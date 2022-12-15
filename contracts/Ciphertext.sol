@@ -8,30 +8,22 @@ import "./Common.sol";
 library Ciphertext {
 
     // The maximum ciphertext output length in bytes.
-    // Rationale: `bytes` ciphertext layout is 32 bytes of length metadata, followed by 175328 bytes of ciphertext.
-    uint256 constant MaxOutputCiphertextBytesLen = 32 + 175328;
+    // Rationale: `bytes` ciphertext layout is 32 bytes of length metadata, followed by 65544 bytes of ciphertext.
+    uint256 constant MaxCiphertextBytesLen = 32 + 65544;
 
-    // Reencrypt the given ciphertext `handle` to the given `publicKey`.
+    // Reencrypt the given ciphertext `handle` to the original caller's public key.
     // If successful, return the reencrypted ciphertext. Else, fail.
-    // Currently, can only be used in read-only requests. If called on a write request, it will fail.
-    function reencrypt(uint256 handle, bytes memory publicKey) internal view returns (bytes memory ciphertext) {
-        // 32 bytes for the handle + the actual length.
-        uint256 inputLen = 32 + publicKey.length;
+    // Currently, can only be used in `eth_call`. If called in a transaction, it will fail.
+    function reencrypt(uint256 handle) internal view returns (bytes memory ciphertext) {
+        bytes32[1] memory input;
+        input[0] = bytes32(handle);
+        uint256 inputLen = 32;
+        ciphertext = new bytes(MaxCiphertextBytesLen);
 
-        bytes memory input = new bytes(inputLen);
-
-        // Store the handle first.
-        assembly { mstore(add(input, 32), handle) }
-
-        // And then the actual public key.
-        for (uint256 i = 0; i < publicKey.length; i++) {
-            input[i + 32] = publicKey[i];
-        }
-
-        // Call the reencrypt precompile. Skip 32 bytes of lenght metadata for the input `bytes`.
+        // Call the reencrypt precompile.
         uint256 precompile = Precompiles.Reencrypt;
         assembly {
-            if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, ciphertext, MaxOutputCiphertextBytesLen)) {
+            if iszero(staticcall(gas(), precompile, input, inputLen, ciphertext, MaxCiphertextBytesLen)) {
                 revert(0, 0)
             }
         }
@@ -61,11 +53,12 @@ library Ciphertext {
     function delegate(uint256 handle) internal view {
         bytes32[1] memory input;
         input[0] = bytes32(handle);
+        uint256 inputLen = 32;
 
         // Call the delegate precompile.
         uint256 precompile = Precompiles.Delegate;
         assembly {
-            if iszero(staticcall(gas(), precompile, input, 32, 0, 0)) {
+            if iszero(staticcall(gas(), precompile, input, inputLen, 0, 0)) {
                 revert(0, 0)
             }
         }
