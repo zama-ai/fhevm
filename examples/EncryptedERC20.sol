@@ -10,10 +10,16 @@ contract EncryptedERC20 {
     // A mapping from address to a ciphertext handle.
     mapping(address => uint256) balances;
 
-    // Sets the balance of the caller to the given encrypted balance.
-    constructor(bytes memory initialEncryptedAmount) {
-        uint256 handle = Ciphertext.verify(initialEncryptedAmount);
-        balances[msg.sender] = handle;
+    // The owner of the contract.
+    address internal owner;
+
+    constructor() {
+        owner = msg.sender;
+    }
+
+    // Sets the balance of the owner to the given encrypted balance.
+    function mint(bytes memory encryptedAmount) public onlyOwner {
+        balances[owner] = Ciphertext.verify(encryptedAmount);
     }
     
     // Transfers an encrypted amount from the message sender address to the `to` address.
@@ -36,5 +42,10 @@ contract EncryptedERC20 {
 
         // Add to the balance of `to`.
         balances[to] = FHEOps.add(balances[to], amount);
+    }
+
+    modifier onlyOwner {
+        require(msg.sender == owner);
+        _;
     }
 }

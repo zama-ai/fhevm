@@ -13,6 +13,11 @@ library FHEOps {
     // if successful, return a handle to the resulting ciphertext. If not successful, fail.
     // If successful, the resulting handle is automatically verified.
     function add(uint256 handleA, uint256 handleB) internal view returns (uint256 resultHandle) {
+        if (handleA == 0) {
+            return handleB;
+        } else if (handleB == 0) {
+            return handleA;
+        }
         bytes32[2] memory input;
         input[0] = bytes32(handleA);
         input[1] = bytes32(handleB);
