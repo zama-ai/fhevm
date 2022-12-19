@@ -2,7 +2,7 @@
 
 pragma solidity >=0.7.0 <0.9.0;
 
-import "./Common.sol";
+import "./Precompiles.sol";
 
 // A library of functions for managing ciphertexts.
 library Ciphertext {
