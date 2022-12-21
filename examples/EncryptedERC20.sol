@@ -40,8 +40,9 @@ contract EncryptedERC20 {
         // Make sure the sender has enough tokens.
         Common.requireCt(FHEOps.lte(amount, balances[from]));
 
-        // Add to the balance of `to`.
+        // Add to the balance of `to` and subract from the balance of `from`.
         balances[to] = FHEOps.add(balances[to], amount);
+        balances[from] = FHEOps.sub(balances[from], amount);
     }
 
     modifier onlyOwner {

@@ -36,6 +36,28 @@ library FHEOps {
         resultHandle = uint256(output[0]);
     }
 
+    // Subtract the ciphertext behind `handleB` from the ciphertext behind `handleA` and,
+    // if successful, return a handle to the resulting ciphertext. If not successful, fail.
+    // If successful, the resulting handle is automatically verified.
+    function sub(uint256 handleA, uint256 handleB) internal view returns (uint256 resultHandle) {
+        bytes32[2] memory input;
+        input[0] = bytes32(handleA);
+        input[1] = bytes32(handleB);
+
+        bytes32[1] memory output;
+
+        // Call the subtract precompile.
+        uint256 precompile = Precompiles.Subtract;
+        assembly {
+            if iszero(staticcall(gas(), precompile, input, 64, output, 32)) {
+                revert(0, 0)
+            }
+        }
+
+        // Copy the handle to the output.
+        resultHandle = uint256(output[0]);
+    }
+
     // Evaluate `handleLhs <= handleRhs` on the underlying ciphertexts and,
     // if successful, return a handle to the resulting ciphertext.
     // If successful, the resulting handle is automatically verified.
