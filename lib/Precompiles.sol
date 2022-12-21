@@ -10,4 +10,5 @@ library Precompiles {
     uint256 public constant Delegate = 68;
     uint256 public constant Require = 69;
     uint256 public constant LessThanOrEqual = 70;
+    uint256 public constant Subtract = 71;
 }
