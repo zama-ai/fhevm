@@ -18,7 +18,7 @@ contract EncryptedERC20 {
     }
 
     // Sets the balance of the owner to the given encrypted balance.
-    function mint(bytes memory encryptedAmount) public onlyOwner {
+    function mint(bytes calldata encryptedAmount) public onlyOwner {
         balances[owner] = Ciphertext.verify(encryptedAmount);
     }
     
