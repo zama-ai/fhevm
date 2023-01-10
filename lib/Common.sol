@@ -5,14 +5,14 @@ pragma solidity >=0.8.13 <0.9.0;
 import "./Precompiles.sol";
 
 // Represents a ciphertext.
-type FheUInt is uint256;
+type FHEUInt is uint256;
 
 library Common {
     // Requires that the `ciphertext` is true.
     // If true, the runction returns. Otherwise, it reverts.
-    function requireCt(FheUInt ciphertext) internal view {
+    function requireCt(FHEUInt ciphertext) internal view {
         bytes32[1] memory input;
-        input[0] = bytes32(FheUInt.unwrap(ciphertext));
+        input[0] = bytes32(FHEUInt.unwrap(ciphertext));
         uint256 inputLen = 32;
 
         // Call the require precompile.
