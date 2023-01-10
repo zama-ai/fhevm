@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity >=0.7.0 <0.9.0;
+pragma solidity >=0.8.13 <0.9.0;
 
 import "./lib/Ciphertext.sol";
 import "./lib/Common.sol";
 import "./lib/FHEOps.sol";
 
 contract EncryptedERC20 {
-    // A mapping from address to a ciphertext handle.
-    mapping(address => uint256) balances;
+    // A mapping from address to an encrypted balance.
+    mapping(address => FheUInt) balances;
 
     // The owner of the contract.
     address internal owner;
@@ -35,7 +35,7 @@ contract EncryptedERC20 {
 
     // Transfers an encrypted amount.
     function _transfer(address from, address to, bytes calldata encryptedAmount) internal {
-        uint256 amount = Ciphertext.verify(encryptedAmount);
+        FheUInt amount = Ciphertext.verify(encryptedAmount);
 
         // Make sure the sender has enough tokens.
         Common.requireCt(FHEOps.lte(amount, balances[from]));

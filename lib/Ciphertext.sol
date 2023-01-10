@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity >=0.7.0 <0.9.0;
+pragma solidity >=0.8.13 <0.9.0;
 
 import "./Precompiles.sol";
+import "./Common.sol";
 
 // A library of functions for managing ciphertexts.
 library Ciphertext {
@@ -11,48 +12,48 @@ library Ciphertext {
     // Rationale: `bytes` ciphertext layout is 32 bytes of length metadata, followed by 65544 bytes of ciphertext.
     uint256 constant MaxCiphertextBytesLen = 32 + 65544;
 
-    // Reencrypt the given ciphertext `handle` to the original caller's public key.
-    // If successful, return the reencrypted ciphertext. Else, fail.
+    // Reencrypt the given `ciphertext` to the original caller's public key.
+    // If successful, return the reencrypted ciphertext bytes. Else, fail.
     // Currently, can only be used in `eth_call`. If called in a transaction, it will fail.
-    function reencrypt(uint256 handle) internal view returns (bytes memory ciphertext) {
+    function reencrypt(FheUInt ciphertext) internal view returns (bytes memory reencrypted) {
         bytes32[1] memory input;
-        input[0] = bytes32(handle);
+        input[0] = bytes32(FheUInt.unwrap(ciphertext));
         uint256 inputLen = 32;
-        ciphertext = new bytes(MaxCiphertextBytesLen);
+        reencrypted = new bytes(MaxCiphertextBytesLen);
 
         // Call the reencrypt precompile.
         uint256 precompile = Precompiles.Reencrypt;
         assembly {
-            if iszero(staticcall(gas(), precompile, input, inputLen, ciphertext, MaxCiphertextBytesLen)) {
+            if iszero(staticcall(gas(), precompile, input, inputLen, reencrypted, MaxCiphertextBytesLen)) {
                 revert(0, 0)
             }
         }
     }
 
-    // Verify the given ciphertext.
-    // If successful, return the handle to it. Else, fail.
+    // Verify the proof of the given `ciphertextWithProof`.
+    // If successful, return the ciphertxt. Else, fail.
     // It is expected that the ciphertext is serialized such that it contains a zero-knowledge proof of knowledge of the plaintext.
-    function verify(bytes memory ciphertextWithProof) internal view returns (uint256 handle) {
+    function verify(bytes memory ciphertextWithProof) internal view returns (FheUInt ciphertext) {
         bytes32[1] memory output;
+        uint256 outputLen = 32;
         uint256 inputLen = ciphertextWithProof.length;
 
         // Call the verify precompile. Skip 32 bytes of lenght metadata for the input `bytes`.
         uint256 precompile = Precompiles.Verify;
         assembly {
-            if iszero(staticcall(gas(), precompile, add(ciphertextWithProof, 32), inputLen, output, 32)) {
+            if iszero(staticcall(gas(), precompile, add(ciphertextWithProof, 32), inputLen, output, outputLen)) {
                 revert(0, 0)
             }
         }
 
-        // Copy the handle to the output.
-        handle = uint256(output[0]);
+        ciphertext = FheUInt.wrap(uint256(output[0]));
     }
 
-    // Delegate the given ciphertext `handle` for use in the outer scope.
+    // Delegate the given `ciphertext` for use in the outer scope.
     // If successful, return. Else, fail.
-    function delegate(uint256 handle) internal view {
+    function delegate(FheUInt ciphertext) internal view {
         bytes32[1] memory input;
-        input[0] = bytes32(handle);
+        input[0] = bytes32(FheUInt.unwrap(ciphertext));
         uint256 inputLen = 32;
 
         // Call the delegate precompile.

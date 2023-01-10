@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity >=0.7.0 <0.9.0;
+pragma solidity >=0.8.13 <0.9.0;
 
 // Addresses of precompiled contracts.
 library Precompiles {
