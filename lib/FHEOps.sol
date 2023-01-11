@@ -13,15 +13,15 @@ library FHEOps {
     // Add ciphertext `a` to ciphertext `b` and, if successful, return the resulting ciphertext.
     // If not successful, fail.
     // If successful, the resulting ciphertext is automatically verified.
-    function add(FheUInt a, FheUInt b) internal view returns (FheUInt result) {
-        if (FheUInt.unwrap(a) == 0) {
+    function add(FHEUInt a, FHEUInt b) internal view returns (FHEUInt result) {
+        if (FHEUInt.unwrap(a) == 0) {
             return b;
-        } else if (FheUInt.unwrap(b) == 0) {
+        } else if (FHEUInt.unwrap(b) == 0) {
             return a;
         }
         bytes32[2] memory input;
-        input[0] = bytes32(FheUInt.unwrap(a));
-        input[1] = bytes32(FheUInt.unwrap(b));
+        input[0] = bytes32(FHEUInt.unwrap(a));
+        input[1] = bytes32(FHEUInt.unwrap(b));
         uint256 inputLen = 64;
 
         bytes32[1] memory output;
@@ -35,16 +35,16 @@ library FHEOps {
             }
         }
 
-        result = FheUInt.wrap(uint256(output[0]));
+        result = FHEUInt.wrap(uint256(output[0]));
     }
 
     // Subtract ciphertext `b` from ciphertext `a` and, if successful, return the resulting ciphertext.
     // If not successful, fail.
     // If successful, the resulting ciphertext is automatically verified.
-    function sub(FheUInt a, FheUInt b) internal view returns (FheUInt result) {
+    function sub(FHEUInt a, FHEUInt b) internal view returns (FHEUInt result) {
         bytes32[2] memory input;
-        input[0] = bytes32(FheUInt.unwrap(a));
-        input[1] = bytes32(FheUInt.unwrap(b));
+        input[0] = bytes32(FHEUInt.unwrap(a));
+        input[1] = bytes32(FHEUInt.unwrap(b));
         uint256 inputLen = 64;
 
         bytes32[1] memory output;
@@ -58,15 +58,15 @@ library FHEOps {
             }
         }
 
-        result = FheUInt.wrap(uint256(output[0]));
+        result = FHEUInt.wrap(uint256(output[0]));
     }
 
     // Evaluate `lhs <= rhs` on the given ciphertexts and, if successful, return the resulting ciphertext.
     // If successful, the resulting ciphertext is automatically verified.
-    function lte(FheUInt lhs, FheUInt rhs) internal view returns (FheUInt result) {
+    function lte(FHEUInt lhs, FHEUInt rhs) internal view returns (FHEUInt result) {
         bytes32[2] memory input;
-        input[0] = bytes32(FheUInt.unwrap(lhs));
-        input[1] = bytes32(FheUInt.unwrap(rhs));
+        input[0] = bytes32(FHEUInt.unwrap(lhs));
+        input[1] = bytes32(FHEUInt.unwrap(rhs));
         uint256 inputLen = 64;
 
         bytes32[1] memory output;
@@ -80,6 +80,6 @@ library FHEOps {
             }
         }
 
-        result = FheUInt.wrap(uint256(output[0]));
+        result = FHEUInt.wrap(uint256(output[0]));
     }
 }

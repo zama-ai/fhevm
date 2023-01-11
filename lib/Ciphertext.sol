@@ -15,9 +15,9 @@ library Ciphertext {
     // Reencrypt the given `ciphertext` to the original caller's public key.
     // If successful, return the reencrypted ciphertext bytes. Else, fail.
     // Currently, can only be used in `eth_call`. If called in a transaction, it will fail.
-    function reencrypt(FheUInt ciphertext) internal view returns (bytes memory reencrypted) {
+    function reencrypt(FHEUInt ciphertext) internal view returns (bytes memory reencrypted) {
         bytes32[1] memory input;
-        input[0] = bytes32(FheUInt.unwrap(ciphertext));
+        input[0] = bytes32(FHEUInt.unwrap(ciphertext));
         uint256 inputLen = 32;
         reencrypted = new bytes(MaxCiphertextBytesLen);
 
@@ -33,7 +33,7 @@ library Ciphertext {
     // Verify the proof of the given `ciphertextWithProof`.
     // If successful, return the ciphertxt. Else, fail.
     // It is expected that the ciphertext is serialized such that it contains a zero-knowledge proof of knowledge of the plaintext.
-    function verify(bytes memory ciphertextWithProof) internal view returns (FheUInt ciphertext) {
+    function verify(bytes memory ciphertextWithProof) internal view returns (FHEUInt ciphertext) {
         bytes32[1] memory output;
         uint256 outputLen = 32;
         uint256 inputLen = ciphertextWithProof.length;
@@ -46,14 +46,14 @@ library Ciphertext {
             }
         }
 
-        ciphertext = FheUInt.wrap(uint256(output[0]));
+        ciphertext = FHEUInt.wrap(uint256(output[0]));
     }
 
     // Delegate the given `ciphertext` for use in the outer scope.
     // If successful, return. Else, fail.
-    function delegate(FheUInt ciphertext) internal view {
+    function delegate(FHEUInt ciphertext) internal view {
         bytes32[1] memory input;
-        input[0] = bytes32(FheUInt.unwrap(ciphertext));
+        input[0] = bytes32(FHEUInt.unwrap(ciphertext));
         uint256 inputLen = 32;
 
         // Call the delegate precompile.

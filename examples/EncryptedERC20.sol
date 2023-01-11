@@ -8,7 +8,7 @@ import "./lib/FHEOps.sol";
 
 contract EncryptedERC20 {
     // A mapping from address to an encrypted balance.
-    mapping(address => FheUInt) balances;
+    mapping(address => FHEUInt) balances;
 
     // The owner of the contract.
     address internal owner;
@@ -35,7 +35,7 @@ contract EncryptedERC20 {
 
     // Transfers an encrypted amount.
     function _transfer(address from, address to, bytes calldata encryptedAmount) internal {
-        FheUInt amount = Ciphertext.verify(encryptedAmount);
+        FHEUInt amount = Ciphertext.verify(encryptedAmount);
 
         // Make sure the sender has enough tokens.
         Common.requireCt(FHEOps.lte(amount, balances[from]));
