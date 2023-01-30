@@ -7,8 +7,14 @@ import "../lib/Common.sol";
 import "../lib/FHEOps.sol";
 
 contract EncryptedERC20 {
+
+    FHEUInt public totalSupply;
+    string public name = "Naraggara"; // City of Zama's battle
+    string public symbol = "NARA";
+    uint8 public decimals = 18;
+
     // A mapping from address to an encrypted balance.
-    mapping(address => FHEUInt) balances;
+    mapping(address => FHEUInt) public balances;
 
     // The owner of the contract.
     address internal owner;
@@ -19,7 +25,10 @@ contract EncryptedERC20 {
 
     // Sets the balance of the owner to the given encrypted balance.
     function mint(bytes calldata encryptedAmount) public onlyOwner {
-        balances[owner] = Ciphertext.verify(encryptedAmount);
+        FHEUInt amount = Ciphertext.verify(encryptedAmount);
+        balances[owner] = amount;
+        totalSupply = FHEOps.add(totalSupply, amount);
+
     }
 
     // Transfers an encrypted amount from the message sender address to the `to` address.
@@ -27,9 +36,13 @@ contract EncryptedERC20 {
         _transfer(msg.sender, to, encryptedAmount);
     }
 
+    function getTotalSupply() public view returns (bytes memory) {
+        return Ciphertext.reencrypt(totalSupply); // Should be decrypt later
+    }
+
     // Reencrypts the balance of the caller under their public FHE key.
     // The FHE public key is automatically determined based on the origin of the call.
-    function reencrypt() public view returns (bytes memory) {
+    function balanceOf() public view returns (bytes memory) {
         return Ciphertext.reencrypt(balances[msg.sender]);
     }
 
