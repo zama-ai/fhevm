@@ -48,7 +48,7 @@ def reencrypt(contract, account, cks_file, ct_file, expected):
 	print("Retrieving encrypted balance from chain...")
 	start = time.time()
 
-	ct = contract.functions.reencrypt().call({
+	ct = contract.functions.balanceOf().call({
 		'from': account.address
 	})
 	# print('len(ct) =', len(ct))
@@ -67,9 +67,9 @@ alice_private_key = "0x00468d407f31211e8f8fba671fa714be5ea3b1203c683dd999075b28f
 alice_account: LocalAccount = Account.from_key(alice_private_key)
 w3.middleware_onion.add(construct_sign_and_send_raw_middleware(alice_account))
 
-bob_private_key = "0x04554c46d10b234939a611dfa3df14d167e4e725ec59e4f38a9bf1177a05ce8f"
-bob_account: LocalAccount = Account.from_key(bob_private_key)
-w3.middleware_onion.add(construct_sign_and_send_raw_middleware(bob_account))
+# bob_private_key = "0x04554c46d10b234939a611dfa3df14d167e4e725ec59e4f38a9bf1177a05ce8f"
+# bob_account: LocalAccount = Account.from_key(bob_private_key)
+# w3.middleware_onion.add(construct_sign_and_send_raw_middleware(bob_account))
 
 carol_private_key = "0xa6c13a4776aee43e5b4da33acc30fa0a688f3271a46357b349d443b2d491f4b2"
 carol_account: LocalAccount = Account.from_key(carol_private_key)
@@ -77,7 +77,7 @@ w3.middleware_onion.add(construct_sign_and_send_raw_middleware(carol_account))
 
 # Change below to match chain specific information:
 chain_id = 9000
-private_key = '0x8386B8F505FD0E133E8781A8F9A6BE7CAA928A147DED4299B2C439D9EE58A447' # private key the default account
+private_key = '0xC7F4542D2E3221D94001A6621299F820F1966BC32ED0937E70283AF54931B19C' # private key of the default account
 account: LocalAccount = Account.from_key(private_key)
 
 print("\n\n======== STEP 1: COMPILE AND DEPLOY SMART CONTRACT ========")
@@ -147,6 +147,8 @@ with_proofs = True
 contract = w3.eth.contract(address=contract_address, abi=abi)
 w3.middleware_onion.add(construct_sign_and_send_raw_middleware(account))
 
+start = time.time()
+
 if with_proofs == True:
 	url_enc = "http://13.39.73.89:23042/encrypt_and_prove"
 	packed = msgpack.packb(2)
@@ -159,6 +161,8 @@ if with_proofs == True:
 	input = enc_response.content
 else:
 	input = secrets.token_bytes(1024 * 1024 * 20)
+
+print('Received transaction input from ZKPoK server in %s seconds' % (time.time() - start))
 
 # print('Input len =', len(input))
 
