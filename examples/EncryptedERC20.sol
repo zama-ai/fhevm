@@ -35,7 +35,12 @@ contract EncryptedERC20 {
 
     // Transfers an encrypted amount from the message sender address to the `to` address.
     function transfer(address to, bytes calldata encryptedAmount) public {
-        _transfer(msg.sender, to, Ciphertext.verify(encryptedAmount));
+        transfer(to, Ciphertext.verify(encryptedAmount));
+    }
+
+    // Transfers an amount from the message sender address to the `to` address.
+    function transfer(address to, FHEUInt amount) public {
+        _transfer(msg.sender, to, amount);
     }
 
     function getTotalSupply() public view returns (bytes memory) {
@@ -61,10 +66,14 @@ contract EncryptedERC20 {
         return Ciphertext.reencrypt(_allowance(owner, spender));
     }
 
-    // Sends `encryptedAmount` tokens using the caller's allowance.
+    // Transfers `encryptedAmount` tokens using the caller's allowance.
     function transferFrom(address from, address to, bytes calldata encryptedAmount) public {
+        transferFrom(from, to, Ciphertext.verify(encryptedAmount));
+    }
+
+    // Transfers `amount` tokens using the caller's allowance.
+    function transferFrom(address from, address to, FHEUInt amount) public {
         address spender = msg.sender;
-        FHEUInt amount = Ciphertext.verify(encryptedAmount);
         _updateAllowance(from, spender, amount);
         _transfer(from, to, amount);
     }

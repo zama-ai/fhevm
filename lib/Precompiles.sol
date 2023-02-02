@@ -12,4 +12,5 @@ library Precompiles {
     uint256 public constant LessThanOrEqual = 70;
     uint256 public constant Subtract = 71;
     uint256 public constant Multiply = 72;
+    uint256 public constant LessThan = 73;
 }

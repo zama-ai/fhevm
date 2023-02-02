@@ -106,6 +106,28 @@ library FHEOps {
         result = FHEUInt.wrap(uint256(output[0]));
     }
 
+    // Evaluate `lhs < rhs` on the given ciphertexts and, if successful, return the resulting ciphertext.
+    // If successful, the resulting ciphertext is automatically verified.
+    function lt(FHEUInt lhs, FHEUInt rhs) internal view returns (FHEUInt result) {
+        bytes32[2] memory input;
+        input[0] = bytes32(FHEUInt.unwrap(lhs));
+        input[1] = bytes32(FHEUInt.unwrap(rhs));
+        uint256 inputLen = 64;
+
+        bytes32[1] memory output;
+        uint256 outputLen = 32;
+
+        // Call the lt precompile.
+        uint256 precompile = Precompiles.LessThan;
+        assembly {
+            if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
+                revert(0, 0)
+            }
+        }
+
+        result = FHEUInt.wrap(uint256(output[0]));
+    }
+
     // If `control`'s value is 1, the resulting value is the same value as `ifTrue`.
     // If `control`'s value is 0, the resulting value is the same value as `ifFalse`.
     // If successful, the resulting ciphertext is automatically verified.
