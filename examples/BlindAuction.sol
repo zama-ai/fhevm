@@ -40,11 +40,15 @@ contract BlindAuction {
     function bid(bytes calldata encryptedValue) public {
         require(!auctionStopped);
         FHEUInt value = Ciphertext.verify(encryptedValue);
-        bids[msg.sender] = value;
+        FHEUInt existingBid = bids[msg.sender];
+        if (FHEUInt.unwrap(existingBid) != 0) {
+            bids[msg.sender] = FHEOps.cmux(FHEOps.lt(existingBid, value), value, existingBid);
+        }
+        FHEUInt currentBid = bids[msg.sender];
         if (FHEUInt.unwrap(highestBid) == 0) {
-            highestBid = value;
+            highestBid = currentBid;
         } else {
-            highestBid = FHEOps.cmux(FHEOps.lte(highestBid, value), value, highestBid);
+            highestBid = FHEOps.cmux(FHEOps.lt(highestBid, currentBid), currentBid, highestBid);
         }
         tokenContract.transferFrom(msg.sender, address(this), value);
     }
