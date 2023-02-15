@@ -173,4 +173,20 @@ library FHEOps {
 
         result = FHEUInt.wrap(uint256(addOutput[0]));
     }
+
+    // Return a random value. The value itself is encrypted.
+    function rand() internal view returns (FHEUInt result) {
+        bytes32[1] memory output;
+        uint256 outputLen = 32;
+
+        // Call the rand precompile.
+        uint256 precompile = Precompiles.Rand;
+        assembly {
+            if iszero(staticcall(gas(), precompile, 0, 0, output, outputLen)) {
+                revert(0, 0)
+            }
+        }
+
+        result = FHEUInt.wrap(uint256(output[0]));
+    }
 }
