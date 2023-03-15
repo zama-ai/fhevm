@@ -22,9 +22,11 @@ contract BlindAuction {
     // The token contract used for encrypted bids.
     EncryptedERC20 public tokenContract;
 
-    // Whether the auction object has been claimed. We need that for a tie-break when
-    // multiple bidders have the same value - in that case, the first one wins.
+    // Whether the auction object has been claimed.
     bool public objectClaimed;
+
+    // If the token has been transferred to the beneficiary
+    bool public tokenTransferred;
 
     // The function has been called too early.
     // Try again at `time`.
@@ -40,6 +42,7 @@ contract BlindAuction {
         tokenContract = _tokenContract;
         endTime = block.timestamp + biddingTime;
         objectClaimed = false;
+        tokenTransferred = false;
     }
 
     // Bid an `encryptedValue`.
@@ -79,10 +82,16 @@ contract BlindAuction {
 
         objectClaimed = true;
         bids[msg.sender] = FHEUInt.wrap(0);
+        emit Winner(msg.sender);
+    }
+
+    // Transfer token to beneficiary
+    function auctionEnd() public onlyAfterEnd() {
+        require(!tokenTransferred);
+
+        tokenTransferred = true;
 
         tokenContract.transfer(beneficiary, highestBid);
-        
-        emit Winner(msg.sender);
     }
 
     // Withdraw a bid from the auction to the caller once the auction has stopped.
