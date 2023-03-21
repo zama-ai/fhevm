@@ -757,7 +757,11 @@ library Precompiles {
     uint256 public constant Require = 69;
     uint256 public constant LessThanOrEqual = 70;
     uint256 public constant Subtract = 71;
-    uint256 public constant Cast = 72;
+    uint256 public constant Multiply = 72;
+    uint256 public constant LessThan = 73;
+    uint256 public constant Random = 74;
+    uint256 public constant optimisticRequire = 75;
+    uint256 public constant Cast = 76;
 }
 
 library Ciphertext {
