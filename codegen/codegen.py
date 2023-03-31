@@ -1,4 +1,4 @@
-### Generation script for boilerplate FHEUInt types
+### Generation script for boilerplate euint types
 
 f = open("FHEOps.sol", "w")
 f.write("""\
@@ -6,28 +6,28 @@ f.write("""\
 
 pragma solidity >=0.8.13 <0.9.0;
 
-type FHEUInt8 is uint256;
-type FHEUInt16 is uint256;
-type FHEUInt32 is uint256;
-type FHEUInt64 is uint256;
-type FHEUInt128 is uint256;
-type FHEUInt256 is uint256;
+type euint8 is uint256;
+type euint16 is uint256;
+type euint32 is uint256;
+type euint64 is uint256;
+type euint128 is uint256;
+type euint256 is uint256;
 
 library Common {
 // Values used to communicate types at runtime to the cast() precompile.
-    uint8 internal constant typeUInt8 = 0;
-    uint8 internal constant typeUInt16 = 1;
-    uint8 internal constant typeUInt32 = 2;
-    uint8 internal constant typeUInt64 = 3;
-    uint8 internal constant typeUInt128 = 4;
-    uint8 internal constant typeUInt256 = 5;
+    uint8 internal constant euint8_t = 0;
+    uint8 internal constant euint16_t = 1;
+    uint8 internal constant euint32_t = 2;
+    uint8 internal constant euint64_t = 3;
+    uint8 internal constant euint128_t = 4;
+    uint8 internal constant euint256_t = 5;
 }
 
 library FHEOps {""")
 
 to_print =  """
-    function {f}(FHEUInt{i} a, FHEUInt{j} b) internal view returns (FHEUInt{k}) {{
-        return FHEUInt{k}.wrap(Impl.{f}(FHEUInt{i}.unwrap(a), FHEUInt{j}.unwrap(b)));
+    function {f}(euint{i} a, euint{j} b) internal view returns (euint{k}) {{
+        return euint{k}.wrap(Impl.{f}(euint{i}.unwrap(a), euint{j}.unwrap(b)));
     }}
 """
 
@@ -38,8 +38,8 @@ for i in (2**p for p in range(3, 9)):
         f.write(to_print.format(i=i, j=j, k=8, f="lte"))
 
 to_print="""
-    function toFHEUint{i}(FHEUInt{j} v) internal view returns (FHEUInt{i}) {{
-        return FHEUInt{i}.wrap(Impl.cast(FHEUInt{j}.unwrap(v), Common.typeUInt{j}));
+    function to_euint{i}(euint{j} v) internal view returns (euint{i}) {{
+        return euint{i}.wrap(Impl.cast(euint{j}.unwrap(v), Common.euint{j}_t));
     }}
 """
 
@@ -250,16 +250,16 @@ f.write("""
 library Ciphertext {""")
 
 to_print="""
-    function verify{i}(bytes memory ciphertextWithProof) internal view returns (FHEUInt{i}) {{
-        return FHEUInt{i}.wrap(Impl.verify(ciphertextWithProof, Common.typeUInt{i}));
+    function as_euint{i}(bytes memory ciphertextWithProof) internal view returns (euint{i}) {{
+        return euint{i}.wrap(Impl.verify(ciphertextWithProof, Common.euint{i}_t));
     }}
 
-    function reencrypt(FHEUInt{i} ciphertext) internal view returns (bytes memory reencrypted) {{
-        return Impl.reencrypt(FHEUInt{i}.unwrap(ciphertext));
+    function reencrypt(euint{i} ciphertext) internal view returns (bytes memory reencrypted) {{
+        return Impl.reencrypt(euint{i}.unwrap(ciphertext));
     }}
 
-    function delegate(FHEUInt{i} ciphertext) internal view {{
-        Impl.delegate(FHEUInt{i}.unwrap(ciphertext));
+    function delegate(euint{i} ciphertext) internal view {{
+        Impl.delegate(euint{i}.unwrap(ciphertext));
     }}
 """
 
@@ -267,8 +267,8 @@ for i in (2**p for p in range(3, 9)):
     f.write(to_print.format(i=i))
 
 f.write("""
-    function requireCt(FHEUInt8 ciphertext) internal view {{
-        Impl.requireCt(FHEUInt8.unwrap(ciphertext));
+    function requireCt(euint8 ciphertext) internal view {{
+        Impl.requireCt(euint8.unwrap(ciphertext));
     }}
 """)
 

@@ -2,576 +2,577 @@
 
 pragma solidity >=0.8.13 <0.9.0;
 
-type FHEUInt8 is uint256;
-type FHEUInt16 is uint256;
-type FHEUInt32 is uint256;
-type FHEUInt64 is uint256;
-type FHEUInt128 is uint256;
-type FHEUInt256 is uint256;
+type euint8 is uint256;
+type euint16 is uint256;
+type euint32 is uint256;
+type euint64 is uint256;
+type euint128 is uint256;
+type euint256 is uint256;
 
 library Common {
-// Values used to communicate types at runtime to the cast() precompile.
-    uint8 internal constant typeUInt8 = 0;
-    uint8 internal constant typeUInt16 = 1;
-    uint8 internal constant typeUInt32 = 2;
-    uint8 internal constant typeUInt64 = 3;
-    uint8 internal constant typeUInt128 = 4;
-    uint8 internal constant typeUInt256 = 5;
+    // Values used to communicate types at runtime to the cast() precompile.
+    uint8 internal constant euint8_t = 0;
+    uint8 internal constant euint16_t = 1;
+    uint8 internal constant euint32_t = 2;
+    uint8 internal constant euint64_t = 3;
+    uint8 internal constant euint128_t = 4;
+    uint8 internal constant euint256_t = 5;
 }
 
 library FHEOps {
-    function add(FHEUInt8 a, FHEUInt8 b) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.add(FHEUInt8.unwrap(a), FHEUInt8.unwrap(b)));
+    function add(euint8 a, euint8 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.add(euint8.unwrap(a), euint8.unwrap(b)));
     }
 
-    function sub(FHEUInt8 a, FHEUInt8 b) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.sub(FHEUInt8.unwrap(a), FHEUInt8.unwrap(b)));
+    function sub(euint8 a, euint8 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.sub(euint8.unwrap(a), euint8.unwrap(b)));
     }
 
-    function lte(FHEUInt8 a, FHEUInt8 b) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.lte(FHEUInt8.unwrap(a), FHEUInt8.unwrap(b)));
+    function lte(euint8 a, euint8 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.lte(euint8.unwrap(a), euint8.unwrap(b)));
     }
 
-    function add(FHEUInt8 a, FHEUInt16 b) internal view returns (FHEUInt16) {
-        return FHEUInt16.wrap(Impl.add(FHEUInt8.unwrap(a), FHEUInt16.unwrap(b)));
+    function add(euint8 a, euint16 b) internal view returns (euint16) {
+        return euint16.wrap(Impl.add(euint8.unwrap(a), euint16.unwrap(b)));
     }
 
-    function sub(FHEUInt8 a, FHEUInt16 b) internal view returns (FHEUInt16) {
-        return FHEUInt16.wrap(Impl.sub(FHEUInt8.unwrap(a), FHEUInt16.unwrap(b)));
+    function sub(euint8 a, euint16 b) internal view returns (euint16) {
+        return euint16.wrap(Impl.sub(euint8.unwrap(a), euint16.unwrap(b)));
     }
 
-    function lte(FHEUInt8 a, FHEUInt16 b) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.lte(FHEUInt8.unwrap(a), FHEUInt16.unwrap(b)));
+    function lte(euint8 a, euint16 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.lte(euint8.unwrap(a), euint16.unwrap(b)));
     }
 
-    function add(FHEUInt8 a, FHEUInt32 b) internal view returns (FHEUInt32) {
-        return FHEUInt32.wrap(Impl.add(FHEUInt8.unwrap(a), FHEUInt32.unwrap(b)));
+    function add(euint8 a, euint32 b) internal view returns (euint32) {
+        return euint32.wrap(Impl.add(euint8.unwrap(a), euint32.unwrap(b)));
     }
 
-    function sub(FHEUInt8 a, FHEUInt32 b) internal view returns (FHEUInt32) {
-        return FHEUInt32.wrap(Impl.sub(FHEUInt8.unwrap(a), FHEUInt32.unwrap(b)));
+    function sub(euint8 a, euint32 b) internal view returns (euint32) {
+        return euint32.wrap(Impl.sub(euint8.unwrap(a), euint32.unwrap(b)));
     }
 
-    function lte(FHEUInt8 a, FHEUInt32 b) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.lte(FHEUInt8.unwrap(a), FHEUInt32.unwrap(b)));
+    function lte(euint8 a, euint32 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.lte(euint8.unwrap(a), euint32.unwrap(b)));
     }
 
-    function add(FHEUInt8 a, FHEUInt64 b) internal view returns (FHEUInt64) {
-        return FHEUInt64.wrap(Impl.add(FHEUInt8.unwrap(a), FHEUInt64.unwrap(b)));
+    function add(euint8 a, euint64 b) internal view returns (euint64) {
+        return euint64.wrap(Impl.add(euint8.unwrap(a), euint64.unwrap(b)));
     }
 
-    function sub(FHEUInt8 a, FHEUInt64 b) internal view returns (FHEUInt64) {
-        return FHEUInt64.wrap(Impl.sub(FHEUInt8.unwrap(a), FHEUInt64.unwrap(b)));
+    function sub(euint8 a, euint64 b) internal view returns (euint64) {
+        return euint64.wrap(Impl.sub(euint8.unwrap(a), euint64.unwrap(b)));
     }
 
-    function lte(FHEUInt8 a, FHEUInt64 b) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.lte(FHEUInt8.unwrap(a), FHEUInt64.unwrap(b)));
+    function lte(euint8 a, euint64 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.lte(euint8.unwrap(a), euint64.unwrap(b)));
     }
 
-    function add(FHEUInt8 a, FHEUInt128 b) internal view returns (FHEUInt128) {
-        return FHEUInt128.wrap(Impl.add(FHEUInt8.unwrap(a), FHEUInt128.unwrap(b)));
+    function add(euint8 a, euint128 b) internal view returns (euint128) {
+        return euint128.wrap(Impl.add(euint8.unwrap(a), euint128.unwrap(b)));
     }
 
-    function sub(FHEUInt8 a, FHEUInt128 b) internal view returns (FHEUInt128) {
-        return FHEUInt128.wrap(Impl.sub(FHEUInt8.unwrap(a), FHEUInt128.unwrap(b)));
+    function sub(euint8 a, euint128 b) internal view returns (euint128) {
+        return euint128.wrap(Impl.sub(euint8.unwrap(a), euint128.unwrap(b)));
     }
 
-    function lte(FHEUInt8 a, FHEUInt128 b) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.lte(FHEUInt8.unwrap(a), FHEUInt128.unwrap(b)));
+    function lte(euint8 a, euint128 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.lte(euint8.unwrap(a), euint128.unwrap(b)));
     }
 
-    function add(FHEUInt8 a, FHEUInt256 b) internal view returns (FHEUInt256) {
-        return FHEUInt256.wrap(Impl.add(FHEUInt8.unwrap(a), FHEUInt256.unwrap(b)));
+    function add(euint8 a, euint256 b) internal view returns (euint256) {
+        return euint256.wrap(Impl.add(euint8.unwrap(a), euint256.unwrap(b)));
     }
 
-    function sub(FHEUInt8 a, FHEUInt256 b) internal view returns (FHEUInt256) {
-        return FHEUInt256.wrap(Impl.sub(FHEUInt8.unwrap(a), FHEUInt256.unwrap(b)));
+    function sub(euint8 a, euint256 b) internal view returns (euint256) {
+        return euint256.wrap(Impl.sub(euint8.unwrap(a), euint256.unwrap(b)));
     }
 
-    function lte(FHEUInt8 a, FHEUInt256 b) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.lte(FHEUInt8.unwrap(a), FHEUInt256.unwrap(b)));
+    function lte(euint8 a, euint256 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.lte(euint8.unwrap(a), euint256.unwrap(b)));
     }
 
-    function add(FHEUInt16 a, FHEUInt8 b) internal view returns (FHEUInt16) {
-        return FHEUInt16.wrap(Impl.add(FHEUInt16.unwrap(a), FHEUInt8.unwrap(b)));
+    function add(euint16 a, euint8 b) internal view returns (euint16) {
+        return euint16.wrap(Impl.add(euint16.unwrap(a), euint8.unwrap(b)));
     }
 
-    function sub(FHEUInt16 a, FHEUInt8 b) internal view returns (FHEUInt16) {
-        return FHEUInt16.wrap(Impl.sub(FHEUInt16.unwrap(a), FHEUInt8.unwrap(b)));
+    function sub(euint16 a, euint8 b) internal view returns (euint16) {
+        return euint16.wrap(Impl.sub(euint16.unwrap(a), euint8.unwrap(b)));
     }
 
-    function lte(FHEUInt16 a, FHEUInt8 b) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.lte(FHEUInt16.unwrap(a), FHEUInt8.unwrap(b)));
+    function lte(euint16 a, euint8 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.lte(euint16.unwrap(a), euint8.unwrap(b)));
     }
 
-    function add(FHEUInt16 a, FHEUInt16 b) internal view returns (FHEUInt16) {
-        return FHEUInt16.wrap(Impl.add(FHEUInt16.unwrap(a), FHEUInt16.unwrap(b)));
+    function add(euint16 a, euint16 b) internal view returns (euint16) {
+        return euint16.wrap(Impl.add(euint16.unwrap(a), euint16.unwrap(b)));
     }
 
-    function sub(FHEUInt16 a, FHEUInt16 b) internal view returns (FHEUInt16) {
-        return FHEUInt16.wrap(Impl.sub(FHEUInt16.unwrap(a), FHEUInt16.unwrap(b)));
+    function sub(euint16 a, euint16 b) internal view returns (euint16) {
+        return euint16.wrap(Impl.sub(euint16.unwrap(a), euint16.unwrap(b)));
     }
 
-    function lte(FHEUInt16 a, FHEUInt16 b) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.lte(FHEUInt16.unwrap(a), FHEUInt16.unwrap(b)));
+    function lte(euint16 a, euint16 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.lte(euint16.unwrap(a), euint16.unwrap(b)));
     }
 
-    function add(FHEUInt16 a, FHEUInt32 b) internal view returns (FHEUInt32) {
-        return FHEUInt32.wrap(Impl.add(FHEUInt16.unwrap(a), FHEUInt32.unwrap(b)));
+    function add(euint16 a, euint32 b) internal view returns (euint32) {
+        return euint32.wrap(Impl.add(euint16.unwrap(a), euint32.unwrap(b)));
     }
 
-    function sub(FHEUInt16 a, FHEUInt32 b) internal view returns (FHEUInt32) {
-        return FHEUInt32.wrap(Impl.sub(FHEUInt16.unwrap(a), FHEUInt32.unwrap(b)));
+    function sub(euint16 a, euint32 b) internal view returns (euint32) {
+        return euint32.wrap(Impl.sub(euint16.unwrap(a), euint32.unwrap(b)));
     }
 
-    function lte(FHEUInt16 a, FHEUInt32 b) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.lte(FHEUInt16.unwrap(a), FHEUInt32.unwrap(b)));
+    function lte(euint16 a, euint32 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.lte(euint16.unwrap(a), euint32.unwrap(b)));
     }
 
-    function add(FHEUInt16 a, FHEUInt64 b) internal view returns (FHEUInt64) {
-        return FHEUInt64.wrap(Impl.add(FHEUInt16.unwrap(a), FHEUInt64.unwrap(b)));
+    function add(euint16 a, euint64 b) internal view returns (euint64) {
+        return euint64.wrap(Impl.add(euint16.unwrap(a), euint64.unwrap(b)));
     }
 
-    function sub(FHEUInt16 a, FHEUInt64 b) internal view returns (FHEUInt64) {
-        return FHEUInt64.wrap(Impl.sub(FHEUInt16.unwrap(a), FHEUInt64.unwrap(b)));
+    function sub(euint16 a, euint64 b) internal view returns (euint64) {
+        return euint64.wrap(Impl.sub(euint16.unwrap(a), euint64.unwrap(b)));
     }
 
-    function lte(FHEUInt16 a, FHEUInt64 b) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.lte(FHEUInt16.unwrap(a), FHEUInt64.unwrap(b)));
+    function lte(euint16 a, euint64 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.lte(euint16.unwrap(a), euint64.unwrap(b)));
     }
 
-    function add(FHEUInt16 a, FHEUInt128 b) internal view returns (FHEUInt128) {
-        return FHEUInt128.wrap(Impl.add(FHEUInt16.unwrap(a), FHEUInt128.unwrap(b)));
+    function add(euint16 a, euint128 b) internal view returns (euint128) {
+        return euint128.wrap(Impl.add(euint16.unwrap(a), euint128.unwrap(b)));
     }
 
-    function sub(FHEUInt16 a, FHEUInt128 b) internal view returns (FHEUInt128) {
-        return FHEUInt128.wrap(Impl.sub(FHEUInt16.unwrap(a), FHEUInt128.unwrap(b)));
+    function sub(euint16 a, euint128 b) internal view returns (euint128) {
+        return euint128.wrap(Impl.sub(euint16.unwrap(a), euint128.unwrap(b)));
     }
 
-    function lte(FHEUInt16 a, FHEUInt128 b) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.lte(FHEUInt16.unwrap(a), FHEUInt128.unwrap(b)));
+    function lte(euint16 a, euint128 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.lte(euint16.unwrap(a), euint128.unwrap(b)));
     }
 
-    function add(FHEUInt16 a, FHEUInt256 b) internal view returns (FHEUInt256) {
-        return FHEUInt256.wrap(Impl.add(FHEUInt16.unwrap(a), FHEUInt256.unwrap(b)));
+    function add(euint16 a, euint256 b) internal view returns (euint256) {
+        return euint256.wrap(Impl.add(euint16.unwrap(a), euint256.unwrap(b)));
     }
 
-    function sub(FHEUInt16 a, FHEUInt256 b) internal view returns (FHEUInt256) {
-        return FHEUInt256.wrap(Impl.sub(FHEUInt16.unwrap(a), FHEUInt256.unwrap(b)));
+    function sub(euint16 a, euint256 b) internal view returns (euint256) {
+        return euint256.wrap(Impl.sub(euint16.unwrap(a), euint256.unwrap(b)));
     }
 
-    function lte(FHEUInt16 a, FHEUInt256 b) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.lte(FHEUInt16.unwrap(a), FHEUInt256.unwrap(b)));
+    function lte(euint16 a, euint256 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.lte(euint16.unwrap(a), euint256.unwrap(b)));
     }
 
-    function add(FHEUInt32 a, FHEUInt8 b) internal view returns (FHEUInt32) {
-        return FHEUInt32.wrap(Impl.add(FHEUInt32.unwrap(a), FHEUInt8.unwrap(b)));
+    function add(euint32 a, euint8 b) internal view returns (euint32) {
+        return euint32.wrap(Impl.add(euint32.unwrap(a), euint8.unwrap(b)));
     }
 
-    function sub(FHEUInt32 a, FHEUInt8 b) internal view returns (FHEUInt32) {
-        return FHEUInt32.wrap(Impl.sub(FHEUInt32.unwrap(a), FHEUInt8.unwrap(b)));
+    function sub(euint32 a, euint8 b) internal view returns (euint32) {
+        return euint32.wrap(Impl.sub(euint32.unwrap(a), euint8.unwrap(b)));
     }
 
-    function lte(FHEUInt32 a, FHEUInt8 b) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.lte(FHEUInt32.unwrap(a), FHEUInt8.unwrap(b)));
+    function lte(euint32 a, euint8 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.lte(euint32.unwrap(a), euint8.unwrap(b)));
     }
 
-    function add(FHEUInt32 a, FHEUInt16 b) internal view returns (FHEUInt32) {
-        return FHEUInt32.wrap(Impl.add(FHEUInt32.unwrap(a), FHEUInt16.unwrap(b)));
+    function add(euint32 a, euint16 b) internal view returns (euint32) {
+        return euint32.wrap(Impl.add(euint32.unwrap(a), euint16.unwrap(b)));
     }
 
-    function sub(FHEUInt32 a, FHEUInt16 b) internal view returns (FHEUInt32) {
-        return FHEUInt32.wrap(Impl.sub(FHEUInt32.unwrap(a), FHEUInt16.unwrap(b)));
+    function sub(euint32 a, euint16 b) internal view returns (euint32) {
+        return euint32.wrap(Impl.sub(euint32.unwrap(a), euint16.unwrap(b)));
     }
 
-    function lte(FHEUInt32 a, FHEUInt16 b) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.lte(FHEUInt32.unwrap(a), FHEUInt16.unwrap(b)));
+    function lte(euint32 a, euint16 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.lte(euint32.unwrap(a), euint16.unwrap(b)));
     }
 
-    function add(FHEUInt32 a, FHEUInt32 b) internal view returns (FHEUInt32) {
-        return FHEUInt32.wrap(Impl.add(FHEUInt32.unwrap(a), FHEUInt32.unwrap(b)));
+    function add(euint32 a, euint32 b) internal view returns (euint32) {
+        return euint32.wrap(Impl.add(euint32.unwrap(a), euint32.unwrap(b)));
     }
 
-    function sub(FHEUInt32 a, FHEUInt32 b) internal view returns (FHEUInt32) {
-        return FHEUInt32.wrap(Impl.sub(FHEUInt32.unwrap(a), FHEUInt32.unwrap(b)));
+    function sub(euint32 a, euint32 b) internal view returns (euint32) {
+        return euint32.wrap(Impl.sub(euint32.unwrap(a), euint32.unwrap(b)));
     }
 
-    function lte(FHEUInt32 a, FHEUInt32 b) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.lte(FHEUInt32.unwrap(a), FHEUInt32.unwrap(b)));
+    function lte(euint32 a, euint32 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.lte(euint32.unwrap(a), euint32.unwrap(b)));
     }
 
-    function add(FHEUInt32 a, FHEUInt64 b) internal view returns (FHEUInt64) {
-        return FHEUInt64.wrap(Impl.add(FHEUInt32.unwrap(a), FHEUInt64.unwrap(b)));
+    function add(euint32 a, euint64 b) internal view returns (euint64) {
+        return euint64.wrap(Impl.add(euint32.unwrap(a), euint64.unwrap(b)));
     }
 
-    function sub(FHEUInt32 a, FHEUInt64 b) internal view returns (FHEUInt64) {
-        return FHEUInt64.wrap(Impl.sub(FHEUInt32.unwrap(a), FHEUInt64.unwrap(b)));
+    function sub(euint32 a, euint64 b) internal view returns (euint64) {
+        return euint64.wrap(Impl.sub(euint32.unwrap(a), euint64.unwrap(b)));
     }
 
-    function lte(FHEUInt32 a, FHEUInt64 b) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.lte(FHEUInt32.unwrap(a), FHEUInt64.unwrap(b)));
+    function lte(euint32 a, euint64 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.lte(euint32.unwrap(a), euint64.unwrap(b)));
     }
 
-    function add(FHEUInt32 a, FHEUInt128 b) internal view returns (FHEUInt128) {
-        return FHEUInt128.wrap(Impl.add(FHEUInt32.unwrap(a), FHEUInt128.unwrap(b)));
+    function add(euint32 a, euint128 b) internal view returns (euint128) {
+        return euint128.wrap(Impl.add(euint32.unwrap(a), euint128.unwrap(b)));
     }
 
-    function sub(FHEUInt32 a, FHEUInt128 b) internal view returns (FHEUInt128) {
-        return FHEUInt128.wrap(Impl.sub(FHEUInt32.unwrap(a), FHEUInt128.unwrap(b)));
+    function sub(euint32 a, euint128 b) internal view returns (euint128) {
+        return euint128.wrap(Impl.sub(euint32.unwrap(a), euint128.unwrap(b)));
     }
 
-    function lte(FHEUInt32 a, FHEUInt128 b) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.lte(FHEUInt32.unwrap(a), FHEUInt128.unwrap(b)));
+    function lte(euint32 a, euint128 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.lte(euint32.unwrap(a), euint128.unwrap(b)));
     }
 
-    function add(FHEUInt32 a, FHEUInt256 b) internal view returns (FHEUInt256) {
-        return FHEUInt256.wrap(Impl.add(FHEUInt32.unwrap(a), FHEUInt256.unwrap(b)));
+    function add(euint32 a, euint256 b) internal view returns (euint256) {
+        return euint256.wrap(Impl.add(euint32.unwrap(a), euint256.unwrap(b)));
     }
 
-    function sub(FHEUInt32 a, FHEUInt256 b) internal view returns (FHEUInt256) {
-        return FHEUInt256.wrap(Impl.sub(FHEUInt32.unwrap(a), FHEUInt256.unwrap(b)));
+    function sub(euint32 a, euint256 b) internal view returns (euint256) {
+        return euint256.wrap(Impl.sub(euint32.unwrap(a), euint256.unwrap(b)));
     }
 
-    function lte(FHEUInt32 a, FHEUInt256 b) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.lte(FHEUInt32.unwrap(a), FHEUInt256.unwrap(b)));
+    function lte(euint32 a, euint256 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.lte(euint32.unwrap(a), euint256.unwrap(b)));
     }
 
-    function add(FHEUInt64 a, FHEUInt8 b) internal view returns (FHEUInt64) {
-        return FHEUInt64.wrap(Impl.add(FHEUInt64.unwrap(a), FHEUInt8.unwrap(b)));
+    function add(euint64 a, euint8 b) internal view returns (euint64) {
+        return euint64.wrap(Impl.add(euint64.unwrap(a), euint8.unwrap(b)));
     }
 
-    function sub(FHEUInt64 a, FHEUInt8 b) internal view returns (FHEUInt64) {
-        return FHEUInt64.wrap(Impl.sub(FHEUInt64.unwrap(a), FHEUInt8.unwrap(b)));
+    function sub(euint64 a, euint8 b) internal view returns (euint64) {
+        return euint64.wrap(Impl.sub(euint64.unwrap(a), euint8.unwrap(b)));
     }
 
-    function lte(FHEUInt64 a, FHEUInt8 b) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.lte(FHEUInt64.unwrap(a), FHEUInt8.unwrap(b)));
+    function lte(euint64 a, euint8 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.lte(euint64.unwrap(a), euint8.unwrap(b)));
     }
 
-    function add(FHEUInt64 a, FHEUInt16 b) internal view returns (FHEUInt64) {
-        return FHEUInt64.wrap(Impl.add(FHEUInt64.unwrap(a), FHEUInt16.unwrap(b)));
+    function add(euint64 a, euint16 b) internal view returns (euint64) {
+        return euint64.wrap(Impl.add(euint64.unwrap(a), euint16.unwrap(b)));
     }
 
-    function sub(FHEUInt64 a, FHEUInt16 b) internal view returns (FHEUInt64) {
-        return FHEUInt64.wrap(Impl.sub(FHEUInt64.unwrap(a), FHEUInt16.unwrap(b)));
+    function sub(euint64 a, euint16 b) internal view returns (euint64) {
+        return euint64.wrap(Impl.sub(euint64.unwrap(a), euint16.unwrap(b)));
     }
 
-    function lte(FHEUInt64 a, FHEUInt16 b) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.lte(FHEUInt64.unwrap(a), FHEUInt16.unwrap(b)));
+    function lte(euint64 a, euint16 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.lte(euint64.unwrap(a), euint16.unwrap(b)));
     }
 
-    function add(FHEUInt64 a, FHEUInt32 b) internal view returns (FHEUInt64) {
-        return FHEUInt64.wrap(Impl.add(FHEUInt64.unwrap(a), FHEUInt32.unwrap(b)));
+    function add(euint64 a, euint32 b) internal view returns (euint64) {
+        return euint64.wrap(Impl.add(euint64.unwrap(a), euint32.unwrap(b)));
     }
 
-    function sub(FHEUInt64 a, FHEUInt32 b) internal view returns (FHEUInt64) {
-        return FHEUInt64.wrap(Impl.sub(FHEUInt64.unwrap(a), FHEUInt32.unwrap(b)));
+    function sub(euint64 a, euint32 b) internal view returns (euint64) {
+        return euint64.wrap(Impl.sub(euint64.unwrap(a), euint32.unwrap(b)));
     }
 
-    function lte(FHEUInt64 a, FHEUInt32 b) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.lte(FHEUInt64.unwrap(a), FHEUInt32.unwrap(b)));
+    function lte(euint64 a, euint32 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.lte(euint64.unwrap(a), euint32.unwrap(b)));
     }
 
-    function add(FHEUInt64 a, FHEUInt64 b) internal view returns (FHEUInt64) {
-        return FHEUInt64.wrap(Impl.add(FHEUInt64.unwrap(a), FHEUInt64.unwrap(b)));
+    function add(euint64 a, euint64 b) internal view returns (euint64) {
+        return euint64.wrap(Impl.add(euint64.unwrap(a), euint64.unwrap(b)));
     }
 
-    function sub(FHEUInt64 a, FHEUInt64 b) internal view returns (FHEUInt64) {
-        return FHEUInt64.wrap(Impl.sub(FHEUInt64.unwrap(a), FHEUInt64.unwrap(b)));
+    function sub(euint64 a, euint64 b) internal view returns (euint64) {
+        return euint64.wrap(Impl.sub(euint64.unwrap(a), euint64.unwrap(b)));
     }
 
-    function lte(FHEUInt64 a, FHEUInt64 b) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.lte(FHEUInt64.unwrap(a), FHEUInt64.unwrap(b)));
+    function lte(euint64 a, euint64 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.lte(euint64.unwrap(a), euint64.unwrap(b)));
     }
 
-    function add(FHEUInt64 a, FHEUInt128 b) internal view returns (FHEUInt128) {
-        return FHEUInt128.wrap(Impl.add(FHEUInt64.unwrap(a), FHEUInt128.unwrap(b)));
+    function add(euint64 a, euint128 b) internal view returns (euint128) {
+        return euint128.wrap(Impl.add(euint64.unwrap(a), euint128.unwrap(b)));
     }
 
-    function sub(FHEUInt64 a, FHEUInt128 b) internal view returns (FHEUInt128) {
-        return FHEUInt128.wrap(Impl.sub(FHEUInt64.unwrap(a), FHEUInt128.unwrap(b)));
+    function sub(euint64 a, euint128 b) internal view returns (euint128) {
+        return euint128.wrap(Impl.sub(euint64.unwrap(a), euint128.unwrap(b)));
     }
 
-    function lte(FHEUInt64 a, FHEUInt128 b) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.lte(FHEUInt64.unwrap(a), FHEUInt128.unwrap(b)));
+    function lte(euint64 a, euint128 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.lte(euint64.unwrap(a), euint128.unwrap(b)));
     }
 
-    function add(FHEUInt64 a, FHEUInt256 b) internal view returns (FHEUInt256) {
-        return FHEUInt256.wrap(Impl.add(FHEUInt64.unwrap(a), FHEUInt256.unwrap(b)));
+    function add(euint64 a, euint256 b) internal view returns (euint256) {
+        return euint256.wrap(Impl.add(euint64.unwrap(a), euint256.unwrap(b)));
     }
 
-    function sub(FHEUInt64 a, FHEUInt256 b) internal view returns (FHEUInt256) {
-        return FHEUInt256.wrap(Impl.sub(FHEUInt64.unwrap(a), FHEUInt256.unwrap(b)));
+    function sub(euint64 a, euint256 b) internal view returns (euint256) {
+        return euint256.wrap(Impl.sub(euint64.unwrap(a), euint256.unwrap(b)));
     }
 
-    function lte(FHEUInt64 a, FHEUInt256 b) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.lte(FHEUInt64.unwrap(a), FHEUInt256.unwrap(b)));
+    function lte(euint64 a, euint256 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.lte(euint64.unwrap(a), euint256.unwrap(b)));
     }
 
-    function add(FHEUInt128 a, FHEUInt8 b) internal view returns (FHEUInt128) {
-        return FHEUInt128.wrap(Impl.add(FHEUInt128.unwrap(a), FHEUInt8.unwrap(b)));
+    function add(euint128 a, euint8 b) internal view returns (euint128) {
+        return euint128.wrap(Impl.add(euint128.unwrap(a), euint8.unwrap(b)));
     }
 
-    function sub(FHEUInt128 a, FHEUInt8 b) internal view returns (FHEUInt128) {
-        return FHEUInt128.wrap(Impl.sub(FHEUInt128.unwrap(a), FHEUInt8.unwrap(b)));
+    function sub(euint128 a, euint8 b) internal view returns (euint128) {
+        return euint128.wrap(Impl.sub(euint128.unwrap(a), euint8.unwrap(b)));
     }
 
-    function lte(FHEUInt128 a, FHEUInt8 b) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.lte(FHEUInt128.unwrap(a), FHEUInt8.unwrap(b)));
+    function lte(euint128 a, euint8 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.lte(euint128.unwrap(a), euint8.unwrap(b)));
     }
 
-    function add(FHEUInt128 a, FHEUInt16 b) internal view returns (FHEUInt128) {
-        return FHEUInt128.wrap(Impl.add(FHEUInt128.unwrap(a), FHEUInt16.unwrap(b)));
+    function add(euint128 a, euint16 b) internal view returns (euint128) {
+        return euint128.wrap(Impl.add(euint128.unwrap(a), euint16.unwrap(b)));
     }
 
-    function sub(FHEUInt128 a, FHEUInt16 b) internal view returns (FHEUInt128) {
-        return FHEUInt128.wrap(Impl.sub(FHEUInt128.unwrap(a), FHEUInt16.unwrap(b)));
+    function sub(euint128 a, euint16 b) internal view returns (euint128) {
+        return euint128.wrap(Impl.sub(euint128.unwrap(a), euint16.unwrap(b)));
     }
 
-    function lte(FHEUInt128 a, FHEUInt16 b) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.lte(FHEUInt128.unwrap(a), FHEUInt16.unwrap(b)));
+    function lte(euint128 a, euint16 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.lte(euint128.unwrap(a), euint16.unwrap(b)));
     }
 
-    function add(FHEUInt128 a, FHEUInt32 b) internal view returns (FHEUInt128) {
-        return FHEUInt128.wrap(Impl.add(FHEUInt128.unwrap(a), FHEUInt32.unwrap(b)));
+    function add(euint128 a, euint32 b) internal view returns (euint128) {
+        return euint128.wrap(Impl.add(euint128.unwrap(a), euint32.unwrap(b)));
     }
 
-    function sub(FHEUInt128 a, FHEUInt32 b) internal view returns (FHEUInt128) {
-        return FHEUInt128.wrap(Impl.sub(FHEUInt128.unwrap(a), FHEUInt32.unwrap(b)));
+    function sub(euint128 a, euint32 b) internal view returns (euint128) {
+        return euint128.wrap(Impl.sub(euint128.unwrap(a), euint32.unwrap(b)));
     }
 
-    function lte(FHEUInt128 a, FHEUInt32 b) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.lte(FHEUInt128.unwrap(a), FHEUInt32.unwrap(b)));
+    function lte(euint128 a, euint32 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.lte(euint128.unwrap(a), euint32.unwrap(b)));
     }
 
-    function add(FHEUInt128 a, FHEUInt64 b) internal view returns (FHEUInt128) {
-        return FHEUInt128.wrap(Impl.add(FHEUInt128.unwrap(a), FHEUInt64.unwrap(b)));
+    function add(euint128 a, euint64 b) internal view returns (euint128) {
+        return euint128.wrap(Impl.add(euint128.unwrap(a), euint64.unwrap(b)));
     }
 
-    function sub(FHEUInt128 a, FHEUInt64 b) internal view returns (FHEUInt128) {
-        return FHEUInt128.wrap(Impl.sub(FHEUInt128.unwrap(a), FHEUInt64.unwrap(b)));
+    function sub(euint128 a, euint64 b) internal view returns (euint128) {
+        return euint128.wrap(Impl.sub(euint128.unwrap(a), euint64.unwrap(b)));
     }
 
-    function lte(FHEUInt128 a, FHEUInt64 b) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.lte(FHEUInt128.unwrap(a), FHEUInt64.unwrap(b)));
+    function lte(euint128 a, euint64 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.lte(euint128.unwrap(a), euint64.unwrap(b)));
     }
 
-    function add(FHEUInt128 a, FHEUInt128 b) internal view returns (FHEUInt128) {
-        return FHEUInt128.wrap(Impl.add(FHEUInt128.unwrap(a), FHEUInt128.unwrap(b)));
+    function add(euint128 a, euint128 b) internal view returns (euint128) {
+        return euint128.wrap(Impl.add(euint128.unwrap(a), euint128.unwrap(b)));
     }
 
-    function sub(FHEUInt128 a, FHEUInt128 b) internal view returns (FHEUInt128) {
-        return FHEUInt128.wrap(Impl.sub(FHEUInt128.unwrap(a), FHEUInt128.unwrap(b)));
+    function sub(euint128 a, euint128 b) internal view returns (euint128) {
+        return euint128.wrap(Impl.sub(euint128.unwrap(a), euint128.unwrap(b)));
     }
 
-    function lte(FHEUInt128 a, FHEUInt128 b) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.lte(FHEUInt128.unwrap(a), FHEUInt128.unwrap(b)));
+    function lte(euint128 a, euint128 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.lte(euint128.unwrap(a), euint128.unwrap(b)));
     }
 
-    function add(FHEUInt128 a, FHEUInt256 b) internal view returns (FHEUInt256) {
-        return FHEUInt256.wrap(Impl.add(FHEUInt128.unwrap(a), FHEUInt256.unwrap(b)));
+    function add(euint128 a, euint256 b) internal view returns (euint256) {
+        return euint256.wrap(Impl.add(euint128.unwrap(a), euint256.unwrap(b)));
     }
 
-    function sub(FHEUInt128 a, FHEUInt256 b) internal view returns (FHEUInt256) {
-        return FHEUInt256.wrap(Impl.sub(FHEUInt128.unwrap(a), FHEUInt256.unwrap(b)));
+    function sub(euint128 a, euint256 b) internal view returns (euint256) {
+        return euint256.wrap(Impl.sub(euint128.unwrap(a), euint256.unwrap(b)));
     }
 
-    function lte(FHEUInt128 a, FHEUInt256 b) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.lte(FHEUInt128.unwrap(a), FHEUInt256.unwrap(b)));
+    function lte(euint128 a, euint256 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.lte(euint128.unwrap(a), euint256.unwrap(b)));
     }
 
-    function add(FHEUInt256 a, FHEUInt8 b) internal view returns (FHEUInt256) {
-        return FHEUInt256.wrap(Impl.add(FHEUInt256.unwrap(a), FHEUInt8.unwrap(b)));
+    function add(euint256 a, euint8 b) internal view returns (euint256) {
+        return euint256.wrap(Impl.add(euint256.unwrap(a), euint8.unwrap(b)));
     }
 
-    function sub(FHEUInt256 a, FHEUInt8 b) internal view returns (FHEUInt256) {
-        return FHEUInt256.wrap(Impl.sub(FHEUInt256.unwrap(a), FHEUInt8.unwrap(b)));
+    function sub(euint256 a, euint8 b) internal view returns (euint256) {
+        return euint256.wrap(Impl.sub(euint256.unwrap(a), euint8.unwrap(b)));
     }
 
-    function lte(FHEUInt256 a, FHEUInt8 b) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.lte(FHEUInt256.unwrap(a), FHEUInt8.unwrap(b)));
+    function lte(euint256 a, euint8 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.lte(euint256.unwrap(a), euint8.unwrap(b)));
     }
 
-    function add(FHEUInt256 a, FHEUInt16 b) internal view returns (FHEUInt256) {
-        return FHEUInt256.wrap(Impl.add(FHEUInt256.unwrap(a), FHEUInt16.unwrap(b)));
+    function add(euint256 a, euint16 b) internal view returns (euint256) {
+        return euint256.wrap(Impl.add(euint256.unwrap(a), euint16.unwrap(b)));
     }
 
-    function sub(FHEUInt256 a, FHEUInt16 b) internal view returns (FHEUInt256) {
-        return FHEUInt256.wrap(Impl.sub(FHEUInt256.unwrap(a), FHEUInt16.unwrap(b)));
+    function sub(euint256 a, euint16 b) internal view returns (euint256) {
+        return euint256.wrap(Impl.sub(euint256.unwrap(a), euint16.unwrap(b)));
     }
 
-    function lte(FHEUInt256 a, FHEUInt16 b) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.lte(FHEUInt256.unwrap(a), FHEUInt16.unwrap(b)));
+    function lte(euint256 a, euint16 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.lte(euint256.unwrap(a), euint16.unwrap(b)));
     }
 
-    function add(FHEUInt256 a, FHEUInt32 b) internal view returns (FHEUInt256) {
-        return FHEUInt256.wrap(Impl.add(FHEUInt256.unwrap(a), FHEUInt32.unwrap(b)));
+    function add(euint256 a, euint32 b) internal view returns (euint256) {
+        return euint256.wrap(Impl.add(euint256.unwrap(a), euint32.unwrap(b)));
     }
 
-    function sub(FHEUInt256 a, FHEUInt32 b) internal view returns (FHEUInt256) {
-        return FHEUInt256.wrap(Impl.sub(FHEUInt256.unwrap(a), FHEUInt32.unwrap(b)));
+    function sub(euint256 a, euint32 b) internal view returns (euint256) {
+        return euint256.wrap(Impl.sub(euint256.unwrap(a), euint32.unwrap(b)));
     }
 
-    function lte(FHEUInt256 a, FHEUInt32 b) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.lte(FHEUInt256.unwrap(a), FHEUInt32.unwrap(b)));
+    function lte(euint256 a, euint32 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.lte(euint256.unwrap(a), euint32.unwrap(b)));
     }
 
-    function add(FHEUInt256 a, FHEUInt64 b) internal view returns (FHEUInt256) {
-        return FHEUInt256.wrap(Impl.add(FHEUInt256.unwrap(a), FHEUInt64.unwrap(b)));
+    function add(euint256 a, euint64 b) internal view returns (euint256) {
+        return euint256.wrap(Impl.add(euint256.unwrap(a), euint64.unwrap(b)));
     }
 
-    function sub(FHEUInt256 a, FHEUInt64 b) internal view returns (FHEUInt256) {
-        return FHEUInt256.wrap(Impl.sub(FHEUInt256.unwrap(a), FHEUInt64.unwrap(b)));
+    function sub(euint256 a, euint64 b) internal view returns (euint256) {
+        return euint256.wrap(Impl.sub(euint256.unwrap(a), euint64.unwrap(b)));
     }
 
-    function lte(FHEUInt256 a, FHEUInt64 b) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.lte(FHEUInt256.unwrap(a), FHEUInt64.unwrap(b)));
+    function lte(euint256 a, euint64 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.lte(euint256.unwrap(a), euint64.unwrap(b)));
     }
 
-    function add(FHEUInt256 a, FHEUInt128 b) internal view returns (FHEUInt256) {
-        return FHEUInt256.wrap(Impl.add(FHEUInt256.unwrap(a), FHEUInt128.unwrap(b)));
+    function add(euint256 a, euint128 b) internal view returns (euint256) {
+        return euint256.wrap(Impl.add(euint256.unwrap(a), euint128.unwrap(b)));
     }
 
-    function sub(FHEUInt256 a, FHEUInt128 b) internal view returns (FHEUInt256) {
-        return FHEUInt256.wrap(Impl.sub(FHEUInt256.unwrap(a), FHEUInt128.unwrap(b)));
+    function sub(euint256 a, euint128 b) internal view returns (euint256) {
+        return euint256.wrap(Impl.sub(euint256.unwrap(a), euint128.unwrap(b)));
     }
 
-    function lte(FHEUInt256 a, FHEUInt128 b) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.lte(FHEUInt256.unwrap(a), FHEUInt128.unwrap(b)));
+    function lte(euint256 a, euint128 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.lte(euint256.unwrap(a), euint128.unwrap(b)));
     }
 
-    function add(FHEUInt256 a, FHEUInt256 b) internal view returns (FHEUInt256) {
-        return FHEUInt256.wrap(Impl.add(FHEUInt256.unwrap(a), FHEUInt256.unwrap(b)));
+    function add(euint256 a, euint256 b) internal view returns (euint256) {
+        return euint256.wrap(Impl.add(euint256.unwrap(a), euint256.unwrap(b)));
     }
 
-    function sub(FHEUInt256 a, FHEUInt256 b) internal view returns (FHEUInt256) {
-        return FHEUInt256.wrap(Impl.sub(FHEUInt256.unwrap(a), FHEUInt256.unwrap(b)));
+    function sub(euint256 a, euint256 b) internal view returns (euint256) {
+        return euint256.wrap(Impl.sub(euint256.unwrap(a), euint256.unwrap(b)));
     }
 
-    function lte(FHEUInt256 a, FHEUInt256 b) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.lte(FHEUInt256.unwrap(a), FHEUInt256.unwrap(b)));
+    function lte(euint256 a, euint256 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.lte(euint256.unwrap(a), euint256.unwrap(b)));
     }
 
-    function toFHEUint8(FHEUInt16 v) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.cast(FHEUInt16.unwrap(v), Common.typeUInt16));
+    function to_euint8(euint16 v) internal view returns (euint8) {
+        return euint8.wrap(Impl.cast(euint16.unwrap(v), Common.euint16_t));
     }
 
-    function toFHEUint8(FHEUInt32 v) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.cast(FHEUInt32.unwrap(v), Common.typeUInt32));
+    function to_euint8(euint32 v) internal view returns (euint8) {
+        return euint8.wrap(Impl.cast(euint32.unwrap(v), Common.euint32_t));
     }
 
-    function toFHEUint8(FHEUInt64 v) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.cast(FHEUInt64.unwrap(v), Common.typeUInt64));
+    function to_euint8(euint64 v) internal view returns (euint8) {
+        return euint8.wrap(Impl.cast(euint64.unwrap(v), Common.euint64_t));
     }
 
-    function toFHEUint8(FHEUInt128 v) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.cast(FHEUInt128.unwrap(v), Common.typeUInt128));
+    function to_euint8(euint128 v) internal view returns (euint8) {
+        return euint8.wrap(Impl.cast(euint128.unwrap(v), Common.euint128_t));
     }
 
-    function toFHEUint8(FHEUInt256 v) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.cast(FHEUInt256.unwrap(v), Common.typeUInt256));
+    function to_euint8(euint256 v) internal view returns (euint8) {
+        return euint8.wrap(Impl.cast(euint256.unwrap(v), Common.euint256_t));
     }
 
-    function toFHEUint16(FHEUInt8 v) internal view returns (FHEUInt16) {
-        return FHEUInt16.wrap(Impl.cast(FHEUInt8.unwrap(v), Common.typeUInt8));
+    function to_euint16(euint8 v) internal view returns (euint16) {
+        return euint16.wrap(Impl.cast(euint8.unwrap(v), Common.euint8_t));
     }
 
-    function toFHEUint16(FHEUInt32 v) internal view returns (FHEUInt16) {
-        return FHEUInt16.wrap(Impl.cast(FHEUInt32.unwrap(v), Common.typeUInt32));
+    function to_euint16(euint32 v) internal view returns (euint16) {
+        return euint16.wrap(Impl.cast(euint32.unwrap(v), Common.euint32_t));
     }
 
-    function toFHEUint16(FHEUInt64 v) internal view returns (FHEUInt16) {
-        return FHEUInt16.wrap(Impl.cast(FHEUInt64.unwrap(v), Common.typeUInt64));
+    function to_euint16(euint64 v) internal view returns (euint16) {
+        return euint16.wrap(Impl.cast(euint64.unwrap(v), Common.euint64_t));
     }
 
-    function toFHEUint16(FHEUInt128 v) internal view returns (FHEUInt16) {
-        return FHEUInt16.wrap(Impl.cast(FHEUInt128.unwrap(v), Common.typeUInt128));
+    function to_euint16(euint128 v) internal view returns (euint16) {
+        return euint16.wrap(Impl.cast(euint128.unwrap(v), Common.euint128_t));
     }
 
-    function toFHEUint16(FHEUInt256 v) internal view returns (FHEUInt16) {
-        return FHEUInt16.wrap(Impl.cast(FHEUInt256.unwrap(v), Common.typeUInt256));
+    function to_euint16(euint256 v) internal view returns (euint16) {
+        return euint16.wrap(Impl.cast(euint256.unwrap(v), Common.euint256_t));
     }
 
-    function toFHEUint32(FHEUInt8 v) internal view returns (FHEUInt32) {
-        return FHEUInt32.wrap(Impl.cast(FHEUInt8.unwrap(v), Common.typeUInt8));
+    function to_euint32(euint8 v) internal view returns (euint32) {
+        return euint32.wrap(Impl.cast(euint8.unwrap(v), Common.euint8_t));
     }
 
-    function toFHEUint32(FHEUInt16 v) internal view returns (FHEUInt32) {
-        return FHEUInt32.wrap(Impl.cast(FHEUInt16.unwrap(v), Common.typeUInt16));
+    function to_euint32(euint16 v) internal view returns (euint32) {
+        return euint32.wrap(Impl.cast(euint16.unwrap(v), Common.euint16_t));
     }
 
-    function toFHEUint32(FHEUInt64 v) internal view returns (FHEUInt32) {
-        return FHEUInt32.wrap(Impl.cast(FHEUInt64.unwrap(v), Common.typeUInt64));
+    function to_euint32(euint64 v) internal view returns (euint32) {
+        return euint32.wrap(Impl.cast(euint64.unwrap(v), Common.euint64_t));
     }
 
-    function toFHEUint32(FHEUInt128 v) internal view returns (FHEUInt32) {
-        return FHEUInt32.wrap(Impl.cast(FHEUInt128.unwrap(v), Common.typeUInt128));
+    function to_euint32(euint128 v) internal view returns (euint32) {
+        return euint32.wrap(Impl.cast(euint128.unwrap(v), Common.euint128_t));
     }
 
-    function toFHEUint32(FHEUInt256 v) internal view returns (FHEUInt32) {
-        return FHEUInt32.wrap(Impl.cast(FHEUInt256.unwrap(v), Common.typeUInt256));
+    function to_euint32(euint256 v) internal view returns (euint32) {
+        return euint32.wrap(Impl.cast(euint256.unwrap(v), Common.euint256_t));
     }
 
-    function toFHEUint64(FHEUInt8 v) internal view returns (FHEUInt64) {
-        return FHEUInt64.wrap(Impl.cast(FHEUInt8.unwrap(v), Common.typeUInt8));
+    function to_euint64(euint8 v) internal view returns (euint64) {
+        return euint64.wrap(Impl.cast(euint8.unwrap(v), Common.euint8_t));
     }
 
-    function toFHEUint64(FHEUInt16 v) internal view returns (FHEUInt64) {
-        return FHEUInt64.wrap(Impl.cast(FHEUInt16.unwrap(v), Common.typeUInt16));
+    function to_euint64(euint16 v) internal view returns (euint64) {
+        return euint64.wrap(Impl.cast(euint16.unwrap(v), Common.euint16_t));
     }
 
-    function toFHEUint64(FHEUInt32 v) internal view returns (FHEUInt64) {
-        return FHEUInt64.wrap(Impl.cast(FHEUInt32.unwrap(v), Common.typeUInt32));
+    function to_euint64(euint32 v) internal view returns (euint64) {
+        return euint64.wrap(Impl.cast(euint32.unwrap(v), Common.euint32_t));
     }
 
-    function toFHEUint64(FHEUInt128 v) internal view returns (FHEUInt64) {
-        return FHEUInt64.wrap(Impl.cast(FHEUInt128.unwrap(v), Common.typeUInt128));
+    function to_euint64(euint128 v) internal view returns (euint64) {
+        return euint64.wrap(Impl.cast(euint128.unwrap(v), Common.euint128_t));
     }
 
-    function toFHEUint64(FHEUInt256 v) internal view returns (FHEUInt64) {
-        return FHEUInt64.wrap(Impl.cast(FHEUInt256.unwrap(v), Common.typeUInt256));
+    function to_euint64(euint256 v) internal view returns (euint64) {
+        return euint64.wrap(Impl.cast(euint256.unwrap(v), Common.euint256_t));
     }
 
-    function toFHEUint128(FHEUInt8 v) internal view returns (FHEUInt128) {
-        return FHEUInt128.wrap(Impl.cast(FHEUInt8.unwrap(v), Common.typeUInt8));
+    function to_euint128(euint8 v) internal view returns (euint128) {
+        return euint128.wrap(Impl.cast(euint8.unwrap(v), Common.euint8_t));
     }
 
-    function toFHEUint128(FHEUInt16 v) internal view returns (FHEUInt128) {
-        return FHEUInt128.wrap(Impl.cast(FHEUInt16.unwrap(v), Common.typeUInt16));
+    function to_euint128(euint16 v) internal view returns (euint128) {
+        return euint128.wrap(Impl.cast(euint16.unwrap(v), Common.euint16_t));
     }
 
-    function toFHEUint128(FHEUInt32 v) internal view returns (FHEUInt128) {
-        return FHEUInt128.wrap(Impl.cast(FHEUInt32.unwrap(v), Common.typeUInt32));
+    function to_euint128(euint32 v) internal view returns (euint128) {
+        return euint128.wrap(Impl.cast(euint32.unwrap(v), Common.euint32_t));
     }
 
-    function toFHEUint128(FHEUInt64 v) internal view returns (FHEUInt128) {
-        return FHEUInt128.wrap(Impl.cast(FHEUInt64.unwrap(v), Common.typeUInt64));
+    function to_euint128(euint64 v) internal view returns (euint128) {
+        return euint128.wrap(Impl.cast(euint64.unwrap(v), Common.euint64_t));
     }
 
-    function toFHEUint128(FHEUInt256 v) internal view returns (FHEUInt128) {
-        return FHEUInt128.wrap(Impl.cast(FHEUInt256.unwrap(v), Common.typeUInt256));
+    function to_euint128(euint256 v) internal view returns (euint128) {
+        return euint128.wrap(Impl.cast(euint256.unwrap(v), Common.euint256_t));
     }
 
-    function toFHEUint256(FHEUInt8 v) internal view returns (FHEUInt256) {
-        return FHEUInt256.wrap(Impl.cast(FHEUInt8.unwrap(v), Common.typeUInt8));
+    function to_euint256(euint8 v) internal view returns (euint256) {
+        return euint256.wrap(Impl.cast(euint8.unwrap(v), Common.euint8_t));
     }
 
-    function toFHEUint256(FHEUInt16 v) internal view returns (FHEUInt256) {
-        return FHEUInt256.wrap(Impl.cast(FHEUInt16.unwrap(v), Common.typeUInt16));
+    function to_euint256(euint16 v) internal view returns (euint256) {
+        return euint256.wrap(Impl.cast(euint16.unwrap(v), Common.euint16_t));
     }
 
-    function toFHEUint256(FHEUInt32 v) internal view returns (FHEUInt256) {
-        return FHEUInt256.wrap(Impl.cast(FHEUInt32.unwrap(v), Common.typeUInt32));
+    function to_euint256(euint32 v) internal view returns (euint256) {
+        return euint256.wrap(Impl.cast(euint32.unwrap(v), Common.euint32_t));
     }
 
-    function toFHEUint256(FHEUInt64 v) internal view returns (FHEUInt256) {
-        return FHEUInt256.wrap(Impl.cast(FHEUInt64.unwrap(v), Common.typeUInt64));
+    function to_euint256(euint64 v) internal view returns (euint256) {
+        return euint256.wrap(Impl.cast(euint64.unwrap(v), Common.euint64_t));
     }
 
-    function toFHEUint256(FHEUInt128 v) internal view returns (FHEUInt256) {
-        return FHEUInt256.wrap(Impl.cast(FHEUInt128.unwrap(v), Common.typeUInt128));
+    function to_euint256(euint128 v) internal view returns (euint256) {
+        return euint256.wrap(Impl.cast(euint128.unwrap(v), Common.euint128_t));
     }
 }
+
 library Impl {
     uint256 constant MaxCiphertextBytesLen = 32 + 65544;
 
@@ -592,7 +593,16 @@ library Impl {
         // Call the add precompile.
         uint256 precompile = Precompiles.Add;
         assembly {
-            if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
+            if iszero(
+                staticcall(
+                    gas(),
+                    precompile,
+                    input,
+                    inputLen,
+                    output,
+                    outputLen
+                )
+            ) {
                 revert(0, 0)
             }
         }
@@ -617,7 +627,16 @@ library Impl {
         // Call the add precompile.
         uint256 precompile = Precompiles.Subtract;
         assembly {
-            if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
+            if iszero(
+                staticcall(
+                    gas(),
+                    precompile,
+                    input,
+                    inputLen,
+                    output,
+                    outputLen
+                )
+            ) {
                 revert(0, 0)
             }
         }
@@ -627,7 +646,10 @@ library Impl {
 
     // Evaluate `lhs <= rhs` on the given ciphertexts and, if successful, return the resulting ciphertext.
     // If successful, the resulting ciphertext is automatically verified.
-    function lte(uint256 lhs, uint256 rhs) internal view returns (uint256 result) {
+    function lte(
+        uint256 lhs,
+        uint256 rhs
+    ) internal view returns (uint256 result) {
         bytes32[2] memory input;
         input[0] = bytes32(lhs);
         input[1] = bytes32(rhs);
@@ -639,21 +661,32 @@ library Impl {
         // Call the lte precompile.
         uint256 precompile = Precompiles.LessThanOrEqual;
         assembly {
-            if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
+            if iszero(
+                staticcall(
+                    gas(),
+                    precompile,
+                    input,
+                    inputLen,
+                    output,
+                    outputLen
+                )
+            ) {
                 revert(0, 0)
             }
         }
 
         result = uint256(output[0]);
     }
-    
 
-//    function safeAdd(uint256 a, uint256 b) internal view returns (uint256) {
-//        TODO: Call addSafe() precompile.
-//        return 0;
-//    }
+    //    function safeAdd(uint256 a, uint256 b) internal view returns (uint256) {
+    //        TODO: Call addSafe() precompile.
+    //        return 0;
+    //    }
 
-    function cast(uint256 ciphertext, uint8 toType) internal view returns(uint256) {
+    function cast(
+        uint256 ciphertext,
+        uint8 toType
+    ) internal view returns (uint256) {
         uint256 inputLen = 33;
 
         bytes memory input = new bytes(inputLen);
@@ -687,7 +720,9 @@ library Impl {
         return 0;
     }
 
-    function reencrypt(uint256 ciphertext) internal view returns (bytes memory reencrypted) {
+    function reencrypt(
+        uint256 ciphertext
+    ) internal view returns (bytes memory reencrypted) {
         bytes32[1] memory input;
         input[0] = bytes32(ciphertext);
         uint256 inputLen = 32;
@@ -706,7 +741,7 @@ library Impl {
                     reencrypted,
                     MaxCiphertextBytesLen
                 )
-            ) { 
+            ) {
                 revert(0, 0)
             }
         }
@@ -765,79 +800,107 @@ library Precompiles {
 }
 
 library Ciphertext {
-    function verify8(bytes memory ciphertextWithProof) internal view returns (FHEUInt8) {
-        return FHEUInt8.wrap(Impl.verify(ciphertextWithProof, Common.typeUInt8));
+    function as_euint8(
+        bytes memory ciphertextWithProof
+    ) internal view returns (euint8) {
+        return euint8.wrap(Impl.verify(ciphertextWithProof, Common.euint8_t));
     }
 
-    function reencrypt(FHEUInt8 ciphertext) internal view returns (bytes memory reencrypted) {
-        return Impl.reencrypt(FHEUInt8.unwrap(ciphertext));
+    function reencrypt(
+        euint8 ciphertext
+    ) internal view returns (bytes memory reencrypted) {
+        return Impl.reencrypt(euint8.unwrap(ciphertext));
     }
 
-    function delegate(FHEUInt8 ciphertext) internal view {
-        Impl.delegate(FHEUInt8.unwrap(ciphertext));
+    function delegate(euint8 ciphertext) internal view {
+        Impl.delegate(euint8.unwrap(ciphertext));
     }
 
-    function verify16(bytes memory ciphertextWithProof) internal view returns (FHEUInt16) {
-        return FHEUInt16.wrap(Impl.verify(ciphertextWithProof, Common.typeUInt16));
+    function as_euint16(
+        bytes memory ciphertextWithProof
+    ) internal view returns (euint16) {
+        return euint16.wrap(Impl.verify(ciphertextWithProof, Common.euint16_t));
     }
 
-    function reencrypt(FHEUInt16 ciphertext) internal view returns (bytes memory reencrypted) {
-        return Impl.reencrypt(FHEUInt16.unwrap(ciphertext));
+    function reencrypt(
+        euint16 ciphertext
+    ) internal view returns (bytes memory reencrypted) {
+        return Impl.reencrypt(euint16.unwrap(ciphertext));
     }
 
-    function delegate(FHEUInt16 ciphertext) internal view {
-        Impl.delegate(FHEUInt16.unwrap(ciphertext));
+    function delegate(euint16 ciphertext) internal view {
+        Impl.delegate(euint16.unwrap(ciphertext));
     }
 
-    function verify32(bytes memory ciphertextWithProof) internal view returns (FHEUInt32) {
-        return FHEUInt32.wrap(Impl.verify(ciphertextWithProof, Common.typeUInt32));
+    function as_euint32(
+        bytes memory ciphertextWithProof
+    ) internal view returns (euint32) {
+        return euint32.wrap(Impl.verify(ciphertextWithProof, Common.euint32_t));
     }
 
-    function reencrypt(FHEUInt32 ciphertext) internal view returns (bytes memory reencrypted) {
-        return Impl.reencrypt(FHEUInt32.unwrap(ciphertext));
+    function reencrypt(
+        euint32 ciphertext
+    ) internal view returns (bytes memory reencrypted) {
+        return Impl.reencrypt(euint32.unwrap(ciphertext));
     }
 
-    function delegate(FHEUInt32 ciphertext) internal view {
-        Impl.delegate(FHEUInt32.unwrap(ciphertext));
+    function delegate(euint32 ciphertext) internal view {
+        Impl.delegate(euint32.unwrap(ciphertext));
     }
 
-    function verify64(bytes memory ciphertextWithProof) internal view returns (FHEUInt64) {
-        return FHEUInt64.wrap(Impl.verify(ciphertextWithProof, Common.typeUInt64));
+    function as_euint64(
+        bytes memory ciphertextWithProof
+    ) internal view returns (euint64) {
+        return euint64.wrap(Impl.verify(ciphertextWithProof, Common.euint64_t));
     }
 
-    function reencrypt(FHEUInt64 ciphertext) internal view returns (bytes memory reencrypted) {
-        return Impl.reencrypt(FHEUInt64.unwrap(ciphertext));
+    function reencrypt(
+        euint64 ciphertext
+    ) internal view returns (bytes memory reencrypted) {
+        return Impl.reencrypt(euint64.unwrap(ciphertext));
     }
 
-    function delegate(FHEUInt64 ciphertext) internal view {
-        Impl.delegate(FHEUInt64.unwrap(ciphertext));
+    function delegate(euint64 ciphertext) internal view {
+        Impl.delegate(euint64.unwrap(ciphertext));
     }
 
-    function verify128(bytes memory ciphertextWithProof) internal view returns (FHEUInt128) {
-        return FHEUInt128.wrap(Impl.verify(ciphertextWithProof, Common.typeUInt128));
+    function as_euint128(
+        bytes memory ciphertextWithProof
+    ) internal view returns (euint128) {
+        return
+            euint128.wrap(Impl.verify(ciphertextWithProof, Common.euint128_t));
     }
 
-    function reencrypt(FHEUInt128 ciphertext) internal view returns (bytes memory reencrypted) {
-        return Impl.reencrypt(FHEUInt128.unwrap(ciphertext));
+    function reencrypt(
+        euint128 ciphertext
+    ) internal view returns (bytes memory reencrypted) {
+        return Impl.reencrypt(euint128.unwrap(ciphertext));
     }
 
-    function delegate(FHEUInt128 ciphertext) internal view {
-        Impl.delegate(FHEUInt128.unwrap(ciphertext));
+    function delegate(euint128 ciphertext) internal view {
+        Impl.delegate(euint128.unwrap(ciphertext));
     }
 
-    function verify256(bytes memory ciphertextWithProof) internal view returns (FHEUInt256) {
-        return FHEUInt256.wrap(Impl.verify(ciphertextWithProof, Common.typeUInt256));
+    function as_euint256(
+        bytes memory ciphertextWithProof
+    ) internal view returns (euint256) {
+        return
+            euint256.wrap(Impl.verify(ciphertextWithProof, Common.euint256_t));
     }
 
-    function reencrypt(FHEUInt256 ciphertext) internal view returns (bytes memory reencrypted) {
-        return Impl.reencrypt(FHEUInt256.unwrap(ciphertext));
+    function reencrypt(
+        euint256 ciphertext
+    ) internal view returns (bytes memory reencrypted) {
+        return Impl.reencrypt(euint256.unwrap(ciphertext));
     }
 
-    function delegate(FHEUInt256 ciphertext) internal view {
-        Impl.delegate(FHEUInt256.unwrap(ciphertext));
+    function delegate(euint256 ciphertext) internal view {
+        Impl.delegate(euint256.unwrap(ciphertext));
     }
 
-    function requireCt(FHEUInt8 ciphertext) internal view {{
-        Impl.requireCt(FHEUInt8.unwrap(ciphertext));
-    }}
+    function requireCt(euint8 ciphertext) internal view {
+        {
+            Impl.requireCt(euint8.unwrap(ciphertext));
+        }
+    }
 }
