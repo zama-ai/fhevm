@@ -14,10 +14,10 @@ contract EncryptedERC20 {
     uint8 public decimals = 18;
 
     // A mapping from address to an encrypted balance.
-    mapping(address => FHEUInt) public balances;
+    mapping(address => FHEUInt) internal balances;
 
     // A mapping of the form mapping(owner => mapping(spender => allowance)).
-    mapping(address => mapping(address => FHEUInt)) allowances;
+    mapping(address => mapping(address => FHEUInt)) internal allowances;
 
     // The owner of the contract.
     address internal contractOwner;
@@ -78,7 +78,7 @@ contract EncryptedERC20 {
         _transfer(from, to, amount);
     }
 
-     function _approve(address owner, address spender, FHEUInt amount) internal {
+    function _approve(address owner, address spender, FHEUInt amount) internal {
         allowances[owner][spender] = amount;
      }
 

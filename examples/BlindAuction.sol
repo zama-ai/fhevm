@@ -17,7 +17,7 @@ contract BlindAuction {
     FHEUInt internal highestBid;
 
     // Mapping from bidder to their bid value.
-    mapping(address => FHEUInt) public bids;
+    mapping(address => FHEUInt) internal bids;
 
     // The token contract used for encrypted bids.
     EncryptedERC20 public tokenContract;
@@ -67,6 +67,11 @@ contract BlindAuction {
         } else {
             highestBid = FHEOps.cmux(FHEOps.lt(highestBid, currentBid), currentBid, highestBid);
         }
+    }
+
+    // Returns the user bid
+    function getBid() public view returns (bytes memory) {
+        return Ciphertext.reencrypt(bids[msg.sender]);
     }
 
     // Returns an encrypted value of 0 or 1 under the caller's public key, indicating
