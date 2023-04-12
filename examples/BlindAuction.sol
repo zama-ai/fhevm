@@ -19,6 +19,9 @@ contract BlindAuction {
     // Mapping from bidder to their bid value.
     mapping(address => FHEUInt) internal bids;
 
+    // Number of bid
+    uint public bidCounter;
+
     // The token contract used for encrypted bids.
     EncryptedERC20 public tokenContract;
 
@@ -58,6 +61,7 @@ contract BlindAuction {
             // Transfer only if bid is higher
             tokenContract.transferFrom(msg.sender, address(this), FHEOps.mul(isHigher, toTransfer));
         } else {
+            bidCounter++;
             bids[msg.sender] = value;
             tokenContract.transferFrom(msg.sender, address(this), value);
         }
