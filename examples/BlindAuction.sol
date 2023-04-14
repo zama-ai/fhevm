@@ -31,6 +31,10 @@ contract BlindAuction {
     // If the token has been transferred to the beneficiary
     bool public tokenTransferred;
 
+    bool public stoppable;
+
+    bool public manuallyStopped = false;
+
     // The function has been called too early.
     // Try again at `time`.
     error TooEarly(uint time);
@@ -40,12 +44,14 @@ contract BlindAuction {
 
     event Winner(address who);
 
-    constructor(address _beneficiary, EncryptedERC20 _tokenContract, uint biddingTime) {
+    constructor(address _beneficiary, EncryptedERC20 _tokenContract, uint biddingTime, bool isStoppable) {
         beneficiary = _beneficiary;
         tokenContract = _tokenContract;
         endTime = block.timestamp + biddingTime;
         objectClaimed = false;
         tokenTransferred = false;
+        bidCounter = 0;
+        stoppable = isStoppable;
     }
 
     // Bid an `encryptedValue`.
@@ -76,6 +82,12 @@ contract BlindAuction {
     // Returns the user bid
     function getBid() public view returns (bytes memory) {
         return Ciphertext.reencrypt(bids[msg.sender]);
+    }
+
+    // Returns the user bid
+    function stop() public {
+        require(stoppable);
+        manuallyStopped = true;
     }
 
     // Returns an encrypted value of 0 or 1 under the caller's public key, indicating
@@ -114,12 +126,12 @@ contract BlindAuction {
     }
 
     modifier onlyBeforeEnd() {
-        if (block.timestamp >= endTime) revert TooLate(endTime);
+        if (block.timestamp >= endTime || manuallyStopped == true) revert TooLate(endTime);
         _;
     }
 
     modifier onlyAfterEnd() {
-        if (block.timestamp <= endTime) revert TooEarly(endTime);
+        if (block.timestamp <= endTime && manuallyStopped == false) revert TooEarly(endTime);
         _;
     }
 }
