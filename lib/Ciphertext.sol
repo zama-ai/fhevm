@@ -48,20 +48,4 @@ library Ciphertext {
 
         ciphertext = FHEUInt.wrap(uint256(output[0]));
     }
-
-    // Delegate the given `ciphertext` for use in the outer scope.
-    // If successful, return. Else, fail.
-    function delegate(FHEUInt ciphertext) internal view {
-        bytes32[1] memory input;
-        input[0] = bytes32(FHEUInt.unwrap(ciphertext));
-        uint256 inputLen = 32;
-
-        // Call the delegate precompile.
-        uint256 precompile = Precompiles.Delegate;
-        assembly {
-            if iszero(staticcall(gas(), precompile, input, inputLen, 0, 0)) {
-                revert(0, 0)
-            }
-        }
-    }
 }
