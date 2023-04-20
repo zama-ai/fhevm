@@ -50,6 +50,8 @@ f.write("""\
 
 pragma solidity >=0.8.13 <0.9.0;
 
+import "./Precompiles.sol";
+
 library Impl {
     uint256 constant euint8Size = 32 + 28124;
     uint256 constant euint16Size = 32 + 56236;
@@ -94,8 +96,33 @@ library Impl {
         bytes32[1] memory output;
         uint256 outputLen = 32;
 
-        // Call the add precompile.
+        // Call the sub precompile.
         uint256 precompile = Precompiles.Subtract;
+        assembly {
+            if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
+                revert(0, 0)
+            }
+        }
+
+        result = uint256(output[0]);
+    }
+
+    function mul(uint256 a, uint256 b) internal view returns (uint256 result) {
+        if (a == 0) {
+            return b;
+        } else if (b == 0) {
+            return a;
+        }
+        bytes32[2] memory input;
+        input[0] = bytes32(a);
+        input[1] = bytes32(b);
+        uint256 inputLen = 64;
+
+        bytes32[1] memory output;
+        uint256 outputLen = 32;
+
+        // Call the mul precompile.
+        uint256 precompile = Precompiles.Multiply;
         assembly {
             if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
                 revert(0, 0)
@@ -134,16 +161,8 @@ library Impl {
 //    }
 
     function cast(uint256 ciphertext, uint8 toType) internal view returns(uint256) {
-        uint256 inputLen = 33;
-
-        bytes memory input = new bytes(inputLen);
-
-        assembly {
-            mstore(add(input, 32), ciphertext)
-        }
-
-        // Pass in the desired return type
-        input[inputLen - 1] = bytes1(toType);
+        bytes memory input = bytes.concat(bytes32(ciphertext), bytes1(toType));
+        uint256 inputLen = input.length;
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
@@ -205,8 +224,30 @@ library Impl {
     function verify(
         bytes memory _ciphertextBytes,
         uint8 _toType
-    ) internal view returns (uint256) {
-        // TODO depending the TFHE-rs implementation of the type system.
+    ) internal view returns (uint256 result) {
+        bytes memory input = bytes.concat(_ciphertextBytes, bytes1(_toType));
+        uint256 inputLen = input.length;
+
+        bytes32[1] memory output;
+        uint256 outputLen = 32;
+
+        // Call the cast precompile.
+        uint256 precompile = Precompiles.Verify;
+        assembly {
+            if iszero(
+                staticcall(
+                    gas(),
+                    precompile,
+                    add(input, 32), // jump over the 32-bit `size` field of the `bytes` data structure to read actual bytes
+                    inputLen,
+                    output,
+                    outputLen
+                )
+            ) {
+                revert(0, 0)
+            }
+        }
+        result = uint256(output[0]);
         return 0;
     }
 
@@ -243,7 +284,7 @@ library Impl {
 f.close()
 
 f = open("FHEOps.sol", "w")
-f.write(""""\
+f.write("""\
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
 pragma solidity >=0.8.13 <0.9.0;
@@ -262,6 +303,7 @@ for i in (2**p for p in range(3, 6)):
     for j in (2**p for p in range(3, 6)):
         f.write(to_print.format(i=i, j=j, k=i if i>j else j, f="add"))
         f.write(to_print.format(i=i, j=j, k=i if i>j else j, f="sub"))
+        f.write(to_print.format(i=i, j=j, k=i if i>j else j, f="mul"))
         f.write(to_print.format(i=i, j=j, k=8, f="lte"))
 
 to_print="""
@@ -279,7 +321,14 @@ f.write("}")
 f.close
 
 f = open("Ciphertext.sol", "w")
-f.write("""
+f.write("""\
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
+pragma solidity >=0.8.13 <0.9.0;
+
+import "./Common.sol";
+import "./Impl.sol";
+
 library Ciphertext {""")
 
 to_print="""
