@@ -2,11 +2,11 @@
 
 pragma solidity >=0.8.13 <0.9.0;
 
-import "./types/lib/Ciphertext.sol";
-import "./types/lib/Common.sol";
-import "./types/lib/FHEOps.sol";
+import "../lib/Ciphertext.sol";
+import "../lib/Common.sol";
+import "../lib/FHEOps.sol";
 
-contract TypedEncryptedERC20 {
+contract SmallEncryptedERC20 {
     euint8 public totalSupply;
     string public name = "Naraggara"; // City of Zama's battle
     string public symbol = "NARA";

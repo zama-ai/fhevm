@@ -13,6 +13,6 @@ library Precompiles {
     uint256 public constant Multiply = 72;
     uint256 public constant LessThan = 73;
     uint256 public constant Random = 74;
-    uint256 public constant optimisticRequire = 75;
+    uint256 public constant OptimisticRequire = 75;
     uint256 public constant Cast = 76;
 }

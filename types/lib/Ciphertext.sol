@@ -10,7 +10,9 @@ library Ciphertext {
         return euint8.wrap(Impl.verify(ciphertext, Common.euint8_t));
     }
 
-    function reencrypt(euint8 ciphertext) internal view returns (bytes memory reencrypted) {
+    function reencrypt(
+        euint8 ciphertext
+    ) internal view returns (bytes memory reencrypted) {
         return Impl.reencrypt(euint8.unwrap(ciphertext), Common.euint8_t);
     }
 
@@ -18,11 +20,15 @@ library Ciphertext {
         Impl.delegate(euint8.unwrap(ciphertext));
     }
 
-    function asEuint16(bytes memory ciphertext) internal view returns (euint16) {
+    function asEuint16(
+        bytes memory ciphertext
+    ) internal view returns (euint16) {
         return euint16.wrap(Impl.verify(ciphertext, Common.euint16_t));
     }
 
-    function reencrypt(euint16 ciphertext) internal view returns (bytes memory reencrypted) {
+    function reencrypt(
+        euint16 ciphertext
+    ) internal view returns (bytes memory reencrypted) {
         return Impl.reencrypt(euint16.unwrap(ciphertext), Common.euint16_t);
     }
 
@@ -30,11 +36,15 @@ library Ciphertext {
         Impl.delegate(euint16.unwrap(ciphertext));
     }
 
-    function asEuint32(bytes memory ciphertext) internal view returns (euint32) {
+    function asEuint32(
+        bytes memory ciphertext
+    ) internal view returns (euint32) {
         return euint32.wrap(Impl.verify(ciphertext, Common.euint32_t));
     }
 
-    function reencrypt(euint32 ciphertext) internal view returns (bytes memory reencrypted) {
+    function reencrypt(
+        euint32 ciphertext
+    ) internal view returns (bytes memory reencrypted) {
         return Impl.reencrypt(euint32.unwrap(ciphertext), Common.euint32_t);
     }
 
@@ -42,7 +52,15 @@ library Ciphertext {
         Impl.delegate(euint32.unwrap(ciphertext));
     }
 
-    function requireCt(euint8 ciphertext) internal view {{
-        Impl.requireCt(euint8.unwrap(ciphertext));
-    }}
+    function requireCt(euint8 ciphertext) internal view {
+        {
+            Impl.requireCt(euint8.unwrap(ciphertext));
+        }
+    }
+
+    function optimisticRequireCt(euint8 ciphertext) internal view {
+        {
+            Impl.optimisticRequireCt(euint8.unwrap(ciphertext));
+        }
+    }
 }

@@ -37,7 +37,7 @@ library Precompiles {
     uint256 public constant Multiply = 72;
     uint256 public constant LessThan = 73;
     uint256 public constant Random = 74;
-    uint256 public constant optimisticRequire = 75;
+    uint256 public constant OptimisticRequire = 75;
     uint256 public constant Cast = 76;
 }
 """
@@ -153,7 +153,100 @@ library Impl {
 
         result = uint256(output[0]);
     }
+
+    // Evaluate `lhs < rhs` on the given ciphertexts and, if successful, return the resulting ciphertext.
+    // If successful, the resulting ciphertext is automatically verified.
+    function lt(uint256 lhs, uint256 rhs) internal view returns (uint256 result) {
+        bytes32[2] memory input;
+        input[0] = bytes32(lhs);
+        input[1] = bytes32(rhs);
+        uint256 inputLen = 64;
+
+        bytes32[1] memory output;
+        uint256 outputLen = 32;
+
+        // Call the lte precompile.
+        uint256 precompile = Precompiles.LessThan;
+        assembly {
+            if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
+                revert(0, 0)
+            }
+        }
+
+        result = uint256(output[0]);
+    }
     
+    // If `control`'s value is 1, the resulting value is the same value as `ifTrue`.
+    // If `control`'s value is 0, the resulting value is the same value as `ifFalse`.
+    // If successful, the resulting ciphertext is automatically verified.
+    function cmux(uint256 control, uint256 ifTrue, uint256 ifFalse) internal view returns (uint256 result) {
+        // result = (ifTrue - ifFalse) * control + ifFalse
+
+        bytes32[2] memory input;
+        uint256 inputLen = 64;
+        uint256 outputLen = 32;
+
+        // Call the sub precompile.
+        input[0] = bytes32(ifTrue);
+        input[1] = bytes32(ifFalse);
+        uint256 precompile = Precompiles.Subtract;
+        bytes32[1] memory subOutput;
+        assembly {
+            if iszero(staticcall(gas(), precompile, input, inputLen, subOutput, outputLen)) {
+                revert(0, 0)
+            }
+        }
+
+        // Call the mul precompile.
+        input[0] = bytes32(control);
+        input[1] = bytes32(subOutput[0]);
+        precompile = Precompiles.Multiply;
+        bytes32[1] memory mulOutput;
+        assembly {
+            if iszero(staticcall(gas(), precompile, input, inputLen, mulOutput, outputLen)) {
+                revert(0, 0)
+            }
+        }
+
+        // Call the add precompile.
+        input[0] = bytes32(mulOutput[0]);
+        input[1] = bytes32(ifFalse);
+        precompile = Precompiles.Add;
+        bytes32[1] memory addOutput;
+        assembly {
+            if iszero(staticcall(gas(), precompile, input, inputLen, addOutput, outputLen)) {
+                revert(0, 0)
+            }
+        }
+
+        result = uint256(addOutput[0]);
+    }
+    
+    // Optimistically requires that the `ciphertext` is true.
+    //
+    // This function does not evaluate the given `ciphertext` at the time of the call.
+    // Instead, it accumulates all optimistic requires and evaluates a single combined
+    // require at the end through the decryption oracle. A side effect of this mechanism
+    // is that a method call with a failed optimistic require will always incur the full
+    // gas cost, as if all optimistic requires were true. Yet, the transaction will be
+    // reverted at the end if any of the optimisic requires were false.
+    //
+    // The benefit of optimistic requires is that they are faster than non-optimistic ones,
+    // because there is a single call to the decryption oracle per transaction, irrespective
+    // of how many optimistic requires were used.
+    function optimisticRequireCt(uint256 ciphertext) internal view {
+        bytes32[1] memory input;
+        input[0] = bytes32(ciphertext);
+        uint256 inputLen = 32;
+
+        // Call the optimistic require precompile.
+        uint256 precompile = Precompiles.OptimisticRequire;
+        assembly {
+            if iszero(staticcall(gas(), precompile, input, inputLen, 0, 0)) {
+                revert(0, 0)
+            }
+        }
+    }
 
 //    function safeAdd(uint256 a, uint256 b) internal view returns (uint256) {
 //        TODO: Call addSafe() precompile.
@@ -301,10 +394,23 @@ to_print =  """
 
 for i in (2**p for p in range(3, 6)):
     for j in (2**p for p in range(3, 6)):
-        f.write(to_print.format(i=i, j=j, k=i if i>j else j, f="add"))
-        f.write(to_print.format(i=i, j=j, k=i if i>j else j, f="sub"))
-        f.write(to_print.format(i=i, j=j, k=i if i>j else j, f="mul"))
-        f.write(to_print.format(i=i, j=j, k=8, f="lte"))
+        if i == j: # TODO: remove this line when casting is implemented
+            f.write(to_print.format(i=i, j=j, k=i if i>j else j, f="add"))
+            f.write(to_print.format(i=i, j=j, k=i if i>j else j, f="sub"))
+            f.write(to_print.format(i=i, j=j, k=i if i>j else j, f="mul"))
+            f.write(to_print.format(i=i, j=j, k=8, f="lte"))
+            f.write(to_print.format(i=i, j=j, k=8, f="lt"))
+
+to_print =  """
+    function cmux(euint8 control, euint{i} a, euint{j} b) internal view returns (euint{k}) {{
+        return euint{k}.wrap(Impl.cmux(euint8.unwrap(control), euint{i}.unwrap(a), euint{j}.unwrap(b)));
+    }}
+"""
+for i in (2**p for p in range(3, 6)):
+    for j in (2**p for p in range(3, 6)):
+        if i == j: # TODO: remove this line when casting is implemented
+            f.write(to_print.format(i=i, j=j, k=i if i>j else j))
+
 
 to_print="""
     function to_euint{i}(euint{j} v) internal view returns (euint{i}) {{
@@ -351,6 +457,9 @@ for i in (2**p for p in range(3, 6)):
 f.write("""
     function requireCt(euint8 ciphertext) internal view {{
         Impl.requireCt(euint8.unwrap(ciphertext));
+    }}
+    function optimisticRequireCt(euint8 ciphertext) internal view {{
+        Impl.optimisticRequireCt(euint8.unwrap(ciphertext));
     }}
 """)
 
