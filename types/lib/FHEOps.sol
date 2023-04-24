@@ -38,12 +38,12 @@ library FHEOps {
         return euint16.wrap(Impl.mul(euint16.unwrap(a), euint16.unwrap(b)));
     }
 
-    function lte(euint16 a, euint16 b) internal view returns (euint8) {
-        return euint8.wrap(Impl.lte(euint16.unwrap(a), euint16.unwrap(b)));
+    function lte(euint16 a, euint16 b) internal view returns (euint16) {
+        return euint16.wrap(Impl.lte(euint16.unwrap(a), euint16.unwrap(b)));
     }
 
-    function lt(euint16 a, euint16 b) internal view returns (euint8) {
-        return euint8.wrap(Impl.lt(euint16.unwrap(a), euint16.unwrap(b)));
+    function lt(euint16 a, euint16 b) internal view returns (euint16) {
+        return euint16.wrap(Impl.lt(euint16.unwrap(a), euint16.unwrap(b)));
     }
 
     function add(euint32 a, euint32 b) internal view returns (euint32) {
@@ -58,12 +58,12 @@ library FHEOps {
         return euint32.wrap(Impl.mul(euint32.unwrap(a), euint32.unwrap(b)));
     }
 
-    function lte(euint32 a, euint32 b) internal view returns (euint8) {
-        return euint8.wrap(Impl.lte(euint32.unwrap(a), euint32.unwrap(b)));
+    function lte(euint32 a, euint32 b) internal view returns (euint32) {
+        return euint32.wrap(Impl.lte(euint32.unwrap(a), euint32.unwrap(b)));
     }
 
-    function lt(euint32 a, euint32 b) internal view returns (euint8) {
-        return euint8.wrap(Impl.lt(euint32.unwrap(a), euint32.unwrap(b)));
+    function lt(euint32 a, euint32 b) internal view returns (euint32) {
+        return euint32.wrap(Impl.lt(euint32.unwrap(a), euint32.unwrap(b)));
     }
 
     function cmux(

@@ -398,8 +398,8 @@ for i in (2**p for p in range(3, 6)):
             f.write(to_print.format(i=i, j=j, k=i if i>j else j, f="add"))
             f.write(to_print.format(i=i, j=j, k=i if i>j else j, f="sub"))
             f.write(to_print.format(i=i, j=j, k=i if i>j else j, f="mul"))
-            f.write(to_print.format(i=i, j=j, k=8, f="lte"))
-            f.write(to_print.format(i=i, j=j, k=8, f="lt"))
+            f.write(to_print.format(i=i, j=j, k=i, f="lte"))
+            f.write(to_print.format(i=i, j=j, k=i, f="lt"))
 
 to_print =  """
     function cmux(euint8 control, euint{i} a, euint{j} b) internal view returns (euint{k}) {{
