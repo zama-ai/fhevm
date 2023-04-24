@@ -413,7 +413,7 @@ for i in (2**p for p in range(3, 6)):
 
 
 to_print="""
-    function to_euint{i}(euint{j} v) internal view returns (euint{i}) {{
+    function toEuint{i}(euint{j} v) internal view returns (euint{i}) {{
         return euint{i}.wrap(Impl.cast(euint{j}.unwrap(v), Common.euint{j}_t));
     }}
 """

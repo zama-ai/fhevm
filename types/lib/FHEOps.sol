@@ -111,27 +111,27 @@ library FHEOps {
             );
     }
 
-    function to_euint8(euint16 v) internal view returns (euint8) {
+    function toEuint8(euint16 v) internal view returns (euint8) {
         return euint8.wrap(Impl.cast(euint16.unwrap(v), Common.euint16_t));
     }
 
-    function to_euint8(euint32 v) internal view returns (euint8) {
+    function toEuint8(euint32 v) internal view returns (euint8) {
         return euint8.wrap(Impl.cast(euint32.unwrap(v), Common.euint32_t));
     }
 
-    function to_euint16(euint8 v) internal view returns (euint16) {
+    function toEuint16(euint8 v) internal view returns (euint16) {
         return euint16.wrap(Impl.cast(euint8.unwrap(v), Common.euint8_t));
     }
 
-    function to_euint16(euint32 v) internal view returns (euint16) {
+    function toEuint16(euint32 v) internal view returns (euint16) {
         return euint16.wrap(Impl.cast(euint32.unwrap(v), Common.euint32_t));
     }
 
-    function to_euint32(euint8 v) internal view returns (euint32) {
+    function toEuint32(euint8 v) internal view returns (euint32) {
         return euint32.wrap(Impl.cast(euint8.unwrap(v), Common.euint8_t));
     }
 
-    function to_euint32(euint16 v) internal view returns (euint32) {
+    function toEuint32(euint16 v) internal view returns (euint32) {
         return euint32.wrap(Impl.cast(euint16.unwrap(v), Common.euint16_t));
     }
 }
