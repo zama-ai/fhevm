@@ -381,7 +381,6 @@ library Impl {
             }
         }
         result = uint256(output[0]);
-        return 0;
     }
 
     function delegate(uint256 ciphertext) internal view {
