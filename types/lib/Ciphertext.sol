@@ -58,9 +58,33 @@ library Ciphertext {
         }
     }
 
+    function requireCt(euint16 ciphertext) internal view {
+        {
+            Impl.requireCt(euint16.unwrap(ciphertext));
+        }
+    }
+
+    function requireCt(euint32 ciphertext) internal view {
+        {
+            Impl.requireCt(euint32.unwrap(ciphertext));
+        }
+    }
+
     function optimisticRequireCt(euint8 ciphertext) internal view {
         {
             Impl.optimisticRequireCt(euint8.unwrap(ciphertext));
+        }
+    }
+
+    function optimisticRequireCt(euint16 ciphertext) internal view {
+        {
+            Impl.optimisticRequireCt(euint16.unwrap(ciphertext));
+        }
+    }
+
+    function optimisticRequireCt(euint32 ciphertext) internal view {
+        {
+            Impl.optimisticRequireCt(euint32.unwrap(ciphertext));
         }
     }
 }
