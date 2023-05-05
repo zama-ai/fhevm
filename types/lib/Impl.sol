@@ -2,6 +2,7 @@
 
 pragma solidity >=0.8.13 <0.9.0;
 
+import "./Common.sol";
 import "./Precompiles.sol";
 
 library Impl {
@@ -324,17 +325,17 @@ library Impl {
         input[0] = bytes32(ciphertext);
         uint256 inputLen = 32;
 
-        uint256 MaxCiphertextBytesLen;
-
-        if (_type == 0) {
-            MaxCiphertextBytesLen = euint8Size;
-        } else if (_type == 1) {
-            MaxCiphertextBytesLen = euint16Size;
-        } else if (_type == 2) {
-            MaxCiphertextBytesLen = euint32Size;
+        uint256 maxCiphertextBytesLen;
+        if (_type == Common.euint8_t) {
+            maxCiphertextBytesLen = euint8Size;
+        } else if (_type == Common.euint16_t) {
+            maxCiphertextBytesLen = euint16Size;
+        } else if (_type == Common.euint32_t) {
+            maxCiphertextBytesLen = euint32Size;
         } else {
             revert("unsupported ciphertext type");
         }
+        reencrypted = new bytes(maxCiphertextBytesLen);
 
         // Call the reencrypt precompile.
         uint256 precompile = Precompiles.Reencrypt;
@@ -346,7 +347,7 @@ library Impl {
                     input,
                     inputLen,
                     reencrypted,
-                    MaxCiphertextBytesLen
+                    maxCiphertextBytesLen
                 )
             ) {
                 revert(0, 0)
