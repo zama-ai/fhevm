@@ -1,3 +1,4 @@
 decrypt/target
 decrypt/ciphertexts
 .venv
+.vscode
