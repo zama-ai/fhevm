@@ -20,6 +20,14 @@ library Ciphertext {
         Impl.delegate(euint8.unwrap(ciphertext));
     }
 
+    function requireCt(euint8 ciphertext) internal view {
+        Impl.requireCt(euint8.unwrap(ciphertext));
+    }
+
+    function optimisticRequireCt(euint8 ciphertext) internal view {
+        Impl.optimisticRequireCt(euint8.unwrap(ciphertext));
+    }
+
     function asEuint16(
         bytes memory ciphertext
     ) internal view returns (euint16) {
@@ -34,6 +42,14 @@ library Ciphertext {
 
     function delegate(euint16 ciphertext) internal view {
         Impl.delegate(euint16.unwrap(ciphertext));
+    }
+
+    function requireCt(euint16 ciphertext) internal view {
+        Impl.requireCt(euint16.unwrap(ciphertext));
+    }
+
+    function optimisticRequireCt(euint16 ciphertext) internal view {
+        Impl.optimisticRequireCt(euint16.unwrap(ciphertext));
     }
 
     function asEuint32(
@@ -52,39 +68,11 @@ library Ciphertext {
         Impl.delegate(euint32.unwrap(ciphertext));
     }
 
-    function requireCt(euint8 ciphertext) internal view {
-        {
-            Impl.requireCt(euint8.unwrap(ciphertext));
-        }
-    }
-
-    function requireCt(euint16 ciphertext) internal view {
-        {
-            Impl.requireCt(euint16.unwrap(ciphertext));
-        }
-    }
-
     function requireCt(euint32 ciphertext) internal view {
-        {
-            Impl.requireCt(euint32.unwrap(ciphertext));
-        }
-    }
-
-    function optimisticRequireCt(euint8 ciphertext) internal view {
-        {
-            Impl.optimisticRequireCt(euint8.unwrap(ciphertext));
-        }
-    }
-
-    function optimisticRequireCt(euint16 ciphertext) internal view {
-        {
-            Impl.optimisticRequireCt(euint16.unwrap(ciphertext));
-        }
+        Impl.requireCt(euint32.unwrap(ciphertext));
     }
 
     function optimisticRequireCt(euint32 ciphertext) internal view {
-        {
-            Impl.optimisticRequireCt(euint32.unwrap(ciphertext));
-        }
+        Impl.optimisticRequireCt(euint32.unwrap(ciphertext));
     }
 }
