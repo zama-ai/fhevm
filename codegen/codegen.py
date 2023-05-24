@@ -50,6 +50,7 @@ f.write("""\
 
 pragma solidity >=0.8.13 <0.9.0;
 
+import "./Common.sol";
 import "./Precompiles.sol";
 
 library Impl {
@@ -254,6 +255,7 @@ library Impl {
 //    }
 
     function cast(uint256 ciphertext, uint8 toType) internal view returns(uint256) {
+        revert("casting not supported yet");
         bytes memory input = bytes.concat(bytes32(ciphertext), bytes1(toType));
         uint256 inputLen = input.length;
 
@@ -284,18 +286,18 @@ library Impl {
         input[0] = bytes32(ciphertext);
         uint256 inputLen = 32;
 
-        uint256 MaxCiphertextBytesLen;
-
-        if (_type == 0) {
-            MaxCiphertextBytesLen = euint8Size;
-        } else if (_type == 1) {
-            MaxCiphertextBytesLen = euint16Size;
-        } else if (_type == 2) {
-            MaxCiphertextBytesLen = euint32Size;
+        uint256 maxCiphertextBytesLen;
+        if (_type == Common.euint8_t) {
+            maxCiphertextBytesLen = euint8Size;
+        } else if (_type == Common.euint16_t) {
+            maxCiphertextBytesLen = euint16Size;
+        } else if (_type == Common.euint32_t) {
+            maxCiphertextBytesLen = euint32Size;
         } else {
             revert("unsupported ciphertext type");
         }
-        
+        reencrypted = new bytes(maxCiphertextBytesLen);
+
         // Call the reencrypt precompile.
         uint256 precompile = Precompiles.Reencrypt;
         assembly {
@@ -306,7 +308,7 @@ library Impl {
                     input,
                     inputLen,
                     reencrypted,
-                    MaxCiphertextBytesLen
+                    maxCiphertextBytesLen
                 )
             ) { 
                 revert(0, 0)
@@ -341,7 +343,6 @@ library Impl {
             }
         }
         result = uint256(output[0]);
-        return 0;
     }
 
     function delegate(uint256 ciphertext) internal view {
@@ -449,19 +450,17 @@ to_print="""
     function delegate(euint{i} ciphertext) internal view {{
         Impl.delegate(euint{i}.unwrap(ciphertext));
     }}
+
+    function requireCt(euint{i} ciphertext) internal view {{
+        Impl.requireCt(euint{i}.unwrap(ciphertext));
+    }}
+    function optimisticRequireCt(euint{i} ciphertext) internal view {{
+        Impl.optimisticRequireCt(euint{i}.unwrap(ciphertext));
+    }}
 """
 
 for i in (2**p for p in range(3, 6)):
     f.write(to_print.format(i=i))
-
-f.write("""
-    function requireCt(euint8 ciphertext) internal view {{
-        Impl.requireCt(euint8.unwrap(ciphertext));
-    }}
-    function optimisticRequireCt(euint8 ciphertext) internal view {{
-        Impl.optimisticRequireCt(euint8.unwrap(ciphertext));
-    }}
-""")
 
 f.write("}")
 f.close()

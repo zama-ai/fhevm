@@ -292,6 +292,7 @@ library Impl {
         uint256 ciphertext,
         uint8 toType
     ) internal view returns (uint256) {
+        revert("casting not supported yet");
         bytes memory input = bytes.concat(bytes32(ciphertext), bytes1(toType));
         uint256 inputLen = input.length;
 
