@@ -2,108 +2,162 @@
 
 pragma solidity >=0.8.13 <0.9.0;
 
-import "../lib/Ciphertext.sol";
-import "../lib/Common.sol";
-import "../lib/FHEOps.sol";
+import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 
-contract EncryptedERC20 {
+import "../lib/TFHE.sol";
 
-    FHEUInt public totalSupply;
-    string public name = "Naraggara"; // City of Zama's battle
-    string public symbol = "NARA";
-    uint8 public decimals = 18;
+contract EncryptedERC20 is EIP712 {
+    euint32 private totalSupply;
+    string public constant name = "Naraggara"; // City of Zama's battle
+    string public constant symbol = "NARA";
+    uint8 public constant decimals = 18;
+
+    // used for output authorization
+    bytes32 private DOMAIN_SEPARATOR;
 
     // A mapping from address to an encrypted balance.
-    mapping(address => FHEUInt) internal balances;
+    mapping(address => euint32) internal balances;
 
     // A mapping of the form mapping(owner => mapping(spender => allowance)).
-    mapping(address => mapping(address => FHEUInt)) internal allowances;
+    mapping(address => mapping(address => euint32)) internal allowances;
 
     // The owner of the contract.
     address internal contractOwner;
 
-    constructor() {
+    constructor() EIP712("Authorization token", "1") {
         contractOwner = msg.sender;
     }
 
     // Sets the balance of the owner to the given encrypted balance.
     function mint(bytes calldata encryptedAmount) public onlyContractOwner {
-        FHEUInt amount = Ciphertext.verify(encryptedAmount);
+        euint32 amount = TFHE.asEuint32(encryptedAmount);
         balances[contractOwner] = amount;
-        totalSupply = FHEOps.add(totalSupply, amount);
+        totalSupply = TFHE.add(totalSupply, amount);
     }
 
     // Transfers an encrypted amount from the message sender address to the `to` address.
     function transfer(address to, bytes calldata encryptedAmount) public {
-        transfer(to, Ciphertext.verify(encryptedAmount));
+        transfer(to, TFHE.asEuint32(encryptedAmount));
     }
 
     // Transfers an amount from the message sender address to the `to` address.
-    function transfer(address to, FHEUInt amount) public {
+    function transfer(address to, euint32 amount) internal {
         _transfer(msg.sender, to, amount);
     }
 
-    function getTotalSupply() public view returns (bytes memory) {
-        return Ciphertext.reencrypt(totalSupply); // Should be decrypt later
+    function recover(
+        bytes memory signature,
+        bytes32 publicKey
+    ) private view returns (address) {
+        bytes32 digest = _hashTypedDataV4(keccak256(abi.encode(
+          keccak256("Reencrypt(bytes32 publicKey)"),
+          publicKey
+        )));
+        return ECDSA.recover(digest, signature);
+    }
+
+    function getTotalSupply(
+        bytes32 publicKey,
+        bytes calldata signature
+    ) public view onlyContractOwner returns (bytes memory) {
+        address signer = recover(signature, publicKey);
+        require(signer != msg.sender, "Invalid EIP712 signature");
+        require(
+            signer == msg.sender,
+            "EIP712 signer and transaction signer do not match"
+        );
+
+        return TFHE.reencrypt(totalSupply, publicKey);
     }
 
     // Returns the balance of the caller under their public FHE key.
     // The FHE public key is automatically determined based on the origin of the call.
-    function balanceOf() public view returns (bytes memory) {
-        return Ciphertext.reencrypt(balances[msg.sender]);
+    function balanceOf(
+        bytes32 publicKey,
+        bytes calldata signature
+    ) public view returns (bytes memory) {
+        address signer = recover(signature, publicKey);
+        require(signer != msg.sender, "Invalid EIP712 signature");
+
+        require(
+            signer == msg.sender,
+            "EIP712 signer and transaction signer do not match"
+        );
+
+        return TFHE.reencrypt(balances[signer], publicKey);
     }
 
     // Sets the `encryptedAmount` as the allowance of `spender` over the caller's tokens.
     function approve(address spender, bytes calldata encryptedAmount) public {
         address owner = msg.sender;
-        _approve(owner, spender, Ciphertext.verify(encryptedAmount));
+        _approve(owner, spender, TFHE.asEuint32(encryptedAmount));
     }
 
     // Returns the remaining number of tokens that `spender` is allowed to spend
     // on behalf of the caller. The returned ciphertext is under the caller public FHE key.
-    function allowance(address spender) public view returns (bytes memory) {
+    function allowance(
+        address spender,
+        bytes32 publicKey,
+        bytes calldata signature
+    ) public view returns (bytes memory) {
         address owner = msg.sender;
-        return Ciphertext.reencrypt(_allowance(owner, spender));
+        address signer = recover(signature, publicKey);
+
+        require(signer != msg.sender, "Invalid EIP712 signature");
+
+        return
+            TFHE.reencrypt(
+                _allowance(owner, spender),
+                publicKey
+            );
     }
 
     // Transfers `encryptedAmount` tokens using the caller's allowance.
-    function transferFrom(address from, address to, bytes calldata encryptedAmount) public {
-        transferFrom(from, to, Ciphertext.verify(encryptedAmount));
+    function transferFrom(
+        address from,
+        address to,
+        bytes calldata encryptedAmount
+    ) public {
+        transferFrom(from, to, TFHE.asEuint32(encryptedAmount));
     }
 
     // Transfers `amount` tokens using the caller's allowance.
-    function transferFrom(address from, address to, FHEUInt amount) public {
+    function transferFrom(address from, address to, euint32 amount) public {
         address spender = msg.sender;
         _updateAllowance(from, spender, amount);
         _transfer(from, to, amount);
     }
 
-    function _approve(address owner, address spender, FHEUInt amount) internal {
+    function _approve(address owner, address spender, euint32 amount) internal {
         allowances[owner][spender] = amount;
-     }
+    }
 
-     function _allowance(address owner, address spender) internal view returns (FHEUInt) {
-         return allowances[owner][spender];
-     }
+    function _allowance(
+        address owner,
+        address spender
+    ) internal view returns (euint32) {
+        return allowances[owner][spender];
+    }
 
-     function _updateAllowance(address owner, address spender, FHEUInt amount) internal {
-         FHEUInt currentAllowance = _allowance(owner, spender);
-         Common.requireCt(FHEOps.lte(amount, currentAllowance));
-         _approve(owner, spender, FHEOps.sub(currentAllowance, amount));
-     }
+    function _updateAllowance(
+        address owner,
+        address spender,
+        euint32 amount
+    ) internal {
+        euint32 currentAllowance = _allowance(owner, spender);
+        TFHE.requireCt(TFHE.lte(amount, currentAllowance));
+        _approve(owner, spender, TFHE.sub(currentAllowance, amount));
+    }
 
     // Transfers an encrypted amount.
-    function _transfer(
-        address from,
-        address to,
-        FHEUInt amount
-    ) internal {
+    function _transfer(address from, address to, euint32 amount) internal {
         // Make sure the sender has enough tokens.
-        Common.requireCt(FHEOps.lte(amount, balances[from]));
+        TFHE.requireCt(TFHE.lte(amount, balances[from]));
 
         // Add to the balance of `to` and subract from the balance of `from`.
-        balances[to] = FHEOps.add(balances[to], amount);
-        balances[from] = FHEOps.sub(balances[from], amount);
+        balances[to] = TFHE.add(balances[to], amount);
+        balances[from] = TFHE.sub(balances[from], amount);
     }
 
     modifier onlyContractOwner() {

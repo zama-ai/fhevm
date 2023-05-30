@@ -1,0 +1,26 @@
+{
+  "dependencies": {
+    "@openzeppelin/contracts": "^4.9.0"
+  },
+  "name": "zbc-solidity",
+  "description": "A Solidity library for interacting with the Zama Blockchain",
+  "version": "1.0.0",
+  "main": "index.js",
+  "directories": {
+    "example": "examples",
+    "lib": "lib"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zama-ai/zbc-solidity.git"
+  },
+  "author": "",
+  "license": "BSD-3-Clause-Clear",
+  "bugs": {
+    "url": "https://github.com/zama-ai/zbc-solidity/issues"
+  },
+  "homepage": "https://github.com/zama-ai/zbc-solidity#readme"
+}

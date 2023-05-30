@@ -9,14 +9,14 @@ import "../lib/FHEOps.sol";
 // Example use of optimistic ciphertext requires. Aims to show the different gas usage
 // as compared to syncrhonous non-optimistic and plaintext ones.
 contract OptimisticRequire {
-    FHEUInt internal ct1;
-    FHEUInt internal ct2;
+    euint32 internal ct1;
+    euint32 internal ct2;
     uint256 internal value;
     uint256 internal iterations;
 
     function init(bytes calldata ctBytes, uint256 _iterations) public {
-        ct1 = Ciphertext.verify(ctBytes);
-        ct2 = Ciphertext.verify(ctBytes);
+        ct1 = Ciphertext.asEuint32(ctBytes);
+        ct2 = Ciphertext.asEuint32(ctBytes);
         iterations = _iterations;
         value = 1;
     }
@@ -29,17 +29,17 @@ contract OptimisticRequire {
         value = newValue;
     }
 
-    function getValue() public view returns(uint256) {
+    function getValue() public view returns (uint256) {
         return value;
     }
 
     // Charge full gas as both requires are true.
     function optimisticRequireCtTrue() public {
         // True.
-        Common.optimisticRequireCt(FHEOps.lte(ct1, ct2));
+        Ciphertext.optimisticRequireCt(FHEOps.lte(ct1, ct2));
 
         // True.
-        Common.optimisticRequireCt(FHEOps.lte(ct1, ct2));
+        Ciphertext.optimisticRequireCt(FHEOps.lte(ct1, ct2));
 
         // Mutate state to pay for gas.
         doWorkToPayGas();
@@ -48,10 +48,10 @@ contract OptimisticRequire {
     // Charge full gas as we are using optimistic requires.
     function optimisticRequireCtFalse() public {
         // True.
-        Common.optimisticRequireCt(FHEOps.lte(ct1, ct2));
+        Ciphertext.optimisticRequireCt(FHEOps.lte(ct1, ct2));
 
         // False.
-        Common.optimisticRequireCt(FHEOps.lt(ct1, ct2));
+        Ciphertext.optimisticRequireCt(FHEOps.lt(ct1, ct2));
 
         // Mutate state to pay for gas - we will pay for it, because we are using optimistic requires.
         doWorkToPayGas();
@@ -60,10 +60,10 @@ contract OptimisticRequire {
     // Charge less than full gas, because the non-optimistic ciphertext require aborts early.
     function requireCtFalse() public {
         // True.
-        Common.requireCt(FHEOps.lte(ct1, ct2));
+        Ciphertext.requireCt(FHEOps.lte(ct1, ct2));
 
         // False.
-        Common.requireCt(FHEOps.lt(ct1, ct2));
+        Ciphertext.requireCt(FHEOps.lt(ct1, ct2));
 
         // Try to mutate state to pay for gas - we won't reach that point due to the false require.
         doWorkToPayGas();

@@ -6,7 +6,7 @@ import "../lib/Ciphertext.sol";
 import "../lib/Common.sol";
 import "../lib/FHEOps.sol";
 
-import "./EncryptedERC20.sol";
+import "./SmallEncryptedERC20.sol";
 
 contract BlindAuction {
     uint public endTime;
@@ -14,26 +14,19 @@ contract BlindAuction {
     address public beneficiary;
 
     // Current highest bid.
-    FHEUInt internal highestBid;
+    euint8 internal highestBid;
 
     // Mapping from bidder to their bid value.
-    mapping(address => FHEUInt) internal bids;
-
-    // Number of bid
-    uint public bidCounter;
+    mapping(address => euint8) public bids;
 
     // The token contract used for encrypted bids.
-    EncryptedERC20 public tokenContract;
+    SmallEncryptedERC20 public tokenContract;
 
     // Whether the auction object has been claimed.
     bool public objectClaimed;
 
     // If the token has been transferred to the beneficiary
     bool public tokenTransferred;
-
-    bool public stoppable;
-
-    bool public manuallyStopped = false;
 
     // The function has been called too early.
     // Try again at `time`.
@@ -44,70 +37,73 @@ contract BlindAuction {
 
     event Winner(address who);
 
-    constructor(address _beneficiary, EncryptedERC20 _tokenContract, uint biddingTime, bool isStoppable) {
+    constructor(
+        address _beneficiary,
+        SmallEncryptedERC20 _tokenContract,
+        uint biddingTime
+    ) {
         beneficiary = _beneficiary;
         tokenContract = _tokenContract;
         endTime = block.timestamp + biddingTime;
         objectClaimed = false;
         tokenTransferred = false;
-        bidCounter = 0;
-        stoppable = isStoppable;
     }
 
     // Bid an `encryptedValue`.
-    function bid(bytes calldata encryptedValue) public onlyBeforeEnd() {
-        FHEUInt value = Ciphertext.verify(encryptedValue);
-        FHEUInt existingBid = bids[msg.sender];
-        if (FHEUInt.unwrap(existingBid) != 0) {
-            FHEUInt isHigher = FHEOps.lt(existingBid, value);
+    function bid(bytes calldata encryptedValue) public onlyBeforeEnd {
+        euint8 value = Ciphertext.asEuint8(encryptedValue);
+        euint8 existingBid = bids[msg.sender];
+        if (euint8.unwrap(existingBid) != 0) {
+            euint8 isHigher = FHEOps.lt(existingBid, value);
             // Update bid with value
             bids[msg.sender] = FHEOps.cmux(isHigher, value, existingBid);
             // Transfer only the difference between existing and value
-            FHEUInt toTransfer = FHEOps.sub(value, existingBid);
+            euint8 toTransfer = FHEOps.sub(value, existingBid);
             // Transfer only if bid is higher
-            tokenContract.transferFrom(msg.sender, address(this), FHEOps.mul(isHigher, toTransfer));
+            tokenContract.transferFrom(
+                msg.sender,
+                address(this),
+                FHEOps.mul(isHigher, toTransfer)
+            );
         } else {
-            bidCounter++;
             bids[msg.sender] = value;
             tokenContract.transferFrom(msg.sender, address(this), value);
         }
-        FHEUInt currentBid = bids[msg.sender];
-        if (FHEUInt.unwrap(highestBid) == 0) {
+        euint8 currentBid = bids[msg.sender];
+        if (euint8.unwrap(highestBid) == 0) {
             highestBid = currentBid;
         } else {
-            highestBid = FHEOps.cmux(FHEOps.lt(highestBid, currentBid), currentBid, highestBid);
+            highestBid = FHEOps.cmux(
+                FHEOps.lt(highestBid, currentBid),
+                currentBid,
+                highestBid
+            );
         }
-    }
-
-    // Returns the user bid
-    function getBid() public view returns (bytes memory) {
-        return Ciphertext.reencrypt(bids[msg.sender]);
-    }
-
-    // Returns the user bid
-    function stop() public {
-        require(stoppable);
-        manuallyStopped = true;
     }
 
     // Returns an encrypted value of 0 or 1 under the caller's public key, indicating
     // if the caller has the highest bid.
-    function doIHaveHighestBid() public view onlyAfterEnd() returns (bytes memory) {
+    function doIHaveHighestBid()
+        public
+        view
+        onlyAfterEnd
+        returns (bytes memory)
+    {
         return Ciphertext.reencrypt(FHEOps.lte(highestBid, bids[msg.sender]));
     }
 
     // Claim the object. Succeeds only if the caller has the highest bid.
-    function claim() public onlyAfterEnd() {
+    function claim() public onlyAfterEnd {
         require(!objectClaimed);
         Common.requireCt(FHEOps.lte(highestBid, bids[msg.sender]));
 
         objectClaimed = true;
-        bids[msg.sender] = FHEUInt.wrap(0);
+        bids[msg.sender] = euint8.wrap(0);
         emit Winner(msg.sender);
     }
 
     // Transfer token to beneficiary
-    function auctionEnd() public onlyAfterEnd() {
+    function auctionEnd() public onlyAfterEnd {
         require(!tokenTransferred);
 
         tokenTransferred = true;
@@ -116,22 +112,22 @@ contract BlindAuction {
     }
 
     // Withdraw a bid from the auction to the caller once the auction has stopped.
-    function withdraw() public onlyAfterEnd() {
-        FHEUInt bidValue = bids[msg.sender];
+    function withdraw() public onlyAfterEnd {
+        euint8 bidValue = bids[msg.sender];
         if (!objectClaimed) {
             Common.requireCt(FHEOps.lt(bidValue, highestBid));
         }
         tokenContract.transfer(msg.sender, bidValue);
-        bids[msg.sender] = FHEUInt.wrap(0);
+        bids[msg.sender] = euint8.wrap(0);
     }
 
     modifier onlyBeforeEnd() {
-        if (block.timestamp >= endTime || manuallyStopped == true) revert TooLate(endTime);
+        if (block.timestamp >= endTime) revert TooLate(endTime);
         _;
     }
 
     modifier onlyAfterEnd() {
-        if (block.timestamp <= endTime && manuallyStopped == false) revert TooEarly(endTime);
+        if (block.timestamp <= endTime) revert TooEarly(endTime);
         _;
     }
 }

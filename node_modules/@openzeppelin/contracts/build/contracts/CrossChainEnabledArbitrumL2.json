@@ -1,0 +1,10 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "CrossChainEnabledArbitrumL2",
+  "sourceName": "contracts/crosschain/arbitrum/CrossChainEnabledArbitrumL2.sol",
+  "abi": [],
+  "bytecode": "0x",
+  "deployedBytecode": "0x",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

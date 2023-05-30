@@ -8,13 +8,17 @@ import "../lib/FHEOps.sol";
 
 // Shows the CMUX operation in Solidity.
 contract CMUX {
-    FHEUInt internal result;
+    euint8 internal result;
 
     // Set result = (ifTrue - ifFalse) * control + ifFalse
-    function cmux(bytes calldata controlBytes, bytes calldata ifTrueBytes, bytes calldata ifFalseBytes) public {
-        FHEUInt control = Ciphertext.verify(controlBytes);
-        FHEUInt ifTrue = Ciphertext.verify(ifTrueBytes);
-        FHEUInt ifFalse = Ciphertext.verify(ifFalseBytes);
+    function cmux(
+        bytes calldata controlBytes,
+        bytes calldata ifTrueBytes,
+        bytes calldata ifFalseBytes
+    ) public {
+        euint8 control = Ciphertext.asEuint8(controlBytes);
+        euint8 ifTrue = Ciphertext.asEuint8(ifTrueBytes);
+        euint8 ifFalse = Ciphertext.asEuint8(ifFalseBytes);
         result = FHEOps.cmux(control, ifTrue, ifFalse);
     }
 
