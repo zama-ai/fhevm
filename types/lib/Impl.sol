@@ -6,9 +6,7 @@ import "./Common.sol";
 import "./Precompiles.sol";
 
 library Impl {
-    uint256 constant euint8Size = 32 + 28124;
-    uint256 constant euint16Size = 32 + 56236;
-    uint256 constant euint32Size = 32 + 112460;
+    uint256 constant reencryptedSize = 32 + 48 + 4; // 32 bytes for the `byte` type header + 48 bytes for the NaCl anonymous box overhead + 4 bytes for the plaintext value
 
     function add(uint256 a, uint256 b) internal view returns (uint256 result) {
         if (a == 0) {
@@ -320,23 +318,14 @@ library Impl {
 
     function reencrypt(
         uint256 ciphertext,
-        uint8 _type
+        bytes32 publicKey
     ) internal view returns (bytes memory reencrypted) {
-        bytes32[1] memory input;
+        bytes32[2] memory input;
         input[0] = bytes32(ciphertext);
-        uint256 inputLen = 32;
+        input[1] = publicKey;
+        uint256 inputLen = 64;
 
-        uint256 maxCiphertextBytesLen;
-        if (_type == Common.euint8_t) {
-            maxCiphertextBytesLen = euint8Size;
-        } else if (_type == Common.euint16_t) {
-            maxCiphertextBytesLen = euint16Size;
-        } else if (_type == Common.euint32_t) {
-            maxCiphertextBytesLen = euint32Size;
-        } else {
-            revert("unsupported ciphertext type");
-        }
-        reencrypted = new bytes(maxCiphertextBytesLen);
+        reencrypted = new bytes(reencryptedSize);
 
         // Call the reencrypt precompile.
         uint256 precompile = Precompiles.Reencrypt;
@@ -348,7 +337,7 @@ library Impl {
                     input,
                     inputLen,
                     reencrypted,
-                    maxCiphertextBytesLen
+                    reencryptedSize
                 )
             ) {
                 revert(0, 0)
