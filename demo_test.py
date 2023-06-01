@@ -14,9 +14,9 @@ from coincurve import PrivateKey as ccsk
 
 def transfer(contract, to, account, amount):
 	#TODO: use public key encryption instead
-	os.system("tfhe encrypt {} ck ~/.evmosd/zama/keys/network-fhe-keys/cks.bin bin ./ciphertext.bin".format(amount))
+	os.system("../zbc-fhe-tool/target/release/zbc-fhe encrypt-integer {} bin ciphertext ./res/keys/global_uncompressed_pks.bin bin".format(amount))
 
-	file = open('./ciphertext.bin',mode='rb')
+	file = open('./res/ct/ciphertext.bin',mode='rb')
 	input = file.read()
 	file.close()
 	print('Input len =', len(input))
@@ -72,7 +72,7 @@ def reencrypt(contract, account: LocalAccount, ct_file, expected):
 	print("Retrieving encrypted balance from chain...")
 	start = time.time()
 
-	box = contract.functions.balanceOf(sk.public_key._public_key, msg_sig.v, msg_sig.r.to_bytes(32, 'big'), msg_sig.s.to_bytes(32, 'big')).call({
+	box = contract.functions.balanceOf(sk.public_key._public_key, msg_sig).call({
 		'from': account.address
 	})
 
@@ -91,7 +91,7 @@ def reencrypt(contract, account: LocalAccount, ct_file, expected):
 	print(pt_int)
 	assert pt_int == expected
 
-w3 = Web3(Web3.HTTPProvider('http://localhost:8545', request_kwargs={'timeout': 600}))
+w3 = Web3(Web3.HTTPProvider('http://13.37.31.214:8545', request_kwargs={'timeout': 600}))
 
 alice_private_key = "0x245c9e930978f2964492fac9234d1224682699d7783bd7eeeab9274444c0002b"
 alice_account: LocalAccount = Account.from_key(alice_private_key)
@@ -113,7 +113,7 @@ w3.middleware_onion.add(construct_sign_and_send_raw_middleware(carol_account))
 
 # Change below to match chain specific information:
 chain_id = 9000
-private_key = 'C7D1EB4E9FFCC24DBE43150EC404E23B46C1A050F15326BAE7A146C5FC9F1604' # private key of the default account
+private_key = '0x00468d407f31211e8f8fba671fa714be5ea3b1203c683dd999075b28f3eff2fd' # private key of the default account
 account: LocalAccount = Account.from_key(private_key)
 print("Main address: ")
 print(account.address)
@@ -123,7 +123,7 @@ print("\n\n======== STEP 1: COMPILE AND DEPLOY SMART CONTRACT ========")
 print("Compiling EncryptedERC20.sol...")
 start = time.time()
 
-with open("types/examples/EncryptedERC20.sol", "r") as file:
+with open("examples/EncryptedERC20.sol", "r") as file:
     file_contents = file.read()
 
 install_solc('0.8.13')
@@ -185,9 +185,9 @@ w3.middleware_onion.add(construct_sign_and_send_raw_middleware(account))
 
 # encrypt amount to mint
 # TODO: use public key encryption heres
-os.system("tfhe encrypt 1337 ck ~/.evmosd/zama/keys/network-fhe-keys/cks.bin bin ./ciphertext.bin")
+os.system("../zbc-fhe-tool/target/release/zbc-fhe encrypt-integer 1337 bin ciphertext ./global_cks.bin bin")
 
-file = open('./ciphertext.bin',mode='rb')
+file = open('./res/ct/ciphertext.bin',mode='rb')
 input = file.read()
 file.close()
 

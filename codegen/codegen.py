@@ -174,7 +174,7 @@ library Impl {
 
         result = uint256(output[0]);
     }
-    
+
     // If `control`'s value is 1, the resulting value is the same value as `ifTrue`.
     // If `control`'s value is 0, the resulting value is the same value as `ifFalse`.
     // If successful, the resulting ciphertext is automatically verified.
@@ -298,7 +298,6 @@ library Impl {
                     inputLen,
                     reencrypted,
                     reencryptedSize
-                    maxCiphertextBytesLen
                 )
             ) { 
                 revert(0, 0)
@@ -367,7 +366,7 @@ library Impl {
 )
 f.close()
 
-f = open("FHEOps.sol", "w")
+f = open("TFHE.sol", "w")
 f.write("""\
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
@@ -375,7 +374,8 @@ pragma solidity >=0.8.13 <0.9.0;
 
 import "./Common.sol";
 import "./Impl.sol";
-library FHEOps {""")
+
+library TFHE {""")
 
 to_print =  """
     function {f}(euint{i} a, euint{j} b) internal view returns (euint{k}) {{
@@ -414,20 +414,6 @@ for i in (2**p for p in range(3, 6)):
         if (i != j):
             f.write(to_print.format(i=i, j=j))
 
-f.write("}")
-f.close
-
-f = open("Ciphertext.sol", "w")
-f.write("""\
-// SPDX-License-Identifier: BSD-3-Clause-Clear
-
-pragma solidity >=0.8.13 <0.9.0;
-
-import "./Common.sol";
-import "./Impl.sol";
-
-library Ciphertext {""")
-
 to_print="""
     function asEuint{i}(bytes memory ciphertext) internal view returns (euint{i}) {{
         return euint{i}.wrap(Impl.verify(ciphertext, Common.euint{i}_t));
@@ -444,6 +430,7 @@ to_print="""
     function requireCt(euint{i} ciphertext) internal view {{
         Impl.requireCt(euint{i}.unwrap(ciphertext));
     }}
+
     function optimisticRequireCt(euint{i} ciphertext) internal view {{
         Impl.optimisticRequireCt(euint{i}.unwrap(ciphertext));
     }}

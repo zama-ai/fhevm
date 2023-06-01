@@ -1,4 +1,6 @@
 decrypt/target
 decrypt/ciphertexts
+res/
+node_modules/
 .venv
 .vscode

@@ -11,7 +11,9 @@
     "lib": "lib"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "lint": "prettier --list-different '**/*.sol'",
+    "prettier": "prettier --write '**/*.sol'",
+    "test": "python demo_test.py"
   },
   "repository": {
     "type": "git",
@@ -22,5 +24,9 @@
   "bugs": {
     "url": "https://github.com/zama-ai/zbc-solidity/issues"
   },
-  "homepage": "https://github.com/zama-ai/zbc-solidity#readme"
+  "homepage": "https://github.com/zama-ai/zbc-solidity#readme",
+  "devDependencies": {
+    "prettier": "^2.8.8",
+    "prettier-plugin-solidity": "^1.1.3"
+  }
 }

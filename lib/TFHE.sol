@@ -2,87 +2,10 @@
 
 pragma solidity >=0.8.13 <0.9.0;
 
-import "./Common.sol";
-import "./Impl.sol";
+import "lib/Common.sol";
+import "lib/Impl.sol";
 
 library TFHE {
-   // euint8 methods
-    function asEuint8(bytes memory ciphertext) internal view returns (euint8) {
-        return euint8.wrap(Impl.verify(ciphertext, Common.euint8_t));
-    }
-
-    function reencrypt(
-        euint8 ciphertext,
-        bytes32 publicKey
-    ) internal view returns (bytes memory reencrypted) {
-        return Impl.reencrypt(euint8.unwrap(ciphertext), publicKey);
-    }
-
-    function delegate(euint8 ciphertext) internal view {
-        Impl.delegate(euint8.unwrap(ciphertext));
-    }
-
-    function requireCt(euint8 ciphertext) internal view {
-        Impl.requireCt(euint8.unwrap(ciphertext));
-    }
-
-    function optimisticRequireCt(euint8 ciphertext) internal view {
-        Impl.optimisticRequireCt(euint8.unwrap(ciphertext));
-    }
-
-   // euint16 methods
-    function asEuint16(
-        bytes memory ciphertext
-    ) internal view returns (euint16) {
-        return euint16.wrap(Impl.verify(ciphertext, Common.euint16_t));
-    }
-
-    function reencrypt(
-        euint16 ciphertext,
-        bytes32 publicKey
-    ) internal view returns (bytes memory reencrypted) {
-        return Impl.reencrypt(euint16.unwrap(ciphertext), publicKey);
-    }
-
-    function delegate(euint16 ciphertext) internal view {
-        Impl.delegate(euint16.unwrap(ciphertext));
-    }
-
-    function requireCt(euint16 ciphertext) internal view {
-        Impl.requireCt(euint16.unwrap(ciphertext));
-    }
-
-    function optimisticRequireCt(euint16 ciphertext) internal view {
-        Impl.optimisticRequireCt(euint16.unwrap(ciphertext));
-    }
-
-    // euint32 methods
-    function asEuint32(
-        bytes memory ciphertext
-    ) internal view returns (euint32) {
-        return euint32.wrap(Impl.verify(ciphertext, Common.euint32_t));
-    }
-
-    function reencrypt(
-        euint32 ciphertext,
-        bytes32 publicKey
-    ) internal view returns (bytes memory reencrypted) {
-        return Impl.reencrypt(euint32.unwrap(ciphertext), publicKey);
-    }
-
-    function delegate(euint32 ciphertext) internal view {
-        Impl.delegate(euint32.unwrap(ciphertext));
-    }
-
-    function requireCt(euint32 ciphertext) internal view {
-        Impl.requireCt(euint32.unwrap(ciphertext));
-    }
-
-    function optimisticRequireCt(euint32 ciphertext) internal view {
-        Impl.optimisticRequireCt(euint32.unwrap(ciphertext));
-    }
-
-    // Operation
     function add(euint8 a, euint8 b) internal view returns (euint8) {
         return euint8.wrap(Impl.add(euint8.unwrap(a), euint8.unwrap(b)));
     }
@@ -210,5 +133,78 @@ library TFHE {
 
     function toEuint32(euint16 v) internal view returns (euint32) {
         return euint32.wrap(Impl.cast(euint16.unwrap(v), Common.euint16_t));
+    }
+
+    function asEuint8(bytes memory ciphertext) internal view returns (euint8) {
+        return euint8.wrap(Impl.verify(ciphertext, Common.euint8_t));
+    }
+
+    function reencrypt(
+        euint8 ciphertext,
+        bytes32 publicKey
+    ) internal view returns (bytes memory reencrypted) {
+        return Impl.reencrypt(euint8.unwrap(ciphertext), publicKey);
+    }
+
+    function delegate(euint8 ciphertext) internal view {
+        Impl.delegate(euint8.unwrap(ciphertext));
+    }
+
+    function requireCt(euint8 ciphertext) internal view {
+        Impl.requireCt(euint8.unwrap(ciphertext));
+    }
+
+    function optimisticRequireCt(euint8 ciphertext) internal view {
+        Impl.optimisticRequireCt(euint8.unwrap(ciphertext));
+    }
+
+    function asEuint16(
+        bytes memory ciphertext
+    ) internal view returns (euint16) {
+        return euint16.wrap(Impl.verify(ciphertext, Common.euint16_t));
+    }
+
+    function reencrypt(
+        euint16 ciphertext,
+        bytes32 publicKey
+    ) internal view returns (bytes memory reencrypted) {
+        return Impl.reencrypt(euint16.unwrap(ciphertext), publicKey);
+    }
+
+    function delegate(euint16 ciphertext) internal view {
+        Impl.delegate(euint16.unwrap(ciphertext));
+    }
+
+    function requireCt(euint16 ciphertext) internal view {
+        Impl.requireCt(euint16.unwrap(ciphertext));
+    }
+
+    function optimisticRequireCt(euint16 ciphertext) internal view {
+        Impl.optimisticRequireCt(euint16.unwrap(ciphertext));
+    }
+
+    function asEuint32(
+        bytes memory ciphertext
+    ) internal view returns (euint32) {
+        return euint32.wrap(Impl.verify(ciphertext, Common.euint32_t));
+    }
+
+    function reencrypt(
+        euint32 ciphertext,
+        bytes32 publicKey
+    ) internal view returns (bytes memory reencrypted) {
+        return Impl.reencrypt(euint32.unwrap(ciphertext), publicKey);
+    }
+
+    function delegate(euint32 ciphertext) internal view {
+        Impl.delegate(euint32.unwrap(ciphertext));
+    }
+
+    function requireCt(euint32 ciphertext) internal view {
+        Impl.requireCt(euint32.unwrap(ciphertext));
+    }
+
+    function optimisticRequireCt(euint32 ciphertext) internal view {
+        Impl.optimisticRequireCt(euint32.unwrap(ciphertext));
     }
 }
