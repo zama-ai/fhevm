@@ -13,7 +13,6 @@ from nacl.public import PrivateKey, SealedBox
 from coincurve import PrivateKey as ccsk
 
 def transfer(contract, to, account, amount):
-	#TODO: use public key encryption instead
 	os.system("../zbc-fhe-tool/target/release/zbc-fhe encrypt-integer {} bin ciphertext ./res/keys/global_uncompressed_pks.bin bin".format(amount))
 
 	file = open('./res/ct/ciphertext.bin',mode='rb')
@@ -91,7 +90,7 @@ def reencrypt(contract, account: LocalAccount, ct_file, expected):
 	print(pt_int)
 	assert pt_int == expected
 
-w3 = Web3(Web3.HTTPProvider('http://13.37.31.214:8545', request_kwargs={'timeout': 600}))
+w3 = Web3(Web3.HTTPProvider('http://localhost:8545', request_kwargs={'timeout': 600}))
 
 alice_private_key = "0x245c9e930978f2964492fac9234d1224682699d7783bd7eeeab9274444c0002b"
 alice_account: LocalAccount = Account.from_key(alice_private_key)

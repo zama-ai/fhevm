@@ -12,7 +12,7 @@ contract CMUX is EIP712 {
 
   constructor() EIP712('Authorization token', '1') {}
 
-  // Set result = (ifTrue - ifFalse) * control + ifFalse
+  // Set result = if control { ifTrue } else { ifFalse }
   function cmux(bytes calldata controlBytes, bytes calldata ifTrueBytes, bytes calldata ifFalseBytes) public {
     euint8 control = TFHE.asEuint8(controlBytes);
     euint8 ifTrue = TFHE.asEuint8(ifTrueBytes);

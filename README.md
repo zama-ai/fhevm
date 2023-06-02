@@ -2,7 +2,7 @@
 
 A Solidity library for interacting with the Zama Blockchain
 
-# Guide development
+# Development guide
 
 Install dependencies (Solidity libraries and dev tools)
 
@@ -12,7 +12,7 @@ npm install
 
 Note: Solidity files are formatted with prettier.
 
-# Demo test
+# Demo Test
 
 This repository includes a python script (see [demo_test.py](demo_test.py)) that automates a sequence of steps simulating deployment and interaction with an encrypted ERC20 contract.
 
