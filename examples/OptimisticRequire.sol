@@ -2,9 +2,7 @@
 
 pragma solidity >=0.8.13 <0.9.0;
 
-import '../node_modules/@openzeppelin/contracts/utils/cryptography/ECDSA.sol';
-import '../node_modules/@openzeppelin/contracts/utils/cryptography/EIP712.sol';
-import '../lib/TFHE.sol';
+import "../lib/TFHE.sol";
 
 // Example use of optimistic ciphertext requires. Aims to show the different gas usage
 // as compared to syncrhonous non-optimistic and plaintext ones.
@@ -14,7 +12,7 @@ contract OptimisticRequire {
   uint256 internal value;
   uint256 internal iterations;
 
-  constructor() EIP712('Authorization token', '1') {}
+  constructor() {}
 
   function init(bytes calldata ctBytes, uint256 _iterations) public {
     ct1 = TFHE.asEuint32(ctBytes);

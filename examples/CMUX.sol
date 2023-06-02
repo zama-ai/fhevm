@@ -2,15 +2,14 @@
 
 pragma solidity >=0.8.13 <0.9.0;
 
-import '../node_modules/@openzeppelin/contracts/utils/cryptography/ECDSA.sol';
-import '../node_modules/@openzeppelin/contracts/utils/cryptography/EIP712.sol';
-import '../lib/TFHE.sol';
+import "./abstract/EIP712WithModifier.sol";
+import "../lib/TFHE.sol";
 
 // Shows the CMUX operation in Solidity.
-contract CMUX is EIP712 {
+contract CMUX is EIP712WithModifier {
   euint8 internal result;
 
-  constructor() EIP712('Authorization token', '1') {}
+  constructor() EIP712WithModifier('Authorization token', '1') {}
 
   // Set result = if control { ifTrue } else { ifFalse }
   function cmux(bytes calldata controlBytes, bytes calldata ifTrueBytes, bytes calldata ifFalseBytes) public {
@@ -25,12 +24,5 @@ contract CMUX is EIP712 {
     bytes calldata signature
   ) public view onlyContractOwner onlySignedPublicKey(signature, publicKey) returns (bytes memory) {
     return TFHE.reencrypt(result, publicKey);
-  }
-
-  modifier onlySignedPublicKey(bytes memory signature, bytes32 publicKey) {
-    bytes32 digest = _hashTypedDataV4(keccak256(abi.encode(keccak256('Reencrypt(bytes32 publicKey)'), publicKey)));
-    address signer = ECDSA.recover(digest, signature);
-    require(signer == msg.sender, 'Invalid EIP712 signature');
-    _;
   }
 }

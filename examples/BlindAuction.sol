@@ -2,13 +2,13 @@
 
 pragma solidity >=0.8.13 <0.9.0;
 
-import '../node_modules/@openzeppelin/contracts/utils/cryptography/ECDSA.sol';
-import '../node_modules/@openzeppelin/contracts/utils/cryptography/EIP712.sol';
-import '../lib/TFHE.sol';
+import "../lib/TFHE.sol";
 
-import './SmallEncryptedERC20.sol';
+import "./abstract/EIP712WithModifier.sol";
 
-contract BlindAuction {
+import "./SmallEncryptedERC20.sol";
+
+contract BlindAuction is EIP712WithModifier {
   uint public endTime;
 
   address public beneficiary;
@@ -41,7 +41,7 @@ contract BlindAuction {
     address _beneficiary,
     SmallEncryptedERC20 _tokenContract,
     uint biddingTime
-  ) EIP712('Authorization token', '1') {
+  ) EIP712WithModifier('Authorization token', '1') {
     beneficiary = _beneficiary;
     tokenContract = _tokenContract;
     endTime = block.timestamp + biddingTime;
@@ -118,13 +118,6 @@ contract BlindAuction {
 
   modifier onlyAfterEnd() {
     if (block.timestamp <= endTime) revert TooEarly(endTime);
-    _;
-  }
-
-  modifier onlySignedPublicKey(bytes memory signature, bytes32 publicKey) {
-    bytes32 digest = _hashTypedDataV4(keccak256(abi.encode(keccak256('Reencrypt(bytes32 publicKey)'), publicKey)));
-    address signer = ECDSA.recover(digest, signature);
-    require(signer == msg.sender, 'EIP712 signer and transaction signer do not match');
     _;
   }
 }

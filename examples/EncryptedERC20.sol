@@ -2,12 +2,11 @@
 
 pragma solidity >=0.8.13 <0.9.0;
 
-import '../node_modules/@openzeppelin/contracts/utils/cryptography/ECDSA.sol';
-import '../node_modules/@openzeppelin/contracts/utils/cryptography/EIP712.sol';
+import "./abstract/EIP712WithModifier.sol";
 
-import '../lib/TFHE.sol';
+import "../lib/TFHE.sol";
 
-contract EncryptedERC20 is EIP712 {
+contract EncryptedERC20 is EIP712WithModifier {
   euint32 private totalSupply;
   string public constant name = 'Naraggara'; // City of Zama's battle
   string public constant symbol = 'NARA';
@@ -25,7 +24,7 @@ contract EncryptedERC20 is EIP712 {
   // The owner of the contract.
   address internal contractOwner;
 
-  constructor() EIP712('Authorization token', '1') {
+  constructor() EIP712WithModifier('Authorization token', '1') {
     contractOwner = msg.sender;
   }
 
@@ -118,13 +117,6 @@ contract EncryptedERC20 is EIP712 {
 
   modifier onlyContractOwner() {
     require(msg.sender == contractOwner);
-    _;
-  }
-
-  modifier onlySignedPublicKey(bytes memory signature, bytes32 publicKey) {
-    bytes32 digest = _hashTypedDataV4(keccak256(abi.encode(keccak256('Reencrypt(bytes32 publicKey)'), publicKey)));
-    address signer = ECDSA.recover(digest, signature);
-    require(signer == msg.sender, 'Invalid EIP712 signature');
     _;
   }
 }
