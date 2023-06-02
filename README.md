@@ -4,7 +4,7 @@ A Solidity library for interacting with the Zama Blockchain
 
 # Guide development
 
-Install dependencies (Soldiity libraries and dev tools
+Install dependencies (Solidity libraries and dev tools)
 
 ```
 npm install
