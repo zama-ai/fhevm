@@ -1,0 +1,32 @@
+{
+  "dependencies": {
+    "@openzeppelin/contracts": "^4.9.0"
+  },
+  "name": "zbc-solidity",
+  "description": "A Solidity library for interacting with the Zama Blockchain",
+  "version": "1.0.0",
+  "main": "index.js",
+  "directories": {
+    "example": "examples",
+    "lib": "lib"
+  },
+  "scripts": {
+    "lint": "prettier --list-different '**/*.sol'",
+    "prettier": "prettier --write '**/*.sol'",
+    "test": "python demo_test.py"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zama-ai/zbc-solidity.git"
+  },
+  "author": "",
+  "license": "BSD-3-Clause-Clear",
+  "bugs": {
+    "url": "https://github.com/zama-ai/zbc-solidity/issues"
+  },
+  "homepage": "https://github.com/zama-ai/zbc-solidity#readme",
+  "devDependencies": {
+    "prettier": "^2.8.8",
+    "prettier-plugin-solidity": "^1.1.3"
+  }
+}

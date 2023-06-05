@@ -2,7 +2,6 @@
 
 pragma solidity >=0.8.13 <0.9.0;
 
-// Addresses of precompiled contracts.
 library Precompiles {
     uint256 public constant Add = 65;
     uint256 public constant Verify = 66;
@@ -12,6 +11,5 @@ library Precompiles {
     uint256 public constant Subtract = 71;
     uint256 public constant Multiply = 72;
     uint256 public constant LessThan = 73;
-    uint256 public constant Rand = 74;
     uint256 public constant OptimisticRequire = 75;
 }
