@@ -1,7 +1,4 @@
 {
-  "dependencies": {
-    "@openzeppelin/contracts": "^4.9.0"
-  },
   "name": "zbc-solidity",
   "description": "A Solidity library for interacting with the Zama Blockchain",
   "version": "1.0.0",
@@ -26,6 +23,7 @@
   },
   "homepage": "https://github.com/zama-ai/zbc-solidity#readme",
   "devDependencies": {
+    "@openzeppelin/contracts": "^4.9.0",
     "prettier": "^2.8.8",
     "prettier-plugin-solidity": "^1.1.3"
   }
