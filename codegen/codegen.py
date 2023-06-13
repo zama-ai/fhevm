@@ -11,7 +11,7 @@ type euint16 is uint256;
 type euint32 is uint256;
 
 library Common {
-// Values used to communicate types at runtime to the cast() precompile.
+    // Values used to communicate types to the runtime.
     uint8 internal constant euint8_t = 0;
     uint8 internal constant euint16_t = 1;
     uint8 internal constant euint32_t = 2;
@@ -51,7 +51,9 @@ import "./Common.sol";
 import "./Precompiles.sol";
 
 library Impl {
-    uint256 constant reencryptedSize = 32 + 48 + 4; // 32 bytes for the `byte` type header + 48 bytes for the NaCl anonymous box overhead + 4 bytes for the plaintext value 
+    // 32 bytes for the `byte` type header + 48 bytes for the NaCl anonymous
+    // box overhead + 4 bytes for the plaintext value.
+    uint256 constant reencryptedSize = 32 + 48 + 4;
 
     function add(uint256 a, uint256 b) internal view returns (uint256 result) {
         if (a == 0) {
@@ -244,38 +246,6 @@ library Impl {
         }
     }
 
-//    function safeAdd(uint256 a, uint256 b) internal view returns (uint256) {
-//        TODO: Call addSafe() precompile.
-//        return 0;
-//    }
-
-    function cast(uint256 ciphertext, uint8 toType) internal view returns(uint256) {
-        revert("casting not supported yet");
-        bytes memory input = bytes.concat(bytes32(ciphertext), bytes1(toType));
-        uint256 inputLen = input.length;
-
-        bytes32[1] memory output;
-        uint256 outputLen = 32;
-
-        // Call the cast precompile.
-        uint256 precompile = Precompiles.Cast;
-        assembly {
-            if iszero(
-                staticcall(
-                    gas(),
-                    precompile,
-                    add(input, 32), // jump over the 32-bit `size` field of the `bytes` data structure to read actual bytes
-                    inputLen,
-                    output,
-                    outputLen
-                )
-            ) {
-                revert(0, 0)
-            }
-        }
-        return 0;
-    }
-
     function reencrypt(uint256 ciphertext, bytes32 publicKey) internal view returns (bytes memory reencrypted) {
         bytes32[2] memory input;
         input[0] = bytes32(ciphertext);
@@ -287,16 +257,7 @@ library Impl {
         // Call the reencrypt precompile.
         uint256 precompile = Precompiles.Reencrypt;
         assembly {
-            if iszero(
-                staticcall(
-                    gas(),
-                    precompile,
-                    input,
-                    inputLen,
-                    reencrypted,
-                    reencryptedSize
-                )
-            ) { 
+            if iszero(staticcall(gas(), precompile, input, inputLen, reencrypted, reencryptedSize)) {
                 revert(0, 0)
             }
         }
@@ -315,34 +276,12 @@ library Impl {
         // Call the cast precompile.
         uint256 precompile = Precompiles.Verify;
         assembly {
-            if iszero(
-                staticcall(
-                    gas(),
-                    precompile,
-                    add(input, 32), // jump over the 32-bit `size` field of the `bytes` data structure to read actual bytes
-                    inputLen,
-                    output,
-                    outputLen
-                )
-            ) {
+            // jump over the 32-bit `size` field of the `bytes` data structure of the `input` to read actual bytes
+            if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
                 revert(0, 0)
             }
         }
         result = uint256(output[0]);
-    }
-
-    function delegate(uint256 ciphertext) internal view {
-        bytes32[1] memory input;
-        input[0] = bytes32(ciphertext);
-        uint256 inputLen = 32;
-
-        // Call the delegate precompile
-        uint256 precompile = Precompiles.Delegate;
-        assembly {
-            if iszero(staticcall(gas(), precompile, input, inputLen, 0, 0)) {
-                revert(0, 0)
-            }
-        }
     }
 
     function requireCt(uint256 ciphertext) internal view {
@@ -399,18 +338,6 @@ for i in (2**p for p in range(3, 6)):
         if i == j: # TODO: remove this line when casting is implemented
             f.write(to_print.format(i=i, j=j, k=i if i>j else j))
 
-
-to_print="""
-    function toEuint{i}(euint{j} v) internal view returns (euint{i}) {{
-        return euint{i}.wrap(Impl.cast(euint{j}.unwrap(v), Common.euint{j}_t));
-    }}
-"""
-
-for i in (2**p for p in range(3, 6)):
-    for j in (2**q for q in range(3, 6)):
-        if (i != j):
-            f.write(to_print.format(i=i, j=j))
-
 to_print="""
     function asEuint{i}(bytes memory ciphertext) internal view returns (euint{i}) {{
         return euint{i}.wrap(Impl.verify(ciphertext, Common.euint{i}_t));
@@ -418,10 +345,6 @@ to_print="""
 
     function reencrypt(euint{i} ciphertext, bytes32 publicKey) internal view returns (bytes memory reencrypted) {{
         return Impl.reencrypt(euint{i}.unwrap(ciphertext), publicKey);
-    }}
-
-    function delegate(euint{i} ciphertext) internal view {{
-        Impl.delegate(euint{i}.unwrap(ciphertext));
     }}
 
     function requireCt(euint{i} ciphertext) internal view {{
@@ -436,5 +359,5 @@ to_print="""
 for i in (2**p for p in range(3, 6)):
     f.write(to_print.format(i=i))
 
-f.write("}")
+f.write("}\n")
 f.close()
