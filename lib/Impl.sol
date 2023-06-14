@@ -27,7 +27,16 @@ library Impl {
         // Call the add precompile.
         uint256 precompile = Precompiles.Add;
         assembly {
-            if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
+            if iszero(
+                staticcall(
+                    gas(),
+                    precompile,
+                    input,
+                    inputLen,
+                    output,
+                    outputLen
+                )
+            ) {
                 revert(0, 0)
             }
         }
@@ -52,7 +61,16 @@ library Impl {
         // Call the sub precompile.
         uint256 precompile = Precompiles.Subtract;
         assembly {
-            if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
+            if iszero(
+                staticcall(
+                    gas(),
+                    precompile,
+                    input,
+                    inputLen,
+                    output,
+                    outputLen
+                )
+            ) {
                 revert(0, 0)
             }
         }
@@ -77,7 +95,16 @@ library Impl {
         // Call the mul precompile.
         uint256 precompile = Precompiles.Multiply;
         assembly {
-            if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
+            if iszero(
+                staticcall(
+                    gas(),
+                    precompile,
+                    input,
+                    inputLen,
+                    output,
+                    outputLen
+                )
+            ) {
                 revert(0, 0)
             }
         }
@@ -87,7 +114,10 @@ library Impl {
 
     // Evaluate `lhs <= rhs` on the given ciphertexts and, if successful, return the resulting ciphertext.
     // If successful, the resulting ciphertext is automatically verified.
-    function lte(uint256 lhs, uint256 rhs) internal view returns (uint256 result) {
+    function lte(
+        uint256 lhs,
+        uint256 rhs
+    ) internal view returns (uint256 result) {
         bytes32[2] memory input;
         input[0] = bytes32(lhs);
         input[1] = bytes32(rhs);
@@ -99,7 +129,16 @@ library Impl {
         // Call the lte precompile.
         uint256 precompile = Precompiles.LessThanOrEqual;
         assembly {
-            if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
+            if iszero(
+                staticcall(
+                    gas(),
+                    precompile,
+                    input,
+                    inputLen,
+                    output,
+                    outputLen
+                )
+            ) {
                 revert(0, 0)
             }
         }
@@ -109,7 +148,10 @@ library Impl {
 
     // Evaluate `lhs < rhs` on the given ciphertexts and, if successful, return the resulting ciphertext.
     // If successful, the resulting ciphertext is automatically verified.
-    function lt(uint256 lhs, uint256 rhs) internal view returns (uint256 result) {
+    function lt(
+        uint256 lhs,
+        uint256 rhs
+    ) internal view returns (uint256 result) {
         bytes32[2] memory input;
         input[0] = bytes32(lhs);
         input[1] = bytes32(rhs);
@@ -121,7 +163,16 @@ library Impl {
         // Call the lte precompile.
         uint256 precompile = Precompiles.LessThan;
         assembly {
-            if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
+            if iszero(
+                staticcall(
+                    gas(),
+                    precompile,
+                    input,
+                    inputLen,
+                    output,
+                    outputLen
+                )
+            ) {
                 revert(0, 0)
             }
         }
@@ -132,7 +183,11 @@ library Impl {
     // If `control`'s value is 1, the resulting value is the same value as `ifTrue`.
     // If `control`'s value is 0, the resulting value is the same value as `ifFalse`.
     // If successful, the resulting ciphertext is automatically verified.
-    function cmux(uint256 control, uint256 ifTrue, uint256 ifFalse) internal view returns (uint256 result) {
+    function cmux(
+        uint256 control,
+        uint256 ifTrue,
+        uint256 ifFalse
+    ) internal view returns (uint256 result) {
         // result = (ifTrue - ifFalse) * control + ifFalse
 
         bytes32[2] memory input;
@@ -145,7 +200,16 @@ library Impl {
         uint256 precompile = Precompiles.Subtract;
         bytes32[1] memory subOutput;
         assembly {
-            if iszero(staticcall(gas(), precompile, input, inputLen, subOutput, outputLen)) {
+            if iszero(
+                staticcall(
+                    gas(),
+                    precompile,
+                    input,
+                    inputLen,
+                    subOutput,
+                    outputLen
+                )
+            ) {
                 revert(0, 0)
             }
         }
@@ -156,7 +220,16 @@ library Impl {
         precompile = Precompiles.Multiply;
         bytes32[1] memory mulOutput;
         assembly {
-            if iszero(staticcall(gas(), precompile, input, inputLen, mulOutput, outputLen)) {
+            if iszero(
+                staticcall(
+                    gas(),
+                    precompile,
+                    input,
+                    inputLen,
+                    mulOutput,
+                    outputLen
+                )
+            ) {
                 revert(0, 0)
             }
         }
@@ -167,14 +240,23 @@ library Impl {
         precompile = Precompiles.Add;
         bytes32[1] memory addOutput;
         assembly {
-            if iszero(staticcall(gas(), precompile, input, inputLen, addOutput, outputLen)) {
+            if iszero(
+                staticcall(
+                    gas(),
+                    precompile,
+                    input,
+                    inputLen,
+                    addOutput,
+                    outputLen
+                )
+            ) {
                 revert(0, 0)
             }
         }
 
         result = uint256(addOutput[0]);
     }
-    
+
     // Optimistically requires that the `ciphertext` is true.
     //
     // This function does not evaluate the given `ciphertext` at the time of the call.
@@ -201,7 +283,10 @@ library Impl {
         }
     }
 
-    function reencrypt(uint256 ciphertext, bytes32 publicKey) internal view returns (bytes memory reencrypted) {
+    function reencrypt(
+        uint256 ciphertext,
+        bytes32 publicKey
+    ) internal view returns (bytes memory reencrypted) {
         bytes32[2] memory input;
         input[0] = bytes32(ciphertext);
         input[1] = publicKey;
@@ -212,7 +297,16 @@ library Impl {
         // Call the reencrypt precompile.
         uint256 precompile = Precompiles.Reencrypt;
         assembly {
-            if iszero(staticcall(gas(), precompile, input, inputLen, reencrypted, reencryptedSize)) {
+            if iszero(
+                staticcall(
+                    gas(),
+                    precompile,
+                    input,
+                    inputLen,
+                    reencrypted,
+                    reencryptedSize
+                )
+            ) {
                 revert(0, 0)
             }
         }
@@ -232,7 +326,16 @@ library Impl {
         uint256 precompile = Precompiles.Verify;
         assembly {
             // jump over the 32-bit `size` field of the `bytes` data structure of the `input` to read actual bytes
-            if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
+            if iszero(
+                staticcall(
+                    gas(),
+                    precompile,
+                    add(input, 32),
+                    inputLen,
+                    output,
+                    outputLen
+                )
+            ) {
                 revert(0, 0)
             }
         }
