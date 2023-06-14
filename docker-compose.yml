@@ -1,0 +1,11 @@
+version: "3.8"
+services:
+  app:
+    build: .
+    image: docker-python-zbc
+    volumes:
+      - .:/home
+    stdin_open: true
+    tty: true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
