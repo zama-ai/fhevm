@@ -2,8 +2,8 @@
 
 pragma solidity >=0.8.13 <0.9.0;
 
-import "./abstract/EIP712WithModifier.sol";
-import "../lib/TFHE.sol";
+import './abstract/EIP712WithModifier.sol';
+import '../lib/TFHE.sol';
 
 // Shows the CMUX operation in Solidity.
 contract CMUX is EIP712WithModifier {
@@ -22,7 +22,7 @@ contract CMUX is EIP712WithModifier {
   function getResult(
     bytes32 publicKey,
     bytes calldata signature
-  ) public view onlyContractOwner onlySignedPublicKey(signature, publicKey) returns (bytes memory) {
+  ) public view onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
     return TFHE.reencrypt(result, publicKey);
   }
 }

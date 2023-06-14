@@ -2,9 +2,9 @@
 
 pragma solidity >=0.8.13 <0.9.0;
 
-import "./abstract/EIP712WithModifier.sol";
+import './abstract/EIP712WithModifier.sol';
 
-import "../lib/TFHE.sol";
+import '../lib/TFHE.sol';
 
 contract EncryptedERC20 is EIP712WithModifier {
   euint32 private totalSupply;
@@ -58,7 +58,7 @@ contract EncryptedERC20 is EIP712WithModifier {
     bytes32 publicKey,
     bytes calldata signature
   ) public view onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
-    return TFHE.reencrypt(balances[signer], publicKey);
+    return TFHE.reencrypt(balances[msg.sender], publicKey);
   }
 
   // Sets the `encryptedAmount` as the allowance of `spender` over the caller's tokens.

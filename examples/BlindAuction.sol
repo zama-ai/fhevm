@@ -2,11 +2,11 @@
 
 pragma solidity >=0.8.13 <0.9.0;
 
-import "../lib/TFHE.sol";
+import '../lib/TFHE.sol';
 
-import "./abstract/EIP712WithModifier.sol";
+import './abstract/EIP712WithModifier.sol';
 
-import "./SmallEncryptedERC20.sol";
+import './SmallEncryptedERC20.sol';
 
 contract BlindAuction is EIP712WithModifier {
   uint public endTime;
@@ -78,7 +78,7 @@ contract BlindAuction is EIP712WithModifier {
   function doIHaveHighestBid(
     bytes32 publicKey,
     bytes calldata signature
-  ) public view onlyAfterEnd onlySignedPublicKey(signature, publicKey) returns (bytes memory) {
+  ) public view onlyAfterEnd onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
     return TFHE.reencrypt(TFHE.lte(highestBid, bids[msg.sender]), publicKey);
   }
 
