@@ -7,22 +7,31 @@ import "../lib/TFHE.sol";
 
 // Shows the CMUX operation in Solidity.
 contract CMUX is EIP712WithModifier {
-  euint8 internal result;
+    euint8 internal result;
 
-  constructor() EIP712WithModifier('Authorization token', '1') {}
+    constructor() EIP712WithModifier("Authorization token", "1") {}
 
-  // Set result = if control { ifTrue } else { ifFalse }
-  function cmux(bytes calldata controlBytes, bytes calldata ifTrueBytes, bytes calldata ifFalseBytes) public {
-    euint8 control = TFHE.asEuint8(controlBytes);
-    euint8 ifTrue = TFHE.asEuint8(ifTrueBytes);
-    euint8 ifFalse = TFHE.asEuint8(ifFalseBytes);
-    result = TFHE.cmux(control, ifTrue, ifFalse);
-  }
+    // Set result = if control { ifTrue } else { ifFalse }
+    function cmux(
+        bytes calldata controlBytes,
+        bytes calldata ifTrueBytes,
+        bytes calldata ifFalseBytes
+    ) public {
+        euint8 control = TFHE.asEuint8(controlBytes);
+        euint8 ifTrue = TFHE.asEuint8(ifTrueBytes);
+        euint8 ifFalse = TFHE.asEuint8(ifFalseBytes);
+        result = TFHE.cmux(control, ifTrue, ifFalse);
+    }
 
-  function getResult(
-    bytes32 publicKey,
-    bytes calldata signature
-  ) public view onlyContractOwner onlySignedPublicKey(signature, publicKey) returns (bytes memory) {
-    return TFHE.reencrypt(result, publicKey);
-  }
+    function getResult(
+        bytes32 publicKey,
+        bytes calldata signature
+    )
+        public
+        view
+        onlySignedPublicKey(publicKey, signature)
+        returns (bytes memory)
+    {
+        return TFHE.reencrypt(result, publicKey);
+    }
 }

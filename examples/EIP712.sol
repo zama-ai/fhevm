@@ -5,13 +5,12 @@ pragma solidity >=0.8.13 <0.9.0;
 import "./abstract/EIP712WithModifier.sol";
 
 contract AuthorizationToken is EIP712WithModifier {
+    constructor() EIP712WithModifier("Authorization token", "1") {}
 
-  constructor() EIP712WithModifier('Authorization token', '1') {}
-
-  function verify(
-    bytes32 publicKey,
-    bytes calldata signature
-  ) public view onlySignedPublicKey(signature, publicKey) returns (bool) {
-    return true;
-  }
+    function verify(
+        bytes32 publicKey,
+        bytes calldata signature
+    ) public view onlySignedPublicKey(publicKey, signature) returns (bool) {
+        return true;
+    }
 }

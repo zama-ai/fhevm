@@ -8,6 +8,7 @@
     "lib": "lib"
   },
   "scripts": {
+    "codegen": "cd ./lib && python ../codegen/codegen.py && npm run prettier && cd ..",
     "lint": "prettier --list-different '**/*.sol'",
     "prettier": "prettier --write '**/*.sol'",
     "test": "python demo_test.py"

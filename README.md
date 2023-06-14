@@ -12,6 +12,14 @@ npm install
 
 Note: Solidity files are formatted with prettier.
 
+## Generate TFHE lib
+
+```
+npm run codegen
+```
+
+WARNING: Use this command to generate Solidity code and prettier result automatically!
+
 # Demo Test
 
 This repository includes a python script (see [demo_test.py](demo_test.py)) that automates a sequence of steps simulating deployment and interaction with an encrypted ERC20 contract.
