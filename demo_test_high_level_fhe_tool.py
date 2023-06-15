@@ -70,7 +70,7 @@ def reencrypt(contract, account: LocalAccount, ct_file, expected):
     print("Generating keys...")
     sk = PrivateKey.generate()
 
-    domain = make_domain(name='Naraggara',
+    domain = make_domain(name='Authorization token',
                          version='1',
                          chainId=9000,
                          verifyingContract=contract.address)
@@ -91,13 +91,8 @@ def reencrypt(contract, account: LocalAccount, ct_file, expected):
 
     print("Retrieving encrypted balance from chain...")
     start = time.time()
-    print(msg_sig.signature)
-    s = bytes.fromhex(msg_sig.signature.hex()[2:])
-    print(s)
-    print(account)
-    # msg_sig.v, msg_sig.r.to_bytes(32, 'big'), msg_sig.s.to_bytes(32, 'big')
-
-    box = contract.functions.balanceOf(sk.public_key._public_key, s).call({
+    sig = bytes.fromhex(msg_sig.signature.hex()[2:])
+    box = contract.functions.balanceOf(sk.public_key._public_key, sig).call({
         'from': account.address
     })
 
