@@ -25,4 +25,4 @@ PRIVATE_KEY=$(docker compose -f $PATH_TO_EVMOS/docker-compose/docker-compose.loc
 echo "Exported private key: $PRIVATE_KEY"
 
 # Run the Python script with the exported private key as an argument
-docker compose -f docker-compose.yml run app python tests/ERC20.py $PRIVATE_KEY
+docker compose -f ci/docker-compose.yml run app python ci/tests/ERC20.py $PRIVATE_KEY

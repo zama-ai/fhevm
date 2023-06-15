@@ -4,7 +4,7 @@ services:
     build: .
     image: docker-python-zbc
     volumes:
-      - .:/home
+      - ../:/home
     stdin_open: true
     tty: true
     extra_hosts:
