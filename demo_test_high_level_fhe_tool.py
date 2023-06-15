@@ -31,7 +31,7 @@ def extract_number(output: bytes) -> int:
 
 def transfer(contract, to, account, amount):
     # TODO: use public key encryption instead
-    os.system("./zbc-fhe-tool public-encrypt-integer32 {} ciphertext $PWD/keys/network-public-fhe-keys/pks".format(amount))
+    os.system("zbc-fhe-tool public-encrypt-integer32 -v {} -c ciphertext -p $PWD/keys/network-public-fhe-keys/pks".format(amount))
 
     file = open('./ciphertext', mode='rb')
     input = file.read()
@@ -219,7 +219,7 @@ contract = w3.eth.contract(address=contract_address, abi=abi)
 w3.middleware_onion.add(construct_sign_and_send_raw_middleware(account))
 
 # encrypt amount to mint
-os.system("./zbc-fhe-tool public-encrypt-integer32 {} ciphertext $PWD/keys/network-public-fhe-keys/pks".format(initial_mint))
+os.system("zbc-fhe-tool public-encrypt-integer32 -v {} -c ciphertext -p $PWD/keys/network-public-fhe-keys/pks".format(initial_mint))
 
 file = open('./ciphertext', mode='rb')
 input = file.read()
