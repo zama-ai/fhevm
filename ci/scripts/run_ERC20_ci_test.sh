@@ -20,7 +20,7 @@ PATH_TO_EVMOS=$2
 mkdir -p keys
 
 # Export the private key from the evmos node
-PRIVATE_KEY=$(docker compose -f $PATH_TO_EVMOS/docker-compose/docker-compose.validator.yml exec evmosnodelocal evmosd --home /root/.evmosd keys unsafe-export-eth-key $key --keyring-backend test)
+PRIVATE_KEY=$(docker compose -f $PATH_TO_EVMOS/docker-compose/docker-compose.validator.yml exec validator evmosd --home /root/.evmosd keys unsafe-export-eth-key $key --keyring-backend test)
 
 echo "Exported private key: $PRIVATE_KEY"
 
