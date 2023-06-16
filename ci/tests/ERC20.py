@@ -120,9 +120,9 @@ args = parser.parse_args()
 print(f"Receive the following private key for main account {args.private_key}")
 
 
-# w3 = Web3(Web3.HTTPProvid/er('http://13.37.31.214:8545', request_kwargs={'timeout': 600}))
-w3 = Web3(Web3.HTTPProvider('http://host.docker.internal:8545',
-          request_kwargs={'timeout': 600}))
+w3 = Web3(Web3.HTTPProvider('http://13.37.31.214:8545', request_kwargs={'timeout': 600}))
+#w3 = Web3(Web3.HTTPProvider('http://host.docker.internal:8545',
+#          request_kwargs={'timeout': 600}))
 
 
 alice_private_key = "0x00468d407f31211e8f8fba671fa714be5ea3b1203c683dd999075b28f3eff2fd"
