@@ -6,6 +6,7 @@ library Precompiles {
     uint256 public constant Add = 65;
     uint256 public constant Verify = 66;
     uint256 public constant Reencrypt = 67;
+    uint256 public constant FhePubKey = 68;
     uint256 public constant Require = 69;
     uint256 public constant LessThanOrEqual = 70;
     uint256 public constant Subtract = 71;
