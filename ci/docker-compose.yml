@@ -1,7 +1,10 @@
 version: "3.8"
 services:
   app:
-    build: .
+    build:
+      context: .
+      args:
+        ZBC_FHE_TOOL_TAG: v0.1.0
     image: docker-python-zbc
     environment:
       - ZBC_FHE_TOOL_TAG=v0.1.0
