@@ -3,6 +3,8 @@ services:
   app:
     build: .
     image: docker-python-zbc
+    environment:
+      - ZBC_FHE_TOOL_TAG=${ZBC_FHE_TOOL_TAG}
     volumes:
       - ../:/home
     stdin_open: true
