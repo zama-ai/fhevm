@@ -171,4 +171,9 @@ library TFHE {
     function optimisticRequireCt(euint32 ciphertext) internal view {
         Impl.optimisticRequireCt(euint32.unwrap(ciphertext));
     }
+
+    // Returns the network public FHE key.
+    function fhePubKey() internal view returns (bytes memory) {
+        return Impl.fhePubKey();
+    }
 }

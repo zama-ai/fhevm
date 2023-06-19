@@ -10,6 +10,9 @@ library Impl {
     // box overhead + 4 bytes for the plaintext value.
     uint256 constant reencryptedSize = 32 + 48 + 4;
 
+    // 32 bytes for the `byte` header + 16553 bytes of key data.
+    uint256 constant fhePubKeySize = 32 + 16553;
+
     function add(uint256 a, uint256 b) internal view returns (uint256 result) {
         if (a == 0) {
             return b;
@@ -305,6 +308,27 @@ library Impl {
                     inputLen,
                     reencrypted,
                     reencryptedSize
+                )
+            ) {
+                revert(0, 0)
+            }
+        }
+    }
+
+    function fhePubKey() internal view returns (bytes memory key) {
+        key = new bytes(fhePubKeySize);
+
+        // Call the fhePubKey precompile.
+        uint256 precompile = Precompiles.FhePubKey;
+        assembly {
+            if iszero(
+                staticcall(
+                    gas(),
+                    precompile,
+                    0,
+                    0,
+                    key,
+                    fhePubKeySize
                 )
             ) {
                 revert(0, 0)
