@@ -117,9 +117,10 @@ parser = argparse.ArgumentParser("Main account address")
 parser.add_argument(
     "private_key", help="The private key of main account without 0x.", type=str)
 parser.add_argument(
-    "node_address", help="The @ of the node with the port, ex. http://host.docker.internal:8545 or http://13.37.31.214:8545.", type=str, default="http://host.docker.internal:8545")
+    "--node_address", help="The @ of the node with the port, ex. http://host.docker.internal:8545 or http://13.37.31.214:8545.", type=str, default="http://host.docker.internal:8545")
 args = parser.parse_args()
 print(f"Receive the following private key for main account {args.private_key}")
+print(f"The node address is {args.private_key}")
 
 
 w3 = Web3(Web3.HTTPProvider(args.node_address,
