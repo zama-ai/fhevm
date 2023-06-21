@@ -37,6 +37,7 @@ library Precompiles {
     uint256 public constant Multiply = 72;
     uint256 public constant LessThan = 73;
     uint256 public constant OptimisticRequire = 75;
+    uint256 public constant TrivialEncrypt = 77;
 }
 """
 )
@@ -309,6 +310,36 @@ library Impl {
         result = uint256(output[0]);
     }
 
+    function trivialEncrypt(
+        uint256 value,
+        uint8 toType
+    ) internal view returns (uint256 result) {
+        bytes memory input = bytes.concat(bytes32(value), bytes1(toType));
+        uint256 inputLen = input.length;
+
+        bytes32[1] memory output;
+        uint256 outputLen = 32;
+
+        // Call the trivialEncrypt precompile.
+        uint256 precompile = Precompiles.TrivialEncrypt;
+        assembly {
+            // jump over the 32-bit `size` field of the `bytes` data structure of the `input` to read actual bytes
+            if iszero(
+                staticcall(
+                    gas(),
+                    precompile,
+                    add(input, 32),
+                    inputLen,
+                    output,
+                    outputLen
+                )
+            ) {
+                revert(0, 0)
+            }
+        }
+        result = uint256(output[0]);
+    }
+
     function requireCt(uint256 ciphertext) internal view {
         bytes32[1] memory input;
         input[0] = bytes32(ciphertext);
@@ -366,6 +397,10 @@ for i in (2**p for p in range(3, 6)):
 to_print="""
     function asEuint{i}(bytes memory ciphertext) internal view returns (euint{i}) {{
         return euint{i}.wrap(Impl.verify(ciphertext, Common.euint{i}_t));
+    }}
+
+    function asEuint{i}(uint256 value) internal view returns (euint{i}) {{
+        return euint{i}.wrap(Impl.trivialEncrypt(value, Common.euint{i}_t));
     }}
 
     function reencrypt(euint{i} ciphertext, bytes32 publicKey) internal view returns (bytes memory reencrypted) {{

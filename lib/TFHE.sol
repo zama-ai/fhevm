@@ -115,6 +115,10 @@ library TFHE {
         return euint8.wrap(Impl.verify(ciphertext, Common.euint8_t));
     }
 
+    function asEuint8(uint256 value) internal view returns (euint8) {
+        return euint8.wrap(Impl.trivialEncrypt(value, Common.euint8_t));
+    }
+
     function reencrypt(
         euint8 ciphertext,
         bytes32 publicKey
@@ -136,6 +140,10 @@ library TFHE {
         return euint16.wrap(Impl.verify(ciphertext, Common.euint16_t));
     }
 
+    function asEuint16(uint256 value) internal view returns (euint16) {
+        return euint16.wrap(Impl.trivialEncrypt(value, Common.euint16_t));
+    }
+
     function reencrypt(
         euint16 ciphertext,
         bytes32 publicKey
@@ -155,6 +163,10 @@ library TFHE {
         bytes memory ciphertext
     ) internal view returns (euint32) {
         return euint32.wrap(Impl.verify(ciphertext, Common.euint32_t));
+    }
+
+    function asEuint32(uint256 value) internal view returns (euint32) {
+        return euint32.wrap(Impl.trivialEncrypt(value, Common.euint32_t));
     }
 
     function reencrypt(
