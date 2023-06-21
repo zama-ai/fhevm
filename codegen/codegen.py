@@ -373,6 +373,14 @@ to_print =  """
     function {f}(euint{i} a, euint{j} b) internal view returns (euint{k}) {{
         return euint{k}.wrap(Impl.{f}(euint{i}.unwrap(a), euint{j}.unwrap(b)));
     }}
+
+    function {f}(uint256 a, euint{i} b) internal view returns (euint{k}) {{
+        return {f}(asEuint{i}(a), b);
+    }}
+
+    function {f}(euint{i} a, uint256 b) internal view returns (euint{k}) {{
+        return {f}(a, asEuint{i}(b));
+    }}
 """
 
 for i in (2**p for p in range(3, 6)):
