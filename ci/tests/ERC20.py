@@ -15,18 +15,7 @@ from eip712_structs import make_domain
 from nacl.public import PrivateKey, SealedBox
 from coincurve import PrivateKey as ccsk
 
-# os.chdir("./types")
-
 initial_mint = 1230
-
-
-def extract_number(output: bytes) -> int:
-    output_str = output.decode("utf-8")
-    lines = output_str.split("\n")
-    for line in lines:
-        if "Decrypted integer:" in line:
-            number = int(line.split(":")[-1].strip())
-            return number
 
 
 def transfer(contract, to, account, amount):
