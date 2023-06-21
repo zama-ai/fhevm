@@ -121,6 +121,10 @@ print("Alice address : ")
 print(alice_account.address)
 w3.middleware_onion.add(construct_sign_and_send_raw_middleware(alice_account))
 
+# bob_private_key = "0x04554c46d10b234939a611dfa3df14d167e4e725ec59e4f38a9bf1177a05ce8f"
+# bob_account: LocalAccount = Account.from_key(bob_private_key)
+# w3.middleware_onion.add(construct_sign_and_send_raw_middleware(bob_account))
+
 carol_private_key = "0xa6c13a4776aee43e5b4da33acc30fa0a688f3271a46357b349d443b2d491f4b2"
 carol_account: LocalAccount = Account.from_key(carol_private_key)
 print("Carol address : ")
@@ -259,9 +263,37 @@ tx_hash = w3.eth.sendRawTransaction(signed_tx.rawTransaction)
 transaction_receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
 assert transaction_receipt['status'] == 1
 
+# tx2
+nonce = w3.eth.getTransactionCount(account.address)
+tx = {
+    'chainId': 9000,
+    'nonce': nonce,
+    'from': account.address,
+    'to': carol_account.address,
+    'value': w3.toWei(9, 'ether'),
+    'gas': 2000000,
+    'gasPrice': w3.toWei('50', 'gwei')
+}
+signed_tx = w3.eth.account.sign_transaction(tx, private_key)
+tx_hash = w3.eth.sendRawTransaction(signed_tx.rawTransaction)
+transaction_receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
+assert transaction_receipt['status'] == 1
+
 
 print("\n\n======== STEP 5: ALICE SENDS 5 TOKEN TO CAROL ========")
 transfer(contract, carol_account.address, alice_account, 5)
 
 print("\n\n======== STEP 6: ALICE REENCRYPTS HER BALANCE ========")
 reencrypt(contract, alice_account, "ct_to_decrypt.bin", 15)
+
+print("\n\n======== STEP 7: CAROL REENCRYPTS HER BALANCE ========")
+reencrypt(contract, carol_account, "ct_to_decrypt.bin", 5)
+
+print("\n\n======== STEP 8: CAROL SENDS BACK 1 TOKEN TO ALICE ========")
+transfer(contract, alice_account.address, carol_account, 1)
+
+print("\n\n======== STEP 9: ALICE REENCRYPTS HER BALANCE ========")
+reencrypt(contract, alice_account, "ct_to_decrypt.bin", 16)
+
+print("\n\n======== STEP 10: CAROL REENCRYPTS HER BALANCE ========")
+reencrypt(contract, carol_account, "ct_to_decrypt.bin", 4)
