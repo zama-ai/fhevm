@@ -269,6 +269,11 @@ library Impl {
     }
 
     function fhePubKey() internal view returns (bytes memory key) {
+        // Set a byte value of 1 to signal the call comes from the library.
+        bytes1[1] memory input;
+        input[0] = 0x01;
+        uint256 inputLen = 1;
+
         key = new bytes(fhePubKeySize);
 
         // Call the fhePubKey precompile.
@@ -278,8 +283,8 @@ library Impl {
                 staticcall(
                     gas(),
                     precompile,
-                    0,
-                    0,
+                    input,
+                    inputLen,
                     key,
                     fhePubKeySize
                 )
