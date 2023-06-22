@@ -231,6 +231,44 @@ library TFHE {
             );
     }
 
+    function asEuint8(euint16 ciphertext) internal view returns (euint8) {
+        return
+            euint8.wrap(Impl.cast(euint16.unwrap(ciphertext), Common.euint8_t));
+    }
+
+    function asEuint8(euint32 ciphertext) internal view returns (euint8) {
+        return
+            euint8.wrap(Impl.cast(euint32.unwrap(ciphertext), Common.euint8_t));
+    }
+
+    function asEuint16(euint8 ciphertext) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.cast(euint8.unwrap(ciphertext), Common.euint16_t)
+            );
+    }
+
+    function asEuint16(euint32 ciphertext) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.cast(euint32.unwrap(ciphertext), Common.euint16_t)
+            );
+    }
+
+    function asEuint32(euint8 ciphertext) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.cast(euint8.unwrap(ciphertext), Common.euint32_t)
+            );
+    }
+
+    function asEuint32(euint16 ciphertext) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.cast(euint16.unwrap(ciphertext), Common.euint32_t)
+            );
+    }
+
     function asEuint8(bytes memory ciphertext) internal view returns (euint8) {
         return euint8.wrap(Impl.verify(ciphertext, Common.euint8_t));
     }

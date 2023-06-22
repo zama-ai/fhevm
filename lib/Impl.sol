@@ -351,8 +351,38 @@ library Impl {
         bytes32[1] memory output;
         uint256 outputLen = 32;
 
-        // Call the cast precompile.
+        // Call the verify precompile.
         uint256 precompile = Precompiles.Verify;
+        assembly {
+            // jump over the 32-bit `size` field of the `bytes` data structure of the `input` to read actual bytes
+            if iszero(
+                staticcall(
+                    gas(),
+                    precompile,
+                    add(input, 32),
+                    inputLen,
+                    output,
+                    outputLen
+                )
+            ) {
+                revert(0, 0)
+            }
+        }
+        result = uint256(output[0]);
+    }
+
+    function cast(
+        uint256 ciphertext,
+        uint8 toType
+    ) internal view returns (uint256 result) {
+        bytes memory input = bytes.concat(bytes32(ciphertext), bytes1(toType));
+        uint256 inputLen = input.length;
+
+        bytes32[1] memory output;
+        uint256 outputLen = 32;
+
+        // Call the cast precompile.
+        uint256 precompile = Precompiles.Cast;
         assembly {
             // jump over the 32-bit `size` field of the `bytes` data structure of the `input` to read actual bytes
             if iszero(
