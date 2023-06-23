@@ -4,10 +4,10 @@ services:
     build:
       context: .
       args:
-        ZBC_FHE_TOOL_TAG: v0.1.0
+        ZBC_FHE_TOOL_TAG: v0.1.1
     image: docker-python-zbc
     environment:
-      - ZBC_FHE_TOOL_TAG=v0.1.0
+      - ZBC_FHE_TOOL_TAG=v0.1.1
     volumes:
       - ../:/home
     stdin_open: true
