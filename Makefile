@@ -3,7 +3,7 @@ WORKDIR ?= $(CURDIR)/work_dir
 
 ZBC_FHE_TOOL_PATH ?= $(WORKDIR)/zbc-fhe-tool
 ZBC_FHE_TOOL_PATH_EXISTS := $(shell test -d $(ZBC_FHE_TOOL_PATH)/.git && echo "true" || echo "false")
-ZBC_FHE_TOOL_VERSION ?= v0.1.0
+ZBC_FHE_TOOL_VERSION ?= v0.1.1
 
 install-zbc-fhe-tool: $(WORKDIR)/ check-zbc-fhe-tool
 
