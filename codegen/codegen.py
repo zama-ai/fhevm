@@ -536,6 +536,17 @@ import "./Common.sol";
 import "./Impl.sol";
 
 library TFHE {""")
+        
+to_print_is_initialized =  """
+    function isInitialized(euint{i} v) internal pure returns (bool) {{
+        return euint{i}.unwrap(v) != 0;
+    }}
+"""
+
+f.write(to_print_is_initialized.format(i=8))
+f.write(to_print_is_initialized.format(i=16))
+f.write(to_print_is_initialized.format(i=32))
+
 
 to_print_no_cast =  """
     function {f}(euint{i} a, euint{j} b) internal view returns (euint{k}) {{

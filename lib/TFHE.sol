@@ -6,6 +6,18 @@ import "./Common.sol";
 import "./Impl.sol";
 
 library TFHE {
+    function isInitialized(euint8 v) internal pure returns (bool) {
+        return euint8.unwrap(v) != 0;
+    }
+
+    function isInitialized(euint16 v) internal pure returns (bool) {
+        return euint16.unwrap(v) != 0;
+    }
+
+    function isInitialized(euint32 v) internal pure returns (bool) {
+        return euint32.unwrap(v) != 0;
+    }
+
     function add(euint8 a, euint8 b) internal view returns (euint8) {
         return euint8.wrap(Impl.add(euint8.unwrap(a), euint8.unwrap(b)));
     }

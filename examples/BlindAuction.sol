@@ -63,7 +63,7 @@ contract BlindAuction is EIP712WithModifier {
     function bid(bytes calldata encryptedValue) public onlyBeforeEnd {
         euint32 value = TFHE.asEuint32(encryptedValue);
         euint32 existingBid = bids[msg.sender];
-        if (euint32.unwrap(existingBid) != 0) {
+        if (TFHE.isInitialized(existingBid)) {
             euint32 isHigher = TFHE.lt(existingBid, value);
             // Update bid with value
             bids[msg.sender] = TFHE.cmux(isHigher, value, existingBid);
@@ -78,7 +78,7 @@ contract BlindAuction is EIP712WithModifier {
             tokenContract.transferFrom(msg.sender, address(this), value);
         }
         euint32 currentBid = bids[msg.sender];
-        if (euint32.unwrap(highestBid) == 0) {
+        if (!TFHE.isInitialized(highestBid)) {
             highestBid = currentBid;
         } else {
             highestBid = TFHE.cmux(
