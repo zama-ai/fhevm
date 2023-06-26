@@ -41,7 +41,7 @@ contract EncryptedERC20 is EIP712WithModifier {
     }
 
     // Transfers an amount from the message sender address to the `to` address.
-    function transfer(address to, euint32 amount) internal {
+    function transfer(address to, euint32 amount) public {
         _transfer(msg.sender, to, amount);
     }
 
