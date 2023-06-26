@@ -34,42 +34,42 @@ contract OptimisticRequire {
     }
 
     // Charge full gas as both requires are true.
-    function optimisticRequireCtTrue() public {
+    function optReqTrue() public {
         // True.
-        TFHE.optimisticRequireCt(TFHE.le(ct1, ct2));
+        TFHE.optReq(TFHE.le(ct1, ct2));
 
         // True.
-        TFHE.optimisticRequireCt(TFHE.le(ct1, ct2));
+        TFHE.optReq(TFHE.le(ct1, ct2));
 
         // Mutate state to pay for gas.
         doWorkToPayGas();
     }
 
     // Charge full gas as we are using optimistic requires.
-    function optimisticRequireCtFalse() public {
+    function optReqFalse() public {
         // True.
-        TFHE.optimisticRequireCt(TFHE.le(ct1, ct2));
+        TFHE.optReq(TFHE.le(ct1, ct2));
 
         // False.
-        TFHE.optimisticRequireCt(TFHE.lt(ct1, ct2));
+        TFHE.optReq(TFHE.lt(ct1, ct2));
 
         // Mutate state to pay for gas - we will pay for it, because we are using optimistic requires.
         doWorkToPayGas();
     }
 
     // Charge less than full gas, because the non-optimistic ciphertext require aborts early.
-    function requireCtFalse() public {
+    function reqFalse() public {
         // True.
-        TFHE.requireCt(TFHE.le(ct1, ct2));
+        TFHE.req(TFHE.le(ct1, ct2));
 
         // False.
-        TFHE.requireCt(TFHE.lt(ct1, ct2));
+        TFHE.req(TFHE.lt(ct1, ct2));
 
         // Try to mutate state to pay for gas - we won't reach that point due to the false require.
         doWorkToPayGas();
     }
 
-    // Must behave as requireCtFalse() in terms of gas.
+    // Must behave as reqFalse() in terms of gas.
     // Since gas estimation would always fail, call it without it by providing a gas value and observe transaction gas usage.
     function requireFalse() public {
         // False.

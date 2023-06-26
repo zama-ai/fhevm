@@ -1820,12 +1820,12 @@ library TFHE {
         return Impl.reencrypt(euint8.unwrap(ciphertext), publicKey);
     }
 
-    function requireCt(euint8 ciphertext) internal view {
-        Impl.requireCt(euint8.unwrap(ciphertext));
+    function req(euint8 ciphertext) internal view {
+        Impl.req(euint8.unwrap(ciphertext));
     }
 
-    function optimisticRequireCt(euint8 ciphertext) internal view {
-        Impl.optimisticRequireCt(euint32.unwrap(asEuint32(ciphertext)));
+    function optReq(euint8 ciphertext) internal view {
+        Impl.optReq(euint32.unwrap(asEuint32(ciphertext)));
     }
 
     function asEuint16(
@@ -1845,12 +1845,12 @@ library TFHE {
         return Impl.reencrypt(euint16.unwrap(ciphertext), publicKey);
     }
 
-    function requireCt(euint16 ciphertext) internal view {
-        Impl.requireCt(euint16.unwrap(ciphertext));
+    function req(euint16 ciphertext) internal view {
+        Impl.req(euint16.unwrap(ciphertext));
     }
 
-    function optimisticRequireCt(euint16 ciphertext) internal view {
-        Impl.optimisticRequireCt(euint32.unwrap(asEuint32(ciphertext)));
+    function optReq(euint16 ciphertext) internal view {
+        Impl.optReq(euint32.unwrap(asEuint32(ciphertext)));
     }
 
     function asEuint32(
@@ -1870,12 +1870,12 @@ library TFHE {
         return Impl.reencrypt(euint32.unwrap(ciphertext), publicKey);
     }
 
-    function requireCt(euint32 ciphertext) internal view {
-        Impl.requireCt(euint32.unwrap(ciphertext));
+    function req(euint32 ciphertext) internal view {
+        Impl.req(euint32.unwrap(ciphertext));
     }
 
-    function optimisticRequireCt(euint32 ciphertext) internal view {
-        Impl.optimisticRequireCt(euint32.unwrap(ciphertext));
+    function optReq(euint32 ciphertext) internal view {
+        Impl.optReq(euint32.unwrap(ciphertext));
     }
 
     // Returns the network public FHE key.

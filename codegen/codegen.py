@@ -370,7 +370,7 @@ library Impl {
     // The benefit of optimistic requires is that they are faster than non-optimistic ones,
     // because there is a single call to the decryption oracle per transaction, irrespective
     // of how many optimistic requires were used.
-    function optimisticRequireCt(uint256 ciphertext) internal view {
+    function optReq(uint256 ciphertext) internal view {
         bytes32[1] memory input;
         input[0] = bytes32(ciphertext);
         uint256 inputLen = 32;
@@ -508,7 +508,7 @@ library Impl {
         result = uint256(output[0]);
     }
 
-    function requireCt(uint256 ciphertext) internal view {
+    function req(uint256 ciphertext) internal view {
         bytes32[1] memory input;
         input[0] = bytes32(ciphertext);
         uint256 inputLen = 32;
@@ -655,20 +655,20 @@ to_print="""
         return Impl.reencrypt(euint{i}.unwrap(ciphertext), publicKey);
     }}
 
-    function requireCt(euint{i} ciphertext) internal view {{
-        Impl.requireCt(euint{i}.unwrap(ciphertext));
+    function req(euint{i} ciphertext) internal view {{
+        Impl.req(euint{i}.unwrap(ciphertext));
     }}
 """
 
 to_print_cast_or="""
-    function optimisticRequireCt(euint{i} ciphertext) internal view {{
-        Impl.optimisticRequireCt(euint32.unwrap(asEuint32(ciphertext)));
+    function optReq(euint{i} ciphertext) internal view {{
+        Impl.optReq(euint32.unwrap(asEuint32(ciphertext)));
     }}
 """
 
 to_print_no_cast_or="""
-    function optimisticRequireCt(euint{i} ciphertext) internal view {{
-        Impl.optimisticRequireCt(euint{i}.unwrap(ciphertext));
+    function optReq(euint{i} ciphertext) internal view {{
+        Impl.optReq(euint{i}.unwrap(ciphertext));
     }}
 """
 

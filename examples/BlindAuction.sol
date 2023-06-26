@@ -4,9 +4,9 @@ pragma solidity >=0.8.13 <0.9.0;
 
 import "../lib/TFHE.sol";
 
-import "./abstract/EIP712WithModifier.sol";
+import "./examples/abstract/EIP712WithModifier.sol";
 
-import "./SmallEncryptedERC20.sol";
+import "./EncryptedERC20.sol";
 
 contract BlindAuction is EIP712WithModifier {
     uint public endTime;
@@ -99,7 +99,7 @@ contract BlindAuction is EIP712WithModifier {
     // Claim the object. Succeeds only if the caller has the highest bid.
     function claim() public onlyAfterEnd {
         require(!objectClaimed);
-        TFHE.requireCt(TFHE.le(highestBid, bids[msg.sender]));
+        TFHE.req(TFHE.le(highestBid, bids[msg.sender]));
 
         objectClaimed = true;
         bids[msg.sender] = euint8.wrap(0);
@@ -119,7 +119,7 @@ contract BlindAuction is EIP712WithModifier {
     function withdraw() public onlyAfterEnd {
         euint8 bidValue = bids[msg.sender];
         if (!objectClaimed) {
-            TFHE.requireCt(TFHE.lt(bidValue, highestBid));
+            TFHE.req(TFHE.lt(bidValue, highestBid));
         }
         tokenContract.transfer(msg.sender, bidValue);
         bids[msg.sender] = euint8.wrap(0);

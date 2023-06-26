@@ -461,7 +461,7 @@ library Impl {
     // The benefit of optimistic requires is that they are faster than non-optimistic ones,
     // because there is a single call to the decryption oracle per transaction, irrespective
     // of how many optimistic requires were used.
-    function optimisticRequireCt(uint256 ciphertext) internal view {
+    function optReq(uint256 ciphertext) internal view {
         bytes32[1] memory input;
         input[0] = bytes32(ciphertext);
         uint256 inputLen = 32;
@@ -620,7 +620,7 @@ library Impl {
         result = uint256(output[0]);
     }
 
-    function requireCt(uint256 ciphertext) internal view {
+    function req(uint256 ciphertext) internal view {
         bytes32[1] memory input;
         input[0] = bytes32(ciphertext);
         uint256 inputLen = 32;
