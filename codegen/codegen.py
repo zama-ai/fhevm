@@ -632,17 +632,6 @@ for i in (2**p for p in range(3, 6)):
             f.write(to_print.format(i=i, j=j))
 
 to_print="""
-    function asEuint{i}(euint{j} ciphertext) internal view returns (euint{i}) {{
-        return euint{i}.wrap(Impl.cast(euint{j}.unwrap(ciphertext), Common.euint{i}_t));
-    }}
-"""
-
-for i in (2**p for p in range(3, 6)):
-    for j in (2**p for p in range(3, 6)):
-        if i != j:
-            f.write(to_print.format(i=i, j=j))
-
-to_print="""
     function asEuint{i}(bytes memory ciphertext) internal view returns (euint{i}) {{
         return euint{i}.wrap(Impl.verify(ciphertext, Common.euint{i}_t));
     }}
