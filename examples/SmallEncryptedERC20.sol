@@ -124,14 +124,14 @@ contract SmallEncryptedERC20 is EIP712WithModifier {
         euint8 amount
     ) internal {
         euint8 currentAllowance = _allowance(owner, spender);
-        TFHE.requireCt(TFHE.lte(amount, currentAllowance));
+        TFHE.requireCt(TFHE.le(amount, currentAllowance));
         _approve(owner, spender, TFHE.sub(currentAllowance, amount));
     }
 
     // Transfers an encrypted amount.
     function _transfer(address from, address to, euint8 amount) internal {
         // Make sure the sender has enough tokens.
-        TFHE.requireCt(TFHE.lte(amount, balances[from]));
+        TFHE.requireCt(TFHE.le(amount, balances[from]));
 
         // Add to the balance of `to` and subract from the balance of `from`.
         balances[to] = TFHE.add(balances[to], amount);

@@ -10,180 +10,1716 @@ library TFHE {
         return euint8.wrap(Impl.add(euint8.unwrap(a), euint8.unwrap(b)));
     }
 
-    function add(uint256 a, euint8 b) internal view returns (euint8) {
-        return add(asEuint8(a), b);
-    }
-
-    function add(euint8 a, uint256 b) internal view returns (euint8) {
-        return add(a, asEuint8(b));
-    }
-
     function sub(euint8 a, euint8 b) internal view returns (euint8) {
         return euint8.wrap(Impl.sub(euint8.unwrap(a), euint8.unwrap(b)));
-    }
-
-    function sub(uint256 a, euint8 b) internal view returns (euint8) {
-        return sub(asEuint8(a), b);
-    }
-
-    function sub(euint8 a, uint256 b) internal view returns (euint8) {
-        return sub(a, asEuint8(b));
     }
 
     function mul(euint8 a, euint8 b) internal view returns (euint8) {
         return euint8.wrap(Impl.mul(euint8.unwrap(a), euint8.unwrap(b)));
     }
 
-    function mul(uint256 a, euint8 b) internal view returns (euint8) {
-        return mul(asEuint8(a), b);
+    function and(euint8 a, euint8 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.and(euint8.unwrap(a), euint8.unwrap(b)));
     }
 
-    function mul(euint8 a, uint256 b) internal view returns (euint8) {
-        return mul(a, asEuint8(b));
+    function or(euint8 a, euint8 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.or(euint8.unwrap(a), euint8.unwrap(b)));
     }
 
-    function lte(euint8 a, euint8 b) internal view returns (euint8) {
-        return euint8.wrap(Impl.lte(euint8.unwrap(a), euint8.unwrap(b)));
+    function xor(euint8 a, euint8 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.xor(euint8.unwrap(a), euint8.unwrap(b)));
     }
 
-    function lte(uint256 a, euint8 b) internal view returns (euint8) {
-        return lte(asEuint8(a), b);
+    function eq(euint8 a, euint8 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.eq(euint8.unwrap(a), euint8.unwrap(b)));
     }
 
-    function lte(euint8 a, uint256 b) internal view returns (euint8) {
-        return lte(a, asEuint8(b));
+    function ge(euint8 a, euint8 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.ge(euint8.unwrap(a), euint8.unwrap(b)));
+    }
+
+    function gt(euint8 a, euint8 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.gt(euint8.unwrap(a), euint8.unwrap(b)));
+    }
+
+    function le(euint8 a, euint8 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.le(euint8.unwrap(a), euint8.unwrap(b)));
     }
 
     function lt(euint8 a, euint8 b) internal view returns (euint8) {
         return euint8.wrap(Impl.lt(euint8.unwrap(a), euint8.unwrap(b)));
     }
 
-    function lt(uint256 a, euint8 b) internal view returns (euint8) {
-        return lt(asEuint8(a), b);
+    function add(euint8 a, euint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.add(euint16.unwrap(asEuint16(a)), euint16.unwrap(b))
+            );
     }
 
-    function lt(euint8 a, uint256 b) internal view returns (euint8) {
-        return lt(a, asEuint8(b));
+    function add(euint8 a, uint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.add(
+                    euint16.unwrap(asEuint16(a)),
+                    euint16.unwrap(asEuint16(b))
+                )
+            );
+    }
+
+    function add(uint8 a, euint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.add(euint16.unwrap(asEuint16(a)), euint16.unwrap(b))
+            );
+    }
+
+    function sub(euint8 a, euint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.sub(euint16.unwrap(asEuint16(a)), euint16.unwrap(b))
+            );
+    }
+
+    function sub(euint8 a, uint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.sub(
+                    euint16.unwrap(asEuint16(a)),
+                    euint16.unwrap(asEuint16(b))
+                )
+            );
+    }
+
+    function sub(uint8 a, euint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.sub(euint16.unwrap(asEuint16(a)), euint16.unwrap(b))
+            );
+    }
+
+    function mul(euint8 a, euint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.mul(euint16.unwrap(asEuint16(a)), euint16.unwrap(b))
+            );
+    }
+
+    function mul(euint8 a, uint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.mul(
+                    euint16.unwrap(asEuint16(a)),
+                    euint16.unwrap(asEuint16(b))
+                )
+            );
+    }
+
+    function mul(uint8 a, euint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.mul(euint16.unwrap(asEuint16(a)), euint16.unwrap(b))
+            );
+    }
+
+    function and(euint8 a, euint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.and(euint16.unwrap(asEuint16(a)), euint16.unwrap(b))
+            );
+    }
+
+    function and(euint8 a, uint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.and(
+                    euint16.unwrap(asEuint16(a)),
+                    euint16.unwrap(asEuint16(b))
+                )
+            );
+    }
+
+    function and(uint8 a, euint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.and(euint16.unwrap(asEuint16(a)), euint16.unwrap(b))
+            );
+    }
+
+    function or(euint8 a, euint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.or(euint16.unwrap(asEuint16(a)), euint16.unwrap(b))
+            );
+    }
+
+    function or(euint8 a, uint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.or(
+                    euint16.unwrap(asEuint16(a)),
+                    euint16.unwrap(asEuint16(b))
+                )
+            );
+    }
+
+    function or(uint8 a, euint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.or(euint16.unwrap(asEuint16(a)), euint16.unwrap(b))
+            );
+    }
+
+    function xor(euint8 a, euint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.xor(euint16.unwrap(asEuint16(a)), euint16.unwrap(b))
+            );
+    }
+
+    function xor(euint8 a, uint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.xor(
+                    euint16.unwrap(asEuint16(a)),
+                    euint16.unwrap(asEuint16(b))
+                )
+            );
+    }
+
+    function xor(uint8 a, euint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.xor(euint16.unwrap(asEuint16(a)), euint16.unwrap(b))
+            );
+    }
+
+    function eq(euint8 a, euint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.eq(euint16.unwrap(asEuint16(a)), euint16.unwrap(b))
+            );
+    }
+
+    function eq(euint8 a, uint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.eq(
+                    euint16.unwrap(asEuint16(a)),
+                    euint16.unwrap(asEuint16(b))
+                )
+            );
+    }
+
+    function eq(uint8 a, euint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.eq(euint16.unwrap(asEuint16(a)), euint16.unwrap(b))
+            );
+    }
+
+    function ge(euint8 a, euint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.ge(euint16.unwrap(asEuint16(a)), euint16.unwrap(b))
+            );
+    }
+
+    function ge(euint8 a, uint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.ge(
+                    euint16.unwrap(asEuint16(a)),
+                    euint16.unwrap(asEuint16(b))
+                )
+            );
+    }
+
+    function ge(uint8 a, euint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.ge(euint16.unwrap(asEuint16(a)), euint16.unwrap(b))
+            );
+    }
+
+    function gt(euint8 a, euint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.gt(euint16.unwrap(asEuint16(a)), euint16.unwrap(b))
+            );
+    }
+
+    function gt(euint8 a, uint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.gt(
+                    euint16.unwrap(asEuint16(a)),
+                    euint16.unwrap(asEuint16(b))
+                )
+            );
+    }
+
+    function gt(uint8 a, euint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.gt(euint16.unwrap(asEuint16(a)), euint16.unwrap(b))
+            );
+    }
+
+    function le(euint8 a, euint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.le(euint16.unwrap(asEuint16(a)), euint16.unwrap(b))
+            );
+    }
+
+    function le(euint8 a, uint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.le(
+                    euint16.unwrap(asEuint16(a)),
+                    euint16.unwrap(asEuint16(b))
+                )
+            );
+    }
+
+    function le(uint8 a, euint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.le(euint16.unwrap(asEuint16(a)), euint16.unwrap(b))
+            );
+    }
+
+    function lt(euint8 a, euint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.lt(euint16.unwrap(asEuint16(a)), euint16.unwrap(b))
+            );
+    }
+
+    function lt(euint8 a, uint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.lt(
+                    euint16.unwrap(asEuint16(a)),
+                    euint16.unwrap(asEuint16(b))
+                )
+            );
+    }
+
+    function lt(uint8 a, euint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.lt(euint16.unwrap(asEuint16(a)), euint16.unwrap(b))
+            );
+    }
+
+    function add(euint8 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.add(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function add(euint8 a, uint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.add(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function add(uint8 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.add(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function sub(euint8 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.sub(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function sub(euint8 a, uint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.sub(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function sub(uint8 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.sub(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function mul(euint8 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.mul(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function mul(euint8 a, uint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.mul(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function mul(uint8 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.mul(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function and(euint8 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.and(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function and(euint8 a, uint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.and(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function and(uint8 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.and(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function or(euint8 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.or(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function or(euint8 a, uint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.or(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function or(uint8 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.or(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function xor(euint8 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.xor(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function xor(euint8 a, uint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.xor(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function xor(uint8 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.xor(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function eq(euint8 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.eq(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function eq(euint8 a, uint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.eq(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function eq(uint8 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.eq(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function ge(euint8 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.ge(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function ge(euint8 a, uint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.ge(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function ge(uint8 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.ge(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function gt(euint8 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.gt(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function gt(euint8 a, uint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.gt(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function gt(uint8 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.gt(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function le(euint8 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.le(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function le(euint8 a, uint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.le(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function le(uint8 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.le(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function lt(euint8 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.lt(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function lt(euint8 a, uint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.lt(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function lt(uint8 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.lt(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function add(euint16 a, euint8 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.add(euint16.unwrap(a), euint16.unwrap(asEuint16(b)))
+            );
+    }
+
+    function add(euint16 a, uint8 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.add(euint16.unwrap(a), euint16.unwrap(asEuint16(b)))
+            );
+    }
+
+    function add(uint16 a, euint8 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.add(
+                    euint16.unwrap(asEuint16(a)),
+                    euint16.unwrap(asEuint16(b))
+                )
+            );
+    }
+
+    function sub(euint16 a, euint8 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.sub(euint16.unwrap(a), euint16.unwrap(asEuint16(b)))
+            );
+    }
+
+    function sub(euint16 a, uint8 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.sub(euint16.unwrap(a), euint16.unwrap(asEuint16(b)))
+            );
+    }
+
+    function sub(uint16 a, euint8 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.sub(
+                    euint16.unwrap(asEuint16(a)),
+                    euint16.unwrap(asEuint16(b))
+                )
+            );
+    }
+
+    function mul(euint16 a, euint8 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.mul(euint16.unwrap(a), euint16.unwrap(asEuint16(b)))
+            );
+    }
+
+    function mul(euint16 a, uint8 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.mul(euint16.unwrap(a), euint16.unwrap(asEuint16(b)))
+            );
+    }
+
+    function mul(uint16 a, euint8 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.mul(
+                    euint16.unwrap(asEuint16(a)),
+                    euint16.unwrap(asEuint16(b))
+                )
+            );
+    }
+
+    function and(euint16 a, euint8 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.and(euint16.unwrap(a), euint16.unwrap(asEuint16(b)))
+            );
+    }
+
+    function and(euint16 a, uint8 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.and(euint16.unwrap(a), euint16.unwrap(asEuint16(b)))
+            );
+    }
+
+    function and(uint16 a, euint8 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.and(
+                    euint16.unwrap(asEuint16(a)),
+                    euint16.unwrap(asEuint16(b))
+                )
+            );
+    }
+
+    function or(euint16 a, euint8 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.or(euint16.unwrap(a), euint16.unwrap(asEuint16(b)))
+            );
+    }
+
+    function or(euint16 a, uint8 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.or(euint16.unwrap(a), euint16.unwrap(asEuint16(b)))
+            );
+    }
+
+    function or(uint16 a, euint8 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.or(
+                    euint16.unwrap(asEuint16(a)),
+                    euint16.unwrap(asEuint16(b))
+                )
+            );
+    }
+
+    function xor(euint16 a, euint8 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.xor(euint16.unwrap(a), euint16.unwrap(asEuint16(b)))
+            );
+    }
+
+    function xor(euint16 a, uint8 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.xor(euint16.unwrap(a), euint16.unwrap(asEuint16(b)))
+            );
+    }
+
+    function xor(uint16 a, euint8 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.xor(
+                    euint16.unwrap(asEuint16(a)),
+                    euint16.unwrap(asEuint16(b))
+                )
+            );
+    }
+
+    function eq(euint16 a, euint8 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.eq(euint16.unwrap(a), euint16.unwrap(asEuint16(b)))
+            );
+    }
+
+    function eq(euint16 a, uint8 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.eq(euint16.unwrap(a), euint16.unwrap(asEuint16(b)))
+            );
+    }
+
+    function eq(uint16 a, euint8 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.eq(
+                    euint16.unwrap(asEuint16(a)),
+                    euint16.unwrap(asEuint16(b))
+                )
+            );
+    }
+
+    function ge(euint16 a, euint8 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.ge(euint16.unwrap(a), euint16.unwrap(asEuint16(b)))
+            );
+    }
+
+    function ge(euint16 a, uint8 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.ge(euint16.unwrap(a), euint16.unwrap(asEuint16(b)))
+            );
+    }
+
+    function ge(uint16 a, euint8 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.ge(
+                    euint16.unwrap(asEuint16(a)),
+                    euint16.unwrap(asEuint16(b))
+                )
+            );
+    }
+
+    function gt(euint16 a, euint8 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.gt(euint16.unwrap(a), euint16.unwrap(asEuint16(b)))
+            );
+    }
+
+    function gt(euint16 a, uint8 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.gt(euint16.unwrap(a), euint16.unwrap(asEuint16(b)))
+            );
+    }
+
+    function gt(uint16 a, euint8 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.gt(
+                    euint16.unwrap(asEuint16(a)),
+                    euint16.unwrap(asEuint16(b))
+                )
+            );
+    }
+
+    function le(euint16 a, euint8 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.le(euint16.unwrap(a), euint16.unwrap(asEuint16(b)))
+            );
+    }
+
+    function le(euint16 a, uint8 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.le(euint16.unwrap(a), euint16.unwrap(asEuint16(b)))
+            );
+    }
+
+    function le(uint16 a, euint8 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.le(
+                    euint16.unwrap(asEuint16(a)),
+                    euint16.unwrap(asEuint16(b))
+                )
+            );
+    }
+
+    function lt(euint16 a, euint8 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.lt(euint16.unwrap(a), euint16.unwrap(asEuint16(b)))
+            );
+    }
+
+    function lt(euint16 a, uint8 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.lt(euint16.unwrap(a), euint16.unwrap(asEuint16(b)))
+            );
+    }
+
+    function lt(uint16 a, euint8 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.lt(
+                    euint16.unwrap(asEuint16(a)),
+                    euint16.unwrap(asEuint16(b))
+                )
+            );
     }
 
     function add(euint16 a, euint16 b) internal view returns (euint16) {
         return euint16.wrap(Impl.add(euint16.unwrap(a), euint16.unwrap(b)));
     }
 
-    function add(uint256 a, euint16 b) internal view returns (euint16) {
-        return add(asEuint16(a), b);
-    }
-
-    function add(euint16 a, uint256 b) internal view returns (euint16) {
-        return add(a, asEuint16(b));
-    }
-
     function sub(euint16 a, euint16 b) internal view returns (euint16) {
         return euint16.wrap(Impl.sub(euint16.unwrap(a), euint16.unwrap(b)));
-    }
-
-    function sub(uint256 a, euint16 b) internal view returns (euint16) {
-        return sub(asEuint16(a), b);
-    }
-
-    function sub(euint16 a, uint256 b) internal view returns (euint16) {
-        return sub(a, asEuint16(b));
     }
 
     function mul(euint16 a, euint16 b) internal view returns (euint16) {
         return euint16.wrap(Impl.mul(euint16.unwrap(a), euint16.unwrap(b)));
     }
 
-    function mul(uint256 a, euint16 b) internal view returns (euint16) {
-        return mul(asEuint16(a), b);
+    function and(euint16 a, euint16 b) internal view returns (euint16) {
+        return euint16.wrap(Impl.and(euint16.unwrap(a), euint16.unwrap(b)));
     }
 
-    function mul(euint16 a, uint256 b) internal view returns (euint16) {
-        return mul(a, asEuint16(b));
+    function or(euint16 a, euint16 b) internal view returns (euint16) {
+        return euint16.wrap(Impl.or(euint16.unwrap(a), euint16.unwrap(b)));
     }
 
-    function lte(euint16 a, euint16 b) internal view returns (euint16) {
-        return euint16.wrap(Impl.lte(euint16.unwrap(a), euint16.unwrap(b)));
+    function xor(euint16 a, euint16 b) internal view returns (euint16) {
+        return euint16.wrap(Impl.xor(euint16.unwrap(a), euint16.unwrap(b)));
     }
 
-    function lte(uint256 a, euint16 b) internal view returns (euint16) {
-        return lte(asEuint16(a), b);
+    function eq(euint16 a, euint16 b) internal view returns (euint16) {
+        return euint16.wrap(Impl.eq(euint16.unwrap(a), euint16.unwrap(b)));
     }
 
-    function lte(euint16 a, uint256 b) internal view returns (euint16) {
-        return lte(a, asEuint16(b));
+    function ge(euint16 a, euint16 b) internal view returns (euint16) {
+        return euint16.wrap(Impl.ge(euint16.unwrap(a), euint16.unwrap(b)));
+    }
+
+    function gt(euint16 a, euint16 b) internal view returns (euint16) {
+        return euint16.wrap(Impl.gt(euint16.unwrap(a), euint16.unwrap(b)));
+    }
+
+    function le(euint16 a, euint16 b) internal view returns (euint16) {
+        return euint16.wrap(Impl.le(euint16.unwrap(a), euint16.unwrap(b)));
     }
 
     function lt(euint16 a, euint16 b) internal view returns (euint16) {
         return euint16.wrap(Impl.lt(euint16.unwrap(a), euint16.unwrap(b)));
     }
 
-    function lt(uint256 a, euint16 b) internal view returns (euint16) {
-        return lt(asEuint16(a), b);
+    function add(euint16 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.add(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
     }
 
-    function lt(euint16 a, uint256 b) internal view returns (euint16) {
-        return lt(a, asEuint16(b));
+    function add(euint16 a, uint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.add(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function add(uint16 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.add(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function sub(euint16 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.sub(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function sub(euint16 a, uint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.sub(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function sub(uint16 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.sub(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function mul(euint16 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.mul(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function mul(euint16 a, uint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.mul(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function mul(uint16 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.mul(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function and(euint16 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.and(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function and(euint16 a, uint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.and(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function and(uint16 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.and(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function or(euint16 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.or(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function or(euint16 a, uint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.or(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function or(uint16 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.or(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function xor(euint16 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.xor(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function xor(euint16 a, uint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.xor(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function xor(uint16 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.xor(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function eq(euint16 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.eq(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function eq(euint16 a, uint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.eq(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function eq(uint16 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.eq(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function ge(euint16 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.ge(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function ge(euint16 a, uint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.ge(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function ge(uint16 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.ge(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function gt(euint16 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.gt(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function gt(euint16 a, uint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.gt(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function gt(uint16 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.gt(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function le(euint16 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.le(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function le(euint16 a, uint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.le(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function le(uint16 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.le(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function lt(euint16 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.lt(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function lt(euint16 a, uint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.lt(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function lt(uint16 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.lt(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
+    function add(euint32 a, euint8 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.add(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function add(euint32 a, uint8 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.add(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function add(uint32 a, euint8 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.add(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function sub(euint32 a, euint8 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.sub(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function sub(euint32 a, uint8 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.sub(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function sub(uint32 a, euint8 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.sub(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function mul(euint32 a, euint8 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.mul(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function mul(euint32 a, uint8 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.mul(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function mul(uint32 a, euint8 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.mul(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function and(euint32 a, euint8 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.and(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function and(euint32 a, uint8 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.and(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function and(uint32 a, euint8 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.and(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function or(euint32 a, euint8 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.or(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function or(euint32 a, uint8 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.or(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function or(uint32 a, euint8 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.or(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function xor(euint32 a, euint8 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.xor(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function xor(euint32 a, uint8 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.xor(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function xor(uint32 a, euint8 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.xor(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function eq(euint32 a, euint8 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.eq(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function eq(euint32 a, uint8 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.eq(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function eq(uint32 a, euint8 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.eq(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function ge(euint32 a, euint8 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.ge(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function ge(euint32 a, uint8 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.ge(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function ge(uint32 a, euint8 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.ge(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function gt(euint32 a, euint8 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.gt(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function gt(euint32 a, uint8 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.gt(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function gt(uint32 a, euint8 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.gt(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function le(euint32 a, euint8 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.le(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function le(euint32 a, uint8 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.le(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function le(uint32 a, euint8 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.le(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function lt(euint32 a, euint8 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.lt(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function lt(euint32 a, uint8 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.lt(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function lt(uint32 a, euint8 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.lt(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function add(euint32 a, euint16 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.add(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function add(euint32 a, uint16 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.add(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function add(uint32 a, euint16 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.add(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function sub(euint32 a, euint16 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.sub(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function sub(euint32 a, uint16 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.sub(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function sub(uint32 a, euint16 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.sub(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function mul(euint32 a, euint16 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.mul(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function mul(euint32 a, uint16 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.mul(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function mul(uint32 a, euint16 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.mul(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function and(euint32 a, euint16 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.and(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function and(euint32 a, uint16 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.and(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function and(uint32 a, euint16 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.and(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function or(euint32 a, euint16 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.or(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function or(euint32 a, uint16 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.or(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function or(uint32 a, euint16 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.or(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function xor(euint32 a, euint16 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.xor(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function xor(euint32 a, uint16 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.xor(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function xor(uint32 a, euint16 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.xor(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function eq(euint32 a, euint16 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.eq(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function eq(euint32 a, uint16 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.eq(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function eq(uint32 a, euint16 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.eq(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function ge(euint32 a, euint16 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.ge(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function ge(euint32 a, uint16 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.ge(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function ge(uint32 a, euint16 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.ge(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function gt(euint32 a, euint16 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.gt(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function gt(euint32 a, uint16 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.gt(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function gt(uint32 a, euint16 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.gt(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function le(euint32 a, euint16 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.le(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function le(euint32 a, uint16 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.le(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function le(uint32 a, euint16 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.le(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
+    }
+
+    function lt(euint32 a, euint16 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.lt(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function lt(euint32 a, uint16 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.lt(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function lt(uint32 a, euint16 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.lt(
+                    euint32.unwrap(asEuint32(a)),
+                    euint32.unwrap(asEuint32(b))
+                )
+            );
     }
 
     function add(euint32 a, euint32 b) internal view returns (euint32) {
         return euint32.wrap(Impl.add(euint32.unwrap(a), euint32.unwrap(b)));
     }
 
-    function add(uint256 a, euint32 b) internal view returns (euint32) {
-        return add(asEuint32(a), b);
-    }
-
-    function add(euint32 a, uint256 b) internal view returns (euint32) {
-        return add(a, asEuint32(b));
-    }
-
     function sub(euint32 a, euint32 b) internal view returns (euint32) {
         return euint32.wrap(Impl.sub(euint32.unwrap(a), euint32.unwrap(b)));
-    }
-
-    function sub(uint256 a, euint32 b) internal view returns (euint32) {
-        return sub(asEuint32(a), b);
-    }
-
-    function sub(euint32 a, uint256 b) internal view returns (euint32) {
-        return sub(a, asEuint32(b));
     }
 
     function mul(euint32 a, euint32 b) internal view returns (euint32) {
         return euint32.wrap(Impl.mul(euint32.unwrap(a), euint32.unwrap(b)));
     }
 
-    function mul(uint256 a, euint32 b) internal view returns (euint32) {
-        return mul(asEuint32(a), b);
+    function and(euint32 a, euint32 b) internal view returns (euint32) {
+        return euint32.wrap(Impl.and(euint32.unwrap(a), euint32.unwrap(b)));
     }
 
-    function mul(euint32 a, uint256 b) internal view returns (euint32) {
-        return mul(a, asEuint32(b));
+    function or(euint32 a, euint32 b) internal view returns (euint32) {
+        return euint32.wrap(Impl.or(euint32.unwrap(a), euint32.unwrap(b)));
     }
 
-    function lte(euint32 a, euint32 b) internal view returns (euint32) {
-        return euint32.wrap(Impl.lte(euint32.unwrap(a), euint32.unwrap(b)));
+    function xor(euint32 a, euint32 b) internal view returns (euint32) {
+        return euint32.wrap(Impl.xor(euint32.unwrap(a), euint32.unwrap(b)));
     }
 
-    function lte(uint256 a, euint32 b) internal view returns (euint32) {
-        return lte(asEuint32(a), b);
+    function eq(euint32 a, euint32 b) internal view returns (euint32) {
+        return euint32.wrap(Impl.eq(euint32.unwrap(a), euint32.unwrap(b)));
     }
 
-    function lte(euint32 a, uint256 b) internal view returns (euint32) {
-        return lte(a, asEuint32(b));
+    function ge(euint32 a, euint32 b) internal view returns (euint32) {
+        return euint32.wrap(Impl.ge(euint32.unwrap(a), euint32.unwrap(b)));
+    }
+
+    function gt(euint32 a, euint32 b) internal view returns (euint32) {
+        return euint32.wrap(Impl.gt(euint32.unwrap(a), euint32.unwrap(b)));
+    }
+
+    function le(euint32 a, euint32 b) internal view returns (euint32) {
+        return euint32.wrap(Impl.le(euint32.unwrap(a), euint32.unwrap(b)));
     }
 
     function lt(euint32 a, euint32 b) internal view returns (euint32) {
         return euint32.wrap(Impl.lt(euint32.unwrap(a), euint32.unwrap(b)));
-    }
-
-    function lt(uint256 a, euint32 b) internal view returns (euint32) {
-        return lt(asEuint32(a), b);
-    }
-
-    function lt(euint32 a, uint256 b) internal view returns (euint32) {
-        return lt(a, asEuint32(b));
     }
 
     function cmux(
@@ -202,14 +1738,14 @@ library TFHE {
     }
 
     function cmux(
-        euint8 control,
+        euint16 control,
         euint16 a,
         euint16 b
     ) internal view returns (euint16) {
         return
             euint16.wrap(
                 Impl.cmux(
-                    euint8.unwrap(control),
+                    euint16.unwrap(control),
                     euint16.unwrap(a),
                     euint16.unwrap(b)
                 )
@@ -217,14 +1753,14 @@ library TFHE {
     }
 
     function cmux(
-        euint8 control,
+        euint32 control,
         euint32 a,
         euint32 b
     ) internal view returns (euint32) {
         return
             euint32.wrap(
                 Impl.cmux(
-                    euint8.unwrap(control),
+                    euint32.unwrap(control),
                     euint32.unwrap(a),
                     euint32.unwrap(b)
                 )
@@ -289,7 +1825,7 @@ library TFHE {
     }
 
     function optimisticRequireCt(euint8 ciphertext) internal view {
-        Impl.optimisticRequireCt(euint8.unwrap(ciphertext));
+        Impl.optimisticRequireCt(euint32.unwrap(asEuint32(ciphertext)));
     }
 
     function asEuint16(
@@ -314,7 +1850,7 @@ library TFHE {
     }
 
     function optimisticRequireCt(euint16 ciphertext) internal view {
-        Impl.optimisticRequireCt(euint16.unwrap(ciphertext));
+        Impl.optimisticRequireCt(euint32.unwrap(asEuint32(ciphertext)));
     }
 
     function asEuint32(

@@ -39,6 +39,12 @@ library Precompiles {
     uint256 public constant OptimisticRequire = 75;
     uint256 public constant Cast = 76;
     uint256 public constant TrivialEncrypt = 77;
+    uint256 public constant BitwiseAnd = 78;
+    uint256 public constant BitwiseOr = 79;
+    uint256 public constant BitwiseXor = 80;
+    uint256 public constant Equal = 81;
+    uint256 public constant GreaterThanOrEqual = 82;
+    uint256 public constant GreaterThan = 83;
 }
 """
 )
@@ -136,9 +142,69 @@ library Impl {
         result = uint256(output[0]);
     }
 
-    // Evaluate `lhs <= rhs` on the given ciphertexts and, if successful, return the resulting ciphertext.
+    function and(uint256 a, uint256 b) internal view returns (uint256 result) {
+        bytes32[2] memory input;
+        input[0] = bytes32(a);
+        input[1] = bytes32(b);
+        uint256 inputLen = 64;
+
+        bytes32[1] memory output;
+        uint256 outputLen = 32;
+
+        // Call the AND precompile.
+        uint256 precompile = Precompiles.BitwiseAnd;
+        assembly {
+            if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
+                revert(0, 0)
+            }
+        }
+
+        result = uint256(output[0]);
+    }
+
+    function or(uint256 a, uint256 b) internal view returns (uint256 result) {
+        bytes32[2] memory input;
+        input[0] = bytes32(a);
+        input[1] = bytes32(b);
+        uint256 inputLen = 64;
+
+        bytes32[1] memory output;
+        uint256 outputLen = 32;
+
+        // Call the OR precompile.
+        uint256 precompile = Precompiles.BitwiseOr;
+        assembly {
+            if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
+                revert(0, 0)
+            }
+        }
+
+        result = uint256(output[0]);
+    }
+
+    function xor(uint256 a, uint256 b) internal view returns (uint256 result) {
+        bytes32[2] memory input;
+        input[0] = bytes32(a);
+        input[1] = bytes32(b);
+        uint256 inputLen = 64;
+
+        bytes32[1] memory output;
+        uint256 outputLen = 32;
+
+        // Call the XOR precompile.
+        uint256 precompile = Precompiles.BitwiseXor;
+        assembly {
+            if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
+                revert(0, 0)
+            }
+        }
+
+        result = uint256(output[0]);
+    }
+
+    // Evaluate `lhs == rhs` on the given ciphertexts and, if successful, return the resulting ciphertext.
     // If successful, the resulting ciphertext is automatically verified.
-    function lte(uint256 lhs, uint256 rhs) internal view returns (uint256 result) {
+    function eq(uint256 lhs, uint256 rhs) internal view returns (uint256 result) {
         bytes32[2] memory input;
         input[0] = bytes32(lhs);
         input[1] = bytes32(rhs);
@@ -147,7 +213,73 @@ library Impl {
         bytes32[1] memory output;
         uint256 outputLen = 32;
 
-        // Call the lte precompile.
+        // Call the eq precompile.
+        uint256 precompile = Precompiles.Equal;
+        assembly {
+            if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
+                revert(0, 0)
+            }
+        }
+
+        result = uint256(output[0]);
+    }
+
+    // Evaluate `lhs >= rhs` on the given ciphertexts and, if successful, return the resulting ciphertext.
+    // If successful, the resulting ciphertext is automatically verified.
+    function ge(uint256 lhs, uint256 rhs) internal view returns (uint256 result) {
+        bytes32[2] memory input;
+        input[0] = bytes32(lhs);
+        input[1] = bytes32(rhs);
+        uint256 inputLen = 64;
+
+        bytes32[1] memory output;
+        uint256 outputLen = 32;
+
+        // Call the ge precompile.
+        uint256 precompile = Precompiles.GreaterThanOrEqual;
+        assembly {
+            if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
+                revert(0, 0)
+            }
+        }
+
+        result = uint256(output[0]);
+    }
+
+    // Evaluate `lhs > rhs` on the given ciphertexts and, if successful, return the resulting ciphertext.
+    // If successful, the resulting ciphertext is automatically verified.
+    function gt(uint256 lhs, uint256 rhs) internal view returns (uint256 result) {
+        bytes32[2] memory input;
+        input[0] = bytes32(lhs);
+        input[1] = bytes32(rhs);
+        uint256 inputLen = 64;
+
+        bytes32[1] memory output;
+        uint256 outputLen = 32;
+
+        // Call the gt precompile.
+        uint256 precompile = Precompiles.GreaterThan;
+        assembly {
+            if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
+                revert(0, 0)
+            }
+        }
+
+        result = uint256(output[0]);
+    }
+
+    // Evaluate `lhs <= rhs` on the given ciphertexts and, if successful, return the resulting ciphertext.
+    // If successful, the resulting ciphertext is automatically verified.
+    function le(uint256 lhs, uint256 rhs) internal view returns (uint256 result) {
+        bytes32[2] memory input;
+        input[0] = bytes32(lhs);
+        input[1] = bytes32(rhs);
+        uint256 inputLen = 64;
+
+        bytes32[1] memory output;
+        uint256 outputLen = 32;
+
+        // Call the le precompile.
         uint256 precompile = Precompiles.LessThanOrEqual;
         assembly {
             if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
@@ -169,7 +301,7 @@ library Impl {
         bytes32[1] memory output;
         uint256 outputLen = 32;
 
-        // Call the lte precompile.
+        // Call the lt precompile.
         uint256 precompile = Precompiles.LessThan;
         assembly {
             if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
@@ -405,38 +537,99 @@ import "./Impl.sol";
 
 library TFHE {""")
 
-to_print =  """
+to_print_no_cast =  """
     function {f}(euint{i} a, euint{j} b) internal view returns (euint{k}) {{
         return euint{k}.wrap(Impl.{f}(euint{i}.unwrap(a), euint{j}.unwrap(b)));
     }}
+"""
 
-    function {f}(uint256 a, euint{i} b) internal view returns (euint{k}) {{
-        return {f}(asEuint{i}(a), b);
+to_print_cast_a =  """
+    function {f}(euint{i} a, euint{j} b) internal view returns (euint{k}) {{
+        return euint{k}.wrap(Impl.{f}(euint{j}.unwrap(asEuint{j}(a)), euint{j}.unwrap(b)));
     }}
 
-    function {f}(euint{i} a, uint256 b) internal view returns (euint{k}) {{
-        return {f}(a, asEuint{i}(b));
+    function {f}(euint{i} a, uint{j} b) internal view returns (euint{k}) {{
+        return euint{k}.wrap(Impl.{f}(euint{j}.unwrap(asEuint{j}(a)), euint{j}.unwrap(asEuint{j}(b))));
+    }}
+
+    function {f}(uint{i} a, euint{j} b) internal view returns (euint{k}) {{
+        return euint{k}.wrap(Impl.{f}(euint{j}.unwrap(asEuint{j}(a)), euint{j}.unwrap(b)));
+    }}
+"""
+
+to_print_cast_b =  """
+    function {f}(euint{i} a, euint{j} b) internal view returns (euint{k}) {{
+        return euint{k}.wrap(Impl.{f}(euint{i}.unwrap(a), euint{i}.unwrap(asEuint{i}(b))));
+    }}
+
+    function {f}(euint{i} a, uint{j} b) internal view returns (euint{k}) {{
+        return euint{k}.wrap(Impl.{f}(euint{i}.unwrap(a), euint{i}.unwrap(asEuint{i}(b))));
+    }}
+
+    function {f}(uint{i} a, euint{j} b) internal view returns (euint{k}) {{
+        return euint{k}.wrap(Impl.{f}(euint{i}.unwrap(asEuint{i}(a)), euint{i}.unwrap(asEuint{i}(b))));
     }}
 """
 
 for i in (2**p for p in range(3, 6)):
     for j in (2**p for p in range(3, 6)):
-        if i == j: # TODO: remove this line when casting is implemented
-            f.write(to_print.format(i=i, j=j, k=i if i>j else j, f="add"))
-            f.write(to_print.format(i=i, j=j, k=i if i>j else j, f="sub"))
-            f.write(to_print.format(i=i, j=j, k=i if i>j else j, f="mul"))
-            f.write(to_print.format(i=i, j=j, k=i, f="lte"))
-            f.write(to_print.format(i=i, j=j, k=i, f="lt"))
+        if i == j:
+            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="add")))
+            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="sub")))
+            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="mul")))
+            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="and")))
+            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="or")))
+            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="xor")))
+            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="eq")))
+            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="ge")))
+            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="gt")))
+            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="le")))
+            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="lt")))
+        elif i < j:
+            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="add")))
+            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="sub")))
+            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="mul")))
+            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="and")))
+            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="or")))
+            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="xor")))
+            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="eq")))
+            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="ge")))
+            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="gt")))
+            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="le")))
+            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="lt")))
+        else:
+            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="add")))
+            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="sub")))
+            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="mul")))
+            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="and")))
+            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="or")))
+            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="xor")))
+            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="eq")))
+            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="ge")))
+            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="gt")))
+            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="le")))
+            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="lt")))
 
 to_print =  """
-    function cmux(euint8 control, euint{i} a, euint{j} b) internal view returns (euint{k}) {{
-        return euint{k}.wrap(Impl.cmux(euint8.unwrap(control), euint{i}.unwrap(a), euint{j}.unwrap(b)));
+    function cmux(euint{i} control, euint{i} a, euint{i} b) internal view returns (euint{i}) {{
+        return euint{i}.wrap(Impl.cmux(euint{i}.unwrap(control), euint{i}.unwrap(a), euint{i}.unwrap(b)));
     }}
 """
 for i in (2**p for p in range(3, 6)):
     for j in (2**p for p in range(3, 6)):
-        if i == j: # TODO: remove this line when casting is implemented
-            f.write(to_print.format(i=i, j=j, k=i if i>j else j))
+        if i == j: # TODO: Decide whether we want to have mixed-inputs for CMUX
+            f.write(to_print.format(i=i))
+
+to_print="""
+    function asEuint{i}(euint{j} ciphertext) internal view returns (euint{i}) {{
+        return euint{i}.wrap(Impl.cast(euint{j}.unwrap(ciphertext), Common.euint{i}_t));
+    }}
+"""
+
+for i in (2**p for p in range(3, 6)):
+    for j in (2**p for p in range(3, 6)):
+        if i != j:
+            f.write(to_print.format(i=i, j=j))
 
 to_print="""
     function asEuint{i}(euint{j} ciphertext) internal view returns (euint{i}) {{
@@ -465,7 +658,15 @@ to_print="""
     function requireCt(euint{i} ciphertext) internal view {{
         Impl.requireCt(euint{i}.unwrap(ciphertext));
     }}
+"""
 
+to_print_cast_or="""
+    function optimisticRequireCt(euint{i} ciphertext) internal view {{
+        Impl.optimisticRequireCt(euint32.unwrap(asEuint32(ciphertext)));
+    }}
+"""
+
+to_print_no_cast_or="""
     function optimisticRequireCt(euint{i} ciphertext) internal view {{
         Impl.optimisticRequireCt(euint{i}.unwrap(ciphertext));
     }}
@@ -473,6 +674,11 @@ to_print="""
 
 for i in (2**p for p in range(3, 6)):
     f.write(to_print.format(i=i))
+    if i != 32:
+        f.write(to_print_cast_or.format(i=i))
+    else:
+        f.write(to_print_no_cast_or.format(i=i))
+
 
 f.write("\n")
 f.write("""\

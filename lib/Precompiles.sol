@@ -15,4 +15,10 @@ library Precompiles {
     uint256 public constant OptimisticRequire = 75;
     uint256 public constant Cast = 76;
     uint256 public constant TrivialEncrypt = 77;
+    uint256 public constant BitwiseAnd = 78;
+    uint256 public constant BitwiseOr = 79;
+    uint256 public constant BitwiseXor = 80;
+    uint256 public constant Equal = 81;
+    uint256 public constant GreaterThanOrEqual = 82;
+    uint256 public constant GreaterThan = 83;
 }

@@ -115,9 +115,96 @@ library Impl {
         result = uint256(output[0]);
     }
 
-    // Evaluate `lhs <= rhs` on the given ciphertexts and, if successful, return the resulting ciphertext.
+    function and(uint256 a, uint256 b) internal view returns (uint256 result) {
+        bytes32[2] memory input;
+        input[0] = bytes32(a);
+        input[1] = bytes32(b);
+        uint256 inputLen = 64;
+
+        bytes32[1] memory output;
+        uint256 outputLen = 32;
+
+        // Call the AND precompile.
+        uint256 precompile = Precompiles.BitwiseAnd;
+        assembly {
+            if iszero(
+                staticcall(
+                    gas(),
+                    precompile,
+                    input,
+                    inputLen,
+                    output,
+                    outputLen
+                )
+            ) {
+                revert(0, 0)
+            }
+        }
+
+        result = uint256(output[0]);
+    }
+
+    function or(uint256 a, uint256 b) internal view returns (uint256 result) {
+        bytes32[2] memory input;
+        input[0] = bytes32(a);
+        input[1] = bytes32(b);
+        uint256 inputLen = 64;
+
+        bytes32[1] memory output;
+        uint256 outputLen = 32;
+
+        // Call the OR precompile.
+        uint256 precompile = Precompiles.BitwiseOr;
+        assembly {
+            if iszero(
+                staticcall(
+                    gas(),
+                    precompile,
+                    input,
+                    inputLen,
+                    output,
+                    outputLen
+                )
+            ) {
+                revert(0, 0)
+            }
+        }
+
+        result = uint256(output[0]);
+    }
+
+    function xor(uint256 a, uint256 b) internal view returns (uint256 result) {
+        bytes32[2] memory input;
+        input[0] = bytes32(a);
+        input[1] = bytes32(b);
+        uint256 inputLen = 64;
+
+        bytes32[1] memory output;
+        uint256 outputLen = 32;
+
+        // Call the XOR precompile.
+        uint256 precompile = Precompiles.BitwiseXor;
+        assembly {
+            if iszero(
+                staticcall(
+                    gas(),
+                    precompile,
+                    input,
+                    inputLen,
+                    output,
+                    outputLen
+                )
+            ) {
+                revert(0, 0)
+            }
+        }
+
+        result = uint256(output[0]);
+    }
+
+    // Evaluate `lhs == rhs` on the given ciphertexts and, if successful, return the resulting ciphertext.
     // If successful, the resulting ciphertext is automatically verified.
-    function lte(
+    function eq(
         uint256 lhs,
         uint256 rhs
     ) internal view returns (uint256 result) {
@@ -129,7 +216,109 @@ library Impl {
         bytes32[1] memory output;
         uint256 outputLen = 32;
 
-        // Call the lte precompile.
+        // Call the eq precompile.
+        uint256 precompile = Precompiles.Equal;
+        assembly {
+            if iszero(
+                staticcall(
+                    gas(),
+                    precompile,
+                    input,
+                    inputLen,
+                    output,
+                    outputLen
+                )
+            ) {
+                revert(0, 0)
+            }
+        }
+
+        result = uint256(output[0]);
+    }
+
+    // Evaluate `lhs >= rhs` on the given ciphertexts and, if successful, return the resulting ciphertext.
+    // If successful, the resulting ciphertext is automatically verified.
+    function ge(
+        uint256 lhs,
+        uint256 rhs
+    ) internal view returns (uint256 result) {
+        bytes32[2] memory input;
+        input[0] = bytes32(lhs);
+        input[1] = bytes32(rhs);
+        uint256 inputLen = 64;
+
+        bytes32[1] memory output;
+        uint256 outputLen = 32;
+
+        // Call the ge precompile.
+        uint256 precompile = Precompiles.GreaterThanOrEqual;
+        assembly {
+            if iszero(
+                staticcall(
+                    gas(),
+                    precompile,
+                    input,
+                    inputLen,
+                    output,
+                    outputLen
+                )
+            ) {
+                revert(0, 0)
+            }
+        }
+
+        result = uint256(output[0]);
+    }
+
+    // Evaluate `lhs > rhs` on the given ciphertexts and, if successful, return the resulting ciphertext.
+    // If successful, the resulting ciphertext is automatically verified.
+    function gt(
+        uint256 lhs,
+        uint256 rhs
+    ) internal view returns (uint256 result) {
+        bytes32[2] memory input;
+        input[0] = bytes32(lhs);
+        input[1] = bytes32(rhs);
+        uint256 inputLen = 64;
+
+        bytes32[1] memory output;
+        uint256 outputLen = 32;
+
+        // Call the gt precompile.
+        uint256 precompile = Precompiles.GreaterThan;
+        assembly {
+            if iszero(
+                staticcall(
+                    gas(),
+                    precompile,
+                    input,
+                    inputLen,
+                    output,
+                    outputLen
+                )
+            ) {
+                revert(0, 0)
+            }
+        }
+
+        result = uint256(output[0]);
+    }
+
+    // Evaluate `lhs <= rhs` on the given ciphertexts and, if successful, return the resulting ciphertext.
+    // If successful, the resulting ciphertext is automatically verified.
+    function le(
+        uint256 lhs,
+        uint256 rhs
+    ) internal view returns (uint256 result) {
+        bytes32[2] memory input;
+        input[0] = bytes32(lhs);
+        input[1] = bytes32(rhs);
+        uint256 inputLen = 64;
+
+        bytes32[1] memory output;
+        uint256 outputLen = 32;
+
+        // Call the le precompile.
         uint256 precompile = Precompiles.LessThanOrEqual;
         assembly {
             if iszero(
@@ -163,7 +352,7 @@ library Impl {
         bytes32[1] memory output;
         uint256 outputLen = 32;
 
-        // Call the lte precompile.
+        // Call the lt precompile.
         uint256 precompile = Precompiles.LessThan;
         assembly {
             if iszero(

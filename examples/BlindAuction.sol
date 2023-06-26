@@ -93,14 +93,13 @@ contract BlindAuction is EIP712WithModifier {
         onlySignedPublicKey(publicKey, signature)
         returns (bytes memory)
     {
-        return
-            TFHE.reencrypt(TFHE.lte(highestBid, bids[msg.sender]), publicKey);
+        return TFHE.reencrypt(TFHE.le(highestBid, bids[msg.sender]), publicKey);
     }
 
     // Claim the object. Succeeds only if the caller has the highest bid.
     function claim() public onlyAfterEnd {
         require(!objectClaimed);
-        TFHE.requireCt(TFHE.lte(highestBid, bids[msg.sender]));
+        TFHE.requireCt(TFHE.le(highestBid, bids[msg.sender]));
 
         objectClaimed = true;
         bids[msg.sender] = euint8.wrap(0);

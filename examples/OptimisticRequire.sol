@@ -36,10 +36,10 @@ contract OptimisticRequire {
     // Charge full gas as both requires are true.
     function optimisticRequireCtTrue() public {
         // True.
-        TFHE.optimisticRequireCt(TFHE.lte(ct1, ct2));
+        TFHE.optimisticRequireCt(TFHE.le(ct1, ct2));
 
         // True.
-        TFHE.optimisticRequireCt(TFHE.lte(ct1, ct2));
+        TFHE.optimisticRequireCt(TFHE.le(ct1, ct2));
 
         // Mutate state to pay for gas.
         doWorkToPayGas();
@@ -48,7 +48,7 @@ contract OptimisticRequire {
     // Charge full gas as we are using optimistic requires.
     function optimisticRequireCtFalse() public {
         // True.
-        TFHE.optimisticRequireCt(TFHE.lte(ct1, ct2));
+        TFHE.optimisticRequireCt(TFHE.le(ct1, ct2));
 
         // False.
         TFHE.optimisticRequireCt(TFHE.lt(ct1, ct2));
@@ -60,7 +60,7 @@ contract OptimisticRequire {
     // Charge less than full gas, because the non-optimistic ciphertext require aborts early.
     function requireCtFalse() public {
         // True.
-        TFHE.requireCt(TFHE.lte(ct1, ct2));
+        TFHE.requireCt(TFHE.le(ct1, ct2));
 
         // False.
         TFHE.requireCt(TFHE.lt(ct1, ct2));
