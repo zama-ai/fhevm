@@ -2,8 +2,8 @@
 
 pragma solidity >=0.8.13 <0.9.0;
 
-import "../../node_modules/@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import "../../node_modules/@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 
 abstract contract EIP712WithModifier is EIP712 {
     constructor(
