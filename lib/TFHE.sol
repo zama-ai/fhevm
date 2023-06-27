@@ -6,6 +6,18 @@ import "./Common.sol";
 import "./Impl.sol";
 
 library TFHE {
+    function isInitialized(euint8 v) internal pure returns (bool) {
+        return euint8.unwrap(v) != 0;
+    }
+
+    function isInitialized(euint16 v) internal pure returns (bool) {
+        return euint16.unwrap(v) != 0;
+    }
+
+    function isInitialized(euint32 v) internal pure returns (bool) {
+        return euint32.unwrap(v) != 0;
+    }
+
     function add(euint8 a, euint8 b) internal view returns (euint8) {
         return euint8.wrap(Impl.add(euint8.unwrap(a), euint8.unwrap(b)));
     }
@@ -1820,12 +1832,12 @@ library TFHE {
         return Impl.reencrypt(euint8.unwrap(ciphertext), publicKey);
     }
 
-    function requireCt(euint8 ciphertext) internal view {
-        Impl.requireCt(euint8.unwrap(ciphertext));
+    function req(euint8 ciphertext) internal view {
+        Impl.req(euint8.unwrap(ciphertext));
     }
 
-    function optimisticRequireCt(euint8 ciphertext) internal view {
-        Impl.optimisticRequireCt(euint32.unwrap(asEuint32(ciphertext)));
+    function optReq(euint8 ciphertext) internal view {
+        Impl.optReq(euint32.unwrap(asEuint32(ciphertext)));
     }
 
     function asEuint16(
@@ -1845,12 +1857,12 @@ library TFHE {
         return Impl.reencrypt(euint16.unwrap(ciphertext), publicKey);
     }
 
-    function requireCt(euint16 ciphertext) internal view {
-        Impl.requireCt(euint16.unwrap(ciphertext));
+    function req(euint16 ciphertext) internal view {
+        Impl.req(euint16.unwrap(ciphertext));
     }
 
-    function optimisticRequireCt(euint16 ciphertext) internal view {
-        Impl.optimisticRequireCt(euint32.unwrap(asEuint32(ciphertext)));
+    function optReq(euint16 ciphertext) internal view {
+        Impl.optReq(euint32.unwrap(asEuint32(ciphertext)));
     }
 
     function asEuint32(
@@ -1870,12 +1882,12 @@ library TFHE {
         return Impl.reencrypt(euint32.unwrap(ciphertext), publicKey);
     }
 
-    function requireCt(euint32 ciphertext) internal view {
-        Impl.requireCt(euint32.unwrap(ciphertext));
+    function req(euint32 ciphertext) internal view {
+        Impl.req(euint32.unwrap(ciphertext));
     }
 
-    function optimisticRequireCt(euint32 ciphertext) internal view {
-        Impl.optimisticRequireCt(euint32.unwrap(ciphertext));
+    function optReq(euint32 ciphertext) internal view {
+        Impl.optReq(euint32.unwrap(ciphertext));
     }
 
     // Returns the network public FHE key.
