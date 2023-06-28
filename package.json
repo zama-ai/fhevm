@@ -1,8 +1,8 @@
 {
-  "name": "zbc-solidity",
+  "name": "fhevm",
   "description": "A Solidity library for interacting with the Zama Blockchain",
-  "version": "1.0.0",
-  "main": "index.js",
+  "version": "0.0.1",
+  "main": "lib/TFHE.sol",
   "directories": {
     "example": "examples",
     "lib": "lib"
