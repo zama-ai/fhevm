@@ -31,7 +31,7 @@ contract EncryptedERC20 is EIP712WithModifier {
     // Sets the balance of the owner to the given encrypted balance.
     function mint(bytes calldata encryptedAmount) public onlyContractOwner {
         euint32 amount = TFHE.asEuint32(encryptedAmount);
-        balances[contractOwner] = amount;
+        balances[contractOwner] = TFHE.add(balances[contractOwner], amount);
         totalSupply = TFHE.add(totalSupply, amount);
     }
 
@@ -51,11 +51,14 @@ contract EncryptedERC20 is EIP712WithModifier {
     )
         public
         view
-        onlyContractOwner
         onlySignedPublicKey(publicKey, signature)
         returns (bytes memory)
     {
-        return TFHE.reencrypt(totalSupply, publicKey);
+        if (TFHE.isInitialized(totalSupply)) {
+            return TFHE.reencrypt(totalSupply, publicKey);
+        } else {
+            return TFHE.reencrypt(TFHE.asEuint32(0), publicKey);
+        }
     }
 
     // Returns the balance of the caller encrypted under the provided public key.
@@ -68,7 +71,11 @@ contract EncryptedERC20 is EIP712WithModifier {
         onlySignedPublicKey(publicKey, signature)
         returns (bytes memory)
     {
-        return TFHE.reencrypt(balances[msg.sender], publicKey);
+        if (TFHE.isInitialized(balances[msg.sender])) {
+            return TFHE.reencrypt(balances[msg.sender], publicKey);
+        } else {
+            return TFHE.reencrypt(TFHE.asEuint32(0), publicKey);
+        }
     }
 
     // Sets the `encryptedAmount` as the allowance of `spender` over the caller's tokens.
@@ -118,7 +125,11 @@ contract EncryptedERC20 is EIP712WithModifier {
         address owner,
         address spender
     ) internal view returns (euint32) {
-        return allowances[owner][spender];
+        if (TFHE.isInitialized(allowances[owner][spender])) {
+            return allowances[owner][spender];
+        } else {
+            return TFHE.asEuint32(0);
+        }
     }
 
     function _updateAllowance(

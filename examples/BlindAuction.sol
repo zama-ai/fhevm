@@ -98,7 +98,11 @@ contract BlindAuction is EIP712WithModifier {
         onlySignedPublicKey(publicKey, signature)
         returns (bytes memory)
     {
-        return TFHE.reencrypt(bids[msg.sender], publicKey);
+        if (TFHE.isInitialized(bids[msg.sender])) {
+            return TFHE.reencrypt(bids[msg.sender], publicKey);
+        } else {
+            return TFHE.reencrypt(TFHE.asEuint32(0), publicKey);
+        }
     }
 
     // Returns the user bid
@@ -119,7 +123,18 @@ contract BlindAuction is EIP712WithModifier {
         onlySignedPublicKey(publicKey, signature)
         returns (bytes memory)
     {
-        return TFHE.reencrypt(TFHE.le(highestBid, bids[msg.sender]), publicKey);
+        if (
+            TFHE.isInitialized(highestBid) &&
+            TFHE.isInitialized(bids[msg.sender])
+        ) {
+            return
+                TFHE.reencrypt(
+                    TFHE.le(highestBid, bids[msg.sender]),
+                    publicKey
+                );
+        } else {
+            return TFHE.reencrypt(TFHE.asEuint32(0), publicKey);
+        }
     }
 
     // Claim the object. Succeeds only if the caller has the highest bid.
