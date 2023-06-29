@@ -13,16 +13,26 @@ library Impl {
     // 32 bytes for the `byte` header + 16553 bytes of key data.
     uint256 constant fhePubKeySize = 32 + 16553;
 
-    function add(uint256 a, uint256 b) internal view returns (uint256 result) {
+    function add(
+        uint256 a,
+        uint256 b,
+        bool scalar
+    ) internal view returns (uint256 result) {
         if (a == 0) {
             return b;
         } else if (b == 0) {
             return a;
         }
-        bytes32[2] memory input;
-        input[0] = bytes32(a);
-        input[1] = bytes32(b);
-        uint256 inputLen = 64;
+
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+
+        bytes memory input = bytes.concat(bytes32(a), bytes32(b), scalarByte);
+        uint256 inputLen = input.length;
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
@@ -30,11 +40,12 @@ library Impl {
         // Call the add precompile.
         uint256 precompile = Precompiles.Add;
         assembly {
+            // jump over the 32-bit `size` field of the `bytes` data structure of the `input` to read actual bytes
             if iszero(
                 staticcall(
                     gas(),
                     precompile,
-                    input,
+                    add(input, 32),
                     inputLen,
                     output,
                     outputLen
@@ -47,16 +58,26 @@ library Impl {
         result = uint256(output[0]);
     }
 
-    function sub(uint256 a, uint256 b) internal view returns (uint256 result) {
+    function sub(
+        uint256 a,
+        uint256 b,
+        bool scalar
+    ) internal view returns (uint256 result) {
         if (a == 0) {
             return b;
         } else if (b == 0) {
             return a;
         }
-        bytes32[2] memory input;
-        input[0] = bytes32(a);
-        input[1] = bytes32(b);
-        uint256 inputLen = 64;
+
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+
+        bytes memory input = bytes.concat(bytes32(a), bytes32(b), scalarByte);
+        uint256 inputLen = input.length;
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
@@ -68,7 +89,7 @@ library Impl {
                 staticcall(
                     gas(),
                     precompile,
-                    input,
+                    add(input, 32),
                     inputLen,
                     output,
                     outputLen
@@ -81,16 +102,26 @@ library Impl {
         result = uint256(output[0]);
     }
 
-    function mul(uint256 a, uint256 b) internal view returns (uint256 result) {
+    function mul(
+        uint256 a,
+        uint256 b,
+        bool scalar
+    ) internal view returns (uint256 result) {
         if (a == 0) {
             return b;
         } else if (b == 0) {
             return a;
         }
-        bytes32[2] memory input;
-        input[0] = bytes32(a);
-        input[1] = bytes32(b);
-        uint256 inputLen = 64;
+
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+
+        bytes memory input = bytes.concat(bytes32(a), bytes32(b), scalarByte);
+        uint256 inputLen = input.length;
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
@@ -102,7 +133,7 @@ library Impl {
                 staticcall(
                     gas(),
                     precompile,
-                    input,
+                    add(input, 32),
                     inputLen,
                     output,
                     outputLen
@@ -116,10 +147,9 @@ library Impl {
     }
 
     function and(uint256 a, uint256 b) internal view returns (uint256 result) {
-        bytes32[2] memory input;
-        input[0] = bytes32(a);
-        input[1] = bytes32(b);
-        uint256 inputLen = 64;
+        // scalars not currently supported for bitwise operators
+        bytes memory input = bytes.concat(bytes32(a), bytes32(b), bytes1(0x00));
+        uint256 inputLen = input.length;
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
@@ -131,7 +161,7 @@ library Impl {
                 staticcall(
                     gas(),
                     precompile,
-                    input,
+                    add(input, 32),
                     inputLen,
                     output,
                     outputLen
@@ -145,10 +175,9 @@ library Impl {
     }
 
     function or(uint256 a, uint256 b) internal view returns (uint256 result) {
-        bytes32[2] memory input;
-        input[0] = bytes32(a);
-        input[1] = bytes32(b);
-        uint256 inputLen = 64;
+        // scalars not currently supported for bitwise operators
+        bytes memory input = bytes.concat(bytes32(a), bytes32(b), bytes1(0x00));
+        uint256 inputLen = input.length;
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
@@ -160,7 +189,7 @@ library Impl {
                 staticcall(
                     gas(),
                     precompile,
-                    input,
+                    add(input, 32),
                     inputLen,
                     output,
                     outputLen
@@ -174,10 +203,9 @@ library Impl {
     }
 
     function xor(uint256 a, uint256 b) internal view returns (uint256 result) {
-        bytes32[2] memory input;
-        input[0] = bytes32(a);
-        input[1] = bytes32(b);
-        uint256 inputLen = 64;
+        // scalars not currently supported for bitwise operators
+        bytes memory input = bytes.concat(bytes32(a), bytes32(b), bytes1(0x00));
+        uint256 inputLen = input.length;
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
@@ -189,7 +217,91 @@ library Impl {
                 staticcall(
                     gas(),
                     precompile,
-                    input,
+                    add(input, 32),
+                    inputLen,
+                    output,
+                    outputLen
+                )
+            ) {
+                revert(0, 0)
+            }
+        }
+
+        result = uint256(output[0]);
+    }
+
+    // lhs << rhs
+    function shl(
+        uint256 lhs,
+        uint256 rhs,
+        bool scalar
+    ) internal view returns (uint256 result) {
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        bytes memory input = bytes.concat(
+            bytes32(rhs),
+            bytes32(lhs),
+            scalarByte
+        );
+        uint256 inputLen = input.length;
+
+        bytes32[1] memory output;
+        uint256 outputLen = 32;
+
+        // Call the left shift precompile.
+        uint256 precompile = Precompiles.ShiftLeft;
+        assembly {
+            if iszero(
+                staticcall(
+                    gas(),
+                    precompile,
+                    add(input, 32),
+                    inputLen,
+                    output,
+                    outputLen
+                )
+            ) {
+                revert(0, 0)
+            }
+        }
+
+        result = uint256(output[0]);
+    }
+
+    // lhs >> rhs
+    function shr(
+        uint256 lhs,
+        uint256 rhs,
+        bool scalar
+    ) internal view returns (uint256 result) {
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        bytes memory input = bytes.concat(
+            bytes32(rhs),
+            bytes32(lhs),
+            scalarByte
+        );
+        uint256 inputLen = input.length;
+
+        bytes32[1] memory output;
+        uint256 outputLen = 32;
+
+        // Call the right shift precompile.
+        uint256 precompile = Precompiles.ShiftRight;
+        assembly {
+            if iszero(
+                staticcall(
+                    gas(),
+                    precompile,
+                    add(input, 32),
                     inputLen,
                     output,
                     outputLen
@@ -206,12 +318,21 @@ library Impl {
     // If successful, the resulting ciphertext is automatically verified.
     function eq(
         uint256 lhs,
-        uint256 rhs
+        uint256 rhs,
+        bool scalar
     ) internal view returns (uint256 result) {
-        bytes32[2] memory input;
-        input[0] = bytes32(lhs);
-        input[1] = bytes32(rhs);
-        uint256 inputLen = 64;
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        bytes memory input = bytes.concat(
+            bytes32(lhs),
+            bytes32(rhs),
+            scalarByte
+        );
+        uint256 inputLen = input.length;
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
@@ -223,7 +344,50 @@ library Impl {
                 staticcall(
                     gas(),
                     precompile,
-                    input,
+                    add(input, 32),
+                    inputLen,
+                    output,
+                    outputLen
+                )
+            ) {
+                revert(0, 0)
+            }
+        }
+
+        result = uint256(output[0]);
+    }
+
+    // Evaluate `lhs != rhs` on the given ciphertexts and, if successful, return the resulting ciphertext.
+    // If successful, the resulting ciphertext is automatically verified.
+    function ne(
+        uint256 lhs,
+        uint256 rhs,
+        bool scalar
+    ) internal view returns (uint256 result) {
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        bytes memory input = bytes.concat(
+            bytes32(lhs),
+            bytes32(rhs),
+            scalarByte
+        );
+        uint256 inputLen = input.length;
+
+        bytes32[1] memory output;
+        uint256 outputLen = 32;
+
+        // Call the not equal precompile.
+        uint256 precompile = Precompiles.NotEqual;
+        assembly {
+            if iszero(
+                staticcall(
+                    gas(),
+                    precompile,
+                    add(input, 32),
                     inputLen,
                     output,
                     outputLen
@@ -240,12 +404,21 @@ library Impl {
     // If successful, the resulting ciphertext is automatically verified.
     function ge(
         uint256 lhs,
-        uint256 rhs
+        uint256 rhs,
+        bool scalar
     ) internal view returns (uint256 result) {
-        bytes32[2] memory input;
-        input[0] = bytes32(lhs);
-        input[1] = bytes32(rhs);
-        uint256 inputLen = 64;
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        bytes memory input = bytes.concat(
+            bytes32(lhs),
+            bytes32(rhs),
+            scalarByte
+        );
+        uint256 inputLen = input.length;
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
@@ -257,7 +430,7 @@ library Impl {
                 staticcall(
                     gas(),
                     precompile,
-                    input,
+                    add(input, 32),
                     inputLen,
                     output,
                     outputLen
@@ -274,12 +447,21 @@ library Impl {
     // If successful, the resulting ciphertext is automatically verified.
     function gt(
         uint256 lhs,
-        uint256 rhs
+        uint256 rhs,
+        bool scalar
     ) internal view returns (uint256 result) {
-        bytes32[2] memory input;
-        input[0] = bytes32(lhs);
-        input[1] = bytes32(rhs);
-        uint256 inputLen = 64;
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        bytes memory input = bytes.concat(
+            bytes32(lhs),
+            bytes32(rhs),
+            scalarByte
+        );
+        uint256 inputLen = input.length;
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
@@ -291,7 +473,7 @@ library Impl {
                 staticcall(
                     gas(),
                     precompile,
-                    input,
+                    add(input, 32),
                     inputLen,
                     output,
                     outputLen
@@ -308,18 +490,180 @@ library Impl {
     // If successful, the resulting ciphertext is automatically verified.
     function le(
         uint256 lhs,
-        uint256 rhs
+        uint256 rhs,
+        bool scalar
     ) internal view returns (uint256 result) {
-        bytes32[2] memory input;
-        input[0] = bytes32(lhs);
-        input[1] = bytes32(rhs);
-        uint256 inputLen = 64;
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        bytes memory input = bytes.concat(
+            bytes32(lhs),
+            bytes32(rhs),
+            scalarByte
+        );
+        uint256 inputLen = input.length;
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
 
         // Call the le precompile.
         uint256 precompile = Precompiles.LessThanOrEqual;
+        assembly {
+            if iszero(
+                staticcall(
+                    gas(),
+                    precompile,
+                    add(input, 32),
+                    inputLen,
+                    output,
+                    outputLen
+                )
+            ) {
+                revert(0, 0)
+            }
+        }
+
+        result = uint256(output[0]);
+    }
+
+    // Evaluate `lhs < rhs` on the given ciphertexts and, if successful, return the resulting ciphertext.
+    // If successful, the resulting ciphertext is automatically verified.
+    function lt(
+        uint256 lhs,
+        uint256 rhs,
+        bool scalar
+    ) internal view returns (uint256 result) {
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        bytes memory input = bytes.concat(
+            bytes32(rhs),
+            bytes32(lhs),
+            scalarByte
+        );
+        uint256 inputLen = input.length;
+
+        bytes32[1] memory output;
+        uint256 outputLen = 32;
+
+        // Call the lt precompile.
+        uint256 precompile = Precompiles.LessThan;
+        assembly {
+            if iszero(
+                staticcall(
+                    gas(),
+                    precompile,
+                    add(input, 32),
+                    inputLen,
+                    output,
+                    outputLen
+                )
+            ) {
+                revert(0, 0)
+            }
+        }
+
+        result = uint256(output[0]);
+    }
+
+    function min(
+        uint256 lhs,
+        uint256 rhs,
+        bool scalar
+    ) internal view returns (uint256 result) {
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        bytes memory input = bytes.concat(
+            bytes32(rhs),
+            bytes32(lhs),
+            scalarByte
+        );
+        uint256 inputLen = input.length;
+
+        bytes32[1] memory output;
+        uint256 outputLen = 32;
+
+        // Call the min precompile.
+        uint256 precompile = Precompiles.Min;
+        assembly {
+            if iszero(
+                staticcall(
+                    gas(),
+                    precompile,
+                    add(input, 32),
+                    inputLen,
+                    output,
+                    outputLen
+                )
+            ) {
+                revert(0, 0)
+            }
+        }
+
+        result = uint256(output[0]);
+    }
+
+    function max(
+        uint256 lhs,
+        uint256 rhs,
+        bool scalar
+    ) internal view returns (uint256 result) {
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        bytes memory input = bytes.concat(
+            bytes32(rhs),
+            bytes32(lhs),
+            scalarByte
+        );
+        uint256 inputLen = input.length;
+
+        bytes32[1] memory output;
+        uint256 outputLen = 32;
+
+        // Call the max precompile.
+        uint256 precompile = Precompiles.Max;
+        assembly {
+            if iszero(
+                staticcall(
+                    gas(),
+                    precompile,
+                    add(input, 32),
+                    inputLen,
+                    output,
+                    outputLen
+                )
+            ) {
+                revert(0, 0)
+            }
+        }
+
+        result = uint256(output[0]);
+    }
+
+    function neg(uint256 ct) internal view returns (uint256 result) {
+        bytes32[1] memory input;
+        input[0] = bytes32(ct);
+        uint256 inputLen = 32;
+
+        bytes32[1] memory output;
+        uint256 outputLen = 32;
+
+        // Call the negation precompile.
+        uint256 precompile = Precompiles.Negate;
         assembly {
             if iszero(
                 staticcall(
@@ -338,22 +682,16 @@ library Impl {
         result = uint256(output[0]);
     }
 
-    // Evaluate `lhs < rhs` on the given ciphertexts and, if successful, return the resulting ciphertext.
-    // If successful, the resulting ciphertext is automatically verified.
-    function lt(
-        uint256 lhs,
-        uint256 rhs
-    ) internal view returns (uint256 result) {
-        bytes32[2] memory input;
-        input[0] = bytes32(lhs);
-        input[1] = bytes32(rhs);
-        uint256 inputLen = 64;
+    function not(uint256 ct) internal view returns (uint256 result) {
+        bytes32[1] memory input;
+        input[0] = bytes32(ct);
+        uint256 inputLen = 32;
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
 
-        // Call the lt precompile.
-        uint256 precompile = Precompiles.LessThan;
+        // Call the negation precompile.
+        uint256 precompile = Precompiles.Not;
         assembly {
             if iszero(
                 staticcall(
@@ -381,22 +719,24 @@ library Impl {
         uint256 ifFalse
     ) internal view returns (uint256 result) {
         // result = (ifTrue - ifFalse) * control + ifFalse
+        bytes memory input = bytes.concat(
+            bytes32(ifTrue),
+            bytes32(ifFalse),
+            bytes1(0x00)
+        );
+        uint256 inputLen = input.length;
 
-        bytes32[2] memory input;
-        uint256 inputLen = 64;
+        bytes32[1] memory subOutput;
         uint256 outputLen = 32;
 
         // Call the sub precompile.
-        input[0] = bytes32(ifTrue);
-        input[1] = bytes32(ifFalse);
         uint256 precompile = Precompiles.Subtract;
-        bytes32[1] memory subOutput;
         assembly {
             if iszero(
                 staticcall(
                     gas(),
                     precompile,
-                    input,
+                    add(input, 32),
                     inputLen,
                     subOutput,
                     outputLen
@@ -407,8 +747,12 @@ library Impl {
         }
 
         // Call the mul precompile.
-        input[0] = bytes32(control);
-        input[1] = bytes32(subOutput[0]);
+        input = bytes.concat(
+            bytes32(control),
+            bytes32(subOutput[0]),
+            bytes1(0x00)
+        );
+        inputLen = input.length;
         precompile = Precompiles.Multiply;
         bytes32[1] memory mulOutput;
         assembly {
@@ -416,7 +760,7 @@ library Impl {
                 staticcall(
                     gas(),
                     precompile,
-                    input,
+                    add(input, 32),
                     inputLen,
                     mulOutput,
                     outputLen
@@ -427,8 +771,12 @@ library Impl {
         }
 
         // Call the add precompile.
-        input[0] = bytes32(mulOutput[0]);
-        input[1] = bytes32(ifFalse);
+        input = bytes.concat(
+            bytes32(mulOutput[0]),
+            bytes32(ifFalse),
+            bytes1(0x00)
+        );
+        inputLen = input.length;
         precompile = Precompiles.Add;
         bytes32[1] memory addOutput;
         assembly {
@@ -436,7 +784,7 @@ library Impl {
                 staticcall(
                     gas(),
                     precompile,
-                    input,
+                    add(input, 32),
                     inputLen,
                     addOutput,
                     outputLen

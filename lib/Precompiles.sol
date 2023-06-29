@@ -21,4 +21,11 @@ library Precompiles {
     uint256 public constant Equal = 81;
     uint256 public constant GreaterThanOrEqual = 82;
     uint256 public constant GreaterThan = 83;
+    uint256 public constant ShiftLeft = 84;
+    uint256 public constant ShiftRight = 85;
+    uint256 public constant NotEqual = 86;
+    uint256 public constant Min = 87;
+    uint256 public constant Max = 88;
+    uint256 public constant Negate = 89;
+    uint256 public constant Not = 90;
 }

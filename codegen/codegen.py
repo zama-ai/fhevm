@@ -45,6 +45,13 @@ library Precompiles {
     uint256 public constant Equal = 81;
     uint256 public constant GreaterThanOrEqual = 82;
     uint256 public constant GreaterThan = 83;
+    uint256 public constant ShiftLeft = 84;
+    uint256 public constant ShiftRight = 85;
+    uint256 public constant NotEqual = 86;
+    uint256 public constant Min = 87;
+    uint256 public constant Max = 88;
+    uint256 public constant Negate = 89;
+    uint256 public constant Not = 90;
 }
 """
 )
@@ -67,16 +74,22 @@ library Impl {
     // 32 bytes for the `byte` header + 16553 bytes of key data.
     uint256 constant fhePubKeySize = 32 + 16553;
 
-    function add(uint256 a, uint256 b) internal view returns (uint256 result) {
+    function add(uint256 a, uint256 b, bool scalar) internal view returns (uint256 result) {
         if (a == 0) {
             return b;
         } else if (b == 0) {
             return a;
         }
-        bytes32[2] memory input;
-        input[0] = bytes32(a);
-        input[1] = bytes32(b);
-        uint256 inputLen = 64;
+        
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        
+        bytes memory input = bytes.concat(bytes32(a), bytes32(b), scalarByte);
+        uint256 inputLen = input.length;
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
@@ -84,7 +97,8 @@ library Impl {
         // Call the add precompile.
         uint256 precompile = Precompiles.Add;
         assembly {
-            if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
+            // jump over the 32-bit `size` field of the `bytes` data structure of the `input` to read actual bytes
+            if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
                 revert(0, 0)
             }
         }
@@ -92,16 +106,22 @@ library Impl {
         result = uint256(output[0]);
     }
 
-    function sub(uint256 a, uint256 b) internal view returns (uint256 result) {
+    function sub(uint256 a, uint256 b, bool scalar) internal view returns (uint256 result) {
         if (a == 0) {
             return b;
         } else if (b == 0) {
             return a;
         }
-        bytes32[2] memory input;
-        input[0] = bytes32(a);
-        input[1] = bytes32(b);
-        uint256 inputLen = 64;
+        
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        
+        bytes memory input = bytes.concat(bytes32(a), bytes32(b), scalarByte);        
+        uint256 inputLen = input.length;
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
@@ -109,7 +129,7 @@ library Impl {
         // Call the sub precompile.
         uint256 precompile = Precompiles.Subtract;
         assembly {
-            if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
+            if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
                 revert(0, 0)
             }
         }
@@ -117,16 +137,22 @@ library Impl {
         result = uint256(output[0]);
     }
 
-    function mul(uint256 a, uint256 b) internal view returns (uint256 result) {
+    function mul(uint256 a, uint256 b, bool scalar) internal view returns (uint256 result) {
         if (a == 0) {
             return b;
         } else if (b == 0) {
             return a;
         }
-        bytes32[2] memory input;
-        input[0] = bytes32(a);
-        input[1] = bytes32(b);
-        uint256 inputLen = 64;
+        
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        
+        bytes memory input = bytes.concat(bytes32(a), bytes32(b), scalarByte);        
+        uint256 inputLen = input.length;
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
@@ -134,7 +160,7 @@ library Impl {
         // Call the mul precompile.
         uint256 precompile = Precompiles.Multiply;
         assembly {
-            if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
+            if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
                 revert(0, 0)
             }
         }
@@ -143,10 +169,9 @@ library Impl {
     }
 
     function and(uint256 a, uint256 b) internal view returns (uint256 result) {
-        bytes32[2] memory input;
-        input[0] = bytes32(a);
-        input[1] = bytes32(b);
-        uint256 inputLen = 64;
+        // scalars not currently supported for bitwise operators
+        bytes memory input = bytes.concat(bytes32(a), bytes32(b), bytes1(0x00));
+        uint256 inputLen = input.length;
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
@@ -154,7 +179,7 @@ library Impl {
         // Call the AND precompile.
         uint256 precompile = Precompiles.BitwiseAnd;
         assembly {
-            if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
+            if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
                 revert(0, 0)
             }
         }
@@ -163,10 +188,9 @@ library Impl {
     }
 
     function or(uint256 a, uint256 b) internal view returns (uint256 result) {
-        bytes32[2] memory input;
-        input[0] = bytes32(a);
-        input[1] = bytes32(b);
-        uint256 inputLen = 64;
+        // scalars not currently supported for bitwise operators
+        bytes memory input = bytes.concat(bytes32(a), bytes32(b), bytes1(0x00));
+        uint256 inputLen = input.length;
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
@@ -174,7 +198,7 @@ library Impl {
         // Call the OR precompile.
         uint256 precompile = Precompiles.BitwiseOr;
         assembly {
-            if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
+            if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
                 revert(0, 0)
             }
         }
@@ -183,10 +207,9 @@ library Impl {
     }
 
     function xor(uint256 a, uint256 b) internal view returns (uint256 result) {
-        bytes32[2] memory input;
-        input[0] = bytes32(a);
-        input[1] = bytes32(b);
-        uint256 inputLen = 64;
+        // scalars not currently supported for bitwise operators
+        bytes memory input = bytes.concat(bytes32(a), bytes32(b), bytes1(0x00));
+        uint256 inputLen = input.length;
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
@@ -194,7 +217,57 @@ library Impl {
         // Call the XOR precompile.
         uint256 precompile = Precompiles.BitwiseXor;
         assembly {
-            if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
+            if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
+                revert(0, 0)
+            }
+        }
+
+        result = uint256(output[0]);
+    }
+
+    // lhs << rhs
+    function shl(uint256 lhs, uint256 rhs, bool scalar) internal view returns (uint256 result) {
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        bytes memory input = bytes.concat(bytes32(rhs), bytes32(lhs), scalarByte);
+        uint256 inputLen = input.length;
+
+        bytes32[1] memory output;
+        uint256 outputLen = 32;
+
+        // Call the left shift precompile.
+        uint256 precompile = Precompiles.ShiftLeft;
+        assembly {
+            if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
+                revert(0, 0)
+            }
+        }
+
+        result = uint256(output[0]);
+    }
+
+    // lhs >> rhs
+    function shr(uint256 lhs, uint256 rhs, bool scalar) internal view returns (uint256 result) {
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        bytes memory input = bytes.concat(bytes32(rhs), bytes32(lhs), scalarByte);
+        uint256 inputLen = input.length;
+
+        bytes32[1] memory output;
+        uint256 outputLen = 32;
+
+        // Call the right shift precompile.
+        uint256 precompile = Precompiles.ShiftRight;
+        assembly {
+            if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
                 revert(0, 0)
             }
         }
@@ -204,11 +277,15 @@ library Impl {
 
     // Evaluate `lhs == rhs` on the given ciphertexts and, if successful, return the resulting ciphertext.
     // If successful, the resulting ciphertext is automatically verified.
-    function eq(uint256 lhs, uint256 rhs) internal view returns (uint256 result) {
-        bytes32[2] memory input;
-        input[0] = bytes32(lhs);
-        input[1] = bytes32(rhs);
-        uint256 inputLen = 64;
+    function eq(uint256 lhs, uint256 rhs, bool scalar) internal view returns (uint256 result) {
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        bytes memory input = bytes.concat(bytes32(lhs), bytes32(rhs), scalarByte);
+        uint256 inputLen = input.length;
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
@@ -216,7 +293,33 @@ library Impl {
         // Call the eq precompile.
         uint256 precompile = Precompiles.Equal;
         assembly {
-            if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
+            if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
+                revert(0, 0)
+            }
+        }
+
+        result = uint256(output[0]);
+    }
+
+    // Evaluate `lhs != rhs` on the given ciphertexts and, if successful, return the resulting ciphertext.
+    // If successful, the resulting ciphertext is automatically verified.
+    function ne(uint256 lhs, uint256 rhs, bool scalar) internal view returns (uint256 result) {
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        bytes memory input = bytes.concat(bytes32(lhs), bytes32(rhs), scalarByte);
+        uint256 inputLen = input.length;
+
+        bytes32[1] memory output;
+        uint256 outputLen = 32;
+
+        // Call the not equal precompile.
+        uint256 precompile = Precompiles.NotEqual;
+        assembly {
+            if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
                 revert(0, 0)
             }
         }
@@ -226,11 +329,15 @@ library Impl {
 
     // Evaluate `lhs >= rhs` on the given ciphertexts and, if successful, return the resulting ciphertext.
     // If successful, the resulting ciphertext is automatically verified.
-    function ge(uint256 lhs, uint256 rhs) internal view returns (uint256 result) {
-        bytes32[2] memory input;
-        input[0] = bytes32(lhs);
-        input[1] = bytes32(rhs);
-        uint256 inputLen = 64;
+    function ge(uint256 lhs, uint256 rhs, bool scalar) internal view returns (uint256 result) {
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        bytes memory input = bytes.concat(bytes32(lhs), bytes32(rhs), scalarByte);
+        uint256 inputLen = input.length;
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
@@ -238,7 +345,7 @@ library Impl {
         // Call the ge precompile.
         uint256 precompile = Precompiles.GreaterThanOrEqual;
         assembly {
-            if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
+            if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
                 revert(0, 0)
             }
         }
@@ -248,11 +355,15 @@ library Impl {
 
     // Evaluate `lhs > rhs` on the given ciphertexts and, if successful, return the resulting ciphertext.
     // If successful, the resulting ciphertext is automatically verified.
-    function gt(uint256 lhs, uint256 rhs) internal view returns (uint256 result) {
-        bytes32[2] memory input;
-        input[0] = bytes32(lhs);
-        input[1] = bytes32(rhs);
-        uint256 inputLen = 64;
+    function gt(uint256 lhs, uint256 rhs, bool scalar) internal view returns (uint256 result) {
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        bytes memory input = bytes.concat(bytes32(lhs), bytes32(rhs), scalarByte);
+        uint256 inputLen = input.length;
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
@@ -260,7 +371,7 @@ library Impl {
         // Call the gt precompile.
         uint256 precompile = Precompiles.GreaterThan;
         assembly {
-            if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
+            if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
                 revert(0, 0)
             }
         }
@@ -270,11 +381,15 @@ library Impl {
 
     // Evaluate `lhs <= rhs` on the given ciphertexts and, if successful, return the resulting ciphertext.
     // If successful, the resulting ciphertext is automatically verified.
-    function le(uint256 lhs, uint256 rhs) internal view returns (uint256 result) {
-        bytes32[2] memory input;
-        input[0] = bytes32(lhs);
-        input[1] = bytes32(rhs);
-        uint256 inputLen = 64;
+    function le(uint256 lhs, uint256 rhs, bool scalar) internal view returns (uint256 result) {
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        bytes memory input = bytes.concat(bytes32(lhs), bytes32(rhs), scalarByte);
+        uint256 inputLen = input.length;
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
@@ -282,7 +397,7 @@ library Impl {
         // Call the le precompile.
         uint256 precompile = Precompiles.LessThanOrEqual;
         assembly {
-            if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
+            if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
                 revert(0, 0)
             }
         }
@@ -292,17 +407,107 @@ library Impl {
 
     // Evaluate `lhs < rhs` on the given ciphertexts and, if successful, return the resulting ciphertext.
     // If successful, the resulting ciphertext is automatically verified.
-    function lt(uint256 lhs, uint256 rhs) internal view returns (uint256 result) {
-        bytes32[2] memory input;
-        input[0] = bytes32(lhs);
-        input[1] = bytes32(rhs);
-        uint256 inputLen = 64;
+    function lt(uint256 lhs, uint256 rhs, bool scalar) internal view returns (uint256 result) {
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        bytes memory input = bytes.concat(bytes32(rhs), bytes32(lhs), scalarByte);
+        uint256 inputLen = input.length;
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
 
         // Call the lt precompile.
         uint256 precompile = Precompiles.LessThan;
+        assembly {
+            if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
+                revert(0, 0)
+            }
+        }
+
+        result = uint256(output[0]);
+    }
+
+    function min(uint256 lhs, uint256 rhs, bool scalar) internal view returns (uint256 result) {
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        bytes memory input = bytes.concat(bytes32(rhs), bytes32(lhs), scalarByte);
+        uint256 inputLen = input.length;
+
+        bytes32[1] memory output;
+        uint256 outputLen = 32;
+
+        // Call the min precompile.
+        uint256 precompile = Precompiles.Min;
+        assembly {
+            if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
+                revert(0, 0)
+            }
+        }
+
+        result = uint256(output[0]);
+    }
+
+    function max(uint256 lhs, uint256 rhs, bool scalar) internal view returns (uint256 result) {
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        bytes memory input = bytes.concat(bytes32(rhs), bytes32(lhs), scalarByte);
+        uint256 inputLen = input.length;
+
+        bytes32[1] memory output;
+        uint256 outputLen = 32;
+
+        // Call the max precompile.
+        uint256 precompile = Precompiles.Max;
+        assembly {
+            if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
+                revert(0, 0)
+            }
+        }
+
+        result = uint256(output[0]);
+    }
+
+    function neg(uint256 ct) internal view returns (uint256 result) {
+        bytes32[1] memory input;
+        input[0] = bytes32(ct);
+        uint256 inputLen = 32;
+
+        bytes32[1] memory output;
+        uint256 outputLen = 32;
+
+        // Call the negation precompile.
+        uint256 precompile = Precompiles.Negate;
+        assembly {
+            if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
+                revert(0, 0)
+            }
+        }
+
+        result = uint256(output[0]);
+    }
+
+    function not(uint256 ct) internal view returns (uint256 result) {
+        bytes32[1] memory input;
+        input[0] = bytes32(ct);
+        uint256 inputLen = 32;
+
+        bytes32[1] memory output;
+        uint256 outputLen = 32;
+
+        // Call the negation precompile.
+        uint256 precompile = Precompiles.Not;
         assembly {
             if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
                 revert(0, 0)
@@ -317,40 +522,38 @@ library Impl {
     // If successful, the resulting ciphertext is automatically verified.
     function cmux(uint256 control, uint256 ifTrue, uint256 ifFalse) internal view returns (uint256 result) {
         // result = (ifTrue - ifFalse) * control + ifFalse
+        bytes memory input = bytes.concat(bytes32(ifTrue), bytes32(ifFalse), bytes1(0x00));
+        uint256 inputLen = input.length;
 
-        bytes32[2] memory input;
-        uint256 inputLen = 64;
+        bytes32[1] memory subOutput;
         uint256 outputLen = 32;
 
         // Call the sub precompile.
-        input[0] = bytes32(ifTrue);
-        input[1] = bytes32(ifFalse);
         uint256 precompile = Precompiles.Subtract;
-        bytes32[1] memory subOutput;
         assembly {
-            if iszero(staticcall(gas(), precompile, input, inputLen, subOutput, outputLen)) {
+            if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, subOutput, outputLen)) {
                 revert(0, 0)
             }
         }
 
         // Call the mul precompile.
-        input[0] = bytes32(control);
-        input[1] = bytes32(subOutput[0]);
+        input = bytes.concat(bytes32(control), bytes32(subOutput[0]), bytes1(0x00));
+        inputLen = input.length;
         precompile = Precompiles.Multiply;
         bytes32[1] memory mulOutput;
         assembly {
-            if iszero(staticcall(gas(), precompile, input, inputLen, mulOutput, outputLen)) {
+            if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, mulOutput, outputLen)) {
                 revert(0, 0)
             }
         }
 
         // Call the add precompile.
-        input[0] = bytes32(mulOutput[0]);
-        input[1] = bytes32(ifFalse);
+        input = bytes.concat(bytes32(mulOutput[0]), bytes32(ifFalse), bytes1(0x00));
+        inputLen = input.length;
         precompile = Precompiles.Add;
         bytes32[1] memory addOutput;
         assembly {
-            if iszero(staticcall(gas(), precompile, input, inputLen, addOutput, outputLen)) {
+            if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, addOutput, outputLen)) {
                 revert(0, 0)
             }
         }
@@ -550,11 +753,45 @@ f.write(to_print_is_initialized.format(i=32))
 
 to_print_no_cast =  """
     function {f}(euint{i} a, euint{j} b) internal view returns (euint{k}) {{
-        return euint{k}.wrap(Impl.{f}(euint{i}.unwrap(a), euint{j}.unwrap(b)));
+        return euint{k}.wrap(Impl.{f}(euint{i}.unwrap(a), euint{j}.unwrap(b), false));
     }}
 """
 
 to_print_cast_a =  """
+    function {f}(euint{i} a, euint{j} b) internal view returns (euint{k}) {{
+        return euint{k}.wrap(Impl.{f}(euint{j}.unwrap(asEuint{j}(a)), euint{j}.unwrap(b), false));
+    }}
+
+    function {f}(euint{i} a, uint{j} b) internal view returns (euint{k}) {{
+        return euint{k}.wrap(Impl.{f}(euint{j}.unwrap(asEuint{j}(a)), uint256(b), true));
+    }}
+
+    function {f}(uint{i} a, euint{j} b) internal view returns (euint{k}) {{
+        return euint{k}.wrap(Impl.{g}(euint{j}.unwrap(b), uint256(a), true));
+    }}
+"""
+
+to_print_cast_b =  """
+    function {f}(euint{i} a, euint{j} b) internal view returns (euint{k}) {{
+        return euint{k}.wrap(Impl.{f}(euint{i}.unwrap(a), euint{i}.unwrap(asEuint{i}(b)), false));
+    }}
+
+    function {f}(euint{i} a, uint{j} b) internal view returns (euint{k}) {{
+        return euint{k}.wrap(Impl.{f}(euint{i}.unwrap(a), uint256(b), true));
+    }}
+
+    function {f}(uint{i} a, euint{j} b) internal view returns (euint{k}) {{
+        return euint{k}.wrap(Impl.{g}(euint{i}.unwrap(asEuint{i}(b)), uint256(a), true));
+    }}
+"""
+
+to_print_no_scalar_no_cast = """
+    function {f}(euint{i} a, euint{j} b) internal view returns (euint{k}) {{
+        return euint{k}.wrap(Impl.{f}(euint{i}.unwrap(a), euint{j}.unwrap(b)));
+    }}
+"""
+
+to_print_no_scalar_cast_a = """
     function {f}(euint{i} a, euint{j} b) internal view returns (euint{k}) {{
         return euint{k}.wrap(Impl.{f}(euint{j}.unwrap(asEuint{j}(a)), euint{j}.unwrap(b)));
     }}
@@ -568,8 +805,8 @@ to_print_cast_a =  """
     }}
 """
 
-to_print_cast_b =  """
-    function {f}(euint{i} a, euint{j} b) internal view returns (euint{k}) {{
+to_print_no_scalar_cast_b = """
+function {f}(euint{i} a, euint{j} b) internal view returns (euint{k}) {{
         return euint{k}.wrap(Impl.{f}(euint{i}.unwrap(a), euint{i}.unwrap(asEuint{i}(b))));
     }}
 
@@ -585,42 +822,56 @@ to_print_cast_b =  """
 for i in (2**p for p in range(3, 6)):
     for j in (2**p for p in range(3, 6)):
         if i == j:
-            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="add")))
-            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="sub")))
-            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="mul")))
-            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="and")))
-            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="or")))
-            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="xor")))
-            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="eq")))
-            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="ge")))
-            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="gt")))
-            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="le")))
-            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="lt")))
+            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="add", g="add")))
+            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="sub", g="sub")))
+            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="mul", g="mul")))
+            f.write((to_print_no_scalar_no_cast.format(i=i, j=j, k=i, f="and")))
+            f.write((to_print_no_scalar_no_cast.format(i=i, j=j, k=i, f="or")))
+            f.write((to_print_no_scalar_no_cast.format(i=i, j=j, k=i, f="xor")))
+            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="shl", g="shl")))
+            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="shr", g="shr")))
+            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="eq", g="eq")))
+            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="ne", g="ne")))
+            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="ge", g="le")))
+            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="gt", g="lt")))
+            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="le", g="ge")))
+            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="lt", g="gt")))
+            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="min", g="min")))
+            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="max", g="max")))
         elif i < j:
-            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="add")))
-            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="sub")))
-            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="mul")))
-            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="and")))
-            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="or")))
-            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="xor")))
-            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="eq")))
-            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="ge")))
-            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="gt")))
-            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="le")))
-            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="lt")))
+            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="add", g="add")))
+            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="sub", g="sub")))
+            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="mul", g="mul")))
+            f.write((to_print_no_scalar_cast_a.format(i=i, j=j, k=j, f="and")))
+            f.write((to_print_no_scalar_cast_a.format(i=i, j=j, k=j, f="or")))
+            f.write((to_print_no_scalar_cast_a.format(i=i, j=j, k=j, f="xor")))
+            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="shl", g="shl")))
+            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="shr", g="shr")))
+            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="eq", g="eq")))
+            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="ne", g="ne")))
+            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="ge", g="le")))
+            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="gt", g="lt")))
+            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="le", g="ge")))
+            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="lt", g="gt")))
+            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="min", g="min")))
+            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="max", g="max")))
         else:
-            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="add")))
-            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="sub")))
-            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="mul")))
-            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="and")))
-            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="or")))
-            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="xor")))
-            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="eq")))
-            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="ge")))
-            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="gt")))
-            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="le")))
-            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="lt")))
-
+            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="add", g="add")))
+            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="sub", g="sub")))
+            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="mul", g="mul")))
+            f.write((to_print_no_scalar_cast_b.format(i=i, j=j, k=i, f="and")))
+            f.write((to_print_no_scalar_cast_b.format(i=i, j=j, k=i, f="or")))
+            f.write((to_print_no_scalar_cast_b.format(i=i, j=j, k=i, f="xor")))
+            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="shl", g="shl")))
+            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="shr", g="shr")))
+            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="eq", g="eq")))
+            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="ne", g="ne")))
+            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="ge", g="le")))
+            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="gt", g="lt")))
+            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="le", g="ge")))
+            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="lt", g="gt")))
+            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="min", g="min")))
+            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="max", g="max")))
 to_print =  """
     function cmux(euint{i} control, euint{i} a, euint{i} b) internal view returns (euint{i}) {{
         return euint{i}.wrap(Impl.cmux(euint{i}.unwrap(control), euint{i}.unwrap(a), euint{i}.unwrap(b)));
