@@ -2170,6 +2170,22 @@ library TFHE {
         return Impl.reencrypt(euint8.unwrap(ciphertext), publicKey);
     }
 
+    function reencrypt(
+        euint8 ciphertext,
+        bytes32 publicKey,
+        uint8 defaultValue
+    ) internal view returns (bytes memory reencrypted) {
+        if (euint8.unwrap(ciphertext) != 0) {
+            return Impl.reencrypt(euint8.unwrap(ciphertext), publicKey);
+        } else {
+            return
+                Impl.reencrypt(
+                    euint8.unwrap(asEuint8(defaultValue)),
+                    publicKey
+                );
+        }
+    }
+
     function req(euint8 ciphertext) internal view {
         Impl.req(euint8.unwrap(ciphertext));
     }
@@ -2195,6 +2211,22 @@ library TFHE {
         return Impl.reencrypt(euint16.unwrap(ciphertext), publicKey);
     }
 
+    function reencrypt(
+        euint16 ciphertext,
+        bytes32 publicKey,
+        uint16 defaultValue
+    ) internal view returns (bytes memory reencrypted) {
+        if (euint16.unwrap(ciphertext) != 0) {
+            return Impl.reencrypt(euint16.unwrap(ciphertext), publicKey);
+        } else {
+            return
+                Impl.reencrypt(
+                    euint16.unwrap(asEuint16(defaultValue)),
+                    publicKey
+                );
+        }
+    }
+
     function req(euint16 ciphertext) internal view {
         Impl.req(euint16.unwrap(ciphertext));
     }
@@ -2218,6 +2250,22 @@ library TFHE {
         bytes32 publicKey
     ) internal view returns (bytes memory reencrypted) {
         return Impl.reencrypt(euint32.unwrap(ciphertext), publicKey);
+    }
+
+    function reencrypt(
+        euint32 ciphertext,
+        bytes32 publicKey,
+        uint32 defaultValue
+    ) internal view returns (bytes memory reencrypted) {
+        if (euint32.unwrap(ciphertext) != 0) {
+            return Impl.reencrypt(euint32.unwrap(ciphertext), publicKey);
+        } else {
+            return
+                Impl.reencrypt(
+                    euint32.unwrap(asEuint32(defaultValue)),
+                    publicKey
+                );
+        }
     }
 
     function req(euint32 ciphertext) internal view {

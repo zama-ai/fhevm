@@ -906,6 +906,14 @@ to_print="""
         return Impl.reencrypt(euint{i}.unwrap(ciphertext), publicKey);
     }}
 
+    function reencrypt(euint{i} ciphertext, bytes32 publicKey, uint{i} defaultValue) internal view returns (bytes memory reencrypted) {{
+        if (euint{i}.unwrap(ciphertext) != 0) {{
+            return Impl.reencrypt(euint{i}.unwrap(ciphertext), publicKey);
+        }} else {{
+            return Impl.reencrypt(euint{i}.unwrap(asEuint{i}(defaultValue)), publicKey);
+        }}
+    }}
+
     function req(euint{i} ciphertext) internal view {{
         Impl.req(euint{i}.unwrap(ciphertext));
     }}
