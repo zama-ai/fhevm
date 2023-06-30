@@ -153,6 +153,8 @@ compiled_sol = compile_standard(
         "language": "Solidity",
         "sources": {"EncryptedERC20.sol": {"content": file_contents}},
         "settings": {
+            "remappings": ['@openzeppelin/contracts={0}/node_modules/@openzeppelin/contracts'.format(os.getcwd()),
+                           'abstract={0}/examples/abstract'.format(os.getcwd())],
             "outputSelection": {
                 "*": {
                     "*": ["abi", "metadata", "evm.bytecode", "evm.bytecode.sourceMap"]
@@ -160,8 +162,7 @@ compiled_sol = compile_standard(
             }
         },
     },
-    solc_version="0.8.13",
-    allow_paths="./examples"
+    solc_version="0.8.13"
 )
 print('Contract compilation took %s seconds' % (time.time() - start))
 
