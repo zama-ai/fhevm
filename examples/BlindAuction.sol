@@ -98,11 +98,7 @@ contract BlindAuction is EIP712WithModifier {
         onlySignedPublicKey(publicKey, signature)
         returns (bytes memory)
     {
-        if (TFHE.isInitialized(bids[msg.sender])) {
-            return TFHE.reencrypt(bids[msg.sender], publicKey);
-        } else {
-            return TFHE.reencrypt(TFHE.asEuint32(0), publicKey);
-        }
+        return TFHE.reencrypt(bids[msg.sender], publicKey, 0);
     }
 
     // Returns the user bid
