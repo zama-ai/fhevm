@@ -243,8 +243,8 @@ library Impl {
             scalarByte = 0x00;
         }
         bytes memory input = bytes.concat(
-            bytes32(rhs),
             bytes32(lhs),
+            bytes32(rhs),
             scalarByte
         );
         uint256 inputLen = input.length;
@@ -285,8 +285,8 @@ library Impl {
             scalarByte = 0x00;
         }
         bytes memory input = bytes.concat(
-            bytes32(rhs),
             bytes32(lhs),
+            bytes32(rhs),
             scalarByte
         );
         uint256 inputLen = input.length;
@@ -543,8 +543,8 @@ library Impl {
             scalarByte = 0x00;
         }
         bytes memory input = bytes.concat(
-            bytes32(rhs),
             bytes32(lhs),
+            bytes32(rhs),
             scalarByte
         );
         uint256 inputLen = input.length;
@@ -584,8 +584,8 @@ library Impl {
             scalarByte = 0x00;
         }
         bytes memory input = bytes.concat(
-            bytes32(rhs),
             bytes32(lhs),
+            bytes32(rhs),
             scalarByte
         );
         uint256 inputLen = input.length;
@@ -625,8 +625,8 @@ library Impl {
             scalarByte = 0x00;
         }
         bytes memory input = bytes.concat(
-            bytes32(rhs),
             bytes32(lhs),
+            bytes32(rhs),
             scalarByte
         );
         uint256 inputLen = input.length;

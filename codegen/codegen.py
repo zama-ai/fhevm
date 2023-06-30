@@ -233,7 +233,7 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        bytes memory input = bytes.concat(bytes32(rhs), bytes32(lhs), scalarByte);
+        bytes memory input = bytes.concat(bytes32(lhs), bytes32(rhs), scalarByte);
         uint256 inputLen = input.length;
 
         bytes32[1] memory output;
@@ -258,7 +258,7 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        bytes memory input = bytes.concat(bytes32(rhs), bytes32(lhs), scalarByte);
+        bytes memory input = bytes.concat(bytes32(lhs), bytes32(rhs), scalarByte);
         uint256 inputLen = input.length;
 
         bytes32[1] memory output;
@@ -414,7 +414,7 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        bytes memory input = bytes.concat(bytes32(rhs), bytes32(lhs), scalarByte);
+        bytes memory input = bytes.concat(bytes32(lhs), bytes32(rhs), scalarByte);
         uint256 inputLen = input.length;
 
         bytes32[1] memory output;
@@ -438,7 +438,7 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        bytes memory input = bytes.concat(bytes32(rhs), bytes32(lhs), scalarByte);
+        bytes memory input = bytes.concat(bytes32(lhs), bytes32(rhs), scalarByte);
         uint256 inputLen = input.length;
 
         bytes32[1] memory output;
@@ -462,7 +462,7 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        bytes memory input = bytes.concat(bytes32(rhs), bytes32(lhs), scalarByte);
+        bytes memory input = bytes.concat(bytes32(lhs), bytes32(rhs), scalarByte);
         uint256 inputLen = input.length;
 
         bytes32[1] memory output;
@@ -754,6 +754,14 @@ f.write(to_print_is_initialized.format(i=32))
 to_print_no_cast =  """
     function {f}(euint{i} a, euint{j} b) internal view returns (euint{k}) {{
         return euint{k}.wrap(Impl.{f}(euint{i}.unwrap(a), euint{j}.unwrap(b), false));
+    }}
+
+    function {f}(euint{i} a, uint{j} b) internal view returns (euint{k}) {{
+        return euint{k}.wrap(Impl.{f}(euint{i}.unwrap(a), uint256(b), true));
+    }}
+
+    function {f}(uint{i} a, euint{j} b) internal view returns (euint{k}) {{
+        return euint{k}.wrap(Impl.{g}(euint{j}.unwrap(b), uint256(a), true));
     }}
 """
 
