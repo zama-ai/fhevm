@@ -6,7 +6,7 @@ NETWORK_KEYS_PUBLIC_PATH=./keys/network-public-fhe-keys
 
 S3_BUCKET_PATH="s3://zbc-testnet"
 S3_NETWORK_KEYS_PATH="$S3_BUCKET_PATH/network-fhe-keys"
-S3_NETWORK_KEYS_FULL_PATH="$S3_NETWORK_KEYS_PATH/staging-env"
+S3_NETWORK_KEYS_FULL_PATH="$S3_NETWORK_KEYS_PATH/keys_gen_with_zbc_fhe_tool_v0_1_1"
 
 mkdir -p $NETWORK_KEYS_PUBLIC_PATH
 
