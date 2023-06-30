@@ -791,6 +791,14 @@ to_print_no_scalar_no_cast = """
     function {f}(euint{i} a, euint{j} b) internal view returns (euint{k}) {{
         return euint{k}.wrap(Impl.{f}(euint{i}.unwrap(a), euint{j}.unwrap(b)));
     }}
+
+    function {f}(euint{i} a, uint{j} b) internal view returns (euint{k}) {{
+        return euint{k}.wrap(Impl.{f}(euint{i}.unwrap(a), euint{j}.unwrap(asEuint{j}(b))));
+    }}
+
+    function {f}(uint{i} a, euint{j} b) internal view returns (euint{k}) {{
+        return euint{k}.wrap(Impl.{f}(euint{i}.unwrap(asEuint{i}(a)), euint{j}.unwrap(b)));
+    }}
 """
 
 to_print_no_scalar_cast_a = """

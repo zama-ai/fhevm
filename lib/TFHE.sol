@@ -58,12 +58,42 @@ library TFHE {
         return euint8.wrap(Impl.and(euint8.unwrap(a), euint8.unwrap(b)));
     }
 
+    function and(euint8 a, uint8 b) internal view returns (euint8) {
+        return
+            euint8.wrap(Impl.and(euint8.unwrap(a), euint8.unwrap(asEuint8(b))));
+    }
+
+    function and(uint8 a, euint8 b) internal view returns (euint8) {
+        return
+            euint8.wrap(Impl.and(euint8.unwrap(asEuint8(a)), euint8.unwrap(b)));
+    }
+
     function or(euint8 a, euint8 b) internal view returns (euint8) {
         return euint8.wrap(Impl.or(euint8.unwrap(a), euint8.unwrap(b)));
     }
 
+    function or(euint8 a, uint8 b) internal view returns (euint8) {
+        return
+            euint8.wrap(Impl.or(euint8.unwrap(a), euint8.unwrap(asEuint8(b))));
+    }
+
+    function or(uint8 a, euint8 b) internal view returns (euint8) {
+        return
+            euint8.wrap(Impl.or(euint8.unwrap(asEuint8(a)), euint8.unwrap(b)));
+    }
+
     function xor(euint8 a, euint8 b) internal view returns (euint8) {
         return euint8.wrap(Impl.xor(euint8.unwrap(a), euint8.unwrap(b)));
+    }
+
+    function xor(euint8 a, uint8 b) internal view returns (euint8) {
+        return
+            euint8.wrap(Impl.xor(euint8.unwrap(a), euint8.unwrap(asEuint8(b))));
+    }
+
+    function xor(uint8 a, euint8 b) internal view returns (euint8) {
+        return
+            euint8.wrap(Impl.xor(euint8.unwrap(asEuint8(a)), euint8.unwrap(b)));
     }
 
     function shl(euint8 a, euint8 b) internal view returns (euint8) {
@@ -1147,12 +1177,54 @@ library TFHE {
         return euint16.wrap(Impl.and(euint16.unwrap(a), euint16.unwrap(b)));
     }
 
+    function and(euint16 a, uint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.and(euint16.unwrap(a), euint16.unwrap(asEuint16(b)))
+            );
+    }
+
+    function and(uint16 a, euint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.and(euint16.unwrap(asEuint16(a)), euint16.unwrap(b))
+            );
+    }
+
     function or(euint16 a, euint16 b) internal view returns (euint16) {
         return euint16.wrap(Impl.or(euint16.unwrap(a), euint16.unwrap(b)));
     }
 
+    function or(euint16 a, uint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.or(euint16.unwrap(a), euint16.unwrap(asEuint16(b)))
+            );
+    }
+
+    function or(uint16 a, euint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.or(euint16.unwrap(asEuint16(a)), euint16.unwrap(b))
+            );
+    }
+
     function xor(euint16 a, euint16 b) internal view returns (euint16) {
         return euint16.wrap(Impl.xor(euint16.unwrap(a), euint16.unwrap(b)));
+    }
+
+    function xor(euint16 a, uint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.xor(euint16.unwrap(a), euint16.unwrap(asEuint16(b)))
+            );
+    }
+
+    function xor(uint16 a, euint16 b) internal view returns (euint16) {
+        return
+            euint16.wrap(
+                Impl.xor(euint16.unwrap(asEuint16(a)), euint16.unwrap(b))
+            );
     }
 
     function shl(euint16 a, euint16 b) internal view returns (euint16) {
@@ -2246,12 +2318,54 @@ library TFHE {
         return euint32.wrap(Impl.and(euint32.unwrap(a), euint32.unwrap(b)));
     }
 
+    function and(euint32 a, uint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.and(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function and(uint32 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.and(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
     function or(euint32 a, euint32 b) internal view returns (euint32) {
         return euint32.wrap(Impl.or(euint32.unwrap(a), euint32.unwrap(b)));
     }
 
+    function or(euint32 a, uint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.or(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function or(uint32 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.or(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
+    }
+
     function xor(euint32 a, euint32 b) internal view returns (euint32) {
         return euint32.wrap(Impl.xor(euint32.unwrap(a), euint32.unwrap(b)));
+    }
+
+    function xor(euint32 a, uint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.xor(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
+            );
+    }
+
+    function xor(uint32 a, euint32 b) internal view returns (euint32) {
+        return
+            euint32.wrap(
+                Impl.xor(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
+            );
     }
 
     function shl(euint32 a, euint32 b) internal view returns (euint32) {
