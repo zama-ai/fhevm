@@ -35,6 +35,9 @@ contract BlindAuction is EIP712WithModifier {
 
     bool public manuallyStopped = false;
 
+    // The owner of the contract.
+    address public contractOwner;
+
     // The function has been called too early.
     // Try again at `time`.
     error TooEarly(uint time);
@@ -57,6 +60,7 @@ contract BlindAuction is EIP712WithModifier {
         tokenTransferred = false;
         bidCounter = 0;
         stoppable = isStoppable;
+        contractOwner = msg.sender;
     }
 
     // Bid an `encryptedValue`.
@@ -102,7 +106,7 @@ contract BlindAuction is EIP712WithModifier {
     }
 
     // Returns the user bid
-    function stop() public {
+    function stop() public onlyContractOwner {
         require(stoppable);
         manuallyStopped = true;
     }
@@ -170,6 +174,11 @@ contract BlindAuction is EIP712WithModifier {
     modifier onlyAfterEnd() {
         if (block.timestamp <= endTime && manuallyStopped == false)
             revert TooEarly(endTime);
+        _;
+    }
+
+    modifier onlyContractOwner() {
+        require(msg.sender == contractOwner);
         _;
     }
 }
