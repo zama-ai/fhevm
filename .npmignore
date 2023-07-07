@@ -1,5 +1,6 @@
 *
-!lib/*
+!lib/**
+!abstracts/**
 !package.json
 !README.md
 !LICENSE

@@ -2,7 +2,7 @@
 
 pragma solidity >=0.8.13 <0.9.0;
 
-import "./abstract/EIP712WithModifier.sol";
+import "../abstracts/EIP712WithModifier.sol";
 import "../lib/TFHE.sol";
 
 // Shows the CMUX operation in Solidity.
