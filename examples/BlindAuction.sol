@@ -4,7 +4,7 @@ pragma solidity >=0.8.13 <0.9.0;
 
 import "../lib/TFHE.sol";
 
-import "./abstract/EIP712WithModifier.sol";
+import "../abstracts/EIP712WithModifier.sol";
 
 import "./EncryptedERC20.sol";
 

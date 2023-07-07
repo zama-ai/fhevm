@@ -2,7 +2,7 @@
 
 pragma solidity >=0.8.13 <0.9.0;
 
-import "./abstract/EIP712WithModifier.sol";
+import "../abstracts/EIP712WithModifier.sol";
 
 import "../lib/TFHE.sol";
 
@@ -22,7 +22,7 @@ contract EncryptedERC20 is EIP712WithModifier {
     mapping(address => mapping(address => euint32)) internal allowances;
 
     // The owner of the contract.
-    address internal contractOwner;
+    address public contractOwner;
 
     constructor() EIP712WithModifier("Authorization token", "1") {
         contractOwner = msg.sender;
