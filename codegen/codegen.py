@@ -75,12 +75,6 @@ library Impl {
     uint256 constant fhePubKeySize = 32 + 16553;
 
     function add(uint256 a, uint256 b, bool scalar) internal view returns (uint256 result) {
-        if (a == 0) {
-            return b;
-        } else if (b == 0) {
-            return a;
-        }
-        
         bytes1 scalarByte;
         if (scalar) {
             scalarByte = 0x01;
@@ -107,12 +101,6 @@ library Impl {
     }
 
     function sub(uint256 a, uint256 b, bool scalar) internal view returns (uint256 result) {
-        if (a == 0) {
-            return b;
-        } else if (b == 0) {
-            return a;
-        }
-        
         bytes1 scalarByte;
         if (scalar) {
             scalarByte = 0x01;
@@ -744,144 +732,162 @@ f.write(to_print_is_initialized.format(i=8))
 f.write(to_print_is_initialized.format(i=16))
 f.write(to_print_is_initialized.format(i=32))
 
-
 to_print_no_cast =  """
     function {f}(euint{i} a, euint{j} b) internal view returns (euint{k}) {{
+        if (!isInitialized(a)) {{
+            a = asEuint{i}(0);
+        }}
+        if (!isInitialized(b)) {{
+            b = asEuint{j}(0);
+        }}
         return euint{k}.wrap(Impl.{f}(euint{i}.unwrap(a), euint{j}.unwrap(b), false));
-    }}
-
-    function {f}(euint{i} a, uint{j} b) internal view returns (euint{k}) {{
-        return euint{k}.wrap(Impl.{f}(euint{i}.unwrap(a), uint256(b), true));
-    }}
-
-    function {f}(uint{i} a, euint{j} b) internal view returns (euint{k}) {{
-        return euint{k}.wrap(Impl.{g}(euint{j}.unwrap(b), uint256(a), true));
     }}
 """
 
 to_print_cast_a =  """
     function {f}(euint{i} a, euint{j} b) internal view returns (euint{k}) {{
+        if (!isInitialized(a)) {{
+            a = asEuint{i}(0);
+        }}
+        if (!isInitialized(b)) {{
+            b = asEuint{j}(0);
+        }}
         return euint{k}.wrap(Impl.{f}(euint{j}.unwrap(asEuint{j}(a)), euint{j}.unwrap(b), false));
-    }}
-
-    function {f}(euint{i} a, uint{j} b) internal view returns (euint{k}) {{
-        return euint{k}.wrap(Impl.{f}(euint{j}.unwrap(asEuint{j}(a)), uint256(b), true));
-    }}
-
-    function {f}(uint{i} a, euint{j} b) internal view returns (euint{k}) {{
-        return euint{k}.wrap(Impl.{g}(euint{j}.unwrap(b), uint256(a), true));
     }}
 """
 
 to_print_cast_b =  """
     function {f}(euint{i} a, euint{j} b) internal view returns (euint{k}) {{
+        if (!isInitialized(a)) {{
+            a = asEuint{i}(0);
+        }}
+        if (!isInitialized(b)) {{
+            b = asEuint{j}(0);
+        }}
         return euint{k}.wrap(Impl.{f}(euint{i}.unwrap(a), euint{i}.unwrap(asEuint{i}(b)), false));
-    }}
-
-    function {f}(euint{i} a, uint{j} b) internal view returns (euint{k}) {{
-        return euint{k}.wrap(Impl.{f}(euint{i}.unwrap(a), uint256(b), true));
-    }}
-
-    function {f}(uint{i} a, euint{j} b) internal view returns (euint{k}) {{
-        return euint{k}.wrap(Impl.{g}(euint{i}.unwrap(asEuint{i}(b)), uint256(a), true));
     }}
 """
 
 to_print_no_scalar_no_cast = """
     function {f}(euint{i} a, euint{j} b) internal view returns (euint{k}) {{
+        if (!isInitialized(a)) {{
+            a = asEuint{i}(0);
+        }}
+        if (!isInitialized(b)) {{
+            b = asEuint{j}(0);
+        }}
         return euint{k}.wrap(Impl.{f}(euint{i}.unwrap(a), euint{j}.unwrap(b)));
-    }}
-
-    function {f}(euint{i} a, uint{j} b) internal view returns (euint{k}) {{
-        return euint{k}.wrap(Impl.{f}(euint{i}.unwrap(a), euint{j}.unwrap(asEuint{j}(b))));
-    }}
-
-    function {f}(uint{i} a, euint{j} b) internal view returns (euint{k}) {{
-        return euint{k}.wrap(Impl.{f}(euint{i}.unwrap(asEuint{i}(a)), euint{j}.unwrap(b)));
     }}
 """
 
 to_print_no_scalar_cast_a = """
     function {f}(euint{i} a, euint{j} b) internal view returns (euint{k}) {{
-        return euint{k}.wrap(Impl.{f}(euint{j}.unwrap(asEuint{j}(a)), euint{j}.unwrap(b)));
-    }}
-
-    function {f}(euint{i} a, uint{j} b) internal view returns (euint{k}) {{
-        return euint{k}.wrap(Impl.{f}(euint{j}.unwrap(asEuint{j}(a)), euint{j}.unwrap(asEuint{j}(b))));
-    }}
-
-    function {f}(uint{i} a, euint{j} b) internal view returns (euint{k}) {{
+        if (!isInitialized(a)) {{
+            a = asEuint{i}(0);
+        }}
+        if (!isInitialized(b)) {{
+            b = asEuint{j}(0);
+        }}
         return euint{k}.wrap(Impl.{f}(euint{j}.unwrap(asEuint{j}(a)), euint{j}.unwrap(b)));
     }}
 """
 
 to_print_no_scalar_cast_b = """
 function {f}(euint{i} a, euint{j} b) internal view returns (euint{k}) {{
+        if (!isInitialized(a)) {{
+            a = asEuint{i}(0);
+        }}
+        if (!isInitialized(b)) {{
+            b = asEuint{j}(0);
+        }}
         return euint{k}.wrap(Impl.{f}(euint{i}.unwrap(a), euint{i}.unwrap(asEuint{i}(b))));
     }}
+"""
 
-    function {f}(euint{i} a, uint{j} b) internal view returns (euint{k}) {{
-        return euint{k}.wrap(Impl.{f}(euint{i}.unwrap(a), euint{i}.unwrap(asEuint{i}(b))));
+to_print_scalar = """
+    function {f}(euint{i} a, uint{i} b) internal view returns (euint{i}) {{
+        if (!isInitialized(a)) {{
+            a = asEuint{i}(0);
+        }}
+        return euint{i}.wrap(Impl.{f}(euint{i}.unwrap(a), uint256(b), true));
     }}
 
-    function {f}(uint{i} a, euint{j} b) internal view returns (euint{k}) {{
-        return euint{k}.wrap(Impl.{f}(euint{i}.unwrap(asEuint{i}(a)), euint{i}.unwrap(asEuint{i}(b))));
+    function {f}(uint{i} a, euint{i} b) internal view returns (euint{i}) {{
+        if (!isInitialized(b)) {{
+            b = asEuint{i}(0);
+        }}
+        return euint{i}.wrap(Impl.{g}(euint{i}.unwrap(b), uint256(a), true));
     }}
 """
 
 for i in (2**p for p in range(3, 6)):
     for j in (2**p for p in range(3, 6)):
         if i == j:
-            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="add", g="add")))
-            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="sub", g="sub")))
-            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="mul", g="mul")))
-            f.write((to_print_no_scalar_no_cast.format(i=i, j=j, k=i, f="and")))
-            f.write((to_print_no_scalar_no_cast.format(i=i, j=j, k=i, f="or")))
-            f.write((to_print_no_scalar_no_cast.format(i=i, j=j, k=i, f="xor")))
-            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="shl", g="shl")))
-            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="shr", g="shr")))
-            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="eq", g="eq")))
-            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="ne", g="ne")))
-            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="ge", g="le")))
-            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="gt", g="lt")))
-            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="le", g="ge")))
-            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="lt", g="gt")))
-            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="min", g="min")))
-            f.write((to_print_no_cast.format(i=i, j=j, k=i, f="max", g="max")))
+            f.write(to_print_no_cast.format(i=i, j=j, k=i, f="add", g="add"))
+            f.write(to_print_no_cast.format(i=i, j=j, k=i, f="sub", g="sub"))
+            f.write(to_print_no_cast.format(i=i, j=j, k=i, f="mul", g="mul"))
+            f.write(to_print_no_scalar_no_cast.format(i=i, j=j, k=i, f="and"))
+            f.write(to_print_no_scalar_no_cast.format(i=i, j=j, k=i, f="or"))
+            f.write(to_print_no_scalar_no_cast.format(i=i, j=j, k=i, f="xor"))
+            f.write(to_print_no_cast.format(i=i, j=j, k=i, f="shl", g="shl"))
+            f.write(to_print_no_cast.format(i=i, j=j, k=i, f="shr", g="shr"))
+            f.write(to_print_no_cast.format(i=i, j=j, k=i, f="eq", g="eq"))
+            f.write(to_print_no_cast.format(i=i, j=j, k=i, f="ne", g="ne"))
+            f.write(to_print_no_cast.format(i=i, j=j, k=i, f="ge", g="le"))
+            f.write(to_print_no_cast.format(i=i, j=j, k=i, f="gt", g="lt"))
+            f.write(to_print_no_cast.format(i=i, j=j, k=i, f="le", g="ge"))
+            f.write(to_print_no_cast.format(i=i, j=j, k=i, f="lt", g="gt"))
+            f.write(to_print_no_cast.format(i=i, j=j, k=i, f="min", g="min"))
+            f.write(to_print_no_cast.format(i=i, j=j, k=i, f="max", g="max"))
         elif i < j:
-            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="add", g="add")))
-            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="sub", g="sub")))
-            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="mul", g="mul")))
-            f.write((to_print_no_scalar_cast_a.format(i=i, j=j, k=j, f="and")))
-            f.write((to_print_no_scalar_cast_a.format(i=i, j=j, k=j, f="or")))
-            f.write((to_print_no_scalar_cast_a.format(i=i, j=j, k=j, f="xor")))
-            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="shl", g="shl")))
-            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="shr", g="shr")))
-            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="eq", g="eq")))
-            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="ne", g="ne")))
-            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="ge", g="le")))
-            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="gt", g="lt")))
-            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="le", g="ge")))
-            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="lt", g="gt")))
-            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="min", g="min")))
-            f.write((to_print_cast_a.format(i=i, j=j, k=j, f="max", g="max")))
+            f.write(to_print_cast_a.format(i=i, j=j, k=j, f="add", g="add"))
+            f.write(to_print_cast_a.format(i=i, j=j, k=j, f="sub", g="sub"))
+            f.write(to_print_cast_a.format(i=i, j=j, k=j, f="mul", g="mul"))
+            f.write(to_print_no_scalar_cast_a.format(i=i, j=j, k=j, f="and"))
+            f.write(to_print_no_scalar_cast_a.format(i=i, j=j, k=j, f="or"))
+            f.write(to_print_no_scalar_cast_a.format(i=i, j=j, k=j, f="xor"))
+            f.write(to_print_cast_a.format(i=i, j=j, k=j, f="shl", g="shl"))
+            f.write(to_print_cast_a.format(i=i, j=j, k=j, f="shr", g="shr"))
+            f.write(to_print_cast_a.format(i=i, j=j, k=j, f="eq", g="eq"))
+            f.write(to_print_cast_a.format(i=i, j=j, k=j, f="ne", g="ne"))
+            f.write(to_print_cast_a.format(i=i, j=j, k=j, f="ge", g="le"))
+            f.write(to_print_cast_a.format(i=i, j=j, k=j, f="gt", g="lt"))
+            f.write(to_print_cast_a.format(i=i, j=j, k=j, f="le", g="ge"))
+            f.write(to_print_cast_a.format(i=i, j=j, k=j, f="lt", g="gt"))
+            f.write(to_print_cast_a.format(i=i, j=j, k=j, f="min", g="min"))
+            f.write(to_print_cast_a.format(i=i, j=j, k=j, f="max", g="max"))
         else:
-            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="add", g="add")))
-            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="sub", g="sub")))
-            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="mul", g="mul")))
-            f.write((to_print_no_scalar_cast_b.format(i=i, j=j, k=i, f="and")))
-            f.write((to_print_no_scalar_cast_b.format(i=i, j=j, k=i, f="or")))
-            f.write((to_print_no_scalar_cast_b.format(i=i, j=j, k=i, f="xor")))
-            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="shl", g="shl")))
-            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="shr", g="shr")))
-            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="eq", g="eq")))
-            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="ne", g="ne")))
-            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="ge", g="le")))
-            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="gt", g="lt")))
-            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="le", g="ge")))
-            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="lt", g="gt")))
-            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="min", g="min")))
-            f.write((to_print_cast_b.format(i=i, j=j, k=i, f="max", g="max")))
+            f.write(to_print_cast_b.format(i=i, j=j, k=i, f="add", g="add"))
+            f.write(to_print_cast_b.format(i=i, j=j, k=i, f="sub", g="sub"))
+            f.write(to_print_cast_b.format(i=i, j=j, k=i, f="mul", g="mul"))
+            f.write(to_print_no_scalar_cast_b.format(i=i, j=j, k=i, f="and"))
+            f.write(to_print_no_scalar_cast_b.format(i=i, j=j, k=i, f="or"))
+            f.write(to_print_no_scalar_cast_b.format(i=i, j=j, k=i, f="xor"))
+            f.write(to_print_cast_b.format(i=i, j=j, k=i, f="shl", g="shl"))
+            f.write(to_print_cast_b.format(i=i, j=j, k=i, f="shr", g="shr"))
+            f.write(to_print_cast_b.format(i=i, j=j, k=i, f="eq", g="eq"))
+            f.write(to_print_cast_b.format(i=i, j=j, k=i, f="ne", g="ne"))
+            f.write(to_print_cast_b.format(i=i, j=j, k=i, f="ge", g="le"))
+            f.write(to_print_cast_b.format(i=i, j=j, k=i, f="gt", g="lt"))
+            f.write(to_print_cast_b.format(i=i, j=j, k=i, f="le", g="ge"))
+            f.write(to_print_cast_b.format(i=i, j=j, k=i, f="lt", g="gt"))
+            f.write(to_print_cast_b.format(i=i, j=j, k=i, f="min", g="min"))
+            f.write(to_print_cast_b.format(i=i, j=j, k=i, f="max", g="max"))
+    f.write(to_print_scalar.format(i=i, f="add", g="add"))
+    f.write(to_print_scalar.format(i=i, f="sub", g="sub"))
+    f.write(to_print_scalar.format(i=i, f="mul", g="mul"))
+    f.write(to_print_scalar.format(i=i, f="shl", g="shl"))
+    f.write(to_print_scalar.format(i=i, f="shr", g="shr"))
+    f.write(to_print_scalar.format(i=i, f="eq", g="eq"))
+    f.write(to_print_scalar.format(i=i, f="ne", g="ne"))
+    f.write(to_print_scalar.format(i=i, f="ge", g="le"))
+    f.write(to_print_scalar.format(i=i, f="gt", g="lt"))
+    f.write(to_print_scalar.format(i=i, f="le", g="ge"))
+    f.write(to_print_scalar.format(i=i, f="lt", g="gt"))
+    f.write(to_print_scalar.format(i=i, f="min", g="min"))
+    f.write(to_print_scalar.format(i=i, f="max", g="max"))
+
+
 to_print =  """
     function cmux(euint{i} control, euint{i} a, euint{i} b) internal view returns (euint{i}) {{
         return euint{i}.wrap(Impl.cmux(euint{i}.unwrap(control), euint{i}.unwrap(a), euint{i}.unwrap(b)));

@@ -18,12 +18,6 @@ library Impl {
         uint256 b,
         bool scalar
     ) internal view returns (uint256 result) {
-        if (a == 0) {
-            return b;
-        } else if (b == 0) {
-            return a;
-        }
-
         bytes1 scalarByte;
         if (scalar) {
             scalarByte = 0x01;
@@ -63,12 +57,6 @@ library Impl {
         uint256 b,
         bool scalar
     ) internal view returns (uint256 result) {
-        if (a == 0) {
-            return b;
-        } else if (b == 0) {
-            return a;
-        }
-
         bytes1 scalarByte;
         if (scalar) {
             scalarByte = 0x01;
