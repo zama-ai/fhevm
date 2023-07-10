@@ -154,7 +154,7 @@ compiled_sol = compile_standard(
         "sources": {"EncryptedERC20.sol": {"content": file_contents}},
         "settings": {
             "remappings": ['@openzeppelin/contracts={0}/node_modules/@openzeppelin/contracts'.format(os.getcwd()),
-                           'abstract={0}/examples/abstract'.format(os.getcwd())],
+                           'abstracts={0}/abstracts'.format(os.getcwd())],
             "outputSelection": {
                 "*": {
                     "*": ["abi", "metadata", "evm.bytecode", "evm.bytecode.sourceMap"]
