@@ -2436,6 +2436,14 @@ library TFHE {
         Impl.req(euint8.unwrap(ciphertext));
     }
 
+    function neg(euint8 ciphertext) internal view {
+        Impl.neg(euint8.unwrap(ciphertext));
+    }
+
+    function not(euint8 ciphertext) internal view {
+        Impl.not(euint8.unwrap(ciphertext));
+    }
+
     function optReq(euint8 ciphertext) internal view {
         Impl.optReq(euint32.unwrap(asEuint32(ciphertext)));
     }
@@ -2477,6 +2485,14 @@ library TFHE {
         Impl.req(euint16.unwrap(ciphertext));
     }
 
+    function neg(euint16 ciphertext) internal view {
+        Impl.neg(euint16.unwrap(ciphertext));
+    }
+
+    function not(euint16 ciphertext) internal view {
+        Impl.not(euint16.unwrap(ciphertext));
+    }
+
     function optReq(euint16 ciphertext) internal view {
         Impl.optReq(euint32.unwrap(asEuint32(ciphertext)));
     }
@@ -2516,6 +2532,14 @@ library TFHE {
 
     function req(euint32 ciphertext) internal view {
         Impl.req(euint32.unwrap(ciphertext));
+    }
+
+    function neg(euint32 ciphertext) internal view {
+        Impl.neg(euint32.unwrap(ciphertext));
+    }
+
+    function not(euint32 ciphertext) internal view {
+        Impl.not(euint32.unwrap(ciphertext));
     }
 
     function optReq(euint32 ciphertext) internal view {

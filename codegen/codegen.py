@@ -488,7 +488,7 @@ library Impl {
         bytes32[1] memory output;
         uint256 outputLen = 32;
 
-        // Call the negation precompile.
+        // Call the opposite precompile.
         uint256 precompile = Precompiles.Not;
         assembly {
             if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
@@ -932,6 +932,14 @@ to_print="""
 
     function req(euint{i} ciphertext) internal view {{
         Impl.req(euint{i}.unwrap(ciphertext));
+    }}
+
+    function neg(euint{i} ciphertext) internal view {{
+        Impl.neg(euint{i}.unwrap(ciphertext));
+    }}
+
+    function not(euint{i} ciphertext) internal view {{
+        Impl.not(euint{i}.unwrap(ciphertext));
     }}
 """
 

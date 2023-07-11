@@ -672,7 +672,7 @@ library Impl {
         bytes32[1] memory output;
         uint256 outputLen = 32;
 
-        // Call the negation precompile.
+        // Call the not precompile.
         uint256 precompile = Precompiles.Not;
         assembly {
             if iszero(
