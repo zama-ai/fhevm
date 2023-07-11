@@ -4,7 +4,7 @@ f = open("Common.sol", "w")
 f.write("""\
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity >=0.8.13 <0.9.0;
+pragma solidity >=0.8.13 <0.8.20;
 
 type euint8 is uint256;
 type euint16 is uint256;
@@ -24,7 +24,7 @@ f = open("Precompiles.sol", "w")
 f.write("""\
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity >=0.8.13 <0.9.0;
+pragma solidity >=0.8.13 <0.8.20;
 
 library Precompiles {
     uint256 public constant Add = 65;
@@ -61,7 +61,7 @@ f = open("Impl.sol", "w")
 f.write("""\
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity >=0.8.13 <0.9.0;
+pragma solidity >=0.8.13 <0.8.20;
 
 import "./Common.sol";
 import "./Precompiles.sol";
@@ -715,7 +715,7 @@ f = open("TFHE.sol", "w")
 f.write("""\
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity >=0.8.13 <0.9.0;
+pragma solidity >=0.8.13 <0.8.20;
 
 import "./Common.sol";
 import "./Impl.sol";

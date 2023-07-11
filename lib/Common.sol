@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity >=0.8.13 <0.9.0;
+pragma solidity >=0.8.13 <0.8.20;
 
 type euint8 is uint256;
 type euint16 is uint256;
