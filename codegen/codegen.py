@@ -945,7 +945,7 @@ to_print="""
 
 to_print_cast_or="""
     function optReq(euint{i} ciphertext) internal view {{
-        Impl.optReq(euint32.unwrap(asEuint32(ciphertext)));
+        Impl.optReq(euint8.unwrap(asEuint8(ciphertext)));
     }}
 """
 
@@ -957,7 +957,7 @@ to_print_no_cast_or="""
 
 for i in (2**p for p in range(3, 6)):
     f.write(to_print.format(i=i))
-    if i != 32:
+    if i != 8:
         f.write(to_print_cast_or.format(i=i))
     else:
         f.write(to_print_no_cast_or.format(i=i))
