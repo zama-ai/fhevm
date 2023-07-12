@@ -24,7 +24,7 @@ else
 	echo "If you want your own version please update FHEVM_TFHE_CLI_PATH pointing to your fhevm-tfhe-cli folder!"
 	$(MAKE) clone_fhevm_tfhe_cli
 endif
-	echo 'Call build zbc fhe'
+	echo 'Call build fhevm-tfhe-cli'
 	$(MAKE) build_fhevm_tfhe_cli
 
 clone_fhevm_tfhe_cli: $(WORKDIR)/

@@ -57,7 +57,8 @@ npm run codegen
 
 WARNING: Use this command to generate Solidity code and prettier result automatically!
 
-### Demo Test
+### Demo test
+> **_NOTE:_**  The following test works on the x86_64 architecture. To run on ARM64, edit the `ci/docker-compose.yml` file to use the correct `FHEVM_TFHE_CLI_TAG` value (e.g., `v0.1.1-arm64`).
 
 This repository includes a python script (see [demo_test.py](demo_test.py)) that automates a sequence of steps simulating deployment and interaction with an encrypted ERC20 contract.
 
@@ -75,8 +76,9 @@ To install all the required python modules, a docker containing a `fhevm-tfhe-cl
 Run the demo test:
 
 ```
-export PRIVATE_KEY=CCABB56366...
-docker compose -f ci/docker-compose.yml run app python demo_test.py $PRIVATE_KEY
+$ npm i
+$ export PRIVATE_KEY=CCABB56366...
+$ docker compose -f ci/docker-compose.yml run app python demo_test.py $PRIVATE_KEY
 ```
 
 <br />

@@ -1,5 +1,5 @@
-ARG ZBC_FHE_TOOL_TAG
-FROM ghcr.io/zama-ai/fhevm-tfhe-cli:${ZBC_FHE_TOOL_TAG}
+ARG FHEVM_TFHE_CLI_TAG=latest
+FROM ghcr.io/zama-ai/fhevm-tfhe-cli:${FHEVM_TFHE_CLI_TAG}
 
 
 WORKDIR /home

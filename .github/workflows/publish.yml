@@ -1,3 +1,4 @@
+name: Publish fhEVM Solidity
 on:
   release:
     types: [created]
