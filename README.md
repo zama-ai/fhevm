@@ -26,11 +26,9 @@ import "fhevm/lib/TFHE.sol";
 contract Counter {
   euint32 counter;
 
-  constructor() {}
-
   function add(bytes calldata encryptedValue) public {
     euint32 value = TFHE.asEuint32(encryptedValue);
-    counter = TFHE.add(world, value);
+    counter = TFHE.add(counter, value);
   }
 
   function getCounter(bytes32 publicKey) returns (bytes memory) {
@@ -63,16 +61,16 @@ WARNING: Use this command to generate Solidity code and prettier result automati
 
 This repository includes a python script (see [demo_test.py](demo_test.py)) that automates a sequence of steps simulating deployment and interaction with an encrypted ERC20 contract.
 
-Because inputs must be encrypted using the blockchain global public key, a tool called zbc-fhe-tool is available.
+Because inputs must be encrypted using the blockchain global public key, a tool called [`fhevm-tfhe-cli`](https://github.com/zama-ai/fhevm-tfhe-cli) is available.
 
-We also need the blockchain public key, please copy it into **keys/network-public-fhe-keys/** named **pks**.
+We also need the blockchain public key, please copy it to **keys/network-public-fhe-keys/pks**.
 
 The python script accepts two arguments:
 
-1. The private key of the main account which owns funds
-2. [optionnal --node_address] The node @ (default is http://host.docker.internal:8545)
+1. The private key of the an account which owns some native coins;
+2. [optionnal --node_address] The node URL (default is http://host.docker.internal:8545).
 
-To install all the required python modules, a docker is available containing zbc-fhe-tool binary.
+To install all the required python modules, a docker containing a `fhevm-tfhe-cli` binary is available.
 
 Run the demo test:
 
@@ -83,14 +81,13 @@ docker compose -f ci/docker-compose.yml run app python demo_test.py $PRIVATE_KEY
 
 <br />
 <details>
-  <summary>Install zbc-fhe-tools</summary>
+  <summary>Install fhevm-tfhe-cli</summary>
 <br />
 
 ```
-make install-zbc-fhe-tool
+make install-fhevm-tfhe-cli
 ```
 
-#The binary will be available at **work_dir/zbc-fhe-tool/target/release/zbc-fhe-tool**
-
+The binary will be available at **work_dir/fhevm-tfhe-cli/target/release/fhevm-tfhe-cli**
 </details>
 <br />

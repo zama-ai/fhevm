@@ -1,5 +1,5 @@
 ARG ZBC_FHE_TOOL_TAG
-FROM ghcr.io/zama-ai/zbc-fhe-tool:${ZBC_FHE_TOOL_TAG}
+FROM ghcr.io/zama-ai/fhevm-tfhe-cli:${ZBC_FHE_TOOL_TAG}
 
 
 WORKDIR /home

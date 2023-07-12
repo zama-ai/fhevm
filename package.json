@@ -16,14 +16,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/zama-ai/zbc-solidity.git"
+    "url": "git+https://github.com/zama-ai/fhevm-solidity.git"
   },
   "author": "",
   "license": "BSD-3-Clause-Clear",
   "bugs": {
-    "url": "https://github.com/zama-ai/zbc-solidity/issues"
+    "url": "https://github.com/zama-ai/fhevm-solidity/issues"
   },
-  "homepage": "https://github.com/zama-ai/zbc-solidity#readme",
+  "homepage": "https://github.com/zama-ai/fhevm-solidity#readme",
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^3.0.0",
     "hardhat": "^2.16.1",
