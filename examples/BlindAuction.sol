@@ -143,7 +143,7 @@ contract BlindAuction is EIP712WithModifier {
         TFHE.req(TFHE.le(highestBid, bids[msg.sender]));
 
         objectClaimed = true;
-        bids[msg.sender] = euint32.wrap(0);
+        bids[msg.sender] = TFHE.NIL32;
         emit Winner(msg.sender);
     }
 
@@ -162,7 +162,7 @@ contract BlindAuction is EIP712WithModifier {
             TFHE.req(TFHE.lt(bidValue, highestBid));
         }
         tokenContract.transfer(msg.sender, bidValue);
-        bids[msg.sender] = euint32.wrap(0);
+        bids[msg.sender] = TFHE.NIL32;
     }
 
     modifier onlyBeforeEnd() {

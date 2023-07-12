@@ -6,6 +6,10 @@ import "./Common.sol";
 import "./Impl.sol";
 
 library TFHE {
+    euint8 constant NIL8 = euint8.wrap(0);
+    euint16 constant NIL16 = euint16.wrap(0);
+    euint32 constant NIL32 = euint32.wrap(0);
+
     function isInitialized(euint8 v) internal pure returns (bool) {
         return euint8.unwrap(v) != 0;
     }
