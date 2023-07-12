@@ -257,8 +257,6 @@ library Impl {
         result = uint256(output[0]);
     }
 
-    // Evaluate `lhs == rhs` on the given ciphertexts and, if successful, return the resulting ciphertext.
-    // If successful, the resulting ciphertext is automatically verified.
     function eq(uint256 lhs, uint256 rhs, bool scalar) internal view returns (uint256 result) {
         bytes1 scalarByte;
         if (scalar) {
@@ -283,8 +281,6 @@ library Impl {
         result = uint256(output[0]);
     }
 
-    // Evaluate `lhs != rhs` on the given ciphertexts and, if successful, return the resulting ciphertext.
-    // If successful, the resulting ciphertext is automatically verified.
     function ne(uint256 lhs, uint256 rhs, bool scalar) internal view returns (uint256 result) {
         bytes1 scalarByte;
         if (scalar) {
@@ -309,8 +305,6 @@ library Impl {
         result = uint256(output[0]);
     }
 
-    // Evaluate `lhs >= rhs` on the given ciphertexts and, if successful, return the resulting ciphertext.
-    // If successful, the resulting ciphertext is automatically verified.
     function ge(uint256 lhs, uint256 rhs, bool scalar) internal view returns (uint256 result) {
         bytes1 scalarByte;
         if (scalar) {
@@ -335,8 +329,6 @@ library Impl {
         result = uint256(output[0]);
     }
 
-    // Evaluate `lhs > rhs` on the given ciphertexts and, if successful, return the resulting ciphertext.
-    // If successful, the resulting ciphertext is automatically verified.
     function gt(uint256 lhs, uint256 rhs, bool scalar) internal view returns (uint256 result) {
         bytes1 scalarByte;
         if (scalar) {
@@ -361,8 +353,6 @@ library Impl {
         result = uint256(output[0]);
     }
 
-    // Evaluate `lhs <= rhs` on the given ciphertexts and, if successful, return the resulting ciphertext.
-    // If successful, the resulting ciphertext is automatically verified.
     function le(uint256 lhs, uint256 rhs, bool scalar) internal view returns (uint256 result) {
         bytes1 scalarByte;
         if (scalar) {
@@ -387,8 +377,6 @@ library Impl {
         result = uint256(output[0]);
     }
 
-    // Evaluate `lhs < rhs` on the given ciphertexts and, if successful, return the resulting ciphertext.
-    // If successful, the resulting ciphertext is automatically verified.
     function lt(uint256 lhs, uint256 rhs, bool scalar) internal view returns (uint256 result) {
         bytes1 scalarByte;
         if (scalar) {
@@ -499,9 +487,8 @@ library Impl {
         result = uint256(output[0]);
     }
 
-    // If `control`'s value is 1, the resulting value is the same value as `ifTrue`.
-    // If `control`'s value is 0, the resulting value is the same value as `ifFalse`.
-    // If successful, the resulting ciphertext is automatically verified.
+    // If `control`'s value is 1, the result has the same value as `ifTrue`.
+    // If `control`'s value is 0, the result has the same value as `ifFalse`.
     function cmux(uint256 control, uint256 ifTrue, uint256 ifFalse) internal view returns (uint256 result) {
         // result = (ifTrue - ifFalse) * control + ifFalse
         bytes memory input = bytes.concat(bytes32(ifTrue), bytes32(ifFalse), bytes1(0x00));
@@ -543,18 +530,6 @@ library Impl {
         result = uint256(addOutput[0]);
     }
     
-    // Optimistically requires that the `ciphertext` is true.
-    //
-    // This function does not evaluate the given `ciphertext` at the time of the call.
-    // Instead, it accumulates all optimistic requires and evaluates a single combined
-    // require at the end through the decryption oracle. A side effect of this mechanism
-    // is that a method call with a failed optimistic require will always incur the full
-    // gas cost, as if all optimistic requires were true. Yet, the transaction will be
-    // reverted at the end if any of the optimisic requires were false.
-    //
-    // The benefit of optimistic requires is that they are faster than non-optimistic ones,
-    // because there is a single call to the decryption oracle per transaction, irrespective
-    // of how many optimistic requires were used.
     function optReq(uint256 ciphertext) internal view {
         bytes32[1] memory input;
         input[0] = bytes32(ciphertext);
@@ -726,6 +701,7 @@ euint16 constant NIL16 = euint16.wrap(0);
 euint32 constant NIL32 = euint32.wrap(0);""")
         
 to_print_is_initialized =  """
+    // Return true if the enrypted integer is initialized and false otherwise.
     function isInitialized(euint{i} v) internal pure returns (bool) {{
         return euint{i}.unwrap(v) != 0;
     }}
@@ -736,6 +712,7 @@ f.write(to_print_is_initialized.format(i=16))
 f.write(to_print_is_initialized.format(i=32))
 
 to_print_no_cast =  """
+    // Evaluate {f}(a, b) and return the result.
     function {f}(euint{i} a, euint{j} b) internal view returns (euint{k}) {{
         if (!isInitialized(a)) {{
             a = asEuint{i}(0);
@@ -748,6 +725,7 @@ to_print_no_cast =  """
 """
 
 to_print_cast_a =  """
+    // Evaluate {f}(a, b) and return the result.
     function {f}(euint{i} a, euint{j} b) internal view returns (euint{k}) {{
         if (!isInitialized(a)) {{
             a = asEuint{i}(0);
@@ -760,6 +738,7 @@ to_print_cast_a =  """
 """
 
 to_print_cast_b =  """
+    // Evaluate {f}(a, b) and return the result.
     function {f}(euint{i} a, euint{j} b) internal view returns (euint{k}) {{
         if (!isInitialized(a)) {{
             a = asEuint{i}(0);
@@ -772,6 +751,7 @@ to_print_cast_b =  """
 """
 
 to_print_no_scalar_no_cast = """
+    // Evaluate {f}(a, b) and return the result.
     function {f}(euint{i} a, euint{j} b) internal view returns (euint{k}) {{
         if (!isInitialized(a)) {{
             a = asEuint{i}(0);
@@ -784,6 +764,7 @@ to_print_no_scalar_no_cast = """
 """
 
 to_print_no_scalar_cast_a = """
+    // Evaluate {f}(a, b) and return the result.
     function {f}(euint{i} a, euint{j} b) internal view returns (euint{k}) {{
         if (!isInitialized(a)) {{
             a = asEuint{i}(0);
@@ -796,6 +777,7 @@ to_print_no_scalar_cast_a = """
 """
 
 to_print_no_scalar_cast_b = """
+// Evaluate {f}(a, b) and return the result.
 function {f}(euint{i} a, euint{j} b) internal view returns (euint{k}) {{
         if (!isInitialized(a)) {{
             a = asEuint{i}(0);
@@ -808,6 +790,7 @@ function {f}(euint{i} a, euint{j} b) internal view returns (euint{k}) {{
 """
 
 to_print_scalar = """
+    // Evaluate {f}(a, b) and return the result.
     function {f}(euint{i} a, uint{i} b) internal view returns (euint{i}) {{
         if (!isInitialized(a)) {{
             a = asEuint{i}(0);
@@ -815,6 +798,7 @@ to_print_scalar = """
         return euint{i}.wrap(Impl.{f}(euint{i}.unwrap(a), uint256(b), true));
     }}
 
+    // Evaluate {f}(a, b) and return the result.
     function {f}(uint{i} a, euint{i} b) internal view returns (euint{i}) {{
         if (!isInitialized(b)) {{
             b = asEuint{i}(0);
@@ -892,6 +876,8 @@ for i in (2**p for p in range(3, 6)):
 
 
 to_print =  """
+    // If `control`'s value is 1, the result has the same value as `a`.
+    // If `control`'s value is 0, the result has the same value as `b`.
     function cmux(euint{i} control, euint{i} a, euint{i} b) internal view returns (euint{i}) {{
         return euint{i}.wrap(Impl.cmux(euint{i}.unwrap(control), euint{i}.unwrap(a), euint{i}.unwrap(b)));
     }}
@@ -902,8 +888,9 @@ for i in (2**p for p in range(3, 6)):
             f.write(to_print.format(i=i))
 
 to_print="""
-    function asEuint{i}(euint{j} ciphertext) internal view returns (euint{i}) {{
-        return euint{i}.wrap(Impl.cast(euint{j}.unwrap(ciphertext), Common.euint{i}_t));
+    // Cast an encrypted integer from euint{j} to euint{i}.
+    function asEuint{i}(euint{j} value) internal view returns (euint{i}) {{
+        return euint{i}.wrap(Impl.cast(euint{j}.unwrap(value), Common.euint{i}_t));
     }}
 """
 
@@ -913,48 +900,83 @@ for i in (2**p for p in range(3, 6)):
             f.write(to_print.format(i=i, j=j))
 
 to_print="""
+    // Convert a serialized `ciphertext` to an encrypted euint{i} integer.
     function asEuint{i}(bytes memory ciphertext) internal view returns (euint{i}) {{
         return euint{i}.wrap(Impl.verify(ciphertext, Common.euint{i}_t));
     }}
 
+    // Convert a plaintext value to an encrypted euint{i} integer.
     function asEuint{i}(uint256 value) internal view returns (euint{i}) {{
         return euint{i}.wrap(Impl.trivialEncrypt(value, Common.euint{i}_t));
     }}
 
-    function reencrypt(euint{i} ciphertext, bytes32 publicKey) internal view returns (bytes memory reencrypted) {{
-        return Impl.reencrypt(euint{i}.unwrap(ciphertext), publicKey);
+    // Reencrypt the given `value` under the given `publicKey`.
+    // Return a serialized euint{i} ciphertext.
+    function reencrypt(euint{i} value, bytes32 publicKey) internal view returns (bytes memory reencrypted) {{
+        return Impl.reencrypt(euint{i}.unwrap(value), publicKey);
     }}
 
-    function reencrypt(euint{i} ciphertext, bytes32 publicKey, uint{i} defaultValue) internal view returns (bytes memory reencrypted) {{
-        if (euint{i}.unwrap(ciphertext) != 0) {{
-            return Impl.reencrypt(euint{i}.unwrap(ciphertext), publicKey);
+    // Reencrypt the given `value` under the given `publicKey`.
+    // If `value` is not initialized, the returned value will contain the `defaultValue` constant.
+    // Return a serialized euint{i} ciphertext.
+    function reencrypt(euint{i} value, bytes32 publicKey, uint{i} defaultValue) internal view returns (bytes memory reencrypted) {{
+        if (euint{i}.unwrap(value) != 0) {{
+            return Impl.reencrypt(euint{i}.unwrap(value), publicKey);
         }} else {{
             return Impl.reencrypt(euint{i}.unwrap(asEuint{i}(defaultValue)), publicKey);
         }}
     }}
 
-    function req(euint{i} ciphertext) internal view {{
-        Impl.req(euint{i}.unwrap(ciphertext));
+    // Require that the encrypted `value` is not equal to 0.
+    // Involves decrypting `value`.
+    function req(euint{i} value) internal view {{
+        Impl.req(euint{i}.unwrap(value));
     }}
 
-    function neg(euint{i} ciphertext) internal view {{
-        Impl.neg(euint{i}.unwrap(ciphertext));
+    // Return the negation of `value`.
+    function neg(euint{i} value) internal view returns (euint{i}) {{
+        return euint{i}.wrap(Impl.neg(euint{i}.unwrap(value)));
     }}
 
-    function not(euint{i} ciphertext) internal view {{
-        Impl.not(euint{i}.unwrap(ciphertext));
+    // Return `!value`.
+    function not(euint{i} value) internal view returns (euint{i}) {{
+        return euint{i}.wrap(Impl.not(euint{i}.unwrap(value)));
     }}
 """
 
 to_print_cast_or="""
-    function optReq(euint{i} ciphertext) internal view {{
-        Impl.optReq(euint8.unwrap(asEuint8(ciphertext)));
+    // Optimistically require that `value` is not equal to 0.
+    //
+    // This function does not evaluate `value` at the time of the call.
+    // Instead, it accumulates all optimistic requires and evaluates a single combined
+    // require at the end of the transaction. A side effect of this mechanism
+    // is that a method call with a failed optimistic require will always incur the full
+    // gas cost, as if all optimistic requires were true. Yet, the transaction will be
+    // reverted at the end if any of the optimisic requires were false.
+    //
+    // The benefit of optimistic requires is that they are faster than non-optimistic ones,
+    // because there is a single call to the decryption oracle per transaction, irrespective
+    // of how many optimistic requires were used.
+    function optReq(euint{i} value) internal view {{
+        Impl.optReq(euint8.unwrap(asEuint8(value)));
     }}
 """
 
 to_print_no_cast_or="""
-    function optReq(euint{i} ciphertext) internal view {{
-        Impl.optReq(euint{i}.unwrap(ciphertext));
+    // Optimistically require that `value` is not equal to 0.
+    //
+    // This function does not evaluate `value` at the time of the call.
+    // Instead, it accumulates all optimistic requires and evaluates a single combined
+    // require at the end of the transaction. A side effect of this mechanism
+    // is that a method call with a failed optimistic require will always incur the full
+    // gas cost, as if all optimistic requires were true. Yet, the transaction will be
+    // reverted at the end if any of the optimisic requires were false.
+    //
+    // The benefit of optimistic requires is that they are faster than non-optimistic ones,
+    // because there is a single call to the decryption oracle per transaction, irrespective
+    // of how many optimistic requires were used.
+    function optReq(euint{i} value) internal view {{
+        Impl.optReq(euint{i}.unwrap(value));
     }}
 """
 
@@ -968,7 +990,7 @@ for i in (2**p for p in range(3, 6)):
 
 f.write("\n")
 f.write("""\
-    // Returns the network public FHE key.
+    // Return the network public FHE key.
     function fhePubKey() internal view returns (bytes memory) {
         return Impl.fhePubKey();
     }

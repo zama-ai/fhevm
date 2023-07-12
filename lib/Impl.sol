@@ -296,8 +296,6 @@ library Impl {
         result = uint256(output[0]);
     }
 
-    // Evaluate `lhs == rhs` on the given ciphertexts and, if successful, return the resulting ciphertext.
-    // If successful, the resulting ciphertext is automatically verified.
     function eq(
         uint256 lhs,
         uint256 rhs,
@@ -339,8 +337,6 @@ library Impl {
         result = uint256(output[0]);
     }
 
-    // Evaluate `lhs != rhs` on the given ciphertexts and, if successful, return the resulting ciphertext.
-    // If successful, the resulting ciphertext is automatically verified.
     function ne(
         uint256 lhs,
         uint256 rhs,
@@ -382,8 +378,6 @@ library Impl {
         result = uint256(output[0]);
     }
 
-    // Evaluate `lhs >= rhs` on the given ciphertexts and, if successful, return the resulting ciphertext.
-    // If successful, the resulting ciphertext is automatically verified.
     function ge(
         uint256 lhs,
         uint256 rhs,
@@ -425,8 +419,6 @@ library Impl {
         result = uint256(output[0]);
     }
 
-    // Evaluate `lhs > rhs` on the given ciphertexts and, if successful, return the resulting ciphertext.
-    // If successful, the resulting ciphertext is automatically verified.
     function gt(
         uint256 lhs,
         uint256 rhs,
@@ -468,8 +460,6 @@ library Impl {
         result = uint256(output[0]);
     }
 
-    // Evaluate `lhs <= rhs` on the given ciphertexts and, if successful, return the resulting ciphertext.
-    // If successful, the resulting ciphertext is automatically verified.
     function le(
         uint256 lhs,
         uint256 rhs,
@@ -511,8 +501,6 @@ library Impl {
         result = uint256(output[0]);
     }
 
-    // Evaluate `lhs < rhs` on the given ciphertexts and, if successful, return the resulting ciphertext.
-    // If successful, the resulting ciphertext is automatically verified.
     function lt(
         uint256 lhs,
         uint256 rhs,
@@ -692,9 +680,8 @@ library Impl {
         result = uint256(output[0]);
     }
 
-    // If `control`'s value is 1, the resulting value is the same value as `ifTrue`.
-    // If `control`'s value is 0, the resulting value is the same value as `ifFalse`.
-    // If successful, the resulting ciphertext is automatically verified.
+    // If `control`'s value is 1, the result has the same value as `ifTrue`.
+    // If `control`'s value is 0, the result has the same value as `ifFalse`.
     function cmux(
         uint256 control,
         uint256 ifTrue,
@@ -779,18 +766,6 @@ library Impl {
         result = uint256(addOutput[0]);
     }
 
-    // Optimistically requires that the `ciphertext` is true.
-    //
-    // This function does not evaluate the given `ciphertext` at the time of the call.
-    // Instead, it accumulates all optimistic requires and evaluates a single combined
-    // require at the end through the decryption oracle. A side effect of this mechanism
-    // is that a method call with a failed optimistic require will always incur the full
-    // gas cost, as if all optimistic requires were true. Yet, the transaction will be
-    // reverted at the end if any of the optimisic requires were false.
-    //
-    // The benefit of optimistic requires is that they are faster than non-optimistic ones,
-    // because there is a single call to the decryption oracle per transaction, irrespective
-    // of how many optimistic requires were used.
     function optReq(uint256 ciphertext) internal view {
         bytes32[1] memory input;
         input[0] = bytes32(ciphertext);
