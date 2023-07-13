@@ -4,22 +4,18 @@ from eth_account.signers.local import LocalAccount
 from web3.middleware import construct_sign_and_send_raw_middleware
 from solcx import compile_standard, install_solc
 import json
-import subprocess
 import time
 import os
 import argparse
-
 import sha3
 from eip712_structs import EIP712Struct, Bytes
 from eip712_structs import make_domain
 from nacl.public import PrivateKey, SealedBox
-from coincurve import PrivateKey as ccsk
 
 initial_mint = 1230
 
 
 def transfer(contract, to, account, amount):
-    # TODO: use public key encryption instead
     os.system("fhevm-tfhe-cli public-encrypt-integer32 -v {} -c ciphertext -p $PWD/keys/network-public-fhe-keys/pks".format(amount))
 
     file = open('./ciphertext', mode='rb')
@@ -243,8 +239,7 @@ transfer(contract, alice_account.address, account, 20)
 print("\n\n======== STEP 4: Alice REENCRYPTS HER BALANCE ========")
 reencrypt(contract, alice_account, "ct_to_decrypt.bin", 20)
 
-# send native coins to alice and carol
-# tx1
+# send native coins to alice
 nonce = w3.eth.getTransactionCount(account.address)
 tx = {
     'chainId': 9000,

@@ -4,22 +4,18 @@ from eth_account.signers.local import LocalAccount
 from web3.middleware import construct_sign_and_send_raw_middleware
 from solcx import compile_standard, install_solc
 import json
-import subprocess
 import time
 import os
 import argparse
-
 import sha3
 from eip712_structs import EIP712Struct, Bytes
 from eip712_structs import make_domain
 from nacl.public import PrivateKey, SealedBox
-from coincurve import PrivateKey as ccsk
 
 initial_mint = 1230
 
 
 def transfer(contract, to, account, amount):
-    # TODO: use public key encryption instead
     os.system("fhevm-tfhe-cli public-encrypt-integer32 -v {} -c ciphertext -p $PWD/keys/network-public-fhe-keys/pks".format(amount))
 
     file = open('./ciphertext', mode='rb')
@@ -120,10 +116,6 @@ alice_account: LocalAccount = Account.from_key(alice_private_key)
 print("Alice address : ")
 print(alice_account.address)
 w3.middleware_onion.add(construct_sign_and_send_raw_middleware(alice_account))
-
-# bob_private_key = "0x04554c46d10b234939a611dfa3df14d167e4e725ec59e4f38a9bf1177a05ce8f"
-# bob_account: LocalAccount = Account.from_key(bob_private_key)
-# w3.middleware_onion.add(construct_sign_and_send_raw_middleware(bob_account))
 
 carol_private_key = "0xa6c13a4776aee43e5b4da33acc30fa0a688f3271a46357b349d443b2d491f4b2"
 carol_account: LocalAccount = Account.from_key(carol_private_key)
@@ -248,7 +240,7 @@ print("\n\n======== STEP 4: Alice REENCRYPTS HER BALANCE ========")
 reencrypt(contract, alice_account, "ct_to_decrypt.bin", 20)
 
 # send native coins to alice and carol
-# tx1
+# tx1: main -> alice
 nonce = w3.eth.getTransactionCount(account.address)
 tx = {
     'chainId': 9000,
@@ -264,7 +256,7 @@ tx_hash = w3.eth.sendRawTransaction(signed_tx.rawTransaction)
 transaction_receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
 assert transaction_receipt['status'] == 1
 
-# tx2
+# tx2: main -> carol
 nonce = w3.eth.getTransactionCount(account.address)
 tx = {
     'chainId': 9000,
