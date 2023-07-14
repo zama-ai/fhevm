@@ -17,7 +17,7 @@ contract CMUX is EIP712WithModifier {
         bytes calldata ifTrueBytes,
         bytes calldata ifFalseBytes
     ) public {
-        euint8 control = TFHE.asEuint8(controlBytes);
+        ebool control = TFHE.asEbool(controlBytes);
         euint8 ifTrue = TFHE.asEuint8(ifTrueBytes);
         euint8 ifFalse = TFHE.asEuint8(ifFalseBytes);
         result = TFHE.cmux(control, ifTrue, ifFalse);

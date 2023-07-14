@@ -680,8 +680,8 @@ library Impl {
         result = uint256(output[0]);
     }
 
-    // If `control`'s value is 1, the result has the same value as `ifTrue`.
-    // If `control`'s value is 0, the result has the same value as `ifFalse`.
+    // If `control`'s value is `true`, the result has the same value as `ifTrue`.
+    // If `control`'s value is `false`, the result has the same value as `ifFalse`.
     function cmux(
         uint256 control,
         uint256 ifTrue,

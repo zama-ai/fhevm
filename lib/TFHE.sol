@@ -25,6 +25,72 @@ library TFHE {
         return euint32.unwrap(v) != 0;
     }
 
+    // Evaluate eq(a, b) and return the boolean result.
+    function eq(euint8 a, euint8 b) internal view returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+        return ebool.wrap(Impl.eq(euint8.unwrap(a), euint8.unwrap(b), false));
+    }
+
+    // Evaluate ne(a, b) and return the boolean result.
+    function ne(euint8 a, euint8 b) internal view returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+        return ebool.wrap(Impl.ne(euint8.unwrap(a), euint8.unwrap(b), false));
+    }
+
+    // Evaluate ge(a, b) and return the boolean result.
+    function ge(euint8 a, euint8 b) internal view returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+        return ebool.wrap(Impl.ge(euint8.unwrap(a), euint8.unwrap(b), false));
+    }
+
+    // Evaluate gt(a, b) and return the boolean result.
+    function gt(euint8 a, euint8 b) internal view returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+        return ebool.wrap(Impl.gt(euint8.unwrap(a), euint8.unwrap(b), false));
+    }
+
+    // Evaluate le(a, b) and return the boolean result.
+    function le(euint8 a, euint8 b) internal view returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+        return ebool.wrap(Impl.le(euint8.unwrap(a), euint8.unwrap(b), false));
+    }
+
+    // Evaluate lt(a, b) and return the boolean result.
+    function lt(euint8 a, euint8 b) internal view returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+        return ebool.wrap(Impl.lt(euint8.unwrap(a), euint8.unwrap(b), false));
+    }
+
     // Evaluate add(a, b) and return the result.
     function add(euint8 a, euint8 b) internal view returns (euint8) {
         if (!isInitialized(a)) {
@@ -111,72 +177,6 @@ library TFHE {
             b = asEuint8(0);
         }
         return euint8.wrap(Impl.shr(euint8.unwrap(a), euint8.unwrap(b), false));
-    }
-
-    // Evaluate eq(a, b) and return the result.
-    function eq(euint8 a, euint8 b) internal view returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
-        return euint8.wrap(Impl.eq(euint8.unwrap(a), euint8.unwrap(b), false));
-    }
-
-    // Evaluate ne(a, b) and return the result.
-    function ne(euint8 a, euint8 b) internal view returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
-        return euint8.wrap(Impl.ne(euint8.unwrap(a), euint8.unwrap(b), false));
-    }
-
-    // Evaluate ge(a, b) and return the result.
-    function ge(euint8 a, euint8 b) internal view returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
-        return euint8.wrap(Impl.ge(euint8.unwrap(a), euint8.unwrap(b), false));
-    }
-
-    // Evaluate gt(a, b) and return the result.
-    function gt(euint8 a, euint8 b) internal view returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
-        return euint8.wrap(Impl.gt(euint8.unwrap(a), euint8.unwrap(b), false));
-    }
-
-    // Evaluate le(a, b) and return the result.
-    function le(euint8 a, euint8 b) internal view returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
-        return euint8.wrap(Impl.le(euint8.unwrap(a), euint8.unwrap(b), false));
-    }
-
-    // Evaluate lt(a, b) and return the result.
-    function lt(euint8 a, euint8 b) internal view returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
-        return euint8.wrap(Impl.lt(euint8.unwrap(a), euint8.unwrap(b), false));
     }
 
     // Evaluate min(a, b) and return the result.
@@ -313,8 +313,8 @@ library TFHE {
             );
     }
 
-    // Evaluate eq(a, b) and return the result.
-    function eq(euint8 a, euint16 b) internal view returns (euint16) {
+    // Evaluate eq(a, b) and return the boolean result.
+    function eq(euint8 a, euint16 b) internal view returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -322,13 +322,20 @@ library TFHE {
             b = asEuint16(0);
         }
         return
-            euint16.wrap(
-                Impl.eq(euint16.unwrap(asEuint16(a)), euint16.unwrap(b), false)
+            ebool.wrap(
+                Impl.cast(
+                    Impl.eq(
+                        euint16.unwrap(asEuint16(a)),
+                        euint16.unwrap(b),
+                        false
+                    ),
+                    Common.ebool_t
+                )
             );
     }
 
-    // Evaluate ne(a, b) and return the result.
-    function ne(euint8 a, euint16 b) internal view returns (euint16) {
+    // Evaluate ne(a, b) and return the boolean result.
+    function ne(euint8 a, euint16 b) internal view returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -336,13 +343,20 @@ library TFHE {
             b = asEuint16(0);
         }
         return
-            euint16.wrap(
-                Impl.ne(euint16.unwrap(asEuint16(a)), euint16.unwrap(b), false)
+            ebool.wrap(
+                Impl.cast(
+                    Impl.ne(
+                        euint16.unwrap(asEuint16(a)),
+                        euint16.unwrap(b),
+                        false
+                    ),
+                    Common.ebool_t
+                )
             );
     }
 
-    // Evaluate ge(a, b) and return the result.
-    function ge(euint8 a, euint16 b) internal view returns (euint16) {
+    // Evaluate ge(a, b) and return the boolean result.
+    function ge(euint8 a, euint16 b) internal view returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -350,13 +364,20 @@ library TFHE {
             b = asEuint16(0);
         }
         return
-            euint16.wrap(
-                Impl.ge(euint16.unwrap(asEuint16(a)), euint16.unwrap(b), false)
+            ebool.wrap(
+                Impl.cast(
+                    Impl.ge(
+                        euint16.unwrap(asEuint16(a)),
+                        euint16.unwrap(b),
+                        false
+                    ),
+                    Common.ebool_t
+                )
             );
     }
 
-    // Evaluate gt(a, b) and return the result.
-    function gt(euint8 a, euint16 b) internal view returns (euint16) {
+    // Evaluate gt(a, b) and return the boolean result.
+    function gt(euint8 a, euint16 b) internal view returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -364,13 +385,20 @@ library TFHE {
             b = asEuint16(0);
         }
         return
-            euint16.wrap(
-                Impl.gt(euint16.unwrap(asEuint16(a)), euint16.unwrap(b), false)
+            ebool.wrap(
+                Impl.cast(
+                    Impl.gt(
+                        euint16.unwrap(asEuint16(a)),
+                        euint16.unwrap(b),
+                        false
+                    ),
+                    Common.ebool_t
+                )
             );
     }
 
-    // Evaluate le(a, b) and return the result.
-    function le(euint8 a, euint16 b) internal view returns (euint16) {
+    // Evaluate le(a, b) and return the boolean result.
+    function le(euint8 a, euint16 b) internal view returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -378,13 +406,20 @@ library TFHE {
             b = asEuint16(0);
         }
         return
-            euint16.wrap(
-                Impl.le(euint16.unwrap(asEuint16(a)), euint16.unwrap(b), false)
+            ebool.wrap(
+                Impl.cast(
+                    Impl.le(
+                        euint16.unwrap(asEuint16(a)),
+                        euint16.unwrap(b),
+                        false
+                    ),
+                    Common.ebool_t
+                )
             );
     }
 
-    // Evaluate lt(a, b) and return the result.
-    function lt(euint8 a, euint16 b) internal view returns (euint16) {
+    // Evaluate lt(a, b) and return the boolean result.
+    function lt(euint8 a, euint16 b) internal view returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -392,8 +427,15 @@ library TFHE {
             b = asEuint16(0);
         }
         return
-            euint16.wrap(
-                Impl.lt(euint16.unwrap(asEuint16(a)), euint16.unwrap(b), false)
+            ebool.wrap(
+                Impl.cast(
+                    Impl.lt(
+                        euint16.unwrap(asEuint16(a)),
+                        euint16.unwrap(b),
+                        false
+                    ),
+                    Common.ebool_t
+                )
             );
     }
 
@@ -537,8 +579,8 @@ library TFHE {
             );
     }
 
-    // Evaluate eq(a, b) and return the result.
-    function eq(euint8 a, euint32 b) internal view returns (euint32) {
+    // Evaluate eq(a, b) and return the boolean result.
+    function eq(euint8 a, euint32 b) internal view returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -546,13 +588,20 @@ library TFHE {
             b = asEuint32(0);
         }
         return
-            euint32.wrap(
-                Impl.eq(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false)
+            ebool.wrap(
+                Impl.cast(
+                    Impl.eq(
+                        euint32.unwrap(asEuint32(a)),
+                        euint32.unwrap(b),
+                        false
+                    ),
+                    Common.ebool_t
+                )
             );
     }
 
-    // Evaluate ne(a, b) and return the result.
-    function ne(euint8 a, euint32 b) internal view returns (euint32) {
+    // Evaluate ne(a, b) and return the boolean result.
+    function ne(euint8 a, euint32 b) internal view returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -560,13 +609,20 @@ library TFHE {
             b = asEuint32(0);
         }
         return
-            euint32.wrap(
-                Impl.ne(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false)
+            ebool.wrap(
+                Impl.cast(
+                    Impl.ne(
+                        euint32.unwrap(asEuint32(a)),
+                        euint32.unwrap(b),
+                        false
+                    ),
+                    Common.ebool_t
+                )
             );
     }
 
-    // Evaluate ge(a, b) and return the result.
-    function ge(euint8 a, euint32 b) internal view returns (euint32) {
+    // Evaluate ge(a, b) and return the boolean result.
+    function ge(euint8 a, euint32 b) internal view returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -574,13 +630,20 @@ library TFHE {
             b = asEuint32(0);
         }
         return
-            euint32.wrap(
-                Impl.ge(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false)
+            ebool.wrap(
+                Impl.cast(
+                    Impl.ge(
+                        euint32.unwrap(asEuint32(a)),
+                        euint32.unwrap(b),
+                        false
+                    ),
+                    Common.ebool_t
+                )
             );
     }
 
-    // Evaluate gt(a, b) and return the result.
-    function gt(euint8 a, euint32 b) internal view returns (euint32) {
+    // Evaluate gt(a, b) and return the boolean result.
+    function gt(euint8 a, euint32 b) internal view returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -588,13 +651,20 @@ library TFHE {
             b = asEuint32(0);
         }
         return
-            euint32.wrap(
-                Impl.gt(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false)
+            ebool.wrap(
+                Impl.cast(
+                    Impl.gt(
+                        euint32.unwrap(asEuint32(a)),
+                        euint32.unwrap(b),
+                        false
+                    ),
+                    Common.ebool_t
+                )
             );
     }
 
-    // Evaluate le(a, b) and return the result.
-    function le(euint8 a, euint32 b) internal view returns (euint32) {
+    // Evaluate le(a, b) and return the boolean result.
+    function le(euint8 a, euint32 b) internal view returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -602,13 +672,20 @@ library TFHE {
             b = asEuint32(0);
         }
         return
-            euint32.wrap(
-                Impl.le(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false)
+            ebool.wrap(
+                Impl.cast(
+                    Impl.le(
+                        euint32.unwrap(asEuint32(a)),
+                        euint32.unwrap(b),
+                        false
+                    ),
+                    Common.ebool_t
+                )
             );
     }
 
-    // Evaluate lt(a, b) and return the result.
-    function lt(euint8 a, euint32 b) internal view returns (euint32) {
+    // Evaluate lt(a, b) and return the boolean result.
+    function lt(euint8 a, euint32 b) internal view returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -616,8 +693,15 @@ library TFHE {
             b = asEuint32(0);
         }
         return
-            euint32.wrap(
-                Impl.lt(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false)
+            ebool.wrap(
+                Impl.cast(
+                    Impl.lt(
+                        euint32.unwrap(asEuint32(a)),
+                        euint32.unwrap(b),
+                        false
+                    ),
+                    Common.ebool_t
+                )
             );
     }
 
@@ -647,6 +731,118 @@ library TFHE {
             euint32.wrap(
                 Impl.max(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false)
             );
+    }
+
+    // Evaluate shr(a, b) and return the result.
+    function shr(euint8 a, uint8 b) internal view returns (euint8) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        return euint8.wrap(Impl.shr(euint8.unwrap(a), uint256(b), true));
+    }
+
+    // Evaluate shr(a, b) and return the result.
+    function shr(uint8 a, euint8 b) internal view returns (euint8) {
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+        return euint8.wrap(Impl.shr(euint8.unwrap(b), uint256(a), true));
+    }
+
+    // Evaluate eq(a, b) and return the boolean result.
+    function eq(euint8 a, uint8 b) internal view returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        return ebool.wrap(Impl.eq(euint8.unwrap(a), uint256(b), true));
+    }
+
+    // Evaluate eq(a, b) and return the boolean result.
+    function eq(uint8 a, euint8 b) internal view returns (ebool) {
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+        return ebool.wrap(Impl.eq(euint8.unwrap(b), uint256(a), true));
+    }
+
+    // Evaluate ne(a, b) and return the boolean result.
+    function ne(euint8 a, uint8 b) internal view returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        return ebool.wrap(Impl.ne(euint8.unwrap(a), uint256(b), true));
+    }
+
+    // Evaluate ne(a, b) and return the boolean result.
+    function ne(uint8 a, euint8 b) internal view returns (ebool) {
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+        return ebool.wrap(Impl.ne(euint8.unwrap(b), uint256(a), true));
+    }
+
+    // Evaluate ge(a, b) and return the boolean result.
+    function ge(euint8 a, uint8 b) internal view returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        return ebool.wrap(Impl.ge(euint8.unwrap(a), uint256(b), true));
+    }
+
+    // Evaluate ge(a, b) and return the boolean result.
+    function ge(uint8 a, euint8 b) internal view returns (ebool) {
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+        return ebool.wrap(Impl.le(euint8.unwrap(b), uint256(a), true));
+    }
+
+    // Evaluate gt(a, b) and return the boolean result.
+    function gt(euint8 a, uint8 b) internal view returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        return ebool.wrap(Impl.gt(euint8.unwrap(a), uint256(b), true));
+    }
+
+    // Evaluate gt(a, b) and return the boolean result.
+    function gt(uint8 a, euint8 b) internal view returns (ebool) {
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+        return ebool.wrap(Impl.lt(euint8.unwrap(b), uint256(a), true));
+    }
+
+    // Evaluate le(a, b) and return the boolean result.
+    function le(euint8 a, uint8 b) internal view returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        return ebool.wrap(Impl.le(euint8.unwrap(a), uint256(b), true));
+    }
+
+    // Evaluate le(a, b) and return the boolean result.
+    function le(uint8 a, euint8 b) internal view returns (ebool) {
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+        return ebool.wrap(Impl.ge(euint8.unwrap(b), uint256(a), true));
+    }
+
+    // Evaluate lt(a, b) and return the boolean result.
+    function lt(euint8 a, uint8 b) internal view returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        return ebool.wrap(Impl.lt(euint8.unwrap(a), uint256(b), true));
+    }
+
+    // Evaluate lt(a, b) and return the boolean result.
+    function lt(uint8 a, euint8 b) internal view returns (ebool) {
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+        return ebool.wrap(Impl.gt(euint8.unwrap(b), uint256(a), true));
     }
 
     // Evaluate add(a, b) and return the result.
@@ -711,118 +907,6 @@ library TFHE {
             b = asEuint8(0);
         }
         return euint8.wrap(Impl.shl(euint8.unwrap(b), uint256(a), true));
-    }
-
-    // Evaluate shr(a, b) and return the result.
-    function shr(euint8 a, uint8 b) internal view returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
-        return euint8.wrap(Impl.shr(euint8.unwrap(a), uint256(b), true));
-    }
-
-    // Evaluate shr(a, b) and return the result.
-    function shr(uint8 a, euint8 b) internal view returns (euint8) {
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
-        return euint8.wrap(Impl.shr(euint8.unwrap(b), uint256(a), true));
-    }
-
-    // Evaluate eq(a, b) and return the result.
-    function eq(euint8 a, uint8 b) internal view returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
-        return euint8.wrap(Impl.eq(euint8.unwrap(a), uint256(b), true));
-    }
-
-    // Evaluate eq(a, b) and return the result.
-    function eq(uint8 a, euint8 b) internal view returns (euint8) {
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
-        return euint8.wrap(Impl.eq(euint8.unwrap(b), uint256(a), true));
-    }
-
-    // Evaluate ne(a, b) and return the result.
-    function ne(euint8 a, uint8 b) internal view returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
-        return euint8.wrap(Impl.ne(euint8.unwrap(a), uint256(b), true));
-    }
-
-    // Evaluate ne(a, b) and return the result.
-    function ne(uint8 a, euint8 b) internal view returns (euint8) {
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
-        return euint8.wrap(Impl.ne(euint8.unwrap(b), uint256(a), true));
-    }
-
-    // Evaluate ge(a, b) and return the result.
-    function ge(euint8 a, uint8 b) internal view returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
-        return euint8.wrap(Impl.ge(euint8.unwrap(a), uint256(b), true));
-    }
-
-    // Evaluate ge(a, b) and return the result.
-    function ge(uint8 a, euint8 b) internal view returns (euint8) {
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
-        return euint8.wrap(Impl.le(euint8.unwrap(b), uint256(a), true));
-    }
-
-    // Evaluate gt(a, b) and return the result.
-    function gt(euint8 a, uint8 b) internal view returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
-        return euint8.wrap(Impl.gt(euint8.unwrap(a), uint256(b), true));
-    }
-
-    // Evaluate gt(a, b) and return the result.
-    function gt(uint8 a, euint8 b) internal view returns (euint8) {
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
-        return euint8.wrap(Impl.lt(euint8.unwrap(b), uint256(a), true));
-    }
-
-    // Evaluate le(a, b) and return the result.
-    function le(euint8 a, uint8 b) internal view returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
-        return euint8.wrap(Impl.le(euint8.unwrap(a), uint256(b), true));
-    }
-
-    // Evaluate le(a, b) and return the result.
-    function le(uint8 a, euint8 b) internal view returns (euint8) {
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
-        return euint8.wrap(Impl.ge(euint8.unwrap(b), uint256(a), true));
-    }
-
-    // Evaluate lt(a, b) and return the result.
-    function lt(euint8 a, uint8 b) internal view returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
-        return euint8.wrap(Impl.lt(euint8.unwrap(a), uint256(b), true));
-    }
-
-    // Evaluate lt(a, b) and return the result.
-    function lt(uint8 a, euint8 b) internal view returns (euint8) {
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
-        return euint8.wrap(Impl.gt(euint8.unwrap(b), uint256(a), true));
     }
 
     // Evaluate min(a, b) and return the result.
@@ -969,8 +1053,8 @@ library TFHE {
             );
     }
 
-    // Evaluate eq(a, b) and return the result.
-    function eq(euint16 a, euint8 b) internal view returns (euint16) {
+    // Evaluate eq(a, b) and return the boolean result.
+    function eq(euint16 a, euint8 b) internal view returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -978,13 +1062,20 @@ library TFHE {
             b = asEuint8(0);
         }
         return
-            euint16.wrap(
-                Impl.eq(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false)
+            ebool.wrap(
+                Impl.cast(
+                    Impl.eq(
+                        euint16.unwrap(a),
+                        euint16.unwrap(asEuint16(b)),
+                        false
+                    ),
+                    Common.ebool_t
+                )
             );
     }
 
-    // Evaluate ne(a, b) and return the result.
-    function ne(euint16 a, euint8 b) internal view returns (euint16) {
+    // Evaluate ne(a, b) and return the boolean result.
+    function ne(euint16 a, euint8 b) internal view returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -992,13 +1083,20 @@ library TFHE {
             b = asEuint8(0);
         }
         return
-            euint16.wrap(
-                Impl.ne(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false)
+            ebool.wrap(
+                Impl.cast(
+                    Impl.ne(
+                        euint16.unwrap(a),
+                        euint16.unwrap(asEuint16(b)),
+                        false
+                    ),
+                    Common.ebool_t
+                )
             );
     }
 
-    // Evaluate ge(a, b) and return the result.
-    function ge(euint16 a, euint8 b) internal view returns (euint16) {
+    // Evaluate ge(a, b) and return the boolean result.
+    function ge(euint16 a, euint8 b) internal view returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1006,13 +1104,20 @@ library TFHE {
             b = asEuint8(0);
         }
         return
-            euint16.wrap(
-                Impl.ge(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false)
+            ebool.wrap(
+                Impl.cast(
+                    Impl.ge(
+                        euint16.unwrap(a),
+                        euint16.unwrap(asEuint16(b)),
+                        false
+                    ),
+                    Common.ebool_t
+                )
             );
     }
 
-    // Evaluate gt(a, b) and return the result.
-    function gt(euint16 a, euint8 b) internal view returns (euint16) {
+    // Evaluate gt(a, b) and return the boolean result.
+    function gt(euint16 a, euint8 b) internal view returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1020,13 +1125,20 @@ library TFHE {
             b = asEuint8(0);
         }
         return
-            euint16.wrap(
-                Impl.gt(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false)
+            ebool.wrap(
+                Impl.cast(
+                    Impl.gt(
+                        euint16.unwrap(a),
+                        euint16.unwrap(asEuint16(b)),
+                        false
+                    ),
+                    Common.ebool_t
+                )
             );
     }
 
-    // Evaluate le(a, b) and return the result.
-    function le(euint16 a, euint8 b) internal view returns (euint16) {
+    // Evaluate le(a, b) and return the boolean result.
+    function le(euint16 a, euint8 b) internal view returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1034,13 +1146,20 @@ library TFHE {
             b = asEuint8(0);
         }
         return
-            euint16.wrap(
-                Impl.le(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false)
+            ebool.wrap(
+                Impl.cast(
+                    Impl.le(
+                        euint16.unwrap(a),
+                        euint16.unwrap(asEuint16(b)),
+                        false
+                    ),
+                    Common.ebool_t
+                )
             );
     }
 
-    // Evaluate lt(a, b) and return the result.
-    function lt(euint16 a, euint8 b) internal view returns (euint16) {
+    // Evaluate lt(a, b) and return the boolean result.
+    function lt(euint16 a, euint8 b) internal view returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1048,8 +1167,15 @@ library TFHE {
             b = asEuint8(0);
         }
         return
-            euint16.wrap(
-                Impl.lt(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false)
+            ebool.wrap(
+                Impl.cast(
+                    Impl.lt(
+                        euint16.unwrap(a),
+                        euint16.unwrap(asEuint16(b)),
+                        false
+                    ),
+                    Common.ebool_t
+                )
             );
     }
 
@@ -1078,6 +1204,108 @@ library TFHE {
         return
             euint16.wrap(
                 Impl.max(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false)
+            );
+    }
+
+    // Evaluate eq(a, b) and return the boolean result.
+    function eq(euint16 a, euint16 b) internal view returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
+        return
+            ebool.wrap(
+                Impl.cast(
+                    Impl.eq(euint16.unwrap(a), euint16.unwrap(b), false),
+                    Common.ebool_t
+                )
+            );
+    }
+
+    // Evaluate ne(a, b) and return the boolean result.
+    function ne(euint16 a, euint16 b) internal view returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
+        return
+            ebool.wrap(
+                Impl.cast(
+                    Impl.ne(euint16.unwrap(a), euint16.unwrap(b), false),
+                    Common.ebool_t
+                )
+            );
+    }
+
+    // Evaluate ge(a, b) and return the boolean result.
+    function ge(euint16 a, euint16 b) internal view returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
+        return
+            ebool.wrap(
+                Impl.cast(
+                    Impl.ge(euint16.unwrap(a), euint16.unwrap(b), false),
+                    Common.ebool_t
+                )
+            );
+    }
+
+    // Evaluate gt(a, b) and return the boolean result.
+    function gt(euint16 a, euint16 b) internal view returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
+        return
+            ebool.wrap(
+                Impl.cast(
+                    Impl.gt(euint16.unwrap(a), euint16.unwrap(b), false),
+                    Common.ebool_t
+                )
+            );
+    }
+
+    // Evaluate le(a, b) and return the boolean result.
+    function le(euint16 a, euint16 b) internal view returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
+        return
+            ebool.wrap(
+                Impl.cast(
+                    Impl.le(euint16.unwrap(a), euint16.unwrap(b), false),
+                    Common.ebool_t
+                )
+            );
+    }
+
+    // Evaluate lt(a, b) and return the boolean result.
+    function lt(euint16 a, euint16 b) internal view returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
+        return
+            ebool.wrap(
+                Impl.cast(
+                    Impl.lt(euint16.unwrap(a), euint16.unwrap(b), false),
+                    Common.ebool_t
+                )
             );
     }
 
@@ -1172,78 +1400,6 @@ library TFHE {
         }
         return
             euint16.wrap(Impl.shr(euint16.unwrap(a), euint16.unwrap(b), false));
-    }
-
-    // Evaluate eq(a, b) and return the result.
-    function eq(euint16 a, euint16 b) internal view returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
-        return
-            euint16.wrap(Impl.eq(euint16.unwrap(a), euint16.unwrap(b), false));
-    }
-
-    // Evaluate ne(a, b) and return the result.
-    function ne(euint16 a, euint16 b) internal view returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
-        return
-            euint16.wrap(Impl.ne(euint16.unwrap(a), euint16.unwrap(b), false));
-    }
-
-    // Evaluate ge(a, b) and return the result.
-    function ge(euint16 a, euint16 b) internal view returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
-        return
-            euint16.wrap(Impl.ge(euint16.unwrap(a), euint16.unwrap(b), false));
-    }
-
-    // Evaluate gt(a, b) and return the result.
-    function gt(euint16 a, euint16 b) internal view returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
-        return
-            euint16.wrap(Impl.gt(euint16.unwrap(a), euint16.unwrap(b), false));
-    }
-
-    // Evaluate le(a, b) and return the result.
-    function le(euint16 a, euint16 b) internal view returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
-        return
-            euint16.wrap(Impl.le(euint16.unwrap(a), euint16.unwrap(b), false));
-    }
-
-    // Evaluate lt(a, b) and return the result.
-    function lt(euint16 a, euint16 b) internal view returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
-        return
-            euint16.wrap(Impl.lt(euint16.unwrap(a), euint16.unwrap(b), false));
     }
 
     // Evaluate min(a, b) and return the result.
@@ -1382,8 +1538,8 @@ library TFHE {
             );
     }
 
-    // Evaluate eq(a, b) and return the result.
-    function eq(euint16 a, euint32 b) internal view returns (euint32) {
+    // Evaluate eq(a, b) and return the boolean result.
+    function eq(euint16 a, euint32 b) internal view returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1391,13 +1547,20 @@ library TFHE {
             b = asEuint32(0);
         }
         return
-            euint32.wrap(
-                Impl.eq(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false)
+            ebool.wrap(
+                Impl.cast(
+                    Impl.eq(
+                        euint32.unwrap(asEuint32(a)),
+                        euint32.unwrap(b),
+                        false
+                    ),
+                    Common.ebool_t
+                )
             );
     }
 
-    // Evaluate ne(a, b) and return the result.
-    function ne(euint16 a, euint32 b) internal view returns (euint32) {
+    // Evaluate ne(a, b) and return the boolean result.
+    function ne(euint16 a, euint32 b) internal view returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1405,13 +1568,20 @@ library TFHE {
             b = asEuint32(0);
         }
         return
-            euint32.wrap(
-                Impl.ne(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false)
+            ebool.wrap(
+                Impl.cast(
+                    Impl.ne(
+                        euint32.unwrap(asEuint32(a)),
+                        euint32.unwrap(b),
+                        false
+                    ),
+                    Common.ebool_t
+                )
             );
     }
 
-    // Evaluate ge(a, b) and return the result.
-    function ge(euint16 a, euint32 b) internal view returns (euint32) {
+    // Evaluate ge(a, b) and return the boolean result.
+    function ge(euint16 a, euint32 b) internal view returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1419,13 +1589,20 @@ library TFHE {
             b = asEuint32(0);
         }
         return
-            euint32.wrap(
-                Impl.ge(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false)
+            ebool.wrap(
+                Impl.cast(
+                    Impl.ge(
+                        euint32.unwrap(asEuint32(a)),
+                        euint32.unwrap(b),
+                        false
+                    ),
+                    Common.ebool_t
+                )
             );
     }
 
-    // Evaluate gt(a, b) and return the result.
-    function gt(euint16 a, euint32 b) internal view returns (euint32) {
+    // Evaluate gt(a, b) and return the boolean result.
+    function gt(euint16 a, euint32 b) internal view returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1433,13 +1610,20 @@ library TFHE {
             b = asEuint32(0);
         }
         return
-            euint32.wrap(
-                Impl.gt(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false)
+            ebool.wrap(
+                Impl.cast(
+                    Impl.gt(
+                        euint32.unwrap(asEuint32(a)),
+                        euint32.unwrap(b),
+                        false
+                    ),
+                    Common.ebool_t
+                )
             );
     }
 
-    // Evaluate le(a, b) and return the result.
-    function le(euint16 a, euint32 b) internal view returns (euint32) {
+    // Evaluate le(a, b) and return the boolean result.
+    function le(euint16 a, euint32 b) internal view returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1447,13 +1631,20 @@ library TFHE {
             b = asEuint32(0);
         }
         return
-            euint32.wrap(
-                Impl.le(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false)
+            ebool.wrap(
+                Impl.cast(
+                    Impl.le(
+                        euint32.unwrap(asEuint32(a)),
+                        euint32.unwrap(b),
+                        false
+                    ),
+                    Common.ebool_t
+                )
             );
     }
 
-    // Evaluate lt(a, b) and return the result.
-    function lt(euint16 a, euint32 b) internal view returns (euint32) {
+    // Evaluate lt(a, b) and return the boolean result.
+    function lt(euint16 a, euint32 b) internal view returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1461,8 +1652,15 @@ library TFHE {
             b = asEuint32(0);
         }
         return
-            euint32.wrap(
-                Impl.lt(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false)
+            ebool.wrap(
+                Impl.cast(
+                    Impl.lt(
+                        euint32.unwrap(asEuint32(a)),
+                        euint32.unwrap(b),
+                        false
+                    ),
+                    Common.ebool_t
+                )
             );
     }
 
@@ -1491,6 +1689,190 @@ library TFHE {
         return
             euint32.wrap(
                 Impl.max(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false)
+            );
+    }
+
+    // Evaluate shr(a, b) and return the result.
+    function shr(euint16 a, uint16 b) internal view returns (euint16) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        return euint16.wrap(Impl.shr(euint16.unwrap(a), uint256(b), true));
+    }
+
+    // Evaluate shr(a, b) and return the result.
+    function shr(uint16 a, euint16 b) internal view returns (euint16) {
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
+        return euint16.wrap(Impl.shr(euint16.unwrap(b), uint256(a), true));
+    }
+
+    // Evaluate eq(a, b) and return the boolean result.
+    function eq(euint16 a, uint16 b) internal view returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        return
+            ebool.wrap(
+                Impl.cast(
+                    Impl.eq(euint16.unwrap(a), uint256(b), true),
+                    Common.ebool_t
+                )
+            );
+    }
+
+    // Evaluate eq(a, b) and return the boolean result.
+    function eq(uint16 a, euint16 b) internal view returns (ebool) {
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
+        return
+            ebool.wrap(
+                Impl.cast(
+                    Impl.eq(euint16.unwrap(b), uint256(a), true),
+                    Common.ebool_t
+                )
+            );
+    }
+
+    // Evaluate ne(a, b) and return the boolean result.
+    function ne(euint16 a, uint16 b) internal view returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        return
+            ebool.wrap(
+                Impl.cast(
+                    Impl.ne(euint16.unwrap(a), uint256(b), true),
+                    Common.ebool_t
+                )
+            );
+    }
+
+    // Evaluate ne(a, b) and return the boolean result.
+    function ne(uint16 a, euint16 b) internal view returns (ebool) {
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
+        return
+            ebool.wrap(
+                Impl.cast(
+                    Impl.ne(euint16.unwrap(b), uint256(a), true),
+                    Common.ebool_t
+                )
+            );
+    }
+
+    // Evaluate ge(a, b) and return the boolean result.
+    function ge(euint16 a, uint16 b) internal view returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        return
+            ebool.wrap(
+                Impl.cast(
+                    Impl.ge(euint16.unwrap(a), uint256(b), true),
+                    Common.ebool_t
+                )
+            );
+    }
+
+    // Evaluate ge(a, b) and return the boolean result.
+    function ge(uint16 a, euint16 b) internal view returns (ebool) {
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
+        return
+            ebool.wrap(
+                Impl.cast(
+                    Impl.le(euint16.unwrap(b), uint256(a), true),
+                    Common.ebool_t
+                )
+            );
+    }
+
+    // Evaluate gt(a, b) and return the boolean result.
+    function gt(euint16 a, uint16 b) internal view returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        return
+            ebool.wrap(
+                Impl.cast(
+                    Impl.gt(euint16.unwrap(a), uint256(b), true),
+                    Common.ebool_t
+                )
+            );
+    }
+
+    // Evaluate gt(a, b) and return the boolean result.
+    function gt(uint16 a, euint16 b) internal view returns (ebool) {
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
+        return
+            ebool.wrap(
+                Impl.cast(
+                    Impl.lt(euint16.unwrap(b), uint256(a), true),
+                    Common.ebool_t
+                )
+            );
+    }
+
+    // Evaluate le(a, b) and return the boolean result.
+    function le(euint16 a, uint16 b) internal view returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        return
+            ebool.wrap(
+                Impl.cast(
+                    Impl.le(euint16.unwrap(a), uint256(b), true),
+                    Common.ebool_t
+                )
+            );
+    }
+
+    // Evaluate le(a, b) and return the boolean result.
+    function le(uint16 a, euint16 b) internal view returns (ebool) {
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
+        return
+            ebool.wrap(
+                Impl.cast(
+                    Impl.ge(euint16.unwrap(b), uint256(a), true),
+                    Common.ebool_t
+                )
+            );
+    }
+
+    // Evaluate lt(a, b) and return the boolean result.
+    function lt(euint16 a, uint16 b) internal view returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        return
+            ebool.wrap(
+                Impl.cast(
+                    Impl.lt(euint16.unwrap(a), uint256(b), true),
+                    Common.ebool_t
+                )
+            );
+    }
+
+    // Evaluate lt(a, b) and return the boolean result.
+    function lt(uint16 a, euint16 b) internal view returns (ebool) {
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
+        return
+            ebool.wrap(
+                Impl.cast(
+                    Impl.gt(euint16.unwrap(b), uint256(a), true),
+                    Common.ebool_t
+                )
             );
     }
 
@@ -1556,118 +1938,6 @@ library TFHE {
             b = asEuint16(0);
         }
         return euint16.wrap(Impl.shl(euint16.unwrap(b), uint256(a), true));
-    }
-
-    // Evaluate shr(a, b) and return the result.
-    function shr(euint16 a, uint16 b) internal view returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
-        return euint16.wrap(Impl.shr(euint16.unwrap(a), uint256(b), true));
-    }
-
-    // Evaluate shr(a, b) and return the result.
-    function shr(uint16 a, euint16 b) internal view returns (euint16) {
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
-        return euint16.wrap(Impl.shr(euint16.unwrap(b), uint256(a), true));
-    }
-
-    // Evaluate eq(a, b) and return the result.
-    function eq(euint16 a, uint16 b) internal view returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
-        return euint16.wrap(Impl.eq(euint16.unwrap(a), uint256(b), true));
-    }
-
-    // Evaluate eq(a, b) and return the result.
-    function eq(uint16 a, euint16 b) internal view returns (euint16) {
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
-        return euint16.wrap(Impl.eq(euint16.unwrap(b), uint256(a), true));
-    }
-
-    // Evaluate ne(a, b) and return the result.
-    function ne(euint16 a, uint16 b) internal view returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
-        return euint16.wrap(Impl.ne(euint16.unwrap(a), uint256(b), true));
-    }
-
-    // Evaluate ne(a, b) and return the result.
-    function ne(uint16 a, euint16 b) internal view returns (euint16) {
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
-        return euint16.wrap(Impl.ne(euint16.unwrap(b), uint256(a), true));
-    }
-
-    // Evaluate ge(a, b) and return the result.
-    function ge(euint16 a, uint16 b) internal view returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
-        return euint16.wrap(Impl.ge(euint16.unwrap(a), uint256(b), true));
-    }
-
-    // Evaluate ge(a, b) and return the result.
-    function ge(uint16 a, euint16 b) internal view returns (euint16) {
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
-        return euint16.wrap(Impl.le(euint16.unwrap(b), uint256(a), true));
-    }
-
-    // Evaluate gt(a, b) and return the result.
-    function gt(euint16 a, uint16 b) internal view returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
-        return euint16.wrap(Impl.gt(euint16.unwrap(a), uint256(b), true));
-    }
-
-    // Evaluate gt(a, b) and return the result.
-    function gt(uint16 a, euint16 b) internal view returns (euint16) {
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
-        return euint16.wrap(Impl.lt(euint16.unwrap(b), uint256(a), true));
-    }
-
-    // Evaluate le(a, b) and return the result.
-    function le(euint16 a, uint16 b) internal view returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
-        return euint16.wrap(Impl.le(euint16.unwrap(a), uint256(b), true));
-    }
-
-    // Evaluate le(a, b) and return the result.
-    function le(uint16 a, euint16 b) internal view returns (euint16) {
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
-        return euint16.wrap(Impl.ge(euint16.unwrap(b), uint256(a), true));
-    }
-
-    // Evaluate lt(a, b) and return the result.
-    function lt(euint16 a, uint16 b) internal view returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
-        return euint16.wrap(Impl.lt(euint16.unwrap(a), uint256(b), true));
-    }
-
-    // Evaluate lt(a, b) and return the result.
-    function lt(uint16 a, euint16 b) internal view returns (euint16) {
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
-        return euint16.wrap(Impl.gt(euint16.unwrap(b), uint256(a), true));
     }
 
     // Evaluate min(a, b) and return the result.
@@ -1814,8 +2084,8 @@ library TFHE {
             );
     }
 
-    // Evaluate eq(a, b) and return the result.
-    function eq(euint32 a, euint8 b) internal view returns (euint32) {
+    // Evaluate eq(a, b) and return the boolean result.
+    function eq(euint32 a, euint8 b) internal view returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1823,13 +2093,20 @@ library TFHE {
             b = asEuint8(0);
         }
         return
-            euint32.wrap(
-                Impl.eq(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false)
+            ebool.wrap(
+                Impl.cast(
+                    Impl.eq(
+                        euint32.unwrap(a),
+                        euint32.unwrap(asEuint32(b)),
+                        false
+                    ),
+                    Common.ebool_t
+                )
             );
     }
 
-    // Evaluate ne(a, b) and return the result.
-    function ne(euint32 a, euint8 b) internal view returns (euint32) {
+    // Evaluate ne(a, b) and return the boolean result.
+    function ne(euint32 a, euint8 b) internal view returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1837,13 +2114,20 @@ library TFHE {
             b = asEuint8(0);
         }
         return
-            euint32.wrap(
-                Impl.ne(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false)
+            ebool.wrap(
+                Impl.cast(
+                    Impl.ne(
+                        euint32.unwrap(a),
+                        euint32.unwrap(asEuint32(b)),
+                        false
+                    ),
+                    Common.ebool_t
+                )
             );
     }
 
-    // Evaluate ge(a, b) and return the result.
-    function ge(euint32 a, euint8 b) internal view returns (euint32) {
+    // Evaluate ge(a, b) and return the boolean result.
+    function ge(euint32 a, euint8 b) internal view returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1851,13 +2135,20 @@ library TFHE {
             b = asEuint8(0);
         }
         return
-            euint32.wrap(
-                Impl.ge(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false)
+            ebool.wrap(
+                Impl.cast(
+                    Impl.ge(
+                        euint32.unwrap(a),
+                        euint32.unwrap(asEuint32(b)),
+                        false
+                    ),
+                    Common.ebool_t
+                )
             );
     }
 
-    // Evaluate gt(a, b) and return the result.
-    function gt(euint32 a, euint8 b) internal view returns (euint32) {
+    // Evaluate gt(a, b) and return the boolean result.
+    function gt(euint32 a, euint8 b) internal view returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1865,13 +2156,20 @@ library TFHE {
             b = asEuint8(0);
         }
         return
-            euint32.wrap(
-                Impl.gt(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false)
+            ebool.wrap(
+                Impl.cast(
+                    Impl.gt(
+                        euint32.unwrap(a),
+                        euint32.unwrap(asEuint32(b)),
+                        false
+                    ),
+                    Common.ebool_t
+                )
             );
     }
 
-    // Evaluate le(a, b) and return the result.
-    function le(euint32 a, euint8 b) internal view returns (euint32) {
+    // Evaluate le(a, b) and return the boolean result.
+    function le(euint32 a, euint8 b) internal view returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1879,13 +2177,20 @@ library TFHE {
             b = asEuint8(0);
         }
         return
-            euint32.wrap(
-                Impl.le(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false)
+            ebool.wrap(
+                Impl.cast(
+                    Impl.le(
+                        euint32.unwrap(a),
+                        euint32.unwrap(asEuint32(b)),
+                        false
+                    ),
+                    Common.ebool_t
+                )
             );
     }
 
-    // Evaluate lt(a, b) and return the result.
-    function lt(euint32 a, euint8 b) internal view returns (euint32) {
+    // Evaluate lt(a, b) and return the boolean result.
+    function lt(euint32 a, euint8 b) internal view returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1893,8 +2198,15 @@ library TFHE {
             b = asEuint8(0);
         }
         return
-            euint32.wrap(
-                Impl.lt(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false)
+            ebool.wrap(
+                Impl.cast(
+                    Impl.lt(
+                        euint32.unwrap(a),
+                        euint32.unwrap(asEuint32(b)),
+                        false
+                    ),
+                    Common.ebool_t
+                )
             );
     }
 
@@ -2038,8 +2350,8 @@ library TFHE {
             );
     }
 
-    // Evaluate eq(a, b) and return the result.
-    function eq(euint32 a, euint16 b) internal view returns (euint32) {
+    // Evaluate eq(a, b) and return the boolean result.
+    function eq(euint32 a, euint16 b) internal view returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -2047,13 +2359,20 @@ library TFHE {
             b = asEuint16(0);
         }
         return
-            euint32.wrap(
-                Impl.eq(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false)
+            ebool.wrap(
+                Impl.cast(
+                    Impl.eq(
+                        euint32.unwrap(a),
+                        euint32.unwrap(asEuint32(b)),
+                        false
+                    ),
+                    Common.ebool_t
+                )
             );
     }
 
-    // Evaluate ne(a, b) and return the result.
-    function ne(euint32 a, euint16 b) internal view returns (euint32) {
+    // Evaluate ne(a, b) and return the boolean result.
+    function ne(euint32 a, euint16 b) internal view returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -2061,13 +2380,20 @@ library TFHE {
             b = asEuint16(0);
         }
         return
-            euint32.wrap(
-                Impl.ne(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false)
+            ebool.wrap(
+                Impl.cast(
+                    Impl.ne(
+                        euint32.unwrap(a),
+                        euint32.unwrap(asEuint32(b)),
+                        false
+                    ),
+                    Common.ebool_t
+                )
             );
     }
 
-    // Evaluate ge(a, b) and return the result.
-    function ge(euint32 a, euint16 b) internal view returns (euint32) {
+    // Evaluate ge(a, b) and return the boolean result.
+    function ge(euint32 a, euint16 b) internal view returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -2075,13 +2401,20 @@ library TFHE {
             b = asEuint16(0);
         }
         return
-            euint32.wrap(
-                Impl.ge(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false)
+            ebool.wrap(
+                Impl.cast(
+                    Impl.ge(
+                        euint32.unwrap(a),
+                        euint32.unwrap(asEuint32(b)),
+                        false
+                    ),
+                    Common.ebool_t
+                )
             );
     }
 
-    // Evaluate gt(a, b) and return the result.
-    function gt(euint32 a, euint16 b) internal view returns (euint32) {
+    // Evaluate gt(a, b) and return the boolean result.
+    function gt(euint32 a, euint16 b) internal view returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -2089,13 +2422,20 @@ library TFHE {
             b = asEuint16(0);
         }
         return
-            euint32.wrap(
-                Impl.gt(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false)
+            ebool.wrap(
+                Impl.cast(
+                    Impl.gt(
+                        euint32.unwrap(a),
+                        euint32.unwrap(asEuint32(b)),
+                        false
+                    ),
+                    Common.ebool_t
+                )
             );
     }
 
-    // Evaluate le(a, b) and return the result.
-    function le(euint32 a, euint16 b) internal view returns (euint32) {
+    // Evaluate le(a, b) and return the boolean result.
+    function le(euint32 a, euint16 b) internal view returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -2103,13 +2443,20 @@ library TFHE {
             b = asEuint16(0);
         }
         return
-            euint32.wrap(
-                Impl.le(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false)
+            ebool.wrap(
+                Impl.cast(
+                    Impl.le(
+                        euint32.unwrap(a),
+                        euint32.unwrap(asEuint32(b)),
+                        false
+                    ),
+                    Common.ebool_t
+                )
             );
     }
 
-    // Evaluate lt(a, b) and return the result.
-    function lt(euint32 a, euint16 b) internal view returns (euint32) {
+    // Evaluate lt(a, b) and return the boolean result.
+    function lt(euint32 a, euint16 b) internal view returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -2117,8 +2464,15 @@ library TFHE {
             b = asEuint16(0);
         }
         return
-            euint32.wrap(
-                Impl.lt(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false)
+            ebool.wrap(
+                Impl.cast(
+                    Impl.lt(
+                        euint32.unwrap(a),
+                        euint32.unwrap(asEuint32(b)),
+                        false
+                    ),
+                    Common.ebool_t
+                )
             );
     }
 
@@ -2147,6 +2501,108 @@ library TFHE {
         return
             euint32.wrap(
                 Impl.max(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false)
+            );
+    }
+
+    // Evaluate eq(a, b) and return the boolean result.
+    function eq(euint32 a, euint32 b) internal view returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
+        return
+            ebool.wrap(
+                Impl.cast(
+                    Impl.eq(euint32.unwrap(a), euint32.unwrap(b), false),
+                    Common.ebool_t
+                )
+            );
+    }
+
+    // Evaluate ne(a, b) and return the boolean result.
+    function ne(euint32 a, euint32 b) internal view returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
+        return
+            ebool.wrap(
+                Impl.cast(
+                    Impl.ne(euint32.unwrap(a), euint32.unwrap(b), false),
+                    Common.ebool_t
+                )
+            );
+    }
+
+    // Evaluate ge(a, b) and return the boolean result.
+    function ge(euint32 a, euint32 b) internal view returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
+        return
+            ebool.wrap(
+                Impl.cast(
+                    Impl.ge(euint32.unwrap(a), euint32.unwrap(b), false),
+                    Common.ebool_t
+                )
+            );
+    }
+
+    // Evaluate gt(a, b) and return the boolean result.
+    function gt(euint32 a, euint32 b) internal view returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
+        return
+            ebool.wrap(
+                Impl.cast(
+                    Impl.gt(euint32.unwrap(a), euint32.unwrap(b), false),
+                    Common.ebool_t
+                )
+            );
+    }
+
+    // Evaluate le(a, b) and return the boolean result.
+    function le(euint32 a, euint32 b) internal view returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
+        return
+            ebool.wrap(
+                Impl.cast(
+                    Impl.le(euint32.unwrap(a), euint32.unwrap(b), false),
+                    Common.ebool_t
+                )
+            );
+    }
+
+    // Evaluate lt(a, b) and return the boolean result.
+    function lt(euint32 a, euint32 b) internal view returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
+        return
+            ebool.wrap(
+                Impl.cast(
+                    Impl.lt(euint32.unwrap(a), euint32.unwrap(b), false),
+                    Common.ebool_t
+                )
             );
     }
 
@@ -2243,78 +2699,6 @@ library TFHE {
             euint32.wrap(Impl.shr(euint32.unwrap(a), euint32.unwrap(b), false));
     }
 
-    // Evaluate eq(a, b) and return the result.
-    function eq(euint32 a, euint32 b) internal view returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
-        return
-            euint32.wrap(Impl.eq(euint32.unwrap(a), euint32.unwrap(b), false));
-    }
-
-    // Evaluate ne(a, b) and return the result.
-    function ne(euint32 a, euint32 b) internal view returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
-        return
-            euint32.wrap(Impl.ne(euint32.unwrap(a), euint32.unwrap(b), false));
-    }
-
-    // Evaluate ge(a, b) and return the result.
-    function ge(euint32 a, euint32 b) internal view returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
-        return
-            euint32.wrap(Impl.ge(euint32.unwrap(a), euint32.unwrap(b), false));
-    }
-
-    // Evaluate gt(a, b) and return the result.
-    function gt(euint32 a, euint32 b) internal view returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
-        return
-            euint32.wrap(Impl.gt(euint32.unwrap(a), euint32.unwrap(b), false));
-    }
-
-    // Evaluate le(a, b) and return the result.
-    function le(euint32 a, euint32 b) internal view returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
-        return
-            euint32.wrap(Impl.le(euint32.unwrap(a), euint32.unwrap(b), false));
-    }
-
-    // Evaluate lt(a, b) and return the result.
-    function lt(euint32 a, euint32 b) internal view returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
-        return
-            euint32.wrap(Impl.lt(euint32.unwrap(a), euint32.unwrap(b), false));
-    }
-
     // Evaluate min(a, b) and return the result.
     function min(euint32 a, euint32 b) internal view returns (euint32) {
         if (!isInitialized(a)) {
@@ -2337,6 +2721,190 @@ library TFHE {
         }
         return
             euint32.wrap(Impl.max(euint32.unwrap(a), euint32.unwrap(b), false));
+    }
+
+    // Evaluate shr(a, b) and return the result.
+    function shr(euint32 a, uint32 b) internal view returns (euint32) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        return euint32.wrap(Impl.shr(euint32.unwrap(a), uint256(b), true));
+    }
+
+    // Evaluate shr(a, b) and return the result.
+    function shr(uint32 a, euint32 b) internal view returns (euint32) {
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
+        return euint32.wrap(Impl.shr(euint32.unwrap(b), uint256(a), true));
+    }
+
+    // Evaluate eq(a, b) and return the boolean result.
+    function eq(euint32 a, uint32 b) internal view returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        return
+            ebool.wrap(
+                Impl.cast(
+                    Impl.eq(euint32.unwrap(a), uint256(b), true),
+                    Common.ebool_t
+                )
+            );
+    }
+
+    // Evaluate eq(a, b) and return the boolean result.
+    function eq(uint32 a, euint32 b) internal view returns (ebool) {
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
+        return
+            ebool.wrap(
+                Impl.cast(
+                    Impl.eq(euint32.unwrap(b), uint256(a), true),
+                    Common.ebool_t
+                )
+            );
+    }
+
+    // Evaluate ne(a, b) and return the boolean result.
+    function ne(euint32 a, uint32 b) internal view returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        return
+            ebool.wrap(
+                Impl.cast(
+                    Impl.ne(euint32.unwrap(a), uint256(b), true),
+                    Common.ebool_t
+                )
+            );
+    }
+
+    // Evaluate ne(a, b) and return the boolean result.
+    function ne(uint32 a, euint32 b) internal view returns (ebool) {
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
+        return
+            ebool.wrap(
+                Impl.cast(
+                    Impl.ne(euint32.unwrap(b), uint256(a), true),
+                    Common.ebool_t
+                )
+            );
+    }
+
+    // Evaluate ge(a, b) and return the boolean result.
+    function ge(euint32 a, uint32 b) internal view returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        return
+            ebool.wrap(
+                Impl.cast(
+                    Impl.ge(euint32.unwrap(a), uint256(b), true),
+                    Common.ebool_t
+                )
+            );
+    }
+
+    // Evaluate ge(a, b) and return the boolean result.
+    function ge(uint32 a, euint32 b) internal view returns (ebool) {
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
+        return
+            ebool.wrap(
+                Impl.cast(
+                    Impl.le(euint32.unwrap(b), uint256(a), true),
+                    Common.ebool_t
+                )
+            );
+    }
+
+    // Evaluate gt(a, b) and return the boolean result.
+    function gt(euint32 a, uint32 b) internal view returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        return
+            ebool.wrap(
+                Impl.cast(
+                    Impl.gt(euint32.unwrap(a), uint256(b), true),
+                    Common.ebool_t
+                )
+            );
+    }
+
+    // Evaluate gt(a, b) and return the boolean result.
+    function gt(uint32 a, euint32 b) internal view returns (ebool) {
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
+        return
+            ebool.wrap(
+                Impl.cast(
+                    Impl.lt(euint32.unwrap(b), uint256(a), true),
+                    Common.ebool_t
+                )
+            );
+    }
+
+    // Evaluate le(a, b) and return the boolean result.
+    function le(euint32 a, uint32 b) internal view returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        return
+            ebool.wrap(
+                Impl.cast(
+                    Impl.le(euint32.unwrap(a), uint256(b), true),
+                    Common.ebool_t
+                )
+            );
+    }
+
+    // Evaluate le(a, b) and return the boolean result.
+    function le(uint32 a, euint32 b) internal view returns (ebool) {
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
+        return
+            ebool.wrap(
+                Impl.cast(
+                    Impl.ge(euint32.unwrap(b), uint256(a), true),
+                    Common.ebool_t
+                )
+            );
+    }
+
+    // Evaluate lt(a, b) and return the boolean result.
+    function lt(euint32 a, uint32 b) internal view returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        return
+            ebool.wrap(
+                Impl.cast(
+                    Impl.lt(euint32.unwrap(a), uint256(b), true),
+                    Common.ebool_t
+                )
+            );
+    }
+
+    // Evaluate lt(a, b) and return the boolean result.
+    function lt(uint32 a, euint32 b) internal view returns (ebool) {
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
+        return
+            ebool.wrap(
+                Impl.cast(
+                    Impl.gt(euint32.unwrap(b), uint256(a), true),
+                    Common.ebool_t
+                )
+            );
     }
 
     // Evaluate add(a, b) and return the result.
@@ -2403,118 +2971,6 @@ library TFHE {
         return euint32.wrap(Impl.shl(euint32.unwrap(b), uint256(a), true));
     }
 
-    // Evaluate shr(a, b) and return the result.
-    function shr(euint32 a, uint32 b) internal view returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
-        return euint32.wrap(Impl.shr(euint32.unwrap(a), uint256(b), true));
-    }
-
-    // Evaluate shr(a, b) and return the result.
-    function shr(uint32 a, euint32 b) internal view returns (euint32) {
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
-        return euint32.wrap(Impl.shr(euint32.unwrap(b), uint256(a), true));
-    }
-
-    // Evaluate eq(a, b) and return the result.
-    function eq(euint32 a, uint32 b) internal view returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
-        return euint32.wrap(Impl.eq(euint32.unwrap(a), uint256(b), true));
-    }
-
-    // Evaluate eq(a, b) and return the result.
-    function eq(uint32 a, euint32 b) internal view returns (euint32) {
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
-        return euint32.wrap(Impl.eq(euint32.unwrap(b), uint256(a), true));
-    }
-
-    // Evaluate ne(a, b) and return the result.
-    function ne(euint32 a, uint32 b) internal view returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
-        return euint32.wrap(Impl.ne(euint32.unwrap(a), uint256(b), true));
-    }
-
-    // Evaluate ne(a, b) and return the result.
-    function ne(uint32 a, euint32 b) internal view returns (euint32) {
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
-        return euint32.wrap(Impl.ne(euint32.unwrap(b), uint256(a), true));
-    }
-
-    // Evaluate ge(a, b) and return the result.
-    function ge(euint32 a, uint32 b) internal view returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
-        return euint32.wrap(Impl.ge(euint32.unwrap(a), uint256(b), true));
-    }
-
-    // Evaluate ge(a, b) and return the result.
-    function ge(uint32 a, euint32 b) internal view returns (euint32) {
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
-        return euint32.wrap(Impl.le(euint32.unwrap(b), uint256(a), true));
-    }
-
-    // Evaluate gt(a, b) and return the result.
-    function gt(euint32 a, uint32 b) internal view returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
-        return euint32.wrap(Impl.gt(euint32.unwrap(a), uint256(b), true));
-    }
-
-    // Evaluate gt(a, b) and return the result.
-    function gt(uint32 a, euint32 b) internal view returns (euint32) {
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
-        return euint32.wrap(Impl.lt(euint32.unwrap(b), uint256(a), true));
-    }
-
-    // Evaluate le(a, b) and return the result.
-    function le(euint32 a, uint32 b) internal view returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
-        return euint32.wrap(Impl.le(euint32.unwrap(a), uint256(b), true));
-    }
-
-    // Evaluate le(a, b) and return the result.
-    function le(uint32 a, euint32 b) internal view returns (euint32) {
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
-        return euint32.wrap(Impl.ge(euint32.unwrap(b), uint256(a), true));
-    }
-
-    // Evaluate lt(a, b) and return the result.
-    function lt(euint32 a, uint32 b) internal view returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
-        return euint32.wrap(Impl.lt(euint32.unwrap(a), uint256(b), true));
-    }
-
-    // Evaluate lt(a, b) and return the result.
-    function lt(uint32 a, euint32 b) internal view returns (euint32) {
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
-        return euint32.wrap(Impl.gt(euint32.unwrap(b), uint256(a), true));
-    }
-
     // Evaluate min(a, b) and return the result.
     function min(euint32 a, uint32 b) internal view returns (euint32) {
         if (!isInitialized(a)) {
@@ -2547,51 +3003,51 @@ library TFHE {
         return euint32.wrap(Impl.max(euint32.unwrap(b), uint256(a), true));
     }
 
-    // If `control`'s value is 1, the result has the same value as `a`.
-    // If `control`'s value is 0, the result has the same value as `b`.
+    // If `control`'s value is `true`, the result has the same value as `a`.
+    // If `control`'s value is `false, the result has the same value as `b`.
     function cmux(
-        euint8 control,
+        ebool control,
         euint8 a,
         euint8 b
     ) internal view returns (euint8) {
         return
             euint8.wrap(
                 Impl.cmux(
-                    euint8.unwrap(control),
+                    ebool.unwrap(control),
                     euint8.unwrap(a),
                     euint8.unwrap(b)
                 )
             );
     }
 
-    // If `control`'s value is 1, the result has the same value as `a`.
-    // If `control`'s value is 0, the result has the same value as `b`.
+    // If `control`'s value is `true`, the result has the same value as `a`.
+    // If `control`'s value is `false, the result has the same value as `b`.
     function cmux(
-        euint16 control,
+        ebool control,
         euint16 a,
         euint16 b
     ) internal view returns (euint16) {
         return
             euint16.wrap(
                 Impl.cmux(
-                    euint16.unwrap(control),
+                    ebool.unwrap(control),
                     euint16.unwrap(a),
                     euint16.unwrap(b)
                 )
             );
     }
 
-    // If `control`'s value is 1, the result has the same value as `a`.
-    // If `control`'s value is 0, the result has the same value as `b`.
+    // If `control`'s value is `true`, the result has the same value as `a`.
+    // If `control`'s value is `false, the result has the same value as `b`.
     function cmux(
-        euint32 control,
+        ebool control,
         euint32 a,
         euint32 b
     ) internal view returns (euint32) {
         return
             euint32.wrap(
                 Impl.cmux(
-                    euint32.unwrap(control),
+                    ebool.unwrap(control),
                     euint32.unwrap(a),
                     euint32.unwrap(b)
                 )
@@ -2608,6 +3064,25 @@ library TFHE {
         return euint8.wrap(Impl.cast(euint32.unwrap(value), Common.euint8_t));
     }
 
+    // Cast an encrypted integer from euint8 to ebool.
+    function asEbool(euint8 value) internal view returns (ebool) {
+        return ne(value, 0);
+    }
+
+    // Convert a serialized `ciphertext` to an encrypted boolean.
+    function asEbool(bytes memory ciphertext) internal view returns (ebool) {
+        return asEbool(asEuint8(ciphertext));
+    }
+
+    // Convert a plaintext boolean to an encrypted boolean.
+    function asEbool(bool value) internal view returns (ebool) {
+        if (value) {
+            return asEbool(asEuint8(1));
+        } else {
+            return asEbool(asEuint8(0));
+        }
+    }
+
     // Cast an encrypted integer from euint8 to euint16.
     function asEuint16(euint8 value) internal view returns (euint16) {
         return euint16.wrap(Impl.cast(euint8.unwrap(value), Common.euint16_t));
@@ -2618,6 +3093,11 @@ library TFHE {
         return euint16.wrap(Impl.cast(euint32.unwrap(value), Common.euint16_t));
     }
 
+    // Cast an encrypted integer from euint16 to ebool.
+    function asEbool(euint16 value) internal view returns (ebool) {
+        return ne(value, 0);
+    }
+
     // Cast an encrypted integer from euint8 to euint32.
     function asEuint32(euint8 value) internal view returns (euint32) {
         return euint32.wrap(Impl.cast(euint8.unwrap(value), Common.euint32_t));
@@ -2626,6 +3106,11 @@ library TFHE {
     // Cast an encrypted integer from euint16 to euint32.
     function asEuint32(euint16 value) internal view returns (euint32) {
         return euint32.wrap(Impl.cast(euint16.unwrap(value), Common.euint32_t));
+    }
+
+    // Cast an encrypted integer from euint32 to ebool.
+    function asEbool(euint32 value) internal view returns (ebool) {
+        return ne(value, 0);
     }
 
     // Convert a serialized `ciphertext` to an encrypted euint8 integer.
@@ -2842,7 +3327,50 @@ library TFHE {
         Impl.optReq(euint8.unwrap(asEuint8(value)));
     }
 
-    // Return the network public FHE key.
+    // Require that the encrypted bool `b` is not equal to 0.
+    // Involves decrypting `b`.
+    function req(ebool b) internal view {
+        Impl.req(ebool.unwrap(b));
+    }
+
+    // Optimistically require that `b` is not equal to 0.
+    function optReq(ebool b) internal view {
+        Impl.optReq(ebool.unwrap(b));
+    }
+
+    // Converts an `ebool` to an `euint8`.
+    function asEuint8(ebool b) internal pure returns (euint8) {
+        {
+            return euint8.wrap(ebool.unwrap(b));
+        }
+    }
+
+    // Reencrypt the given `value` under the given `publicKey`.
+    // Return a serialized euint8 value.
+    function reencrypt(
+        ebool value,
+        bytes32 publicKey
+    ) internal view returns (bytes memory reencrypted) {
+        return Impl.reencrypt(ebool.unwrap(value), publicKey);
+    }
+
+    // Reencrypt the given `value` under the given `publicKey`.
+    // Return a serialized euint8 value.
+    // If `value` is not initialized, the returned value will contain the `defaultValue` constant.
+    function reencrypt(
+        ebool value,
+        bytes32 publicKey,
+        bool defaultValue
+    ) internal view returns (bytes memory reencrypted) {
+        if (ebool.unwrap(value) != 0) {
+            return Impl.reencrypt(ebool.unwrap(value), publicKey);
+        } else {
+            return
+                Impl.reencrypt(ebool.unwrap(asEbool(defaultValue)), publicKey);
+        }
+    }
+
+    // Returns the network public FHE key.
     function fhePubKey() internal view returns (bytes memory) {
         return Impl.fhePubKey();
     }

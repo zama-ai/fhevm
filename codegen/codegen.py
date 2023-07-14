@@ -6,12 +6,14 @@ f.write("""\
 
 pragma solidity >=0.8.13 <0.8.20;
 
+type ebool is uint256;
 type euint8 is uint256;
 type euint16 is uint256;
 type euint32 is uint256;
 
 library Common {
     // Values used to communicate types to the runtime.
+    uint8 internal constant ebool_t = 0;
     uint8 internal constant euint8_t = 0;
     uint8 internal constant euint16_t = 1;
     uint8 internal constant euint32_t = 2;
@@ -750,6 +752,32 @@ to_print_cast_b =  """
     }}
 """
 
+to_print_no_cast_comp =  """
+    // Evaluate {f}(a, b) and return the boolean result.
+    function {f}(euint{i} a, euint{j} b) internal view returns (ebool) {{
+        if (!isInitialized(a)) {{
+            a = asEuint{i}(0);
+        }}
+        if (!isInitialized(b)) {{
+            b = asEuint{j}(0);
+        }}
+        return ebool.wrap(Impl.cast(Impl.{f}(euint{i}.unwrap(a), euint{j}.unwrap(b), false), Common.ebool_t));
+    }}
+"""
+
+to_print_no_cast_comp_8 =  """
+    // Evaluate {f}(a, b) and return the boolean result.
+    function {f}(euint{i} a, euint{j} b) internal view returns (ebool) {{
+        if (!isInitialized(a)) {{
+            a = asEuint{i}(0);
+        }}
+        if (!isInitialized(b)) {{
+            b = asEuint{j}(0);
+        }}
+        return ebool.wrap(Impl.{f}(euint{i}.unwrap(a), euint{j}.unwrap(b), false));
+    }}
+"""
+
 to_print_no_scalar_no_cast = """
     // Evaluate {f}(a, b) and return the result.
     function {f}(euint{i} a, euint{j} b) internal view returns (euint{k}) {{
@@ -763,6 +791,19 @@ to_print_no_scalar_no_cast = """
     }}
 """
 
+to_print_cast_a_comp =  """
+    // Evaluate {f}(a, b) and return the boolean result.
+    function {f}(euint{i} a, euint{j} b) internal view returns (ebool) {{
+        if (!isInitialized(a)) {{
+            a = asEuint{i}(0);
+        }}
+        if (!isInitialized(b)) {{
+            b = asEuint{j}(0);
+        }}
+        return ebool.wrap(Impl.cast(Impl.{f}(euint{j}.unwrap(asEuint{j}(a)), euint{j}.unwrap(b), false), Common.ebool_t));
+    }}
+"""
+
 to_print_no_scalar_cast_a = """
     // Evaluate {f}(a, b) and return the result.
     function {f}(euint{i} a, euint{j} b) internal view returns (euint{k}) {{
@@ -773,6 +814,19 @@ to_print_no_scalar_cast_a = """
             b = asEuint{j}(0);
         }}
         return euint{k}.wrap(Impl.{f}(euint{j}.unwrap(asEuint{j}(a)), euint{j}.unwrap(b)));
+    }}
+"""
+
+to_print_cast_b_comp =  """
+    // Evaluate {f}(a, b) and return the boolean result.
+    function {f}(euint{i} a, euint{j} b) internal view returns (ebool) {{
+        if (!isInitialized(a)) {{
+            a = asEuint{i}(0);
+        }}
+        if (!isInitialized(b)) {{
+            b = asEuint{j}(0);
+        }}
+        return ebool.wrap(Impl.cast(Impl.{f}(euint{i}.unwrap(a), euint{i}.unwrap(asEuint{i}(b)), false), Common.ebool_t));
     }}
 """
 
@@ -807,9 +861,59 @@ to_print_scalar = """
     }}
 """
 
+to_print_scalar_comp = """
+    // Evaluate {f}(a, b) and return the boolean result.
+    function {f}(euint{i} a, uint{i} b) internal view returns (ebool) {{
+        if (!isInitialized(a)) {{
+            a = asEuint{i}(0);
+        }}
+        return ebool.wrap(Impl.cast(Impl.{f}(euint{i}.unwrap(a), uint256(b), true), Common.ebool_t));
+    }}
+
+    // Evaluate {f}(a, b) and return the boolean result.
+    function {f}(uint{i} a, euint{i} b) internal view returns (ebool) {{
+        if (!isInitialized(b)) {{
+            b = asEuint{i}(0);
+        }}
+        return ebool.wrap(Impl.cast(Impl.{g}(euint{i}.unwrap(b), uint256(a), true), Common.ebool_t));
+    }}
+"""
+
+to_print_scalar_comp_8 = """
+    // Evaluate {f}(a, b) and return the boolean result.
+    function {f}(euint{i} a, uint{i} b) internal view returns (ebool) {{
+        if (!isInitialized(a)) {{
+            a = asEuint{i}(0);
+        }}
+        return ebool.wrap(Impl.{f}(euint{i}.unwrap(a), uint256(b), true));
+    }}
+
+    // Evaluate {f}(a, b) and return the boolean result.
+    function {f}(uint{i} a, euint{i} b) internal view returns (ebool) {{
+        if (!isInitialized(b)) {{
+            b = asEuint{i}(0);
+        }}
+        return ebool.wrap(Impl.{g}(euint{i}.unwrap(b), uint256(a), true));
+    }}
+"""
+
 for i in (2**p for p in range(3, 6)):
     for j in (2**p for p in range(3, 6)):
         if i == j:
+            if i == 8:
+                f.write(to_print_no_cast_comp_8.format(i=i, j=j, k=i, f="eq", g="eq"))
+                f.write(to_print_no_cast_comp_8.format(i=i, j=j, k=i, f="ne", g="ne"))
+                f.write(to_print_no_cast_comp_8.format(i=i, j=j, k=i, f="ge", g="le"))
+                f.write(to_print_no_cast_comp_8.format(i=i, j=j, k=i, f="gt", g="lt"))
+                f.write(to_print_no_cast_comp_8.format(i=i, j=j, k=i, f="le", g="ge"))
+                f.write(to_print_no_cast_comp_8.format(i=i, j=j, k=i, f="lt", g="gt"))
+            else:
+                f.write(to_print_no_cast_comp.format(i=i, j=j, k=i, f="eq", g="eq"))
+                f.write(to_print_no_cast_comp.format(i=i, j=j, k=i, f="ne", g="ne"))
+                f.write(to_print_no_cast_comp.format(i=i, j=j, k=i, f="ge", g="le"))
+                f.write(to_print_no_cast_comp.format(i=i, j=j, k=i, f="gt", g="lt"))
+                f.write(to_print_no_cast_comp.format(i=i, j=j, k=i, f="le", g="ge"))
+                f.write(to_print_no_cast_comp.format(i=i, j=j, k=i, f="lt", g="gt"))
             f.write(to_print_no_cast.format(i=i, j=j, k=i, f="add", g="add"))
             f.write(to_print_no_cast.format(i=i, j=j, k=i, f="sub", g="sub"))
             f.write(to_print_no_cast.format(i=i, j=j, k=i, f="mul", g="mul"))
@@ -818,12 +922,6 @@ for i in (2**p for p in range(3, 6)):
             f.write(to_print_no_scalar_no_cast.format(i=i, j=j, k=i, f="xor"))
             f.write(to_print_no_cast.format(i=i, j=j, k=i, f="shl", g="shl"))
             f.write(to_print_no_cast.format(i=i, j=j, k=i, f="shr", g="shr"))
-            f.write(to_print_no_cast.format(i=i, j=j, k=i, f="eq", g="eq"))
-            f.write(to_print_no_cast.format(i=i, j=j, k=i, f="ne", g="ne"))
-            f.write(to_print_no_cast.format(i=i, j=j, k=i, f="ge", g="le"))
-            f.write(to_print_no_cast.format(i=i, j=j, k=i, f="gt", g="lt"))
-            f.write(to_print_no_cast.format(i=i, j=j, k=i, f="le", g="ge"))
-            f.write(to_print_no_cast.format(i=i, j=j, k=i, f="lt", g="gt"))
             f.write(to_print_no_cast.format(i=i, j=j, k=i, f="min", g="min"))
             f.write(to_print_no_cast.format(i=i, j=j, k=i, f="max", g="max"))
         elif i < j:
@@ -835,12 +933,12 @@ for i in (2**p for p in range(3, 6)):
             f.write(to_print_no_scalar_cast_a.format(i=i, j=j, k=j, f="xor"))
             f.write(to_print_cast_a.format(i=i, j=j, k=j, f="shl", g="shl"))
             f.write(to_print_cast_a.format(i=i, j=j, k=j, f="shr", g="shr"))
-            f.write(to_print_cast_a.format(i=i, j=j, k=j, f="eq", g="eq"))
-            f.write(to_print_cast_a.format(i=i, j=j, k=j, f="ne", g="ne"))
-            f.write(to_print_cast_a.format(i=i, j=j, k=j, f="ge", g="le"))
-            f.write(to_print_cast_a.format(i=i, j=j, k=j, f="gt", g="lt"))
-            f.write(to_print_cast_a.format(i=i, j=j, k=j, f="le", g="ge"))
-            f.write(to_print_cast_a.format(i=i, j=j, k=j, f="lt", g="gt"))
+            f.write(to_print_cast_a_comp.format(i=i, j=j, k=j, f="eq", g="eq"))
+            f.write(to_print_cast_a_comp.format(i=i, j=j, k=j, f="ne", g="ne"))
+            f.write(to_print_cast_a_comp.format(i=i, j=j, k=j, f="ge", g="le"))
+            f.write(to_print_cast_a_comp.format(i=i, j=j, k=j, f="gt", g="lt"))
+            f.write(to_print_cast_a_comp.format(i=i, j=j, k=j, f="le", g="ge"))
+            f.write(to_print_cast_a_comp.format(i=i, j=j, k=j, f="lt", g="gt"))
             f.write(to_print_cast_a.format(i=i, j=j, k=j, f="min", g="min"))
             f.write(to_print_cast_a.format(i=i, j=j, k=j, f="max", g="max"))
         else:
@@ -852,25 +950,34 @@ for i in (2**p for p in range(3, 6)):
             f.write(to_print_no_scalar_cast_b.format(i=i, j=j, k=i, f="xor"))
             f.write(to_print_cast_b.format(i=i, j=j, k=i, f="shl", g="shl"))
             f.write(to_print_cast_b.format(i=i, j=j, k=i, f="shr", g="shr"))
-            f.write(to_print_cast_b.format(i=i, j=j, k=i, f="eq", g="eq"))
-            f.write(to_print_cast_b.format(i=i, j=j, k=i, f="ne", g="ne"))
-            f.write(to_print_cast_b.format(i=i, j=j, k=i, f="ge", g="le"))
-            f.write(to_print_cast_b.format(i=i, j=j, k=i, f="gt", g="lt"))
-            f.write(to_print_cast_b.format(i=i, j=j, k=i, f="le", g="ge"))
-            f.write(to_print_cast_b.format(i=i, j=j, k=i, f="lt", g="gt"))
+            f.write(to_print_cast_b_comp.format(i=i, j=j, k=i, f="eq", g="eq"))
+            f.write(to_print_cast_b_comp.format(i=i, j=j, k=i, f="ne", g="ne"))
+            f.write(to_print_cast_b_comp.format(i=i, j=j, k=i, f="ge", g="le"))
+            f.write(to_print_cast_b_comp.format(i=i, j=j, k=i, f="gt", g="lt"))
+            f.write(to_print_cast_b_comp.format(i=i, j=j, k=i, f="le", g="ge"))
+            f.write(to_print_cast_b_comp.format(i=i, j=j, k=i, f="lt", g="gt"))
             f.write(to_print_cast_b.format(i=i, j=j, k=i, f="min", g="min"))
             f.write(to_print_cast_b.format(i=i, j=j, k=i, f="max", g="max"))
+    if i == 8:
+        f.write(to_print_scalar.format(i=i, f="shr", g="shr"))
+        f.write(to_print_scalar_comp_8.format(i=i, f="eq", g="eq"))
+        f.write(to_print_scalar_comp_8.format(i=i, f="ne", g="ne"))
+        f.write(to_print_scalar_comp_8.format(i=i, f="ge", g="le"))
+        f.write(to_print_scalar_comp_8.format(i=i, f="gt", g="lt"))
+        f.write(to_print_scalar_comp_8.format(i=i, f="le", g="ge"))
+        f.write(to_print_scalar_comp_8.format(i=i, f="lt", g="gt"))
+    else:
+        f.write(to_print_scalar.format(i=i, f="shr", g="shr"))
+        f.write(to_print_scalar_comp.format(i=i, f="eq", g="eq"))
+        f.write(to_print_scalar_comp.format(i=i, f="ne", g="ne"))
+        f.write(to_print_scalar_comp.format(i=i, f="ge", g="le"))
+        f.write(to_print_scalar_comp.format(i=i, f="gt", g="lt"))
+        f.write(to_print_scalar_comp.format(i=i, f="le", g="ge"))
+        f.write(to_print_scalar_comp.format(i=i, f="lt", g="gt"))
     f.write(to_print_scalar.format(i=i, f="add", g="add"))
     f.write(to_print_scalar.format(i=i, f="sub", g="sub"))
     f.write(to_print_scalar.format(i=i, f="mul", g="mul"))
     f.write(to_print_scalar.format(i=i, f="shl", g="shl"))
-    f.write(to_print_scalar.format(i=i, f="shr", g="shr"))
-    f.write(to_print_scalar.format(i=i, f="eq", g="eq"))
-    f.write(to_print_scalar.format(i=i, f="ne", g="ne"))
-    f.write(to_print_scalar.format(i=i, f="ge", g="le"))
-    f.write(to_print_scalar.format(i=i, f="gt", g="lt"))
-    f.write(to_print_scalar.format(i=i, f="le", g="ge"))
-    f.write(to_print_scalar.format(i=i, f="lt", g="gt"))
     f.write(to_print_scalar.format(i=i, f="min", g="min"))
     f.write(to_print_scalar.format(i=i, f="max", g="max"))
 
@@ -878,8 +985,8 @@ for i in (2**p for p in range(3, 6)):
 to_print =  """
     // If `control`'s value is 1, the result has the same value as `a`.
     // If `control`'s value is 0, the result has the same value as `b`.
-    function cmux(euint{i} control, euint{i} a, euint{i} b) internal view returns (euint{i}) {{
-        return euint{i}.wrap(Impl.cmux(euint{i}.unwrap(control), euint{i}.unwrap(a), euint{i}.unwrap(b)));
+    function cmux(ebool control, euint{i} a, euint{i} b) internal view returns (euint{i}) {{
+        return euint{i}.wrap(Impl.cmux(ebool.unwrap(control), euint{i}.unwrap(a), euint{i}.unwrap(b)));
     }}
 """
 for i in (2**p for p in range(3, 6)):
@@ -894,10 +1001,42 @@ to_print="""
     }}
 """
 
+to_print_cast="""
+    // Cast an encrypted integer from euint{i} to ebool.
+    function asEbool(euint{i} value) internal view returns (ebool) {{
+        return ne(value, 0);
+    }}
+"""
+
+to_print_no_cast="""
+    // Cast an encrypted integer from euint8 to ebool.
+    function asEbool(euint8 value) internal view returns (ebool) {{
+        return ne(value, 0);
+    }}
+
+    // Convert a serialized `ciphertext` to an encrypted boolean.
+    function asEbool(bytes memory ciphertext) internal view returns (ebool) {{
+        return asEbool(asEuint8(ciphertext));
+    }}
+
+    // Convert a plaintext boolean to an encrypted boolean.
+    function asEbool(bool value) internal view returns (ebool) {{
+        if (value) {{
+            return asEbool(asEuint8(1));
+        }} else {{
+            return asEbool(asEuint8(0));
+        }}
+    }}
+"""
+
 for i in (2**p for p in range(3, 6)):
     for j in (2**p for p in range(3, 6)):
         if i != j:
             f.write(to_print.format(i=i, j=j))
+    if i != 8:
+        f.write(to_print_cast.format(i=i))
+    else:
+        f.write(to_print_no_cast.format(i=i))
 
 to_print="""
     // Convert a serialized `ciphertext` to an encrypted euint{i} integer.
@@ -990,7 +1129,40 @@ for i in (2**p for p in range(3, 6)):
 
 f.write("\n")
 f.write("""\
-    // Return the network public FHE key.
+    // Require that the encrypted bool `b` is not equal to 0.
+    // Involves decrypting `b`.
+    function req(ebool b) internal view {
+        Impl.req(ebool.unwrap(b));
+    }
+    
+    // Optimistically require that `b` is not equal to 0.
+    function optReq(ebool b) internal view {
+        Impl.optReq(ebool.unwrap(b));
+    }
+        
+    // Converts an `ebool` to an `euint8`.
+    function asEuint8(ebool b) internal pure returns (euint8) {{
+        return euint8.wrap(ebool.unwrap(b));
+    }}
+
+    // Reencrypt the given `value` under the given `publicKey`.
+    // Return a serialized euint8 value.
+    function reencrypt(ebool value, bytes32 publicKey) internal view returns (bytes memory reencrypted) {
+        return Impl.reencrypt(ebool.unwrap(value), publicKey);
+    }
+
+    // Reencrypt the given `value` under the given `publicKey`.
+    // Return a serialized euint8 value.
+    // If `value` is not initialized, the returned value will contain the `defaultValue` constant.
+    function reencrypt(ebool value, bytes32 publicKey, bool defaultValue) internal view returns (bytes memory reencrypted) {
+        if (ebool.unwrap(value) != 0) {
+            return Impl.reencrypt(ebool.unwrap(value), publicKey);
+        } else {
+            return Impl.reencrypt(ebool.unwrap(asEbool(defaultValue)), publicKey);
+        }
+    }
+    
+    // Returns the network public FHE key.
     function fhePubKey() internal view returns (bytes memory) {
         return Impl.fhePubKey();
     }
