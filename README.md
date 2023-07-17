@@ -1,6 +1,6 @@
 # fhEVM
 
-A Solidity library for interacting with the Zama Blockchain
+A Solidity library for interacting with an fhEVM blockchain.
 
 ## Install
 
@@ -32,7 +32,7 @@ contract Counter {
   }
 
   function getCounter(bytes32 publicKey) returns (bytes memory) {
-    return TFHE.reencrypt(totalSupply, publicKey);
+    return TFHE.reencrypt(counter, publicKey);
   }
 }
 ```
