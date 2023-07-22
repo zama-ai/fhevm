@@ -3003,8 +3003,8 @@ library TFHE {
         return euint32.wrap(Impl.max(euint32.unwrap(b), uint256(a), true));
     }
 
-    // If `control`'s value is `true`, the result has the same value as `a`.
-    // If `control`'s value is `false, the result has the same value as `b`.
+    // If `control`'s value is 1, the result has the same value as `a`.
+    // If `control`'s value is 0, the result has the same value as `b`.
     function cmux(
         ebool control,
         euint8 a,
@@ -3021,16 +3021,17 @@ library TFHE {
     }
 
     // If `control`'s value is `true`, the result has the same value as `a`.
-    // If `control`'s value is `false, the result has the same value as `b`.
+    // If `control`'s value is `false`, the result has the same value as `b`.
     function cmux(
         ebool control,
         euint16 a,
         euint16 b
     ) internal view returns (euint16) {
+        euint16 ctrl = asEuint16(asEuint8(control));
         return
             euint16.wrap(
                 Impl.cmux(
-                    ebool.unwrap(control),
+                    euint16.unwrap(ctrl),
                     euint16.unwrap(a),
                     euint16.unwrap(b)
                 )
@@ -3038,16 +3039,17 @@ library TFHE {
     }
 
     // If `control`'s value is `true`, the result has the same value as `a`.
-    // If `control`'s value is `false, the result has the same value as `b`.
+    // If `control`'s value is `false`, the result has the same value as `b`.
     function cmux(
         ebool control,
         euint32 a,
         euint32 b
     ) internal view returns (euint32) {
+        euint32 ctrl = asEuint32(asEuint8(control));
         return
             euint32.wrap(
                 Impl.cmux(
-                    ebool.unwrap(control),
+                    euint32.unwrap(ctrl),
                     euint32.unwrap(a),
                     euint32.unwrap(b)
                 )

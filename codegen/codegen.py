@@ -489,8 +489,8 @@ library Impl {
         result = uint256(output[0]);
     }
 
-    // If `control`'s value is 1, the result has the same value as `ifTrue`.
-    // If `control`'s value is 0, the result has the same value as `ifFalse`.
+    // If `control`'s value is `true`, the result has the same value as `ifTrue`.
+    // If `control`'s value is `false`, the result has the same value as `ifFalse`.
     function cmux(uint256 control, uint256 ifTrue, uint256 ifFalse) internal view returns (uint256 result) {
         // result = (ifTrue - ifFalse) * control + ifFalse
         bytes memory input = bytes.concat(bytes32(ifTrue), bytes32(ifFalse), bytes1(0x00));
@@ -982,17 +982,28 @@ for i in (2**p for p in range(3, 6)):
     f.write(to_print_scalar.format(i=i, f="max", g="max"))
 
 
-to_print =  """
+to_print_8 =  """
     // If `control`'s value is 1, the result has the same value as `a`.
     // If `control`'s value is 0, the result has the same value as `b`.
     function cmux(ebool control, euint{i} a, euint{i} b) internal view returns (euint{i}) {{
         return euint{i}.wrap(Impl.cmux(ebool.unwrap(control), euint{i}.unwrap(a), euint{i}.unwrap(b)));
     }}
 """
+to_print =  """
+    // If `control`'s value is `true`, the result has the same value as `a`.
+    // If `control`'s value is `false`, the result has the same value as `b`.
+    function cmux(ebool control, euint{i} a, euint{i} b) internal view returns (euint{i}) {{
+        euint{i} ctrl = asEuint{i}(asEuint8(control));
+        return euint{i}.wrap(Impl.cmux(euint{i}.unwrap(ctrl), euint{i}.unwrap(a), euint{i}.unwrap(b)));
+    }}
+"""
 for i in (2**p for p in range(3, 6)):
     for j in (2**p for p in range(3, 6)):
         if i == j: # TODO: Decide whether we want to have mixed-inputs for CMUX
-            f.write(to_print.format(i=i))
+            if i == 8:
+                f.write(to_print_8.format(i=i))
+            else:
+                f.write(to_print.format(i=i))
 
 to_print="""
     // Cast an encrypted integer from euint{j} to euint{i}.
