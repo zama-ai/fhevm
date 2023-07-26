@@ -57,7 +57,7 @@ def reencrypt(contract, account: LocalAccount, ct_file, expected):
 
     domain = make_domain(name='Authorization token',
                          version='1',
-                         chainId=9000,
+                         chainId=chain_id,
                          verifyingContract=contract.address)
 
     class Reencrypt(EIP712Struct):
@@ -103,6 +103,8 @@ parser.add_argument(
     "private_key", help="The private key of main account without 0x.", type=str)
 parser.add_argument(
     "--node_address", help="The @ of the node with the port, ex. http://host.docker.internal:8545 or http://13.37.31.214:8545.", type=str, default="http://host.docker.internal:8545")
+parser.add_argument(
+    "--chain_id", help="The chain id", type=int, default=9000)
 args = parser.parse_args()
 print(f"Receive the following private key for main account {args.private_key}")
 print(f"The node address is {args.private_key}")
@@ -124,7 +126,7 @@ print(carol_account.address)
 w3.middleware_onion.add(construct_sign_and_send_raw_middleware(carol_account))
 
 # Change below to match chain specific information:
-chain_id = 9000
+chain_id = args.chain_id
 # private key of the default account
 private_key = "0x" + args.private_key
 account: LocalAccount = Account.from_key(private_key)
@@ -243,7 +245,7 @@ reencrypt(contract, alice_account, "ct_to_decrypt.bin", 20)
 # tx1: main -> alice
 nonce = w3.eth.getTransactionCount(account.address)
 tx = {
-    'chainId': 9000,
+    'chainId': chain_id,
     'nonce': nonce,
     'from': account.address,
     'to': alice_account.address,
@@ -259,7 +261,7 @@ assert transaction_receipt['status'] == 1
 # tx2: main -> carol
 nonce = w3.eth.getTransactionCount(account.address)
 tx = {
-    'chainId': 9000,
+    'chainId': chain_id,
     'nonce': nonce,
     'from': account.address,
     'to': carol_account.address,
