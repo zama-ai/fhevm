@@ -4,7 +4,7 @@ services:
     build:
       context: .
       args:
-        FHEVM_TFHE_CLI_TAG: v0.1.1
+        FHEVM_TFHE_CLI_TAG: v0.1.2
     image: docker-python-fhevm
     volumes:
       - ../:/home
