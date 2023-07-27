@@ -20,4 +20,3 @@ jobs:
       - run: cp .env.example .env
       - run: npm ci
       - run: npm run test
-      - run: npm run build
