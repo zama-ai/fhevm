@@ -1,10 +1,10 @@
-# Current ignores
 decrypt/target
 decrypt/ciphertexts
 res/
 node_modules/
 .venv
 .vscode
+
 node_modules
 .env
 coverage
@@ -15,48 +15,4 @@ typechain-types
 # Hardhat files
 cache
 artifacts
-
-# Python files
-env/
-*.pyc
-*.pyo
-*.pyd
-__pycache__/
-*.py[cod]
-*$py.class
-
-# Solidity files
-build/
-
-# TypeScript files
-dist/
-*.tsbuildinfo
-
-# Logs and databases
-*.log
-*.sql
-*.sqlite
-
-# OS generated files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# Package lock files
-package-lock.json
-yarn.lock
-
-# IDE/Editor folders
-.idea/
-*.swp
-*.swo
-*.swn
-*.bak
-*.orig
-*.old
-*.sage.py
 
