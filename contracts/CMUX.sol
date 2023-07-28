@@ -12,11 +12,7 @@ contract CMUX is EIP712WithModifier {
     constructor() EIP712WithModifier("Authorization token", "1") {}
 
     // Set result = if control { ifTrue } else { ifFalse }
-    function cmux(
-        bytes calldata controlBytes,
-        bytes calldata ifTrueBytes,
-        bytes calldata ifFalseBytes
-    ) public {
+    function cmux(bytes calldata controlBytes, bytes calldata ifTrueBytes, bytes calldata ifFalseBytes) public {
         ebool control = TFHE.asEbool(controlBytes);
         euint8 ifTrue = TFHE.asEuint8(ifTrueBytes);
         euint8 ifFalse = TFHE.asEuint8(ifFalseBytes);
@@ -26,12 +22,7 @@ contract CMUX is EIP712WithModifier {
     function getResult(
         bytes32 publicKey,
         bytes calldata signature
-    )
-        public
-        view
-        onlySignedPublicKey(publicKey, signature)
-        returns (bytes memory)
-    {
+    ) public view onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
         return TFHE.reencrypt(result, publicKey);
     }
 }
