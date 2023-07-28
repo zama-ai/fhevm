@@ -48,12 +48,7 @@ contract EncryptedERC20 is EIP712WithModifier {
     function getTotalSupply(
         bytes32 publicKey,
         bytes calldata signature
-    )
-        public
-        view
-        onlySignedPublicKey(publicKey, signature)
-        returns (bytes memory)
-    {
+    ) public view onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
         return TFHE.reencrypt(totalSupply, publicKey, 0);
     }
 
@@ -61,12 +56,7 @@ contract EncryptedERC20 is EIP712WithModifier {
     function balanceOf(
         bytes32 publicKey,
         bytes calldata signature
-    )
-        public
-        view
-        onlySignedPublicKey(publicKey, signature)
-        returns (bytes memory)
-    {
+    ) public view onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
         return TFHE.reencrypt(balances[msg.sender], publicKey, 0);
     }
 
@@ -82,23 +72,14 @@ contract EncryptedERC20 is EIP712WithModifier {
         address spender,
         bytes32 publicKey,
         bytes calldata signature
-    )
-        public
-        view
-        onlySignedPublicKey(publicKey, signature)
-        returns (bytes memory)
-    {
+    ) public view onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
         address owner = msg.sender;
 
         return TFHE.reencrypt(_allowance(owner, spender), publicKey);
     }
 
     // Transfers `encryptedAmount` tokens using the caller's allowance.
-    function transferFrom(
-        address from,
-        address to,
-        bytes calldata encryptedAmount
-    ) public {
+    function transferFrom(address from, address to, bytes calldata encryptedAmount) public {
         transferFrom(from, to, TFHE.asEuint32(encryptedAmount));
     }
 
@@ -113,10 +94,7 @@ contract EncryptedERC20 is EIP712WithModifier {
         allowances[owner][spender] = amount;
     }
 
-    function _allowance(
-        address owner,
-        address spender
-    ) internal view returns (euint32) {
+    function _allowance(address owner, address spender) internal view returns (euint32) {
         if (TFHE.isInitialized(allowances[owner][spender])) {
             return allowances[owner][spender];
         } else {
@@ -124,11 +102,7 @@ contract EncryptedERC20 is EIP712WithModifier {
         }
     }
 
-    function _updateAllowance(
-        address owner,
-        address spender,
-        euint32 amount
-    ) internal {
+    function _updateAllowance(address owner, address spender, euint32 amount) internal {
         euint32 currentAllowance = _allowance(owner, spender);
         TFHE.req(TFHE.le(amount, currentAllowance));
         _approve(owner, spender, TFHE.sub(currentAllowance, amount));

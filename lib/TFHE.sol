@@ -209,10 +209,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            euint16.wrap(
-                Impl.add(euint16.unwrap(asEuint16(a)), euint16.unwrap(b), false)
-            );
+        return euint16.wrap(Impl.add(euint16.unwrap(asEuint16(a)), euint16.unwrap(b), false));
     }
 
     // Evaluate sub(a, b) and return the result.
@@ -223,10 +220,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            euint16.wrap(
-                Impl.sub(euint16.unwrap(asEuint16(a)), euint16.unwrap(b), false)
-            );
+        return euint16.wrap(Impl.sub(euint16.unwrap(asEuint16(a)), euint16.unwrap(b), false));
     }
 
     // Evaluate mul(a, b) and return the result.
@@ -237,10 +231,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            euint16.wrap(
-                Impl.mul(euint16.unwrap(asEuint16(a)), euint16.unwrap(b), false)
-            );
+        return euint16.wrap(Impl.mul(euint16.unwrap(asEuint16(a)), euint16.unwrap(b), false));
     }
 
     // Evaluate and(a, b) and return the result.
@@ -251,10 +242,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            euint16.wrap(
-                Impl.and(euint16.unwrap(asEuint16(a)), euint16.unwrap(b))
-            );
+        return euint16.wrap(Impl.and(euint16.unwrap(asEuint16(a)), euint16.unwrap(b)));
     }
 
     // Evaluate or(a, b) and return the result.
@@ -265,10 +253,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            euint16.wrap(
-                Impl.or(euint16.unwrap(asEuint16(a)), euint16.unwrap(b))
-            );
+        return euint16.wrap(Impl.or(euint16.unwrap(asEuint16(a)), euint16.unwrap(b)));
     }
 
     // Evaluate xor(a, b) and return the result.
@@ -279,10 +264,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            euint16.wrap(
-                Impl.xor(euint16.unwrap(asEuint16(a)), euint16.unwrap(b))
-            );
+        return euint16.wrap(Impl.xor(euint16.unwrap(asEuint16(a)), euint16.unwrap(b)));
     }
 
     // Evaluate shl(a, b) and return the result.
@@ -293,10 +275,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            euint16.wrap(
-                Impl.shl(euint16.unwrap(asEuint16(a)), euint16.unwrap(b), false)
-            );
+        return euint16.wrap(Impl.shl(euint16.unwrap(asEuint16(a)), euint16.unwrap(b), false));
     }
 
     // Evaluate shr(a, b) and return the result.
@@ -307,10 +286,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            euint16.wrap(
-                Impl.shr(euint16.unwrap(asEuint16(a)), euint16.unwrap(b), false)
-            );
+        return euint16.wrap(Impl.shr(euint16.unwrap(asEuint16(a)), euint16.unwrap(b), false));
     }
 
     // Evaluate eq(a, b) and return the boolean result.
@@ -321,17 +297,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.eq(
-                        euint16.unwrap(asEuint16(a)),
-                        euint16.unwrap(b),
-                        false
-                    ),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.eq(euint16.unwrap(asEuint16(a)), euint16.unwrap(b), false), Common.ebool_t));
     }
 
     // Evaluate ne(a, b) and return the boolean result.
@@ -342,17 +308,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.ne(
-                        euint16.unwrap(asEuint16(a)),
-                        euint16.unwrap(b),
-                        false
-                    ),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.ne(euint16.unwrap(asEuint16(a)), euint16.unwrap(b), false), Common.ebool_t));
     }
 
     // Evaluate ge(a, b) and return the boolean result.
@@ -363,17 +319,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.ge(
-                        euint16.unwrap(asEuint16(a)),
-                        euint16.unwrap(b),
-                        false
-                    ),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.ge(euint16.unwrap(asEuint16(a)), euint16.unwrap(b), false), Common.ebool_t));
     }
 
     // Evaluate gt(a, b) and return the boolean result.
@@ -384,17 +330,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.gt(
-                        euint16.unwrap(asEuint16(a)),
-                        euint16.unwrap(b),
-                        false
-                    ),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.gt(euint16.unwrap(asEuint16(a)), euint16.unwrap(b), false), Common.ebool_t));
     }
 
     // Evaluate le(a, b) and return the boolean result.
@@ -405,17 +341,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.le(
-                        euint16.unwrap(asEuint16(a)),
-                        euint16.unwrap(b),
-                        false
-                    ),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.le(euint16.unwrap(asEuint16(a)), euint16.unwrap(b), false), Common.ebool_t));
     }
 
     // Evaluate lt(a, b) and return the boolean result.
@@ -426,17 +352,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.lt(
-                        euint16.unwrap(asEuint16(a)),
-                        euint16.unwrap(b),
-                        false
-                    ),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.lt(euint16.unwrap(asEuint16(a)), euint16.unwrap(b), false), Common.ebool_t));
     }
 
     // Evaluate min(a, b) and return the result.
@@ -447,10 +363,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            euint16.wrap(
-                Impl.min(euint16.unwrap(asEuint16(a)), euint16.unwrap(b), false)
-            );
+        return euint16.wrap(Impl.min(euint16.unwrap(asEuint16(a)), euint16.unwrap(b), false));
     }
 
     // Evaluate max(a, b) and return the result.
@@ -461,10 +374,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            euint16.wrap(
-                Impl.max(euint16.unwrap(asEuint16(a)), euint16.unwrap(b), false)
-            );
+        return euint16.wrap(Impl.max(euint16.unwrap(asEuint16(a)), euint16.unwrap(b), false));
     }
 
     // Evaluate add(a, b) and return the result.
@@ -475,10 +385,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            euint32.wrap(
-                Impl.add(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false)
-            );
+        return euint32.wrap(Impl.add(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false));
     }
 
     // Evaluate sub(a, b) and return the result.
@@ -489,10 +396,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            euint32.wrap(
-                Impl.sub(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false)
-            );
+        return euint32.wrap(Impl.sub(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false));
     }
 
     // Evaluate mul(a, b) and return the result.
@@ -503,10 +407,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            euint32.wrap(
-                Impl.mul(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false)
-            );
+        return euint32.wrap(Impl.mul(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false));
     }
 
     // Evaluate and(a, b) and return the result.
@@ -517,10 +418,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            euint32.wrap(
-                Impl.and(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
-            );
+        return euint32.wrap(Impl.and(euint32.unwrap(asEuint32(a)), euint32.unwrap(b)));
     }
 
     // Evaluate or(a, b) and return the result.
@@ -531,10 +429,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            euint32.wrap(
-                Impl.or(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
-            );
+        return euint32.wrap(Impl.or(euint32.unwrap(asEuint32(a)), euint32.unwrap(b)));
     }
 
     // Evaluate xor(a, b) and return the result.
@@ -545,10 +440,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            euint32.wrap(
-                Impl.xor(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
-            );
+        return euint32.wrap(Impl.xor(euint32.unwrap(asEuint32(a)), euint32.unwrap(b)));
     }
 
     // Evaluate shl(a, b) and return the result.
@@ -559,10 +451,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            euint32.wrap(
-                Impl.shl(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false)
-            );
+        return euint32.wrap(Impl.shl(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false));
     }
 
     // Evaluate shr(a, b) and return the result.
@@ -573,10 +462,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            euint32.wrap(
-                Impl.shr(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false)
-            );
+        return euint32.wrap(Impl.shr(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false));
     }
 
     // Evaluate eq(a, b) and return the boolean result.
@@ -587,17 +473,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.eq(
-                        euint32.unwrap(asEuint32(a)),
-                        euint32.unwrap(b),
-                        false
-                    ),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.eq(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false), Common.ebool_t));
     }
 
     // Evaluate ne(a, b) and return the boolean result.
@@ -608,17 +484,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.ne(
-                        euint32.unwrap(asEuint32(a)),
-                        euint32.unwrap(b),
-                        false
-                    ),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.ne(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false), Common.ebool_t));
     }
 
     // Evaluate ge(a, b) and return the boolean result.
@@ -629,17 +495,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.ge(
-                        euint32.unwrap(asEuint32(a)),
-                        euint32.unwrap(b),
-                        false
-                    ),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.ge(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false), Common.ebool_t));
     }
 
     // Evaluate gt(a, b) and return the boolean result.
@@ -650,17 +506,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.gt(
-                        euint32.unwrap(asEuint32(a)),
-                        euint32.unwrap(b),
-                        false
-                    ),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.gt(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false), Common.ebool_t));
     }
 
     // Evaluate le(a, b) and return the boolean result.
@@ -671,17 +517,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.le(
-                        euint32.unwrap(asEuint32(a)),
-                        euint32.unwrap(b),
-                        false
-                    ),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.le(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false), Common.ebool_t));
     }
 
     // Evaluate lt(a, b) and return the boolean result.
@@ -692,17 +528,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.lt(
-                        euint32.unwrap(asEuint32(a)),
-                        euint32.unwrap(b),
-                        false
-                    ),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.lt(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false), Common.ebool_t));
     }
 
     // Evaluate min(a, b) and return the result.
@@ -713,10 +539,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            euint32.wrap(
-                Impl.min(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false)
-            );
+        return euint32.wrap(Impl.min(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false));
     }
 
     // Evaluate max(a, b) and return the result.
@@ -727,10 +550,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            euint32.wrap(
-                Impl.max(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false)
-            );
+        return euint32.wrap(Impl.max(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false));
     }
 
     // Evaluate shr(a, b) and return the result.
@@ -949,10 +769,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return
-            euint16.wrap(
-                Impl.add(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false)
-            );
+        return euint16.wrap(Impl.add(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false));
     }
 
     // Evaluate sub(a, b) and return the result.
@@ -963,10 +780,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return
-            euint16.wrap(
-                Impl.sub(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false)
-            );
+        return euint16.wrap(Impl.sub(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false));
     }
 
     // Evaluate mul(a, b) and return the result.
@@ -977,10 +791,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return
-            euint16.wrap(
-                Impl.mul(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false)
-            );
+        return euint16.wrap(Impl.mul(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false));
     }
 
     // Evaluate and(a, b) and return the result.
@@ -991,10 +802,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return
-            euint16.wrap(
-                Impl.and(euint16.unwrap(a), euint16.unwrap(asEuint16(b)))
-            );
+        return euint16.wrap(Impl.and(euint16.unwrap(a), euint16.unwrap(asEuint16(b))));
     }
 
     // Evaluate or(a, b) and return the result.
@@ -1005,10 +813,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return
-            euint16.wrap(
-                Impl.or(euint16.unwrap(a), euint16.unwrap(asEuint16(b)))
-            );
+        return euint16.wrap(Impl.or(euint16.unwrap(a), euint16.unwrap(asEuint16(b))));
     }
 
     // Evaluate xor(a, b) and return the result.
@@ -1019,10 +824,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return
-            euint16.wrap(
-                Impl.xor(euint16.unwrap(a), euint16.unwrap(asEuint16(b)))
-            );
+        return euint16.wrap(Impl.xor(euint16.unwrap(a), euint16.unwrap(asEuint16(b))));
     }
 
     // Evaluate shl(a, b) and return the result.
@@ -1033,10 +835,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return
-            euint16.wrap(
-                Impl.shl(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false)
-            );
+        return euint16.wrap(Impl.shl(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false));
     }
 
     // Evaluate shr(a, b) and return the result.
@@ -1047,10 +846,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return
-            euint16.wrap(
-                Impl.shr(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false)
-            );
+        return euint16.wrap(Impl.shr(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false));
     }
 
     // Evaluate eq(a, b) and return the boolean result.
@@ -1061,17 +857,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.eq(
-                        euint16.unwrap(a),
-                        euint16.unwrap(asEuint16(b)),
-                        false
-                    ),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.eq(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false), Common.ebool_t));
     }
 
     // Evaluate ne(a, b) and return the boolean result.
@@ -1082,17 +868,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.ne(
-                        euint16.unwrap(a),
-                        euint16.unwrap(asEuint16(b)),
-                        false
-                    ),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.ne(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false), Common.ebool_t));
     }
 
     // Evaluate ge(a, b) and return the boolean result.
@@ -1103,17 +879,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.ge(
-                        euint16.unwrap(a),
-                        euint16.unwrap(asEuint16(b)),
-                        false
-                    ),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.ge(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false), Common.ebool_t));
     }
 
     // Evaluate gt(a, b) and return the boolean result.
@@ -1124,17 +890,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.gt(
-                        euint16.unwrap(a),
-                        euint16.unwrap(asEuint16(b)),
-                        false
-                    ),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.gt(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false), Common.ebool_t));
     }
 
     // Evaluate le(a, b) and return the boolean result.
@@ -1145,17 +901,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.le(
-                        euint16.unwrap(a),
-                        euint16.unwrap(asEuint16(b)),
-                        false
-                    ),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.le(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false), Common.ebool_t));
     }
 
     // Evaluate lt(a, b) and return the boolean result.
@@ -1166,17 +912,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.lt(
-                        euint16.unwrap(a),
-                        euint16.unwrap(asEuint16(b)),
-                        false
-                    ),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.lt(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false), Common.ebool_t));
     }
 
     // Evaluate min(a, b) and return the result.
@@ -1187,10 +923,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return
-            euint16.wrap(
-                Impl.min(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false)
-            );
+        return euint16.wrap(Impl.min(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false));
     }
 
     // Evaluate max(a, b) and return the result.
@@ -1201,10 +934,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return
-            euint16.wrap(
-                Impl.max(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false)
-            );
+        return euint16.wrap(Impl.max(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false));
     }
 
     // Evaluate eq(a, b) and return the boolean result.
@@ -1215,13 +945,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.eq(euint16.unwrap(a), euint16.unwrap(b), false),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.eq(euint16.unwrap(a), euint16.unwrap(b), false), Common.ebool_t));
     }
 
     // Evaluate ne(a, b) and return the boolean result.
@@ -1232,13 +956,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.ne(euint16.unwrap(a), euint16.unwrap(b), false),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.ne(euint16.unwrap(a), euint16.unwrap(b), false), Common.ebool_t));
     }
 
     // Evaluate ge(a, b) and return the boolean result.
@@ -1249,13 +967,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.ge(euint16.unwrap(a), euint16.unwrap(b), false),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.ge(euint16.unwrap(a), euint16.unwrap(b), false), Common.ebool_t));
     }
 
     // Evaluate gt(a, b) and return the boolean result.
@@ -1266,13 +978,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.gt(euint16.unwrap(a), euint16.unwrap(b), false),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.gt(euint16.unwrap(a), euint16.unwrap(b), false), Common.ebool_t));
     }
 
     // Evaluate le(a, b) and return the boolean result.
@@ -1283,13 +989,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.le(euint16.unwrap(a), euint16.unwrap(b), false),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.le(euint16.unwrap(a), euint16.unwrap(b), false), Common.ebool_t));
     }
 
     // Evaluate lt(a, b) and return the boolean result.
@@ -1300,13 +1000,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.lt(euint16.unwrap(a), euint16.unwrap(b), false),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.lt(euint16.unwrap(a), euint16.unwrap(b), false), Common.ebool_t));
     }
 
     // Evaluate add(a, b) and return the result.
@@ -1317,8 +1011,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            euint16.wrap(Impl.add(euint16.unwrap(a), euint16.unwrap(b), false));
+        return euint16.wrap(Impl.add(euint16.unwrap(a), euint16.unwrap(b), false));
     }
 
     // Evaluate sub(a, b) and return the result.
@@ -1329,8 +1022,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            euint16.wrap(Impl.sub(euint16.unwrap(a), euint16.unwrap(b), false));
+        return euint16.wrap(Impl.sub(euint16.unwrap(a), euint16.unwrap(b), false));
     }
 
     // Evaluate mul(a, b) and return the result.
@@ -1341,8 +1033,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            euint16.wrap(Impl.mul(euint16.unwrap(a), euint16.unwrap(b), false));
+        return euint16.wrap(Impl.mul(euint16.unwrap(a), euint16.unwrap(b), false));
     }
 
     // Evaluate and(a, b) and return the result.
@@ -1386,8 +1077,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            euint16.wrap(Impl.shl(euint16.unwrap(a), euint16.unwrap(b), false));
+        return euint16.wrap(Impl.shl(euint16.unwrap(a), euint16.unwrap(b), false));
     }
 
     // Evaluate shr(a, b) and return the result.
@@ -1398,8 +1088,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            euint16.wrap(Impl.shr(euint16.unwrap(a), euint16.unwrap(b), false));
+        return euint16.wrap(Impl.shr(euint16.unwrap(a), euint16.unwrap(b), false));
     }
 
     // Evaluate min(a, b) and return the result.
@@ -1410,8 +1099,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            euint16.wrap(Impl.min(euint16.unwrap(a), euint16.unwrap(b), false));
+        return euint16.wrap(Impl.min(euint16.unwrap(a), euint16.unwrap(b), false));
     }
 
     // Evaluate max(a, b) and return the result.
@@ -1422,8 +1110,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            euint16.wrap(Impl.max(euint16.unwrap(a), euint16.unwrap(b), false));
+        return euint16.wrap(Impl.max(euint16.unwrap(a), euint16.unwrap(b), false));
     }
 
     // Evaluate add(a, b) and return the result.
@@ -1434,10 +1121,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            euint32.wrap(
-                Impl.add(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false)
-            );
+        return euint32.wrap(Impl.add(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false));
     }
 
     // Evaluate sub(a, b) and return the result.
@@ -1448,10 +1132,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            euint32.wrap(
-                Impl.sub(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false)
-            );
+        return euint32.wrap(Impl.sub(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false));
     }
 
     // Evaluate mul(a, b) and return the result.
@@ -1462,10 +1143,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            euint32.wrap(
-                Impl.mul(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false)
-            );
+        return euint32.wrap(Impl.mul(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false));
     }
 
     // Evaluate and(a, b) and return the result.
@@ -1476,10 +1154,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            euint32.wrap(
-                Impl.and(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
-            );
+        return euint32.wrap(Impl.and(euint32.unwrap(asEuint32(a)), euint32.unwrap(b)));
     }
 
     // Evaluate or(a, b) and return the result.
@@ -1490,10 +1165,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            euint32.wrap(
-                Impl.or(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
-            );
+        return euint32.wrap(Impl.or(euint32.unwrap(asEuint32(a)), euint32.unwrap(b)));
     }
 
     // Evaluate xor(a, b) and return the result.
@@ -1504,10 +1176,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            euint32.wrap(
-                Impl.xor(euint32.unwrap(asEuint32(a)), euint32.unwrap(b))
-            );
+        return euint32.wrap(Impl.xor(euint32.unwrap(asEuint32(a)), euint32.unwrap(b)));
     }
 
     // Evaluate shl(a, b) and return the result.
@@ -1518,10 +1187,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            euint32.wrap(
-                Impl.shl(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false)
-            );
+        return euint32.wrap(Impl.shl(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false));
     }
 
     // Evaluate shr(a, b) and return the result.
@@ -1532,10 +1198,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            euint32.wrap(
-                Impl.shr(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false)
-            );
+        return euint32.wrap(Impl.shr(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false));
     }
 
     // Evaluate eq(a, b) and return the boolean result.
@@ -1546,17 +1209,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.eq(
-                        euint32.unwrap(asEuint32(a)),
-                        euint32.unwrap(b),
-                        false
-                    ),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.eq(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false), Common.ebool_t));
     }
 
     // Evaluate ne(a, b) and return the boolean result.
@@ -1567,17 +1220,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.ne(
-                        euint32.unwrap(asEuint32(a)),
-                        euint32.unwrap(b),
-                        false
-                    ),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.ne(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false), Common.ebool_t));
     }
 
     // Evaluate ge(a, b) and return the boolean result.
@@ -1588,17 +1231,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.ge(
-                        euint32.unwrap(asEuint32(a)),
-                        euint32.unwrap(b),
-                        false
-                    ),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.ge(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false), Common.ebool_t));
     }
 
     // Evaluate gt(a, b) and return the boolean result.
@@ -1609,17 +1242,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.gt(
-                        euint32.unwrap(asEuint32(a)),
-                        euint32.unwrap(b),
-                        false
-                    ),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.gt(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false), Common.ebool_t));
     }
 
     // Evaluate le(a, b) and return the boolean result.
@@ -1630,17 +1253,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.le(
-                        euint32.unwrap(asEuint32(a)),
-                        euint32.unwrap(b),
-                        false
-                    ),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.le(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false), Common.ebool_t));
     }
 
     // Evaluate lt(a, b) and return the boolean result.
@@ -1651,17 +1264,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.lt(
-                        euint32.unwrap(asEuint32(a)),
-                        euint32.unwrap(b),
-                        false
-                    ),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.lt(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false), Common.ebool_t));
     }
 
     // Evaluate min(a, b) and return the result.
@@ -1672,10 +1275,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            euint32.wrap(
-                Impl.min(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false)
-            );
+        return euint32.wrap(Impl.min(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false));
     }
 
     // Evaluate max(a, b) and return the result.
@@ -1686,10 +1286,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            euint32.wrap(
-                Impl.max(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false)
-            );
+        return euint32.wrap(Impl.max(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false));
     }
 
     // Evaluate shr(a, b) and return the result.
@@ -1713,13 +1310,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.eq(euint16.unwrap(a), uint256(b), true),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.eq(euint16.unwrap(a), uint256(b), true), Common.ebool_t));
     }
 
     // Evaluate eq(a, b) and return the boolean result.
@@ -1727,13 +1318,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.eq(euint16.unwrap(b), uint256(a), true),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.eq(euint16.unwrap(b), uint256(a), true), Common.ebool_t));
     }
 
     // Evaluate ne(a, b) and return the boolean result.
@@ -1741,13 +1326,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.ne(euint16.unwrap(a), uint256(b), true),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.ne(euint16.unwrap(a), uint256(b), true), Common.ebool_t));
     }
 
     // Evaluate ne(a, b) and return the boolean result.
@@ -1755,13 +1334,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.ne(euint16.unwrap(b), uint256(a), true),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.ne(euint16.unwrap(b), uint256(a), true), Common.ebool_t));
     }
 
     // Evaluate ge(a, b) and return the boolean result.
@@ -1769,13 +1342,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.ge(euint16.unwrap(a), uint256(b), true),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.ge(euint16.unwrap(a), uint256(b), true), Common.ebool_t));
     }
 
     // Evaluate ge(a, b) and return the boolean result.
@@ -1783,13 +1350,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.le(euint16.unwrap(b), uint256(a), true),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.le(euint16.unwrap(b), uint256(a), true), Common.ebool_t));
     }
 
     // Evaluate gt(a, b) and return the boolean result.
@@ -1797,13 +1358,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.gt(euint16.unwrap(a), uint256(b), true),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.gt(euint16.unwrap(a), uint256(b), true), Common.ebool_t));
     }
 
     // Evaluate gt(a, b) and return the boolean result.
@@ -1811,13 +1366,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.lt(euint16.unwrap(b), uint256(a), true),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.lt(euint16.unwrap(b), uint256(a), true), Common.ebool_t));
     }
 
     // Evaluate le(a, b) and return the boolean result.
@@ -1825,13 +1374,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.le(euint16.unwrap(a), uint256(b), true),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.le(euint16.unwrap(a), uint256(b), true), Common.ebool_t));
     }
 
     // Evaluate le(a, b) and return the boolean result.
@@ -1839,13 +1382,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.ge(euint16.unwrap(b), uint256(a), true),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.ge(euint16.unwrap(b), uint256(a), true), Common.ebool_t));
     }
 
     // Evaluate lt(a, b) and return the boolean result.
@@ -1853,13 +1390,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.lt(euint16.unwrap(a), uint256(b), true),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.lt(euint16.unwrap(a), uint256(b), true), Common.ebool_t));
     }
 
     // Evaluate lt(a, b) and return the boolean result.
@@ -1867,13 +1398,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.gt(euint16.unwrap(b), uint256(a), true),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.gt(euint16.unwrap(b), uint256(a), true), Common.ebool_t));
     }
 
     // Evaluate add(a, b) and return the result.
@@ -1980,10 +1505,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return
-            euint32.wrap(
-                Impl.add(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false)
-            );
+        return euint32.wrap(Impl.add(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
     // Evaluate sub(a, b) and return the result.
@@ -1994,10 +1516,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return
-            euint32.wrap(
-                Impl.sub(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false)
-            );
+        return euint32.wrap(Impl.sub(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
     // Evaluate mul(a, b) and return the result.
@@ -2008,10 +1527,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return
-            euint32.wrap(
-                Impl.mul(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false)
-            );
+        return euint32.wrap(Impl.mul(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
     // Evaluate and(a, b) and return the result.
@@ -2022,10 +1538,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return
-            euint32.wrap(
-                Impl.and(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
-            );
+        return euint32.wrap(Impl.and(euint32.unwrap(a), euint32.unwrap(asEuint32(b))));
     }
 
     // Evaluate or(a, b) and return the result.
@@ -2036,10 +1549,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return
-            euint32.wrap(
-                Impl.or(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
-            );
+        return euint32.wrap(Impl.or(euint32.unwrap(a), euint32.unwrap(asEuint32(b))));
     }
 
     // Evaluate xor(a, b) and return the result.
@@ -2050,10 +1560,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return
-            euint32.wrap(
-                Impl.xor(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
-            );
+        return euint32.wrap(Impl.xor(euint32.unwrap(a), euint32.unwrap(asEuint32(b))));
     }
 
     // Evaluate shl(a, b) and return the result.
@@ -2064,10 +1571,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return
-            euint32.wrap(
-                Impl.shl(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false)
-            );
+        return euint32.wrap(Impl.shl(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
     // Evaluate shr(a, b) and return the result.
@@ -2078,10 +1582,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return
-            euint32.wrap(
-                Impl.shr(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false)
-            );
+        return euint32.wrap(Impl.shr(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
     // Evaluate eq(a, b) and return the boolean result.
@@ -2092,17 +1593,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.eq(
-                        euint32.unwrap(a),
-                        euint32.unwrap(asEuint32(b)),
-                        false
-                    ),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.eq(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false), Common.ebool_t));
     }
 
     // Evaluate ne(a, b) and return the boolean result.
@@ -2113,17 +1604,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.ne(
-                        euint32.unwrap(a),
-                        euint32.unwrap(asEuint32(b)),
-                        false
-                    ),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.ne(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false), Common.ebool_t));
     }
 
     // Evaluate ge(a, b) and return the boolean result.
@@ -2134,17 +1615,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.ge(
-                        euint32.unwrap(a),
-                        euint32.unwrap(asEuint32(b)),
-                        false
-                    ),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.ge(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false), Common.ebool_t));
     }
 
     // Evaluate gt(a, b) and return the boolean result.
@@ -2155,17 +1626,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.gt(
-                        euint32.unwrap(a),
-                        euint32.unwrap(asEuint32(b)),
-                        false
-                    ),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.gt(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false), Common.ebool_t));
     }
 
     // Evaluate le(a, b) and return the boolean result.
@@ -2176,17 +1637,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.le(
-                        euint32.unwrap(a),
-                        euint32.unwrap(asEuint32(b)),
-                        false
-                    ),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.le(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false), Common.ebool_t));
     }
 
     // Evaluate lt(a, b) and return the boolean result.
@@ -2197,17 +1648,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.lt(
-                        euint32.unwrap(a),
-                        euint32.unwrap(asEuint32(b)),
-                        false
-                    ),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.lt(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false), Common.ebool_t));
     }
 
     // Evaluate min(a, b) and return the result.
@@ -2218,10 +1659,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return
-            euint32.wrap(
-                Impl.min(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false)
-            );
+        return euint32.wrap(Impl.min(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
     // Evaluate max(a, b) and return the result.
@@ -2232,10 +1670,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return
-            euint32.wrap(
-                Impl.max(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false)
-            );
+        return euint32.wrap(Impl.max(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
     // Evaluate add(a, b) and return the result.
@@ -2246,10 +1681,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            euint32.wrap(
-                Impl.add(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false)
-            );
+        return euint32.wrap(Impl.add(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
     // Evaluate sub(a, b) and return the result.
@@ -2260,10 +1692,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            euint32.wrap(
-                Impl.sub(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false)
-            );
+        return euint32.wrap(Impl.sub(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
     // Evaluate mul(a, b) and return the result.
@@ -2274,10 +1703,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            euint32.wrap(
-                Impl.mul(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false)
-            );
+        return euint32.wrap(Impl.mul(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
     // Evaluate and(a, b) and return the result.
@@ -2288,10 +1714,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            euint32.wrap(
-                Impl.and(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
-            );
+        return euint32.wrap(Impl.and(euint32.unwrap(a), euint32.unwrap(asEuint32(b))));
     }
 
     // Evaluate or(a, b) and return the result.
@@ -2302,10 +1725,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            euint32.wrap(
-                Impl.or(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
-            );
+        return euint32.wrap(Impl.or(euint32.unwrap(a), euint32.unwrap(asEuint32(b))));
     }
 
     // Evaluate xor(a, b) and return the result.
@@ -2316,10 +1736,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            euint32.wrap(
-                Impl.xor(euint32.unwrap(a), euint32.unwrap(asEuint32(b)))
-            );
+        return euint32.wrap(Impl.xor(euint32.unwrap(a), euint32.unwrap(asEuint32(b))));
     }
 
     // Evaluate shl(a, b) and return the result.
@@ -2330,10 +1747,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            euint32.wrap(
-                Impl.shl(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false)
-            );
+        return euint32.wrap(Impl.shl(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
     // Evaluate shr(a, b) and return the result.
@@ -2344,10 +1758,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            euint32.wrap(
-                Impl.shr(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false)
-            );
+        return euint32.wrap(Impl.shr(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
     // Evaluate eq(a, b) and return the boolean result.
@@ -2358,17 +1769,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.eq(
-                        euint32.unwrap(a),
-                        euint32.unwrap(asEuint32(b)),
-                        false
-                    ),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.eq(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false), Common.ebool_t));
     }
 
     // Evaluate ne(a, b) and return the boolean result.
@@ -2379,17 +1780,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.ne(
-                        euint32.unwrap(a),
-                        euint32.unwrap(asEuint32(b)),
-                        false
-                    ),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.ne(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false), Common.ebool_t));
     }
 
     // Evaluate ge(a, b) and return the boolean result.
@@ -2400,17 +1791,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.ge(
-                        euint32.unwrap(a),
-                        euint32.unwrap(asEuint32(b)),
-                        false
-                    ),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.ge(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false), Common.ebool_t));
     }
 
     // Evaluate gt(a, b) and return the boolean result.
@@ -2421,17 +1802,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.gt(
-                        euint32.unwrap(a),
-                        euint32.unwrap(asEuint32(b)),
-                        false
-                    ),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.gt(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false), Common.ebool_t));
     }
 
     // Evaluate le(a, b) and return the boolean result.
@@ -2442,17 +1813,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.le(
-                        euint32.unwrap(a),
-                        euint32.unwrap(asEuint32(b)),
-                        false
-                    ),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.le(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false), Common.ebool_t));
     }
 
     // Evaluate lt(a, b) and return the boolean result.
@@ -2463,17 +1824,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.lt(
-                        euint32.unwrap(a),
-                        euint32.unwrap(asEuint32(b)),
-                        false
-                    ),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.lt(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false), Common.ebool_t));
     }
 
     // Evaluate min(a, b) and return the result.
@@ -2484,10 +1835,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            euint32.wrap(
-                Impl.min(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false)
-            );
+        return euint32.wrap(Impl.min(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
     // Evaluate max(a, b) and return the result.
@@ -2498,10 +1846,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return
-            euint32.wrap(
-                Impl.max(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false)
-            );
+        return euint32.wrap(Impl.max(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
     // Evaluate eq(a, b) and return the boolean result.
@@ -2512,13 +1857,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.eq(euint32.unwrap(a), euint32.unwrap(b), false),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.eq(euint32.unwrap(a), euint32.unwrap(b), false), Common.ebool_t));
     }
 
     // Evaluate ne(a, b) and return the boolean result.
@@ -2529,13 +1868,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.ne(euint32.unwrap(a), euint32.unwrap(b), false),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.ne(euint32.unwrap(a), euint32.unwrap(b), false), Common.ebool_t));
     }
 
     // Evaluate ge(a, b) and return the boolean result.
@@ -2546,13 +1879,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.ge(euint32.unwrap(a), euint32.unwrap(b), false),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.ge(euint32.unwrap(a), euint32.unwrap(b), false), Common.ebool_t));
     }
 
     // Evaluate gt(a, b) and return the boolean result.
@@ -2563,13 +1890,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.gt(euint32.unwrap(a), euint32.unwrap(b), false),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.gt(euint32.unwrap(a), euint32.unwrap(b), false), Common.ebool_t));
     }
 
     // Evaluate le(a, b) and return the boolean result.
@@ -2580,13 +1901,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.le(euint32.unwrap(a), euint32.unwrap(b), false),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.le(euint32.unwrap(a), euint32.unwrap(b), false), Common.ebool_t));
     }
 
     // Evaluate lt(a, b) and return the boolean result.
@@ -2597,13 +1912,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.lt(euint32.unwrap(a), euint32.unwrap(b), false),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.lt(euint32.unwrap(a), euint32.unwrap(b), false), Common.ebool_t));
     }
 
     // Evaluate add(a, b) and return the result.
@@ -2614,8 +1923,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            euint32.wrap(Impl.add(euint32.unwrap(a), euint32.unwrap(b), false));
+        return euint32.wrap(Impl.add(euint32.unwrap(a), euint32.unwrap(b), false));
     }
 
     // Evaluate sub(a, b) and return the result.
@@ -2626,8 +1934,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            euint32.wrap(Impl.sub(euint32.unwrap(a), euint32.unwrap(b), false));
+        return euint32.wrap(Impl.sub(euint32.unwrap(a), euint32.unwrap(b), false));
     }
 
     // Evaluate mul(a, b) and return the result.
@@ -2638,8 +1945,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            euint32.wrap(Impl.mul(euint32.unwrap(a), euint32.unwrap(b), false));
+        return euint32.wrap(Impl.mul(euint32.unwrap(a), euint32.unwrap(b), false));
     }
 
     // Evaluate and(a, b) and return the result.
@@ -2683,8 +1989,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            euint32.wrap(Impl.shl(euint32.unwrap(a), euint32.unwrap(b), false));
+        return euint32.wrap(Impl.shl(euint32.unwrap(a), euint32.unwrap(b), false));
     }
 
     // Evaluate shr(a, b) and return the result.
@@ -2695,8 +2000,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            euint32.wrap(Impl.shr(euint32.unwrap(a), euint32.unwrap(b), false));
+        return euint32.wrap(Impl.shr(euint32.unwrap(a), euint32.unwrap(b), false));
     }
 
     // Evaluate min(a, b) and return the result.
@@ -2707,8 +2011,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            euint32.wrap(Impl.min(euint32.unwrap(a), euint32.unwrap(b), false));
+        return euint32.wrap(Impl.min(euint32.unwrap(a), euint32.unwrap(b), false));
     }
 
     // Evaluate max(a, b) and return the result.
@@ -2719,8 +2022,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            euint32.wrap(Impl.max(euint32.unwrap(a), euint32.unwrap(b), false));
+        return euint32.wrap(Impl.max(euint32.unwrap(a), euint32.unwrap(b), false));
     }
 
     // Evaluate shr(a, b) and return the result.
@@ -2744,13 +2046,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.eq(euint32.unwrap(a), uint256(b), true),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.eq(euint32.unwrap(a), uint256(b), true), Common.ebool_t));
     }
 
     // Evaluate eq(a, b) and return the boolean result.
@@ -2758,13 +2054,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.eq(euint32.unwrap(b), uint256(a), true),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.eq(euint32.unwrap(b), uint256(a), true), Common.ebool_t));
     }
 
     // Evaluate ne(a, b) and return the boolean result.
@@ -2772,13 +2062,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.ne(euint32.unwrap(a), uint256(b), true),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.ne(euint32.unwrap(a), uint256(b), true), Common.ebool_t));
     }
 
     // Evaluate ne(a, b) and return the boolean result.
@@ -2786,13 +2070,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.ne(euint32.unwrap(b), uint256(a), true),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.ne(euint32.unwrap(b), uint256(a), true), Common.ebool_t));
     }
 
     // Evaluate ge(a, b) and return the boolean result.
@@ -2800,13 +2078,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.ge(euint32.unwrap(a), uint256(b), true),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.ge(euint32.unwrap(a), uint256(b), true), Common.ebool_t));
     }
 
     // Evaluate ge(a, b) and return the boolean result.
@@ -2814,13 +2086,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.le(euint32.unwrap(b), uint256(a), true),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.le(euint32.unwrap(b), uint256(a), true), Common.ebool_t));
     }
 
     // Evaluate gt(a, b) and return the boolean result.
@@ -2828,13 +2094,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.gt(euint32.unwrap(a), uint256(b), true),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.gt(euint32.unwrap(a), uint256(b), true), Common.ebool_t));
     }
 
     // Evaluate gt(a, b) and return the boolean result.
@@ -2842,13 +2102,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.lt(euint32.unwrap(b), uint256(a), true),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.lt(euint32.unwrap(b), uint256(a), true), Common.ebool_t));
     }
 
     // Evaluate le(a, b) and return the boolean result.
@@ -2856,13 +2110,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.le(euint32.unwrap(a), uint256(b), true),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.le(euint32.unwrap(a), uint256(b), true), Common.ebool_t));
     }
 
     // Evaluate le(a, b) and return the boolean result.
@@ -2870,13 +2118,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.ge(euint32.unwrap(b), uint256(a), true),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.ge(euint32.unwrap(b), uint256(a), true), Common.ebool_t));
     }
 
     // Evaluate lt(a, b) and return the boolean result.
@@ -2884,13 +2126,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.lt(euint32.unwrap(a), uint256(b), true),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.lt(euint32.unwrap(a), uint256(b), true), Common.ebool_t));
     }
 
     // Evaluate lt(a, b) and return the boolean result.
@@ -2898,13 +2134,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return
-            ebool.wrap(
-                Impl.cast(
-                    Impl.gt(euint32.unwrap(b), uint256(a), true),
-                    Common.ebool_t
-                )
-            );
+        return ebool.wrap(Impl.cast(Impl.gt(euint32.unwrap(b), uint256(a), true), Common.ebool_t));
     }
 
     // Evaluate add(a, b) and return the result.
@@ -3005,55 +2235,22 @@ library TFHE {
 
     // If `control`'s value is 1, the result has the same value as `a`.
     // If `control`'s value is 0, the result has the same value as `b`.
-    function cmux(
-        ebool control,
-        euint8 a,
-        euint8 b
-    ) internal view returns (euint8) {
-        return
-            euint8.wrap(
-                Impl.cmux(
-                    ebool.unwrap(control),
-                    euint8.unwrap(a),
-                    euint8.unwrap(b)
-                )
-            );
+    function cmux(ebool control, euint8 a, euint8 b) internal view returns (euint8) {
+        return euint8.wrap(Impl.cmux(ebool.unwrap(control), euint8.unwrap(a), euint8.unwrap(b)));
     }
 
     // If `control`'s value is `true`, the result has the same value as `a`.
     // If `control`'s value is `false`, the result has the same value as `b`.
-    function cmux(
-        ebool control,
-        euint16 a,
-        euint16 b
-    ) internal view returns (euint16) {
+    function cmux(ebool control, euint16 a, euint16 b) internal view returns (euint16) {
         euint16 ctrl = asEuint16(asEuint8(control));
-        return
-            euint16.wrap(
-                Impl.cmux(
-                    euint16.unwrap(ctrl),
-                    euint16.unwrap(a),
-                    euint16.unwrap(b)
-                )
-            );
+        return euint16.wrap(Impl.cmux(euint16.unwrap(ctrl), euint16.unwrap(a), euint16.unwrap(b)));
     }
 
     // If `control`'s value is `true`, the result has the same value as `a`.
     // If `control`'s value is `false`, the result has the same value as `b`.
-    function cmux(
-        ebool control,
-        euint32 a,
-        euint32 b
-    ) internal view returns (euint32) {
+    function cmux(ebool control, euint32 a, euint32 b) internal view returns (euint32) {
         euint32 ctrl = asEuint32(asEuint8(control));
-        return
-            euint32.wrap(
-                Impl.cmux(
-                    euint32.unwrap(ctrl),
-                    euint32.unwrap(a),
-                    euint32.unwrap(b)
-                )
-            );
+        return euint32.wrap(Impl.cmux(euint32.unwrap(ctrl), euint32.unwrap(a), euint32.unwrap(b)));
     }
 
     // Cast an encrypted integer from euint16 to euint8.
@@ -3127,10 +2324,7 @@ library TFHE {
 
     // Reencrypt the given `value` under the given `publicKey`.
     // Return a serialized euint8 ciphertext.
-    function reencrypt(
-        euint8 value,
-        bytes32 publicKey
-    ) internal view returns (bytes memory reencrypted) {
+    function reencrypt(euint8 value, bytes32 publicKey) internal view returns (bytes memory reencrypted) {
         return Impl.reencrypt(euint8.unwrap(value), publicKey);
     }
 
@@ -3145,11 +2339,7 @@ library TFHE {
         if (euint8.unwrap(value) != 0) {
             return Impl.reencrypt(euint8.unwrap(value), publicKey);
         } else {
-            return
-                Impl.reencrypt(
-                    euint8.unwrap(asEuint8(defaultValue)),
-                    publicKey
-                );
+            return Impl.reencrypt(euint8.unwrap(asEuint8(defaultValue)), publicKey);
         }
     }
 
@@ -3186,9 +2376,7 @@ library TFHE {
     }
 
     // Convert a serialized `ciphertext` to an encrypted euint16 integer.
-    function asEuint16(
-        bytes memory ciphertext
-    ) internal view returns (euint16) {
+    function asEuint16(bytes memory ciphertext) internal view returns (euint16) {
         return euint16.wrap(Impl.verify(ciphertext, Common.euint16_t));
     }
 
@@ -3199,10 +2387,7 @@ library TFHE {
 
     // Reencrypt the given `value` under the given `publicKey`.
     // Return a serialized euint16 ciphertext.
-    function reencrypt(
-        euint16 value,
-        bytes32 publicKey
-    ) internal view returns (bytes memory reencrypted) {
+    function reencrypt(euint16 value, bytes32 publicKey) internal view returns (bytes memory reencrypted) {
         return Impl.reencrypt(euint16.unwrap(value), publicKey);
     }
 
@@ -3217,11 +2402,7 @@ library TFHE {
         if (euint16.unwrap(value) != 0) {
             return Impl.reencrypt(euint16.unwrap(value), publicKey);
         } else {
-            return
-                Impl.reencrypt(
-                    euint16.unwrap(asEuint16(defaultValue)),
-                    publicKey
-                );
+            return Impl.reencrypt(euint16.unwrap(asEuint16(defaultValue)), publicKey);
         }
     }
 
@@ -3258,9 +2439,7 @@ library TFHE {
     }
 
     // Convert a serialized `ciphertext` to an encrypted euint32 integer.
-    function asEuint32(
-        bytes memory ciphertext
-    ) internal view returns (euint32) {
+    function asEuint32(bytes memory ciphertext) internal view returns (euint32) {
         return euint32.wrap(Impl.verify(ciphertext, Common.euint32_t));
     }
 
@@ -3271,10 +2450,7 @@ library TFHE {
 
     // Reencrypt the given `value` under the given `publicKey`.
     // Return a serialized euint32 ciphertext.
-    function reencrypt(
-        euint32 value,
-        bytes32 publicKey
-    ) internal view returns (bytes memory reencrypted) {
+    function reencrypt(euint32 value, bytes32 publicKey) internal view returns (bytes memory reencrypted) {
         return Impl.reencrypt(euint32.unwrap(value), publicKey);
     }
 
@@ -3289,11 +2465,7 @@ library TFHE {
         if (euint32.unwrap(value) != 0) {
             return Impl.reencrypt(euint32.unwrap(value), publicKey);
         } else {
-            return
-                Impl.reencrypt(
-                    euint32.unwrap(asEuint32(defaultValue)),
-                    publicKey
-                );
+            return Impl.reencrypt(euint32.unwrap(asEuint32(defaultValue)), publicKey);
         }
     }
 
@@ -3349,10 +2521,7 @@ library TFHE {
 
     // Reencrypt the given `value` under the given `publicKey`.
     // Return a serialized euint8 value.
-    function reencrypt(
-        ebool value,
-        bytes32 publicKey
-    ) internal view returns (bytes memory reencrypted) {
+    function reencrypt(ebool value, bytes32 publicKey) internal view returns (bytes memory reencrypted) {
         return Impl.reencrypt(ebool.unwrap(value), publicKey);
     }
 
@@ -3367,8 +2536,7 @@ library TFHE {
         if (ebool.unwrap(value) != 0) {
             return Impl.reencrypt(ebool.unwrap(value), publicKey);
         } else {
-            return
-                Impl.reencrypt(ebool.unwrap(asEbool(defaultValue)), publicKey);
+            return Impl.reencrypt(ebool.unwrap(asEbool(defaultValue)), publicKey);
         }
     }
 

@@ -85,23 +85,14 @@ contract BlindAuction is EIP712WithModifier {
         if (!TFHE.isInitialized(highestBid)) {
             highestBid = currentBid;
         } else {
-            highestBid = TFHE.cmux(
-                TFHE.lt(highestBid, currentBid),
-                currentBid,
-                highestBid
-            );
+            highestBid = TFHE.cmux(TFHE.lt(highestBid, currentBid), currentBid, highestBid);
         }
     }
 
     function getBid(
         bytes32 publicKey,
         bytes calldata signature
-    )
-        public
-        view
-        onlySignedPublicKey(publicKey, signature)
-        returns (bytes memory)
-    {
+    ) public view onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
         return TFHE.reencrypt(bids[msg.sender], publicKey, 0);
     }
 
@@ -116,22 +107,9 @@ contract BlindAuction is EIP712WithModifier {
     function doIHaveHighestBid(
         bytes32 publicKey,
         bytes calldata signature
-    )
-        public
-        view
-        onlyAfterEnd
-        onlySignedPublicKey(publicKey, signature)
-        returns (bytes memory)
-    {
-        if (
-            TFHE.isInitialized(highestBid) &&
-            TFHE.isInitialized(bids[msg.sender])
-        ) {
-            return
-                TFHE.reencrypt(
-                    TFHE.le(highestBid, bids[msg.sender]),
-                    publicKey
-                );
+    ) public view onlyAfterEnd onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
+        if (TFHE.isInitialized(highestBid) && TFHE.isInitialized(bids[msg.sender])) {
+            return TFHE.reencrypt(TFHE.le(highestBid, bids[msg.sender]), publicKey);
         } else {
             return TFHE.reencrypt(TFHE.asEuint32(0), publicKey);
         }
@@ -166,14 +144,12 @@ contract BlindAuction is EIP712WithModifier {
     }
 
     modifier onlyBeforeEnd() {
-        if (block.timestamp >= endTime || manuallyStopped == true)
-            revert TooLate(endTime);
+        if (block.timestamp >= endTime || manuallyStopped == true) revert TooLate(endTime);
         _;
     }
 
     modifier onlyAfterEnd() {
-        if (block.timestamp <= endTime && manuallyStopped == false)
-            revert TooEarly(endTime);
+        if (block.timestamp <= endTime && manuallyStopped == false) revert TooEarly(endTime);
         _;
     }
 
