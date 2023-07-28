@@ -17,5 +17,6 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: ${{ matrix.node-version }}
+      - run: cp .env.example .env
       - run: npm ci
-      - run: npm run test
+      - run: npm test
