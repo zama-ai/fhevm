@@ -138,7 +138,7 @@ print("\n\n======== STEP 1: COMPILE AND DEPLOY SMART CONTRACT ========")
 print("Compiling EncryptedERC20.sol...")
 start = time.time()
 
-with open("examples/EncryptedERC20.sol", "r") as file:
+with open("contracts/EncryptedERC20.sol", "r") as file:
     file_contents = file.read()
 
 install_solc('0.8.13')
