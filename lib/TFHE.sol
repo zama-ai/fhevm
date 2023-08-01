@@ -2233,8 +2233,8 @@ library TFHE {
         return euint32.wrap(Impl.max(euint32.unwrap(b), uint256(a), true));
     }
 
-    // If `control`'s value is 1, the result has the same value as `a`.
-    // If `control`'s value is 0, the result has the same value as `b`.
+    // If `control`'s value is `true`, the result has the same value as `a`.
+    // If `control`'s value is `false`, the result has the same value as `b`.
     function cmux(ebool control, euint8 a, euint8 b) internal view returns (euint8) {
         return euint8.wrap(Impl.cmux(ebool.unwrap(control), euint8.unwrap(a), euint8.unwrap(b)));
     }
@@ -2343,10 +2343,9 @@ library TFHE {
         }
     }
 
-    // Require that the encrypted `value` is not equal to 0.
-    // Involves decrypting `value`.
-    function req(euint8 value) internal view {
-        Impl.req(euint8.unwrap(value));
+    // Decrypts the encrypted `value`.
+    function decrypt(euint8 value) internal view returns (uint8) {
+        return uint8(Impl.decrypt(euint8.unwrap(value)));
     }
 
     // Return the negation of `value`.
@@ -2357,22 +2356,6 @@ library TFHE {
     // Return `!value`.
     function not(euint8 value) internal view returns (euint8) {
         return euint8.wrap(Impl.not(euint8.unwrap(value)));
-    }
-
-    // Optimistically require that `value` is not equal to 0.
-    //
-    // This function does not evaluate `value` at the time of the call.
-    // Instead, it accumulates all optimistic requires and evaluates a single combined
-    // require at the end of the transaction. A side effect of this mechanism
-    // is that a method call with a failed optimistic require will always incur the full
-    // gas cost, as if all optimistic requires were true. Yet, the transaction will be
-    // reverted at the end if any of the optimisic requires were false.
-    //
-    // The benefit of optimistic requires is that they are faster than non-optimistic ones,
-    // because there is a single call to the decryption oracle per transaction, irrespective
-    // of how many optimistic requires were used.
-    function optReq(euint8 value) internal view {
-        Impl.optReq(euint8.unwrap(value));
     }
 
     // Convert a serialized `ciphertext` to an encrypted euint16 integer.
@@ -2406,10 +2389,9 @@ library TFHE {
         }
     }
 
-    // Require that the encrypted `value` is not equal to 0.
-    // Involves decrypting `value`.
-    function req(euint16 value) internal view {
-        Impl.req(euint16.unwrap(value));
+    // Decrypts the encrypted `value`.
+    function decrypt(euint16 value) internal view returns (uint16) {
+        return uint16(Impl.decrypt(euint16.unwrap(value)));
     }
 
     // Return the negation of `value`.
@@ -2420,22 +2402,6 @@ library TFHE {
     // Return `!value`.
     function not(euint16 value) internal view returns (euint16) {
         return euint16.wrap(Impl.not(euint16.unwrap(value)));
-    }
-
-    // Optimistically require that `value` is not equal to 0.
-    //
-    // This function does not evaluate `value` at the time of the call.
-    // Instead, it accumulates all optimistic requires and evaluates a single combined
-    // require at the end of the transaction. A side effect of this mechanism
-    // is that a method call with a failed optimistic require will always incur the full
-    // gas cost, as if all optimistic requires were true. Yet, the transaction will be
-    // reverted at the end if any of the optimisic requires were false.
-    //
-    // The benefit of optimistic requires is that they are faster than non-optimistic ones,
-    // because there is a single call to the decryption oracle per transaction, irrespective
-    // of how many optimistic requires were used.
-    function optReq(euint16 value) internal view {
-        Impl.optReq(euint8.unwrap(asEuint8(value)));
     }
 
     // Convert a serialized `ciphertext` to an encrypted euint32 integer.
@@ -2469,10 +2435,9 @@ library TFHE {
         }
     }
 
-    // Require that the encrypted `value` is not equal to 0.
-    // Involves decrypting `value`.
-    function req(euint32 value) internal view {
-        Impl.req(euint32.unwrap(value));
+    // Decrypts the encrypted `value`.
+    function decrypt(euint32 value) internal view returns (uint32) {
+        return uint32(Impl.decrypt(euint32.unwrap(value)));
     }
 
     // Return the negation of `value`.
@@ -2485,38 +2450,43 @@ library TFHE {
         return euint32.wrap(Impl.not(euint32.unwrap(value)));
     }
 
-    // Optimistically require that `value` is not equal to 0.
+    // Require that the encrypted bool `b` is true.
+    // Involves decrypting `b`.
+    function req(ebool b) internal view {
+        Impl.req(ebool.unwrap(b));
+    }
+
+    // Optimistically require that `b` is true.
     //
-    // This function does not evaluate `value` at the time of the call.
+    // This function does not evaluate `b` at the time of the call.
     // Instead, it accumulates all optimistic requires and evaluates a single combined
     // require at the end of the transaction. A side effect of this mechanism
     // is that a method call with a failed optimistic require will always incur the full
     // gas cost, as if all optimistic requires were true. Yet, the transaction will be
     // reverted at the end if any of the optimisic requires were false.
     //
+    // Exceptions to above rule are encrypted requires via TFHE.req() and decryption via
+    // TFHE.decrypt(). If either of them are encountered and if optimistic requires have been
+    // used before in the txn, the optimisic requires will be immediately evaluated. Rationale is
+    // that we want to avoid decrypting a non-optimistic require or a value if the txn is about
+    // to fail and be reverted anyway at the end. Checking immediately and reverting on the spot
+    // would avoid unnecessary decryptions.
+    //
     // The benefit of optimistic requires is that they are faster than non-optimistic ones,
     // because there is a single call to the decryption oracle per transaction, irrespective
     // of how many optimistic requires were used.
-    function optReq(euint32 value) internal view {
-        Impl.optReq(euint8.unwrap(asEuint8(value)));
-    }
-
-    // Require that the encrypted bool `b` is not equal to 0.
-    // Involves decrypting `b`.
-    function req(ebool b) internal view {
-        Impl.req(ebool.unwrap(b));
-    }
-
-    // Optimistically require that `b` is not equal to 0.
     function optReq(ebool b) internal view {
         Impl.optReq(ebool.unwrap(b));
     }
 
+    // Decrypts the encrypted `value`.
+    function decrypt(ebool value) internal view returns (bool) {
+        return (Impl.decrypt(ebool.unwrap(value)) != 0);
+    }
+
     // Converts an `ebool` to an `euint8`.
     function asEuint8(ebool b) internal pure returns (euint8) {
-        {
-            return euint8.wrap(ebool.unwrap(b));
-        }
+        return euint8.wrap(ebool.unwrap(b));
     }
 
     // Reencrypt the given `value` under the given `publicKey`.

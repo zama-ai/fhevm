@@ -584,4 +584,23 @@ library Impl {
             }
         }
     }
+
+    function decrypt(uint256 ciphertext) internal view returns (uint256 result) {
+        bytes32[1] memory input;
+        input[0] = bytes32(ciphertext);
+        uint256 inputLen = 32;
+
+        bytes32[1] memory output;
+        uint256 outputLen = 32;
+
+        // Call the decrypt precompile.
+        uint256 precompile = Precompiles.Decrypt;
+        assembly {
+            if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
+                revert(0, 0)
+            }
+        }
+        // The output is a 32-byte buffer of a 256-bit big-endian unsigned integer.
+        result = uint256(output[0]);
+    }
 }

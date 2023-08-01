@@ -28,4 +28,5 @@ library Precompiles {
     uint256 public constant Max = 88;
     uint256 public constant Negate = 89;
     uint256 public constant Not = 90;
+    uint256 public constant Decrypt = 91;
 }

@@ -54,6 +54,7 @@ library Precompiles {
     uint256 public constant Max = 88;
     uint256 public constant Negate = 89;
     uint256 public constant Not = 90;
+    uint256 public constant Decrypt = 91;
 }
 """
 )
@@ -683,6 +684,25 @@ library Impl {
             }
         }
     }
+        
+    function decrypt(uint256 ciphertext) internal view returns(uint256 result) {
+        bytes32[1] memory input;
+        input[0] = bytes32(ciphertext);
+        uint256 inputLen = 32;
+
+        bytes32[1] memory output;
+        uint256 outputLen = 32;
+
+        // Call the decrypt precompile.
+        uint256 precompile = Precompiles.Decrypt;
+        assembly {
+            if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
+                revert(0, 0)
+            }
+        }
+        // The output is a 32-byte buffer of a 256-bit big-endian unsigned integer.
+        result = uint256(output[0]);
+    }
 }
 """
 )
@@ -983,8 +1003,8 @@ for i in (2**p for p in range(3, 6)):
 
 
 to_print_8 =  """
-    // If `control`'s value is 1, the result has the same value as `a`.
-    // If `control`'s value is 0, the result has the same value as `b`.
+    // If `control`'s value is `true`, the result has the same value as `a`.
+    // If `control`'s value is `false`, the result has the same value as `b`.
     function cmux(ebool control, euint{i} a, euint{i} b) internal view returns (euint{i}) {{
         return euint{i}.wrap(Impl.cmux(ebool.unwrap(control), euint{i}.unwrap(a), euint{i}.unwrap(b)));
     }}
@@ -1077,10 +1097,9 @@ to_print="""
         }}
     }}
 
-    // Require that the encrypted `value` is not equal to 0.
-    // Involves decrypting `value`.
-    function req(euint{i} value) internal view {{
-        Impl.req(euint{i}.unwrap(value));
+    // Decrypts the encrypted `value`.
+    function decrypt(euint{i} value) internal view returns (uint{i}) {{
+        return uint{i}(Impl.decrypt(euint{i}.unwrap(value)));
     }}
 
     // Return the negation of `value`.
@@ -1094,67 +1113,49 @@ to_print="""
     }}
 """
 
-to_print_cast_or="""
-    // Optimistically require that `value` is not equal to 0.
-    //
-    // This function does not evaluate `value` at the time of the call.
-    // Instead, it accumulates all optimistic requires and evaluates a single combined
-    // require at the end of the transaction. A side effect of this mechanism
-    // is that a method call with a failed optimistic require will always incur the full
-    // gas cost, as if all optimistic requires were true. Yet, the transaction will be
-    // reverted at the end if any of the optimisic requires were false.
-    //
-    // The benefit of optimistic requires is that they are faster than non-optimistic ones,
-    // because there is a single call to the decryption oracle per transaction, irrespective
-    // of how many optimistic requires were used.
-    function optReq(euint{i} value) internal view {{
-        Impl.optReq(euint8.unwrap(asEuint8(value)));
-    }}
-"""
-
-to_print_no_cast_or="""
-    // Optimistically require that `value` is not equal to 0.
-    //
-    // This function does not evaluate `value` at the time of the call.
-    // Instead, it accumulates all optimistic requires and evaluates a single combined
-    // require at the end of the transaction. A side effect of this mechanism
-    // is that a method call with a failed optimistic require will always incur the full
-    // gas cost, as if all optimistic requires were true. Yet, the transaction will be
-    // reverted at the end if any of the optimisic requires were false.
-    //
-    // The benefit of optimistic requires is that they are faster than non-optimistic ones,
-    // because there is a single call to the decryption oracle per transaction, irrespective
-    // of how many optimistic requires were used.
-    function optReq(euint{i} value) internal view {{
-        Impl.optReq(euint{i}.unwrap(value));
-    }}
-"""
-
 for i in (2**p for p in range(3, 6)):
     f.write(to_print.format(i=i))
-    if i != 8:
-        f.write(to_print_cast_or.format(i=i))
-    else:
-        f.write(to_print_no_cast_or.format(i=i))
-
 
 f.write("\n")
 f.write("""\
-    // Require that the encrypted bool `b` is not equal to 0.
+    // Require that the encrypted bool `b` is true.
     // Involves decrypting `b`.
     function req(ebool b) internal view {
         Impl.req(ebool.unwrap(b));
     }
     
-    // Optimistically require that `b` is not equal to 0.
+    // Optimistically require that `b` is true.
+    //
+    // This function does not evaluate `b` at the time of the call.
+    // Instead, it accumulates all optimistic requires and evaluates a single combined
+    // require at the end of the transaction. A side effect of this mechanism
+    // is that a method call with a failed optimistic require will always incur the full
+    // gas cost, as if all optimistic requires were true. Yet, the transaction will be
+    // reverted at the end if any of the optimisic requires were false.
+    //
+    // Exceptions to above rule are encrypted requires via TFHE.req() and decryption via
+    // TFHE.decrypt(). If either of them are encountered and if optimistic requires have been
+    // used before in the txn, the optimisic requires will be immediately evaluated. Rationale is
+    // that we want to avoid decrypting a non-optimistic require or a value if the txn is about
+    // to fail and be reverted anyway at the end. Checking immediately and reverting on the spot
+    // would avoid unnecessary decryptions.
+    //
+    // The benefit of optimistic requires is that they are faster than non-optimistic ones,
+    // because there is a single call to the decryption oracle per transaction, irrespective
+    // of how many optimistic requires were used.
     function optReq(ebool b) internal view {
         Impl.optReq(ebool.unwrap(b));
     }
+
+    // Decrypts the encrypted `value`.
+    function decrypt(ebool value) internal view returns (bool) {
+        return (Impl.decrypt(ebool.unwrap(value)) != 0);
+    }
         
     // Converts an `ebool` to an `euint8`.
-    function asEuint8(ebool b) internal pure returns (euint8) {{
+    function asEuint8(ebool b) internal pure returns (euint8) {
         return euint8.wrap(ebool.unwrap(b));
-    }}
+    }
 
     // Reencrypt the given `value` under the given `publicKey`.
     // Return a serialized euint8 value.
