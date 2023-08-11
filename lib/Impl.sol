@@ -89,6 +89,25 @@ library Impl {
         result = uint256(output[0]);
     }
 
+    function div(uint256 a, uint256 b) internal view returns (uint256 result) {
+        // only scalar is supported now
+        bytes memory input = bytes.concat(bytes32(a), bytes32(b), bytes1(0x01));
+        uint256 inputLen = input.length;
+
+        bytes32[1] memory output;
+        uint256 outputLen = 32;
+
+        // Call the div precompile.
+        uint256 precompile = Precompiles.Divide;
+        assembly {
+            if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
+                revert(0, 0)
+            }
+        }
+
+        result = uint256(output[0]);
+    }
+
     function and(uint256 a, uint256 b) internal view returns (uint256 result) {
         // scalars not currently supported for bitwise operators
         bytes memory input = bytes.concat(bytes32(a), bytes32(b), bytes1(0x00));
