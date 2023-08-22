@@ -19,4 +19,13 @@ jobs:
           node-version: ${{ matrix.node-version }}
       - run: cp .env.example .env
       - run: npm ci
-      - run: npm test
+      - name: "npm CI test"
+        run: |
+          # sometimes not created and is not tailed
+          touch fhevm.log
+          npm run fhevm:start &> fhevm.log &
+          tail -f fhevm.log | sed '/Starting JSON WebSocket server/ q'
+
+          npm run fhevm:faucet
+          npm test
+          npm run fhevm:stop || true
