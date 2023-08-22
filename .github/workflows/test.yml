@@ -21,6 +21,8 @@ jobs:
       - run: npm ci
       - name: "npm CI test"
         run: |
+          # sometimes not created and is not tailed
+          touch fhevm.log
           npm run fhevm:start &> fhevm.log &
           tail -f fhevm.log | sed '/Starting JSON WebSocket server/ q'
 
