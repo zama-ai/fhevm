@@ -761,6 +761,22 @@ library TFHE {
         return euint8.wrap(Impl.max(euint8.unwrap(b), uint256(a), true));
     }
 
+    // Evaluate div(a, b) and return the result.
+    function div(euint8 a, uint8 b) internal view returns (euint8) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        return euint8.wrap(Impl.div(euint8.unwrap(a), uint256(b)));
+    }
+
+    // Evaluate div(a, b) and return the result.
+    function div(uint8 a, euint8 b) internal view returns (euint8) {
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+        return euint8.wrap(Impl.div(euint8.unwrap(b), uint256(a)));
+    }
+
     // Evaluate add(a, b) and return the result.
     function add(euint16 a, euint8 b) internal view returns (euint16) {
         if (!isInitialized(a)) {
@@ -1497,6 +1513,22 @@ library TFHE {
         return euint16.wrap(Impl.max(euint16.unwrap(b), uint256(a), true));
     }
 
+    // Evaluate div(a, b) and return the result.
+    function div(euint16 a, uint16 b) internal view returns (euint16) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        return euint16.wrap(Impl.div(euint16.unwrap(a), uint256(b)));
+    }
+
+    // Evaluate div(a, b) and return the result.
+    function div(uint16 a, euint16 b) internal view returns (euint16) {
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
+        return euint16.wrap(Impl.div(euint16.unwrap(b), uint256(a)));
+    }
+
     // Evaluate add(a, b) and return the result.
     function add(euint32 a, euint8 b) internal view returns (euint32) {
         if (!isInitialized(a)) {
@@ -2231,6 +2263,22 @@ library TFHE {
             b = asEuint32(0);
         }
         return euint32.wrap(Impl.max(euint32.unwrap(b), uint256(a), true));
+    }
+
+    // Evaluate div(a, b) and return the result.
+    function div(euint32 a, uint32 b) internal view returns (euint32) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        return euint32.wrap(Impl.div(euint32.unwrap(a), uint256(b)));
+    }
+
+    // Evaluate div(a, b) and return the result.
+    function div(uint32 a, euint32 b) internal view returns (euint32) {
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
+        return euint32.wrap(Impl.div(euint32.unwrap(b), uint256(a)));
     }
 
     // If `control`'s value is `true`, the result has the same value as `a`.

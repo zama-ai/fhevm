@@ -55,6 +55,7 @@ library Precompiles {
     uint256 public constant Negate = 89;
     uint256 public constant Not = 90;
     uint256 public constant Decrypt = 91;
+    uint256 public constant Divide = 92;
 }
 """
 )
@@ -144,6 +145,25 @@ library Impl {
 
         // Call the mul precompile.
         uint256 precompile = Precompiles.Multiply;
+        assembly {
+            if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
+                revert(0, 0)
+            }
+        }
+
+        result = uint256(output[0]);
+    }
+
+    function div(uint256 a, uint256 b) internal view returns (uint256 result) {
+        // only scalar is supported now
+        bytes memory input = bytes.concat(bytes32(a), bytes32(b), bytes1(0x01));
+        uint256 inputLen = input.length;
+
+        bytes32[1] memory output;
+        uint256 outputLen = 32;
+
+        // Call the div precompile.
+        uint256 precompile = Precompiles.Divide;
         assembly {
             if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
                 revert(0, 0)
@@ -881,6 +901,24 @@ to_print_scalar = """
     }}
 """
 
+to_print_scalar_only = """
+    // Evaluate {f}(a, b) and return the result.
+    function {f}(euint{i} a, uint{i} b) internal view returns (euint{i}) {{
+        if (!isInitialized(a)) {{
+            a = asEuint{i}(0);
+        }}
+        return euint{i}.wrap(Impl.{f}(euint{i}.unwrap(a), uint256(b)));
+    }}
+
+    // Evaluate {f}(a, b) and return the result.
+    function {f}(uint{i} a, euint{i} b) internal view returns (euint{i}) {{
+        if (!isInitialized(b)) {{
+            b = asEuint{i}(0);
+        }}
+        return euint{i}.wrap(Impl.{g}(euint{i}.unwrap(b), uint256(a)));
+    }}
+"""
+
 to_print_scalar_comp = """
     // Evaluate {f}(a, b) and return the boolean result.
     function {f}(euint{i} a, uint{i} b) internal view returns (ebool) {{
@@ -1000,6 +1038,7 @@ for i in (2**p for p in range(3, 6)):
     f.write(to_print_scalar.format(i=i, f="shl", g="shl"))
     f.write(to_print_scalar.format(i=i, f="min", g="min"))
     f.write(to_print_scalar.format(i=i, f="max", g="max"))
+    f.write(to_print_scalar_only.format(i=i, f="div", g="div"))
 
 
 to_print_8 =  """
