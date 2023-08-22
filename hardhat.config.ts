@@ -8,6 +8,7 @@ import { resolve } from 'path';
 import './tasks/accounts';
 import './tasks/mint';
 import './tasks/taskDeploy';
+import "./tasks/getEthereumAddress";
 
 const dotenvConfigPath: string = process.env.DOTENV_CONFIG_PATH || './.env';
 dotenvConfig({ path: resolve(__dirname, dotenvConfigPath) });
@@ -20,11 +21,15 @@ if (!mnemonic) {
 
 const chainIds = {
   zama: 8009,
+  local: 9000,
 };
 
 function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
   let jsonRpcUrl: string;
   switch (chain) {
+    case "local":
+      jsonRpcUrl = "http://localhost:8545";
+      break;
     case 'zama':
       jsonRpcUrl = 'https://devnet.zama.ai';
       break;
@@ -41,7 +46,7 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
 }
 
 const config: HardhatUserConfig = {
-  defaultNetwork: 'zama',
+  defaultNetwork: 'local',
   namedAccounts: {
     deployer: 0,
   },
@@ -53,6 +58,7 @@ const config: HardhatUserConfig = {
   },
   networks: {
     zama: getChainConfig('zama'),
+    local: getChainConfig('local'),
   },
   paths: {
     artifacts: './artifacts',
