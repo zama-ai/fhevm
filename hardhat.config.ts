@@ -6,9 +6,9 @@ import type { NetworkUserConfig } from 'hardhat/types';
 import { resolve } from 'path';
 
 import './tasks/accounts';
+import './tasks/getEthereumAddress';
 import './tasks/mint';
 import './tasks/taskDeploy';
-import "./tasks/getEthereumAddress";
 
 const dotenvConfigPath: string = process.env.DOTENV_CONFIG_PATH || './.env';
 dotenvConfig({ path: resolve(__dirname, dotenvConfigPath) });
@@ -27,8 +27,8 @@ const chainIds = {
 function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
   let jsonRpcUrl: string;
   switch (chain) {
-    case "local":
-      jsonRpcUrl = "http://localhost:8545";
+    case 'local':
+      jsonRpcUrl = 'http://localhost:8545';
       break;
     case 'zama':
       jsonRpcUrl = 'https://devnet.zama.ai';

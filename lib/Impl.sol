@@ -6,31 +6,29 @@ import "./Common.sol";
 import "./Precompiles.sol";
 
 library Impl {
-    // 32 bytes for the `byte` type header + 48 bytes for the NaCl anonymous
+    // 32 bytes for the 'byte' type header + 48 bytes for the NaCl anonymous
     // box overhead + 4 bytes for the plaintext value.
     uint256 constant reencryptedSize = 32 + 48 + 4;
 
-    // 32 bytes for the `byte` header + 16553 bytes of key data.
+    // 32 bytes for the 'byte' header + 16553 bytes of key data.
     uint256 constant fhePubKeySize = 32 + 16553;
 
-    function add(uint256 a, uint256 b, bool scalar) internal view returns (uint256 result) {
+    function add(uint256 lhs, uint256 rhs, bool scalar) internal view returns (uint256 result) {
         bytes1 scalarByte;
         if (scalar) {
             scalarByte = 0x01;
         } else {
             scalarByte = 0x00;
         }
-
-        bytes memory input = bytes.concat(bytes32(a), bytes32(b), scalarByte);
+        bytes memory input = bytes.concat(bytes32(lhs), bytes32(rhs), scalarByte);
         uint256 inputLen = input.length;
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
-
         // Call the add precompile.
         uint256 precompile = Precompiles.Add;
         assembly {
-            // jump over the 32-bit `size` field of the `bytes` data structure of the `input` to read actual bytes
+            // jump over the 32-bit 'size' field of the 'bytes' data structure of the 'input' to read actual bytes
             if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
                 revert(0, 0)
             }
@@ -39,23 +37,22 @@ library Impl {
         result = uint256(output[0]);
     }
 
-    function sub(uint256 a, uint256 b, bool scalar) internal view returns (uint256 result) {
+    function sub(uint256 lhs, uint256 rhs, bool scalar) internal view returns (uint256 result) {
         bytes1 scalarByte;
         if (scalar) {
             scalarByte = 0x01;
         } else {
             scalarByte = 0x00;
         }
-
-        bytes memory input = bytes.concat(bytes32(a), bytes32(b), scalarByte);
+        bytes memory input = bytes.concat(bytes32(lhs), bytes32(rhs), scalarByte);
         uint256 inputLen = input.length;
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
-
         // Call the sub precompile.
         uint256 precompile = Precompiles.Subtract;
         assembly {
+            // jump over the 32-bit 'size' field of the 'bytes' data structure of the 'input' to read actual bytes
             if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
                 revert(0, 0)
             }
@@ -64,23 +61,22 @@ library Impl {
         result = uint256(output[0]);
     }
 
-    function mul(uint256 a, uint256 b, bool scalar) internal view returns (uint256 result) {
+    function mul(uint256 lhs, uint256 rhs, bool scalar) internal view returns (uint256 result) {
         bytes1 scalarByte;
         if (scalar) {
             scalarByte = 0x01;
         } else {
             scalarByte = 0x00;
         }
-
-        bytes memory input = bytes.concat(bytes32(a), bytes32(b), scalarByte);
+        bytes memory input = bytes.concat(bytes32(lhs), bytes32(rhs), scalarByte);
         uint256 inputLen = input.length;
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
-
         // Call the mul precompile.
         uint256 precompile = Precompiles.Multiply;
         assembly {
+            // jump over the 32-bit 'size' field of the 'bytes' data structure of the 'input' to read actual bytes
             if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
                 revert(0, 0)
             }
@@ -89,17 +85,16 @@ library Impl {
         result = uint256(output[0]);
     }
 
-    function div(uint256 a, uint256 b) internal view returns (uint256 result) {
-        // only scalar is supported now
-        bytes memory input = bytes.concat(bytes32(a), bytes32(b), bytes1(0x01));
+    function div(uint256 lhs, uint256 rhs) internal view returns (uint256 result) {
+        bytes memory input = bytes.concat(bytes32(lhs), bytes32(rhs), bytes1(0x01));
         uint256 inputLen = input.length;
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
-
         // Call the div precompile.
         uint256 precompile = Precompiles.Divide;
         assembly {
+            // jump over the 32-bit 'size' field of the 'bytes' data structure of the 'input' to read actual bytes
             if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
                 revert(0, 0)
             }
@@ -108,17 +103,16 @@ library Impl {
         result = uint256(output[0]);
     }
 
-    function and(uint256 a, uint256 b) internal view returns (uint256 result) {
-        // scalars not currently supported for bitwise operators
-        bytes memory input = bytes.concat(bytes32(a), bytes32(b), bytes1(0x00));
+    function and(uint256 lhs, uint256 rhs) internal view returns (uint256 result) {
+        bytes memory input = bytes.concat(bytes32(lhs), bytes32(rhs), bytes1(0x00));
         uint256 inputLen = input.length;
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
-
-        // Call the AND precompile.
+        // Call the and precompile.
         uint256 precompile = Precompiles.BitwiseAnd;
         assembly {
+            // jump over the 32-bit 'size' field of the 'bytes' data structure of the 'input' to read actual bytes
             if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
                 revert(0, 0)
             }
@@ -127,17 +121,16 @@ library Impl {
         result = uint256(output[0]);
     }
 
-    function or(uint256 a, uint256 b) internal view returns (uint256 result) {
-        // scalars not currently supported for bitwise operators
-        bytes memory input = bytes.concat(bytes32(a), bytes32(b), bytes1(0x00));
+    function or(uint256 lhs, uint256 rhs) internal view returns (uint256 result) {
+        bytes memory input = bytes.concat(bytes32(lhs), bytes32(rhs), bytes1(0x00));
         uint256 inputLen = input.length;
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
-
-        // Call the OR precompile.
+        // Call the or precompile.
         uint256 precompile = Precompiles.BitwiseOr;
         assembly {
+            // jump over the 32-bit 'size' field of the 'bytes' data structure of the 'input' to read actual bytes
             if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
                 revert(0, 0)
             }
@@ -146,17 +139,16 @@ library Impl {
         result = uint256(output[0]);
     }
 
-    function xor(uint256 a, uint256 b) internal view returns (uint256 result) {
-        // scalars not currently supported for bitwise operators
-        bytes memory input = bytes.concat(bytes32(a), bytes32(b), bytes1(0x00));
+    function xor(uint256 lhs, uint256 rhs) internal view returns (uint256 result) {
+        bytes memory input = bytes.concat(bytes32(lhs), bytes32(rhs), bytes1(0x00));
         uint256 inputLen = input.length;
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
-
-        // Call the XOR precompile.
+        // Call the xor precompile.
         uint256 precompile = Precompiles.BitwiseXor;
         assembly {
+            // jump over the 32-bit 'size' field of the 'bytes' data structure of the 'input' to read actual bytes
             if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
                 revert(0, 0)
             }
@@ -165,7 +157,6 @@ library Impl {
         result = uint256(output[0]);
     }
 
-    // lhs << rhs
     function shl(uint256 lhs, uint256 rhs, bool scalar) internal view returns (uint256 result) {
         bytes1 scalarByte;
         if (scalar) {
@@ -178,10 +169,10 @@ library Impl {
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
-
-        // Call the left shift precompile.
+        // Call the shl precompile.
         uint256 precompile = Precompiles.ShiftLeft;
         assembly {
+            // jump over the 32-bit 'size' field of the 'bytes' data structure of the 'input' to read actual bytes
             if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
                 revert(0, 0)
             }
@@ -190,7 +181,6 @@ library Impl {
         result = uint256(output[0]);
     }
 
-    // lhs >> rhs
     function shr(uint256 lhs, uint256 rhs, bool scalar) internal view returns (uint256 result) {
         bytes1 scalarByte;
         if (scalar) {
@@ -203,10 +193,10 @@ library Impl {
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
-
-        // Call the right shift precompile.
+        // Call the shr precompile.
         uint256 precompile = Precompiles.ShiftRight;
         assembly {
+            // jump over the 32-bit 'size' field of the 'bytes' data structure of the 'input' to read actual bytes
             if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
                 revert(0, 0)
             }
@@ -227,10 +217,10 @@ library Impl {
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
-
         // Call the eq precompile.
         uint256 precompile = Precompiles.Equal;
         assembly {
+            // jump over the 32-bit 'size' field of the 'bytes' data structure of the 'input' to read actual bytes
             if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
                 revert(0, 0)
             }
@@ -251,10 +241,10 @@ library Impl {
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
-
-        // Call the not equal precompile.
+        // Call the ne precompile.
         uint256 precompile = Precompiles.NotEqual;
         assembly {
+            // jump over the 32-bit 'size' field of the 'bytes' data structure of the 'input' to read actual bytes
             if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
                 revert(0, 0)
             }
@@ -275,10 +265,10 @@ library Impl {
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
-
         // Call the ge precompile.
         uint256 precompile = Precompiles.GreaterThanOrEqual;
         assembly {
+            // jump over the 32-bit 'size' field of the 'bytes' data structure of the 'input' to read actual bytes
             if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
                 revert(0, 0)
             }
@@ -299,10 +289,10 @@ library Impl {
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
-
         // Call the gt precompile.
         uint256 precompile = Precompiles.GreaterThan;
         assembly {
+            // jump over the 32-bit 'size' field of the 'bytes' data structure of the 'input' to read actual bytes
             if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
                 revert(0, 0)
             }
@@ -323,10 +313,10 @@ library Impl {
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
-
         // Call the le precompile.
         uint256 precompile = Precompiles.LessThanOrEqual;
         assembly {
+            // jump over the 32-bit 'size' field of the 'bytes' data structure of the 'input' to read actual bytes
             if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
                 revert(0, 0)
             }
@@ -347,10 +337,10 @@ library Impl {
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
-
         // Call the lt precompile.
         uint256 precompile = Precompiles.LessThan;
         assembly {
+            // jump over the 32-bit 'size' field of the 'bytes' data structure of the 'input' to read actual bytes
             if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
                 revert(0, 0)
             }
@@ -371,10 +361,10 @@ library Impl {
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
-
         // Call the min precompile.
         uint256 precompile = Precompiles.Min;
         assembly {
+            // jump over the 32-bit 'size' field of the 'bytes' data structure of the 'input' to read actual bytes
             if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
                 revert(0, 0)
             }
@@ -395,10 +385,10 @@ library Impl {
 
         bytes32[1] memory output;
         uint256 outputLen = 32;
-
         // Call the max precompile.
         uint256 precompile = Precompiles.Max;
         assembly {
+            // jump over the 32-bit 'size' field of the 'bytes' data structure of the 'input' to read actual bytes
             if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
                 revert(0, 0)
             }
@@ -415,7 +405,7 @@ library Impl {
         bytes32[1] memory output;
         uint256 outputLen = 32;
 
-        // Call the negation precompile.
+        // Call the neg precompile.
         uint256 precompile = Precompiles.Negate;
         assembly {
             if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
@@ -445,8 +435,8 @@ library Impl {
         result = uint256(output[0]);
     }
 
-    // If `control`'s value is `true`, the result has the same value as `ifTrue`.
-    // If `control`'s value is `false`, the result has the same value as `ifFalse`.
+    // If 'control's value is 'true', the result has the same value as 'ifTrue'.
+    // If 'control's value is 'false', the result has the same value as 'ifFalse'.
     function cmux(uint256 control, uint256 ifTrue, uint256 ifFalse) internal view returns (uint256 result) {
         // result = (ifTrue - ifFalse) * control + ifFalse
         bytes memory input = bytes.concat(bytes32(ifTrue), bytes32(ifFalse), bytes1(0x00));
@@ -546,7 +536,7 @@ library Impl {
         // Call the verify precompile.
         uint256 precompile = Precompiles.Verify;
         assembly {
-            // jump over the 32-bit `size` field of the `bytes` data structure of the `input` to read actual bytes
+            // jump over the 32-bit 'size' field of the 'bytes' data structure of the 'input' to read actual bytes
             if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
                 revert(0, 0)
             }
@@ -564,7 +554,7 @@ library Impl {
         // Call the cast precompile.
         uint256 precompile = Precompiles.Cast;
         assembly {
-            // jump over the 32-bit `size` field of the `bytes` data structure of the `input` to read actual bytes
+            // jump over the 32-bit 'size' field of the 'bytes' data structure of the 'input' to read actual bytes
             if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
                 revert(0, 0)
             }
@@ -582,7 +572,7 @@ library Impl {
         // Call the trivialEncrypt precompile.
         uint256 precompile = Precompiles.TrivialEncrypt;
         assembly {
-            // jump over the 32-bit `size` field of the `bytes` data structure of the `input` to read actual bytes
+            // jump over the 32-bit 'size' field of the 'bytes' data structure of the 'input' to read actual bytes
             if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
                 revert(0, 0)
             }
