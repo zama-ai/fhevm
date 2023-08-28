@@ -1,6 +1,6 @@
 import { writeFileSync } from 'fs';
 
-import { ALL_OPERATORS, ALL_PRECOMPILES, checks } from './common';
+import { ALL_OPERATORS, ALL_PRECOMPILES, SUPPORTED_BITS, checks } from './common';
 import * as t from './templates';
 
 function generateAllFiles() {
@@ -9,6 +9,7 @@ function generateAllFiles() {
   writeFileSync(`lib/Common.sol`, t.commonSolHeader());
   writeFileSync(`lib/Precompiles.sol`, t.precompiles(ALL_PRECOMPILES));
   writeFileSync(`lib/Impl.sol`, t.implSol(operators));
+  writeFileSync(`lib/TFHE.sol`, t.tfheSol(operators, SUPPORTED_BITS));
 }
 
 generateAllFiles();

@@ -2,11 +2,13 @@ import assert from 'assert';
 
 export type Operator = {
   name: string;
+  leftScalarInvertOp?: string;
   precompileName: string;
-  bits: number[];
   hasScalar: boolean;
   hasEncrypted: boolean;
   arguments: OperatorArguments;
+  returnType: ReturnType;
+  tfheSolOrder: number;
 };
 
 export type Precompile = {
@@ -19,7 +21,12 @@ export enum OperatorArguments {
   Unary,
 }
 
-export const SUPPORTED_BITS = [8, 16, 32];
+export enum ReturnType {
+  Uint,
+  Ebool,
+}
+
+export const SUPPORTED_BITS: number[] = [8, 16, 32];
 
 export const ALL_PRECOMPILES: Precompile[] = [
   { name: 'Add', code: 65 },
@@ -55,154 +62,177 @@ export const ALL_OPERATORS: Operator[] = [
   {
     name: 'add',
     precompileName: 'Add',
-    bits: SUPPORTED_BITS,
     hasScalar: true,
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
+    returnType: ReturnType.Uint,
+    tfheSolOrder: 7,
   },
   {
     name: 'sub',
     precompileName: 'Subtract',
-    bits: SUPPORTED_BITS,
     hasScalar: true,
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
+    returnType: ReturnType.Uint,
+    tfheSolOrder: 8,
   },
   {
     name: 'mul',
     precompileName: 'Multiply',
-    bits: SUPPORTED_BITS,
     hasScalar: true,
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
+    returnType: ReturnType.Uint,
+    tfheSolOrder: 9,
   },
   {
     name: 'div',
     precompileName: 'Divide',
-    bits: SUPPORTED_BITS,
     hasScalar: true,
     hasEncrypted: false,
     arguments: OperatorArguments.Binary,
+    returnType: ReturnType.Uint,
+    tfheSolOrder: 17,
   },
   {
     name: 'and',
     precompileName: 'BitwiseAnd',
-    bits: SUPPORTED_BITS,
     hasScalar: false,
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
+    returnType: ReturnType.Uint,
+    tfheSolOrder: 10,
   },
   {
     name: 'or',
     precompileName: 'BitwiseOr',
-    bits: SUPPORTED_BITS,
     hasScalar: false,
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
+    returnType: ReturnType.Uint,
+    tfheSolOrder: 11,
   },
   {
     name: 'xor',
     precompileName: 'BitwiseXor',
-    bits: SUPPORTED_BITS,
     hasScalar: false,
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
+    returnType: ReturnType.Uint,
+    tfheSolOrder: 12,
   },
   {
     name: 'shl',
     precompileName: 'ShiftLeft',
-    bits: SUPPORTED_BITS,
     hasScalar: true,
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
+    returnType: ReturnType.Uint,
+    tfheSolOrder: 13,
   },
   {
     name: 'shr',
     precompileName: 'ShiftRight',
-    bits: SUPPORTED_BITS,
     hasScalar: true,
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
+    returnType: ReturnType.Uint,
+    tfheSolOrder: 14,
   },
   {
     name: 'eq',
     precompileName: 'Equal',
-    bits: SUPPORTED_BITS,
     hasScalar: true,
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
+    returnType: ReturnType.Ebool,
+    tfheSolOrder: 1,
   },
   {
     name: 'ne',
     precompileName: 'NotEqual',
-    bits: SUPPORTED_BITS,
     hasScalar: true,
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
+    returnType: ReturnType.Ebool,
+    tfheSolOrder: 2,
   },
   {
     name: 'ge',
+    leftScalarInvertOp: 'le',
     precompileName: 'GreaterThanOrEqual',
-    bits: SUPPORTED_BITS,
     hasScalar: true,
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
+    returnType: ReturnType.Ebool,
+    tfheSolOrder: 3,
   },
   {
     name: 'gt',
+    leftScalarInvertOp: 'lt',
     precompileName: 'GreaterThan',
-    bits: SUPPORTED_BITS,
     hasScalar: true,
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
+    returnType: ReturnType.Ebool,
+    tfheSolOrder: 4,
   },
   {
     name: 'le',
+    leftScalarInvertOp: 'ge',
     precompileName: 'LessThanOrEqual',
-    bits: SUPPORTED_BITS,
     hasScalar: true,
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
+    returnType: ReturnType.Ebool,
+    tfheSolOrder: 5,
   },
   {
     name: 'lt',
+    leftScalarInvertOp: 'gt',
     precompileName: 'LessThan',
-    bits: SUPPORTED_BITS,
     hasScalar: true,
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
+    returnType: ReturnType.Ebool,
+    tfheSolOrder: 6,
   },
   {
     name: 'min',
     precompileName: 'Min',
-    bits: SUPPORTED_BITS,
     hasScalar: true,
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
+    returnType: ReturnType.Uint,
+    tfheSolOrder: 15,
   },
   {
     name: 'max',
     precompileName: 'Max',
-    bits: SUPPORTED_BITS,
     hasScalar: true,
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
+    returnType: ReturnType.Uint,
+    tfheSolOrder: 16,
   },
   {
     name: 'neg',
     precompileName: 'Negate',
-    bits: SUPPORTED_BITS,
     hasScalar: true,
     hasEncrypted: true,
     arguments: OperatorArguments.Unary,
+    returnType: ReturnType.Uint,
+    tfheSolOrder: 18,
   },
   {
     name: 'not',
     precompileName: 'Not',
-    bits: SUPPORTED_BITS,
     hasScalar: true,
     hasEncrypted: true,
     arguments: OperatorArguments.Unary,
+    returnType: ReturnType.Uint,
+    tfheSolOrder: 19,
   },
 ];
 
