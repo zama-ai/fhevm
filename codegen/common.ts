@@ -8,7 +8,6 @@ export type Operator = {
   hasEncrypted: boolean;
   arguments: OperatorArguments;
   returnType: ReturnType;
-  tfheSolOrder: number;
 };
 
 export type Precompile = {
@@ -66,7 +65,6 @@ export const ALL_OPERATORS: Operator[] = [
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
     returnType: ReturnType.Uint,
-    tfheSolOrder: 7,
   },
   {
     name: 'sub',
@@ -75,7 +73,6 @@ export const ALL_OPERATORS: Operator[] = [
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
     returnType: ReturnType.Uint,
-    tfheSolOrder: 8,
   },
   {
     name: 'mul',
@@ -84,7 +81,6 @@ export const ALL_OPERATORS: Operator[] = [
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
     returnType: ReturnType.Uint,
-    tfheSolOrder: 9,
   },
   {
     name: 'div',
@@ -93,7 +89,6 @@ export const ALL_OPERATORS: Operator[] = [
     hasEncrypted: false,
     arguments: OperatorArguments.Binary,
     returnType: ReturnType.Uint,
-    tfheSolOrder: 17,
   },
   {
     name: 'and',
@@ -102,7 +97,6 @@ export const ALL_OPERATORS: Operator[] = [
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
     returnType: ReturnType.Uint,
-    tfheSolOrder: 10,
   },
   {
     name: 'or',
@@ -111,7 +105,6 @@ export const ALL_OPERATORS: Operator[] = [
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
     returnType: ReturnType.Uint,
-    tfheSolOrder: 11,
   },
   {
     name: 'xor',
@@ -120,7 +113,6 @@ export const ALL_OPERATORS: Operator[] = [
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
     returnType: ReturnType.Uint,
-    tfheSolOrder: 12,
   },
   {
     name: 'shl',
@@ -129,7 +121,6 @@ export const ALL_OPERATORS: Operator[] = [
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
     returnType: ReturnType.Uint,
-    tfheSolOrder: 13,
   },
   {
     name: 'shr',
@@ -138,7 +129,6 @@ export const ALL_OPERATORS: Operator[] = [
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
     returnType: ReturnType.Uint,
-    tfheSolOrder: 14,
   },
   {
     name: 'eq',
@@ -147,7 +137,6 @@ export const ALL_OPERATORS: Operator[] = [
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
     returnType: ReturnType.Ebool,
-    tfheSolOrder: 1,
   },
   {
     name: 'ne',
@@ -156,7 +145,6 @@ export const ALL_OPERATORS: Operator[] = [
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
     returnType: ReturnType.Ebool,
-    tfheSolOrder: 2,
   },
   {
     name: 'ge',
@@ -166,7 +154,6 @@ export const ALL_OPERATORS: Operator[] = [
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
     returnType: ReturnType.Ebool,
-    tfheSolOrder: 3,
   },
   {
     name: 'gt',
@@ -176,7 +163,6 @@ export const ALL_OPERATORS: Operator[] = [
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
     returnType: ReturnType.Ebool,
-    tfheSolOrder: 4,
   },
   {
     name: 'le',
@@ -186,7 +172,6 @@ export const ALL_OPERATORS: Operator[] = [
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
     returnType: ReturnType.Ebool,
-    tfheSolOrder: 5,
   },
   {
     name: 'lt',
@@ -196,7 +181,6 @@ export const ALL_OPERATORS: Operator[] = [
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
     returnType: ReturnType.Ebool,
-    tfheSolOrder: 6,
   },
   {
     name: 'min',
@@ -205,7 +189,6 @@ export const ALL_OPERATORS: Operator[] = [
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
     returnType: ReturnType.Uint,
-    tfheSolOrder: 15,
   },
   {
     name: 'max',
@@ -214,7 +197,6 @@ export const ALL_OPERATORS: Operator[] = [
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
     returnType: ReturnType.Uint,
-    tfheSolOrder: 16,
   },
   {
     name: 'neg',
@@ -223,7 +205,6 @@ export const ALL_OPERATORS: Operator[] = [
     hasEncrypted: true,
     arguments: OperatorArguments.Unary,
     returnType: ReturnType.Uint,
-    tfheSolOrder: 18,
   },
   {
     name: 'not',
@@ -232,7 +213,6 @@ export const ALL_OPERATORS: Operator[] = [
     hasEncrypted: true,
     arguments: OperatorArguments.Unary,
     returnType: ReturnType.Uint,
-    tfheSolOrder: 19,
   },
 ];
 

@@ -123,28 +123,11 @@ library TFHE {
 `);
   });
 
-  // TODO: remove sorting tricks once diff is established
-  // this is only done for legacy diffing with original codegen.py
-  const operatorsSorted: Operator[] = Object.assign([], operators);
-  operatorsSorted.sort((a, b) => a.tfheSolOrder - b.tfheSolOrder);
-  const operatorsSorted2: Operator[] = Object.assign([], operators);
-  operatorsSorted2.sort((a, b) => {
-    return opOrderBoost(a) - opOrderBoost(b);
-  });
-  const operatorsSorted3: Operator[] = Object.assign([], operators);
-  operatorsSorted3.sort((a, b) => {
-    return opOrderBoost2(a) - opOrderBoost2(b);
-  });
-
   supportedBits.forEach((lhsBits) => {
     supportedBits.forEach((rhsBits) => {
-      var ops = operatorsSorted;
-      if (rhsBits > lhsBits || rhsBits < lhsBits) {
-        ops = operatorsSorted2;
-      }
-      ops.forEach((operator) => res.push(tfheEncryptedOperator(lhsBits, rhsBits, operator)));
+      operators.forEach((operator) => res.push(tfheEncryptedOperator(lhsBits, rhsBits, operator)));
     });
-    operatorsSorted3.forEach((operator) => res.push(tfheScalarOperator(lhsBits, lhsBits, operator)));
+    operators.forEach((operator) => res.push(tfheScalarOperator(lhsBits, lhsBits, operator)));
   });
 
   // TODO: Decide whether we want to have mixed-inputs for CMUX
@@ -202,26 +185,7 @@ function tfheEncryptedOperator(lhsBits: number, rhsBits: number, operator: Opera
     }
 `);
 
-  // also print scalars if supported
-
   return res.join('');
-}
-
-// TODO: delete after function order no longer important
-function opOrderBoost(op: Operator): number {
-  var num = op.tfheSolOrder;
-  if ((op.name.length == 2 && op.name != 'or') || op.name == 'min' || op.name == 'max') {
-    num += 20;
-  }
-  return num;
-}
-
-function opOrderBoost2(op: Operator): number {
-  var num = op.tfheSolOrder;
-  if (op.name == 'shr') {
-    num -= 20;
-  }
-  return num;
 }
 
 function tfheScalarOperator(lhsBits: number, rhsBits: number, operator: Operator): string {
