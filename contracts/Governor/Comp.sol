@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: BSD-3-Clause
 pragma solidity >=0.8.13 <0.9.0;
 
+import "../../abstracts/EIP712WithModifier.sol";
+
 import "../../lib/TFHE.sol";
 
-contract Comp {
+contract Comp is EIP712WithModifier {
     /// @notice EIP-20 token name for this token
     string public constant name = "Compound";
 
@@ -70,7 +72,7 @@ contract Comp {
      * @notice Construct a new Comp token
      * @param account The initial account to grant all the tokens
      */
-    constructor(address account) {
+    constructor(address account) EIP712WithModifier("Authorization token", "1") {
         contractOwner = account;
     }
 
@@ -98,8 +100,22 @@ contract Comp {
      * @notice Get the number of tokens held by the `account`
      * @return reencrypted The number of tokens held
      */
-    function balanceOf() public view returns (bytes memory reencrypted) {
-        return TFHE.reencrypt(balances[msg.sender], 0);
+    function balanceOf(
+        bytes32 publicKey,
+        bytes calldata signature
+    ) public view onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
+        return TFHE.reencrypt(balances[msg.sender], publicKey, 0);
+    }
+
+    /**
+     * @notice Get the number of tokens
+     * @return reencrypted The number of tokens
+     */
+    function getTotalSupply(
+        bytes32 publicKey,
+        bytes calldata signature
+    ) public view onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
+        return TFHE.reencrypt(totalSupply, publicKey, 0);
     }
 
     /**
@@ -139,22 +155,18 @@ contract Comp {
      * @notice Transfer `amount` tokens from `msg.sender` to `dst`
      * @param to The address of the destination account
      * @param encryptedAmount The number of tokens to transfer
-     * @return bool Whether or not the transfer succeeded
      */
-    function transfer(address to, bytes calldata encryptedAmount) public returns (bool) {
+    function transfer(address to, bytes calldata encryptedAmount) public {
         transfer(to, TFHE.asEuint32(encryptedAmount));
-        return true;
     }
 
     /**
      * @notice Transfer `amount` tokens from `msg.sender` to `dst`
      * @param to The address of the destination account
      * @param amount The number of tokens to transfer
-     * @return bool Whether or not the transfer succeeded
      */
-    function transfer(address to, euint32 amount) public returns (bool) {
+    function transfer(address to, euint32 amount) public {
         _transfer(msg.sender, to, amount);
-        return true;
     }
 
     /**
