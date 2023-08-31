@@ -151,7 +151,12 @@ contract GovernorZama {
         bytes[] memory calldatas,
         string memory description
     ) public returns (uint) {
-        TFHE.req(TFHE.le(uint32(proposalThreshold()), comp.getPriorVotes(msg.sender, sub256(block.number, 1))));
+        require(
+            TFHE.decrypt(
+                TFHE.lt(comp.getPriorVotes(msg.sender, sub256(block.number, 1)), TFHE.asEuint32(proposalThreshold()))
+            ),
+            "GovernorAlpha::propose: proposer votes below proposal threshold"
+        );
         // require(
         //     comp.getPriorVotes(msg.sender, sub256(block.number, 1)) >
         //         proposalThreshold(),
@@ -265,12 +270,12 @@ contract GovernorZama {
         Proposal storage proposal = proposals[proposalId];
 
         ebool proposerAboveThreshold = TFHE.le(
-            uint32(proposalThreshold()),
+            TFHE.asEuint32(proposalThreshold()),
             comp.getPriorVotes(proposal.proposer, sub256(block.number, 1))
         );
         euint8 isGuardian = TFHE.asEuint8(msg.sender == guardian ? 1 : 0);
 
-        TFHE.req(TFHE.asEbool(TFHE.or(TFHE.asEuint8(proposerAboveThreshold), isGuardian)));
+        require(TFHE.decrypt(TFHE.asEbool(TFHE.or(TFHE.asEuint8(proposerAboveThreshold), isGuardian))));
 
         // require(
         //     msg.sender == guardian ||

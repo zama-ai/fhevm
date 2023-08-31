@@ -24,19 +24,19 @@ describe('GovernorZama', function () {
 
   it('should propose a vote', async function () {
     await this.comp.delegate(this.signers.alice.address);
-    // const callDatas = [ethers.AbiCoder.defaultAbiCoder().encode(['address'], [this.signers.alice.address])];
-    // const tx = await this.governor.propose(
-    //   [this.signers.alice],
-    //   ['0'],
-    //   ['getBalanceOf(address)'],
-    //   callDatas,
-    //   'do nothing',
-    // );
-    // await tx.wait();
-    // const proposalId = await this.governor.latestProposalIds(this.signers.alice.address);
-    // const proposals = await this.governor.proposals(proposalId);
-    // console.log(proposalId);
-    // console.log(proposals);
-    // expect(proposalId).to.equal(0);
+    const callDatas = [ethers.AbiCoder.defaultAbiCoder().encode(['address'], [this.signers.alice.address])];
+    const tx = await this.governor.propose(
+      [this.signers.alice],
+      ['0'],
+      ['getBalanceOf(address)'],
+      callDatas,
+      'do nothing',
+    );
+    await tx.wait();
+    const proposalId = await this.governor.latestProposalIds(this.signers.alice.address);
+    const proposals = await this.governor.proposals(proposalId);
+    console.log(proposalId);
+    console.log(proposals);
+    expect(proposalId).to.equal(1);
   });
 });

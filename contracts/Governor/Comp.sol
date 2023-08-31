@@ -16,7 +16,7 @@ contract Comp is EIP712WithModifier {
     uint8 public constant decimals = 18;
 
     /// @notice Total number of tokens in circulation
-    euint32 public totalSupply = euint32.wrap(0);
+    euint32 public totalSupply = TFHE.asEuint32(0);
 
     /// @notice owner address
     address public contractOwner;
@@ -218,22 +218,14 @@ contract Comp is EIP712WithModifier {
         if (srcRep != dstRep) {
             if (srcRep != address(0)) {
                 uint32 srcRepNum = numCheckpoints[srcRep];
-                euint32 srcRepOld = TFHE.cmux(
-                    TFHE.asEbool(TFHE.asEuint8(srcRepNum > 0 ? 1 : 0)),
-                    checkpoints[srcRep][srcRepNum - 1].votes,
-                    TFHE.asEuint32(0)
-                );
+                euint32 srcRepOld = srcRepNum > 0 ? checkpoints[srcRep][srcRepNum - 1].votes : TFHE.asEuint32(0);
                 euint32 srcRepNew = TFHE.sub(srcRepOld, amount);
                 _writeCheckpoint(srcRep, srcRepNum, srcRepOld, srcRepNew);
             }
 
             if (dstRep != address(0)) {
                 uint32 dstRepNum = numCheckpoints[dstRep];
-                euint32 dstRepOld = TFHE.cmux(
-                    TFHE.asEbool(TFHE.asEuint8(dstRepNum > 0 ? 1 : 0)),
-                    checkpoints[dstRep][dstRepNum - 1].votes,
-                    TFHE.asEuint32(0)
-                );
+                euint32 dstRepOld = dstRepNum > 0 ? checkpoints[dstRep][dstRepNum - 1].votes : TFHE.asEuint32(0);
                 euint32 dstRepNew = TFHE.add(dstRepOld, amount);
                 _writeCheckpoint(dstRep, dstRepNum, dstRepOld, dstRepNew);
             }
@@ -290,7 +282,7 @@ contract Comp is EIP712WithModifier {
      */
     function getCurrentVotes(address account) external view onlyAllowedContract returns (euint32) {
         uint32 nCheckpoints = numCheckpoints[account];
-        return nCheckpoints > 0 ? checkpoints[account][nCheckpoints - 1].votes : euint32.wrap(0);
+        return nCheckpoints > 0 ? checkpoints[account][nCheckpoints - 1].votes : TFHE.asEuint32(0);
     }
 
     /**
@@ -305,7 +297,7 @@ contract Comp is EIP712WithModifier {
 
         uint32 nCheckpoints = numCheckpoints[account];
         if (nCheckpoints == 0) {
-            return euint32.wrap(0);
+            return TFHE.asEuint32(0);
         }
 
         // First check most recent balance
@@ -315,7 +307,7 @@ contract Comp is EIP712WithModifier {
 
         // Next check implicit zero balance
         if (checkpoints[account][0].fromBlock > blockNumber) {
-            return euint32.wrap(0);
+            return TFHE.asEuint32(0);
         }
 
         uint32 lower = 0;
