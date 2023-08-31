@@ -1,6 +1,6 @@
 import { ethers } from 'hardhat';
 
-import type { TFHETestSuite } from '../../types/contracts/TFHETestSuite';
+import type { TFHETestSuite } from '../../types';
 
 export async function deployTfheTestFixture(): Promise<TFHETestSuite> {
   const signers = await ethers.getSigners();

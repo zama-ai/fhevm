@@ -2,7 +2,8 @@ import { Signer } from 'ethers';
 import fhevmjs, { FhevmInstance } from 'fhevmjs';
 import { ethers as hethers } from 'hardhat';
 
-import { FhevmInstances, Signers } from './types';
+import type { Signers } from './signers';
+import { FhevmInstances } from './types';
 
 let publicKey: string;
 let chainId: number;

@@ -1,7 +1,7 @@
-import type { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/dist/src/signer-with-address';
 import type { FhevmInstance } from 'fhevmjs';
 
-import type { EncryptedERC20 } from '../types/contracts/EncryptedERC20';
+import { EncryptedERC20 } from '../types';
+import type { Signers } from './signers';
 
 declare module 'mocha' {
   export interface Context {
@@ -10,13 +10,6 @@ declare module 'mocha' {
     instances: FhevmInstances;
     erc20: EncryptedERC20;
   }
-}
-
-export interface Signers {
-  alice: SignerWithAddress;
-  bob: SignerWithAddress;
-  carol: SignerWithAddress;
-  dave: SignerWithAddress;
 }
 
 export interface FhevmInstances {
