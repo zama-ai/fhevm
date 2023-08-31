@@ -1,6 +1,6 @@
 import { ethers } from 'hardhat';
 
-import type { Comp } from '../../types/contracts/Governor/Comp';
+import type { Comp } from '../../types';
 import { getSigners } from '../signers';
 
 export async function deployCompFixture(): Promise<Comp> {
