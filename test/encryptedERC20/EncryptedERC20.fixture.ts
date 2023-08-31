@@ -1,13 +1,13 @@
 import { ethers } from 'hardhat';
 
-import type { EncryptedERC20 } from '../../types/contracts/EncryptedERC20';
+import type { EncryptedERC20 } from '../../types';
+import { getSigners } from '../signers';
 
 export async function deployEncryptedERC20Fixture(): Promise<EncryptedERC20> {
-  const signers = await ethers.getSigners();
-  const admin = signers[0];
+  const signers = await getSigners();
 
   const contractFactory = await ethers.getContractFactory('EncryptedERC20');
-  const contract = await contractFactory.connect(admin).deploy();
+  const contract = await contractFactory.connect(signers.alice).deploy();
   await contract.waitForDeployment();
 
   return contract;
