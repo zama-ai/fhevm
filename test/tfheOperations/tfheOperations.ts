@@ -4,7 +4,7 @@ import { ethers } from 'hardhat';
 import type { TFHETestSuite1 } from '../../types/contracts/tests/TFHETestSuite1';
 import type { TFHETestSuite2 } from '../../types/contracts/tests/TFHETestSuite2';
 import { createInstances } from '../instance';
-import type { Signers } from '../types';
+import { getSigners } from '../signers';
 
 async function deployTfheTestFixture1(): Promise<TFHETestSuite1> {
   const signers = await ethers.getSigners();
@@ -30,12 +30,7 @@ async function deployTfheTestFixture2(): Promise<TFHETestSuite2> {
 
 describe('TFHE operations', function () {
   before(async function () {
-    this.signers = {} as Signers;
-    const signers = await ethers.getSigners();
-    this.signers.alice = signers[0];
-    this.signers.bob = signers[1];
-    this.signers.carol = signers[2];
-    this.signers.dave = signers[3];
+    this.signers = await getSigners();
 
     const contract1 = await deployTfheTestFixture1();
     this.contract1Address = await contract1.getAddress();

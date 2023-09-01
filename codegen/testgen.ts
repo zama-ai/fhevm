@@ -64,7 +64,7 @@ export function generateTestCode(shards: OverloadShard[]): string {
     import { expect } from 'chai';
     import { ethers } from 'hardhat';
     import { createInstances } from '../instance';
-    import type { Signers } from '../types';
+    import { getSigners } from '../signers';
 
   `);
 
@@ -92,12 +92,7 @@ async function deployTfheTestFixture${os.shardNumber}(): Promise<TFHETestSuite${
   res.push(`
     describe('TFHE operations', function () {
         before(async function () {
-            this.signers = {} as Signers;
-            const signers = await ethers.getSigners();
-            this.signers.alice = signers[0];
-            this.signers.bob = signers[1];
-            this.signers.carol = signers[2];
-            this.signers.dave = signers[3];
+            this.signers = await getSigners();
 
   `);
 
