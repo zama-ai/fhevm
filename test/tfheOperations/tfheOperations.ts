@@ -1,8 +1,8 @@
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
-import type { TFHETestSuite1 } from '../../types/contracts/TFHETestSuite1';
-import type { TFHETestSuite2 } from '../../types/contracts/TFHETestSuite2';
+import type { TFHETestSuite1 } from '../../types/contracts/tests/TFHETestSuite1';
+import type { TFHETestSuite2 } from '../../types/contracts/tests/TFHETestSuite2';
 import { createInstances } from '../instance';
 import type { Signers } from '../types';
 

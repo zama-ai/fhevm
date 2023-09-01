@@ -239,8 +239,8 @@ function tfheScalarOperator(
     // workaround until tfhe-rs left scalar support:
     // do the trivial encryption and preserve order of operations
     scalarFlag = ', false';
-    maybeEncryptLeft = `euint${outputBits} a_enc = asEuint${outputBits}(a);`;
-    implExpressionB = `Impl.${leftOpName}(euint${outputBits}.unwrap(a_enc), euint${outputBits}.unwrap(b)${scalarFlag})`;
+    maybeEncryptLeft = `euint${outputBits} aEnc = asEuint${outputBits}(a);`;
+    implExpressionB = `Impl.${leftOpName}(euint${outputBits}.unwrap(aEnc), euint${outputBits}.unwrap(b)${scalarFlag})`;
   }
   if (boolCastNeeded) {
     implExpressionA = `Impl.cast(${implExpressionA}, Common.ebool_t)`;

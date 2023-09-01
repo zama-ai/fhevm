@@ -70,7 +70,7 @@ export function generateTestCode(shards: OverloadShard[]): string {
 
   shards.forEach((os) => {
     res.push(`
-    import type { TFHETestSuite${os.shardNumber} } from '../../types/contracts/TFHETestSuite${os.shardNumber}';
+    import type { TFHETestSuite${os.shardNumber} } from '../../types/contracts/tests/TFHETestSuite${os.shardNumber}';
     `);
   });
 
@@ -184,7 +184,7 @@ export function generateSmartContract(os: OverloadShard): string {
         // SPDX-License-Identifier: BSD-3-Clause-Clear
         pragma solidity >=0.8.13 <0.8.20;
 
-        import "../lib/TFHE.sol";
+        import "../../lib/TFHE.sol";
         contract TFHETestSuite${os.shardNumber} {
     `);
 
@@ -199,7 +199,7 @@ export function generateSmartContract(os: OverloadShard): string {
     var argName = 97; // letter 'a' in ascii
     o.arguments.forEach((a) => {
       const arg = String.fromCharCode(argName);
-      const argProc = `${arg}_proc`;
+      const argProc = `${arg}Proc`;
       procArgs.push(argProc);
       res.push(`${functionTypeToString(a)} ${argProc} = ${castExpressionToType(arg, a)};`);
       res.push('\n');

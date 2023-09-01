@@ -1,4 +1,4 @@
-import { writeFileSync } from 'fs';
+import { mkdirSync, writeFileSync } from 'fs';
 
 import { ALL_OPERATORS, ALL_PRECOMPILES, SUPPORTED_BITS, checks } from './common';
 import * as t from './templates';
@@ -13,8 +13,9 @@ function generateAllFiles() {
   writeFileSync('lib/Precompiles.sol', t.precompiles(ALL_PRECOMPILES));
   writeFileSync('lib/Impl.sol', t.implSol(operators));
   writeFileSync('lib/TFHE.sol', tfheSolSource);
+  mkdirSync('contracts/tests', { recursive: true });
   ovShards.forEach((os) => {
-    writeFileSync(`contracts/TFHETestSuite${os.shardNumber}.sol`, testgen.generateSmartContract(os));
+    writeFileSync(`contracts/tests/TFHETestSuite${os.shardNumber}.sol`, testgen.generateSmartContract(os));
   });
   writeFileSync('test/tfheOperations/tfheOperations.ts', testgen.generateTestCode(ovShards));
 }

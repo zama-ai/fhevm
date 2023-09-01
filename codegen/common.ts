@@ -2,18 +2,14 @@ import { strict as assert } from 'node:assert';
 
 export type Operator = {
   name: string;
-  // express left scalar operation
-  // as different operation with arguments
-  // swapped
+  // express left scalar operation as different operation with arguments swapped
   leftScalarInvertOp?: string;
   precompileName: string;
   hasScalar: boolean;
   hasEncrypted: boolean;
   arguments: OperatorArguments;
   returnType: ReturnType;
-  // if true do trivial encryption
-  // for left scalar operand, this is workaround
-  // until tfhe-rs supports left scalar operands
+  // if true do trivial encryption for left scalar operand, this is workaround until tfhe-rs supports left scalar operands
   leftScalarEncrypt?: boolean;
   // disable left scalar operator
   leftScalarDisable?: boolean;

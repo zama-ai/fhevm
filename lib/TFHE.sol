@@ -579,11 +579,11 @@ library TFHE {
 
     // Evaluate sub(a, b) and return the result.
     function sub(uint8 a, euint8 b) internal view returns (euint8) {
-        euint8 a_enc = asEuint8(a);
+        euint8 aEnc = asEuint8(a);
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return euint8.wrap(Impl.sub(euint8.unwrap(a_enc), euint8.unwrap(b), false));
+        return euint8.wrap(Impl.sub(euint8.unwrap(aEnc), euint8.unwrap(b), false));
     }
 
     // Evaluate mul(a, b) and return the result.
@@ -620,11 +620,11 @@ library TFHE {
 
     // Evaluate shl(a, b) and return the result.
     function shl(uint8 a, euint8 b) internal view returns (euint8) {
-        euint8 a_enc = asEuint8(a);
+        euint8 aEnc = asEuint8(a);
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return euint8.wrap(Impl.shl(euint8.unwrap(a_enc), euint8.unwrap(b), false));
+        return euint8.wrap(Impl.shl(euint8.unwrap(aEnc), euint8.unwrap(b), false));
     }
 
     // Evaluate shr(a, b) and return the result.
@@ -637,11 +637,11 @@ library TFHE {
 
     // Evaluate shr(a, b) and return the result.
     function shr(uint8 a, euint8 b) internal view returns (euint8) {
-        euint8 a_enc = asEuint8(a);
+        euint8 aEnc = asEuint8(a);
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return euint8.wrap(Impl.shr(euint8.unwrap(a_enc), euint8.unwrap(b), false));
+        return euint8.wrap(Impl.shr(euint8.unwrap(aEnc), euint8.unwrap(b), false));
     }
 
     // Evaluate eq(a, b) and return the result.
@@ -1326,11 +1326,11 @@ library TFHE {
 
     // Evaluate sub(a, b) and return the result.
     function sub(uint16 a, euint16 b) internal view returns (euint16) {
-        euint16 a_enc = asEuint16(a);
+        euint16 aEnc = asEuint16(a);
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return euint16.wrap(Impl.sub(euint16.unwrap(a_enc), euint16.unwrap(b), false));
+        return euint16.wrap(Impl.sub(euint16.unwrap(aEnc), euint16.unwrap(b), false));
     }
 
     // Evaluate mul(a, b) and return the result.
@@ -1367,11 +1367,11 @@ library TFHE {
 
     // Evaluate shl(a, b) and return the result.
     function shl(uint16 a, euint16 b) internal view returns (euint16) {
-        euint16 a_enc = asEuint16(a);
+        euint16 aEnc = asEuint16(a);
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return euint16.wrap(Impl.shl(euint16.unwrap(a_enc), euint16.unwrap(b), false));
+        return euint16.wrap(Impl.shl(euint16.unwrap(aEnc), euint16.unwrap(b), false));
     }
 
     // Evaluate shr(a, b) and return the result.
@@ -1384,11 +1384,11 @@ library TFHE {
 
     // Evaluate shr(a, b) and return the result.
     function shr(uint16 a, euint16 b) internal view returns (euint16) {
-        euint16 a_enc = asEuint16(a);
+        euint16 aEnc = asEuint16(a);
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return euint16.wrap(Impl.shr(euint16.unwrap(a_enc), euint16.unwrap(b), false));
+        return euint16.wrap(Impl.shr(euint16.unwrap(aEnc), euint16.unwrap(b), false));
     }
 
     // Evaluate eq(a, b) and return the result.
@@ -2073,11 +2073,11 @@ library TFHE {
 
     // Evaluate sub(a, b) and return the result.
     function sub(uint32 a, euint32 b) internal view returns (euint32) {
-        euint32 a_enc = asEuint32(a);
+        euint32 aEnc = asEuint32(a);
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return euint32.wrap(Impl.sub(euint32.unwrap(a_enc), euint32.unwrap(b), false));
+        return euint32.wrap(Impl.sub(euint32.unwrap(aEnc), euint32.unwrap(b), false));
     }
 
     // Evaluate mul(a, b) and return the result.
@@ -2114,11 +2114,11 @@ library TFHE {
 
     // Evaluate shl(a, b) and return the result.
     function shl(uint32 a, euint32 b) internal view returns (euint32) {
-        euint32 a_enc = asEuint32(a);
+        euint32 aEnc = asEuint32(a);
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return euint32.wrap(Impl.shl(euint32.unwrap(a_enc), euint32.unwrap(b), false));
+        return euint32.wrap(Impl.shl(euint32.unwrap(aEnc), euint32.unwrap(b), false));
     }
 
     // Evaluate shr(a, b) and return the result.
@@ -2131,11 +2131,11 @@ library TFHE {
 
     // Evaluate shr(a, b) and return the result.
     function shr(uint32 a, euint32 b) internal view returns (euint32) {
-        euint32 a_enc = asEuint32(a);
+        euint32 aEnc = asEuint32(a);
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return euint32.wrap(Impl.shr(euint32.unwrap(a_enc), euint32.unwrap(b), false));
+        return euint32.wrap(Impl.shr(euint32.unwrap(aEnc), euint32.unwrap(b), false));
     }
 
     // Evaluate eq(a, b) and return the result.
