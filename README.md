@@ -49,13 +49,29 @@ npm install
 
 Note: Solidity files are formatted with prettier.
 
-### Generate TFHE lib
+### Generate TFHE lib and tests
 
 ```
 npm run codegen
 ```
 
 WARNING: Use this command to generate Solidity code and prettier result automatically!
+
+Files that are generated now (can be seen inside `codegen/main.ts`)
+
+```
+lib/Common.sol
+lib/Precompiles.sol
+lib/Impl.sol
+lib/TFHE.sol
+contracts/tests/TFHETestSuiteX.sol
+test/tfheOperations/tfheOperations.ts
+```
+
+### Adding new operators
+
+Operators can be defined as data inside `codegen/common.ts` file and code automatically generates solidity overloads.
+Test for overloads must be added (or the build doesn't pass) inside `codegen/overloadsTests.ts` file.
 
 ### Test
 

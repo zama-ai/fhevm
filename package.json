@@ -20,7 +20,7 @@
     "typechain": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat typechain",
     "codegen": "cd ./lib && npx ts-node codegen/main.ts && npm run prettier && cd ..",
     "task:getEthereumAddress": "hardhat task:getEthereumAddress",
-    "fhevm:start": "docker run -i -p 8545:8545 --rm --name fhevm ghcr.io/zama-ai/evmos-dev-node:v0.1.7",
+    "fhevm:start": "docker run -i -p 8545:8545 --rm --name fhevm ghcr.io/zama-ai/evmos-dev-node:v0.1.8",
     "fhevm:stop": "docker rm -f fhevm",
     "fhevm:restart": "fhevm:stop && fhevm:start",
     "fhevm:faucet": "docker exec -i fhevm faucet $(npx hardhat task:getEthereumAddress)"

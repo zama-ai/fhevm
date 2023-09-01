@@ -1,6 +1,7 @@
 import { assert } from 'console';
 
 import { Operator, OperatorArguments, Precompile, ReturnType } from './common';
+import { ArgumentType, OverloadSignature } from './testgen';
 
 export function commonSolHeader(): string {
   return `
@@ -97,7 +98,8 @@ library Impl {
   return res.join('');
 }
 
-export function tfheSol(operators: Operator[], supportedBits: number[]): string {
+export function tfheSol(operators: Operator[], supportedBits: number[]): [string, OverloadSignature[]] {
+  const signatures: OverloadSignature[] = [];
   const res: string[] = [];
 
   res.push(`// SPDX-License-Identifier: BSD-3-Clause-Clear
@@ -125,9 +127,9 @@ library TFHE {
 
   supportedBits.forEach((lhsBits) => {
     supportedBits.forEach((rhsBits) => {
-      operators.forEach((operator) => res.push(tfheEncryptedOperator(lhsBits, rhsBits, operator)));
+      operators.forEach((operator) => res.push(tfheEncryptedOperator(lhsBits, rhsBits, operator, signatures)));
     });
-    operators.forEach((operator) => res.push(tfheScalarOperator(lhsBits, lhsBits, operator)));
+    operators.forEach((operator) => res.push(tfheScalarOperator(lhsBits, lhsBits, operator, signatures)));
   });
 
   // TODO: Decide whether we want to have mixed-inputs for CMUX
@@ -144,10 +146,15 @@ library TFHE {
 
   res.push('}\n');
 
-  return res.join('');
+  return [res.join(''), signatures];
 }
 
-function tfheEncryptedOperator(lhsBits: number, rhsBits: number, operator: Operator): string {
+function tfheEncryptedOperator(
+  lhsBits: number,
+  rhsBits: number,
+  operator: Operator,
+  signatures: OverloadSignature[],
+): string {
   if (!operator.hasEncrypted || operator.arguments != OperatorArguments.Binary) {
     return '';
   }
@@ -164,6 +171,8 @@ function tfheEncryptedOperator(lhsBits: number, rhsBits: number, operator: Opera
       : operator.returnType == ReturnType.Ebool
       ? `ebool`
       : assert(false, 'Unknown return type');
+  const returnTypeOverload: ArgumentType =
+    operator.returnType == ReturnType.Uint ? ArgumentType.EUint : ArgumentType.Ebool;
   const scalarFlag = operator.hasEncrypted && operator.hasScalar ? ', false' : '';
 
   const leftExpr = castLeftToRight ? `asEuint${outputBits}(a)` : 'a';
@@ -172,6 +181,14 @@ function tfheEncryptedOperator(lhsBits: number, rhsBits: number, operator: Opera
   if (boolCastNeeded) {
     implExpression = `Impl.cast(${implExpression}, Common.ebool_t)`;
   }
+  signatures.push({
+    name: operator.name,
+    arguments: [
+      { type: ArgumentType.EUint, bits: lhsBits },
+      { type: ArgumentType.EUint, bits: rhsBits },
+    ],
+    returnType: { type: returnTypeOverload, bits: outputBits },
+  });
   res.push(`
     // Evaluate ${operator.name}(a, b) and return the result.
     function ${operator.name}(euint${lhsBits} a, euint${rhsBits} b) internal view returns (${returnType}) {
@@ -188,7 +205,12 @@ function tfheEncryptedOperator(lhsBits: number, rhsBits: number, operator: Opera
   return res.join('');
 }
 
-function tfheScalarOperator(lhsBits: number, rhsBits: number, operator: Operator): string {
+function tfheScalarOperator(
+  lhsBits: number,
+  rhsBits: number,
+  operator: Operator,
+  signatures: OverloadSignature[],
+): string {
   if (operator.arguments != OperatorArguments.Binary) {
     return '';
   }
@@ -207,17 +229,34 @@ function tfheScalarOperator(lhsBits: number, rhsBits: number, operator: Operator
       : operator.returnType == ReturnType.Ebool
       ? `ebool`
       : assert(false, 'Unknown return type');
-  const scalarFlag = operator.hasEncrypted && operator.hasScalar ? ', true' : '';
+  const returnTypeOverload = operator.returnType == ReturnType.Uint ? ArgumentType.EUint : ArgumentType.Ebool;
+  var scalarFlag = operator.hasEncrypted && operator.hasScalar ? ', true' : '';
+  const leftOpName = operator.leftScalarInvertOp ?? operator.name;
   var implExpressionA = `Impl.${operator.name}(euint${outputBits}.unwrap(a), uint256(b)${scalarFlag})`;
-  var implExpressionB = `Impl.${operator.name}(euint${outputBits}.unwrap(b), uint256(a)${scalarFlag})`;
-  if (operator.leftScalarInvertOp) {
-    implExpressionB = `Impl.${operator.leftScalarInvertOp}(euint${outputBits}.unwrap(b), uint256(a)${scalarFlag})`;
+  var implExpressionB = `Impl.${leftOpName}(euint${outputBits}.unwrap(b), uint256(a)${scalarFlag})`;
+  var maybeEncryptLeft = '';
+  if (operator.leftScalarEncrypt) {
+    // workaround until tfhe-rs left scalar support:
+    // do the trivial encryption and preserve order of operations
+    scalarFlag = ', false';
+    maybeEncryptLeft = `euint${outputBits} aEnc = asEuint${outputBits}(a);`;
+    implExpressionB = `Impl.${leftOpName}(euint${outputBits}.unwrap(aEnc), euint${outputBits}.unwrap(b)${scalarFlag})`;
   }
   if (boolCastNeeded) {
     implExpressionA = `Impl.cast(${implExpressionA}, Common.ebool_t)`;
     implExpressionB = `Impl.cast(${implExpressionB}, Common.ebool_t)`;
   }
 
+  signatures.push({
+    name: operator.name,
+    arguments: [
+      { type: ArgumentType.EUint, bits: lhsBits },
+      { type: ArgumentType.Uint, bits: rhsBits },
+    ],
+    returnType: { type: returnTypeOverload, bits: outputBits },
+  });
+
+  // rhs scalar
   res.push(`
     // Evaluate ${operator.name}(a, b) and return the result.
     function ${operator.name}(euint${lhsBits} a, uint${rhsBits} b) internal view returns (${returnType}) {
@@ -226,15 +265,31 @@ function tfheScalarOperator(lhsBits: number, rhsBits: number, operator: Operator
         }
         return ${returnType}.wrap(${implExpressionA});
     }
+`);
+
+  // lhs scalar
+  if (!operator.leftScalarDisable) {
+    signatures.push({
+      name: operator.name,
+      arguments: [
+        { type: ArgumentType.Uint, bits: rhsBits },
+        { type: ArgumentType.EUint, bits: lhsBits },
+      ],
+      returnType: { type: returnTypeOverload, bits: outputBits },
+    });
+
+    res.push(`
 
     // Evaluate ${operator.name}(a, b) and return the result.
     function ${operator.name}(uint${lhsBits} a, euint${rhsBits} b) internal view returns (${returnType}) {
+        ${maybeEncryptLeft}
         if (!isInitialized(b)) {
             b = asEuint${rhsBits}(0);
         }
         return ${returnType}.wrap(${implExpressionB});
     }
-`);
+        `);
+  }
 
   return res.join('');
 }
