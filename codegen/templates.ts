@@ -501,6 +501,24 @@ function tfheCustomMethods(): string {
     function fhePubKey() internal view returns (bytes memory) {
         return Impl.fhePubKey();
     }
+
+    // Generates a random encrypted 8-bit unsigned integer.
+    // Important: The random integer is generated in the plain! An FHE-based version is coming soon.
+    function randEuint8() internal view returns (euint8) {
+      return euint8.wrap(Impl.rand(Common.euint8_t));
+    }
+
+    // Generates a random encrypted 16-bit unsigned integer.
+    // Important: The random integer is generated in the plain! An FHE-based version is coming soon.
+    function randEuint16() internal view returns (euint16) {
+      return euint16.wrap(Impl.rand(Common.euint16_t));
+    }
+
+    // Generates a random encrypted 32-bit unsigned integer.
+    // Important: The random integer is generated in the plain! An FHE-based version is coming soon.
+    function randEuint32() internal view returns (euint32) {
+      return euint32.wrap(Impl.rand(Common.euint32_t));
+    }
 `;
 }
 
@@ -704,6 +722,24 @@ function implCustomMethods(): string {
         }
         // The output is a 32-byte buffer of a 256-bit big-endian unsigned integer.
         result = uint256(output[0]);
+    }
+
+    function rand(uint8 randType) internal view returns(uint256 result) {
+      bytes32[1] memory input;
+      input[0] = bytes1(randType);
+      uint256 inputLen = 1;
+
+      bytes32[1] memory output;
+      uint256 outputLen = 32;
+
+      // Call the rand precompile.
+      uint256 precompile = Precompiles.Rand;
+      assembly {
+          if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
+              revert(0, 0)
+          }
+      }
+      result = uint256(output[0]);
     }
     `;
 }

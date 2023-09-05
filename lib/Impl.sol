@@ -598,4 +598,22 @@ library Impl {
         // The output is a 32-byte buffer of a 256-bit big-endian unsigned integer.
         result = uint256(output[0]);
     }
+
+    function rand(uint8 randType) internal view returns (uint256 result) {
+        bytes32[1] memory input;
+        input[0] = bytes1(randType);
+        uint256 inputLen = 1;
+
+        bytes32[1] memory output;
+        uint256 outputLen = 32;
+
+        // Call the rand precompile.
+        uint256 precompile = Precompiles.Rand;
+        assembly {
+            if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
+                revert(0, 0)
+            }
+        }
+        result = uint256(output[0]);
+    }
 }

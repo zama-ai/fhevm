@@ -41,6 +41,7 @@ export const ALL_PRECOMPILES: Precompile[] = [
   { name: 'Subtract', code: 71 },
   { name: 'Multiply', code: 72 },
   { name: 'LessThan', code: 73 },
+  { name: 'Rand', code: 74 },
   { name: 'OptimisticRequire', code: 75 },
   { name: 'Cast', code: 76 },
   { name: 'TrivialEncrypt', code: 77 },
