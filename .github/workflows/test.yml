@@ -27,5 +27,8 @@ jobs:
           tail -f fhevm.log | sed '/Starting JSON WebSocket server/ q'
 
           npm run fhevm:faucet
+          npm run fhevm:faucetBob
+          sleep 10
+          npm run fhevm:faucetCarol
           npm test
           npm run fhevm:stop || true
