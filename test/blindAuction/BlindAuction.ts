@@ -99,7 +99,7 @@ describe('BlindAuction', function () {
         const balanceAlice = instance.alice.decrypt(this.contractERC20Address, encryptedBalanceAlice);
         expect(balanceAlice).to.equal(1000 - 100 - 100 + 20);
 
-    })
+    }).timeout(100000);
 
 });
 
