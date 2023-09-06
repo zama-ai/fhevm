@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause
-pragma solidity ^0.8.10;
+pragma solidity ^0.8.19;
 
 import "../../lib/TFHE.sol";
 
@@ -14,23 +14,23 @@ contract GovernorZama {
     } // 400,000 = 4% of Comp
 
     /// @notice The number of votes required in order for a voter to become a proposer
-    function proposalThreshold() public pure returns (uint) {
+    function proposalThreshold() public pure returns (uint32) {
         return 3;
         // return 100000e18;
     } // 100,000 = 1% of Comp
 
     /// @notice The maximum number of actions that can be included in a proposal
-    function proposalMaxOperations() public pure returns (uint) {
+    function proposalMaxOperations() public pure returns (uint32) {
         return 10;
     } // 10 actions
 
     /// @notice The delay before voting on a proposal may take place, once proposed
-    function votingDelay() public pure returns (uint) {
+    function votingDelay() public pure returns (uint32) {
         return 1;
     } // 1 block
 
     /// @notice The duration of voting on a proposal, in blocks
-    function votingPeriod() public pure virtual returns (uint) {
+    function votingPeriod() public pure virtual returns (uint32) {
         return 17280;
     } // ~3 days in blocks (assuming 15s blocks)
 
@@ -153,15 +153,10 @@ contract GovernorZama {
     ) public returns (uint) {
         require(
             TFHE.decrypt(
-                TFHE.lt(comp.getPriorVotes(msg.sender, sub256(block.number, 1)), TFHE.asEuint32(proposalThreshold()))
+                TFHE.lt(comp.getPriorVotes(msg.sender, block.number - 1), TFHE.asEuint32(proposalThreshold()))
             ),
             "GovernorAlpha::propose: proposer votes below proposal threshold"
         );
-        // require(
-        //     comp.getPriorVotes(msg.sender, sub256(block.number, 1)) >
-        //         proposalThreshold(),
-        //     "GovernorAlpha::propose: proposer votes below proposal threshold"
-        // );
         require(
             targets.length == values.length &&
                 targets.length == signatures.length &&

@@ -46,7 +46,7 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
 }
 
 const config: HardhatUserConfig = {
-  defaultNetwork: 'zama',
+  defaultNetwork: 'local',
   namedAccounts: {
     deployer: 0,
   },
@@ -67,7 +67,7 @@ const config: HardhatUserConfig = {
     tests: './test',
   },
   solidity: {
-    version: '0.8.17',
+    version: '0.8.19',
     settings: {
       metadata: {
         // Not including the metadata hash

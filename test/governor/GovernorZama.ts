@@ -19,7 +19,9 @@ describe('GovernorZama', function () {
     this.instances = await createInstances(this.contractAddress, ethers, this.signers);
     const encryptedAmount = this.instances.alice.encrypt32(1000);
     const transaction = await this.comp.initSupply(encryptedAmount);
+    const transaction2 = await this.comp.setAllowedContract(this.contractAddress);
     await transaction.wait();
+    await transaction2.wait();
   });
 
   it('should propose a vote', async function () {
@@ -31,11 +33,12 @@ describe('GovernorZama', function () {
       ['getBalanceOf(address)'],
       callDatas,
       'do nothing',
+      { gasLimit: 1000000 },
     );
-    await tx.wait();
+    const results = await tx.wait();
+    expect(results?.status).to.equal(1);
     const proposalId = await this.governor.latestProposalIds(this.signers.alice.address);
     const proposals = await this.governor.proposals(proposalId);
-    console.log(proposalId);
     console.log(proposals);
     expect(proposalId).to.equal(1);
   });
