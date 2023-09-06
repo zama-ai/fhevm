@@ -580,20 +580,6 @@ library Impl {
         result = uint256(output[0]);
     }
 
-    function req(uint256 ciphertext) internal view {
-        bytes32[1] memory input;
-        input[0] = bytes32(ciphertext);
-        uint256 inputLen = 32;
-
-        // Call the require precompile.
-        uint256 precompile = Precompiles.Require;
-        assembly {
-            if iszero(staticcall(gas(), precompile, input, inputLen, 0, 0)) {
-                revert(0, 0)
-            }
-        }
-    }
-
     function decrypt(uint256 ciphertext) internal view returns (uint256 result) {
         bytes32[1] memory input;
         input[0] = bytes32(ciphertext);

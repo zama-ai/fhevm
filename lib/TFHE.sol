@@ -2483,12 +2483,6 @@ library TFHE {
         return euint32.wrap(Impl.not(euint32.unwrap(value)));
     }
 
-    // Require that the encrypted bool 'b' is true.
-    // Involves decrypting 'b'.
-    function req(ebool b) internal view {
-        Impl.req(ebool.unwrap(b));
-    }
-
     // Optimistically require that 'b' is true.
     //
     // This function does not evaluate 'b' at the time of the call.
@@ -2498,10 +2492,10 @@ library TFHE {
     // gas cost, as if all optimistic requires were true. Yet, the transaction will be
     // reverted at the end if any of the optimisic requires were false.
     //
-    // Exceptions to above rule are encrypted requires via TFHE.req() and decryption via
+    // Exceptions to above rule are reencryptions and decryptions via
     // TFHE.decrypt(). If either of them are encountered and if optimistic requires have been
     // used before in the txn, the optimisic requires will be immediately evaluated. Rationale is
-    // that we want to avoid decrypting a non-optimistic require or a value if the txn is about
+    // that we want to avoid decrypting or reencrypting a value if the txn is about
     // to fail and be reverted anyway at the end. Checking immediately and reverting on the spot
     // would avoid unnecessary decryptions.
     //

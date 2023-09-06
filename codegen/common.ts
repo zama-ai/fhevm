@@ -37,7 +37,6 @@ export const ALL_PRECOMPILES: Precompile[] = [
   { name: 'Verify', code: 66 },
   { name: 'Reencrypt', code: 67 },
   { name: 'FhePubKey', code: 68 },
-  { name: 'Require', code: 69 },
   { name: 'LessThanOrEqual', code: 70 },
   { name: 'Subtract', code: 71 },
   { name: 'Multiply', code: 72 },

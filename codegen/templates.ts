@@ -446,12 +446,6 @@ function unaryOperatorImpl(op: Operator): string {
 
 function tfheCustomMethods(): string {
   return `
-    // Require that the encrypted bool 'b' is true.
-    // Involves decrypting 'b'.
-    function req(ebool b) internal view {
-        Impl.req(ebool.unwrap(b));
-    }
-
     // Optimistically require that 'b' is true.
     //
     // This function does not evaluate 'b' at the time of the call.
@@ -461,10 +455,11 @@ function tfheCustomMethods(): string {
     // gas cost, as if all optimistic requires were true. Yet, the transaction will be
     // reverted at the end if any of the optimisic requires were false.
     //
-    // Exceptions to above rule are encrypted requires via TFHE.req() and decryption via
-    // TFHE.decrypt(). If either of them are encountered and if optimistic requires have been
-    // used before in the txn, the optimisic requires will be immediately evaluated. Rationale is
-    // that we want to avoid decrypting a non-optimistic require or a value if the txn is about
+    // Exceptions to above rule are reencryptions and decryptions via
+    // TFHE.reencrypt() and TFHE.decrypt(), respectively. If either of them
+    // are encountered and if optimistic requires have been used before in the
+    // txn, the optimisic requires will be immediately evaluated. Rationale is
+    // that we want to avoid decrypting or reencrypting a value if the txn is about
     // to fail and be reverted anyway at the end. Checking immediately and reverting on the spot
     // would avoid unnecessary decryptions.
     //
@@ -690,20 +685,6 @@ function implCustomMethods(): string {
             }
         }
         result = uint256(output[0]);
-    }
-
-    function req(uint256 ciphertext) internal view {
-        bytes32[1] memory input;
-        input[0] = bytes32(ciphertext);
-        uint256 inputLen = 32;
-
-        // Call the require precompile.
-        uint256 precompile = Precompiles.Require;
-        assembly {
-            if iszero(staticcall(gas(), precompile, input, inputLen, 0, 0)) {
-                revert(0, 0)
-            }
-        }
     }
 
     function decrypt(uint256 ciphertext) internal view returns(uint256 result) {

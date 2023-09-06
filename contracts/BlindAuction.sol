@@ -118,7 +118,7 @@ contract BlindAuction is EIP712WithModifier {
     // Claim the object. Succeeds only if the caller has the highest bid.
     function claim() public onlyAfterEnd {
         require(!objectClaimed);
-        TFHE.req(TFHE.le(highestBid, bids[msg.sender]));
+        require(TFHE.decrypt(TFHE.le(highestBid, bids[msg.sender])));
 
         objectClaimed = true;
         bids[msg.sender] = TFHE.NIL32;
@@ -137,7 +137,7 @@ contract BlindAuction is EIP712WithModifier {
     function withdraw() public onlyAfterEnd {
         euint32 bidValue = bids[msg.sender];
         if (!objectClaimed) {
-            TFHE.req(TFHE.lt(bidValue, highestBid));
+            require(TFHE.decrypt(TFHE.lt(bidValue, highestBid)));
         }
         tokenContract.transfer(msg.sender, bidValue);
         bids[msg.sender] = TFHE.NIL32;

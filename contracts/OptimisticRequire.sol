@@ -60,10 +60,10 @@ contract OptimisticRequire {
     // Charge less than full gas, because the non-optimistic ciphertext require aborts early.
     function reqFalse() public {
         // True.
-        TFHE.req(TFHE.le(ct1, ct2));
+        require(TFHE.decrypt(TFHE.le(ct1, ct2)));
 
         // False.
-        TFHE.req(TFHE.lt(ct1, ct2));
+        require(TFHE.decrypt(TFHE.lt(ct1, ct2)));
 
         // Try to mutate state to pay for gas - we won't reach that point due to the false require.
         doWorkToPayGas();
