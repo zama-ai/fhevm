@@ -1,22 +1,24 @@
 import { ethers } from 'hardhat';
 
 import { Comp } from '../../types';
-import type { GovernorZama } from '../../types';
+import type { GovernorZama, Timelock } from '../../types';
 import { getSigners } from '../signers';
 
-export async function deployGovernorZamaFixture(compContract: Comp): Promise<GovernorZama> {
+export async function deployGovernorZamaFixture(
+  compContract: Comp,
+): Promise<{ governor: GovernorZama; timelock: Timelock }> {
   const signers = await getSigners();
 
   const timelockFactory = await ethers.getContractFactory('Timelock');
-  const timelockContract = await timelockFactory.connect(signers.alice).deploy(signers.alice.address, 60 * 60 * 24 * 2);
+  const timelock = await timelockFactory.connect(signers.alice).deploy(signers.alice.address, 60 * 60 * 24 * 2);
 
-  await timelockContract.waitForDeployment();
+  await timelock.waitForDeployment();
 
-  const contractFactory = await ethers.getContractFactory('GovernorZama');
-  const contract = await contractFactory
+  const governorFactory = await ethers.getContractFactory('GovernorZama');
+  const governor = await governorFactory
     .connect(signers.alice)
-    .deploy(timelockContract.getAddress(), compContract.getAddress(), signers.alice.address);
-  await contract.waitForDeployment();
+    .deploy(timelock.getAddress(), compContract.getAddress(), signers.alice.address);
+  await governor.waitForDeployment();
 
-  return contract;
+  return { governor, timelock };
 }

@@ -3,6 +3,7 @@ import { ethers } from 'hardhat';
 
 import { createInstances } from '../instance';
 import { getSigners } from '../signers';
+import { waitForBlock } from '../utils';
 import { deployCompFixture } from './Comp.fixture';
 import { deployGovernorZamaFixture } from './GovernorZama.fixture';
 
@@ -13,18 +14,23 @@ describe('GovernorZama', function () {
 
   beforeEach(async function () {
     this.comp = await deployCompFixture();
-    const contract = await deployGovernorZamaFixture(this.comp);
-    this.contractAddress = await contract.getAddress();
-    this.governor = contract;
+    const { governor, timelock } = await deployGovernorZamaFixture(this.comp);
+    this.contractAddress = await governor.getAddress();
+    this.governor = governor;
     this.instances = await createInstances(this.contractAddress, ethers, this.signers);
     const encryptedAmount = this.instances.alice.encrypt32(1000);
+
+    const tx1 = await timelock.setPendingAdmin(governor.getAddress());
+    await tx1.wait();
+
     const transaction = await this.comp.initSupply(encryptedAmount);
     const transaction2 = await this.comp.setAllowedContract(this.contractAddress);
-    await transaction.wait();
-    await transaction2.wait();
+    const transaction3 = await this.governor.__acceptAdmin();
+
+    await Promise.all([transaction.wait(), transaction2.wait(), transaction3.wait()]);
   });
 
-  it('should propose a vote', async function () {
+  it('should vote', async function () {
     await this.comp.delegate(this.signers.alice.address);
     const callDatas = [ethers.AbiCoder.defaultAbiCoder().encode(['address'], [this.signers.alice.address])];
     const tx = await this.governor.propose(
@@ -35,11 +41,40 @@ describe('GovernorZama', function () {
       'do nothing',
       { gasLimit: 1000000 },
     );
-    const results = await tx.wait();
+    await tx.wait();
+    const proposals = await this.governor.proposals(1);
+    await waitForBlock(proposals.startBlock + 1n);
+
+    const encryptedSupport = this.instances.alice.encrypt32(1000);
+    const txVote = await this.governor['castVote(uint256,bytes)'](1, encryptedSupport);
+    const results = await txVote.wait();
     expect(results?.status).to.equal(1);
+  });
+
+  it('should cancel', async function () {
+    await this.comp.delegate(this.signers.alice.address);
+    const callDatas = [ethers.AbiCoder.defaultAbiCoder().encode(['address'], [this.signers.alice.address])];
+    const tx = await this.governor.propose(
+      [this.signers.alice],
+      ['0'],
+      ['getBalanceOf(address)'],
+      callDatas,
+      'do nothing',
+      { gasLimit: 500000 },
+    );
+    await tx.wait();
     const proposalId = await this.governor.latestProposalIds(this.signers.alice.address);
     const proposals = await this.governor.proposals(proposalId);
-    console.log(proposals);
-    expect(proposalId).to.equal(1);
+    await waitForBlock(proposals.startBlock + 1n);
+
+    const state = await this.governor.state(proposalId);
+    expect(state).to.equal(1n);
+
+    const txCancel = await this.governor.cancel(proposalId, { gasLimit: 1000000 });
+    await txCancel.wait();
+    const newProposals = await this.governor.proposals(proposalId);
+    console.log(newProposals);
+    const newState = await this.governor.state(proposalId);
+    expect(newState).to.equal(2n);
   });
 });

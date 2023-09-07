@@ -264,19 +264,12 @@ contract GovernorZama {
 
         Proposal storage proposal = proposals[proposalId];
 
-        ebool proposerAboveThreshold = TFHE.le(
-            TFHE.asEuint32(proposalThreshold()),
-            comp.getPriorVotes(proposal.proposer, sub256(block.number, 1))
+        ebool proposerAboveThreshold = TFHE.lt(
+            comp.getPriorVotes(msg.sender, block.number - 1),
+            TFHE.asEuint32(proposalThreshold())
         );
-        euint8 isGuardian = TFHE.asEuint8(msg.sender == guardian ? 1 : 0);
 
-        require(TFHE.decrypt(TFHE.asEbool(TFHE.or(TFHE.asEuint8(proposerAboveThreshold), isGuardian))));
-
-        // require(
-        //     msg.sender == guardian ||
-        //         comp.getPriorVotes(proposal.proposer, sub256(block.number, 1)) < proposalThreshold(),
-        //     "GovernorAlpha::cancel: proposer above threshold"
-        // );
+        require(msg.sender == guardian || TFHE.decrypt(proposerAboveThreshold));
 
         proposal.canceled = true;
         for (uint i = 0; i < proposal.targets.length; i++) {
@@ -312,15 +305,7 @@ contract GovernorZama {
         ebool defeated = TFHE.le(proposal.forVotes, proposal.againstVotes);
         ebool reachedQuorum = TFHE.lt(proposal.forVotes, encryptedQuorumVotes);
 
-        return TFHE.decrypt(TFHE.asEbool(TFHE.or(TFHE.asEuint8(defeated), TFHE.asEuint8(reachedQuorum))));
-
-        // if (TFHE.le(proposal.forVotes, proposal.againstVotes)) ||
-        //     TFHE.lt(proposal.forVotes, ()))
-        //     return ProposalState.Defeated;
-        // else
-        //     // (proposal.forVotes > proposal.againstVotes &&
-        //     //     proposal.forVotes >= ()
-        // return ProposalState.Succeeded;
+        return TFHE.decrypt(reachedQuorum) || TFHE.decrypt(defeated);
     }
 
     function state(uint proposalId) public view returns (ProposalState) {
