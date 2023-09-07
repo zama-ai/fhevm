@@ -23,9 +23,11 @@
     "fhevm:start": "docker run -i -p 8545:8545 --rm --name fhevm ghcr.io/zama-ai/evmos-dev-node:v0.1.9-alpha",
     "fhevm:stop": "docker rm -f fhevm",
     "fhevm:restart": "fhevm:stop && fhevm:start",
-    "fhevm:faucet": "docker exec -i fhevm faucet $(npx hardhat task:getEthereumAddress)",
-    "fhevm:faucet:bob": "docker exec -i fhevm faucet $(npx hardhat accounts | grep 0x |  sed -n '2p')",
-    "fhevm:faucet:carol": "docker exec -i fhevm faucet $(npx hardhat accounts | grep 0x |  sed -n '3p')"
+    "fhevm:faucet": "npm run fhevm:faucet:alice && npm run fhevm:faucet:bob && npm run fhevm:faucet:carol && npm run fhevm:faucet:dave",
+    "fhevm:faucet:alice": "docker exec -i fhevm faucet $(npx hardhat task:getEthereumAddressAlice)",
+    "fhevm:faucet:bob": "docker exec -i fhevm faucet $(npx hardhat task:getEthereumAddressBob)",
+    "fhevm:faucet:carol": "docker exec -i fhevm faucet $(npx hardhat task:getEthereumAddressCarol)",
+    "fhevm:faucet:dave": "docker exec -i fhevm faucet $(npx hardhat task:getEthereumAddressDave)"
   },
   "repository": {
     "type": "git",

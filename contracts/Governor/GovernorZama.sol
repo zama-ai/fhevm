@@ -149,6 +149,7 @@ contract GovernorZama {
         uint[] memory values,
         string[] memory signatures,
         bytes[] memory calldatas,
+        uint customVotingPeriod,
         string memory description
     ) public returns (uint) {
         require(
@@ -180,7 +181,7 @@ contract GovernorZama {
         }
 
         uint startBlock = add256(block.number, votingDelay());
-        uint endBlock = add256(startBlock, votingPeriod());
+        uint endBlock = add256(startBlock, customVotingPeriod != 0 ? customVotingPeriod : votingPeriod());
 
         proposalCount++;
         uint proposalId = proposalCount;
