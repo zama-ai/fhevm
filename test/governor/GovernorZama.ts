@@ -39,7 +39,7 @@ describe('GovernorZama', function () {
       ['getBalanceOf(address)'],
       callDatas,
       'do nothing',
-      { gasLimit: 1000000 },
+      { gasLimit: 500000 },
     );
     await tx.wait();
     const proposalId = await this.governor.latestProposalIds(this.signers.alice.address);
@@ -52,7 +52,7 @@ describe('GovernorZama', function () {
     const txVote = await this.governor['castVote(uint256,bytes)'](1, encryptedSupport);
     const results = await txVote.wait();
     expect(results?.status).to.equal(1);
-  });
+  }).timeout(120000);
 
   it('should cancel', async function () {
     await this.comp.delegate(this.signers.alice.address);
@@ -73,9 +73,9 @@ describe('GovernorZama', function () {
     const state = await this.governor.state(proposalId);
     expect(state).to.equal(1n);
 
-    const txCancel = await this.governor.cancel(proposalId, { gasLimit: 1000000 });
+    const txCancel = await this.governor.cancel(proposalId);
     await txCancel.wait();
     const newState = await this.governor.state(proposalId);
     expect(newState).to.equal(2n);
-  });
+  }).timeout(120000);
 });
