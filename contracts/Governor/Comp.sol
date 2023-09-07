@@ -81,7 +81,7 @@ contract Comp is EIP712WithModifier {
      * @param encryptedAmount The amount of token to create
      */
     function initSupply(bytes calldata encryptedAmount) public onlyContractOwner {
-        TFHE.req(TFHE.eq(totalSupply, 0));
+        require(TFHE.decrypt(TFHE.eq(totalSupply, 0)));
         euint32 amount = TFHE.asEuint32(encryptedAmount);
         totalSupply = amount;
         balances[contractOwner] = amount;
@@ -197,14 +197,14 @@ contract Comp is EIP712WithModifier {
 
     function _updateAllowance(address owner, address spender, euint32 amount) internal {
         euint32 currentAllowance = _allowance(owner, spender);
-        TFHE.req(TFHE.le(amount, currentAllowance));
+        require(TFHE.decrypt(TFHE.le(amount, currentAllowance)));
         _approve(owner, spender, TFHE.sub(currentAllowance, amount));
     }
 
     // Transfers an encrypted amount.
     function _transfer(address from, address to, euint32 amount) internal {
         // Make sure the sender has enough tokens.
-        TFHE.req(TFHE.le(amount, balances[from]));
+        require(TFHE.decrypt(TFHE.le(amount, balances[from])));
 
         // Add to the balance of `to` and subract from the balance of `from`.
         balances[to] = TFHE.add(balances[to], amount);
