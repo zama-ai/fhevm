@@ -32,9 +32,7 @@ describe('Comp', function () {
     const balance = this.instances.alice.decrypt(this.contractAddress, encryptedBalance);
     expect(balance).to.equal(1000);
 
-    const encryptedTotalSupply = await this.comp.getTotalSupply(token.publicKey, token.signature);
-    // Decrypt the total supply
-    const totalSupply = this.instances.alice.decrypt(this.contractAddress, encryptedTotalSupply);
+    const totalSupply = await this.comp.getTotalSupply();
     expect(totalSupply).to.equal(1000);
   });
 

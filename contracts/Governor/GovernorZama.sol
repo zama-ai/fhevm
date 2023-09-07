@@ -194,11 +194,11 @@ contract GovernorZama {
         newProposal.targets = targets;
         newProposal.values = values;
         newProposal.signatures = signatures;
+        newProposal.forVotes = TFHE.asEuint32(0);
+        newProposal.againstVotes = TFHE.asEuint32(0);
         newProposal.calldatas = calldatas;
         newProposal.startBlock = startBlock;
         newProposal.endBlock = endBlock;
-        newProposal.forVotes = euint32.wrap(0);
-        newProposal.againstVotes = euint32.wrap(0);
         newProposal.canceled = false;
         newProposal.executed = false;
 
@@ -372,18 +372,10 @@ contract GovernorZama {
         require(receipt.hasVoted == false, "GovernorAlpha::_castVote: voter already voted");
         euint32 votes = comp.getPriorVotes(voter, proposal.startBlock);
 
-        // can't do this, otherwise external actors will be able to deduce the votes of individual users.
-        // if (support) {
-        //     proposal.forVotes = add256(proposal.forVotes, votes);
-        // } else {
-        //     proposal.againstVotes = add256(proposal.againstVotes, votes);
-        // }
-
-        euint32 ct_one = TFHE.asEuint32(1);
+        euint32 ctOne = TFHE.asEuint32(1);
 
         proposal.forVotes = TFHE.add(proposal.forVotes, TFHE.mul(votes, support));
-
-        proposal.forVotes = TFHE.add(proposal.forVotes, TFHE.mul(votes, TFHE.sub(ct_one, support)));
+        proposal.againstVotes = TFHE.add(proposal.againstVotes, TFHE.mul(votes, TFHE.sub(ctOne, support)));
 
         receipt.hasVoted = true;
         receipt.votes = votes;

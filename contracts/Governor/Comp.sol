@@ -111,11 +111,8 @@ contract Comp is EIP712WithModifier {
      * @notice Get the number of tokens
      * @return reencrypted The number of tokens
      */
-    function getTotalSupply(
-        bytes32 publicKey,
-        bytes calldata signature
-    ) public view onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
-        return TFHE.reencrypt(totalSupply, publicKey, 0);
+    function getTotalSupply() public view returns (uint32) {
+        return TFHE.decrypt(totalSupply);
     }
 
     /**
