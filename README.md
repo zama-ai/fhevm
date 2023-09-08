@@ -57,8 +57,6 @@ contract Counter {
 
 See our documentation on [https://docs.zama.ai/fhevm/solidity/getting_started](https://docs.zama.ai/fhevm/solidity/getting_started) for more details.
 
-## Development
-
 ## Development Guide
 
 Install dependencies (Solidity libraries and dev tools)
