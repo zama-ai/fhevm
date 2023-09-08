@@ -14,6 +14,73 @@ or
 yarn install fhevm
 ```
 
+## Test
+
+
+
+
+<br />
+<details>
+  <summary>Fast start</summary>
+<br />
+
+```bash
+# in one terminal
+npm run fhevm:start
+# in another terminal
+npm i
+cp .env.example .env
+./scripts/faucet.sh
+npm test
+```
+</details>
+<br />
+
+
+### Docker
+
+We provide a docker image to spin up a fhEVM node for local development.
+
+```bash
+npm run fhevm:start
+# stop
+npm run fhevm:stop
+```
+
+### Faucet
+
+To use a ready to use test (only for dev) wallet first, prepare the .env file that contains the mnemonic.
+
+```bash
+cp .env.example .env
+```
+
+This allows the developer to use a few accounts, each account can get coins:
+
+```bash
+npm run fhevm:faucet:alice
+npm run fhevm:faucet:bob
+npm run fhevm:faucet:carol
+```
+
+
+### Run test
+
+```bash
+npm test
+```
+
+<br />
+<details>
+  <summary>Error: insufficient funds</summary>
+<br />
+
+Ensure the faucet command is succesfull.
+
+</details>
+<br />
+
+
 ## Usage
 
 ```solidity
