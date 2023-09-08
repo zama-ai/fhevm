@@ -81,8 +81,6 @@ describe('GovernorZama', function () {
     const proposals = await this.governor.proposals(proposalId);
     await waitForBlock(proposals.startBlock + 1n);
 
-    // TOFIX: Votes are not casted. See _castVotes function in GovernorZama.sol
-
     // Cast some votes
     const encryptedSupportBob = this.instances.bob.encrypt32(1);
     const txVoteBob = await createTransaction(
@@ -125,12 +123,10 @@ describe('GovernorZama', function () {
     const proposals = await this.governor.proposals(proposalId);
     await waitForBlock(proposals.startBlock + 1n);
 
-    // TOFIX: Votes are not casted. See _castVotes function in GovernorZama.sol
-
     // Cast some votes
     const encryptedSupportBob = this.instances.bob.encrypt32(0);
     const txVoteBob = await createTransaction(
-      this.governor.connect(this.signers.carol)['castVote(uint256,bytes)'],
+      this.governor.connect(this.signers.bob)['castVote(uint256,bytes)'],
       proposalId,
       encryptedSupportBob,
     );
