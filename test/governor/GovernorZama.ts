@@ -3,7 +3,7 @@ import { ethers } from 'hardhat';
 
 import { createInstances } from '../instance';
 import { getSigners } from '../signers';
-import { waitForBlock } from '../utils';
+import { createTransaction, waitForBlock } from '../utils';
 import { deployCompFixture } from './Comp.fixture';
 import { deployGovernorZamaFixture } from './GovernorZama.fixture';
 
@@ -38,21 +38,22 @@ describe('GovernorZama', function () {
     const transaction2 = await this.governor.__acceptAdmin();
 
     await Promise.all([transaction.wait(), transaction2.wait()]);
-    await this.comp.delegate(this.signers.alice);
-    await this.comp.connect(this.signers.bob).delegate(this.signers.bob);
-    await this.comp.connect(this.signers.carol).delegate(this.signers.carol);
+    const delegate1 = await this.comp.delegate(this.signers.alice);
+    const delegate2 = await this.comp.connect(this.signers.bob).delegate(this.signers.bob);
+    const delegate3 = await this.comp.connect(this.signers.carol).delegate(this.signers.carol);
+    await Promise.all([delegate1, delegate2, delegate3]);
   });
 
   it('should propose a vote', async function () {
     const callDatas = [ethers.AbiCoder.defaultAbiCoder().encode(['address'], [this.signers.alice.address])];
-    const tx = await this.governor.propose(
+    const tx = await createTransaction(
+      this.governor.propose,
       [this.signers.alice],
       ['0'],
       ['getBalanceOf(address)'],
       callDatas,
       0,
       'do nothing',
-      { gasLimit: 1000000 },
     );
     const proposal = await tx.wait();
     expect(proposal?.status).to.equal(1);
@@ -64,14 +65,14 @@ describe('GovernorZama', function () {
 
   it('should vote and return a Succeed', async function () {
     const callDatas = [ethers.AbiCoder.defaultAbiCoder().encode(['address'], [this.signers.alice.address])];
-    const tx = await this.governor.propose(
+    const tx = await createTransaction(
+      this.governor.propose,
       [this.signers.alice],
       ['0'],
       ['getBalanceOf(address)'],
       callDatas,
       4,
       'do nothing',
-      { gasLimit: 1000000 },
     );
     const proposal = await tx.wait();
     expect(proposal?.status).to.equal(1);
@@ -84,14 +85,18 @@ describe('GovernorZama', function () {
 
     // Cast some votes
     const encryptedSupportBob = this.instances.bob.encrypt32(1);
-    const txVoteBob = await this.governor
-      .connect(this.signers.bob)
-      ['castVote(uint256,bytes)'](proposalId, encryptedSupportBob, { gasLimit: 5000000 });
+    const txVoteBob = await createTransaction(
+      this.governor.connect(this.signers.bob)['castVote(uint256,bytes)'],
+      proposalId,
+      encryptedSupportBob,
+    );
 
     const encryptedSupportCarol = this.instances.carol.encrypt32(1);
-    const txVoteCarol = await this.governor
-      .connect(this.signers.carol)
-      ['castVote(uint256,bytes)'](proposalId, encryptedSupportCarol, { gasLimit: 5000000 });
+    const txVoteCarol = await createTransaction(
+      this.governor.connect(this.signers.carol)['castVote(uint256,bytes)'],
+      proposalId,
+      encryptedSupportCarol,
+    );
 
     const [bobResults, aliceResults] = await Promise.all([txVoteBob.wait(), txVoteCarol.wait()]);
     expect(bobResults?.status).to.equal(1);
@@ -105,34 +110,37 @@ describe('GovernorZama', function () {
 
   it('should vote and return a Defeated ', async function () {
     const callDatas = [ethers.AbiCoder.defaultAbiCoder().encode(['address'], [this.signers.alice.address])];
-    const tx = await this.governor.propose(
+    const tx = await createTransaction(
+      this.governor.propose,
       [this.signers.alice],
       ['0'],
       ['getBalanceOf(address)'],
       callDatas,
       4,
       'do nothing',
-      { gasLimit: 1000000 },
     );
     const proposal = await tx.wait();
     expect(proposal?.status).to.equal(1);
     const proposalId = await this.governor.latestProposalIds(this.signers.alice.address);
     const proposals = await this.governor.proposals(proposalId);
-    console.log(proposals);
     await waitForBlock(proposals.startBlock + 1n);
 
     // TOFIX: Votes are not casted. See _castVotes function in GovernorZama.sol
 
     // Cast some votes
     const encryptedSupportBob = this.instances.bob.encrypt32(0);
-    const txVoteBob = await this.governor
-      .connect(this.signers.bob)
-      ['castVote(uint256,bytes)'](proposalId, encryptedSupportBob, { gasLimit: 5000000 });
+    const txVoteBob = await createTransaction(
+      this.governor.connect(this.signers.carol)['castVote(uint256,bytes)'],
+      proposalId,
+      encryptedSupportBob,
+    );
 
     const encryptedSupportCarol = this.instances.carol.encrypt32(0);
-    const txVoteCarol = await this.governor
-      .connect(this.signers.carol)
-      ['castVote(uint256,bytes)'](proposalId, encryptedSupportCarol, { gasLimit: 5000000 });
+    const txVoteCarol = await createTransaction(
+      this.governor.connect(this.signers.carol)['castVote(uint256,bytes)'],
+      proposalId,
+      encryptedSupportCarol,
+    );
 
     const [bobResults, aliceResults] = await Promise.all([txVoteBob.wait(), txVoteCarol.wait()]);
     expect(bobResults?.status).to.equal(1);
@@ -147,14 +155,14 @@ describe('GovernorZama', function () {
   it('should cancel', async function () {
     await this.comp.delegate(this.signers.alice.address);
     const callDatas = [ethers.AbiCoder.defaultAbiCoder().encode(['address'], [this.signers.alice.address])];
-    const tx = await this.governor.propose(
+    const tx = await createTransaction(
+      this.governor.propose,
       [this.signers.alice],
       ['0'],
       ['getBalanceOf(address)'],
       callDatas,
       0,
       'do nothing',
-      { gasLimit: 500000 },
     );
     const proposal = await tx.wait();
     expect(proposal?.status).to.equal(1);
