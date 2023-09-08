@@ -52,9 +52,10 @@ describe('GovernorZama', function () {
       callDatas,
       0,
       'do nothing',
-      { gasLimit: 500000 },
+      { gasLimit: 1000000 },
     );
-    await tx.wait();
+    const proposal = await tx.wait();
+    expect(proposal?.status).to.equal(1);
     const proposalId = await this.governor.latestProposalIds(this.signers.alice.address);
     const proposals = await this.governor.proposals(proposalId);
     expect(proposals.id).to.equal(proposalId);
@@ -70,9 +71,11 @@ describe('GovernorZama', function () {
       callDatas,
       4,
       'do nothing',
-      { gasLimit: 500000 },
+      { gasLimit: 1000000 },
     );
-    await tx.wait();
+    const proposal = await tx.wait();
+    expect(proposal?.status).to.equal(1);
+
     const proposalId = await this.governor.latestProposalIds(this.signers.alice.address);
     const proposals = await this.governor.proposals(proposalId);
     await waitForBlock(proposals.startBlock + 1n);
@@ -80,23 +83,25 @@ describe('GovernorZama', function () {
     // TOFIX: Votes are not casted. See _castVotes function in GovernorZama.sol
 
     // Cast some votes
-    // const encryptedSupportBob = this.instances.bob.encrypt32(1);
-    // const txVoteBob = await this.governor
-    //   .connect(this.signers.bob)
-    //   ['castVote(uint256,bytes)'](proposalId, encryptedSupportBob, { gasLimit: 500000 });
+    const encryptedSupportBob = this.instances.bob.encrypt32(1);
+    const txVoteBob = await this.governor
+      .connect(this.signers.bob)
+      ['castVote(uint256,bytes)'](proposalId, encryptedSupportBob, { gasLimit: 5000000 });
 
-    // const encryptedSupportCarol = this.instances.carol.encrypt32(1);
-    // const txVoteCarol = await this.governor
-    //   .connect(this.signers.carol)
-    //   ['castVote(uint256,bytes)'](proposalId, encryptedSupportCarol, { gasLimit: 500000 });
+    const encryptedSupportCarol = this.instances.carol.encrypt32(1);
+    const txVoteCarol = await this.governor
+      .connect(this.signers.carol)
+      ['castVote(uint256,bytes)'](proposalId, encryptedSupportCarol, { gasLimit: 5000000 });
 
-    // await Promise.all([txVoteBob.wait(), txVoteCarol.wait()]);
+    const [bobResults, aliceResults] = await Promise.all([txVoteBob.wait(), txVoteCarol.wait()]);
+    expect(bobResults?.status).to.equal(1);
+    expect(aliceResults?.status).to.equal(1);
 
-    // await waitForBlock(proposals.endBlock + 1n);
+    await waitForBlock(proposals.endBlock + 1n);
 
-    // const state = await this.governor.state(proposalId);
-    // expect(state).to.equal(4n);
-  }).timeout(300000);
+    const state = await this.governor.state(proposalId);
+    expect(state).to.equal(4n);
+  }).timeout(120000);
 
   it('should vote and return a Defeated ', async function () {
     const callDatas = [ethers.AbiCoder.defaultAbiCoder().encode(['address'], [this.signers.alice.address])];
@@ -107,9 +112,10 @@ describe('GovernorZama', function () {
       callDatas,
       4,
       'do nothing',
-      { gasLimit: 500000 },
+      { gasLimit: 1000000 },
     );
-    await tx.wait();
+    const proposal = await tx.wait();
+    expect(proposal?.status).to.equal(1);
     const proposalId = await this.governor.latestProposalIds(this.signers.alice.address);
     const proposals = await this.governor.proposals(proposalId);
     console.log(proposals);
@@ -118,20 +124,24 @@ describe('GovernorZama', function () {
     // TOFIX: Votes are not casted. See _castVotes function in GovernorZama.sol
 
     // Cast some votes
-    // const encryptedSupportBob = this.instances.bob.encrypt32(0);
-    // const txVoteBob = await this.governor
-    //   .connect(this.signers.bob)
-    //   ['castVote(uint256,bytes)'](proposalId, encryptedSupportBob, { gasLimit: 500000 });
-    // const encryptedSupportCarol = this.instances.bob.encrypt32(1);
-    // const txVoteCarol = await this.governor
-    //   .connect(this.signers.bob)
-    //   ['castVote(uint256,bytes)'](proposalId, encryptedSupportCarol, { gasLimit: 500000 });
-    // await Promise.all([txVoteAlice.wait(), txVoteBob.wait(), txVoteCarol.wait()]);
+    const encryptedSupportBob = this.instances.bob.encrypt32(0);
+    const txVoteBob = await this.governor
+      .connect(this.signers.bob)
+      ['castVote(uint256,bytes)'](proposalId, encryptedSupportBob, { gasLimit: 5000000 });
 
-    // await waitForBlock(proposals.endBlock + 1n);
+    const encryptedSupportCarol = this.instances.carol.encrypt32(0);
+    const txVoteCarol = await this.governor
+      .connect(this.signers.carol)
+      ['castVote(uint256,bytes)'](proposalId, encryptedSupportCarol, { gasLimit: 5000000 });
 
-    // const state = await this.governor.state(proposalId);
-    // expect(state).to.equal(3n);
+    const [bobResults, aliceResults] = await Promise.all([txVoteBob.wait(), txVoteCarol.wait()]);
+    expect(bobResults?.status).to.equal(1);
+    expect(aliceResults?.status).to.equal(1);
+
+    await waitForBlock(proposals.endBlock + 1n);
+
+    const state = await this.governor.state(proposalId);
+    expect(state).to.equal(3n);
   }).timeout(120000);
 
   it('should cancel', async function () {
@@ -146,7 +156,8 @@ describe('GovernorZama', function () {
       'do nothing',
       { gasLimit: 500000 },
     );
-    await tx.wait();
+    const proposal = await tx.wait();
+    expect(proposal?.status).to.equal(1);
     const proposalId = await this.governor.latestProposalIds(this.signers.alice.address);
     const proposals = await this.governor.proposals(proposalId);
     await waitForBlock(proposals.startBlock + 1n);

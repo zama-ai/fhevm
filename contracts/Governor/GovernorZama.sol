@@ -194,8 +194,8 @@ contract GovernorZama {
         newProposal.targets = targets;
         newProposal.values = values;
         newProposal.signatures = signatures;
-        newProposal.forVotes = euint32.wrap(0);
-        newProposal.againstVotes = euint32.wrap(0);
+        newProposal.forVotes = TFHE.asEuint32(0);
+        newProposal.againstVotes = TFHE.asEuint32(0);
         newProposal.calldatas = calldatas;
         newProposal.startBlock = startBlock;
         newProposal.endBlock = endBlock;
@@ -374,9 +374,8 @@ contract GovernorZama {
 
         euint32 ctOne = TFHE.asEuint32(1);
 
-        // TOFIX These 2 lines fails:
-        proposal.forVotes = TFHE.add(TFHE.asEuint32(0), TFHE.mul(votes, support));
-        proposal.againstVotes = TFHE.add(TFHE.asEuint32(0), TFHE.mul(votes, TFHE.sub(ctOne, support)));
+        proposal.forVotes = TFHE.add(proposal.forVotes, TFHE.mul(votes, support));
+        proposal.againstVotes = TFHE.add(proposal.againstVotes, TFHE.mul(votes, TFHE.sub(ctOne, support)));
 
         receipt.hasVoted = true;
         receipt.votes = votes;
