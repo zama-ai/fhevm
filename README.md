@@ -16,8 +16,7 @@ yarn install fhevm
 
 ## Test
 
-
-
+The easiest way to understand how to write/dev smart contract and interact with them using __fhevmjs__ is to read and explore the few tests available in this repository.
 
 <br />
 <details>
