@@ -23,13 +23,13 @@ A Solidity library for interacting with an fhEVM blockchain.
 
 ```bash
 # Using npm
-npm install fhevmjs
+npm install fhevm
 
 # Using Yarn
-yarn add fhevmjs
+yarn add fhevm
 
 # Using pnpm
-pnpm add pnpm
+pnpm add fhevm
 ```
 
 ## Usage
