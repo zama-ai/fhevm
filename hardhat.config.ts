@@ -54,7 +54,7 @@ const config: HardhatUserConfig = {
     currency: 'USD',
     enabled: process.env.REPORT_GAS ? true : false,
     excludeContracts: [],
-    src: './contracts',
+    src: './examples',
   },
   networks: {
     zama: getChainConfig('zama'),
@@ -63,7 +63,7 @@ const config: HardhatUserConfig = {
   paths: {
     artifacts: './artifacts',
     cache: './cache',
-    sources: './contracts',
+    sources: './examples',
     tests: './test',
   },
   solidity: {
