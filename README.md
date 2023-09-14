@@ -161,13 +161,14 @@ There are two ways to contribute to the Zama fhEVM:
 
 - you can open issues to report bugs or typos, or to suggest new ideas
 - you can ask to become an official contributor by emailing hello@zama.ai. (becoming an approved contributor involves signing our Contributor License Agreement (CLA))
-Only approved contributors can send pull requests, so please make sure to get in touch before you do!
+  Only approved contributors can send pull requests, so please make sure to get in touch before you do!
 
 ## Credits
 
 This library uses several dependencies and we would like to thank the contributors of those libraries.
 
 ## Need support?
+
 <a target="_blank" href="https://community.zama.ai">
   <img src="https://github.com/zama-ai/fhevm-solidity/assets/1384478/049dfc9b-3caa-4c56-8bee-3d1700664db9">
 </a>
