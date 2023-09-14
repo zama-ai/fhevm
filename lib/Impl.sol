@@ -600,7 +600,7 @@ library Impl {
     }
 
     function rand(uint8 randType) internal view returns (uint256 result) {
-        bytes32[1] memory input;
+        bytes1[1] memory input;
         input[0] = bytes1(randType);
         uint256 inputLen = 1;
 
