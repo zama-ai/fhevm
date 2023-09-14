@@ -13,9 +13,9 @@ function generateAllFiles() {
   writeFileSync('lib/Precompiles.sol', t.precompiles(ALL_PRECOMPILES));
   writeFileSync('lib/Impl.sol', t.implSol(operators));
   writeFileSync('lib/TFHE.sol', tfheSolSource);
-  mkdirSync('contracts/tests', { recursive: true });
+  mkdirSync('examples/tests', { recursive: true });
   ovShards.forEach((os) => {
-    writeFileSync(`contracts/tests/TFHETestSuite${os.shardNumber}.sol`, testgen.generateSmartContract(os));
+    writeFileSync(`examples/tests/TFHETestSuite${os.shardNumber}.sol`, testgen.generateSmartContract(os));
   });
   writeFileSync('test/tfheOperations/tfheOperations.ts', testgen.generateTestCode(ovShards));
 }

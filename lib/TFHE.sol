@@ -2493,8 +2493,9 @@ library TFHE {
     // reverted at the end if any of the optimisic requires were false.
     //
     // Exceptions to above rule are reencryptions and decryptions via
-    // TFHE.decrypt(). If either of them are encountered and if optimistic requires have been
-    // used before in the txn, the optimisic requires will be immediately evaluated. Rationale is
+    // TFHE.reencrypt() and TFHE.decrypt(), respectively. If either of them
+    // are encountered and if optimistic requires have been used before in the
+    // txn, the optimisic requires will be immediately evaluated. Rationale is
     // that we want to avoid decrypting or reencrypting a value if the txn is about
     // to fail and be reverted anyway at the end. Checking immediately and reverting on the spot
     // would avoid unnecessary decryptions.
