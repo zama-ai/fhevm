@@ -30,7 +30,7 @@ export type OverloadShard = {
  * of a smart contract you can deploy
  */
 export function splitOverloadsToShards(overloads: OverloadSignature[]): OverloadShard[] {
-  const MAX_SHARD_SIZE = 150;
+  const MAX_SHARD_SIZE = 100;
   const res: OverloadShard[] = [];
 
   var shardNo = 1;
@@ -130,9 +130,18 @@ async function deployTfheTestFixture${os.shardNumber}(): Promise<TFHETestSuite${
           ensureNumberAcceptableInBitRange(o.returnType.bits, t.output);
         }
         const testArgs = t.inputs.join(', ');
+        const testArgsEncrypted = t.inputs
+          .map((v, index) => {
+            if (o.arguments[index].type == ArgumentType.EUint) {
+              return `this.instances${os.shardNumber}.alice.encrypt${o.arguments[index].bits}(${v})`;
+            } else {
+              return v;
+            }
+          })
+          .join(', ');
         res.push(`
                 it('${testName} test ${testIndex} (${testArgs})', async function () {
-                    const res = await this.contract${os.shardNumber}.${methodName}(${testArgs});
+                    const res = await this.contract${os.shardNumber}.${methodName}(${testArgsEncrypted});
                     expect(res).to.equal(${t.output});
                 });
             `);
@@ -232,7 +241,7 @@ function signatureContractArguments(s: OverloadSignature): string {
 
   var argName = 97; // letter 'a' in ascii
   s.arguments.forEach((a) => {
-    res.push(`${functionTypeToDecryptedType(a)} ${String.fromCharCode(argName)}`);
+    res.push(`${functionTypeToCalldataType(a)} ${String.fromCharCode(argName)}`);
     argName++;
   });
 
@@ -260,6 +269,17 @@ function castExpressionToType(argExpr: string, outputType: FunctionType): string
       return argExpr;
     case ArgumentType.Ebool:
       return `TFHE.asEbool(${argExpr})`;
+  }
+}
+
+function functionTypeToCalldataType(t: FunctionType): string {
+  switch (t.type) {
+    case ArgumentType.EUint:
+      return `bytes calldata`;
+    case ArgumentType.Uint:
+      return `uint${t.bits}`;
+    case ArgumentType.Ebool:
+      return `bool`;
   }
 }
 
