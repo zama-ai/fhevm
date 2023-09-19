@@ -17,7 +17,37 @@
 </p>
 <hr/>
 
-A Solidity library for interacting with an fhEVM blockchain.
+## Bring confidential smart contracts to your blockchain with fhEVM
+
+There used to be a dilemma in blockchain: keep your application and user data on-chain, allowing everyone to see it, or keep it privately off-chain and lose contract composability.
+Thanks to a breakthrough in homomorphic encryption, Zama’s fhEVM makes it possible to run confidential smart contracts on encrypted data, guaranteeing both confidentiality and composability.
+
+## Zama’s fhEVM enables confidential smart contracts using fully homomorphic encryption (FHE)
+
+- End-to-end encryption of transactions and state
+- Composability and data availability on-chain
+- No impact on existing dapps and state
+
+<p align="center"><img width="816" alt="encrypted" src="https://github.com/zama-ai/fhevm/assets/1384478/6b70af9d-6790-4dad-826c-eba09dc80d8b"></p>
+
+## Developers can write confidential smart contracts without learning cryptography
+
+**Solidity Integration:** fhEVM contracts are simple solidity contracts that are built using traditional solidity toolchains.
+
+**Simple DevX:** Developers can use the euint data types to mark which part of their contracts should be private.
+
+**SC-defined ACL:** All the logic for access control of encrypted states is defined by developers in their smart contracts.
+
+You can take a look at our [examples](/examples)!
+
+## Powerful features available out of the box
+
+- **High Precision Integers -** Up to 256 bits of precision for integers
+- **Full range of Operators -** All typical operators are available: +,-,*,/,<,>.==,...
+- **Encrypted If-Else Conditionals -** Check conditions on encrypted states
+- **On-chain Secure Randomness -** Generate randomness without using oracles
+- **Configurable Decryption -** Threshold, centralized or KMS decryption
+- **Unbounded Compute Depth -** Unlimited consecutive FHE operations
 
 ## Install
 
