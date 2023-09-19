@@ -25,6 +25,7 @@ library Common {
 }
 
 function binaryOperatorImpl(op: Operator, isScalar: boolean, isEncrypted: boolean): string {
+  const fname = operatorFheLibFunction(op);
   const scalarArg = isScalar && isEncrypted ? ', bool scalar' : '';
   const scalarByte = isScalar ? '0x01' : '0x00';
   const scalarSection =
@@ -34,33 +35,21 @@ function binaryOperatorImpl(op: Operator, isScalar: boolean, isEncrypted: boolea
             scalarByte = 0x01;
         } else {
             scalarByte = 0x00;
-        }
-        bytes memory input = bytes.concat(bytes32(lhs), bytes32(rhs), scalarByte);`
-      : `bytes memory input = bytes.concat(bytes32(lhs), bytes32(rhs), bytes1(${scalarByte}));`;
+        }`
+      : `bytes1 scalarByte = ${scalarByte};`;
   return (
     `
-    function ${op.name}(uint256 lhs, uint256 rhs${scalarArg}) internal view returns (uint256 result) {
+    function ${op.name}(uint256 lhs, uint256 rhs${scalarArg}) internal pure returns (uint256 result) {
         ${scalarSection}
-        uint256 inputLen = input.length;
-
-        bytes32[1] memory output;
-        uint256 outputLen = 32;
-        // Call the ${op.name} precompile.
-        uint256 precompile = Precompiles.${op.precompileName};
-        assembly {
-            // jump over the 32-bit 'size' field of the 'bytes' data structure of the 'input' to read actual bytes
-            if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
-                revert(0, 0)
-            }
-        }
-
-        result = uint256(output[0]);
+        result = FhevmLib(address(EXT_TFHE_LIBRARY)).${fname}(lhs, rhs, scalarByte);
     }` + '\n'
   );
 }
 
 export function implSol(operators: Operator[]): string {
   const res: string[] = [];
+
+  const fheLibInterface = generateImplFhevmLibInterface(operators);
 
   res.push(`
 // SPDX-License-Identifier: BSD-3-Clause-Clear
@@ -69,6 +58,10 @@ pragma solidity >=0.8.13 <0.8.20;
 
 import "./Common.sol";
 import "./Precompiles.sol";
+
+${fheLibInterface}
+
+address constant EXT_TFHE_LIBRARY = address(93);
 
 library Impl {
     // 32 bytes for the 'byte' type header + 48 bytes for the NaCl anonymous
@@ -96,6 +89,55 @@ library Impl {
   res.push('}\n');
 
   return res.join('');
+}
+
+function operatorFheLibFunction(op: Operator): string {
+  if (op.fheLibName) {
+    return op.fheLibName;
+  }
+  const firstLetter = op.name.toUpperCase().charAt(0);
+  const theRest = op.name.substring(1);
+  return `fhe${firstLetter}${theRest}`;
+}
+
+function generateImplFhevmLibInterface(operators: Operator[]): string {
+  const res: string[] = [];
+
+  res.push('interface FhevmLib {');
+  operators.forEach((op) => {
+    let functionName = operatorFheLibFunction(op);
+    const tail = 'external pure returns (uint256 result);';
+    let functionArguments: string;
+    switch (op.arguments) {
+      case OperatorArguments.Binary:
+        functionArguments = '(uint256 lhs, uint256 rhs, bytes1 scalarByte)';
+        res.push(`  function ${functionName}${functionArguments} ${tail}`);
+        break;
+      case OperatorArguments.Unary:
+        functionArguments = '(uint256 ct)';
+        res.push(`  function ${functionName}${functionArguments} ${tail}`);
+        break;
+    }
+  });
+
+  res.push(fheLibCustomInterfaceFunctions());
+
+  res.push('}');
+
+  return res.join('\n');
+}
+
+function fheLibCustomInterfaceFunctions(): string {
+  return `
+    function optimisticRequire(uint256 ct) external view;
+    function reencrypt(uint256 ct, uint256 publicKey) external view returns (bytes memory);
+    function fhePubKey(bytes1 fromLib) external view returns (bytes memory result);
+    function verifyCiphertext(bytes memory input) external view returns (uint256 result);
+    function cast(uint256 ct, bytes1 toType) external view returns (uint256 result);
+    function trivialEncrypt(uint256 ct, bytes1 toType) external view returns (uint256 result);
+    function decrypt(uint256 ct) external view returns (uint256 result);
+    function fheRand(bytes1 inp) external view returns (uint256 result);
+  `;
 }
 
 export function tfheSol(operators: Operator[], supportedBits: number[]): [string, OverloadSignature[]] {
@@ -140,7 +182,8 @@ library TFHE {
     });
     res.push(tfheAsEboolUnaryCast(outputBits));
   });
-  supportedBits.forEach((bits) => res.push(tfheCustomUnaryOperators(bits)));
+  supportedBits.forEach((bits) => res.push(tfheUnaryOperators(bits, operators, signatures)));
+  supportedBits.forEach((bits) => res.push(tfheCustomUnaryOperators(bits, signatures)));
 
   res.push(tfheCustomMethods());
 
@@ -177,7 +220,7 @@ function tfheEncryptedOperator(
 
   const leftExpr = castLeftToRight ? `asEuint${outputBits}(a)` : 'a';
   const rightExpr = castRightToLeft ? `asEuint${outputBits}(b)` : 'b';
-  var implExpression = `Impl.${operator.name}(euint${outputBits}.unwrap(${leftExpr}), euint${outputBits}.unwrap(${rightExpr})${scalarFlag})`;
+  let implExpression = `Impl.${operator.name}(euint${outputBits}.unwrap(${leftExpr}), euint${outputBits}.unwrap(${rightExpr})${scalarFlag})`;
   if (boolCastNeeded) {
     implExpression = `Impl.cast(${implExpression}, Common.ebool_t)`;
   }
@@ -299,7 +342,7 @@ function tfheCmux(inputBits: number): string {
     return `
     // If 'control''s value is 'true', the result has the same value as 'a'.
     // If 'control''s value is 'false', the result has the same value as 'b'.
-    function cmux(ebool control, euint${inputBits} a, euint${inputBits} b) internal view returns (euint${inputBits}) {
+    function cmux(ebool control, euint${inputBits} a, euint${inputBits} b) internal pure returns (euint${inputBits}) {
         return euint${inputBits}.wrap(Impl.cmux(ebool.unwrap(control), euint${inputBits}.unwrap(a), euint${inputBits}.unwrap(b)));
     }`;
   }
@@ -355,7 +398,29 @@ function tfheAsEboolUnaryCast(bits: number): string {
   return res.join('');
 }
 
-function tfheCustomUnaryOperators(bits: number): string {
+function tfheUnaryOperators(bits: number, operators: Operator[], signatures: OverloadSignature[]): string {
+  const res: string[] = [];
+
+  operators.forEach((op) => {
+    if (op.arguments == OperatorArguments.Unary) {
+      signatures.push({
+        name: op.name,
+        arguments: [{ type: ArgumentType.EUint, bits }],
+        returnType: { type: ArgumentType.EUint, bits },
+      });
+
+      res.push(`
+        function ${op.name}(euint${bits} value) internal pure returns (euint${bits}) {
+            return euint${bits}.wrap(Impl.${op.name}(euint${bits}.unwrap(value)));
+        }
+      `);
+    }
+  });
+
+  return res.join('\n');
+}
+
+function tfheCustomUnaryOperators(bits: number, signatures: OverloadSignature[]): string {
   return `
     // Convert a serialized 'ciphertext' to an encrypted euint${bits} integer.
     function asEuint${bits}(bytes memory ciphertext) internal view returns (euint${bits}) {
@@ -388,16 +453,6 @@ function tfheCustomUnaryOperators(bits: number): string {
     function decrypt(euint${bits} value) internal view returns (uint${bits}) {
         return uint${bits}(Impl.decrypt(euint${bits}.unwrap(value)));
     }
-
-    // Return the negation of 'value'.
-    function neg(euint${bits} value) internal view returns (euint${bits}) {
-        return euint${bits}.wrap(Impl.neg(euint${bits}.unwrap(value)));
-    }
-
-    // Return '!value'.
-    function not(euint${bits} value) internal view returns (euint${bits}) {
-        return euint${bits}.wrap(Impl.not(euint${bits}.unwrap(value)));
-    }
     `;
 }
 
@@ -422,26 +477,12 @@ library Precompiles {
 }
 
 function unaryOperatorImpl(op: Operator): string {
+  let fname = operatorFheLibFunction(op);
   return `
-    function ${op.name}(uint256 ct) internal view returns (uint256 result) {
-        bytes32[1] memory input;
-        input[0] = bytes32(ct);
-        uint256 inputLen = 32;
-
-        bytes32[1] memory output;
-        uint256 outputLen = 32;
-
-        // Call the ${op.name} precompile.
-        uint256 precompile = Precompiles.${op.precompileName};
-        assembly {
-            if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
-                revert(0, 0)
-            }
-        }
-
-        result = uint256(output[0]);
+    function ${op.name}(uint256 ct) internal pure returns (uint256 result) {
+      result = FhevmLib(address(EXT_TFHE_LIBRARY)).${fname}(ct);
     }
-    `;
+  `;
 }
 
 function tfheCustomMethods(): string {
@@ -526,102 +567,24 @@ function implCustomMethods(): string {
   return `
     // If 'control's value is 'true', the result has the same value as 'ifTrue'.
     // If 'control's value is 'false', the result has the same value as 'ifFalse'.
-    function cmux(uint256 control, uint256 ifTrue, uint256 ifFalse) internal view returns (uint256 result) {
+    function cmux(uint256 control, uint256 ifTrue, uint256 ifFalse) internal pure returns (uint256 result) {
         // result = (ifTrue - ifFalse) * control + ifFalse
-        bytes memory input = bytes.concat(bytes32(ifTrue), bytes32(ifFalse), bytes1(0x00));
-        uint256 inputLen = input.length;
-
-        bytes32[1] memory subOutput;
-        uint256 outputLen = 32;
-
-        // Call the sub precompile.
-        uint256 precompile = Precompiles.Subtract;
-        assembly {
-            if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, subOutput, outputLen)) {
-                revert(0, 0)
-            }
-        }
-
-        // Call the mul precompile.
-        input = bytes.concat(bytes32(control), bytes32(subOutput[0]), bytes1(0x00));
-        inputLen = input.length;
-        precompile = Precompiles.Multiply;
-        bytes32[1] memory mulOutput;
-        assembly {
-            if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, mulOutput, outputLen)) {
-                revert(0, 0)
-            }
-        }
-
-        // Call the add precompile.
-        input = bytes.concat(bytes32(mulOutput[0]), bytes32(ifFalse), bytes1(0x00));
-        inputLen = input.length;
-        precompile = Precompiles.Add;
-        bytes32[1] memory addOutput;
-        assembly {
-            if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, addOutput, outputLen)) {
-                revert(0, 0)
-            }
-        }
-
-        result = uint256(addOutput[0]);
+        uint256 subOutput = FhevmLib(address(EXT_TFHE_LIBRARY)).fheSub(ifTrue, ifFalse, bytes1(0x00));
+        uint256 mulOutput = FhevmLib(address(EXT_TFHE_LIBRARY)).fheMul(control, subOutput, bytes1(0x00));
+        result = FhevmLib(address(EXT_TFHE_LIBRARY)).fheAdd(mulOutput, ifFalse, bytes1(0x00));
     }
 
     function optReq(uint256 ciphertext) internal view {
-        bytes32[1] memory input;
-        input[0] = bytes32(ciphertext);
-        uint256 inputLen = 32;
-
-        // Call the optimistic require precompile.
-        uint256 precompile = Precompiles.OptimisticRequire;
-        assembly {
-            if iszero(staticcall(gas(), precompile, input, inputLen, 0, 0)) {
-                revert(0, 0)
-            }
-        }
+        FhevmLib(address(EXT_TFHE_LIBRARY)).optimisticRequire(ciphertext);
     }
 
     function reencrypt(uint256 ciphertext, bytes32 publicKey) internal view returns (bytes memory reencrypted) {
-        bytes32[2] memory input;
-        input[0] = bytes32(ciphertext);
-        input[1] = publicKey;
-        uint256 inputLen = 64;
-
-        reencrypted = new bytes(reencryptedSize);
-
-        // Call the reencrypt precompile.
-        uint256 precompile = Precompiles.Reencrypt;
-        assembly {
-            if iszero(staticcall(gas(), precompile, input, inputLen, reencrypted, reencryptedSize)) {
-                revert(0, 0)
-            }
-        }
+        return FhevmLib(address(EXT_TFHE_LIBRARY)).reencrypt(ciphertext, uint256(publicKey));
     }
 
     function fhePubKey() internal view returns (bytes memory key) {
         // Set a byte value of 1 to signal the call comes from the library.
-        bytes1[1] memory input;
-        input[0] = 0x01;
-        uint256 inputLen = 1;
-
-        key = new bytes(fhePubKeySize);
-
-        // Call the fhePubKey precompile.
-        uint256 precompile = Precompiles.FhePubKey;
-        assembly {
-            if iszero(
-                staticcall(
-                    gas(),
-                    precompile,
-                    input,
-                    inputLen,
-                    key,
-                    fhePubKeySize
-                )
-            ) {
-                revert(0, 0)
-            }
-        }
+        key = FhevmLib(address(EXT_TFHE_LIBRARY)).fhePubKey(bytes1(0x01));
     }
 
     function verify(
@@ -629,117 +592,29 @@ function implCustomMethods(): string {
         uint8 _toType
     ) internal view returns (uint256 result) {
         bytes memory input = bytes.concat(_ciphertextBytes, bytes1(_toType));
-        uint256 inputLen = input.length;
-
-        bytes32[1] memory output;
-        uint256 outputLen = 32;
-
-        // Call the verify precompile.
-        uint256 precompile = Precompiles.Verify;
-        assembly {
-            // jump over the 32-bit 'size' field of the 'bytes' data structure of the 'input' to read actual bytes
-            if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, output, outputLen)) {
-                revert(0, 0)
-            }
-        }
-        result = uint256(output[0]);
+        result = FhevmLib(address(EXT_TFHE_LIBRARY)).verifyCiphertext(input);
     }
 
     function cast(
         uint256 ciphertext,
         uint8 toType
     ) internal view returns (uint256 result) {
-        bytes memory input = bytes.concat(bytes32(ciphertext), bytes1(toType));
-        uint256 inputLen = input.length;
-
-        bytes32[1] memory output;
-        uint256 outputLen = 32;
-
-        // Call the cast precompile.
-        uint256 precompile = Precompiles.Cast;
-        assembly {
-            // jump over the 32-bit 'size' field of the 'bytes' data structure of the 'input' to read actual bytes
-            if iszero(
-                staticcall(
-                    gas(),
-                    precompile,
-                    add(input, 32),
-                    inputLen,
-                    output,
-                    outputLen
-                )
-            ) {
-                revert(0, 0)
-            }
-        }
-        result = uint256(output[0]);
+        result = FhevmLib(address(EXT_TFHE_LIBRARY)).cast(ciphertext, bytes1(toType));
     }
 
     function trivialEncrypt(
         uint256 value,
         uint8 toType
     ) internal view returns (uint256 result) {
-        bytes memory input = bytes.concat(bytes32(value), bytes1(toType));
-        uint256 inputLen = input.length;
-
-        bytes32[1] memory output;
-        uint256 outputLen = 32;
-
-        // Call the trivialEncrypt precompile.
-        uint256 precompile = Precompiles.TrivialEncrypt;
-        assembly {
-            // jump over the 32-bit 'size' field of the 'bytes' data structure of the 'input' to read actual bytes
-            if iszero(
-                staticcall(
-                    gas(),
-                    precompile,
-                    add(input, 32),
-                    inputLen,
-                    output,
-                    outputLen
-                )
-            ) {
-                revert(0, 0)
-            }
-        }
-        result = uint256(output[0]);
+        result = FhevmLib(address(EXT_TFHE_LIBRARY)).trivialEncrypt(value, bytes1(toType));
     }
 
     function decrypt(uint256 ciphertext) internal view returns(uint256 result) {
-        bytes32[1] memory input;
-        input[0] = bytes32(ciphertext);
-        uint256 inputLen = 32;
-
-        bytes32[1] memory output;
-        uint256 outputLen = 32;
-
-        // Call the decrypt precompile.
-        uint256 precompile = Precompiles.Decrypt;
-        assembly {
-            if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
-                revert(0, 0)
-            }
-        }
-        // The output is a 32-byte buffer of a 256-bit big-endian unsigned integer.
-        result = uint256(output[0]);
+        result = FhevmLib(address(EXT_TFHE_LIBRARY)).decrypt(ciphertext);
     }
 
     function rand(uint8 randType) internal view returns(uint256 result) {
-      bytes1[1] memory input;
-      input[0] = bytes1(randType);
-      uint256 inputLen = 1;
-
-      bytes32[1] memory output;
-      uint256 outputLen = 32;
-
-      // Call the rand precompile.
-      uint256 precompile = Precompiles.Rand;
-      assembly {
-          if iszero(staticcall(gas(), precompile, input, inputLen, output, outputLen)) {
-              revert(0, 0)
-          }
-      }
-      result = uint256(output[0]);
+      result = FhevmLib(address(EXT_TFHE_LIBRARY)).fheRand(bytes1(randType));
     }
     `;
 }

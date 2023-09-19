@@ -13,6 +13,7 @@ export type Operator = {
   leftScalarEncrypt?: boolean;
   // disable left scalar operator
   leftScalarDisable?: boolean;
+  fheLibName?: string;
 };
 
 export type Precompile = {
@@ -104,6 +105,7 @@ export const ALL_OPERATORS: Operator[] = [
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
     returnType: ReturnType.Uint,
+    fheLibName: 'fheBitAnd',
   },
   {
     name: 'or',
@@ -112,6 +114,7 @@ export const ALL_OPERATORS: Operator[] = [
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
     returnType: ReturnType.Uint,
+    fheLibName: 'fheBitOr',
   },
   {
     name: 'xor',
@@ -120,6 +123,7 @@ export const ALL_OPERATORS: Operator[] = [
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
     returnType: ReturnType.Uint,
+    fheLibName: 'fheBitXor',
   },
   {
     name: 'shl',
