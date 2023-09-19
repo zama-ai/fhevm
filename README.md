@@ -192,9 +192,9 @@ This library uses several dependencies and we would like to thank the contributo
 
 ## Need support?
 
-<a target="_blank" href="https://community.zama.ai">
-  <img src="https://github.com/zama-ai/fhevm-solidity/assets/1384478/049dfc9b-3caa-4c56-8bee-3d1700664db9">
-</a>
+- Ask technical questions on the Zama discourse forum: [community.zama.ai](https://community.zama.ai)
+- Discuss live with the team on the FHE.org discord server: [discord.fhe.org](https://discord.fhe.org)
+- Follow Zama on Twitter: [@zama_fhe](https://twitter.com/zama_fhe)
 
 ## License
 
