@@ -22,13 +22,13 @@
 There used to be a dilemma in blockchain: keep your application and user data on-chain, allowing everyone to see it, or keep it privately off-chain and lose contract composability.
 Thanks to a breakthrough in homomorphic encryption, Zama’s fhEVM makes it possible to run confidential smart contracts on encrypted data, guaranteeing both confidentiality and composability.
 
-## Zama’s fhEVM enables confidential smart contracts using fully homomorphic encryption (FHE)
+### Zama’s fhEVM enables confidential smart contracts using fully homomorphic encryption (FHE)
 
 - **End-to-end encryption of transactions and state:** Data included in transactions is encrypted and never visible to anynone.
 - **Composability and data availability on-chain:** States are updated while remaining encrypted at all times.
 - **No impact on existing dapps and state:** Data stored on-chain remains encrypted end-to-end.
 
-## Developers can write confidential smart contracts without learning cryptography
+### Developers can write confidential smart contracts without learning cryptography
 
 - **Solidity Integration:** fhEVM contracts are simple solidity contracts that are built using traditional solidity toolchains.
 - **Simple DevX:** Developers can use the euint data types to mark which part of their contracts should be private.
@@ -36,7 +36,7 @@ Thanks to a breakthrough in homomorphic encryption, Zama’s fhEVM makes it poss
 
 You can take a look at our list of [examples](/examples).
 
-## Powerful features available out of the box
+### Powerful features available out of the box
 
 - **High Precision Integers -** Up to 256 bits of precision for integers
 - **Full range of Operators -** All typical operators are available: +,-,*,/,<,>.==,...
