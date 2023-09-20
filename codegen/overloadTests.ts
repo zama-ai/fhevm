@@ -6,6 +6,36 @@ type OverloadTest = {
 };
 
 export const overloadTests: { [methodName: string]: OverloadTest[] } = {
+  // solidity operators 8 bit
+  bin_op_add_euint8_euint8: [{ inputs: [0x03, 0x04], output: 0x07 }],
+  bin_op_sub_euint8_euint8: [{ inputs: [0x04, 0x03], output: 0x01 }],
+  bin_op_mul_euint8_euint8: [{ inputs: [0x04, 0x03], output: 12 }],
+  bin_op_and_euint8_euint8: [{ inputs: [0xef, 0xf0], output: 0xe0 }],
+  bin_op_or_euint8_euint8: [{ inputs: [0xef, 0xf0], output: 0xff }],
+  bin_op_xor_euint8_euint8: [{ inputs: [0xef, 0xf0], output: 0x1f }],
+  unary_op_neg_euint8: [{ inputs: [0x02], output: 0xfe }],
+  unary_op_not_euint8: [{ inputs: [0x0f], output: 0xf0 }],
+
+  // solidity operators 16 bit
+  bin_op_add_euint16_euint16: [{ inputs: [0x0103, 0x0204], output: 0x0307 }],
+  bin_op_sub_euint16_euint16: [{ inputs: [0x0204, 0x0103], output: 0x0101 }],
+  bin_op_mul_euint16_euint16: [{ inputs: [0x0104, 0x0003], output: 0x030c }],
+  bin_op_and_euint16_euint16: [{ inputs: [0xefef, 0xf0f0], output: 0xe0e0 }],
+  bin_op_or_euint16_euint16: [{ inputs: [0xefef, 0x01f0], output: 0xefff }],
+  bin_op_xor_euint16_euint16: [{ inputs: [0xefef, 0xf0f0], output: 0x1f1f }],
+  unary_op_neg_euint16: [{ inputs: [0x0003], output: 0xfffd }],
+  unary_op_not_euint16: [{ inputs: [0x0f0f], output: 0xf0f0 }],
+
+  // solidity operators 32 bit
+  bin_op_add_euint32_euint32: [{ inputs: [0x00100103, 0x00400204], output: 0x00500307 }],
+  bin_op_sub_euint32_euint32: [{ inputs: [0x90000204, 0x50000103], output: 0x40000101 }],
+  bin_op_mul_euint32_euint32: [{ inputs: [0x02000104, 0x0003], output: 0x0600030c }],
+  bin_op_and_euint32_euint32: [{ inputs: [0xefefefef, 0xf0f0f0f0], output: 0xe0e0e0e0 }],
+  bin_op_or_euint32_euint32: [{ inputs: [0xefefefef, 0x01f001f0], output: 0xefffefff }],
+  bin_op_xor_euint32_euint32: [{ inputs: [0xefefefef, 0xf0f0f0f0], output: 0x1f1f1f1f }],
+  unary_op_neg_euint32: [{ inputs: [0x00000004], output: 0xfffffffc }],
+  unary_op_not_euint32: [{ inputs: [0x0f0f0f0f], output: 0xf0f0f0f0 }],
+
   neg_euint8: [
     { inputs: [0x01], output: 0xff },
     { inputs: [0x02], output: 0xfe },

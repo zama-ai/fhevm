@@ -2,7 +2,19 @@
 
 pragma solidity >=0.8.13 <0.8.20;
 
-import "./Common.sol";
+type ebool is uint256;
+type euint8 is uint256;
+type euint16 is uint256;
+type euint32 is uint256;
+
+library Common {
+    // Values used to communicate types to the runtime.
+    uint8 internal constant ebool_t = 0;
+    uint8 internal constant euint8_t = 0;
+    uint8 internal constant euint16_t = 1;
+    uint8 internal constant euint32_t = 2;
+}
+
 import "./Impl.sol";
 
 library TFHE {
@@ -26,7 +38,7 @@ library TFHE {
     }
 
     // Evaluate add(a, b) and return the result.
-    function add(euint8 a, euint8 b) internal view returns (euint8) {
+    function add(euint8 a, euint8 b) internal pure returns (euint8) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -37,7 +49,7 @@ library TFHE {
     }
 
     // Evaluate sub(a, b) and return the result.
-    function sub(euint8 a, euint8 b) internal view returns (euint8) {
+    function sub(euint8 a, euint8 b) internal pure returns (euint8) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -48,7 +60,7 @@ library TFHE {
     }
 
     // Evaluate mul(a, b) and return the result.
-    function mul(euint8 a, euint8 b) internal view returns (euint8) {
+    function mul(euint8 a, euint8 b) internal pure returns (euint8) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -59,7 +71,7 @@ library TFHE {
     }
 
     // Evaluate and(a, b) and return the result.
-    function and(euint8 a, euint8 b) internal view returns (euint8) {
+    function and(euint8 a, euint8 b) internal pure returns (euint8) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -70,7 +82,7 @@ library TFHE {
     }
 
     // Evaluate or(a, b) and return the result.
-    function or(euint8 a, euint8 b) internal view returns (euint8) {
+    function or(euint8 a, euint8 b) internal pure returns (euint8) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -81,7 +93,7 @@ library TFHE {
     }
 
     // Evaluate xor(a, b) and return the result.
-    function xor(euint8 a, euint8 b) internal view returns (euint8) {
+    function xor(euint8 a, euint8 b) internal pure returns (euint8) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -92,7 +104,7 @@ library TFHE {
     }
 
     // Evaluate shl(a, b) and return the result.
-    function shl(euint8 a, euint8 b) internal view returns (euint8) {
+    function shl(euint8 a, euint8 b) internal pure returns (euint8) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -103,7 +115,7 @@ library TFHE {
     }
 
     // Evaluate shr(a, b) and return the result.
-    function shr(euint8 a, euint8 b) internal view returns (euint8) {
+    function shr(euint8 a, euint8 b) internal pure returns (euint8) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -114,7 +126,7 @@ library TFHE {
     }
 
     // Evaluate eq(a, b) and return the result.
-    function eq(euint8 a, euint8 b) internal view returns (ebool) {
+    function eq(euint8 a, euint8 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -125,7 +137,7 @@ library TFHE {
     }
 
     // Evaluate ne(a, b) and return the result.
-    function ne(euint8 a, euint8 b) internal view returns (ebool) {
+    function ne(euint8 a, euint8 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -136,7 +148,7 @@ library TFHE {
     }
 
     // Evaluate ge(a, b) and return the result.
-    function ge(euint8 a, euint8 b) internal view returns (ebool) {
+    function ge(euint8 a, euint8 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -147,7 +159,7 @@ library TFHE {
     }
 
     // Evaluate gt(a, b) and return the result.
-    function gt(euint8 a, euint8 b) internal view returns (ebool) {
+    function gt(euint8 a, euint8 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -158,7 +170,7 @@ library TFHE {
     }
 
     // Evaluate le(a, b) and return the result.
-    function le(euint8 a, euint8 b) internal view returns (ebool) {
+    function le(euint8 a, euint8 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -169,7 +181,7 @@ library TFHE {
     }
 
     // Evaluate lt(a, b) and return the result.
-    function lt(euint8 a, euint8 b) internal view returns (ebool) {
+    function lt(euint8 a, euint8 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -180,7 +192,7 @@ library TFHE {
     }
 
     // Evaluate min(a, b) and return the result.
-    function min(euint8 a, euint8 b) internal view returns (euint8) {
+    function min(euint8 a, euint8 b) internal pure returns (euint8) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -191,7 +203,7 @@ library TFHE {
     }
 
     // Evaluate max(a, b) and return the result.
-    function max(euint8 a, euint8 b) internal view returns (euint8) {
+    function max(euint8 a, euint8 b) internal pure returns (euint8) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -202,7 +214,7 @@ library TFHE {
     }
 
     // Evaluate add(a, b) and return the result.
-    function add(euint8 a, euint16 b) internal view returns (euint16) {
+    function add(euint8 a, euint16 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -213,7 +225,7 @@ library TFHE {
     }
 
     // Evaluate sub(a, b) and return the result.
-    function sub(euint8 a, euint16 b) internal view returns (euint16) {
+    function sub(euint8 a, euint16 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -224,7 +236,7 @@ library TFHE {
     }
 
     // Evaluate mul(a, b) and return the result.
-    function mul(euint8 a, euint16 b) internal view returns (euint16) {
+    function mul(euint8 a, euint16 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -235,7 +247,7 @@ library TFHE {
     }
 
     // Evaluate and(a, b) and return the result.
-    function and(euint8 a, euint16 b) internal view returns (euint16) {
+    function and(euint8 a, euint16 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -246,7 +258,7 @@ library TFHE {
     }
 
     // Evaluate or(a, b) and return the result.
-    function or(euint8 a, euint16 b) internal view returns (euint16) {
+    function or(euint8 a, euint16 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -257,7 +269,7 @@ library TFHE {
     }
 
     // Evaluate xor(a, b) and return the result.
-    function xor(euint8 a, euint16 b) internal view returns (euint16) {
+    function xor(euint8 a, euint16 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -268,7 +280,7 @@ library TFHE {
     }
 
     // Evaluate shl(a, b) and return the result.
-    function shl(euint8 a, euint16 b) internal view returns (euint16) {
+    function shl(euint8 a, euint16 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -279,7 +291,7 @@ library TFHE {
     }
 
     // Evaluate shr(a, b) and return the result.
-    function shr(euint8 a, euint16 b) internal view returns (euint16) {
+    function shr(euint8 a, euint16 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -290,7 +302,7 @@ library TFHE {
     }
 
     // Evaluate eq(a, b) and return the result.
-    function eq(euint8 a, euint16 b) internal view returns (ebool) {
+    function eq(euint8 a, euint16 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -301,7 +313,7 @@ library TFHE {
     }
 
     // Evaluate ne(a, b) and return the result.
-    function ne(euint8 a, euint16 b) internal view returns (ebool) {
+    function ne(euint8 a, euint16 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -312,7 +324,7 @@ library TFHE {
     }
 
     // Evaluate ge(a, b) and return the result.
-    function ge(euint8 a, euint16 b) internal view returns (ebool) {
+    function ge(euint8 a, euint16 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -323,7 +335,7 @@ library TFHE {
     }
 
     // Evaluate gt(a, b) and return the result.
-    function gt(euint8 a, euint16 b) internal view returns (ebool) {
+    function gt(euint8 a, euint16 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -334,7 +346,7 @@ library TFHE {
     }
 
     // Evaluate le(a, b) and return the result.
-    function le(euint8 a, euint16 b) internal view returns (ebool) {
+    function le(euint8 a, euint16 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -345,7 +357,7 @@ library TFHE {
     }
 
     // Evaluate lt(a, b) and return the result.
-    function lt(euint8 a, euint16 b) internal view returns (ebool) {
+    function lt(euint8 a, euint16 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -356,7 +368,7 @@ library TFHE {
     }
 
     // Evaluate min(a, b) and return the result.
-    function min(euint8 a, euint16 b) internal view returns (euint16) {
+    function min(euint8 a, euint16 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -367,7 +379,7 @@ library TFHE {
     }
 
     // Evaluate max(a, b) and return the result.
-    function max(euint8 a, euint16 b) internal view returns (euint16) {
+    function max(euint8 a, euint16 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -378,7 +390,7 @@ library TFHE {
     }
 
     // Evaluate add(a, b) and return the result.
-    function add(euint8 a, euint32 b) internal view returns (euint32) {
+    function add(euint8 a, euint32 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -389,7 +401,7 @@ library TFHE {
     }
 
     // Evaluate sub(a, b) and return the result.
-    function sub(euint8 a, euint32 b) internal view returns (euint32) {
+    function sub(euint8 a, euint32 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -400,7 +412,7 @@ library TFHE {
     }
 
     // Evaluate mul(a, b) and return the result.
-    function mul(euint8 a, euint32 b) internal view returns (euint32) {
+    function mul(euint8 a, euint32 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -411,7 +423,7 @@ library TFHE {
     }
 
     // Evaluate and(a, b) and return the result.
-    function and(euint8 a, euint32 b) internal view returns (euint32) {
+    function and(euint8 a, euint32 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -422,7 +434,7 @@ library TFHE {
     }
 
     // Evaluate or(a, b) and return the result.
-    function or(euint8 a, euint32 b) internal view returns (euint32) {
+    function or(euint8 a, euint32 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -433,7 +445,7 @@ library TFHE {
     }
 
     // Evaluate xor(a, b) and return the result.
-    function xor(euint8 a, euint32 b) internal view returns (euint32) {
+    function xor(euint8 a, euint32 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -444,7 +456,7 @@ library TFHE {
     }
 
     // Evaluate shl(a, b) and return the result.
-    function shl(euint8 a, euint32 b) internal view returns (euint32) {
+    function shl(euint8 a, euint32 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -455,7 +467,7 @@ library TFHE {
     }
 
     // Evaluate shr(a, b) and return the result.
-    function shr(euint8 a, euint32 b) internal view returns (euint32) {
+    function shr(euint8 a, euint32 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -466,7 +478,7 @@ library TFHE {
     }
 
     // Evaluate eq(a, b) and return the result.
-    function eq(euint8 a, euint32 b) internal view returns (ebool) {
+    function eq(euint8 a, euint32 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -477,7 +489,7 @@ library TFHE {
     }
 
     // Evaluate ne(a, b) and return the result.
-    function ne(euint8 a, euint32 b) internal view returns (ebool) {
+    function ne(euint8 a, euint32 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -488,7 +500,7 @@ library TFHE {
     }
 
     // Evaluate ge(a, b) and return the result.
-    function ge(euint8 a, euint32 b) internal view returns (ebool) {
+    function ge(euint8 a, euint32 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -499,7 +511,7 @@ library TFHE {
     }
 
     // Evaluate gt(a, b) and return the result.
-    function gt(euint8 a, euint32 b) internal view returns (ebool) {
+    function gt(euint8 a, euint32 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -510,7 +522,7 @@ library TFHE {
     }
 
     // Evaluate le(a, b) and return the result.
-    function le(euint8 a, euint32 b) internal view returns (ebool) {
+    function le(euint8 a, euint32 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -521,7 +533,7 @@ library TFHE {
     }
 
     // Evaluate lt(a, b) and return the result.
-    function lt(euint8 a, euint32 b) internal view returns (ebool) {
+    function lt(euint8 a, euint32 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -532,7 +544,7 @@ library TFHE {
     }
 
     // Evaluate min(a, b) and return the result.
-    function min(euint8 a, euint32 b) internal view returns (euint32) {
+    function min(euint8 a, euint32 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -543,7 +555,7 @@ library TFHE {
     }
 
     // Evaluate max(a, b) and return the result.
-    function max(euint8 a, euint32 b) internal view returns (euint32) {
+    function max(euint8 a, euint32 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -554,7 +566,7 @@ library TFHE {
     }
 
     // Evaluate add(a, b) and return the result.
-    function add(euint8 a, uint8 b) internal view returns (euint8) {
+    function add(euint8 a, uint8 b) internal pure returns (euint8) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -562,7 +574,7 @@ library TFHE {
     }
 
     // Evaluate add(a, b) and return the result.
-    function add(uint8 a, euint8 b) internal view returns (euint8) {
+    function add(uint8 a, euint8 b) internal pure returns (euint8) {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
@@ -570,7 +582,7 @@ library TFHE {
     }
 
     // Evaluate sub(a, b) and return the result.
-    function sub(euint8 a, uint8 b) internal view returns (euint8) {
+    function sub(euint8 a, uint8 b) internal pure returns (euint8) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -578,7 +590,7 @@ library TFHE {
     }
 
     // Evaluate sub(a, b) and return the result.
-    function sub(uint8 a, euint8 b) internal view returns (euint8) {
+    function sub(uint8 a, euint8 b) internal pure returns (euint8) {
         euint8 aEnc = asEuint8(a);
         if (!isInitialized(b)) {
             b = asEuint8(0);
@@ -587,7 +599,7 @@ library TFHE {
     }
 
     // Evaluate mul(a, b) and return the result.
-    function mul(euint8 a, uint8 b) internal view returns (euint8) {
+    function mul(euint8 a, uint8 b) internal pure returns (euint8) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -595,7 +607,7 @@ library TFHE {
     }
 
     // Evaluate mul(a, b) and return the result.
-    function mul(uint8 a, euint8 b) internal view returns (euint8) {
+    function mul(uint8 a, euint8 b) internal pure returns (euint8) {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
@@ -603,7 +615,7 @@ library TFHE {
     }
 
     // Evaluate div(a, b) and return the result.
-    function div(euint8 a, uint8 b) internal view returns (euint8) {
+    function div(euint8 a, uint8 b) internal pure returns (euint8) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -611,7 +623,7 @@ library TFHE {
     }
 
     // Evaluate shl(a, b) and return the result.
-    function shl(euint8 a, uint8 b) internal view returns (euint8) {
+    function shl(euint8 a, uint8 b) internal pure returns (euint8) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -619,7 +631,7 @@ library TFHE {
     }
 
     // Evaluate shl(a, b) and return the result.
-    function shl(uint8 a, euint8 b) internal view returns (euint8) {
+    function shl(uint8 a, euint8 b) internal pure returns (euint8) {
         euint8 aEnc = asEuint8(a);
         if (!isInitialized(b)) {
             b = asEuint8(0);
@@ -628,7 +640,7 @@ library TFHE {
     }
 
     // Evaluate shr(a, b) and return the result.
-    function shr(euint8 a, uint8 b) internal view returns (euint8) {
+    function shr(euint8 a, uint8 b) internal pure returns (euint8) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -636,7 +648,7 @@ library TFHE {
     }
 
     // Evaluate shr(a, b) and return the result.
-    function shr(uint8 a, euint8 b) internal view returns (euint8) {
+    function shr(uint8 a, euint8 b) internal pure returns (euint8) {
         euint8 aEnc = asEuint8(a);
         if (!isInitialized(b)) {
             b = asEuint8(0);
@@ -645,7 +657,7 @@ library TFHE {
     }
 
     // Evaluate eq(a, b) and return the result.
-    function eq(euint8 a, uint8 b) internal view returns (ebool) {
+    function eq(euint8 a, uint8 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -653,7 +665,7 @@ library TFHE {
     }
 
     // Evaluate eq(a, b) and return the result.
-    function eq(uint8 a, euint8 b) internal view returns (ebool) {
+    function eq(uint8 a, euint8 b) internal pure returns (ebool) {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
@@ -661,7 +673,7 @@ library TFHE {
     }
 
     // Evaluate ne(a, b) and return the result.
-    function ne(euint8 a, uint8 b) internal view returns (ebool) {
+    function ne(euint8 a, uint8 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -669,7 +681,7 @@ library TFHE {
     }
 
     // Evaluate ne(a, b) and return the result.
-    function ne(uint8 a, euint8 b) internal view returns (ebool) {
+    function ne(uint8 a, euint8 b) internal pure returns (ebool) {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
@@ -677,7 +689,7 @@ library TFHE {
     }
 
     // Evaluate ge(a, b) and return the result.
-    function ge(euint8 a, uint8 b) internal view returns (ebool) {
+    function ge(euint8 a, uint8 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -685,7 +697,7 @@ library TFHE {
     }
 
     // Evaluate ge(a, b) and return the result.
-    function ge(uint8 a, euint8 b) internal view returns (ebool) {
+    function ge(uint8 a, euint8 b) internal pure returns (ebool) {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
@@ -693,7 +705,7 @@ library TFHE {
     }
 
     // Evaluate gt(a, b) and return the result.
-    function gt(euint8 a, uint8 b) internal view returns (ebool) {
+    function gt(euint8 a, uint8 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -701,7 +713,7 @@ library TFHE {
     }
 
     // Evaluate gt(a, b) and return the result.
-    function gt(uint8 a, euint8 b) internal view returns (ebool) {
+    function gt(uint8 a, euint8 b) internal pure returns (ebool) {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
@@ -709,7 +721,7 @@ library TFHE {
     }
 
     // Evaluate le(a, b) and return the result.
-    function le(euint8 a, uint8 b) internal view returns (ebool) {
+    function le(euint8 a, uint8 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -717,7 +729,7 @@ library TFHE {
     }
 
     // Evaluate le(a, b) and return the result.
-    function le(uint8 a, euint8 b) internal view returns (ebool) {
+    function le(uint8 a, euint8 b) internal pure returns (ebool) {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
@@ -725,7 +737,7 @@ library TFHE {
     }
 
     // Evaluate lt(a, b) and return the result.
-    function lt(euint8 a, uint8 b) internal view returns (ebool) {
+    function lt(euint8 a, uint8 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -733,7 +745,7 @@ library TFHE {
     }
 
     // Evaluate lt(a, b) and return the result.
-    function lt(uint8 a, euint8 b) internal view returns (ebool) {
+    function lt(uint8 a, euint8 b) internal pure returns (ebool) {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
@@ -741,7 +753,7 @@ library TFHE {
     }
 
     // Evaluate min(a, b) and return the result.
-    function min(euint8 a, uint8 b) internal view returns (euint8) {
+    function min(euint8 a, uint8 b) internal pure returns (euint8) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -749,7 +761,7 @@ library TFHE {
     }
 
     // Evaluate min(a, b) and return the result.
-    function min(uint8 a, euint8 b) internal view returns (euint8) {
+    function min(uint8 a, euint8 b) internal pure returns (euint8) {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
@@ -757,7 +769,7 @@ library TFHE {
     }
 
     // Evaluate max(a, b) and return the result.
-    function max(euint8 a, uint8 b) internal view returns (euint8) {
+    function max(euint8 a, uint8 b) internal pure returns (euint8) {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
@@ -765,7 +777,7 @@ library TFHE {
     }
 
     // Evaluate max(a, b) and return the result.
-    function max(uint8 a, euint8 b) internal view returns (euint8) {
+    function max(uint8 a, euint8 b) internal pure returns (euint8) {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
@@ -773,7 +785,7 @@ library TFHE {
     }
 
     // Evaluate add(a, b) and return the result.
-    function add(euint16 a, euint8 b) internal view returns (euint16) {
+    function add(euint16 a, euint8 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -784,7 +796,7 @@ library TFHE {
     }
 
     // Evaluate sub(a, b) and return the result.
-    function sub(euint16 a, euint8 b) internal view returns (euint16) {
+    function sub(euint16 a, euint8 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -795,7 +807,7 @@ library TFHE {
     }
 
     // Evaluate mul(a, b) and return the result.
-    function mul(euint16 a, euint8 b) internal view returns (euint16) {
+    function mul(euint16 a, euint8 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -806,7 +818,7 @@ library TFHE {
     }
 
     // Evaluate and(a, b) and return the result.
-    function and(euint16 a, euint8 b) internal view returns (euint16) {
+    function and(euint16 a, euint8 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -817,7 +829,7 @@ library TFHE {
     }
 
     // Evaluate or(a, b) and return the result.
-    function or(euint16 a, euint8 b) internal view returns (euint16) {
+    function or(euint16 a, euint8 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -828,7 +840,7 @@ library TFHE {
     }
 
     // Evaluate xor(a, b) and return the result.
-    function xor(euint16 a, euint8 b) internal view returns (euint16) {
+    function xor(euint16 a, euint8 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -839,7 +851,7 @@ library TFHE {
     }
 
     // Evaluate shl(a, b) and return the result.
-    function shl(euint16 a, euint8 b) internal view returns (euint16) {
+    function shl(euint16 a, euint8 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -850,7 +862,7 @@ library TFHE {
     }
 
     // Evaluate shr(a, b) and return the result.
-    function shr(euint16 a, euint8 b) internal view returns (euint16) {
+    function shr(euint16 a, euint8 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -861,7 +873,7 @@ library TFHE {
     }
 
     // Evaluate eq(a, b) and return the result.
-    function eq(euint16 a, euint8 b) internal view returns (ebool) {
+    function eq(euint16 a, euint8 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -872,7 +884,7 @@ library TFHE {
     }
 
     // Evaluate ne(a, b) and return the result.
-    function ne(euint16 a, euint8 b) internal view returns (ebool) {
+    function ne(euint16 a, euint8 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -883,7 +895,7 @@ library TFHE {
     }
 
     // Evaluate ge(a, b) and return the result.
-    function ge(euint16 a, euint8 b) internal view returns (ebool) {
+    function ge(euint16 a, euint8 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -894,7 +906,7 @@ library TFHE {
     }
 
     // Evaluate gt(a, b) and return the result.
-    function gt(euint16 a, euint8 b) internal view returns (ebool) {
+    function gt(euint16 a, euint8 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -905,7 +917,7 @@ library TFHE {
     }
 
     // Evaluate le(a, b) and return the result.
-    function le(euint16 a, euint8 b) internal view returns (ebool) {
+    function le(euint16 a, euint8 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -916,7 +928,7 @@ library TFHE {
     }
 
     // Evaluate lt(a, b) and return the result.
-    function lt(euint16 a, euint8 b) internal view returns (ebool) {
+    function lt(euint16 a, euint8 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -927,7 +939,7 @@ library TFHE {
     }
 
     // Evaluate min(a, b) and return the result.
-    function min(euint16 a, euint8 b) internal view returns (euint16) {
+    function min(euint16 a, euint8 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -938,7 +950,7 @@ library TFHE {
     }
 
     // Evaluate max(a, b) and return the result.
-    function max(euint16 a, euint8 b) internal view returns (euint16) {
+    function max(euint16 a, euint8 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -949,7 +961,7 @@ library TFHE {
     }
 
     // Evaluate add(a, b) and return the result.
-    function add(euint16 a, euint16 b) internal view returns (euint16) {
+    function add(euint16 a, euint16 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -960,7 +972,7 @@ library TFHE {
     }
 
     // Evaluate sub(a, b) and return the result.
-    function sub(euint16 a, euint16 b) internal view returns (euint16) {
+    function sub(euint16 a, euint16 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -971,7 +983,7 @@ library TFHE {
     }
 
     // Evaluate mul(a, b) and return the result.
-    function mul(euint16 a, euint16 b) internal view returns (euint16) {
+    function mul(euint16 a, euint16 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -982,7 +994,7 @@ library TFHE {
     }
 
     // Evaluate and(a, b) and return the result.
-    function and(euint16 a, euint16 b) internal view returns (euint16) {
+    function and(euint16 a, euint16 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -993,7 +1005,7 @@ library TFHE {
     }
 
     // Evaluate or(a, b) and return the result.
-    function or(euint16 a, euint16 b) internal view returns (euint16) {
+    function or(euint16 a, euint16 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1004,7 +1016,7 @@ library TFHE {
     }
 
     // Evaluate xor(a, b) and return the result.
-    function xor(euint16 a, euint16 b) internal view returns (euint16) {
+    function xor(euint16 a, euint16 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1015,7 +1027,7 @@ library TFHE {
     }
 
     // Evaluate shl(a, b) and return the result.
-    function shl(euint16 a, euint16 b) internal view returns (euint16) {
+    function shl(euint16 a, euint16 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1026,7 +1038,7 @@ library TFHE {
     }
 
     // Evaluate shr(a, b) and return the result.
-    function shr(euint16 a, euint16 b) internal view returns (euint16) {
+    function shr(euint16 a, euint16 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1037,7 +1049,7 @@ library TFHE {
     }
 
     // Evaluate eq(a, b) and return the result.
-    function eq(euint16 a, euint16 b) internal view returns (ebool) {
+    function eq(euint16 a, euint16 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1048,7 +1060,7 @@ library TFHE {
     }
 
     // Evaluate ne(a, b) and return the result.
-    function ne(euint16 a, euint16 b) internal view returns (ebool) {
+    function ne(euint16 a, euint16 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1059,7 +1071,7 @@ library TFHE {
     }
 
     // Evaluate ge(a, b) and return the result.
-    function ge(euint16 a, euint16 b) internal view returns (ebool) {
+    function ge(euint16 a, euint16 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1070,7 +1082,7 @@ library TFHE {
     }
 
     // Evaluate gt(a, b) and return the result.
-    function gt(euint16 a, euint16 b) internal view returns (ebool) {
+    function gt(euint16 a, euint16 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1081,7 +1093,7 @@ library TFHE {
     }
 
     // Evaluate le(a, b) and return the result.
-    function le(euint16 a, euint16 b) internal view returns (ebool) {
+    function le(euint16 a, euint16 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1092,7 +1104,7 @@ library TFHE {
     }
 
     // Evaluate lt(a, b) and return the result.
-    function lt(euint16 a, euint16 b) internal view returns (ebool) {
+    function lt(euint16 a, euint16 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1103,7 +1115,7 @@ library TFHE {
     }
 
     // Evaluate min(a, b) and return the result.
-    function min(euint16 a, euint16 b) internal view returns (euint16) {
+    function min(euint16 a, euint16 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1114,7 +1126,7 @@ library TFHE {
     }
 
     // Evaluate max(a, b) and return the result.
-    function max(euint16 a, euint16 b) internal view returns (euint16) {
+    function max(euint16 a, euint16 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1125,7 +1137,7 @@ library TFHE {
     }
 
     // Evaluate add(a, b) and return the result.
-    function add(euint16 a, euint32 b) internal view returns (euint32) {
+    function add(euint16 a, euint32 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1136,7 +1148,7 @@ library TFHE {
     }
 
     // Evaluate sub(a, b) and return the result.
-    function sub(euint16 a, euint32 b) internal view returns (euint32) {
+    function sub(euint16 a, euint32 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1147,7 +1159,7 @@ library TFHE {
     }
 
     // Evaluate mul(a, b) and return the result.
-    function mul(euint16 a, euint32 b) internal view returns (euint32) {
+    function mul(euint16 a, euint32 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1158,7 +1170,7 @@ library TFHE {
     }
 
     // Evaluate and(a, b) and return the result.
-    function and(euint16 a, euint32 b) internal view returns (euint32) {
+    function and(euint16 a, euint32 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1169,7 +1181,7 @@ library TFHE {
     }
 
     // Evaluate or(a, b) and return the result.
-    function or(euint16 a, euint32 b) internal view returns (euint32) {
+    function or(euint16 a, euint32 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1180,7 +1192,7 @@ library TFHE {
     }
 
     // Evaluate xor(a, b) and return the result.
-    function xor(euint16 a, euint32 b) internal view returns (euint32) {
+    function xor(euint16 a, euint32 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1191,7 +1203,7 @@ library TFHE {
     }
 
     // Evaluate shl(a, b) and return the result.
-    function shl(euint16 a, euint32 b) internal view returns (euint32) {
+    function shl(euint16 a, euint32 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1202,7 +1214,7 @@ library TFHE {
     }
 
     // Evaluate shr(a, b) and return the result.
-    function shr(euint16 a, euint32 b) internal view returns (euint32) {
+    function shr(euint16 a, euint32 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1213,7 +1225,7 @@ library TFHE {
     }
 
     // Evaluate eq(a, b) and return the result.
-    function eq(euint16 a, euint32 b) internal view returns (ebool) {
+    function eq(euint16 a, euint32 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1224,7 +1236,7 @@ library TFHE {
     }
 
     // Evaluate ne(a, b) and return the result.
-    function ne(euint16 a, euint32 b) internal view returns (ebool) {
+    function ne(euint16 a, euint32 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1235,7 +1247,7 @@ library TFHE {
     }
 
     // Evaluate ge(a, b) and return the result.
-    function ge(euint16 a, euint32 b) internal view returns (ebool) {
+    function ge(euint16 a, euint32 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1246,7 +1258,7 @@ library TFHE {
     }
 
     // Evaluate gt(a, b) and return the result.
-    function gt(euint16 a, euint32 b) internal view returns (ebool) {
+    function gt(euint16 a, euint32 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1257,7 +1269,7 @@ library TFHE {
     }
 
     // Evaluate le(a, b) and return the result.
-    function le(euint16 a, euint32 b) internal view returns (ebool) {
+    function le(euint16 a, euint32 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1268,7 +1280,7 @@ library TFHE {
     }
 
     // Evaluate lt(a, b) and return the result.
-    function lt(euint16 a, euint32 b) internal view returns (ebool) {
+    function lt(euint16 a, euint32 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1279,7 +1291,7 @@ library TFHE {
     }
 
     // Evaluate min(a, b) and return the result.
-    function min(euint16 a, euint32 b) internal view returns (euint32) {
+    function min(euint16 a, euint32 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1290,7 +1302,7 @@ library TFHE {
     }
 
     // Evaluate max(a, b) and return the result.
-    function max(euint16 a, euint32 b) internal view returns (euint32) {
+    function max(euint16 a, euint32 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1301,7 +1313,7 @@ library TFHE {
     }
 
     // Evaluate add(a, b) and return the result.
-    function add(euint16 a, uint16 b) internal view returns (euint16) {
+    function add(euint16 a, uint16 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1309,7 +1321,7 @@ library TFHE {
     }
 
     // Evaluate add(a, b) and return the result.
-    function add(uint16 a, euint16 b) internal view returns (euint16) {
+    function add(uint16 a, euint16 b) internal pure returns (euint16) {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -1317,7 +1329,7 @@ library TFHE {
     }
 
     // Evaluate sub(a, b) and return the result.
-    function sub(euint16 a, uint16 b) internal view returns (euint16) {
+    function sub(euint16 a, uint16 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1325,7 +1337,7 @@ library TFHE {
     }
 
     // Evaluate sub(a, b) and return the result.
-    function sub(uint16 a, euint16 b) internal view returns (euint16) {
+    function sub(uint16 a, euint16 b) internal pure returns (euint16) {
         euint16 aEnc = asEuint16(a);
         if (!isInitialized(b)) {
             b = asEuint16(0);
@@ -1334,7 +1346,7 @@ library TFHE {
     }
 
     // Evaluate mul(a, b) and return the result.
-    function mul(euint16 a, uint16 b) internal view returns (euint16) {
+    function mul(euint16 a, uint16 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1342,7 +1354,7 @@ library TFHE {
     }
 
     // Evaluate mul(a, b) and return the result.
-    function mul(uint16 a, euint16 b) internal view returns (euint16) {
+    function mul(uint16 a, euint16 b) internal pure returns (euint16) {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -1350,7 +1362,7 @@ library TFHE {
     }
 
     // Evaluate div(a, b) and return the result.
-    function div(euint16 a, uint16 b) internal view returns (euint16) {
+    function div(euint16 a, uint16 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1358,7 +1370,7 @@ library TFHE {
     }
 
     // Evaluate shl(a, b) and return the result.
-    function shl(euint16 a, uint16 b) internal view returns (euint16) {
+    function shl(euint16 a, uint16 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1366,7 +1378,7 @@ library TFHE {
     }
 
     // Evaluate shl(a, b) and return the result.
-    function shl(uint16 a, euint16 b) internal view returns (euint16) {
+    function shl(uint16 a, euint16 b) internal pure returns (euint16) {
         euint16 aEnc = asEuint16(a);
         if (!isInitialized(b)) {
             b = asEuint16(0);
@@ -1375,7 +1387,7 @@ library TFHE {
     }
 
     // Evaluate shr(a, b) and return the result.
-    function shr(euint16 a, uint16 b) internal view returns (euint16) {
+    function shr(euint16 a, uint16 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1383,7 +1395,7 @@ library TFHE {
     }
 
     // Evaluate shr(a, b) and return the result.
-    function shr(uint16 a, euint16 b) internal view returns (euint16) {
+    function shr(uint16 a, euint16 b) internal pure returns (euint16) {
         euint16 aEnc = asEuint16(a);
         if (!isInitialized(b)) {
             b = asEuint16(0);
@@ -1392,7 +1404,7 @@ library TFHE {
     }
 
     // Evaluate eq(a, b) and return the result.
-    function eq(euint16 a, uint16 b) internal view returns (ebool) {
+    function eq(euint16 a, uint16 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1400,7 +1412,7 @@ library TFHE {
     }
 
     // Evaluate eq(a, b) and return the result.
-    function eq(uint16 a, euint16 b) internal view returns (ebool) {
+    function eq(uint16 a, euint16 b) internal pure returns (ebool) {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -1408,7 +1420,7 @@ library TFHE {
     }
 
     // Evaluate ne(a, b) and return the result.
-    function ne(euint16 a, uint16 b) internal view returns (ebool) {
+    function ne(euint16 a, uint16 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1416,7 +1428,7 @@ library TFHE {
     }
 
     // Evaluate ne(a, b) and return the result.
-    function ne(uint16 a, euint16 b) internal view returns (ebool) {
+    function ne(uint16 a, euint16 b) internal pure returns (ebool) {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -1424,7 +1436,7 @@ library TFHE {
     }
 
     // Evaluate ge(a, b) and return the result.
-    function ge(euint16 a, uint16 b) internal view returns (ebool) {
+    function ge(euint16 a, uint16 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1432,7 +1444,7 @@ library TFHE {
     }
 
     // Evaluate ge(a, b) and return the result.
-    function ge(uint16 a, euint16 b) internal view returns (ebool) {
+    function ge(uint16 a, euint16 b) internal pure returns (ebool) {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -1440,7 +1452,7 @@ library TFHE {
     }
 
     // Evaluate gt(a, b) and return the result.
-    function gt(euint16 a, uint16 b) internal view returns (ebool) {
+    function gt(euint16 a, uint16 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1448,7 +1460,7 @@ library TFHE {
     }
 
     // Evaluate gt(a, b) and return the result.
-    function gt(uint16 a, euint16 b) internal view returns (ebool) {
+    function gt(uint16 a, euint16 b) internal pure returns (ebool) {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -1456,7 +1468,7 @@ library TFHE {
     }
 
     // Evaluate le(a, b) and return the result.
-    function le(euint16 a, uint16 b) internal view returns (ebool) {
+    function le(euint16 a, uint16 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1464,7 +1476,7 @@ library TFHE {
     }
 
     // Evaluate le(a, b) and return the result.
-    function le(uint16 a, euint16 b) internal view returns (ebool) {
+    function le(uint16 a, euint16 b) internal pure returns (ebool) {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -1472,7 +1484,7 @@ library TFHE {
     }
 
     // Evaluate lt(a, b) and return the result.
-    function lt(euint16 a, uint16 b) internal view returns (ebool) {
+    function lt(euint16 a, uint16 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1480,7 +1492,7 @@ library TFHE {
     }
 
     // Evaluate lt(a, b) and return the result.
-    function lt(uint16 a, euint16 b) internal view returns (ebool) {
+    function lt(uint16 a, euint16 b) internal pure returns (ebool) {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -1488,7 +1500,7 @@ library TFHE {
     }
 
     // Evaluate min(a, b) and return the result.
-    function min(euint16 a, uint16 b) internal view returns (euint16) {
+    function min(euint16 a, uint16 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1496,7 +1508,7 @@ library TFHE {
     }
 
     // Evaluate min(a, b) and return the result.
-    function min(uint16 a, euint16 b) internal view returns (euint16) {
+    function min(uint16 a, euint16 b) internal pure returns (euint16) {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -1504,7 +1516,7 @@ library TFHE {
     }
 
     // Evaluate max(a, b) and return the result.
-    function max(euint16 a, uint16 b) internal view returns (euint16) {
+    function max(euint16 a, uint16 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
@@ -1512,7 +1524,7 @@ library TFHE {
     }
 
     // Evaluate max(a, b) and return the result.
-    function max(uint16 a, euint16 b) internal view returns (euint16) {
+    function max(uint16 a, euint16 b) internal pure returns (euint16) {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -1520,7 +1532,7 @@ library TFHE {
     }
 
     // Evaluate add(a, b) and return the result.
-    function add(euint32 a, euint8 b) internal view returns (euint32) {
+    function add(euint32 a, euint8 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1531,7 +1543,7 @@ library TFHE {
     }
 
     // Evaluate sub(a, b) and return the result.
-    function sub(euint32 a, euint8 b) internal view returns (euint32) {
+    function sub(euint32 a, euint8 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1542,7 +1554,7 @@ library TFHE {
     }
 
     // Evaluate mul(a, b) and return the result.
-    function mul(euint32 a, euint8 b) internal view returns (euint32) {
+    function mul(euint32 a, euint8 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1553,7 +1565,7 @@ library TFHE {
     }
 
     // Evaluate and(a, b) and return the result.
-    function and(euint32 a, euint8 b) internal view returns (euint32) {
+    function and(euint32 a, euint8 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1564,7 +1576,7 @@ library TFHE {
     }
 
     // Evaluate or(a, b) and return the result.
-    function or(euint32 a, euint8 b) internal view returns (euint32) {
+    function or(euint32 a, euint8 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1575,7 +1587,7 @@ library TFHE {
     }
 
     // Evaluate xor(a, b) and return the result.
-    function xor(euint32 a, euint8 b) internal view returns (euint32) {
+    function xor(euint32 a, euint8 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1586,7 +1598,7 @@ library TFHE {
     }
 
     // Evaluate shl(a, b) and return the result.
-    function shl(euint32 a, euint8 b) internal view returns (euint32) {
+    function shl(euint32 a, euint8 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1597,7 +1609,7 @@ library TFHE {
     }
 
     // Evaluate shr(a, b) and return the result.
-    function shr(euint32 a, euint8 b) internal view returns (euint32) {
+    function shr(euint32 a, euint8 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1608,7 +1620,7 @@ library TFHE {
     }
 
     // Evaluate eq(a, b) and return the result.
-    function eq(euint32 a, euint8 b) internal view returns (ebool) {
+    function eq(euint32 a, euint8 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1619,7 +1631,7 @@ library TFHE {
     }
 
     // Evaluate ne(a, b) and return the result.
-    function ne(euint32 a, euint8 b) internal view returns (ebool) {
+    function ne(euint32 a, euint8 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1630,7 +1642,7 @@ library TFHE {
     }
 
     // Evaluate ge(a, b) and return the result.
-    function ge(euint32 a, euint8 b) internal view returns (ebool) {
+    function ge(euint32 a, euint8 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1641,7 +1653,7 @@ library TFHE {
     }
 
     // Evaluate gt(a, b) and return the result.
-    function gt(euint32 a, euint8 b) internal view returns (ebool) {
+    function gt(euint32 a, euint8 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1652,7 +1664,7 @@ library TFHE {
     }
 
     // Evaluate le(a, b) and return the result.
-    function le(euint32 a, euint8 b) internal view returns (ebool) {
+    function le(euint32 a, euint8 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1663,7 +1675,7 @@ library TFHE {
     }
 
     // Evaluate lt(a, b) and return the result.
-    function lt(euint32 a, euint8 b) internal view returns (ebool) {
+    function lt(euint32 a, euint8 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1674,7 +1686,7 @@ library TFHE {
     }
 
     // Evaluate min(a, b) and return the result.
-    function min(euint32 a, euint8 b) internal view returns (euint32) {
+    function min(euint32 a, euint8 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1685,7 +1697,7 @@ library TFHE {
     }
 
     // Evaluate max(a, b) and return the result.
-    function max(euint32 a, euint8 b) internal view returns (euint32) {
+    function max(euint32 a, euint8 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1696,7 +1708,7 @@ library TFHE {
     }
 
     // Evaluate add(a, b) and return the result.
-    function add(euint32 a, euint16 b) internal view returns (euint32) {
+    function add(euint32 a, euint16 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1707,7 +1719,7 @@ library TFHE {
     }
 
     // Evaluate sub(a, b) and return the result.
-    function sub(euint32 a, euint16 b) internal view returns (euint32) {
+    function sub(euint32 a, euint16 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1718,7 +1730,7 @@ library TFHE {
     }
 
     // Evaluate mul(a, b) and return the result.
-    function mul(euint32 a, euint16 b) internal view returns (euint32) {
+    function mul(euint32 a, euint16 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1729,7 +1741,7 @@ library TFHE {
     }
 
     // Evaluate and(a, b) and return the result.
-    function and(euint32 a, euint16 b) internal view returns (euint32) {
+    function and(euint32 a, euint16 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1740,7 +1752,7 @@ library TFHE {
     }
 
     // Evaluate or(a, b) and return the result.
-    function or(euint32 a, euint16 b) internal view returns (euint32) {
+    function or(euint32 a, euint16 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1751,7 +1763,7 @@ library TFHE {
     }
 
     // Evaluate xor(a, b) and return the result.
-    function xor(euint32 a, euint16 b) internal view returns (euint32) {
+    function xor(euint32 a, euint16 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1762,7 +1774,7 @@ library TFHE {
     }
 
     // Evaluate shl(a, b) and return the result.
-    function shl(euint32 a, euint16 b) internal view returns (euint32) {
+    function shl(euint32 a, euint16 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1773,7 +1785,7 @@ library TFHE {
     }
 
     // Evaluate shr(a, b) and return the result.
-    function shr(euint32 a, euint16 b) internal view returns (euint32) {
+    function shr(euint32 a, euint16 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1784,7 +1796,7 @@ library TFHE {
     }
 
     // Evaluate eq(a, b) and return the result.
-    function eq(euint32 a, euint16 b) internal view returns (ebool) {
+    function eq(euint32 a, euint16 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1795,7 +1807,7 @@ library TFHE {
     }
 
     // Evaluate ne(a, b) and return the result.
-    function ne(euint32 a, euint16 b) internal view returns (ebool) {
+    function ne(euint32 a, euint16 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1806,7 +1818,7 @@ library TFHE {
     }
 
     // Evaluate ge(a, b) and return the result.
-    function ge(euint32 a, euint16 b) internal view returns (ebool) {
+    function ge(euint32 a, euint16 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1817,7 +1829,7 @@ library TFHE {
     }
 
     // Evaluate gt(a, b) and return the result.
-    function gt(euint32 a, euint16 b) internal view returns (ebool) {
+    function gt(euint32 a, euint16 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1828,7 +1840,7 @@ library TFHE {
     }
 
     // Evaluate le(a, b) and return the result.
-    function le(euint32 a, euint16 b) internal view returns (ebool) {
+    function le(euint32 a, euint16 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1839,7 +1851,7 @@ library TFHE {
     }
 
     // Evaluate lt(a, b) and return the result.
-    function lt(euint32 a, euint16 b) internal view returns (ebool) {
+    function lt(euint32 a, euint16 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1850,7 +1862,7 @@ library TFHE {
     }
 
     // Evaluate min(a, b) and return the result.
-    function min(euint32 a, euint16 b) internal view returns (euint32) {
+    function min(euint32 a, euint16 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1861,7 +1873,7 @@ library TFHE {
     }
 
     // Evaluate max(a, b) and return the result.
-    function max(euint32 a, euint16 b) internal view returns (euint32) {
+    function max(euint32 a, euint16 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1872,7 +1884,7 @@ library TFHE {
     }
 
     // Evaluate add(a, b) and return the result.
-    function add(euint32 a, euint32 b) internal view returns (euint32) {
+    function add(euint32 a, euint32 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1883,7 +1895,7 @@ library TFHE {
     }
 
     // Evaluate sub(a, b) and return the result.
-    function sub(euint32 a, euint32 b) internal view returns (euint32) {
+    function sub(euint32 a, euint32 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1894,7 +1906,7 @@ library TFHE {
     }
 
     // Evaluate mul(a, b) and return the result.
-    function mul(euint32 a, euint32 b) internal view returns (euint32) {
+    function mul(euint32 a, euint32 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1905,7 +1917,7 @@ library TFHE {
     }
 
     // Evaluate and(a, b) and return the result.
-    function and(euint32 a, euint32 b) internal view returns (euint32) {
+    function and(euint32 a, euint32 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1916,7 +1928,7 @@ library TFHE {
     }
 
     // Evaluate or(a, b) and return the result.
-    function or(euint32 a, euint32 b) internal view returns (euint32) {
+    function or(euint32 a, euint32 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1927,7 +1939,7 @@ library TFHE {
     }
 
     // Evaluate xor(a, b) and return the result.
-    function xor(euint32 a, euint32 b) internal view returns (euint32) {
+    function xor(euint32 a, euint32 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1938,7 +1950,7 @@ library TFHE {
     }
 
     // Evaluate shl(a, b) and return the result.
-    function shl(euint32 a, euint32 b) internal view returns (euint32) {
+    function shl(euint32 a, euint32 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1949,7 +1961,7 @@ library TFHE {
     }
 
     // Evaluate shr(a, b) and return the result.
-    function shr(euint32 a, euint32 b) internal view returns (euint32) {
+    function shr(euint32 a, euint32 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1960,7 +1972,7 @@ library TFHE {
     }
 
     // Evaluate eq(a, b) and return the result.
-    function eq(euint32 a, euint32 b) internal view returns (ebool) {
+    function eq(euint32 a, euint32 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1971,7 +1983,7 @@ library TFHE {
     }
 
     // Evaluate ne(a, b) and return the result.
-    function ne(euint32 a, euint32 b) internal view returns (ebool) {
+    function ne(euint32 a, euint32 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1982,7 +1994,7 @@ library TFHE {
     }
 
     // Evaluate ge(a, b) and return the result.
-    function ge(euint32 a, euint32 b) internal view returns (ebool) {
+    function ge(euint32 a, euint32 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -1993,7 +2005,7 @@ library TFHE {
     }
 
     // Evaluate gt(a, b) and return the result.
-    function gt(euint32 a, euint32 b) internal view returns (ebool) {
+    function gt(euint32 a, euint32 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -2004,7 +2016,7 @@ library TFHE {
     }
 
     // Evaluate le(a, b) and return the result.
-    function le(euint32 a, euint32 b) internal view returns (ebool) {
+    function le(euint32 a, euint32 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -2015,7 +2027,7 @@ library TFHE {
     }
 
     // Evaluate lt(a, b) and return the result.
-    function lt(euint32 a, euint32 b) internal view returns (ebool) {
+    function lt(euint32 a, euint32 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -2026,7 +2038,7 @@ library TFHE {
     }
 
     // Evaluate min(a, b) and return the result.
-    function min(euint32 a, euint32 b) internal view returns (euint32) {
+    function min(euint32 a, euint32 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -2037,7 +2049,7 @@ library TFHE {
     }
 
     // Evaluate max(a, b) and return the result.
-    function max(euint32 a, euint32 b) internal view returns (euint32) {
+    function max(euint32 a, euint32 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -2048,7 +2060,7 @@ library TFHE {
     }
 
     // Evaluate add(a, b) and return the result.
-    function add(euint32 a, uint32 b) internal view returns (euint32) {
+    function add(euint32 a, uint32 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -2056,7 +2068,7 @@ library TFHE {
     }
 
     // Evaluate add(a, b) and return the result.
-    function add(uint32 a, euint32 b) internal view returns (euint32) {
+    function add(uint32 a, euint32 b) internal pure returns (euint32) {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -2064,7 +2076,7 @@ library TFHE {
     }
 
     // Evaluate sub(a, b) and return the result.
-    function sub(euint32 a, uint32 b) internal view returns (euint32) {
+    function sub(euint32 a, uint32 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -2072,7 +2084,7 @@ library TFHE {
     }
 
     // Evaluate sub(a, b) and return the result.
-    function sub(uint32 a, euint32 b) internal view returns (euint32) {
+    function sub(uint32 a, euint32 b) internal pure returns (euint32) {
         euint32 aEnc = asEuint32(a);
         if (!isInitialized(b)) {
             b = asEuint32(0);
@@ -2081,7 +2093,7 @@ library TFHE {
     }
 
     // Evaluate mul(a, b) and return the result.
-    function mul(euint32 a, uint32 b) internal view returns (euint32) {
+    function mul(euint32 a, uint32 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -2089,7 +2101,7 @@ library TFHE {
     }
 
     // Evaluate mul(a, b) and return the result.
-    function mul(uint32 a, euint32 b) internal view returns (euint32) {
+    function mul(uint32 a, euint32 b) internal pure returns (euint32) {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -2097,7 +2109,7 @@ library TFHE {
     }
 
     // Evaluate div(a, b) and return the result.
-    function div(euint32 a, uint32 b) internal view returns (euint32) {
+    function div(euint32 a, uint32 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -2105,7 +2117,7 @@ library TFHE {
     }
 
     // Evaluate shl(a, b) and return the result.
-    function shl(euint32 a, uint32 b) internal view returns (euint32) {
+    function shl(euint32 a, uint32 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -2113,7 +2125,7 @@ library TFHE {
     }
 
     // Evaluate shl(a, b) and return the result.
-    function shl(uint32 a, euint32 b) internal view returns (euint32) {
+    function shl(uint32 a, euint32 b) internal pure returns (euint32) {
         euint32 aEnc = asEuint32(a);
         if (!isInitialized(b)) {
             b = asEuint32(0);
@@ -2122,7 +2134,7 @@ library TFHE {
     }
 
     // Evaluate shr(a, b) and return the result.
-    function shr(euint32 a, uint32 b) internal view returns (euint32) {
+    function shr(euint32 a, uint32 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -2130,7 +2142,7 @@ library TFHE {
     }
 
     // Evaluate shr(a, b) and return the result.
-    function shr(uint32 a, euint32 b) internal view returns (euint32) {
+    function shr(uint32 a, euint32 b) internal pure returns (euint32) {
         euint32 aEnc = asEuint32(a);
         if (!isInitialized(b)) {
             b = asEuint32(0);
@@ -2139,7 +2151,7 @@ library TFHE {
     }
 
     // Evaluate eq(a, b) and return the result.
-    function eq(euint32 a, uint32 b) internal view returns (ebool) {
+    function eq(euint32 a, uint32 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -2147,7 +2159,7 @@ library TFHE {
     }
 
     // Evaluate eq(a, b) and return the result.
-    function eq(uint32 a, euint32 b) internal view returns (ebool) {
+    function eq(uint32 a, euint32 b) internal pure returns (ebool) {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -2155,7 +2167,7 @@ library TFHE {
     }
 
     // Evaluate ne(a, b) and return the result.
-    function ne(euint32 a, uint32 b) internal view returns (ebool) {
+    function ne(euint32 a, uint32 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -2163,7 +2175,7 @@ library TFHE {
     }
 
     // Evaluate ne(a, b) and return the result.
-    function ne(uint32 a, euint32 b) internal view returns (ebool) {
+    function ne(uint32 a, euint32 b) internal pure returns (ebool) {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -2171,7 +2183,7 @@ library TFHE {
     }
 
     // Evaluate ge(a, b) and return the result.
-    function ge(euint32 a, uint32 b) internal view returns (ebool) {
+    function ge(euint32 a, uint32 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -2179,7 +2191,7 @@ library TFHE {
     }
 
     // Evaluate ge(a, b) and return the result.
-    function ge(uint32 a, euint32 b) internal view returns (ebool) {
+    function ge(uint32 a, euint32 b) internal pure returns (ebool) {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -2187,7 +2199,7 @@ library TFHE {
     }
 
     // Evaluate gt(a, b) and return the result.
-    function gt(euint32 a, uint32 b) internal view returns (ebool) {
+    function gt(euint32 a, uint32 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -2195,7 +2207,7 @@ library TFHE {
     }
 
     // Evaluate gt(a, b) and return the result.
-    function gt(uint32 a, euint32 b) internal view returns (ebool) {
+    function gt(uint32 a, euint32 b) internal pure returns (ebool) {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -2203,7 +2215,7 @@ library TFHE {
     }
 
     // Evaluate le(a, b) and return the result.
-    function le(euint32 a, uint32 b) internal view returns (ebool) {
+    function le(euint32 a, uint32 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -2211,7 +2223,7 @@ library TFHE {
     }
 
     // Evaluate le(a, b) and return the result.
-    function le(uint32 a, euint32 b) internal view returns (ebool) {
+    function le(uint32 a, euint32 b) internal pure returns (ebool) {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -2219,7 +2231,7 @@ library TFHE {
     }
 
     // Evaluate lt(a, b) and return the result.
-    function lt(euint32 a, uint32 b) internal view returns (ebool) {
+    function lt(euint32 a, uint32 b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -2227,7 +2239,7 @@ library TFHE {
     }
 
     // Evaluate lt(a, b) and return the result.
-    function lt(uint32 a, euint32 b) internal view returns (ebool) {
+    function lt(uint32 a, euint32 b) internal pure returns (ebool) {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -2235,7 +2247,7 @@ library TFHE {
     }
 
     // Evaluate min(a, b) and return the result.
-    function min(euint32 a, uint32 b) internal view returns (euint32) {
+    function min(euint32 a, uint32 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -2243,7 +2255,7 @@ library TFHE {
     }
 
     // Evaluate min(a, b) and return the result.
-    function min(uint32 a, euint32 b) internal view returns (euint32) {
+    function min(uint32 a, euint32 b) internal pure returns (euint32) {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -2251,7 +2263,7 @@ library TFHE {
     }
 
     // Evaluate max(a, b) and return the result.
-    function max(euint32 a, uint32 b) internal view returns (euint32) {
+    function max(euint32 a, uint32 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
@@ -2259,7 +2271,7 @@ library TFHE {
     }
 
     // Evaluate max(a, b) and return the result.
-    function max(uint32 a, euint32 b) internal view returns (euint32) {
+    function max(uint32 a, euint32 b) internal pure returns (euint32) {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -2274,40 +2286,40 @@ library TFHE {
 
     // If 'control's value is 'true', the result has the same value as 'a'.
     // If 'control's value is 'false', the result has the same value as 'b'.
-    function cmux(ebool control, euint16 a, euint16 b) internal view returns (euint16) {
+    function cmux(ebool control, euint16 a, euint16 b) internal pure returns (euint16) {
         euint16 ctrl = asEuint16(asEuint8(control));
         return euint16.wrap(Impl.cmux(euint16.unwrap(ctrl), euint16.unwrap(a), euint16.unwrap(b)));
     }
 
     // If 'control's value is 'true', the result has the same value as 'a'.
     // If 'control's value is 'false', the result has the same value as 'b'.
-    function cmux(ebool control, euint32 a, euint32 b) internal view returns (euint32) {
+    function cmux(ebool control, euint32 a, euint32 b) internal pure returns (euint32) {
         euint32 ctrl = asEuint32(asEuint8(control));
         return euint32.wrap(Impl.cmux(euint32.unwrap(ctrl), euint32.unwrap(a), euint32.unwrap(b)));
     }
 
     // Cast an encrypted integer from euint16 to euint8.
-    function asEuint8(euint16 value) internal view returns (euint8) {
+    function asEuint8(euint16 value) internal pure returns (euint8) {
         return euint8.wrap(Impl.cast(euint16.unwrap(value), Common.euint8_t));
     }
 
     // Cast an encrypted integer from euint32 to euint8.
-    function asEuint8(euint32 value) internal view returns (euint8) {
+    function asEuint8(euint32 value) internal pure returns (euint8) {
         return euint8.wrap(Impl.cast(euint32.unwrap(value), Common.euint8_t));
     }
 
     // Cast an encrypted integer from euint8 to ebool.
-    function asEbool(euint8 value) internal view returns (ebool) {
+    function asEbool(euint8 value) internal pure returns (ebool) {
         return ne(value, 0);
     }
 
     // Convert a serialized 'ciphertext' to an encrypted boolean.
-    function asEbool(bytes memory ciphertext) internal view returns (ebool) {
+    function asEbool(bytes memory ciphertext) internal pure returns (ebool) {
         return asEbool(asEuint8(ciphertext));
     }
 
     // Convert a plaintext boolean to an encrypted boolean.
-    function asEbool(bool value) internal view returns (ebool) {
+    function asEbool(bool value) internal pure returns (ebool) {
         if (value) {
             return asEbool(asEuint8(1));
         } else {
@@ -2316,32 +2328,32 @@ library TFHE {
     }
 
     // Cast an encrypted integer from euint8 to euint16.
-    function asEuint16(euint8 value) internal view returns (euint16) {
+    function asEuint16(euint8 value) internal pure returns (euint16) {
         return euint16.wrap(Impl.cast(euint8.unwrap(value), Common.euint16_t));
     }
 
     // Cast an encrypted integer from euint32 to euint16.
-    function asEuint16(euint32 value) internal view returns (euint16) {
+    function asEuint16(euint32 value) internal pure returns (euint16) {
         return euint16.wrap(Impl.cast(euint32.unwrap(value), Common.euint16_t));
     }
 
     // Cast an encrypted integer from euint16 to ebool.
-    function asEbool(euint16 value) internal view returns (ebool) {
+    function asEbool(euint16 value) internal pure returns (ebool) {
         return ne(value, 0);
     }
 
     // Cast an encrypted integer from euint8 to euint32.
-    function asEuint32(euint8 value) internal view returns (euint32) {
+    function asEuint32(euint8 value) internal pure returns (euint32) {
         return euint32.wrap(Impl.cast(euint8.unwrap(value), Common.euint32_t));
     }
 
     // Cast an encrypted integer from euint16 to euint32.
-    function asEuint32(euint16 value) internal view returns (euint32) {
+    function asEuint32(euint16 value) internal pure returns (euint32) {
         return euint32.wrap(Impl.cast(euint16.unwrap(value), Common.euint32_t));
     }
 
     // Cast an encrypted integer from euint32 to ebool.
-    function asEbool(euint32 value) internal view returns (ebool) {
+    function asEbool(euint32 value) internal pure returns (ebool) {
         return ne(value, 0);
     }
 
@@ -2370,12 +2382,12 @@ library TFHE {
     }
 
     // Convert a serialized 'ciphertext' to an encrypted euint8 integer.
-    function asEuint8(bytes memory ciphertext) internal view returns (euint8) {
+    function asEuint8(bytes memory ciphertext) internal pure returns (euint8) {
         return euint8.wrap(Impl.verify(ciphertext, Common.euint8_t));
     }
 
     // Convert a plaintext value to an encrypted euint8 integer.
-    function asEuint8(uint256 value) internal view returns (euint8) {
+    function asEuint8(uint256 value) internal pure returns (euint8) {
         return euint8.wrap(Impl.trivialEncrypt(value, Common.euint8_t));
     }
 
@@ -2406,12 +2418,12 @@ library TFHE {
     }
 
     // Convert a serialized 'ciphertext' to an encrypted euint16 integer.
-    function asEuint16(bytes memory ciphertext) internal view returns (euint16) {
+    function asEuint16(bytes memory ciphertext) internal pure returns (euint16) {
         return euint16.wrap(Impl.verify(ciphertext, Common.euint16_t));
     }
 
     // Convert a plaintext value to an encrypted euint16 integer.
-    function asEuint16(uint256 value) internal view returns (euint16) {
+    function asEuint16(uint256 value) internal pure returns (euint16) {
         return euint16.wrap(Impl.trivialEncrypt(value, Common.euint16_t));
     }
 
@@ -2442,12 +2454,12 @@ library TFHE {
     }
 
     // Convert a serialized 'ciphertext' to an encrypted euint32 integer.
-    function asEuint32(bytes memory ciphertext) internal view returns (euint32) {
+    function asEuint32(bytes memory ciphertext) internal pure returns (euint32) {
         return euint32.wrap(Impl.verify(ciphertext, Common.euint32_t));
     }
 
     // Convert a plaintext value to an encrypted euint32 integer.
-    function asEuint32(uint256 value) internal view returns (euint32) {
+    function asEuint32(uint256 value) internal pure returns (euint32) {
         return euint32.wrap(Impl.trivialEncrypt(value, Common.euint32_t));
     }
 
@@ -2554,4 +2566,148 @@ library TFHE {
     function randEuint32() internal view returns (euint32) {
         return euint32.wrap(Impl.rand(Common.euint32_t));
     }
+}
+
+using {tfheBinaryOperatorAdd8 as +} for euint8 global;
+
+function tfheBinaryOperatorAdd8(euint8 lhs, euint8 rhs) pure returns (euint8) {
+    return TFHE.add(lhs, rhs);
+}
+
+using {tfheBinaryOperatorSub8 as -} for euint8 global;
+
+function tfheBinaryOperatorSub8(euint8 lhs, euint8 rhs) pure returns (euint8) {
+    return TFHE.sub(lhs, rhs);
+}
+
+using {tfheBinaryOperatorMul8 as *} for euint8 global;
+
+function tfheBinaryOperatorMul8(euint8 lhs, euint8 rhs) pure returns (euint8) {
+    return TFHE.mul(lhs, rhs);
+}
+
+using {tfheBinaryOperatorAnd8 as &} for euint8 global;
+
+function tfheBinaryOperatorAnd8(euint8 lhs, euint8 rhs) pure returns (euint8) {
+    return TFHE.and(lhs, rhs);
+}
+
+using {tfheBinaryOperatorOr8 as |} for euint8 global;
+
+function tfheBinaryOperatorOr8(euint8 lhs, euint8 rhs) pure returns (euint8) {
+    return TFHE.or(lhs, rhs);
+}
+
+using {tfheBinaryOperatorXor8 as ^} for euint8 global;
+
+function tfheBinaryOperatorXor8(euint8 lhs, euint8 rhs) pure returns (euint8) {
+    return TFHE.xor(lhs, rhs);
+}
+
+using {tfheUnaryOperatorNeg8 as -} for euint8 global;
+
+function tfheUnaryOperatorNeg8(euint8 input) pure returns (euint8) {
+    return TFHE.neg(input);
+}
+
+using {tfheUnaryOperatorNot8 as ~} for euint8 global;
+
+function tfheUnaryOperatorNot8(euint8 input) pure returns (euint8) {
+    return TFHE.not(input);
+}
+
+using {tfheBinaryOperatorAdd16 as +} for euint16 global;
+
+function tfheBinaryOperatorAdd16(euint16 lhs, euint16 rhs) pure returns (euint16) {
+    return TFHE.add(lhs, rhs);
+}
+
+using {tfheBinaryOperatorSub16 as -} for euint16 global;
+
+function tfheBinaryOperatorSub16(euint16 lhs, euint16 rhs) pure returns (euint16) {
+    return TFHE.sub(lhs, rhs);
+}
+
+using {tfheBinaryOperatorMul16 as *} for euint16 global;
+
+function tfheBinaryOperatorMul16(euint16 lhs, euint16 rhs) pure returns (euint16) {
+    return TFHE.mul(lhs, rhs);
+}
+
+using {tfheBinaryOperatorAnd16 as &} for euint16 global;
+
+function tfheBinaryOperatorAnd16(euint16 lhs, euint16 rhs) pure returns (euint16) {
+    return TFHE.and(lhs, rhs);
+}
+
+using {tfheBinaryOperatorOr16 as |} for euint16 global;
+
+function tfheBinaryOperatorOr16(euint16 lhs, euint16 rhs) pure returns (euint16) {
+    return TFHE.or(lhs, rhs);
+}
+
+using {tfheBinaryOperatorXor16 as ^} for euint16 global;
+
+function tfheBinaryOperatorXor16(euint16 lhs, euint16 rhs) pure returns (euint16) {
+    return TFHE.xor(lhs, rhs);
+}
+
+using {tfheUnaryOperatorNeg16 as -} for euint16 global;
+
+function tfheUnaryOperatorNeg16(euint16 input) pure returns (euint16) {
+    return TFHE.neg(input);
+}
+
+using {tfheUnaryOperatorNot16 as ~} for euint16 global;
+
+function tfheUnaryOperatorNot16(euint16 input) pure returns (euint16) {
+    return TFHE.not(input);
+}
+
+using {tfheBinaryOperatorAdd32 as +} for euint32 global;
+
+function tfheBinaryOperatorAdd32(euint32 lhs, euint32 rhs) pure returns (euint32) {
+    return TFHE.add(lhs, rhs);
+}
+
+using {tfheBinaryOperatorSub32 as -} for euint32 global;
+
+function tfheBinaryOperatorSub32(euint32 lhs, euint32 rhs) pure returns (euint32) {
+    return TFHE.sub(lhs, rhs);
+}
+
+using {tfheBinaryOperatorMul32 as *} for euint32 global;
+
+function tfheBinaryOperatorMul32(euint32 lhs, euint32 rhs) pure returns (euint32) {
+    return TFHE.mul(lhs, rhs);
+}
+
+using {tfheBinaryOperatorAnd32 as &} for euint32 global;
+
+function tfheBinaryOperatorAnd32(euint32 lhs, euint32 rhs) pure returns (euint32) {
+    return TFHE.and(lhs, rhs);
+}
+
+using {tfheBinaryOperatorOr32 as |} for euint32 global;
+
+function tfheBinaryOperatorOr32(euint32 lhs, euint32 rhs) pure returns (euint32) {
+    return TFHE.or(lhs, rhs);
+}
+
+using {tfheBinaryOperatorXor32 as ^} for euint32 global;
+
+function tfheBinaryOperatorXor32(euint32 lhs, euint32 rhs) pure returns (euint32) {
+    return TFHE.xor(lhs, rhs);
+}
+
+using {tfheUnaryOperatorNeg32 as -} for euint32 global;
+
+function tfheUnaryOperatorNeg32(euint32 input) pure returns (euint32) {
+    return TFHE.neg(input);
+}
+
+using {tfheUnaryOperatorNot32 as ~} for euint32 global;
+
+function tfheUnaryOperatorNot32(euint32 input) pure returns (euint32) {
+    return TFHE.not(input);
 }

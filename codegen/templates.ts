@@ -3,12 +3,8 @@ import { assert } from 'console';
 import { Operator, OperatorArguments, Precompile, ReturnType } from './common';
 import { ArgumentType, OverloadSignature } from './testgen';
 
-export function commonSolHeader(): string {
+export function commonSolLib(): string {
   return `
-// SPDX-License-Identifier: BSD-3-Clause-Clear
-
-pragma solidity >=0.8.13 <0.8.20;
-
 type ebool is uint256;
 type euint8 is uint256;
 type euint16 is uint256;
@@ -56,9 +52,6 @@ export function implSol(operators: Operator[]): string {
 
 pragma solidity >=0.8.13 <0.8.20;
 
-import "./Common.sol";
-import "./Precompiles.sol";
-
 ${fheLibInterface}
 
 address constant EXT_TFHE_LIBRARY = address(93);
@@ -95,9 +88,13 @@ function operatorFheLibFunction(op: Operator): string {
   if (op.fheLibName) {
     return op.fheLibName;
   }
-  const firstLetter = op.name.toUpperCase().charAt(0);
-  const theRest = op.name.substring(1);
-  return `fhe${firstLetter}${theRest}`;
+  return `fhe${capitalizeFirstLetter(op.name)}`;
+}
+
+function capitalizeFirstLetter(input: string): string {
+  const firstLetter = input.toUpperCase().charAt(0);
+  const theRest = input.substring(1);
+  return `${firstLetter}${theRest}`;
 }
 
 function generateImplFhevmLibInterface(operators: Operator[]): string {
@@ -132,9 +129,9 @@ function fheLibCustomInterfaceFunctions(): string {
     function optimisticRequire(uint256 ct) external view;
     function reencrypt(uint256 ct, uint256 publicKey) external view returns (bytes memory);
     function fhePubKey(bytes1 fromLib) external view returns (bytes memory result);
-    function verifyCiphertext(bytes memory input) external view returns (uint256 result);
-    function cast(uint256 ct, bytes1 toType) external view returns (uint256 result);
-    function trivialEncrypt(uint256 ct, bytes1 toType) external view returns (uint256 result);
+    function verifyCiphertext(bytes memory input) external pure returns (uint256 result);
+    function cast(uint256 ct, bytes1 toType) external pure returns (uint256 result);
+    function trivialEncrypt(uint256 ct, bytes1 toType) external pure returns (uint256 result);
     function decrypt(uint256 ct) external view returns (uint256 result);
     function fheRand(bytes1 inp) external view returns (uint256 result);
   `;
@@ -148,7 +145,8 @@ export function tfheSol(operators: Operator[], supportedBits: number[]): [string
 
 pragma solidity >=0.8.13 <0.8.20;
 
-import "./Common.sol";
+${commonSolLib()}
+
 import "./Impl.sol";
 
 library TFHE {
@@ -189,7 +187,64 @@ library TFHE {
 
   res.push('}\n');
 
+  supportedBits.forEach((bits) => {
+    operators.forEach((op) => {
+      res.push(tfheSolidityOperator(bits, op, signatures));
+    });
+  });
+
   return [res.join(''), signatures];
+}
+
+function tfheSolidityOperator(bits: number, operator: Operator, os: OverloadSignature[]): string {
+  const res: string[] = [];
+
+  if (operator.hasEncrypted && operator.binarySolidityOperator) {
+    const fname = `tfheBinaryOperator${capitalizeFirstLetter(operator.name)}${bits}`;
+    res.push(`
+      using {${fname} as ${operator.binarySolidityOperator}} for euint${bits} global;
+    `);
+
+    res.push(`
+      function ${fname}(euint${bits} lhs, euint${bits} rhs) pure returns (euint${bits}) {
+        return TFHE.${operator.name}(lhs, rhs);
+      }
+    `);
+
+    os.push({
+      binaryOperator: operator.binarySolidityOperator,
+      arguments: [
+        { type: ArgumentType.EUint, bits },
+        { type: ArgumentType.EUint, bits },
+      ],
+
+      name: `bin_op_${operator.name}`,
+      returnType: { type: ArgumentType.EUint, bits },
+    });
+  }
+
+  if (operator.hasEncrypted && operator.unarySolidityOperator) {
+    const fname = `tfheUnaryOperator${capitalizeFirstLetter(operator.name)}${bits}`;
+    res.push(`
+      using {${fname} as ${operator.unarySolidityOperator}} for euint${bits} global;
+    `);
+
+    res.push(`
+      function ${fname}(euint${bits} input) pure returns (euint${bits}) {
+        return TFHE.${operator.name}(input);
+      }
+    `);
+
+    os.push({
+      unaryOperator: operator.unarySolidityOperator,
+      arguments: [{ type: ArgumentType.EUint, bits }],
+
+      name: `unary_op_${operator.name}`,
+      returnType: { type: ArgumentType.EUint, bits },
+    });
+  }
+
+  return res.join('');
 }
 
 function tfheEncryptedOperator(
@@ -234,7 +289,7 @@ function tfheEncryptedOperator(
   });
   res.push(`
     // Evaluate ${operator.name}(a, b) and return the result.
-    function ${operator.name}(euint${lhsBits} a, euint${rhsBits} b) internal view returns (${returnType}) {
+    function ${operator.name}(euint${lhsBits} a, euint${rhsBits} b) internal pure returns (${returnType}) {
         if (!isInitialized(a)) {
             a = asEuint${lhsBits}(0);
         }
@@ -302,7 +357,7 @@ function tfheScalarOperator(
   // rhs scalar
   res.push(`
     // Evaluate ${operator.name}(a, b) and return the result.
-    function ${operator.name}(euint${lhsBits} a, uint${rhsBits} b) internal view returns (${returnType}) {
+    function ${operator.name}(euint${lhsBits} a, uint${rhsBits} b) internal pure returns (${returnType}) {
         if (!isInitialized(a)) {
             a = asEuint${lhsBits}(0);
         }
@@ -324,7 +379,7 @@ function tfheScalarOperator(
     res.push(`
 
     // Evaluate ${operator.name}(a, b) and return the result.
-    function ${operator.name}(uint${lhsBits} a, euint${rhsBits} b) internal view returns (${returnType}) {
+    function ${operator.name}(uint${lhsBits} a, euint${rhsBits} b) internal pure returns (${returnType}) {
         ${maybeEncryptLeft}
         if (!isInitialized(b)) {
             b = asEuint${rhsBits}(0);
@@ -350,7 +405,7 @@ function tfheCmux(inputBits: number): string {
   return `
     // If 'control's value is 'true', the result has the same value as 'a'.
     // If 'control's value is 'false', the result has the same value as 'b'.
-    function cmux(ebool control, euint${inputBits} a, euint${inputBits} b) internal view returns (euint${inputBits}) {
+    function cmux(ebool control, euint${inputBits} a, euint${inputBits} b) internal pure returns (euint${inputBits}) {
         euint${inputBits} ctrl = asEuint${inputBits}(asEuint8(control));
         return euint${inputBits}.wrap(Impl.cmux(euint${inputBits}.unwrap(ctrl), euint${inputBits}.unwrap(a), euint${inputBits}.unwrap(b)));
     }`;
@@ -363,7 +418,7 @@ function tfheAsEboolCustomCast(inputBits: number, outputBits: number): string {
 
   return `
     // Cast an encrypted integer from euint${inputBits} to euint${outputBits}.
-    function asEuint${outputBits}(euint${inputBits} value) internal view returns (euint${outputBits}) {
+    function asEuint${outputBits}(euint${inputBits} value) internal pure returns (euint${outputBits}) {
         return euint${outputBits}.wrap(Impl.cast(euint${inputBits}.unwrap(value), Common.euint${outputBits}_t));
     }
     `;
@@ -373,7 +428,7 @@ function tfheAsEboolUnaryCast(bits: number): string {
   const res: string[] = [];
   res.push(`
     // Cast an encrypted integer from euint${bits} to ebool.
-    function asEbool(euint${bits} value) internal view returns (ebool) {
+    function asEbool(euint${bits} value) internal pure returns (ebool) {
         return ne(value, 0);
     }
     `);
@@ -381,12 +436,12 @@ function tfheAsEboolUnaryCast(bits: number): string {
   if (bits == 8) {
     res.push(`
     // Convert a serialized 'ciphertext' to an encrypted boolean.
-    function asEbool(bytes memory ciphertext) internal view returns (ebool) {
+    function asEbool(bytes memory ciphertext) internal pure returns (ebool) {
         return asEbool(asEuint8(ciphertext));
     }
 
     // Convert a plaintext boolean to an encrypted boolean.
-    function asEbool(bool value) internal view returns (ebool) {
+    function asEbool(bool value) internal pure returns (ebool) {
         if (value) {
             return asEbool(asEuint8(1));
         } else {
@@ -423,12 +478,12 @@ function tfheUnaryOperators(bits: number, operators: Operator[], signatures: Ove
 function tfheCustomUnaryOperators(bits: number, signatures: OverloadSignature[]): string {
   return `
     // Convert a serialized 'ciphertext' to an encrypted euint${bits} integer.
-    function asEuint${bits}(bytes memory ciphertext) internal view returns (euint${bits}) {
+    function asEuint${bits}(bytes memory ciphertext) internal pure returns (euint${bits}) {
         return euint${bits}.wrap(Impl.verify(ciphertext, Common.euint${bits}_t));
     }
 
     // Convert a plaintext value to an encrypted euint${bits} integer.
-    function asEuint${bits}(uint256 value) internal view returns (euint${bits}) {
+    function asEuint${bits}(uint256 value) internal pure returns (euint${bits}) {
         return euint${bits}.wrap(Impl.trivialEncrypt(value, Common.euint${bits}_t));
     }
 
@@ -590,7 +645,7 @@ function implCustomMethods(): string {
     function verify(
         bytes memory _ciphertextBytes,
         uint8 _toType
-    ) internal view returns (uint256 result) {
+    ) internal pure returns (uint256 result) {
         bytes memory input = bytes.concat(_ciphertextBytes, bytes1(_toType));
         result = FhevmLib(address(EXT_TFHE_LIBRARY)).verifyCiphertext(input);
     }
@@ -598,14 +653,14 @@ function implCustomMethods(): string {
     function cast(
         uint256 ciphertext,
         uint8 toType
-    ) internal view returns (uint256 result) {
+    ) internal pure returns (uint256 result) {
         result = FhevmLib(address(EXT_TFHE_LIBRARY)).cast(ciphertext, bytes1(toType));
     }
 
     function trivialEncrypt(
         uint256 value,
         uint8 toType
-    ) internal view returns (uint256 result) {
+    ) internal pure returns (uint256 result) {
         result = FhevmLib(address(EXT_TFHE_LIBRARY)).trivialEncrypt(value, bytes1(toType));
     }
 

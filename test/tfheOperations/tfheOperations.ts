@@ -3430,4 +3430,178 @@ describe('TFHE operations', function () {
     const res = await this.contract3.not_euint32(this.instances3.alice.encrypt32(65534));
     expect(res).to.equal(4294901761);
   });
+
+  it('test operator "bin_op_add" overload (euint8, euint8) => euint8 test 1 (3, 4)', async function () {
+    const res = await this.contract3.bin_op_add_euint8_euint8(
+      this.instances3.alice.encrypt8(3),
+      this.instances3.alice.encrypt8(4),
+    );
+    expect(res).to.equal(7);
+  });
+
+  it('test operator "bin_op_sub" overload (euint8, euint8) => euint8 test 1 (4, 3)', async function () {
+    const res = await this.contract3.bin_op_sub_euint8_euint8(
+      this.instances3.alice.encrypt8(4),
+      this.instances3.alice.encrypt8(3),
+    );
+    expect(res).to.equal(1);
+  });
+
+  it('test operator "bin_op_mul" overload (euint8, euint8) => euint8 test 1 (4, 3)', async function () {
+    const res = await this.contract3.bin_op_mul_euint8_euint8(
+      this.instances3.alice.encrypt8(4),
+      this.instances3.alice.encrypt8(3),
+    );
+    expect(res).to.equal(12);
+  });
+
+  it('test operator "bin_op_and" overload (euint8, euint8) => euint8 test 1 (239, 240)', async function () {
+    const res = await this.contract3.bin_op_and_euint8_euint8(
+      this.instances3.alice.encrypt8(239),
+      this.instances3.alice.encrypt8(240),
+    );
+    expect(res).to.equal(224);
+  });
+
+  it('test operator "bin_op_or" overload (euint8, euint8) => euint8 test 1 (239, 240)', async function () {
+    const res = await this.contract3.bin_op_or_euint8_euint8(
+      this.instances3.alice.encrypt8(239),
+      this.instances3.alice.encrypt8(240),
+    );
+    expect(res).to.equal(255);
+  });
+
+  it('test operator "bin_op_xor" overload (euint8, euint8) => euint8 test 1 (239, 240)', async function () {
+    const res = await this.contract3.bin_op_xor_euint8_euint8(
+      this.instances3.alice.encrypt8(239),
+      this.instances3.alice.encrypt8(240),
+    );
+    expect(res).to.equal(31);
+  });
+
+  it('test operator "unary_op_neg" overload (euint8) => euint8 test 1 (2)', async function () {
+    const res = await this.contract3.unary_op_neg_euint8(this.instances3.alice.encrypt8(2));
+    expect(res).to.equal(254);
+  });
+
+  it('test operator "unary_op_not" overload (euint8) => euint8 test 1 (15)', async function () {
+    const res = await this.contract3.unary_op_not_euint8(this.instances3.alice.encrypt8(15));
+    expect(res).to.equal(240);
+  });
+
+  it('test operator "bin_op_add" overload (euint16, euint16) => euint16 test 1 (259, 516)', async function () {
+    const res = await this.contract3.bin_op_add_euint16_euint16(
+      this.instances3.alice.encrypt16(259),
+      this.instances3.alice.encrypt16(516),
+    );
+    expect(res).to.equal(775);
+  });
+
+  it('test operator "bin_op_sub" overload (euint16, euint16) => euint16 test 1 (516, 259)', async function () {
+    const res = await this.contract3.bin_op_sub_euint16_euint16(
+      this.instances3.alice.encrypt16(516),
+      this.instances3.alice.encrypt16(259),
+    );
+    expect(res).to.equal(257);
+  });
+
+  it('test operator "bin_op_mul" overload (euint16, euint16) => euint16 test 1 (260, 3)', async function () {
+    const res = await this.contract3.bin_op_mul_euint16_euint16(
+      this.instances3.alice.encrypt16(260),
+      this.instances3.alice.encrypt16(3),
+    );
+    expect(res).to.equal(780);
+  });
+
+  it('test operator "bin_op_and" overload (euint16, euint16) => euint16 test 1 (61423, 61680)', async function () {
+    const res = await this.contract3.bin_op_and_euint16_euint16(
+      this.instances3.alice.encrypt16(61423),
+      this.instances3.alice.encrypt16(61680),
+    );
+    expect(res).to.equal(57568);
+  });
+
+  it('test operator "bin_op_or" overload (euint16, euint16) => euint16 test 1 (61423, 496)', async function () {
+    const res = await this.contract3.bin_op_or_euint16_euint16(
+      this.instances3.alice.encrypt16(61423),
+      this.instances3.alice.encrypt16(496),
+    );
+    expect(res).to.equal(61439);
+  });
+
+  it('test operator "bin_op_xor" overload (euint16, euint16) => euint16 test 1 (61423, 61680)', async function () {
+    const res = await this.contract3.bin_op_xor_euint16_euint16(
+      this.instances3.alice.encrypt16(61423),
+      this.instances3.alice.encrypt16(61680),
+    );
+    expect(res).to.equal(7967);
+  });
+
+  it('test operator "unary_op_neg" overload (euint16) => euint16 test 1 (3)', async function () {
+    const res = await this.contract3.unary_op_neg_euint16(this.instances3.alice.encrypt16(3));
+    expect(res).to.equal(65533);
+  });
+
+  it('test operator "unary_op_not" overload (euint16) => euint16 test 1 (3855)', async function () {
+    const res = await this.contract3.unary_op_not_euint16(this.instances3.alice.encrypt16(3855));
+    expect(res).to.equal(61680);
+  });
+
+  it('test operator "bin_op_add" overload (euint32, euint32) => euint32 test 1 (1048835, 4194820)', async function () {
+    const res = await this.contract3.bin_op_add_euint32_euint32(
+      this.instances3.alice.encrypt32(1048835),
+      this.instances3.alice.encrypt32(4194820),
+    );
+    expect(res).to.equal(5243655);
+  });
+
+  it('test operator "bin_op_sub" overload (euint32, euint32) => euint32 test 1 (2415919620, 1342177539)', async function () {
+    const res = await this.contract3.bin_op_sub_euint32_euint32(
+      this.instances3.alice.encrypt32(2415919620),
+      this.instances3.alice.encrypt32(1342177539),
+    );
+    expect(res).to.equal(1073742081);
+  });
+
+  it('test operator "bin_op_mul" overload (euint32, euint32) => euint32 test 1 (33554692, 3)', async function () {
+    const res = await this.contract3.bin_op_mul_euint32_euint32(
+      this.instances3.alice.encrypt32(33554692),
+      this.instances3.alice.encrypt32(3),
+    );
+    expect(res).to.equal(100664076);
+  });
+
+  it('test operator "bin_op_and" overload (euint32, euint32) => euint32 test 1 (4025479151, 4042322160)', async function () {
+    const res = await this.contract3.bin_op_and_euint32_euint32(
+      this.instances3.alice.encrypt32(4025479151),
+      this.instances3.alice.encrypt32(4042322160),
+    );
+    expect(res).to.equal(3772834016);
+  });
+
+  it('test operator "bin_op_or" overload (euint32, euint32) => euint32 test 1 (4025479151, 32506352)', async function () {
+    const res = await this.contract3.bin_op_or_euint32_euint32(
+      this.instances3.alice.encrypt32(4025479151),
+      this.instances3.alice.encrypt32(32506352),
+    );
+    expect(res).to.equal(4026527743);
+  });
+
+  it('test operator "bin_op_xor" overload (euint32, euint32) => euint32 test 1 (4025479151, 4042322160)', async function () {
+    const res = await this.contract3.bin_op_xor_euint32_euint32(
+      this.instances3.alice.encrypt32(4025479151),
+      this.instances3.alice.encrypt32(4042322160),
+    );
+    expect(res).to.equal(522133279);
+  });
+
+  it('test operator "unary_op_neg" overload (euint32) => euint32 test 1 (4)', async function () {
+    const res = await this.contract3.unary_op_neg_euint32(this.instances3.alice.encrypt32(4));
+    expect(res).to.equal(4294967292);
+  });
+
+  it('test operator "unary_op_not" overload (euint32) => euint32 test 1 (252645135)', async function () {
+    const res = await this.contract3.unary_op_not_euint32(this.instances3.alice.encrypt32(252645135));
+    expect(res).to.equal(4042322160);
+  });
 });
