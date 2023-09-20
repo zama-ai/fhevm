@@ -1,5 +1,5 @@
 <p align="center">
-<img width=600 src="https://github.com/zama-ai/fhevm-solidity/assets/1384478/265d051c-e177-42b4-b9a2-d2b2e474131b" />
+<img width=600 src="https://github.com/zama-ai/fhevm/assets/1384478/265d051c-e177-42b4-b9a2-d2b2e474131b" />
 </p>
 <hr/>
 <p align="center">
@@ -7,8 +7,8 @@
 </p>
 <p align="center">
 <!-- Version badge using shields.io -->
-  <a href="https://github.com/zama-ai/fhevm-solidity/releases">
-    <img src="https://img.shields.io/github/v/release/zama-ai/fhevm-solidity?style=flat-square">
+  <a href="https://github.com/zama-ai/fhevm/releases">
+    <img src="https://img.shields.io/github/v/release/zama-ai/fhevm?style=flat-square">
   </a>
 <!-- Zama Bounty Program -->
   <a href="https://github.com/zama-ai/bounty-program">
@@ -39,7 +39,7 @@ You can take a look at our list of [examples](/examples).
 ### Powerful features available out of the box
 
 - **High Precision Integers -** Up to 256 bits of precision for integers
-- **Full range of Operators -** All typical operators are available: +,-,*,/,<,>.==,...
+- **Full range of Operators -** All typical operators are available: +,-,\*,/,<,>.==,...
 - **Encrypted If-Else Conditionals -** Check conditions on encrypted states
 - **On-chain Secure Randomness -** Generate randomness without using oracles
 - **Configurable Decryption -** Threshold, centralized or KMS decryption
