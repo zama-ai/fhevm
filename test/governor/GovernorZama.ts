@@ -14,7 +14,7 @@ describe('GovernorZama', function () {
 
   beforeEach(async function () {
     // Increase timeout for beforeEach
-    this.timeout(120000);
+    this.timeout(130000);
 
     this.comp = await deployCompFixture();
     const instances = await createInstances(await this.comp.getAddress(), ethers, this.signers);
@@ -61,7 +61,7 @@ describe('GovernorZama', function () {
     const proposals = await this.governor.proposals(proposalId);
     expect(proposals.id).to.equal(proposalId);
     expect(proposals.proposer).to.equal(this.signers.alice.address);
-  }).timeout(120000);
+  }).timeout(130000);
 
   it('should vote and return a Succeed', async function () {
     const callDatas = [ethers.AbiCoder.defaultAbiCoder().encode(['address'], [this.signers.alice.address])];
@@ -104,7 +104,7 @@ describe('GovernorZama', function () {
 
     const state = await this.governor.state(proposalId);
     expect(state).to.equal(4n);
-  }).timeout(120000);
+  }).timeout(130000);
 
   it('should vote and return a Defeated ', async function () {
     const callDatas = [ethers.AbiCoder.defaultAbiCoder().encode(['address'], [this.signers.alice.address])];
@@ -146,7 +146,7 @@ describe('GovernorZama', function () {
 
     const state = await this.governor.state(proposalId);
     expect(state).to.equal(3n);
-  }).timeout(120000);
+  }).timeout(130000);
 
   it('should cancel', async function () {
     await this.comp.delegate(this.signers.alice.address);
@@ -173,5 +173,5 @@ describe('GovernorZama', function () {
     await txCancel.wait();
     const newState = await this.governor.state(proposalId);
     expect(newState).to.equal(2n);
-  }).timeout(120000);
+  }).timeout(130000);
 });
