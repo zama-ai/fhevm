@@ -31,17 +31,17 @@ Thanks to a breakthrough in homomorphic encryption, Zama’s fhEVM makes it poss
 ### Developers can write confidential smart contracts without learning cryptography
 
 - **Solidity Integration:** fhEVM contracts are simple solidity contracts that are built using traditional solidity toolchains.
-- **Simple DevX:** Developers can use the `euint` data types to mark which part of their contracts should be private.
-- **SC-defined ACL:** All the logic for access control of encrypted states is defined by developers in their smart contracts.
+- **Simple Developer Experience:** Developers can use the `euint` data types to mark which part of their contracts should be private.
+- **Programmable Privacy:** All the logic for access control of encrypted states is defined by developers in their smart contracts.
 
 You can take a look at our list of [examples](/examples).
 
 ### Powerful features available out of the box
 
-- **High Precision Integers -** Up to 256 bits of precision for integers
+- **High Precision Encrypted Integers -** Up to 256 bits of precision for integers
 - **Full range of Operators -** All typical operators are available: `+`, `-`, `*`, `/`, `<`, `>`, `==`, …
 - **Encrypted If-Else Conditionals -** Check conditions on encrypted states
-- **On-chain Secure Randomness -** Generate randomness without using oracles
+- **On-chain PRNG -** Generate secure randomness without using oracles
 - **Configurable Decryption -** Threshold, centralized or KMS decryption
 - **Unbounded Compute Depth -** Unlimited consecutive FHE operations
 
