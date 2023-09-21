@@ -108,8 +108,6 @@ WARNING: Use this command to generate Solidity code and prettier result automati
 Files that are generated now (can be seen inside `codegen/main.ts`)
 
 ```
-lib/Common.sol
-lib/Precompiles.sol
 lib/Impl.sol
 lib/TFHE.sol
 contracts/tests/TFHETestSuiteX.sol
