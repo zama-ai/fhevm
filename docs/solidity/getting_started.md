@@ -29,7 +29,7 @@ It allows you to start a fhEVM docker image and run your smart contract on it. R
 {% endtab %}
 
 {% tab title="Remix IDE" %}
-You can use Remix to interact with a blockchain using fhEVM. If you want to send an encrypted input, you need to encrypt it with [fhevmjs CLI tool](/fhevmjs/cli) for example. It becomes more complex if you want to reencrypt a value directly in Remix.
+You can use Remix to interact with a blockchain using fhEVM. If you want to send an encrypted input, you need to encrypt it with [fhevmjs CLI tool](https://docs.zama.ai/fhevm/fhevmjs/cli) for example. It becomes more complex if you want to reencrypt a value directly in Remix.
 
 To avoid this problem, we developed a [version of Remix IDE](https://github.com/zama-ai/remix-project) with two missing features:
 
