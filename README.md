@@ -197,7 +197,9 @@ This library uses several dependencies and we would like to thank the contributo
 
 - Ask technical questions on the Zama discourse forum: [community.zama.ai](https://community.zama.ai)
 - Discuss live with the team on the FHE.org discord server: [discord.fhe.org](https://discord.fhe.org)
+<!-- markdown-link-check-disable -->
 - Follow Zama on Twitter: [@zama_fhe](https://twitter.com/zama_fhe)
+<!-- markdown-link-check-enable -->
 
 ## License
 
