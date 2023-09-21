@@ -2,9 +2,6 @@
 
 pragma solidity >=0.8.13 <0.8.20;
 
-import "./Common.sol";
-import "./Precompiles.sol";
-
 interface FhevmLib {
     function fheAdd(uint256 lhs, uint256 rhs, bytes1 scalarByte) external pure returns (uint256 result);
 
@@ -50,11 +47,11 @@ interface FhevmLib {
 
     function fhePubKey(bytes1 fromLib) external view returns (bytes memory result);
 
-    function verifyCiphertext(bytes memory input) external view returns (uint256 result);
+    function verifyCiphertext(bytes memory input) external pure returns (uint256 result);
 
-    function cast(uint256 ct, bytes1 toType) external view returns (uint256 result);
+    function cast(uint256 ct, bytes1 toType) external pure returns (uint256 result);
 
-    function trivialEncrypt(uint256 ct, bytes1 toType) external view returns (uint256 result);
+    function trivialEncrypt(uint256 ct, bytes1 toType) external pure returns (uint256 result);
 
     function decrypt(uint256 ct) external view returns (uint256 result);
 
@@ -251,16 +248,16 @@ library Impl {
         key = FhevmLib(address(EXT_TFHE_LIBRARY)).fhePubKey(bytes1(0x01));
     }
 
-    function verify(bytes memory _ciphertextBytes, uint8 _toType) internal view returns (uint256 result) {
+    function verify(bytes memory _ciphertextBytes, uint8 _toType) internal pure returns (uint256 result) {
         bytes memory input = bytes.concat(_ciphertextBytes, bytes1(_toType));
         result = FhevmLib(address(EXT_TFHE_LIBRARY)).verifyCiphertext(input);
     }
 
-    function cast(uint256 ciphertext, uint8 toType) internal view returns (uint256 result) {
+    function cast(uint256 ciphertext, uint8 toType) internal pure returns (uint256 result) {
         result = FhevmLib(address(EXT_TFHE_LIBRARY)).cast(ciphertext, bytes1(toType));
     }
 
-    function trivialEncrypt(uint256 value, uint8 toType) internal view returns (uint256 result) {
+    function trivialEncrypt(uint256 value, uint8 toType) internal pure returns (uint256 result) {
         result = FhevmLib(address(EXT_TFHE_LIBRARY)).trivialEncrypt(value, bytes1(toType));
     }
 

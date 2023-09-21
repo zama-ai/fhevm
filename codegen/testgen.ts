@@ -18,6 +18,8 @@ export type OverloadSignature = {
   name: string;
   arguments: FunctionType[];
   returnType: FunctionType;
+  binaryOperator?: string;
+  unaryOperator?: string;
 };
 
 export type OverloadShard = {
@@ -192,6 +194,16 @@ export function generateSmartContract(os: OverloadShard): string {
         contract TFHETestSuite${os.shardNumber} {
     `);
 
+  generateLibCallTest(os, res);
+
+  res.push(`
+        }
+    `);
+
+  return res.join('');
+}
+
+function generateLibCallTest(os: OverloadShard, res: string[]) {
   os.overloads.forEach((o) => {
     const methodName = signatureContractMethodName(o);
     const args = signatureContractArguments(o);
@@ -212,19 +224,23 @@ export function generateSmartContract(os: OverloadShard): string {
 
     const tfheArgs = procArgs.join(', ');
 
-    res.push(`${functionTypeToEncryptedType(o.returnType)} result = TFHE.${o.name}(${tfheArgs});`);
-    res.push('\n');
+    if (o.binaryOperator) {
+      assert(o.arguments.length == 2, 'We assume two arguments for binary operator');
+      res.push(`${functionTypeToEncryptedType(o.returnType)} result = aProc ${o.binaryOperator} bProc;`);
+      res.push('\n');
+    } else if (o.unaryOperator) {
+      assert(o.arguments.length == 1, 'We assume one argument for unary operator');
+      res.push(`${functionTypeToEncryptedType(o.returnType)} result = ${o.unaryOperator}aProc;`);
+      res.push('\n');
+    } else {
+      res.push(`${functionTypeToEncryptedType(o.returnType)} result = TFHE.${o.name}(${tfheArgs});`);
+      res.push('\n');
+    }
 
     res.push(`return TFHE.decrypt(result);
         }
     `);
   });
-
-  res.push(`
-        }
-    `);
-
-  return res.join('');
 }
 
 export function signatureContractMethodName(s: OverloadSignature): string {

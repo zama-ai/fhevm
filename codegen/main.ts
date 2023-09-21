@@ -9,8 +9,6 @@ function generateAllFiles() {
 
   const [tfheSolSource, overloads] = t.tfheSol(operators, SUPPORTED_BITS);
   const ovShards = testgen.splitOverloadsToShards(overloads);
-  writeFileSync('lib/Common.sol', t.commonSolHeader());
-  writeFileSync('lib/Precompiles.sol', t.precompiles(ALL_PRECOMPILES));
   writeFileSync('lib/Impl.sol', t.implSol(operators));
   writeFileSync('lib/TFHE.sol', tfheSolSource);
   mkdirSync('examples/tests', { recursive: true });

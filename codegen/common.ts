@@ -14,6 +14,8 @@ export type Operator = {
   // disable left scalar operator
   leftScalarDisable?: boolean;
   fheLibName?: string;
+  binarySolidityOperator?: string;
+  unarySolidityOperator?: string;
 };
 
 export type Precompile = {
@@ -71,6 +73,7 @@ export const ALL_OPERATORS: Operator[] = [
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
     returnType: ReturnType.Uint,
+    binarySolidityOperator: '+',
   },
   {
     name: 'sub',
@@ -80,6 +83,7 @@ export const ALL_OPERATORS: Operator[] = [
     arguments: OperatorArguments.Binary,
     returnType: ReturnType.Uint,
     leftScalarEncrypt: true,
+    binarySolidityOperator: '-',
   },
   {
     name: 'mul',
@@ -88,6 +92,7 @@ export const ALL_OPERATORS: Operator[] = [
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
     returnType: ReturnType.Uint,
+    binarySolidityOperator: '*',
   },
   {
     name: 'div',
@@ -106,6 +111,7 @@ export const ALL_OPERATORS: Operator[] = [
     arguments: OperatorArguments.Binary,
     returnType: ReturnType.Uint,
     fheLibName: 'fheBitAnd',
+    binarySolidityOperator: '&',
   },
   {
     name: 'or',
@@ -115,6 +121,7 @@ export const ALL_OPERATORS: Operator[] = [
     arguments: OperatorArguments.Binary,
     returnType: ReturnType.Uint,
     fheLibName: 'fheBitOr',
+    binarySolidityOperator: '|',
   },
   {
     name: 'xor',
@@ -124,6 +131,7 @@ export const ALL_OPERATORS: Operator[] = [
     arguments: OperatorArguments.Binary,
     returnType: ReturnType.Uint,
     fheLibName: 'fheBitXor',
+    binarySolidityOperator: '^',
   },
   {
     name: 'shl',
@@ -218,6 +226,7 @@ export const ALL_OPERATORS: Operator[] = [
     hasEncrypted: true,
     arguments: OperatorArguments.Unary,
     returnType: ReturnType.Uint,
+    unarySolidityOperator: '-',
   },
   {
     name: 'not',
@@ -226,6 +235,7 @@ export const ALL_OPERATORS: Operator[] = [
     hasEncrypted: true,
     arguments: OperatorArguments.Unary,
     returnType: ReturnType.Uint,
+    unarySolidityOperator: '~',
   },
 ];
 
