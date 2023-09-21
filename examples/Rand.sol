@@ -8,6 +8,9 @@ contract Rand {
     euint8 value8;
     euint16 value16;
     euint32 value32;
+    uint8 public value8Decrypted;
+    uint16 public value16Decrypted;
+    uint32 public value32Decrypted;
 
     function generate8() public {
         value8 = TFHE.randEuint8();
@@ -21,16 +24,28 @@ contract Rand {
         value32 = TFHE.randEuint32();
     }
 
-    function get8() public view returns (uint8) {
+    function decrypt8() public view returns (uint8) {
         return TFHE.decrypt(value8);
     }
 
-    function get16() public view returns (uint16) {
+    function decrypt16() public view returns (uint16) {
         return TFHE.decrypt(value16);
     }
 
-    function get32() public view returns (uint32) {
+    function decrypt32() public view returns (uint32) {
         return TFHE.decrypt(value32);
+    }
+
+    function decryptAndStore8() public {
+        value8Decrypted = TFHE.decrypt(value8);
+    }
+
+    function decryptAndStore16() public {
+        value16Decrypted = TFHE.decrypt(value16);
+    }
+
+    function decryptAndStore32() public {
+        value32Decrypted = TFHE.decrypt(value32);
     }
 
     // Must fail.

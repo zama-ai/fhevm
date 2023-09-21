@@ -1,14 +1,14 @@
 <p align="center">
-<img width=600 src="https://github.com/zama-ai/fhevm-solidity/assets/1384478/265d051c-e177-42b4-b9a2-d2b2e474131b" />
+<img width=600 src="https://github.com/zama-ai/fhevm/assets/1384478/265d051c-e177-42b4-b9a2-d2b2e474131b" />
 </p>
 <hr/>
 <p align="center">
-  <a href="https://docs.zama.ai/fhevm"> 📃 Read white paper</a> |<a href="https://docs.zama.ai/fhevm"> 📒 Read documentation</a> | <a href="https://zama.ai/community"> 💛 Community support</a>
+  <a href="https://zama.ai/fhevm-whitepaper.pdf"> 📃 Read white paper</a> |<a href="https://docs.zama.ai/fhevm"> 📒 Read documentation</a> | <a href="https://zama.ai/community"> 💛 Community support</a>
 </p>
 <p align="center">
 <!-- Version badge using shields.io -->
-  <a href="https://github.com/zama-ai/fhevm-solidity/releases">
-    <img src="https://img.shields.io/github/v/release/zama-ai/fhevm-solidity?style=flat-square">
+  <a href="https://github.com/zama-ai/fhevm/releases">
+    <img src="https://img.shields.io/github/v/release/zama-ai/fhevm?style=flat-square">
   </a>
 <!-- Zama Bounty Program -->
   <a href="https://github.com/zama-ai/bounty-program">
@@ -17,7 +17,33 @@
 </p>
 <hr/>
 
-A Solidity library for interacting with an fhEVM blockchain.
+## Bring confidential smart contracts to your blockchain with fhEVM
+
+There used to be a dilemma in blockchain: keep your application and user data on-chain, allowing everyone to see it, or keep it privately off-chain and lose contract composability.
+Thanks to a breakthrough in homomorphic encryption, Zama’s fhEVM makes it possible to run confidential smart contracts on encrypted data, guaranteeing both confidentiality and composability.
+
+### Zama’s fhEVM enables confidential smart contracts using fully homomorphic encryption (FHE)
+
+- **End-to-end encryption of transactions and state:** Data included in transactions is encrypted and never visible to anyone.
+- **Composability and data availability on-chain:** States are updated while remaining encrypted at all times.
+- **No impact on existing dapps and state:** Data stored on-chain remains encrypted end-to-end.
+
+### Developers can write confidential smart contracts without learning cryptography
+
+- **Solidity Integration:** fhEVM contracts are simple solidity contracts that are built using traditional solidity toolchains.
+- **Simple DevX:** Developers can use the `euint` data types to mark which part of their contracts should be private.
+- **SC-defined ACL:** All the logic for access control of encrypted states is defined by developers in their smart contracts.
+
+You can take a look at our list of [examples](/examples).
+
+### Powerful features available out of the box
+
+- **High Precision Integers -** Up to 256 bits of precision for integers
+- **Full range of Operators -** All typical operators are available: `+`, `-`, `*`, `/`, `<`, `>`, `==`, …
+- **Encrypted If-Else Conditionals -** Check conditions on encrypted states
+- **On-chain Secure Randomness -** Generate randomness without using oracles
+- **Configurable Decryption -** Threshold, centralized or KMS decryption
+- **Unbounded Compute Depth -** Unlimited consecutive FHE operations
 
 ## Install
 
@@ -88,12 +114,9 @@ test/tfheOperations/tfheOperations.ts
 
 ### Tests
 
-The easiest way to understand how to write/dev smart contract and interact with them using **fhevmjs** is to read and explore the few tests available in this repository.
+The easiest way to understand how to write/dev smart contract and interact with them using **fhevmjs** is to read and explore the available tests in this repository.
 
-<br />
-<details>
-  <summary>Fast start</summary>
-<br />
+#### Fast start
 
 ```bash
 # in one terminal
@@ -120,7 +143,8 @@ npm run fhevm:stop
 
 #### Faucet
 
-To use a ready to use test (only for dev) wallet first, prepare the .env file that contains the mnemonic.
+For development purpose, we provide a ready to use wallet. In order to use
+it, prepare the .env file that contains the mnemonic.
 
 ```bash
 cp .env.example .env
@@ -169,9 +193,9 @@ This library uses several dependencies and we would like to thank the contributo
 
 ## Need support?
 
-<a target="_blank" href="https://community.zama.ai">
-  <img src="https://github.com/zama-ai/fhevm-solidity/assets/1384478/049dfc9b-3caa-4c56-8bee-3d1700664db9">
-</a>
+- Ask technical questions on the Zama discourse forum: [community.zama.ai](https://community.zama.ai)
+- Discuss live with the team on the FHE.org discord server: [discord.fhe.org](https://discord.fhe.org)
+- Follow Zama on Twitter: [@zama_fhe](https://twitter.com/zama_fhe)
 
 ## License
 

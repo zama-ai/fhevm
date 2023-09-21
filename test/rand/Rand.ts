@@ -17,12 +17,12 @@ describe('Rand', function () {
     this.instances = await createInstances(this.contractAddress, ethers, this.signers);
   });
 
-  it('8 bits', async function () {
+  it('8 bits generate and decrypt', async function () {
     const values: bigint[] = [];
     for (let i = 0; i < 5; i++) {
       const txn = await this.rand.generate8();
       await txn.wait();
-      const value = await this.rand.get8();
+      const value = await this.rand.decrypt8();
       expect(value).to.be.lessThanOrEqual(0xff);
       values.push(value);
     }
@@ -31,13 +31,13 @@ describe('Rand', function () {
     expect(unique.size).to.be.greaterThanOrEqual(2);
   });
 
-  it('16 bits', async function () {
+  it('16 bits generate and decrypt', async function () {
     const values: bigint[] = [];
     let has16bit: boolean = false;
     for (let i = 0; i < 5; i++) {
       const txn = await this.rand.generate16();
       await txn.wait();
-      const value = await this.rand.get16();
+      const value = await this.rand.decrypt16();
       expect(value).to.be.lessThanOrEqual(0xffff);
       if (value > 0xff) {
         has16bit = true;
@@ -51,13 +51,13 @@ describe('Rand', function () {
     expect(unique.size).to.be.greaterThanOrEqual(2);
   });
 
-  it('32 bits', async function () {
+  it('32 bits generate and decrypt', async function () {
     const values: bigint[] = [];
     let has32bit: boolean = false;
     for (let i = 0; i < 5; i++) {
       const txn = await this.rand.generate32();
       await txn.wait();
-      const value = await this.rand.get32();
+      const value = await this.rand.decrypt32();
       expect(value).to.be.lessThanOrEqual(0xffffffff);
       if (value > 0xffff) {
         has32bit = true;
@@ -69,6 +69,27 @@ describe('Rand', function () {
     // Expect at least two different generated values.
     const unique = new Set(values);
     expect(unique.size).to.be.greaterThanOrEqual(2);
+  });
+
+  it('8 bits generate, decrypt and store', async function () {
+    const txnGen = await this.rand.generate8();
+    await txnGen.wait();
+    const txnDecAndStore = await this.rand.decryptAndStore8();
+    await expect(txnDecAndStore.wait()).to.not.be.rejected;
+  });
+
+  it('16 bits generate, decrypt and store', async function () {
+    const txnGen = await this.rand.generate16();
+    await txnGen.wait();
+    const txnDecAndStore = await this.rand.decryptAndStore16();
+    await expect(txnDecAndStore.wait()).to.not.be.rejected;
+  });
+
+  it('32 bits generate, decrypt and store', async function () {
+    const txnGen = await this.rand.generate32();
+    await txnGen.wait();
+    const txnDecAndStore = await this.rand.decryptAndStore32();
+    await expect(txnDecAndStore.wait()).to.not.be.rejected;
   });
 
   it('8 bits in view', async function () {

@@ -20,7 +20,7 @@
     "typechain": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat typechain",
     "codegen": "npx ts-node codegen/main.ts && npm run prettier",
     "task:getEthereumAddress": "hardhat task:getEthereumAddress",
-    "fhevm:start": "docker run -i -p 8545:8545 --rm --name fhevm ghcr.io/zama-ai/evmos-dev-node:v0.1.9-beta",
+    "fhevm:start": "docker run -i -p 8545:8545 --rm --name fhevm ghcr.io/zama-ai/evmos-dev-node:v0.1.9",
     "fhevm:stop": "docker rm -f fhevm",
     "fhevm:restart": "fhevm:stop && fhevm:start",
     "fhevm:faucet": "npm run fhevm:faucet:alice && sleep 5 && npm run fhevm:faucet:bob && sleep 5 && npm run fhevm:faucet:carol && sleep 5 && npm run fhevm:faucet:dave",
@@ -31,14 +31,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/zama-ai/fhevm-solidity.git"
+    "url": "git+https://github.com/zama-ai/fhevm.git"
   },
   "author": "",
   "license": "BSD-3-Clause-Clear",
   "bugs": {
-    "url": "https://github.com/zama-ai/fhevm-solidity/issues"
+    "url": "https://github.com/zama-ai/fhevm/issues"
   },
-  "homepage": "https://github.com/zama-ai/fhevm-solidity#readme",
+  "homepage": "https://github.com/zama-ai/fhevm#readme",
   "devDependencies": {
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.0",
     "@nomicfoundation/hardhat-ethers": "^3.0.0",
