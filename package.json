@@ -1,7 +1,7 @@
 {
   "name": "fhevm",
   "description": "A Solidity library for interacting with the Zama Blockchain",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "main": "lib/TFHE.sol",
   "directories": {
     "example": "examples",
