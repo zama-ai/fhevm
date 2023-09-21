@@ -29,7 +29,14 @@ It allows you to start a fhEVM docker image and run your smart contract on it. R
 {% endtab %}
 
 {% tab title="Remix IDE" %}
-We developed a [version of Remix IDE](https://github.com/zama-ai/remix-project) to interact with a blockchain using fhEVM. You can use it on [https://remix.zama.ai](https://remix.zama.ai)
+You can use Remix to interact with a blockchain using fhEVM. If you want to send an encrypted input, you need to encrypt it with [fhevmjs CLI tool](/fhevmjs/cli) for example. It becomes more complex if you want to reencrypt a value directly in Remix.
+
+To avoid this problem, we developed a [version of Remix IDE](https://github.com/zama-ai/remix-project) with two missing features:
+
+- Encryption of input
+- Generation of public key and signature for reencryption and decryption.
+
+You can use it on [https://remix.zama.ai](https://remix.zama.ai).
 {% endtab %}
 
 {% tab title="Docker" %}
@@ -46,5 +53,6 @@ If you need to get coins for a specific wallet, you can use the faucet as follow
 ```bash
 docker exec -i fhevm faucet 0xa5e1defb98EFe38EBb2D958CEe052410247F4c80
 ```
+
 {% endtab %}
 {% endtabs %}
