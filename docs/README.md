@@ -1,6 +1,6 @@
 # What is Zama's fhEVM?
 
-📁 [Github](https://github.com/zama-ai/fhevm) | 💛 [Community support](https://zama.ai/community) | 🟨 [Zama Bounty Program](https://github.com/zama-ai/bounty-program)
+📙 [fhEVM whitepaper](../fhevm-whitepaper.pdf) 📁 [Github](https://github.com/zama-ai/fhevm) | 💛 [Community support](https://zama.ai/community) | 🟨 [Zama Bounty Program](https://github.com/zama-ai/bounty-program)
 
 <figure><img src=".gitbook/assets/Zama (3).png" alt=""><figcaption></figcaption></figure>
 
