@@ -143,7 +143,7 @@ npm run fhevm:stop
 
 #### Faucet
 
-For development purpose, we provide a ready to use wallet. In order to use
+For development purposes, we provide a ready to use wallet. In order to use
 it, prepare the .env file that contains the mnemonic.
 
 ```bash
@@ -169,7 +169,7 @@ npm test
   <summary>Error: insufficient funds</summary>
 <br />
 
-Ensure the faucet command is succesfull.
+Ensure the faucet command was succesful.
 
 </details>
 <br />
