@@ -34,7 +34,7 @@ Thanks to a breakthrough in homomorphic encryption, Zama’s fhEVM makes it poss
 - **Simple DevX:** Developers can use the `euint` data types to mark which part of their contracts should be private.
 - **SC-defined ACL:** All the logic for access control of encrypted states is defined by developers in their smart contracts.
 
-You can take a look at our list of [examples](/examples).
+You can take a look at our [list of examples](https://docs.zama.ai/fhevm/resources/examples).
 
 ### Powerful features available out of the box
 
@@ -44,6 +44,10 @@ You can take a look at our list of [examples](/examples).
 - **On-chain Secure Randomness -** Generate randomness without using oracles
 - **Configurable Decryption -** Threshold, centralized or KMS decryption
 - **Unbounded Compute Depth -** Unlimited consecutive FHE operations
+
+### fhEVM implementation
+
+For now, fhEVM is implemented on evmos. You can find all the resources related to this implementation on [this repository](https://github.com/zama-ai/fhevm-evmos).
 
 ## Install
 
