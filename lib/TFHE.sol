@@ -2268,7 +2268,7 @@ library TFHE {
 
     // If 'control''s value is 'true', the result has the same value as 'a'.
     // If 'control''s value is 'false', the result has the same value as 'b'.
-    function cmux(ebool control, euint8 a, euint8 b) internal view returns (euint8) {
+    function cmux(ebool control, euint8 a, euint8 b) internal pure returns (euint8) {
         return euint8.wrap(Impl.cmux(ebool.unwrap(control), euint8.unwrap(a), euint8.unwrap(b)));
     }
 
@@ -2345,6 +2345,30 @@ library TFHE {
         return ne(value, 0);
     }
 
+    function neg(euint8 value) internal pure returns (euint8) {
+        return euint8.wrap(Impl.neg(euint8.unwrap(value)));
+    }
+
+    function not(euint8 value) internal pure returns (euint8) {
+        return euint8.wrap(Impl.not(euint8.unwrap(value)));
+    }
+
+    function neg(euint16 value) internal pure returns (euint16) {
+        return euint16.wrap(Impl.neg(euint16.unwrap(value)));
+    }
+
+    function not(euint16 value) internal pure returns (euint16) {
+        return euint16.wrap(Impl.not(euint16.unwrap(value)));
+    }
+
+    function neg(euint32 value) internal pure returns (euint32) {
+        return euint32.wrap(Impl.neg(euint32.unwrap(value)));
+    }
+
+    function not(euint32 value) internal pure returns (euint32) {
+        return euint32.wrap(Impl.not(euint32.unwrap(value)));
+    }
+
     // Convert a serialized 'ciphertext' to an encrypted euint8 integer.
     function asEuint8(bytes memory ciphertext) internal view returns (euint8) {
         return euint8.wrap(Impl.verify(ciphertext, Common.euint8_t));
@@ -2379,16 +2403,6 @@ library TFHE {
     // Decrypts the encrypted 'value'.
     function decrypt(euint8 value) internal view returns (uint8) {
         return uint8(Impl.decrypt(euint8.unwrap(value)));
-    }
-
-    // Return the negation of 'value'.
-    function neg(euint8 value) internal view returns (euint8) {
-        return euint8.wrap(Impl.neg(euint8.unwrap(value)));
-    }
-
-    // Return '!value'.
-    function not(euint8 value) internal view returns (euint8) {
-        return euint8.wrap(Impl.not(euint8.unwrap(value)));
     }
 
     // Convert a serialized 'ciphertext' to an encrypted euint16 integer.
@@ -2427,16 +2441,6 @@ library TFHE {
         return uint16(Impl.decrypt(euint16.unwrap(value)));
     }
 
-    // Return the negation of 'value'.
-    function neg(euint16 value) internal view returns (euint16) {
-        return euint16.wrap(Impl.neg(euint16.unwrap(value)));
-    }
-
-    // Return '!value'.
-    function not(euint16 value) internal view returns (euint16) {
-        return euint16.wrap(Impl.not(euint16.unwrap(value)));
-    }
-
     // Convert a serialized 'ciphertext' to an encrypted euint32 integer.
     function asEuint32(bytes memory ciphertext) internal view returns (euint32) {
         return euint32.wrap(Impl.verify(ciphertext, Common.euint32_t));
@@ -2471,16 +2475,6 @@ library TFHE {
     // Decrypts the encrypted 'value'.
     function decrypt(euint32 value) internal view returns (uint32) {
         return uint32(Impl.decrypt(euint32.unwrap(value)));
-    }
-
-    // Return the negation of 'value'.
-    function neg(euint32 value) internal view returns (euint32) {
-        return euint32.wrap(Impl.neg(euint32.unwrap(value)));
-    }
-
-    // Return '!value'.
-    function not(euint32 value) internal view returns (euint32) {
-        return euint32.wrap(Impl.not(euint32.unwrap(value)));
     }
 
     // Optimistically require that 'b' is true.

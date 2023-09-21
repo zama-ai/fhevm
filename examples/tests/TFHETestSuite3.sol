@@ -178,4 +178,40 @@ contract TFHETestSuite3 {
         euint32 result = TFHE.max(aProc, bProc);
         return TFHE.decrypt(result);
     }
+
+    function neg_euint8(bytes calldata a) public view returns (uint8) {
+        euint8 aProc = TFHE.asEuint8(a);
+        euint8 result = TFHE.neg(aProc);
+        return TFHE.decrypt(result);
+    }
+
+    function not_euint8(bytes calldata a) public view returns (uint8) {
+        euint8 aProc = TFHE.asEuint8(a);
+        euint8 result = TFHE.not(aProc);
+        return TFHE.decrypt(result);
+    }
+
+    function neg_euint16(bytes calldata a) public view returns (uint16) {
+        euint16 aProc = TFHE.asEuint16(a);
+        euint16 result = TFHE.neg(aProc);
+        return TFHE.decrypt(result);
+    }
+
+    function not_euint16(bytes calldata a) public view returns (uint16) {
+        euint16 aProc = TFHE.asEuint16(a);
+        euint16 result = TFHE.not(aProc);
+        return TFHE.decrypt(result);
+    }
+
+    function neg_euint32(bytes calldata a) public view returns (uint32) {
+        euint32 aProc = TFHE.asEuint32(a);
+        euint32 result = TFHE.neg(aProc);
+        return TFHE.decrypt(result);
+    }
+
+    function not_euint32(bytes calldata a) public view returns (uint32) {
+        euint32 aProc = TFHE.asEuint32(a);
+        euint32 result = TFHE.not(aProc);
+        return TFHE.decrypt(result);
+    }
 }

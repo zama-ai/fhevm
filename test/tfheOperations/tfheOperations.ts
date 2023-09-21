@@ -3385,4 +3385,49 @@ describe('TFHE operations', function () {
     const res = await this.contract3.max_uint32_euint32(3416064, this.instances3.alice.encrypt32(3416063));
     expect(res).to.equal(3416064);
   });
+
+  it('test operator "neg" overload (euint8) => euint8 test 1 (1)', async function () {
+    const res = await this.contract3.neg_euint8(this.instances3.alice.encrypt8(1));
+    expect(res).to.equal(255);
+  });
+
+  it('test operator "neg" overload (euint8) => euint8 test 2 (2)', async function () {
+    const res = await this.contract3.neg_euint8(this.instances3.alice.encrypt8(2));
+    expect(res).to.equal(254);
+  });
+
+  it('test operator "not" overload (euint8) => euint8 test 1 (3)', async function () {
+    const res = await this.contract3.not_euint8(this.instances3.alice.encrypt8(3));
+    expect(res).to.equal(252);
+  });
+
+  it('test operator "neg" overload (euint16) => euint16 test 1 (1)', async function () {
+    const res = await this.contract3.neg_euint16(this.instances3.alice.encrypt16(1));
+    expect(res).to.equal(65535);
+  });
+
+  it('test operator "neg" overload (euint16) => euint16 test 2 (2)', async function () {
+    const res = await this.contract3.neg_euint16(this.instances3.alice.encrypt16(2));
+    expect(res).to.equal(65534);
+  });
+
+  it('test operator "not" overload (euint16) => euint16 test 1 (241)', async function () {
+    const res = await this.contract3.not_euint16(this.instances3.alice.encrypt16(241));
+    expect(res).to.equal(65294);
+  });
+
+  it('test operator "neg" overload (euint32) => euint32 test 1 (1)', async function () {
+    const res = await this.contract3.neg_euint32(this.instances3.alice.encrypt32(1));
+    expect(res).to.equal(4294967295);
+  });
+
+  it('test operator "neg" overload (euint32) => euint32 test 2 (2)', async function () {
+    const res = await this.contract3.neg_euint32(this.instances3.alice.encrypt32(2));
+    expect(res).to.equal(4294967294);
+  });
+
+  it('test operator "not" overload (euint32) => euint32 test 1 (65534)', async function () {
+    const res = await this.contract3.not_euint32(this.instances3.alice.encrypt32(65534));
+    expect(res).to.equal(4294901761);
+  });
 });

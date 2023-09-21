@@ -6,6 +6,21 @@ type OverloadTest = {
 };
 
 export const overloadTests: { [methodName: string]: OverloadTest[] } = {
+  neg_euint8: [
+    { inputs: [0x01], output: 0xff },
+    { inputs: [0x02], output: 0xfe },
+  ],
+  not_euint8: [{ inputs: [0x03], output: 0xfc }],
+  neg_euint16: [
+    { inputs: [0x0001], output: 0xffff },
+    { inputs: [0x0002], output: 0xfffe },
+  ],
+  not_euint16: [{ inputs: [0x00f1], output: 0xff0e }],
+  neg_euint32: [
+    { inputs: [0x00000001], output: 0xffffffff },
+    { inputs: [0x00000002], output: 0xfffffffe },
+  ],
+  not_euint32: [{ inputs: [0x0000fffe], output: 0xffff0001 }],
   add_euint8_euint8: [{ inputs: [3, 4], output: 7 }],
   sub_euint8_euint8: [{ inputs: [4, 3], output: 1 }],
   mul_euint8_euint8: [{ inputs: [3, 4], output: 12 }],
