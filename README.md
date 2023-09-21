@@ -3,7 +3,7 @@
 </p>
 <hr/>
 <p align="center">
-  <a href="https://zama.ai/fhevm-whitepaper.pdf"> 📃 Read white paper</a> |<a href="https://docs.zama.ai/fhevm"> 📒 Read documentation</a> | <a href="https://zama.ai/community"> 💛 Community support</a>
+  <a href="./fhevm-whitepaper.pdf"> 📃 Read white paper</a> |<a href="https://docs.zama.ai/fhevm"> 📒 Read documentation</a> | <a href="https://zama.ai/community"> 💛 Community support</a>
 </p>
 <p align="center">
 <!-- Version badge using shields.io -->
