@@ -26,7 +26,7 @@ Thanks to a breakthrough in homomorphic encryption, Zama’s fhEVM makes it poss
 
 - **End-to-end encryption of transactions and state:** Data included in transactions is encrypted and never visible to anyone.
 - **Composability and data availability on-chain:** States are updated while remaining encrypted at all times.
-- **No impact on existing dapps and state:** Data stored on-chain remains encrypted end-to-end.
+- **No impact on existing dapps and state:** Encrypted state co-exist alongside public one, and doesn't impact existing dapps.
 
 ### Developers can write confidential smart contracts without learning cryptography
 
