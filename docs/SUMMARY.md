@@ -13,8 +13,8 @@
 ## Writing contract
 
 - [Getting started](getting_started.md)
-  - [Remix](solidity/getting_started/remix.md)
   - [Hardhat](solidity/getting_started/hardhat.md)
+  - [Remix](solidity/getting_started/remix.md)
   - [Docker](solidity/getting_started/docker.md)
 - [TFHE Library](solidity/library.md)
 - [Function specifications](solidity/functions.md)

@@ -8,3 +8,17 @@ To avoid this problem, we developed a [version of Remix IDE](https://github.com/
 - Generation of public key and signature for reencryption and decryption.
 
 You can use it on [https://remix.zama.ai](https://remix.zama.ai).
+
+## Usage
+
+First, to import TFHE library, simply import it at the top of your contract.
+
+`import "fhevm/lib/TFHE.sol";`
+
+Be sure to be on the correct network before deploying your contract
+
+<figure><img src="../../.gitbook/assets/metamask_select_network.png" alt=""><figcaption>
+Choose the Zama Devnet</figcaption></figure>
+
+<figure><img src="../../.gitbook/assets/remix_network.png" alt=""><figcaption>
+Choose "Injected Provider - Metamask"</figcaption></figure>

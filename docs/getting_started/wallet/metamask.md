@@ -2,12 +2,12 @@
 
 Here are the main steps from the [official guide](https://support.metamask.io/hc/en-us/articles/360043227612-How-to-add-a-custom-network-RPC) provided by Metamask:
 
-<figure><img src=".gitbook/assets/metamask_add_network.gif" alt=""><figcaption>
-1) From the homepage of your wallet, click on the network selector in the top left, and then on 'Add network'
+<figure><img src="../../.gitbook/assets/metamask_add_network.gif" alt=""><figcaption>
+From the homepage of your wallet, click on the network selector in the top left, and then on 'Add network'
 </figcaption></figure>
 
-<figure><img src=".gitbook/assets/metamask_add_network2.gif" alt=""><figcaption>
-2) MetaMask will open in a new tab in fullscreen mode. From here, find and the 'Add network manually' button at the bottom of the network list.</figcaption></figure>
+<figure><img src="../../.gitbook/assets/metamask_add_network2.gif" alt=""><figcaption>
+MetaMask will open in a new tab in fullscreen mode. From here, find and the 'Add network manually' button at the bottom of the network list.</figcaption></figure>
 
 Add these informations to access to blockchain
 {% tabs %}
@@ -34,3 +34,6 @@ Add these informations to access to blockchain
 
 {% endtab %}
 {% endtabs %}
+
+<figure><img src="../../.gitbook/assets/metamask_select_network.png" alt=""><figcaption>
+4) Choose the Zama Devnet</figcaption></figure>
