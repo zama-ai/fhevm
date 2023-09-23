@@ -10,7 +10,7 @@ Here are the main steps from the [official guide](https://support.metamask.io/hc
 From the homepage of your wallet, click on the network selector in the top left, and then on 'Add network'
 </figcaption></figure>
 
-<figure><img src="../../.gitbook/assets/metamask_add_network2.webp" alt="How to add network" width="300"><figcaption>
+<figure><img src="../../.gitbook/assets/metamask_add_network2.webp" alt="How to add network"><figcaption>
 MetaMask will open in a new tab in fullscreen mode. From here, find and the 'Add network manually' button at the bottom of the network list.</figcaption></figure>
 <!-- markdown-link-check-disable -->
 

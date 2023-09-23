@@ -2,7 +2,7 @@
 
 - [What is Zama's fhEVM?](README.md)
 
-## Zama's fhEVM network
+## Getting started
 
 - Connect wallet
   - [Metamask](getting_started/wallet/metamask.md)
@@ -12,7 +12,7 @@
 
 ## Writing contract
 
-- [Getting started](getting_started.md)
+- [Getting started](solidity/getting_started.md)
   - [Hardhat](solidity/getting_started/hardhat.md)
   - [Remix](solidity/getting_started/remix.md)
   - [Docker](solidity/getting_started/docker.md)
@@ -37,6 +37,6 @@
 
 ## Resources
 
-- [Whitepaper](resources/whitepaper.md)
 - [Tutorials](resources/tutorials.md)
 - [Repositories](resources/repositories.md)
+- [Whitepaper](https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper.pdf)
