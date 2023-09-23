@@ -20,5 +20,5 @@ Be sure to be on the correct network before deploying your contract
 <figure><img src="../../.gitbook/assets/metamask_select_network.png" alt="" width="300"><figcaption>
 Choose the Zama Devnet</figcaption></figure>
 
-<figure><img src="../../.gitbook/assets/remix_network.png" alt="" width="300"><figcaption>
+<figure><img src="../../.gitbook/assets/remix_deploy.png" alt="" width="300"><figcaption>
 Choose "Injected Provider - Metamask"</figcaption></figure>
