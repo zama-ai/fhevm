@@ -18,15 +18,12 @@ The Solidity library we introduce is a powerful tool that empowers developers to
 
 ## Tutorials and Examples
 
-* [Workshop during ETHcc](https://www.youtube.com/watch?v=eivfVykPP8U) \[by Morten Dahl — Zama]
-* [Confidential ERC-20 Tokens Using Homomorphic Encryption](https://www.zama.ai/post/confidential-erc-20-tokens-using-homomorphic-encryption) \[by \[Clément Danjou — Zama]
-* [On-chain Blind Auctions Using Homomorphic Encryption](https://www.zama.ai/post/on-chain-blind-auctions-using-homomorphic-encryption) \[by Clément Danjou — Zama]
-* [ERC-20](https://github.com/zama-ai/fhevm-solidity/blob/main/examples/EncryptedERC20.sol)
-* [Blind Auction](https://github.com/zama-ai/fhevm-solidity/blob/main/examples/BlindAuction.sol)
-* [Governor DAO](https://github.com/zama-ai/fhevm-solidity/tree/main/examples/Governor)
-* [Mixnet](https://github.com/anonymousGifter/mixnet-core) \[by [Remi Gai](https://github.com/remi-gai)]
-* [Battleship](https://github.com/battleship-fhevm/battleship-hardhat) \[by [Owen Murovec](https://github.com/omurovec)]
-* [Darkpool](https://github.com/omurovec/fhe-darkpools) \[by [Owen Murovec](https://github.com/omurovec)]
-
-
-
+- [Workshop during ETHcc](https://www.youtube.com/watch?v=eivfVykPP8U) \[by Morten Dahl — Zama]
+- [Confidential ERC-20 Tokens Using Homomorphic Encryption](https://www.zama.ai/post/confidential-erc-20-tokens-using-homomorphic-encryption) \[by \[Clément Danjou — Zama]
+- [On-chain Blind Auctions Using Homomorphic Encryption](https://www.zama.ai/post/on-chain-blind-auctions-using-homomorphic-encryption) \[by Clément Danjou — Zama]
+- [ERC-20](https://github.com/zama-ai/fhevm-solidity/blob/main/examples/EncryptedERC20.sol)
+- [Blind Auction](https://github.com/zama-ai/fhevm-solidity/blob/main/examples/BlindAuction.sol)
+- [Governor DAO](https://github.com/zama-ai/fhevm-solidity/tree/main/examples/Governor)
+- [Mixnet](https://github.com/anonymousGifter/mixnet-core) \[by [Remi Gai](https://github.com/remi-gai)]
+- [Battleship](https://github.com/battleship-fhevm/battleship-hardhat) \[by [Owen Murovec](https://github.com/omurovec)]
+- [Darkpool](https://github.com/omurovec/fhe-darkpools) \[by [Owen Murovec](https://github.com/omurovec)]
