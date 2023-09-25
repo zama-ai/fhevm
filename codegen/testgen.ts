@@ -188,7 +188,7 @@ export function generateSmartContract(os: OverloadShard): string {
 
   res.push(`
         // SPDX-License-Identifier: BSD-3-Clause-Clear
-        pragma solidity >=0.8.13 <0.8.20;
+        pragma solidity ^0.8.19;
 
         import "../../lib/TFHE.sol";
         contract TFHETestSuite${os.shardNumber} {

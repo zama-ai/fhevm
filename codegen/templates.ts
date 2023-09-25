@@ -50,7 +50,7 @@ export function implSol(operators: Operator[]): string {
   res.push(`
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity >=0.8.13 <0.8.20;
+pragma solidity ^0.8.19;
 
 ${fheLibInterface}
 
@@ -143,7 +143,7 @@ export function tfheSol(operators: Operator[], supportedBits: number[]): [string
 
   res.push(`// SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity >=0.8.13 <0.8.20;
+pragma solidity ^0.8.19;
 
 ${commonSolLib()}
 
@@ -516,7 +516,7 @@ export function precompiles(precompiles: Precompile[]): string {
 
   res.push(`// SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity >=0.8.13 <0.8.20;
+pragma solidity ^0.8.19;
 
 library Precompiles {
 `);

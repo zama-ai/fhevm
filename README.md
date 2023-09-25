@@ -67,7 +67,7 @@ pnpm add fhevm
 ```solidity
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity >=0.8.13 <0.8.20;
+pragma solidity ^0.8.19;
 
 import "fhevm/lib/TFHE.sol";
 
