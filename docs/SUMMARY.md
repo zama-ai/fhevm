@@ -40,3 +40,10 @@
 - [Tutorials](resources/tutorials.md)
 - [Repositories](resources/repositories.md)
 - [Whitepaper](https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper.pdf)
+
+## 🔗 Support
+
+* [Community forum](https://community.zama.ai)
+* [Telegram](https://t.me/+Ojt5y-I7oR42MTkx)
+* [FHE.org discord](https://discord.fhe.org)
+* [Twitter](https://twitter.com/zama\_fhe)
