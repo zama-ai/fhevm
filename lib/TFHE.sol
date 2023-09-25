@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity >=0.8.13 <0.8.20;
+pragma solidity ^0.8.19;
 
 type ebool is uint256;
 type euint8 is uint256;

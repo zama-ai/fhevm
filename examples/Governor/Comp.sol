@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause
-pragma solidity >=0.8.19 <0.9.0;
+pragma solidity ^0.8.19;
 
 import "../../abstracts/EIP712WithModifier.sol";
 
