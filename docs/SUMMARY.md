@@ -16,9 +16,11 @@
   - [Hardhat](solidity/getting_started/hardhat.md)
   - [Remix](solidity/getting_started/remix.md)
   - [Docker](solidity/getting_started/docker.md)
-- [TFHE Library](solidity/library.md)
+- [Types](solidity/types.md)
+- [Operations](solidity/operations.md)
+- [Condition](solidity/condition.md)
+- [Decryption and reencryption](solidity/decrypt.md)
 - [Function specifications](solidity/functions.md)
-- [Decryption and control structures](solidity/decryption.md)
 - [Examples](solidity/examples.md)
 
 ## Client
