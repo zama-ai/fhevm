@@ -2,7 +2,7 @@
 
 The result of [comparison operations](functions.md#comparison-operation-eq-ne-ge-gt-le-lt) is of type `ebool`. Typical boolean operations are not currently supported for this type.
 
-That said, there are possibilities to do condition with or without leaking informations.
+That said, there are possibilities to do condition with or without information leakage.
 
 ## Decryption and condition
 
@@ -24,11 +24,11 @@ function bid(bytes calldata encryptedBid) internal {
 In this code, we first evaluate a homomorphic comparison checking that the user has bid more than the highest bid. This homomorphic comparison will return an encryption of 0 if false, or an encryption of 1 if true. Since we are decrypting this value with `TFHE.decrypt`, we are leaking information: if the user didn't bid enough tokens, the transaction is reverted.
 For example, a user can know the value of the highest bid by trying every possible values and finally bid just one token above.
 
-## Condition homomorphically
+## Homomorphic condition
 
 ### Ternary operator
 
-To avoid leaking information, fhEVM provides a method which acts as a ternary operator on encrypted integers. This method is called [cmux](functions.md#multiplexer-operator-cmux).
+To avoid information leakage, fhEVM provides a method which acts as a ternary operator on encrypted integers. This method is called [cmux](functions.md#multiplexer-operator-cmux).
 
 ```solidity
 function bid(bytes calldata encryptedBid) internal {
