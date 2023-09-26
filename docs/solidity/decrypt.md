@@ -41,6 +41,8 @@ function balanceOf(bytes32 publicKey) public view returns (bytes memory) {
 In the example above (`balanceOf`), this view function need to validate the user to prevent anyone to reencrypt any user's balance. To prevent this, the user provides a signature of the provided public key. The best way to do it is to use [EIP-712 standard](https://eips.ethereum.org/EIPS/eip-712). Since this is something very useful, fhEVM library provide an abstract to use in your contract:
 
 ```solidity
+import "fhevm/abstracts/EIP712WithModifier.sol";
+
 contract EncryptedERC20 is EIP712WithModifier {
   ...
   constructor() EIP712WithModifier("Authorization token", "1") {

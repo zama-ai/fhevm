@@ -1,4 +1,4 @@
-# Functions
+# Function specifications
 
 The functions exposed by the `TFHE` Solidity library come in various shapes and sizes in order to facilitate developer experience.
 For example, most binary operators (e.g., `add`) can take as input any combination of the following types:
@@ -148,14 +148,15 @@ function gt(euint16 a, uint32 b) internal view returns (ebool)
 
 ## Multiplexer operator (`cmux`)
 
-This operator takes three inputs. The first input `b` is of type `ebool` and the two others of type `euintX`. 
-If `b` is an encryption of `true`, the first integer parameter is returned. Otherwise, the second integer parameter is returned. 
+This operator takes three inputs. The first input `b` is of type `ebool` and the two others of type `euintX`.
+If `b` is an encryption of `true`, the first integer parameter is returned. Otherwise, the second integer parameter is returned.
 
 ### Example
+
 ```solidity
 // if (b == true) return val1 else return val2
 function cmux(ebool b, euint8 val1, euint8 val2) internal view returns (euint8) {
-    return TFHE.cmux(b, val1, val2);
+  return TFHE.cmux(b, val1, val2);
 }
 ```
 
