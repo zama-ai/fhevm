@@ -17,7 +17,7 @@
   - [Remix](solidity/getting_started/remix.md)
   - [Docker](solidity/getting_started/docker.md)
 - [Types](solidity/types.md)
-- [Operations](solidity/compute.md)
+- [Operations](solidity/operations.md)
 - [Condition](solidity/condition.md)
 - [Decryption and reencryption](solidity/decrypt.md)
 - [Function specifications](solidity/functions.md)
