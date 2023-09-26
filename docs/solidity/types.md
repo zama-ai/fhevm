@@ -24,10 +24,10 @@ The `euint` types are _wrappers_ over these handles.
 
 When a user sends an encrypted integer, this ciphertext must be checked to prevent arbitrary data from being sent. So, to check user input received as `bytes`, there are several methods.
 
-- `TFHE.asEbool()` will verify and returns a `ebool`
-- `TFHE.asEuint8()` will verify and returns a `euint8`
-- `TFHE.asEuint16()` will verify and returns a `euint16`
-- `TFHE.asEuint32()` will verify and returns a `euint32`
+- `TFHE.asEbool()` will verify the provided ciphertext and returns a `ebool`
+- `TFHE.asEuint8()` will verify the provided ciphertext and returns a `euint8`
+- `TFHE.asEuint16()` will verify the provided ciphertext and returns a `euint16`
+- `TFHE.asEuint32()` will verify the provided ciphertext and returns a `euint32`
 
 ### Example
 

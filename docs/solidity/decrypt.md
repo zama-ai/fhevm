@@ -5,6 +5,8 @@
 We allow explicit decryption requests for any encrypted type.
 The values are decrypted through the distributed decryption protocol and are stored on-chain.
 
+### Example
+
 ```solidity
 function getTotalSupply() public view returns (uint32) {
   return TFHE.decrypt(totalSupply);
@@ -27,6 +29,8 @@ The result of this encryption is sent back to the caller as `bytes memory`.
 
 It is also possible to provide a default value to the `reencrypt` function.
 In this case, if the provided ciphertext is not initialized (i.e., if the ciphertext handle is `0`), the function will return an encryption of the provided default value.
+
+### Example
 
 ```solidity
 function balanceOf(bytes32 publicKey) public view returns (bytes memory) {
