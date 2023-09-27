@@ -195,7 +195,7 @@ contract Comp is EIP712WithModifier {
     function _updateAllowance(address owner, address spender, euint32 amount) internal {
         euint32 currentAllowance = _allowance(owner, spender);
         require(TFHE.decrypt(TFHE.le(amount, currentAllowance)));
-        _approve(owner, spender, TFHE.sub(currentAllowance, amount));
+        _approve(owner, spender, currentAllowance - amount);
     }
 
     // Transfers an encrypted amount.
@@ -204,8 +204,8 @@ contract Comp is EIP712WithModifier {
         require(TFHE.decrypt(TFHE.le(amount, balances[from])));
 
         // Add to the balance of `to` and subract from the balance of `from`.
-        balances[to] = TFHE.add(balances[to], amount);
-        balances[from] = TFHE.sub(balances[from], amount);
+        balances[to] = balances[to] + amount;
+        balances[from] = balances[from] - amount;
         emit Transfer(from, to, amount);
 
         _moveDelegates(delegates[from], delegates[to], amount);
@@ -216,14 +216,14 @@ contract Comp is EIP712WithModifier {
             if (srcRep != address(0)) {
                 uint32 srcRepNum = numCheckpoints[srcRep];
                 euint32 srcRepOld = srcRepNum > 0 ? checkpoints[srcRep][srcRepNum - 1].votes : TFHE.asEuint32(0);
-                euint32 srcRepNew = TFHE.sub(srcRepOld, amount);
+                euint32 srcRepNew = srcRepOld - amount;
                 _writeCheckpoint(srcRep, srcRepNum, srcRepOld, srcRepNew);
             }
 
             if (dstRep != address(0)) {
                 uint32 dstRepNum = numCheckpoints[dstRep];
                 euint32 dstRepOld = dstRepNum > 0 ? checkpoints[dstRep][dstRepNum - 1].votes : TFHE.asEuint32(0);
-                euint32 dstRepNew = TFHE.add(dstRepOld, amount);
+                euint32 dstRepNew = dstRepOld + amount;
                 _writeCheckpoint(dstRep, dstRepNum, dstRepOld, dstRepNew);
             }
         }

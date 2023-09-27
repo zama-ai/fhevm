@@ -72,9 +72,9 @@ contract BlindAuction is EIP712WithModifier {
             // Update bid with value
             bids[msg.sender] = TFHE.cmux(isHigher, value, existingBid);
             // Transfer only the difference between existing and value
-            euint32 toTransfer = TFHE.sub(value, existingBid);
+            euint32 toTransfer = value - existingBid;
             // Transfer only if bid is higher
-            euint32 amount = TFHE.mul(TFHE.asEuint8(isHigher), toTransfer);
+            euint32 amount = TFHE.cmux(isHigher, toTransfer, TFHE.asEuint32(0));
             tokenContract.transferFrom(msg.sender, address(this), amount);
         } else {
             bidCounter++;
