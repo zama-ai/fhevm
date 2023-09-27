@@ -374,8 +374,12 @@ contract GovernorZama {
 
         euint32 ctOne = TFHE.asEuint32(1);
 
-        proposal.forVotes = TFHE.add(proposal.forVotes, TFHE.mul(votes, support));
-        proposal.againstVotes = TFHE.add(proposal.againstVotes, TFHE.mul(votes, TFHE.sub(ctOne, support)));
+        proposal.forVotes = TFHE.cmux(TFHE.asEbool(support), proposal.forVotes + votes, proposal.forVotes);
+        proposal.againstVotes = TFHE.cmux(
+            TFHE.asEbool(ctOne - support),
+            proposal.againstVotes + votes,
+            proposal.againstVotes
+        );
 
         receipt.hasVoted = true;
         receipt.votes = votes;

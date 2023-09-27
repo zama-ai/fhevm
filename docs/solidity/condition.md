@@ -26,8 +26,6 @@ For example, a user can know the value of the highest bid by trying every possib
 
 ## Homomorphic condition
 
-### Ternary operator
-
 To avoid information leakage, fhEVM provides a method which acts as a ternary operator on encrypted integers. This method is called [cmux](functions.md#multiplexer-operator-cmux).
 
 ```solidity
@@ -41,37 +39,6 @@ function bid(bytes calldata encryptedBid) internal {
 ```
 
 It is important to keep in mind that each time we assign a value using `TFHE.cmux`, the value changes, even if the plaintext value remains the same.
-
-### Multiplication
-
-An other solution is to homomorphically multiply an encrypted integers by an encrypted comparison value. We can take a transfer method as example. Here a normal transfer method with `TFHE.decrypt` and `require`:
-
-```solidity
-function transfer(address to, bytes calldata encryptedAmount) internal {
-  euint32 amount = TFHE.asEuint32(encryptedAmount);
-
-  ebool hasEnoughTokens = TFHE.le(amount, balances[msg.sender]);
-
-  require(TFHE.decrypt(hasEnoughTokens));
-
-  balances[to] = balances[to] + amount;
-  balances[msg.sender] = balances[msg.sender] - amount;
-}
-```
-
-If we want to avoid `TFHE.decrypt`, we can use multiplication:
-
-```solidity
-function transfer(address to, bytes calldata encryptedAmount) internal {
-  euint32 amount = TFHE.asEuint32(encryptedAmount);
-  ebool hasEnoughTokens = TFHE.le(amount, balances[msg.sender]);
-
-  balances[to] = balances[to] + (amount * hasEnoughTokens); // balance + amount OR balance + 0
-  balances[msg.sender] = balances[msg.sender] - (amount * hasEnoughTokens); // balance - amount OR balance - 0
-}
-```
-
-In any case, the transaction will go through and a new balance ciphertext will be generated, but it’s actual value won’t change if `hasEnoughTokens` equals 0 (since we transfer 0 tokens).
 
 ## Optimistic encrypted require statements
 

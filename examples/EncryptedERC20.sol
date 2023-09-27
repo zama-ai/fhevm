@@ -31,8 +31,8 @@ contract EncryptedERC20 is EIP712WithModifier {
     // Sets the balance of the owner to the given encrypted balance.
     function mint(bytes calldata encryptedAmount) public onlyContractOwner {
         euint32 amount = TFHE.asEuint32(encryptedAmount);
-        balances[contractOwner] = TFHE.add(balances[contractOwner], amount);
-        totalSupply = TFHE.add(totalSupply, amount);
+        balances[contractOwner] = balances[contractOwner] + amount;
+        totalSupply = totalSupply + amount;
     }
 
     // Transfers an encrypted amount from the message sender address to the `to` address.
@@ -105,7 +105,7 @@ contract EncryptedERC20 is EIP712WithModifier {
     function _updateAllowance(address owner, address spender, euint32 amount) internal {
         euint32 currentAllowance = _allowance(owner, spender);
         require(TFHE.decrypt(TFHE.le(amount, currentAllowance)));
-        _approve(owner, spender, TFHE.sub(currentAllowance, amount));
+        _approve(owner, spender, currentAllowance - amount);
     }
 
     // Transfers an encrypted amount.
@@ -114,8 +114,8 @@ contract EncryptedERC20 is EIP712WithModifier {
         require(TFHE.decrypt(TFHE.le(amount, balances[from])));
 
         // Add to the balance of `to` and subract from the balance of `from`.
-        balances[to] = TFHE.add(balances[to], amount);
-        balances[from] = TFHE.sub(balances[from], amount);
+        balances[to] = balances[to] + amount;
+        balances[from] = balances[from] - amount;
     }
 
     modifier onlyContractOwner() {
