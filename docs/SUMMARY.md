@@ -10,7 +10,7 @@
   - [Zama Devnet](getting_started/faucet/devnet.md)
   - [Local node](getting_started/faucet/local.md)
 
-## Writing contract
+## Writing contracts
 
 - [Getting started](solidity/getting_started.md)
   - [Hardhat](solidity/getting_started/hardhat.md)

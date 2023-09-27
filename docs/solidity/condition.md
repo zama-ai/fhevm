@@ -1,12 +1,12 @@
 # Condition
 
-The result of [comparison operations](functions.md#comparison-operation-eq-ne-ge-gt-le-lt) is of type `ebool`. Typical boolean operations are not currently supported for this type.
+The result of [comparison operations](functions.md#comparison-operation-eq-ne-ge-gt-le-lt) is of type `ebool`. Typical boolean operations are not currently supported for this type, because it is encrypted.
 
-That said, there are possibilities to do condition with or without information leakage.
+That said, there are possibilities to condition on `ebool` with or without information leakage.
 
 ## Decryption and condition
 
-The first way to do condition is to [decrypt](decrypt.md) the `ebool` and then pass it to a `require`. This solution is the simplest way to do a condition but it will leak information. To illustrate this, let's take an example where a user can bid for an item in a blind auction.
+The first way to have a condition based on an `ebool` is to [decrypt](decrypt.md) it and then either use an if statement or pass it to a `require`. This solution is the simplest way to do a condition but it will leak information. To illustrate this, let's take an example where a user bids for an item in a blind auction.
 
 ```solidity
 function bid(bytes calldata encryptedBid) internal {
