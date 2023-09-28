@@ -1,33 +1,44 @@
 # Types
 
-The library provides a type system that is checked both at compile time and at run time.
-The structure and operations related to these types are described in this sections.
+The `TFHE` library provides encrypted integer types and a type system that is checked both at compile time and at run time.
 
-We currently support encrypted integers of bit length up to 32 bits.
+Encrypted integers behave as much as possible as Solidity's integer types. Currently, however, behaviour such as "revert on overflow" is not supported as this would leak some information about the encrypted value. Therefore, arithmetic on `e(u)int` types is [unchecked](https://docs.soliditylang.org/en/latest/control-structures.html#checked-or-unchecked-arithmetic), i.e. there is wrap-around on overflow.
 
-<!-- Support for up to 256 bits is on our roadmap.  -->
+Encrypted integers with overflow checking are coming soon to the `TFHE` library. They will allow reversal in case of an overflow,
+but will leak some information about the operands.
 
-Our library provides the following types :
+In terms of implementation in the `fhEVM`, encrypted integers take the form of FHE ciphertexts.
+The `TFHE` library abstracts away that and, instead, exposes ciphertext handles to smart contract developers.
+The `e(u)int` types are __wrappers__ over these handles.
 
-- `ebool`
-- `euint8`
-- `euint16`
-- `euint32`
+The following encrypted data types are defined:
 
-These encrypted integers behave as much as possible as Solidity's integer types. However, behaviour such as "revert on overflow" is not supported as this would leak some information of the encrypted integers. Therefore, arithmetic on `euint` types is [unchecked](https://docs.soliditylang.org/en/latest/control-structures.html#checked-or-unchecked-arithmetic), i.e. there is wrap-around on overflow.
+| type       | supported       |
+| ---------- | --------------- |
+| `ebool`    | yes (1)         |
+| `euint8`   | yes             |
+| `euint16`  | yes             |
+| `euint32`  | yes             |
+| `euint64`  | no, coming soon |
+| `eint8`    | no, coming soon |
+| `eint16`   | no, coming soon |
+| `eint32`   | no, coming soon |
+| `eint64`   | no, coming soon |
 
-In the back-end, encrypted integers are TFHE ciphertexts.
-The library abstracts away the ciphertexts and presents pointers to ciphertexts, or ciphertext handles, to the smart contract developer.
-The `euint` types are _wrappers_ over these handles.
+Higher-precision integers are supported in the `TFHE-rs` library and can be added as needed to `fhEVM`.
+
+> **_NOTE 1:_** The `ebool` type is currently implemented as an `euint8`. A more optimized native boolean type will replace `euint8`.
 
 ## Verification
 
-When a user sends an encrypted integer, this ciphertext must be checked to prevent arbitrary data from being sent. So, to check user input received as `bytes`, there are several methods.
+When users send serialized ciphertexts as `bytes` to the blockchain, they first need to be converted to the respective encrypted integer type. Conversion verifies if the ciphertext is well-formed and includes proof verification. These steps prevent usage of arbitrary inputs.
+For example, following functions are provided for `ebool`, `euint8`, `euint16` and `euint32`:
 
-- `TFHE.asEbool()` will verify the provided ciphertext and returns a `ebool`
-- `TFHE.asEuint8()` will verify the provided ciphertext and returns a `euint8`
-- `TFHE.asEuint16()` will verify the provided ciphertext and returns a `euint16`
-- `TFHE.asEuint32()` will verify the provided ciphertext and returns a `euint32`
+- `TFHE.asEbool(bytes ciphertext)` verifies the provided ciphertext and returns an `ebool`
+- `TFHE.asEuint8(bytes ciphertext)` verifies the provided ciphertext and returns an `euint8`
+- `TFHE.asEuint16(bytes ciphertext)` verifies the provided ciphertext and returns an `euint16`
+- `TFHE.asEuint32(bytes ciphertext)` verifies the provided ciphertext and returns an `euint32`
+- ... more functions for the respective encrypted integer types
 
 ### Example
 

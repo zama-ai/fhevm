@@ -1,31 +1,13 @@
 # Function specifications
 
 The functions exposed by the `TFHE` Solidity library come in various shapes and sizes in order to facilitate developer experience.
-For example, most binary operators (e.g., `add`) can take as input any combination of the following types:
+For example, most binary operators (e.g., `add`) can take as input any combination of the supported data types.
 
-- `euint8`
-- `euint16`
-- `euint32`
+In the `fhEVM`, FHE operations are only defined on same-type operands. Implicit upcasting will be done automatically, if necessary.
 
-Note that in the backend, FHE operations are only defined on same-type operands.
-Therefore, the `TFHE` Solidity library will do implicit upcasting if necessary.
-
-Most binary operators are also defined with a mix of ciphertext and plaintext inputs.
-In this case, operators can take as input operands of the following types
-
-- `euint8`
-- `euint16`
-- `euint32`
-- `uint8`
-- `uint16`
-- `uint32`
-
-under the condition that the size of the `uint` operand is at most the size of the `euint` operand.
-For example, `add(uint8 a, euint8 b)` is defined but `add(uint16 a, euint16 b)` is not.
+Most binary operators are also defined with a mix of ciphertext and plaintext operands, under the condition that the size of the plaintext operand is at most the size of the encrypted operand.
+For example, `add(uint8 a, euint8 b)` is defined but `add(uint32 a, euint16 b)` is not.
 Note that these ciphertext-plaintext operations may take less time to compute than ciphertext-ciphertext operations.
-
-In the backend, FHE operations are only defined on same-type operands.
-Therefore, the `TFHE` Solidity library will do implicit upcasting if necessary.
 
 ## `asEuint`
 
@@ -83,11 +65,11 @@ function reencrypt(euint32 ciphertext, bytes32 publicKey, uint32 defaultValue) i
 
 > **_NOTE:_** If one of the following operations is called with an uninitialized ciphertext handle as an operand, this handle will be made to point to a trivial encryption of `0` before the operation is executed.
 
-## Arithmetic operations (`add`, `sub`, `mul`)
+## Arithmetic operations (`add`, `sub`, `mul`, `div`, `rem`)
 
 Performs the operation homomorphically.
 
-Note that division is not currently supported.
+Note that division only supports plaintext divisors.
 
 ### Examples
 
@@ -96,6 +78,11 @@ Note that division is not currently supported.
 function add(euint8 a, euint8 b) internal view returns (euint8)
 function add(euint8 a, euint16 b) internal view returns (euint16)
 function add(uint32 a, euint32 b) internal view returns (euint32)
+
+// a / b
+function div(euint8 a, uint8 b) internal pure returns (euint8)
+function div(euint16 a, uint16 b) internal pure returns (euint16)
+function div(euint32 a, uint32 b) internal pure returns (euint32)
 ```
 
 ## Bitwise operations (`AND`, `OR`, `XOR`)
@@ -181,3 +168,22 @@ Note that since we work with unsigned integers, the result of negation is interp
 The `not` operator returns the value obtained after flipping all the bits of the operand.
 
 > **_NOTE:_** More information about the behavior of these operators can be found at the [TFHE-rs docs](https://docs.zama.ai/tfhe-rs/getting-started/operations#arithmetic-operations.).
+
+## Generating random encrypted integers
+
+Random encrypted integers can be generated fully on-chain.
+
+That can only be done during transactions and not on an `eth_call` RPC method,
+because PRNG state needs to be mutated on-chain during generation.
+
+> **_WARNING:_** Not for use in production! Currently, integers are generated
+in the plain via a PRNG whose seed and state are public, with the state being
+on-chain. An FHE-based PRNG is coming soon, where the seed and state will be
+encrypted.
+
+### Example
+
+```solidity
+// Generate a random encrypted unsigned integer `r`.
+euint32 r = TFHE.randEuint32();
+```
