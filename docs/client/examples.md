@@ -5,19 +5,16 @@
 ### Transfer ERC-20 tokens
 
 ```javascript
-const { createInstance } = require('fhevmjs');
-const { Wallet, JsonRpcProvider, Contract } = require('ethers');
+const { createInstance } = require("fhevmjs");
+const { Wallet, JsonRpcProvider, Contract } = require("ethers");
 
-const contractInfo = require('./EncryptedERC20.json');
+const contractInfo = require("./EncryptedERC20.json");
 
-const CONTRACT_ADDRESS = '0x309cf2aae85ad8a1db70ca88cfd4225bf17a7482';
+const CONTRACT_ADDRESS = "0x309cf2aae85ad8a1db70ca88cfd4225bf17a7482";
 
 const provider = new JsonRpcProvider(`https://devnet.zama.ai/`);
 
-const signer = new Wallet(
-  '0x92293977156de6e03b20b26708cb4496b523116190b5c32d77cee8286d0c41f6',
-  provider,
-);
+const signer = new Wallet("0x92293977156de6e03b20b26708cb4496b523116190b5c32d77cee8286d0c41f6", provider);
 
 let _instance;
 
@@ -30,7 +27,7 @@ const getInstance = async () => {
 
   // Get blockchain public key
   const publicKey = await provider.call({
-    to: '0x0000000000000000000000000000000000000044',
+    to: "0x0000000000000000000000000000000000000044",
   });
 
   // Create instance
@@ -45,32 +42,26 @@ const transfer = async (to, amount) => {
   const instance = await getInstance();
   const encryptedAmount = instance.encrypt32(amount);
 
-  const transaction = await contract['transfer(address,bytes)'](
-    to,
-    encryptedAmount,
-  );
+  const transaction = await contract["transfer(address,bytes)"](to, encryptedAmount);
   return transaction;
 };
 
-transfer('0xa83a498Eee26f9594E3A784f204e507a5Fae3210', 10);
+transfer("0xa83a498Eee26f9594E3A784f204e507a5Fae3210", 10);
 ```
 
 ## Get balance
 
 ```javascript
-const { createInstance } = require('fhevmjs');
-const { Wallet, JsonRpcProvider, Contract } = require('ethers');
+const { createInstance } = require("fhevmjs");
+const { Wallet, JsonRpcProvider, Contract } = require("ethers");
 
-const contractInfo = require('./EncryptedERC20.json');
+const contractInfo = require("./EncryptedERC20.json");
 
-const CONTRACT_ADDRESS = '0x309cf2aae85ad8a1db70ca88cfd4225bf17a7482';
+const CONTRACT_ADDRESS = "0x309cf2aae85ad8a1db70ca88cfd4225bf17a7482";
 
 const provider = new JsonRpcProvider(`https://devnet.zama.ai/`);
 
-const signer = new Wallet(
-  '0x92293977156de6e03b20b26708cb4496b523116190b5c32d77cee8286d0c41f6',
-  provider,
-);
+const signer = new Wallet("0x92293977156de6e03b20b26708cb4496b523116190b5c32d77cee8286d0c41f6", provider);
 
 let _instance;
 
@@ -84,7 +75,7 @@ const getInstance = async () => {
 
   // Get blockchain public key
   const publicKey = await provider.call({
-    to: '0x0000000000000000000000000000000000000044',
+    to: "0x0000000000000000000000000000000000000044",
   });
 
   // Create instance
@@ -113,10 +104,7 @@ const getBalance = async () => {
   instance.setTokenSignature(CONTRACT_ADDRESS, signature);
 
   // Call the method
-  const encryptedBalance = await contract.balanceOf(
-    generatedToken.publicKey,
-    signature,
-  );
+  const encryptedBalance = await contract.balanceOf(generatedToken.publicKey, signature);
 
   // Decrypt the balance
   const balance = instance.decrypt(CONTRACT_ADDRESS, encryptedBalance);

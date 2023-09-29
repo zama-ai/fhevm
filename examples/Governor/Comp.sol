@@ -85,6 +85,7 @@ contract Comp is EIP712WithModifier {
         euint32 amount = TFHE.asEuint32(encryptedAmount);
         totalSupply = amount;
         balances[contractOwner] = amount;
+        _moveDelegates(address(0), contractOwner, amount);
         emit Transfer(address(0), contractOwner, amount);
     }
 

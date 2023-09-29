@@ -45,9 +45,9 @@
 
 ## 🔗 Support
 
-* [Community forum](https://community.zama.ai)
-* [Telegram](https://t.me/+Ojt5y-I7oR42MTkx)
-* [FHE.org discord](https://discord.fhe.org)
+- [Community forum](https://community.zama.ai)
+- [Telegram](https://t.me/+Ojt5y-I7oR42MTkx)
+- [FHE.org discord](https://discord.fhe.org)
 <!-- markdown-link-check-disable -->
-* [Twitter](https://twitter.com/zama\_fhe)
+- [Twitter](https://twitter.com/zama_fhe)
 <!-- markdown-link-check-enable -->

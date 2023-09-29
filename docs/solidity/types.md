@@ -9,21 +9,21 @@ but will leak some information about the operands.
 
 In terms of implementation in the `fhEVM`, encrypted integers take the form of FHE ciphertexts.
 The `TFHE` library abstracts away that and, instead, exposes ciphertext handles to smart contract developers.
-The `e(u)int` types are __wrappers__ over these handles.
+The `e(u)int` types are **wrappers** over these handles.
 
 The following encrypted data types are defined:
 
-| type       | supported       |
-| ---------- | --------------- |
-| `ebool`    | yes (1)         |
-| `euint8`   | yes             |
-| `euint16`  | yes             |
-| `euint32`  | yes             |
-| `euint64`  | no, coming soon |
-| `eint8`    | no, coming soon |
-| `eint16`   | no, coming soon |
-| `eint32`   | no, coming soon |
-| `eint64`   | no, coming soon |
+| type      | supported       |
+| --------- | --------------- |
+| `ebool`   | yes (1)         |
+| `euint8`  | yes             |
+| `euint16` | yes             |
+| `euint32` | yes             |
+| `euint64` | no, coming soon |
+| `eint8`   | no, coming soon |
+| `eint16`  | no, coming soon |
+| `eint32`  | no, coming soon |
+| `eint64`  | no, coming soon |
 
 Higher-precision integers are supported in the `TFHE-rs` library and can be added as needed to `fhEVM`.
 
