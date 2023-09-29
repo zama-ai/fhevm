@@ -9,7 +9,7 @@ contract GovernorZama {
 
     /// @notice The number of votes in support of a proposal required in order for a quorum to be reached and for a vote to succeed
     function quorumVotes() public pure returns (uint) {
-        return 2;
+        return 200;
         // return 400000e18;
     } // 400,000 = 4% of Comp
 
@@ -153,9 +153,7 @@ contract GovernorZama {
         string memory description
     ) public returns (uint) {
         require(
-            TFHE.decrypt(
-                TFHE.lt(comp.getPriorVotes(msg.sender, block.number - 1), TFHE.asEuint32(proposalThreshold()))
-            ),
+            TFHE.decrypt(TFHE.lt(proposalThreshold(), comp.getPriorVotes(msg.sender, block.number - 1))),
             "GovernorAlpha::propose: proposer votes below proposal threshold"
         );
         require(
@@ -265,10 +263,7 @@ contract GovernorZama {
 
         Proposal storage proposal = proposals[proposalId];
 
-        ebool proposerAboveThreshold = TFHE.lt(
-            comp.getPriorVotes(msg.sender, block.number - 1),
-            TFHE.asEuint32(proposalThreshold())
-        );
+        ebool proposerAboveThreshold = TFHE.lt(proposalThreshold(), comp.getPriorVotes(msg.sender, block.number - 1));
 
         require(msg.sender == guardian || TFHE.decrypt(proposerAboveThreshold));
 
@@ -302,9 +297,8 @@ contract GovernorZama {
     }
 
     function isDefeated(Proposal storage proposal) private view returns (bool) {
-        euint32 encryptedQuorumVotes = TFHE.asEuint32(uint32(quorumVotes()));
         ebool defeated = TFHE.le(proposal.forVotes, proposal.againstVotes);
-        ebool reachedQuorum = TFHE.lt(proposal.forVotes, encryptedQuorumVotes);
+        ebool reachedQuorum = TFHE.lt(proposal.forVotes, uint32(quorumVotes()));
 
         return TFHE.decrypt(reachedQuorum) || TFHE.decrypt(defeated);
     }
@@ -343,18 +337,18 @@ contract GovernorZama {
     }
 
     function castVote(uint proposalId, bytes calldata support) public {
-        return castVote(proposalId, TFHE.asEuint32(support));
+        return castVote(proposalId, TFHE.asEbool(support));
     }
 
-    function castVote(uint proposalId, euint32 support) public {
+    function castVote(uint proposalId, ebool support) public {
         return _castVote(msg.sender, proposalId, support);
     }
 
     function castVoteBySig(uint proposalId, bytes calldata support, uint8 v, bytes32 r, bytes32 s) public {
-        return castVoteBySig(proposalId, TFHE.asEuint32(support), v, r, s);
+        return castVoteBySig(proposalId, TFHE.asEbool(support), v, r, s);
     }
 
-    function castVoteBySig(uint proposalId, euint32 support, uint8 v, bytes32 r, bytes32 s) public {
+    function castVoteBySig(uint proposalId, ebool support, uint8 v, bytes32 r, bytes32 s) public {
         bytes32 domainSeparator = keccak256(
             abi.encode(DOMAIN_TYPEHASH, keccak256(bytes(name)), getChainId(), address(this))
         );
@@ -365,21 +359,15 @@ contract GovernorZama {
         return _castVote(signatory, proposalId, support);
     }
 
-    function _castVote(address voter, uint proposalId, euint32 support) internal {
+    function _castVote(address voter, uint proposalId, ebool support) internal {
         require(state(proposalId) == ProposalState.Active, "GovernorAlpha::_castVote: voting is closed");
         Proposal storage proposal = proposals[proposalId];
         Receipt storage receipt = proposal.receipts[voter];
         require(receipt.hasVoted == false, "GovernorAlpha::_castVote: voter already voted");
         euint32 votes = comp.getPriorVotes(voter, proposal.startBlock);
 
-        euint32 ctOne = TFHE.asEuint32(1);
-
-        proposal.forVotes = TFHE.cmux(TFHE.asEbool(support), proposal.forVotes + votes, proposal.forVotes);
-        proposal.againstVotes = TFHE.cmux(
-            TFHE.asEbool(ctOne - support),
-            proposal.againstVotes + votes,
-            proposal.againstVotes
-        );
+        proposal.forVotes = TFHE.cmux(support, proposal.forVotes + votes, proposal.forVotes);
+        proposal.againstVotes = TFHE.cmux(support, proposal.againstVotes, proposal.againstVotes + votes);
 
         receipt.hasVoted = true;
         receipt.votes = votes;

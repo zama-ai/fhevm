@@ -32,12 +32,12 @@ By utilizing this JSON object and having it signed by the user, a secure process
 ```javascript
 const instance = await createInstance({ chainId, publicKey });
 const encryptedParam = instance.generateToken({
-  name: 'Authentication',
-  verifyingContract: '0x1c786b8ca49D932AFaDCEc00827352B503edf16c',
+  name: "Authentication",
+  verifyingContract: "0x1c786b8ca49D932AFaDCEc00827352B503edf16c",
 });
 const params = [userAddress, JSON.stringify(generatedToken.token)];
 const sign = await window.ethereum.request({
-  method: 'eth_signTypedData_v4',
+  method: "eth_signTypedData_v4",
   params,
 });
 ```
@@ -81,14 +81,14 @@ This method allows you to store the signature of a public key for a specific con
 ```javascript
 const instance = await createInstance({ chainId, publicKey });
 const generatedToken = instance.generateToken({
-  name: 'Authentication',
-  verifyingContract: '0x1c786b8ca49D932AFaDCEc00827352B503edf16c',
+  name: "Authentication",
+  verifyingContract: "0x1c786b8ca49D932AFaDCEc00827352B503edf16c",
 });
 
 // Ask for user to sign the token
 const params = [userAddress, JSON.stringify(generatedToken.token)];
 const sign = await window.ethereum.request({
-  method: 'eth_signTypedData_v4',
+  method: "eth_signTypedData_v4",
   params,
 });
 // Store signature
@@ -148,17 +148,17 @@ This method returns the saved public key and signature for a specific contract. 
 ### Example
 
 ```javascript
-const contractAddress = '0x1c786b8ca49D932AFaDCEc00827352B503edf16c';
+const contractAddress = "0x1c786b8ca49D932AFaDCEc00827352B503edf16c";
 const instance = await createInstance({ chainId, publicKey });
 const generatedToken = instance.generateToken({
-  name: 'Authentication',
+  name: "Authentication",
   verifyingContract: contractAddress,
 });
 
 // Ask for user to sign the token
 const params = [userAddress, JSON.stringify(generatedToken.token)];
 const sign = await window.ethereum.request({
-  method: 'eth_signTypedData_v4',
+  method: "eth_signTypedData_v4",
   params,
 });
 // Store signature
