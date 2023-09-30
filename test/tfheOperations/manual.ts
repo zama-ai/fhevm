@@ -18,7 +18,6 @@ async function deployTfheManualTestFixture(): Promise<TFHEManualTestSuite> {
 
 describe('TFHE manual operations', function () {
   before(async function () {
-    this.timeout(180000);
     await faucetSigners(1);
     this.signers = await getSigners();
 

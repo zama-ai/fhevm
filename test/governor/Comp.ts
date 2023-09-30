@@ -7,7 +7,6 @@ import { deployCompFixture } from './Comp.fixture';
 
 describe('Comp', function () {
   before(async function () {
-    this.timeout(180000);
     await faucetSigners(2);
     this.signers = await getSigners();
   });

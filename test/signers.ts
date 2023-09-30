@@ -32,7 +32,7 @@ const faucet = async (address: string) => {
   await waitForBalance(address);
 };
 
-export const faucetSigners = async (quantity: number): Promise<Signers> => {
+export const faucetSigners = async (quantity: number): Promise<void> => {
   if (!signers) {
     if (process.env.HARDHAT_PARALLEL) {
       signers = {
@@ -50,15 +50,15 @@ export const faucetSigners = async (quantity: number): Promise<Signers> => {
         dave: eSigners[3],
       };
     }
+
+    const q = Math.min(quantity, 4);
+    const faucetP: Promise<void>[] = [];
+    for (let i = 0; i < q; i += 1) {
+      const account = signers[keys[i]];
+      faucetP.push(faucet(account.address));
+    }
+    await Promise.all(faucetP);
   }
-  const q = Math.min(quantity, 4);
-  const faucetP: Promise<void>[] = [];
-  for (let i = 0; i < q; i += 1) {
-    const account = signers[keys[i]];
-    faucetP.push(faucet(account.address));
-  }
-  await Promise.all(faucetP);
-  return signers as Signers;
 };
 
 export const getSigners = async (): Promise<Signers> => {

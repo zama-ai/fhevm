@@ -9,15 +9,12 @@ import { deployGovernorZamaFixture } from './GovernorZama.fixture';
 
 describe('GovernorZama', function () {
   before(async function () {
-    this.timeout(180000);
     await faucetSigners(3);
     this.signers = await getSigners();
   });
 
   beforeEach(async function () {
     // Increase timeout for beforeEach
-    this.timeout(180000);
-
     this.comp = await deployCompFixture();
     const instances = await createInstances(await this.comp.getAddress(), ethers, this.signers);
     const encryptedAmount = instances.alice.encrypt32(600);
