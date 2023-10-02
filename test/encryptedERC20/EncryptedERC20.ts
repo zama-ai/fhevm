@@ -2,11 +2,12 @@ import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
 import { createInstances } from '../instance';
-import { getSigners } from '../signers';
+import { faucetSigners, getSigners } from '../signers';
 import { deployEncryptedERC20Fixture } from './EncryptedERC20.fixture';
 
 describe('EncryptedERC20', function () {
   before(async function () {
+    await faucetSigners(2);
     this.signers = await getSigners();
   });
 

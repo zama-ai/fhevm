@@ -50,6 +50,9 @@ const config: HardhatUserConfig = {
   namedAccounts: {
     deployer: 0,
   },
+  mocha: {
+    timeout: 180000,
+  },
   gasReporter: {
     currency: 'USD',
     enabled: process.env.REPORT_GAS ? true : false,

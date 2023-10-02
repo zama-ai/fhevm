@@ -3,11 +3,11 @@ import { ethers } from 'hardhat';
 
 import type { TFHEManualTestSuite } from '../../types/contracts/tests/TFHEManualTestSuite';
 import { createInstances } from '../instance';
-import { getSigners } from '../signers';
+import { faucetSigners, getSigners } from '../signers';
 
 async function deployTfheManualTestFixture(): Promise<TFHEManualTestSuite> {
-  const signers = await ethers.getSigners();
-  const admin = signers[0];
+  const signers = await getSigners();
+  const admin = signers.alice;
 
   const contractFactory = await ethers.getContractFactory('TFHEManualTestSuite');
   const contract = await contractFactory.connect(admin).deploy();
@@ -18,6 +18,7 @@ async function deployTfheManualTestFixture(): Promise<TFHEManualTestSuite> {
 
 describe('TFHE manual operations', function () {
   before(async function () {
+    await faucetSigners(1);
     this.signers = await getSigners();
 
     const contract = await deployTfheManualTestFixture();
