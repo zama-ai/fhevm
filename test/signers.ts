@@ -32,7 +32,7 @@ const faucet = async (address: string) => {
   await waitForBalance(address);
 };
 
-export const faucetSigners = async (quantity: number): Promise<void> => {
+export const initSigners = async (quantity: number): Promise<void> => {
   if (!signers) {
     if (process.env.HARDHAT_PARALLEL) {
       signers = {

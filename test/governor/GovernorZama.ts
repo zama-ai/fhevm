@@ -2,14 +2,14 @@ import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
 import { createInstances } from '../instance';
-import { faucetSigners, getSigners } from '../signers';
+import { getSigners, initSigners } from '../signers';
 import { createTransaction, waitForBlock } from '../utils';
 import { deployCompFixture } from './Comp.fixture';
 import { deployGovernorZamaFixture, deployTimelockFixture } from './GovernorZama.fixture';
 
 describe('GovernorZama', function () {
   before(async function () {
-    await faucetSigners(3);
+    await initSigners(3);
     this.signers = await getSigners();
     this.comp = await deployCompFixture();
 

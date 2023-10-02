@@ -5,7 +5,7 @@ import type { TFHETestSuite1 } from '../../types/contracts/tests/TFHETestSuite1'
 import type { TFHETestSuite2 } from '../../types/contracts/tests/TFHETestSuite2';
 import type { TFHETestSuite3 } from '../../types/contracts/tests/TFHETestSuite3';
 import { createInstances } from '../instance';
-import { faucetSigners, getSigners } from '../signers';
+import { getSigners, initSigners } from '../signers';
 
 async function deployTfheTestFixture1(): Promise<TFHETestSuite1> {
   const signers = await getSigners();
@@ -42,7 +42,7 @@ async function deployTfheTestFixture3(): Promise<TFHETestSuite3> {
 
 describe('TFHE operations', function () {
   before(async function () {
-    await faucetSigners(1);
+    await initSigners(1);
     this.signers = await getSigners();
 
     const contract1 = await deployTfheTestFixture1();

@@ -2,12 +2,12 @@ import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
 import { createInstances } from '../instance';
-import { faucetSigners, getSigners } from '../signers';
+import { getSigners, initSigners } from '../signers';
 import { deployCompFixture } from './Comp.fixture';
 
 describe('Comp', function () {
   before(async function () {
-    await faucetSigners(2);
+    await initSigners(2);
     this.signers = await getSigners();
   });
 
