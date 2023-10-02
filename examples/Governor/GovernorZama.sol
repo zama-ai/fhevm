@@ -9,7 +9,7 @@ contract GovernorZama {
 
     /// @notice The number of votes in support of a proposal required in order for a quorum to be reached and for a vote to succeed
     function quorumVotes() public pure returns (uint) {
-        return 200;
+        return 10000;
         // return 400000e18;
     } // 400,000 = 4% of Comp
 
