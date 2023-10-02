@@ -2327,6 +2327,11 @@ library TFHE {
         }
     }
 
+    // Converts an 'ebool' to an 'euint8'.
+    function asEuint8(ebool b) internal pure returns (euint8) {
+        return euint8.wrap(ebool.unwrap(b));
+    }
+
     // Cast an encrypted integer from euint8 to euint16.
     function asEuint16(euint8 value) internal pure returns (euint16) {
         return euint16.wrap(Impl.cast(euint8.unwrap(value), Common.euint16_t));
@@ -2342,6 +2347,11 @@ library TFHE {
         return ne(value, 0);
     }
 
+    // Converts an 'ebool' to an 'euint16'.
+    function asEuint16(ebool b) internal pure returns (euint16) {
+        return euint16.wrap(Impl.cast(ebool.unwrap(b), Common.euint16_t));
+    }
+
     // Cast an encrypted integer from euint8 to euint32.
     function asEuint32(euint8 value) internal pure returns (euint32) {
         return euint32.wrap(Impl.cast(euint8.unwrap(value), Common.euint32_t));
@@ -2355,6 +2365,11 @@ library TFHE {
     // Cast an encrypted integer from euint32 to ebool.
     function asEbool(euint32 value) internal pure returns (ebool) {
         return ne(value, 0);
+    }
+
+    // Converts an 'ebool' to an 'euint32'.
+    function asEuint32(ebool b) internal pure returns (euint32) {
+        return euint32.wrap(Impl.cast(ebool.unwrap(b), Common.euint32_t));
     }
 
     function neg(euint8 value) internal pure returns (euint8) {
@@ -2516,11 +2531,6 @@ library TFHE {
     // Decrypts the encrypted 'value'.
     function decrypt(ebool value) internal view returns (bool) {
         return (Impl.decrypt(ebool.unwrap(value)) != 0);
-    }
-
-    // Converts an 'ebool' to an 'euint8'.
-    function asEuint8(ebool b) internal pure returns (euint8) {
-        return euint8.wrap(ebool.unwrap(b));
     }
 
     // Reencrypt the given 'value' under the given 'publicKey'.
