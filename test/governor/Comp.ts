@@ -17,36 +17,13 @@ describe('Comp', function () {
     this.instances = await createInstances(this.contractAddress, ethers, this.signers);
   });
 
-  it('should init supply', async function () {
-    const encryptedAmount = this.instances.alice.encrypt32(1000);
-    const transaction = await this.comp.initSupply(encryptedAmount);
-    await transaction.wait();
-    // Call the method
-    const token = this.instances.alice.getTokenSignature(this.contractAddress) || {
-      signature: '',
-      publicKey: '',
-    };
-
-    const encryptedBalance = await this.comp.balanceOf(token.publicKey, token.signature);
-    // Decrypt the balance
-    const balance = this.instances.alice.decrypt(this.contractAddress, encryptedBalance);
-    expect(balance).to.equal(1000);
-
-    const totalSupply = await this.comp.getTotalSupply();
-    expect(totalSupply).to.equal(1000);
-  });
-
   it('should transfer tokens', async function () {
-    const encryptedAmount = this.instances.alice.encrypt32(1000);
-    const supplyTransac = await this.comp.initSupply(encryptedAmount);
-
-    const encryptedAmountToTransfer = this.instances.alice.encrypt32(200);
+    const encryptedAmountToTransfer = this.instances.alice.encrypt32(200000);
     const transferTransac = await this.comp['transfer(address,bytes)'](
       this.signers.bob.address,
       encryptedAmountToTransfer,
     );
 
-    await supplyTransac.wait();
     await transferTransac.wait();
 
     const aliceToken = this.instances.alice.getTokenSignature(this.contractAddress) || {
@@ -56,7 +33,7 @@ describe('Comp', function () {
     const encryptedAliceBalance = await this.comp.balanceOf(aliceToken.publicKey, aliceToken.signature);
     // Decrypt Alice's balance
     const aliceBalance = this.instances.alice.decrypt(this.contractAddress, encryptedAliceBalance);
-    expect(aliceBalance).to.equal(800);
+    expect(aliceBalance).to.equal(800000);
 
     const bobToken = this.instances.bob.getTokenSignature(this.contractAddress) || {
       signature: '',
@@ -67,6 +44,6 @@ describe('Comp', function () {
       .balanceOf(bobToken.publicKey, bobToken.signature);
     // Decrypt Bob's balance
     const bobBalance = this.instances.bob.decrypt(this.contractAddress, encryptedBobBalance);
-    expect(bobBalance).to.equal(200);
+    expect(bobBalance).to.equal(200000);
   });
 });

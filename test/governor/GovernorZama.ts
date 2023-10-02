@@ -5,28 +5,31 @@ import { createInstances } from '../instance';
 import { getSigners } from '../signers';
 import { createTransaction, waitForBlock } from '../utils';
 import { deployCompFixture } from './Comp.fixture';
-import { deployGovernorZamaFixture } from './GovernorZama.fixture';
+import { deployGovernorZamaFixture, deployTimelockFixture } from './GovernorZama.fixture';
 
 describe('GovernorZama', function () {
   before(async function () {
     this.signers = await getSigners();
+    this.comp = await deployCompFixture();
+
+    const instances = await createInstances(await this.comp.getAddress(), ethers, this.signers);
+    const encryptedAmountToTransfer = instances.alice.encrypt32(100000);
+    const transfer1 = await this.comp['transfer(address,bytes)'](this.signers.bob.address, encryptedAmountToTransfer);
+    const transfer2 = await this.comp['transfer(address,bytes)'](this.signers.carol.address, encryptedAmountToTransfer);
+    await Promise.all([transfer1.wait(), transfer2.wait()]);
+
+    const delegate1 = await this.comp.delegate(this.signers.alice);
+    const delegate2 = await this.comp.connect(this.signers.bob).delegate(this.signers.bob);
+    const delegate3 = await this.comp.connect(this.signers.carol).delegate(this.signers.carol);
+    await Promise.all([delegate1, delegate2, delegate3]);
   });
 
   beforeEach(async function () {
     // Increase timeout for beforeEach
     this.timeout(180000);
+    const timelock = await deployTimelockFixture();
 
-    this.comp = await deployCompFixture();
-    const instances = await createInstances(await this.comp.getAddress(), ethers, this.signers);
-    const encryptedAmount = instances.alice.encrypt32(600);
-    const supply = await this.comp.initSupply(encryptedAmount);
-    supply.wait();
-    const encryptedAmountToTransfer = instances.alice.encrypt32(200);
-    const transfer1 = await this.comp['transfer(address,bytes)'](this.signers.bob.address, encryptedAmountToTransfer);
-    const transfer2 = await this.comp['transfer(address,bytes)'](this.signers.carol.address, encryptedAmountToTransfer);
-    await Promise.all([transfer1.wait(), transfer2.wait()]);
-
-    const { governor, timelock } = await deployGovernorZamaFixture(this.comp);
+    const governor = await deployGovernorZamaFixture(this.comp, timelock);
     this.contractAddress = await governor.getAddress();
     this.governor = governor;
     this.instances = await createInstances(this.contractAddress, ethers, this.signers);
@@ -38,10 +41,6 @@ describe('GovernorZama', function () {
     const transaction2 = await this.governor.__acceptAdmin();
 
     await Promise.all([transaction.wait(), transaction2.wait()]);
-    const delegate1 = await this.comp.delegate(this.signers.alice);
-    const delegate2 = await this.comp.connect(this.signers.bob).delegate(this.signers.bob);
-    const delegate3 = await this.comp.connect(this.signers.carol).delegate(this.signers.carol);
-    await Promise.all([delegate1, delegate2, delegate3]);
   });
 
   it('should propose a vote', async function () {

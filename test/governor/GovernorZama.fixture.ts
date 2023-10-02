@@ -4,9 +4,7 @@ import { Comp } from '../../types';
 import type { GovernorZama, Timelock } from '../../types';
 import { getSigners } from '../signers';
 
-export async function deployGovernorZamaFixture(
-  compContract: Comp,
-): Promise<{ governor: GovernorZama; timelock: Timelock }> {
+export async function deployTimelockFixture(): Promise<Timelock> {
   const signers = await getSigners();
 
   const timelockFactory = await ethers.getContractFactory('Timelock');
@@ -14,11 +12,17 @@ export async function deployGovernorZamaFixture(
 
   await timelock.waitForDeployment();
 
+  return timelock;
+}
+
+export async function deployGovernorZamaFixture(compContract: Comp, timelock: Timelock): Promise<GovernorZama> {
+  const signers = await getSigners();
+
   const governorFactory = await ethers.getContractFactory('GovernorZama');
   const governor = await governorFactory
     .connect(signers.alice)
     .deploy(timelock.getAddress(), compContract.getAddress(), signers.alice.address);
   await governor.waitForDeployment();
 
-  return { governor, timelock };
+  return governor;
 }

@@ -16,7 +16,7 @@ contract Comp is EIP712WithModifier {
     uint8 public constant decimals = 18;
 
     /// @notice Total number of tokens in circulation
-    euint32 public totalSupply = TFHE.asEuint32(0);
+    euint32 public totalSupply = TFHE.asEuint32(1000000);
 
     /// @notice owner address
     address public contractOwner;
@@ -74,19 +74,7 @@ contract Comp is EIP712WithModifier {
      */
     constructor(address account) EIP712WithModifier("Authorization token", "1") {
         contractOwner = account;
-    }
-
-    /**
-     * @notice Init total supply of the contract
-     * @param encryptedAmount The amount of token to create
-     */
-    function initSupply(bytes calldata encryptedAmount) public onlyContractOwner {
-        require(TFHE.decrypt(TFHE.eq(totalSupply, 0)));
-        euint32 amount = TFHE.asEuint32(encryptedAmount);
-        totalSupply = amount;
-        balances[contractOwner] = amount;
-        _moveDelegates(address(0), contractOwner, amount);
-        emit Transfer(address(0), contractOwner, amount);
+        balances[contractOwner] = totalSupply;
     }
 
     /**
