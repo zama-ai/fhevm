@@ -447,7 +447,20 @@ function tfheAsEboolUnaryCast(bits: number): string {
         } else {
             return asEbool(asEuint8(0));
         }
-    }`);
+    }
+
+    // Converts an 'ebool' to an 'euint8'.
+    function asEuint8(ebool b) internal pure returns (euint8) {
+        return euint8.wrap(ebool.unwrap(b));
+    }
+    `);
+  } else {
+    res.push(`
+    // Converts an 'ebool' to an 'euint${bits}'.
+    function asEuint${bits}(ebool b) internal pure returns (euint${bits}) {
+        return euint${bits}.wrap(Impl.cast(ebool.unwrap(b), Common.euint${bits}_t));
+    }
+    `);
   }
 
   return res.join('');
@@ -569,11 +582,6 @@ function tfheCustomMethods(): string {
     // Decrypts the encrypted 'value'.
     function decrypt(ebool value) internal view returns (bool) {
         return (Impl.decrypt(ebool.unwrap(value)) != 0);
-    }
-
-    // Converts an 'ebool' to an 'euint8'.
-    function asEuint8(ebool b) internal pure returns (euint8) {
-        return euint8.wrap(ebool.unwrap(b));
     }
 
     // Reencrypt the given 'value' under the given 'publicKey'.
