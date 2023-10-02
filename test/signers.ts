@@ -1,7 +1,7 @@
 import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
 import { exec as oldExec } from 'child_process';
 import { HDNodeWallet } from 'ethers';
-import { ethers } from 'hardhat';
+import { config, ethers } from 'hardhat';
 import { promisify } from 'util';
 
 import { waitForBalance } from './utils';
@@ -32,16 +32,16 @@ const faucet = async (address: string) => {
   await waitForBalance(address);
 };
 
-export const faucetSigners = async (quantity: number): Promise<void> => {
+export const initSigners = async (quantity: number): Promise<void> => {
   if (!signers) {
-    if (process.env.HARDHAT_PARALLEL) {
+    if (process.env.HARDHAT_PARALLEL && config.defaultNetwork === 'local') {
       signers = {
         alice: ethers.Wallet.createRandom().connect(ethers.provider),
         bob: ethers.Wallet.createRandom().connect(ethers.provider),
         dave: ethers.Wallet.createRandom().connect(ethers.provider),
         carol: ethers.Wallet.createRandom().connect(ethers.provider),
       };
-    } else {
+    } else if (!process.env.HARDHAT_PARALLEL) {
       const eSigners = await ethers.getSigners();
       signers = {
         alice: eSigners[0],
@@ -49,6 +49,8 @@ export const faucetSigners = async (quantity: number): Promise<void> => {
         carol: eSigners[2],
         dave: eSigners[3],
       };
+    } else {
+      throw new Error("Can't run parallel mode if network is not 'local'");
     }
 
     const q = Math.min(quantity, 4);

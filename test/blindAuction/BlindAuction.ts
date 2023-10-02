@@ -3,12 +3,12 @@ import { ethers } from 'hardhat';
 
 import { deployEncryptedERC20Fixture } from '../encryptedERC20/EncryptedERC20.fixture';
 import { createInstances } from '../instance';
-import { faucetSigners, getSigners } from '../signers';
+import { getSigners, initSigners } from '../signers';
 import { deployBlindAuctionFixture } from './BlindAuction.fixture';
 
 describe('BlindAuction', function () {
   before(async function () {
-    await faucetSigners(3);
+    await initSigners(3);
     this.signers = await getSigners();
   });
 
