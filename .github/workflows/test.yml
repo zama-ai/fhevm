@@ -19,6 +19,7 @@ jobs:
           node-version: ${{ matrix.node-version }}
       - run: cp .env.example .env
       - run: npm ci
+      - run: npm run prettier:check
       - name: "npm CI test"
         run: |
           # sometimes not created and is not tailed
