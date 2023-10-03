@@ -53,13 +53,15 @@ export const initSigners = async (quantity: number): Promise<void> => {
       throw new Error("Can't run parallel mode if network is not 'local'");
     }
 
-    const q = Math.min(quantity, 4);
-    const faucetP: Promise<void>[] = [];
-    for (let i = 0; i < q; i += 1) {
-      const account = signers[keys[i]];
-      faucetP.push(faucet(account.address));
+    if (config.defaultNetwork === 'local') {
+      const q = Math.min(quantity, 4);
+      const faucetP: Promise<void>[] = [];
+      for (let i = 0; i < q; i += 1) {
+        const account = signers[keys[i]];
+        faucetP.push(faucet(account.address));
+      }
+      await Promise.all(faucetP);
     }
-    await Promise.all(faucetP);
   }
 };
 
