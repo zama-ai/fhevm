@@ -25,10 +25,5 @@ jobs:
           touch fhevm.log
           npm run fhevm:start &> fhevm.log &
           tail -f fhevm.log | sed '/Starting JSON WebSocket server/ q'
-
-          npm run fhevm:faucet
-          npm run fhevm:faucet:bob
-          sleep 8
-          npm run fhevm:faucet:carol
-          npm test
+          npm run test
           npm run fhevm:stop || true
