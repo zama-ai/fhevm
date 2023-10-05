@@ -11,7 +11,9 @@ You can use it on [https://remix.zama.ai](https://remix.zama.ai).
 
 ## Usage
 
-First, to import TFHE library, simply import it at the top of your contract.
+First, read the [usage section](../getting_started.md#usage) regarding Solidity version and EVM.
+
+To import TFHE library, simply import it at the top of your contract.
 
 `import "fhevm/lib/TFHE.sol";`
 
