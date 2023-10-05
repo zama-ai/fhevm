@@ -25,5 +25,5 @@ jobs:
           touch fhevm.log
           npm run fhevm:start &> fhevm.log &
           tail -f fhevm.log | sed '/Starting JSON WebSocket server/ q'
-          npm run test
+          npm run test:inband
           npm run fhevm:stop || true
