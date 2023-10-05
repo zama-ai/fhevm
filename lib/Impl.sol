@@ -11,6 +11,8 @@ interface FhevmLib {
 
     function fheDiv(uint256 lhs, uint256 rhs, bytes1 scalarByte) external pure returns (uint256 result);
 
+    function fheRem(uint256 lhs, uint256 rhs, bytes1 scalarByte) external pure returns (uint256 result);
+
     function fheBitAnd(uint256 lhs, uint256 rhs, bytes1 scalarByte) external pure returns (uint256 result);
 
     function fheBitOr(uint256 lhs, uint256 rhs, bytes1 scalarByte) external pure returns (uint256 result);
@@ -99,6 +101,11 @@ library Impl {
     function div(uint256 lhs, uint256 rhs) internal pure returns (uint256 result) {
         bytes1 scalarByte = 0x01;
         result = FhevmLib(address(EXT_TFHE_LIBRARY)).fheDiv(lhs, rhs, scalarByte);
+    }
+
+    function rem(uint256 lhs, uint256 rhs) internal pure returns (uint256 result) {
+        bytes1 scalarByte = 0x01;
+        result = FhevmLib(address(EXT_TFHE_LIBRARY)).fheRem(lhs, rhs, scalarByte);
     }
 
     function and(uint256 lhs, uint256 rhs) internal pure returns (uint256 result) {

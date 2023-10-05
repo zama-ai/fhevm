@@ -4,6 +4,13 @@ pragma solidity 0.8.19;
 import "../../lib/TFHE.sol";
 
 contract TFHETestSuite2 {
+    function eq_euint16_euint16(bytes calldata a, bytes calldata b) public view returns (bool) {
+        euint16 aProc = TFHE.asEuint16(a);
+        euint16 bProc = TFHE.asEuint16(b);
+        ebool result = TFHE.eq(aProc, bProc);
+        return TFHE.decrypt(result);
+    }
+
     function ne_euint16_euint16(bytes calldata a, bytes calldata b) public view returns (bool) {
         euint16 aProc = TFHE.asEuint16(a);
         euint16 bProc = TFHE.asEuint16(b);
@@ -211,6 +218,13 @@ contract TFHETestSuite2 {
         euint16 aProc = TFHE.asEuint16(a);
         uint16 bProc = b;
         euint16 result = TFHE.div(aProc, bProc);
+        return TFHE.decrypt(result);
+    }
+
+    function rem_euint16_uint16(bytes calldata a, uint16 b) public view returns (uint16) {
+        euint16 aProc = TFHE.asEuint16(a);
+        uint16 bProc = b;
+        euint16 result = TFHE.rem(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
@@ -687,20 +701,6 @@ contract TFHETestSuite2 {
         euint32 aProc = TFHE.asEuint32(a);
         euint32 bProc = TFHE.asEuint32(b);
         euint32 result = TFHE.max(aProc, bProc);
-        return TFHE.decrypt(result);
-    }
-
-    function add_euint32_uint32(bytes calldata a, uint32 b) public view returns (uint32) {
-        euint32 aProc = TFHE.asEuint32(a);
-        uint32 bProc = b;
-        euint32 result = TFHE.add(aProc, bProc);
-        return TFHE.decrypt(result);
-    }
-
-    function add_uint32_euint32(uint32 a, bytes calldata b) public view returns (uint32) {
-        uint32 aProc = a;
-        euint32 bProc = TFHE.asEuint32(b);
-        euint32 result = TFHE.add(aProc, bProc);
         return TFHE.decrypt(result);
     }
 }

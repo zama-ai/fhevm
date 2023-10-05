@@ -260,6 +260,7 @@ export const overloadTests: { [methodName: string]: OverloadTest[] } = {
     { inputs: [0x08, 0x02], output: 0x10 },
   ],
   div_euint8_uint8: [{ inputs: [0x10, 0x02], output: 0x08 }],
+  rem_euint8_uint8: [{ inputs: [0x08, 0x03], output: 0x02 }],
   shl_euint8_uint8: [
     { inputs: [0x10, 0x01], output: 0x20 },
     { inputs: [0x10, 0x02], output: 0x40 },
@@ -533,6 +534,7 @@ export const overloadTests: { [methodName: string]: OverloadTest[] } = {
   mul_euint16_uint16: [{ inputs: [0x0202, 0x0003], output: 0x0606 }],
   mul_uint16_euint16: [{ inputs: [0x0202, 0x0003], output: 0x0606 }],
   div_euint16_uint16: [{ inputs: [0x0606, 0x0003], output: 0x0202 }],
+  rem_euint16_uint16: [{ inputs: [0x0608, 0x0003], output: 0x0002 }],
   shl_euint16_uint16: [{ inputs: [0x0606, 0x0003], output: 0x3030 }],
   shl_uint16_euint16: [{ inputs: [0x0606, 0x0003], output: 0x3030 }],
   shr_euint16_uint16: [{ inputs: [0x0606, 0x0003], output: 0x00c0 }],
@@ -782,6 +784,7 @@ export const overloadTests: { [methodName: string]: OverloadTest[] } = {
   mul_euint32_uint32: [{ inputs: [0x00342000, 0x00000100], output: 0x34200000 }],
   mul_uint32_euint32: [{ inputs: [0x00342000, 0x00000100], output: 0x34200000 }],
   div_euint32_uint32: [{ inputs: [0x00342000, 0x00000100], output: 0x00003420 }],
+  rem_euint32_uint32: [{ inputs: [0x00342039, 0x00000100], output: 0x00000039 }],
   shl_euint32_uint32: [{ inputs: [0x00342000, 0x00000001], output: 0x00684000 }],
   shl_uint32_euint32: [{ inputs: [0x00342000, 0x00000001], output: 0x00684000 }],
   shr_euint32_uint32: [{ inputs: [0x00342000, 0x00000001], output: 0x001a1000 }],

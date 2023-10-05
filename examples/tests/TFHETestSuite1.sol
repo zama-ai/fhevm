@@ -389,6 +389,13 @@ contract TFHETestSuite1 {
         return TFHE.decrypt(result);
     }
 
+    function rem_euint8_uint8(bytes calldata a, uint8 b) public view returns (uint8) {
+        euint8 aProc = TFHE.asEuint8(a);
+        uint8 bProc = b;
+        euint8 result = TFHE.rem(aProc, bProc);
+        return TFHE.decrypt(result);
+    }
+
     function shl_euint8_uint8(bytes calldata a, uint8 b) public view returns (uint8) {
         euint8 aProc = TFHE.asEuint8(a);
         uint8 bProc = b;
@@ -694,13 +701,6 @@ contract TFHETestSuite1 {
         euint16 aProc = TFHE.asEuint16(a);
         euint16 bProc = TFHE.asEuint16(b);
         euint16 result = TFHE.shr(aProc, bProc);
-        return TFHE.decrypt(result);
-    }
-
-    function eq_euint16_euint16(bytes calldata a, bytes calldata b) public view returns (bool) {
-        euint16 aProc = TFHE.asEuint16(a);
-        euint16 bProc = TFHE.asEuint16(b);
-        ebool result = TFHE.eq(aProc, bProc);
         return TFHE.decrypt(result);
     }
 }

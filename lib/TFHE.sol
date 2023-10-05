@@ -622,6 +622,14 @@ library TFHE {
         return euint8.wrap(Impl.div(euint8.unwrap(a), uint256(b)));
     }
 
+    // Evaluate rem(a, b) and return the result.
+    function rem(euint8 a, uint8 b) internal pure returns (euint8) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        return euint8.wrap(Impl.rem(euint8.unwrap(a), uint256(b)));
+    }
+
     // Evaluate shl(a, b) and return the result.
     function shl(euint8 a, uint8 b) internal pure returns (euint8) {
         if (!isInitialized(a)) {
@@ -1369,6 +1377,14 @@ library TFHE {
         return euint16.wrap(Impl.div(euint16.unwrap(a), uint256(b)));
     }
 
+    // Evaluate rem(a, b) and return the result.
+    function rem(euint16 a, uint16 b) internal pure returns (euint16) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        return euint16.wrap(Impl.rem(euint16.unwrap(a), uint256(b)));
+    }
+
     // Evaluate shl(a, b) and return the result.
     function shl(euint16 a, uint16 b) internal pure returns (euint16) {
         if (!isInitialized(a)) {
@@ -2114,6 +2130,14 @@ library TFHE {
             a = asEuint32(0);
         }
         return euint32.wrap(Impl.div(euint32.unwrap(a), uint256(b)));
+    }
+
+    // Evaluate rem(a, b) and return the result.
+    function rem(euint32 a, uint32 b) internal pure returns (euint32) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        return euint32.wrap(Impl.rem(euint32.unwrap(a), uint256(b)));
     }
 
     // Evaluate shl(a, b) and return the result.

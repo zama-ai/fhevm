@@ -63,6 +63,7 @@ export const ALL_PRECOMPILES: Precompile[] = [
   { name: 'Not', code: 90 },
   { name: 'Decrypt', code: 91 },
   { name: 'Divide', code: 92 },
+  { name: 'Rem', code: 94 },
 ];
 
 export const ALL_OPERATORS: Operator[] = [
@@ -97,6 +98,15 @@ export const ALL_OPERATORS: Operator[] = [
   {
     name: 'div',
     precompileName: 'Divide',
+    hasScalar: true,
+    hasEncrypted: false,
+    arguments: OperatorArguments.Binary,
+    returnType: ReturnType.Uint,
+    leftScalarDisable: true,
+  },
+  {
+    name: 'rem',
+    precompileName: 'Rem',
     hasScalar: true,
     hasEncrypted: false,
     arguments: OperatorArguments.Binary,

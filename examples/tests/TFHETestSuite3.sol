@@ -4,6 +4,20 @@ pragma solidity 0.8.19;
 import "../../lib/TFHE.sol";
 
 contract TFHETestSuite3 {
+    function add_euint32_uint32(bytes calldata a, uint32 b) public view returns (uint32) {
+        euint32 aProc = TFHE.asEuint32(a);
+        uint32 bProc = b;
+        euint32 result = TFHE.add(aProc, bProc);
+        return TFHE.decrypt(result);
+    }
+
+    function add_uint32_euint32(uint32 a, bytes calldata b) public view returns (uint32) {
+        uint32 aProc = a;
+        euint32 bProc = TFHE.asEuint32(b);
+        euint32 result = TFHE.add(aProc, bProc);
+        return TFHE.decrypt(result);
+    }
+
     function sub_euint32_uint32(bytes calldata a, uint32 b) public view returns (uint32) {
         euint32 aProc = TFHE.asEuint32(a);
         uint32 bProc = b;
@@ -36,6 +50,13 @@ contract TFHETestSuite3 {
         euint32 aProc = TFHE.asEuint32(a);
         uint32 bProc = b;
         euint32 result = TFHE.div(aProc, bProc);
+        return TFHE.decrypt(result);
+    }
+
+    function rem_euint32_uint32(bytes calldata a, uint32 b) public view returns (uint32) {
+        euint32 aProc = TFHE.asEuint32(a);
+        uint32 bProc = b;
+        euint32 result = TFHE.rem(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
