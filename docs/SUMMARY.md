@@ -21,6 +21,7 @@
 - [Condition](solidity/condition.md)
 - [Decryption and reencryption](solidity/decrypt.md)
 - [Function specifications](solidity/functions.md)
+- [Roadmap](solidity/roadmap.md)
 - [Examples](solidity/examples.md)
 
 ## Client
