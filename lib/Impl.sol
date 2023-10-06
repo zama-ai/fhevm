@@ -239,7 +239,7 @@ library Impl {
         bytes memory input = abi.encodeWithSignature("optimisticRequire(uint256)", ciphertext);
         uint256 inputLen = input.length;
 
-        // Call the optimistic require precompile.
+        // Call the optimistic require method in precompile.
         address precompile = EXT_TFHE_LIBRARY;
         assembly {
             if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, 0, 0)) {

@@ -79,4 +79,16 @@ describe('TFHE manual operations', function () {
       expect(e.message).to.contain('execution reverted');
     }
   });
+
+  it('stateful optimistic require with true succeeds', async function () {
+    const res = await this.contract.test_opt_req_stateful(true);
+    const receipt = await res.wait();
+    expect(receipt.status).to.equal(1);
+  });
+
+  it('stateful optimistic require with false fails', async function () {
+    const res = await this.contract.test_opt_req_stateful(false);
+    const receipt = await res.wait();
+    expect(receipt.status).to.not.equal(1);
+  });
 });

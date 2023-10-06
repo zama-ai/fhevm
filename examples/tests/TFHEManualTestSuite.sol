@@ -26,4 +26,11 @@ contract TFHEManualTestSuite {
     function test_opt_req(bool input) public view {
         TFHE.optReq(TFHE.asEbool(input));
     }
+
+    uint32 counter = 0;
+
+    function test_opt_req_stateful(bool input) public {
+        TFHE.optReq(TFHE.asEbool(input));
+        counter += 1;
+    }
 }
