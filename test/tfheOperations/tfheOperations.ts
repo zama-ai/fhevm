@@ -5,11 +5,11 @@ import type { TFHETestSuite1 } from '../../types/contracts/tests/TFHETestSuite1'
 import type { TFHETestSuite2 } from '../../types/contracts/tests/TFHETestSuite2';
 import type { TFHETestSuite3 } from '../../types/contracts/tests/TFHETestSuite3';
 import { createInstances } from '../instance';
-import { getSigners, initSigners } from '../signers';
+import { getSigners } from '../signers';
 
 async function deployTfheTestFixture1(): Promise<TFHETestSuite1> {
-  const signers = await getSigners();
-  const admin = signers.alice;
+  const signers = await ethers.getSigners();
+  const admin = signers[0];
 
   const contractFactory = await ethers.getContractFactory('TFHETestSuite1');
   const contract = await contractFactory.connect(admin).deploy();
@@ -19,8 +19,8 @@ async function deployTfheTestFixture1(): Promise<TFHETestSuite1> {
 }
 
 async function deployTfheTestFixture2(): Promise<TFHETestSuite2> {
-  const signers = await getSigners();
-  const admin = signers.alice;
+  const signers = await ethers.getSigners();
+  const admin = signers[0];
 
   const contractFactory = await ethers.getContractFactory('TFHETestSuite2');
   const contract = await contractFactory.connect(admin).deploy();
@@ -30,8 +30,8 @@ async function deployTfheTestFixture2(): Promise<TFHETestSuite2> {
 }
 
 async function deployTfheTestFixture3(): Promise<TFHETestSuite3> {
-  const signers = await getSigners();
-  const admin = signers.alice;
+  const signers = await ethers.getSigners();
+  const admin = signers[0];
 
   const contractFactory = await ethers.getContractFactory('TFHETestSuite3');
   const contract = await contractFactory.connect(admin).deploy();
@@ -42,7 +42,6 @@ async function deployTfheTestFixture3(): Promise<TFHETestSuite3> {
 
 describe('TFHE operations', function () {
   before(async function () {
-    await initSigners(1);
     this.signers = await getSigners();
 
     const contract1 = await deployTfheTestFixture1();

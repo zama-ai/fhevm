@@ -126,7 +126,6 @@ function generateImplFhevmLibInterface(operators: Operator[]): string {
 
 function fheLibCustomInterfaceFunctions(): string {
   return `
-    function optimisticRequire(uint256 ct) external view;
     function reencrypt(uint256 ct, uint256 publicKey) external view returns (bytes memory);
     function fhePubKey(bytes1 fromLib) external view returns (bytes memory result);
     function verifyCiphertext(bytes memory input) external pure returns (uint256 result);
@@ -637,8 +636,19 @@ function implCustomMethods(): string {
         result = FhevmLib(address(EXT_TFHE_LIBRARY)).fheAdd(mulOutput, ifFalse, bytes1(0x00));
     }
 
+    // We do assembly here because ordinary call will emit extcodesize check which is zero for our precompiles
+    // and revert the transaction because we don't return any data for this precompile method
     function optReq(uint256 ciphertext) internal view {
-        FhevmLib(address(EXT_TFHE_LIBRARY)).optimisticRequire(ciphertext);
+        bytes memory input = abi.encodeWithSignature("optimisticRequire(uint256)", ciphertext);
+        uint256 inputLen = input.length;
+
+        // Call the optimistic require method in precompile.
+        address precompile = EXT_TFHE_LIBRARY;
+        assembly {
+            if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, 0, 0)) {
+                revert(0, 0)
+            }
+        }
     }
 
     function reencrypt(uint256 ciphertext, bytes32 publicKey) internal view returns (bytes memory reencrypted) {

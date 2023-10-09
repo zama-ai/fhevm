@@ -1,3 +1,4 @@
+import { fail } from 'assert';
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
@@ -64,5 +65,30 @@ describe('TFHE manual operations', function () {
   it('ebool to euint32 casting works with false', async function () {
     const res = await this.contract.test_ebool_to_euint32_cast(false);
     expect(res).to.equal(0);
+  });
+
+  it('optimistic require with true succeeds', async function () {
+    await this.contract.test_opt_req(true);
+  });
+
+  it('optimistic require with false fails', async function () {
+    try {
+      await this.contract.test_opt_req(false);
+      fail('This should fail');
+    } catch (e: any) {
+      expect(e.message).to.contain('execution reverted');
+    }
+  });
+
+  it('stateful optimistic require with true succeeds', async function () {
+    const res = await this.contract.test_opt_req_stateful(true);
+    const receipt = await res.wait();
+    expect(receipt.status).to.equal(1);
+  });
+
+  it('stateful optimistic require with false fails', async function () {
+    const res = await this.contract.test_opt_req_stateful(false);
+    const receipt = await res.wait();
+    expect(receipt.status).to.not.equal(1);
   });
 });
