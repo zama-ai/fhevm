@@ -69,7 +69,7 @@ function reencrypt(euint32 ciphertext, bytes32 publicKey, uint32 defaultValue) i
 
 Performs the operation homomorphically.
 
-Note that division only supports plaintext divisors.
+Note that division/remainder only support plaintext divisors.
 
 ### Examples
 
