@@ -61,6 +61,7 @@ const config: HardhatUserConfig = {
   },
   networks: {
     zama: getChainConfig('zama'),
+    localDev: getChainConfig('local'),
     local: getChainConfig('local'),
   },
   paths: {
