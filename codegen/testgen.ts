@@ -66,7 +66,7 @@ export function generateTestCode(shards: OverloadShard[]): string {
     import { expect } from 'chai';
     import { ethers } from 'hardhat';
     import { createInstances } from '../instance';
-    import { getSigners } from '../signers';
+    import { getSigners, initSigners } from '../signers';
 
   `);
 
@@ -79,8 +79,8 @@ export function generateTestCode(shards: OverloadShard[]): string {
   shards.forEach((os) => {
     res.push(`
 async function deployTfheTestFixture${os.shardNumber}(): Promise<TFHETestSuite${os.shardNumber}> {
-  const signers = await ethers.getSigners();
-  const admin = signers[0];
+  const signers = await getSigners();
+  const admin = signers.alice;
 
   const contractFactory = await ethers.getContractFactory('TFHETestSuite${os.shardNumber}');
   const contract = await contractFactory.connect(admin).deploy();
@@ -94,6 +94,7 @@ async function deployTfheTestFixture${os.shardNumber}(): Promise<TFHETestSuite${
   res.push(`
     describe('TFHE operations', function () {
         before(async function () {
+            await initSigners(1);
             this.signers = await getSigners();
 
   `);
