@@ -42,7 +42,7 @@
   "homepage": "https://github.com/zama-ai/fhevm#readme",
   "devDependencies": {
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.0",
-    "@nomicfoundation/hardhat-ethers": "^3.0.0",
+    "@nomicfoundation/hardhat-ethers": "^3.0.4",
     "@nomicfoundation/hardhat-network-helpers": "^1.0.6",
     "@nomicfoundation/hardhat-toolbox": "^3.0.0",
     "@nomicfoundation/hardhat-verify": "^1.0.0",
@@ -60,7 +60,7 @@
     "dotenv": "^16.0.3",
     "eslint": "^8.28.0",
     "eslint-config-prettier": "^8.5.0",
-    "ethers": "^6.4.0",
+    "ethers": "^6.8.0",
     "fhevmjs": "^0.2.0",
     "fs-extra": "^10.1.0",
     "ganache": "^7.9.0",
