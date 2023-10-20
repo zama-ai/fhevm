@@ -34,7 +34,7 @@ Thanks to a breakthrough in homomorphic encryption, Zama’s fhEVM makes it poss
 - **Simple Developer Experience:** Developers can use the `euint` data types to mark which part of their contracts should be private.
 - **Programmable Privacy:** All the logic for access control of encrypted states is defined by developers in their smart contracts.
 
-You can take a look at our [list of examples](https://docs.zama.ai/fhevm/writing-contract/examples).
+You can take a look at our [list of examples](https://docs.zama.ai/fhevm/writing-contracts/examples).
 
 ### Powerful features available out of the box
 
@@ -85,7 +85,7 @@ contract Counter {
 }
 ```
 
-See our documentation on [https://docs.zama.ai/fhevm/writing-contract/getting_started](https://docs.zama.ai/fhevm/writing-contract/getting_started) for more details.
+See our documentation on [https://docs.zama.ai/fhevm/writing-contract/getting_started](https://docs.zama.ai/fhevm/writing-contracts/getting_started) for more details.
 
 ## Development Guide
 
