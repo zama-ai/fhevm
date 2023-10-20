@@ -28,9 +28,11 @@ const getCoin = async (address: string) => {
 
 const faucet = async (address: string) => {
   const balance = await ethers.provider.getBalance(address);
+  console.log(`balance of ${address}`);
   if (balance > 0) return;
   await getCoin(address);
   await waitForBalance(address);
+  console.log(`After wait balance of ${address}`);
 };
 
 export const initSigners = async (quantity: number): Promise<void> => {
@@ -39,8 +41,8 @@ export const initSigners = async (quantity: number): Promise<void> => {
       signers = {
         alice: ethers.Wallet.createRandom().connect(ethers.provider),
         bob: ethers.Wallet.createRandom().connect(ethers.provider),
-        dave: ethers.Wallet.createRandom().connect(ethers.provider),
         carol: ethers.Wallet.createRandom().connect(ethers.provider),
+        dave: ethers.Wallet.createRandom().connect(ethers.provider),
       };
     } else if (!process.env.HARDHAT_PARALLEL) {
       const eSigners = await ethers.getSigners();
@@ -59,6 +61,7 @@ export const initSigners = async (quantity: number): Promise<void> => {
       const faucetP: Promise<void>[] = [];
       for (let i = 0; i < q; i += 1) {
         const account = signers[keys[i]];
+        console.log(keys[i], account.address);
         faucetP.push(faucet(account.address));
       }
       await Promise.all(faucetP);
