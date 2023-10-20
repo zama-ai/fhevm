@@ -28,14 +28,13 @@ const getCoin = async (address: string) => {
 
 const faucet = async (address: string) => {
   const balance = await ethers.provider.getBalance(address);
-  console.log(`balance of ${address}`);
   if (balance > 0) return;
   await getCoin(address);
   await waitForBalance(address);
-  console.log(`After wait balance of ${address}`);
 };
 
 export const initSigners = async (quantity: number): Promise<void> => {
+  const q = process.env.HARDHAT_PARALLEL ? Math.min(quantity, 4) : 4;
   if (!signers) {
     if (process.env.HARDHAT_PARALLEL && config.defaultNetwork === 'local') {
       signers = {
@@ -57,11 +56,9 @@ export const initSigners = async (quantity: number): Promise<void> => {
     }
 
     if (config.defaultNetwork === 'local') {
-      const q = Math.min(quantity, 4);
       const faucetP: Promise<void>[] = [];
       for (let i = 0; i < q; i += 1) {
         const account = signers[keys[i]];
-        console.log(keys[i], account.address);
         faucetP.push(faucet(account.address));
       }
       await Promise.all(faucetP);
