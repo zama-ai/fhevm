@@ -3,7 +3,7 @@ import { ethers } from 'hardhat';
 
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
-import { deployIdentityFixture } from './Identity.fixture';
+import { deployIdentityFixture } from './identity.fixture';
 
 describe('Identity', function () {
   before(async function () {

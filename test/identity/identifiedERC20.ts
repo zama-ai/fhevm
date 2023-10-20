@@ -4,8 +4,8 @@ import { ethers } from 'hardhat';
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
 import { deployERC20RulesFixture } from './ERC20Rules';
-import { deployIdentifiedERC20Fixture } from './IdentifiedERC20.fixture';
-import { deployIdentityFixture } from './Identity.fixture';
+import { deployIdentifiedERC20Fixture } from './identifiedERC20.fixture';
+import { deployIdentityFixture } from './identity.fixture';
 
 describe('IdentifiedERC20', function () {
   before(async function () {
