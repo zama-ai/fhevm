@@ -28,10 +28,10 @@ abstract contract AbstractIdentifiedERC20 is EIP712WithModifier {
                 TFHE.cmux(
                     isIssuer,
                     TFHE.isInitialized(balances[wallet]) ? balances[wallet] : TFHE.asEuint32(0),
-                    TFHE.asEuint32(12)
+                    TFHE.asEuint32(0)
                 ),
                 publicKey,
-                14
+                0
             );
     }
 
