@@ -22,6 +22,7 @@ if (!mnemonic) {
 const chainIds = {
   zama: 8009,
   local: 9000,
+  localNetwork1: 9000,
 };
 
 function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
@@ -29,6 +30,9 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
   switch (chain) {
     case 'local':
       jsonRpcUrl = 'http://localhost:8545';
+      break;
+    case 'localNetwork1':
+      jsonRpcUrl = 'http://127.0.0.1:9650/ext/bc/fhevm/rpc';
       break;
     case 'zama':
       jsonRpcUrl = 'https://devnet.zama.ai';
@@ -63,6 +67,7 @@ const config: HardhatUserConfig = {
     zama: getChainConfig('zama'),
     localDev: getChainConfig('local'),
     local: getChainConfig('local'),
+    localNetwork1: getChainConfig('localNetwork1'),
   },
   paths: {
     artifacts: './artifacts',
