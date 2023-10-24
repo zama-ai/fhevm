@@ -1,6 +1,6 @@
 import { assert } from 'console';
 
-import { Operator, OperatorArguments, Precompile, ReturnType } from './common';
+import { CodegenContext, Operator, OperatorArguments, ReturnType } from './common';
 import { ArgumentType, OverloadSignature } from './testgen';
 
 export function commonSolLib(): string {
@@ -42,7 +42,7 @@ function binaryOperatorImpl(op: Operator, isScalar: boolean, isEncrypted: boolea
   );
 }
 
-export function implSol(operators: Operator[]): string {
+export function implSol(ctx: CodegenContext, operators: Operator[]): string {
   const res: string[] = [];
 
   const fheLibInterface = generateImplFhevmLibInterface(operators);
@@ -54,7 +54,7 @@ pragma solidity 0.8.19;
 
 ${fheLibInterface}
 
-address constant EXT_TFHE_LIBRARY = address(93);
+address constant EXT_TFHE_LIBRARY = address(${ctx.libFheAddress});
 
 library Impl {
     // 32 bytes for the 'byte' type header + 48 bytes for the NaCl anonymous
@@ -77,7 +77,7 @@ library Impl {
     }
   });
 
-  res.push(implCustomMethods());
+  res.push(implCustomMethods(ctx));
 
   res.push('}\n');
 
@@ -136,7 +136,11 @@ function fheLibCustomInterfaceFunctions(): string {
   `;
 }
 
-export function tfheSol(operators: Operator[], supportedBits: number[]): [string, OverloadSignature[]] {
+export function tfheSol(
+  ctx: CodegenContext,
+  operators: Operator[],
+  supportedBits: number[],
+): [string, OverloadSignature[]] {
   const signatures: OverloadSignature[] = [];
   const res: string[] = [];
 
@@ -182,7 +186,7 @@ library TFHE {
   supportedBits.forEach((bits) => res.push(tfheUnaryOperators(bits, operators, signatures)));
   supportedBits.forEach((bits) => res.push(tfheCustomUnaryOperators(bits, signatures)));
 
-  res.push(tfheCustomMethods());
+  res.push(tfheCustomMethods(ctx));
 
   res.push('}\n');
 
@@ -523,26 +527,6 @@ function tfheCustomUnaryOperators(bits: number, signatures: OverloadSignature[])
     `;
 }
 
-export function precompiles(precompiles: Precompile[]): string {
-  const res: string[] = [];
-
-  res.push(`// SPDX-License-Identifier: BSD-3-Clause-Clear
-
-pragma solidity 0.8.19;
-
-library Precompiles {
-`);
-
-  precompiles.forEach((op) => {
-    res.push(`    uint256 public constant ${op.name} = ${op.code};
-`);
-  });
-
-  res.push('}\n');
-
-  return res.join('');
-}
-
 function unaryOperatorImpl(op: Operator): string {
   let fname = operatorFheLibFunction(op);
   return `
@@ -552,7 +536,7 @@ function unaryOperatorImpl(op: Operator): string {
   `;
 }
 
-function tfheCustomMethods(): string {
+function tfheCustomMethods(ctx: CodegenContext): string {
   return `
     // Optimistically require that 'b' is true.
     //
@@ -625,7 +609,7 @@ function tfheCustomMethods(): string {
 `;
 }
 
-function implCustomMethods(): string {
+function implCustomMethods(ctx: CodegenContext): string {
   return `
     // If 'control's value is 'true', the result has the same value as 'ifTrue'.
     // If 'control's value is 'false', the result has the same value as 'ifFalse'.

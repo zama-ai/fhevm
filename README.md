@@ -176,6 +176,15 @@ Ensure the faucet command was succesful.
 </details>
 <br />
 
+#### Run tests for network1 network
+
+```bash
+# codegen for network1 network
+TARGET_NETWORK=Network1 npx ts-node codegen/main.ts && npm run prettier
+# run tests for network1 network, assumes network1 rpc already running locally
+npx hardhat test --network localNetwork1
+```
+
 ### Adding new operators
 
 Operators can be defined as data inside `codegen/common.ts` file and code automatically generates solidity overloads.

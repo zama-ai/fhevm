@@ -1,5 +1,10 @@
 import { strict as assert } from 'node:assert';
 
+export enum Network {
+  Evmos,
+  Network1,
+}
+
 export type Operator = {
   name: string;
   // express left scalar operation as different operation with arguments swapped
@@ -18,9 +23,8 @@ export type Operator = {
   unarySolidityOperator?: string;
 };
 
-export type Precompile = {
-  name: string;
-  code: number;
+export type CodegenContext = {
+  libFheAddress: string;
 };
 
 export enum OperatorArguments {
@@ -34,37 +38,6 @@ export enum ReturnType {
 }
 
 export const SUPPORTED_BITS: number[] = [8, 16, 32];
-
-export const ALL_PRECOMPILES: Precompile[] = [
-  { name: 'Add', code: 65 },
-  { name: 'Verify', code: 66 },
-  { name: 'Reencrypt', code: 67 },
-  { name: 'FhePubKey', code: 68 },
-  { name: 'LessThanOrEqual', code: 70 },
-  { name: 'Subtract', code: 71 },
-  { name: 'Multiply', code: 72 },
-  { name: 'LessThan', code: 73 },
-  { name: 'Rand', code: 74 },
-  { name: 'OptimisticRequire', code: 75 },
-  { name: 'Cast', code: 76 },
-  { name: 'TrivialEncrypt', code: 77 },
-  { name: 'BitwiseAnd', code: 78 },
-  { name: 'BitwiseOr', code: 79 },
-  { name: 'BitwiseXor', code: 80 },
-  { name: 'Equal', code: 81 },
-  { name: 'GreaterThanOrEqual', code: 82 },
-  { name: 'GreaterThan', code: 83 },
-  { name: 'ShiftLeft', code: 84 },
-  { name: 'ShiftRight', code: 85 },
-  { name: 'NotEqual', code: 86 },
-  { name: 'Min', code: 87 },
-  { name: 'Max', code: 88 },
-  { name: 'Negate', code: 89 },
-  { name: 'Not', code: 90 },
-  { name: 'Decrypt', code: 91 },
-  { name: 'Divide', code: 92 },
-  { name: 'Rem', code: 94 },
-];
 
 export const ALL_OPERATORS: Operator[] = [
   {
@@ -262,4 +235,17 @@ export function checks(operators: Operator[]): Operator[] {
   });
 
   return operators;
+}
+
+export function networkCodegenContext(network: Network): CodegenContext {
+  switch (network) {
+    case Network.Evmos:
+      return {
+        libFheAddress: '0x000000000000000000000000000000000000005d',
+      };
+    case Network.Network1:
+      return {
+        libFheAddress: '0x010000000000000000000000000000000000005D',
+      };
+  }
 }

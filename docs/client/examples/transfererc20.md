@@ -22,9 +22,14 @@ const getInstance = async () => {
   const chainId = +network.chainId.toString(); // Need to be a number
 
   // Get blockchain public key
-  const publicKey = await provider.call({
-    to: "0x0000000000000000000000000000000000000044",
+  const ret = await provider.call({
+    // fhe lib address, may need to be changed depending on network
+    to: "0x000000000000000000000000000000000000005d",
+    // first four bytes of keccak256('fhePubKey(bytes1)') + 1 byte for library
+    data: "0xd9d47bb001",
   });
+  const decoded = ethers.AbiCoder.defaultAbiCoder().decode(["bytes"], ret);
+  const publicKey = decoded[0];
 
   // Create instance
   _instance = createInstance({ chainId, publicKey });
