@@ -2356,6 +2356,23 @@ library TFHE {
         return euint8.wrap(ebool.unwrap(b));
     }
 
+    // Implement and/or operator
+    function and(ebool a, ebool b) internal pure returns (ebool) {
+        return asEbool(and(asEuint8(a), asEuint8(b)));
+    }
+
+    function or(ebool a, ebool b) internal pure returns (ebool) {
+        return asEbool(or(asEuint8(a), asEuint8(b)));
+    }
+
+    function not(ebool a) internal pure returns (ebool) {
+        return asEbool(not(asEuint8(a)));
+    }
+
+    function cmux(ebool cond, ebool a, ebool b) internal pure returns (ebool) {
+        return asEbool(cmux(cond, asEuint8(a), asEuint8(b)));
+    }
+
     // Cast an encrypted integer from euint8 to euint16.
     function asEuint16(euint8 value) internal pure returns (euint16) {
         return euint16.wrap(Impl.cast(euint8.unwrap(value), Common.euint16_t));

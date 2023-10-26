@@ -452,6 +452,23 @@ function tfheAsEboolUnaryCast(bits: number): string {
     function asEuint8(ebool b) internal pure returns (euint8) {
         return euint8.wrap(ebool.unwrap(b));
     }
+
+    // Implement and/or operator
+    function and(ebool a, ebool b) internal pure returns (ebool) {
+        return asEbool(and(asEuint8(a), asEuint8(b)));
+    }
+
+    function or(ebool a, ebool b) internal pure returns (ebool) {
+        return asEbool(or(asEuint8(a), asEuint8(b)));
+    }
+
+    function not(ebool a) internal pure returns (ebool) {
+        return asEbool(not(asEuint8(a)));
+    }
+
+    function cmux(ebool cond, ebool a, ebool b) internal pure returns (ebool) {
+        return asEbool(cmux(cond, asEuint8(a), asEuint8(b)));
+    }
     `);
   } else {
     res.push(`
