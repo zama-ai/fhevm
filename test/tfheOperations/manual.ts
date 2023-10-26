@@ -3,6 +3,7 @@ import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
 import type { TFHEManualTestSuite } from '../../types/contracts/tests/TFHEManualTestSuite';
+import { OPTIMISTIC_REQUIRES_ENABLED } from '../generated';
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
 
@@ -67,32 +68,34 @@ describe('TFHE manual operations', function () {
     expect(res).to.equal(0);
   });
 
-  it('optimistic require with true succeeds', async function () {
-    await this.contract.test_opt_req(true);
-  });
+  if (OPTIMISTIC_REQUIRES_ENABLED) {
+    it('optimistic require with true succeeds', async function () {
+      await this.contract.test_opt_req(true);
+    });
 
-  it('optimistic require with false fails', async function () {
-    try {
-      await this.contract.test_opt_req(false);
-      fail('This should fail');
-    } catch (e: any) {
-      expect(e.message).to.contain('execution reverted');
-    }
-  });
+    it('optimistic require with false fails', async function () {
+      try {
+        await this.contract.test_opt_req(false);
+        fail('This should fail');
+      } catch (e: any) {
+        expect(e.message).to.contain('execution reverted');
+      }
+    });
 
-  it('stateful optimistic require with true succeeds', async function () {
-    const res = await this.contract.test_opt_req_stateful(true);
-    const receipt = await res.wait();
-    expect(receipt.status).to.equal(1);
-  });
+    it('stateful optimistic require with true succeeds', async function () {
+      const res = await this.contract.test_opt_req_stateful(true);
+      const receipt = await res.wait();
+      expect(receipt.status).to.equal(1);
+    });
 
-  it('stateful optimistic require with false fails', async function () {
-    const res = await this.contract.test_opt_req_stateful(false);
-    try {
-      const _ = await res.wait();
-      fail('This should fail');
-    } catch (e: any) {
-      expect(e.toString()).to.contain('transaction execution reverted');
-    }
-  });
+    it('stateful optimistic require with false fails', async function () {
+      const res = await this.contract.test_opt_req_stateful(false);
+      try {
+        const _ = await res.wait();
+        fail('This should fail');
+      } catch (e: any) {
+        expect(e.toString()).to.contain('transaction execution reverted');
+      }
+    });
+  }
 });
