@@ -34,13 +34,14 @@ const faucet = async (address: string) => {
 };
 
 export const initSigners = async (quantity: number): Promise<void> => {
+  const q = process.env.HARDHAT_PARALLEL ? Math.min(quantity, 4) : 4;
   if (!signers) {
     if (process.env.HARDHAT_PARALLEL && config.defaultNetwork === 'local') {
       signers = {
         alice: ethers.Wallet.createRandom().connect(ethers.provider),
         bob: ethers.Wallet.createRandom().connect(ethers.provider),
-        dave: ethers.Wallet.createRandom().connect(ethers.provider),
         carol: ethers.Wallet.createRandom().connect(ethers.provider),
+        dave: ethers.Wallet.createRandom().connect(ethers.provider),
       };
     } else if (!process.env.HARDHAT_PARALLEL) {
       const eSigners = await ethers.getSigners();
@@ -55,7 +56,6 @@ export const initSigners = async (quantity: number): Promise<void> => {
     }
 
     if (config.defaultNetwork === 'local') {
-      const q = Math.min(quantity, 4);
       const faucetP: Promise<void>[] = [];
       for (let i = 0; i < q; i += 1) {
         const account = signers[keys[i]];
