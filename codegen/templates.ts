@@ -453,11 +453,12 @@ function tfheAsEboolUnaryCast(bits: number): string {
         return euint8.wrap(ebool.unwrap(b));
     }
 
-    // Implement and/or operator
+    // Evaluate and(a, b) and return the result.
     function and(ebool a, ebool b) internal pure returns (ebool) {
         return asEbool(and(asEuint8(a), asEuint8(b)));
     }
 
+    // Evaluate or(a, b) and return the result.
     function or(ebool a, ebool b) internal pure returns (ebool) {
         return asEbool(or(asEuint8(a), asEuint8(b)));
     }
@@ -465,7 +466,9 @@ function tfheAsEboolUnaryCast(bits: number): string {
     function not(ebool a) internal pure returns (ebool) {
         return asEbool(not(asEuint8(a)));
     }
-
+    
+    // If 'control''s value is 'true', the result has the same value as 'a'.
+    // If 'control''s value is 'false', the result has the same value as 'b'.
     function cmux(ebool cond, ebool a, ebool b) internal pure returns (ebool) {
         return asEbool(cmux(cond, asEuint8(a), asEuint8(b)));
     }
