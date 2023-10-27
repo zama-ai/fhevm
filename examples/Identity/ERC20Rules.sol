@@ -31,14 +31,16 @@ contract ERC20Rules {
         require(TFHE.isInitialized(fromCountry) && TFHE.isInitialized(toCountry), "You don't have access");
         ebool sameCountry = TFHE.eq(fromCountry, toCountry);
         ebool amountAbove10k = TFHE.gt(_amount, 10000);
-        ebool countryCondition = TFHE.asEbool(
-            TFHE.cmux(sameCountry, TFHE.asEuint8(1), TFHE.cmux(amountAbove10k, TFHE.asEuint8(0), TFHE.asEuint8(1)))
+        ebool countryCondition = TFHE.cmux(
+            sameCountry,
+            TFHE.asEbool(true),
+            TFHE.cmux(amountAbove10k, TFHE.asEbool(false), TFHE.asEbool(true))
         );
 
         // Condition 2: Check that noone is blacklisted
-        euint32 fromBlacklisted = identityContract.getIdentifier(from, "blacklist");
-        euint32 toBlacklisted = identityContract.getIdentifier(to, "blacklist");
-        ebool whitelisted = TFHE.asEbool(TFHE.not(TFHE.and(toBlacklisted, fromBlacklisted)));
+        ebool fromBlacklisted = TFHE.asEbool(identityContract.getIdentifier(from, "blacklist"));
+        ebool toBlacklisted = TFHE.asEbool(identityContract.getIdentifier(to, "blacklist"));
+        ebool whitelisted = TFHE.not(TFHE.and(toBlacklisted, fromBlacklisted));
 
         euint32 amount = TFHE.cmux(
             countryCondition,

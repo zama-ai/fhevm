@@ -2356,6 +2356,26 @@ library TFHE {
         return euint8.wrap(ebool.unwrap(b));
     }
 
+    // Evaluate and(a, b) and return the result.
+    function and(ebool a, ebool b) internal pure returns (ebool) {
+        return asEbool(and(asEuint8(a), asEuint8(b)));
+    }
+
+    // Evaluate or(a, b) and return the result.
+    function or(ebool a, ebool b) internal pure returns (ebool) {
+        return asEbool(or(asEuint8(a), asEuint8(b)));
+    }
+
+    function not(ebool a) internal pure returns (ebool) {
+        return asEbool(not(asEuint8(a)));
+    }
+
+    // If 'control''s value is 'true', the result has the same value as 'a'.
+    // If 'control''s value is 'false', the result has the same value as 'b'.
+    function cmux(ebool cond, ebool a, ebool b) internal pure returns (ebool) {
+        return asEbool(cmux(cond, asEuint8(a), asEuint8(b)));
+    }
+
     // Cast an encrypted integer from euint8 to euint16.
     function asEuint16(euint8 value) internal pure returns (euint16) {
         return euint16.wrap(Impl.cast(euint8.unwrap(value), Common.euint16_t));
