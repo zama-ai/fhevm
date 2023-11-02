@@ -23,4 +23,5 @@ export interface FhevmInstances {
   bob: FhevmInstance;
   carol: FhevmInstance;
   dave: FhevmInstance;
+  eve: FhevmInstance;
 }

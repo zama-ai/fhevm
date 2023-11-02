@@ -1,11 +1,13 @@
 import { expect } from 'chai';
-import { ethers } from 'hardhat';
+import { ethers, network } from 'hardhat';
 
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
-import { createTransaction, waitForBlock } from '../utils';
+import { createTransaction, produceDummyTransactions, waitForBlock } from '../utils';
 import { deployCompFixture } from './Comp.fixture';
 import { deployGovernorZamaFixture, deployTimelockFixture } from './GovernorZama.fixture';
+
+const timeout = 180000;
 
 describe('GovernorZama', function () {
   before(async function () {
@@ -23,11 +25,17 @@ describe('GovernorZama', function () {
     const delegate2 = await this.comp.connect(this.signers.bob).delegate(this.signers.bob);
     const delegate3 = await this.comp.connect(this.signers.carol).delegate(this.signers.carol);
     await Promise.all([delegate1, delegate2, delegate3]);
+    if (network.name == 'localNetwork1') {
+      // inside network1 blocks are not
+      // produced unless there are transactions and
+      // we rely on block production for voting time
+      produceDummyTransactions(100);
+    }
   });
 
   beforeEach(async function () {
     // Increase timeout for beforeEach
-    this.timeout(180000);
+    this.timeout(timeout);
     const timelock = await deployTimelockFixture();
 
     const governor = await deployGovernorZamaFixture(this.comp, timelock);
@@ -61,7 +69,7 @@ describe('GovernorZama', function () {
     const proposals = await this.governor.proposals(proposalId);
     expect(proposals.id).to.equal(proposalId);
     expect(proposals.proposer).to.equal(this.signers.alice.address);
-  }).timeout(180000);
+  }).timeout(timeout);
 
   it('should vote and return a Succeed', async function () {
     const callDatas = [ethers.AbiCoder.defaultAbiCoder().encode(['address'], [this.signers.alice.address])];
@@ -104,7 +112,7 @@ describe('GovernorZama', function () {
 
     const state = await this.governor.state(proposalId);
     expect(state).to.equal(4n);
-  }).timeout(180000);
+  }).timeout(timeout);
 
   it('should vote and return a Defeated ', async function () {
     const callDatas = [ethers.AbiCoder.defaultAbiCoder().encode(['address'], [this.signers.alice.address])];
@@ -146,7 +154,7 @@ describe('GovernorZama', function () {
 
     const state = await this.governor.state(proposalId);
     expect(state).to.equal(3n);
-  }).timeout(180000);
+  }).timeout(timeout);
 
   it('should cancel', async function () {
     await this.comp.delegate(this.signers.alice.address);
@@ -173,5 +181,5 @@ describe('GovernorZama', function () {
     await txCancel.wait();
     const newState = await this.governor.state(proposalId);
     expect(newState).to.equal(2n);
-  }).timeout(180000);
+  }).timeout(timeout);
 });
