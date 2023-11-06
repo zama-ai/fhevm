@@ -7,8 +7,8 @@ The `TFHE` library defines the following operations with FHE ciphertexts:
 | Add                          | `TFHE.add`          | `+`    | Binary       |
 | Sub                          | `TFHE.sub`          | `-`    | Binary       |
 | Mul                          | `TFHE.mul`          | `*`    | Binary       |
-| Div                          | `TFHE.div`          |        | Binary       |
-| Rem                          | `TFHE.rem`          |        | Binary       |
+| Div (plaintext divisor)      | `TFHE.div`          |        | Binary       |
+| Rem (plaintext divisor)      | `TFHE.rem`          |        | Binary       |
 | BitAnd                       | `TFHE.and`          | `&`    | Binary       |
 | BitOr                        | `TFHE.or`           | `\|`   | Binary       |
 | BitXor                       | `TFHE.xor`          | `^`    | Binary       |
