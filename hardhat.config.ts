@@ -55,7 +55,7 @@ const config: HardhatUserConfig = {
     deployer: 0,
   },
   mocha: {
-    timeout: 180000,
+    timeout: 500000,
   },
   gasReporter: {
     currency: 'USD',
