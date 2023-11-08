@@ -15,7 +15,7 @@ import "../../abstracts/EIP712WithModifier.sol";
 import "../../lib/TFHE.sol";
 
 contract Identity is EIP712WithModifier, Ownable {
-    // A mapping from did to an identity.
+    // A mapping from wallet to an identity.
     mapping(address => UserIdentity) internal identities;
 
     struct UserIdentity {
@@ -24,7 +24,7 @@ contract Identity is EIP712WithModifier, Ownable {
         mapping(string => euint32) identifiers;
     }
 
-    mapping(address => mapping(address => mapping(string => bool))) permissions; // user => contracts => identifiers[]
+    mapping(address => mapping(address => mapping(string => bool))) permissions; // users => contracts => identifiers[]
 
     event NewDid(address wallet);
     event RemoveDid(address wallet);
@@ -104,11 +104,11 @@ contract Identity is EIP712WithModifier, Ownable {
     }
 
     // User handling permission permission
-    function givePermission(string calldata identifier, address allowed) public {
+    function grantAccess(address allowed, string calldata identifier) public {
         permissions[msg.sender][allowed][identifier] = true;
     }
 
-    function removePermission(string calldata identifier, address allowed) public {
+    function revokeAccess(address allowed, string calldata identifier) public {
         delete permissions[msg.sender][allowed][identifier];
     }
 
@@ -118,8 +118,9 @@ contract Identity is EIP712WithModifier, Ownable {
         return _getCountry(wallet);
     }
 
-    function _getCountry(address wallet) internal view onlyAllowed(wallet, "country") returns (euint8) {
-        require(TFHE.isInitialized(identities[wallet].country), "This wallet isn't registered");
+    function _getCountry(
+        address wallet
+    ) internal view onlyExistingWallet(wallet) onlyAllowed(wallet, "country") returns (euint8) {
         return identities[wallet].country;
     }
 

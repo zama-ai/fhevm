@@ -16,6 +16,10 @@ abstract contract AbstractIdentifiedERC20 is EIP712WithModifier {
         rulesContract = ERC20Rules(_rulesAddr);
     }
 
+    function identifiers() public view returns (string[] memory) {
+        return rulesContract.getIdentifiers();
+    }
+
     function balanceOf(
         address wallet,
         bytes32 publicKey,

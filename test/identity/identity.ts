@@ -28,9 +28,7 @@ describe('Identity', function () {
     const transaction = await this.identity.setIdentifier(this.signers.bob.address, 'birthdate', encryptedBirth);
     await transaction.wait();
 
-    const allowed = await this.identity
-      .connect(this.signers.bob)
-      .givePermission('birthdate', this.signers.carol.address);
+    const allowed = await this.identity.connect(this.signers.bob).grantAccess(this.signers.carol.address, 'birthdate');
     await allowed.wait();
 
     // Carol use this token to access information
