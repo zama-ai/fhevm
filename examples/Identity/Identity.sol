@@ -159,10 +159,8 @@ contract Identity is EIP712WithModifier, Ownable {
         if (ebool.unwrap(identities[wallet].issuer) == 0) return TFHE.asEbool(false);
         euint8 issuerCountry = identities[wallet].country;
         ebool matchingCountry = TFHE.eq(country, issuerCountry);
-        // return matchingCountry;
         ebool issuer = identities[wallet].issuer;
-        // return issuer;
-        return TFHE.asEbool(TFHE.and(TFHE.asEuint8(matchingCountry), TFHE.asEuint8(issuer)));
+        return TFHE.and(matchingCountry, issuer);
     }
 
     // ACL
