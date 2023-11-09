@@ -4,15 +4,15 @@ pragma solidity 0.8.19;
 
 import "../../abstracts/EIP712WithModifier.sol";
 import "./ERC20Rules.sol";
-import "./Identity.sol";
+import "./IdentityRegistry.sol";
 
 abstract contract AbstractIdentifiedERC20 is EIP712WithModifier {
     mapping(address => euint32) internal balances;
-    Identity identityContract;
+    IdentityRegistry identityContract;
     ERC20Rules rulesContract;
 
     constructor(address _identityAddr, address _rulesAddr) EIP712WithModifier("Authorization token", "1") {
-        identityContract = Identity(_identityAddr);
+        identityContract = IdentityRegistry(_identityAddr);
         rulesContract = ERC20Rules(_rulesAddr);
     }
 
@@ -25,31 +25,26 @@ abstract contract AbstractIdentifiedERC20 is EIP712WithModifier {
         bytes32 publicKey,
         bytes calldata signature
     ) public view onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
-        ebool isIssuer = identityContract.isIssuer(msg.sender, identityContract.getCountry(wallet));
+        uint registrarId = identityContract.registrars(msg.sender);
+        require(registrarId > 0, "You're not a registrar");
+        uint userRegistrarId = identityContract.getRegistrar(wallet);
+        require(userRegistrarId == registrarId, "You're not managing this did");
 
-        return
-            TFHE.reencrypt(
-                TFHE.cmux(
-                    isIssuer,
-                    TFHE.isInitialized(balances[wallet]) ? balances[wallet] : TFHE.asEuint32(0),
-                    TFHE.asEuint32(0)
-                ),
-                publicKey,
-                0
-            );
+        return TFHE.reencrypt(balances[wallet], publicKey, 0);
     }
 
     // Transfers an encrypted amount.
     function _transfer(address from, address to, euint32 _amount) internal {
         // Condition 1: hasEnoughFunds
-        require(TFHE.decrypt(TFHE.le(_amount, balances[from])), "Not enough funds");
+        ebool enoughFund = TFHE.le(_amount, balances[from]);
+        euint32 amount = TFHE.cmux(enoughFund, _amount, TFHE.asEuint32(0));
 
         // Delegate call
         (bool success, bytes memory returndata) = address(rulesContract).delegatecall(
-            abi.encodeWithSelector(ERC20Rules.transfer.selector, identityContract, from, to, _amount)
+            abi.encodeWithSelector(ERC20Rules.transfer.selector, identityContract, from, to, amount)
         );
         require(success == true);
-        euint32 amount = abi.decode(returndata, (euint32));
+        amount = abi.decode(returndata, (euint32));
 
         balances[to] = balances[to] + amount;
         balances[from] = balances[from] - amount;

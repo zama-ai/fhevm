@@ -1,14 +1,9 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-// Owner = ONU
-// Issuer par pays
-// Did associé à un issuer
-
 pragma solidity 0.8.19;
 
-import "./Identity.sol";
-
 import "../../lib/TFHE.sol";
+import "./IdentityRegistry.sol";
 
 contract ERC20Rules {
     address immutable _this;
@@ -25,7 +20,7 @@ contract ERC20Rules {
     }
 
     function transfer(
-        Identity identityContract,
+        IdentityRegistry identityContract,
         address from,
         address to,
         euint32 amount
@@ -51,13 +46,13 @@ contract ERC20Rules {
     }
 
     function checkLimitTransfer(
-        Identity identityContract,
+        IdentityRegistry identityContract,
         address from,
         address to,
         euint32 amount
     ) internal view returns (ebool) {
-        euint8 fromCountry = identityContract.getCountry(from);
-        euint8 toCountry = identityContract.getCountry(to);
+        euint32 fromCountry = identityContract.getIdentifier(from, "country");
+        euint32 toCountry = identityContract.getIdentifier(to, "country");
         require(TFHE.isInitialized(fromCountry) && TFHE.isInitialized(toCountry), "You don't have access");
         ebool sameCountry = TFHE.eq(fromCountry, toCountry);
         ebool amountBelow10k = TFHE.le(amount, 10000);
@@ -65,18 +60,22 @@ contract ERC20Rules {
         return TFHE.or(sameCountry, amountBelow10k);
     }
 
-    function checkBlacklist(Identity identityContract, address from, address to) internal view returns (ebool) {
+    function checkBlacklist(IdentityRegistry identityContract, address from, address to) internal view returns (ebool) {
         ebool fromBlacklisted = TFHE.asEbool(identityContract.getIdentifier(from, "blacklist"));
         ebool toBlacklisted = TFHE.asEbool(identityContract.getIdentifier(to, "blacklist"));
         return TFHE.not(TFHE.and(toBlacklisted, fromBlacklisted));
     }
 
-    function checkCountryToCountry(Identity identityContract, address from, address to) internal view returns (ebool) {
+    function checkCountryToCountry(
+        IdentityRegistry identityContract,
+        address from,
+        address to
+    ) internal view returns (ebool) {
         // Disallow transfer from country 2 to country 1
         euint16[1] memory c2cRestrictions = [TFHE.shl(TFHE.asEuint16(2), 8) + TFHE.asEuint16(1)];
 
-        euint8 fromCountry = identityContract.getCountry(from);
-        euint8 toCountry = identityContract.getCountry(to);
+        euint32 fromCountry = identityContract.getIdentifier(from, "country");
+        euint32 toCountry = identityContract.getIdentifier(to, "country");
         require(TFHE.isInitialized(fromCountry) && TFHE.isInitialized(toCountry), "You don't have access");
         euint16 countryToCountry = TFHE.shl(TFHE.asEuint16(fromCountry), 8) + TFHE.asEuint16(toCountry);
         ebool condition = TFHE.asEbool(true);
