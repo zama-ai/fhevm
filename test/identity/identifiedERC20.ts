@@ -24,99 +24,6 @@ describe('IdentifiedERC20', function () {
     this.instances = await createInstances(this.contractAddress, ethers, this.signers);
   });
 
-  it('should allow decryption of balance for identity owner', async function () {
-    // Create accounts;
-    const country1 = this.instances.alice.encrypt32(1);
-    const country2 = this.instances.alice.encrypt32(2);
-    // Alice => owner
-    // Bob => Issuer
-    // Carol & Dave => User
-    const bobIssuerTx = await this.identityRegistry.addRegistrar(this.signers.bob, 1);
-    await bobIssuerTx.wait();
-    const tx1 = await this.identityRegistry.connect(this.signers.bob).addDid(this.signers.alice);
-    const tx2 = await this.identityRegistry.connect(this.signers.bob).addDid(this.signers.bob);
-    const tx3 = await this.identityRegistry.connect(this.signers.bob).addDid(this.signers.carol);
-    const tx4 = await this.identityRegistry.connect(this.signers.bob).addDid(this.signers.dave);
-    await Promise.all([tx1.wait(), tx2.wait(), tx3.wait(), tx4.wait()]);
-
-    const tx1Identifier = await this.identityRegistry
-      .connect(this.signers.bob)
-      .setIdentifier(this.signers.alice, 'country', country1);
-    const tx2Identifier = await this.identityRegistry
-      .connect(this.signers.bob)
-      .setIdentifier(this.signers.bob, 'country', country1);
-    const tx3Identifier = await this.identityRegistry
-      .connect(this.signers.bob)
-      .setIdentifier(this.signers.carol, 'country', country1);
-    const tx4Identifier = await this.identityRegistry
-      .connect(this.signers.bob)
-      .setIdentifier(this.signers.dave, 'country', country2);
-    await Promise.all([tx1Identifier.wait(), tx2Identifier.wait(), tx3Identifier.wait(), tx4Identifier.wait()]);
-
-    // Give permissions
-    const list = await this.identifiedErc20.identifiers();
-    await list.reduce(async (p, identifier) => {
-      return p.then(async () => {
-        const txs = await Promise.all([
-          this.identityRegistry.connect(this.signers.alice).grantAccess(this.contractAddress, identifier),
-          this.identityRegistry.connect(this.signers.bob).grantAccess(this.contractAddress, identifier),
-          this.identityRegistry.connect(this.signers.carol).grantAccess(this.contractAddress, identifier),
-          this.identityRegistry.connect(this.signers.dave).grantAccess(this.contractAddress, identifier),
-        ]);
-
-        await Promise.all(txs.map((tx) => tx.wait()));
-      });
-    }, Promise.resolve());
-
-    const txIssuer = await this.identityRegistry.connect(this.signers.bob).grantAccess(this.contractAddress, 'issuer');
-    await txIssuer.wait();
-
-    const amount20k = this.instances.alice.encrypt32(20000);
-    const amount10k = this.instances.alice.encrypt32(10000);
-
-    const encryptedAmount = this.instances.alice.encrypt32(100_000);
-    const transaction = await this.identifiedErc20.mint(encryptedAmount);
-    await transaction.wait();
-
-    const txT1 = await this.identifiedErc20['transfer(address,bytes)'](this.signers.carol, amount20k);
-    const txT2 = await this.identifiedErc20['transfer(address,bytes)'](this.signers.dave, amount10k);
-    await Promise.all([txT1.wait(), txT2.wait()]);
-
-    // // Call the method
-    const token = this.instances.bob.getTokenSignature(this.contractAddress) || {
-      signature: '',
-      publicKey: '',
-    };
-
-    const encryptedCarolBalance = await this.identifiedErc20
-      .connect(this.signers.bob)
-      ['balanceOf(address,bytes32,bytes)'](this.signers.carol, token.publicKey, token.signature);
-
-    // // Decrypt the balance
-    const carolBalance = this.instances.bob.decrypt(this.contractAddress, encryptedCarolBalance);
-    expect(carolBalance).to.equal(20000);
-
-    const encryptedDaveBalance = await this.identifiedErc20
-      .connect(this.signers.bob)
-      ['balanceOf(address,bytes32,bytes)'](this.signers.dave, token.publicKey, token.signature);
-
-    // // Decrypt the balance
-    const daveBalance = this.instances.bob.decrypt(this.contractAddress, encryptedDaveBalance);
-    expect(daveBalance).to.equal(10000);
-
-    const carolToken = this.instances.carol.getTokenSignature(this.contractAddress) || {
-      signature: '',
-      publicKey: '',
-    };
-
-    // It must throw since Carol is not owner of the identity contract
-    const bobBalance = this.identifiedErc20
-      .connect(this.signers.carol)
-      ['balanceOf(address,bytes32,bytes)'](this.signers.bob.address, carolToken.publicKey, carolToken.signature);
-
-    expect(bobBalance).to.throw;
-  });
-
   it('should prevent transfers', async function () {
     // Create accounts;
     const country1 = this.instances.alice.encrypt32(1);
@@ -191,7 +98,7 @@ describe('IdentifiedERC20', function () {
 
     const encryptedBalance = await this.identifiedErc20
       .connect(this.signers.carol)
-      ['balanceOf(bytes32,bytes)'](carolToken.publicKey, carolToken.signature);
+      .balanceOf(carolToken.publicKey, carolToken.signature);
     const balance = this.instances.carol.decrypt(this.contractAddress, encryptedBalance);
     expect(balance).to.be.equal(20000); // The amount didn't move
 
@@ -203,7 +110,7 @@ describe('IdentifiedERC20', function () {
 
     const encryptedBalance2 = await this.identifiedErc20
       .connect(this.signers.dave)
-      ['balanceOf(bytes32,bytes)'](daveToken.publicKey, daveToken.signature);
+      .balanceOf(daveToken.publicKey, daveToken.signature);
     const balance2 = this.instances.dave.decrypt(this.contractAddress, encryptedBalance2);
     expect(balance2).to.be.equal(10000); // The amount didn't move
 
@@ -215,7 +122,7 @@ describe('IdentifiedERC20', function () {
 
     const encryptedBalance3 = await this.identifiedErc20
       .connect(this.signers.carol)
-      ['balanceOf(bytes32,bytes)'](carolToken.publicKey, carolToken.signature);
+      .balanceOf(carolToken.publicKey, carolToken.signature);
     const balance3 = this.instances.carol.decrypt(this.contractAddress, encryptedBalance3);
     expect(balance3).to.be.equal(17000); // The amount moved
   });

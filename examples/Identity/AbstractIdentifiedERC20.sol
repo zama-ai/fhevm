@@ -20,19 +20,6 @@ abstract contract AbstractIdentifiedERC20 is EIP712WithModifier {
         return rulesContract.getIdentifiers();
     }
 
-    function balanceOf(
-        address wallet,
-        bytes32 publicKey,
-        bytes calldata signature
-    ) public view onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
-        uint registrarId = identityContract.registrars(msg.sender);
-        require(registrarId > 0, "You're not a registrar");
-        uint userRegistrarId = identityContract.getRegistrar(wallet);
-        require(userRegistrarId == registrarId, "You're not managing this did");
-
-        return TFHE.reencrypt(balances[wallet], publicKey, 0);
-    }
-
     // Transfers an encrypted amount.
     function _transfer(address from, address to, euint32 _amount) internal {
         // Condition 1: hasEnoughFunds
