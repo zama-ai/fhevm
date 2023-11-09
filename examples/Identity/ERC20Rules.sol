@@ -38,9 +38,9 @@ contract ERC20Rules {
         ebool condition = transferLimitOK;
 
         // Condition 2: Check that noone is blacklisted
-        // ebool blacklistOK = checkBlacklist(identityContract, from, to);
+        ebool blacklistOK = checkBlacklist(identityContract, from, to);
 
-        // condition = TFHE.and(condition, blacklistOK);
+        condition = TFHE.and(condition, blacklistOK);
 
         // Condition 3: Check country to country rules
         ebool c2cOK = checkCountryToCountry(identityContract, from, to);
