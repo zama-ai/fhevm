@@ -14,6 +14,22 @@ export const createInstances = async (
   ethers: typeof hethers,
   accounts: Signers,
 ): Promise<FhevmInstances> => {
+  // Create instance
+  const instances: FhevmInstances = {} as FhevmInstances;
+  await Promise.all(
+    Object.keys(accounts).map(async (k) => {
+      instances[k as keyof FhevmInstances] = await createInstance(
+        contractAddress,
+        accounts[k as keyof Signers],
+        ethers,
+      );
+    }),
+  );
+
+  return instances;
+};
+
+export const createInstance = async (contractAddress: string, account: Signer, ethers: typeof hethers) => {
   if (!publicKey || !chainId) {
     // 1. Get chain id
     const provider = ethers.provider;
@@ -30,18 +46,9 @@ export const createInstances = async (
     const decoded = ethers.AbiCoder.defaultAbiCoder().decode(['bytes'], ret);
     publicKey = decoded[0];
   }
-
-  // Create instance
-  const instances: FhevmInstances = {} as FhevmInstances;
-  await Promise.all(
-    Object.keys(accounts).map(async (k) => {
-      const instance = await fhevmjs.createInstance({ chainId, publicKey });
-      await generateToken(contractAddress, accounts[k as keyof Signers], instance);
-      instances[k as keyof FhevmInstances] = instance;
-    }),
-  );
-
-  return instances;
+  const instance = await fhevmjs.createInstance({ chainId, publicKey });
+  await generateToken(contractAddress, account, instance);
+  return instance;
 };
 
 const generateToken = async (contractAddress: string, signer: Signer, instance: FhevmInstance) => {

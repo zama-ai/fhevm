@@ -20,6 +20,22 @@ abstract contract AbstractIdentifiedERC20 is EIP712WithModifier {
         return rulesContract.getIdentifiers();
     }
 
+    function balanceOfUser(
+        address wallet,
+        bytes32 publicKey,
+        bytes calldata signature
+    ) public view onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
+        uint32 userCountry = rulesContract.countryWallets(msg.sender);
+        require(userCountry > 0, "You're not registered as a country wallet");
+
+        euint32 walletCountry = identityContract.getIdentifier(wallet, "country");
+        ebool sameCountry = TFHE.eq(walletCountry, userCountry);
+        euint32 balance = TFHE.isInitialized(balances[wallet]) ? balances[wallet] : TFHE.asEuint32(0);
+        balance = TFHE.cmux(sameCountry, balance, TFHE.asEuint32(0));
+
+        return TFHE.reencrypt(balance, publicKey, 0);
+    }
+
     // Transfers an encrypted amount.
     function _transfer(address from, address to, euint32 _amount) internal {
         // Condition 1: hasEnoughFunds

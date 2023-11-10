@@ -10,9 +10,13 @@ contract ERC20Rules {
 
     string[] public identifiers;
 
+    mapping(address => uint32) public countryWallets;
+
     constructor() {
         _this = address(this);
         identifiers = ["country", "blacklist"];
+        countryWallets[address(0x133725C6461120439E85887C7639316CB27a2D9d)] = 1;
+        countryWallets[address(0x4CaCeF78615AFecEf7eF182CfbD243195Fc90a29)] = 2;
     }
 
     function getIdentifiers() public view returns (string[] memory) {
@@ -25,7 +29,7 @@ contract ERC20Rules {
         address to,
         euint32 amount
     ) public view returns (euint32) {
-        require(address(this) != _this, "isTransferable must be called with delegatecall");
+        require(address(this) != _this, "transfer must be called with delegatecall");
 
         // Condition 1: 10k limit between two different countries
         ebool transferLimitOK = checkLimitTransfer(identityContract, from, to, amount);
