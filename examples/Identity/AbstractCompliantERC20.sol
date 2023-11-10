@@ -6,7 +6,7 @@ import "../../abstracts/EIP712WithModifier.sol";
 import "./ERC20Rules.sol";
 import "./IdentityRegistry.sol";
 
-abstract contract AbstractIdentifiedERC20 is EIP712WithModifier {
+abstract contract AbstractCompliantERC20 is EIP712WithModifier {
     mapping(address => euint32) internal balances;
     IdentityRegistry identityContract;
     ERC20Rules rulesContract;

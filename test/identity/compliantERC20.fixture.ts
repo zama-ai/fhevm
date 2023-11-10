@@ -3,7 +3,7 @@ import { ethers } from 'hardhat';
 import type { IdentifiedERC20 } from '../../types';
 import { getSigners } from '../signers';
 
-export async function deployIdentifiedERC20Fixture(
+export async function deployCompliantERC20Fixture(
   identityAddress: string,
   erc20RulesAddress: string,
 ): Promise<IdentifiedERC20> {

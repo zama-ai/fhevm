@@ -4,7 +4,7 @@ import { ethers } from 'hardhat';
 import { createInstance, createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
 import { deployERC20RulesFixture } from './ERC20Rules';
-import { deployIdentifiedERC20Fixture } from './identifiedERC20.fixture';
+import { deployCompliantERC20Fixture } from './compliantERC20.fixture';
 import { deployIdentityRegistryFixture } from './identityRegistry.fixture';
 
 const WALLET_COUNTRY1_PK = 'e3d2a61080fc3a972e5744e59f083f243018271b3070732c1edf1eb2593ac580';
@@ -20,7 +20,7 @@ describe('IdentifiedERC20', function () {
     const erc20RulesAddress = await erc20Rules.getAddress();
     this.identityRegistry = await deployIdentityRegistryFixture();
     const identityAddress = await this.identityRegistry.getAddress();
-    const contract = await deployIdentifiedERC20Fixture(identityAddress, erc20RulesAddress);
+    const contract = await deployCompliantERC20Fixture(identityAddress, erc20RulesAddress);
     this.contractAddress = await contract.getAddress();
     this.identifiedErc20 = contract;
     this.instances = await createInstances(this.contractAddress, ethers, this.signers);

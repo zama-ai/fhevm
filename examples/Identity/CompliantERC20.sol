@@ -3,9 +3,9 @@
 pragma solidity 0.8.19;
 
 import "../../lib/TFHE.sol";
-import "./AbstractIdentifiedERC20.sol";
+import "./AbstractCompliantERC20.sol";
 
-contract IdentifiedERC20 is AbstractIdentifiedERC20 {
+contract IdentifiedERC20 is AbstractCompliantERC20 {
     euint32 private totalSupply;
     string public constant name = "Naraggara"; // City of Zama's battle
     string public constant symbol = "NARA";
@@ -17,7 +17,7 @@ contract IdentifiedERC20 is AbstractIdentifiedERC20 {
     // The owner of the contract.
     address public contractOwner;
 
-    constructor(address _identityAddr, address _rulesAddr) AbstractIdentifiedERC20(_identityAddr, _rulesAddr) {
+    constructor(address _identityAddr, address _rulesAddr) AbstractCompliantERC20(_identityAddr, _rulesAddr) {
         contractOwner = msg.sender;
     }
 

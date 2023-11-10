@@ -55,8 +55,8 @@ contract ERC20Rules {
         address to,
         euint32 amount
     ) internal view returns (ebool) {
-        euint32 fromCountry = identityContract.getIdentifier(from, "country");
-        euint32 toCountry = identityContract.getIdentifier(to, "country");
+        euint8 fromCountry = TFHE.asEuint8(identityContract.getIdentifier(from, "country"));
+        euint8 toCountry = TFHE.asEuint8(identityContract.getIdentifier(to, "country"));
         require(TFHE.isInitialized(fromCountry) && TFHE.isInitialized(toCountry), "You don't have access");
         ebool sameCountry = TFHE.eq(fromCountry, toCountry);
         ebool amountBelow10k = TFHE.le(amount, 10000);
