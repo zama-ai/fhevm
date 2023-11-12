@@ -9,7 +9,7 @@ import { deployIdentityRegistryFixture } from './identityRegistry.fixture';
 
 const WALLET_COUNTRY1_PK = 'e3d2a61080fc3a972e5744e59f083f243018271b3070732c1edf1eb2593ac580';
 
-describe('IdentifiedERC20', function () {
+describe('CompliantERC20', function () {
   before(async function () {
     await initSigners(4);
     this.signers = await getSigners();
@@ -26,7 +26,7 @@ describe('IdentifiedERC20', function () {
     this.instances = await createInstances(this.contractAddress, ethers, this.signers);
   });
 
-  it.only('should allow decryption of balance for identity owner', async function () {
+  it('should allow decryption of balance for identity owner', async function () {
     // Create accounts;
     const country1 = this.instances.alice.encrypt32(1);
     const country2 = this.instances.alice.encrypt32(2);
@@ -56,21 +56,18 @@ describe('IdentifiedERC20', function () {
     await Promise.all([tx1Identifier.wait(), tx2Identifier.wait(), tx3Identifier.wait(), tx4Identifier.wait()]);
 
     // Give permissions
-    const list = await this.identifiedErc20.identifiers();
-    await list.reduce(async (p, identifier) => {
-      return p.then(async () => {
-        const txs = await Promise.all([
-          this.identityRegistry.connect(this.signers.alice).grantAccess(this.contractAddress, identifier),
-          this.identityRegistry.connect(this.signers.bob).grantAccess(this.contractAddress, identifier),
-          this.identityRegistry.connect(this.signers.carol).grantAccess(this.contractAddress, identifier),
-          this.identityRegistry.connect(this.signers.dave).grantAccess(this.contractAddress, identifier),
-        ]);
+    const identifiers = [...(await this.identifiedErc20.identifiers())];
+    const txs = await Promise.all([
+      this.identityRegistry.connect(this.signers.alice).grantAccess(this.contractAddress, identifiers),
+      this.identityRegistry.connect(this.signers.bob).grantAccess(this.contractAddress, identifiers),
+      this.identityRegistry.connect(this.signers.carol).grantAccess(this.contractAddress, identifiers),
+      this.identityRegistry.connect(this.signers.dave).grantAccess(this.contractAddress, identifiers),
+    ]);
+    await Promise.all(txs.map((tx) => tx.wait()));
 
-        await Promise.all(txs.map((tx) => tx.wait()));
-      });
-    }, Promise.resolve());
-
-    const txIssuer = await this.identityRegistry.connect(this.signers.bob).grantAccess(this.contractAddress, 'issuer');
+    const txIssuer = await this.identityRegistry
+      .connect(this.signers.bob)
+      .grantAccess(this.contractAddress, ['issuer']);
     await txIssuer.wait();
 
     const amount20k = this.instances.alice.encrypt32(20000);
@@ -85,7 +82,6 @@ describe('IdentifiedERC20', function () {
     await Promise.all([txT1.wait(), txT2.wait()]);
 
     const country1Admin = new ethers.Wallet(WALLET_COUNTRY1_PK).connect(ethers.provider);
-    console.log(country1Admin.address);
     const country1Instance = await createInstance(this.contractAddress, country1Admin, ethers);
     const token = country1Instance.getTokenSignature(this.contractAddress) || {
       signature: '',
@@ -157,19 +153,14 @@ describe('IdentifiedERC20', function () {
     await Promise.all([tx1Identifier.wait(), tx2Identifier.wait(), tx3Identifier.wait(), tx4Identifier.wait()]);
 
     // Give permissions
-    const list = await this.identifiedErc20.identifiers();
-    await list.reduce(async (p, identifier) => {
-      return p.then(async () => {
-        const txs = await Promise.all([
-          this.identityRegistry.connect(this.signers.alice).grantAccess(this.contractAddress, identifier),
-          this.identityRegistry.connect(this.signers.bob).grantAccess(this.contractAddress, identifier),
-          this.identityRegistry.connect(this.signers.carol).grantAccess(this.contractAddress, identifier),
-          this.identityRegistry.connect(this.signers.dave).grantAccess(this.contractAddress, identifier),
-        ]);
-
-        await Promise.all(txs.map((tx) => tx.wait()));
-      });
-    }, Promise.resolve());
+    const identifiers = [...(await this.identifiedErc20.identifiers())];
+    const txs = await Promise.all([
+      this.identityRegistry.connect(this.signers.alice).grantAccess(this.contractAddress, identifiers),
+      this.identityRegistry.connect(this.signers.bob).grantAccess(this.contractAddress, identifiers),
+      this.identityRegistry.connect(this.signers.carol).grantAccess(this.contractAddress, identifiers),
+      this.identityRegistry.connect(this.signers.dave).grantAccess(this.contractAddress, identifiers),
+    ]);
+    await Promise.all(txs.map((tx) => tx.wait()));
 
     const encryptedAmount = this.instances.alice.encrypt32(100000);
     const transaction = await this.identifiedErc20.mint(encryptedAmount);

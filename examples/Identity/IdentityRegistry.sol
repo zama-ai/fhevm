@@ -73,12 +73,16 @@ contract IdentityRegistry is EIP712WithModifier, Ownable {
     }
 
     // User handling permission permission
-    function grantAccess(address allowed, string calldata identifier) public {
-        permissions[msg.sender][allowed][identifier] = true;
+    function grantAccess(address allowed, string[] calldata identifiers) public {
+        for (uint i = 0; i < identifiers.length; i++) {
+            permissions[msg.sender][allowed][identifiers[i]] = true;
+        }
     }
 
-    function revokeAccess(address allowed, string calldata identifier) public {
-        delete permissions[msg.sender][allowed][identifier];
+    function revokeAccess(address allowed, string[] calldata identifiers) public {
+        for (uint i = 0; i < identifiers.length; i++) {
+            delete permissions[msg.sender][allowed][identifiers[i]];
+        }
     }
 
     // Get encrypted identifiers

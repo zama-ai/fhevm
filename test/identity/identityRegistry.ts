@@ -35,7 +35,7 @@ describe('Identity', function () {
 
     const allowed = await this.identityRegistry
       .connect(this.signers.bob)
-      .grantAccess(this.signers.carol.address, 'birthdate');
+      .grantAccess(this.signers.carol.address, ['birthdate']);
     await allowed.wait();
 
     // Carol use this token to access information
