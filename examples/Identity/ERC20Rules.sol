@@ -11,20 +11,36 @@ contract ERC20Rules {
     string[] public identifiers;
 
     mapping(address => uint32) public countryWallets;
+    mapping(string => uint8) public countries;
+    uint16[] public country2CountryRestrictions;
 
     constructor() {
         _this = address(this);
         identifiers = ["country", "blacklist"];
         countryWallets[address(0x133725C6461120439E85887C7639316CB27a2D9d)] = 1;
         countryWallets[address(0x4CaCeF78615AFecEf7eF182CfbD243195Fc90a29)] = 2;
+
+        countries["fr"] = 1;
+        countries["us"] = 2;
+
+        country2CountryRestrictions = [createRestriction(countries["us"], countries["fr"])];
+    }
+
+    function createRestriction(uint16 from, uint16 to) internal pure returns (uint16) {
+        return (from << 8) + to;
     }
 
     function getIdentifiers() public view returns (string[] memory) {
         return identifiers;
     }
 
+    function getC2CRestrictions() public view returns (uint16[] memory) {
+        return country2CountryRestrictions;
+    }
+
     function transfer(
         IdentityRegistry identityContract,
+        ERC20Rules rulesContract,
         address from,
         address to,
         euint32 amount
@@ -42,7 +58,7 @@ contract ERC20Rules {
         condition = TFHE.and(condition, blacklistOK);
 
         // Condition 3: Check country to country rules
-        ebool c2cOK = checkCountryToCountry(identityContract, from, to);
+        ebool c2cOK = checkCountryToCountry(identityContract, rulesContract, from, to);
 
         condition = TFHE.and(condition, c2cOK);
 
@@ -72,11 +88,12 @@ contract ERC20Rules {
 
     function checkCountryToCountry(
         IdentityRegistry identityContract,
+        ERC20Rules rulesContract,
         address from,
         address to
     ) internal view returns (ebool) {
         // Disallow transfer from country 2 to country 1
-        euint16[1] memory c2cRestrictions = [TFHE.shl(TFHE.asEuint16(2), 8) + TFHE.asEuint16(1)];
+        uint16[] memory c2cRestrictions = rulesContract.getC2CRestrictions();
 
         euint32 fromCountry = identityContract.getIdentifier(from, "country");
         euint32 toCountry = identityContract.getIdentifier(to, "country");
@@ -86,7 +103,7 @@ contract ERC20Rules {
 
         // Check all countryToCountry restrictions
         for (uint i = 0; i < c2cRestrictions.length; i++) {
-            condition = TFHE.and(condition, TFHE.ne(c2cRestrictions[i], countryToCountry));
+            condition = TFHE.and(condition, TFHE.ne(countryToCountry, c2cRestrictions[i]));
         }
 
         return condition;

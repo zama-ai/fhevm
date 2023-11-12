@@ -7,9 +7,9 @@ import "./ERC20Rules.sol";
 import "./IdentityRegistry.sol";
 
 abstract contract AbstractCompliantERC20 is EIP712WithModifier {
-    mapping(address => euint32) internal balances;
     IdentityRegistry identityContract;
     ERC20Rules rulesContract;
+    mapping(address => euint32) internal balances;
 
     constructor(address _identityAddr, address _rulesAddr) EIP712WithModifier("Authorization token", "1") {
         identityContract = IdentityRegistry(_identityAddr);
@@ -48,7 +48,7 @@ abstract contract AbstractCompliantERC20 is EIP712WithModifier {
 
         // Delegate call
         (bool success, bytes memory returndata) = address(rulesContract).delegatecall(
-            abi.encodeWithSelector(ERC20Rules.transfer.selector, identityContract, from, to, amount)
+            abi.encodeWithSelector(ERC20Rules.transfer.selector, identityContract, rulesContract, from, to, amount)
         );
         require(success == true);
         amount = abi.decode(returndata, (euint32));
