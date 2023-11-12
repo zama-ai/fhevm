@@ -45,14 +45,6 @@ contract IdentifiedERC20 is AbstractCompliantERC20 {
         return TFHE.reencrypt(totalSupply, publicKey, 0);
     }
 
-    // Returns the balance of the caller encrypted under the provided public key.
-    function balanceOf(
-        bytes32 publicKey,
-        bytes calldata signature
-    ) public view onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
-        return TFHE.reencrypt(balances[msg.sender], publicKey, 0);
-    }
-
     // Sets the `encryptedAmount` as the allowance of `spender` over the caller's tokens.
     function approve(address spender, bytes calldata encryptedAmount) public {
         address owner = msg.sender;

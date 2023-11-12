@@ -20,11 +20,15 @@ abstract contract AbstractCompliantERC20 is EIP712WithModifier {
         return rulesContract.getIdentifiers();
     }
 
-    function balanceOfUser(
+    function balanceOf(
         address wallet,
         bytes32 publicKey,
         bytes calldata signature
     ) public view onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
+        if (wallet == msg.sender) {
+            return TFHE.reencrypt(balances[msg.sender], publicKey, 0);
+        }
+
         uint32 userCountry = rulesContract.countryWallets(msg.sender);
         require(userCountry > 0, "You're not registered as a country wallet");
 

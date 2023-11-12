@@ -90,7 +90,7 @@ describe('CompliantERC20', function () {
 
     const encryptedAliceBalance = await this.identifiedErc20
       .connect(country1Admin)
-      .balanceOfUser(this.signers.alice, token.publicKey, token.signature);
+      .balanceOf(this.signers.alice, token.publicKey, token.signature);
 
     // // Decrypt the balance
     const aliceBalance = country1Instance.decrypt(this.contractAddress, encryptedAliceBalance);
@@ -98,7 +98,7 @@ describe('CompliantERC20', function () {
 
     const encryptedCarolBalance = await this.identifiedErc20
       .connect(country1Admin)
-      .balanceOfUser(this.signers.carol, token.publicKey, token.signature);
+      .balanceOf(this.signers.carol, token.publicKey, token.signature);
 
     // // Decrypt the balance
     const carolBalance = country1Instance.decrypt(this.contractAddress, encryptedCarolBalance);
@@ -106,7 +106,7 @@ describe('CompliantERC20', function () {
 
     const encryptedDaveBalance = this.identifiedErc20
       .connect(country1Admin)
-      .balanceOfUser(this.signers.carol, token.publicKey, token.signature);
+      .balanceOf(this.signers.carol, token.publicKey, token.signature);
 
     expect(encryptedDaveBalance).to.throw;
 
@@ -118,7 +118,7 @@ describe('CompliantERC20', function () {
     // It must throw since Carol is not owner of the identity contract
     const encryptedBobBalance2 = this.identifiedErc20
       .connect(this.signers.carol)
-      .balanceOfUser(this.signers.bob.address, carolToken.publicKey, carolToken.signature);
+      .balanceOf(this.signers.bob.address, carolToken.publicKey, carolToken.signature);
 
     expect(encryptedBobBalance2).to.throw;
   });
@@ -192,7 +192,7 @@ describe('CompliantERC20', function () {
 
     const encryptedBalance = await this.identifiedErc20
       .connect(this.signers.carol)
-      .balanceOf(carolToken.publicKey, carolToken.signature);
+      .balanceOf(this.signers.carol.address, carolToken.publicKey, carolToken.signature);
     const balance = this.instances.carol.decrypt(this.contractAddress, encryptedBalance);
     expect(balance).to.be.equal(20000); // The amount didn't move
 
@@ -204,7 +204,7 @@ describe('CompliantERC20', function () {
 
     const encryptedBalance2 = await this.identifiedErc20
       .connect(this.signers.dave)
-      .balanceOf(daveToken.publicKey, daveToken.signature);
+      .balanceOf(this.signers.dave.address, daveToken.publicKey, daveToken.signature);
     const balance2 = this.instances.dave.decrypt(this.contractAddress, encryptedBalance2);
     expect(balance2).to.be.equal(10000); // The amount didn't move
 
@@ -216,7 +216,7 @@ describe('CompliantERC20', function () {
 
     const encryptedBalance3 = await this.identifiedErc20
       .connect(this.signers.carol)
-      .balanceOf(carolToken.publicKey, carolToken.signature);
+      .balanceOf(this.signers.carol.address, carolToken.publicKey, carolToken.signature);
     const balance3 = this.instances.carol.decrypt(this.contractAddress, encryptedBalance3);
     expect(balance3).to.be.equal(17000); // The amount moved
   });
