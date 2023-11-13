@@ -2,32 +2,10 @@ import { Signer } from 'ethers';
 import fhevmjs, { FhevmInstance } from 'fhevmjs';
 import { ethers as hethers } from 'hardhat';
 
-import { FHE_LIB_ADDRESS } from './generated';
-import type { Signers } from './signers';
-import { FhevmInstances } from './types';
+export const FHE_LIB_ADDRESS = '0x000000000000000000000000000000000000005d';
 
 let publicKey: string;
 let chainId: number;
-
-export const createInstances = async (
-  contractAddress: string,
-  ethers: typeof hethers,
-  accounts: Signers,
-): Promise<FhevmInstances> => {
-  // Create instance
-  const instances: FhevmInstances = {} as FhevmInstances;
-  await Promise.all(
-    Object.keys(accounts).map(async (k) => {
-      instances[k as keyof FhevmInstances] = await createInstance(
-        contractAddress,
-        accounts[k as keyof Signers],
-        ethers,
-      );
-    }),
-  );
-
-  return instances;
-};
 
 export const createInstance = async (contractAddress: string, account: Signer, ethers: typeof hethers) => {
   if (!publicKey || !chainId) {
