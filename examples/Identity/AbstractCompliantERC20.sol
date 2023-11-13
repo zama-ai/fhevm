@@ -20,6 +20,11 @@ abstract contract AbstractCompliantERC20 is EIP712WithModifier {
         return rulesContract.getIdentifiers();
     }
 
+    function getIdentifier(address wallet, string calldata identifier) external view returns (euint32) {
+        require(msg.sender == address(rulesContract), "Access restricted to the current ERC20Rules");
+        return identityContract.getIdentifier(wallet, identifier);
+    }
+
     function balanceOf(
         address wallet,
         bytes32 publicKey,
@@ -46,12 +51,7 @@ abstract contract AbstractCompliantERC20 is EIP712WithModifier {
         ebool enoughFund = TFHE.le(_amount, balances[from]);
         euint32 amount = TFHE.cmux(enoughFund, _amount, TFHE.asEuint32(0));
 
-        // Delegate call
-        (bool success, bytes memory returndata) = address(rulesContract).delegatecall(
-            abi.encodeWithSelector(ERC20Rules.transfer.selector, identityContract, rulesContract, from, to, amount)
-        );
-        require(success == true);
-        amount = abi.decode(returndata, (euint32));
+        amount = rulesContract.transfer(from, to, amount);
 
         balances[to] = balances[to] + amount;
         balances[from] = balances[from] - amount;
