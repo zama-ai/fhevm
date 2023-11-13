@@ -9,6 +9,7 @@ import './tasks/accounts';
 import './tasks/getEthereumAddress';
 import './tasks/mint';
 import './tasks/taskDeploy';
+import './tasks/taskIdentity';
 
 const dotenvConfigPath: string = process.env.DOTENV_CONFIG_PATH || './.env';
 dotenvConfig({ path: resolve(__dirname, dotenvConfigPath) });
