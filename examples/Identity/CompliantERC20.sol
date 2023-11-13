@@ -5,7 +5,7 @@ pragma solidity 0.8.19;
 import "../../lib/TFHE.sol";
 import "./AbstractCompliantERC20.sol";
 
-contract IdentifiedERC20 is AbstractCompliantERC20 {
+contract CompliantERC20 is AbstractCompliantERC20 {
     euint32 private totalSupply;
     string public constant name = "Naraggara"; // City of Zama's battle
     string public constant symbol = "NARA";

@@ -3,7 +3,7 @@ import { ethers } from 'hardhat';
 
 import { createInstance, createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
-import { deployERC20RulesFixture } from './ERC20Rules';
+import { deployERC20RulesFixture } from './ERC20Rules.fixture';
 import { deployCompliantERC20Fixture } from './compliantERC20.fixture';
 import { deployIdentityRegistryFixture } from './identityRegistry.fixture';
 
