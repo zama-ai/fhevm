@@ -2366,6 +2366,11 @@ library TFHE {
         return asEbool(or(asEuint8(a), asEuint8(b)));
     }
 
+    // Evaluate xor(a, b) and return the result.
+    function xor(ebool a, ebool b) internal pure returns (ebool) {
+        return asEbool(xor(asEuint8(a), asEuint8(b)));
+    }
+
     function not(ebool a) internal pure returns (ebool) {
         return asEbool(not(asEuint8(a)));
     }
