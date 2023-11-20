@@ -99,7 +99,11 @@ describe('BlindAuction', function () {
 
     const instance = await createInstances(this.contractERC20Address, ethers, this.signers);
     const tokenAlice = instance.alice.getTokenSignature(this.contractERC20Address)!;
-    const encryptedBalanceAlice = await this.erc20.balanceOf(tokenAlice.publicKey, tokenAlice.signature);
+    const encryptedBalanceAlice = await this.erc20.balanceOf(
+      this.signers.alice,
+      tokenAlice.publicKey,
+      tokenAlice.signature,
+    );
 
     const balanceAlice = instance.alice.decrypt(this.contractERC20Address, encryptedBalanceAlice);
     expect(balanceAlice).to.equal(1000 - 100 - 100 + 20);
