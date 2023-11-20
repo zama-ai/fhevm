@@ -104,18 +104,18 @@ contract EncryptedERC20 is EIP712WithModifier {
 
     function _updateAllowance(address owner, address spender, euint32 amount) internal {
         euint32 currentAllowance = _allowance(owner, spender);
-        require(TFHE.decrypt(TFHE.le(amount, currentAllowance)));
-        _approve(owner, spender, currentAllowance - amount);
+        ebool canTransfer = TFHE.le(amount, currentAllowance);
+        _approve(owner, spender, TFHE.cmux(canTransfer, currentAllowance - amount, TFHE.asEuint32(0)));
     }
 
     // Transfers an encrypted amount.
     function _transfer(address from, address to, euint32 amount) internal {
         // Make sure the sender has enough tokens.
-        require(TFHE.decrypt(TFHE.le(amount, balances[from])));
+        ebool canTransfer = TFHE.le(amount, balances[from]);
 
         // Add to the balance of `to` and subract from the balance of `from`.
-        balances[to] = balances[to] + amount;
-        balances[from] = balances[from] - amount;
+        balances[to] = balances[to] + TFHE.cmux(canTransfer, amount, TFHE.asEuint32(0));
+        balances[from] = balances[from] - TFHE.cmux(canTransfer, amount, TFHE.asEuint32(0));
     }
 
     modifier onlyContractOwner() {
