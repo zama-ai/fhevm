@@ -12,14 +12,14 @@ interface ICompliantERC20 {
 contract ERC20Rules {
     string[] public identifiers;
 
-    mapping(address => uint32) public countryWallets;
+    mapping(address => uint32) public whitelistedWallets;
     mapping(string => uint8) public countries;
     uint16[] public country2CountryRestrictions;
 
     constructor() {
         identifiers = ["country", "blacklist"];
-        countryWallets[address(0x133725C6461120439E85887C7639316CB27a2D9d)] = 1;
-        countryWallets[address(0x4CaCeF78615AFecEf7eF182CfbD243195Fc90a29)] = 2;
+        whitelistedWallets[address(0x133725C6461120439E85887C7639316CB27a2D9d)] = 1;
+        whitelistedWallets[address(0x4CaCeF78615AFecEf7eF182CfbD243195Fc90a29)] = 2;
 
         countries["fr"] = 1;
         countries["us"] = 2;
