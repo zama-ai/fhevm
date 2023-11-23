@@ -24,8 +24,22 @@ contract EncryptedERC20 is EIP712WithModifier {
     // The owner of the contract.
     address public contractOwner;
 
+    mapping(address => euint8) internal lastError;
+
+    euint8 internal NO_ERROR;
+    euint8 internal NOT_ENOUGH_FUND;
+
     constructor() EIP712WithModifier("Authorization token", "1") {
         contractOwner = msg.sender;
+        NO_ERROR = TFHE.asEuint8(0);
+        NOT_ENOUGH_FUND = TFHE.asEuint8(1);
+    }
+
+    function getLastError(
+        bytes32 publicKey,
+        bytes calldata signature
+    ) public view onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
+        return TFHE.reencrypt(lastError[msg.sender], publicKey, 0);
     }
 
     // Sets the balance of the owner to the given encrypted balance.
@@ -53,11 +67,16 @@ contract EncryptedERC20 is EIP712WithModifier {
     }
 
     // Returns the balance of the caller encrypted under the provided public key.
+
     function balanceOf(
+        address wallet,
         bytes32 publicKey,
         bytes calldata signature
     ) public view onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
-        return TFHE.reencrypt(balances[msg.sender], publicKey, 0);
+        if (wallet == msg.sender) {
+            return TFHE.reencrypt(balances[wallet], publicKey, 0);
+        }
+        return TFHE.reencrypt(TFHE.asEuint32(0), publicKey, 0);
     }
 
     // Sets the `encryptedAmount` as the allowance of `spender` over the caller's tokens.
@@ -104,18 +123,19 @@ contract EncryptedERC20 is EIP712WithModifier {
 
     function _updateAllowance(address owner, address spender, euint32 amount) internal {
         euint32 currentAllowance = _allowance(owner, spender);
-        require(TFHE.decrypt(TFHE.le(amount, currentAllowance)));
-        _approve(owner, spender, currentAllowance - amount);
+        ebool canTransfer = TFHE.le(amount, currentAllowance);
+        _approve(owner, spender, TFHE.cmux(canTransfer, currentAllowance - amount, TFHE.asEuint32(0)));
     }
 
     // Transfers an encrypted amount.
     function _transfer(address from, address to, euint32 amount) internal {
         // Make sure the sender has enough tokens.
-        require(TFHE.decrypt(TFHE.le(amount, balances[from])));
+        ebool canTransfer = TFHE.le(amount, balances[from]);
+        lastError[msg.sender] = TFHE.cmux(canTransfer, NO_ERROR, NOT_ENOUGH_FUND);
 
         // Add to the balance of `to` and subract from the balance of `from`.
-        balances[to] = balances[to] + amount;
-        balances[from] = balances[from] - amount;
+        balances[to] = balances[to] + TFHE.cmux(canTransfer, amount, TFHE.asEuint32(0));
+        balances[from] = balances[from] - TFHE.cmux(canTransfer, amount, TFHE.asEuint32(0));
     }
 
     modifier onlyContractOwner() {

@@ -26,7 +26,7 @@ contract BlindAuction is EIP712WithModifier {
     EncryptedERC20 public tokenContract;
 
     // Whether the auction object has been claimed.
-    bool public objectClaimed;
+    ebool public objectClaimed;
 
     // If the token has been transferred to the beneficiary
     bool public tokenTransferred;
@@ -56,7 +56,7 @@ contract BlindAuction is EIP712WithModifier {
         beneficiary = _beneficiary;
         tokenContract = _tokenContract;
         endTime = block.timestamp + biddingTime;
-        objectClaimed = false;
+        objectClaimed = TFHE.asEbool(false);
         tokenTransferred = false;
         bidCounter = 0;
         stoppable = isStoppable;
@@ -117,12 +117,11 @@ contract BlindAuction is EIP712WithModifier {
 
     // Claim the object. Succeeds only if the caller has the highest bid.
     function claim() public onlyAfterEnd {
-        require(!objectClaimed);
-        require(TFHE.decrypt(TFHE.le(highestBid, bids[msg.sender])));
+        ebool canClaim = TFHE.and(TFHE.le(highestBid, bids[msg.sender]), TFHE.not(objectClaimed));
 
-        objectClaimed = true;
-        bids[msg.sender] = TFHE.NIL32;
-        emit Winner(msg.sender);
+        objectClaimed = canClaim;
+        bids[msg.sender] = TFHE.cmux(canClaim, TFHE.asEuint32(0), bids[msg.sender]);
+        // emit Winner(msg.sender);
     }
 
     // Transfer token to beneficiary
@@ -136,11 +135,10 @@ contract BlindAuction is EIP712WithModifier {
     // Withdraw a bid from the auction to the caller once the auction has stopped.
     function withdraw() public onlyAfterEnd {
         euint32 bidValue = bids[msg.sender];
-        if (!objectClaimed) {
-            require(TFHE.decrypt(TFHE.lt(bidValue, highestBid)));
-        }
-        tokenContract.transfer(msg.sender, bidValue);
-        bids[msg.sender] = TFHE.NIL32;
+        ebool isHighestBid = TFHE.eq(bidValue, highestBid);
+        ebool canWithdraw = TFHE.not(TFHE.and(isHighestBid, TFHE.not(objectClaimed)));
+        tokenContract.transfer(msg.sender, TFHE.cmux(canWithdraw, bidValue, TFHE.asEuint32(0)));
+        bids[msg.sender] = TFHE.cmux(canWithdraw, TFHE.asEuint32(0), bids[msg.sender]);
     }
 
     modifier onlyBeforeEnd() {

@@ -89,8 +89,8 @@ contract CompliantERC20 is AbstractCompliantERC20 {
 
     function _updateAllowance(address owner, address spender, euint32 amount) internal {
         euint32 currentAllowance = _allowance(owner, spender);
-        require(TFHE.decrypt(TFHE.le(amount, currentAllowance)));
-        _approve(owner, spender, currentAllowance - amount);
+        ebool canTransfer = TFHE.le(amount, currentAllowance);
+        _approve(owner, spender, TFHE.cmux(canTransfer, currentAllowance - amount, TFHE.asEuint32(0)));
     }
 
     modifier onlyContractOwner() {
