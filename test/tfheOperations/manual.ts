@@ -68,6 +68,37 @@ describe('TFHE manual operations', function () {
     expect(res).to.equal(0);
   });
 
+  it('ebool not for false is true', async function () {
+    const res = await this.contract.test_ebool_not(false);
+    expect(res).to.equal(true);
+  });
+
+  it('ebool not for true is false', async function () {
+    const res = await this.contract.test_ebool_not(true);
+    expect(res).to.equal(false);
+  });
+
+  it('ebool and', async function () {
+    expect(await this.contract.test_ebool_and(false, false)).to.equal(false);
+    expect(await this.contract.test_ebool_and(false, true)).to.equal(false);
+    expect(await this.contract.test_ebool_and(true, false)).to.equal(false);
+    expect(await this.contract.test_ebool_and(true, true)).to.equal(true);
+  });
+
+  it('ebool or', async function () {
+    expect(await this.contract.test_ebool_or(false, false)).to.equal(false);
+    expect(await this.contract.test_ebool_or(false, true)).to.equal(true);
+    expect(await this.contract.test_ebool_or(true, false)).to.equal(true);
+    expect(await this.contract.test_ebool_or(true, true)).to.equal(true);
+  });
+
+  it('ebool xor', async function () {
+    expect(await this.contract.test_ebool_xor(false, false)).to.equal(false);
+    expect(await this.contract.test_ebool_xor(false, true)).to.equal(true);
+    expect(await this.contract.test_ebool_xor(true, false)).to.equal(true);
+    expect(await this.contract.test_ebool_xor(true, true)).to.equal(false);
+  });
+
   if (OPTIMISTIC_REQUIRES_ENABLED) {
     it('optimistic require with true succeeds', async function () {
       await this.contract.test_opt_req(true);

@@ -33,4 +33,20 @@ contract TFHEManualTestSuite {
         TFHE.optReq(TFHE.asEbool(input));
         counter += 1;
     }
+
+    function test_ebool_not(bool input) public view returns (bool) {
+        return TFHE.decrypt(TFHE.not(TFHE.asEbool(input)));
+    }
+
+    function test_ebool_and(bool a, bool b) public view returns (bool) {
+        return TFHE.decrypt(TFHE.and(TFHE.asEbool(a), TFHE.asEbool(b)));
+    }
+
+    function test_ebool_or(bool a, bool b) public view returns (bool) {
+        return TFHE.decrypt(TFHE.or(TFHE.asEbool(a), TFHE.asEbool(b)));
+    }
+
+    function test_ebool_xor(bool a, bool b) public view returns (bool) {
+        return TFHE.decrypt(TFHE.xor(TFHE.asEbool(a), TFHE.asEbool(b)));
+    }
 }
