@@ -30,7 +30,7 @@
 - [Getting started](client/getting_started.md)
   - [Node](client/getting_started/node.md)
   - [Browser](client/getting_started/browser.md)
-  - [Template](client/getting_started/template.md)
+  - [Templates](client/getting_started/templates.md)
   - [CLI](client/getting_started/cli.md)
 - [Setup an instance](client/instance.md)
 - [Inputs](client/inputs.md)
