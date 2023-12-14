@@ -16,12 +16,24 @@ contract Rand {
         value8 = TFHE.randEuint8();
     }
 
+    function generate8UpperBound(uint8 upperBound) public {
+        value8 = TFHE.randEuint8(upperBound);
+    }
+
     function generate16() public {
         value16 = TFHE.randEuint16();
     }
 
+    function generate16UpperBound(uint16 upperBound) public {
+        value16 = TFHE.randEuint16(upperBound);
+    }
+
     function generate32() public {
         value32 = TFHE.randEuint32();
+    }
+
+    function generate32UpperBound(uint32 upperBound) public {
+        value32 = TFHE.randEuint32(upperBound);
     }
 
     function decrypt8() public view returns (uint8) {
@@ -54,12 +66,27 @@ contract Rand {
     }
 
     // Must fail.
+    function generate8UpperBoundInView(uint8 upperBound) public view {
+        TFHE.randEuint8(upperBound);
+    }
+
+    // Must fail.
     function generate16InView() public view {
         TFHE.randEuint16();
     }
 
     // Must fail.
+    function generate16UpperBoundInView(uint16 upperBound) public view {
+        TFHE.randEuint16(upperBound);
+    }
+
+    // Must fail.
     function generate32InView() public view {
         TFHE.randEuint32();
+    }
+
+    // Must fail.
+    function generate32UpperBoundInView(uint32 upperBound) public view {
+        TFHE.randEuint32(upperBound);
     }
 }

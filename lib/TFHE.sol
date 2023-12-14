@@ -2426,16 +2426,37 @@ library TFHE {
         return euint8.wrap(Impl.rand(Common.euint8_t));
     }
 
+    // Generates a random encrypted 8-bit unsigned integer in the [0, upperBound) range.
+    // The upperBound must be a power of 2.
+    // Important: The random integer is generated in the plain! An FHE-based version is coming soon.
+    function randEuint8(uint8 upperBound) internal view returns (euint8) {
+        return euint8.wrap(Impl.randBounded(upperBound, Common.euint8_t));
+    }
+
     // Generates a random encrypted 16-bit unsigned integer.
     // Important: The random integer is generated in the plain! An FHE-based version is coming soon.
     function randEuint16() internal view returns (euint16) {
         return euint16.wrap(Impl.rand(Common.euint16_t));
     }
 
+    // Generates a random encrypted 16-bit unsigned integer in the [0, upperBound) range.
+    // The upperBound must be a power of 2.
+    // Important: The random integer is generated in the plain! An FHE-based version is coming soon.
+    function randEuint16(uint16 upperBound) internal view returns (euint16) {
+        return euint16.wrap(Impl.randBounded(upperBound, Common.euint16_t));
+    }
+
     // Generates a random encrypted 32-bit unsigned integer.
     // Important: The random integer is generated in the plain! An FHE-based version is coming soon.
     function randEuint32() internal view returns (euint32) {
         return euint32.wrap(Impl.rand(Common.euint32_t));
+    }
+
+    // Generates a random encrypted 32-bit unsigned integer in the [0, upperBound) range.
+    // The upperBound must be a power of 2.
+    // Important: The random integer is generated in the plain! An FHE-based version is coming soon.
+    function randEuint32(uint32 upperBound) internal view returns (euint32) {
+        return euint32.wrap(Impl.randBounded(upperBound, Common.euint32_t));
     }
 }
 

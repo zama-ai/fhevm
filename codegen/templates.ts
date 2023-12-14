@@ -52,6 +52,8 @@ export function implSol(ctx: CodegenContext, operators: Operator[]): string {
 
 pragma solidity ^0.8.20;
 
+import "./TFHE.sol";
+
 ${fheLibInterface}
 
 address constant EXT_TFHE_LIBRARY = address(${ctx.libFheAddress});
@@ -132,8 +134,9 @@ function fheLibCustomInterfaceFunctions(): string {
     function cast(uint256 ct, bytes1 toType) external pure returns (uint256 result);
     function trivialEncrypt(uint256 ct, bytes1 toType) external pure returns (uint256 result);
     function decrypt(uint256 ct) external view returns (uint256 result);
-    function fheRand(bytes1 inp) external view returns (uint256 result);
     function fheIfThenElse(uint256 control, uint256 ifTrue, uint256 ifFalse) external pure returns (uint256 result);
+    function fheRand(bytes1 randType) external view returns (uint256 result);
+    function fheRandBounded(uint256 upperBound, bytes1 randType) external view returns (uint256 result);
   `;
 }
 
@@ -706,16 +709,37 @@ function tfheCustomMethods(ctx: CodegenContext): string {
       return euint8.wrap(Impl.rand(Common.euint8_t));
     }
 
+    // Generates a random encrypted 8-bit unsigned integer in the [0, upperBound) range.
+    // The upperBound must be a power of 2.
+    // Important: The random integer is generated in the plain! An FHE-based version is coming soon.
+    function randEuint8(uint8 upperBound) internal view returns (euint8) {
+      return euint8.wrap(Impl.randBounded(upperBound, Common.euint8_t));
+    }
+
     // Generates a random encrypted 16-bit unsigned integer.
     // Important: The random integer is generated in the plain! An FHE-based version is coming soon.
     function randEuint16() internal view returns (euint16) {
       return euint16.wrap(Impl.rand(Common.euint16_t));
     }
 
+    // Generates a random encrypted 16-bit unsigned integer in the [0, upperBound) range.
+    // The upperBound must be a power of 2.
+    // Important: The random integer is generated in the plain! An FHE-based version is coming soon.
+    function randEuint16(uint16 upperBound) internal view returns (euint16) {
+      return euint16.wrap(Impl.randBounded(upperBound, Common.euint16_t));
+    }
+
     // Generates a random encrypted 32-bit unsigned integer.
     // Important: The random integer is generated in the plain! An FHE-based version is coming soon.
     function randEuint32() internal view returns (euint32) {
       return euint32.wrap(Impl.rand(Common.euint32_t));
+    }
+
+    // Generates a random encrypted 32-bit unsigned integer in the [0, upperBound) range.
+    // The upperBound must be a power of 2.
+    // Important: The random integer is generated in the plain! An FHE-based version is coming soon.
+    function randEuint32(uint32 upperBound) internal view returns (euint32) {
+      return euint32.wrap(Impl.randBounded(upperBound, Common.euint32_t));
     }
 `;
 }
@@ -781,6 +805,10 @@ function implCustomMethods(ctx: CodegenContext): string {
     function rand(uint8 randType) internal view returns(uint256 result) {
       result = FhevmLib(address(EXT_TFHE_LIBRARY)).fheRand(bytes1(randType));
     }
+
+    function randBounded(uint256 upperBound, uint8 randType) internal view returns(uint256 result) {
+      result = FhevmLib(address(EXT_TFHE_LIBRARY)).fheRandBounded(upperBound, bytes1(randType));
+    }
     `;
 }
 
@@ -791,6 +819,8 @@ export function implSolMock(ctx: CodegenContext, operators: Operator[]): string 
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
 pragma solidity ^0.8.20;
+
+import "./TFHE.sol";
 
 library Impl {
   function add(uint256 lhs, uint256 rhs, bool scalar) internal pure returns (uint256 result) {
@@ -947,7 +977,23 @@ library Impl {
   }
 
   function rand(uint8 randType) internal view returns (uint256 result) {
-      result = uint256(keccak256(abi.encodePacked(block.number, gasleft(), msg.sender))); // assuming no duplicated tx by same sender in a single block
+      uint256 randomness = uint256(keccak256(abi.encodePacked(block.number, gasleft(), msg.sender))); // assuming no duplicated tx by same sender in a single block
+      if (randType == Common.euint8_t) {
+        result = uint8(randomness);
+      } else if (randType == Common.euint16_t) {
+        result = uint16(randomness);
+      } else if (randType == Common.euint32_t) {
+        result = uint32(randomness);
+      } else {
+        revert("rand() mock invalid type");
+      }
+  }
+
+  function randBounded(uint256 upperBound, uint8 randType) internal view returns (uint256 result) {
+    // Here, we assume upperBound is a power of 2. Therefore, using modulo is secure.
+    // If not a power of 2, we might have to do something else (though might not matter
+    // much as this is a mock).
+    result = rand(randType) % upperBound;
   }
 `);
 

@@ -2,6 +2,8 @@
 
 pragma solidity ^0.8.20;
 
+import "./TFHE.sol";
+
 interface FhevmLib {
     function fheAdd(uint256 lhs, uint256 rhs, bytes1 scalarByte) external pure returns (uint256 result);
 
@@ -55,9 +57,11 @@ interface FhevmLib {
 
     function decrypt(uint256 ct) external view returns (uint256 result);
 
-    function fheRand(bytes1 inp) external view returns (uint256 result);
-
     function fheIfThenElse(uint256 control, uint256 ifTrue, uint256 ifFalse) external pure returns (uint256 result);
+
+    function fheRand(bytes1 randType) external view returns (uint256 result);
+
+    function fheRandBounded(uint256 upperBound, bytes1 randType) external view returns (uint256 result);
 }
 
 address constant EXT_TFHE_LIBRARY = address(0x000000000000000000000000000000000000005d);
@@ -282,5 +286,9 @@ library Impl {
 
     function rand(uint8 randType) internal view returns (uint256 result) {
         result = FhevmLib(address(EXT_TFHE_LIBRARY)).fheRand(bytes1(randType));
+    }
+
+    function randBounded(uint256 upperBound, uint8 randType) internal view returns (uint256 result) {
+        result = FhevmLib(address(EXT_TFHE_LIBRARY)).fheRandBounded(upperBound, bytes1(randType));
     }
 }

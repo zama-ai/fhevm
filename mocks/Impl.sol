@@ -2,6 +2,8 @@
 
 pragma solidity ^0.8.20;
 
+import "./TFHE.sol";
+
 library Impl {
     function add(uint256 lhs, uint256 rhs, bool scalar) internal pure returns (uint256 result) {
         unchecked {
@@ -157,6 +159,22 @@ library Impl {
     }
 
     function rand(uint8 randType) internal view returns (uint256 result) {
-        result = uint256(keccak256(abi.encodePacked(block.number, gasleft(), msg.sender))); // assuming no duplicated tx by same sender in a single block
+        uint256 randomness = uint256(keccak256(abi.encodePacked(block.number, gasleft(), msg.sender))); // assuming no duplicated tx by same sender in a single block
+        if (randType == Common.euint8_t) {
+            result = uint8(randomness);
+        } else if (randType == Common.euint16_t) {
+            result = uint16(randomness);
+        } else if (randType == Common.euint32_t) {
+            result = uint32(randomness);
+        } else {
+            revert("rand() mock invalid type");
+        }
+    }
+
+    function randBounded(uint256 upperBound, uint8 randType) internal view returns (uint256 result) {
+        // Here, we assume upperBound is a power of 2. Therefore, using modulo is secure.
+        // If not a power of 2, we might have to do something else (though might not matter
+        // much as this is a mock).
+        result = rand(randType) % upperBound;
     }
 }
