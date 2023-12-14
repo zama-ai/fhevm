@@ -18,6 +18,10 @@ function revertIfConditionIsFalse(ebool condition) public {
 }
 ```
 
+For now, a `TFHE.decrypt` is pretty cheap, making it tempting to use constructs like `if(TFHE.decrypt(encryptedBool))`. However, it is recommended to avoid this approach, as in the future, each decryption will trigger an external call, introducing latency and incurring gas costs. Instead, use [cmux operator to handle conditions](conditions.md).
+
+For the same reason, you should replace a `require(TFHE.decrypt(encryptedBool1) && TFHE.decrypt(encryptedBool2));` with a `TFHE.decrypt(TFHE.and(encryptedBool1, encryptedBool2));` to limit decryption calls.
+
 ## Reencrypt
 
 The reencrypt functions takes as inputs a ciphertext and a public encryption key (namely, a [NaCl box](https://nacl.cr.yp.to/index.html)).
