@@ -23,7 +23,7 @@
 - [Use encrypted types](howto/types.md)
 - [Operations on encrypted types](howto/operations.md)
 - [Generate random number](howto/random.md)
-- [Write conditions][howto/conditions.md]
+- [Write conditions](howto/conditions.md)
 - [Decrypt and reencrypt](howto/decrypt.md)
 - [Estimate gas](howto/gas.md)
 
