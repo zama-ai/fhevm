@@ -4,7 +4,7 @@ The result of [comparison operations](../api/functions.md#comparison-operation-e
 
 ## Condition with encrypted boolean
 
-fhEVM provides a method which acts as a ternary operator on encrypted integers. This method is called [cmux](functions.md#multiplexer-operator-cmux).
+fhEVM provides a method which acts as a ternary operator on encrypted integers. This method is called [cmux](../api/functions.md#multiplexer-operator-cmux).
 
 ```solidity
 function bid(bytes calldata encryptedBid) internal {

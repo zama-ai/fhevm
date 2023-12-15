@@ -13,7 +13,7 @@ You can use it on [https://remix.zama.ai](https://remix.zama.ai).
 
 ## Usage
 
-First, read the [usage section](../getting_started.md#usage) regarding Solidity version and EVM.
+First, read the [usage section](../write_contract.md#usage) regarding Solidity version and EVM.
 
 To import TFHE library, simply import it at the top of your contract.
 

@@ -16,7 +16,7 @@
 
 ## How to
 
-- Write contract
+- [Write contract](howto/write_contract.md)
   - [Using Hardhat](howto/write_contract/hardhat.md)
   - [Using Remix](howto/write_contract/remix.md)
   - [Other development environment](howto/write_contract/others.md)
@@ -29,8 +29,7 @@
 
 ## API
 
-- [Operations](solidity/operations.md)
-- [Function specifications](solidity/functions.md)
+- [Function specifications](api/functions.md)
 
 ## Client SDK
 
