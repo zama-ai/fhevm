@@ -2,7 +2,7 @@
 
 ## What is Zama's fhEVM
 
-- [Overview](fhevm/overview.md)
+- [Overview](README.md)
 - [Whitepaper](https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper.pdf)
 
 ## Getting Started
