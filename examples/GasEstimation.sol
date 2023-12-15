@@ -27,7 +27,7 @@ contract GasEstimation {
     }
 
     function mul8() public {
-        TFHE.asEuint8(2) * TFHE.asEuint8(1);
+        TFHE.asEuint8(2) * TFHE.asEuint8(10);
     }
 
     function div8() public {
@@ -55,7 +55,7 @@ contract GasEstimation {
     }
 
     function mul16() public {
-        TFHE.asEuint16(2) * TFHE.asEuint16(1);
+        TFHE.asEuint16(2) * TFHE.asEuint16(10);
     }
 
     function div16() public {
@@ -83,7 +83,7 @@ contract GasEstimation {
     }
 
     function mul32() public {
-        TFHE.asEuint32(2) * TFHE.asEuint32(1);
+        TFHE.asEuint32(2) * TFHE.asEuint32(10);
     }
 
     function div32() public {

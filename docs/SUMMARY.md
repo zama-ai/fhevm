@@ -34,23 +34,27 @@
 
 ## Client SDK
 
-- Getting started
+- [Getting started](client/getting_started.md)
   - [Using Node](client/getting_started/node.md)
-  - [Using Vite.js]()
+  - [Using Vite.js](client/getting_started/vite.md)
   - [Other frontend tooling](client/getting_started/browser.md)
-  - [Using CLI](cli)
-- [How to](principle)
+  - [Using CLI](client/getting_started/cli.md)
 - [Setup an instance](client/instance.md)
-- [Inputs](client/inputs.md)
-- [Reencryption](client/reencryption.md)
-- [Examples](client/examples.md)
+- [Encrypt an input](client/inputs.md)
+- [Get a reencryption](client/reencryption.md)
+- Examples
   - [Transfer tokens (node)](client/examples/transfererc20.md)
   - [Get balance (node)](client/examples/getbalance.md)
 
-## Roadmap and future Developments
+## Resources
 
-- Upcoming Features
-- Development Roadmap
+- [Examples](resources/examples.md)
+- [Tutorials](resources/tutorials.md)
+- [Repositories](resources/repositories.md)
+
+## Future Developments
+
+- [Development Roadmap](roadmap/roadmap.md)
 
 ## 🔗 Support
 

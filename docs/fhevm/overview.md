@@ -24,12 +24,13 @@ fhEVM contracts are simple solidity contracts that are built using traditional s
 ## Tutorials and examples
 
 - [🎥 Workshop during ETHcc](https://www.youtube.com/watch?v=eivfVykPP8U) \[by Morten Dahl — Zama]
-- [📃 Programmable Privacy and Onchain Compliance using Homomorphic Encryption](https://www.zama.ai/post/programmable-privacy-and-onchain-compliance-using-homomorphic-encryption) \[by \[Rand Hindi and Clément Danjou — Zama]
+- [🎥 How to Write Confidential Smart Contracts Using Zama's fhEVM](https://www.youtube.com/watch?v=1FtbyHZwNX4) \[by Clément Danjou (Zama)]
+- [📃 Programmable Privacy and Onchain Compliance using Homomorphic Encryption](https://www.zama.ai/post/programmable-privacy-and-onchain-compliance-using-homomorphic-encryption) \[by Rand Hindi and Clément Danjou — Zama]
 - [📃 Confidential ERC-20 Tokens Using Homomorphic Encryption](https://www.zama.ai/post/confidential-erc-20-tokens-using-homomorphic-encryption) \[by \[Clément Danjou — Zama]
 - [📃 On-chain Blind Auctions Using Homomorphic Encryption](https://www.zama.ai/post/on-chain-blind-auctions-using-homomorphic-encryption) \[by Clément Danjou — Zama]
-- [🖥️ ERC-20](https://github.com/zama-ai/fhevm-solidity/blob/main/examples/EncryptedERC20.sol)
-- [🖥️ Blind Auction](https://github.com/zama-ai/fhevm-solidity/blob/main/examples/BlindAuction.sol)
-- [🖥️ Governor DAO](https://github.com/zama-ai/fhevm-solidity/tree/main/examples/Governor)
+- [🖥️ ERC-20](https://github.com/zama-ai/fhevm/blob/main/examples/EncryptedERC20.sol)
+- [🖥️ Blind Auction](https://github.com/zama-ai/fhevm/blob/main/examples/BlindAuction.sol)
+- [🖥️ Governor DAO](https://github.com/zama-ai/fhevm/tree/main/examples/Governor)
 - [🖥️ Mixnet](https://github.com/anonymousGifter/mixnet-core) \[by [Remi Gai](https://github.com/remi-gai)]
 - [🖥️ Battleship](https://github.com/battleship-fhevm/battleship-hardhat) \[by [Owen Murovec](https://github.com/omurovec)]
 - [🖥️ Darkpool](https://github.com/omurovec/fhe-darkpools) \[by [Owen Murovec](https://github.com/omurovec)]
