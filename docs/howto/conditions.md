@@ -51,9 +51,3 @@ function _transfer(address from, address to, euint32 amount) internal {
   balances[from] = balances[from] - TFHE.cmux(canTransfer, amount, TFHE.asEuint32(0));
 }
 ```
-
-### Event
-
-```
-
-```
