@@ -51,7 +51,7 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
 }
 
 const config: HardhatUserConfig = {
-  defaultNetwork: 'zama',
+  defaultNetwork: 'local',
   namedAccounts: {
     deployer: 0,
   },
