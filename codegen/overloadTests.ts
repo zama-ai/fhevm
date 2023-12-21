@@ -121,16 +121,6 @@ export const overloadTests: { [methodName: string]: OverloadTest[] } = {
     { inputs: [0xff, 0xffff], output: 0xff00 },
     { inputs: [0xff, 0xff00], output: 0xffff },
   ],
-  shl_euint8_euint16: [
-    // TODO: should shl output 8bit with 16bit be like that?
-    { inputs: [0xff, 0x0100], output: 0xff },
-    { inputs: [0x02, 0x0001], output: 0x04 },
-  ],
-  shr_euint8_euint16: [
-    // TODO: should shr output 8bit with 16bit be like that?
-    { inputs: [0xff, 0x0100], output: 0xff },
-    { inputs: [0xff, 0x0001], output: 0x7f },
-  ],
   eq_euint8_euint16: [
     { inputs: [0xff, 0x00ff], output: true },
     { inputs: [0xff, 0x01ff], output: false },
@@ -186,18 +176,6 @@ export const overloadTests: { [methodName: string]: OverloadTest[] } = {
   xor_euint8_euint32: [
     { inputs: [0x10, 0x00010000], output: 0x00010010 },
     { inputs: [0x11, 0x00010010], output: 0x00010001 },
-  ],
-  shl_euint8_euint32: [
-    // C compiler emits the same
-    { inputs: [0x10, 0x00010000], output: 0x10 },
-    { inputs: [0x1f, 0x00010000], output: 0x1f },
-  ],
-  shr_euint8_euint32: [
-    // C compiler emits the same
-    { inputs: [0x10, 0x00010000], output: 0x10 },
-    { inputs: [0x1f, 0x00010000], output: 0x1f },
-    { inputs: [0x10, 0x00000001], output: 0x8 },
-    { inputs: [0x1f, 0x00000001], output: 0xf },
   ],
   eq_euint8_euint32: [
     { inputs: [0x01, 0x00000001], output: true },
@@ -265,15 +243,7 @@ export const overloadTests: { [methodName: string]: OverloadTest[] } = {
     { inputs: [0x10, 0x01], output: 0x20 },
     { inputs: [0x10, 0x02], output: 0x40 },
   ],
-  shl_uint8_euint8: [
-    { inputs: [0x10, 0x01], output: 0x20 },
-    { inputs: [0x10, 0x02], output: 0x40 },
-  ],
   shr_euint8_uint8: [
-    { inputs: [0x10, 0x01], output: 0x08 },
-    { inputs: [0x10, 0x02], output: 0x04 },
-  ],
-  shr_uint8_euint8: [
     { inputs: [0x10, 0x01], output: 0x08 },
     { inputs: [0x10, 0x02], output: 0x04 },
   ],
@@ -375,7 +345,9 @@ export const overloadTests: { [methodName: string]: OverloadTest[] } = {
     { inputs: [0x10f0, 0xf2], output: 0x1002 },
   ],
   shl_euint16_euint8: [{ inputs: [0x1010, 0x02], output: 0x4040 }],
+  shl_euint16_uint8: [{ inputs: [0x1010, 0x02], output: 0x4040 }],
   shr_euint16_euint8: [{ inputs: [0x1010, 0x02], output: 0x0404 }],
+  shr_euint16_uint8: [{ inputs: [0x1010, 0x02], output: 0x0404 }],
   eq_euint16_euint8: [
     { inputs: [0x0010, 0x10], output: true },
     { inputs: [0x0110, 0x10], output: false },
@@ -429,8 +401,6 @@ export const overloadTests: { [methodName: string]: OverloadTest[] } = {
     { inputs: [0x0200, 0x0002], output: 0x0202 },
     { inputs: [0x0210, 0x0012], output: 0x0202 },
   ],
-  shl_euint16_euint16: [{ inputs: [0x0200, 0x0002], output: 0x0800 }],
-  shr_euint16_euint16: [{ inputs: [0x0200, 0x0002], output: 0x0080 }],
   eq_euint16_euint16: [
     { inputs: [0x0200, 0x0002], output: false },
     { inputs: [0x0200, 0x0200], output: true },
@@ -487,8 +457,6 @@ export const overloadTests: { [methodName: string]: OverloadTest[] } = {
     { inputs: [0x0202, 0x00010000], output: 0x00010202 },
     { inputs: [0x0202, 0x00010002], output: 0x00010200 },
   ],
-  shl_euint16_euint32: [{ inputs: [0x0202, 0x00000002], output: 0x00000808 }],
-  shr_euint16_euint32: [{ inputs: [0x0202, 0x00000002], output: 0x00000080 }],
   eq_euint16_euint32: [
     { inputs: [0x0202, 0x00010202], output: false },
     { inputs: [0x0202, 0x00000202], output: true },
@@ -535,10 +503,6 @@ export const overloadTests: { [methodName: string]: OverloadTest[] } = {
   mul_uint16_euint16: [{ inputs: [0x0202, 0x0003], output: 0x0606 }],
   div_euint16_uint16: [{ inputs: [0x0606, 0x0003], output: 0x0202 }],
   rem_euint16_uint16: [{ inputs: [0x0608, 0x0003], output: 0x0002 }],
-  shl_euint16_uint16: [{ inputs: [0x0606, 0x0003], output: 0x3030 }],
-  shl_uint16_euint16: [{ inputs: [0x0606, 0x0003], output: 0x3030 }],
-  shr_euint16_uint16: [{ inputs: [0x0606, 0x0003], output: 0x00c0 }],
-  shr_uint16_euint16: [{ inputs: [0x0606, 0x0003], output: 0x00c0 }],
   eq_euint16_uint16: [
     { inputs: [0x0606, 0x0606], output: true },
     { inputs: [0x0606, 0x0605], output: false },
@@ -631,7 +595,9 @@ export const overloadTests: { [methodName: string]: OverloadTest[] } = {
     { inputs: [0x03010003, 0x03], output: 0x03010000 },
   ],
   shl_euint32_euint8: [{ inputs: [0x03010000, 0x03], output: 0x18080000 }],
+  shl_euint32_uint8: [{ inputs: [0x03010000, 0x03], output: 0x18080000 }],
   shr_euint32_euint8: [{ inputs: [0x03010000, 0x03], output: 0x00602000 }],
+  shr_euint32_uint8: [{ inputs: [0x03010000, 0x03], output: 0x00602000 }],
   eq_euint32_euint8: [
     { inputs: [0x00000003, 0x03], output: true },
     { inputs: [0x03000003, 0x03], output: false },
@@ -682,8 +648,6 @@ export const overloadTests: { [methodName: string]: OverloadTest[] } = {
     { inputs: [0x03000023, 0x1003], output: 0x03001023 },
   ],
   xor_euint32_euint16: [{ inputs: [0x03000023, 0x1003], output: 0x03001020 }],
-  shl_euint32_euint16: [{ inputs: [0x03000000, 0x0002], output: 0x0c000000 }],
-  shr_euint32_euint16: [{ inputs: [0x03000000, 0x0002], output: 0x00c00000 }],
   eq_euint32_euint16: [
     { inputs: [0x00001000, 0x1000], output: true },
     { inputs: [0x01001000, 0x1000], output: false },
@@ -737,8 +701,6 @@ export const overloadTests: { [methodName: string]: OverloadTest[] } = {
     { inputs: [0x00321000, 0x54000000], output: 0x54321000 },
     { inputs: [0x00321000, 0x54030000], output: 0x54311000 },
   ],
-  shl_euint32_euint32: [{ inputs: [0x00321000, 0x00000002], output: 0x00c84000 }],
-  shr_euint32_euint32: [{ inputs: [0x00321000, 0x00000002], output: 0x000c8400 }],
   eq_euint32_euint32: [
     { inputs: [0x00321000, 0x00321000], output: true },
     { inputs: [0x00321000, 0x00321001], output: false },
@@ -785,10 +747,6 @@ export const overloadTests: { [methodName: string]: OverloadTest[] } = {
   mul_uint32_euint32: [{ inputs: [0x00342000, 0x00000100], output: 0x34200000 }],
   div_euint32_uint32: [{ inputs: [0x00342000, 0x00000100], output: 0x00003420 }],
   rem_euint32_uint32: [{ inputs: [0x00342039, 0x00000100], output: 0x00000039 }],
-  shl_euint32_uint32: [{ inputs: [0x00342000, 0x00000001], output: 0x00684000 }],
-  shl_uint32_euint32: [{ inputs: [0x00342000, 0x00000001], output: 0x00684000 }],
-  shr_euint32_uint32: [{ inputs: [0x00342000, 0x00000001], output: 0x001a1000 }],
-  shr_uint32_euint32: [{ inputs: [0x00342000, 0x00000001], output: 0x001a1000 }],
   eq_euint32_uint32: [
     { inputs: [0x00342000, 0x00342000], output: true },
     { inputs: [0x00342000, 0x00342001], output: false },
