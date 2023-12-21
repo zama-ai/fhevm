@@ -21,6 +21,7 @@ export type Operator = {
   fheLibName?: string;
   binarySolidityOperator?: string;
   unarySolidityOperator?: string;
+  shiftOperator?: boolean;
 };
 
 export type CodegenContext = {
@@ -125,6 +126,7 @@ export const ALL_OPERATORS: Operator[] = [
     arguments: OperatorArguments.Binary,
     returnType: ReturnType.Uint,
     leftScalarEncrypt: true,
+    shiftOperator: true,
   },
   {
     name: 'shr',
@@ -134,6 +136,7 @@ export const ALL_OPERATORS: Operator[] = [
     arguments: OperatorArguments.Binary,
     returnType: ReturnType.Uint,
     leftScalarEncrypt: true,
+    shiftOperator: true,
   },
   {
     name: 'eq',

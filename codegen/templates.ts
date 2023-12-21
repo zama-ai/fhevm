@@ -170,9 +170,19 @@ library TFHE {
 
   supportedBits.forEach((lhsBits) => {
     supportedBits.forEach((rhsBits) => {
-      operators.forEach((operator) => res.push(tfheEncryptedOperator(lhsBits, rhsBits, operator, signatures)));
+      operators.forEach((operator) => {
+        if (!operator.shiftOperator) res.push(tfheEncryptedOperator(lhsBits, rhsBits, operator, signatures));
+      });
     });
-    operators.forEach((operator) => res.push(tfheScalarOperator(lhsBits, lhsBits, operator, signatures)));
+    operators.forEach((operator) => {
+      if (!operator.shiftOperator) res.push(tfheScalarOperator(lhsBits, lhsBits, operator, signatures));
+    });
+  });
+
+  supportedBits.forEach((bits) => {
+    operators.forEach((operator) => {
+      if (operator.shiftOperator) res.push(tfheShiftOperators(bits, operator, signatures));
+    });
   });
 
   // TODO: Decide whether we want to have mixed-inputs for CMUX
@@ -391,6 +401,79 @@ function tfheScalarOperator(
     }
         `);
   }
+
+  return res.join('');
+}
+
+function tfheShiftOperators(inputBits: number, operator: Operator, signatures: OverloadSignature[]): string {
+  const res: string[] = [];
+
+  // Code and test for shift(euint{inputBits},euint8}
+  const outputBits = inputBits;
+  const lhsBits = inputBits;
+  const rhsBits = 8;
+  const castRightToLeft = lhsBits > rhsBits;
+
+  const returnType = `euint${outputBits}`;
+
+  const returnTypeOverload: ArgumentType = ArgumentType.EUint;
+  let scalarFlag = ', false';
+
+  const leftExpr = 'a';
+  const rightExpr = castRightToLeft ? `asEuint${outputBits}(b)` : 'b';
+  let implExpression = `Impl.${operator.name}(euint${outputBits}.unwrap(${leftExpr}), euint${outputBits}.unwrap(${rightExpr})${scalarFlag})`;
+
+  signatures.push({
+    name: operator.name,
+    arguments: [
+      { type: ArgumentType.EUint, bits: lhsBits },
+      { type: ArgumentType.EUint, bits: rhsBits },
+    ],
+    returnType: { type: returnTypeOverload, bits: outputBits },
+  });
+  res.push(`
+    // Evaluate ${operator.name}(a, b) and return the result.
+    function ${operator.name}(euint${lhsBits} a, euint${rhsBits} b) internal pure returns (${returnType}) {
+        if (!isInitialized(a)) {
+            a = asEuint${lhsBits}(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint${rhsBits}(0);
+        }
+        return ${returnType}.wrap(${implExpression});
+    }
+`);
+
+  // Code and test for shift(euint{inputBits},uint8}
+  scalarFlag = ', true';
+  const leftOpName = operator.name;
+  var implExpressionA = `Impl.${operator.name}(euint${outputBits}.unwrap(a), uint256(b)${scalarFlag})`;
+  var implExpressionB = `Impl.${leftOpName}(euint${outputBits}.unwrap(b), uint256(a)${scalarFlag})`;
+  var maybeEncryptLeft = '';
+  if (operator.leftScalarEncrypt) {
+    // workaround until tfhe-rs left scalar support:
+    // do the trivial encryption and preserve order of operations
+    scalarFlag = ', false';
+    maybeEncryptLeft = `euint${outputBits} aEnc = asEuint${outputBits}(a);`;
+    implExpressionB = `Impl.${leftOpName}(euint${outputBits}.unwrap(aEnc), euint${8}.unwrap(b)${scalarFlag})`;
+  }
+  signatures.push({
+    name: operator.name,
+    arguments: [
+      { type: ArgumentType.EUint, bits: lhsBits },
+      { type: ArgumentType.Uint, bits: rhsBits },
+    ],
+    returnType: { type: returnTypeOverload, bits: outputBits },
+  });
+  res.push(`
+    // Evaluate ${operator.name}(a, b) and return the result.
+    function ${operator.name}(euint${lhsBits} a, uint${rhsBits} b) internal pure returns (${returnType}) {
+        if (!isInitialized(a)) {
+            a = asEuint${lhsBits}(0);
+        }
+        return ${returnType}.wrap(${implExpressionA});
+    }
+  `);
 
   return res.join('');
 }

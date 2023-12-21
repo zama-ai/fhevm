@@ -120,38 +120,6 @@ describe('TFHE operations', function () {
     expect(res).to.equal(46);
   });
 
-  it('test operator "shl" overload (euint8, euint8) => euint8 test 1 (2, 1)', async function () {
-    const res = await this.contract1.shl_euint8_euint8(
-      this.instances1.alice.encrypt8(2),
-      this.instances1.alice.encrypt8(1),
-    );
-    expect(res).to.equal(4);
-  });
-
-  it('test operator "shl" overload (euint8, euint8) => euint8 test 2 (2, 4)', async function () {
-    const res = await this.contract1.shl_euint8_euint8(
-      this.instances1.alice.encrypt8(2),
-      this.instances1.alice.encrypt8(4),
-    );
-    expect(res).to.equal(32);
-  });
-
-  it('test operator "shr" overload (euint8, euint8) => euint8 test 1 (2, 1)', async function () {
-    const res = await this.contract1.shr_euint8_euint8(
-      this.instances1.alice.encrypt8(2),
-      this.instances1.alice.encrypt8(1),
-    );
-    expect(res).to.equal(1);
-  });
-
-  it('test operator "shr" overload (euint8, euint8) => euint8 test 2 (32, 4)', async function () {
-    const res = await this.contract1.shr_euint8_euint8(
-      this.instances1.alice.encrypt8(32),
-      this.instances1.alice.encrypt8(4),
-    );
-    expect(res).to.equal(2);
-  });
-
   it('test operator "eq" overload (euint8, euint8) => ebool test 1 (12, 49)', async function () {
     const res = await this.contract1.eq_euint8_euint8(
       this.instances1.alice.encrypt8(12),
@@ -398,38 +366,6 @@ describe('TFHE operations', function () {
       this.instances1.alice.encrypt16(65280),
     );
     expect(res).to.equal(65535);
-  });
-
-  it('test operator "shl" overload (euint8, euint16) => euint16 test 1 (255, 256)', async function () {
-    const res = await this.contract1.shl_euint8_euint16(
-      this.instances1.alice.encrypt8(255),
-      this.instances1.alice.encrypt16(256),
-    );
-    expect(res).to.equal(255);
-  });
-
-  it('test operator "shl" overload (euint8, euint16) => euint16 test 2 (2, 1)', async function () {
-    const res = await this.contract1.shl_euint8_euint16(
-      this.instances1.alice.encrypt8(2),
-      this.instances1.alice.encrypt16(1),
-    );
-    expect(res).to.equal(4);
-  });
-
-  it('test operator "shr" overload (euint8, euint16) => euint16 test 1 (255, 256)', async function () {
-    const res = await this.contract1.shr_euint8_euint16(
-      this.instances1.alice.encrypt8(255),
-      this.instances1.alice.encrypt16(256),
-    );
-    expect(res).to.equal(255);
-  });
-
-  it('test operator "shr" overload (euint8, euint16) => euint16 test 2 (255, 1)', async function () {
-    const res = await this.contract1.shr_euint8_euint16(
-      this.instances1.alice.encrypt8(255),
-      this.instances1.alice.encrypt16(1),
-    );
-    expect(res).to.equal(127);
   });
 
   it('test operator "eq" overload (euint8, euint16) => ebool test 1 (255, 255)', async function () {
@@ -688,54 +624,6 @@ describe('TFHE operations', function () {
     expect(res).to.equal(65537);
   });
 
-  it('test operator "shl" overload (euint8, euint32) => euint32 test 1 (16, 65536)', async function () {
-    const res = await this.contract1.shl_euint8_euint32(
-      this.instances1.alice.encrypt8(16),
-      this.instances1.alice.encrypt32(65536),
-    );
-    expect(res).to.equal(16);
-  });
-
-  it('test operator "shl" overload (euint8, euint32) => euint32 test 2 (31, 65536)', async function () {
-    const res = await this.contract1.shl_euint8_euint32(
-      this.instances1.alice.encrypt8(31),
-      this.instances1.alice.encrypt32(65536),
-    );
-    expect(res).to.equal(31);
-  });
-
-  it('test operator "shr" overload (euint8, euint32) => euint32 test 1 (16, 65536)', async function () {
-    const res = await this.contract1.shr_euint8_euint32(
-      this.instances1.alice.encrypt8(16),
-      this.instances1.alice.encrypt32(65536),
-    );
-    expect(res).to.equal(16);
-  });
-
-  it('test operator "shr" overload (euint8, euint32) => euint32 test 2 (31, 65536)', async function () {
-    const res = await this.contract1.shr_euint8_euint32(
-      this.instances1.alice.encrypt8(31),
-      this.instances1.alice.encrypt32(65536),
-    );
-    expect(res).to.equal(31);
-  });
-
-  it('test operator "shr" overload (euint8, euint32) => euint32 test 3 (16, 1)', async function () {
-    const res = await this.contract1.shr_euint8_euint32(
-      this.instances1.alice.encrypt8(16),
-      this.instances1.alice.encrypt32(1),
-    );
-    expect(res).to.equal(8);
-  });
-
-  it('test operator "shr" overload (euint8, euint32) => euint32 test 4 (31, 1)', async function () {
-    const res = await this.contract1.shr_euint8_euint32(
-      this.instances1.alice.encrypt8(31),
-      this.instances1.alice.encrypt32(1),
-    );
-    expect(res).to.equal(15);
-  });
-
   it('test operator "eq" overload (euint8, euint32) => ebool test 1 (1, 1)', async function () {
     const res = await this.contract1.eq_euint8_euint32(
       this.instances1.alice.encrypt8(1),
@@ -980,46 +868,6 @@ describe('TFHE operations', function () {
   it('test operator "rem" overload (euint8, uint8) => euint8 test 1 (8, 3)', async function () {
     const res = await this.contract1.rem_euint8_uint8(this.instances1.alice.encrypt8(8), 3);
     expect(res).to.equal(2);
-  });
-
-  it('test operator "shl" overload (euint8, uint8) => euint8 test 1 (16, 1)', async function () {
-    const res = await this.contract1.shl_euint8_uint8(this.instances1.alice.encrypt8(16), 1);
-    expect(res).to.equal(32);
-  });
-
-  it('test operator "shl" overload (euint8, uint8) => euint8 test 2 (16, 2)', async function () {
-    const res = await this.contract1.shl_euint8_uint8(this.instances1.alice.encrypt8(16), 2);
-    expect(res).to.equal(64);
-  });
-
-  it('test operator "shl" overload (uint8, euint8) => euint8 test 1 (16, 1)', async function () {
-    const res = await this.contract1.shl_uint8_euint8(16, this.instances1.alice.encrypt8(1));
-    expect(res).to.equal(32);
-  });
-
-  it('test operator "shl" overload (uint8, euint8) => euint8 test 2 (16, 2)', async function () {
-    const res = await this.contract1.shl_uint8_euint8(16, this.instances1.alice.encrypt8(2));
-    expect(res).to.equal(64);
-  });
-
-  it('test operator "shr" overload (euint8, uint8) => euint8 test 1 (16, 1)', async function () {
-    const res = await this.contract1.shr_euint8_uint8(this.instances1.alice.encrypt8(16), 1);
-    expect(res).to.equal(8);
-  });
-
-  it('test operator "shr" overload (euint8, uint8) => euint8 test 2 (16, 2)', async function () {
-    const res = await this.contract1.shr_euint8_uint8(this.instances1.alice.encrypt8(16), 2);
-    expect(res).to.equal(4);
-  });
-
-  it('test operator "shr" overload (uint8, euint8) => euint8 test 1 (16, 1)', async function () {
-    const res = await this.contract1.shr_uint8_euint8(16, this.instances1.alice.encrypt8(1));
-    expect(res).to.equal(8);
-  });
-
-  it('test operator "shr" overload (uint8, euint8) => euint8 test 2 (16, 2)', async function () {
-    const res = await this.contract1.shr_uint8_euint8(16, this.instances1.alice.encrypt8(2));
-    expect(res).to.equal(4);
   });
 
   it('test operator "eq" overload (euint8, uint8) => ebool test 1 (16, 16)', async function () {
@@ -1330,22 +1178,6 @@ describe('TFHE operations', function () {
     expect(res).to.equal(4098);
   });
 
-  it('test operator "shl" overload (euint16, euint8) => euint16 test 1 (4112, 2)', async function () {
-    const res = await this.contract1.shl_euint16_euint8(
-      this.instances1.alice.encrypt16(4112),
-      this.instances1.alice.encrypt8(2),
-    );
-    expect(res).to.equal(16448);
-  });
-
-  it('test operator "shr" overload (euint16, euint8) => euint16 test 1 (4112, 2)', async function () {
-    const res = await this.contract1.shr_euint16_euint8(
-      this.instances1.alice.encrypt16(4112),
-      this.instances1.alice.encrypt8(2),
-    );
-    expect(res).to.equal(1028);
-  });
-
   it('test operator "eq" overload (euint16, euint8) => ebool test 1 (16, 16)', async function () {
     const res = await this.contract1.eq_euint16_euint8(
       this.instances1.alice.encrypt16(16),
@@ -1594,292 +1426,260 @@ describe('TFHE operations', function () {
     expect(res).to.equal(514);
   });
 
-  it('test operator "shl" overload (euint16, euint16) => euint16 test 1 (512, 2)', async function () {
-    const res = await this.contract1.shl_euint16_euint16(
-      this.instances1.alice.encrypt16(512),
-      this.instances1.alice.encrypt16(2),
-    );
-    expect(res).to.equal(2048);
-  });
-
-  it('test operator "shr" overload (euint16, euint16) => euint16 test 1 (512, 2)', async function () {
-    const res = await this.contract1.shr_euint16_euint16(
-      this.instances1.alice.encrypt16(512),
-      this.instances1.alice.encrypt16(2),
-    );
-    expect(res).to.equal(128);
-  });
-
   it('test operator "eq" overload (euint16, euint16) => ebool test 1 (512, 2)', async function () {
-    const res = await this.contract2.eq_euint16_euint16(
-      this.instances2.alice.encrypt16(512),
-      this.instances2.alice.encrypt16(2),
+    const res = await this.contract1.eq_euint16_euint16(
+      this.instances1.alice.encrypt16(512),
+      this.instances1.alice.encrypt16(2),
     );
     expect(res).to.equal(false);
   });
 
   it('test operator "eq" overload (euint16, euint16) => ebool test 2 (512, 512)', async function () {
-    const res = await this.contract2.eq_euint16_euint16(
-      this.instances2.alice.encrypt16(512),
-      this.instances2.alice.encrypt16(512),
+    const res = await this.contract1.eq_euint16_euint16(
+      this.instances1.alice.encrypt16(512),
+      this.instances1.alice.encrypt16(512),
     );
     expect(res).to.equal(true);
   });
 
   it('test operator "ne" overload (euint16, euint16) => ebool test 1 (512, 2)', async function () {
-    const res = await this.contract2.ne_euint16_euint16(
-      this.instances2.alice.encrypt16(512),
-      this.instances2.alice.encrypt16(2),
+    const res = await this.contract1.ne_euint16_euint16(
+      this.instances1.alice.encrypt16(512),
+      this.instances1.alice.encrypt16(2),
     );
     expect(res).to.equal(true);
   });
 
   it('test operator "ne" overload (euint16, euint16) => ebool test 2 (512, 512)', async function () {
-    const res = await this.contract2.ne_euint16_euint16(
-      this.instances2.alice.encrypt16(512),
-      this.instances2.alice.encrypt16(512),
+    const res = await this.contract1.ne_euint16_euint16(
+      this.instances1.alice.encrypt16(512),
+      this.instances1.alice.encrypt16(512),
     );
     expect(res).to.equal(false);
   });
 
   it('test operator "ge" overload (euint16, euint16) => ebool test 1 (512, 2)', async function () {
-    const res = await this.contract2.ge_euint16_euint16(
-      this.instances2.alice.encrypt16(512),
-      this.instances2.alice.encrypt16(2),
+    const res = await this.contract1.ge_euint16_euint16(
+      this.instances1.alice.encrypt16(512),
+      this.instances1.alice.encrypt16(2),
     );
     expect(res).to.equal(true);
   });
 
   it('test operator "ge" overload (euint16, euint16) => ebool test 2 (512, 512)', async function () {
-    const res = await this.contract2.ge_euint16_euint16(
-      this.instances2.alice.encrypt16(512),
-      this.instances2.alice.encrypt16(512),
+    const res = await this.contract1.ge_euint16_euint16(
+      this.instances1.alice.encrypt16(512),
+      this.instances1.alice.encrypt16(512),
     );
     expect(res).to.equal(true);
   });
 
   it('test operator "ge" overload (euint16, euint16) => ebool test 3 (512, 513)', async function () {
-    const res = await this.contract2.ge_euint16_euint16(
-      this.instances2.alice.encrypt16(512),
-      this.instances2.alice.encrypt16(513),
+    const res = await this.contract1.ge_euint16_euint16(
+      this.instances1.alice.encrypt16(512),
+      this.instances1.alice.encrypt16(513),
     );
     expect(res).to.equal(false);
   });
 
   it('test operator "gt" overload (euint16, euint16) => ebool test 1 (512, 2)', async function () {
-    const res = await this.contract2.gt_euint16_euint16(
-      this.instances2.alice.encrypt16(512),
-      this.instances2.alice.encrypt16(2),
+    const res = await this.contract1.gt_euint16_euint16(
+      this.instances1.alice.encrypt16(512),
+      this.instances1.alice.encrypt16(2),
     );
     expect(res).to.equal(true);
   });
 
   it('test operator "gt" overload (euint16, euint16) => ebool test 2 (512, 512)', async function () {
-    const res = await this.contract2.gt_euint16_euint16(
-      this.instances2.alice.encrypt16(512),
-      this.instances2.alice.encrypt16(512),
+    const res = await this.contract1.gt_euint16_euint16(
+      this.instances1.alice.encrypt16(512),
+      this.instances1.alice.encrypt16(512),
     );
     expect(res).to.equal(false);
   });
 
   it('test operator "gt" overload (euint16, euint16) => ebool test 3 (512, 513)', async function () {
-    const res = await this.contract2.gt_euint16_euint16(
-      this.instances2.alice.encrypt16(512),
-      this.instances2.alice.encrypt16(513),
+    const res = await this.contract1.gt_euint16_euint16(
+      this.instances1.alice.encrypt16(512),
+      this.instances1.alice.encrypt16(513),
     );
     expect(res).to.equal(false);
   });
 
   it('test operator "le" overload (euint16, euint16) => ebool test 1 (512, 2)', async function () {
-    const res = await this.contract2.le_euint16_euint16(
-      this.instances2.alice.encrypt16(512),
-      this.instances2.alice.encrypt16(2),
+    const res = await this.contract1.le_euint16_euint16(
+      this.instances1.alice.encrypt16(512),
+      this.instances1.alice.encrypt16(2),
     );
     expect(res).to.equal(false);
   });
 
   it('test operator "le" overload (euint16, euint16) => ebool test 2 (512, 512)', async function () {
-    const res = await this.contract2.le_euint16_euint16(
-      this.instances2.alice.encrypt16(512),
-      this.instances2.alice.encrypt16(512),
+    const res = await this.contract1.le_euint16_euint16(
+      this.instances1.alice.encrypt16(512),
+      this.instances1.alice.encrypt16(512),
     );
     expect(res).to.equal(true);
   });
 
   it('test operator "le" overload (euint16, euint16) => ebool test 3 (512, 513)', async function () {
-    const res = await this.contract2.le_euint16_euint16(
-      this.instances2.alice.encrypt16(512),
-      this.instances2.alice.encrypt16(513),
+    const res = await this.contract1.le_euint16_euint16(
+      this.instances1.alice.encrypt16(512),
+      this.instances1.alice.encrypt16(513),
     );
     expect(res).to.equal(true);
   });
 
   it('test operator "lt" overload (euint16, euint16) => ebool test 1 (512, 2)', async function () {
-    const res = await this.contract2.lt_euint16_euint16(
-      this.instances2.alice.encrypt16(512),
-      this.instances2.alice.encrypt16(2),
+    const res = await this.contract1.lt_euint16_euint16(
+      this.instances1.alice.encrypt16(512),
+      this.instances1.alice.encrypt16(2),
     );
     expect(res).to.equal(false);
   });
 
   it('test operator "lt" overload (euint16, euint16) => ebool test 2 (512, 512)', async function () {
-    const res = await this.contract2.lt_euint16_euint16(
-      this.instances2.alice.encrypt16(512),
-      this.instances2.alice.encrypt16(512),
+    const res = await this.contract1.lt_euint16_euint16(
+      this.instances1.alice.encrypt16(512),
+      this.instances1.alice.encrypt16(512),
     );
     expect(res).to.equal(false);
   });
 
   it('test operator "lt" overload (euint16, euint16) => ebool test 3 (512, 513)', async function () {
-    const res = await this.contract2.lt_euint16_euint16(
-      this.instances2.alice.encrypt16(512),
-      this.instances2.alice.encrypt16(513),
+    const res = await this.contract1.lt_euint16_euint16(
+      this.instances1.alice.encrypt16(512),
+      this.instances1.alice.encrypt16(513),
     );
     expect(res).to.equal(true);
   });
 
   it('test operator "min" overload (euint16, euint16) => euint16 test 1 (512, 2)', async function () {
-    const res = await this.contract2.min_euint16_euint16(
-      this.instances2.alice.encrypt16(512),
-      this.instances2.alice.encrypt16(2),
+    const res = await this.contract1.min_euint16_euint16(
+      this.instances1.alice.encrypt16(512),
+      this.instances1.alice.encrypt16(2),
     );
     expect(res).to.equal(2);
   });
 
   it('test operator "min" overload (euint16, euint16) => euint16 test 2 (512, 512)', async function () {
-    const res = await this.contract2.min_euint16_euint16(
-      this.instances2.alice.encrypt16(512),
-      this.instances2.alice.encrypt16(512),
+    const res = await this.contract1.min_euint16_euint16(
+      this.instances1.alice.encrypt16(512),
+      this.instances1.alice.encrypt16(512),
     );
     expect(res).to.equal(512);
   });
 
   it('test operator "min" overload (euint16, euint16) => euint16 test 3 (512, 513)', async function () {
-    const res = await this.contract2.min_euint16_euint16(
-      this.instances2.alice.encrypt16(512),
-      this.instances2.alice.encrypt16(513),
+    const res = await this.contract1.min_euint16_euint16(
+      this.instances1.alice.encrypt16(512),
+      this.instances1.alice.encrypt16(513),
     );
     expect(res).to.equal(512);
   });
 
   it('test operator "max" overload (euint16, euint16) => euint16 test 1 (512, 2)', async function () {
-    const res = await this.contract2.max_euint16_euint16(
-      this.instances2.alice.encrypt16(512),
-      this.instances2.alice.encrypt16(2),
+    const res = await this.contract1.max_euint16_euint16(
+      this.instances1.alice.encrypt16(512),
+      this.instances1.alice.encrypt16(2),
     );
     expect(res).to.equal(512);
   });
 
   it('test operator "max" overload (euint16, euint16) => euint16 test 2 (512, 512)', async function () {
-    const res = await this.contract2.max_euint16_euint16(
-      this.instances2.alice.encrypt16(512),
-      this.instances2.alice.encrypt16(512),
+    const res = await this.contract1.max_euint16_euint16(
+      this.instances1.alice.encrypt16(512),
+      this.instances1.alice.encrypt16(512),
     );
     expect(res).to.equal(512);
   });
 
   it('test operator "max" overload (euint16, euint16) => euint16 test 3 (512, 513)', async function () {
-    const res = await this.contract2.max_euint16_euint16(
-      this.instances2.alice.encrypt16(512),
-      this.instances2.alice.encrypt16(513),
+    const res = await this.contract1.max_euint16_euint16(
+      this.instances1.alice.encrypt16(512),
+      this.instances1.alice.encrypt16(513),
     );
     expect(res).to.equal(513);
   });
 
   it('test operator "add" overload (euint16, euint32) => euint32 test 1 (514, 131074)', async function () {
-    const res = await this.contract2.add_euint16_euint32(
-      this.instances2.alice.encrypt16(514),
-      this.instances2.alice.encrypt32(131074),
+    const res = await this.contract1.add_euint16_euint32(
+      this.instances1.alice.encrypt16(514),
+      this.instances1.alice.encrypt32(131074),
     );
     expect(res).to.equal(131588);
   });
 
   it('test operator "sub" overload (euint16, euint32) => euint32 test 1 (514, 2)', async function () {
-    const res = await this.contract2.sub_euint16_euint32(
-      this.instances2.alice.encrypt16(514),
-      this.instances2.alice.encrypt32(2),
+    const res = await this.contract1.sub_euint16_euint32(
+      this.instances1.alice.encrypt16(514),
+      this.instances1.alice.encrypt32(2),
     );
     expect(res).to.equal(512);
   });
 
   it('test operator "sub" overload (euint16, euint32) => euint32 test 2 (514, 65536)', async function () {
-    const res = await this.contract2.sub_euint16_euint32(
-      this.instances2.alice.encrypt16(514),
-      this.instances2.alice.encrypt32(65536),
+    const res = await this.contract1.sub_euint16_euint32(
+      this.instances1.alice.encrypt16(514),
+      this.instances1.alice.encrypt32(65536),
     );
     expect(res).to.equal(4294902274);
   });
 
   it('test operator "mul" overload (euint16, euint32) => euint32 test 1 (512, 65536)', async function () {
-    const res = await this.contract2.mul_euint16_euint32(
-      this.instances2.alice.encrypt16(512),
-      this.instances2.alice.encrypt32(65536),
+    const res = await this.contract1.mul_euint16_euint32(
+      this.instances1.alice.encrypt16(512),
+      this.instances1.alice.encrypt32(65536),
     );
     expect(res).to.equal(33554432);
   });
 
   it('test operator "and" overload (euint16, euint32) => euint32 test 1 (514, 65536)', async function () {
-    const res = await this.contract2.and_euint16_euint32(
-      this.instances2.alice.encrypt16(514),
-      this.instances2.alice.encrypt32(65536),
+    const res = await this.contract1.and_euint16_euint32(
+      this.instances1.alice.encrypt16(514),
+      this.instances1.alice.encrypt32(65536),
     );
     expect(res).to.equal(0);
   });
 
   it('test operator "and" overload (euint16, euint32) => euint32 test 2 (514, 65538)', async function () {
-    const res = await this.contract2.and_euint16_euint32(
-      this.instances2.alice.encrypt16(514),
-      this.instances2.alice.encrypt32(65538),
+    const res = await this.contract1.and_euint16_euint32(
+      this.instances1.alice.encrypt16(514),
+      this.instances1.alice.encrypt32(65538),
     );
     expect(res).to.equal(2);
   });
 
   it('test operator "or" overload (euint16, euint32) => euint32 test 1 (514, 65536)', async function () {
-    const res = await this.contract2.or_euint16_euint32(
-      this.instances2.alice.encrypt16(514),
-      this.instances2.alice.encrypt32(65536),
+    const res = await this.contract1.or_euint16_euint32(
+      this.instances1.alice.encrypt16(514),
+      this.instances1.alice.encrypt32(65536),
     );
     expect(res).to.equal(66050);
   });
 
   it('test operator "or" overload (euint16, euint32) => euint32 test 2 (514, 65538)', async function () {
-    const res = await this.contract2.or_euint16_euint32(
-      this.instances2.alice.encrypt16(514),
-      this.instances2.alice.encrypt32(65538),
+    const res = await this.contract1.or_euint16_euint32(
+      this.instances1.alice.encrypt16(514),
+      this.instances1.alice.encrypt32(65538),
     );
     expect(res).to.equal(66050);
   });
 
   it('test operator "xor" overload (euint16, euint32) => euint32 test 1 (514, 65536)', async function () {
-    const res = await this.contract2.xor_euint16_euint32(
-      this.instances2.alice.encrypt16(514),
-      this.instances2.alice.encrypt32(65536),
+    const res = await this.contract1.xor_euint16_euint32(
+      this.instances1.alice.encrypt16(514),
+      this.instances1.alice.encrypt32(65536),
     );
     expect(res).to.equal(66050);
   });
 
   it('test operator "xor" overload (euint16, euint32) => euint32 test 2 (514, 65538)', async function () {
-    const res = await this.contract2.xor_euint16_euint32(
-      this.instances2.alice.encrypt16(514),
-      this.instances2.alice.encrypt32(65538),
+    const res = await this.contract1.xor_euint16_euint32(
+      this.instances1.alice.encrypt16(514),
+      this.instances1.alice.encrypt32(65538),
     );
     expect(res).to.equal(66048);
-  });
-
-  it('test operator "shl" overload (euint16, euint32) => euint32 test 1 (514, 2)', async function () {
-    const res = await this.contract2.shl_euint16_euint32(
-      this.instances2.alice.encrypt16(514),
-      this.instances2.alice.encrypt32(2),
-    );
-    expect(res).to.equal(2056);
-  });
-
-  it('test operator "shr" overload (euint16, euint32) => euint32 test 1 (514, 2)', async function () {
-    const res = await this.contract2.shr_euint16_euint32(
-      this.instances2.alice.encrypt16(514),
-      this.instances2.alice.encrypt32(2),
-    );
-    expect(res).to.equal(128);
   });
 
   it('test operator "eq" overload (euint16, euint32) => ebool test 1 (514, 66050)', async function () {
@@ -2096,26 +1896,6 @@ describe('TFHE operations', function () {
   it('test operator "rem" overload (euint16, uint16) => euint16 test 1 (1544, 3)', async function () {
     const res = await this.contract2.rem_euint16_uint16(this.instances2.alice.encrypt16(1544), 3);
     expect(res).to.equal(2);
-  });
-
-  it('test operator "shl" overload (euint16, uint16) => euint16 test 1 (1542, 3)', async function () {
-    const res = await this.contract2.shl_euint16_uint16(this.instances2.alice.encrypt16(1542), 3);
-    expect(res).to.equal(12336);
-  });
-
-  it('test operator "shl" overload (uint16, euint16) => euint16 test 1 (1542, 3)', async function () {
-    const res = await this.contract2.shl_uint16_euint16(1542, this.instances2.alice.encrypt16(3));
-    expect(res).to.equal(12336);
-  });
-
-  it('test operator "shr" overload (euint16, uint16) => euint16 test 1 (1542, 3)', async function () {
-    const res = await this.contract2.shr_euint16_uint16(this.instances2.alice.encrypt16(1542), 3);
-    expect(res).to.equal(192);
-  });
-
-  it('test operator "shr" overload (uint16, euint16) => euint16 test 1 (1542, 3)', async function () {
-    const res = await this.contract2.shr_uint16_euint16(1542, this.instances2.alice.encrypt16(3));
-    expect(res).to.equal(192);
   });
 
   it('test operator "eq" overload (euint16, uint16) => ebool test 1 (1542, 1542)', async function () {
@@ -2410,22 +2190,6 @@ describe('TFHE operations', function () {
     expect(res).to.equal(50397184);
   });
 
-  it('test operator "shl" overload (euint32, euint8) => euint32 test 1 (50397184, 3)', async function () {
-    const res = await this.contract2.shl_euint32_euint8(
-      this.instances2.alice.encrypt32(50397184),
-      this.instances2.alice.encrypt8(3),
-    );
-    expect(res).to.equal(403177472);
-  });
-
-  it('test operator "shr" overload (euint32, euint8) => euint32 test 1 (50397184, 3)', async function () {
-    const res = await this.contract2.shr_euint32_euint8(
-      this.instances2.alice.encrypt32(50397184),
-      this.instances2.alice.encrypt8(3),
-    );
-    expect(res).to.equal(6299648);
-  });
-
   it('test operator "eq" overload (euint32, euint8) => ebool test 1 (3, 3)', async function () {
     const res = await this.contract2.eq_euint32_euint8(
       this.instances2.alice.encrypt32(3),
@@ -2664,22 +2428,6 @@ describe('TFHE operations', function () {
       this.instances2.alice.encrypt16(4099),
     );
     expect(res).to.equal(50335776);
-  });
-
-  it('test operator "shl" overload (euint32, euint16) => euint32 test 1 (50331648, 2)', async function () {
-    const res = await this.contract2.shl_euint32_euint16(
-      this.instances2.alice.encrypt32(50331648),
-      this.instances2.alice.encrypt16(2),
-    );
-    expect(res).to.equal(201326592);
-  });
-
-  it('test operator "shr" overload (euint32, euint16) => euint32 test 1 (50331648, 2)', async function () {
-    const res = await this.contract2.shr_euint32_euint16(
-      this.instances2.alice.encrypt32(50331648),
-      this.instances2.alice.encrypt16(2),
-    );
-    expect(res).to.equal(12582912);
   });
 
   it('test operator "eq" overload (euint32, euint16) => ebool test 1 (4096, 4096)', async function () {
@@ -2930,22 +2678,6 @@ describe('TFHE operations', function () {
     expect(res).to.equal(1412501504);
   });
 
-  it('test operator "shl" overload (euint32, euint32) => euint32 test 1 (3280896, 2)', async function () {
-    const res = await this.contract2.shl_euint32_euint32(
-      this.instances2.alice.encrypt32(3280896),
-      this.instances2.alice.encrypt32(2),
-    );
-    expect(res).to.equal(13123584);
-  });
-
-  it('test operator "shr" overload (euint32, euint32) => euint32 test 1 (3280896, 2)', async function () {
-    const res = await this.contract2.shr_euint32_euint32(
-      this.instances2.alice.encrypt32(3280896),
-      this.instances2.alice.encrypt32(2),
-    );
-    expect(res).to.equal(820224);
-  });
-
   it('test operator "eq" overload (euint32, euint32) => ebool test 1 (3280896, 3280896)', async function () {
     const res = await this.contract2.eq_euint32_euint32(
       this.instances2.alice.encrypt32(3280896),
@@ -3123,283 +2855,367 @@ describe('TFHE operations', function () {
   });
 
   it('test operator "add" overload (euint32, uint32) => euint32 test 1 (3416064, 3280896)', async function () {
-    const res = await this.contract3.add_euint32_uint32(this.instances3.alice.encrypt32(3416064), 3280896);
+    const res = await this.contract2.add_euint32_uint32(this.instances2.alice.encrypt32(3416064), 3280896);
     expect(res).to.equal(6696960);
   });
 
   it('test operator "add" overload (uint32, euint32) => euint32 test 1 (3416064, 3280896)', async function () {
-    const res = await this.contract3.add_uint32_euint32(3416064, this.instances3.alice.encrypt32(3280896));
+    const res = await this.contract2.add_uint32_euint32(3416064, this.instances2.alice.encrypt32(3280896));
     expect(res).to.equal(6696960);
   });
 
   it('test operator "sub" overload (euint32, uint32) => euint32 test 1 (3416064, 3280896)', async function () {
-    const res = await this.contract3.sub_euint32_uint32(this.instances3.alice.encrypt32(3416064), 3280896);
+    const res = await this.contract2.sub_euint32_uint32(this.instances2.alice.encrypt32(3416064), 3280896);
     expect(res).to.equal(135168);
   });
 
   it('test operator "sub" overload (uint32, euint32) => euint32 test 1 (3416064, 3280896)', async function () {
-    const res = await this.contract3.sub_uint32_euint32(3416064, this.instances3.alice.encrypt32(3280896));
+    const res = await this.contract2.sub_uint32_euint32(3416064, this.instances2.alice.encrypt32(3280896));
     expect(res).to.equal(135168);
   });
 
   it('test operator "mul" overload (euint32, uint32) => euint32 test 1 (3416064, 256)', async function () {
-    const res = await this.contract3.mul_euint32_uint32(this.instances3.alice.encrypt32(3416064), 256);
+    const res = await this.contract2.mul_euint32_uint32(this.instances2.alice.encrypt32(3416064), 256);
     expect(res).to.equal(874512384);
   });
 
   it('test operator "mul" overload (uint32, euint32) => euint32 test 1 (3416064, 256)', async function () {
-    const res = await this.contract3.mul_uint32_euint32(3416064, this.instances3.alice.encrypt32(256));
+    const res = await this.contract2.mul_uint32_euint32(3416064, this.instances2.alice.encrypt32(256));
     expect(res).to.equal(874512384);
   });
 
   it('test operator "div" overload (euint32, uint32) => euint32 test 1 (3416064, 256)', async function () {
-    const res = await this.contract3.div_euint32_uint32(this.instances3.alice.encrypt32(3416064), 256);
+    const res = await this.contract2.div_euint32_uint32(this.instances2.alice.encrypt32(3416064), 256);
     expect(res).to.equal(13344);
   });
 
   it('test operator "rem" overload (euint32, uint32) => euint32 test 1 (3416121, 256)', async function () {
-    const res = await this.contract3.rem_euint32_uint32(this.instances3.alice.encrypt32(3416121), 256);
+    const res = await this.contract2.rem_euint32_uint32(this.instances2.alice.encrypt32(3416121), 256);
     expect(res).to.equal(57);
   });
 
-  it('test operator "shl" overload (euint32, uint32) => euint32 test 1 (3416064, 1)', async function () {
-    const res = await this.contract3.shl_euint32_uint32(this.instances3.alice.encrypt32(3416064), 1);
-    expect(res).to.equal(6832128);
-  });
-
-  it('test operator "shl" overload (uint32, euint32) => euint32 test 1 (3416064, 1)', async function () {
-    const res = await this.contract3.shl_uint32_euint32(3416064, this.instances3.alice.encrypt32(1));
-    expect(res).to.equal(6832128);
-  });
-
-  it('test operator "shr" overload (euint32, uint32) => euint32 test 1 (3416064, 1)', async function () {
-    const res = await this.contract3.shr_euint32_uint32(this.instances3.alice.encrypt32(3416064), 1);
-    expect(res).to.equal(1708032);
-  });
-
-  it('test operator "shr" overload (uint32, euint32) => euint32 test 1 (3416064, 1)', async function () {
-    const res = await this.contract3.shr_uint32_euint32(3416064, this.instances3.alice.encrypt32(1));
-    expect(res).to.equal(1708032);
-  });
-
   it('test operator "eq" overload (euint32, uint32) => ebool test 1 (3416064, 3416064)', async function () {
-    const res = await this.contract3.eq_euint32_uint32(this.instances3.alice.encrypt32(3416064), 3416064);
+    const res = await this.contract2.eq_euint32_uint32(this.instances2.alice.encrypt32(3416064), 3416064);
     expect(res).to.equal(true);
   });
 
   it('test operator "eq" overload (euint32, uint32) => ebool test 2 (3416064, 3416065)', async function () {
-    const res = await this.contract3.eq_euint32_uint32(this.instances3.alice.encrypt32(3416064), 3416065);
+    const res = await this.contract2.eq_euint32_uint32(this.instances2.alice.encrypt32(3416064), 3416065);
     expect(res).to.equal(false);
   });
 
   it('test operator "eq" overload (uint32, euint32) => ebool test 1 (3416064, 3416064)', async function () {
-    const res = await this.contract3.eq_uint32_euint32(3416064, this.instances3.alice.encrypt32(3416064));
+    const res = await this.contract2.eq_uint32_euint32(3416064, this.instances2.alice.encrypt32(3416064));
     expect(res).to.equal(true);
   });
 
   it('test operator "eq" overload (uint32, euint32) => ebool test 2 (3416064, 3416065)', async function () {
-    const res = await this.contract3.eq_uint32_euint32(3416064, this.instances3.alice.encrypt32(3416065));
+    const res = await this.contract2.eq_uint32_euint32(3416064, this.instances2.alice.encrypt32(3416065));
     expect(res).to.equal(false);
   });
 
   it('test operator "ne" overload (euint32, uint32) => ebool test 1 (3416064, 3416064)', async function () {
-    const res = await this.contract3.ne_euint32_uint32(this.instances3.alice.encrypt32(3416064), 3416064);
+    const res = await this.contract2.ne_euint32_uint32(this.instances2.alice.encrypt32(3416064), 3416064);
     expect(res).to.equal(false);
   });
 
   it('test operator "ne" overload (euint32, uint32) => ebool test 2 (3416064, 3416065)', async function () {
-    const res = await this.contract3.ne_euint32_uint32(this.instances3.alice.encrypt32(3416064), 3416065);
+    const res = await this.contract2.ne_euint32_uint32(this.instances2.alice.encrypt32(3416064), 3416065);
     expect(res).to.equal(true);
   });
 
   it('test operator "ne" overload (uint32, euint32) => ebool test 1 (3416064, 3416064)', async function () {
-    const res = await this.contract3.ne_uint32_euint32(3416064, this.instances3.alice.encrypt32(3416064));
+    const res = await this.contract2.ne_uint32_euint32(3416064, this.instances2.alice.encrypt32(3416064));
     expect(res).to.equal(false);
   });
 
   it('test operator "ne" overload (uint32, euint32) => ebool test 2 (3416064, 3416065)', async function () {
-    const res = await this.contract3.ne_uint32_euint32(3416064, this.instances3.alice.encrypt32(3416065));
+    const res = await this.contract2.ne_uint32_euint32(3416064, this.instances2.alice.encrypt32(3416065));
     expect(res).to.equal(true);
   });
 
   it('test operator "ge" overload (euint32, uint32) => ebool test 1 (3416064, 3416064)', async function () {
-    const res = await this.contract3.ge_euint32_uint32(this.instances3.alice.encrypt32(3416064), 3416064);
+    const res = await this.contract2.ge_euint32_uint32(this.instances2.alice.encrypt32(3416064), 3416064);
     expect(res).to.equal(true);
   });
 
   it('test operator "ge" overload (euint32, uint32) => ebool test 2 (3416064, 3416065)', async function () {
-    const res = await this.contract3.ge_euint32_uint32(this.instances3.alice.encrypt32(3416064), 3416065);
+    const res = await this.contract2.ge_euint32_uint32(this.instances2.alice.encrypt32(3416064), 3416065);
     expect(res).to.equal(false);
   });
 
   it('test operator "ge" overload (euint32, uint32) => ebool test 3 (3416064, 3416063)', async function () {
-    const res = await this.contract3.ge_euint32_uint32(this.instances3.alice.encrypt32(3416064), 3416063);
+    const res = await this.contract2.ge_euint32_uint32(this.instances2.alice.encrypt32(3416064), 3416063);
     expect(res).to.equal(true);
   });
 
   it('test operator "ge" overload (uint32, euint32) => ebool test 1 (3416064, 3416064)', async function () {
-    const res = await this.contract3.ge_uint32_euint32(3416064, this.instances3.alice.encrypt32(3416064));
+    const res = await this.contract2.ge_uint32_euint32(3416064, this.instances2.alice.encrypt32(3416064));
     expect(res).to.equal(true);
   });
 
   it('test operator "ge" overload (uint32, euint32) => ebool test 2 (3416064, 3416065)', async function () {
-    const res = await this.contract3.ge_uint32_euint32(3416064, this.instances3.alice.encrypt32(3416065));
+    const res = await this.contract2.ge_uint32_euint32(3416064, this.instances2.alice.encrypt32(3416065));
     expect(res).to.equal(false);
   });
 
   it('test operator "ge" overload (uint32, euint32) => ebool test 3 (3416064, 3416063)', async function () {
-    const res = await this.contract3.ge_uint32_euint32(3416064, this.instances3.alice.encrypt32(3416063));
+    const res = await this.contract2.ge_uint32_euint32(3416064, this.instances2.alice.encrypt32(3416063));
     expect(res).to.equal(true);
   });
 
   it('test operator "gt" overload (euint32, uint32) => ebool test 1 (3416064, 3416064)', async function () {
-    const res = await this.contract3.gt_euint32_uint32(this.instances3.alice.encrypt32(3416064), 3416064);
+    const res = await this.contract2.gt_euint32_uint32(this.instances2.alice.encrypt32(3416064), 3416064);
     expect(res).to.equal(false);
   });
 
   it('test operator "gt" overload (euint32, uint32) => ebool test 2 (3416064, 3416065)', async function () {
-    const res = await this.contract3.gt_euint32_uint32(this.instances3.alice.encrypt32(3416064), 3416065);
+    const res = await this.contract2.gt_euint32_uint32(this.instances2.alice.encrypt32(3416064), 3416065);
     expect(res).to.equal(false);
   });
 
   it('test operator "gt" overload (euint32, uint32) => ebool test 3 (3416064, 3416063)', async function () {
-    const res = await this.contract3.gt_euint32_uint32(this.instances3.alice.encrypt32(3416064), 3416063);
+    const res = await this.contract2.gt_euint32_uint32(this.instances2.alice.encrypt32(3416064), 3416063);
     expect(res).to.equal(true);
   });
 
   it('test operator "gt" overload (uint32, euint32) => ebool test 1 (3416064, 3416064)', async function () {
-    const res = await this.contract3.gt_uint32_euint32(3416064, this.instances3.alice.encrypt32(3416064));
+    const res = await this.contract2.gt_uint32_euint32(3416064, this.instances2.alice.encrypt32(3416064));
     expect(res).to.equal(false);
   });
 
   it('test operator "gt" overload (uint32, euint32) => ebool test 2 (3416064, 3416065)', async function () {
-    const res = await this.contract3.gt_uint32_euint32(3416064, this.instances3.alice.encrypt32(3416065));
+    const res = await this.contract2.gt_uint32_euint32(3416064, this.instances2.alice.encrypt32(3416065));
     expect(res).to.equal(false);
   });
 
   it('test operator "gt" overload (uint32, euint32) => ebool test 3 (3416064, 3416063)', async function () {
-    const res = await this.contract3.gt_uint32_euint32(3416064, this.instances3.alice.encrypt32(3416063));
+    const res = await this.contract2.gt_uint32_euint32(3416064, this.instances2.alice.encrypt32(3416063));
     expect(res).to.equal(true);
   });
 
   it('test operator "le" overload (euint32, uint32) => ebool test 1 (3416064, 3416064)', async function () {
-    const res = await this.contract3.le_euint32_uint32(this.instances3.alice.encrypt32(3416064), 3416064);
+    const res = await this.contract2.le_euint32_uint32(this.instances2.alice.encrypt32(3416064), 3416064);
     expect(res).to.equal(true);
   });
 
   it('test operator "le" overload (euint32, uint32) => ebool test 2 (3416064, 3416065)', async function () {
-    const res = await this.contract3.le_euint32_uint32(this.instances3.alice.encrypt32(3416064), 3416065);
+    const res = await this.contract2.le_euint32_uint32(this.instances2.alice.encrypt32(3416064), 3416065);
     expect(res).to.equal(true);
   });
 
   it('test operator "le" overload (euint32, uint32) => ebool test 3 (3416064, 3416063)', async function () {
-    const res = await this.contract3.le_euint32_uint32(this.instances3.alice.encrypt32(3416064), 3416063);
+    const res = await this.contract2.le_euint32_uint32(this.instances2.alice.encrypt32(3416064), 3416063);
     expect(res).to.equal(false);
   });
 
   it('test operator "le" overload (uint32, euint32) => ebool test 1 (3416064, 3416064)', async function () {
-    const res = await this.contract3.le_uint32_euint32(3416064, this.instances3.alice.encrypt32(3416064));
+    const res = await this.contract2.le_uint32_euint32(3416064, this.instances2.alice.encrypt32(3416064));
     expect(res).to.equal(true);
   });
 
   it('test operator "le" overload (uint32, euint32) => ebool test 2 (3416064, 3416065)', async function () {
-    const res = await this.contract3.le_uint32_euint32(3416064, this.instances3.alice.encrypt32(3416065));
+    const res = await this.contract2.le_uint32_euint32(3416064, this.instances2.alice.encrypt32(3416065));
     expect(res).to.equal(true);
   });
 
   it('test operator "le" overload (uint32, euint32) => ebool test 3 (3416064, 3416063)', async function () {
-    const res = await this.contract3.le_uint32_euint32(3416064, this.instances3.alice.encrypt32(3416063));
+    const res = await this.contract2.le_uint32_euint32(3416064, this.instances2.alice.encrypt32(3416063));
     expect(res).to.equal(false);
   });
 
   it('test operator "lt" overload (euint32, uint32) => ebool test 1 (3416064, 3416064)', async function () {
-    const res = await this.contract3.lt_euint32_uint32(this.instances3.alice.encrypt32(3416064), 3416064);
+    const res = await this.contract2.lt_euint32_uint32(this.instances2.alice.encrypt32(3416064), 3416064);
     expect(res).to.equal(false);
   });
 
   it('test operator "lt" overload (euint32, uint32) => ebool test 2 (3416064, 3416065)', async function () {
-    const res = await this.contract3.lt_euint32_uint32(this.instances3.alice.encrypt32(3416064), 3416065);
+    const res = await this.contract2.lt_euint32_uint32(this.instances2.alice.encrypt32(3416064), 3416065);
     expect(res).to.equal(true);
   });
 
   it('test operator "lt" overload (euint32, uint32) => ebool test 3 (3416064, 3416063)', async function () {
-    const res = await this.contract3.lt_euint32_uint32(this.instances3.alice.encrypt32(3416064), 3416063);
+    const res = await this.contract2.lt_euint32_uint32(this.instances2.alice.encrypt32(3416064), 3416063);
     expect(res).to.equal(false);
   });
 
   it('test operator "lt" overload (uint32, euint32) => ebool test 1 (3416064, 3416064)', async function () {
-    const res = await this.contract3.lt_uint32_euint32(3416064, this.instances3.alice.encrypt32(3416064));
+    const res = await this.contract2.lt_uint32_euint32(3416064, this.instances2.alice.encrypt32(3416064));
     expect(res).to.equal(false);
   });
 
   it('test operator "lt" overload (uint32, euint32) => ebool test 2 (3416064, 3416065)', async function () {
-    const res = await this.contract3.lt_uint32_euint32(3416064, this.instances3.alice.encrypt32(3416065));
+    const res = await this.contract2.lt_uint32_euint32(3416064, this.instances2.alice.encrypt32(3416065));
     expect(res).to.equal(true);
   });
 
   it('test operator "lt" overload (uint32, euint32) => ebool test 3 (3416064, 3416063)', async function () {
-    const res = await this.contract3.lt_uint32_euint32(3416064, this.instances3.alice.encrypt32(3416063));
+    const res = await this.contract2.lt_uint32_euint32(3416064, this.instances2.alice.encrypt32(3416063));
     expect(res).to.equal(false);
   });
 
   it('test operator "min" overload (euint32, uint32) => euint32 test 1 (3416064, 3416064)', async function () {
-    const res = await this.contract3.min_euint32_uint32(this.instances3.alice.encrypt32(3416064), 3416064);
+    const res = await this.contract2.min_euint32_uint32(this.instances2.alice.encrypt32(3416064), 3416064);
     expect(res).to.equal(3416064);
   });
 
   it('test operator "min" overload (euint32, uint32) => euint32 test 2 (3416064, 3416065)', async function () {
-    const res = await this.contract3.min_euint32_uint32(this.instances3.alice.encrypt32(3416064), 3416065);
+    const res = await this.contract2.min_euint32_uint32(this.instances2.alice.encrypt32(3416064), 3416065);
     expect(res).to.equal(3416064);
   });
 
   it('test operator "min" overload (euint32, uint32) => euint32 test 3 (3416064, 3416063)', async function () {
-    const res = await this.contract3.min_euint32_uint32(this.instances3.alice.encrypt32(3416064), 3416063);
+    const res = await this.contract2.min_euint32_uint32(this.instances2.alice.encrypt32(3416064), 3416063);
     expect(res).to.equal(3416063);
   });
 
   it('test operator "min" overload (uint32, euint32) => euint32 test 1 (3416064, 3416064)', async function () {
-    const res = await this.contract3.min_uint32_euint32(3416064, this.instances3.alice.encrypt32(3416064));
+    const res = await this.contract2.min_uint32_euint32(3416064, this.instances2.alice.encrypt32(3416064));
     expect(res).to.equal(3416064);
   });
 
   it('test operator "min" overload (uint32, euint32) => euint32 test 2 (3416064, 3416065)', async function () {
-    const res = await this.contract3.min_uint32_euint32(3416064, this.instances3.alice.encrypt32(3416065));
+    const res = await this.contract2.min_uint32_euint32(3416064, this.instances2.alice.encrypt32(3416065));
     expect(res).to.equal(3416064);
   });
 
   it('test operator "min" overload (uint32, euint32) => euint32 test 3 (3416064, 3416063)', async function () {
-    const res = await this.contract3.min_uint32_euint32(3416064, this.instances3.alice.encrypt32(3416063));
+    const res = await this.contract2.min_uint32_euint32(3416064, this.instances2.alice.encrypt32(3416063));
     expect(res).to.equal(3416063);
   });
 
   it('test operator "max" overload (euint32, uint32) => euint32 test 1 (3416064, 3416064)', async function () {
-    const res = await this.contract3.max_euint32_uint32(this.instances3.alice.encrypt32(3416064), 3416064);
+    const res = await this.contract2.max_euint32_uint32(this.instances2.alice.encrypt32(3416064), 3416064);
     expect(res).to.equal(3416064);
   });
 
   it('test operator "max" overload (euint32, uint32) => euint32 test 2 (3416064, 3416065)', async function () {
-    const res = await this.contract3.max_euint32_uint32(this.instances3.alice.encrypt32(3416064), 3416065);
+    const res = await this.contract2.max_euint32_uint32(this.instances2.alice.encrypt32(3416064), 3416065);
     expect(res).to.equal(3416065);
   });
 
   it('test operator "max" overload (euint32, uint32) => euint32 test 3 (3416064, 3416063)', async function () {
-    const res = await this.contract3.max_euint32_uint32(this.instances3.alice.encrypt32(3416064), 3416063);
+    const res = await this.contract2.max_euint32_uint32(this.instances2.alice.encrypt32(3416064), 3416063);
     expect(res).to.equal(3416064);
   });
 
   it('test operator "max" overload (uint32, euint32) => euint32 test 1 (3416064, 3416064)', async function () {
-    const res = await this.contract3.max_uint32_euint32(3416064, this.instances3.alice.encrypt32(3416064));
+    const res = await this.contract2.max_uint32_euint32(3416064, this.instances2.alice.encrypt32(3416064));
     expect(res).to.equal(3416064);
   });
 
   it('test operator "max" overload (uint32, euint32) => euint32 test 2 (3416064, 3416065)', async function () {
-    const res = await this.contract3.max_uint32_euint32(3416064, this.instances3.alice.encrypt32(3416065));
+    const res = await this.contract2.max_uint32_euint32(3416064, this.instances2.alice.encrypt32(3416065));
     expect(res).to.equal(3416065);
   });
 
   it('test operator "max" overload (uint32, euint32) => euint32 test 3 (3416064, 3416063)', async function () {
-    const res = await this.contract3.max_uint32_euint32(3416064, this.instances3.alice.encrypt32(3416063));
+    const res = await this.contract2.max_uint32_euint32(3416064, this.instances2.alice.encrypt32(3416063));
     expect(res).to.equal(3416064);
+  });
+
+  it('test operator "shl" overload (euint8, euint8) => euint8 test 1 (2, 1)', async function () {
+    const res = await this.contract2.shl_euint8_euint8(
+      this.instances2.alice.encrypt8(2),
+      this.instances2.alice.encrypt8(1),
+    );
+    expect(res).to.equal(4);
+  });
+
+  it('test operator "shl" overload (euint8, euint8) => euint8 test 2 (2, 4)', async function () {
+    const res = await this.contract2.shl_euint8_euint8(
+      this.instances2.alice.encrypt8(2),
+      this.instances2.alice.encrypt8(4),
+    );
+    expect(res).to.equal(32);
+  });
+
+  it('test operator "shl" overload (euint8, uint8) => euint8 test 1 (16, 1)', async function () {
+    const res = await this.contract2.shl_euint8_uint8(this.instances2.alice.encrypt8(16), 1);
+    expect(res).to.equal(32);
+  });
+
+  it('test operator "shl" overload (euint8, uint8) => euint8 test 2 (16, 2)', async function () {
+    const res = await this.contract2.shl_euint8_uint8(this.instances2.alice.encrypt8(16), 2);
+    expect(res).to.equal(64);
+  });
+
+  it('test operator "shr" overload (euint8, euint8) => euint8 test 1 (2, 1)', async function () {
+    const res = await this.contract3.shr_euint8_euint8(
+      this.instances3.alice.encrypt8(2),
+      this.instances3.alice.encrypt8(1),
+    );
+    expect(res).to.equal(1);
+  });
+
+  it('test operator "shr" overload (euint8, euint8) => euint8 test 2 (32, 4)', async function () {
+    const res = await this.contract3.shr_euint8_euint8(
+      this.instances3.alice.encrypt8(32),
+      this.instances3.alice.encrypt8(4),
+    );
+    expect(res).to.equal(2);
+  });
+
+  it('test operator "shr" overload (euint8, uint8) => euint8 test 1 (16, 1)', async function () {
+    const res = await this.contract3.shr_euint8_uint8(this.instances3.alice.encrypt8(16), 1);
+    expect(res).to.equal(8);
+  });
+
+  it('test operator "shr" overload (euint8, uint8) => euint8 test 2 (16, 2)', async function () {
+    const res = await this.contract3.shr_euint8_uint8(this.instances3.alice.encrypt8(16), 2);
+    expect(res).to.equal(4);
+  });
+
+  it('test operator "shl" overload (euint16, euint8) => euint16 test 1 (4112, 2)', async function () {
+    const res = await this.contract3.shl_euint16_euint8(
+      this.instances3.alice.encrypt16(4112),
+      this.instances3.alice.encrypt8(2),
+    );
+    expect(res).to.equal(16448);
+  });
+
+  it('test operator "shl" overload (euint16, uint8) => euint16 test 1 (4112, 2)', async function () {
+    const res = await this.contract3.shl_euint16_uint8(this.instances3.alice.encrypt16(4112), 2);
+    expect(res).to.equal(16448);
+  });
+
+  it('test operator "shr" overload (euint16, euint8) => euint16 test 1 (4112, 2)', async function () {
+    const res = await this.contract3.shr_euint16_euint8(
+      this.instances3.alice.encrypt16(4112),
+      this.instances3.alice.encrypt8(2),
+    );
+    expect(res).to.equal(1028);
+  });
+
+  it('test operator "shr" overload (euint16, uint8) => euint16 test 1 (4112, 2)', async function () {
+    const res = await this.contract3.shr_euint16_uint8(this.instances3.alice.encrypt16(4112), 2);
+    expect(res).to.equal(1028);
+  });
+
+  it('test operator "shl" overload (euint32, euint8) => euint32 test 1 (50397184, 3)', async function () {
+    const res = await this.contract3.shl_euint32_euint8(
+      this.instances3.alice.encrypt32(50397184),
+      this.instances3.alice.encrypt8(3),
+    );
+    expect(res).to.equal(403177472);
+  });
+
+  it('test operator "shl" overload (euint32, uint8) => euint32 test 1 (50397184, 3)', async function () {
+    const res = await this.contract3.shl_euint32_uint8(this.instances3.alice.encrypt32(50397184), 3);
+    expect(res).to.equal(403177472);
+  });
+
+  it('test operator "shr" overload (euint32, euint8) => euint32 test 1 (50397184, 3)', async function () {
+    const res = await this.contract3.shr_euint32_euint8(
+      this.instances3.alice.encrypt32(50397184),
+      this.instances3.alice.encrypt8(3),
+    );
+    expect(res).to.equal(6299648);
+  });
+
+  it('test operator "shr" overload (euint32, uint8) => euint32 test 1 (50397184, 3)', async function () {
+    const res = await this.contract3.shr_euint32_uint8(this.instances3.alice.encrypt32(50397184), 3);
+    expect(res).to.equal(6299648);
   });
 
   it('test operator "neg" overload (euint8) => euint8 test 1 (1)', async function () {
