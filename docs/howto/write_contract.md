@@ -1,6 +1,4 @@
-# Getting Started
-
-Welcome to the documentation for fhEVM Solidity Library! This comprehensive guide provides developers with detailed information on the library's functions, parameters, and usage examples. Explore how to leverage TFHE's powerful capabilities for computing over encrypted data within Solidity smart contracts, enabling secure computations and encrypted data manipulation. Unlock a new level of privacy and confidentiality in your blockchain applications with fhEVM Solidity Library.
+# Write contract
 
 ## Usage
 

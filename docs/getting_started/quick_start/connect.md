@@ -1,4 +1,4 @@
-# Metamask
+# Connecting to Zama Devnet
 
 <!-- markdown-link-check-disable -->
 

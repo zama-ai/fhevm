@@ -45,7 +45,7 @@ const getBalance = async () => {
   const instance = await getInstance();
 
   // Generate token to decrypt
-  const generatedToken = instance.generateToken({
+  const generatedToken = instance.generatePublicKey({
     verifyingContract: CONTRACT_ADDRESS,
   });
 
@@ -55,7 +55,7 @@ const getBalance = async () => {
     { Reencrypt: generatedToken.token.types.Reencrypt }, // Need to remove EIP712Domain from types
     generatedToken.token.message,
   );
-  instance.setTokenSignature(CONTRACT_ADDRESS, signature);
+  instance.setPublicKeySignature(CONTRACT_ADDRESS, signature);
 
   // Call the method
   const encryptedBalance = await contract.balanceOf(generatedToken.publicKey, signature);

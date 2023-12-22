@@ -1,44 +1,31 @@
 # Setup an instance
 
-First, you need to create an instance. An instance allows you to:
+fhevmjs provides two features:
 
-- Encrypt inputs with blockchain public key
-- Manage user keys to reencrypt contract's encrypted data
+- Encrypt an input with the blockchain's FHE public key
+- Generate a private key and a public key to provide to `TFHE.reencrypt()`
 
-## createInstance
+## Instance
 
-### Parameters
+Before using these features, you need to create an instance and provide some informations:
 
-- `params` (required):
+- The blockchain chainId
+- The blockchain's FHE public key
 
-  - `chainId` (required): Id of the chain
-  - `publicKey` (required): Public key of the blockchain
-  - `keypairs` (optional): A list of keypairs associated with contract
-
-### Returns
-
-- `Promise<FhevmInstance>`
-
-### Example
+You can get this information directly from the blockchain you're using. For example with `ethers`:
 
 ```javascript
+import { BrowserProvider } from "ethers";
 import { createInstance } from "fhevmjs";
 
-const keypairs = {
-  "0x1c786b8ca49D932AFaDCEc00827352B503edf16c": {
-    publicKey: "7b2352b10cb4e379fc89094c445acb8b2161ec23a3694c309e01e797ab2bae22",
-    privateKey: "764d194c6c686164fa5eb3c53ef3f7f5b90985723f19e865baf0961dd28991eb",
-    signature:
-      "0x5668c087804bd8b2f95b17d7f60599502bf7d539b0b19a4d989c3a5e422c77de37771be1f991223088e968a7e18330c7ece973f527eec03b97f219447d4833401b",
-  },
-};
+const createFhevmInstance = async () => {
+  const provider = new BrowserProvider(window.ethereum);
 
-const initInstance = async () => {
   // 1. Get chain id
-  const chainIdHex = await window.ethereum.request({ method: "eth_chainId" });
-  const chainId = parseInt(chainIdHex, 16);
+  const network = await provider.getNetwork();
+  const chainId = +network.chainId.toString();
 
-  // Get blockchain public key
+  // 2. Get blockchain public key
   const ret = await provider.call({
     // fhe lib address, may need to be changed depending on network
     to: "0x000000000000000000000000000000000000005d",
@@ -48,11 +35,65 @@ const initInstance = async () => {
   const decoded = ethers.AbiCoder.defaultAbiCoder().decode(["bytes"], ret);
   const publicKey = decoded[0];
 
-  // Create instance
-  return createInstance({ chainId, publicKey, keypairs });
+  // 3. Create instance
+  instance = createInstance({ chainId, publicKey });
+  return instance;
 };
+```
 
-initInstance().then((instance) => {
-  console.log(instance.serializeKeypairs());
-});
+Important: Since the instance memorizes user's signature, you need to refresh the instance if the user uses another wallet address. Otherwise, you will encounter issue during reencryption.
+
+## Export keypairs
+
+When a user generate and sign an [EIP712 token](reencryption.md) for a contract, you can export these tokens with `instance.serializeKeypairs()`. This method will return all keypairs and signature associated with a contract.
+
+```javascript
+{
+   '0x1c786b8ca49D932AFaDCEc00827352B503edf16c': {
+     signature: '0x6214e232b2dae4d8d2c99837dd1af0...',
+     publicKey: '7b2352b10cb4e379fc89094c445acb8b2161ec23a3694c309e01e797ab2bae22',
+     privateKey: '764d194c6c686164fa5eb3c53ef3f7f5b90985723f19e865baf0961dd28991eb',
+   }
+}
+```
+
+You can store this object in the user's local storage, enabling you to load it in the next user session. You must save this information per wallet since it contains the user's signature.
+
+```javascript
+const keypairs = instance.serializeKeypairs();
+window.localStorage.setItem(`fhevmKeypairs-${wallet}`, JSON.stringify(keypairs));
+```
+
+## Initialize instance with stored keypairs
+
+You can load previously stored keypairs to initialize the instance.
+
+```javascript
+import { BrowserProvider } from "ethers";
+import { createInstance } from "fhevmjs";
+
+const createFhevmInstance = async (wallet) => {
+  const provider = new BrowserProvider(window.ethereum);
+
+  // 1. Get chain id
+  const network = await provider.getNetwork();
+  const chainId = +network.chainId.toString();
+
+  // 2. Get blockchain public key
+  const ret = await provider.call({
+    // fhe lib address, may need to be changed depending on network
+    to: "0x000000000000000000000000000000000000005d",
+    // first four bytes of keccak256('fhePubKey(bytes1)') + 1 byte for library
+    data: "0xd9d47bb001",
+  });
+  const decoded = ethers.AbiCoder.defaultAbiCoder().decode(["bytes"], ret);
+  const publicKey = decoded[0];
+
+  const storedKeypairs = window.localStorage.get(`fhevmKeypairs-${wallet}`) || null;
+  const keypairs = storedKeypairs ? JSON.parse(storedKeypairs) : {};
+
+  // 3. Create instance
+  instance = createInstance({ chainId, publicKey, keypairs });
+  return instance;
+};
 ```

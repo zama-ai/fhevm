@@ -1,11 +1,10 @@
-# Types
+# Use encrypted types
 
 The `TFHE` library provides encrypted integer types and a type system that is checked both at compile time and at run time.
 
 Encrypted integers behave as much as possible as Solidity's integer types. Currently, however, behaviour such as "revert on overflow" is not supported as this would leak some information about the encrypted value. Therefore, arithmetic on `e(u)int` types is [unchecked](https://docs.soliditylang.org/en/latest/control-structures.html#checked-or-unchecked-arithmetic), i.e. there is wrap-around on overflow.
 
-Encrypted integers with overflow checking are coming soon to the `TFHE` library. They will allow reversal in case of an overflow,
-but will leak some information about the operands.
+Encrypted integers with overflow checking are coming soon to the `TFHE` library. They will allow reversal in case of an overflow, but will leak some information about the operands.
 
 In terms of implementation in the `fhEVM`, encrypted integers take the form of FHE ciphertexts.
 The `TFHE` library abstracts away that and, instead, exposes ciphertext handles to smart contract developers.
