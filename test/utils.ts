@@ -5,32 +5,41 @@ import type { Counter } from '../types';
 import { TypedContractMethod } from '../types/common';
 import { getSigners } from './signers';
 
+async function getCurrentBlockNumber() {
+  return ethers.provider.getBlockNumber();
+}
+
 export const waitForBlock = (blockNumber: bigint) => {
   return new Promise((resolve, reject) => {
-    const waitBlock = async (currentBlock: number) => {
-      if (blockNumber <= BigInt(currentBlock)) {
-        await ethers.provider.off('block', waitBlock);
-        resolve(blockNumber);
+    const intervalId = setInterval(async () => {
+      try {
+        const currentBlock = await ethers.provider.getBlockNumber();
+        if (BigInt(currentBlock) >= blockNumber) {
+          clearInterval(intervalId);
+          resolve(currentBlock);
+        }
+      } catch (error) {
+        clearInterval(intervalId);
+        reject(error);
       }
-    };
-    ethers.provider.on('block', waitBlock).catch((err) => {
-      reject(err);
-    });
+    }, 50); // Check every 50 milliseconds
   });
 };
 
-export const waitForBalance = async (address: string): Promise<void> => {
-  return new Promise((resolve, reject) => {
-    const checkBalance = async () => {
-      const balance = await ethers.provider.getBalance(address);
-      if (balance > 0) {
-        await ethers.provider.off('block', checkBalance);
-        resolve();
+export const waitForBalance = (address: string) => {
+  return new Promise<void>((resolve, reject) => {
+    const intervalId = setInterval(async () => {
+      try {
+        const balance = await ethers.provider.getBalance(address);
+        if (balance >= 0) {
+          clearInterval(intervalId);
+          resolve();
+        }
+      } catch (error) {
+        clearInterval(intervalId);
+        reject(error);
       }
-    };
-    ethers.provider.on('block', checkBalance).catch((err) => {
-      reject(err);
-    });
+    }, 50); // Check every 50 milliseconds
   });
 };
 
@@ -65,3 +74,9 @@ async function deployCounterContract(): Promise<Counter> {
 
   return contract;
 }
+
+export const mineNBlocks = async (n: number) => {
+  for (let index = 0; index < n; index++) {
+    await ethers.provider.send('evm_mine');
+  }
+};

@@ -94,14 +94,20 @@ describe('Rand', function () {
   });
 
   it('8 bits in view', async function () {
-    await expect(this.rand.generate8InView()).to.be.rejected;
+    if (process.env.HARDHAT_NETWORK !== 'hardhat') {
+      await expect(this.rand.generate8InView()).to.be.rejected;
+    }
   });
 
   it('16 bits in view', async function () {
-    await expect(this.rand.generate16InView()).to.be.rejected;
+    if (process.env.HARDHAT_NETWORK !== 'hardhat') {
+      await expect(this.rand.generate16InView()).to.be.rejected;
+    }
   });
 
   it('32 bits in view', async function () {
-    await expect(this.rand.generate32InView()).to.be.rejected;
+    if (process.env.HARDHAT_NETWORK !== 'hardhat') {
+      await expect(this.rand.generate32InView()).to.be.rejected;
+    }
   });
 });

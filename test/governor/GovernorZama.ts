@@ -3,7 +3,7 @@ import { ethers, network } from 'hardhat';
 
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
-import { createTransaction, produceDummyTransactions, waitForBlock } from '../utils';
+import { createTransaction, mineNBlocks, produceDummyTransactions, waitForBlock } from '../utils';
 import { deployCompFixture } from './Comp.fixture';
 import { deployGovernorZamaFixture, deployTimelockFixture } from './GovernorZama.fixture';
 
@@ -23,8 +23,8 @@ describe('GovernorZama', function () {
     const delegate2 = await this.comp.connect(this.signers.bob).delegate(this.signers.bob);
     const delegate3 = await this.comp.connect(this.signers.carol).delegate(this.signers.carol);
     await Promise.all([delegate1, delegate2, delegate3]);
-    if (network.name == 'localNetwork1') {
-      // inside network1 blocks are not
+    if (network.name == 'localNetwork1' || network.name == 'hardhat') {
+      // inside network1 or hardhat blocks are not
       // produced unless there are transactions and
       // we rely on block production for voting time
       produceDummyTransactions(100);
@@ -75,7 +75,7 @@ describe('GovernorZama', function () {
       ['0'],
       ['getBalanceOf(address)'],
       callDatas,
-      4,
+      5,
       'do nothing',
     );
     const proposal = await tx.wait();
@@ -83,8 +83,10 @@ describe('GovernorZama', function () {
 
     const proposalId = await this.governor.latestProposalIds(this.signers.alice.address);
     const proposals = await this.governor.proposals(proposalId);
+    if (network.name == 'hardhat') {
+      await mineNBlocks(2);
+    }
     await waitForBlock(proposals.startBlock + 1n);
-
     // Cast some votes
     const encryptedSupportBob = this.instances.bob.encrypt8(1);
     const txVoteBob = await createTransaction(
@@ -103,7 +105,9 @@ describe('GovernorZama', function () {
     const [bobResults, carolResults] = await Promise.all([txVoteBob.wait(), txVoteCarol.wait()]);
     expect(bobResults?.status).to.equal(1);
     expect(carolResults?.status).to.equal(1);
-
+    if (network.name == 'hardhat') {
+      await mineNBlocks(5);
+    }
     await waitForBlock(proposals.endBlock + 1n);
 
     const state = await this.governor.state(proposalId);
@@ -125,6 +129,9 @@ describe('GovernorZama', function () {
     expect(proposal?.status).to.equal(1);
     const proposalId = await this.governor.latestProposalIds(this.signers.alice.address);
     const proposals = await this.governor.proposals(proposalId);
+    if (network.name == 'hardhat') {
+      await mineNBlocks(2);
+    }
     await waitForBlock(proposals.startBlock + 1n);
 
     // Cast some votes
@@ -145,7 +152,9 @@ describe('GovernorZama', function () {
     const [bobResults, aliceResults] = await Promise.all([txVoteBob.wait(), txVoteCarol.wait()]);
     expect(bobResults?.status).to.equal(1);
     expect(aliceResults?.status).to.equal(1);
-
+    if (network.name == 'hardhat') {
+      await mineNBlocks(5);
+    }
     await waitForBlock(proposals.endBlock + 1n);
 
     const state = await this.governor.state(proposalId);
@@ -168,6 +177,9 @@ describe('GovernorZama', function () {
     expect(proposal?.status).to.equal(1);
     const proposalId = await this.governor.latestProposalIds(this.signers.alice.address);
     const proposals = await this.governor.proposals(proposalId);
+    if (network.name == 'hardhat') {
+      await mineNBlocks(2);
+    }
     await waitForBlock(proposals.startBlock + 1n);
 
     const state = await this.governor.state(proposalId);
