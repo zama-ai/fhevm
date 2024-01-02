@@ -116,11 +116,11 @@ describe('CompliantERC20', function () {
     };
 
     // It must throw since Carol is not owner of the identity contract
-    const encryptedBobBalance2 = this.identifiedErc20
-      .connect(this.signers.carol)
-      .balanceOf(this.signers.bob.address, carolToken.publicKey, carolToken.signature);
-
-    expect(encryptedBobBalance2).to.throw;
+    await expect(
+      this.identifiedErc20
+        .connect(this.signers.carol)
+        .balanceOf(this.signers.bob.address, carolToken.publicKey, carolToken.signature),
+    ).to.be.reverted;
   });
 
   it('should prevent transfers', async function () {

@@ -120,8 +120,8 @@ describe('TFHE manual operations', function () {
     });
 
     it('stateful optimistic require with false fails', async function () {
-      const res = await this.contract.test_opt_req_stateful(false);
       try {
+        const res = await this.contract.test_opt_req_stateful(false);
         const _ = await res.wait();
         fail('This should fail');
       } catch (e: any) {

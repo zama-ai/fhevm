@@ -6,6 +6,8 @@ import { FHE_LIB_ADDRESS } from './generated';
 import type { Signers } from './signers';
 import { FhevmInstances } from './types';
 
+const network = process.env.HARDHAT_NETWORK;
+
 let publicKey: string;
 let chainId: number;
 
@@ -30,7 +32,7 @@ export const createInstances = async (
 };
 
 export const createInstance = async (contractAddress: string, account: Signer, ethers: typeof hethers) => {
-  if (!publicKey || !chainId) {
+  if (network !== 'hardhat' && (!publicKey || !chainId)) {
     // 1. Get chain id
     const provider = ethers.provider;
 
@@ -46,8 +48,19 @@ export const createInstance = async (contractAddress: string, account: Signer, e
     const decoded = ethers.AbiCoder.defaultAbiCoder().decode(['bytes'], ret);
     publicKey = decoded[0];
   }
-  const instance = await fhevmjs.createInstance({ chainId, publicKey });
+  let instance = await fhevmjs.createInstance({ chainId: 31337, publicKey: '0x00' }); // 31337 is hardhat node's default chainId
   await generateToken(contractAddress, account, instance);
+
+  if (network === 'hardhat') {
+    instance.encrypt8 = createUintToUint8ArrayFunction(8);
+    instance.encrypt16 = createUintToUint8ArrayFunction(16);
+    instance.encrypt32 = createUintToUint8ArrayFunction(32);
+    instance.decrypt = (_, hexadecimalString) => Number(BigInt(hexadecimalString));
+  } else {
+    instance = await fhevmjs.createInstance({ chainId, publicKey });
+    await generateToken(contractAddress, account, instance);
+  }
+
   return instance;
 };
 
@@ -56,7 +69,6 @@ const generateToken = async (contractAddress: string, signer: Signer, instance: 
   const generatedToken = instance.generateToken({
     verifyingContract: contractAddress,
   });
-
   // Sign the public key
   const signature = await signer.signTypedData(
     generatedToken.token.domain,
@@ -65,3 +77,28 @@ const generateToken = async (contractAddress: string, signer: Signer, instance: 
   );
   instance.setTokenSignature(contractAddress, signature);
 };
+
+function createUintToUint8ArrayFunction(numBits: number) {
+  const numBytes = Math.ceil(numBits / 8);
+  const maxValue = 2 ** numBits;
+  const totalBytes = 32; // Total size of the array is always 32 bytes
+
+  return function (uint: number) {
+    // Applying modulus operation to ensure the value fits in numBits
+    let value = uint % maxValue;
+
+    // Create a buffer of 32 bytes
+    let buffer = new ArrayBuffer(totalBytes);
+    let view = new DataView(buffer);
+
+    // Fill the relevant part of the buffer byte by byte
+    for (let i = 0; i < numBytes; i++) {
+      // Calculate the value for each byte and set it in the last numBytes of the buffer
+      let byteValue = (value >> (8 * (numBytes - i - 1))) & 0xff;
+      view.setUint8(totalBytes - numBytes + i, byteValue);
+    }
+
+    // Return the buffer as a Uint8Array
+    return new Uint8Array(buffer);
+  };
+}
