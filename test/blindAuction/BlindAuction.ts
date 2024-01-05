@@ -20,8 +20,7 @@ describe('BlindAuction', function () {
     const instance = await createInstances(this.contractERC20Address, ethers, this.signers);
 
     // Mint with Alice account
-    const encryptedAmount = instance.alice.encrypt32(1000);
-    const transaction = await this.erc20.mint(encryptedAmount);
+    const transaction = await this.erc20.mint(1000);
 
     // Deploy blind auction
     const contractPromise = deployBlindAuctionFixture(this.signers.alice, this.contractERC20Address, 1000000, true);
@@ -48,8 +47,12 @@ describe('BlindAuction', function () {
 
     // To be able to bid, we give approbation to
     // the blind auction to spend tokens on Bob's and Carol's behalf.
-    const txeBobApprove = await this.erc20.connect(this.signers.bob).approve(this.contractAddress, bobBidAmount);
-    const txCarolApprove = await this.erc20.connect(this.signers.carol).approve(this.contractAddress, carolBidAmount);
+    const txeBobApprove = await this.erc20
+      .connect(this.signers.bob)
+      ['approve(address,bytes)'](this.contractAddress, bobBidAmount);
+    const txCarolApprove = await this.erc20
+      .connect(this.signers.carol)
+      ['approve(address,bytes)'](this.contractAddress, carolBidAmount);
     await Promise.all([txeBobApprove.wait(), txCarolApprove.wait()]);
 
     // Need to add gasLimit to avoid a gas limit issue for two parallel bids
