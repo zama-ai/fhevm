@@ -50,7 +50,7 @@ export function implSol(ctx: CodegenContext, operators: Operator[]): string {
   res.push(`
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity 0.8.19;
+pragma solidity ^0.8.20;
 
 ${fheLibInterface}
 
@@ -148,7 +148,7 @@ export function tfheSol(
 
   res.push(`// SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity 0.8.19;
+pragma solidity ^0.8.20;
 
 ${commonSolLib()}
 
@@ -790,7 +790,7 @@ export function implSolMock(ctx: CodegenContext, operators: Operator[]): string 
   res.push(`
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity 0.8.19;
+pragma solidity ^0.8.20;
 
 library Impl {
   function add(uint256 lhs, uint256 rhs, bool scalar) internal pure returns (uint256 result) {

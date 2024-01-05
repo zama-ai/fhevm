@@ -1,7 +1,5 @@
 # Using Remix
 
-> Our library TFHE requires Solidity version **0.8.19** specifically, as we rely on features exclusive to this version and do not currently provide support for versions beyond it.
-
 You can use Remix to interact with a blockchain using fhEVM. If you want to send an encrypted input, you need to encrypt it with [fhevmjs CLI tool](https://docs.zama.ai/fhevm/client/getting_started/cli) for example. It becomes more complex if you want to reencrypt a value directly in Remix.
 
 To avoid this problem, we developed a [version of Remix IDE](https://github.com/zama-ai/remix-project) with these two missing features:

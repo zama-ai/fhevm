@@ -69,7 +69,7 @@
     "fhevmjs": "^0.2.0",
     "fs-extra": "^10.1.0",
     "ganache": "^7.9.0",
-    "hardhat": "^2.12.2",
+    "hardhat": "^2.19.4",
     "hardhat-deploy": "^0.11.29",
     "hardhat-gas-reporter": "^1.0.2",
     "lodash": "^4.17.21",
@@ -84,7 +84,7 @@
     "typescript": "^5.1.6"
   },
   "dependencies": {
-    "@openzeppelin/contracts": "^4.9.2",
+    "@openzeppelin/contracts": "^5.0.1",
     "hardhat-preprocessor": "^0.1.5"
   }
 }

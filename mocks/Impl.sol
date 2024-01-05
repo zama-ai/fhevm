@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity 0.8.19;
+pragma solidity ^0.8.20;
 
 library Impl {
     function add(uint256 lhs, uint256 rhs, bool scalar) internal pure returns (uint256 result) {

@@ -32,7 +32,7 @@ The `TFHE` library defines the following operations with FHE ciphertexts:
 > **_NOTE 1:_** Random encrypted integers that are generated fully on-chain. Currently, implemented as a mockup by using a PRNG in the plain.
 > Not for use in production!
 
-Overloaded operators `+`, `-`, `*`, `&`, ... on encrypted integers are supported ([using for](https://docs.soliditylang.org/en/v0.8.19/contracts.html#using-for)). As of now, overloaded operators will call the versions without an overflow check.
+Overloaded operators `+`, `-`, `*`, `&`, ... on encrypted integers are supported ([using for](https://docs.soliditylang.org/en/v0.8.22/contracts.html#using-for)). As of now, overloaded operators will call the versions without an overflow check.
 
 More information about the supported operations can be found in the [function specifications](../api/functions.md) page or in the [TFHE-rs docs](https://docs.zama.ai/tfhe-rs/getting-started/operations#arithmetic-operations.).
 
