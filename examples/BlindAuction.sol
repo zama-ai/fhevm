@@ -4,11 +4,11 @@ pragma solidity 0.8.19;
 
 import "../lib/TFHE.sol";
 
-import "../abstracts/EIP712WithModifier.sol";
+import "../abstracts/Reencrypt.sol";
 
 import "./EncryptedERC20.sol";
 
-contract BlindAuction is EIP712WithModifier {
+contract BlindAuction is Reencrypt {
     uint public endTime;
 
     address public beneficiary;
@@ -47,12 +47,7 @@ contract BlindAuction is EIP712WithModifier {
 
     event Winner(address who);
 
-    constructor(
-        address _beneficiary,
-        EncryptedERC20 _tokenContract,
-        uint biddingTime,
-        bool isStoppable
-    ) EIP712WithModifier("Authorization token", "1") {
+    constructor(address _beneficiary, EncryptedERC20 _tokenContract, uint biddingTime, bool isStoppable) {
         beneficiary = _beneficiary;
         tokenContract = _tokenContract;
         endTime = block.timestamp + biddingTime;

@@ -6,11 +6,11 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 
-import "../../abstracts/EIP712WithModifier.sol";
+import "../../abstracts/Reencrypt.sol";
 
 import "../../lib/TFHE.sol";
 
-contract IdentityRegistry is EIP712WithModifier, Ownable {
+contract IdentityRegistry is Reencrypt, Ownable {
     // A mapping from wallet to registrarId
     mapping(address => uint) public registrars;
 
@@ -28,7 +28,7 @@ contract IdentityRegistry is EIP712WithModifier, Ownable {
     event NewDid(address wallet);
     event RemoveDid(address wallet);
 
-    constructor() Ownable() EIP712WithModifier("Authorization token", "1") {
+    constructor() Ownable() {
         _transferOwnership(msg.sender);
     }
 

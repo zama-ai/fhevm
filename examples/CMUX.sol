@@ -2,14 +2,14 @@
 
 pragma solidity 0.8.19;
 
-import "../abstracts/EIP712WithModifier.sol";
+import "../abstracts/Reencrypt.sol";
 import "../lib/TFHE.sol";
 
 // Shows the CMUX operation in Solidity.
-contract CMUX is EIP712WithModifier {
+contract CMUX is Reencrypt {
     euint8 internal result;
 
-    constructor() EIP712WithModifier("Authorization token", "1") {}
+    constructor() {}
 
     // Set result = if control { ifTrue } else { ifFalse }
     function cmux(bytes calldata controlBytes, bytes calldata ifTrueBytes, bytes calldata ifFalseBytes) public {
