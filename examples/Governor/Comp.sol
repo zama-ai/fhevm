@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: BSD-3-Clause
 pragma solidity 0.8.19;
 
-import "../../abstracts/EIP712WithModifier.sol";
+import "../../abstracts/Reencrypt.sol";
 
 import "../../lib/TFHE.sol";
 
-contract Comp is EIP712WithModifier {
+contract Comp is Reencrypt {
     /// @notice EIP-20 token name for this token
     string public constant name = "Compound";
 
@@ -72,7 +72,7 @@ contract Comp is EIP712WithModifier {
      * @notice Construct a new Comp token
      * @param account The initial account to grant all the tokens
      */
-    constructor(address account) EIP712WithModifier("Authorization token", "1") {
+    constructor(address account) {
         contractOwner = account;
         balances[contractOwner] = totalSupply;
     }

@@ -5,11 +5,8 @@ pragma solidity 0.8.19;
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 
-/**
- * @dev {EIP712WithModifier} is deprecated. Please use {Reencrypt} instead.
- */
-abstract contract EIP712WithModifier is EIP712 {
-    constructor(string memory name, string memory version) EIP712(name, version) {}
+abstract contract Reencrypt is EIP712 {
+    constructor() EIP712("Authorization token", "1") {}
 
     modifier onlySignedPublicKey(bytes32 publicKey, bytes memory signature) {
         bytes32 digest = _hashTypedDataV4(keccak256(abi.encode(keccak256("Reencrypt(bytes32 publicKey)"), publicKey)));

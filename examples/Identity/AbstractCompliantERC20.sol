@@ -2,16 +2,16 @@
 
 pragma solidity 0.8.19;
 
-import "../../abstracts/EIP712WithModifier.sol";
+import "../../abstracts/Reencrypt.sol";
 import "./ERC20Rules.sol";
 import "./IdentityRegistry.sol";
 
-abstract contract AbstractCompliantERC20 is EIP712WithModifier {
+abstract contract AbstractCompliantERC20 is Reencrypt {
     IdentityRegistry identityContract;
     ERC20Rules rulesContract;
     mapping(address => euint32) internal balances;
 
-    constructor(address _identityAddr, address _rulesAddr) EIP712WithModifier("Authorization token", "1") {
+    constructor(address _identityAddr, address _rulesAddr) {
         identityContract = IdentityRegistry(_identityAddr);
         rulesContract = ERC20Rules(_rulesAddr);
     }

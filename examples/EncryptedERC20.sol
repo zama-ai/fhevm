@@ -2,11 +2,11 @@
 
 pragma solidity 0.8.19;
 
-import "../abstracts/EIP712WithModifier.sol";
+import "../abstracts/Reencrypt.sol";
 
 import "../lib/TFHE.sol";
 
-contract EncryptedERC20 is EIP712WithModifier {
+contract EncryptedERC20 is Reencrypt {
     euint32 private totalSupply;
     string public constant name = "Naraggara"; // City of Zama's battle
     string public constant symbol = "NARA";
@@ -29,7 +29,7 @@ contract EncryptedERC20 is EIP712WithModifier {
     euint8 internal NO_ERROR;
     euint8 internal NOT_ENOUGH_FUND;
 
-    constructor() EIP712WithModifier("Authorization token", "1") {
+    constructor() {
         contractOwner = msg.sender;
         NO_ERROR = TFHE.asEuint8(0);
         NOT_ENOUGH_FUND = TFHE.asEuint8(1);
