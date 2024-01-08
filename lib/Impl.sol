@@ -56,6 +56,8 @@ interface FhevmLib {
     function decrypt(uint256 ct) external view returns (uint256 result);
 
     function fheRand(bytes1 inp) external view returns (uint256 result);
+
+    function fheIfThenElse(uint256 control, uint256 ifTrue, uint256 ifFalse) external pure returns (uint256 result);
 }
 
 address constant EXT_TFHE_LIBRARY = address(0x000000000000000000000000000000000000005d);
@@ -234,10 +236,7 @@ library Impl {
     // If 'control's value is 'true', the result has the same value as 'ifTrue'.
     // If 'control's value is 'false', the result has the same value as 'ifFalse'.
     function cmux(uint256 control, uint256 ifTrue, uint256 ifFalse) internal pure returns (uint256 result) {
-        // result = (ifTrue - ifFalse) * control + ifFalse
-        uint256 subOutput = FhevmLib(address(EXT_TFHE_LIBRARY)).fheSub(ifTrue, ifFalse, bytes1(0x00));
-        uint256 mulOutput = FhevmLib(address(EXT_TFHE_LIBRARY)).fheMul(control, subOutput, bytes1(0x00));
-        result = FhevmLib(address(EXT_TFHE_LIBRARY)).fheAdd(mulOutput, ifFalse, bytes1(0x00));
+        result = FhevmLib(address(EXT_TFHE_LIBRARY)).fheIfThenElse(control, ifTrue, ifFalse);
     }
 
     // We do assembly here because ordinary call will emit extcodesize check which is zero for our precompiles

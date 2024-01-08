@@ -2122,18 +2122,16 @@ library TFHE {
         return euint8.wrap(Impl.cmux(ebool.unwrap(control), euint8.unwrap(a), euint8.unwrap(b)));
     }
 
-    // If 'control's value is 'true', the result has the same value as 'a'.
-    // If 'control's value is 'false', the result has the same value as 'b'.
+    // If 'control''s value is 'true', the result has the same value as 'a'.
+    // If 'control''s value is 'false', the result has the same value as 'b'.
     function cmux(ebool control, euint16 a, euint16 b) internal pure returns (euint16) {
-        euint16 ctrl = asEuint16(asEuint8(control));
-        return euint16.wrap(Impl.cmux(euint16.unwrap(ctrl), euint16.unwrap(a), euint16.unwrap(b)));
+        return euint16.wrap(Impl.cmux(ebool.unwrap(control), euint16.unwrap(a), euint16.unwrap(b)));
     }
 
-    // If 'control's value is 'true', the result has the same value as 'a'.
-    // If 'control's value is 'false', the result has the same value as 'b'.
+    // If 'control''s value is 'true', the result has the same value as 'a'.
+    // If 'control''s value is 'false', the result has the same value as 'b'.
     function cmux(ebool control, euint32 a, euint32 b) internal pure returns (euint32) {
-        euint32 ctrl = asEuint32(asEuint8(control));
-        return euint32.wrap(Impl.cmux(euint32.unwrap(ctrl), euint32.unwrap(a), euint32.unwrap(b)));
+        return euint32.wrap(Impl.cmux(ebool.unwrap(control), euint32.unwrap(a), euint32.unwrap(b)));
     }
 
     // Cast an encrypted integer from euint16 to euint8.
