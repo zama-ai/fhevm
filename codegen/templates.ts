@@ -133,6 +133,7 @@ function fheLibCustomInterfaceFunctions(): string {
     function trivialEncrypt(uint256 ct, bytes1 toType) external pure returns (uint256 result);
     function decrypt(uint256 ct) external view returns (uint256 result);
     function fheRand(bytes1 inp) external view returns (uint256 result);
+    function fheIfThenElse(uint256 control, uint256 ifTrue, uint256 ifFalse) external pure returns (uint256 result);
   `;
 }
 
@@ -491,21 +492,11 @@ function tfheShiftOperators(inputBits: number, operator: Operator, signatures: O
 }
 
 function tfheCmux(inputBits: number): string {
-  if (inputBits == 8) {
-    return `
+  return `
     // If 'control''s value is 'true', the result has the same value as 'a'.
     // If 'control''s value is 'false', the result has the same value as 'b'.
     function cmux(ebool control, euint${inputBits} a, euint${inputBits} b) internal pure returns (euint${inputBits}) {
         return euint${inputBits}.wrap(Impl.cmux(ebool.unwrap(control), euint${inputBits}.unwrap(a), euint${inputBits}.unwrap(b)));
-    }`;
-  }
-
-  return `
-    // If 'control's value is 'true', the result has the same value as 'a'.
-    // If 'control's value is 'false', the result has the same value as 'b'.
-    function cmux(ebool control, euint${inputBits} a, euint${inputBits} b) internal pure returns (euint${inputBits}) {
-        euint${inputBits} ctrl = asEuint${inputBits}(asEuint8(control));
-        return euint${inputBits}.wrap(Impl.cmux(euint${inputBits}.unwrap(ctrl), euint${inputBits}.unwrap(a), euint${inputBits}.unwrap(b)));
     }`;
 }
 
@@ -734,10 +725,7 @@ function implCustomMethods(ctx: CodegenContext): string {
     // If 'control's value is 'true', the result has the same value as 'ifTrue'.
     // If 'control's value is 'false', the result has the same value as 'ifFalse'.
     function cmux(uint256 control, uint256 ifTrue, uint256 ifFalse) internal pure returns (uint256 result) {
-        // result = (ifTrue - ifFalse) * control + ifFalse
-        uint256 subOutput = FhevmLib(address(EXT_TFHE_LIBRARY)).fheSub(ifTrue, ifFalse, bytes1(0x00));
-        uint256 mulOutput = FhevmLib(address(EXT_TFHE_LIBRARY)).fheMul(control, subOutput, bytes1(0x00));
-        result = FhevmLib(address(EXT_TFHE_LIBRARY)).fheAdd(mulOutput, ifFalse, bytes1(0x00));
+        result = FhevmLib(address(EXT_TFHE_LIBRARY)).fheIfThenElse(control, ifTrue, ifFalse);
     }
 
     // We do assembly here because ordinary call will emit extcodesize check which is zero for our precompiles
