@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity 0.8.19;
+pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
@@ -28,9 +28,7 @@ contract IdentityRegistry is Reencrypt, Ownable {
     event NewDid(address wallet);
     event RemoveDid(address wallet);
 
-    constructor() Ownable() {
-        _transferOwnership(msg.sender);
-    }
+    constructor() Ownable(msg.sender) {}
 
     function addRegistrar(address wallet, uint registrarId) public onlyOwner {
         require(registrarId > 0, "registrarId needs to be > 0");

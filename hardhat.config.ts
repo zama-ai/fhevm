@@ -149,7 +149,7 @@ const config: HardhatUserConfig = {
     tests: './test',
   },
   solidity: {
-    version: '0.8.19',
+    version: '0.8.22',
     settings: {
       metadata: {
         // Not including the metadata hash
@@ -162,6 +162,7 @@ const config: HardhatUserConfig = {
         enabled: true,
         runs: 800,
       },
+      evmVersion: 'paris',
     },
   },
   typechain: {
