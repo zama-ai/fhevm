@@ -19,8 +19,7 @@ describe('EncryptedERC20', function () {
   });
 
   it('should mint the contract', async function () {
-    const encryptedAmount = this.instances.alice.encrypt32(1000);
-    const transaction = await this.erc20.mint(encryptedAmount);
+    const transaction = await this.erc20.mint(1000);
     await transaction.wait();
     // Call the method
     const token = this.instances.alice.getTokenSignature(this.contractAddress) || {
@@ -32,15 +31,13 @@ describe('EncryptedERC20', function () {
     const balance = this.instances.alice.decrypt(this.contractAddress, encryptedBalance);
     expect(balance).to.equal(1000);
 
-    const encryptedTotalSupply = await this.erc20.getTotalSupply(token.publicKey, token.signature);
+    const totalSupply = await this.erc20.totalSupply();
     // Decrypt the total supply
-    const totalSupply = this.instances.alice.decrypt(this.contractAddress, encryptedTotalSupply);
     expect(totalSupply).to.equal(1000);
   });
 
   it('should transfer tokens between two users', async function () {
-    const encryptedAmount = this.instances.alice.encrypt32(10000);
-    const transaction = await this.erc20.mint(encryptedAmount);
+    const transaction = await this.erc20.mint(10000);
     await transaction.wait();
 
     const encryptedTransferAmount = this.instances.alice.encrypt32(1337);
@@ -73,8 +70,7 @@ describe('EncryptedERC20', function () {
   });
 
   it('should not transfer tokens between two users', async function () {
-    const encryptedAmount = this.instances.alice.encrypt32(1000);
-    const transaction = await this.erc20.mint(encryptedAmount);
+    const transaction = await this.erc20.mint(1000);
     await transaction.wait();
 
     const encryptedTransferAmount = this.instances.alice.encrypt32(1337);
@@ -104,9 +100,61 @@ describe('EncryptedERC20', function () {
     const balanceBob = this.instances.bob.decrypt(this.contractAddress, encryptedBalanceBob);
 
     expect(balanceBob).to.equal(0);
+  });
 
-    const encryptedErrorAlice = await this.erc20.getLastError(tokenAlice.publicKey, tokenAlice.signature);
-    const errorAlice = this.instances.alice.decrypt(this.contractAddress, encryptedErrorAlice);
-    expect(errorAlice).to.equal(1);
+  it('should be able to transferFrom only if allowance is sufficient', async function () {
+    const transaction = await this.erc20.mint(10000);
+    await transaction.wait();
+
+    const encryptedAllowanceAmount = this.instances.alice.encrypt32(1337);
+    const tx = await this.erc20['approve(address,bytes)'](this.signers.bob.address, encryptedAllowanceAmount);
+    await tx.wait();
+
+    const bobErc20 = this.erc20.connect(this.signers.bob);
+    const encryptedTransferAmount = this.instances.bob.encrypt32(1338); // above allowance so next tx should actually not send any token
+    const tx2 = await bobErc20['transferFrom(address,address,bytes)'](
+      this.signers.alice.address,
+      this.signers.bob.address,
+      encryptedTransferAmount,
+    );
+    await tx2.wait();
+
+    const tokenAlice = this.instances.alice.getTokenSignature(this.contractAddress)!;
+    const encryptedBalanceAlice = await this.erc20.balanceOf(
+      this.signers.alice,
+      tokenAlice.publicKey,
+      tokenAlice.signature,
+    );
+
+    // Decrypt the balance
+    const balanceAlice = this.instances.alice.decrypt(this.contractAddress, encryptedBalanceAlice);
+    expect(balanceAlice).to.equal(10000); // check that transfer did not happen, as expected
+
+    const tokenBob = this.instances.bob.getTokenSignature(this.contractAddress)!;
+    const encryptedBalanceBob = await bobErc20.balanceOf(this.signers.bob, tokenBob.publicKey, tokenBob.signature);
+    // Decrypt the balance
+    const balanceBob = this.instances.bob.decrypt(this.contractAddress, encryptedBalanceBob);
+    expect(balanceBob).to.equal(0); // check that transfer did not happen, as expected
+
+    const encryptedTransferAmount2 = this.instances.bob.encrypt32(1337); // below allowance so next tx should send token
+    const tx3 = await bobErc20['transferFrom(address,address,bytes)'](
+      this.signers.alice.address,
+      this.signers.bob.address,
+      encryptedTransferAmount2,
+    );
+    await tx3.wait();
+
+    const encryptedBalanceAlice2 = await this.erc20.balanceOf(
+      this.signers.alice,
+      tokenAlice.publicKey,
+      tokenAlice.signature,
+    );
+    // Decrypt the balance
+    const balanceAlice2 = this.instances.alice.decrypt(this.contractAddress, encryptedBalanceAlice2);
+    expect(balanceAlice2).to.equal(10000 - 1337); // check that transfer did happen this time
+
+    const encryptedBalanceBob2 = await bobErc20.balanceOf(this.signers.bob, tokenBob.publicKey, tokenBob.signature);
+    const balanceBob2 = this.instances.bob.decrypt(this.contractAddress, encryptedBalanceBob2);
+    expect(balanceBob2).to.equal(1337); // check that transfer did happen this time
   });
 });

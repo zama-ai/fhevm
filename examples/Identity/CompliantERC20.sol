@@ -3,98 +3,58 @@
 pragma solidity ^0.8.20;
 
 import "../../lib/TFHE.sol";
-import "./AbstractCompliantERC20.sol";
+import "../../abstracts/Reencrypt.sol";
+import "../EncryptedERC20.sol";
+import "./ERC20Rules.sol";
+import "./IdentityRegistry.sol";
 
-contract CompliantERC20 is AbstractCompliantERC20 {
-    euint32 private totalSupply;
-    string public constant name = "Naraggara"; // City of Zama's battle
-    string public constant symbol = "NARA";
-    uint8 public constant decimals = 18;
+contract CompliantERC20 is EncryptedERC20 {
+    IdentityRegistry identityContract;
+    ERC20Rules rulesContract;
 
-    // A mapping of the form mapping(owner => mapping(spender => allowance)).
-    mapping(address => mapping(address => euint32)) internal allowances;
-
-    // The owner of the contract.
-    address public contractOwner;
-
-    constructor(address _identityAddr, address _rulesAddr) AbstractCompliantERC20(_identityAddr, _rulesAddr) {
-        contractOwner = msg.sender;
+    constructor(address _identityAddr, address _rulesAddr) {
+        identityContract = IdentityRegistry(_identityAddr);
+        rulesContract = ERC20Rules(_rulesAddr);
     }
 
-    // Sets the balance of the owner to the given encrypted balance.
-    function mint(bytes calldata encryptedAmount) public onlyContractOwner {
-        euint32 amount = TFHE.asEuint32(encryptedAmount);
-        balances[contractOwner] = balances[contractOwner] + amount;
-        totalSupply = totalSupply + amount;
+    function identifiers() public view returns (string[] memory) {
+        return rulesContract.getIdentifiers();
     }
 
-    // Transfers an encrypted amount from the message sender address to the `to` address.
-    function transfer(address to, bytes calldata encryptedAmount) public {
-        transfer(to, TFHE.asEuint32(encryptedAmount));
+    function getIdentifier(address wallet, string calldata identifier) external view returns (euint32) {
+        require(msg.sender == address(rulesContract), "Access restricted to the current ERC20Rules");
+        return identityContract.getIdentifier(wallet, identifier);
     }
 
-    // Transfers an amount from the message sender address to the `to` address.
-    function transfer(address to, euint32 amount) public {
-        _transfer(msg.sender, to, amount);
-    }
-
-    function getTotalSupply(
+    function balanceOf(
+        address wallet,
         bytes32 publicKey,
         bytes calldata signature
-    ) public view onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
-        return TFHE.reencrypt(totalSupply, publicKey, 0);
-    }
-
-    // Sets the `encryptedAmount` as the allowance of `spender` over the caller's tokens.
-    function approve(address spender, bytes calldata encryptedAmount) public {
-        address owner = msg.sender;
-        _approve(owner, spender, TFHE.asEuint32(encryptedAmount));
-    }
-
-    // Returns the remaining number of tokens that `spender` is allowed to spend
-    // on behalf of the caller. The returned ciphertext is under the caller public FHE key.
-    function allowance(
-        address spender,
-        bytes32 publicKey,
-        bytes calldata signature
-    ) public view onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
-        address owner = msg.sender;
-
-        return TFHE.reencrypt(_allowance(owner, spender), publicKey);
-    }
-
-    // Transfers `encryptedAmount` tokens using the caller's allowance.
-    function transferFrom(address from, address to, bytes calldata encryptedAmount) public {
-        transferFrom(from, to, TFHE.asEuint32(encryptedAmount));
-    }
-
-    // Transfers `amount` tokens using the caller's allowance.
-    function transferFrom(address from, address to, euint32 amount) public {
-        address spender = msg.sender;
-        _updateAllowance(from, spender, amount);
-        _transfer(from, to, amount);
-    }
-
-    function _approve(address owner, address spender, euint32 amount) internal {
-        allowances[owner][spender] = amount;
-    }
-
-    function _allowance(address owner, address spender) internal view returns (euint32) {
-        if (TFHE.isInitialized(allowances[owner][spender])) {
-            return allowances[owner][spender];
-        } else {
-            return TFHE.asEuint32(0);
+    ) public view override onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
+        if (wallet == msg.sender) {
+            return TFHE.reencrypt(balances[msg.sender], publicKey, 0);
         }
+
+        uint32 userCountry = rulesContract.whitelistedWallets(msg.sender);
+        require(userCountry > 0, "You're not registered as a country wallet");
+
+        euint32 walletCountry = identityContract.getIdentifier(wallet, "country");
+        ebool sameCountry = TFHE.eq(walletCountry, userCountry);
+        euint32 balance = TFHE.isInitialized(balances[wallet]) ? balances[wallet] : TFHE.asEuint32(0);
+        balance = TFHE.cmux(sameCountry, balance, TFHE.asEuint32(0));
+
+        return TFHE.reencrypt(balance, publicKey, 0);
     }
 
-    function _updateAllowance(address owner, address spender, euint32 amount) internal {
-        euint32 currentAllowance = _allowance(owner, spender);
-        ebool canTransfer = TFHE.le(amount, currentAllowance);
-        _approve(owner, spender, TFHE.cmux(canTransfer, currentAllowance - amount, TFHE.asEuint32(0)));
-    }
+    // Transfers an encrypted amount.
+    function _transfer(address from, address to, euint32 _amount, ebool isTransferable) internal override {
+        // Condition 1: hasEnoughFunds
+        ebool enoughFund = TFHE.le(_amount, balances[from]);
+        euint32 amount = TFHE.cmux(enoughFund, _amount, TFHE.asEuint32(0));
 
-    modifier onlyContractOwner() {
-        require(msg.sender == contractOwner);
-        _;
+        amount = rulesContract.transfer(from, to, amount);
+
+        balances[to] = balances[to] + amount;
+        balances[from] = balances[from] - amount;
     }
 }
