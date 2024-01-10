@@ -50,7 +50,7 @@ contract EncryptedERC20 is Reencrypt, Ownable2Step {
         address wallet,
         bytes32 publicKey,
         bytes calldata signature
-    ) public view onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
+    ) public view virtual onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
         if (wallet == msg.sender) {
             return TFHE.reencrypt(balances[wallet], publicKey, 0);
         }
@@ -121,7 +121,7 @@ contract EncryptedERC20 is Reencrypt, Ownable2Step {
     }
 
     // Transfers an encrypted amount.
-    function _transfer(address from, address to, euint32 amount, ebool isTransferable) internal {
+    function _transfer(address from, address to, euint32 amount, ebool isTransferable) internal virtual {
         // Add to the balance of `to` and subract from the balance of `from`.
         balances[to] = balances[to] + TFHE.cmux(isTransferable, amount, TFHE.asEuint32(0));
         balances[from] = balances[from] - TFHE.cmux(isTransferable, amount, TFHE.asEuint32(0));

@@ -77,7 +77,7 @@ contract ERC20Rules {
     function checkBlacklist(ICompliantERC20 erc20, address from, address to) internal view returns (ebool) {
         ebool fromBlacklisted = TFHE.asEbool(erc20.getIdentifier(from, "blacklist"));
         ebool toBlacklisted = TFHE.asEbool(erc20.getIdentifier(to, "blacklist"));
-        return TFHE.not(TFHE.and(toBlacklisted, fromBlacklisted));
+        return TFHE.not(TFHE.or(toBlacklisted, fromBlacklisted));
     }
 
     function checkCountryToCountry(ICompliantERC20 erc20, address from, address to) internal view returns (ebool) {

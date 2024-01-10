@@ -73,8 +73,7 @@ describe('CompliantERC20', function () {
     const amount20k = this.instances.alice.encrypt32(20000);
     const amount10k = this.instances.alice.encrypt32(10000);
 
-    const encryptedAmount = this.instances.alice.encrypt32(100_000);
-    const transaction = await this.identifiedErc20.mint(encryptedAmount);
+    const transaction = await this.identifiedErc20.mint(100_000);
     await transaction.wait();
 
     const txT1 = await this.identifiedErc20['transfer(address,bytes)'](this.signers.carol, amount20k);
@@ -162,8 +161,7 @@ describe('CompliantERC20', function () {
     ]);
     await Promise.all(txs.map((tx) => tx.wait()));
 
-    const encryptedAmount = this.instances.alice.encrypt32(100000);
-    const transaction = await this.identifiedErc20.mint(encryptedAmount);
+    const transaction = await this.identifiedErc20.mint(100000);
     await transaction.wait();
 
     const amount20k = this.instances.alice.encrypt32(20000);
