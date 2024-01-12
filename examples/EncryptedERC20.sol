@@ -11,7 +11,7 @@ contract EncryptedERC20 is Reencrypt, Ownable2Step {
     event Approval(address indexed owner, address indexed spender);
     event Mint(address indexed to, uint32 amount);
 
-    uint32 public totalSupply;
+    uint32 private _totalSupply;
     string private _name;
     string private _symbol;
     uint8 public constant decimals = 0;
@@ -37,21 +37,26 @@ contract EncryptedERC20 is Reencrypt, Ownable2Step {
         return _symbol;
     }
 
+    // Returns the total supply of the token
+    function totalSupply() public view virtual returns (uint32) {
+        return _totalSupply;
+    }
+
     // Sets the balance of the owner to the given encrypted balance.
-    function mint(uint32 mintedAmount) public onlyOwner {
+    function mint(uint32 mintedAmount) public virtual onlyOwner {
         balances[owner()] = TFHE.add(balances[owner()], mintedAmount); // overflow impossible because of next line
-        totalSupply = totalSupply + mintedAmount;
+        _totalSupply = _totalSupply + mintedAmount;
         emit Mint(owner(), mintedAmount);
     }
 
     // Transfers an encrypted amount from the message sender address to the `to` address.
-    function transfer(address to, bytes calldata encryptedAmount) public returns (bool) {
+    function transfer(address to, bytes calldata encryptedAmount) public virtual returns (bool) {
         transfer(to, TFHE.asEuint32(encryptedAmount));
         return true;
     }
 
     // Transfers an amount from the message sender address to the `to` address.
-    function transfer(address to, euint32 amount) public returns (bool) {
+    function transfer(address to, euint32 amount) public virtual returns (bool) {
         // makes sure the owner has enough tokens
         ebool canTransfer = TFHE.le(amount, balances[msg.sender]);
         _transfer(msg.sender, to, amount, canTransfer);
@@ -71,13 +76,13 @@ contract EncryptedERC20 is Reencrypt, Ownable2Step {
     }
 
     // Sets the `encryptedAmount` as the allowance of `spender` over the caller's tokens.
-    function approve(address spender, bytes calldata encryptedAmount) public returns (bool) {
+    function approve(address spender, bytes calldata encryptedAmount) public virtual returns (bool) {
         approve(spender, TFHE.asEuint32(encryptedAmount));
         return true;
     }
 
     // Sets the `amount` as the allowance of `spender` over the caller's tokens.
-    function approve(address spender, euint32 amount) public returns (bool) {
+    function approve(address spender, euint32 amount) public virtual returns (bool) {
         address owner = msg.sender;
         _approve(owner, spender, amount);
         emit Approval(owner, spender);
@@ -91,30 +96,30 @@ contract EncryptedERC20 is Reencrypt, Ownable2Step {
         address spender,
         bytes32 publicKey,
         bytes calldata signature
-    ) public view onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
+    ) public view virtual onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
         require(owner == msg.sender || spender == msg.sender);
         return TFHE.reencrypt(_allowance(owner, spender), publicKey);
     }
 
     // Transfers `encryptedAmount` tokens using the caller's allowance.
-    function transferFrom(address from, address to, bytes calldata encryptedAmount) public returns (bool) {
+    function transferFrom(address from, address to, bytes calldata encryptedAmount) public virtual returns (bool) {
         transferFrom(from, to, TFHE.asEuint32(encryptedAmount));
         return true;
     }
 
     // Transfers `amount` tokens using the caller's allowance.
-    function transferFrom(address from, address to, euint32 amount) public returns (bool) {
+    function transferFrom(address from, address to, euint32 amount) public virtual returns (bool) {
         address spender = msg.sender;
         ebool isTransferable = _updateAllowance(from, spender, amount);
         _transfer(from, to, amount, isTransferable);
         return true;
     }
 
-    function _approve(address owner, address spender, euint32 amount) internal {
+    function _approve(address owner, address spender, euint32 amount) internal virtual {
         allowances[owner][spender] = amount;
     }
 
-    function _allowance(address owner, address spender) internal view returns (euint32) {
+    function _allowance(address owner, address spender) internal view virtual returns (euint32) {
         if (TFHE.isInitialized(allowances[owner][spender])) {
             return allowances[owner][spender];
         } else {
@@ -122,7 +127,7 @@ contract EncryptedERC20 is Reencrypt, Ownable2Step {
         }
     }
 
-    function _updateAllowance(address owner, address spender, euint32 amount) internal returns (ebool) {
+    function _updateAllowance(address owner, address spender, euint32 amount) internal virtual returns (ebool) {
         euint32 currentAllowance = _allowance(owner, spender);
         // makes sure the allowance suffices
         ebool allowedTransfer = TFHE.le(amount, currentAllowance);
