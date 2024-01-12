@@ -12,7 +12,12 @@ contract CompliantERC20 is EncryptedERC20 {
     IdentityRegistry identityContract;
     ERC20Rules rulesContract;
 
-    constructor(address _identityAddr, address _rulesAddr) {
+    constructor(
+        address _identityAddr,
+        address _rulesAddr,
+        string memory _name,
+        string memory _symbol
+    ) EncryptedERC20(_name, _symbol) {
         identityContract = IdentityRegistry(_identityAddr);
         rulesContract = ERC20Rules(_rulesAddr);
     }

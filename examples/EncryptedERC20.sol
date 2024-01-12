@@ -12,8 +12,8 @@ contract EncryptedERC20 is Reencrypt, Ownable2Step {
     event Mint(address indexed to, uint32 amount);
 
     uint32 public totalSupply;
-    string public constant name = "Naraggara"; // City of Zama's battle
-    string public constant symbol = "NARA";
+    string private _name;
+    string private _symbol;
     uint8 public constant decimals = 0;
 
     // A mapping from address to an encrypted balance.
@@ -22,7 +22,20 @@ contract EncryptedERC20 is Reencrypt, Ownable2Step {
     // A mapping of the form mapping(owner => mapping(spender => allowance)).
     mapping(address => mapping(address => euint32)) internal allowances;
 
-    constructor() Ownable(msg.sender) {}
+    constructor(string memory name_, string memory symbol_) Ownable(msg.sender) {
+        _name = name_;
+        _symbol = symbol_;
+    }
+
+    // Returns the name of the token.
+    function name() public view virtual returns (string memory) {
+        return _name;
+    }
+
+    // Returns the symbol of the token, usually a shorter version of the name.
+    function symbol() public view virtual returns (string memory) {
+        return _symbol;
+    }
 
     // Sets the balance of the owner to the given encrypted balance.
     function mint(uint32 mintedAmount) public onlyOwner {
