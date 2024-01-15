@@ -4,12 +4,11 @@
 
 | name                  | description                                | ETA    |
 | --------------------- | ------------------------------------------ | ------ |
-| Key Management System | Decrypt through a centralized KMS          | Q1 '24 |
-| Proof for inputs      | Generate a proof for every encrypted input | Q2 '24 |
+| 64bits                | Add euint64                                | Q2 '24 |
+| Encrypted address     | Add new type `eaddress`                    | Q2 '24 |
+| Key Management System | Decrypt through a centralized KMS          | Q2 '24 |
+| Proof for inputs      | Generate a proof for every encrypted input | Q3 '24 |
 | Threshold decryption  | Use threshold decryption                   | Q3 '24 |
-| 64bits                | Add euint64                                | Q1 '24 |
-| Foundry support       | Add support for Foundry environment        | -      |
-| Encrypted address     | Add new type `eaddress`                    | -      |
 
 ## Operations
 
