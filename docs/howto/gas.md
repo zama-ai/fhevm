@@ -31,7 +31,7 @@ FHE operations are typically more computationally expensive than classical opera
 | `TFHE.not`          | 29,000       | 31,000  | 33,000  |
 | `TFHE.cmux`         | 60,000       | 65,000  | 70,000  |
 | `TFHE.decrypt()`    | 500,000      | 500,000 | 500,000 |
-| `TFHE.randEuintX()` | 100,000      | 200,000 | 400,000 |
+| `TFHE.randEuintX()` | 100,000      | 100,000 | 100,000 |
 
 ## Estimate gas
 
