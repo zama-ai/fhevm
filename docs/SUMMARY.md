@@ -7,12 +7,9 @@
 
 ## Getting Started
 
-- Quick start
-  - [Connecting to Zama Devnet](getting_started/quick_start/connect.md)
-  - [Using Zama Faucet](getting_started/quick_start/faucet.md)
-- Local dev node
-  - [Setup](getting_started/local/setup.md)
-  - [Faucet](getting_started/local/faucet.md)
+- [Connecting to Zama Devnet](getting_started/connect.md)
+- [Using Zama Faucet](getting_started/faucet.md)
+- [Local dev node](getting_started/local.md)
 
 ## How to
 
