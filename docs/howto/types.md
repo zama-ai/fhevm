@@ -48,3 +48,15 @@ function mint(bytes calldata encryptedAmount) public onlyContractOwner {
   totalSupply = totalSupply + amount;
 }
 ```
+
+## Contract property with encrypted types
+
+If you require a contract property that utilizes these encrypted types, you cannot directly assign the value. In Solidity, the compiler attempts to ascertain the value of `TFHE.asEuintXX(yy)` during compilation, which is not feasible because `asEuintXX()` invokes a precompiled contract. To address this challenge, you should declare your property and subsequently assign its value within the constructor.
+
+```
+euint32 private totalSupply;
+
+constructor() {
+  totalSupply = TFHE.asEuint32(0);
+}
+```
