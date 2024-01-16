@@ -49,10 +49,10 @@ function mint(bytes calldata encryptedAmount) public onlyContractOwner {
 }
 ```
 
-## Contract property with encrypted types
+## Contract state variables with encrypted types
 
 If you require a state variable that utilizes these encrypted types, you cannot directly assign the value. In Solidity, the compiler attempts to ascertain the value of `TFHE.asEuintXX(yy)` during compilation, which is not feasible because `asEuintXX()` invokes a precompiled contract. To address this challenge, you should declare your property and subsequently assign its value within the constructor.
-Also, please be aware that you should never declare encrypted types as either constant or immutable types, as these variables need to be stored in the privileged storage of the fhEVM, which is not compatible with constant variable types.
+Also, please be aware that you should never declare encrypted types as either constant or immutable variables, as these variables need to be stored in the privileged storage of the fhEVM, which is not compatible with constant variable types.
 
 ```
 euint32 private totalSupply;
