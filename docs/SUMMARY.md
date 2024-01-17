@@ -32,7 +32,7 @@
 
 - [Getting started](client/getting_started.md)
   - [Using Node](client/getting_started/node.md)
-  - [Using Vite.js](client/getting_started/vite.md)
+  - [Using a template](client/getting_started/templates.md)
   - [Other frontend tooling](client/getting_started/browser.md)
   - [Using CLI](client/getting_started/cli.md)
 - [Setup an instance](client/instance.md)
