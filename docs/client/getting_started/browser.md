@@ -39,7 +39,7 @@ init().then((instance) => {
 
 ### "Module not found: Error: Can't resolve 'tfhe_bg.wasm'"
 
-In the codebase, there is a `new URL('tfhe_bg.wasm')` which triggers a resolve by Webpack. If yo u encounter an issue, you can add a fallback for this file by adding a resolve configuration in y our `webpack.config.js`:
+In the codebase, there is a `new URL('tfhe_bg.wasm')` which triggers a resolve by Webpack. If you encounter an issue, you can add a fallback for this file by adding a resolve configuration in your `webpack.config.js`:
 
 ```javascript
 resolve: {
