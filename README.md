@@ -110,6 +110,8 @@ Files that are generated now (can be seen inside `codegen/main.ts`)
 ```
 lib/Impl.sol
 lib/TFHE.sol
+mocks/Impl.sol
+mocks/TFHE.sol
 contracts/tests/TFHETestSuiteX.sol
 test/tfheOperations/tfheOperations.ts
 ```
@@ -189,6 +191,24 @@ npx hardhat test --network localNetwork1
 
 Operators can be defined as data inside `codegen/common.ts` file and code automatically generates solidity overloads.
 Test for overloads must be added (or the build doesn't pass) inside `codegen/overloadsTests.ts` file.
+
+### Mocked mode
+
+The mocked mode allows faster testing and the ability to analyze coverage of the tests. In this mocked version, encrypted types are not really encrypted, and the tests are run on the original version of the EVM, on a local hardhat network instance. To run the tests in mocked mode, you can use directly the following command:
+
+```bash
+npm run test:mock
+```
+
+To analyze the coverage of the tests (in mocked mode necessarily, as this cannot be done on the real fhEVM node), you can use this command :
+
+```bash
+npm run coverage:mock
+```
+
+Then open the file `coverage/index.html`. You can see there which line or branch for each contract which has been covered or missed by your test suite. This allows increased security by pointing out missing branches not covered yet by the current tests.
+
+Notice that, due to intrinsic limitations of the original EVM, the mocked version differ in few corner cases from the real fhEVM, the most important change is the `TFHE.isInitialized` method which will always return `true` in the mocked version. Another big difference in mocked mode, compared to the real fhEVM implementation, is that there is no ciphertext verification neither checking that a ciphertext has been honestly obtained (see section 4 of the [whitepaper](https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper.pdf)). This means that before deploying to production, developers still need to run the tests with the original fhEVM node, as a final check in non-mocked mode, with `npm run test`.
 
 ## Contributing
 

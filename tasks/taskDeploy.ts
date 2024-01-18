@@ -5,7 +5,7 @@ import type { TaskArguments } from 'hardhat/types';
 task('task:deployERC20').setAction(async function (taskArguments: TaskArguments, { ethers }) {
   const signers = await ethers.getSigners();
   const erc20Factory = await ethers.getContractFactory('EncryptedERC20');
-  const encryptedERC20 = await erc20Factory.connect(signers[0]).deploy();
+  const encryptedERC20 = await erc20Factory.connect(signers[0]).deploy('Naraggara', 'NARA');
   await encryptedERC20.waitForDeployment();
   console.log('EncryptedERC20 deployed to: ', await encryptedERC20.getAddress());
 });
@@ -24,7 +24,7 @@ task('task:deployIdentity').setAction(async function (taskArguments: TaskArgumen
   const compliantERC20Factory = await ethers.getContractFactory('CompliantERC20');
   const compliantERC20 = await compliantERC20Factory
     .connect(signers[0])
-    .deploy(await identityRegistry.getAddress(), await erc20Rules.getAddress());
+    .deploy(await identityRegistry.getAddress(), await erc20Rules.getAddress(), 'CompliantToken', 'CTOK');
   await compliantERC20.waitForDeployment();
 
   // const erc20RulesAddress = await await erc20Rules.getAddress();
