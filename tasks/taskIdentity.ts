@@ -103,8 +103,7 @@ task('task:identity:mint')
 
     console.log(chalk.bold('Step 1: Alice mints 100 000 tokens on the compliant contract'));
     console.log(chalk.italic('eg: erc20.mint(Enc(100000))'));
-    const encryptedAmount = instance.encrypt32(100000);
-    const transaction = await erc20.mint(encryptedAmount);
+    const transaction = await erc20.mint(100000);
     await transaction.wait();
     console.log('=> 10000 tokens have been minted');
 
