@@ -25,21 +25,21 @@ export const createInstance = async (contractAddress: string, account: Signer, e
     publicKey = decoded[0];
   }
   const instance = await fhevmjs.createInstance({ chainId, publicKey });
-  await generateToken(contractAddress, account, instance);
+  await generatePublicKey(contractAddress, account, instance);
   return instance;
 };
 
-const generateToken = async (contractAddress: string, signer: Signer, instance: FhevmInstance) => {
+const generatePublicKey = async (contractAddress: string, signer: Signer, instance: FhevmInstance) => {
   // Generate token to decrypt
-  const generatedToken = instance.generateToken({
+  const generatedToken = instance.generatePublicKey({
     verifyingContract: contractAddress,
   });
 
   // Sign the public key
   const signature = await signer.signTypedData(
-    generatedToken.token.domain,
-    { Reencrypt: generatedToken.token.types.Reencrypt }, // Need to remove EIP712Domain from types
-    generatedToken.token.message,
+    generatedToken.eip712.domain,
+    { Reencrypt: generatedToken.eip712.types.Reencrypt }, // Need to remove EIP712Domain from types
+    generatedToken.eip712.message,
   );
-  instance.setTokenSignature(contractAddress, signature);
+  instance.setSignature(contractAddress, signature);
 };

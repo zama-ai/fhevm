@@ -82,7 +82,7 @@ describe('CompliantERC20', function () {
 
     const country1Admin = new ethers.Wallet(WALLET_COUNTRY1_PK).connect(ethers.provider);
     const country1Instance = await createInstance(this.contractAddress, country1Admin, ethers);
-    const token = country1Instance.getTokenSignature(this.contractAddress) || {
+    const token = country1Instance.getPublicKey(this.contractAddress) || {
       signature: '',
       publicKey: '',
     };
@@ -109,7 +109,7 @@ describe('CompliantERC20', function () {
 
     expect(encryptedDaveBalance).to.throw;
 
-    const carolToken = this.instances.carol.getTokenSignature(this.contractAddress) || {
+    const carolToken = this.instances.carol.getPublicKey(this.contractAddress) || {
       signature: '',
       publicKey: '',
     };
@@ -172,12 +172,12 @@ describe('CompliantERC20', function () {
     const txT2 = await this.identifiedErc20['transfer(address,bytes)'](this.signers.dave, amount10k);
     await Promise.all([txT1.wait(), txT2.wait()]);
 
-    const carolToken = this.instances.carol.getTokenSignature(this.contractAddress) || {
+    const carolToken = this.instances.carol.getPublicKey(this.contractAddress) || {
       signature: '',
       publicKey: '',
     };
 
-    const daveToken = this.instances.dave.getTokenSignature(this.contractAddress) || {
+    const daveToken = this.instances.dave.getPublicKey(this.contractAddress) || {
       signature: '',
       publicKey: '',
     };

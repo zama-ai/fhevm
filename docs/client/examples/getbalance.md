@@ -51,9 +51,9 @@ const getBalance = async () => {
 
   // Sign the public key
   const signature = await signer.signTypedData(
-    generatedToken.token.domain,
-    { Reencrypt: generatedToken.token.types.Reencrypt }, // Need to remove EIP712Domain from types
-    generatedToken.token.message,
+    generatedToken.eip712.domain,
+    { Reencrypt: generatedToken.eip712.types.Reencrypt }, // Need to remove EIP712Domain from types
+    generatedToken.eip712.message,
   );
   instance.setPublicKeySignature(CONTRACT_ADDRESS, signature);
 

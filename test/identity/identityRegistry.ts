@@ -39,7 +39,7 @@ describe('Identity', function () {
     await allowed.wait();
 
     // Carol use this token to access information
-    const token = this.instances.carol.getTokenSignature(this.contractAddress) || {
+    const token = this.instances.carol.getPublicKey(this.contractAddress) || {
       signature: '',
       publicKey: '',
     };

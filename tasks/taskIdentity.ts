@@ -160,7 +160,7 @@ task('task:identity:balanceOf')
 
     const instance = await createInstance(erc20Address, signers[user], ethers);
 
-    const token = instance.getTokenSignature(erc20Address)!;
+    const token = instance.getPublicKey(erc20Address)!;
 
     const balance = await erc20.connect(signers[user]).balanceOf(signers[user], token.publicKey, token.signature);
     console.log(`=> ${chalk.bold('Balance')}: ${instance.decrypt(erc20Address, balance)} tokens`);

@@ -68,14 +68,14 @@ describe('BlindAuction', function () {
     const txAliceStop = await this.blindAuction.connect(this.signers.alice).stop();
     await txAliceStop.wait();
 
-    const tokenCarol = this.instances.carol.getTokenSignature(this.contractAddress)!;
+    const tokenCarol = this.instances.carol.getPublicKey(this.contractAddress)!;
     const carolBidAmountCheckEnc = await this.blindAuction
       .connect(this.signers.carol)
       .getBid(tokenCarol.publicKey, tokenCarol.signature);
     const carolBidAmountCheckDec = this.instances.carol.decrypt(this.contractAddress, carolBidAmountCheckEnc);
     expect(carolBidAmountCheckDec).to.equal(20);
 
-    const tokenBob = this.instances.bob.getTokenSignature(this.contractAddress)!;
+    const tokenBob = this.instances.bob.getPublicKey(this.contractAddress)!;
     const bobBidAmountCheckEnc = await this.blindAuction
       .connect(this.signers.bob)
       .getBid(tokenBob.publicKey, tokenBob.signature);
@@ -101,7 +101,7 @@ describe('BlindAuction', function () {
     await txCarolWithdraw.wait();
 
     const instance = await createInstances(this.contractERC20Address, ethers, this.signers);
-    const tokenAlice = instance.alice.getTokenSignature(this.contractERC20Address)!;
+    const tokenAlice = instance.alice.getPublicKey(this.contractERC20Address)!;
     const encryptedBalanceAlice = await this.erc20.balanceOf(
       this.signers.alice,
       tokenAlice.publicKey,

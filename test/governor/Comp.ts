@@ -27,7 +27,7 @@ describe('Comp', function () {
 
     await transferTransac.wait();
 
-    const aliceToken = this.instances.alice.getTokenSignature(this.contractAddress) || {
+    const aliceToken = this.instances.alice.getPublicKey(this.contractAddress) || {
       signature: '',
       publicKey: '',
     };
@@ -36,7 +36,7 @@ describe('Comp', function () {
     const aliceBalance = this.instances.alice.decrypt(this.contractAddress, encryptedAliceBalance);
     expect(aliceBalance).to.equal(800000);
 
-    const bobToken = this.instances.bob.getTokenSignature(this.contractAddress) || {
+    const bobToken = this.instances.bob.getPublicKey(this.contractAddress) || {
       signature: '',
       publicKey: '',
     };
