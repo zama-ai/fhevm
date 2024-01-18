@@ -10,7 +10,6 @@
   "scripts": {
     "clean": "rimraf ./artifacts ./cache ./coverage ./types ./coverage.json && npm run typechain",
     "compile": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat compile",
-    "coverage": "hardhat coverage --solcoverjs ./.solcover.js --temp artifacts --testfiles \"test/**/*.ts\" && pnpm typechain",
     "deploy:contracts": "hardhat deploy",
     "lint": "npm run lint:sol && npm run lint:ts && npm run prettier:check",
     "lint:ts": "eslint --ignore-path ./.eslintignore --ext .js,.ts .",
