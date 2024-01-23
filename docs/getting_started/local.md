@@ -5,7 +5,7 @@
 We provide a docker image to spin up a fhEVM node for local development.
 
 ```bash
-docker run -i -p 8545:8545 -p 8546:8546 --rm --name fhevm ghcr.io/zama-ai/ethermint-dev-node:v0.2.3
+docker run -i -p 8545:8545 -p 8546:8546 --rm --name fhevm ghcr.io/zama-ai/ethermint-dev-node:v0.2.4
 ```
 
 <!-- markdown-link-check-disable -->
