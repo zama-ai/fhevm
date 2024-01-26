@@ -11,18 +11,9 @@ You can use it on [https://remix.zama.ai](https://remix.zama.ai).
 
 ## Usage
 
-First, read the [usage section](../write_contract.md#usage) regarding Solidity version and EVM.
-
 To import TFHE library, simply import it at the top of your contract.
 
 `import "fhevm/lib/TFHE.sol";`
-
-**UPDATE**: Remix doesn't take into consideration the package.json of fhevm to fetch dependencies. If you're using `fhevm/abstracts/EIP712WithModifier.sol`, it will fetch the latest version of the `@openzeppelin/contracts` package, which runs only on the Shanghai EVM (Solidity version ^0.8.20). Since fhEVM is not compatible with versions above 0.8.19, it will fail. To fix that, go to `.deps/fhevm/abstracts/EIP712WithModifier.sol` and change the imports as follows:
-
-```solidity
-import "@openzeppelin/contracts@4.9.3/utils/cryptography/ECDSA.sol";
-import "@openzeppelin/contracts@4.9.3/utils/cryptography/EIP712.sol";
-```
 
 Be sure to be on the correct network before deploying your contract
 
