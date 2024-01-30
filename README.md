@@ -180,6 +180,8 @@ Ensure the faucet command was succesful.
 
 #### Run tests for network1 network
 
+Network1 doesn't support shanghai, so you should update the `evmVersion` [here](https://github.com/zama-ai/fhevm/blob/main/hardhat.config.ts#L170) to use `paris`, and make sure contracts are compiled using that version.
+
 ```bash
 # codegen for network1 network
 TARGET_NETWORK=Network1 npx ts-node codegen/main.ts && npm run prettier
