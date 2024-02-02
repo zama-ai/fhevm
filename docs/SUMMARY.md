@@ -23,6 +23,7 @@
 - [Write conditions](howto/conditions.md)
 - [Decrypt and reencrypt](howto/decrypt.md)
 - [Estimate gas](howto/gas.md)
+- [Common pitfalls and best practises](howto/pitfalls.md)
 
 ## API
 

@@ -36,9 +36,7 @@ In this case, if the provided ciphertext is not initialized (i.e., if the cipher
 ### Example
 
 ```solidity
-function balanceOf(bytes32 publicKey) public view returns (bytes memory) {
-  return TFHE.reencrypt(balances[msg.sender], publicKey, 0);
-}
+TFHE.reencrypt(balances[msg.sender], publicKey, 0);
 ```
 
 > **_NOTE:_** If one of the following operations is called with an uninitialized ciphertext handle as an operand, this handle will be made to point to a trivial encryption of `0` before the operation is executed.

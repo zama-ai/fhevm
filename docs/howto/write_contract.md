@@ -20,3 +20,12 @@ pnpm add fhevm
 ```
 
 This will download and install the fhEVM Solidity Library and its dependencies into your project.
+
+## Typical workflow for writing confidential smart contracts
+
+1/ For quick prototyping of a specific feature, use the [Zama version of the Remix IDE](./write_contract/remix.md). This will let you quickly deploy a contract on the devnet via Metamask, and interact easily with it through the Remix UI.
+Otherwise, for a bigger project, you should use our custom [`fhevm-hardhat-template` repository](https://github.com/zama-ai/fhevm-hardhat-template). Hardhat is a popular development environment for Solidity developers and will let you test and deploy your contracts to the fhEVM using TypeScript.
+
+2/ A good first step is to start with an unencrypted version of the contract you want to implement, as you would usually do on a regular EVM chain. It is easier to reason first on cleartext variables, before thinking on how to add confidentialy.
+
+3/ When you're ready, you can start to add confidentiality by using the `TFHE` solidity library. Typically, this would involve converting some `uintX` types to `euintX`, as well as following all the detailed advices that we gave in the [pitfalls to avoid and best practises](../howto/pitfalls.md) section of the documentation. For inspiration, you can take a look at the examples inside the [`fhevm` repository](https://github.com/zama-ai/fhevm/tree/main/examples). If you're using the Hardhat template, read the advices that we gave in the [Hardhat section](./write_contract/hardhat.md).
