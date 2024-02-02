@@ -62,7 +62,7 @@ In this last snippet, the `internal` keyword could have been omitted (state vari
 
 ## Protect access of view functions using reencryptions
 
-If a view function is using `TFHE.reencrypt` it is mandatory to protect it via the `onlySignedPublicKey` modifier imported from `"fhevm/abstracts/Reencrypt.sol"`. See the example from the [Decrypt page](decrypt.md#handle-private-reencryption). Failing to address this allows anyone to reencrypt another person's ciphertext. This vulnerability comes from the ability to impersonate any `msg.sender` address during a static call to a view function, as it does not require a signature, unlike transactions.
+If a view function is using `TFHE.reencrypt` it is mandatory to protect its access to not leak confidentiality, for instance this is doable easily via the `onlySignedPublicKey` modifier imported from `"fhevm/abstracts/Reencrypt.sol"`. See the example from the [Decrypt page](decrypt.md#handle-private-reencryption). Failing to address this allows anyone to reencrypt another person's ciphertext. This vulnerability comes from the ability to impersonate any `msg.sender` address during a static call to a view function, as it does not require a signature, unlike transactions.
 
 # Best practises
 
@@ -138,7 +138,7 @@ This is different from a classical non-confidential AMM with regular ERC20 token
 
 ## Avoid using while loops with an encrypted condition
 
-❌ Avoid using this type of loop because it might require many decryption operations:
+❌ Avoid using this type of loop because it might require many decryption operations, and in the example given, we're also leaking how much was added to `x`, which may not be intended behavior.:
 
 ```solidity
 ebool isTrue;
