@@ -5292,7 +5292,7 @@ describe('TFHE operations', function () {
 
   it('test operator "not" overload (euint32) => euint32 test 1 (65534)', async function () {
     const res = await this.contract4.not_euint32(this.instances4.alice.encrypt32(65534));
-    expect(res).to.equal(18446744073709486081n);
+    expect(res).to.equal(4294901761);
   });
 
   it('test operator "neg" overload (euint64) => euint64 test 1 (1)', async function () {
