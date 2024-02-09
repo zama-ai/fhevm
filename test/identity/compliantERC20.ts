@@ -28,8 +28,8 @@ describe('CompliantERC20', function () {
 
   it('should allow decryption of balance for identity owner', async function () {
     // Create accounts;
-    const country1 = this.instances.alice.encrypt32(1);
-    const country2 = this.instances.alice.encrypt32(2);
+    const country1 = this.instances.alice.encrypt64(1);
+    const country2 = this.instances.alice.encrypt64(2);
     // Alice => owner
     // Bob => Issuer
     // Carol & Dave => User
@@ -70,8 +70,8 @@ describe('CompliantERC20', function () {
       .grantAccess(this.contractAddress, ['issuer']);
     await txIssuer.wait();
 
-    const amount20k = this.instances.alice.encrypt32(20000);
-    const amount10k = this.instances.alice.encrypt32(10000);
+    const amount20k = this.instances.alice.encrypt64(20000);
+    const amount10k = this.instances.alice.encrypt64(10000);
 
     const transaction = await this.identifiedErc20.mint(100_000);
     await transaction.wait();
@@ -124,8 +124,8 @@ describe('CompliantERC20', function () {
 
   it('should prevent transfers', async function () {
     // Create accounts;
-    const country1 = this.instances.alice.encrypt32(1);
-    const country2 = this.instances.alice.encrypt32(2);
+    const country1 = this.instances.alice.encrypt64(1);
+    const country2 = this.instances.alice.encrypt64(2);
     // Alice => owner
     // Bob => Issuer
     // Carol & Dave => User
@@ -164,9 +164,9 @@ describe('CompliantERC20', function () {
     const transaction = await this.identifiedErc20.mint(100000);
     await transaction.wait();
 
-    const amount20k = this.instances.alice.encrypt32(20000);
-    const amount10k = this.instances.alice.encrypt32(10000);
-    const amount3k = this.instances.alice.encrypt32(3000);
+    const amount20k = this.instances.alice.encrypt64(20000);
+    const amount10k = this.instances.alice.encrypt64(10000);
+    const amount3k = this.instances.alice.encrypt64(3000);
     const txT1 = await this.identifiedErc20['transfer(address,bytes)'](this.signers.carol, amount20k);
     // Transmit 20000 tokens to dave is possible since alice is admin
     const txT2 = await this.identifiedErc20['transfer(address,bytes)'](this.signers.dave, amount10k);
