@@ -54,6 +54,7 @@ export const createInstance = async (contractAddress: string, account: Signer, e
     instance.encrypt8 = createUintToUint8ArrayFunction(8);
     instance.encrypt16 = createUintToUint8ArrayFunction(16);
     instance.encrypt32 = createUintToUint8ArrayFunction(32);
+    instance.encrypt64 = createUintToUint8ArrayFunction(64);
     instance.decrypt = (_, hexadecimalString) => Number(BigInt(hexadecimalString));
     instance.generatePublicKey = () => ({ eip712: {} as any, publicKey: new Uint8Array() });
   } else {
