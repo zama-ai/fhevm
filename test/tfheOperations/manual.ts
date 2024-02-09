@@ -68,6 +68,16 @@ describe('TFHE manual operations', function () {
     expect(res).to.equal(0);
   });
 
+  it('ebool to euint64 casting works with true', async function () {
+    const res = await this.contract.test_ebool_to_euint64_cast(true);
+    expect(res).to.equal(1);
+  });
+
+  it('ebool to euint32 casting works with false', async function () {
+    const res = await this.contract.test_ebool_to_euint64_cast(false);
+    expect(res).to.equal(0);
+  });
+
   it('ebool not for false is true', async function () {
     const res = await this.contract.test_ebool_not(false);
     expect(res).to.equal(true);
