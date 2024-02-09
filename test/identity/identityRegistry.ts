@@ -25,7 +25,7 @@ describe('Identity', function () {
     const tx1 = await this.identityRegistry.addDid(this.signers.bob);
     await tx1.wait();
 
-    const encryptedBirth = this.instances.alice.encrypt32(495873907);
+    const encryptedBirth = this.instances.alice.encrypt64(495873907);
     const transaction = await this.identityRegistry.setIdentifier(
       this.signers.bob.address,
       'birthdate',
@@ -59,7 +59,7 @@ describe('Identity', function () {
     const tx1 = await this.identityRegistry.addDid(this.signers.bob);
     await tx1.wait();
 
-    const encryptedBirth = this.instances.alice.encrypt32(495873907);
+    const encryptedBirth = this.instances.alice.encrypt64(495873907);
     const tx2 = await this.identityRegistry.setIdentifier(this.signers.bob, 'birthdate', encryptedBirth);
     await tx2.wait();
 
