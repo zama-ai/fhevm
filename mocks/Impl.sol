@@ -148,6 +148,9 @@ library Impl {
         if (toType == 2) {
             result = uint256(uint32(ciphertext));
         }
+        if (toType == 3) {
+            result = uint256(uint64(ciphertext));
+        }
     }
 
     function trivialEncrypt(uint256 value, uint8 toType) internal pure returns (uint256 result) {
@@ -166,6 +169,8 @@ library Impl {
             result = uint16(randomness);
         } else if (randType == Common.euint32_t) {
             result = uint32(randomness);
+        } else if (randType == Common.euint64_t) {
+            result = uint64(randomness);
         } else {
             revert("rand() mock invalid type");
         }

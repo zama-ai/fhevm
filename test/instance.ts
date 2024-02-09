@@ -48,18 +48,18 @@ export const createInstance = async (contractAddress: string, account: Signer, e
     const decoded = ethers.AbiCoder.defaultAbiCoder().decode(['bytes'], ret);
     publicKey = decoded[0];
   }
-  let instance = await fhevmjs.createInstance({ chainId: 31337, publicKey: '0x00' }); // 31337 is hardhat node's default chainId
-  await generatePublicKey(contractAddress, account, instance);
+  let instance = {} as FhevmInstance; // 31337 is hardhat node's default chainId
 
   if (network === 'hardhat') {
     instance.encrypt8 = createUintToUint8ArrayFunction(8);
     instance.encrypt16 = createUintToUint8ArrayFunction(16);
     instance.encrypt32 = createUintToUint8ArrayFunction(32);
     instance.decrypt = (_, hexadecimalString) => Number(BigInt(hexadecimalString));
+    instance.generatePublicKey = () => ({ eip712: {} as any, publicKey: new Uint8Array() });
   } else {
     instance = await fhevmjs.createInstance({ chainId, publicKey });
-    await generatePublicKey(contractAddress, account, instance);
   }
+  await generatePublicKey(contractAddress, account, instance);
 
   return instance;
 };

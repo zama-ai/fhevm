@@ -142,10 +142,12 @@ async function deployTfheTestFixture${os.shardNumber}(): Promise<TFHETestSuite${
             }
           })
           .join(', ');
+        let output = t.output.toString();
+        if (typeof t.output === 'bigint') output += 'n';
         res.push(`
                 it('${testName} test ${testIndex} (${testArgs})', async function () {
                     const res = await this.contract${os.shardNumber}.${methodName}(${testArgsEncrypted});
-                    expect(res).to.equal(${t.output});
+                    expect(res).to.equal(${output});
                 });
             `);
         testIndex++;
@@ -174,6 +176,9 @@ function ensureNumberAcceptableInBitRange(bits: number, input: number) {
       break;
     case 32:
       ensureNumberInRange(bits, input, 0x00, 0xffffffff);
+      break;
+    case 64:
+      ensureNumberInRange(bits, input, 0x00, 0xffffffffffffffff);
       break;
     default:
       assert(false, `TODO: add support for ${bits} numbers`);

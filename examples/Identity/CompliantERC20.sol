@@ -26,7 +26,7 @@ contract CompliantERC20 is EncryptedERC20 {
         return rulesContract.getIdentifiers();
     }
 
-    function getIdentifier(address wallet, string calldata identifier) external view returns (euint32) {
+    function getIdentifier(address wallet, string calldata identifier) external view returns (euint64) {
         require(msg.sender == address(rulesContract), "Access restricted to the current ERC20Rules");
         return identityContract.getIdentifier(wallet, identifier);
     }
@@ -40,22 +40,22 @@ contract CompliantERC20 is EncryptedERC20 {
             return TFHE.reencrypt(balances[msg.sender], publicKey, 0);
         }
 
-        uint32 userCountry = rulesContract.whitelistedWallets(msg.sender);
+        uint64 userCountry = rulesContract.whitelistedWallets(msg.sender);
         require(userCountry > 0, "You're not registered as a country wallet");
 
-        euint32 walletCountry = identityContract.getIdentifier(wallet, "country");
+        euint64 walletCountry = identityContract.getIdentifier(wallet, "country");
         ebool sameCountry = TFHE.eq(walletCountry, userCountry);
-        euint32 balance = TFHE.isInitialized(balances[wallet]) ? balances[wallet] : TFHE.asEuint32(0);
-        balance = TFHE.cmux(sameCountry, balance, TFHE.asEuint32(0));
+        euint64 balance = TFHE.isInitialized(balances[wallet]) ? balances[wallet] : TFHE.asEuint64(0);
+        balance = TFHE.cmux(sameCountry, balance, TFHE.asEuint64(0));
 
         return TFHE.reencrypt(balance, publicKey, 0);
     }
 
     // Transfers an encrypted amount.
-    function _transfer(address from, address to, euint32 _amount, ebool isTransferable) internal override {
+    function _transfer(address from, address to, euint64 _amount, ebool isTransferable) internal override {
         // Condition 1: hasEnoughFunds
         ebool enoughFund = TFHE.le(_amount, balances[from]);
-        euint32 amount = TFHE.cmux(enoughFund, _amount, TFHE.asEuint32(0));
+        euint64 amount = TFHE.cmux(enoughFund, _amount, TFHE.asEuint64(0));
 
         amount = rulesContract.transfer(from, to, amount);
 

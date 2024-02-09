@@ -14,10 +14,10 @@ contract BlindAuction is Reencrypt {
     address public beneficiary;
 
     // Current highest bid.
-    euint32 internal highestBid;
+    euint64 internal highestBid;
 
     // Mapping from bidder to their bid value.
-    mapping(address => euint32) public bids;
+    mapping(address => euint64) public bids;
 
     // Number of bid
     uint public bidCounter;
@@ -60,23 +60,23 @@ contract BlindAuction is Reencrypt {
 
     // Bid an `encryptedValue`.
     function bid(bytes calldata encryptedValue) public onlyBeforeEnd {
-        euint32 value = TFHE.asEuint32(encryptedValue);
-        euint32 existingBid = bids[msg.sender];
+        euint64 value = TFHE.asEuint64(encryptedValue);
+        euint64 existingBid = bids[msg.sender];
         if (TFHE.isInitialized(existingBid)) {
             ebool isHigher = TFHE.lt(existingBid, value);
             // Update bid with value
             bids[msg.sender] = TFHE.cmux(isHigher, value, existingBid);
             // Transfer only the difference between existing and value
-            euint32 toTransfer = value - existingBid;
+            euint64 toTransfer = value - existingBid;
             // Transfer only if bid is higher
-            euint32 amount = TFHE.cmux(isHigher, toTransfer, TFHE.asEuint32(0));
+            euint64 amount = TFHE.cmux(isHigher, toTransfer, TFHE.asEuint64(0));
             tokenContract.transferFrom(msg.sender, address(this), amount);
         } else {
             bidCounter++;
             bids[msg.sender] = value;
             tokenContract.transferFrom(msg.sender, address(this), value);
         }
-        euint32 currentBid = bids[msg.sender];
+        euint64 currentBid = bids[msg.sender];
         if (!TFHE.isInitialized(highestBid)) {
             highestBid = currentBid;
         } else {
@@ -106,7 +106,7 @@ contract BlindAuction is Reencrypt {
         if (TFHE.isInitialized(highestBid) && TFHE.isInitialized(bids[msg.sender])) {
             return TFHE.reencrypt(TFHE.le(highestBid, bids[msg.sender]), publicKey);
         } else {
-            return TFHE.reencrypt(TFHE.asEuint32(0), publicKey);
+            return TFHE.reencrypt(TFHE.asEuint64(0), publicKey);
         }
     }
 
@@ -115,7 +115,7 @@ contract BlindAuction is Reencrypt {
         ebool canClaim = TFHE.and(TFHE.le(highestBid, bids[msg.sender]), TFHE.not(objectClaimed));
 
         objectClaimed = canClaim;
-        bids[msg.sender] = TFHE.cmux(canClaim, TFHE.asEuint32(0), bids[msg.sender]);
+        bids[msg.sender] = TFHE.cmux(canClaim, TFHE.asEuint64(0), bids[msg.sender]);
         // emit Winner(msg.sender);
     }
 
@@ -129,11 +129,11 @@ contract BlindAuction is Reencrypt {
 
     // Withdraw a bid from the auction to the caller once the auction has stopped.
     function withdraw() public onlyAfterEnd {
-        euint32 bidValue = bids[msg.sender];
+        euint64 bidValue = bids[msg.sender];
         ebool isHighestBid = TFHE.eq(bidValue, highestBid);
         ebool canWithdraw = TFHE.not(TFHE.and(isHighestBid, TFHE.not(objectClaimed)));
-        tokenContract.transfer(msg.sender, TFHE.cmux(canWithdraw, bidValue, TFHE.asEuint32(0)));
-        bids[msg.sender] = TFHE.cmux(canWithdraw, TFHE.asEuint32(0), bids[msg.sender]);
+        tokenContract.transfer(msg.sender, TFHE.cmux(canWithdraw, bidValue, TFHE.asEuint64(0)));
+        bids[msg.sender] = TFHE.cmux(canWithdraw, TFHE.asEuint64(0), bids[msg.sender]);
     }
 
     modifier onlyBeforeEnd() {
