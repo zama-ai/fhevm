@@ -60,7 +60,7 @@ export const overloadTests: { [methodName: string]: OverloadTest[] } = {
     { inputs: [0x00000001], output: 0xffffffff },
     { inputs: [0x00000002], output: 0xfffffffe },
   ],
-  not_euint32: [{ inputs: [0x0000fffe], output: 18446744073709486081n }],
+  not_euint32: [{ inputs: [0x0000fffe], output: 0xffff0001 }],
   neg_euint64: [
     { inputs: [0x0000000000000001], output: 18446744073709551615n },
     { inputs: [0x0000000000000002], output: 18446744073709551614n },
