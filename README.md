@@ -60,12 +60,13 @@ _Learn more use cases in the [list of examples](https://docs.zama.ai/fhevm/resou
 
 - **[Getting Started](#getting-started)**
   - [Installation](#installation)
-  - [A simple example](#a-simple-example)
+  - [A Simple Example](#a-simple-example)
 - **[Resources](#resources)**
   - [White paper](#white-paper)
   - [Demos](#demos)
   - [Tutorials](#tutorials)
   - [Documentation](#documentation)
+  - [Blockchain Implementation](#blockchain-implementation)
 - **[Working with fhEVM](#working-with-fhevm)**
   - [Developer guide](#developer-guide)
   - [Citations](#citations)
@@ -94,7 +95,7 @@ pnpm add fhevm
 _Find more details on implementation instructions in [this repository](https://github.com/zama-ai/fhevm-evmos)._
 <br></br>
 
-### A simple example
+### A Simple Example
 
 ```solidity
 // SPDX-License-Identifier: BSD-3-Clause-Clear
@@ -169,6 +170,13 @@ Full, comprehensive documentation is available here: [https://docs.zama.ai/fhevm
 <p align="right">
   <a href="#about" > ↑ Back to top </a> 
 </p>
+
+### Blockchain Implementation
+
+To support fhEVM in an EVM-based blockchain, the **fhevm-go** library can be used as it implements all the needed FHE functionalities.
+It is available here: [fhevm-go](https://github.com/zama-ai/fhevm-go)
+
+To integrate fhevm-go into any EVM-based blockchain, you can follow the [Integration Guide](https://docs.zama.ai/fhevm-go/getting-started/integration).
 
 ## Working with fhEVM
 
