@@ -14,7 +14,7 @@ describe('GovernorZama', function () {
     this.comp = await deployCompFixture();
 
     const instances = await createInstances(await this.comp.getAddress(), ethers, this.signers);
-    const encryptedAmountToTransfer = instances.alice.encrypt32(100000);
+    const encryptedAmountToTransfer = instances.alice.encrypt64(100000);
     const transfer1 = await this.comp['transfer(address,bytes)'](this.signers.bob.address, encryptedAmountToTransfer);
     const transfer2 = await this.comp['transfer(address,bytes)'](this.signers.carol.address, encryptedAmountToTransfer);
     await Promise.all([transfer1.wait(), transfer2.wait()]);

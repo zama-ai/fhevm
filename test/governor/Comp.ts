@@ -19,7 +19,7 @@ describe('Comp', function () {
   });
 
   it('should transfer tokens', async function () {
-    const encryptedAmountToTransfer = this.instances.alice.encrypt32(200000);
+    const encryptedAmountToTransfer = this.instances.alice.encrypt64(200000);
     const transferTransac = await this.comp['transfer(address,bytes)'](
       this.signers.bob.address,
       encryptedAmountToTransfer,

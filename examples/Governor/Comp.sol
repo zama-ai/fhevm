@@ -16,7 +16,7 @@ contract Comp is Reencrypt {
     uint8 public constant decimals = 18;
 
     /// @notice Total number of tokens in circulation
-    euint32 public totalSupply = TFHE.asEuint32(1000000);
+    euint64 public totalSupply = TFHE.asEuint64(1000000);
 
     /// @notice owner address
     address public contractOwner;
@@ -25,10 +25,10 @@ contract Comp is Reencrypt {
     address public allowedContract;
 
     /// @notice Allowance amounts on behalf of others
-    mapping(address => mapping(address => euint32)) internal allowances;
+    mapping(address => mapping(address => euint64)) internal allowances;
 
     /// @notice Official record of token balances for each account
-    mapping(address => euint32) internal balances;
+    mapping(address => euint64) internal balances;
 
     /// @notice A record of each accounts delegate
     mapping(address => address) public delegates;
@@ -36,7 +36,7 @@ contract Comp is Reencrypt {
     /// @notice A checkpoint for marking number of votes from a given block
     struct Checkpoint {
         uint32 fromBlock;
-        euint32 votes;
+        euint64 votes;
     }
 
     /// @notice A record of votes checkpoints for each account, by index
@@ -60,13 +60,13 @@ contract Comp is Reencrypt {
     event DelegateChanged(address indexed delegator, address indexed fromDelegate, address indexed toDelegate);
 
     /// @notice An event thats emitted when a delegate account's vote balance changes
-    event DelegateVotesChanged(address indexed delegate, euint32 previousBalance, euint32 newBalance);
+    event DelegateVotesChanged(address indexed delegate, euint64 previousBalance, euint64 newBalance);
 
     /// @notice The standard EIP-20 transfer event
-    event Transfer(address indexed from, address indexed to, euint32 amount);
+    event Transfer(address indexed from, address indexed to, euint64 amount);
 
     /// @notice The standard EIP-20 approval event
-    event Approval(address indexed owner, address indexed spender, euint32 amount);
+    event Approval(address indexed owner, address indexed spender, euint64 amount);
 
     /**
      * @notice Construct a new Comp token
@@ -100,7 +100,7 @@ contract Comp is Reencrypt {
      * @notice Get the number of tokens
      * @return reencrypted The number of tokens
      */
-    function getTotalSupply() public view returns (uint32) {
+    function getTotalSupply() public view returns (uint64) {
         return TFHE.decrypt(totalSupply);
     }
 
@@ -114,11 +114,11 @@ contract Comp is Reencrypt {
      */
     function approve(address spender, bytes calldata encryptedAmount) external returns (bool) {
         address owner = msg.sender;
-        _approve(owner, spender, TFHE.asEuint32(encryptedAmount));
+        _approve(owner, spender, TFHE.asEuint64(encryptedAmount));
         return true;
     }
 
-    function _approve(address owner, address spender, euint32 amount) internal {
+    function _approve(address owner, address spender, euint64 amount) internal {
         emit Approval(owner, spender, amount);
         allowances[owner][spender] = amount;
     }
@@ -133,7 +133,7 @@ contract Comp is Reencrypt {
         return TFHE.reencrypt(_allowance(owner, spender), 0);
     }
 
-    function _allowance(address owner, address spender) internal view returns (euint32) {
+    function _allowance(address owner, address spender) internal view returns (euint64) {
         return allowances[owner][spender];
     }
 
@@ -143,7 +143,7 @@ contract Comp is Reencrypt {
      * @param encryptedAmount The number of tokens to transfer
      */
     function transfer(address to, bytes calldata encryptedAmount) public {
-        transfer(to, TFHE.asEuint32(encryptedAmount));
+        transfer(to, TFHE.asEuint64(encryptedAmount));
     }
 
     /**
@@ -151,7 +151,7 @@ contract Comp is Reencrypt {
      * @param to The address of the destination account
      * @param amount The number of tokens to transfer
      */
-    function transfer(address to, euint32 amount) public {
+    function transfer(address to, euint64 amount) public {
         _transfer(msg.sender, to, amount);
     }
 
@@ -163,7 +163,7 @@ contract Comp is Reencrypt {
      * @return bool Whether or not the transfer succeeded
      */
     function transferFrom(address from, address to, bytes calldata encryptedAmount) public returns (bool) {
-        transferFrom(from, to, TFHE.asEuint32(encryptedAmount));
+        transferFrom(from, to, TFHE.asEuint64(encryptedAmount));
         return true;
     }
 
@@ -174,51 +174,51 @@ contract Comp is Reencrypt {
      * @param amount The number of tokens to transfer
      * @return bool Whether or not the transfer succeeded
      */
-    function transferFrom(address from, address to, euint32 amount) public returns (bool) {
+    function transferFrom(address from, address to, euint64 amount) public returns (bool) {
         address spender = msg.sender;
         _updateAllowance(from, spender, amount);
         _transfer(from, to, amount);
         return true;
     }
 
-    function _updateAllowance(address owner, address spender, euint32 amount) internal {
-        euint32 currentAllowance = _allowance(owner, spender);
+    function _updateAllowance(address owner, address spender, euint64 amount) internal {
+        euint64 currentAllowance = _allowance(owner, spender);
         ebool canApprove = TFHE.le(amount, currentAllowance);
-        _approve(owner, spender, TFHE.cmux(canApprove, currentAllowance - amount, TFHE.asEuint32(0)));
+        _approve(owner, spender, TFHE.cmux(canApprove, currentAllowance - amount, TFHE.asEuint64(0)));
     }
 
     // Transfers an encrypted amount.
-    function _transfer(address from, address to, euint32 amount) internal {
+    function _transfer(address from, address to, euint64 amount) internal {
         // Make sure the sender has enough tokens.
         ebool canTransfer = TFHE.le(amount, balances[from]);
 
         // Add to the balance of `to` and subract from the balance of `from`.
-        balances[to] = balances[to] + TFHE.cmux(canTransfer, amount, TFHE.asEuint32(0));
-        balances[from] = balances[from] - TFHE.cmux(canTransfer, amount, TFHE.asEuint32(0));
+        balances[to] = balances[to] + TFHE.cmux(canTransfer, amount, TFHE.asEuint64(0));
+        balances[from] = balances[from] - TFHE.cmux(canTransfer, amount, TFHE.asEuint64(0));
         emit Transfer(from, to, amount);
 
         _moveDelegates(delegates[from], delegates[to], amount);
     }
 
-    function _moveDelegates(address srcRep, address dstRep, euint32 amount) internal {
+    function _moveDelegates(address srcRep, address dstRep, euint64 amount) internal {
         if (srcRep != dstRep) {
             if (srcRep != address(0)) {
                 uint32 srcRepNum = numCheckpoints[srcRep];
-                euint32 srcRepOld = srcRepNum > 0 ? checkpoints[srcRep][srcRepNum - 1].votes : TFHE.asEuint32(0);
-                euint32 srcRepNew = srcRepOld - amount;
+                euint64 srcRepOld = srcRepNum > 0 ? checkpoints[srcRep][srcRepNum - 1].votes : TFHE.asEuint64(0);
+                euint64 srcRepNew = srcRepOld - amount;
                 _writeCheckpoint(srcRep, srcRepNum, srcRepOld, srcRepNew);
             }
 
             if (dstRep != address(0)) {
                 uint32 dstRepNum = numCheckpoints[dstRep];
-                euint32 dstRepOld = dstRepNum > 0 ? checkpoints[dstRep][dstRepNum - 1].votes : TFHE.asEuint32(0);
-                euint32 dstRepNew = dstRepOld + amount;
+                euint64 dstRepOld = dstRepNum > 0 ? checkpoints[dstRep][dstRepNum - 1].votes : TFHE.asEuint64(0);
+                euint64 dstRepNew = dstRepOld + amount;
                 _writeCheckpoint(dstRep, dstRepNum, dstRepOld, dstRepNew);
             }
         }
     }
 
-    function _writeCheckpoint(address delegatee, uint32 nCheckpoints, euint32 oldVotes, euint32 newVotes) internal {
+    function _writeCheckpoint(address delegatee, uint32 nCheckpoints, euint64 oldVotes, euint64 newVotes) internal {
         uint32 blockNumber = safe32(block.number, "Comp::_writeCheckpoint: block number exceeds 32 bits");
 
         if (nCheckpoints > 0 && checkpoints[delegatee][nCheckpoints - 1].fromBlock == blockNumber) {
@@ -266,9 +266,9 @@ contract Comp is Reencrypt {
      * @param account The address to get votes balance
      * @return The number of current votes for `account`
      */
-    function getCurrentVotes(address account) external view onlyAllowedContract returns (euint32) {
+    function getCurrentVotes(address account) external view onlyAllowedContract returns (euint64) {
         uint32 nCheckpoints = numCheckpoints[account];
-        return nCheckpoints > 0 ? checkpoints[account][nCheckpoints - 1].votes : TFHE.asEuint32(0);
+        return nCheckpoints > 0 ? checkpoints[account][nCheckpoints - 1].votes : TFHE.asEuint64(0);
     }
 
     /**
@@ -278,12 +278,12 @@ contract Comp is Reencrypt {
      * @param blockNumber The block number to get the vote balance at
      * @return The number of votes the account had as of the given block
      */
-    function getPriorVotes(address account, uint blockNumber) public view onlyAllowedContract returns (euint32) {
+    function getPriorVotes(address account, uint blockNumber) public view onlyAllowedContract returns (euint64) {
         require(blockNumber < block.number, "Comp::getPriorVotes: not yet determined");
 
         uint32 nCheckpoints = numCheckpoints[account];
         if (nCheckpoints == 0) {
-            return TFHE.asEuint32(0);
+            return TFHE.asEuint64(0);
         }
 
         // First check most recent balance
@@ -293,7 +293,7 @@ contract Comp is Reencrypt {
 
         // Next check implicit zero balance
         if (checkpoints[account][0].fromBlock > blockNumber) {
-            return TFHE.asEuint32(0);
+            return TFHE.asEuint64(0);
         }
 
         uint32 lower = 0;
@@ -314,7 +314,7 @@ contract Comp is Reencrypt {
 
     function _delegate(address delegator, address delegatee) internal {
         address currentDelegate = delegates[delegator];
-        euint32 delegatorBalance = balances[delegator];
+        euint64 delegatorBalance = balances[delegator];
         delegates[delegator] = delegatee;
 
         emit DelegateChanged(delegator, currentDelegate, delegatee);

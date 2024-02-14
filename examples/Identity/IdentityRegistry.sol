@@ -19,7 +19,7 @@ contract IdentityRegistry is Reencrypt, Ownable {
 
     struct Identity {
         uint registrarId;
-        mapping(string => euint32) identifiers;
+        mapping(string => euint64) identifiers;
     }
 
     mapping(address => mapping(address => mapping(string => bool))) permissions; // users => contracts => identifiers[]
@@ -58,14 +58,14 @@ contract IdentityRegistry is Reencrypt, Ownable {
 
     // Set user's identifiers
     function setIdentifier(address wallet, string calldata identifier, bytes calldata encryptedValue) public {
-        euint32 value = TFHE.asEuint32(encryptedValue);
+        euint64 value = TFHE.asEuint64(encryptedValue);
         setIdentifier(wallet, identifier, value);
     }
 
     function setIdentifier(
         address wallet,
         string calldata identifier,
-        euint32 value
+        euint64 value
     ) internal onlyExistingWallet(wallet) onlyRegistrarOf(wallet) {
         identities[wallet].identifiers[identifier] = value;
     }
@@ -90,7 +90,7 @@ contract IdentityRegistry is Reencrypt, Ownable {
         bytes32 publicKey,
         bytes calldata signature
     ) public view onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
-        euint32 ident = _getIdentifier(wallet, identifier);
+        euint64 ident = _getIdentifier(wallet, identifier);
         require(TFHE.isInitialized(ident), "This identifier is unknown");
 
         return TFHE.reencrypt(ident, publicKey, 0);
@@ -100,14 +100,14 @@ contract IdentityRegistry is Reencrypt, Ownable {
         return identities[wallet].registrarId;
     }
 
-    function getIdentifier(address wallet, string calldata identifier) public view returns (euint32) {
+    function getIdentifier(address wallet, string calldata identifier) public view returns (euint64) {
         return _getIdentifier(wallet, identifier);
     }
 
     function _getIdentifier(
         address wallet,
         string calldata identifier
-    ) internal view onlyExistingWallet(wallet) onlyAllowed(wallet, identifier) returns (euint32) {
+    ) internal view onlyExistingWallet(wallet) onlyAllowed(wallet, identifier) returns (euint64) {
         return identities[wallet].identifiers[identifier];
     }
 

@@ -26,6 +26,7 @@ describe('EncryptedERC20', function () {
       signature: '',
       publicKey: '',
     };
+
     const encryptedBalance = await this.erc20.balanceOf(this.signers.alice, token.publicKey, token.signature);
     // Decrypt the balance
     const balance = this.instances.alice.decrypt(this.contractAddress, encryptedBalance);
@@ -40,7 +41,7 @@ describe('EncryptedERC20', function () {
     const transaction = await this.erc20.mint(10000);
     await transaction.wait();
 
-    const encryptedTransferAmount = this.instances.alice.encrypt32(1337);
+    const encryptedTransferAmount = this.instances.alice.encrypt64(1337);
     const tx = await this.erc20['transfer(address,bytes)'](this.signers.bob.address, encryptedTransferAmount);
     await tx.wait();
 
@@ -73,7 +74,7 @@ describe('EncryptedERC20', function () {
     const transaction = await this.erc20.mint(1000);
     await transaction.wait();
 
-    const encryptedTransferAmount = this.instances.alice.encrypt32(1337);
+    const encryptedTransferAmount = this.instances.alice.encrypt64(1337);
     const tx = await this.erc20['transfer(address,bytes)'](this.signers.bob.address, encryptedTransferAmount);
     await tx.wait();
 
@@ -106,12 +107,12 @@ describe('EncryptedERC20', function () {
     const transaction = await this.erc20.mint(10000);
     await transaction.wait();
 
-    const encryptedAllowanceAmount = this.instances.alice.encrypt32(1337);
+    const encryptedAllowanceAmount = this.instances.alice.encrypt64(1337);
     const tx = await this.erc20['approve(address,bytes)'](this.signers.bob.address, encryptedAllowanceAmount);
     await tx.wait();
 
     const bobErc20 = this.erc20.connect(this.signers.bob);
-    const encryptedTransferAmount = this.instances.bob.encrypt32(1338); // above allowance so next tx should actually not send any token
+    const encryptedTransferAmount = this.instances.bob.encrypt64(1338); // above allowance so next tx should actually not send any token
     const tx2 = await bobErc20['transferFrom(address,address,bytes)'](
       this.signers.alice.address,
       this.signers.bob.address,
@@ -136,7 +137,7 @@ describe('EncryptedERC20', function () {
     const balanceBob = this.instances.bob.decrypt(this.contractAddress, encryptedBalanceBob);
     expect(balanceBob).to.equal(0); // check that transfer did not happen, as expected
 
-    const encryptedTransferAmount2 = this.instances.bob.encrypt32(1337); // below allowance so next tx should send token
+    const encryptedTransferAmount2 = this.instances.bob.encrypt64(1337); // below allowance so next tx should send token
     const tx3 = await bobErc20['transferFrom(address,address,bytes)'](
       this.signers.alice.address,
       this.signers.bob.address,

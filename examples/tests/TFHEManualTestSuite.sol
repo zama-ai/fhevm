@@ -23,6 +23,10 @@ contract TFHEManualTestSuite {
         return TFHE.decrypt(TFHE.asEuint32(TFHE.asEbool(input)));
     }
 
+    function test_ebool_to_euint64_cast(bool input) public view returns (uint64) {
+        return TFHE.decrypt(TFHE.asEuint64(TFHE.asEbool(input)));
+    }
+
     function test_opt_req(bool input) public view {
         TFHE.optReq(TFHE.asEbool(input));
     }

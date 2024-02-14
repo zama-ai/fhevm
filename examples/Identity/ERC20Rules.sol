@@ -6,13 +6,13 @@ import "../../lib/TFHE.sol";
 import "./IdentityRegistry.sol";
 
 interface ICompliantERC20 {
-    function getIdentifier(address wallet, string calldata identifier) external view returns (euint32);
+    function getIdentifier(address wallet, string calldata identifier) external view returns (euint64);
 }
 
 contract ERC20Rules {
     string[] public identifiers;
 
-    mapping(address => uint32) public whitelistedWallets;
+    mapping(address => uint64) public whitelistedWallets;
     mapping(string => uint8) public countries;
     uint16[] public country2CountryRestrictions;
 
@@ -39,7 +39,7 @@ contract ERC20Rules {
         return country2CountryRestrictions;
     }
 
-    function transfer(address from, address to, euint32 amount) public view returns (euint32) {
+    function transfer(address from, address to, euint64 amount) public view returns (euint64) {
         ICompliantERC20 erc20 = ICompliantERC20(msg.sender);
         // Condition 1: 10k limit between two different countries
         ebool transferLimitOK = checkLimitTransfer(erc20, from, to, amount);
@@ -56,14 +56,14 @@ contract ERC20Rules {
 
         condition = TFHE.and(condition, c2cOK);
 
-        return TFHE.cmux(condition, amount, TFHE.asEuint32(0));
+        return TFHE.cmux(condition, amount, TFHE.asEuint64(0));
     }
 
     function checkLimitTransfer(
         ICompliantERC20 erc20,
         address from,
         address to,
-        euint32 amount
+        euint64 amount
     ) internal view returns (ebool) {
         euint8 fromCountry = TFHE.asEuint8(erc20.getIdentifier(from, "country"));
         euint8 toCountry = TFHE.asEuint8(erc20.getIdentifier(to, "country"));
@@ -84,8 +84,8 @@ contract ERC20Rules {
         // Disallow transfer from country 2 to country 1
         uint16[] memory c2cRestrictions = getC2CRestrictions();
 
-        euint32 fromCountry = erc20.getIdentifier(from, "country");
-        euint32 toCountry = erc20.getIdentifier(to, "country");
+        euint64 fromCountry = erc20.getIdentifier(from, "country");
+        euint64 toCountry = erc20.getIdentifier(to, "country");
         require(TFHE.isInitialized(fromCountry) && TFHE.isInitialized(toCountry), "You don't have access");
         euint16 countryToCountry = TFHE.shl(TFHE.asEuint16(fromCountry), 8) + TFHE.asEuint16(toCountry);
         ebool condition = TFHE.asEbool(true);

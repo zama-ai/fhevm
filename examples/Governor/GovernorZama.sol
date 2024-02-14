@@ -14,7 +14,7 @@ contract GovernorZama {
     } // 400,000 = 4% of Comp
 
     /// @notice The number of votes required in order for a voter to become a proposer
-    function proposalThreshold() public pure returns (uint32) {
+    function proposalThreshold() public pure returns (uint64) {
         return 3;
         // return 100000e18;
     } // 100,000 = 1% of Comp
@@ -66,9 +66,9 @@ contract GovernorZama {
         /// @notice The block at which voting ends: votes must be cast prior to this block
         uint endBlock;
         /// @notice Current number of votes in favor of this proposal
-        euint32 forVotes;
+        euint64 forVotes;
         /// @notice Current number of votes in opposition to this proposal
-        euint32 againstVotes;
+        euint64 againstVotes;
         /// @notice Flag marking whether the proposal has been canceled
         bool canceled;
         /// @notice Flag marking whether the proposal has been executed
@@ -84,7 +84,7 @@ contract GovernorZama {
         /// @notice Whether or not the voter supports the proposal
         bool support;
         /// @notice The number of votes the voter had, which were cast
-        euint32 votes;
+        euint64 votes;
     }
 
     /// @notice Possible states that a proposal may be in
@@ -192,8 +192,8 @@ contract GovernorZama {
         newProposal.targets = targets;
         newProposal.values = values;
         newProposal.signatures = signatures;
-        newProposal.forVotes = TFHE.asEuint32(0);
-        newProposal.againstVotes = TFHE.asEuint32(0);
+        newProposal.forVotes = TFHE.asEuint64(0);
+        newProposal.againstVotes = TFHE.asEuint64(0);
         newProposal.calldatas = calldatas;
         newProposal.startBlock = startBlock;
         newProposal.endBlock = endBlock;
@@ -298,7 +298,7 @@ contract GovernorZama {
 
     function isDefeated(Proposal storage proposal) private view returns (bool) {
         ebool defeated = TFHE.le(proposal.forVotes, proposal.againstVotes);
-        ebool reachedQuorum = TFHE.lt(proposal.forVotes, uint32(quorumVotes()));
+        ebool reachedQuorum = TFHE.lt(proposal.forVotes, uint64(quorumVotes()));
 
         return TFHE.decrypt(reachedQuorum) || TFHE.decrypt(defeated);
     }
@@ -364,7 +364,7 @@ contract GovernorZama {
         Proposal storage proposal = proposals[proposalId];
         Receipt storage receipt = proposal.receipts[voter];
         require(receipt.hasVoted == false, "GovernorAlpha::_castVote: voter already voted");
-        euint32 votes = comp.getPriorVotes(voter, proposal.startBlock);
+        euint64 votes = comp.getPriorVotes(voter, proposal.startBlock);
 
         proposal.forVotes = TFHE.cmux(support, proposal.forVotes + votes, proposal.forVotes);
         proposal.againstVotes = TFHE.cmux(support, proposal.againstVotes, proposal.againstVotes + votes);
@@ -452,5 +452,5 @@ interface TimelockInterface {
 }
 
 interface CompInterface {
-    function getPriorVotes(address account, uint blockNumber) external view returns (euint32);
+    function getPriorVotes(address account, uint blockNumber) external view returns (euint64);
 }

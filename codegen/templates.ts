@@ -9,6 +9,7 @@ type ebool is uint256;
 type euint8 is uint256;
 type euint16 is uint256;
 type euint32 is uint256;
+type euint64 is uint256;
 
 library Common {
     // Values used to communicate types to the runtime.
@@ -16,6 +17,7 @@ library Common {
     uint8 internal constant euint8_t = 0;
     uint8 internal constant euint16_t = 1;
     uint8 internal constant euint32_t = 2;
+    uint8 internal constant euint64_t = 3;
 }
 `;
 }
@@ -966,6 +968,9 @@ library Impl {
       if (toType == 2) {
           result = uint256(uint32(ciphertext));
       }
+      if (toType == 3) {
+          result = uint256(uint64(ciphertext));
+      }
   }
 
   function trivialEncrypt(uint256 value, uint8 toType) internal pure returns (uint256 result) {
@@ -984,6 +989,8 @@ library Impl {
         result = uint16(randomness);
       } else if (randType == Common.euint32_t) {
         result = uint32(randomness);
+      } else if (randType == Common.euint64_t) {
+        result = uint64(randomness);
       } else {
         revert("rand() mock invalid type");
       }
