@@ -1,8 +1,8 @@
-name: Publish fhEVM Solidity release
+name: Publish fhEVM Solidity prerelease
 
 on:
   release:
-    types: [released]
+    types: [prereleased]
 
 jobs:
   publish:
