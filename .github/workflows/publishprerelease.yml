@@ -1,8 +1,8 @@
-name: Publish fhEVM Solidity release
+name: Publish fhEVM Solidity prerelease
 
 on:
   release:
-    types: [released]
+    types: [prereleased]
 
 jobs:
   publish:
@@ -17,4 +17,5 @@ jobs:
       - run: npm run compile
       - uses: JS-DevTools/npm-publish@0f451a94170d1699fd50710966d48fb26194d939
         with:
+          tag: prerelease
           token: ${{ secrets.NPM_TOKEN }}
