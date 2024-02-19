@@ -5,19 +5,19 @@ pragma solidity ^0.8.20;
 import "./TFHE.sol";
 
 library Impl {
-    function add(uint256 lhs, uint256 rhs, bool scalar) internal pure returns (uint256 result) {
+    function add(uint256 lhs, uint256 rhs, bool /*scalar*/) internal pure returns (uint256 result) {
         unchecked {
             result = lhs + rhs;
         }
     }
 
-    function sub(uint256 lhs, uint256 rhs, bool scalar) internal pure returns (uint256 result) {
+    function sub(uint256 lhs, uint256 rhs, bool /*scalar*/) internal pure returns (uint256 result) {
         unchecked {
             result = lhs - rhs;
         }
     }
 
-    function mul(uint256 lhs, uint256 rhs, bool scalar) internal pure returns (uint256 result) {
+    function mul(uint256 lhs, uint256 rhs, bool /*scalar*/) internal pure returns (uint256 result) {
         unchecked {
             result = lhs * rhs;
         }
@@ -43,43 +43,43 @@ library Impl {
         result = lhs ^ rhs;
     }
 
-    function shl(uint256 lhs, uint256 rhs, bool scalar) internal pure returns (uint256 result) {
+    function shl(uint256 lhs, uint256 rhs, bool /*scalar*/) internal pure returns (uint256 result) {
         result = lhs << rhs;
     }
 
-    function shr(uint256 lhs, uint256 rhs, bool scalar) internal pure returns (uint256 result) {
+    function shr(uint256 lhs, uint256 rhs, bool /*scalar*/) internal pure returns (uint256 result) {
         result = lhs >> rhs;
     }
 
-    function eq(uint256 lhs, uint256 rhs, bool scalar) internal pure returns (uint256 result) {
+    function eq(uint256 lhs, uint256 rhs, bool /*scalar*/) internal pure returns (uint256 result) {
         result = (lhs == rhs) ? 1 : 0;
     }
 
-    function ne(uint256 lhs, uint256 rhs, bool scalar) internal pure returns (uint256 result) {
+    function ne(uint256 lhs, uint256 rhs, bool /*scalar*/) internal pure returns (uint256 result) {
         result = (lhs != rhs) ? 1 : 0;
     }
 
-    function ge(uint256 lhs, uint256 rhs, bool scalar) internal pure returns (uint256 result) {
+    function ge(uint256 lhs, uint256 rhs, bool /*scalar*/) internal pure returns (uint256 result) {
         result = (lhs >= rhs) ? 1 : 0;
     }
 
-    function gt(uint256 lhs, uint256 rhs, bool scalar) internal pure returns (uint256 result) {
+    function gt(uint256 lhs, uint256 rhs, bool /*scalar*/) internal pure returns (uint256 result) {
         result = (lhs > rhs) ? 1 : 0;
     }
 
-    function le(uint256 lhs, uint256 rhs, bool scalar) internal pure returns (uint256 result) {
+    function le(uint256 lhs, uint256 rhs, bool /*scalar*/) internal pure returns (uint256 result) {
         result = (lhs <= rhs) ? 1 : 0;
     }
 
-    function lt(uint256 lhs, uint256 rhs, bool scalar) internal pure returns (uint256 result) {
+    function lt(uint256 lhs, uint256 rhs, bool /*scalar*/) internal pure returns (uint256 result) {
         result = (lhs < rhs) ? 1 : 0;
     }
 
-    function min(uint256 lhs, uint256 rhs, bool scalar) internal pure returns (uint256 result) {
+    function min(uint256 lhs, uint256 rhs, bool /*scalar*/) internal pure returns (uint256 result) {
         result = (lhs < rhs) ? lhs : rhs;
     }
 
-    function max(uint256 lhs, uint256 rhs, bool scalar) internal pure returns (uint256 result) {
+    function max(uint256 lhs, uint256 rhs, bool /*scalar*/) internal pure returns (uint256 result) {
         result = (lhs > rhs) ? lhs : rhs;
     }
 
@@ -106,10 +106,12 @@ library Impl {
     }
 
     function optReq(uint256 ciphertext) internal view {
+        this; // silence state mutability warning
         require(ciphertext == 1, "transaction execution reverted");
     }
 
-    function reencrypt(uint256 ciphertext, bytes32 publicKey) internal view returns (bytes memory reencrypted) {
+    function reencrypt(uint256 ciphertext, bytes32 /*publicKey*/) internal view returns (bytes memory reencrypted) {
+        this; // silence state mutability warning
         reencrypted = new bytes(32);
         assembly {
             mstore(add(reencrypted, 32), ciphertext)
@@ -118,10 +120,11 @@ library Impl {
     }
 
     function fhePubKey() internal view returns (bytes memory key) {
+        this; // silence state mutability warning
         key = hex"0123456789ABCDEF";
     }
 
-    function verify(bytes memory _ciphertextBytes, uint8 _toType) internal pure returns (uint256 result) {
+    function verify(bytes memory _ciphertextBytes, uint8 /*_toType*/) internal pure returns (uint256 result) {
         uint256 x;
         assembly {
             switch gt(mload(_ciphertextBytes), 31)
@@ -153,11 +156,12 @@ library Impl {
         }
     }
 
-    function trivialEncrypt(uint256 value, uint8 toType) internal pure returns (uint256 result) {
+    function trivialEncrypt(uint256 value, uint8 /*toType*/) internal pure returns (uint256 result) {
         result = value;
     }
 
     function decrypt(uint256 ciphertext) internal view returns (uint256 result) {
+        this; // silence state mutability warning
         result = ciphertext;
     }
 

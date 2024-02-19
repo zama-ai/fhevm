@@ -17,7 +17,7 @@
     "prettier": "prettier --write \"**/*.{js,json,md,sol,ts,yml}\"",
     "test:inband": "hardhat test",
     "test": "HARDHAT_PARALLEL=1 hardhat test --parallel",
-    "test:mock": "HARDHAT_NETWORK=hardhat npx hardhat test --network hardhat",
+    "test:mock": "HARDHAT_NETWORK=hardhat hardhat test --network hardhat",
     "coverage:mock": "HARDHAT_NETWORK=hardhat npx hardhat coverage-mock --network hardhat",
     "typechain": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat typechain",
     "codegen": "npx ts-node codegen/main.ts && npm run prettier",
