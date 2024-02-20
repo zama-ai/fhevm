@@ -167,6 +167,12 @@ library TFHE {
 `);
   });
   if (mocked) {
+    res.push(`
+    // Return true if the enrypted integer is initialized and false otherwise.
+    function isInitialized(ebool /*v*/) internal pure returns (bool) {
+        return true;
+    }
+  `);
     supportedBits.forEach((b) => {
       res.push(`
       // Return true if the enrypted integer is initialized and false otherwise.
@@ -176,6 +182,12 @@ library TFHE {
     `);
     });
   } else {
+    res.push(`
+    // Return true if the enrypted integer is initialized and false otherwise.
+    function isInitialized(ebool v) internal pure returns (bool) {
+        return ebool.unwrap(v) != 0;
+    }
+  `);
     supportedBits.forEach((b) => {
       res.push(`
       // Return true if the enrypted integer is initialized and false otherwise.

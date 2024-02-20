@@ -26,6 +26,11 @@ library TFHE {
     euint64 constant NIL64 = euint64.wrap(0);
 
     // Return true if the enrypted integer is initialized and false otherwise.
+    function isInitialized(ebool /*v*/) internal pure returns (bool) {
+        return true;
+    }
+
+    // Return true if the enrypted integer is initialized and false otherwise.
     function isInitialized(euint8 /*v*/) internal pure returns (bool) {
         return true;
     }
