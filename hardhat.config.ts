@@ -141,6 +141,13 @@ const config: HardhatUserConfig = {
     src: './examples',
   },
   networks: {
+    hardhat: {
+      accounts: {
+        count: 10,
+        mnemonic,
+        path: "m/44'/60'/0'/0",
+      },
+    },
     zama: getChainConfig('zama'),
     localDev: getChainConfig('local'),
     local: getChainConfig('local'),
