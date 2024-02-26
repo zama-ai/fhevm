@@ -86,3 +86,5 @@ export const initSigners = async (quantity: number): Promise<void> => {
 export const getSigners = async (): Promise<Signers> => {
   return signers;
 };
+
+export const requestFaucet = faucet;

@@ -1,7 +1,7 @@
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
-import { getSigners, initSigners } from '../signers';
+import { getSigners, initSigners, requestFaucet } from '../signers';
 
 describe('TestAsyncDecrypt', function () {
   before(async function () {
@@ -10,38 +10,39 @@ describe('TestAsyncDecrypt', function () {
   });
 
   beforeEach(async function () {
+    const alicePrivateKey = '0x8355bb293b8714a06b972bfe692d1bd9f24235c1f4007ae0be285d398b0bba2f'; // private key corresponding to Alice's original account (derived from the mnemonic in `.env.example`)
     const evePrivateKey = '0x717fd99986df414889fd8b51069d4f90a50af72e542c58ee065f5883779099c6'; // private key corresponding to Eve's original account (derived from the mnemonic in `.env.example`)
+    this.alice = new ethers.Wallet(alicePrivateKey).connect(ethers.provider);
     this.eve = new ethers.Wallet(evePrivateKey).connect(ethers.provider);
-    const tx0 = await this.signers.alice.sendTransaction({ to: this.eve.address, value: ethers.parseEther('0.1') });
-    await tx0.wait();
-
     const addressToCheck = '0xc8c9303Cd7F337fab769686B593B87DC3403E0ce'; // Should be equal to the hardcoded ORACLE_PREDEPLOY_ADDRESS in the Oracle solidity library
     const codeAtAddress = await ethers.provider.getCode(addressToCheck);
     if (codeAtAddress === '0x') {
-      // OraclePredploy not deployed yet, so Eve (original's account from `.env`) should deploy it while her nonce is still null to get the correct address
-      const nonce = await ethers.provider.getTransactionCount(this.eve);
+      await requestFaucet(this.alice.address);
+      await requestFaucet(this.eve.address);
+      // OraclePredploy not deployed yet, so Eve (original account from `.env`) should deploy it while her nonce is still null to get the correct address
+      const nonce = await ethers.provider.getTransactionCount(this.eve.address);
       if (nonce !== 0) {
         throw new Error(
           `The nonce of Eve's account is not null, could not deploy the Oracle predeploy. Please relaunch a clean instance of the fhEVM`,
         );
       }
-      const oracleFactory = await ethers.getContractFactory('OraclePredeploy');
-      this.oracle = await oracleFactory.connect(this.eve).deploy(); // Eve is the Oracle Admin
+      const oracleFactory = await ethers.getContractFactory('OraclePredeployTest');
+      this.oracle = await oracleFactory.connect(this.eve).deploy(this.alice.address); // Eve sets Alice (original account from `.env`) as the Oracle Admin
       await this.oracle.waitForDeployment();
-      const tx1 = await this.oracle.connect(this.eve).addRelayer(this.signers.bob.address); // Bob is an Oracle Relayer
+      const tx1 = await this.oracle.connect(this.alice).addRelayer(this.signers.bob.address); // Bob is an Oracle Relayer
       await tx1.wait();
     } else {
       // An oracle was already deployed at ORACLE_PREDEPLOY_ADDRESS, check that is indeed the OraclePredploy contract by comparing hashes
       const codeHash = ethers.keccak256(codeAtAddress);
       if (
-        codeHash === '0xabf5180b65c12aae6fb23e1c971550809bb33088d0409d25f55ef8d9dbdb2d1f' ||
-        codeHash === '0x236016a40c97d82055188e770d4bd2eaa72160b1bcfd4542018bdf5725816ddd'
+        codeHash === '0x0cc63344ed0c9df080a56306bd363c6dc3618618cf3c2d77f0367c9fc745d99c' ||
+        codeHash === '0xdbf7e8e8bf5f776cb8b101f95ca1ff1ab161df3f9eb1f31cb39bfa66e9ba0034'
       ) {
         // it is indeed the OraclePredploy because it codeHashes are matching on either hardhat node (mocked mode) or on the fhevm node
-        this.oracle = await ethers.getContractAt('OraclePredeploy', addressToCheck);
+        this.oracle = await ethers.getContractAt('OraclePredeployTest', addressToCheck);
         const bobIsRelayer = await this.oracle.isRelayer(this.signers.bob.address);
         if (!bobIsRelayer) {
-          const tx1 = await this.oracle.connect(this.eve).addRelayer(this.signers.bob.address); // Bob is an Oracle Relayer
+          const tx1 = await this.oracle.connect(this.alice).addRelayer(this.signers.bob.address); // Bob is an Oracle Relayer
           await tx1.wait();
         }
       } else {
@@ -51,20 +52,16 @@ describe('TestAsyncDecrypt', function () {
         );
       }
     }
-
     const contractFactory = await ethers.getContractFactory('TestAsyncDecrypt');
-    this.contract = await contractFactory.connect(this.signers.alice).deploy();
+    this.contract = await contractFactory.connect(this.alice).deploy();
   });
 
   it('test async decrypt', async function () {
     const tx2 = await this.contract.connect(this.signers.carol).request(5, 15, { gasLimit: 5_000_000 });
     await tx2.wait();
-
     const filter = this.oracle.filters.EventDecryptionEUint32;
     const events = await this.oracle.queryFilter(filter, -1);
-
     const event = events[0];
-
     const args = event.args;
     const requestID = args[0];
     const handlesCTs = args[1];
@@ -75,7 +72,7 @@ describe('TestAsyncDecrypt', function () {
     const msgValue = args[4];
 
     // Here we simulate the threshold decryption by the KMS
-    const resultDecryption = await this.oracle.connect(this.signers.bob).decryptTEST(requestID);
+    const resultDecryption = await this.oracle.connect(this.signers.bob).decryptTest(requestID);
 
     // Finally the relayer submit a tx to fulfill the decryption request and execute the callback before the timeout
     const tx3 = await this.oracle

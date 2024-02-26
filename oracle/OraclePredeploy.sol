@@ -58,7 +58,7 @@ contract OraclePredeploy is Ownable2Step {
     mapping(uint256 => DecryptionRequestEUint64) decryptionRequestsEUint64;
     mapping(uint256 => bool) isFulfilled;
 
-    constructor() Ownable(msg.sender) {}
+    constructor(address predeployOwner) Ownable(predeployOwner) {}
 
     event EventDecryptionEBool(
         uint256 indexed requestID,
@@ -370,11 +370,5 @@ contract OraclePredeploy is Ownable2Step {
     modifier onlyRelayer() {
         require(isRelayer[msg.sender], "Not relayer");
         _;
-    }
-
-    // ONLY FOR TESTING PURPOSE : decryptTEST function MUST BE REMOVED IN PRODUCTION
-    // This is used in the test to simulate the threshold decryption by the KMS after the request
-    function decryptTEST(uint256 requestID) external view onlyRelayer returns (uint32) {
-        return TFHE.decrypt(decryptionRequestsEUint32[requestID].cts[0]);
     }
 }

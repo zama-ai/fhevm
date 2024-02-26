@@ -3,8 +3,8 @@
 pragma solidity ^0.8.20;
 
 import "../OraclePredeploy.sol";
+import {ORACLE_PREDEPLOY_ADDRESS} from "./PredeployAddress.sol";
 
-address constant ORACLE_PREDEPLOY_ADDRESS = 0xc8c9303Cd7F337fab769686B593B87DC3403E0ce; // Oracle should be deployed by Eve when her seed is 0
 OraclePredeploy constant oraclePredeploy = OraclePredeploy(ORACLE_PREDEPLOY_ADDRESS);
 
 library Oracle {
