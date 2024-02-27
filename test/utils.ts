@@ -77,7 +77,7 @@ async function deployCounterContract(): Promise<Counter> {
   const signers = await getSigners();
 
   const contractFactory = await ethers.getContractFactory('Counter');
-  const contract = await contractFactory.connect(signers.eve).deploy();
+  const contract = await contractFactory.connect(signers.dave).deploy();
   await contract.waitForDeployment();
 
   return contract;
