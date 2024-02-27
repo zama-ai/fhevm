@@ -1,5 +1,5 @@
-import { exec as oldExec } from 'child_process';
 import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
+import { exec as oldExec } from 'child_process';
 import { config, ethers } from 'hardhat';
 import { promisify } from 'util';
 
