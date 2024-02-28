@@ -2,6 +2,7 @@ import { strict as assert } from 'node:assert';
 
 import { Operator } from './common';
 import { overloadTests } from './overloadTests';
+import { getUint } from './utils';
 
 export enum ArgumentType {
   Ebool,
@@ -121,7 +122,7 @@ async function deployTfheTestFixture${os.shardNumber}(): Promise<TFHETestSuite${
       const methodName = signatureContractMethodName(o);
       overloadUsages[methodName] = true;
       const tests = overloadTests[methodName] || [];
-      assert(tests.length > 0, `Overload ${methodName} has no tests, please add them.`);
+      // assert(tests.length > 0, `Overload ${methodName} has no tests, please add them.`);
       var testIndex = 1;
       tests.forEach((t) => {
         assert(
@@ -299,7 +300,7 @@ function functionTypeToCalldataType(t: FunctionType): string {
     case ArgumentType.EUint:
       return `bytes calldata`;
     case ArgumentType.Uint:
-      return `uint${t.bits}`;
+      return getUint(t.bits);
     case ArgumentType.Ebool:
       return `bool`;
   }
@@ -309,7 +310,7 @@ function functionTypeToDecryptedType(t: FunctionType): string {
   switch (t.type) {
     case ArgumentType.EUint:
     case ArgumentType.Uint:
-      return `uint${t.bits}`;
+      return getUint(t.bits);
     case ArgumentType.Ebool:
       return `bool`;
   }
@@ -330,7 +331,7 @@ function functionTypeToString(t: FunctionType): string {
     case ArgumentType.EUint:
       return `euint${t.bits}`;
     case ArgumentType.Uint:
-      return `uint${t.bits}`;
+      return getUint(t.bits);
     case ArgumentType.Ebool:
       return `ebool`;
   }

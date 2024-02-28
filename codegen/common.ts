@@ -39,7 +39,7 @@ export enum ReturnType {
   Ebool,
 }
 
-export const SUPPORTED_BITS: number[] = [8, 16, 32, 64];
+export const SUPPORTED_BITS: number[] = [4, 8, 16, 32, 64];
 
 export const ALL_OPERATORS: Operator[] = [
   {

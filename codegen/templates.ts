@@ -2,6 +2,7 @@ import { assert } from 'console';
 
 import { CodegenContext, Operator, OperatorArguments, ReturnType } from './common';
 import { ArgumentType, OverloadSignature } from './testgen';
+import { getUint } from './utils';
 
 export function commonSolLib(): string {
   return `
@@ -392,7 +393,7 @@ function tfheScalarOperator(
   // rhs scalar
   res.push(`
     // Evaluate ${operator.name}(a, b) and return the result.
-    function ${operator.name}(euint${lhsBits} a, uint${rhsBits} b) internal pure returns (${returnType}) {
+    function ${operator.name}(euint${lhsBits} a, ${getUint(rhsBits)} b) internal pure returns (${returnType}) {
         if (!isInitialized(a)) {
             a = asEuint${lhsBits}(0);
         }
@@ -414,7 +415,7 @@ function tfheScalarOperator(
     res.push(`
 
     // Evaluate ${operator.name}(a, b) and return the result.
-    function ${operator.name}(uint${lhsBits} a, euint${rhsBits} b) internal pure returns (${returnType}) {
+    function ${operator.name}(${getUint(lhsBits)} a, euint${rhsBits} b) internal pure returns (${returnType}) {
         ${maybeEncryptLeft}
         if (!isInitialized(b)) {
             b = asEuint${rhsBits}(0);
@@ -445,15 +446,17 @@ function tfheShiftOperators(inputBits: number, operator: Operator, signatures: O
   const rightExpr = castRightToLeft ? `asEuint${outputBits}(b)` : 'b';
   let implExpression = `Impl.${operator.name}(euint${outputBits}.unwrap(${leftExpr}), euint${outputBits}.unwrap(${rightExpr})${scalarFlag})`;
 
-  signatures.push({
-    name: operator.name,
-    arguments: [
-      { type: ArgumentType.EUint, bits: lhsBits },
-      { type: ArgumentType.EUint, bits: rhsBits },
-    ],
-    returnType: { type: returnTypeOverload, bits: outputBits },
-  });
-  res.push(`
+  if (inputBits >= 8) {
+    signatures.push({
+      name: operator.name,
+      arguments: [
+        { type: ArgumentType.EUint, bits: lhsBits },
+        { type: ArgumentType.EUint, bits: rhsBits },
+      ],
+      returnType: { type: returnTypeOverload, bits: outputBits },
+    });
+
+    res.push(`
     // Evaluate ${operator.name}(a, b) and return the result.
     function ${operator.name}(euint${lhsBits} a, euint${rhsBits} b) internal pure returns (${returnType}) {
         if (!isInitialized(a)) {
@@ -465,6 +468,7 @@ function tfheShiftOperators(inputBits: number, operator: Operator, signatures: O
         return ${returnType}.wrap(${implExpression});
     }
 `);
+  }
 
   // Code and test for shift(euint{inputBits},uint8}
   scalarFlag = ', true';
@@ -489,7 +493,7 @@ function tfheShiftOperators(inputBits: number, operator: Operator, signatures: O
   });
   res.push(`
     // Evaluate ${operator.name}(a, b) and return the result.
-    function ${operator.name}(euint${lhsBits} a, uint${rhsBits} b) internal pure returns (${returnType}) {
+    function ${operator.name}(euint${lhsBits} a, ${getUint(rhsBits)} b) internal pure returns (${returnType}) {
         if (!isInitialized(a)) {
             a = asEuint${lhsBits}(0);
         }
@@ -631,7 +635,9 @@ function tfheCustomUnaryOperators(bits: number, signatures: OverloadSignature[])
     // Reencrypt the given 'value' under the given 'publicKey'.
     // If 'value' is not initialized, the returned value will contain the 'defaultValue' constant.
     // Return a serialized euint${bits} ciphertext.
-    function reencrypt(euint${bits} value, bytes32 publicKey, uint${bits} defaultValue) internal view returns (bytes memory reencrypted) {
+    function reencrypt(euint${bits} value, bytes32 publicKey, ${getUint(
+      bits,
+    )} defaultValue) internal view returns (bytes memory reencrypted) {
         if (euint${bits}.unwrap(value) != 0) {
             return Impl.reencrypt(euint${bits}.unwrap(value), publicKey);
         } else {
@@ -640,8 +646,8 @@ function tfheCustomUnaryOperators(bits: number, signatures: OverloadSignature[])
     }
 
     // Decrypts the encrypted 'value'.
-    function decrypt(euint${bits} value) internal view returns (uint${bits}) {
-        return uint${bits}(Impl.decrypt(euint${bits}.unwrap(value)));
+    function decrypt(euint${bits} value) internal view returns (${getUint(bits)}) {
+        return ${getUint(bits)}(Impl.decrypt(euint${bits}.unwrap(value)));
     }
     `;
 }
