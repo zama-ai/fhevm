@@ -49,32 +49,32 @@ describe('TFHE manual operations', function () {
   });
 
   it('ebool to euint16 casting works with true', async function () {
-    const res = await this.contract.test_ebool_to_euint16_cast(true);
+    const res = await this.contract.test_eboolo_euint16_cast(true);
     expect(res).to.equal(1);
   });
 
   it('ebool to euint16 casting works with false', async function () {
-    const res = await this.contract.test_ebool_to_euint16_cast(false);
+    const res = await this.contract.test_eboolo_euint16_cast(false);
     expect(res).to.equal(0);
   });
 
   it('ebool to euint32 casting works with true', async function () {
-    const res = await this.contract.test_ebool_to_euint32_cast(true);
+    const res = await this.contract.test_eboolo_euint32_cast(true);
     expect(res).to.equal(1);
   });
 
   it('ebool to euint32 casting works with false', async function () {
-    const res = await this.contract.test_ebool_to_euint32_cast(false);
+    const res = await this.contract.test_eboolo_euint32_cast(false);
     expect(res).to.equal(0);
   });
 
   it('ebool to euint64 casting works with true', async function () {
-    const res = await this.contract.test_ebool_to_euint64_cast(true);
+    const res = await this.contract.test_eboolo_euint64_cast(true);
     expect(res).to.equal(1);
   });
 
   it('ebool to euint32 casting works with false', async function () {
-    const res = await this.contract.test_ebool_to_euint64_cast(false);
+    const res = await this.contract.test_eboolo_euint64_cast(false);
     expect(res).to.equal(0);
   });
 

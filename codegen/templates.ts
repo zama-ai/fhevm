@@ -6,6 +6,7 @@ import { ArgumentType, OverloadSignature } from './testgen';
 export function commonSolLib(): string {
   return `
 type ebool is uint256;
+type euint4 is uint256;
 type euint8 is uint256;
 type euint16 is uint256;
 type euint32 is uint256;
@@ -13,11 +14,12 @@ type euint64 is uint256;
 
 library Common {
     // Values used to communicate types to the runtime.
-    uint8 internal constant ebool_t = 0;
-    uint8 internal constant euint8_t = 0;
-    uint8 internal constant euint16_t = 1;
-    uint8 internal constant euint32_t = 2;
-    uint8 internal constant euint64_t = 3;
+    uint8 internal constant ebool = 0;
+    uint8 internal constant euint4_t = 1;
+    uint8 internal constant euint8_t = 2;
+    uint8 internal constant euint16_t = 3;
+    uint8 internal constant euint32_t = 4;
+    uint8 internal constant euint64_t = 5;
 }
 `;
 }
@@ -305,7 +307,6 @@ function tfheEncryptedOperator(
   const outputBits = Math.max(lhsBits, rhsBits);
   const castLeftToRight = lhsBits < rhsBits;
   const castRightToLeft = lhsBits > rhsBits;
-  const boolCastNeeded = outputBits > 8 && operator.returnType == ReturnType.Ebool;
   const returnType =
     operator.returnType == ReturnType.Uint
       ? `euint${outputBits}`
@@ -319,9 +320,6 @@ function tfheEncryptedOperator(
   const leftExpr = castLeftToRight ? `asEuint${outputBits}(a)` : 'a';
   const rightExpr = castRightToLeft ? `asEuint${outputBits}(b)` : 'b';
   let implExpression = `Impl.${operator.name}(euint${outputBits}.unwrap(${leftExpr}), euint${outputBits}.unwrap(${rightExpr})${scalarFlag})`;
-  if (boolCastNeeded) {
-    implExpression = `Impl.cast(${implExpression}, Common.ebool_t)`;
-  }
   signatures.push({
     name: operator.name,
     arguments: [
@@ -363,7 +361,6 @@ function tfheScalarOperator(
   const res: string[] = [];
 
   const outputBits = Math.max(lhsBits, rhsBits);
-  const boolCastNeeded = outputBits > 8 && operator.returnType == ReturnType.Ebool;
   const returnType =
     operator.returnType == ReturnType.Uint
       ? `euint${outputBits}`
@@ -383,11 +380,6 @@ function tfheScalarOperator(
     maybeEncryptLeft = `euint${outputBits} aEnc = asEuint${outputBits}(a);`;
     implExpressionB = `Impl.${leftOpName}(euint${outputBits}.unwrap(aEnc), euint${outputBits}.unwrap(b)${scalarFlag})`;
   }
-  if (boolCastNeeded) {
-    implExpressionA = `Impl.cast(${implExpressionA}, Common.ebool_t)`;
-    implExpressionB = `Impl.cast(${implExpressionB}, Common.ebool_t)`;
-  }
-
   signatures.push({
     name: operator.name,
     arguments: [
@@ -541,48 +533,47 @@ function tfheAsEboolUnaryCast(bits: number): string {
 
   if (bits == 8) {
     res.push(`
-    // Convert a serialized 'ciphertext' to an encrypted boolean.
+    // Convert a serialized 'ciphertext' to an encrypted euint8 integer.
     function asEbool(bytes memory ciphertext) internal pure returns (ebool) {
-        return asEbool(asEuint8(ciphertext));
+        return ebool.wrap(Impl.verify(ciphertext, Common.ebool));
+    }
+
+    // Convert a plaintext value to an encrypted euint8 integer.
+    function asEbool(uint256 value) internal pure returns (ebool) {
+        return ebool.wrap(Impl.trivialEncrypt(value, Common.ebool));
     }
 
     // Convert a plaintext boolean to an encrypted boolean.
     function asEbool(bool value) internal pure returns (ebool) {
         if (value) {
-            return asEbool(asEuint8(1));
+            return asEbool(1);
         } else {
-            return asEbool(asEuint8(0));
+            return asEbool(0);
         }
     }
 
     // Converts an 'ebool' to an 'euint8'.
-    function asEuint8(ebool b) internal pure returns (euint8) {
-        return euint8.wrap(ebool.unwrap(b));
+    function asEuint8(ebool value) internal pure returns (euint8) {
+      return euint8.wrap(Impl.cast(ebool.unwrap(value), Common.euint8_t));
     }
 
     // Evaluate and(a, b) and return the result.
     function and(ebool a, ebool b) internal pure returns (ebool) {
-        return asEbool(and(asEuint8(a), asEuint8(b)));
+        return ebool.wrap(Impl.and(ebool.unwrap(a), ebool.unwrap(b)));
     }
 
     // Evaluate or(a, b) and return the result.
     function or(ebool a, ebool b) internal pure returns (ebool) {
-        return asEbool(or(asEuint8(a), asEuint8(b)));
+        return ebool.wrap(Impl.or(ebool.unwrap(a), ebool.unwrap(b)));
     }
 
     // Evaluate xor(a, b) and return the result.
     function xor(ebool a, ebool b) internal pure returns (ebool) {
-        return asEbool(xor(asEuint8(a), asEuint8(b)));
+        return ebool.wrap(Impl.xor(ebool.unwrap(a), ebool.unwrap(b)));
     }
 
     function not(ebool a) internal pure returns (ebool) {
-        return asEbool(and(not(asEuint8(a)), asEuint8(1)));
-    }
-    
-    // If 'control''s value is 'true', the result has the same value as 'a'.
-    // If 'control''s value is 'false', the result has the same value as 'b'.
-    function cmux(ebool cond, ebool a, ebool b) internal pure returns (ebool) {
-        return asEbool(cmux(cond, asEuint8(a), asEuint8(b)));
+        return ebool.wrap(Impl.not(ebool.unwrap(a)));
     }
     `);
   } else {
