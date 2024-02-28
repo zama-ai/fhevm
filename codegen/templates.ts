@@ -14,7 +14,7 @@ type euint64 is uint256;
 
 library Common {
     // Values used to communicate types to the runtime.
-    uint8 internal constant ebool = 0;
+    uint8 internal constant ebool_t = 0;
     uint8 internal constant euint4_t = 1;
     uint8 internal constant euint8_t = 2;
     uint8 internal constant euint16_t = 3;
@@ -535,12 +535,12 @@ function tfheAsEboolUnaryCast(bits: number): string {
     res.push(`
     // Convert a serialized 'ciphertext' to an encrypted euint8 integer.
     function asEbool(bytes memory ciphertext) internal pure returns (ebool) {
-        return ebool.wrap(Impl.verify(ciphertext, Common.ebool));
+        return ebool.wrap(Impl.verify(ciphertext, Common.ebool_t));
     }
 
     // Convert a plaintext value to an encrypted euint8 integer.
     function asEbool(uint256 value) internal pure returns (ebool) {
-        return ebool.wrap(Impl.trivialEncrypt(value, Common.ebool));
+        return ebool.wrap(Impl.trivialEncrypt(value, Common.ebool_t));
     }
 
     // Convert a plaintext boolean to an encrypted boolean.
