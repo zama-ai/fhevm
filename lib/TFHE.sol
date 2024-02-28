@@ -5500,7 +5500,7 @@ library TFHE {
     // because there is a single call to the decryption oracle per transaction, irrespective
     // of how many optimistic requires were used.
     function optReq(ebool b) internal view {
-        Impl.optReq(ebool.unwrap(b));
+        Impl.optReq(euint8.unwrap(asEuint8(b)));
     }
 
     // Decrypts the encrypted 'value'.

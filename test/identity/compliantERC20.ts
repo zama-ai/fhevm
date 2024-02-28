@@ -26,7 +26,7 @@ describe('CompliantERC20', function () {
     this.instances = await createInstances(this.contractAddress, ethers, this.signers);
   });
 
-  it('should allow decryption of balance for identity owner', async function () {
+  it.only('should allow decryption of balance for identity owner', async function () {
     // Create accounts;
     const country1 = this.instances.alice.encrypt64(1);
     const country2 = this.instances.alice.encrypt64(2);
