@@ -32,7 +32,7 @@ describe('TFHE manual operations', function () {
 
   it('Cmux works returning if false', async function () {
     const res = await this.contract.test_cmux(
-      this.instances.alice.encrypt8(0),
+      this.instances.alice.encryptBool(false),
       this.instances.alice.encrypt32(3),
       this.instances.alice.encrypt32(4),
     );
@@ -41,7 +41,7 @@ describe('TFHE manual operations', function () {
 
   it('Cmux works returning if true', async function () {
     const res = await this.contract.test_cmux(
-      this.instances.alice.encrypt8(1),
+      this.instances.alice.encryptBool(true),
       this.instances.alice.encrypt32(3),
       this.instances.alice.encrypt32(4),
     );
