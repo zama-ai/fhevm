@@ -129,7 +129,6 @@ async function deployTfheTestFixture${os.shardNumber}(): Promise<TFHETestSuite${
           t.inputs.length == o.arguments.length,
           `Test argument count is different to operator arguments, arguments: ${t.inputs}, expected count: ${o.arguments.length}`,
         );
-        console.log(testName, o.name, o.arguments);
         t.inputs.forEach((input, index) => ensureNumberAcceptableInBitRange(o.arguments[index].bits, input));
         if (typeof t.output === 'number') {
           ensureNumberAcceptableInBitRange(o.returnType.bits, t.output);
