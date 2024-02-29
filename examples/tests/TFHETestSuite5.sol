@@ -679,18 +679,4 @@ contract TFHETestSuite5 {
         euint64 result = TFHE.not(aProc);
         return TFHE.decrypt(result);
     }
-
-    function bin_op_add_euint4_euint4(bytes calldata a, bytes calldata b) public view returns (uint8) {
-        euint4 aProc = TFHE.asEuint4(a);
-        euint4 bProc = TFHE.asEuint4(b);
-        euint4 result = aProc + bProc;
-        return TFHE.decrypt(result);
-    }
-
-    function bin_op_sub_euint4_euint4(bytes calldata a, bytes calldata b) public view returns (uint8) {
-        euint4 aProc = TFHE.asEuint4(a);
-        euint4 bProc = TFHE.asEuint4(b);
-        euint4 result = aProc - bProc;
-        return TFHE.decrypt(result);
-    }
 }

@@ -1,0 +1,2870 @@
+{
+  "add_euint4_euint4": [
+    { "inputs": [5, 3], "output": 8 },
+    { "inputs": [4, 8], "output": 12 },
+    { "inputs": [4, 4], "output": 8 },
+    { "inputs": [8, 4], "output": 12 }
+  ],
+  "add_euint4_euint8": [
+    { "inputs": [1, 7], "output": 8 },
+    { "inputs": [3, 5], "output": 8 },
+    { "inputs": [5, 5], "output": 10 },
+    { "inputs": [5, 3], "output": 8 }
+  ],
+  "add_euint4_uint8": [
+    { "inputs": [11, 1], "output": 12 },
+    { "inputs": [3, 5], "output": 8 },
+    { "inputs": [5, 5], "output": 10 },
+    { "inputs": [5, 3], "output": 8 }
+  ],
+  "add_euint4_euint16": [
+    { "inputs": [1, 14], "output": 15 },
+    { "inputs": [3, 5], "output": 8 },
+    { "inputs": [5, 5], "output": 10 },
+    { "inputs": [5, 3], "output": 8 }
+  ],
+  "add_euint4_euint32": [
+    { "inputs": [1, 10], "output": 11 },
+    { "inputs": [3, 5], "output": 8 },
+    { "inputs": [5, 5], "output": 10 },
+    { "inputs": [5, 3], "output": 8 }
+  ],
+  "add_euint4_euint64": [
+    { "inputs": [1, 7], "output": 8 },
+    { "inputs": [3, 5], "output": 8 },
+    { "inputs": [5, 5], "output": 10 },
+    { "inputs": [5, 3], "output": 8 }
+  ],
+  "add_euint8_euint4": [
+    { "inputs": [7, 1], "output": 8 },
+    { "inputs": [4, 8], "output": 12 },
+    { "inputs": [4, 4], "output": 8 },
+    { "inputs": [8, 4], "output": 12 }
+  ],
+  "add_uint8_euint4": [
+    { "inputs": [8, 4], "output": 12 },
+    { "inputs": [4, 8], "output": 12 },
+    { "inputs": [4, 4], "output": 8 },
+    { "inputs": [8, 4], "output": 12 }
+  ],
+  "add_euint8_euint8": [
+    { "inputs": [8, 73], "output": 81 },
+    { "inputs": [4, 8], "output": 12 },
+    { "inputs": [8, 8], "output": 16 },
+    { "inputs": [8, 4], "output": 12 }
+  ],
+  "add_euint8_uint8": [
+    { "inputs": [8, 136], "output": 144 },
+    { "inputs": [4, 8], "output": 12 },
+    { "inputs": [8, 8], "output": 16 },
+    { "inputs": [8, 4], "output": 12 }
+  ],
+  "add_uint8_euint8": [
+    { "inputs": [1, 136], "output": 137 },
+    { "inputs": [4, 8], "output": 12 },
+    { "inputs": [8, 8], "output": 16 },
+    { "inputs": [8, 4], "output": 12 }
+  ],
+  "add_euint8_euint16": [
+    { "inputs": [1, 251], "output": 252 },
+    { "inputs": [4, 8], "output": 12 },
+    { "inputs": [8, 8], "output": 16 },
+    { "inputs": [8, 4], "output": 12 }
+  ],
+  "add_euint8_euint32": [
+    { "inputs": [1, 207], "output": 208 },
+    { "inputs": [4, 8], "output": 12 },
+    { "inputs": [8, 8], "output": 16 },
+    { "inputs": [8, 4], "output": 12 }
+  ],
+  "add_euint8_euint64": [
+    { "inputs": [1, 212], "output": 213 },
+    { "inputs": [4, 8], "output": 12 },
+    { "inputs": [8, 8], "output": 16 },
+    { "inputs": [8, 4], "output": 12 }
+  ],
+  "add_euint16_euint4": [
+    { "inputs": [14, 1], "output": 15 },
+    { "inputs": [4, 8], "output": 12 },
+    { "inputs": [4, 4], "output": 8 },
+    { "inputs": [8, 4], "output": 12 }
+  ],
+  "add_euint16_euint8": [
+    { "inputs": [236, 1], "output": 237 },
+    { "inputs": [99, 101], "output": 200 },
+    { "inputs": [101, 101], "output": 202 },
+    { "inputs": [101, 99], "output": 200 }
+  ],
+  "add_euint16_euint16": [
+    { "inputs": [30233, 31275], "output": 61508 },
+    { "inputs": [30229, 30233], "output": 60462 },
+    { "inputs": [30233, 30233], "output": 60466 },
+    { "inputs": [30233, 30229], "output": 60462 }
+  ],
+  "add_euint16_uint16": [
+    { "inputs": [30233, 10584], "output": 40817 },
+    { "inputs": [30229, 30233], "output": 60462 },
+    { "inputs": [30233, 30233], "output": 60466 },
+    { "inputs": [30233, 30229], "output": 60462 }
+  ],
+  "add_uint16_euint16": [
+    { "inputs": [27830, 10584], "output": 38414 },
+    { "inputs": [30229, 30233], "output": 60462 },
+    { "inputs": [30233, 30233], "output": 60466 },
+    { "inputs": [30233, 30229], "output": 60462 }
+  ],
+  "add_euint16_euint32": [
+    { "inputs": [1, 40500], "output": 40501 },
+    { "inputs": [27826, 27830], "output": 55656 },
+    { "inputs": [27830, 27830], "output": 55660 },
+    { "inputs": [27830, 27826], "output": 55656 }
+  ],
+  "add_euint16_euint64": [
+    { "inputs": [1, 46642], "output": 46643 },
+    { "inputs": [27826, 27830], "output": 55656 },
+    { "inputs": [27830, 27830], "output": 55660 },
+    { "inputs": [27830, 27826], "output": 55656 }
+  ],
+  "add_euint32_euint4": [
+    { "inputs": [10, 1], "output": 11 },
+    { "inputs": [4, 8], "output": 12 },
+    { "inputs": [4, 4], "output": 8 },
+    { "inputs": [8, 4], "output": 12 }
+  ],
+  "add_euint32_euint8": [
+    { "inputs": [162, 1], "output": 163 },
+    { "inputs": [115, 117], "output": 232 },
+    { "inputs": [117, 117], "output": 234 },
+    { "inputs": [117, 115], "output": 232 }
+  ],
+  "add_euint32_euint16": [
+    { "inputs": [41642, 13], "output": 41655 },
+    { "inputs": [28344, 28348], "output": 56692 },
+    { "inputs": [28348, 28348], "output": 56696 },
+    { "inputs": [28348, 28344], "output": 56692 }
+  ],
+  "add_euint32_euint32": [
+    { "inputs": [85283614, 1389046047], "output": 1474329661 },
+    { "inputs": [85283610, 85283614], "output": 170567224 },
+    { "inputs": [85283614, 85283614], "output": 170567228 },
+    { "inputs": [85283614, 85283610], "output": 170567224 }
+  ],
+  "add_euint32_uint32": [
+    { "inputs": [85283614, 1598412404], "output": 1683696018 },
+    { "inputs": [85283610, 85283614], "output": 170567224 },
+    { "inputs": [85283614, 85283614], "output": 170567228 },
+    { "inputs": [85283614, 85283610], "output": 170567224 }
+  ],
+  "add_uint32_euint32": [
+    { "inputs": [343329587, 1598412404], "output": 1941741991 },
+    { "inputs": [85283610, 85283614], "output": 170567224 },
+    { "inputs": [85283614, 85283614], "output": 170567228 },
+    { "inputs": [85283614, 85283610], "output": 170567224 }
+  ],
+  "add_euint32_euint64": [
+    { "inputs": [343329587, 532996009], "output": 876325596 },
+    { "inputs": [343329583, 343329587], "output": 686659170 },
+    { "inputs": [343329587, 343329587], "output": 686659174 },
+    { "inputs": [343329587, 343329583], "output": 686659170 }
+  ],
+  "add_euint64_euint4": [
+    { "inputs": [11, 1], "output": 12 },
+    { "inputs": [4, 8], "output": 12 },
+    { "inputs": [4, 4], "output": 8 },
+    { "inputs": [8, 4], "output": 12 }
+  ],
+  "add_euint64_euint8": [
+    { "inputs": [181, 1], "output": 182 },
+    { "inputs": [66, 68], "output": 134 },
+    { "inputs": [68, 68], "output": 136 },
+    { "inputs": [68, 66], "output": 134 }
+  ],
+  "add_euint64_euint16": [
+    { "inputs": [46497, 1], "output": 46498 },
+    { "inputs": [1781, 1785], "output": 3566 },
+    { "inputs": [1785, 1785], "output": 3570 },
+    { "inputs": [1785, 1781], "output": 3566 }
+  ],
+  "add_euint64_euint32": [
+    { "inputs": [761810509, 2065807481], "output": 2827617990 },
+    { "inputs": [761810505, 761810509], "output": 1523621014 },
+    { "inputs": [761810509, 761810509], "output": 1523621018 },
+    { "inputs": [761810509, 761810505], "output": 1523621014 }
+  ],
+  "add_euint64_euint64": [
+    { "inputs": [761810509, 74167544], "output": 835978053 },
+    { "inputs": [74167540, 74167544], "output": 148335084 },
+    { "inputs": [74167544, 74167544], "output": 148335088 },
+    { "inputs": [74167544, 74167540], "output": 148335084 }
+  ],
+  "add_euint64_uint64": [
+    { "inputs": [761810509, 1968908307], "output": 2730718816 },
+    { "inputs": [74167540, 74167544], "output": 148335084 },
+    { "inputs": [74167544, 74167544], "output": 148335088 },
+    { "inputs": [74167544, 74167540], "output": 148335084 }
+  ],
+  "add_uint64_euint64": [
+    { "inputs": [1954867210, 1968908307], "output": 3923775517 },
+    { "inputs": [74167540, 74167544], "output": 148335084 },
+    { "inputs": [74167544, 74167544], "output": 148335088 },
+    { "inputs": [74167544, 74167540], "output": 148335084 }
+  ],
+  "sub_euint4_euint4": [
+    { "inputs": [9, 9], "output": 0 },
+    { "inputs": [9, 5], "output": 4 }
+  ],
+  "sub_euint4_euint8": [
+    { "inputs": [12, 12], "output": 0 },
+    { "inputs": [12, 8], "output": 4 }
+  ],
+  "sub_euint4_uint8": [
+    { "inputs": [12, 12], "output": 0 },
+    { "inputs": [12, 8], "output": 4 }
+  ],
+  "sub_euint4_euint16": [
+    { "inputs": [12, 12], "output": 0 },
+    { "inputs": [12, 8], "output": 4 }
+  ],
+  "sub_euint4_euint32": [
+    { "inputs": [12, 12], "output": 0 },
+    { "inputs": [12, 8], "output": 4 }
+  ],
+  "sub_euint4_euint64": [
+    { "inputs": [12, 12], "output": 0 },
+    { "inputs": [12, 8], "output": 4 }
+  ],
+  "sub_euint8_euint4": [
+    { "inputs": [8, 8], "output": 0 },
+    { "inputs": [8, 4], "output": 4 }
+  ],
+  "sub_uint8_euint4": [
+    { "inputs": [8, 8], "output": 0 },
+    { "inputs": [8, 4], "output": 4 }
+  ],
+  "sub_euint8_euint8": [
+    { "inputs": [14, 14], "output": 0 },
+    { "inputs": [14, 10], "output": 4 }
+  ],
+  "sub_euint8_uint8": [
+    { "inputs": [14, 14], "output": 0 },
+    { "inputs": [14, 10], "output": 4 }
+  ],
+  "sub_uint8_euint8": [
+    { "inputs": [14, 14], "output": 0 },
+    { "inputs": [14, 10], "output": 4 }
+  ],
+  "sub_euint8_euint16": [
+    { "inputs": [62, 62], "output": 0 },
+    { "inputs": [62, 58], "output": 4 }
+  ],
+  "sub_euint8_euint32": [
+    { "inputs": [62, 62], "output": 0 },
+    { "inputs": [62, 58], "output": 4 }
+  ],
+  "sub_euint8_euint64": [
+    { "inputs": [62, 62], "output": 0 },
+    { "inputs": [62, 58], "output": 4 }
+  ],
+  "sub_euint16_euint4": [
+    { "inputs": [8, 8], "output": 0 },
+    { "inputs": [8, 4], "output": 4 }
+  ],
+  "sub_euint16_euint8": [
+    { "inputs": [100, 100], "output": 0 },
+    { "inputs": [100, 96], "output": 4 }
+  ],
+  "sub_euint16_euint16": [
+    { "inputs": [7674, 7674], "output": 0 },
+    { "inputs": [7674, 7670], "output": 4 }
+  ],
+  "sub_euint16_uint16": [
+    { "inputs": [7674, 7674], "output": 0 },
+    { "inputs": [7674, 7670], "output": 4 }
+  ],
+  "sub_uint16_euint16": [
+    { "inputs": [7674, 7674], "output": 0 },
+    { "inputs": [7674, 7670], "output": 4 }
+  ],
+  "sub_euint16_euint32": [
+    { "inputs": [34964, 34964], "output": 0 },
+    { "inputs": [34964, 34960], "output": 4 }
+  ],
+  "sub_euint16_euint64": [
+    { "inputs": [34964, 34964], "output": 0 },
+    { "inputs": [34964, 34960], "output": 4 }
+  ],
+  "sub_euint32_euint4": [
+    { "inputs": [8, 8], "output": 0 },
+    { "inputs": [8, 4], "output": 4 }
+  ],
+  "sub_euint32_euint8": [
+    { "inputs": [239, 239], "output": 0 },
+    { "inputs": [239, 235], "output": 4 }
+  ],
+  "sub_euint32_euint16": [
+    { "inputs": [4191, 4191], "output": 0 },
+    { "inputs": [4191, 4187], "output": 4 }
+  ],
+  "sub_euint32_euint32": [
+    { "inputs": [949346704, 949346704], "output": 0 },
+    { "inputs": [949346704, 949346700], "output": 4 }
+  ],
+  "sub_euint32_uint32": [
+    { "inputs": [949346704, 949346704], "output": 0 },
+    { "inputs": [949346704, 949346700], "output": 4 }
+  ],
+  "sub_uint32_euint32": [
+    { "inputs": [949346704, 949346704], "output": 0 },
+    { "inputs": [949346704, 949346700], "output": 4 }
+  ],
+  "sub_euint32_euint64": [
+    { "inputs": [108582607, 108582607], "output": 0 },
+    { "inputs": [108582607, 108582603], "output": 4 }
+  ],
+  "sub_euint64_euint4": [
+    { "inputs": [8, 8], "output": 0 },
+    { "inputs": [8, 4], "output": 4 }
+  ],
+  "sub_euint64_euint8": [
+    { "inputs": [236, 236], "output": 0 },
+    { "inputs": [236, 232], "output": 4 }
+  ],
+  "sub_euint64_euint16": [
+    { "inputs": [42609, 42609], "output": 0 },
+    { "inputs": [42609, 42605], "output": 4 }
+  ],
+  "sub_euint64_euint32": [
+    { "inputs": [1679860005, 1679860005], "output": 0 },
+    { "inputs": [1679860005, 1679860001], "output": 4 }
+  ],
+  "sub_euint64_euint64": [
+    { "inputs": [1450674385, 1450674385], "output": 0 },
+    { "inputs": [1450674385, 1450674381], "output": 4 }
+  ],
+  "sub_euint64_uint64": [
+    { "inputs": [1450674385, 1450674385], "output": 0 },
+    { "inputs": [1450674385, 1450674381], "output": 4 }
+  ],
+  "sub_uint64_euint64": [
+    { "inputs": [1450674385, 1450674385], "output": 0 },
+    { "inputs": [1450674385, 1450674381], "output": 4 }
+  ],
+  "mul_euint4_euint4": [
+    { "inputs": [1, 4], "output": 4 },
+    { "inputs": [2, 4], "output": 8 },
+    { "inputs": [2, 2], "output": 4 },
+    { "inputs": [4, 2], "output": 8 }
+  ],
+  "mul_euint4_euint8": [
+    { "inputs": [1, 8], "output": 8 },
+    { "inputs": [2, 4], "output": 8 },
+    { "inputs": [2, 2], "output": 4 },
+    { "inputs": [4, 2], "output": 8 }
+  ],
+  "mul_euint4_uint8": [
+    { "inputs": [1, 7], "output": 7 },
+    { "inputs": [2, 4], "output": 8 },
+    { "inputs": [2, 2], "output": 4 },
+    { "inputs": [4, 2], "output": 8 }
+  ],
+  "mul_euint4_euint16": [
+    { "inputs": [1, 8], "output": 8 },
+    { "inputs": [2, 4], "output": 8 },
+    { "inputs": [2, 2], "output": 4 },
+    { "inputs": [4, 2], "output": 8 }
+  ],
+  "mul_euint4_euint32": [
+    { "inputs": [1, 15], "output": 15 },
+    { "inputs": [2, 4], "output": 8 },
+    { "inputs": [2, 2], "output": 4 },
+    { "inputs": [4, 2], "output": 8 }
+  ],
+  "mul_euint4_euint64": [
+    { "inputs": [1, 10], "output": 10 },
+    { "inputs": [2, 4], "output": 8 },
+    { "inputs": [2, 2], "output": 4 },
+    { "inputs": [4, 2], "output": 8 }
+  ],
+  "mul_euint8_euint4": [
+    { "inputs": [13, 1], "output": 13 },
+    { "inputs": [2, 4], "output": 8 },
+    { "inputs": [2, 2], "output": 4 },
+    { "inputs": [4, 2], "output": 8 }
+  ],
+  "mul_uint8_euint4": [
+    { "inputs": [6, 2], "output": 12 },
+    { "inputs": [2, 4], "output": 8 },
+    { "inputs": [2, 2], "output": 4 },
+    { "inputs": [4, 2], "output": 8 }
+  ],
+  "mul_euint8_euint8": [
+    { "inputs": [6, 19], "output": 114 },
+    { "inputs": [8, 12], "output": 96 },
+    { "inputs": [12, 12], "output": 144 },
+    { "inputs": [12, 8], "output": 96 }
+  ],
+  "mul_euint8_uint8": [
+    { "inputs": [3, 48], "output": 144 },
+    { "inputs": [8, 12], "output": 96 },
+    { "inputs": [12, 12], "output": 144 },
+    { "inputs": [12, 8], "output": 96 }
+  ],
+  "mul_uint8_euint8": [
+    { "inputs": [11, 12], "output": 132 },
+    { "inputs": [8, 12], "output": 96 },
+    { "inputs": [12, 12], "output": 144 },
+    { "inputs": [12, 8], "output": 96 }
+  ],
+  "mul_euint8_euint16": [
+    { "inputs": [2, 33], "output": 66 },
+    { "inputs": [11, 11], "output": 121 },
+    { "inputs": [11, 11], "output": 121 },
+    { "inputs": [11, 11], "output": 121 }
+  ],
+  "mul_euint8_euint32": [
+    { "inputs": [1, 174], "output": 174 },
+    { "inputs": [11, 11], "output": 121 },
+    { "inputs": [11, 11], "output": 121 },
+    { "inputs": [11, 11], "output": 121 }
+  ],
+  "mul_euint8_euint64": [
+    { "inputs": [1, 145], "output": 145 },
+    { "inputs": [11, 11], "output": 121 },
+    { "inputs": [11, 11], "output": 121 },
+    { "inputs": [11, 11], "output": 121 }
+  ],
+  "mul_euint16_euint4": [
+    { "inputs": [13, 1], "output": 13 },
+    { "inputs": [2, 3], "output": 6 },
+    { "inputs": [3, 3], "output": 9 },
+    { "inputs": [3, 2], "output": 6 }
+  ],
+  "mul_euint16_euint8": [
+    { "inputs": [221, 1], "output": 221 },
+    { "inputs": [12, 13], "output": 156 },
+    { "inputs": [13, 13], "output": 169 },
+    { "inputs": [13, 12], "output": 156 }
+  ],
+  "mul_euint16_euint16": [
+    { "inputs": [221, 180], "output": 39780 },
+    { "inputs": [180, 180], "output": 32400 },
+    { "inputs": [180, 180], "output": 32400 },
+    { "inputs": [180, 180], "output": 32400 }
+  ],
+  "mul_euint16_uint16": [
+    { "inputs": [442, 133], "output": 58786 },
+    { "inputs": [180, 180], "output": 32400 },
+    { "inputs": [180, 180], "output": 32400 },
+    { "inputs": [180, 180], "output": 32400 }
+  ],
+  "mul_uint16_euint16": [
+    { "inputs": [288, 133], "output": 38304 },
+    { "inputs": [180, 180], "output": 32400 },
+    { "inputs": [180, 180], "output": 32400 },
+    { "inputs": [180, 180], "output": 32400 }
+  ],
+  "mul_euint16_euint32": [
+    { "inputs": [1, 39192], "output": 39192 },
+    { "inputs": [144, 144], "output": 20736 },
+    { "inputs": [144, 144], "output": 20736 },
+    { "inputs": [144, 144], "output": 20736 }
+  ],
+  "mul_euint16_euint64": [
+    { "inputs": [1, 22059], "output": 22059 },
+    { "inputs": [144, 144], "output": 20736 },
+    { "inputs": [144, 144], "output": 20736 },
+    { "inputs": [144, 144], "output": 20736 }
+  ],
+  "mul_euint32_euint4": [
+    { "inputs": [13, 1], "output": 13 },
+    { "inputs": [2, 3], "output": 6 },
+    { "inputs": [3, 3], "output": 9 },
+    { "inputs": [3, 2], "output": 6 }
+  ],
+  "mul_euint32_euint8": [
+    { "inputs": [222, 1], "output": 222 },
+    { "inputs": [10, 14], "output": 140 },
+    { "inputs": [14, 14], "output": 196 },
+    { "inputs": [14, 10], "output": 140 }
+  ],
+  "mul_euint32_euint16": [
+    { "inputs": [56978, 1], "output": 56978 },
+    { "inputs": [159, 159], "output": 25281 },
+    { "inputs": [159, 159], "output": 25281 },
+    { "inputs": [159, 159], "output": 25281 }
+  ],
+  "mul_euint32_euint32": [
+    { "inputs": [28489, 38748], "output": 1103891772 },
+    { "inputs": [56978, 56978], "output": 3246492484 },
+    { "inputs": [56978, 56978], "output": 3246492484 },
+    { "inputs": [56978, 56978], "output": 3246492484 }
+  ],
+  "mul_euint32_uint32": [
+    { "inputs": [28489, 51753], "output": 1474391217 },
+    { "inputs": [56978, 56978], "output": 3246492484 },
+    { "inputs": [56978, 56978], "output": 3246492484 },
+    { "inputs": [56978, 56978], "output": 3246492484 }
+  ],
+  "mul_uint32_euint32": [
+    { "inputs": [72675, 51753], "output": 3761149275 },
+    { "inputs": [56978, 56978], "output": 3246492484 },
+    { "inputs": [56978, 56978], "output": 3246492484 },
+    { "inputs": [56978, 56978], "output": 3246492484 }
+  ],
+  "mul_euint32_euint64": [
+    { "inputs": [145351, 9637], "output": 1400747587 },
+    { "inputs": [38548, 38548], "output": 1485948304 },
+    { "inputs": [38548, 38548], "output": 1485948304 },
+    { "inputs": [38548, 38548], "output": 1485948304 }
+  ],
+  "mul_euint64_euint4": [
+    { "inputs": [8, 1], "output": 8 },
+    { "inputs": [2, 4], "output": 8 },
+    { "inputs": [2, 2], "output": 4 },
+    { "inputs": [4, 2], "output": 8 }
+  ],
+  "mul_euint64_euint8": [
+    { "inputs": [132, 1], "output": 132 },
+    { "inputs": [14, 15], "output": 210 },
+    { "inputs": [15, 15], "output": 225 },
+    { "inputs": [15, 14], "output": 210 }
+  ],
+  "mul_euint64_euint16": [
+    { "inputs": [16971, 3], "output": 50913 },
+    { "inputs": [227, 227], "output": 51529 },
+    { "inputs": [227, 227], "output": 51529 },
+    { "inputs": [227, 227], "output": 51529 }
+  ],
+  "mul_euint64_euint32": [
+    { "inputs": [33943, 59095], "output": 2005861585 },
+    { "inputs": [33943, 33943], "output": 1152127249 },
+    { "inputs": [33943, 33943], "output": 1152127249 },
+    { "inputs": [33943, 33943], "output": 1152127249 }
+  ],
+  "mul_euint64_euint64": [
+    { "inputs": [278067877, 1869129475], "output": 519744864951374600 },
+    { "inputs": [278067873, 278067877], "output": 77321743107015620 },
+    { "inputs": [278067877, 278067877], "output": 77321744219287140 },
+    { "inputs": [278067877, 278067873], "output": 77321743107015620 }
+  ],
+  "mul_euint64_uint64": [
+    { "inputs": [278067877, 45641442], "output": 12691418880158634 },
+    { "inputs": [278067873, 278067877], "output": 77321743107015620 },
+    { "inputs": [278067877, 278067877], "output": 77321744219287140 },
+    { "inputs": [278067877, 278067873], "output": 77321743107015620 }
+  ],
+  "mul_uint64_euint64": [
+    { "inputs": [1066035620, 45641442], "output": 48655402920164040 },
+    { "inputs": [278067873, 278067877], "output": 77321743107015620 },
+    { "inputs": [278067877, 278067877], "output": 77321744219287140 },
+    { "inputs": [278067877, 278067873], "output": 77321743107015620 }
+  ],
+  "div_euint4_uint8": [
+    { "inputs": [2, 8], "output": 0 },
+    { "inputs": [4, 8], "output": 0 },
+    { "inputs": [8, 8], "output": 1 },
+    { "inputs": [8, 4], "output": 2 }
+  ],
+  "div_euint8_uint8": [
+    { "inputs": [209, 108], "output": 1 },
+    { "inputs": [112, 116], "output": 0 },
+    { "inputs": [116, 116], "output": 1 },
+    { "inputs": [116, 112], "output": 1 }
+  ],
+  "div_euint16_uint16": [
+    { "inputs": [30116, 13141], "output": 2 },
+    { "inputs": [8385, 8389], "output": 0 },
+    { "inputs": [8389, 8389], "output": 1 },
+    { "inputs": [8389, 8385], "output": 1 }
+  ],
+  "div_euint32_uint32": [
+    { "inputs": [836400951, 1557627728], "output": 0 },
+    { "inputs": [392005478, 392005482], "output": 0 },
+    { "inputs": [392005482, 392005482], "output": 1 },
+    { "inputs": [392005482, 392005478], "output": 1 }
+  ],
+  "div_euint64_uint64": [
+    { "inputs": [1965907341, 1364383301], "output": 1 },
+    { "inputs": [16210309, 16210313], "output": 0 },
+    { "inputs": [16210313, 16210313], "output": 1 },
+    { "inputs": [16210313, 16210309], "output": 1 }
+  ],
+  "rem_euint4_uint8": [
+    { "inputs": [12, 1], "output": 0 },
+    { "inputs": [8, 12], "output": 8 },
+    { "inputs": [12, 12], "output": 0 },
+    { "inputs": [12, 8], "output": 4 }
+  ],
+  "rem_euint8_uint8": [
+    { "inputs": [242, 190], "output": 52 },
+    { "inputs": [177, 181], "output": 177 },
+    { "inputs": [181, 181], "output": 0 },
+    { "inputs": [181, 177], "output": 4 }
+  ],
+  "rem_euint16_uint16": [
+    { "inputs": [50030, 38531], "output": 11499 },
+    { "inputs": [13739, 13743], "output": 13739 },
+    { "inputs": [13743, 13743], "output": 0 },
+    { "inputs": [13743, 13739], "output": 4 }
+  ],
+  "rem_euint32_uint32": [
+    { "inputs": [1083212025, 1390178884], "output": 1083212025 },
+    { "inputs": [1083212021, 1083212025], "output": 1083212021 },
+    { "inputs": [1083212025, 1083212025], "output": 0 },
+    { "inputs": [1083212025, 1083212021], "output": 4 }
+  ],
+  "rem_euint64_uint64": [
+    { "inputs": [1066501377, 1975528768], "output": 1066501377 },
+    { "inputs": [1066501373, 1066501377], "output": 1066501373 },
+    { "inputs": [1066501377, 1066501377], "output": 0 },
+    { "inputs": [1066501377, 1066501373], "output": 4 }
+  ],
+  "le_euint4_euint4": [
+    { "inputs": [6, 9], "output": true },
+    { "inputs": [4, 8], "output": true },
+    { "inputs": [8, 8], "output": true },
+    { "inputs": [8, 4], "output": false }
+  ],
+  "le_euint4_euint8": [
+    { "inputs": [6, 104], "output": true },
+    { "inputs": [4, 8], "output": true },
+    { "inputs": [8, 8], "output": true },
+    { "inputs": [8, 4], "output": false }
+  ],
+  "le_euint4_uint8": [
+    { "inputs": [6, 1], "output": false },
+    { "inputs": [4, 8], "output": true },
+    { "inputs": [8, 8], "output": true },
+    { "inputs": [8, 4], "output": false }
+  ],
+  "le_euint4_euint16": [
+    { "inputs": [6, 39475], "output": true },
+    { "inputs": [4, 8], "output": true },
+    { "inputs": [8, 8], "output": true },
+    { "inputs": [8, 4], "output": false }
+  ],
+  "le_euint4_euint32": [
+    { "inputs": [6, 204501643], "output": true },
+    { "inputs": [4, 8], "output": true },
+    { "inputs": [8, 8], "output": true },
+    { "inputs": [8, 4], "output": false }
+  ],
+  "le_euint4_euint64": [
+    { "inputs": [6, 102260366], "output": true },
+    { "inputs": [4, 8], "output": true },
+    { "inputs": [8, 8], "output": true },
+    { "inputs": [8, 4], "output": false }
+  ],
+  "le_euint8_euint4": [
+    { "inputs": [85, 9], "output": false },
+    { "inputs": [5, 9], "output": true },
+    { "inputs": [9, 9], "output": true },
+    { "inputs": [9, 5], "output": false }
+  ],
+  "le_uint8_euint4": [
+    { "inputs": [9, 9], "output": true },
+    { "inputs": [5, 9], "output": true },
+    { "inputs": [9, 9], "output": true },
+    { "inputs": [9, 5], "output": false }
+  ],
+  "le_euint8_euint8": [
+    { "inputs": [9, 136], "output": true },
+    { "inputs": [5, 9], "output": true },
+    { "inputs": [9, 9], "output": true },
+    { "inputs": [9, 5], "output": false }
+  ],
+  "le_euint8_uint8": [
+    { "inputs": [9, 180], "output": true },
+    { "inputs": [5, 9], "output": true },
+    { "inputs": [9, 9], "output": true },
+    { "inputs": [9, 5], "output": false }
+  ],
+  "le_uint8_euint8": [
+    { "inputs": [52, 180], "output": true },
+    { "inputs": [5, 9], "output": true },
+    { "inputs": [9, 9], "output": true },
+    { "inputs": [9, 5], "output": false }
+  ],
+  "le_euint8_euint16": [
+    { "inputs": [52, 17587], "output": true },
+    { "inputs": [48, 52], "output": true },
+    { "inputs": [52, 52], "output": true },
+    { "inputs": [52, 48], "output": false }
+  ],
+  "le_euint8_euint32": [
+    { "inputs": [52, 1808707750], "output": true },
+    { "inputs": [48, 52], "output": true },
+    { "inputs": [52, 52], "output": true },
+    { "inputs": [52, 48], "output": false }
+  ],
+  "le_euint8_euint64": [
+    { "inputs": [52, 1397250357], "output": true },
+    { "inputs": [48, 52], "output": true },
+    { "inputs": [52, 52], "output": true },
+    { "inputs": [52, 48], "output": false }
+  ],
+  "le_euint16_euint4": [
+    { "inputs": [5574, 6], "output": false },
+    { "inputs": [4, 8], "output": true },
+    { "inputs": [8, 8], "output": true },
+    { "inputs": [8, 4], "output": false }
+  ],
+  "le_euint16_euint8": [
+    { "inputs": [5574, 242], "output": false },
+    { "inputs": [238, 242], "output": true },
+    { "inputs": [242, 242], "output": true },
+    { "inputs": [242, 238], "output": false }
+  ],
+  "le_euint16_euint16": [
+    { "inputs": [5574, 28657], "output": true },
+    { "inputs": [5570, 5574], "output": true },
+    { "inputs": [5574, 5574], "output": true },
+    { "inputs": [5574, 5570], "output": false }
+  ],
+  "le_euint16_uint16": [
+    { "inputs": [5574, 3979], "output": false },
+    { "inputs": [5570, 5574], "output": true },
+    { "inputs": [5574, 5574], "output": true },
+    { "inputs": [5574, 5570], "output": false }
+  ],
+  "le_uint16_euint16": [
+    { "inputs": [63255, 3979], "output": false },
+    { "inputs": [5570, 5574], "output": true },
+    { "inputs": [5574, 5574], "output": true },
+    { "inputs": [5574, 5570], "output": false }
+  ],
+  "le_euint16_euint32": [
+    { "inputs": [63255, 340383439], "output": true },
+    { "inputs": [63251, 63255], "output": true },
+    { "inputs": [63255, 63255], "output": true },
+    { "inputs": [63255, 63251], "output": false }
+  ],
+  "le_euint16_euint64": [
+    { "inputs": [63255, 1184396370], "output": true },
+    { "inputs": [63251, 63255], "output": true },
+    { "inputs": [63255, 63255], "output": true },
+    { "inputs": [63255, 63251], "output": false }
+  ],
+  "le_euint32_euint4": [
+    { "inputs": [523722139, 11], "output": false },
+    { "inputs": [7, 11], "output": true },
+    { "inputs": [11, 11], "output": true },
+    { "inputs": [11, 7], "output": false }
+  ],
+  "le_euint32_euint8": [
+    { "inputs": [523722139, 41], "output": false },
+    { "inputs": [37, 41], "output": true },
+    { "inputs": [41, 41], "output": true },
+    { "inputs": [41, 37], "output": false }
+  ],
+  "le_euint32_euint16": [
+    { "inputs": [523722139, 51250], "output": false },
+    { "inputs": [51246, 51250], "output": true },
+    { "inputs": [51250, 51250], "output": true },
+    { "inputs": [51250, 51246], "output": false }
+  ],
+  "le_euint32_euint32": [
+    { "inputs": [523722139, 878801545], "output": true },
+    { "inputs": [523722135, 523722139], "output": true },
+    { "inputs": [523722139, 523722139], "output": true },
+    { "inputs": [523722139, 523722135], "output": false }
+  ],
+  "le_euint32_uint32": [
+    { "inputs": [523722139, 1994886988], "output": true },
+    { "inputs": [523722135, 523722139], "output": true },
+    { "inputs": [523722139, 523722139], "output": true },
+    { "inputs": [523722139, 523722135], "output": false }
+  ],
+  "le_uint32_euint32": [
+    { "inputs": [1167528973, 1994886988], "output": true },
+    { "inputs": [523722135, 523722139], "output": true },
+    { "inputs": [523722139, 523722139], "output": true },
+    { "inputs": [523722139, 523722135], "output": false }
+  ],
+  "le_euint32_euint64": [
+    { "inputs": [1167528973, 1661227936], "output": true },
+    { "inputs": [1167528969, 1167528973], "output": true },
+    { "inputs": [1167528973, 1167528973], "output": true },
+    { "inputs": [1167528973, 1167528969], "output": false }
+  ],
+  "le_euint64_euint4": [
+    { "inputs": [2018662588, 9], "output": false },
+    { "inputs": [5, 9], "output": true },
+    { "inputs": [9, 9], "output": true },
+    { "inputs": [9, 5], "output": false }
+  ],
+  "le_euint64_euint8": [
+    { "inputs": [2018662588, 245], "output": false },
+    { "inputs": [241, 245], "output": true },
+    { "inputs": [245, 245], "output": true },
+    { "inputs": [245, 241], "output": false }
+  ],
+  "le_euint64_euint16": [
+    { "inputs": [2018662588, 22989], "output": false },
+    { "inputs": [22985, 22989], "output": true },
+    { "inputs": [22989, 22989], "output": true },
+    { "inputs": [22989, 22985], "output": false }
+  ],
+  "le_euint64_euint32": [
+    { "inputs": [2018662588, 812190927], "output": false },
+    { "inputs": [812190923, 812190927], "output": true },
+    { "inputs": [812190927, 812190927], "output": true },
+    { "inputs": [812190927, 812190923], "output": false }
+  ],
+  "le_euint64_euint64": [
+    { "inputs": [2018662588, 1848670692], "output": false },
+    { "inputs": [1848670688, 1848670692], "output": true },
+    { "inputs": [1848670692, 1848670692], "output": true },
+    { "inputs": [1848670692, 1848670688], "output": false }
+  ],
+  "le_euint64_uint64": [
+    { "inputs": [2018662588, 32215999], "output": false },
+    { "inputs": [1848670688, 1848670692], "output": true },
+    { "inputs": [1848670692, 1848670692], "output": true },
+    { "inputs": [1848670692, 1848670688], "output": false }
+  ],
+  "le_uint64_euint64": [
+    { "inputs": [119652561, 32215999], "output": false },
+    { "inputs": [1848670688, 1848670692], "output": true },
+    { "inputs": [1848670692, 1848670692], "output": true },
+    { "inputs": [1848670692, 1848670688], "output": false }
+  ],
+  "lt_euint4_euint4": [
+    { "inputs": [4, 6], "output": true },
+    { "inputs": [4, 8], "output": true },
+    { "inputs": [8, 8], "output": false },
+    { "inputs": [8, 4], "output": false }
+  ],
+  "lt_euint4_euint8": [
+    { "inputs": [4, 236], "output": true },
+    { "inputs": [4, 8], "output": true },
+    { "inputs": [8, 8], "output": false },
+    { "inputs": [8, 4], "output": false }
+  ],
+  "lt_euint4_uint8": [
+    { "inputs": [4, 1], "output": false },
+    { "inputs": [4, 8], "output": true },
+    { "inputs": [8, 8], "output": false },
+    { "inputs": [8, 4], "output": false }
+  ],
+  "lt_euint4_euint16": [
+    { "inputs": [4, 31822], "output": true },
+    { "inputs": [4, 8], "output": true },
+    { "inputs": [8, 8], "output": false },
+    { "inputs": [8, 4], "output": false }
+  ],
+  "lt_euint4_euint32": [
+    { "inputs": [4, 329229639], "output": true },
+    { "inputs": [4, 8], "output": true },
+    { "inputs": [8, 8], "output": false },
+    { "inputs": [8, 4], "output": false }
+  ],
+  "lt_euint4_euint64": [
+    { "inputs": [4, 1152793041], "output": true },
+    { "inputs": [4, 8], "output": true },
+    { "inputs": [8, 8], "output": false },
+    { "inputs": [8, 4], "output": false }
+  ],
+  "lt_euint8_euint4": [
+    { "inputs": [50, 8], "output": false },
+    { "inputs": [4, 8], "output": true },
+    { "inputs": [8, 8], "output": false },
+    { "inputs": [8, 4], "output": false }
+  ],
+  "lt_uint8_euint4": [
+    { "inputs": [3, 8], "output": true },
+    { "inputs": [4, 8], "output": true },
+    { "inputs": [8, 8], "output": false },
+    { "inputs": [8, 4], "output": false }
+  ],
+  "lt_euint8_euint8": [
+    { "inputs": [3, 82], "output": true },
+    { "inputs": [4, 8], "output": true },
+    { "inputs": [8, 8], "output": false },
+    { "inputs": [8, 4], "output": false }
+  ],
+  "lt_euint8_uint8": [
+    { "inputs": [3, 223], "output": true },
+    { "inputs": [4, 8], "output": true },
+    { "inputs": [8, 8], "output": false },
+    { "inputs": [8, 4], "output": false }
+  ],
+  "lt_uint8_euint8": [
+    { "inputs": [148, 223], "output": true },
+    { "inputs": [4, 8], "output": true },
+    { "inputs": [8, 8], "output": false },
+    { "inputs": [8, 4], "output": false }
+  ],
+  "lt_euint8_euint16": [
+    { "inputs": [148, 35784], "output": true },
+    { "inputs": [144, 148], "output": true },
+    { "inputs": [148, 148], "output": false },
+    { "inputs": [148, 144], "output": false }
+  ],
+  "lt_euint8_euint32": [
+    { "inputs": [148, 1735514833], "output": true },
+    { "inputs": [144, 148], "output": true },
+    { "inputs": [148, 148], "output": false },
+    { "inputs": [148, 144], "output": false }
+  ],
+  "lt_euint8_euint64": [
+    { "inputs": [148, 1575025918], "output": true },
+    { "inputs": [144, 148], "output": true },
+    { "inputs": [148, 148], "output": false },
+    { "inputs": [148, 144], "output": false }
+  ],
+  "lt_euint16_euint4": [
+    { "inputs": [64394, 14], "output": false },
+    { "inputs": [10, 14], "output": true },
+    { "inputs": [14, 14], "output": false },
+    { "inputs": [14, 10], "output": false }
+  ],
+  "lt_euint16_euint8": [
+    { "inputs": [64394, 92], "output": false },
+    { "inputs": [88, 92], "output": true },
+    { "inputs": [92, 92], "output": false },
+    { "inputs": [92, 88], "output": false }
+  ],
+  "lt_euint16_euint16": [
+    { "inputs": [64394, 46201], "output": false },
+    { "inputs": [46197, 46201], "output": true },
+    { "inputs": [46201, 46201], "output": false },
+    { "inputs": [46201, 46197], "output": false }
+  ],
+  "lt_euint16_uint16": [
+    { "inputs": [64394, 5464], "output": false },
+    { "inputs": [46197, 46201], "output": true },
+    { "inputs": [46201, 46201], "output": false },
+    { "inputs": [46201, 46197], "output": false }
+  ],
+  "lt_uint16_euint16": [
+    { "inputs": [50578, 5464], "output": false },
+    { "inputs": [46197, 46201], "output": true },
+    { "inputs": [46201, 46201], "output": false },
+    { "inputs": [46201, 46197], "output": false }
+  ],
+  "lt_euint16_euint32": [
+    { "inputs": [50578, 1677650454], "output": true },
+    { "inputs": [50574, 50578], "output": true },
+    { "inputs": [50578, 50578], "output": false },
+    { "inputs": [50578, 50574], "output": false }
+  ],
+  "lt_euint16_euint64": [
+    { "inputs": [50578, 1995209966], "output": true },
+    { "inputs": [50574, 50578], "output": true },
+    { "inputs": [50578, 50578], "output": false },
+    { "inputs": [50578, 50574], "output": false }
+  ],
+  "lt_euint32_euint4": [
+    { "inputs": [1044281941, 14], "output": false },
+    { "inputs": [10, 14], "output": true },
+    { "inputs": [14, 14], "output": false },
+    { "inputs": [14, 10], "output": false }
+  ],
+  "lt_euint32_euint8": [
+    { "inputs": [1044281941, 77], "output": false },
+    { "inputs": [73, 77], "output": true },
+    { "inputs": [77, 77], "output": false },
+    { "inputs": [77, 73], "output": false }
+  ],
+  "lt_euint32_euint16": [
+    { "inputs": [1044281941, 44435], "output": false },
+    { "inputs": [44431, 44435], "output": true },
+    { "inputs": [44435, 44435], "output": false },
+    { "inputs": [44435, 44431], "output": false }
+  ],
+  "lt_euint32_euint32": [
+    { "inputs": [1044281941, 27475171], "output": false },
+    { "inputs": [27475167, 27475171], "output": true },
+    { "inputs": [27475171, 27475171], "output": false },
+    { "inputs": [27475171, 27475167], "output": false }
+  ],
+  "lt_euint32_uint32": [
+    { "inputs": [1044281941, 1474237696], "output": true },
+    { "inputs": [27475167, 27475171], "output": true },
+    { "inputs": [27475171, 27475171], "output": false },
+    { "inputs": [27475171, 27475167], "output": false }
+  ],
+  "lt_uint32_euint32": [
+    { "inputs": [1829077110, 1474237696], "output": false },
+    { "inputs": [27475167, 27475171], "output": true },
+    { "inputs": [27475171, 27475171], "output": false },
+    { "inputs": [27475171, 27475167], "output": false }
+  ],
+  "lt_euint32_euint64": [
+    { "inputs": [1829077110, 871332370], "output": false },
+    { "inputs": [871332366, 871332370], "output": true },
+    { "inputs": [871332370, 871332370], "output": false },
+    { "inputs": [871332370, 871332366], "output": false }
+  ],
+  "lt_euint64_euint4": [
+    { "inputs": [102600113, 13], "output": false },
+    { "inputs": [9, 13], "output": true },
+    { "inputs": [13, 13], "output": false },
+    { "inputs": [13, 9], "output": false }
+  ],
+  "lt_euint64_euint8": [
+    { "inputs": [102600113, 117], "output": false },
+    { "inputs": [113, 117], "output": true },
+    { "inputs": [117, 117], "output": false },
+    { "inputs": [117, 113], "output": false }
+  ],
+  "lt_euint64_euint16": [
+    { "inputs": [102600113, 19620], "output": false },
+    { "inputs": [19616, 19620], "output": true },
+    { "inputs": [19620, 19620], "output": false },
+    { "inputs": [19620, 19616], "output": false }
+  ],
+  "lt_euint64_euint32": [
+    { "inputs": [102600113, 1018674751], "output": true },
+    { "inputs": [102600109, 102600113], "output": true },
+    { "inputs": [102600113, 102600113], "output": false },
+    { "inputs": [102600113, 102600109], "output": false }
+  ],
+  "lt_euint64_euint64": [
+    { "inputs": [102600113, 1772405733], "output": true },
+    { "inputs": [102600109, 102600113], "output": true },
+    { "inputs": [102600113, 102600113], "output": false },
+    { "inputs": [102600113, 102600109], "output": false }
+  ],
+  "lt_euint64_uint64": [
+    { "inputs": [102600113, 1945807436], "output": true },
+    { "inputs": [102600109, 102600113], "output": true },
+    { "inputs": [102600113, 102600113], "output": false },
+    { "inputs": [102600113, 102600109], "output": false }
+  ],
+  "lt_uint64_euint64": [
+    { "inputs": [1582166407, 1945807436], "output": true },
+    { "inputs": [102600109, 102600113], "output": true },
+    { "inputs": [102600113, 102600113], "output": false },
+    { "inputs": [102600113, 102600109], "output": false }
+  ],
+  "ge_euint4_euint4": [
+    { "inputs": [7, 14], "output": false },
+    { "inputs": [4, 8], "output": false },
+    { "inputs": [8, 8], "output": true },
+    { "inputs": [8, 4], "output": true }
+  ],
+  "ge_euint4_euint8": [
+    { "inputs": [7, 148], "output": false },
+    { "inputs": [4, 8], "output": false },
+    { "inputs": [8, 8], "output": true },
+    { "inputs": [8, 4], "output": true }
+  ],
+  "ge_euint4_uint8": [
+    { "inputs": [7, 6], "output": true },
+    { "inputs": [4, 8], "output": false },
+    { "inputs": [8, 8], "output": true },
+    { "inputs": [8, 4], "output": true }
+  ],
+  "ge_euint4_euint16": [
+    { "inputs": [7, 22312], "output": false },
+    { "inputs": [4, 8], "output": false },
+    { "inputs": [8, 8], "output": true },
+    { "inputs": [8, 4], "output": true }
+  ],
+  "ge_euint4_euint32": [
+    { "inputs": [7, 2084141274], "output": false },
+    { "inputs": [4, 8], "output": false },
+    { "inputs": [8, 8], "output": true },
+    { "inputs": [8, 4], "output": true }
+  ],
+  "ge_euint4_euint64": [
+    { "inputs": [7, 1017706709], "output": false },
+    { "inputs": [4, 8], "output": false },
+    { "inputs": [8, 8], "output": true },
+    { "inputs": [8, 4], "output": true }
+  ],
+  "ge_euint8_euint4": [
+    { "inputs": [182, 3], "output": true },
+    { "inputs": [4, 8], "output": false },
+    { "inputs": [8, 8], "output": true },
+    { "inputs": [8, 4], "output": true }
+  ],
+  "ge_uint8_euint4": [
+    { "inputs": [8, 3], "output": true },
+    { "inputs": [4, 8], "output": false },
+    { "inputs": [8, 8], "output": true },
+    { "inputs": [8, 4], "output": true }
+  ],
+  "ge_euint8_euint8": [
+    { "inputs": [8, 253], "output": false },
+    { "inputs": [4, 8], "output": false },
+    { "inputs": [8, 8], "output": true },
+    { "inputs": [8, 4], "output": true }
+  ],
+  "ge_euint8_uint8": [
+    { "inputs": [8, 73], "output": false },
+    { "inputs": [4, 8], "output": false },
+    { "inputs": [8, 8], "output": true },
+    { "inputs": [8, 4], "output": true }
+  ],
+  "ge_uint8_euint8": [
+    { "inputs": [97, 73], "output": true },
+    { "inputs": [4, 8], "output": false },
+    { "inputs": [8, 8], "output": true },
+    { "inputs": [8, 4], "output": true }
+  ],
+  "ge_euint8_euint16": [
+    { "inputs": [97, 54950], "output": false },
+    { "inputs": [93, 97], "output": false },
+    { "inputs": [97, 97], "output": true },
+    { "inputs": [97, 93], "output": true }
+  ],
+  "ge_euint8_euint32": [
+    { "inputs": [97, 1858963305], "output": false },
+    { "inputs": [93, 97], "output": false },
+    { "inputs": [97, 97], "output": true },
+    { "inputs": [97, 93], "output": true }
+  ],
+  "ge_euint8_euint64": [
+    { "inputs": [97, 24079369], "output": false },
+    { "inputs": [93, 97], "output": false },
+    { "inputs": [97, 97], "output": true },
+    { "inputs": [97, 93], "output": true }
+  ],
+  "ge_euint16_euint4": [
+    { "inputs": [44342, 8], "output": true },
+    { "inputs": [4, 8], "output": false },
+    { "inputs": [8, 8], "output": true },
+    { "inputs": [8, 4], "output": true }
+  ],
+  "ge_euint16_euint8": [
+    { "inputs": [44342, 190], "output": true },
+    { "inputs": [186, 190], "output": false },
+    { "inputs": [190, 190], "output": true },
+    { "inputs": [190, 186], "output": true }
+  ],
+  "ge_euint16_euint16": [
+    { "inputs": [44342, 57666], "output": false },
+    { "inputs": [44338, 44342], "output": false },
+    { "inputs": [44342, 44342], "output": true },
+    { "inputs": [44342, 44338], "output": true }
+  ],
+  "ge_euint16_uint16": [
+    { "inputs": [44342, 6260], "output": true },
+    { "inputs": [44338, 44342], "output": false },
+    { "inputs": [44342, 44342], "output": true },
+    { "inputs": [44342, 44338], "output": true }
+  ],
+  "ge_uint16_euint16": [
+    { "inputs": [64532, 6260], "output": true },
+    { "inputs": [44338, 44342], "output": false },
+    { "inputs": [44342, 44342], "output": true },
+    { "inputs": [44342, 44338], "output": true }
+  ],
+  "ge_euint16_euint32": [
+    { "inputs": [64532, 892657805], "output": false },
+    { "inputs": [64528, 64532], "output": false },
+    { "inputs": [64532, 64532], "output": true },
+    { "inputs": [64532, 64528], "output": true }
+  ],
+  "ge_euint16_euint64": [
+    { "inputs": [64532, 1819047757], "output": false },
+    { "inputs": [64528, 64532], "output": false },
+    { "inputs": [64532, 64532], "output": true },
+    { "inputs": [64532, 64528], "output": true }
+  ],
+  "ge_euint32_euint4": [
+    { "inputs": [627970552, 13], "output": true },
+    { "inputs": [9, 13], "output": false },
+    { "inputs": [13, 13], "output": true },
+    { "inputs": [13, 9], "output": true }
+  ],
+  "ge_euint32_euint8": [
+    { "inputs": [627970552, 5], "output": true },
+    { "inputs": [4, 8], "output": false },
+    { "inputs": [8, 8], "output": true },
+    { "inputs": [8, 4], "output": true }
+  ],
+  "ge_euint32_euint16": [
+    { "inputs": [627970552, 58999], "output": true },
+    { "inputs": [58995, 58999], "output": false },
+    { "inputs": [58999, 58999], "output": true },
+    { "inputs": [58999, 58995], "output": true }
+  ],
+  "ge_euint32_euint32": [
+    { "inputs": [627970552, 2136326684], "output": false },
+    { "inputs": [627970548, 627970552], "output": false },
+    { "inputs": [627970552, 627970552], "output": true },
+    { "inputs": [627970552, 627970548], "output": true }
+  ],
+  "ge_euint32_uint32": [
+    { "inputs": [627970552, 1986041075], "output": false },
+    { "inputs": [627970548, 627970552], "output": false },
+    { "inputs": [627970552, 627970552], "output": true },
+    { "inputs": [627970552, 627970548], "output": true }
+  ],
+  "ge_uint32_euint32": [
+    { "inputs": [1972025848, 1986041075], "output": false },
+    { "inputs": [627970548, 627970552], "output": false },
+    { "inputs": [627970552, 627970552], "output": true },
+    { "inputs": [627970552, 627970548], "output": true }
+  ],
+  "ge_euint32_euint64": [
+    { "inputs": [1972025848, 1698971084], "output": true },
+    { "inputs": [1698971080, 1698971084], "output": false },
+    { "inputs": [1698971084, 1698971084], "output": true },
+    { "inputs": [1698971084, 1698971080], "output": true }
+  ],
+  "ge_euint64_euint4": [
+    { "inputs": [1885602752, 6], "output": true },
+    { "inputs": [4, 8], "output": false },
+    { "inputs": [8, 8], "output": true },
+    { "inputs": [8, 4], "output": true }
+  ],
+  "ge_euint64_euint8": [
+    { "inputs": [1885602752, 64], "output": true },
+    { "inputs": [60, 64], "output": false },
+    { "inputs": [64, 64], "output": true },
+    { "inputs": [64, 60], "output": true }
+  ],
+  "ge_euint64_euint16": [
+    { "inputs": [1885602752, 42598], "output": true },
+    { "inputs": [42594, 42598], "output": false },
+    { "inputs": [42598, 42598], "output": true },
+    { "inputs": [42598, 42594], "output": true }
+  ],
+  "ge_euint64_euint32": [
+    { "inputs": [1885602752, 2120758041], "output": false },
+    { "inputs": [1885602748, 1885602752], "output": false },
+    { "inputs": [1885602752, 1885602752], "output": true },
+    { "inputs": [1885602752, 1885602748], "output": true }
+  ],
+  "ge_euint64_euint64": [
+    { "inputs": [1885602752, 1033076257], "output": true },
+    { "inputs": [1033076253, 1033076257], "output": false },
+    { "inputs": [1033076257, 1033076257], "output": true },
+    { "inputs": [1033076257, 1033076253], "output": true }
+  ],
+  "ge_euint64_uint64": [
+    { "inputs": [1885602752, 494320060], "output": true },
+    { "inputs": [1033076253, 1033076257], "output": false },
+    { "inputs": [1033076257, 1033076257], "output": true },
+    { "inputs": [1033076257, 1033076253], "output": true }
+  ],
+  "ge_uint64_euint64": [
+    { "inputs": [1544604409, 494320060], "output": true },
+    { "inputs": [1033076253, 1033076257], "output": false },
+    { "inputs": [1033076257, 1033076257], "output": true },
+    { "inputs": [1033076257, 1033076253], "output": true }
+  ],
+  "gt_euint4_euint4": [
+    { "inputs": [6, 9], "output": false },
+    { "inputs": [4, 8], "output": false },
+    { "inputs": [8, 8], "output": false },
+    { "inputs": [8, 4], "output": true }
+  ],
+  "gt_euint4_euint8": [
+    { "inputs": [6, 250], "output": false },
+    { "inputs": [4, 8], "output": false },
+    { "inputs": [8, 8], "output": false },
+    { "inputs": [8, 4], "output": true }
+  ],
+  "gt_euint4_uint8": [
+    { "inputs": [6, 1], "output": true },
+    { "inputs": [4, 8], "output": false },
+    { "inputs": [8, 8], "output": false },
+    { "inputs": [8, 4], "output": true }
+  ],
+  "gt_euint4_euint16": [
+    { "inputs": [6, 26898], "output": false },
+    { "inputs": [4, 8], "output": false },
+    { "inputs": [8, 8], "output": false },
+    { "inputs": [8, 4], "output": true }
+  ],
+  "gt_euint4_euint32": [
+    { "inputs": [6, 1743193522], "output": false },
+    { "inputs": [4, 8], "output": false },
+    { "inputs": [8, 8], "output": false },
+    { "inputs": [8, 4], "output": true }
+  ],
+  "gt_euint4_euint64": [
+    { "inputs": [6, 8303014], "output": false },
+    { "inputs": [4, 8], "output": false },
+    { "inputs": [8, 8], "output": false },
+    { "inputs": [8, 4], "output": true }
+  ],
+  "gt_euint8_euint4": [
+    { "inputs": [37, 9], "output": true },
+    { "inputs": [5, 9], "output": false },
+    { "inputs": [9, 9], "output": false },
+    { "inputs": [9, 5], "output": true }
+  ],
+  "gt_uint8_euint4": [
+    { "inputs": [1, 9], "output": false },
+    { "inputs": [5, 9], "output": false },
+    { "inputs": [9, 9], "output": false },
+    { "inputs": [9, 5], "output": true }
+  ],
+  "gt_euint8_euint8": [
+    { "inputs": [1, 112], "output": false },
+    { "inputs": [4, 8], "output": false },
+    { "inputs": [8, 8], "output": false },
+    { "inputs": [8, 4], "output": true }
+  ],
+  "gt_euint8_uint8": [
+    { "inputs": [1, 127], "output": false },
+    { "inputs": [4, 8], "output": false },
+    { "inputs": [8, 8], "output": false },
+    { "inputs": [8, 4], "output": true }
+  ],
+  "gt_uint8_euint8": [
+    { "inputs": [79, 127], "output": false },
+    { "inputs": [4, 8], "output": false },
+    { "inputs": [8, 8], "output": false },
+    { "inputs": [8, 4], "output": true }
+  ],
+  "gt_euint8_euint16": [
+    { "inputs": [79, 20669], "output": false },
+    { "inputs": [75, 79], "output": false },
+    { "inputs": [79, 79], "output": false },
+    { "inputs": [79, 75], "output": true }
+  ],
+  "gt_euint8_euint32": [
+    { "inputs": [79, 2069042933], "output": false },
+    { "inputs": [75, 79], "output": false },
+    { "inputs": [79, 79], "output": false },
+    { "inputs": [79, 75], "output": true }
+  ],
+  "gt_euint8_euint64": [
+    { "inputs": [79, 1487732246], "output": false },
+    { "inputs": [75, 79], "output": false },
+    { "inputs": [79, 79], "output": false },
+    { "inputs": [79, 75], "output": true }
+  ],
+  "gt_euint16_euint4": [
+    { "inputs": [42324, 1], "output": true },
+    { "inputs": [4, 8], "output": false },
+    { "inputs": [8, 8], "output": false },
+    { "inputs": [8, 4], "output": true }
+  ],
+  "gt_euint16_euint8": [
+    { "inputs": [42324, 76], "output": true },
+    { "inputs": [72, 76], "output": false },
+    { "inputs": [76, 76], "output": false },
+    { "inputs": [76, 72], "output": true }
+  ],
+  "gt_euint16_euint16": [
+    { "inputs": [42324, 60441], "output": false },
+    { "inputs": [42320, 42324], "output": false },
+    { "inputs": [42324, 42324], "output": false },
+    { "inputs": [42324, 42320], "output": true }
+  ],
+  "gt_euint16_uint16": [
+    { "inputs": [42324, 7407], "output": true },
+    { "inputs": [42320, 42324], "output": false },
+    { "inputs": [42324, 42324], "output": false },
+    { "inputs": [42324, 42320], "output": true }
+  ],
+  "gt_uint16_euint16": [
+    { "inputs": [47205, 7407], "output": true },
+    { "inputs": [42320, 42324], "output": false },
+    { "inputs": [42324, 42324], "output": false },
+    { "inputs": [42324, 42320], "output": true }
+  ],
+  "gt_euint16_euint32": [
+    { "inputs": [47205, 1988625224], "output": false },
+    { "inputs": [47201, 47205], "output": false },
+    { "inputs": [47205, 47205], "output": false },
+    { "inputs": [47205, 47201], "output": true }
+  ],
+  "gt_euint16_euint64": [
+    { "inputs": [47205, 1792915583], "output": false },
+    { "inputs": [47201, 47205], "output": false },
+    { "inputs": [47205, 47205], "output": false },
+    { "inputs": [47205, 47201], "output": true }
+  ],
+  "gt_euint32_euint4": [
+    { "inputs": [1801714413, 14], "output": true },
+    { "inputs": [10, 14], "output": false },
+    { "inputs": [14, 14], "output": false },
+    { "inputs": [14, 10], "output": true }
+  ],
+  "gt_euint32_euint8": [
+    { "inputs": [1801714413, 95], "output": true },
+    { "inputs": [91, 95], "output": false },
+    { "inputs": [95, 95], "output": false },
+    { "inputs": [95, 91], "output": true }
+  ],
+  "gt_euint32_euint16": [
+    { "inputs": [1801714413, 56461], "output": true },
+    { "inputs": [56457, 56461], "output": false },
+    { "inputs": [56461, 56461], "output": false },
+    { "inputs": [56461, 56457], "output": true }
+  ],
+  "gt_euint32_euint32": [
+    { "inputs": [1801714413, 831227104], "output": true },
+    { "inputs": [831227100, 831227104], "output": false },
+    { "inputs": [831227104, 831227104], "output": false },
+    { "inputs": [831227104, 831227100], "output": true }
+  ],
+  "gt_euint32_uint32": [
+    { "inputs": [1801714413, 448229258], "output": true },
+    { "inputs": [831227100, 831227104], "output": false },
+    { "inputs": [831227104, 831227104], "output": false },
+    { "inputs": [831227104, 831227100], "output": true }
+  ],
+  "gt_uint32_euint32": [
+    { "inputs": [258393672, 448229258], "output": false },
+    { "inputs": [831227100, 831227104], "output": false },
+    { "inputs": [831227104, 831227104], "output": false },
+    { "inputs": [831227104, 831227100], "output": true }
+  ],
+  "gt_euint32_euint64": [
+    { "inputs": [258393672, 1790809342], "output": false },
+    { "inputs": [258393668, 258393672], "output": false },
+    { "inputs": [258393672, 258393672], "output": false },
+    { "inputs": [258393672, 258393668], "output": true }
+  ],
+  "gt_euint64_euint4": [
+    { "inputs": [307981806, 12], "output": true },
+    { "inputs": [8, 12], "output": false },
+    { "inputs": [12, 12], "output": false },
+    { "inputs": [12, 8], "output": true }
+  ],
+  "gt_euint64_euint8": [
+    { "inputs": [307981806, 246], "output": true },
+    { "inputs": [242, 246], "output": false },
+    { "inputs": [246, 246], "output": false },
+    { "inputs": [246, 242], "output": true }
+  ],
+  "gt_euint64_euint16": [
+    { "inputs": [307981806, 10827], "output": true },
+    { "inputs": [10823, 10827], "output": false },
+    { "inputs": [10827, 10827], "output": false },
+    { "inputs": [10827, 10823], "output": true }
+  ],
+  "gt_euint64_euint32": [
+    { "inputs": [307981806, 973826729], "output": false },
+    { "inputs": [307981802, 307981806], "output": false },
+    { "inputs": [307981806, 307981806], "output": false },
+    { "inputs": [307981806, 307981802], "output": true }
+  ],
+  "gt_euint64_euint64": [
+    { "inputs": [307981806, 618210327], "output": false },
+    { "inputs": [307981802, 307981806], "output": false },
+    { "inputs": [307981806, 307981806], "output": false },
+    { "inputs": [307981806, 307981802], "output": true }
+  ],
+  "gt_euint64_uint64": [
+    { "inputs": [307981806, 218365735], "output": true },
+    { "inputs": [307981802, 307981806], "output": false },
+    { "inputs": [307981806, 307981806], "output": false },
+    { "inputs": [307981806, 307981802], "output": true }
+  ],
+  "gt_uint64_euint64": [
+    { "inputs": [342213755, 218365735], "output": true },
+    { "inputs": [307981802, 307981806], "output": false },
+    { "inputs": [307981806, 307981806], "output": false },
+    { "inputs": [307981806, 307981802], "output": true }
+  ],
+  "eq_euint4_euint4": [
+    { "inputs": [11, 12], "output": false },
+    { "inputs": [7, 11], "output": false },
+    { "inputs": [11, 11], "output": true },
+    { "inputs": [11, 7], "output": false }
+  ],
+  "eq_euint4_euint8": [
+    { "inputs": [11, 134], "output": false },
+    { "inputs": [7, 11], "output": false },
+    { "inputs": [11, 11], "output": true },
+    { "inputs": [11, 7], "output": false }
+  ],
+  "eq_euint4_uint8": [
+    { "inputs": [11, 3], "output": false },
+    { "inputs": [7, 11], "output": false },
+    { "inputs": [11, 11], "output": true },
+    { "inputs": [11, 7], "output": false }
+  ],
+  "eq_euint4_euint16": [
+    { "inputs": [11, 56998], "output": false },
+    { "inputs": [7, 11], "output": false },
+    { "inputs": [11, 11], "output": true },
+    { "inputs": [11, 7], "output": false }
+  ],
+  "eq_euint4_euint32": [
+    { "inputs": [11, 991467756], "output": false },
+    { "inputs": [7, 11], "output": false },
+    { "inputs": [11, 11], "output": true },
+    { "inputs": [11, 7], "output": false }
+  ],
+  "eq_euint4_euint64": [
+    { "inputs": [11, 1242271547], "output": false },
+    { "inputs": [7, 11], "output": false },
+    { "inputs": [11, 11], "output": true },
+    { "inputs": [11, 7], "output": false }
+  ],
+  "eq_euint8_euint4": [
+    { "inputs": [59, 2], "output": false },
+    { "inputs": [4, 8], "output": false },
+    { "inputs": [8, 8], "output": true },
+    { "inputs": [8, 4], "output": false }
+  ],
+  "eq_uint8_euint4": [
+    { "inputs": [6, 2], "output": false },
+    { "inputs": [4, 8], "output": false },
+    { "inputs": [8, 8], "output": true },
+    { "inputs": [8, 4], "output": false }
+  ],
+  "eq_euint8_euint8": [
+    { "inputs": [6, 193], "output": false },
+    { "inputs": [4, 8], "output": false },
+    { "inputs": [8, 8], "output": true },
+    { "inputs": [8, 4], "output": false }
+  ],
+  "eq_euint8_uint8": [
+    { "inputs": [6, 35], "output": false },
+    { "inputs": [4, 8], "output": false },
+    { "inputs": [8, 8], "output": true },
+    { "inputs": [8, 4], "output": false }
+  ],
+  "eq_uint8_euint8": [
+    { "inputs": [224, 35], "output": false },
+    { "inputs": [4, 8], "output": false },
+    { "inputs": [8, 8], "output": true },
+    { "inputs": [8, 4], "output": false }
+  ],
+  "eq_euint8_euint16": [
+    { "inputs": [224, 28749], "output": false },
+    { "inputs": [220, 224], "output": false },
+    { "inputs": [224, 224], "output": true },
+    { "inputs": [224, 220], "output": false }
+  ],
+  "eq_euint8_euint32": [
+    { "inputs": [224, 1978797433], "output": false },
+    { "inputs": [220, 224], "output": false },
+    { "inputs": [224, 224], "output": true },
+    { "inputs": [224, 220], "output": false }
+  ],
+  "eq_euint8_euint64": [
+    { "inputs": [224, 1900324216], "output": false },
+    { "inputs": [220, 224], "output": false },
+    { "inputs": [224, 224], "output": true },
+    { "inputs": [224, 220], "output": false }
+  ],
+  "eq_euint16_euint4": [
+    { "inputs": [5627, 12], "output": false },
+    { "inputs": [8, 12], "output": false },
+    { "inputs": [12, 12], "output": true },
+    { "inputs": [12, 8], "output": false }
+  ],
+  "eq_euint16_euint8": [
+    { "inputs": [5627, 83], "output": false },
+    { "inputs": [79, 83], "output": false },
+    { "inputs": [83, 83], "output": true },
+    { "inputs": [83, 79], "output": false }
+  ],
+  "eq_euint16_euint16": [
+    { "inputs": [5627, 4536], "output": false },
+    { "inputs": [4532, 4536], "output": false },
+    { "inputs": [4536, 4536], "output": true },
+    { "inputs": [4536, 4532], "output": false }
+  ],
+  "eq_euint16_uint16": [
+    { "inputs": [5627, 53030], "output": false },
+    { "inputs": [4532, 4536], "output": false },
+    { "inputs": [4536, 4536], "output": true },
+    { "inputs": [4536, 4532], "output": false }
+  ],
+  "eq_uint16_euint16": [
+    { "inputs": [65041, 53030], "output": false },
+    { "inputs": [4532, 4536], "output": false },
+    { "inputs": [4536, 4536], "output": true },
+    { "inputs": [4536, 4532], "output": false }
+  ],
+  "eq_euint16_euint32": [
+    { "inputs": [65041, 696957537], "output": false },
+    { "inputs": [65037, 65041], "output": false },
+    { "inputs": [65041, 65041], "output": true },
+    { "inputs": [65041, 65037], "output": false }
+  ],
+  "eq_euint16_euint64": [
+    { "inputs": [65041, 1498344478], "output": false },
+    { "inputs": [65037, 65041], "output": false },
+    { "inputs": [65041, 65041], "output": true },
+    { "inputs": [65041, 65037], "output": false }
+  ],
+  "eq_euint32_euint4": [
+    { "inputs": [1270694518, 8], "output": false },
+    { "inputs": [4, 8], "output": false },
+    { "inputs": [8, 8], "output": true },
+    { "inputs": [8, 4], "output": false }
+  ],
+  "eq_euint32_euint8": [
+    { "inputs": [1270694518, 11], "output": false },
+    { "inputs": [7, 11], "output": false },
+    { "inputs": [11, 11], "output": true },
+    { "inputs": [11, 7], "output": false }
+  ],
+  "eq_euint32_euint16": [
+    { "inputs": [1270694518, 22132], "output": false },
+    { "inputs": [22128, 22132], "output": false },
+    { "inputs": [22132, 22132], "output": true },
+    { "inputs": [22132, 22128], "output": false }
+  ],
+  "eq_euint32_euint32": [
+    { "inputs": [1270694518, 247535168], "output": false },
+    { "inputs": [247535164, 247535168], "output": false },
+    { "inputs": [247535168, 247535168], "output": true },
+    { "inputs": [247535168, 247535164], "output": false }
+  ],
+  "eq_euint32_uint32": [
+    { "inputs": [1270694518, 945618490], "output": false },
+    { "inputs": [247535164, 247535168], "output": false },
+    { "inputs": [247535168, 247535168], "output": true },
+    { "inputs": [247535168, 247535164], "output": false }
+  ],
+  "eq_uint32_euint32": [
+    { "inputs": [1877579186, 945618490], "output": false },
+    { "inputs": [247535164, 247535168], "output": false },
+    { "inputs": [247535168, 247535168], "output": true },
+    { "inputs": [247535168, 247535164], "output": false }
+  ],
+  "eq_euint32_euint64": [
+    { "inputs": [1877579186, 1428129540], "output": false },
+    { "inputs": [1428129536, 1428129540], "output": false },
+    { "inputs": [1428129540, 1428129540], "output": true },
+    { "inputs": [1428129540, 1428129536], "output": false }
+  ],
+  "eq_euint64_euint4": [
+    { "inputs": [2078992513, 6], "output": false },
+    { "inputs": [4, 8], "output": false },
+    { "inputs": [8, 8], "output": true },
+    { "inputs": [8, 4], "output": false }
+  ],
+  "eq_euint64_euint8": [
+    { "inputs": [2078992513, 51], "output": false },
+    { "inputs": [47, 51], "output": false },
+    { "inputs": [51, 51], "output": true },
+    { "inputs": [51, 47], "output": false }
+  ],
+  "eq_euint64_euint16": [
+    { "inputs": [2078992513, 32629], "output": false },
+    { "inputs": [32625, 32629], "output": false },
+    { "inputs": [32629, 32629], "output": true },
+    { "inputs": [32629, 32625], "output": false }
+  ],
+  "eq_euint64_euint32": [
+    { "inputs": [2078992513, 810545451], "output": false },
+    { "inputs": [810545447, 810545451], "output": false },
+    { "inputs": [810545451, 810545451], "output": true },
+    { "inputs": [810545451, 810545447], "output": false }
+  ],
+  "eq_euint64_euint64": [
+    { "inputs": [2078992513, 1060802657], "output": false },
+    { "inputs": [1060802653, 1060802657], "output": false },
+    { "inputs": [1060802657, 1060802657], "output": true },
+    { "inputs": [1060802657, 1060802653], "output": false }
+  ],
+  "eq_euint64_uint64": [
+    { "inputs": [2078992513, 415471663], "output": false },
+    { "inputs": [1060802653, 1060802657], "output": false },
+    { "inputs": [1060802657, 1060802657], "output": true },
+    { "inputs": [1060802657, 1060802653], "output": false }
+  ],
+  "eq_uint64_euint64": [
+    { "inputs": [810072111, 415471663], "output": false },
+    { "inputs": [1060802653, 1060802657], "output": false },
+    { "inputs": [1060802657, 1060802657], "output": true },
+    { "inputs": [1060802657, 1060802653], "output": false }
+  ],
+  "ne_euint4_euint4": [
+    { "inputs": [2, 13], "output": true },
+    { "inputs": [4, 8], "output": true },
+    { "inputs": [8, 8], "output": false },
+    { "inputs": [8, 4], "output": true }
+  ],
+  "ne_euint4_euint8": [
+    { "inputs": [2, 86], "output": true },
+    { "inputs": [4, 8], "output": true },
+    { "inputs": [8, 8], "output": false },
+    { "inputs": [8, 4], "output": true }
+  ],
+  "ne_euint4_uint8": [
+    { "inputs": [2, 3], "output": true },
+    { "inputs": [4, 8], "output": true },
+    { "inputs": [8, 8], "output": false },
+    { "inputs": [8, 4], "output": true }
+  ],
+  "ne_euint4_euint16": [
+    { "inputs": [2, 15611], "output": true },
+    { "inputs": [4, 8], "output": true },
+    { "inputs": [8, 8], "output": false },
+    { "inputs": [8, 4], "output": true }
+  ],
+  "ne_euint4_euint32": [
+    { "inputs": [2, 2115089145], "output": true },
+    { "inputs": [4, 8], "output": true },
+    { "inputs": [8, 8], "output": false },
+    { "inputs": [8, 4], "output": true }
+  ],
+  "ne_euint4_euint64": [
+    { "inputs": [2, 537819520], "output": true },
+    { "inputs": [4, 8], "output": true },
+    { "inputs": [8, 8], "output": false },
+    { "inputs": [8, 4], "output": true }
+  ],
+  "ne_euint8_euint4": [
+    { "inputs": [18, 13], "output": true },
+    { "inputs": [9, 13], "output": true },
+    { "inputs": [13, 13], "output": false },
+    { "inputs": [13, 9], "output": true }
+  ],
+  "ne_uint8_euint4": [
+    { "inputs": [11, 13], "output": true },
+    { "inputs": [9, 13], "output": true },
+    { "inputs": [13, 13], "output": false },
+    { "inputs": [13, 9], "output": true }
+  ],
+  "ne_euint8_euint8": [
+    { "inputs": [11, 49], "output": true },
+    { "inputs": [7, 11], "output": true },
+    { "inputs": [11, 11], "output": false },
+    { "inputs": [11, 7], "output": true }
+  ],
+  "ne_euint8_uint8": [
+    { "inputs": [11, 2], "output": true },
+    { "inputs": [7, 11], "output": true },
+    { "inputs": [11, 11], "output": false },
+    { "inputs": [11, 7], "output": true }
+  ],
+  "ne_uint8_euint8": [
+    { "inputs": [223, 2], "output": true },
+    { "inputs": [7, 11], "output": true },
+    { "inputs": [11, 11], "output": false },
+    { "inputs": [11, 7], "output": true }
+  ],
+  "ne_euint8_euint16": [
+    { "inputs": [223, 38601], "output": true },
+    { "inputs": [219, 223], "output": true },
+    { "inputs": [223, 223], "output": false },
+    { "inputs": [223, 219], "output": true }
+  ],
+  "ne_euint8_euint32": [
+    { "inputs": [223, 19817588], "output": true },
+    { "inputs": [219, 223], "output": true },
+    { "inputs": [223, 223], "output": false },
+    { "inputs": [223, 219], "output": true }
+  ],
+  "ne_euint8_euint64": [
+    { "inputs": [223, 1747152964], "output": true },
+    { "inputs": [219, 223], "output": true },
+    { "inputs": [223, 223], "output": false },
+    { "inputs": [223, 219], "output": true }
+  ],
+  "ne_euint16_euint4": [
+    { "inputs": [20601, 5], "output": true },
+    { "inputs": [4, 8], "output": true },
+    { "inputs": [8, 8], "output": false },
+    { "inputs": [8, 4], "output": true }
+  ],
+  "ne_euint16_euint8": [
+    { "inputs": [20601, 251], "output": true },
+    { "inputs": [247, 251], "output": true },
+    { "inputs": [251, 251], "output": false },
+    { "inputs": [251, 247], "output": true }
+  ],
+  "ne_euint16_euint16": [
+    { "inputs": [20601, 31416], "output": true },
+    { "inputs": [20597, 20601], "output": true },
+    { "inputs": [20601, 20601], "output": false },
+    { "inputs": [20601, 20597], "output": true }
+  ],
+  "ne_euint16_uint16": [
+    { "inputs": [20601, 24726], "output": true },
+    { "inputs": [20597, 20601], "output": true },
+    { "inputs": [20601, 20601], "output": false },
+    { "inputs": [20601, 20597], "output": true }
+  ],
+  "ne_uint16_euint16": [
+    { "inputs": [16027, 24726], "output": true },
+    { "inputs": [20597, 20601], "output": true },
+    { "inputs": [20601, 20601], "output": false },
+    { "inputs": [20601, 20597], "output": true }
+  ],
+  "ne_euint16_euint32": [
+    { "inputs": [16027, 1143925973], "output": true },
+    { "inputs": [16023, 16027], "output": true },
+    { "inputs": [16027, 16027], "output": false },
+    { "inputs": [16027, 16023], "output": true }
+  ],
+  "ne_euint16_euint64": [
+    { "inputs": [16027, 1755085159], "output": true },
+    { "inputs": [16023, 16027], "output": true },
+    { "inputs": [16027, 16027], "output": false },
+    { "inputs": [16027, 16023], "output": true }
+  ],
+  "ne_euint32_euint4": [
+    { "inputs": [1211702728, 8], "output": true },
+    { "inputs": [4, 8], "output": true },
+    { "inputs": [8, 8], "output": false },
+    { "inputs": [8, 4], "output": true }
+  ],
+  "ne_euint32_euint8": [
+    { "inputs": [1211702728, 132], "output": true },
+    { "inputs": [128, 132], "output": true },
+    { "inputs": [132, 132], "output": false },
+    { "inputs": [132, 128], "output": true }
+  ],
+  "ne_euint32_euint16": [
+    { "inputs": [1211702728, 13344], "output": true },
+    { "inputs": [13340, 13344], "output": true },
+    { "inputs": [13344, 13344], "output": false },
+    { "inputs": [13344, 13340], "output": true }
+  ],
+  "ne_euint32_euint32": [
+    { "inputs": [1211702728, 563095027], "output": true },
+    { "inputs": [563095023, 563095027], "output": true },
+    { "inputs": [563095027, 563095027], "output": false },
+    { "inputs": [563095027, 563095023], "output": true }
+  ],
+  "ne_euint32_uint32": [
+    { "inputs": [1211702728, 426850373], "output": true },
+    { "inputs": [563095023, 563095027], "output": true },
+    { "inputs": [563095027, 563095027], "output": false },
+    { "inputs": [563095027, 563095023], "output": true }
+  ],
+  "ne_uint32_euint32": [
+    { "inputs": [1464361694, 426850373], "output": true },
+    { "inputs": [563095023, 563095027], "output": true },
+    { "inputs": [563095027, 563095027], "output": false },
+    { "inputs": [563095027, 563095023], "output": true }
+  ],
+  "ne_euint32_euint64": [
+    { "inputs": [1464361694, 2125136992], "output": true },
+    { "inputs": [1464361690, 1464361694], "output": true },
+    { "inputs": [1464361694, 1464361694], "output": false },
+    { "inputs": [1464361694, 1464361690], "output": true }
+  ],
+  "ne_euint64_euint4": [
+    { "inputs": [1037057063, 9], "output": true },
+    { "inputs": [5, 9], "output": true },
+    { "inputs": [9, 9], "output": false },
+    { "inputs": [9, 5], "output": true }
+  ],
+  "ne_euint64_euint8": [
+    { "inputs": [1037057063, 209], "output": true },
+    { "inputs": [205, 209], "output": true },
+    { "inputs": [209, 209], "output": false },
+    { "inputs": [209, 205], "output": true }
+  ],
+  "ne_euint64_euint16": [
+    { "inputs": [1037057063, 50271], "output": true },
+    { "inputs": [50267, 50271], "output": true },
+    { "inputs": [50271, 50271], "output": false },
+    { "inputs": [50271, 50267], "output": true }
+  ],
+  "ne_euint64_euint32": [
+    { "inputs": [1037057063, 358604604], "output": true },
+    { "inputs": [358604600, 358604604], "output": true },
+    { "inputs": [358604604, 358604604], "output": false },
+    { "inputs": [358604604, 358604600], "output": true }
+  ],
+  "ne_euint64_euint64": [
+    { "inputs": [1037057063, 451065562], "output": true },
+    { "inputs": [451065558, 451065562], "output": true },
+    { "inputs": [451065562, 451065562], "output": false },
+    { "inputs": [451065562, 451065558], "output": true }
+  ],
+  "ne_euint64_uint64": [
+    { "inputs": [1037057063, 1794841801], "output": true },
+    { "inputs": [451065558, 451065562], "output": true },
+    { "inputs": [451065562, 451065562], "output": false },
+    { "inputs": [451065562, 451065558], "output": true }
+  ],
+  "ne_uint64_euint64": [
+    { "inputs": [1447708235, 1794841801], "output": true },
+    { "inputs": [451065558, 451065562], "output": true },
+    { "inputs": [451065562, 451065562], "output": false },
+    { "inputs": [451065562, 451065558], "output": true }
+  ],
+  "shl_euint4_uint8": [
+    { "inputs": [1, 9], "output": 0 },
+    { "inputs": [4, 8], "output": 0 },
+    { "inputs": [8, 8], "output": 0 },
+    { "inputs": [8, 4], "output": 0 }
+  ],
+  "shl_euint8_euint8": [
+    { "inputs": [15, 7], "output": 0 },
+    { "inputs": [4, 8], "output": 0 },
+    { "inputs": [8, 8], "output": 0 },
+    { "inputs": [8, 4], "output": 0 }
+  ],
+  "shl_euint8_uint8": [
+    { "inputs": [15, 173], "output": 0 },
+    { "inputs": [4, 8], "output": 0 },
+    { "inputs": [8, 8], "output": 0 },
+    { "inputs": [8, 4], "output": 0 }
+  ],
+  "shl_euint16_euint8": [
+    { "inputs": [470, 1], "output": 235 },
+    { "inputs": [4, 8], "output": 0 },
+    { "inputs": [8, 8], "output": 0 },
+    { "inputs": [8, 4], "output": 0 }
+  ],
+  "shl_euint16_uint8": [
+    { "inputs": [60273, 120], "output": 0 },
+    { "inputs": [4, 8], "output": 0 },
+    { "inputs": [8, 8], "output": 0 },
+    { "inputs": [8, 4], "output": 0 }
+  ],
+  "shl_euint32_euint8": [
+    { "inputs": [465, 1], "output": 232 },
+    { "inputs": [4, 8], "output": 0 },
+    { "inputs": [8, 8], "output": 0 },
+    { "inputs": [8, 4], "output": 0 }
+  ],
+  "shl_euint32_uint8": [
+    { "inputs": [465, 1], "output": 232 },
+    { "inputs": [4, 8], "output": 0 },
+    { "inputs": [8, 8], "output": 0 },
+    { "inputs": [8, 4], "output": 0 }
+  ],
+  "shl_euint64_euint8": [
+    { "inputs": [449, 1], "output": 224 },
+    { "inputs": [4, 8], "output": 0 },
+    { "inputs": [8, 8], "output": 0 },
+    { "inputs": [8, 4], "output": 0 }
+  ],
+  "shl_euint64_uint8": [
+    { "inputs": [1886374881, 60], "output": 7 },
+    { "inputs": [4, 8], "output": 0 },
+    { "inputs": [8, 8], "output": 0 },
+    { "inputs": [8, 4], "output": 0 }
+  ],
+  "shr_euint4_uint8": [
+    { "inputs": [5, 7], "output": 0 },
+    { "inputs": [4, 8], "output": 0 },
+    { "inputs": [8, 8], "output": 0 },
+    { "inputs": [8, 4], "output": 0 }
+  ],
+  "shr_euint8_euint8": [
+    { "inputs": [113, 7], "output": 0 },
+    { "inputs": [4, 8], "output": 0 },
+    { "inputs": [8, 8], "output": 0 },
+    { "inputs": [8, 4], "output": 0 }
+  ],
+  "shr_euint8_uint8": [
+    { "inputs": [113, 128], "output": 113 },
+    { "inputs": [4, 8], "output": 0 },
+    { "inputs": [8, 8], "output": 0 },
+    { "inputs": [8, 4], "output": 0 }
+  ],
+  "shr_euint16_euint8": [
+    { "inputs": [386, 1], "output": 193 },
+    { "inputs": [4, 8], "output": 0 },
+    { "inputs": [8, 8], "output": 0 },
+    { "inputs": [8, 4], "output": 0 }
+  ],
+  "shr_euint16_uint8": [
+    { "inputs": [49490, 216], "output": 0 },
+    { "inputs": [4, 8], "output": 0 },
+    { "inputs": [8, 8], "output": 0 },
+    { "inputs": [8, 4], "output": 0 }
+  ],
+  "shr_euint32_euint8": [
+    { "inputs": [315, 1], "output": 157 },
+    { "inputs": [4, 8], "output": 0 },
+    { "inputs": [8, 8], "output": 0 },
+    { "inputs": [8, 4], "output": 0 }
+  ],
+  "shr_euint32_uint8": [
+    { "inputs": [315, 1], "output": 157 },
+    { "inputs": [4, 8], "output": 0 },
+    { "inputs": [8, 8], "output": 0 },
+    { "inputs": [8, 4], "output": 0 }
+  ],
+  "shr_euint64_euint8": [
+    { "inputs": [443, 1], "output": 221 },
+    { "inputs": [4, 8], "output": 0 },
+    { "inputs": [8, 8], "output": 0 },
+    { "inputs": [8, 4], "output": 0 }
+  ],
+  "shr_euint64_uint8": [
+    { "inputs": [29073964, 153], "output": 0 },
+    { "inputs": [4, 8], "output": 0 },
+    { "inputs": [8, 8], "output": 0 },
+    { "inputs": [8, 4], "output": 0 }
+  ],
+  "max_euint4_euint4": [
+    { "inputs": [1, 12], "output": 12 },
+    { "inputs": [4, 8], "output": 8 },
+    { "inputs": [8, 8], "output": 8 },
+    { "inputs": [8, 4], "output": 8 }
+  ],
+  "max_euint4_euint8": [
+    { "inputs": [1, 8], "output": 8 },
+    { "inputs": [4, 8], "output": 8 },
+    { "inputs": [8, 8], "output": 8 },
+    { "inputs": [8, 4], "output": 8 }
+  ],
+  "max_euint4_uint8": [
+    { "inputs": [1, 4], "output": 4 },
+    { "inputs": [4, 8], "output": 8 },
+    { "inputs": [8, 8], "output": 8 },
+    { "inputs": [8, 4], "output": 8 }
+  ],
+  "max_euint4_euint16": [
+    { "inputs": [1, 14], "output": 14 },
+    { "inputs": [4, 8], "output": 8 },
+    { "inputs": [8, 8], "output": 8 },
+    { "inputs": [8, 4], "output": 8 }
+  ],
+  "max_euint4_euint32": [
+    { "inputs": [1, 11], "output": 11 },
+    { "inputs": [4, 8], "output": 8 },
+    { "inputs": [8, 8], "output": 8 },
+    { "inputs": [8, 4], "output": 8 }
+  ],
+  "max_euint4_euint64": [
+    { "inputs": [1, 12], "output": 12 },
+    { "inputs": [4, 8], "output": 8 },
+    { "inputs": [8, 8], "output": 8 },
+    { "inputs": [8, 4], "output": 8 }
+  ],
+  "max_euint8_euint4": [
+    { "inputs": [11, 8], "output": 11 },
+    { "inputs": [4, 8], "output": 8 },
+    { "inputs": [8, 8], "output": 8 },
+    { "inputs": [8, 4], "output": 8 }
+  ],
+  "max_uint8_euint4": [
+    { "inputs": [2, 8], "output": 8 },
+    { "inputs": [4, 8], "output": 8 },
+    { "inputs": [8, 8], "output": 8 },
+    { "inputs": [8, 4], "output": 8 }
+  ],
+  "max_euint8_euint8": [
+    { "inputs": [2, 44], "output": 44 },
+    { "inputs": [4, 8], "output": 8 },
+    { "inputs": [8, 8], "output": 8 },
+    { "inputs": [8, 4], "output": 8 }
+  ],
+  "max_euint8_uint8": [
+    { "inputs": [2, 123], "output": 123 },
+    { "inputs": [4, 8], "output": 8 },
+    { "inputs": [8, 8], "output": 8 },
+    { "inputs": [8, 4], "output": 8 }
+  ],
+  "max_uint8_euint8": [
+    { "inputs": [178, 123], "output": 178 },
+    { "inputs": [4, 8], "output": 8 },
+    { "inputs": [8, 8], "output": 8 },
+    { "inputs": [8, 4], "output": 8 }
+  ],
+  "max_euint8_euint16": [
+    { "inputs": [1, 173], "output": 173 },
+    { "inputs": [174, 178], "output": 178 },
+    { "inputs": [178, 178], "output": 178 },
+    { "inputs": [178, 174], "output": 178 }
+  ],
+  "max_euint8_euint32": [
+    { "inputs": [1, 176], "output": 176 },
+    { "inputs": [174, 178], "output": 178 },
+    { "inputs": [178, 178], "output": 178 },
+    { "inputs": [178, 174], "output": 178 }
+  ],
+  "max_euint8_euint64": [
+    { "inputs": [1, 143], "output": 143 },
+    { "inputs": [174, 178], "output": 178 },
+    { "inputs": [178, 178], "output": 178 },
+    { "inputs": [178, 174], "output": 178 }
+  ],
+  "max_euint16_euint4": [
+    { "inputs": [10, 1], "output": 10 },
+    { "inputs": [4, 8], "output": 8 },
+    { "inputs": [8, 8], "output": 8 },
+    { "inputs": [8, 4], "output": 8 }
+  ],
+  "max_euint16_euint8": [
+    { "inputs": [168, 1], "output": 168 },
+    { "inputs": [62, 66], "output": 66 },
+    { "inputs": [66, 66], "output": 66 },
+    { "inputs": [66, 62], "output": 66 }
+  ],
+  "max_euint16_euint16": [
+    { "inputs": [43071, 37043], "output": 43071 },
+    { "inputs": [37039, 37043], "output": 37043 },
+    { "inputs": [37043, 37043], "output": 37043 },
+    { "inputs": [37043, 37039], "output": 37043 }
+  ],
+  "max_euint16_uint16": [
+    { "inputs": [43071, 57395], "output": 57395 },
+    { "inputs": [37039, 37043], "output": 37043 },
+    { "inputs": [37043, 37043], "output": 37043 },
+    { "inputs": [37043, 37039], "output": 37043 }
+  ],
+  "max_uint16_euint16": [
+    { "inputs": [31971, 57395], "output": 57395 },
+    { "inputs": [37039, 37043], "output": 37043 },
+    { "inputs": [37043, 37043], "output": 37043 },
+    { "inputs": [37043, 37039], "output": 37043 }
+  ],
+  "max_euint16_euint32": [
+    { "inputs": [1, 46246], "output": 46246 },
+    { "inputs": [31967, 31971], "output": 31971 },
+    { "inputs": [31971, 31971], "output": 31971 },
+    { "inputs": [31971, 31967], "output": 31971 }
+  ],
+  "max_euint16_euint64": [
+    { "inputs": [3, 35170], "output": 35170 },
+    { "inputs": [31967, 31971], "output": 31971 },
+    { "inputs": [31971, 31971], "output": 31971 },
+    { "inputs": [31971, 31967], "output": 31971 }
+  ],
+  "max_euint32_euint4": [
+    { "inputs": [8, 1], "output": 8 },
+    { "inputs": [7, 11], "output": 11 },
+    { "inputs": [11, 11], "output": 11 },
+    { "inputs": [11, 7], "output": 11 }
+  ],
+  "max_euint32_euint8": [
+    { "inputs": [135, 1], "output": 135 },
+    { "inputs": [81, 85], "output": 85 },
+    { "inputs": [85, 85], "output": 85 },
+    { "inputs": [85, 81], "output": 85 }
+  ],
+  "max_euint32_euint16": [
+    { "inputs": [34584, 1], "output": 34584 },
+    { "inputs": [2745, 2749], "output": 2749 },
+    { "inputs": [2749, 2749], "output": 2749 },
+    { "inputs": [2749, 2745], "output": 2749 }
+  ],
+  "max_euint32_euint32": [
+    { "inputs": [283314521, 1686574997], "output": 1686574997 },
+    { "inputs": [283314517, 283314521], "output": 283314521 },
+    { "inputs": [283314521, 283314521], "output": 283314521 },
+    { "inputs": [283314521, 283314517], "output": 283314521 }
+  ],
+  "max_euint32_uint32": [
+    { "inputs": [283314521, 1397934692], "output": 1397934692 },
+    { "inputs": [283314517, 283314521], "output": 283314521 },
+    { "inputs": [283314521, 283314521], "output": 283314521 },
+    { "inputs": [283314521, 283314517], "output": 283314521 }
+  ],
+  "max_uint32_euint32": [
+    { "inputs": [1446821827, 1397934692], "output": 1446821827 },
+    { "inputs": [283314517, 283314521], "output": 283314521 },
+    { "inputs": [283314521, 283314521], "output": 283314521 },
+    { "inputs": [283314521, 283314517], "output": 283314521 }
+  ],
+  "max_euint32_euint64": [
+    { "inputs": [1446821827, 98162433], "output": 1446821827 },
+    { "inputs": [98162429, 98162433], "output": 98162433 },
+    { "inputs": [98162433, 98162433], "output": 98162433 },
+    { "inputs": [98162433, 98162429], "output": 98162433 }
+  ],
+  "max_euint64_euint4": [
+    { "inputs": [14, 1], "output": 14 },
+    { "inputs": [9, 13], "output": 13 },
+    { "inputs": [13, 13], "output": 13 },
+    { "inputs": [13, 9], "output": 13 }
+  ],
+  "max_euint64_euint8": [
+    { "inputs": [231, 1], "output": 231 },
+    { "inputs": [210, 214], "output": 214 },
+    { "inputs": [214, 214], "output": 214 },
+    { "inputs": [214, 210], "output": 214 }
+  ],
+  "max_euint64_euint16": [
+    { "inputs": [59321, 1], "output": 59321 },
+    { "inputs": [49394, 49398], "output": 49398 },
+    { "inputs": [49398, 49398], "output": 49398 },
+    { "inputs": [49398, 49394], "output": 49398 }
+  ],
+  "max_euint64_euint32": [
+    { "inputs": [1943842367, 2024517605], "output": 2024517605 },
+    { "inputs": [1943842363, 1943842367], "output": 1943842367 },
+    { "inputs": [1943842367, 1943842367], "output": 1943842367 },
+    { "inputs": [1943842367, 1943842363], "output": 1943842367 }
+  ],
+  "max_euint64_euint64": [
+    { "inputs": [1943842367, 1448051868], "output": 1943842367 },
+    { "inputs": [1448051864, 1448051868], "output": 1448051868 },
+    { "inputs": [1448051868, 1448051868], "output": 1448051868 },
+    { "inputs": [1448051868, 1448051864], "output": 1448051868 }
+  ],
+  "max_euint64_uint64": [
+    { "inputs": [1943842367, 447177064], "output": 1943842367 },
+    { "inputs": [1448051864, 1448051868], "output": 1448051868 },
+    { "inputs": [1448051868, 1448051868], "output": 1448051868 },
+    { "inputs": [1448051868, 1448051864], "output": 1448051868 }
+  ],
+  "max_uint64_euint64": [
+    { "inputs": [776673220, 447177064], "output": 776673220 },
+    { "inputs": [1448051864, 1448051868], "output": 1448051868 },
+    { "inputs": [1448051868, 1448051868], "output": 1448051868 },
+    { "inputs": [1448051868, 1448051864], "output": 1448051868 }
+  ],
+  "min_euint4_euint4": [
+    { "inputs": [6, 11], "output": 6 },
+    { "inputs": [4, 8], "output": 4 },
+    { "inputs": [8, 8], "output": 8 },
+    { "inputs": [8, 4], "output": 4 }
+  ],
+  "min_euint4_euint8": [
+    { "inputs": [6, 1], "output": 1 },
+    { "inputs": [4, 8], "output": 4 },
+    { "inputs": [8, 8], "output": 8 },
+    { "inputs": [8, 4], "output": 4 }
+  ],
+  "min_euint4_uint8": [
+    { "inputs": [6, 3], "output": 3 },
+    { "inputs": [4, 8], "output": 4 },
+    { "inputs": [8, 8], "output": 8 },
+    { "inputs": [8, 4], "output": 4 }
+  ],
+  "min_euint4_euint16": [
+    { "inputs": [6, 45682], "output": 6 },
+    { "inputs": [4, 8], "output": 4 },
+    { "inputs": [8, 8], "output": 8 },
+    { "inputs": [8, 4], "output": 4 }
+  ],
+  "min_euint4_euint32": [
+    { "inputs": [6, 629182656], "output": 6 },
+    { "inputs": [4, 8], "output": 4 },
+    { "inputs": [8, 8], "output": 8 },
+    { "inputs": [8, 4], "output": 4 }
+  ],
+  "min_euint4_euint64": [
+    { "inputs": [6, 1380027485], "output": 6 },
+    { "inputs": [4, 8], "output": 4 },
+    { "inputs": [8, 8], "output": 8 },
+    { "inputs": [8, 4], "output": 4 }
+  ],
+  "min_euint8_euint4": [
+    { "inputs": [79, 12], "output": 12 },
+    { "inputs": [8, 12], "output": 8 },
+    { "inputs": [12, 12], "output": 12 },
+    { "inputs": [12, 8], "output": 8 }
+  ],
+  "min_uint8_euint4": [
+    { "inputs": [11, 12], "output": 11 },
+    { "inputs": [8, 12], "output": 8 },
+    { "inputs": [12, 12], "output": 12 },
+    { "inputs": [12, 8], "output": 8 }
+  ],
+  "min_euint8_euint8": [
+    { "inputs": [11, 214], "output": 11 },
+    { "inputs": [7, 11], "output": 7 },
+    { "inputs": [11, 11], "output": 11 },
+    { "inputs": [11, 7], "output": 7 }
+  ],
+  "min_euint8_uint8": [
+    { "inputs": [11, 200], "output": 11 },
+    { "inputs": [7, 11], "output": 7 },
+    { "inputs": [11, 11], "output": 11 },
+    { "inputs": [11, 7], "output": 7 }
+  ],
+  "min_uint8_euint8": [
+    { "inputs": [45, 200], "output": 45 },
+    { "inputs": [7, 11], "output": 7 },
+    { "inputs": [11, 11], "output": 11 },
+    { "inputs": [11, 7], "output": 7 }
+  ],
+  "min_euint8_euint16": [
+    { "inputs": [45, 12728], "output": 45 },
+    { "inputs": [41, 45], "output": 41 },
+    { "inputs": [45, 45], "output": 45 },
+    { "inputs": [45, 41], "output": 41 }
+  ],
+  "min_euint8_euint32": [
+    { "inputs": [45, 1572730534], "output": 45 },
+    { "inputs": [41, 45], "output": 41 },
+    { "inputs": [45, 45], "output": 45 },
+    { "inputs": [45, 41], "output": 41 }
+  ],
+  "min_euint8_euint64": [
+    { "inputs": [45, 1376771886], "output": 45 },
+    { "inputs": [41, 45], "output": 41 },
+    { "inputs": [45, 45], "output": 45 },
+    { "inputs": [45, 41], "output": 41 }
+  ],
+  "min_euint16_euint4": [
+    { "inputs": [3854, 8], "output": 8 },
+    { "inputs": [4, 8], "output": 4 },
+    { "inputs": [8, 8], "output": 8 },
+    { "inputs": [8, 4], "output": 4 }
+  ],
+  "min_euint16_euint8": [
+    { "inputs": [3854, 166], "output": 166 },
+    { "inputs": [162, 166], "output": 162 },
+    { "inputs": [166, 166], "output": 166 },
+    { "inputs": [166, 162], "output": 162 }
+  ],
+  "min_euint16_euint16": [
+    { "inputs": [3854, 29273], "output": 3854 },
+    { "inputs": [3850, 3854], "output": 3850 },
+    { "inputs": [3854, 3854], "output": 3854 },
+    { "inputs": [3854, 3850], "output": 3850 }
+  ],
+  "min_euint16_uint16": [
+    { "inputs": [3854, 54603], "output": 3854 },
+    { "inputs": [3850, 3854], "output": 3850 },
+    { "inputs": [3854, 3854], "output": 3854 },
+    { "inputs": [3854, 3850], "output": 3850 }
+  ],
+  "min_uint16_euint16": [
+    { "inputs": [27643, 54603], "output": 27643 },
+    { "inputs": [3850, 3854], "output": 3850 },
+    { "inputs": [3854, 3854], "output": 3854 },
+    { "inputs": [3854, 3850], "output": 3850 }
+  ],
+  "min_euint16_euint32": [
+    { "inputs": [27643, 2066729287], "output": 27643 },
+    { "inputs": [27639, 27643], "output": 27639 },
+    { "inputs": [27643, 27643], "output": 27643 },
+    { "inputs": [27643, 27639], "output": 27639 }
+  ],
+  "min_euint16_euint64": [
+    { "inputs": [27643, 1529181739], "output": 27643 },
+    { "inputs": [27639, 27643], "output": 27639 },
+    { "inputs": [27643, 27643], "output": 27643 },
+    { "inputs": [27643, 27639], "output": 27639 }
+  ],
+  "min_euint32_euint4": [
+    { "inputs": [390943086, 2], "output": 2 },
+    { "inputs": [4, 8], "output": 4 },
+    { "inputs": [8, 8], "output": 8 },
+    { "inputs": [8, 4], "output": 4 }
+  ],
+  "min_euint32_euint8": [
+    { "inputs": [390943086, 113], "output": 113 },
+    { "inputs": [109, 113], "output": 109 },
+    { "inputs": [113, 113], "output": 113 },
+    { "inputs": [113, 109], "output": 109 }
+  ],
+  "min_euint32_euint16": [
+    { "inputs": [390943086, 41085], "output": 41085 },
+    { "inputs": [41081, 41085], "output": 41081 },
+    { "inputs": [41085, 41085], "output": 41085 },
+    { "inputs": [41085, 41081], "output": 41081 }
+  ],
+  "min_euint32_euint32": [
+    { "inputs": [390943086, 2102211879], "output": 390943086 },
+    { "inputs": [390943082, 390943086], "output": 390943082 },
+    { "inputs": [390943086, 390943086], "output": 390943086 },
+    { "inputs": [390943086, 390943082], "output": 390943082 }
+  ],
+  "min_euint32_uint32": [
+    { "inputs": [390943086, 304405118], "output": 304405118 },
+    { "inputs": [390943082, 390943086], "output": 390943082 },
+    { "inputs": [390943086, 390943086], "output": 390943086 },
+    { "inputs": [390943086, 390943082], "output": 390943082 }
+  ],
+  "min_uint32_euint32": [
+    { "inputs": [1819271941, 304405118], "output": 304405118 },
+    { "inputs": [390943082, 390943086], "output": 390943082 },
+    { "inputs": [390943086, 390943086], "output": 390943086 },
+    { "inputs": [390943086, 390943082], "output": 390943082 }
+  ],
+  "min_euint32_euint64": [
+    { "inputs": [1819271941, 1588645185], "output": 1588645185 },
+    { "inputs": [1588645181, 1588645185], "output": 1588645181 },
+    { "inputs": [1588645185, 1588645185], "output": 1588645185 },
+    { "inputs": [1588645185, 1588645181], "output": 1588645181 }
+  ],
+  "min_euint64_euint4": [
+    { "inputs": [1933734274, 2], "output": 2 },
+    { "inputs": [4, 8], "output": 4 },
+    { "inputs": [8, 8], "output": 8 },
+    { "inputs": [8, 4], "output": 4 }
+  ],
+  "min_euint64_euint8": [
+    { "inputs": [1933734274, 92], "output": 92 },
+    { "inputs": [88, 92], "output": 88 },
+    { "inputs": [92, 92], "output": 92 },
+    { "inputs": [92, 88], "output": 88 }
+  ],
+  "min_euint64_euint16": [
+    { "inputs": [1933734274, 63835], "output": 63835 },
+    { "inputs": [63831, 63835], "output": 63831 },
+    { "inputs": [63835, 63835], "output": 63835 },
+    { "inputs": [63835, 63831], "output": 63831 }
+  ],
+  "min_euint64_euint32": [
+    { "inputs": [1933734274, 1600509978], "output": 1600509978 },
+    { "inputs": [1600509974, 1600509978], "output": 1600509974 },
+    { "inputs": [1600509978, 1600509978], "output": 1600509978 },
+    { "inputs": [1600509978, 1600509974], "output": 1600509974 }
+  ],
+  "min_euint64_euint64": [
+    { "inputs": [1933734274, 484998270], "output": 484998270 },
+    { "inputs": [484998266, 484998270], "output": 484998266 },
+    { "inputs": [484998270, 484998270], "output": 484998270 },
+    { "inputs": [484998270, 484998266], "output": 484998266 }
+  ],
+  "min_euint64_uint64": [
+    { "inputs": [1933734274, 2130607481], "output": 1933734274 },
+    { "inputs": [484998266, 484998270], "output": 484998266 },
+    { "inputs": [484998270, 484998270], "output": 484998270 },
+    { "inputs": [484998270, 484998266], "output": 484998266 }
+  ],
+  "min_uint64_euint64": [
+    { "inputs": [1509813623, 2130607481], "output": 1509813623 },
+    { "inputs": [484998266, 484998270], "output": 484998266 },
+    { "inputs": [484998270, 484998270], "output": 484998270 },
+    { "inputs": [484998270, 484998266], "output": 484998266 }
+  ],
+  "or_euint4_euint4": [
+    { "inputs": [5, 9], "output": 13 },
+    { "inputs": [4, 8], "output": 12 },
+    { "inputs": [8, 8], "output": 8 },
+    { "inputs": [8, 4], "output": 12 }
+  ],
+  "or_euint4_euint8": [
+    { "inputs": [1, 13], "output": 13 },
+    { "inputs": [4, 8], "output": 12 },
+    { "inputs": [8, 8], "output": 8 },
+    { "inputs": [8, 4], "output": 12 }
+  ],
+  "or_euint4_euint16": [
+    { "inputs": [1, 12], "output": 13 },
+    { "inputs": [4, 8], "output": 12 },
+    { "inputs": [8, 8], "output": 8 },
+    { "inputs": [8, 4], "output": 12 }
+  ],
+  "or_euint4_euint32": [
+    { "inputs": [1, 11], "output": 11 },
+    { "inputs": [4, 8], "output": 12 },
+    { "inputs": [8, 8], "output": 8 },
+    { "inputs": [8, 4], "output": 12 }
+  ],
+  "or_euint4_euint64": [
+    { "inputs": [1, 10], "output": 11 },
+    { "inputs": [4, 8], "output": 12 },
+    { "inputs": [8, 8], "output": 8 },
+    { "inputs": [8, 4], "output": 12 }
+  ],
+  "or_euint8_euint4": [
+    { "inputs": [11, 1], "output": 11 },
+    { "inputs": [4, 8], "output": 12 },
+    { "inputs": [8, 8], "output": 8 },
+    { "inputs": [8, 4], "output": 12 }
+  ],
+  "or_euint8_euint8": [
+    { "inputs": [93, 243], "output": 255 },
+    { "inputs": [89, 93], "output": 93 },
+    { "inputs": [93, 93], "output": 93 },
+    { "inputs": [93, 89], "output": 93 }
+  ],
+  "or_euint8_euint16": [
+    { "inputs": [1, 196], "output": 197 },
+    { "inputs": [89, 93], "output": 93 },
+    { "inputs": [93, 93], "output": 93 },
+    { "inputs": [93, 89], "output": 93 }
+  ],
+  "or_euint8_euint32": [
+    { "inputs": [1, 143], "output": 143 },
+    { "inputs": [89, 93], "output": 93 },
+    { "inputs": [93, 93], "output": 93 },
+    { "inputs": [93, 89], "output": 93 }
+  ],
+  "or_euint8_euint64": [
+    { "inputs": [1, 139], "output": 139 },
+    { "inputs": [89, 93], "output": 93 },
+    { "inputs": [93, 93], "output": 93 },
+    { "inputs": [93, 89], "output": 93 }
+  ],
+  "or_euint16_euint4": [
+    { "inputs": [15, 1], "output": 15 },
+    { "inputs": [4, 8], "output": 12 },
+    { "inputs": [8, 8], "output": 8 },
+    { "inputs": [8, 4], "output": 12 }
+  ],
+  "or_euint16_euint8": [
+    { "inputs": [241, 1], "output": 241 },
+    { "inputs": [120, 124], "output": 124 },
+    { "inputs": [124, 124], "output": 124 },
+    { "inputs": [124, 120], "output": 124 }
+  ],
+  "or_euint16_euint16": [
+    { "inputs": [15468, 53935], "output": 65263 },
+    { "inputs": [15464, 15468], "output": 15468 },
+    { "inputs": [15468, 15468], "output": 15468 },
+    { "inputs": [15468, 15464], "output": 15468 }
+  ],
+  "or_euint16_euint32": [
+    { "inputs": [1, 37057], "output": 37057 },
+    { "inputs": [15464, 15468], "output": 15468 },
+    { "inputs": [15468, 15468], "output": 15468 },
+    { "inputs": [15468, 15464], "output": 15468 }
+  ],
+  "or_euint16_euint64": [
+    { "inputs": [1, 52075], "output": 52075 },
+    { "inputs": [15464, 15468], "output": 15468 },
+    { "inputs": [15468, 15468], "output": 15468 },
+    { "inputs": [15468, 15464], "output": 15468 }
+  ],
+  "or_euint32_euint4": [
+    { "inputs": [9, 1], "output": 9 },
+    { "inputs": [10, 14], "output": 14 },
+    { "inputs": [14, 14], "output": 14 },
+    { "inputs": [14, 10], "output": 14 }
+  ],
+  "or_euint32_euint8": [
+    { "inputs": [156, 1], "output": 157 },
+    { "inputs": [25, 29], "output": 29 },
+    { "inputs": [29, 29], "output": 29 },
+    { "inputs": [29, 25], "output": 29 }
+  ],
+  "or_euint32_euint16": [
+    { "inputs": [40006, 1], "output": 40007 },
+    { "inputs": [46882, 46886], "output": 46886 },
+    { "inputs": [46886, 46886], "output": 46886 },
+    { "inputs": [46886, 46882], "output": 46886 }
+  ],
+  "or_euint32_euint32": [
+    { "inputs": [1310933534, 968535512], "output": 2143023070 },
+    { "inputs": [968535508, 968535512], "output": 968535516 },
+    { "inputs": [968535512, 968535512], "output": 968535512 },
+    { "inputs": [968535512, 968535508], "output": 968535516 }
+  ],
+  "or_euint32_euint64": [
+    { "inputs": [1310933534, 287712997], "output": 1596417791 },
+    { "inputs": [287712993, 287712997], "output": 287712997 },
+    { "inputs": [287712997, 287712997], "output": 287712997 },
+    { "inputs": [287712997, 287712993], "output": 287712997 }
+  ],
+  "or_euint64_euint4": [
+    { "inputs": [10, 1], "output": 11 },
+    { "inputs": [4, 8], "output": 12 },
+    { "inputs": [8, 8], "output": 8 },
+    { "inputs": [8, 4], "output": 12 }
+  ],
+  "or_euint64_euint8": [
+    { "inputs": [167, 1], "output": 167 },
+    { "inputs": [97, 101], "output": 101 },
+    { "inputs": [101, 101], "output": 101 },
+    { "inputs": [101, 97], "output": 101 }
+  ],
+  "or_euint64_euint16": [
+    { "inputs": [42889, 1], "output": 42889 },
+    { "inputs": [21447, 21451], "output": 21455 },
+    { "inputs": [21451, 21451], "output": 21451 },
+    { "inputs": [21451, 21447], "output": 21455 }
+  ],
+  "or_euint64_euint32": [
+    { "inputs": [1405387766, 963544644], "output": 2079229942 },
+    { "inputs": [963544640, 963544644], "output": 963544644 },
+    { "inputs": [963544644, 963544644], "output": 963544644 },
+    { "inputs": [963544644, 963544640], "output": 963544644 }
+  ],
+  "or_euint64_euint64": [
+    { "inputs": [1405387766, 1463413902], "output": 1476259838 },
+    { "inputs": [1405387762, 1405387766], "output": 1405387766 },
+    { "inputs": [1405387766, 1405387766], "output": 1405387766 },
+    { "inputs": [1405387766, 1405387762], "output": 1405387766 }
+  ],
+  "and_euint4_euint4": [
+    { "inputs": [6, 2], "output": 2 },
+    { "inputs": [4, 8], "output": 0 },
+    { "inputs": [8, 8], "output": 8 },
+    { "inputs": [8, 4], "output": 0 }
+  ],
+  "and_euint4_euint8": [
+    { "inputs": [6, 41], "output": 0 },
+    { "inputs": [4, 8], "output": 0 },
+    { "inputs": [8, 8], "output": 8 },
+    { "inputs": [8, 4], "output": 0 }
+  ],
+  "and_euint4_euint16": [
+    { "inputs": [6, 28819], "output": 2 },
+    { "inputs": [4, 8], "output": 0 },
+    { "inputs": [8, 8], "output": 8 },
+    { "inputs": [8, 4], "output": 0 }
+  ],
+  "and_euint4_euint32": [
+    { "inputs": [6, 159427402], "output": 2 },
+    { "inputs": [4, 8], "output": 0 },
+    { "inputs": [8, 8], "output": 8 },
+    { "inputs": [8, 4], "output": 0 }
+  ],
+  "and_euint4_euint64": [
+    { "inputs": [6, 698915120], "output": 0 },
+    { "inputs": [4, 8], "output": 0 },
+    { "inputs": [8, 8], "output": 8 },
+    { "inputs": [8, 4], "output": 0 }
+  ],
+  "and_euint8_euint4": [
+    { "inputs": [209, 7], "output": 1 },
+    { "inputs": [4, 8], "output": 0 },
+    { "inputs": [8, 8], "output": 8 },
+    { "inputs": [8, 4], "output": 0 }
+  ],
+  "and_euint8_euint8": [
+    { "inputs": [209, 109], "output": 65 },
+    { "inputs": [105, 109], "output": 105 },
+    { "inputs": [109, 109], "output": 109 },
+    { "inputs": [109, 105], "output": 105 }
+  ],
+  "and_euint8_euint16": [
+    { "inputs": [209, 33383], "output": 65 },
+    { "inputs": [205, 209], "output": 193 },
+    { "inputs": [209, 209], "output": 209 },
+    { "inputs": [209, 205], "output": 193 }
+  ],
+  "and_euint8_euint32": [
+    { "inputs": [209, 527165394], "output": 208 },
+    { "inputs": [205, 209], "output": 193 },
+    { "inputs": [209, 209], "output": 209 },
+    { "inputs": [209, 205], "output": 193 }
+  ],
+  "and_euint8_euint64": [
+    { "inputs": [209, 1641438334], "output": 80 },
+    { "inputs": [205, 209], "output": 193 },
+    { "inputs": [209, 209], "output": 209 },
+    { "inputs": [209, 205], "output": 193 }
+  ],
+  "and_euint16_euint4": [
+    { "inputs": [14563, 10], "output": 2 },
+    { "inputs": [6, 10], "output": 2 },
+    { "inputs": [10, 10], "output": 10 },
+    { "inputs": [10, 6], "output": 2 }
+  ],
+  "and_euint16_euint8": [
+    { "inputs": [14563, 200], "output": 192 },
+    { "inputs": [196, 200], "output": 192 },
+    { "inputs": [200, 200], "output": 200 },
+    { "inputs": [200, 196], "output": 192 }
+  ],
+  "and_euint16_euint16": [
+    { "inputs": [14563, 4918], "output": 4130 },
+    { "inputs": [4914, 4918], "output": 4914 },
+    { "inputs": [4918, 4918], "output": 4918 },
+    { "inputs": [4918, 4914], "output": 4914 }
+  ],
+  "and_euint16_euint32": [
+    { "inputs": [14563, 408583146], "output": 14562 },
+    { "inputs": [14559, 14563], "output": 14531 },
+    { "inputs": [14563, 14563], "output": 14563 },
+    { "inputs": [14563, 14559], "output": 14531 }
+  ],
+  "and_euint16_euint64": [
+    { "inputs": [14563, 1642657503], "output": 12483 },
+    { "inputs": [14559, 14563], "output": 14531 },
+    { "inputs": [14563, 14563], "output": 14563 },
+    { "inputs": [14563, 14559], "output": 14531 }
+  ],
+  "and_euint32_euint4": [
+    { "inputs": [1757898274, 2], "output": 2 },
+    { "inputs": [4, 8], "output": 0 },
+    { "inputs": [8, 8], "output": 8 },
+    { "inputs": [8, 4], "output": 0 }
+  ],
+  "and_euint32_euint8": [
+    { "inputs": [1757898274, 2], "output": 2 },
+    { "inputs": [4, 8], "output": 0 },
+    { "inputs": [8, 8], "output": 8 },
+    { "inputs": [8, 4], "output": 0 }
+  ],
+  "and_euint32_euint16": [
+    { "inputs": [1757898274, 20019], "output": 17954 },
+    { "inputs": [20015, 20019], "output": 20003 },
+    { "inputs": [20019, 20019], "output": 20019 },
+    { "inputs": [20019, 20015], "output": 20003 }
+  ],
+  "and_euint32_euint32": [
+    { "inputs": [1757898274, 1599687665], "output": 1212236320 },
+    { "inputs": [1599687661, 1599687665], "output": 1599687649 },
+    { "inputs": [1599687665, 1599687665], "output": 1599687665 },
+    { "inputs": [1599687665, 1599687661], "output": 1599687649 }
+  ],
+  "and_euint32_euint64": [
+    { "inputs": [1757898274, 276645072], "output": 4539392 },
+    { "inputs": [276645068, 276645072], "output": 276645056 },
+    { "inputs": [276645072, 276645072], "output": 276645072 },
+    { "inputs": [276645072, 276645068], "output": 276645056 }
+  ],
+  "and_euint64_euint4": [
+    { "inputs": [1294685955, 14], "output": 2 },
+    { "inputs": [10, 14], "output": 10 },
+    { "inputs": [14, 14], "output": 14 },
+    { "inputs": [14, 10], "output": 10 }
+  ],
+  "and_euint64_euint8": [
+    { "inputs": [1294685955, 133], "output": 1 },
+    { "inputs": [129, 133], "output": 129 },
+    { "inputs": [133, 133], "output": 133 },
+    { "inputs": [133, 129], "output": 129 }
+  ],
+  "and_euint64_euint16": [
+    { "inputs": [1294685955, 63959], "output": 20739 },
+    { "inputs": [63955, 63959], "output": 63955 },
+    { "inputs": [63959, 63959], "output": 63959 },
+    { "inputs": [63959, 63955], "output": 63955 }
+  ],
+  "and_euint64_euint32": [
+    { "inputs": [1294685955, 1745450667], "output": 1208571395 },
+    { "inputs": [1294685951, 1294685955], "output": 1294685699 },
+    { "inputs": [1294685955, 1294685955], "output": 1294685955 },
+    { "inputs": [1294685955, 1294685951], "output": 1294685699 }
+  ],
+  "and_euint64_euint64": [
+    { "inputs": [1294685955, 55045679], "output": 16991747 },
+    { "inputs": [55045675, 55045679], "output": 55045675 },
+    { "inputs": [55045679, 55045679], "output": 55045679 },
+    { "inputs": [55045679, 55045675], "output": 55045675 }
+  ],
+  "xor_euint4_euint4": [
+    { "inputs": [10, 9], "output": 3 },
+    { "inputs": [5, 9], "output": 12 },
+    { "inputs": [9, 9], "output": 0 },
+    { "inputs": [9, 5], "output": 12 }
+  ],
+  "xor_euint4_euint8": [
+    { "inputs": [5, 12], "output": 9 },
+    { "inputs": [6, 10], "output": 12 },
+    { "inputs": [10, 10], "output": 0 },
+    { "inputs": [10, 6], "output": 12 }
+  ],
+  "xor_euint4_euint16": [
+    { "inputs": [1, 15], "output": 14 },
+    { "inputs": [6, 10], "output": 12 },
+    { "inputs": [10, 10], "output": 0 },
+    { "inputs": [10, 6], "output": 12 }
+  ],
+  "xor_euint4_euint32": [
+    { "inputs": [1, 15], "output": 14 },
+    { "inputs": [6, 10], "output": 12 },
+    { "inputs": [10, 10], "output": 0 },
+    { "inputs": [10, 6], "output": 12 }
+  ],
+  "xor_euint4_euint64": [
+    { "inputs": [1, 11], "output": 10 },
+    { "inputs": [6, 10], "output": 12 },
+    { "inputs": [10, 10], "output": 0 },
+    { "inputs": [10, 6], "output": 12 }
+  ],
+  "xor_euint8_euint4": [
+    { "inputs": [1, 11], "output": 10 },
+    { "inputs": [4, 8], "output": 12 },
+    { "inputs": [8, 8], "output": 0 },
+    { "inputs": [8, 4], "output": 12 }
+  ],
+  "xor_euint8_euint8": [
+    { "inputs": [1, 166], "output": 167 },
+    { "inputs": [4, 8], "output": 12 },
+    { "inputs": [8, 8], "output": 0 },
+    { "inputs": [8, 4], "output": 12 }
+  ],
+  "xor_euint8_euint16": [
+    { "inputs": [1, 217], "output": 216 },
+    { "inputs": [4, 8], "output": 12 },
+    { "inputs": [8, 8], "output": 0 },
+    { "inputs": [8, 4], "output": 12 }
+  ],
+  "xor_euint8_euint32": [
+    { "inputs": [1, 186], "output": 187 },
+    { "inputs": [4, 8], "output": 12 },
+    { "inputs": [8, 8], "output": 0 },
+    { "inputs": [8, 4], "output": 12 }
+  ],
+  "xor_euint8_euint64": [
+    { "inputs": [1, 136], "output": 137 },
+    { "inputs": [4, 8], "output": 12 },
+    { "inputs": [8, 8], "output": 0 },
+    { "inputs": [8, 4], "output": 12 }
+  ],
+  "xor_euint16_euint4": [
+    { "inputs": [11, 1], "output": 10 },
+    { "inputs": [4, 8], "output": 12 },
+    { "inputs": [8, 8], "output": 0 },
+    { "inputs": [8, 4], "output": 12 }
+  ],
+  "xor_euint16_euint8": [
+    { "inputs": [187, 1], "output": 186 },
+    { "inputs": [25, 29], "output": 4 },
+    { "inputs": [29, 29], "output": 0 },
+    { "inputs": [29, 25], "output": 4 }
+  ],
+  "xor_euint16_euint16": [
+    { "inputs": [48081, 52727], "output": 30246 },
+    { "inputs": [48077, 48081], "output": 28 },
+    { "inputs": [48081, 48081], "output": 0 },
+    { "inputs": [48081, 48077], "output": 28 }
+  ],
+  "xor_euint16_euint32": [
+    { "inputs": [1, 33460], "output": 33461 },
+    { "inputs": [48077, 48081], "output": 28 },
+    { "inputs": [48081, 48081], "output": 0 },
+    { "inputs": [48081, 48077], "output": 28 }
+  ],
+  "xor_euint16_euint64": [
+    { "inputs": [5, 40064], "output": 40069 },
+    { "inputs": [48077, 48081], "output": 28 },
+    { "inputs": [48081, 48081], "output": 0 },
+    { "inputs": [48081, 48077], "output": 28 }
+  ],
+  "xor_euint32_euint4": [
+    { "inputs": [13, 1], "output": 12 },
+    { "inputs": [4, 8], "output": 12 },
+    { "inputs": [8, 8], "output": 0 },
+    { "inputs": [8, 4], "output": 12 }
+  ],
+  "xor_euint32_euint8": [
+    { "inputs": [210, 1], "output": 211 },
+    { "inputs": [54, 58], "output": 12 },
+    { "inputs": [58, 58], "output": 0 },
+    { "inputs": [58, 54], "output": 12 }
+  ],
+  "xor_euint32_euint16": [
+    { "inputs": [53760, 15], "output": 53775 },
+    { "inputs": [64891, 64895], "output": 4 },
+    { "inputs": [64895, 64895], "output": 0 },
+    { "inputs": [64895, 64891], "output": 4 }
+  ],
+  "xor_euint32_euint32": [
+    { "inputs": [220202687, 1588836729], "output": 1402191814 },
+    { "inputs": [220202683, 220202687], "output": 4 },
+    { "inputs": [220202687, 220202687], "output": 0 },
+    { "inputs": [220202687, 220202683], "output": 4 }
+  ],
+  "xor_euint32_euint64": [
+    { "inputs": [220202687, 58005830], "output": 240459769 },
+    { "inputs": [58005826, 58005830], "output": 4 },
+    { "inputs": [58005830, 58005830], "output": 0 },
+    { "inputs": [58005830, 58005826], "output": 4 }
+  ],
+  "xor_euint64_euint4": [
+    { "inputs": [15, 1], "output": 14 },
+    { "inputs": [8, 12], "output": 4 },
+    { "inputs": [12, 12], "output": 0 },
+    { "inputs": [12, 8], "output": 4 }
+  ],
+  "xor_euint64_euint8": [
+    { "inputs": [246, 1], "output": 247 },
+    { "inputs": [22, 26], "output": 12 },
+    { "inputs": [26, 26], "output": 0 },
+    { "inputs": [26, 22], "output": 12 }
+  ],
+  "xor_euint64_euint16": [
+    { "inputs": [63024, 2], "output": 63026 },
+    { "inputs": [33630, 33634], "output": 60 },
+    { "inputs": [33634, 33634], "output": 0 },
+    { "inputs": [33634, 33630], "output": 60 }
+  ],
+  "xor_euint64_euint32": [
+    { "inputs": [1032596672, 1451108916], "output": 1811023604 },
+    { "inputs": [1032596668, 1032596672], "output": 124 },
+    { "inputs": [1032596672, 1032596672], "output": 0 },
+    { "inputs": [1032596672, 1032596668], "output": 124 }
+  ],
+  "xor_euint64_euint64": [
+    { "inputs": [1032596672, 34433579], "output": 1065436907 },
+    { "inputs": [34433575, 34433579], "output": 12 },
+    { "inputs": [34433579, 34433579], "output": 0 },
+    { "inputs": [34433579, 34433575], "output": 12 }
+  ],
+  "not_euint4": [{ "inputs": [2], "output": 13 }],
+  "not_euint8": [{ "inputs": [151], "output": 104 }],
+  "not_euint16": [{ "inputs": [58147], "output": 7388 }],
+  "not_euint32": [{ "inputs": [1014323468], "output": 1133160179 }],
+  "not_euint64": [{ "inputs": [566602200], "output": 1580881447 }],
+  "neg_euint4": [{ "inputs": [10], "output": 5 }],
+  "neg_euint8": [{ "inputs": [29], "output": 226 }],
+  "neg_euint16": [{ "inputs": [55816], "output": 9719 }],
+  "neg_euint32": [{ "inputs": [384529386], "output": 1762954261 }],
+  "neg_euint64": [{ "inputs": [2136222472], "output": 11261175 }]
+}

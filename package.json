@@ -21,6 +21,7 @@
     "coverage:mock": "HARDHAT_NETWORK=hardhat npx hardhat coverage-mock --network hardhat",
     "typechain": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat typechain",
     "codegen": "npx ts-node codegen/main.ts && npm run prettier",
+    "codegen:overloads": "npx ts-node codegen/generateOverloads.ts",
     "task:getEthereumAddress": "hardhat task:getEthereumAddress",
     "task:deployIdentity": "hardhat task:deployIdentity",
     "fhevm:start": "docker run -i -p 8545:8545 --rm --name fhevm ghcr.io/zama-ai/ethermint-dev-node:v0.3.0-0",
@@ -81,7 +82,7 @@
     "rimraf": "^4.1.2",
     "solidity-coverage": "^0.8.1",
     "ts-generator": "^0.1.1",
-    "ts-node": "^10.9.1",
+    "ts-node": "^10.9.2",
     "typechain": "^8.2.0",
     "typescript": "^5.1.6"
   },

@@ -257,16 +257,16 @@ function tfheSolidityOperator(bits: number, operator: Operator, os: OverloadSign
       }
     `);
 
-    os.push({
-      binaryOperator: operator.binarySolidityOperator,
-      arguments: [
-        { type: ArgumentType.EUint, bits },
-        { type: ArgumentType.EUint, bits },
-      ],
+    // os.push({
+    //   binaryOperator: operator.binarySolidityOperator,
+    //   arguments: [
+    //     { type: ArgumentType.EUint, bits },
+    //     { type: ArgumentType.EUint, bits },
+    //   ],
 
-      name: `bin_op_${operator.name}`,
-      returnType: { type: ArgumentType.EUint, bits },
-    });
+    //   name: `bin_op_${operator.name}`,
+    //   returnType: { type: ArgumentType.EUint, bits },
+    // });
   }
 
   if (operator.hasEncrypted && operator.unarySolidityOperator) {
@@ -281,13 +281,13 @@ function tfheSolidityOperator(bits: number, operator: Operator, os: OverloadSign
       }
     `);
 
-    os.push({
-      unaryOperator: operator.unarySolidityOperator,
-      arguments: [{ type: ArgumentType.EUint, bits }],
+    // os.push({
+    //   unaryOperator: operator.unarySolidityOperator,
+    //   arguments: [{ type: ArgumentType.EUint, bits }],
 
-      name: `unary_op_${operator.name}`,
-      returnType: { type: ArgumentType.EUint, bits },
-    });
+    //   name: `unary_op_${operator.name}`,
+    //   returnType: { type: ArgumentType.EUint, bits },
+    // });
   }
 
   return res.join('');
