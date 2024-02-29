@@ -50,8 +50,8 @@ const safeEval = (
   const bitResults = safeMin ? Math.min(lhs, rhs) : Math.max(lhs, rhs);
   let result = fn(lhsNumber, rhsNumber, lhs, rhs);
   const logs: any[] = [];
-  if (typeof result === 'number') {
-    while ((result as number) > Math.pow(2, bitResults) - 1) {
+  if (typeof result === 'number' || typeof result === 'bigint') {
+    while ((result as number | bigint) > Math.pow(2, bitResults) - 1) {
       lhsNumber = Math.max(Math.floor(lhsNumber / 2), 1);
       rhsNumber = Math.max(Math.floor(rhsNumber / 2), 1);
       result = fn(lhsNumber, rhsNumber, lhs, rhs);
@@ -65,7 +65,7 @@ export const SUPPORTED_FUNCTIONS: SupportedFunctions = {
   add: {
     supportedBits: SUPPORTED_BITS,
     safeMin: true,
-    evalTest: (lhsNumber: number, rhsNumber: number) => lhsNumber + rhsNumber,
+    evalTest: (lhsNumber: number, rhsNumber: number) => BigInt(lhsNumber) + BigInt(rhsNumber),
   },
   sub: {
     supportedBits: SUPPORTED_BITS,
@@ -75,7 +75,7 @@ export const SUPPORTED_FUNCTIONS: SupportedFunctions = {
   mul: {
     supportedBits: SUPPORTED_BITS,
     safeMin: true,
-    evalTest: (lhsNumber: number, rhsNumber: number) => lhsNumber * rhsNumber,
+    evalTest: (lhsNumber: number, rhsNumber: number) => BigInt(lhsNumber) * BigInt(rhsNumber),
   },
   div: {
     supportedBits: SUPPORTED_BITS,
