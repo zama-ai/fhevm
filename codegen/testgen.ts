@@ -167,7 +167,7 @@ async function deployTfheTestFixture${os.shardNumber}(): Promise<TFHETestSuite${
   return res.join('');
 }
 
-function ensureNumberAcceptableInBitRange(bits: number, input: number) {
+function ensureNumberAcceptableInBitRange(bits: number, input: number | bigint) {
   switch (bits) {
     case 4:
       ensureNumberInRange(bits, input, 0x00, 0xf);
@@ -189,7 +189,7 @@ function ensureNumberAcceptableInBitRange(bits: number, input: number) {
   }
 }
 
-function ensureNumberInRange(bits: number, input: number, min: number, max: number) {
+function ensureNumberInRange(bits: number, input: number | bigint, min: number, max: number) {
   assert(input >= min && input <= max, `${bits} bit number ${input} doesn't fall into expected [${min}; ${max}] range`);
 }
 
