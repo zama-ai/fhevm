@@ -47,7 +47,6 @@ const generateNumber = (bits: number) => {
   const power = BigInt(Math.pow(2, bits) - 1);
   const maxRange = bigIntMin(power, BigInt(Number.MAX_SAFE_INTEGER));
   const substract = bigIntMax(BigInt(Math.floor(Math.random() * Number(maxRange))), 1n);
-  console.log(bits, power, substract);
   return bigIntMax(power - substract, 1n);
 };
 
@@ -132,7 +131,7 @@ export const SUPPORTED_FUNCTIONS: SupportedFunctions = {
         const newIndex = Number(BigInt(index) + (rhsNumber % BigInt(lhs)));
         return newIndex >= bits.length ? '0' : bits[newIndex];
       });
-      return parseInt(r.join(''), 2);
+      return BigInt(`0b${r.join('')}`);
     },
   },
   shr: {
@@ -144,7 +143,7 @@ export const SUPPORTED_FUNCTIONS: SupportedFunctions = {
         const newIndex = Number(BigInt(index) - (rhsNumber % BigInt(lhs)));
         return newIndex < 0 ? '0' : bits[newIndex];
       });
-      return parseInt(r.join(''), 2);
+      return BigInt(`0b${r.join('')}`);
     },
   },
   max: {
