@@ -139,7 +139,7 @@ async function deployTfheTestFixture${os.shardNumber}(): Promise<TFHETestSuite${
             if (o.arguments[index].type == ArgumentType.EUint) {
               return `this.instances${os.shardNumber}.alice.encrypt${o.arguments[index].bits}(${v}n)`;
             } else {
-              return v;
+              return `${v}n`;
             }
           })
           .join(', ');
