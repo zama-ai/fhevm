@@ -137,7 +137,7 @@ async function deployTfheTestFixture${os.shardNumber}(): Promise<TFHETestSuite${
         const testArgsEncrypted = t.inputs
           .map((v, index) => {
             if (o.arguments[index].type == ArgumentType.EUint) {
-              return `this.instances${os.shardNumber}.alice.encrypt${o.arguments[index].bits}(${v})`;
+              return `this.instances${os.shardNumber}.alice.encrypt${o.arguments[index].bits}(${v}n)`;
             } else {
               return v;
             }
