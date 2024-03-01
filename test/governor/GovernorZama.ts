@@ -88,14 +88,14 @@ describe('GovernorZama', function () {
     }
     await waitForBlock(proposals.startBlock + 1n);
     // Cast some votes
-    const encryptedSupportBob = this.instances.bob.encrypt8(1);
+    const encryptedSupportBob = this.instances.bob.encryptBool(true);
     const txVoteBob = await createTransaction(
       this.governor.connect(this.signers.bob)['castVote(uint256,bytes)'],
       proposalId,
       encryptedSupportBob,
     );
 
-    const encryptedSupportCarol = this.instances.carol.encrypt8(1);
+    const encryptedSupportCarol = this.instances.carol.encryptBool(true);
     const txVoteCarol = await createTransaction(
       this.governor.connect(this.signers.carol)['castVote(uint256,bytes)'],
       proposalId,
@@ -135,14 +135,14 @@ describe('GovernorZama', function () {
     await waitForBlock(proposals.startBlock + 1n);
 
     // Cast some votes
-    const encryptedSupportBob = this.instances.bob.encrypt8(0);
+    const encryptedSupportBob = this.instances.bob.encryptBool(false);
     const txVoteBob = await createTransaction(
       this.governor.connect(this.signers.bob)['castVote(uint256,bytes)'],
       proposalId,
       encryptedSupportBob,
     );
 
-    const encryptedSupportCarol = this.instances.carol.encrypt8(0);
+    const encryptedSupportCarol = this.instances.carol.encryptBool(true);
     const txVoteCarol = await createTransaction(
       this.governor.connect(this.signers.carol)['castVote(uint256,bytes)'],
       proposalId,

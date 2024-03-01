@@ -15,6 +15,14 @@ contract TFHEManualTestSuite {
         return TFHE.decrypt(TFHE.cmux(controlProc, ifTrueProc, ifFalseProc));
     }
 
+    function test_ebool_to_euint4_cast(bool input) public view returns (uint16) {
+        return TFHE.decrypt(TFHE.asEuint4(TFHE.asEbool(input)));
+    }
+
+    function test_ebool_to_euint8_cast(bool input) public view returns (uint16) {
+        return TFHE.decrypt(TFHE.asEuint8(TFHE.asEbool(input)));
+    }
+
     function test_ebool_to_euint16_cast(bool input) public view returns (uint16) {
         return TFHE.decrypt(TFHE.asEuint16(TFHE.asEbool(input)));
     }

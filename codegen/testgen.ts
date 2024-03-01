@@ -2,6 +2,7 @@ import { strict as assert } from 'node:assert';
 
 import { Operator } from './common';
 import { overloadTests } from './overloadTests';
+import { getUint } from './utils';
 
 export enum ArgumentType {
   Ebool,
@@ -136,9 +137,9 @@ async function deployTfheTestFixture${os.shardNumber}(): Promise<TFHETestSuite${
         const testArgsEncrypted = t.inputs
           .map((v, index) => {
             if (o.arguments[index].type == ArgumentType.EUint) {
-              return `this.instances${os.shardNumber}.alice.encrypt${o.arguments[index].bits}(${v})`;
+              return `this.instances${os.shardNumber}.alice.encrypt${o.arguments[index].bits}(${v}n)`;
             } else {
-              return v;
+              return `${v}n`;
             }
           })
           .join(', ');
@@ -166,8 +167,11 @@ async function deployTfheTestFixture${os.shardNumber}(): Promise<TFHETestSuite${
   return res.join('');
 }
 
-function ensureNumberAcceptableInBitRange(bits: number, input: number) {
+function ensureNumberAcceptableInBitRange(bits: number, input: number | bigint) {
   switch (bits) {
+    case 4:
+      ensureNumberInRange(bits, input, 0x00, 0xf);
+      break;
     case 8:
       ensureNumberInRange(bits, input, 0x00, 0xff);
       break;
@@ -185,7 +189,7 @@ function ensureNumberAcceptableInBitRange(bits: number, input: number) {
   }
 }
 
-function ensureNumberInRange(bits: number, input: number, min: number, max: number) {
+function ensureNumberInRange(bits: number, input: number | bigint, min: number, max: number) {
   assert(input >= min && input <= max, `${bits} bit number ${input} doesn't fall into expected [${min}; ${max}] range`);
 }
 
@@ -299,7 +303,7 @@ function functionTypeToCalldataType(t: FunctionType): string {
     case ArgumentType.EUint:
       return `bytes calldata`;
     case ArgumentType.Uint:
-      return `uint${t.bits}`;
+      return getUint(t.bits);
     case ArgumentType.Ebool:
       return `bool`;
   }
@@ -309,7 +313,7 @@ function functionTypeToDecryptedType(t: FunctionType): string {
   switch (t.type) {
     case ArgumentType.EUint:
     case ArgumentType.Uint:
-      return `uint${t.bits}`;
+      return getUint(t.bits);
     case ArgumentType.Ebool:
       return `bool`;
   }
@@ -330,7 +334,7 @@ function functionTypeToString(t: FunctionType): string {
     case ArgumentType.EUint:
       return `euint${t.bits}`;
     case ArgumentType.Uint:
-      return `uint${t.bits}`;
+      return getUint(t.bits);
     case ArgumentType.Ebool:
       return `ebool`;
   }

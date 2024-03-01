@@ -32,7 +32,7 @@ describe('TFHE manual operations', function () {
 
   it('Cmux works returning if false', async function () {
     const res = await this.contract.test_cmux(
-      this.instances.alice.encrypt8(0),
+      this.instances.alice.encryptBool(false),
       this.instances.alice.encrypt32(3),
       this.instances.alice.encrypt32(4),
     );
@@ -41,11 +41,31 @@ describe('TFHE manual operations', function () {
 
   it('Cmux works returning if true', async function () {
     const res = await this.contract.test_cmux(
-      this.instances.alice.encrypt8(1),
+      this.instances.alice.encryptBool(true),
       this.instances.alice.encrypt32(3),
       this.instances.alice.encrypt32(4),
     );
     expect(res).to.equal(3);
+  });
+
+  it('ebool to euint4 casting works with true', async function () {
+    const res = await this.contract.test_ebool_to_euint4_cast(true);
+    expect(res).to.equal(1);
+  });
+
+  it('ebool to euint4 casting works with false', async function () {
+    const res = await this.contract.test_ebool_to_euint4_cast(false);
+    expect(res).to.equal(0);
+  });
+
+  it('ebool to euint8 casting works with true', async function () {
+    const res = await this.contract.test_ebool_to_euint8_cast(true);
+    expect(res).to.equal(1);
+  });
+
+  it('ebool to euint8 casting works with false', async function () {
+    const res = await this.contract.test_ebool_to_euint8_cast(false);
+    expect(res).to.equal(0);
   });
 
   it('ebool to euint16 casting works with true', async function () {
