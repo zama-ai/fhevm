@@ -1,213 +1,213 @@
 {
   "add_euint4_euint4": [
-    { "inputs": ["8", "2"], "output": "10" },
+    { "inputs": ["11", "1"], "output": "12" },
     { "inputs": ["4", "8"], "output": "12" },
     { "inputs": ["5", "5"], "output": "10" },
     { "inputs": ["8", "4"], "output": "12" }
   ],
   "add_euint4_euint8": [
-    { "inputs": ["8", "3"], "output": "11" },
+    { "inputs": ["2", "12"], "output": "14" },
     { "inputs": ["4", "8"], "output": "12" },
     { "inputs": ["5", "5"], "output": "10" },
     { "inputs": ["8", "4"], "output": "12" }
   ],
   "add_euint4_uint8": [
-    { "inputs": ["8", "2"], "output": "10" },
+    { "inputs": ["7", "7"], "output": "14" },
     { "inputs": ["4", "8"], "output": "12" },
     { "inputs": ["5", "5"], "output": "10" },
     { "inputs": ["8", "4"], "output": "12" }
   ],
   "add_euint4_euint16": [
-    { "inputs": ["8", "1"], "output": "9" },
-    { "inputs": ["4", "8"], "output": "12" },
+    { "inputs": ["2", "9"], "output": "11" },
+    { "inputs": ["6", "8"], "output": "14" },
     { "inputs": ["5", "5"], "output": "10" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["8", "6"], "output": "14" }
   ],
   "add_euint4_euint32": [
-    { "inputs": ["8", "1"], "output": "9" },
+    { "inputs": ["2", "11"], "output": "13" },
     { "inputs": ["4", "8"], "output": "12" },
     { "inputs": ["5", "5"], "output": "10" },
     { "inputs": ["8", "4"], "output": "12" }
   ],
   "add_euint4_euint64": [
-    { "inputs": ["2", "10"], "output": "12" },
-    { "inputs": ["6", "8"], "output": "14" },
-    { "inputs": ["5", "5"], "output": "10" },
-    { "inputs": ["8", "6"], "output": "14" }
+    { "inputs": ["2", "9"], "output": "11" },
+    { "inputs": ["4", "6"], "output": "10" },
+    { "inputs": ["6", "6"], "output": "12" },
+    { "inputs": ["6", "4"], "output": "10" }
   ],
   "add_euint8_euint4": [
-    { "inputs": ["2", "1"], "output": "3" },
+    { "inputs": ["9", "2"], "output": "11" },
     { "inputs": ["4", "8"], "output": "12" },
     { "inputs": ["5", "5"], "output": "10" },
     { "inputs": ["8", "4"], "output": "12" }
   ],
   "add_uint8_euint4": [
-    { "inputs": ["8", "1"], "output": "9" },
+    { "inputs": ["12", "3"], "output": "15" },
     { "inputs": ["4", "8"], "output": "12" },
     { "inputs": ["5", "5"], "output": "10" },
     { "inputs": ["8", "4"], "output": "12" }
   ],
   "add_euint8_euint8": [
-    { "inputs": ["15", "3"], "output": "18" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "16" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["93", "114"], "output": "207" },
+    { "inputs": ["91", "93"], "output": "184" },
+    { "inputs": ["93", "93"], "output": "186" },
+    { "inputs": ["93", "91"], "output": "184" }
   ],
   "add_euint8_uint8": [
-    { "inputs": ["15", "1"], "output": "16" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "16" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["93", "112"], "output": "205" },
+    { "inputs": ["91", "93"], "output": "184" },
+    { "inputs": ["93", "93"], "output": "186" },
+    { "inputs": ["93", "91"], "output": "184" }
   ],
   "add_uint8_euint8": [
-    { "inputs": ["36", "1"], "output": "37" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "16" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["34", "112"], "output": "146" },
+    { "inputs": ["91", "93"], "output": "184" },
+    { "inputs": ["93", "93"], "output": "186" },
+    { "inputs": ["93", "91"], "output": "184" }
   ],
   "add_euint8_euint16": [
-    { "inputs": ["36", "1"], "output": "37" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "16" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["2", "208"], "output": "210" },
+    { "inputs": ["83", "85"], "output": "168" },
+    { "inputs": ["85", "85"], "output": "170" },
+    { "inputs": ["85", "83"], "output": "168" }
   ],
   "add_euint8_euint32": [
-    { "inputs": ["36", "2"], "output": "38" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "16" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["2", "161"], "output": "163" },
+    { "inputs": ["96", "100"], "output": "196" },
+    { "inputs": ["100", "100"], "output": "200" },
+    { "inputs": ["100", "96"], "output": "196" }
   ],
   "add_euint8_euint64": [
-    { "inputs": ["3", "168"], "output": "171" },
-    { "inputs": ["32", "36"], "output": "68" },
-    { "inputs": ["36", "36"], "output": "72" },
-    { "inputs": ["36", "32"], "output": "68" }
+    { "inputs": ["2", "129"], "output": "131" },
+    { "inputs": ["115", "119"], "output": "234" },
+    { "inputs": ["119", "119"], "output": "238" },
+    { "inputs": ["119", "115"], "output": "234" }
   ],
   "add_euint16_euint4": [
-    { "inputs": ["3", "2"], "output": "5" },
+    { "inputs": ["13", "2"], "output": "15" },
     { "inputs": ["4", "8"], "output": "12" },
     { "inputs": ["5", "5"], "output": "10" },
     { "inputs": ["8", "4"], "output": "12" }
   ],
   "add_euint16_euint8": [
-    { "inputs": ["3", "1"], "output": "4" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "16" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["171", "2"], "output": "173" },
+    { "inputs": ["7", "11"], "output": "18" },
+    { "inputs": ["11", "11"], "output": "22" },
+    { "inputs": ["11", "7"], "output": "18" }
   ],
   "add_euint16_euint16": [
-    { "inputs": ["3", "3"], "output": "6" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "16" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["27226", "22058"], "output": "49284" },
+    { "inputs": ["22056", "22058"], "output": "44114" },
+    { "inputs": ["22058", "22058"], "output": "44116" },
+    { "inputs": ["22058", "22056"], "output": "44114" }
   ],
   "add_euint16_uint16": [
-    { "inputs": ["3", "2"], "output": "5" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "16" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["54451", "6303"], "output": "60754" },
+    { "inputs": ["22056", "22058"], "output": "44114" },
+    { "inputs": ["22058", "22058"], "output": "44116" },
+    { "inputs": ["22058", "22056"], "output": "44114" }
   ],
   "add_uint16_euint16": [
-    { "inputs": ["2", "2"], "output": "4" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "16" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["29751", "3152"], "output": "32903" },
+    { "inputs": ["22056", "22058"], "output": "44114" },
+    { "inputs": ["22058", "22058"], "output": "44116" },
+    { "inputs": ["22058", "22056"], "output": "44114" }
   ],
   "add_euint16_euint32": [
-    { "inputs": ["2", "2"], "output": "4" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "16" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["2", "41075"], "output": "41077" },
+    { "inputs": ["25150", "25154"], "output": "50304" },
+    { "inputs": ["25154", "25154"], "output": "50308" },
+    { "inputs": ["25154", "25150"], "output": "50304" }
   ],
   "add_euint16_euint64": [
-    { "inputs": ["2", "5596"], "output": "5598" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "16" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["2", "65518"], "output": "65520" },
+    { "inputs": ["22742", "22744"], "output": "45486" },
+    { "inputs": ["22744", "22744"], "output": "45488" },
+    { "inputs": ["22744", "22742"], "output": "45486" }
   ],
   "add_euint32_euint4": [
-    { "inputs": ["2", "8"], "output": "10" },
+    { "inputs": ["11", "2"], "output": "13" },
     { "inputs": ["4", "8"], "output": "12" },
     { "inputs": ["5", "5"], "output": "10" },
     { "inputs": ["8", "4"], "output": "12" }
   ],
   "add_euint32_euint8": [
-    { "inputs": ["3", "1"], "output": "4" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "16" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["186", "2"], "output": "188" },
+    { "inputs": ["69", "71"], "output": "140" },
+    { "inputs": ["71", "71"], "output": "142" },
+    { "inputs": ["71", "69"], "output": "140" }
   ],
   "add_euint32_euint16": [
-    { "inputs": ["3", "5"], "output": "8" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "16" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["40687", "4"], "output": "40691" },
+    { "inputs": ["18607", "18611"], "output": "37218" },
+    { "inputs": ["18611", "18611"], "output": "37222" },
+    { "inputs": ["18611", "18607"], "output": "37218" }
   ],
   "add_euint32_euint32": [
-    { "inputs": ["3", "1"], "output": "4" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "16" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["2163343287", "829836787"], "output": "2993180074" },
+    { "inputs": ["829836783", "829836787"], "output": "1659673570" },
+    { "inputs": ["829836787", "829836787"], "output": "1659673574" },
+    { "inputs": ["829836787", "829836783"], "output": "1659673570" }
   ],
   "add_euint32_uint32": [
-    { "inputs": ["3", "1"], "output": "4" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "16" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["1081671644", "1277295402"], "output": "2358967046" },
+    { "inputs": ["829836783", "829836787"], "output": "1659673570" },
+    { "inputs": ["829836787", "829836787"], "output": "1659673574" },
+    { "inputs": ["829836787", "829836783"], "output": "1659673570" }
   ],
   "add_uint32_euint32": [
-    { "inputs": ["8", "1"], "output": "9" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "16" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["1301306419", "1277295402"], "output": "2578601821" },
+    { "inputs": ["829836783", "829836787"], "output": "1659673570" },
+    { "inputs": ["829836787", "829836787"], "output": "1659673574" },
+    { "inputs": ["829836787", "829836783"], "output": "1659673570" }
   ],
   "add_euint32_euint64": [
-    { "inputs": ["8", "2055"], "output": "2063" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "16" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["2", "4293304478"], "output": "4293304480" },
+    { "inputs": ["2093298939", "2093298943"], "output": "4186597882" },
+    { "inputs": ["2093298943", "2093298943"], "output": "4186597886" },
+    { "inputs": ["2093298943", "2093298939"], "output": "4186597882" }
   ],
   "add_euint64_euint4": [
-    { "inputs": ["10", "1"], "output": "11" },
-    { "inputs": ["4", "8"], "output": "12" },
+    { "inputs": ["9", "2"], "output": "11" },
+    { "inputs": ["6", "8"], "output": "14" },
     { "inputs": ["5", "5"], "output": "10" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["8", "6"], "output": "14" }
   ],
   "add_euint64_euint8": [
-    { "inputs": ["141", "2"], "output": "143" },
-    { "inputs": ["10", "14"], "output": "24" },
-    { "inputs": ["14", "14"], "output": "28" },
-    { "inputs": ["14", "10"], "output": "24" }
+    { "inputs": ["129", "2"], "output": "131" },
+    { "inputs": ["98", "102"], "output": "200" },
+    { "inputs": ["102", "102"], "output": "204" },
+    { "inputs": ["102", "98"], "output": "200" }
   ],
   "add_euint64_euint16": [
-    { "inputs": ["17823", "1"], "output": "17824" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "16" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["65532", "2"], "output": "65534" },
+    { "inputs": ["23282", "23284"], "output": "46566" },
+    { "inputs": ["23284", "23284"], "output": "46568" },
+    { "inputs": ["23284", "23282"], "output": "46566" }
   ],
   "add_euint64_euint32": [
-    { "inputs": ["17823", "2"], "output": "17825" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "16" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["4293362093", "2"], "output": "4293362095" },
+    { "inputs": ["1194292230", "1194292232"], "output": "2388584462" },
+    { "inputs": ["1194292232", "1194292232"], "output": "2388584464" },
+    { "inputs": ["1194292232", "1194292230"], "output": "2388584462" }
   ],
   "add_euint64_euint64": [
-    { "inputs": ["17823", "3432"], "output": "21255" },
-    { "inputs": ["3428", "3432"], "output": "6860" },
-    { "inputs": ["3432", "3432"], "output": "6864" },
-    { "inputs": ["3432", "3428"], "output": "6860" }
+    { "inputs": ["9223329218882461797", "9219964371310000511"], "output": "18443293590192462308" },
+    { "inputs": ["9219964371310000509", "9219964371310000511"], "output": "18439928742620001020" },
+    { "inputs": ["9219964371310000511", "9219964371310000511"], "output": "18439928742620001022" },
+    { "inputs": ["9219964371310000511", "9219964371310000509"], "output": "18439928742620001020" }
   ],
   "add_euint64_uint64": [
-    { "inputs": ["17823", "7318"], "output": "25141" },
-    { "inputs": ["3428", "3432"], "output": "6860" },
-    { "inputs": ["3432", "3432"], "output": "6864" },
-    { "inputs": ["3432", "3428"], "output": "6860" }
+    { "inputs": ["9223329218882461797", "9220956803715422232"], "output": "18444286022597884029" },
+    { "inputs": ["9219964371310000509", "9219964371310000511"], "output": "18439928742620001020" },
+    { "inputs": ["9219964371310000511", "9219964371310000511"], "output": "18439928742620001022" },
+    { "inputs": ["9219964371310000511", "9219964371310000509"], "output": "18439928742620001020" }
   ],
   "add_uint64_euint64": [
-    { "inputs": ["5752", "7318"], "output": "13070" },
-    { "inputs": ["3428", "3432"], "output": "6860" },
-    { "inputs": ["3432", "3432"], "output": "6864" },
-    { "inputs": ["3432", "3428"], "output": "6860" }
+    { "inputs": ["9219177655732910821", "9220956803715422232"], "output": "18440134459448333053" },
+    { "inputs": ["9219964371310000509", "9219964371310000511"], "output": "18439928742620001020" },
+    { "inputs": ["9219964371310000511", "9219964371310000511"], "output": "18439928742620001022" },
+    { "inputs": ["9219964371310000511", "9219964371310000509"], "output": "18439928742620001020" }
   ],
   "sub_euint4_euint4": [
     { "inputs": ["8", "8"], "output": "0" },
@@ -242,2629 +242,2629 @@
     { "inputs": ["8", "4"], "output": "4" }
   ],
   "sub_euint8_euint8": [
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["52", "52"], "output": "0" },
+    { "inputs": ["52", "48"], "output": "4" }
   ],
   "sub_euint8_uint8": [
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["52", "52"], "output": "0" },
+    { "inputs": ["52", "48"], "output": "4" }
   ],
   "sub_uint8_euint8": [
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["52", "52"], "output": "0" },
+    { "inputs": ["52", "48"], "output": "4" }
   ],
   "sub_euint8_euint16": [
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["236", "236"], "output": "0" },
+    { "inputs": ["236", "232"], "output": "4" }
   ],
   "sub_euint8_euint32": [
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["83", "83"], "output": "0" },
+    { "inputs": ["83", "79"], "output": "4" }
   ],
   "sub_euint8_euint64": [
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["168", "168"], "output": "0" },
+    { "inputs": ["168", "164"], "output": "4" }
   ],
   "sub_euint16_euint4": [
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["14", "14"], "output": "0" },
+    { "inputs": ["14", "10"], "output": "4" }
   ],
   "sub_euint16_euint8": [
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["166", "166"], "output": "0" },
+    { "inputs": ["166", "162"], "output": "4" }
   ],
   "sub_euint16_euint16": [
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["56955", "56955"], "output": "0" },
+    { "inputs": ["56955", "56951"], "output": "4" }
   ],
   "sub_euint16_uint16": [
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["56955", "56955"], "output": "0" },
+    { "inputs": ["56955", "56951"], "output": "4" }
   ],
   "sub_uint16_euint16": [
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["56955", "56955"], "output": "0" },
+    { "inputs": ["56955", "56951"], "output": "4" }
   ],
   "sub_euint16_euint32": [
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["42408", "42408"], "output": "0" },
+    { "inputs": ["42408", "42404"], "output": "4" }
   ],
   "sub_euint16_euint64": [
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["8385", "8385"], "output": "0" },
+    { "inputs": ["8385", "8381"], "output": "4" }
   ],
   "sub_euint32_euint4": [
     { "inputs": ["8", "8"], "output": "0" },
     { "inputs": ["8", "4"], "output": "4" }
   ],
   "sub_euint32_euint8": [
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["179", "179"], "output": "0" },
+    { "inputs": ["179", "175"], "output": "4" }
   ],
   "sub_euint32_euint16": [
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["47991", "47991"], "output": "0" },
+    { "inputs": ["47991", "47987"], "output": "4" }
   ],
   "sub_euint32_euint32": [
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["3061205449", "3061205449"], "output": "0" },
+    { "inputs": ["3061205449", "3061205445"], "output": "4" }
   ],
   "sub_euint32_uint32": [
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["3061205449", "3061205449"], "output": "0" },
+    { "inputs": ["3061205449", "3061205445"], "output": "4" }
   ],
   "sub_uint32_euint32": [
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["3061205449", "3061205449"], "output": "0" },
+    { "inputs": ["3061205449", "3061205445"], "output": "4" }
   ],
   "sub_euint32_euint64": [
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["1018084759", "1018084759"], "output": "0" },
+    { "inputs": ["1018084759", "1018084755"], "output": "4" }
   ],
   "sub_euint64_euint4": [
     { "inputs": ["8", "8"], "output": "0" },
     { "inputs": ["8", "4"], "output": "4" }
   ],
   "sub_euint64_euint8": [
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["101", "101"], "output": "0" },
+    { "inputs": ["101", "97"], "output": "4" }
   ],
   "sub_euint64_euint16": [
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["25338", "25338"], "output": "0" },
+    { "inputs": ["25338", "25334"], "output": "4" }
   ],
   "sub_euint64_euint32": [
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["624820999", "624820999"], "output": "0" },
+    { "inputs": ["624820999", "624820995"], "output": "4" }
   ],
   "sub_euint64_euint64": [
-    { "inputs": ["3660", "3660"], "output": "0" },
-    { "inputs": ["3660", "3656"], "output": "4" }
+    { "inputs": ["18445117613821089157", "18445117613821089157"], "output": "0" },
+    { "inputs": ["18445117613821089157", "18445117613821089153"], "output": "4" }
   ],
   "sub_euint64_uint64": [
-    { "inputs": ["3660", "3660"], "output": "0" },
-    { "inputs": ["3660", "3656"], "output": "4" }
+    { "inputs": ["18445117613821089157", "18445117613821089157"], "output": "0" },
+    { "inputs": ["18445117613821089157", "18445117613821089153"], "output": "4" }
   ],
   "sub_uint64_euint64": [
-    { "inputs": ["3660", "3660"], "output": "0" },
-    { "inputs": ["3660", "3656"], "output": "4" }
+    { "inputs": ["18445117613821089157", "18445117613821089157"], "output": "0" },
+    { "inputs": ["18445117613821089157", "18445117613821089153"], "output": "4" }
   ],
   "mul_euint4_euint4": [
-    { "inputs": ["1", "2"], "output": "2" },
-    { "inputs": ["3", "5"], "output": "15" },
     { "inputs": ["3", "3"], "output": "9" },
-    { "inputs": ["5", "3"], "output": "15" }
+    { "inputs": ["3", "4"], "output": "12" },
+    { "inputs": ["3", "3"], "output": "9" },
+    { "inputs": ["4", "3"], "output": "12" }
   ],
   "mul_euint4_euint8": [
-    { "inputs": ["1", "1"], "output": "1" },
+    { "inputs": ["1", "14"], "output": "14" },
     { "inputs": ["3", "5"], "output": "15" },
     { "inputs": ["3", "3"], "output": "9" },
     { "inputs": ["5", "3"], "output": "15" }
   ],
   "mul_euint4_uint8": [
-    { "inputs": ["1", "3"], "output": "3" },
+    { "inputs": ["1", "10"], "output": "10" },
     { "inputs": ["3", "5"], "output": "15" },
     { "inputs": ["3", "3"], "output": "9" },
     { "inputs": ["5", "3"], "output": "15" }
   ],
   "mul_euint4_euint16": [
-    { "inputs": ["1", "12"], "output": "12" },
+    { "inputs": ["2", "5"], "output": "10" },
     { "inputs": ["3", "5"], "output": "15" },
     { "inputs": ["3", "3"], "output": "9" },
     { "inputs": ["5", "3"], "output": "15" }
   ],
   "mul_euint4_euint32": [
-    { "inputs": ["1", "2"], "output": "2" },
-    { "inputs": ["3", "5"], "output": "15" },
+    { "inputs": ["2", "7"], "output": "14" },
+    { "inputs": ["3", "4"], "output": "12" },
     { "inputs": ["3", "3"], "output": "9" },
-    { "inputs": ["5", "3"], "output": "15" }
+    { "inputs": ["4", "3"], "output": "12" }
   ],
   "mul_euint4_euint64": [
-    { "inputs": ["1", "13"], "output": "13" },
+    { "inputs": ["2", "5"], "output": "10" },
     { "inputs": ["3", "5"], "output": "15" },
     { "inputs": ["3", "3"], "output": "9" },
     { "inputs": ["5", "3"], "output": "15" }
   ],
   "mul_euint8_euint4": [
-    { "inputs": ["2", "5"], "output": "10" },
-    { "inputs": ["3", "5"], "output": "15" },
+    { "inputs": ["5", "2"], "output": "10" },
+    { "inputs": ["3", "4"], "output": "12" },
     { "inputs": ["3", "3"], "output": "9" },
-    { "inputs": ["5", "3"], "output": "15" }
+    { "inputs": ["4", "3"], "output": "12" }
   ],
   "mul_uint8_euint4": [
-    { "inputs": ["2", "5"], "output": "10" },
-    { "inputs": ["3", "5"], "output": "15" },
+    { "inputs": ["1", "10"], "output": "10" },
+    { "inputs": ["3", "4"], "output": "12" },
     { "inputs": ["3", "3"], "output": "9" },
-    { "inputs": ["5", "3"], "output": "15" }
+    { "inputs": ["4", "3"], "output": "12" }
   ],
   "mul_euint8_euint8": [
-    { "inputs": ["2", "2"], "output": "4" },
-    { "inputs": ["4", "8"], "output": "32" },
-    { "inputs": ["8", "8"], "output": "64" },
-    { "inputs": ["8", "4"], "output": "32" }
+    { "inputs": ["9", "17"], "output": "153" },
+    { "inputs": ["15", "16"], "output": "240" },
+    { "inputs": ["9", "9"], "output": "81" },
+    { "inputs": ["16", "15"], "output": "240" }
   ],
   "mul_euint8_uint8": [
-    { "inputs": ["2", "2"], "output": "4" },
-    { "inputs": ["4", "8"], "output": "32" },
-    { "inputs": ["8", "8"], "output": "64" },
-    { "inputs": ["8", "4"], "output": "32" }
+    { "inputs": ["16", "7"], "output": "112" },
+    { "inputs": ["15", "16"], "output": "240" },
+    { "inputs": ["9", "9"], "output": "81" },
+    { "inputs": ["16", "15"], "output": "240" }
   ],
   "mul_uint8_euint8": [
-    { "inputs": ["1", "2"], "output": "2" },
-    { "inputs": ["4", "8"], "output": "32" },
-    { "inputs": ["8", "8"], "output": "64" },
-    { "inputs": ["8", "4"], "output": "32" }
+    { "inputs": ["14", "12"], "output": "168" },
+    { "inputs": ["15", "16"], "output": "240" },
+    { "inputs": ["9", "9"], "output": "81" },
+    { "inputs": ["16", "15"], "output": "240" }
   ],
   "mul_euint8_euint16": [
-    { "inputs": ["1", "1"], "output": "1" },
-    { "inputs": ["4", "8"], "output": "32" },
-    { "inputs": ["8", "8"], "output": "64" },
-    { "inputs": ["8", "4"], "output": "32" }
+    { "inputs": ["3", "60"], "output": "180" },
+    { "inputs": ["9", "9"], "output": "81" },
+    { "inputs": ["9", "9"], "output": "81" },
+    { "inputs": ["9", "9"], "output": "81" }
   ],
   "mul_euint8_euint32": [
-    { "inputs": ["1", "1"], "output": "1" },
-    { "inputs": ["4", "8"], "output": "32" },
-    { "inputs": ["8", "8"], "output": "64" },
-    { "inputs": ["8", "4"], "output": "32" }
+    { "inputs": ["2", "96"], "output": "192" },
+    { "inputs": ["10", "12"], "output": "120" },
+    { "inputs": ["12", "12"], "output": "144" },
+    { "inputs": ["12", "10"], "output": "120" }
   ],
   "mul_euint8_euint64": [
-    { "inputs": ["1", "140"], "output": "140" },
-    { "inputs": ["4", "8"], "output": "32" },
-    { "inputs": ["8", "8"], "output": "64" },
-    { "inputs": ["8", "4"], "output": "32" }
+    { "inputs": ["2", "65"], "output": "130" },
+    { "inputs": ["10", "11"], "output": "110" },
+    { "inputs": ["11", "11"], "output": "121" },
+    { "inputs": ["11", "10"], "output": "110" }
   ],
   "mul_euint16_euint4": [
-    { "inputs": ["1", "1"], "output": "1" },
+    { "inputs": ["7", "2"], "output": "14" },
     { "inputs": ["3", "5"], "output": "15" },
     { "inputs": ["3", "3"], "output": "9" },
     { "inputs": ["5", "3"], "output": "15" }
   ],
   "mul_euint16_euint8": [
-    { "inputs": ["1", "21"], "output": "21" },
-    { "inputs": ["4", "8"], "output": "32" },
-    { "inputs": ["8", "8"], "output": "64" },
-    { "inputs": ["8", "4"], "output": "32" }
+    { "inputs": ["110", "2"], "output": "220" },
+    { "inputs": ["13", "13"], "output": "169" },
+    { "inputs": ["13", "13"], "output": "169" },
+    { "inputs": ["13", "13"], "output": "169" }
   ],
   "mul_euint16_euint16": [
-    { "inputs": ["1", "2"], "output": "2" },
-    { "inputs": ["4", "8"], "output": "32" },
-    { "inputs": ["8", "8"], "output": "64" },
-    { "inputs": ["8", "4"], "output": "32" }
+    { "inputs": ["120", "150"], "output": "18000" },
+    { "inputs": ["239", "239"], "output": "57121" },
+    { "inputs": ["239", "239"], "output": "57121" },
+    { "inputs": ["239", "239"], "output": "57121" }
   ],
   "mul_euint16_uint16": [
-    { "inputs": ["1", "14"], "output": "14" },
-    { "inputs": ["4", "8"], "output": "32" },
-    { "inputs": ["8", "8"], "output": "64" },
-    { "inputs": ["8", "4"], "output": "32" }
+    { "inputs": ["239", "131"], "output": "31309" },
+    { "inputs": ["239", "239"], "output": "57121" },
+    { "inputs": ["239", "239"], "output": "57121" },
+    { "inputs": ["239", "239"], "output": "57121" }
   ],
   "mul_uint16_euint16": [
-    { "inputs": ["2", "14"], "output": "28" },
-    { "inputs": ["4", "8"], "output": "32" },
-    { "inputs": ["8", "8"], "output": "64" },
-    { "inputs": ["8", "4"], "output": "32" }
+    { "inputs": ["190", "131"], "output": "24890" },
+    { "inputs": ["239", "239"], "output": "57121" },
+    { "inputs": ["239", "239"], "output": "57121" },
+    { "inputs": ["239", "239"], "output": "57121" }
   ],
   "mul_euint16_euint32": [
-    { "inputs": ["2", "1"], "output": "2" },
-    { "inputs": ["4", "8"], "output": "32" },
-    { "inputs": ["8", "8"], "output": "64" },
-    { "inputs": ["8", "4"], "output": "32" }
+    { "inputs": ["2", "32121"], "output": "64242" },
+    { "inputs": ["235", "235"], "output": "55225" },
+    { "inputs": ["235", "235"], "output": "55225" },
+    { "inputs": ["235", "235"], "output": "55225" }
   ],
   "mul_euint16_euint64": [
-    { "inputs": ["2", "2601"], "output": "5202" },
-    { "inputs": ["4", "8"], "output": "32" },
-    { "inputs": ["8", "8"], "output": "64" },
-    { "inputs": ["8", "4"], "output": "32" }
+    { "inputs": ["2", "32761"], "output": "65522" },
+    { "inputs": ["251", "251"], "output": "63001" },
+    { "inputs": ["251", "251"], "output": "63001" },
+    { "inputs": ["251", "251"], "output": "63001" }
   ],
   "mul_euint32_euint4": [
-    { "inputs": ["1", "2"], "output": "2" },
-    { "inputs": ["3", "5"], "output": "15" },
+    { "inputs": ["5", "2"], "output": "10" },
     { "inputs": ["3", "3"], "output": "9" },
-    { "inputs": ["5", "3"], "output": "15" }
+    { "inputs": ["3", "3"], "output": "9" },
+    { "inputs": ["3", "3"], "output": "9" }
   ],
   "mul_euint32_euint8": [
-    { "inputs": ["1", "3"], "output": "3" },
-    { "inputs": ["4", "8"], "output": "32" },
-    { "inputs": ["8", "8"], "output": "64" },
-    { "inputs": ["8", "4"], "output": "32" }
+    { "inputs": ["107", "2"], "output": "214" },
+    { "inputs": ["12", "12"], "output": "144" },
+    { "inputs": ["12", "12"], "output": "144" },
+    { "inputs": ["12", "12"], "output": "144" }
   ],
   "mul_euint32_euint16": [
-    { "inputs": ["1", "4"], "output": "4" },
-    { "inputs": ["4", "8"], "output": "32" },
-    { "inputs": ["8", "8"], "output": "64" },
-    { "inputs": ["8", "4"], "output": "32" }
+    { "inputs": ["30409", "2"], "output": "60818" },
+    { "inputs": ["152", "152"], "output": "23104" },
+    { "inputs": ["152", "152"], "output": "23104" },
+    { "inputs": ["152", "152"], "output": "23104" }
   ],
   "mul_euint32_euint32": [
-    { "inputs": ["1", "1"], "output": "1" },
-    { "inputs": ["4", "8"], "output": "32" },
-    { "inputs": ["8", "8"], "output": "64" },
-    { "inputs": ["8", "4"], "output": "32" }
+    { "inputs": ["42467", "41983"], "output": "1782892061" },
+    { "inputs": ["41983", "41983"], "output": "1762572289" },
+    { "inputs": ["41983", "41983"], "output": "1762572289" },
+    { "inputs": ["41983", "41983"], "output": "1762572289" }
   ],
   "mul_euint32_uint32": [
-    { "inputs": ["1", "4"], "output": "4" },
-    { "inputs": ["4", "8"], "output": "32" },
-    { "inputs": ["8", "8"], "output": "64" },
-    { "inputs": ["8", "4"], "output": "32" }
+    { "inputs": ["42467", "65037"], "output": "2761926279" },
+    { "inputs": ["41983", "41983"], "output": "1762572289" },
+    { "inputs": ["41983", "41983"], "output": "1762572289" },
+    { "inputs": ["41983", "41983"], "output": "1762572289" }
   ],
   "mul_uint32_euint32": [
-    { "inputs": ["1", "4"], "output": "4" },
-    { "inputs": ["4", "8"], "output": "32" },
-    { "inputs": ["8", "8"], "output": "64" },
-    { "inputs": ["8", "4"], "output": "32" }
+    { "inputs": ["17461", "65037"], "output": "1135611057" },
+    { "inputs": ["41983", "41983"], "output": "1762572289" },
+    { "inputs": ["41983", "41983"], "output": "1762572289" },
+    { "inputs": ["41983", "41983"], "output": "1762572289" }
   ],
   "mul_euint32_euint64": [
-    { "inputs": ["1", "2410"], "output": "2410" },
-    { "inputs": ["4", "8"], "output": "32" },
-    { "inputs": ["8", "8"], "output": "64" },
-    { "inputs": ["8", "4"], "output": "32" }
+    { "inputs": ["2", "2147115345"], "output": "4294230690" },
+    { "inputs": ["46957", "46957"], "output": "2204959849" },
+    { "inputs": ["46957", "46957"], "output": "2204959849" },
+    { "inputs": ["46957", "46957"], "output": "2204959849" }
   ],
   "mul_euint64_euint4": [
-    { "inputs": ["15", "1"], "output": "15" },
+    { "inputs": ["5", "2"], "output": "10" },
     { "inputs": ["3", "5"], "output": "15" },
     { "inputs": ["3", "3"], "output": "9" },
     { "inputs": ["5", "3"], "output": "15" }
   ],
   "mul_euint64_euint8": [
-    { "inputs": ["109", "2"], "output": "218" },
-    { "inputs": ["4", "8"], "output": "32" },
-    { "inputs": ["8", "8"], "output": "64" },
-    { "inputs": ["8", "4"], "output": "32" }
+    { "inputs": ["65", "2"], "output": "130" },
+    { "inputs": ["15", "15"], "output": "225" },
+    { "inputs": ["15", "15"], "output": "225" },
+    { "inputs": ["15", "15"], "output": "225" }
   ],
   "mul_euint64_euint16": [
-    { "inputs": ["3449", "2"], "output": "6898" },
-    { "inputs": ["4", "8"], "output": "32" },
-    { "inputs": ["8", "8"], "output": "64" },
-    { "inputs": ["8", "4"], "output": "32" }
+    { "inputs": ["32765", "2"], "output": "65530" },
+    { "inputs": ["163", "163"], "output": "26569" },
+    { "inputs": ["163", "163"], "output": "26569" },
+    { "inputs": ["163", "163"], "output": "26569" }
   ],
   "mul_euint64_euint32": [
-    { "inputs": ["3449", "9"], "output": "31041" },
-    { "inputs": ["5", "9"], "output": "45" },
-    { "inputs": ["9", "9"], "output": "81" },
-    { "inputs": ["9", "5"], "output": "45" }
+    { "inputs": ["2147410658", "2"], "output": "4294821316" },
+    { "inputs": ["32881", "32881"], "output": "1081160161" },
+    { "inputs": ["32881", "32881"], "output": "1081160161" },
+    { "inputs": ["32881", "32881"], "output": "1081160161" }
   ],
   "mul_euint64_euint64": [
-    { "inputs": ["3449", "2396"], "output": "8263804" },
-    { "inputs": ["2392", "2396"], "output": "5731232" },
-    { "inputs": ["2396", "2396"], "output": "5740816" },
-    { "inputs": ["2396", "2392"], "output": "5731232" }
+    { "inputs": ["4294635170", "4293288604"], "output": "18438108233698602680" },
+    { "inputs": ["4293288604", "4293288604"], "output": "18432327037236268816" },
+    { "inputs": ["4293288604", "4293288604"], "output": "18432327037236268816" },
+    { "inputs": ["4293288604", "4293288604"], "output": "18432327037236268816" }
   ],
   "mul_euint64_uint64": [
-    { "inputs": ["3449", "4919"], "output": "16965631" },
-    { "inputs": ["2392", "2396"], "output": "5731232" },
-    { "inputs": ["2396", "2396"], "output": "5740816" },
-    { "inputs": ["2396", "2392"], "output": "5731232" }
+    { "inputs": ["4294635170", "4293232253"], "output": "18437866226712138010" },
+    { "inputs": ["4293288604", "4293288604"], "output": "18432327037236268816" },
+    { "inputs": ["4293288604", "4293288604"], "output": "18432327037236268816" },
+    { "inputs": ["4293288604", "4293288604"], "output": "18432327037236268816" }
   ],
   "mul_uint64_euint64": [
-    { "inputs": ["2383", "4919"], "output": "11721977" },
-    { "inputs": ["2392", "2396"], "output": "5731232" },
-    { "inputs": ["2396", "2396"], "output": "5740816" },
-    { "inputs": ["2396", "2392"], "output": "5731232" }
+    { "inputs": ["4294226236", "4293232253"], "output": "18436110578073989708" },
+    { "inputs": ["4293288604", "4293288604"], "output": "18432327037236268816" },
+    { "inputs": ["4293288604", "4293288604"], "output": "18432327037236268816" },
+    { "inputs": ["4293288604", "4293288604"], "output": "18432327037236268816" }
   ],
   "div_euint4_uint8": [
-    { "inputs": ["1", "2"], "output": "0" },
+    { "inputs": ["3", "6"], "output": "0" },
     { "inputs": ["4", "8"], "output": "0" },
     { "inputs": ["8", "8"], "output": "1" },
     { "inputs": ["8", "4"], "output": "2" }
   ],
   "div_euint8_uint8": [
-    { "inputs": ["1", "7"], "output": "0" },
-    { "inputs": ["4", "8"], "output": "0" },
-    { "inputs": ["8", "8"], "output": "1" },
-    { "inputs": ["8", "4"], "output": "2" }
+    { "inputs": ["123", "214"], "output": "0" },
+    { "inputs": ["20", "24"], "output": "0" },
+    { "inputs": ["24", "24"], "output": "1" },
+    { "inputs": ["24", "20"], "output": "1" }
   ],
   "div_euint16_uint16": [
-    { "inputs": ["1", "1"], "output": "1" },
-    { "inputs": ["4", "8"], "output": "0" },
-    { "inputs": ["8", "8"], "output": "1" },
-    { "inputs": ["8", "4"], "output": "2" }
+    { "inputs": ["61139", "60988"], "output": "1" },
+    { "inputs": ["59165", "59169"], "output": "0" },
+    { "inputs": ["59169", "59169"], "output": "1" },
+    { "inputs": ["59169", "59165"], "output": "1" }
   ],
   "div_euint32_uint32": [
-    { "inputs": ["1", "12"], "output": "0" },
-    { "inputs": ["4", "8"], "output": "0" },
-    { "inputs": ["8", "8"], "output": "1" },
-    { "inputs": ["8", "4"], "output": "2" }
+    { "inputs": ["1945845245", "755191882"], "output": "2" },
+    { "inputs": ["1945845241", "1945845245"], "output": "0" },
+    { "inputs": ["1945845245", "1945845245"], "output": "1" },
+    { "inputs": ["1945845245", "1945845241"], "output": "1" }
   ],
   "div_euint64_uint64": [
-    { "inputs": ["3692", "2899"], "output": "1" },
-    { "inputs": ["3688", "3692"], "output": "0" },
-    { "inputs": ["3692", "3692"], "output": "1" },
-    { "inputs": ["3692", "3688"], "output": "1" }
+    { "inputs": ["18441976837575510865", "18441212274805422577"], "output": "1" },
+    { "inputs": ["18441976837575510861", "18441976837575510865"], "output": "0" },
+    { "inputs": ["18441976837575510865", "18441976837575510865"], "output": "1" },
+    { "inputs": ["18441976837575510865", "18441976837575510861"], "output": "1" }
   ],
   "rem_euint4_uint8": [
-    { "inputs": ["15", "2"], "output": "1" },
+    { "inputs": ["4", "10"], "output": "4" },
     { "inputs": ["4", "8"], "output": "4" },
     { "inputs": ["8", "8"], "output": "0" },
     { "inputs": ["8", "4"], "output": "0" }
   ],
   "rem_euint8_uint8": [
-    { "inputs": ["1", "1"], "output": "0" },
-    { "inputs": ["4", "8"], "output": "4" },
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "0" }
+    { "inputs": ["144", "19"], "output": "11" },
+    { "inputs": ["140", "144"], "output": "140" },
+    { "inputs": ["144", "144"], "output": "0" },
+    { "inputs": ["144", "140"], "output": "4" }
   ],
   "rem_euint16_uint16": [
-    { "inputs": ["1", "3"], "output": "1" },
-    { "inputs": ["4", "8"], "output": "4" },
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "0" }
+    { "inputs": ["18856", "18330"], "output": "526" },
+    { "inputs": ["18852", "18856"], "output": "18852" },
+    { "inputs": ["18856", "18856"], "output": "0" },
+    { "inputs": ["18856", "18852"], "output": "4" }
   ],
   "rem_euint32_uint32": [
-    { "inputs": ["1", "1"], "output": "0" },
-    { "inputs": ["4", "8"], "output": "4" },
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "0" }
+    { "inputs": ["2521442787", "706504920"], "output": "401928027" },
+    { "inputs": ["2521442783", "2521442787"], "output": "2521442783" },
+    { "inputs": ["2521442787", "2521442787"], "output": "0" },
+    { "inputs": ["2521442787", "2521442783"], "output": "4" }
   ],
   "rem_euint64_uint64": [
-    { "inputs": ["2467", "230368"], "output": "2467" },
-    { "inputs": ["2168", "2172"], "output": "2168" },
-    { "inputs": ["2172", "2172"], "output": "0" },
-    { "inputs": ["2172", "2168"], "output": "4" }
+    { "inputs": ["18443785129295236141", "18441307989286811147"], "output": "2477140008424994" },
+    { "inputs": ["18438390548915069819", "18438390548915069823"], "output": "18438390548915069819" },
+    { "inputs": ["18438390548915069823", "18438390548915069823"], "output": "0" },
+    { "inputs": ["18438390548915069823", "18438390548915069819"], "output": "4" }
   ],
   "le_euint4_euint4": [
-    { "inputs": ["1", "3"], "output": true },
+    { "inputs": ["8", "6"], "output": false },
     { "inputs": ["4", "8"], "output": true },
     { "inputs": ["8", "8"], "output": true },
     { "inputs": ["8", "4"], "output": false }
   ],
   "le_euint4_euint8": [
-    { "inputs": ["1", "1"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["14", "151"], "output": true },
+    { "inputs": ["10", "14"], "output": true },
+    { "inputs": ["14", "14"], "output": true },
+    { "inputs": ["14", "10"], "output": false }
   ],
   "le_euint4_uint8": [
-    { "inputs": ["1", "7"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["14", "8"], "output": false },
+    { "inputs": ["10", "14"], "output": true },
+    { "inputs": ["14", "14"], "output": true },
+    { "inputs": ["14", "10"], "output": false }
   ],
   "le_euint4_euint16": [
-    { "inputs": ["1", "17"], "output": true },
+    { "inputs": ["1", "51341"], "output": true },
     { "inputs": ["4", "8"], "output": true },
     { "inputs": ["8", "8"], "output": true },
     { "inputs": ["8", "4"], "output": false }
   ],
   "le_euint4_euint32": [
-    { "inputs": ["1", "1"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["9", "467708048"], "output": true },
+    { "inputs": ["5", "9"], "output": true },
+    { "inputs": ["9", "9"], "output": true },
+    { "inputs": ["9", "5"], "output": false }
   ],
   "le_euint4_euint64": [
-    { "inputs": ["1", "10377"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["12", "18438657387678135029"], "output": true },
+    { "inputs": ["8", "12"], "output": true },
+    { "inputs": ["12", "12"], "output": true },
+    { "inputs": ["12", "8"], "output": false }
   ],
   "le_euint8_euint4": [
-    { "inputs": ["1", "2"], "output": true },
+    { "inputs": ["194", "8"], "output": false },
     { "inputs": ["4", "8"], "output": true },
     { "inputs": ["8", "8"], "output": true },
     { "inputs": ["8", "4"], "output": false }
   ],
   "le_uint8_euint4": [
-    { "inputs": ["1", "2"], "output": true },
+    { "inputs": ["11", "8"], "output": false },
     { "inputs": ["4", "8"], "output": true },
     { "inputs": ["8", "8"], "output": true },
     { "inputs": ["8", "4"], "output": false }
   ],
   "le_euint8_euint8": [
-    { "inputs": ["1", "4"], "output": true },
+    { "inputs": ["102", "4"], "output": false },
     { "inputs": ["4", "8"], "output": true },
     { "inputs": ["8", "8"], "output": true },
     { "inputs": ["8", "4"], "output": false }
   ],
   "le_euint8_uint8": [
-    { "inputs": ["1", "2"], "output": true },
+    { "inputs": ["102", "85"], "output": false },
     { "inputs": ["4", "8"], "output": true },
     { "inputs": ["8", "8"], "output": true },
     { "inputs": ["8", "4"], "output": false }
   ],
   "le_uint8_euint8": [
-    { "inputs": ["15", "2"], "output": false },
+    { "inputs": ["46", "85"], "output": true },
     { "inputs": ["4", "8"], "output": true },
     { "inputs": ["8", "8"], "output": true },
     { "inputs": ["8", "4"], "output": false }
   ],
   "le_euint8_euint16": [
-    { "inputs": ["15", "1"], "output": false },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["31", "28651"], "output": true },
+    { "inputs": ["27", "31"], "output": true },
+    { "inputs": ["31", "31"], "output": true },
+    { "inputs": ["31", "27"], "output": false }
   ],
   "le_euint8_euint32": [
-    { "inputs": ["15", "1"], "output": false },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["200", "2966523441"], "output": true },
+    { "inputs": ["196", "200"], "output": true },
+    { "inputs": ["200", "200"], "output": true },
+    { "inputs": ["200", "196"], "output": false }
   ],
   "le_euint8_euint64": [
-    { "inputs": ["15", "3500"], "output": true },
-    { "inputs": ["11", "15"], "output": true },
-    { "inputs": ["15", "15"], "output": true },
-    { "inputs": ["15", "11"], "output": false }
+    { "inputs": ["80", "18440486388708045995"], "output": true },
+    { "inputs": ["76", "80"], "output": true },
+    { "inputs": ["80", "80"], "output": true },
+    { "inputs": ["80", "76"], "output": false }
   ],
   "le_euint16_euint4": [
-    { "inputs": ["23", "1"], "output": false },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["7456", "9"], "output": false },
+    { "inputs": ["5", "9"], "output": true },
+    { "inputs": ["9", "9"], "output": true },
+    { "inputs": ["9", "5"], "output": false }
   ],
   "le_euint16_euint8": [
-    { "inputs": ["23", "2"], "output": false },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["3242", "147"], "output": false },
+    { "inputs": ["143", "147"], "output": true },
+    { "inputs": ["147", "147"], "output": true },
+    { "inputs": ["147", "143"], "output": false }
   ],
   "le_euint16_euint16": [
-    { "inputs": ["23", "1"], "output": false },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["9281", "48556"], "output": true },
+    { "inputs": ["9277", "9281"], "output": true },
+    { "inputs": ["9281", "9281"], "output": true },
+    { "inputs": ["9281", "9277"], "output": false }
   ],
   "le_euint16_uint16": [
-    { "inputs": ["23", "1"], "output": false },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["9281", "23936"], "output": true },
+    { "inputs": ["9277", "9281"], "output": true },
+    { "inputs": ["9281", "9281"], "output": true },
+    { "inputs": ["9281", "9277"], "output": false }
   ],
   "le_uint16_euint16": [
-    { "inputs": ["1", "1"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["49675", "23936"], "output": false },
+    { "inputs": ["9277", "9281"], "output": true },
+    { "inputs": ["9281", "9281"], "output": true },
+    { "inputs": ["9281", "9277"], "output": false }
   ],
   "le_euint16_euint32": [
-    { "inputs": ["1", "1"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["42248", "3250361677"], "output": true },
+    { "inputs": ["42244", "42248"], "output": true },
+    { "inputs": ["42248", "42248"], "output": true },
+    { "inputs": ["42248", "42244"], "output": false }
   ],
   "le_euint16_euint64": [
-    { "inputs": ["1", "7578"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["16281", "18438048148950562767"], "output": true },
+    { "inputs": ["16277", "16281"], "output": true },
+    { "inputs": ["16281", "16281"], "output": true },
+    { "inputs": ["16281", "16277"], "output": false }
   ],
   "le_euint32_euint4": [
-    { "inputs": ["25", "15"], "output": false },
-    { "inputs": ["11", "15"], "output": true },
-    { "inputs": ["15", "15"], "output": true },
-    { "inputs": ["15", "11"], "output": false }
+    { "inputs": ["4064031115", "9"], "output": false },
+    { "inputs": ["5", "9"], "output": true },
+    { "inputs": ["9", "9"], "output": true },
+    { "inputs": ["9", "5"], "output": false }
   ],
   "le_euint32_euint8": [
-    { "inputs": ["25", "1"], "output": false },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["3743657855", "103"], "output": false },
+    { "inputs": ["99", "103"], "output": true },
+    { "inputs": ["103", "103"], "output": true },
+    { "inputs": ["103", "99"], "output": false }
   ],
   "le_euint32_euint16": [
-    { "inputs": ["25", "1"], "output": false },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["1673073080", "44621"], "output": false },
+    { "inputs": ["44617", "44621"], "output": true },
+    { "inputs": ["44621", "44621"], "output": true },
+    { "inputs": ["44621", "44617"], "output": false }
   ],
   "le_euint32_euint32": [
-    { "inputs": ["25", "1"], "output": false },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["989604334", "3011475023"], "output": true },
+    { "inputs": ["989604330", "989604334"], "output": true },
+    { "inputs": ["989604334", "989604334"], "output": true },
+    { "inputs": ["989604334", "989604330"], "output": false }
   ],
   "le_euint32_uint32": [
-    { "inputs": ["25", "3"], "output": false },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["989604334", "2400461325"], "output": true },
+    { "inputs": ["989604330", "989604334"], "output": true },
+    { "inputs": ["989604334", "989604334"], "output": true },
+    { "inputs": ["989604334", "989604330"], "output": false }
   ],
   "le_uint32_euint32": [
-    { "inputs": ["2", "3"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["3171491075", "2400461325"], "output": false },
+    { "inputs": ["989604330", "989604334"], "output": true },
+    { "inputs": ["989604334", "989604334"], "output": true },
+    { "inputs": ["989604334", "989604330"], "output": false }
   ],
   "le_euint32_euint64": [
-    { "inputs": ["2", "2235"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["3652038615", "18440248369616077365"], "output": true },
+    { "inputs": ["3652038611", "3652038615"], "output": true },
+    { "inputs": ["3652038615", "3652038615"], "output": true },
+    { "inputs": ["3652038615", "3652038611"], "output": false }
   ],
   "le_euint64_euint4": [
-    { "inputs": ["4742", "7"], "output": false },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["18446127513373335953", "14"], "output": false },
+    { "inputs": ["10", "14"], "output": true },
+    { "inputs": ["14", "14"], "output": true },
+    { "inputs": ["14", "10"], "output": false }
   ],
   "le_euint64_euint8": [
-    { "inputs": ["4742", "1"], "output": false },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["18446424442125229129", "19"], "output": false },
+    { "inputs": ["15", "19"], "output": true },
+    { "inputs": ["19", "19"], "output": true },
+    { "inputs": ["19", "15"], "output": false }
   ],
   "le_euint64_euint16": [
-    { "inputs": ["4742", "1"], "output": false },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["18442809234541757919", "39205"], "output": false },
+    { "inputs": ["39201", "39205"], "output": true },
+    { "inputs": ["39205", "39205"], "output": true },
+    { "inputs": ["39205", "39201"], "output": false }
   ],
   "le_euint64_euint32": [
-    { "inputs": ["4742", "21"], "output": false },
-    { "inputs": ["17", "21"], "output": true },
-    { "inputs": ["21", "21"], "output": true },
-    { "inputs": ["21", "17"], "output": false }
+    { "inputs": ["18439009396144568585", "2271345781"], "output": false },
+    { "inputs": ["2271345777", "2271345781"], "output": true },
+    { "inputs": ["2271345781", "2271345781"], "output": true },
+    { "inputs": ["2271345781", "2271345777"], "output": false }
   ],
   "le_euint64_euint64": [
-    { "inputs": ["4742", "3626"], "output": false },
-    { "inputs": ["3622", "3626"], "output": true },
-    { "inputs": ["3626", "3626"], "output": true },
-    { "inputs": ["3626", "3622"], "output": false }
+    { "inputs": ["18440769778451615393", "18446070761608442971"], "output": true },
+    { "inputs": ["18440769778451615389", "18440769778451615393"], "output": true },
+    { "inputs": ["18440769778451615393", "18440769778451615393"], "output": true },
+    { "inputs": ["18440769778451615393", "18440769778451615389"], "output": false }
   ],
   "le_euint64_uint64": [
-    { "inputs": ["4742", "42694"], "output": true },
-    { "inputs": ["3622", "3626"], "output": true },
-    { "inputs": ["3626", "3626"], "output": true },
-    { "inputs": ["3626", "3622"], "output": false }
+    { "inputs": ["18440769778451615393", "18439065451314752761"], "output": false },
+    { "inputs": ["18440769778451615389", "18440769778451615393"], "output": true },
+    { "inputs": ["18440769778451615393", "18440769778451615393"], "output": true },
+    { "inputs": ["18440769778451615393", "18440769778451615389"], "output": false }
   ],
   "le_uint64_euint64": [
-    { "inputs": ["2150", "42694"], "output": true },
-    { "inputs": ["3622", "3626"], "output": true },
-    { "inputs": ["3626", "3626"], "output": true },
-    { "inputs": ["3626", "3622"], "output": false }
+    { "inputs": ["18440980092932624951", "18439065451314752761"], "output": false },
+    { "inputs": ["18440769778451615389", "18440769778451615393"], "output": true },
+    { "inputs": ["18440769778451615393", "18440769778451615393"], "output": true },
+    { "inputs": ["18440769778451615393", "18440769778451615389"], "output": false }
   ],
   "lt_euint4_euint4": [
-    { "inputs": ["2", "5"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["10", "9"], "output": false },
+    { "inputs": ["5", "9"], "output": true },
+    { "inputs": ["9", "9"], "output": false },
+    { "inputs": ["9", "5"], "output": false }
   ],
   "lt_euint4_euint8": [
-    { "inputs": ["2", "255"], "output": true },
+    { "inputs": ["7", "92"], "output": true },
     { "inputs": ["4", "8"], "output": true },
     { "inputs": ["8", "8"], "output": false },
     { "inputs": ["8", "4"], "output": false }
   ],
   "lt_euint4_uint8": [
-    { "inputs": ["2", "3"], "output": true },
+    { "inputs": ["7", "14"], "output": true },
     { "inputs": ["4", "8"], "output": true },
     { "inputs": ["8", "8"], "output": false },
     { "inputs": ["8", "4"], "output": false }
   ],
   "lt_euint4_euint16": [
-    { "inputs": ["2", "1"], "output": false },
+    { "inputs": ["6", "15496"], "output": true },
     { "inputs": ["4", "8"], "output": true },
     { "inputs": ["8", "8"], "output": false },
     { "inputs": ["8", "4"], "output": false }
   ],
   "lt_euint4_euint32": [
-    { "inputs": ["2", "1"], "output": false },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["11", "1378961804"], "output": true },
+    { "inputs": ["7", "11"], "output": true },
+    { "inputs": ["11", "11"], "output": false },
+    { "inputs": ["11", "7"], "output": false }
   ],
   "lt_euint4_euint64": [
-    { "inputs": ["2", "8139"], "output": true },
+    { "inputs": ["8", "18442139041620940861"], "output": true },
     { "inputs": ["4", "8"], "output": true },
     { "inputs": ["8", "8"], "output": false },
     { "inputs": ["8", "4"], "output": false }
   ],
   "lt_euint8_euint4": [
-    { "inputs": ["1", "1"], "output": false },
+    { "inputs": ["130", "5"], "output": false },
     { "inputs": ["4", "8"], "output": true },
     { "inputs": ["8", "8"], "output": false },
     { "inputs": ["8", "4"], "output": false }
   ],
   "lt_uint8_euint4": [
-    { "inputs": ["15", "1"], "output": false },
+    { "inputs": ["12", "5"], "output": false },
     { "inputs": ["4", "8"], "output": true },
     { "inputs": ["8", "8"], "output": false },
     { "inputs": ["8", "4"], "output": false }
   ],
   "lt_euint8_euint8": [
-    { "inputs": ["15", "1"], "output": false },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["253", "98"], "output": false },
+    { "inputs": ["94", "98"], "output": true },
+    { "inputs": ["98", "98"], "output": false },
+    { "inputs": ["98", "94"], "output": false }
   ],
   "lt_euint8_uint8": [
-    { "inputs": ["15", "1"], "output": false },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["253", "9"], "output": false },
+    { "inputs": ["94", "98"], "output": true },
+    { "inputs": ["98", "98"], "output": false },
+    { "inputs": ["98", "94"], "output": false }
   ],
   "lt_uint8_euint8": [
-    { "inputs": ["1", "1"], "output": false },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["79", "9"], "output": false },
+    { "inputs": ["94", "98"], "output": true },
+    { "inputs": ["98", "98"], "output": false },
+    { "inputs": ["98", "94"], "output": false }
   ],
   "lt_euint8_euint16": [
-    { "inputs": ["1", "1"], "output": false },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["113", "2877"], "output": true },
+    { "inputs": ["109", "113"], "output": true },
+    { "inputs": ["113", "113"], "output": false },
+    { "inputs": ["113", "109"], "output": false }
   ],
   "lt_euint8_euint32": [
-    { "inputs": ["1", "1"], "output": false },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["80", "2205479823"], "output": true },
+    { "inputs": ["76", "80"], "output": true },
+    { "inputs": ["80", "80"], "output": false },
+    { "inputs": ["80", "76"], "output": false }
   ],
   "lt_euint8_euint64": [
-    { "inputs": ["1", "2371"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["190", "18443665731691391943"], "output": true },
+    { "inputs": ["186", "190"], "output": true },
+    { "inputs": ["190", "190"], "output": false },
+    { "inputs": ["190", "186"], "output": false }
   ],
   "lt_euint16_euint4": [
-    { "inputs": ["1", "1"], "output": false },
+    { "inputs": ["53504", "6"], "output": false },
     { "inputs": ["4", "8"], "output": true },
     { "inputs": ["8", "8"], "output": false },
     { "inputs": ["8", "4"], "output": false }
   ],
   "lt_euint16_euint8": [
-    { "inputs": ["1", "5"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["42518", "110"], "output": false },
+    { "inputs": ["106", "110"], "output": true },
+    { "inputs": ["110", "110"], "output": false },
+    { "inputs": ["110", "106"], "output": false }
   ],
   "lt_euint16_euint16": [
-    { "inputs": ["1", "1"], "output": false },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["44794", "23290"], "output": false },
+    { "inputs": ["23286", "23290"], "output": true },
+    { "inputs": ["23290", "23290"], "output": false },
+    { "inputs": ["23290", "23286"], "output": false }
   ],
   "lt_euint16_uint16": [
-    { "inputs": ["1", "8"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["44794", "29106"], "output": false },
+    { "inputs": ["23286", "23290"], "output": true },
+    { "inputs": ["23290", "23290"], "output": false },
+    { "inputs": ["23290", "23286"], "output": false }
   ],
   "lt_uint16_euint16": [
-    { "inputs": ["2", "8"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["11942", "29106"], "output": true },
+    { "inputs": ["23286", "23290"], "output": true },
+    { "inputs": ["23290", "23290"], "output": false },
+    { "inputs": ["23290", "23286"], "output": false }
   ],
   "lt_euint16_euint32": [
-    { "inputs": ["2", "4"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["45430", "522886914"], "output": true },
+    { "inputs": ["45426", "45430"], "output": true },
+    { "inputs": ["45430", "45430"], "output": false },
+    { "inputs": ["45430", "45426"], "output": false }
   ],
   "lt_euint16_euint64": [
-    { "inputs": ["2", "2714"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["18995", "18443093417222594453"], "output": true },
+    { "inputs": ["18991", "18995"], "output": true },
+    { "inputs": ["18995", "18995"], "output": false },
+    { "inputs": ["18995", "18991"], "output": false }
   ],
   "lt_euint32_euint4": [
-    { "inputs": ["2", "1"], "output": false },
+    { "inputs": ["3623618060", "5"], "output": false },
     { "inputs": ["4", "8"], "output": true },
     { "inputs": ["8", "8"], "output": false },
     { "inputs": ["8", "4"], "output": false }
   ],
   "lt_euint32_euint8": [
-    { "inputs": ["2", "4"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["800790361", "82"], "output": false },
+    { "inputs": ["78", "82"], "output": true },
+    { "inputs": ["82", "82"], "output": false },
+    { "inputs": ["82", "78"], "output": false }
   ],
   "lt_euint32_euint16": [
-    { "inputs": ["2", "6"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["2528767958", "64360"], "output": false },
+    { "inputs": ["64356", "64360"], "output": true },
+    { "inputs": ["64360", "64360"], "output": false },
+    { "inputs": ["64360", "64356"], "output": false }
   ],
   "lt_euint32_euint32": [
-    { "inputs": ["2", "25"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["3432727362", "2953663248"], "output": false },
+    { "inputs": ["2953663244", "2953663248"], "output": true },
+    { "inputs": ["2953663248", "2953663248"], "output": false },
+    { "inputs": ["2953663248", "2953663244"], "output": false }
   ],
   "lt_euint32_uint32": [
-    { "inputs": ["2", "2"], "output": false },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["3432727362", "340267218"], "output": false },
+    { "inputs": ["2953663244", "2953663248"], "output": true },
+    { "inputs": ["2953663248", "2953663248"], "output": false },
+    { "inputs": ["2953663248", "2953663244"], "output": false }
   ],
   "lt_uint32_euint32": [
-    { "inputs": ["4", "2"], "output": false },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["254860119", "340267218"], "output": true },
+    { "inputs": ["2953663244", "2953663248"], "output": true },
+    { "inputs": ["2953663248", "2953663248"], "output": false },
+    { "inputs": ["2953663248", "2953663244"], "output": false }
   ],
   "lt_euint32_euint64": [
-    { "inputs": ["4", "5352"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["1728686329", "18442541149578902807"], "output": true },
+    { "inputs": ["1728686325", "1728686329"], "output": true },
+    { "inputs": ["1728686329", "1728686329"], "output": false },
+    { "inputs": ["1728686329", "1728686325"], "output": false }
   ],
   "lt_euint64_euint4": [
-    { "inputs": ["16329", "1"], "output": false },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["18440890716948813157", "11"], "output": false },
+    { "inputs": ["7", "11"], "output": true },
+    { "inputs": ["11", "11"], "output": false },
+    { "inputs": ["11", "7"], "output": false }
   ],
   "lt_euint64_euint8": [
-    { "inputs": ["16329", "1"], "output": false },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["18445717540030063977", "27"], "output": false },
+    { "inputs": ["23", "27"], "output": true },
+    { "inputs": ["27", "27"], "output": false },
+    { "inputs": ["27", "23"], "output": false }
   ],
   "lt_euint64_euint16": [
-    { "inputs": ["16329", "3"], "output": false },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["18443664339829863559", "39059"], "output": false },
+    { "inputs": ["39055", "39059"], "output": true },
+    { "inputs": ["39059", "39059"], "output": false },
+    { "inputs": ["39059", "39055"], "output": false }
   ],
   "lt_euint64_euint32": [
-    { "inputs": ["16329", "2"], "output": false },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["18439663977987842087", "2158000734"], "output": false },
+    { "inputs": ["2158000730", "2158000734"], "output": true },
+    { "inputs": ["2158000734", "2158000734"], "output": false },
+    { "inputs": ["2158000734", "2158000730"], "output": false }
   ],
   "lt_euint64_euint64": [
-    { "inputs": ["16329", "2082"], "output": false },
-    { "inputs": ["2078", "2082"], "output": true },
-    { "inputs": ["2082", "2082"], "output": false },
-    { "inputs": ["2082", "2078"], "output": false }
+    { "inputs": ["18446718131340158589", "18444160910497783341"], "output": false },
+    { "inputs": ["18444160910497783337", "18444160910497783341"], "output": true },
+    { "inputs": ["18444160910497783341", "18444160910497783341"], "output": false },
+    { "inputs": ["18444160910497783341", "18444160910497783337"], "output": false }
   ],
   "lt_euint64_uint64": [
-    { "inputs": ["16329", "2853"], "output": false },
-    { "inputs": ["2078", "2082"], "output": true },
-    { "inputs": ["2082", "2082"], "output": false },
-    { "inputs": ["2082", "2078"], "output": false }
+    { "inputs": ["18446718131340158589", "18438438177494413269"], "output": false },
+    { "inputs": ["18444160910497783337", "18444160910497783341"], "output": true },
+    { "inputs": ["18444160910497783341", "18444160910497783341"], "output": false },
+    { "inputs": ["18444160910497783341", "18444160910497783337"], "output": false }
   ],
   "lt_uint64_euint64": [
-    { "inputs": ["27593", "2853"], "output": false },
-    { "inputs": ["2078", "2082"], "output": true },
-    { "inputs": ["2082", "2082"], "output": false },
-    { "inputs": ["2082", "2078"], "output": false }
+    { "inputs": ["18445719507413937869", "18438438177494413269"], "output": false },
+    { "inputs": ["18444160910497783337", "18444160910497783341"], "output": true },
+    { "inputs": ["18444160910497783341", "18444160910497783341"], "output": false },
+    { "inputs": ["18444160910497783341", "18444160910497783337"], "output": false }
   ],
   "ge_euint4_euint4": [
-    { "inputs": ["2", "1"], "output": true },
+    { "inputs": ["3", "4"], "output": false },
     { "inputs": ["4", "8"], "output": false },
     { "inputs": ["8", "8"], "output": true },
     { "inputs": ["8", "4"], "output": true }
   ],
   "ge_euint4_euint8": [
-    { "inputs": ["2", "3"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["12", "141"], "output": false },
+    { "inputs": ["8", "12"], "output": false },
+    { "inputs": ["12", "12"], "output": true },
+    { "inputs": ["12", "8"], "output": true }
   ],
   "ge_euint4_uint8": [
-    { "inputs": ["2", "1"], "output": true },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["12", "11"], "output": true },
+    { "inputs": ["8", "12"], "output": false },
+    { "inputs": ["12", "12"], "output": true },
+    { "inputs": ["12", "8"], "output": true }
   ],
   "ge_euint4_euint16": [
-    { "inputs": ["2", "10"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["9", "63554"], "output": false },
+    { "inputs": ["5", "9"], "output": false },
+    { "inputs": ["9", "9"], "output": true },
+    { "inputs": ["9", "5"], "output": true }
   ],
   "ge_euint4_euint32": [
-    { "inputs": ["2", "3"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["9", "3023026099"], "output": false },
+    { "inputs": ["5", "9"], "output": false },
+    { "inputs": ["9", "9"], "output": true },
+    { "inputs": ["9", "5"], "output": true }
   ],
   "ge_euint4_euint64": [
-    { "inputs": ["2", "3677"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["14", "18441505983320830973"], "output": false },
+    { "inputs": ["10", "14"], "output": false },
+    { "inputs": ["14", "14"], "output": true },
+    { "inputs": ["14", "10"], "output": true }
   ],
   "ge_euint8_euint4": [
-    { "inputs": ["2", "15"], "output": false },
+    { "inputs": ["228", "4"], "output": true },
     { "inputs": ["4", "8"], "output": false },
     { "inputs": ["8", "8"], "output": true },
     { "inputs": ["8", "4"], "output": true }
   ],
   "ge_uint8_euint4": [
-    { "inputs": ["2", "15"], "output": false },
+    { "inputs": ["2", "4"], "output": false },
     { "inputs": ["4", "8"], "output": false },
     { "inputs": ["8", "8"], "output": true },
     { "inputs": ["8", "4"], "output": true }
   ],
   "ge_euint8_euint8": [
-    { "inputs": ["2", "2"], "output": true },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["41", "173"], "output": false },
+    { "inputs": ["37", "41"], "output": false },
+    { "inputs": ["41", "41"], "output": true },
+    { "inputs": ["41", "37"], "output": true }
   ],
   "ge_euint8_uint8": [
-    { "inputs": ["2", "11"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["41", "155"], "output": false },
+    { "inputs": ["37", "41"], "output": false },
+    { "inputs": ["41", "41"], "output": true },
+    { "inputs": ["41", "37"], "output": true }
   ],
   "ge_uint8_euint8": [
-    { "inputs": ["1", "11"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["28", "155"], "output": false },
+    { "inputs": ["37", "41"], "output": false },
+    { "inputs": ["41", "41"], "output": true },
+    { "inputs": ["41", "37"], "output": true }
   ],
   "ge_euint8_euint16": [
-    { "inputs": ["1", "26"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["204", "4953"], "output": false },
+    { "inputs": ["200", "204"], "output": false },
+    { "inputs": ["204", "204"], "output": true },
+    { "inputs": ["204", "200"], "output": true }
   ],
   "ge_euint8_euint32": [
-    { "inputs": ["1", "1"], "output": true },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["214", "2636986545"], "output": false },
+    { "inputs": ["210", "214"], "output": false },
+    { "inputs": ["214", "214"], "output": true },
+    { "inputs": ["214", "210"], "output": true }
   ],
   "ge_euint8_euint64": [
-    { "inputs": ["1", "7637"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["27", "18445930867214181117"], "output": false },
+    { "inputs": ["23", "27"], "output": false },
+    { "inputs": ["27", "27"], "output": true },
+    { "inputs": ["27", "23"], "output": true }
   ],
   "ge_euint16_euint4": [
-    { "inputs": ["1", "7"], "output": false },
+    { "inputs": ["9661", "2"], "output": true },
     { "inputs": ["4", "8"], "output": false },
     { "inputs": ["8", "8"], "output": true },
     { "inputs": ["8", "4"], "output": true }
   ],
   "ge_euint16_euint8": [
-    { "inputs": ["1", "1"], "output": true },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["3763", "81"], "output": true },
+    { "inputs": ["77", "81"], "output": false },
+    { "inputs": ["81", "81"], "output": true },
+    { "inputs": ["81", "77"], "output": true }
   ],
   "ge_euint16_euint16": [
-    { "inputs": ["1", "2"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["18226", "11817"], "output": true },
+    { "inputs": ["11813", "11817"], "output": false },
+    { "inputs": ["11817", "11817"], "output": true },
+    { "inputs": ["11817", "11813"], "output": true }
   ],
   "ge_euint16_uint16": [
-    { "inputs": ["1", "1"], "output": true },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["18226", "26413"], "output": false },
+    { "inputs": ["11813", "11817"], "output": false },
+    { "inputs": ["11817", "11817"], "output": true },
+    { "inputs": ["11817", "11813"], "output": true }
   ],
   "ge_uint16_euint16": [
-    { "inputs": ["1", "1"], "output": true },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["45131", "26413"], "output": true },
+    { "inputs": ["11813", "11817"], "output": false },
+    { "inputs": ["11817", "11817"], "output": true },
+    { "inputs": ["11817", "11813"], "output": true }
   ],
   "ge_euint16_euint32": [
-    { "inputs": ["1", "1"], "output": true },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["19364", "2908406445"], "output": false },
+    { "inputs": ["19360", "19364"], "output": false },
+    { "inputs": ["19364", "19364"], "output": true },
+    { "inputs": ["19364", "19360"], "output": true }
   ],
   "ge_euint16_euint64": [
-    { "inputs": ["1", "3917"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["17006", "18440111639904808773"], "output": false },
+    { "inputs": ["17002", "17006"], "output": false },
+    { "inputs": ["17006", "17006"], "output": true },
+    { "inputs": ["17006", "17002"], "output": true }
   ],
   "ge_euint32_euint4": [
-    { "inputs": ["1", "15"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["4064050662", "13"], "output": true },
+    { "inputs": ["9", "13"], "output": false },
+    { "inputs": ["13", "13"], "output": true },
+    { "inputs": ["13", "9"], "output": true }
   ],
   "ge_euint32_euint8": [
-    { "inputs": ["1", "1"], "output": true },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["4107105674", "147"], "output": true },
+    { "inputs": ["143", "147"], "output": false },
+    { "inputs": ["147", "147"], "output": true },
+    { "inputs": ["147", "143"], "output": true }
   ],
   "ge_euint32_euint16": [
-    { "inputs": ["1", "1"], "output": true },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["3202817970", "50829"], "output": true },
+    { "inputs": ["50825", "50829"], "output": false },
+    { "inputs": ["50829", "50829"], "output": true },
+    { "inputs": ["50829", "50825"], "output": true }
   ],
   "ge_euint32_euint32": [
-    { "inputs": ["1", "22"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["1970784794", "1596956634"], "output": true },
+    { "inputs": ["1596956630", "1596956634"], "output": false },
+    { "inputs": ["1596956634", "1596956634"], "output": true },
+    { "inputs": ["1596956634", "1596956630"], "output": true }
   ],
   "ge_euint32_uint32": [
-    { "inputs": ["1", "2"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["1970784794", "2198890323"], "output": false },
+    { "inputs": ["1596956630", "1596956634"], "output": false },
+    { "inputs": ["1596956634", "1596956634"], "output": true },
+    { "inputs": ["1596956634", "1596956630"], "output": true }
   ],
   "ge_uint32_euint32": [
-    { "inputs": ["2", "2"], "output": true },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["3128599756", "2198890323"], "output": true },
+    { "inputs": ["1596956630", "1596956634"], "output": false },
+    { "inputs": ["1596956634", "1596956634"], "output": true },
+    { "inputs": ["1596956634", "1596956630"], "output": true }
   ],
   "ge_euint32_euint64": [
-    { "inputs": ["2", "2385"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["1126093045", "18444900127425225651"], "output": false },
+    { "inputs": ["1126093041", "1126093045"], "output": false },
+    { "inputs": ["1126093045", "1126093045"], "output": true },
+    { "inputs": ["1126093045", "1126093041"], "output": true }
   ],
   "ge_euint64_euint4": [
-    { "inputs": ["3383", "2"], "output": true },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["18438518295027982843", "12"], "output": true },
+    { "inputs": ["8", "12"], "output": false },
+    { "inputs": ["12", "12"], "output": true },
+    { "inputs": ["12", "8"], "output": true }
   ],
   "ge_euint64_euint8": [
-    { "inputs": ["3383", "1"], "output": true },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["18439034739003983767", "245"], "output": true },
+    { "inputs": ["241", "245"], "output": false },
+    { "inputs": ["245", "245"], "output": true },
+    { "inputs": ["245", "241"], "output": true }
   ],
   "ge_euint64_euint16": [
-    { "inputs": ["3383", "2"], "output": true },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["18440840766291159069", "55918"], "output": true },
+    { "inputs": ["55914", "55918"], "output": false },
+    { "inputs": ["55918", "55918"], "output": true },
+    { "inputs": ["55918", "55914"], "output": true }
   ],
   "ge_euint64_euint32": [
-    { "inputs": ["3383", "8"], "output": true },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["18443677328726027173", "2889413053"], "output": true },
+    { "inputs": ["2889413049", "2889413053"], "output": false },
+    { "inputs": ["2889413053", "2889413053"], "output": true },
+    { "inputs": ["2889413053", "2889413049"], "output": true }
   ],
   "ge_euint64_euint64": [
-    { "inputs": ["3383", "7363"], "output": false },
-    { "inputs": ["3379", "3383"], "output": false },
-    { "inputs": ["3383", "3383"], "output": true },
-    { "inputs": ["3383", "3379"], "output": true }
+    { "inputs": ["18444991478795579145", "18445260307161364245"], "output": false },
+    { "inputs": ["18444991478795579141", "18444991478795579145"], "output": false },
+    { "inputs": ["18444991478795579145", "18444991478795579145"], "output": true },
+    { "inputs": ["18444991478795579145", "18444991478795579141"], "output": true }
   ],
   "ge_euint64_uint64": [
-    { "inputs": ["3383", "3479"], "output": false },
-    { "inputs": ["3379", "3383"], "output": false },
-    { "inputs": ["3383", "3383"], "output": true },
-    { "inputs": ["3383", "3379"], "output": true }
+    { "inputs": ["18444991478795579145", "18439567451994245465"], "output": true },
+    { "inputs": ["18444991478795579141", "18444991478795579145"], "output": false },
+    { "inputs": ["18444991478795579145", "18444991478795579145"], "output": true },
+    { "inputs": ["18444991478795579145", "18444991478795579141"], "output": true }
   ],
   "ge_uint64_euint64": [
-    { "inputs": ["27028", "3479"], "output": true },
-    { "inputs": ["3379", "3383"], "output": false },
-    { "inputs": ["3383", "3383"], "output": true },
-    { "inputs": ["3383", "3379"], "output": true }
+    { "inputs": ["18444429093181704535", "18439567451994245465"], "output": true },
+    { "inputs": ["18444991478795579141", "18444991478795579145"], "output": false },
+    { "inputs": ["18444991478795579145", "18444991478795579145"], "output": true },
+    { "inputs": ["18444991478795579145", "18444991478795579141"], "output": true }
   ],
   "gt_euint4_euint4": [
-    { "inputs": ["3", "3"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["9", "12"], "output": false },
+    { "inputs": ["5", "9"], "output": false },
+    { "inputs": ["9", "9"], "output": false },
+    { "inputs": ["9", "5"], "output": true }
   ],
   "gt_euint4_euint8": [
-    { "inputs": ["3", "4"], "output": false },
+    { "inputs": ["7", "49"], "output": false },
     { "inputs": ["4", "8"], "output": false },
     { "inputs": ["8", "8"], "output": false },
     { "inputs": ["8", "4"], "output": true }
   ],
   "gt_euint4_uint8": [
-    { "inputs": ["3", "1"], "output": true },
+    { "inputs": ["7", "10"], "output": false },
     { "inputs": ["4", "8"], "output": false },
     { "inputs": ["8", "8"], "output": false },
     { "inputs": ["8", "4"], "output": true }
   ],
   "gt_euint4_euint16": [
-    { "inputs": ["3", "2"], "output": true },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["13", "28270"], "output": false },
+    { "inputs": ["9", "13"], "output": false },
+    { "inputs": ["13", "13"], "output": false },
+    { "inputs": ["13", "9"], "output": true }
   ],
   "gt_euint4_euint32": [
-    { "inputs": ["3", "4"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["10", "2302702329"], "output": false },
+    { "inputs": ["6", "10"], "output": false },
+    { "inputs": ["10", "10"], "output": false },
+    { "inputs": ["10", "6"], "output": true }
   ],
   "gt_euint4_euint64": [
-    { "inputs": ["3", "6288"], "output": false },
+    { "inputs": ["8", "18443962302044821049"], "output": false },
     { "inputs": ["4", "8"], "output": false },
     { "inputs": ["8", "8"], "output": false },
     { "inputs": ["8", "4"], "output": true }
   ],
   "gt_euint8_euint4": [
-    { "inputs": ["1", "15"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["53", "14"], "output": true },
+    { "inputs": ["10", "14"], "output": false },
+    { "inputs": ["14", "14"], "output": false },
+    { "inputs": ["14", "10"], "output": true }
   ],
   "gt_uint8_euint4": [
-    { "inputs": ["5", "15"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["4", "14"], "output": false },
+    { "inputs": ["10", "14"], "output": false },
+    { "inputs": ["14", "14"], "output": false },
+    { "inputs": ["14", "10"], "output": true }
   ],
   "gt_euint8_euint8": [
-    { "inputs": ["5", "1"], "output": true },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["225", "96"], "output": true },
+    { "inputs": ["92", "96"], "output": false },
+    { "inputs": ["96", "96"], "output": false },
+    { "inputs": ["96", "92"], "output": true }
   ],
   "gt_euint8_uint8": [
-    { "inputs": ["5", "1"], "output": true },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["225", "176"], "output": true },
+    { "inputs": ["92", "96"], "output": false },
+    { "inputs": ["96", "96"], "output": false },
+    { "inputs": ["96", "92"], "output": true }
   ],
   "gt_uint8_euint8": [
-    { "inputs": ["2", "1"], "output": true },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["34", "176"], "output": false },
+    { "inputs": ["92", "96"], "output": false },
+    { "inputs": ["96", "96"], "output": false },
+    { "inputs": ["96", "92"], "output": true }
   ],
   "gt_euint8_euint16": [
-    { "inputs": ["2", "2"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["254", "24172"], "output": false },
+    { "inputs": ["250", "254"], "output": false },
+    { "inputs": ["254", "254"], "output": false },
+    { "inputs": ["254", "250"], "output": true }
   ],
   "gt_euint8_euint32": [
-    { "inputs": ["2", "1"], "output": true },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["254", "3644170480"], "output": false },
+    { "inputs": ["250", "254"], "output": false },
+    { "inputs": ["254", "254"], "output": false },
+    { "inputs": ["254", "250"], "output": true }
   ],
   "gt_euint8_euint64": [
-    { "inputs": ["2", "2952"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["235", "18439120393033635471"], "output": false },
+    { "inputs": ["231", "235"], "output": false },
+    { "inputs": ["235", "235"], "output": false },
+    { "inputs": ["235", "231"], "output": true }
   ],
   "gt_euint16_euint4": [
-    { "inputs": ["1", "1"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["36260", "13"], "output": true },
+    { "inputs": ["9", "13"], "output": false },
+    { "inputs": ["13", "13"], "output": false },
+    { "inputs": ["13", "9"], "output": true }
   ],
   "gt_euint16_euint8": [
-    { "inputs": ["1", "3"], "output": false },
+    { "inputs": ["17649", "8"], "output": true },
     { "inputs": ["4", "8"], "output": false },
     { "inputs": ["8", "8"], "output": false },
     { "inputs": ["8", "4"], "output": true }
   ],
   "gt_euint16_euint16": [
-    { "inputs": ["1", "2"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["46712", "53146"], "output": false },
+    { "inputs": ["46708", "46712"], "output": false },
+    { "inputs": ["46712", "46712"], "output": false },
+    { "inputs": ["46712", "46708"], "output": true }
   ],
   "gt_euint16_uint16": [
-    { "inputs": ["1", "1"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["46712", "65342"], "output": false },
+    { "inputs": ["46708", "46712"], "output": false },
+    { "inputs": ["46712", "46712"], "output": false },
+    { "inputs": ["46712", "46708"], "output": true }
   ],
   "gt_uint16_euint16": [
-    { "inputs": ["1", "1"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["58255", "65342"], "output": false },
+    { "inputs": ["46708", "46712"], "output": false },
+    { "inputs": ["46712", "46712"], "output": false },
+    { "inputs": ["46712", "46708"], "output": true }
   ],
   "gt_euint16_euint32": [
-    { "inputs": ["1", "1"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["61440", "2523716364"], "output": false },
+    { "inputs": ["61436", "61440"], "output": false },
+    { "inputs": ["61440", "61440"], "output": false },
+    { "inputs": ["61440", "61436"], "output": true }
   ],
   "gt_euint16_euint64": [
-    { "inputs": ["1", "23898"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["13915", "18437957835114177845"], "output": false },
+    { "inputs": ["13911", "13915"], "output": false },
+    { "inputs": ["13915", "13915"], "output": false },
+    { "inputs": ["13915", "13911"], "output": true }
   ],
   "gt_euint32_euint4": [
-    { "inputs": ["1", "15"], "output": false },
+    { "inputs": ["2933730621", "7"], "output": true },
     { "inputs": ["4", "8"], "output": false },
     { "inputs": ["8", "8"], "output": false },
     { "inputs": ["8", "4"], "output": true }
   ],
   "gt_euint32_euint8": [
-    { "inputs": ["1", "7"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["1917780828", "163"], "output": true },
+    { "inputs": ["159", "163"], "output": false },
+    { "inputs": ["163", "163"], "output": false },
+    { "inputs": ["163", "159"], "output": true }
   ],
   "gt_euint32_euint16": [
-    { "inputs": ["1", "1"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["1221805876", "57752"], "output": true },
+    { "inputs": ["57748", "57752"], "output": false },
+    { "inputs": ["57752", "57752"], "output": false },
+    { "inputs": ["57752", "57748"], "output": true }
   ],
   "gt_euint32_euint32": [
-    { "inputs": ["1", "1"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["2212514392", "854163759"], "output": true },
+    { "inputs": ["854163755", "854163759"], "output": false },
+    { "inputs": ["854163759", "854163759"], "output": false },
+    { "inputs": ["854163759", "854163755"], "output": true }
   ],
   "gt_euint32_uint32": [
-    { "inputs": ["1", "3"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["2212514392", "3587264713"], "output": false },
+    { "inputs": ["854163755", "854163759"], "output": false },
+    { "inputs": ["854163759", "854163759"], "output": false },
+    { "inputs": ["854163759", "854163755"], "output": true }
   ],
   "gt_uint32_euint32": [
-    { "inputs": ["1", "3"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["405003775", "3587264713"], "output": false },
+    { "inputs": ["854163755", "854163759"], "output": false },
+    { "inputs": ["854163759", "854163759"], "output": false },
+    { "inputs": ["854163759", "854163755"], "output": true }
   ],
   "gt_euint32_euint64": [
-    { "inputs": ["1", "3010"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["1296765186", "18439742981119094705"], "output": false },
+    { "inputs": ["1296765182", "1296765186"], "output": false },
+    { "inputs": ["1296765186", "1296765186"], "output": false },
+    { "inputs": ["1296765186", "1296765182"], "output": true }
   ],
   "gt_euint64_euint4": [
-    { "inputs": ["2050", "1"], "output": true },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["18445028672073920305", "11"], "output": true },
+    { "inputs": ["7", "11"], "output": false },
+    { "inputs": ["11", "11"], "output": false },
+    { "inputs": ["11", "7"], "output": true }
   ],
   "gt_euint64_euint8": [
-    { "inputs": ["2050", "12"], "output": true },
-    { "inputs": ["8", "12"], "output": false },
-    { "inputs": ["12", "12"], "output": false },
-    { "inputs": ["12", "8"], "output": true }
+    { "inputs": ["18444472755157488819", "101"], "output": true },
+    { "inputs": ["97", "101"], "output": false },
+    { "inputs": ["101", "101"], "output": false },
+    { "inputs": ["101", "97"], "output": true }
   ],
   "gt_euint64_euint16": [
-    { "inputs": ["2050", "6"], "output": true },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["18446239272421398075", "52612"], "output": true },
+    { "inputs": ["52608", "52612"], "output": false },
+    { "inputs": ["52612", "52612"], "output": false },
+    { "inputs": ["52612", "52608"], "output": true }
   ],
   "gt_euint64_euint32": [
-    { "inputs": ["2050", "1"], "output": true },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["18445619408455524051", "2595159918"], "output": true },
+    { "inputs": ["2595159914", "2595159918"], "output": false },
+    { "inputs": ["2595159918", "2595159918"], "output": false },
+    { "inputs": ["2595159918", "2595159914"], "output": true }
   ],
   "gt_euint64_euint64": [
-    { "inputs": ["2050", "2503"], "output": false },
-    { "inputs": ["2046", "2050"], "output": false },
-    { "inputs": ["2050", "2050"], "output": false },
-    { "inputs": ["2050", "2046"], "output": true }
+    { "inputs": ["18439787790330435145", "18439484090308827429"], "output": true },
+    { "inputs": ["18439484090308827425", "18439484090308827429"], "output": false },
+    { "inputs": ["18439484090308827429", "18439484090308827429"], "output": false },
+    { "inputs": ["18439484090308827429", "18439484090308827425"], "output": true }
   ],
   "gt_euint64_uint64": [
-    { "inputs": ["2050", "4117"], "output": false },
-    { "inputs": ["2046", "2050"], "output": false },
-    { "inputs": ["2050", "2050"], "output": false },
-    { "inputs": ["2050", "2046"], "output": true }
+    { "inputs": ["18439787790330435145", "18441907321511169065"], "output": false },
+    { "inputs": ["18439484090308827425", "18439484090308827429"], "output": false },
+    { "inputs": ["18439484090308827429", "18439484090308827429"], "output": false },
+    { "inputs": ["18439484090308827429", "18439484090308827425"], "output": true }
   ],
   "gt_uint64_euint64": [
-    { "inputs": ["44963", "4117"], "output": true },
-    { "inputs": ["2046", "2050"], "output": false },
-    { "inputs": ["2050", "2050"], "output": false },
-    { "inputs": ["2050", "2046"], "output": true }
+    { "inputs": ["18438935380134710315", "18441907321511169065"], "output": false },
+    { "inputs": ["18439484090308827425", "18439484090308827429"], "output": false },
+    { "inputs": ["18439484090308827429", "18439484090308827429"], "output": false },
+    { "inputs": ["18439484090308827429", "18439484090308827425"], "output": true }
   ],
   "eq_euint4_euint4": [
-    { "inputs": ["15", "1"], "output": false },
+    { "inputs": ["8", "2"], "output": false },
     { "inputs": ["4", "8"], "output": false },
     { "inputs": ["8", "8"], "output": true },
     { "inputs": ["8", "4"], "output": false }
   ],
   "eq_euint4_euint8": [
-    { "inputs": ["15", "5"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["14", "180"], "output": false },
+    { "inputs": ["10", "14"], "output": false },
+    { "inputs": ["14", "14"], "output": true },
+    { "inputs": ["14", "10"], "output": false }
   ],
   "eq_euint4_uint8": [
-    { "inputs": ["15", "15"], "output": true },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["14", "4"], "output": false },
+    { "inputs": ["10", "14"], "output": false },
+    { "inputs": ["14", "14"], "output": true },
+    { "inputs": ["14", "10"], "output": false }
   ],
   "eq_euint4_euint16": [
-    { "inputs": ["15", "2"], "output": false },
+    { "inputs": ["9", "7831"], "output": false },
+    { "inputs": ["5", "9"], "output": false },
+    { "inputs": ["9", "9"], "output": true },
+    { "inputs": ["9", "5"], "output": false }
+  ],
+  "eq_euint4_euint32": [
+    { "inputs": ["6", "2902824357"], "output": false },
     { "inputs": ["4", "8"], "output": false },
     { "inputs": ["8", "8"], "output": true },
     { "inputs": ["8", "4"], "output": false }
   ],
-  "eq_euint4_euint32": [
-    { "inputs": ["15", "16"], "output": false },
-    { "inputs": ["11", "15"], "output": false },
-    { "inputs": ["15", "15"], "output": true },
-    { "inputs": ["15", "11"], "output": false }
-  ],
   "eq_euint4_euint64": [
-    { "inputs": ["15", "191715"], "output": false },
-    { "inputs": ["11", "15"], "output": false },
-    { "inputs": ["15", "15"], "output": true },
-    { "inputs": ["15", "11"], "output": false }
+    { "inputs": ["4", "18441783865246079825"], "output": false },
+    { "inputs": ["4", "8"], "output": false },
+    { "inputs": ["8", "8"], "output": true },
+    { "inputs": ["8", "4"], "output": false }
   ],
   "eq_euint8_euint4": [
-    { "inputs": ["1", "2"], "output": false },
+    { "inputs": ["168", "1"], "output": false },
     { "inputs": ["4", "8"], "output": false },
     { "inputs": ["8", "8"], "output": true },
     { "inputs": ["8", "4"], "output": false }
   ],
   "eq_uint8_euint4": [
-    { "inputs": ["1", "2"], "output": false },
+    { "inputs": ["11", "1"], "output": false },
     { "inputs": ["4", "8"], "output": false },
     { "inputs": ["8", "8"], "output": true },
     { "inputs": ["8", "4"], "output": false }
   ],
   "eq_euint8_euint8": [
-    { "inputs": ["1", "1"], "output": true },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["101", "188"], "output": false },
+    { "inputs": ["97", "101"], "output": false },
+    { "inputs": ["101", "101"], "output": true },
+    { "inputs": ["101", "97"], "output": false }
   ],
   "eq_euint8_uint8": [
-    { "inputs": ["1", "1"], "output": true },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["101", "175"], "output": false },
+    { "inputs": ["97", "101"], "output": false },
+    { "inputs": ["101", "101"], "output": true },
+    { "inputs": ["101", "97"], "output": false }
   ],
   "eq_uint8_euint8": [
-    { "inputs": ["5", "1"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["182", "175"], "output": false },
+    { "inputs": ["97", "101"], "output": false },
+    { "inputs": ["101", "101"], "output": true },
+    { "inputs": ["101", "97"], "output": false }
   ],
   "eq_euint8_euint16": [
-    { "inputs": ["5", "1"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["111", "58517"], "output": false },
+    { "inputs": ["107", "111"], "output": false },
+    { "inputs": ["111", "111"], "output": true },
+    { "inputs": ["111", "107"], "output": false }
   ],
   "eq_euint8_euint32": [
-    { "inputs": ["5", "3"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["161", "1325601812"], "output": false },
+    { "inputs": ["157", "161"], "output": false },
+    { "inputs": ["161", "161"], "output": true },
+    { "inputs": ["161", "157"], "output": false }
   ],
   "eq_euint8_euint64": [
-    { "inputs": ["5", "5764"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["91", "18446457346943992227"], "output": false },
+    { "inputs": ["87", "91"], "output": false },
+    { "inputs": ["91", "91"], "output": true },
+    { "inputs": ["91", "87"], "output": false }
   ],
   "eq_euint16_euint4": [
-    { "inputs": ["5", "7"], "output": false },
+    { "inputs": ["43178", "6"], "output": false },
     { "inputs": ["4", "8"], "output": false },
     { "inputs": ["8", "8"], "output": true },
     { "inputs": ["8", "4"], "output": false }
   ],
   "eq_euint16_euint8": [
-    { "inputs": ["5", "3"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["52156", "49"], "output": false },
+    { "inputs": ["45", "49"], "output": false },
+    { "inputs": ["49", "49"], "output": true },
+    { "inputs": ["49", "45"], "output": false }
   ],
   "eq_euint16_euint16": [
-    { "inputs": ["5", "6"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["53936", "55687"], "output": false },
+    { "inputs": ["53932", "53936"], "output": false },
+    { "inputs": ["53936", "53936"], "output": true },
+    { "inputs": ["53936", "53932"], "output": false }
   ],
   "eq_euint16_uint16": [
-    { "inputs": ["5", "1"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["53936", "62296"], "output": false },
+    { "inputs": ["53932", "53936"], "output": false },
+    { "inputs": ["53936", "53936"], "output": true },
+    { "inputs": ["53936", "53932"], "output": false }
   ],
   "eq_uint16_euint16": [
-    { "inputs": ["1", "1"], "output": true },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["49783", "62296"], "output": false },
+    { "inputs": ["53932", "53936"], "output": false },
+    { "inputs": ["53936", "53936"], "output": true },
+    { "inputs": ["53936", "53932"], "output": false }
   ],
   "eq_euint16_euint32": [
-    { "inputs": ["1", "9"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["26213", "2142712247"], "output": false },
+    { "inputs": ["26209", "26213"], "output": false },
+    { "inputs": ["26213", "26213"], "output": true },
+    { "inputs": ["26213", "26209"], "output": false }
   ],
   "eq_euint16_euint64": [
-    { "inputs": ["1", "4154"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["38256", "18442430973530036421"], "output": false },
+    { "inputs": ["38252", "38256"], "output": false },
+    { "inputs": ["38256", "38256"], "output": true },
+    { "inputs": ["38256", "38252"], "output": false }
   ],
   "eq_euint32_euint4": [
-    { "inputs": ["1", "3"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["2724048740", "14"], "output": false },
+    { "inputs": ["10", "14"], "output": false },
+    { "inputs": ["14", "14"], "output": true },
+    { "inputs": ["14", "10"], "output": false }
   ],
   "eq_euint32_euint8": [
-    { "inputs": ["1", "1"], "output": true },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["2890164202", "10"], "output": false },
+    { "inputs": ["6", "10"], "output": false },
+    { "inputs": ["10", "10"], "output": true },
+    { "inputs": ["10", "6"], "output": false }
   ],
   "eq_euint32_euint16": [
-    { "inputs": ["1", "5"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["3540063980", "53142"], "output": false },
+    { "inputs": ["53138", "53142"], "output": false },
+    { "inputs": ["53142", "53142"], "output": true },
+    { "inputs": ["53142", "53138"], "output": false }
   ],
   "eq_euint32_euint32": [
-    { "inputs": ["1", "54"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["3674813327", "3173886291"], "output": false },
+    { "inputs": ["3173886287", "3173886291"], "output": false },
+    { "inputs": ["3173886291", "3173886291"], "output": true },
+    { "inputs": ["3173886291", "3173886287"], "output": false }
   ],
   "eq_euint32_uint32": [
-    { "inputs": ["1", "3"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["3674813327", "340447461"], "output": false },
+    { "inputs": ["3173886287", "3173886291"], "output": false },
+    { "inputs": ["3173886291", "3173886291"], "output": true },
+    { "inputs": ["3173886291", "3173886287"], "output": false }
   ],
   "eq_uint32_euint32": [
-    { "inputs": ["1", "3"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["630917914", "340447461"], "output": false },
+    { "inputs": ["3173886287", "3173886291"], "output": false },
+    { "inputs": ["3173886291", "3173886291"], "output": true },
+    { "inputs": ["3173886291", "3173886287"], "output": false }
   ],
   "eq_euint32_euint64": [
-    { "inputs": ["1", "2530"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["2805333302", "18443732701658209223"], "output": false },
+    { "inputs": ["2805333298", "2805333302"], "output": false },
+    { "inputs": ["2805333302", "2805333302"], "output": true },
+    { "inputs": ["2805333302", "2805333298"], "output": false }
   ],
   "eq_euint64_euint4": [
-    { "inputs": ["55032", "1"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["18439121948970600941", "14"], "output": false },
+    { "inputs": ["10", "14"], "output": false },
+    { "inputs": ["14", "14"], "output": true },
+    { "inputs": ["14", "10"], "output": false }
   ],
   "eq_euint64_euint8": [
-    { "inputs": ["55032", "1"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["18441725985045807501", "52"], "output": false },
+    { "inputs": ["48", "52"], "output": false },
+    { "inputs": ["52", "52"], "output": true },
+    { "inputs": ["52", "48"], "output": false }
   ],
   "eq_euint64_euint16": [
-    { "inputs": ["55032", "3"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["18444068251063204057", "45460"], "output": false },
+    { "inputs": ["45456", "45460"], "output": false },
+    { "inputs": ["45460", "45460"], "output": true },
+    { "inputs": ["45460", "45456"], "output": false }
   ],
   "eq_euint64_euint32": [
-    { "inputs": ["55032", "3"], "output": false },
-    { "inputs": ["4", "8"], "output": false },
-    { "inputs": ["8", "8"], "output": true },
-    { "inputs": ["8", "4"], "output": false }
+    { "inputs": ["18444814847193612111", "3675625287"], "output": false },
+    { "inputs": ["3675625283", "3675625287"], "output": false },
+    { "inputs": ["3675625287", "3675625287"], "output": true },
+    { "inputs": ["3675625287", "3675625283"], "output": false }
   ],
   "eq_euint64_euint64": [
-    { "inputs": ["55032", "3655"], "output": false },
-    { "inputs": ["3651", "3655"], "output": false },
-    { "inputs": ["3655", "3655"], "output": true },
-    { "inputs": ["3655", "3651"], "output": false }
+    { "inputs": ["18443330521266220729", "18438253731135327627"], "output": false },
+    { "inputs": ["18438253731135327623", "18438253731135327627"], "output": false },
+    { "inputs": ["18438253731135327627", "18438253731135327627"], "output": true },
+    { "inputs": ["18438253731135327627", "18438253731135327623"], "output": false }
   ],
   "eq_euint64_uint64": [
-    { "inputs": ["55032", "2077"], "output": false },
-    { "inputs": ["3651", "3655"], "output": false },
-    { "inputs": ["3655", "3655"], "output": true },
-    { "inputs": ["3655", "3651"], "output": false }
+    { "inputs": ["18443330521266220729", "18446706410531688277"], "output": false },
+    { "inputs": ["18438253731135327623", "18438253731135327627"], "output": false },
+    { "inputs": ["18438253731135327627", "18438253731135327627"], "output": true },
+    { "inputs": ["18438253731135327627", "18438253731135327623"], "output": false }
   ],
   "eq_uint64_euint64": [
-    { "inputs": ["6350", "2077"], "output": false },
-    { "inputs": ["3651", "3655"], "output": false },
-    { "inputs": ["3655", "3655"], "output": true },
-    { "inputs": ["3655", "3651"], "output": false }
+    { "inputs": ["18444395277752785729", "18446706410531688277"], "output": false },
+    { "inputs": ["18438253731135327623", "18438253731135327627"], "output": false },
+    { "inputs": ["18438253731135327627", "18438253731135327627"], "output": true },
+    { "inputs": ["18438253731135327627", "18438253731135327623"], "output": false }
   ],
   "ne_euint4_euint4": [
-    { "inputs": ["3", "3"], "output": false },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["11", "12"], "output": true },
+    { "inputs": ["7", "11"], "output": true },
+    { "inputs": ["11", "11"], "output": false },
+    { "inputs": ["11", "7"], "output": true }
   ],
   "ne_euint4_euint8": [
-    { "inputs": ["3", "3"], "output": false },
+    { "inputs": ["7", "94"], "output": true },
     { "inputs": ["4", "8"], "output": true },
     { "inputs": ["8", "8"], "output": false },
     { "inputs": ["8", "4"], "output": true }
   ],
   "ne_euint4_uint8": [
-    { "inputs": ["3", "1"], "output": true },
+    { "inputs": ["7", "12"], "output": true },
     { "inputs": ["4", "8"], "output": true },
     { "inputs": ["8", "8"], "output": false },
     { "inputs": ["8", "4"], "output": true }
   ],
   "ne_euint4_euint16": [
-    { "inputs": ["3", "41"], "output": true },
+    { "inputs": ["2", "63787"], "output": true },
     { "inputs": ["4", "8"], "output": true },
     { "inputs": ["8", "8"], "output": false },
     { "inputs": ["8", "4"], "output": true }
   ],
   "ne_euint4_euint32": [
-    { "inputs": ["3", "1"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["13", "3287915476"], "output": true },
+    { "inputs": ["9", "13"], "output": true },
+    { "inputs": ["13", "13"], "output": false },
+    { "inputs": ["13", "9"], "output": true }
   ],
   "ne_euint4_euint64": [
-    { "inputs": ["3", "2558"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["11", "18442031616327904827"], "output": true },
+    { "inputs": ["7", "11"], "output": true },
+    { "inputs": ["11", "11"], "output": false },
+    { "inputs": ["11", "7"], "output": true }
   ],
   "ne_euint8_euint4": [
-    { "inputs": ["2", "2"], "output": false },
+    { "inputs": ["237", "1"], "output": true },
     { "inputs": ["4", "8"], "output": true },
     { "inputs": ["8", "8"], "output": false },
     { "inputs": ["8", "4"], "output": true }
   ],
   "ne_uint8_euint4": [
-    { "inputs": ["2", "2"], "output": false },
+    { "inputs": ["3", "1"], "output": true },
     { "inputs": ["4", "8"], "output": true },
     { "inputs": ["8", "8"], "output": false },
     { "inputs": ["8", "4"], "output": true }
   ],
   "ne_euint8_euint8": [
-    { "inputs": ["2", "1"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["250", "143"], "output": true },
+    { "inputs": ["139", "143"], "output": true },
+    { "inputs": ["143", "143"], "output": false },
+    { "inputs": ["143", "139"], "output": true }
   ],
   "ne_euint8_uint8": [
-    { "inputs": ["2", "2"], "output": false },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["250", "114"], "output": true },
+    { "inputs": ["139", "143"], "output": true },
+    { "inputs": ["143", "143"], "output": false },
+    { "inputs": ["143", "139"], "output": true }
   ],
   "ne_uint8_euint8": [
-    { "inputs": ["3", "2"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["139", "114"], "output": true },
+    { "inputs": ["139", "143"], "output": true },
+    { "inputs": ["143", "143"], "output": false },
+    { "inputs": ["143", "139"], "output": true }
   ],
   "ne_euint8_euint16": [
-    { "inputs": ["3", "1"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["86", "21243"], "output": true },
+    { "inputs": ["82", "86"], "output": true },
+    { "inputs": ["86", "86"], "output": false },
+    { "inputs": ["86", "82"], "output": true }
   ],
   "ne_euint8_euint32": [
-    { "inputs": ["3", "1"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["185", "1521229668"], "output": true },
+    { "inputs": ["181", "185"], "output": true },
+    { "inputs": ["185", "185"], "output": false },
+    { "inputs": ["185", "181"], "output": true }
   ],
   "ne_euint8_euint64": [
-    { "inputs": ["3", "2082"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["109", "18443318570639553087"], "output": true },
+    { "inputs": ["105", "109"], "output": true },
+    { "inputs": ["109", "109"], "output": false },
+    { "inputs": ["109", "105"], "output": true }
   ],
   "ne_euint16_euint4": [
-    { "inputs": ["3", "3"], "output": false },
+    { "inputs": ["36210", "8"], "output": true },
     { "inputs": ["4", "8"], "output": true },
     { "inputs": ["8", "8"], "output": false },
     { "inputs": ["8", "4"], "output": true }
   ],
   "ne_euint16_euint8": [
-    { "inputs": ["3", "1"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["45762", "206"], "output": true },
+    { "inputs": ["202", "206"], "output": true },
+    { "inputs": ["206", "206"], "output": false },
+    { "inputs": ["206", "202"], "output": true }
   ],
   "ne_euint16_euint16": [
-    { "inputs": ["3", "2"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["64200", "17038"], "output": true },
+    { "inputs": ["17034", "17038"], "output": true },
+    { "inputs": ["17038", "17038"], "output": false },
+    { "inputs": ["17038", "17034"], "output": true }
   ],
   "ne_euint16_uint16": [
-    { "inputs": ["3", "6"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["64200", "15145"], "output": true },
+    { "inputs": ["17034", "17038"], "output": true },
+    { "inputs": ["17038", "17038"], "output": false },
+    { "inputs": ["17038", "17034"], "output": true }
   ],
   "ne_uint16_euint16": [
-    { "inputs": ["1", "6"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["35214", "15145"], "output": true },
+    { "inputs": ["17034", "17038"], "output": true },
+    { "inputs": ["17038", "17038"], "output": false },
+    { "inputs": ["17038", "17034"], "output": true }
   ],
   "ne_euint16_euint32": [
-    { "inputs": ["1", "1"], "output": false },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["52545", "2079966846"], "output": true },
+    { "inputs": ["52541", "52545"], "output": true },
+    { "inputs": ["52545", "52545"], "output": false },
+    { "inputs": ["52545", "52541"], "output": true }
   ],
   "ne_euint16_euint64": [
-    { "inputs": ["1", "14889"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["33238", "18440140341099634203"], "output": true },
+    { "inputs": ["33234", "33238"], "output": true },
+    { "inputs": ["33238", "33238"], "output": false },
+    { "inputs": ["33238", "33234"], "output": true }
   ],
   "ne_euint32_euint4": [
-    { "inputs": ["24", "15"], "output": true },
-    { "inputs": ["11", "15"], "output": true },
-    { "inputs": ["15", "15"], "output": false },
-    { "inputs": ["15", "11"], "output": true }
+    { "inputs": ["2506657954", "7"], "output": true },
+    { "inputs": ["4", "8"], "output": true },
+    { "inputs": ["8", "8"], "output": false },
+    { "inputs": ["8", "4"], "output": true }
   ],
   "ne_euint32_euint8": [
-    { "inputs": ["24", "13"], "output": true },
-    { "inputs": ["9", "13"], "output": true },
-    { "inputs": ["13", "13"], "output": false },
-    { "inputs": ["13", "9"], "output": true }
+    { "inputs": ["874720156", "10"], "output": true },
+    { "inputs": ["6", "10"], "output": true },
+    { "inputs": ["10", "10"], "output": false },
+    { "inputs": ["10", "6"], "output": true }
   ],
   "ne_euint32_euint16": [
-    { "inputs": ["24", "2"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["2729404223", "63905"], "output": true },
+    { "inputs": ["63901", "63905"], "output": true },
+    { "inputs": ["63905", "63905"], "output": false },
+    { "inputs": ["63905", "63901"], "output": true }
   ],
   "ne_euint32_euint32": [
-    { "inputs": ["24", "1"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["40863923", "1726230330"], "output": true },
+    { "inputs": ["40863919", "40863923"], "output": true },
+    { "inputs": ["40863923", "40863923"], "output": false },
+    { "inputs": ["40863923", "40863919"], "output": true }
   ],
   "ne_euint32_uint32": [
-    { "inputs": ["24", "1"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["40863923", "740881042"], "output": true },
+    { "inputs": ["40863919", "40863923"], "output": true },
+    { "inputs": ["40863923", "40863923"], "output": false },
+    { "inputs": ["40863923", "40863919"], "output": true }
   ],
   "ne_uint32_euint32": [
-    { "inputs": ["1", "1"], "output": false },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["3944008003", "740881042"], "output": true },
+    { "inputs": ["40863919", "40863923"], "output": true },
+    { "inputs": ["40863923", "40863923"], "output": false },
+    { "inputs": ["40863923", "40863919"], "output": true }
   ],
   "ne_euint32_euint64": [
-    { "inputs": ["1", "2583"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["734315994", "18437906324621631829"], "output": true },
+    { "inputs": ["734315990", "734315994"], "output": true },
+    { "inputs": ["734315994", "734315994"], "output": false },
+    { "inputs": ["734315994", "734315990"], "output": true }
   ],
   "ne_euint64_euint4": [
-    { "inputs": ["3163", "15"], "output": true },
-    { "inputs": ["11", "15"], "output": true },
-    { "inputs": ["15", "15"], "output": false },
-    { "inputs": ["15", "11"], "output": true }
+    { "inputs": ["18442748864669273899", "3"], "output": true },
+    { "inputs": ["4", "8"], "output": true },
+    { "inputs": ["8", "8"], "output": false },
+    { "inputs": ["8", "4"], "output": true }
   ],
   "ne_euint64_euint8": [
-    { "inputs": ["3163", "2"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["18437879735793971605", "183"], "output": true },
+    { "inputs": ["179", "183"], "output": true },
+    { "inputs": ["183", "183"], "output": false },
+    { "inputs": ["183", "179"], "output": true }
   ],
   "ne_euint64_euint16": [
-    { "inputs": ["3163", "2"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["18439766867707518465", "19155"], "output": true },
+    { "inputs": ["19151", "19155"], "output": true },
+    { "inputs": ["19155", "19155"], "output": false },
+    { "inputs": ["19155", "19151"], "output": true }
   ],
   "ne_euint64_euint32": [
-    { "inputs": ["3163", "1"], "output": true },
-    { "inputs": ["4", "8"], "output": true },
-    { "inputs": ["8", "8"], "output": false },
-    { "inputs": ["8", "4"], "output": true }
+    { "inputs": ["18442332740658370363", "1304399628"], "output": true },
+    { "inputs": ["1304399624", "1304399628"], "output": true },
+    { "inputs": ["1304399628", "1304399628"], "output": false },
+    { "inputs": ["1304399628", "1304399624"], "output": true }
   ],
   "ne_euint64_euint64": [
-    { "inputs": ["3163", "2116"], "output": true },
-    { "inputs": ["2112", "2116"], "output": true },
-    { "inputs": ["2116", "2116"], "output": false },
-    { "inputs": ["2116", "2112"], "output": true }
+    { "inputs": ["18445140354518938845", "18441391037965649995"], "output": true },
+    { "inputs": ["18441391037965649991", "18441391037965649995"], "output": true },
+    { "inputs": ["18441391037965649995", "18441391037965649995"], "output": false },
+    { "inputs": ["18441391037965649995", "18441391037965649991"], "output": true }
   ],
   "ne_euint64_uint64": [
-    { "inputs": ["3163", "3329"], "output": true },
-    { "inputs": ["2112", "2116"], "output": true },
-    { "inputs": ["2116", "2116"], "output": false },
-    { "inputs": ["2116", "2112"], "output": true }
+    { "inputs": ["18445140354518938845", "18438176226766160787"], "output": true },
+    { "inputs": ["18441391037965649991", "18441391037965649995"], "output": true },
+    { "inputs": ["18441391037965649995", "18441391037965649995"], "output": false },
+    { "inputs": ["18441391037965649995", "18441391037965649991"], "output": true }
   ],
   "ne_uint64_euint64": [
-    { "inputs": ["2985", "3329"], "output": true },
-    { "inputs": ["2112", "2116"], "output": true },
-    { "inputs": ["2116", "2116"], "output": false },
-    { "inputs": ["2116", "2112"], "output": true }
+    { "inputs": ["18443547473224968383", "18438176226766160787"], "output": true },
+    { "inputs": ["18441391037965649991", "18441391037965649995"], "output": true },
+    { "inputs": ["18441391037965649995", "18441391037965649995"], "output": false },
+    { "inputs": ["18441391037965649995", "18441391037965649991"], "output": true }
   ],
   "shl_euint4_uint8": [
-    { "inputs": ["1", "3"], "output": 8 },
+    { "inputs": ["13", "5"], "output": 10 },
     { "inputs": ["4", "8"], "output": 4 },
     { "inputs": ["8", "8"], "output": 8 },
     { "inputs": ["8", "4"], "output": 8 }
   ],
   "shl_euint8_euint8": [
-    { "inputs": ["1", "2"], "output": 4 },
+    { "inputs": ["34", "4"], "output": 32 },
     { "inputs": ["4", "8"], "output": 4 },
     { "inputs": ["8", "8"], "output": 8 },
     { "inputs": ["8", "4"], "output": 128 }
   ],
   "shl_euint8_uint8": [
-    { "inputs": ["1", "2"], "output": 4 },
+    { "inputs": ["34", "4"], "output": 32 },
     { "inputs": ["4", "8"], "output": 4 },
     { "inputs": ["8", "8"], "output": 8 },
     { "inputs": ["8", "4"], "output": 128 }
   ],
   "shl_euint16_euint8": [
-    { "inputs": ["1", "5"], "output": 32 },
+    { "inputs": ["15362", "2"], "output": 61448 },
     { "inputs": ["4", "8"], "output": 1024 },
     { "inputs": ["8", "8"], "output": 2048 },
     { "inputs": ["8", "4"], "output": 128 }
   ],
   "shl_euint16_uint8": [
-    { "inputs": ["1", "5"], "output": 32 },
+    { "inputs": ["15362", "2"], "output": 61448 },
     { "inputs": ["4", "8"], "output": 1024 },
     { "inputs": ["8", "8"], "output": 2048 },
     { "inputs": ["8", "4"], "output": 128 }
   ],
   "shl_euint32_euint8": [
-    { "inputs": ["1", "6"], "output": 64 },
+    { "inputs": ["833510670", "1"], "output": 1667021340 },
     { "inputs": ["4", "8"], "output": 1024 },
     { "inputs": ["8", "8"], "output": 2048 },
     { "inputs": ["8", "4"], "output": 128 }
   ],
   "shl_euint32_uint8": [
-    { "inputs": ["1", "6"], "output": 64 },
+    { "inputs": ["833510670", "1"], "output": 1667021340 },
     { "inputs": ["4", "8"], "output": 1024 },
     { "inputs": ["8", "8"], "output": 2048 },
     { "inputs": ["8", "4"], "output": 128 }
   ],
   "shl_euint64_euint8": [
-    { "inputs": ["4744", "2"], "output": 18976 },
+    { "inputs": ["18445451452906630791", "5"], "output": 18405380208016085000 },
     { "inputs": ["4", "8"], "output": 1024 },
     { "inputs": ["8", "8"], "output": 2048 },
     { "inputs": ["8", "4"], "output": 128 }
   ],
   "shl_euint64_uint8": [
-    { "inputs": ["4744", "2"], "output": 18976 },
+    { "inputs": ["18445451452906630791", "5"], "output": 18405380208016085000 },
     { "inputs": ["4", "8"], "output": 1024 },
     { "inputs": ["8", "8"], "output": 2048 },
     { "inputs": ["8", "4"], "output": 128 }
   ],
   "shr_euint4_uint8": [
-    { "inputs": ["5", "6"], "output": 1 },
+    { "inputs": ["14", "4"], "output": 14 },
     { "inputs": ["4", "8"], "output": 4 },
     { "inputs": ["8", "8"], "output": 8 },
     { "inputs": ["8", "4"], "output": 8 }
   ],
   "shr_euint8_euint8": [
-    { "inputs": ["1", "1"], "output": 0 },
+    { "inputs": ["68", "4"], "output": 4 },
     { "inputs": ["4", "8"], "output": 4 },
     { "inputs": ["8", "8"], "output": 8 },
     { "inputs": ["8", "4"], "output": 0 }
   ],
   "shr_euint8_uint8": [
-    { "inputs": ["1", "1"], "output": 0 },
+    { "inputs": ["68", "4"], "output": 4 },
     { "inputs": ["4", "8"], "output": 4 },
     { "inputs": ["8", "8"], "output": 8 },
     { "inputs": ["8", "4"], "output": 0 }
   ],
   "shr_euint16_euint8": [
-    { "inputs": ["278", "4"], "output": 17 },
+    { "inputs": ["25648", "5"], "output": 801 },
     { "inputs": ["4", "8"], "output": 0 },
     { "inputs": ["8", "8"], "output": 0 },
     { "inputs": ["8", "4"], "output": 0 }
   ],
   "shr_euint16_uint8": [
-    { "inputs": ["278", "4"], "output": 17 },
+    { "inputs": ["25648", "5"], "output": 801 },
     { "inputs": ["4", "8"], "output": 0 },
     { "inputs": ["8", "8"], "output": 0 },
     { "inputs": ["8", "4"], "output": 0 }
   ],
   "shr_euint32_euint8": [
-    { "inputs": ["2", "6"], "output": 0 },
+    { "inputs": ["3957313401", "6"], "output": 61833021 },
     { "inputs": ["4", "8"], "output": 0 },
     { "inputs": ["8", "8"], "output": 0 },
     { "inputs": ["8", "4"], "output": 0 }
   ],
   "shr_euint32_uint8": [
-    { "inputs": ["2", "6"], "output": 0 },
+    { "inputs": ["3957313401", "6"], "output": 61833021 },
     { "inputs": ["4", "8"], "output": 0 },
     { "inputs": ["8", "8"], "output": 0 },
     { "inputs": ["8", "4"], "output": 0 }
   ],
   "shr_euint64_euint8": [
-    { "inputs": ["23325", "5"], "output": 728 },
+    { "inputs": ["18439569308403000305", "1"], "output": 9219784654201500000 },
     { "inputs": ["4", "8"], "output": 0 },
     { "inputs": ["8", "8"], "output": 0 },
     { "inputs": ["8", "4"], "output": 0 }
   ],
   "shr_euint64_uint8": [
-    { "inputs": ["23325", "5"], "output": 728 },
+    { "inputs": ["18439569308403000305", "1"], "output": 9219784654201500000 },
     { "inputs": ["4", "8"], "output": 0 },
     { "inputs": ["8", "8"], "output": 0 },
     { "inputs": ["8", "4"], "output": 0 }
   ],
   "max_euint4_euint4": [
-    { "inputs": ["1", "2"], "output": "2" },
+    { "inputs": ["8", "3"], "output": "8" },
     { "inputs": ["4", "8"], "output": "8" },
     { "inputs": ["8", "8"], "output": "8" },
     { "inputs": ["8", "4"], "output": "8" }
   ],
   "max_euint4_euint8": [
-    { "inputs": ["1", "5"], "output": "5" },
-    { "inputs": ["4", "8"], "output": "8" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "8" }
+    { "inputs": ["11", "181"], "output": "181" },
+    { "inputs": ["7", "11"], "output": "11" },
+    { "inputs": ["11", "11"], "output": "11" },
+    { "inputs": ["11", "7"], "output": "11" }
   ],
   "max_euint4_uint8": [
-    { "inputs": ["1", "7"], "output": "7" },
-    { "inputs": ["4", "8"], "output": "8" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "8" }
+    { "inputs": ["11", "7"], "output": "11" },
+    { "inputs": ["7", "11"], "output": "11" },
+    { "inputs": ["11", "11"], "output": "11" },
+    { "inputs": ["11", "7"], "output": "11" }
   ],
   "max_euint4_euint16": [
-    { "inputs": ["1", "1"], "output": "1" },
+    { "inputs": ["2", "61770"], "output": "61770" },
     { "inputs": ["4", "8"], "output": "8" },
     { "inputs": ["8", "8"], "output": "8" },
     { "inputs": ["8", "4"], "output": "8" }
   ],
   "max_euint4_euint32": [
-    { "inputs": ["1", "6"], "output": "6" },
+    { "inputs": ["2", "1031795645"], "output": "1031795645" },
     { "inputs": ["4", "8"], "output": "8" },
     { "inputs": ["8", "8"], "output": "8" },
     { "inputs": ["8", "4"], "output": "8" }
   ],
   "max_euint4_euint64": [
-    { "inputs": ["1", "2520"], "output": "2520" },
+    { "inputs": ["3", "18443395042624107977"], "output": "18443395042624107977" },
     { "inputs": ["4", "8"], "output": "8" },
     { "inputs": ["8", "8"], "output": "8" },
     { "inputs": ["8", "4"], "output": "8" }
   ],
   "max_euint8_euint4": [
-    { "inputs": ["1", "1"], "output": "1" },
-    { "inputs": ["4", "8"], "output": "8" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "8" }
+    { "inputs": ["211", "14"], "output": "211" },
+    { "inputs": ["10", "14"], "output": "14" },
+    { "inputs": ["14", "14"], "output": "14" },
+    { "inputs": ["14", "10"], "output": "14" }
   ],
   "max_uint8_euint4": [
-    { "inputs": ["3", "1"], "output": "3" },
-    { "inputs": ["4", "8"], "output": "8" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "8" }
+    { "inputs": ["7", "14"], "output": "14" },
+    { "inputs": ["10", "14"], "output": "14" },
+    { "inputs": ["14", "14"], "output": "14" },
+    { "inputs": ["14", "10"], "output": "14" }
   ],
   "max_euint8_euint8": [
-    { "inputs": ["3", "3"], "output": "3" },
-    { "inputs": ["4", "8"], "output": "8" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "8" }
+    { "inputs": ["198", "211"], "output": "211" },
+    { "inputs": ["194", "198"], "output": "198" },
+    { "inputs": ["198", "198"], "output": "198" },
+    { "inputs": ["198", "194"], "output": "198" }
   ],
   "max_euint8_uint8": [
-    { "inputs": ["3", "14"], "output": "14" },
-    { "inputs": ["4", "8"], "output": "8" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "8" }
+    { "inputs": ["198", "31"], "output": "198" },
+    { "inputs": ["194", "198"], "output": "198" },
+    { "inputs": ["198", "198"], "output": "198" },
+    { "inputs": ["198", "194"], "output": "198" }
   ],
   "max_uint8_euint8": [
-    { "inputs": ["1", "14"], "output": "14" },
-    { "inputs": ["4", "8"], "output": "8" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "8" }
+    { "inputs": ["102", "31"], "output": "102" },
+    { "inputs": ["194", "198"], "output": "198" },
+    { "inputs": ["198", "198"], "output": "198" },
+    { "inputs": ["198", "194"], "output": "198" }
   ],
   "max_euint8_euint16": [
-    { "inputs": ["1", "1"], "output": "1" },
+    { "inputs": ["8", "11440"], "output": "11440" },
     { "inputs": ["4", "8"], "output": "8" },
     { "inputs": ["8", "8"], "output": "8" },
     { "inputs": ["8", "4"], "output": "8" }
   ],
   "max_euint8_euint32": [
-    { "inputs": ["1", "3"], "output": "3" },
-    { "inputs": ["4", "8"], "output": "8" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "8" }
+    { "inputs": ["130", "566960922"], "output": "566960922" },
+    { "inputs": ["126", "130"], "output": "130" },
+    { "inputs": ["130", "130"], "output": "130" },
+    { "inputs": ["130", "126"], "output": "130" }
   ],
   "max_euint8_euint64": [
-    { "inputs": ["1", "9155"], "output": "9155" },
-    { "inputs": ["4", "8"], "output": "8" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "8" }
+    { "inputs": ["172", "18445195398017975891"], "output": "18445195398017975891" },
+    { "inputs": ["168", "172"], "output": "172" },
+    { "inputs": ["172", "172"], "output": "172" },
+    { "inputs": ["172", "168"], "output": "172" }
   ],
   "max_euint16_euint4": [
-    { "inputs": ["2", "1"], "output": "2" },
-    { "inputs": ["4", "8"], "output": "8" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "8" }
+    { "inputs": ["29272", "10"], "output": "29272" },
+    { "inputs": ["6", "10"], "output": "10" },
+    { "inputs": ["10", "10"], "output": "10" },
+    { "inputs": ["10", "6"], "output": "10" }
   ],
   "max_euint16_euint8": [
-    { "inputs": ["2", "1"], "output": "2" },
-    { "inputs": ["4", "8"], "output": "8" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "8" }
+    { "inputs": ["18336", "117"], "output": "18336" },
+    { "inputs": ["113", "117"], "output": "117" },
+    { "inputs": ["117", "117"], "output": "117" },
+    { "inputs": ["117", "113"], "output": "117" }
   ],
   "max_euint16_euint16": [
-    { "inputs": ["2", "1"], "output": "2" },
-    { "inputs": ["4", "8"], "output": "8" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "8" }
+    { "inputs": ["34561", "34789"], "output": "34789" },
+    { "inputs": ["34557", "34561"], "output": "34561" },
+    { "inputs": ["34561", "34561"], "output": "34561" },
+    { "inputs": ["34561", "34557"], "output": "34561" }
   ],
   "max_euint16_uint16": [
-    { "inputs": ["2", "34"], "output": "34" },
-    { "inputs": ["4", "8"], "output": "8" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "8" }
+    { "inputs": ["34561", "63895"], "output": "63895" },
+    { "inputs": ["34557", "34561"], "output": "34561" },
+    { "inputs": ["34561", "34561"], "output": "34561" },
+    { "inputs": ["34561", "34557"], "output": "34561" }
   ],
   "max_uint16_euint16": [
-    { "inputs": ["1", "34"], "output": "34" },
-    { "inputs": ["4", "8"], "output": "8" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "8" }
+    { "inputs": ["52784", "63895"], "output": "63895" },
+    { "inputs": ["34557", "34561"], "output": "34561" },
+    { "inputs": ["34561", "34561"], "output": "34561" },
+    { "inputs": ["34561", "34557"], "output": "34561" }
   ],
   "max_euint16_euint32": [
-    { "inputs": ["1", "1"], "output": "1" },
-    { "inputs": ["4", "8"], "output": "8" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "8" }
+    { "inputs": ["50723", "1432053137"], "output": "1432053137" },
+    { "inputs": ["50719", "50723"], "output": "50723" },
+    { "inputs": ["50723", "50723"], "output": "50723" },
+    { "inputs": ["50723", "50719"], "output": "50723" }
   ],
   "max_euint16_euint64": [
-    { "inputs": ["1", "3622"], "output": "3622" },
-    { "inputs": ["4", "8"], "output": "8" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "8" }
+    { "inputs": ["23644", "18446414081706845657"], "output": "18446414081706845657" },
+    { "inputs": ["23640", "23644"], "output": "23644" },
+    { "inputs": ["23644", "23644"], "output": "23644" },
+    { "inputs": ["23644", "23640"], "output": "23644" }
   ],
   "max_euint32_euint4": [
-    { "inputs": ["9", "5"], "output": "9" },
+    { "inputs": ["681402629", "7"], "output": "681402629" },
     { "inputs": ["4", "8"], "output": "8" },
     { "inputs": ["8", "8"], "output": "8" },
     { "inputs": ["8", "4"], "output": "8" }
   ],
   "max_euint32_euint8": [
-    { "inputs": ["9", "2"], "output": "9" },
-    { "inputs": ["4", "8"], "output": "8" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "8" }
+    { "inputs": ["1610798197", "160"], "output": "1610798197" },
+    { "inputs": ["156", "160"], "output": "160" },
+    { "inputs": ["160", "160"], "output": "160" },
+    { "inputs": ["160", "156"], "output": "160" }
   ],
   "max_euint32_euint16": [
-    { "inputs": ["9", "2"], "output": "9" },
-    { "inputs": ["4", "8"], "output": "8" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "8" }
+    { "inputs": ["4136615954", "9960"], "output": "4136615954" },
+    { "inputs": ["9956", "9960"], "output": "9960" },
+    { "inputs": ["9960", "9960"], "output": "9960" },
+    { "inputs": ["9960", "9956"], "output": "9960" }
   ],
   "max_euint32_euint32": [
-    { "inputs": ["9", "6"], "output": "9" },
-    { "inputs": ["4", "8"], "output": "8" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "8" }
+    { "inputs": ["2043312979", "3247295293"], "output": "3247295293" },
+    { "inputs": ["2043312975", "2043312979"], "output": "2043312979" },
+    { "inputs": ["2043312979", "2043312979"], "output": "2043312979" },
+    { "inputs": ["2043312979", "2043312975"], "output": "2043312979" }
   ],
   "max_euint32_uint32": [
-    { "inputs": ["9", "12"], "output": "12" },
-    { "inputs": ["4", "8"], "output": "8" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "8" }
+    { "inputs": ["2043312979", "706283813"], "output": "2043312979" },
+    { "inputs": ["2043312975", "2043312979"], "output": "2043312979" },
+    { "inputs": ["2043312979", "2043312979"], "output": "2043312979" },
+    { "inputs": ["2043312979", "2043312975"], "output": "2043312979" }
   ],
   "max_uint32_euint32": [
-    { "inputs": ["4", "12"], "output": "12" },
-    { "inputs": ["4", "8"], "output": "8" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "8" }
+    { "inputs": ["1094445398", "706283813"], "output": "1094445398" },
+    { "inputs": ["2043312975", "2043312979"], "output": "2043312979" },
+    { "inputs": ["2043312979", "2043312979"], "output": "2043312979" },
+    { "inputs": ["2043312979", "2043312975"], "output": "2043312979" }
   ],
   "max_euint32_euint64": [
-    { "inputs": ["4", "2425"], "output": "2425" },
-    { "inputs": ["4", "8"], "output": "8" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "8" }
+    { "inputs": ["340812031", "18443150842651286449"], "output": "18443150842651286449" },
+    { "inputs": ["340812027", "340812031"], "output": "340812031" },
+    { "inputs": ["340812031", "340812031"], "output": "340812031" },
+    { "inputs": ["340812031", "340812027"], "output": "340812031" }
   ],
   "max_euint64_euint4": [
-    { "inputs": ["2374", "3"], "output": "2374" },
+    { "inputs": ["18441711596093702931", "1"], "output": "18441711596093702931" },
     { "inputs": ["4", "8"], "output": "8" },
     { "inputs": ["8", "8"], "output": "8" },
     { "inputs": ["8", "4"], "output": "8" }
   ],
   "max_euint64_euint8": [
-    { "inputs": ["2374", "1"], "output": "2374" },
+    { "inputs": ["18442614857754346699", "3"], "output": "18442614857754346699" },
     { "inputs": ["4", "8"], "output": "8" },
     { "inputs": ["8", "8"], "output": "8" },
     { "inputs": ["8", "4"], "output": "8" }
   ],
   "max_euint64_euint16": [
-    { "inputs": ["2374", "1"], "output": "2374" },
-    { "inputs": ["4", "8"], "output": "8" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "8" }
+    { "inputs": ["18439537518803733101", "41315"], "output": "18439537518803733101" },
+    { "inputs": ["41311", "41315"], "output": "41315" },
+    { "inputs": ["41315", "41315"], "output": "41315" },
+    { "inputs": ["41315", "41311"], "output": "41315" }
   ],
   "max_euint64_euint32": [
-    { "inputs": ["2374", "2"], "output": "2374" },
-    { "inputs": ["4", "8"], "output": "8" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "8" }
+    { "inputs": ["18439662390589911437", "4249693397"], "output": "18439662390589911437" },
+    { "inputs": ["4249693393", "4249693397"], "output": "4249693397" },
+    { "inputs": ["4249693397", "4249693397"], "output": "4249693397" },
+    { "inputs": ["4249693397", "4249693393"], "output": "4249693397" }
   ],
   "max_euint64_euint64": [
-    { "inputs": ["2374", "2762"], "output": "2762" },
-    { "inputs": ["2370", "2374"], "output": "2374" },
-    { "inputs": ["2374", "2374"], "output": "2374" },
-    { "inputs": ["2374", "2370"], "output": "2374" }
+    { "inputs": ["18440739371866435289", "18438298584940765731"], "output": "18440739371866435289" },
+    { "inputs": ["18438298584940765727", "18438298584940765731"], "output": "18438298584940765731" },
+    { "inputs": ["18438298584940765731", "18438298584940765731"], "output": "18438298584940765731" },
+    { "inputs": ["18438298584940765731", "18438298584940765727"], "output": "18438298584940765731" }
   ],
   "max_euint64_uint64": [
-    { "inputs": ["2374", "5605"], "output": "5605" },
-    { "inputs": ["2370", "2374"], "output": "2374" },
-    { "inputs": ["2374", "2374"], "output": "2374" },
-    { "inputs": ["2374", "2370"], "output": "2374" }
+    { "inputs": ["18440739371866435289", "18440643015791741637"], "output": "18440739371866435289" },
+    { "inputs": ["18438298584940765727", "18438298584940765731"], "output": "18438298584940765731" },
+    { "inputs": ["18438298584940765731", "18438298584940765731"], "output": "18438298584940765731" },
+    { "inputs": ["18438298584940765731", "18438298584940765727"], "output": "18438298584940765731" }
   ],
   "max_uint64_euint64": [
-    { "inputs": ["7998", "5605"], "output": "7998" },
-    { "inputs": ["2370", "2374"], "output": "2374" },
-    { "inputs": ["2374", "2374"], "output": "2374" },
-    { "inputs": ["2374", "2370"], "output": "2374" }
+    { "inputs": ["18441357041435050863", "18440643015791741637"], "output": "18441357041435050863" },
+    { "inputs": ["18438298584940765727", "18438298584940765731"], "output": "18438298584940765731" },
+    { "inputs": ["18438298584940765731", "18438298584940765731"], "output": "18438298584940765731" },
+    { "inputs": ["18438298584940765731", "18438298584940765727"], "output": "18438298584940765731" }
   ],
   "min_euint4_euint4": [
-    { "inputs": ["1", "1"], "output": "1" },
+    { "inputs": ["6", "5"], "output": "5" },
     { "inputs": ["4", "8"], "output": "4" },
     { "inputs": ["8", "8"], "output": "8" },
     { "inputs": ["8", "4"], "output": "4" }
   ],
   "min_euint4_euint8": [
-    { "inputs": ["1", "2"], "output": "1" },
-    { "inputs": ["4", "8"], "output": "4" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["11", "237"], "output": "11" },
+    { "inputs": ["7", "11"], "output": "7" },
+    { "inputs": ["11", "11"], "output": "11" },
+    { "inputs": ["11", "7"], "output": "7" }
   ],
   "min_euint4_uint8": [
-    { "inputs": ["1", "15"], "output": "1" },
-    { "inputs": ["4", "8"], "output": "4" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["11", "10"], "output": "10" },
+    { "inputs": ["7", "11"], "output": "7" },
+    { "inputs": ["11", "11"], "output": "11" },
+    { "inputs": ["11", "7"], "output": "7" }
   ],
   "min_euint4_euint16": [
-    { "inputs": ["1", "2"], "output": "1" },
-    { "inputs": ["4", "8"], "output": "4" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["10", "26263"], "output": "10" },
+    { "inputs": ["6", "10"], "output": "6" },
+    { "inputs": ["10", "10"], "output": "10" },
+    { "inputs": ["10", "6"], "output": "6" }
   ],
   "min_euint4_euint32": [
-    { "inputs": ["1", "1"], "output": "1" },
+    { "inputs": ["5", "2670542696"], "output": "5" },
     { "inputs": ["4", "8"], "output": "4" },
     { "inputs": ["8", "8"], "output": "8" },
     { "inputs": ["8", "4"], "output": "4" }
   ],
   "min_euint4_euint64": [
-    { "inputs": ["1", "2202"], "output": "1" },
+    { "inputs": ["6", "18437937380503493287"], "output": "6" },
     { "inputs": ["4", "8"], "output": "4" },
     { "inputs": ["8", "8"], "output": "8" },
     { "inputs": ["8", "4"], "output": "4" }
   ],
   "min_euint8_euint4": [
-    { "inputs": ["8", "15"], "output": "8" },
-    { "inputs": ["4", "8"], "output": "4" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["58", "11"], "output": "11" },
+    { "inputs": ["7", "11"], "output": "7" },
+    { "inputs": ["11", "11"], "output": "11" },
+    { "inputs": ["11", "7"], "output": "7" }
   ],
   "min_uint8_euint4": [
-    { "inputs": ["2", "15"], "output": "2" },
-    { "inputs": ["4", "8"], "output": "4" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["8", "11"], "output": "8" },
+    { "inputs": ["7", "11"], "output": "7" },
+    { "inputs": ["11", "11"], "output": "11" },
+    { "inputs": ["11", "7"], "output": "7" }
   ],
   "min_euint8_euint8": [
-    { "inputs": ["2", "2"], "output": "2" },
-    { "inputs": ["4", "8"], "output": "4" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["53", "97"], "output": "53" },
+    { "inputs": ["49", "53"], "output": "49" },
+    { "inputs": ["53", "53"], "output": "53" },
+    { "inputs": ["53", "49"], "output": "49" }
   ],
   "min_euint8_uint8": [
-    { "inputs": ["2", "1"], "output": "1" },
-    { "inputs": ["4", "8"], "output": "4" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["53", "70"], "output": "53" },
+    { "inputs": ["49", "53"], "output": "49" },
+    { "inputs": ["53", "53"], "output": "53" },
+    { "inputs": ["53", "49"], "output": "49" }
   ],
   "min_uint8_euint8": [
-    { "inputs": ["1", "1"], "output": "1" },
-    { "inputs": ["4", "8"], "output": "4" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["109", "70"], "output": "70" },
+    { "inputs": ["49", "53"], "output": "49" },
+    { "inputs": ["53", "53"], "output": "53" },
+    { "inputs": ["53", "49"], "output": "49" }
   ],
   "min_euint8_euint16": [
-    { "inputs": ["1", "3"], "output": "1" },
-    { "inputs": ["4", "8"], "output": "4" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["190", "58049"], "output": "190" },
+    { "inputs": ["186", "190"], "output": "186" },
+    { "inputs": ["190", "190"], "output": "190" },
+    { "inputs": ["190", "186"], "output": "186" }
   ],
   "min_euint8_euint32": [
-    { "inputs": ["1", "18"], "output": "1" },
-    { "inputs": ["4", "8"], "output": "4" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["253", "2965000543"], "output": "253" },
+    { "inputs": ["249", "253"], "output": "249" },
+    { "inputs": ["253", "253"], "output": "253" },
+    { "inputs": ["253", "249"], "output": "249" }
   ],
   "min_euint8_euint64": [
-    { "inputs": ["1", "5533"], "output": "1" },
-    { "inputs": ["4", "8"], "output": "4" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["18", "18446036892619585799"], "output": "18" },
+    { "inputs": ["14", "18"], "output": "14" },
+    { "inputs": ["18", "18"], "output": "18" },
+    { "inputs": ["18", "14"], "output": "14" }
   ],
   "min_euint16_euint4": [
-    { "inputs": ["1", "1"], "output": "1" },
+    { "inputs": ["37174", "5"], "output": "5" },
     { "inputs": ["4", "8"], "output": "4" },
     { "inputs": ["8", "8"], "output": "8" },
     { "inputs": ["8", "4"], "output": "4" }
   ],
   "min_euint16_euint8": [
-    { "inputs": ["1", "3"], "output": "1" },
-    { "inputs": ["4", "8"], "output": "4" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["25144", "64"], "output": "64" },
+    { "inputs": ["60", "64"], "output": "60" },
+    { "inputs": ["64", "64"], "output": "64" },
+    { "inputs": ["64", "60"], "output": "60" }
   ],
   "min_euint16_euint16": [
-    { "inputs": ["1", "1"], "output": "1" },
-    { "inputs": ["4", "8"], "output": "4" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["30936", "9027"], "output": "9027" },
+    { "inputs": ["9023", "9027"], "output": "9023" },
+    { "inputs": ["9027", "9027"], "output": "9027" },
+    { "inputs": ["9027", "9023"], "output": "9023" }
   ],
   "min_euint16_uint16": [
-    { "inputs": ["1", "2"], "output": "1" },
-    { "inputs": ["4", "8"], "output": "4" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["30936", "64470"], "output": "30936" },
+    { "inputs": ["9023", "9027"], "output": "9023" },
+    { "inputs": ["9027", "9027"], "output": "9027" },
+    { "inputs": ["9027", "9023"], "output": "9023" }
   ],
   "min_uint16_euint16": [
-    { "inputs": ["1", "2"], "output": "1" },
-    { "inputs": ["4", "8"], "output": "4" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["10499", "64470"], "output": "10499" },
+    { "inputs": ["9023", "9027"], "output": "9023" },
+    { "inputs": ["9027", "9027"], "output": "9027" },
+    { "inputs": ["9027", "9023"], "output": "9023" }
   ],
   "min_euint16_euint32": [
-    { "inputs": ["1", "5"], "output": "1" },
-    { "inputs": ["4", "8"], "output": "4" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["3581", "3061947173"], "output": "3581" },
+    { "inputs": ["3577", "3581"], "output": "3577" },
+    { "inputs": ["3581", "3581"], "output": "3581" },
+    { "inputs": ["3581", "3577"], "output": "3577" }
   ],
   "min_euint16_euint64": [
-    { "inputs": ["1", "3602"], "output": "1" },
-    { "inputs": ["4", "8"], "output": "4" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["60945", "18442404212044065569"], "output": "60945" },
+    { "inputs": ["60941", "60945"], "output": "60941" },
+    { "inputs": ["60945", "60945"], "output": "60945" },
+    { "inputs": ["60945", "60941"], "output": "60941" }
   ],
   "min_euint32_euint4": [
-    { "inputs": ["3", "15"], "output": "3" },
+    { "inputs": ["3192029980", "3"], "output": "3" },
     { "inputs": ["4", "8"], "output": "4" },
     { "inputs": ["8", "8"], "output": "8" },
     { "inputs": ["8", "4"], "output": "4" }
   ],
   "min_euint32_euint8": [
-    { "inputs": ["3", "2"], "output": "2" },
-    { "inputs": ["4", "8"], "output": "4" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["2128865754", "127"], "output": "127" },
+    { "inputs": ["123", "127"], "output": "123" },
+    { "inputs": ["127", "127"], "output": "127" },
+    { "inputs": ["127", "123"], "output": "123" }
   ],
   "min_euint32_euint16": [
-    { "inputs": ["3", "3"], "output": "3" },
-    { "inputs": ["4", "8"], "output": "4" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["2025213170", "65001"], "output": "65001" },
+    { "inputs": ["64997", "65001"], "output": "64997" },
+    { "inputs": ["65001", "65001"], "output": "65001" },
+    { "inputs": ["65001", "64997"], "output": "64997" }
   ],
   "min_euint32_euint32": [
-    { "inputs": ["3", "5"], "output": "3" },
-    { "inputs": ["4", "8"], "output": "4" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["1800381916", "3495424142"], "output": "1800381916" },
+    { "inputs": ["1800381912", "1800381916"], "output": "1800381912" },
+    { "inputs": ["1800381916", "1800381916"], "output": "1800381916" },
+    { "inputs": ["1800381916", "1800381912"], "output": "1800381912" }
   ],
   "min_euint32_uint32": [
-    { "inputs": ["3", "3"], "output": "3" },
-    { "inputs": ["4", "8"], "output": "4" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["1800381916", "3488347882"], "output": "1800381916" },
+    { "inputs": ["1800381912", "1800381916"], "output": "1800381912" },
+    { "inputs": ["1800381916", "1800381916"], "output": "1800381916" },
+    { "inputs": ["1800381916", "1800381912"], "output": "1800381912" }
   ],
   "min_uint32_euint32": [
-    { "inputs": ["45", "3"], "output": "3" },
-    { "inputs": ["4", "8"], "output": "4" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["2638635782", "3488347882"], "output": "2638635782" },
+    { "inputs": ["1800381912", "1800381916"], "output": "1800381912" },
+    { "inputs": ["1800381916", "1800381916"], "output": "1800381916" },
+    { "inputs": ["1800381916", "1800381912"], "output": "1800381912" }
   ],
   "min_euint32_euint64": [
-    { "inputs": ["45", "5751"], "output": "45" },
-    { "inputs": ["41", "45"], "output": "41" },
-    { "inputs": ["45", "45"], "output": "45" },
-    { "inputs": ["45", "41"], "output": "41" }
+    { "inputs": ["968740054", "18439525226452222255"], "output": "968740054" },
+    { "inputs": ["968740050", "968740054"], "output": "968740050" },
+    { "inputs": ["968740054", "968740054"], "output": "968740054" },
+    { "inputs": ["968740054", "968740050"], "output": "968740050" }
   ],
   "min_euint64_euint4": [
-    { "inputs": ["2618", "3"], "output": "3" },
-    { "inputs": ["4", "8"], "output": "4" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["18437774930056492317", "14"], "output": "14" },
+    { "inputs": ["10", "14"], "output": "10" },
+    { "inputs": ["14", "14"], "output": "14" },
+    { "inputs": ["14", "10"], "output": "10" }
   ],
   "min_euint64_euint8": [
-    { "inputs": ["2618", "1"], "output": "1" },
-    { "inputs": ["4", "8"], "output": "4" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["18441639004244956281", "36"], "output": "36" },
+    { "inputs": ["32", "36"], "output": "32" },
+    { "inputs": ["36", "36"], "output": "36" },
+    { "inputs": ["36", "32"], "output": "32" }
   ],
   "min_euint64_euint16": [
-    { "inputs": ["2618", "5"], "output": "5" },
-    { "inputs": ["4", "8"], "output": "4" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["18440273866551894469", "42779"], "output": "42779" },
+    { "inputs": ["42775", "42779"], "output": "42775" },
+    { "inputs": ["42779", "42779"], "output": "42779" },
+    { "inputs": ["42779", "42775"], "output": "42775" }
   ],
   "min_euint64_euint32": [
-    { "inputs": ["2618", "1"], "output": "1" },
-    { "inputs": ["4", "8"], "output": "4" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "4" }
+    { "inputs": ["18442182412102668107", "657148413"], "output": "657148413" },
+    { "inputs": ["657148409", "657148413"], "output": "657148409" },
+    { "inputs": ["657148413", "657148413"], "output": "657148413" },
+    { "inputs": ["657148413", "657148409"], "output": "657148409" }
   ],
   "min_euint64_euint64": [
-    { "inputs": ["2618", "6448"], "output": "2618" },
-    { "inputs": ["2614", "2618"], "output": "2614" },
-    { "inputs": ["2618", "2618"], "output": "2618" },
-    { "inputs": ["2618", "2614"], "output": "2614" }
+    { "inputs": ["18444400472074074345", "18442962239103377481"], "output": "18442962239103377481" },
+    { "inputs": ["18442962239103377477", "18442962239103377481"], "output": "18442962239103377477" },
+    { "inputs": ["18442962239103377481", "18442962239103377481"], "output": "18442962239103377481" },
+    { "inputs": ["18442962239103377481", "18442962239103377477"], "output": "18442962239103377477" }
   ],
   "min_euint64_uint64": [
-    { "inputs": ["2618", "4687"], "output": "2618" },
-    { "inputs": ["2614", "2618"], "output": "2614" },
-    { "inputs": ["2618", "2618"], "output": "2618" },
-    { "inputs": ["2618", "2614"], "output": "2614" }
+    { "inputs": ["18444400472074074345", "18445675871085860653"], "output": "18444400472074074345" },
+    { "inputs": ["18442962239103377477", "18442962239103377481"], "output": "18442962239103377477" },
+    { "inputs": ["18442962239103377481", "18442962239103377481"], "output": "18442962239103377481" },
+    { "inputs": ["18442962239103377481", "18442962239103377477"], "output": "18442962239103377477" }
   ],
   "min_uint64_euint64": [
-    { "inputs": ["3232", "4687"], "output": "3232" },
-    { "inputs": ["2614", "2618"], "output": "2614" },
-    { "inputs": ["2618", "2618"], "output": "2618" },
-    { "inputs": ["2618", "2614"], "output": "2614" }
+    { "inputs": ["18443908139931756717", "18445675871085860653"], "output": "18443908139931756717" },
+    { "inputs": ["18442962239103377477", "18442962239103377481"], "output": "18442962239103377477" },
+    { "inputs": ["18442962239103377481", "18442962239103377481"], "output": "18442962239103377481" },
+    { "inputs": ["18442962239103377481", "18442962239103377477"], "output": "18442962239103377477" }
   ],
   "or_euint4_euint4": [
-    { "inputs": ["1", "2"], "output": "3" },
+    { "inputs": ["6", "5"], "output": "7" },
     { "inputs": ["4", "8"], "output": "12" },
     { "inputs": ["8", "8"], "output": "8" },
     { "inputs": ["8", "4"], "output": "12" }
   ],
   "or_euint4_euint8": [
-    { "inputs": ["1", "1"], "output": "1" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["14", "110"], "output": "110" },
+    { "inputs": ["10", "14"], "output": "14" },
+    { "inputs": ["14", "14"], "output": "14" },
+    { "inputs": ["14", "10"], "output": "14" }
   ],
   "or_euint4_euint16": [
-    { "inputs": ["1", "1"], "output": "1" },
+    { "inputs": ["3", "60460"], "output": "60463" },
     { "inputs": ["4", "8"], "output": "12" },
     { "inputs": ["8", "8"], "output": "8" },
     { "inputs": ["8", "4"], "output": "12" }
   ],
   "or_euint4_euint32": [
-    { "inputs": ["1", "1"], "output": "1" },
+    { "inputs": ["3", "2840015564"], "output": "2840015567" },
     { "inputs": ["4", "8"], "output": "12" },
     { "inputs": ["8", "8"], "output": "8" },
     { "inputs": ["8", "4"], "output": "12" }
   ],
   "or_euint4_euint64": [
-    { "inputs": ["1", "57469"], "output": "57469" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["10", "18439589984533574615"], "output": "18439589984533574623" },
+    { "inputs": ["6", "10"], "output": "14" },
+    { "inputs": ["10", "10"], "output": "10" },
+    { "inputs": ["10", "6"], "output": "14" }
   ],
   "or_euint8_euint4": [
-    { "inputs": ["1", "1"], "output": "1" },
+    { "inputs": ["89", "1"], "output": "89" },
     { "inputs": ["4", "8"], "output": "12" },
     { "inputs": ["8", "8"], "output": "8" },
     { "inputs": ["8", "4"], "output": "12" }
   ],
   "or_euint8_euint8": [
-    { "inputs": ["1", "1"], "output": "1" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["174", "137"], "output": "175" },
+    { "inputs": ["133", "137"], "output": "141" },
+    { "inputs": ["137", "137"], "output": "137" },
+    { "inputs": ["137", "133"], "output": "141" }
   ],
   "or_euint8_euint16": [
-    { "inputs": ["1", "1"], "output": "1" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["99", "46031"], "output": "46063" },
+    { "inputs": ["95", "99"], "output": "127" },
+    { "inputs": ["99", "99"], "output": "99" },
+    { "inputs": ["99", "95"], "output": "127" }
   ],
   "or_euint8_euint32": [
-    { "inputs": ["1", "1"], "output": "1" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["50", "1388677537"], "output": "1388677555" },
+    { "inputs": ["46", "50"], "output": "62" },
+    { "inputs": ["50", "50"], "output": "50" },
+    { "inputs": ["50", "46"], "output": "62" }
   ],
   "or_euint8_euint64": [
-    { "inputs": ["1", "6021"], "output": "6021" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["135", "18439029290182698975"], "output": "18439029290182698975" },
+    { "inputs": ["131", "135"], "output": "135" },
+    { "inputs": ["135", "135"], "output": "135" },
+    { "inputs": ["135", "131"], "output": "135" }
   ],
   "or_euint16_euint4": [
-    { "inputs": ["2", "15"], "output": "15" },
+    { "inputs": ["57838", "2"], "output": "57838" },
     { "inputs": ["4", "8"], "output": "12" },
     { "inputs": ["8", "8"], "output": "8" },
     { "inputs": ["8", "4"], "output": "12" }
   ],
   "or_euint16_euint8": [
-    { "inputs": ["2", "4"], "output": "6" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["60745", "176"], "output": "60921" },
+    { "inputs": ["172", "176"], "output": "188" },
+    { "inputs": ["176", "176"], "output": "176" },
+    { "inputs": ["176", "172"], "output": "188" }
   ],
   "or_euint16_euint16": [
-    { "inputs": ["2", "5"], "output": "7" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["53682", "14727"], "output": "63927" },
+    { "inputs": ["14723", "14727"], "output": "14727" },
+    { "inputs": ["14727", "14727"], "output": "14727" },
+    { "inputs": ["14727", "14723"], "output": "14727" }
   ],
   "or_euint16_euint32": [
-    { "inputs": ["2", "4"], "output": "6" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["47569", "1867557342"], "output": "1867561439" },
+    { "inputs": ["47565", "47569"], "output": "47581" },
+    { "inputs": ["47569", "47569"], "output": "47569" },
+    { "inputs": ["47569", "47565"], "output": "47581" }
   ],
   "or_euint16_euint64": [
-    { "inputs": ["2", "17420"], "output": "17422" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["3594", "18443975303513898329"], "output": "18443975303513898843" },
+    { "inputs": ["3590", "3594"], "output": "3598" },
+    { "inputs": ["3594", "3594"], "output": "3594" },
+    { "inputs": ["3594", "3590"], "output": "3598" }
   ],
   "or_euint32_euint4": [
-    { "inputs": ["2", "15"], "output": "15" },
+    { "inputs": ["2406735968", "5"], "output": "2406735973" },
     { "inputs": ["4", "8"], "output": "12" },
     { "inputs": ["8", "8"], "output": "8" },
     { "inputs": ["8", "4"], "output": "12" }
   ],
   "or_euint32_euint8": [
-    { "inputs": ["2", "1"], "output": "3" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["3961011805", "118"], "output": "3961011839" },
+    { "inputs": ["114", "118"], "output": "118" },
+    { "inputs": ["118", "118"], "output": "118" },
+    { "inputs": ["118", "114"], "output": "118" }
   ],
   "or_euint32_euint16": [
-    { "inputs": ["2", "1"], "output": "3" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["2441286673", "26427"], "output": "2441312059" },
+    { "inputs": ["26423", "26427"], "output": "26431" },
+    { "inputs": ["26427", "26427"], "output": "26427" },
+    { "inputs": ["26427", "26423"], "output": "26431" }
   ],
   "or_euint32_euint32": [
-    { "inputs": ["2", "2"], "output": "2" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["183558137", "3592149879"], "output": "3741048831" },
+    { "inputs": ["183558133", "183558137"], "output": "183558141" },
+    { "inputs": ["183558137", "183558137"], "output": "183558137" },
+    { "inputs": ["183558137", "183558133"], "output": "183558141" }
   ],
   "or_euint32_euint64": [
-    { "inputs": ["2", "3577"], "output": "3579" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["1857122149", "18440946789011191531"], "output": "18440946789112971247" },
+    { "inputs": ["1857122145", "1857122149"], "output": "1857122149" },
+    { "inputs": ["1857122149", "1857122149"], "output": "1857122149" },
+    { "inputs": ["1857122149", "1857122145"], "output": "1857122149" }
   ],
   "or_euint64_euint4": [
-    { "inputs": ["3328", "3"], "output": "3331" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["18445233461885169423", "12"], "output": "18445233461885169423" },
+    { "inputs": ["8", "12"], "output": "12" },
+    { "inputs": ["12", "12"], "output": "12" },
+    { "inputs": ["12", "8"], "output": "12" }
   ],
   "or_euint64_euint8": [
-    { "inputs": ["3328", "1"], "output": "3329" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["18445900286060653541", "17"], "output": "18445900286060653557" },
+    { "inputs": ["13", "17"], "output": "29" },
+    { "inputs": ["17", "17"], "output": "17" },
+    { "inputs": ["17", "13"], "output": "29" }
   ],
   "or_euint64_euint16": [
-    { "inputs": ["3328", "2"], "output": "3330" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["18445329388989380329", "5327"], "output": "18445329388989380335" },
+    { "inputs": ["5323", "5327"], "output": "5327" },
+    { "inputs": ["5327", "5327"], "output": "5327" },
+    { "inputs": ["5327", "5323"], "output": "5327" }
   ],
   "or_euint64_euint32": [
-    { "inputs": ["3328", "3"], "output": "3331" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["18444852954550836631", "3550708762"], "output": "18444852955920440735" },
+    { "inputs": ["3550708758", "3550708762"], "output": "3550708766" },
+    { "inputs": ["3550708762", "3550708762"], "output": "3550708762" },
+    { "inputs": ["3550708762", "3550708758"], "output": "3550708766" }
   ],
   "or_euint64_euint64": [
-    { "inputs": ["3328", "2096"], "output": "3376" },
-    { "inputs": ["2092", "2096"], "output": "2108" },
-    { "inputs": ["2096", "2096"], "output": "2096" },
-    { "inputs": ["2096", "2092"], "output": "2108" }
+    { "inputs": ["18439947486770357681", "18442205516883919361"], "output": "18442234697046943665" },
+    { "inputs": ["18439947486770357677", "18439947486770357681"], "output": "18439947486770357693" },
+    { "inputs": ["18439947486770357681", "18439947486770357681"], "output": "18439947486770357681" },
+    { "inputs": ["18439947486770357681", "18439947486770357677"], "output": "18439947486770357693" }
   ],
   "and_euint4_euint4": [
-    { "inputs": ["1", "15"], "output": "1" },
+    { "inputs": ["5", "2"], "output": "0" },
     { "inputs": ["4", "8"], "output": "0" },
     { "inputs": ["8", "8"], "output": "8" },
     { "inputs": ["8", "4"], "output": "0" }
   ],
   "and_euint4_euint8": [
-    { "inputs": ["1", "1"], "output": "1" },
-    { "inputs": ["4", "8"], "output": "0" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "0" }
+    { "inputs": ["12", "110"], "output": "12" },
+    { "inputs": ["8", "12"], "output": "8" },
+    { "inputs": ["12", "12"], "output": "12" },
+    { "inputs": ["12", "8"], "output": "8" }
   ],
   "and_euint4_euint16": [
-    { "inputs": ["1", "3"], "output": "1" },
-    { "inputs": ["4", "8"], "output": "0" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "0" }
+    { "inputs": ["10", "16702"], "output": "10" },
+    { "inputs": ["6", "10"], "output": "2" },
+    { "inputs": ["10", "10"], "output": "10" },
+    { "inputs": ["10", "6"], "output": "2" }
   ],
   "and_euint4_euint32": [
-    { "inputs": ["1", "2"], "output": "0" },
+    { "inputs": ["6", "3534750602"], "output": "2" },
     { "inputs": ["4", "8"], "output": "0" },
     { "inputs": ["8", "8"], "output": "8" },
     { "inputs": ["8", "4"], "output": "0" }
   ],
   "and_euint4_euint64": [
-    { "inputs": ["1", "13187"], "output": "1" },
+    { "inputs": ["7", "18444452142912700231"], "output": "7" },
     { "inputs": ["4", "8"], "output": "0" },
     { "inputs": ["8", "8"], "output": "8" },
     { "inputs": ["8", "4"], "output": "0" }
   ],
   "and_euint8_euint4": [
-    { "inputs": ["2", "1"], "output": "0" },
+    { "inputs": ["143", "6"], "output": "6" },
     { "inputs": ["4", "8"], "output": "0" },
     { "inputs": ["8", "8"], "output": "8" },
     { "inputs": ["8", "4"], "output": "0" }
   ],
   "and_euint8_euint8": [
-    { "inputs": ["2", "1"], "output": "0" },
-    { "inputs": ["4", "8"], "output": "0" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "0" }
+    { "inputs": ["254", "204"], "output": "204" },
+    { "inputs": ["200", "204"], "output": "200" },
+    { "inputs": ["204", "204"], "output": "204" },
+    { "inputs": ["204", "200"], "output": "200" }
   ],
   "and_euint8_euint16": [
-    { "inputs": ["2", "2"], "output": "2" },
-    { "inputs": ["4", "8"], "output": "0" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "0" }
+    { "inputs": ["112", "22367"], "output": "80" },
+    { "inputs": ["108", "112"], "output": "96" },
+    { "inputs": ["112", "112"], "output": "112" },
+    { "inputs": ["112", "108"], "output": "96" }
   ],
   "and_euint8_euint32": [
-    { "inputs": ["2", "4"], "output": "0" },
-    { "inputs": ["4", "8"], "output": "0" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "0" }
+    { "inputs": ["36", "664013992"], "output": "32" },
+    { "inputs": ["32", "36"], "output": "32" },
+    { "inputs": ["36", "36"], "output": "36" },
+    { "inputs": ["36", "32"], "output": "32" }
   ],
   "and_euint8_euint64": [
-    { "inputs": ["2", "2049"], "output": "0" },
-    { "inputs": ["4", "8"], "output": "0" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "0" }
+    { "inputs": ["187", "18444084668783699555"], "output": "35" },
+    { "inputs": ["183", "187"], "output": "179" },
+    { "inputs": ["187", "187"], "output": "187" },
+    { "inputs": ["187", "183"], "output": "179" }
   ],
   "and_euint16_euint4": [
-    { "inputs": ["1", "7"], "output": "1" },
+    { "inputs": ["6680", "4"], "output": "0" },
     { "inputs": ["4", "8"], "output": "0" },
     { "inputs": ["8", "8"], "output": "8" },
     { "inputs": ["8", "4"], "output": "0" }
   ],
   "and_euint16_euint8": [
-    { "inputs": ["1", "1"], "output": "1" },
-    { "inputs": ["4", "8"], "output": "0" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "0" }
+    { "inputs": ["18191", "188"], "output": "12" },
+    { "inputs": ["184", "188"], "output": "184" },
+    { "inputs": ["188", "188"], "output": "188" },
+    { "inputs": ["188", "184"], "output": "184" }
   ],
   "and_euint16_euint16": [
-    { "inputs": ["1", "1"], "output": "1" },
-    { "inputs": ["4", "8"], "output": "0" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "0" }
+    { "inputs": ["63103", "25335"], "output": "25207" },
+    { "inputs": ["25331", "25335"], "output": "25331" },
+    { "inputs": ["25335", "25335"], "output": "25335" },
+    { "inputs": ["25335", "25331"], "output": "25331" }
   ],
   "and_euint16_euint32": [
-    { "inputs": ["1", "1"], "output": "1" },
-    { "inputs": ["4", "8"], "output": "0" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "0" }
+    { "inputs": ["31764", "719791208"], "output": "9216" },
+    { "inputs": ["31760", "31764"], "output": "31760" },
+    { "inputs": ["31764", "31764"], "output": "31764" },
+    { "inputs": ["31764", "31760"], "output": "31760" }
   ],
   "and_euint16_euint64": [
-    { "inputs": ["1", "4630"], "output": "0" },
-    { "inputs": ["4", "8"], "output": "0" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "0" }
+    { "inputs": ["3617", "18445521461849474399"], "output": "1025" },
+    { "inputs": ["3613", "3617"], "output": "3585" },
+    { "inputs": ["3617", "3617"], "output": "3617" },
+    { "inputs": ["3617", "3613"], "output": "3585" }
   ],
   "and_euint32_euint4": [
-    { "inputs": ["1", "2"], "output": "0" },
-    { "inputs": ["4", "8"], "output": "0" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "0" }
-  ],
-  "and_euint32_euint8": [
-    { "inputs": ["1", "85"], "output": "1" },
-    { "inputs": ["4", "8"], "output": "0" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "0" }
-  ],
-  "and_euint32_euint16": [
-    { "inputs": ["1", "1"], "output": "1" },
-    { "inputs": ["4", "8"], "output": "0" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "0" }
-  ],
-  "and_euint32_euint32": [
-    { "inputs": ["1", "1"], "output": "1" },
-    { "inputs": ["4", "8"], "output": "0" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "0" }
-  ],
-  "and_euint32_euint64": [
-    { "inputs": ["1", "3270"], "output": "0" },
-    { "inputs": ["4", "8"], "output": "0" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "0" }
-  ],
-  "and_euint64_euint4": [
-    { "inputs": ["2380", "1"], "output": "0" },
-    { "inputs": ["4", "8"], "output": "0" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "0" }
-  ],
-  "and_euint64_euint8": [
-    { "inputs": ["2380", "1"], "output": "0" },
-    { "inputs": ["4", "8"], "output": "0" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "0" }
-  ],
-  "and_euint64_euint16": [
-    { "inputs": ["2380", "9"], "output": "8" },
+    { "inputs": ["1301921086", "9"], "output": "8" },
     { "inputs": ["5", "9"], "output": "1" },
     { "inputs": ["9", "9"], "output": "9" },
     { "inputs": ["9", "5"], "output": "1" }
   ],
+  "and_euint32_euint8": [
+    { "inputs": ["2684075699", "16"], "output": "16" },
+    { "inputs": ["12", "16"], "output": "0" },
+    { "inputs": ["16", "16"], "output": "16" },
+    { "inputs": ["16", "12"], "output": "0" }
+  ],
+  "and_euint32_euint16": [
+    { "inputs": ["1113519013", "16851"], "output": "16769" },
+    { "inputs": ["16847", "16851"], "output": "16835" },
+    { "inputs": ["16851", "16851"], "output": "16851" },
+    { "inputs": ["16851", "16847"], "output": "16835" }
+  ],
+  "and_euint32_euint32": [
+    { "inputs": ["749010015", "1458345079"], "output": "77894743" },
+    { "inputs": ["749010011", "749010015"], "output": "749010011" },
+    { "inputs": ["749010015", "749010015"], "output": "749010015" },
+    { "inputs": ["749010015", "749010011"], "output": "749010011" }
+  ],
+  "and_euint32_euint64": [
+    { "inputs": ["365928159", "18445926323394727831"], "output": "13110935" },
+    { "inputs": ["365928155", "365928159"], "output": "365928155" },
+    { "inputs": ["365928159", "365928159"], "output": "365928159" },
+    { "inputs": ["365928159", "365928155"], "output": "365928155" }
+  ],
+  "and_euint64_euint4": [
+    { "inputs": ["18442416087216426369", "12"], "output": "0" },
+    { "inputs": ["8", "12"], "output": "8" },
+    { "inputs": ["12", "12"], "output": "12" },
+    { "inputs": ["12", "8"], "output": "8" }
+  ],
+  "and_euint64_euint8": [
+    { "inputs": ["18438525099029165039", "71"], "output": "71" },
+    { "inputs": ["67", "71"], "output": "67" },
+    { "inputs": ["71", "71"], "output": "71" },
+    { "inputs": ["71", "67"], "output": "67" }
+  ],
+  "and_euint64_euint16": [
+    { "inputs": ["18444131025157690381", "45908"], "output": "4100" },
+    { "inputs": ["45904", "45908"], "output": "45904" },
+    { "inputs": ["45908", "45908"], "output": "45908" },
+    { "inputs": ["45908", "45904"], "output": "45904" }
+  ],
   "and_euint64_euint32": [
-    { "inputs": ["2380", "4"], "output": "4" },
-    { "inputs": ["4", "8"], "output": "0" },
-    { "inputs": ["8", "8"], "output": "8" },
-    { "inputs": ["8", "4"], "output": "0" }
+    { "inputs": ["18444449709394842073", "3823819229"], "output": "2718454233" },
+    { "inputs": ["3823819225", "3823819229"], "output": "3823819225" },
+    { "inputs": ["3823819229", "3823819229"], "output": "3823819229" },
+    { "inputs": ["3823819229", "3823819225"], "output": "3823819225" }
   ],
   "and_euint64_euint64": [
-    { "inputs": ["2380", "2068"], "output": "2052" },
-    { "inputs": ["2064", "2068"], "output": "2064" },
-    { "inputs": ["2068", "2068"], "output": "2068" },
-    { "inputs": ["2068", "2064"], "output": "2064" }
+    { "inputs": ["18441848963293247005", "18437762817766608073"], "output": "18437758350371472393" },
+    { "inputs": ["18437762817766608069", "18437762817766608073"], "output": "18437762817766608065" },
+    { "inputs": ["18437762817766608073", "18437762817766608073"], "output": "18437762817766608073" },
+    { "inputs": ["18437762817766608073", "18437762817766608069"], "output": "18437762817766608065" }
   ],
   "xor_euint4_euint4": [
-    { "inputs": ["3", "1"], "output": "2" },
+    { "inputs": ["2", "10"], "output": "8" },
     { "inputs": ["4", "8"], "output": "12" },
     { "inputs": ["8", "8"], "output": "0" },
     { "inputs": ["8", "4"], "output": "12" }
   ],
   "xor_euint4_euint8": [
-    { "inputs": ["3", "1"], "output": "2" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["12", "244"], "output": "248" },
+    { "inputs": ["8", "12"], "output": "4" },
+    { "inputs": ["12", "12"], "output": "0" },
+    { "inputs": ["12", "8"], "output": "4" }
   ],
   "xor_euint4_euint16": [
-    { "inputs": ["3", "1"], "output": "2" },
+    { "inputs": ["6", "58722"], "output": "58724" },
     { "inputs": ["4", "8"], "output": "12" },
     { "inputs": ["8", "8"], "output": "0" },
     { "inputs": ["8", "4"], "output": "12" }
   ],
   "xor_euint4_euint32": [
-    { "inputs": ["3", "5"], "output": "6" },
+    { "inputs": ["6", "2183122437"], "output": "2183122435" },
     { "inputs": ["4", "8"], "output": "12" },
     { "inputs": ["8", "8"], "output": "0" },
     { "inputs": ["8", "4"], "output": "12" }
   ],
   "xor_euint4_euint64": [
-    { "inputs": ["3", "2792"], "output": "2795" },
+    { "inputs": ["7", "18438536745518625067"], "output": "18438536745518625068" },
     { "inputs": ["4", "8"], "output": "12" },
     { "inputs": ["8", "8"], "output": "0" },
     { "inputs": ["8", "4"], "output": "12" }
   ],
   "xor_euint8_euint4": [
-    { "inputs": ["2", "1"], "output": "3" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["100", "12"], "output": "104" },
+    { "inputs": ["8", "12"], "output": "4" },
+    { "inputs": ["12", "12"], "output": "0" },
+    { "inputs": ["12", "8"], "output": "4" }
   ],
   "xor_euint8_euint8": [
-    { "inputs": ["2", "1"], "output": "3" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["183", "10"], "output": "189" },
+    { "inputs": ["6", "10"], "output": "12" },
+    { "inputs": ["10", "10"], "output": "0" },
+    { "inputs": ["10", "6"], "output": "12" }
   ],
   "xor_euint8_euint16": [
-    { "inputs": ["2", "1"], "output": "3" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["129", "2322"], "output": "2451" },
+    { "inputs": ["125", "129"], "output": "252" },
+    { "inputs": ["129", "129"], "output": "0" },
+    { "inputs": ["129", "125"], "output": "252" }
   ],
   "xor_euint8_euint32": [
-    { "inputs": ["2", "1"], "output": "3" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["67", "2386754441"], "output": "2386754506" },
+    { "inputs": ["63", "67"], "output": "124" },
+    { "inputs": ["67", "67"], "output": "0" },
+    { "inputs": ["67", "63"], "output": "124" }
   ],
   "xor_euint8_euint64": [
-    { "inputs": ["2", "4046"], "output": "4044" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["84", "18444990477299490715"], "output": "18444990477299490767" },
+    { "inputs": ["80", "84"], "output": "4" },
+    { "inputs": ["84", "84"], "output": "0" },
+    { "inputs": ["84", "80"], "output": "4" }
   ],
   "xor_euint16_euint4": [
-    { "inputs": ["9", "3"], "output": "10" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["29564", "14"], "output": "29554" },
+    { "inputs": ["10", "14"], "output": "4" },
+    { "inputs": ["14", "14"], "output": "0" },
+    { "inputs": ["14", "10"], "output": "4" }
   ],
   "xor_euint16_euint8": [
-    { "inputs": ["9", "7"], "output": "14" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["24120", "221"], "output": "24293" },
+    { "inputs": ["217", "221"], "output": "4" },
+    { "inputs": ["221", "221"], "output": "0" },
+    { "inputs": ["221", "217"], "output": "4" }
   ],
   "xor_euint16_euint16": [
-    { "inputs": ["9", "1"], "output": "8" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["272", "42865"], "output": "42593" },
+    { "inputs": ["268", "272"], "output": "28" },
+    { "inputs": ["272", "272"], "output": "0" },
+    { "inputs": ["272", "268"], "output": "28" }
   ],
   "xor_euint16_euint32": [
-    { "inputs": ["9", "147"], "output": "154" },
-    { "inputs": ["5", "9"], "output": "12" },
-    { "inputs": ["9", "9"], "output": "0" },
-    { "inputs": ["9", "5"], "output": "12" }
+    { "inputs": ["49958", "2256953798"], "output": "2256970464" },
+    { "inputs": ["49954", "49958"], "output": "4" },
+    { "inputs": ["49958", "49958"], "output": "0" },
+    { "inputs": ["49958", "49954"], "output": "4" }
   ],
   "xor_euint16_euint64": [
-    { "inputs": ["9", "28164"], "output": "28173" },
-    { "inputs": ["5", "9"], "output": "12" },
-    { "inputs": ["9", "9"], "output": "0" },
-    { "inputs": ["9", "5"], "output": "12" }
+    { "inputs": ["31158", "18442847100019644985"], "output": "18442847100019663759" },
+    { "inputs": ["31154", "31158"], "output": "4" },
+    { "inputs": ["31158", "31158"], "output": "0" },
+    { "inputs": ["31158", "31154"], "output": "4" }
   ],
   "xor_euint32_euint4": [
-    { "inputs": ["1", "1"], "output": "0" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["3625477729", "13"], "output": "3625477740" },
+    { "inputs": ["9", "13"], "output": "4" },
+    { "inputs": ["13", "13"], "output": "0" },
+    { "inputs": ["13", "9"], "output": "4" }
   ],
   "xor_euint32_euint8": [
-    { "inputs": ["1", "1"], "output": "0" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["2615810877", "184"], "output": "2615810949" },
+    { "inputs": ["180", "184"], "output": "12" },
+    { "inputs": ["184", "184"], "output": "0" },
+    { "inputs": ["184", "180"], "output": "12" }
   ],
   "xor_euint32_euint16": [
-    { "inputs": ["1", "1"], "output": "0" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["2697992454", "47573"], "output": "2698027219" },
+    { "inputs": ["47569", "47573"], "output": "4" },
+    { "inputs": ["47573", "47573"], "output": "0" },
+    { "inputs": ["47573", "47569"], "output": "4" }
   ],
   "xor_euint32_euint32": [
-    { "inputs": ["1", "1"], "output": "0" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["3727740302", "3007364521"], "output": "1836085287" },
+    { "inputs": ["3007364517", "3007364521"], "output": "12" },
+    { "inputs": ["3007364521", "3007364521"], "output": "0" },
+    { "inputs": ["3007364521", "3007364517"], "output": "12" }
   ],
   "xor_euint32_euint64": [
-    { "inputs": ["1", "2447"], "output": "2446" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["2536876532", "18445343517070927715"], "output": "18445343518833806999" },
+    { "inputs": ["2536876528", "2536876532"], "output": "4" },
+    { "inputs": ["2536876532", "2536876532"], "output": "0" },
+    { "inputs": ["2536876532", "2536876528"], "output": "4" }
   ],
   "xor_euint64_euint4": [
-    { "inputs": ["5602", "3"], "output": "5601" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["18444022948851042337", "14"], "output": "18444022948851042351" },
+    { "inputs": ["10", "14"], "output": "4" },
+    { "inputs": ["14", "14"], "output": "0" },
+    { "inputs": ["14", "10"], "output": "4" }
   ],
   "xor_euint64_euint8": [
-    { "inputs": ["5602", "5"], "output": "5607" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["18439418694946486147", "205"], "output": "18439418694946486094" },
+    { "inputs": ["201", "205"], "output": "4" },
+    { "inputs": ["205", "205"], "output": "0" },
+    { "inputs": ["205", "201"], "output": "4" }
   ],
   "xor_euint64_euint16": [
-    { "inputs": ["5602", "9"], "output": "5611" },
-    { "inputs": ["5", "9"], "output": "12" },
-    { "inputs": ["9", "9"], "output": "0" },
-    { "inputs": ["9", "5"], "output": "12" }
+    { "inputs": ["18443398919380985157", "45655"], "output": "18443398919380948754" },
+    { "inputs": ["45651", "45655"], "output": "4" },
+    { "inputs": ["45655", "45655"], "output": "0" },
+    { "inputs": ["45655", "45651"], "output": "4" }
   ],
   "xor_euint64_euint32": [
-    { "inputs": ["5602", "2"], "output": "5600" },
-    { "inputs": ["4", "8"], "output": "12" },
-    { "inputs": ["8", "8"], "output": "0" },
-    { "inputs": ["8", "4"], "output": "12" }
+    { "inputs": ["18445532500811503869", "2578227181"], "output": "18445532498506434320" },
+    { "inputs": ["2578227177", "2578227181"], "output": "4" },
+    { "inputs": ["2578227181", "2578227181"], "output": "0" },
+    { "inputs": ["2578227181", "2578227177"], "output": "4" }
   ],
   "xor_euint64_euint64": [
-    { "inputs": ["5602", "4581"], "output": "1031" },
-    { "inputs": ["4577", "4581"], "output": "4" },
-    { "inputs": ["4581", "4581"], "output": "0" },
-    { "inputs": ["4581", "4577"], "output": "4" }
+    { "inputs": ["18444700078916958431", "18443866708631144651"], "output": "3795455568392212" },
+    { "inputs": ["18443866708631144647", "18443866708631144651"], "output": "12" },
+    { "inputs": ["18443866708631144651", "18443866708631144651"], "output": "0" },
+    { "inputs": ["18443866708631144651", "18443866708631144647"], "output": "12" }
   ],
-  "not_euint4": [{ "inputs": ["1"], "output": "14" }],
-  "not_euint8": [{ "inputs": ["1"], "output": "254" }],
-  "not_euint16": [{ "inputs": ["5"], "output": "65530" }],
-  "not_euint32": [{ "inputs": ["1"], "output": "4294967294" }],
-  "not_euint64": [{ "inputs": ["51608"], "output": "18446744073709500007" }],
-  "neg_euint4": [{ "inputs": ["1"], "output": "15" }],
-  "neg_euint8": [{ "inputs": ["1"], "output": "255" }],
-  "neg_euint16": [{ "inputs": ["1"], "output": "65535" }],
-  "neg_euint32": [{ "inputs": ["1"], "output": "4294967295" }],
-  "neg_euint64": [{ "inputs": ["40511"], "output": "18446744073709511105" }]
+  "not_euint4": [{ "inputs": ["13"], "output": "2" }],
+  "not_euint8": [{ "inputs": ["187"], "output": "68" }],
+  "not_euint16": [{ "inputs": ["60538"], "output": "4997" }],
+  "not_euint32": [{ "inputs": ["2475211657"], "output": "1819755638" }],
+  "not_euint64": [{ "inputs": ["18443955194473722291"], "output": "2788879235829324" }],
+  "neg_euint4": [{ "inputs": ["11"], "output": "5" }],
+  "neg_euint8": [{ "inputs": ["251"], "output": "5" }],
+  "neg_euint16": [{ "inputs": ["25161"], "output": "40375" }],
+  "neg_euint32": [{ "inputs": ["2156295218"], "output": "2138672078" }],
+  "neg_euint64": [{ "inputs": ["18438244346234461619"], "output": "8499727475089997" }]
 }

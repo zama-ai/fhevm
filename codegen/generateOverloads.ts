@@ -46,8 +46,9 @@ const bigIntMax = (...args: bigint[]) => {
 const generateNumber = (bits: number) => {
   const power = BigInt(Math.pow(2, bits) - 1);
   const maxRange = bigIntMin(power, BigInt(Number.MAX_SAFE_INTEGER));
-  const divider = bigIntMax(BigInt(Math.floor(Math.random() * Number(maxRange))), 1n);
-  return bigIntMax(power / divider, 1n);
+  const substract = bigIntMax(BigInt(Math.floor(Math.random() * Number(maxRange))), 1n);
+  console.log(bits, power, substract);
+  return bigIntMax(power - substract, 1n);
 };
 
 const safeEval = (
@@ -209,8 +210,8 @@ export const generateTests = () => {
   Object.keys(SUPPORTED_FUNCTIONS).forEach((functionName: string) => {
     const test = SUPPORTED_FUNCTIONS[functionName];
     test.supportedBits.forEach((lhs: number) => {
-      let lhsNumber = generateNumber(lhs);
       if (test.unary) {
+        let lhsNumber = generateNumber(lhs);
         const encryptedTestName = [functionName, `euint${lhs}`].join('_');
         const encryptedTests: Test[] = [];
         encryptedTests.push({
@@ -221,6 +222,7 @@ export const generateTests = () => {
       } else {
         test.supportedBits.forEach((rhs: number) => {
           const bitResults = Math.min(lhs, rhs);
+          let lhsNumber = generateNumber(lhs);
           let rhsNumber = generateNumber(rhs);
           if (test.limit === 'bits') {
             rhsNumber = BigInt(1 + Math.floor(Math.random() * (rhs - 1)));
