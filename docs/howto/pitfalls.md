@@ -58,7 +58,7 @@ contract C {
 }
 ```
 
-In this last snippet, the `internal` keyword could have been omitted (state variables are private by default) or alternatively have been replaced by `private`.
+In this last snippet, the `internal` keyword could have been omitted (state variables are internal by default) or alternatively have been replaced by `private`.
 
 ## Protect access of view functions using reencryptions
 
