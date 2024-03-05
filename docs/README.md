@@ -1,36 +1,53 @@
-# Overview
+# Welcome to fhEVM
 
-📙 [White paper](https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper.pdf) | 📁 [Github](https://github.com/zama-ai/fhevm) | 💛 [Community support](https://zama.ai/community) | 🟨 [Zama Bounty Program](https://github.com/zama-ai/bounty-program)
+📙 [White paper](https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper.pdf) | ⭐️ [Star the repo on Github](https://github.com/zama-ai/fhevm) | 📚 [FHE resources by Zama](https://github.com/zama-ai/awesome-zama) | 💬 [Community support](https://zama.ai/community)&#x20;
 
-<figure><img src=".gitbook/assets/zama_doc_header_fhevm.png" alt=""><figcaption></figcaption></figure>
+<figure><img src=".gitbook/assets/doc header (6).png" alt=""><figcaption></figcaption></figure>
 
-## Bring confidential smart contracts to your blockchain with Zama's fhEVM
+**fhEVM** is a technology that enables confidential smart contracts on the EVM using Fully Homomorphic Encryption (FHE).
 
-There used to be a dilemma in blockchain: keep your application and user data on-chain, allowing everyone to see it, or keep it privately off-chain and lose contract composability. Thanks to a breakthrough in homomorphic encryption, Zama’s fhEVM makes it possible to run confidential smart contracts on encrypted data, guaranteeing both confidentiality and composability.
+### Start here
 
-## Build confidential dapps just as you would regular ones
+Learn the basics of fhEVM, set it up, and make it run with ease.
 
-fhEVM contracts are simple solidity contracts that are built using traditional solidity toolchains. ‍Developers can use the euint data types to mark which part of their contracts should be private. ‍All the logic for access control of encrypted states is defined by developers in their smart contracts.
+{% tabs %}
+{% tab title="Write a fhEVM smart contract in Solidity" %}
 
-## Use cases
+<table data-card-size="large" data-view="cards"><thead><tr><th align="center"></th><th data-hidden data-card-target data-type="content-ref"></th></tr></thead><tbody><tr><td align="center">What is fhEVM</td><td><a href="README (1).md">README (1).md</a></td></tr><tr><td align="center">Connecting to Zama Devnet</td><td><a href="getting_started/connect.md">connect.md</a></td></tr><tr><td align="center">Using Zama faucet</td><td><a href="getting_started/faucet.md">faucet.md</a></td></tr><tr><td align="center">Local dev node</td><td><a href="getting_started/local.md">local.md</a></td></tr></tbody></table>
+{% endtab %}
 
-- Tokenization: Swap tokens and RWAs on-chain without others seeing the amounts.
-- Blind auctions: Bid on items without revealing the amount or the winner.
-- On-chain games: Keep moves, selections, cards, or items hidden until ready to reveal.
-- Confidential voting: Prevents bribery and blackmailing by keeping votes private.
-- Encrypted DIDs: Store identities on-chain and generate attestations without ZK.
-- Private transfers: Keep balances and amounts private, without using mixers.
+{% tab title="Build blockchain cores with fhEVM" %}
 
-## Tutorials and examples
+<table data-card-size="large" data-view="cards"><thead><tr><th align="center"></th><th></th><th data-hidden data-card-target data-type="content-ref"></th></tr></thead><tbody><tr><td align="center"><strong>fhevm-go</strong></td><td>An open-source library to easily integrate the <a href="https://docs.zama.ai/fhevm">fhEVM</a> into an EVM-compatible blockchain. <br><br>The library helps EVM maintainers to extend their EVM with the power of FHE. </td><td><a href="https://docs.zama.ai/fhevm-go/what-is-fhevm-go/readme">https://docs.zama.ai/fhevm-go/what-is-fhevm-go/readme</a></td></tr></tbody></table>
+{% endtab %}
+{% endtabs %}
 
-- [🎥 Workshop during ETHcc](https://www.youtube.com/watch?v=eivfVykPP8U) \[by Morten Dahl — Zama]
-- [🎥 How to Write Confidential Smart Contracts Using Zama's fhEVM](https://www.youtube.com/watch?v=1FtbyHZwNX4) \[by Clément Danjou (Zama)]
-- [📃 Programmable Privacy and Onchain Compliance using Homomorphic Encryption](https://www.zama.ai/post/programmable-privacy-and-onchain-compliance-using-homomorphic-encryption) \[by Rand Hindi and Clément Danjou — Zama]
-- [📃 Confidential ERC-20 Tokens Using Homomorphic Encryption](https://www.zama.ai/post/confidential-erc-20-tokens-using-homomorphic-encryption) \[by \[Clément Danjou — Zama]
-- [📃 On-chain Blind Auctions Using Homomorphic Encryption](https://www.zama.ai/post/on-chain-blind-auctions-using-homomorphic-encryption) \[by Clément Danjou — Zama]
-- [🖥️ ERC-20](https://github.com/zama-ai/fhevm/blob/main/examples/EncryptedERC20.sol)
-- [🖥️ Blind Auction](https://github.com/zama-ai/fhevm/blob/main/examples/BlindAuction.sol)
-- [🖥️ Governor DAO](https://github.com/zama-ai/fhevm/tree/main/examples/Governor)
-- [🖥️ Mixnet](https://github.com/anonymousGifter/mixnet-core) \[by [Remi Gai](https://github.com/remi-gai)]
-- [🖥️ Battleship](https://github.com/battleship-fhevm/battleship-hardhat) \[by [Owen Murovec](https://github.com/omurovec)]
-- [🖥️ Darkpool](https://github.com/omurovec/fhe-darkpools) \[by [Owen Murovec](https://github.com/omurovec)]
+### Develop a fhEVM smart contract
+
+Start developing fhEVM smart contracts in Solidity by exploring its core features, following deployment guides, and diving into user-friendly tutorials step by step.
+
+<table data-view="cards"><thead><tr><th align="center"></th><th></th><th></th><th data-hidden data-card-cover data-type="files"></th></tr></thead><tbody><tr><td align="center"><strong>Fundamentals</strong></td><td>Explore core features of the fhEVM Solidity library with and code examples.</td><td><ul><li><a href="fundamentals/write_contract/">Write contract</a></li><li><a href="fundamentals/types.md">Use encrypted types</a></li><li><a href="fundamentals/conditions.md">Write conditions</a></li><li><a href="fundamentals/decrypt.md">Decrypt and reencrypt</a></li></ul></td><td><a href=".gitbook/assets/3.png">3.png</a></td></tr><tr><td align="center"><strong>Guides</strong></td><td>Discover essential deployment guides to streamline your fhEVM smart contract.</td><td><ul><li><a href="guides/gas.md">Estimate gas</a></li><li><a href="guides/pitfalls.md">Common pitfalls and best practices </a></li><li><a href="guides/client-sdk/">Client SDK</a></li></ul></td><td><a href=".gitbook/assets/2.png">2.png</a></td></tr><tr><td align="center"><strong>Tutorials</strong></td><td>Follow step-by-step guides to build use case examples with fhEVM</td><td><ul><li><a href="tutorials/see-all-tutorials.md#start-here">Start here</a></li><li><a href="tutorials/see-all-tutorials.md#go-further">Go further</a></li></ul></td><td><a href=".gitbook/assets/1.png">1.png</a></td></tr></tbody></table>
+
+### References
+
+Refer to the API and access additional resources for in-depth explanations while working with fhEVM.
+
+<table data-card-size="large" data-view="cards"><thead><tr><th align="center"></th><th data-hidden data-card-target data-type="content-ref"></th></tr></thead><tbody><tr><td align="center">API Function specifications</td><td><a href="references/functions.md">functions.md</a></td></tr><tr><td align="center">Repositories</td><td><a href="references/repositories.md">repositories.md</a></td></tr></tbody></table>
+
+### Support
+
+Our team of experts usually answers within 24 hours in working days.
+
+<table data-view="cards"><thead><tr><th align="center"></th><th></th><th data-hidden data-card-target data-type="content-ref"></th></tr></thead><tbody><tr><td align="center"><strong>💬 Community forum</strong></td><td>Raise your technical problems and find solutions to common issues.</td><td></td></tr><tr><td align="center"><strong>👾 Discord channel</strong></td><td>Discuss FHE-related topics with our research team and the community on live.</td><td></td></tr><tr><td align="center"><strong>🗣️ Telegram</strong></td><td>Be the first to know fhEVM novel use cases and dApp design patterns.</td><td><a href="https://t.me/+Ojt5y-I7oR42MTkx">https://t.me/+Ojt5y-I7oR42MTkx</a></td></tr></tbody></table>
+
+### Developer
+
+- [Contribute to fhEVM](https://github.com/zama-ai/fhevm?tab=readme-ov-file#developer-guide)
+- [Development Roadmap](developer/roadmap.md)
+- [Latest release note](https://github.com/zama-ai/fhevm/releases)
+- [Feature request](https://github.com/zama-ai/fhevm/issues/new)
+- [Bug report](https://github.com/zama-ai/fhevm/issues/new)
+
+---
+
+<figure><picture><source srcset=".gitbook/assets/8.png" media="(prefers-color-scheme: dark)"><img src=".gitbook/assets/5.png" alt=""></picture><figcaption></figcaption></figure>
