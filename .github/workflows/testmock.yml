@@ -1,0 +1,25 @@
+name: Pull request tests with mocks
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18.x]
+    steps:
+      - uses: actions/checkout@v3
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.node-version }}
+      - run: cp .env.example .env
+      - run: npm ci
+      - name: "npm CI test"
+        run: |
+          # sometimes not created and is not tailed
+          npm run test:mock

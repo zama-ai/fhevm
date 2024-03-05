@@ -5309,6 +5309,11 @@ library TFHE {
         return euint4.wrap(Impl.trivialEncrypt(value, Common.euint4_t));
     }
 
+    // Decrypts the encrypted 'value'.
+    function decrypt(euint4 value) internal view returns (uint8) {
+        return uint8(Impl.decrypt(euint4.unwrap(value)));
+    }
+
     // Reencrypt the given 'value' under the given 'publicKey'.
     // Return a serialized euint4 ciphertext.
     function reencrypt(euint4 value, bytes32 publicKey) internal view returns (bytes memory reencrypted) {
@@ -5330,11 +5335,6 @@ library TFHE {
         }
     }
 
-    // Decrypts the encrypted 'value'.
-    function decrypt(euint4 value) internal view returns (uint8) {
-        return uint8(Impl.decrypt(euint4.unwrap(value)));
-    }
-
     // Convert a serialized 'ciphertext' to an encrypted euint8 integer.
     function asEuint8(bytes memory ciphertext) internal pure returns (euint8) {
         return euint8.wrap(Impl.verify(ciphertext, Common.euint8_t));
@@ -5343,6 +5343,11 @@ library TFHE {
     // Convert a plaintext value to an encrypted euint8 integer.
     function asEuint8(uint256 value) internal pure returns (euint8) {
         return euint8.wrap(Impl.trivialEncrypt(value, Common.euint8_t));
+    }
+
+    // Decrypts the encrypted 'value'.
+    function decrypt(euint8 value) internal view returns (uint8) {
+        return uint8(Impl.decrypt(euint8.unwrap(value)));
     }
 
     // Reencrypt the given 'value' under the given 'publicKey'.
@@ -5366,11 +5371,6 @@ library TFHE {
         }
     }
 
-    // Decrypts the encrypted 'value'.
-    function decrypt(euint8 value) internal view returns (uint8) {
-        return uint8(Impl.decrypt(euint8.unwrap(value)));
-    }
-
     // Convert a serialized 'ciphertext' to an encrypted euint16 integer.
     function asEuint16(bytes memory ciphertext) internal pure returns (euint16) {
         return euint16.wrap(Impl.verify(ciphertext, Common.euint16_t));
@@ -5379,6 +5379,11 @@ library TFHE {
     // Convert a plaintext value to an encrypted euint16 integer.
     function asEuint16(uint256 value) internal pure returns (euint16) {
         return euint16.wrap(Impl.trivialEncrypt(value, Common.euint16_t));
+    }
+
+    // Decrypts the encrypted 'value'.
+    function decrypt(euint16 value) internal view returns (uint16) {
+        return uint16(Impl.decrypt(euint16.unwrap(value)));
     }
 
     // Reencrypt the given 'value' under the given 'publicKey'.
@@ -5402,11 +5407,6 @@ library TFHE {
         }
     }
 
-    // Decrypts the encrypted 'value'.
-    function decrypt(euint16 value) internal view returns (uint16) {
-        return uint16(Impl.decrypt(euint16.unwrap(value)));
-    }
-
     // Convert a serialized 'ciphertext' to an encrypted euint32 integer.
     function asEuint32(bytes memory ciphertext) internal pure returns (euint32) {
         return euint32.wrap(Impl.verify(ciphertext, Common.euint32_t));
@@ -5415,6 +5415,11 @@ library TFHE {
     // Convert a plaintext value to an encrypted euint32 integer.
     function asEuint32(uint256 value) internal pure returns (euint32) {
         return euint32.wrap(Impl.trivialEncrypt(value, Common.euint32_t));
+    }
+
+    // Decrypts the encrypted 'value'.
+    function decrypt(euint32 value) internal view returns (uint32) {
+        return uint32(Impl.decrypt(euint32.unwrap(value)));
     }
 
     // Reencrypt the given 'value' under the given 'publicKey'.
@@ -5438,11 +5443,6 @@ library TFHE {
         }
     }
 
-    // Decrypts the encrypted 'value'.
-    function decrypt(euint32 value) internal view returns (uint32) {
-        return uint32(Impl.decrypt(euint32.unwrap(value)));
-    }
-
     // Convert a serialized 'ciphertext' to an encrypted euint64 integer.
     function asEuint64(bytes memory ciphertext) internal pure returns (euint64) {
         return euint64.wrap(Impl.verify(ciphertext, Common.euint64_t));
@@ -5451,6 +5451,11 @@ library TFHE {
     // Convert a plaintext value to an encrypted euint64 integer.
     function asEuint64(uint256 value) internal pure returns (euint64) {
         return euint64.wrap(Impl.trivialEncrypt(value, Common.euint64_t));
+    }
+
+    // Decrypts the encrypted 'value'.
+    function decrypt(euint64 value) internal view returns (uint64) {
+        return uint64(Impl.decrypt(euint64.unwrap(value)));
     }
 
     // Reencrypt the given 'value' under the given 'publicKey'.
@@ -5472,11 +5477,6 @@ library TFHE {
         } else {
             return Impl.reencrypt(euint64.unwrap(asEuint64(defaultValue)), publicKey);
         }
-    }
-
-    // Decrypts the encrypted 'value'.
-    function decrypt(euint64 value) internal view returns (uint64) {
-        return uint64(Impl.decrypt(euint64.unwrap(value)));
     }
 
     // Optimistically require that 'b' is true.
@@ -5501,11 +5501,6 @@ library TFHE {
     // of how many optimistic requires were used.
     function optReq(ebool b) internal view {
         Impl.optReq(euint8.unwrap(asEuint8(b)));
-    }
-
-    // Decrypts the encrypted 'value'.
-    function decrypt(ebool value) internal view returns (bool) {
-        return (Impl.decrypt(ebool.unwrap(value)) != 0);
     }
 
     // Reencrypt the given 'value' under the given 'publicKey'.
@@ -5571,6 +5566,11 @@ library TFHE {
     // Important: The random integer is generated in the plain! An FHE-based version is coming soon.
     function randEuint32(uint32 upperBound) internal view returns (euint32) {
         return euint32.wrap(Impl.randBounded(upperBound, Common.euint32_t));
+    }
+
+    // Decrypts the encrypted 'value'.
+    function decrypt(ebool value) internal view returns (bool) {
+        return (Impl.decrypt(ebool.unwrap(value)) != 0);
     }
 }
 

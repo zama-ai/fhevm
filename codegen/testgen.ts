@@ -1,6 +1,5 @@
 import { strict as assert } from 'node:assert';
 
-import { Operator } from './common';
 import { overloadTests } from './overloadTests';
 import { getUint } from './utils';
 

@@ -146,12 +146,18 @@ library Impl {
             result = uint256(uint8(ciphertext));
         }
         if (toType == 1) {
-            result = uint256(uint16(ciphertext));
+            result = uint256(uint8(ciphertext));
         }
         if (toType == 2) {
-            result = uint256(uint32(ciphertext));
+            result = uint256(uint8(ciphertext));
         }
         if (toType == 3) {
+            result = uint256(uint16(ciphertext));
+        }
+        if (toType == 4) {
+            result = uint256(uint32(ciphertext));
+        }
+        if (toType == 5) {
             result = uint256(uint64(ciphertext));
         }
     }
