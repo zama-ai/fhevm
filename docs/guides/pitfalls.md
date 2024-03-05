@@ -1,6 +1,8 @@
-# Common pitfalls to avoid
+# Common pitfalls and best practises
 
-## No constant nor immutable encrypted state variables
+## Common pitfalls to avoid
+
+### No constant nor immutable encrypted state variables
 
 Never use encrypted types for constant or immutable state variables, even if they should actually stay constants, or else any transaction involving those will fail. This is because ciphertexts should always be stored in the privileged storage of the contract (see parapgraph 4.4 of [whitepaper](../../fhevm-whitepaper.pdf)) while constant and immutable variables are just appended to the bytecode of the deployed contract at construction time.
 
@@ -30,7 +32,7 @@ contract C {
 }
 ```
 
-## Never use public encrypted state variables
+### Never use public encrypted state variables
 
 Declaring an encrypted state variable as public exposes the variable to any external untrusted smart contract to access and potentially decrypt them, compromising their confidentiality.
 
@@ -60,13 +62,13 @@ contract C {
 
 In this last snippet, the `internal` keyword could have been omitted (state variables are internal by default) or alternatively have been replaced by `private`.
 
-## Protect access of view functions using reencryptions
+### Protect access of view functions using reencryptions
 
-If a view function is using `TFHE.reencrypt` it is mandatory to protect its access to not leak confidentiality, for instance this is doable easily via the `onlySignedPublicKey` modifier imported from `"fhevm/abstracts/Reencrypt.sol"`. See the example from the [Decrypt page](decrypt.md#handle-private-reencryption). Failing to address this allows anyone to reencrypt another person's ciphertext. This vulnerability comes from the ability to impersonate any `msg.sender` address during a static call to a view function, as it does not require a signature, unlike transactions.
+If a view function is using `TFHE.reencrypt` it is mandatory to protect its access to not leak confidentiality, for instance this is doable easily via the `onlySignedPublicKey` modifier imported from `"fhevm/abstracts/Reencrypt.sol"`. See the example from the [Decrypt page](../fundamentals/decrypt.md#handle-private-reencryption). Failing to address this allows anyone to reencrypt another person's ciphertext. This vulnerability comes from the ability to impersonate any `msg.sender` address during a static call to a view function, as it does not require a signature, unlike transactions.
 
-# Best practises
+## Best practises
 
-## Avoid using TFHE.decrypt, use TFHE.cmux instead
+### Avoid using TFHE.decrypt, use TFHE.cmux instead
 
 Any use of decryption should be avoided as much as possible. Current version of `TFHE.decrypt` will soon be deprecated and get replaced by an asynchronous version, so please consider this operator as a very expensive one which should be used only if absolutely necessary.
 
@@ -92,7 +94,7 @@ ebool condition = TFHE.gt(x,5)
 x = TFHE.cmux(condition, TFHE.asEuint(0), TFHE.asEuint(42));
 ```
 
-## Obfuscate branching
+### Obfuscate branching
 
 The previous paragraph emphasized that branch logic should rely as much as possible on `TFHE.cmux` instead of decryptions. It hides effectively which branch has been executed.
 
@@ -136,9 +138,9 @@ Notice that to preserve confidentiality, we had to make two inputs transfers on 
 
 This is different from a classical non-confidential AMM with regular ERC20 tokens: in this case, the user would need to just do one input transfer to the AMM on the token being sold, and receive only one output transfer from the AMM on the token being bought.
 
-## Avoid using while loops with an encrypted condition
+### Avoid using while loops with an encrypted condition
 
-❌ Avoid using this type of loop because it might require many decryption operations, and in the example given, we're also leaking how much was added to `x`, which may not be intended behavior.:
+❌ Avoid using this type of loop because it might require many decryption operations:
 
 ```solidity
 ebool isTrue;
@@ -165,7 +167,7 @@ for (uint32 i = 0; i < 5; i++) {
 }
 ```
 
-## Avoid using encrypted indexes
+### Avoid using encrypted indexes
 
 Using encrypted indexes to pick an element from an array without revealing it is not very efficient, because you would still need to loop on all the indexes to preserve confidentiality.
 
@@ -188,7 +190,7 @@ function setXwithEncryptedIndex(bytes calldata encryptedIndex) public {
 }
 ```
 
-## Use scalar operands when possible to save gas
+### Use scalar operands when possible to save gas
 
 Some TFHE operators exist in two versions : one where all operands are ciphertexts handles, and another where one of the operands is an unencrypted scalar. Whenever possible, use the scalar operand version, as this will save a lot of gas. See the page on [Gas](gas.md) to discover which operators support scalar operands and compare the gas saved between both versions: all-encrypted operands vs scalar.
 
@@ -210,7 +212,7 @@ x = TFHE.add(x,42);
 
 Despite both leading to the same encrypted result!
 
-## Beware of overflows of TFHE arithmetic operators
+### Beware of overflows of TFHE arithmetic operators
 
 TFHE arithmetic operators can overflow. Do not forget to take into account such a possibility when implementing fhEVM smart contracts.
 

@@ -26,12 +26,9 @@ For the same reason, you should replace a `require(TFHE.decrypt(encryptedBool1) 
 
 The reencrypt functions takes as inputs a ciphertext and a public encryption key (namely, a [NaCl box](https://nacl.cr.yp.to/index.html)).
 
-During reencryption, the ciphertext is decrypted using the network private key (the threshold decryption protocol is in the works).
-Then, the decrypted result is encrypted under the user-provided public encryption key.
-The result of this encryption is sent back to the caller as `bytes memory`.
+During reencryption, the ciphertext is decrypted using the network private key (the threshold decryption protocol is in the works). Then, the decrypted result is encrypted under the user-provided public encryption key. The result of this encryption is sent back to the caller as `bytes memory`.
 
-It is also possible to provide a default value to the `reencrypt` function.
-In this case, if the provided ciphertext is not initialized (i.e., if the ciphertext handle is `0`), the function will return an encryption of the provided default value.
+It is also possible to provide a default value to the `reencrypt` function. In this case, if the provided ciphertext is not initialized (i.e., if the ciphertext handle is `0`), the function will return an encryption of the provided default value.
 
 ### Example
 
@@ -39,7 +36,7 @@ In this case, if the provided ciphertext is not initialized (i.e., if the cipher
 TFHE.reencrypt(balances[msg.sender], publicKey, 0);
 ```
 
-> **_NOTE:_** If one of the following operations is called with an uninitialized ciphertext handle as an operand, this handle will be made to point to a trivial encryption of `0` before the operation is executed.
+> _**NOTE:**_ If one of the following operations is called with an uninitialized ciphertext handle as an operand, this handle will be made to point to a trivial encryption of `0` before the operation is executed.
 
 ### Handle private reencryption
 
@@ -64,4 +61,4 @@ function balanceOf(
 }
 ```
 
-This signature can be generated on client side using [fhevmjs library](../client/reencryption.md).
+This signature can be generated on client side using [fhevmjs library](../guides/client-sdk/reencryption.md).

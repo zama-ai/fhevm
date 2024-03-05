@@ -1,10 +1,10 @@
 # Write conditions
 
-The result of [comparison operations](../api/functions.md#comparison-operation-eq-ne-ge-gt-le-lt) is of type `ebool`. Typical boolean operations are not supported for this type, because it is an encrypted boolean.
+The result of [comparison operations](../references/functions.md#comparison-operation-eq-ne-ge-gt-le-lt) is of type `ebool`. Typical boolean operations are not supported for this type, because it is an encrypted boolean.
 
 ## Condition with encrypted boolean
 
-fhEVM provides a method which acts as a ternary operator on encrypted integers. This method is called [cmux](../api/functions.md#multiplexer-operator-cmux).
+fhEVM provides a method which acts as a ternary operator on encrypted integers. This method is called [cmux](../references/functions.md#multiplexer-operator-cmux).
 
 ```solidity
 function bid(bytes calldata encryptedBid) internal {
