@@ -35,8 +35,8 @@ describe('TestAsyncDecrypt', function () {
       // An oracle was already deployed at ORACLE_PREDEPLOY_ADDRESS, check that is indeed the OraclePredploy contract by comparing hashes
       const codeHash = ethers.keccak256(codeAtAddress);
       if (
-        codeHash === '0x0cc63344ed0c9df080a56306bd363c6dc3618618cf3c2d77f0367c9fc745d99c' ||
-        codeHash === '0xdbf7e8e8bf5f776cb8b101f95ca1ff1ab161df3f9eb1f31cb39bfa66e9ba0034'
+        codeHash === '0xa81c332349ede3c96d697c732fa5a6f98338f6cc4fdc43c3909bffd3cb7dbd00' ||
+        codeHash === '0x808db48789429e5f79adb9849400e0d01c5c0f017663f06c6b2ab48f2eeae10e'
       ) {
         // it is indeed the OraclePredploy because it codeHashes are matching on either hardhat node (mocked mode) or on the fhevm node
         this.oracle = await ethers.getContractAt('OraclePredeployTest', addressToCheck);
@@ -56,8 +56,92 @@ describe('TestAsyncDecrypt', function () {
     this.contract = await contractFactory.connect(this.alice).deploy();
   });
 
-  it('test async decrypt', async function () {
-    const tx2 = await this.contract.connect(this.signers.carol).request(5, 15, { gasLimit: 5_000_000 });
+  it('test async decrypt bool', async function () {
+    const tx2 = await this.contract.connect(this.signers.carol).requestBool({ gasLimit: 5_000_000 });
+    await tx2.wait();
+    const filter = this.oracle.filters.EventDecryptionEBool;
+    const events = await this.oracle.queryFilter(filter, -1);
+    const event = events[0];
+    const args = event.args;
+    const requestID = args[0];
+    const handlesCTs = args[1];
+    // the relayer will call the endpoint getCipherText() on a node to get the ciphertexts bytes arrays from this array of handles
+    // + Merkle proof that the event was indeed emitted by the Oracle contract with this handle and send all this data to the KMS
+    // then the KMS will check the Merkle Proof of the event + check that indeed hash(ciphertext)=handleCT for each handleCT
+
+    const msgValue = args[4];
+
+    // Here we simulate the threshold decryption by the KMS
+    const resultDecryption = await this.oracle.connect(this.signers.bob).decryptTestBool(requestID);
+
+    // Finally the relayer submit a tx to fulfill the decryption request and execute the callback before the timeout
+    const tx3 = await this.oracle
+      .connect(this.signers.bob)
+      .fulfillRequestBool(requestID, [resultDecryption], { value: msgValue });
+    await tx3.wait();
+
+    const y = await this.contract.yBool();
+    expect(y).to.equal(true);
+  });
+
+  it('test async decrypt uint8', async function () {
+    const tx2 = await this.contract.connect(this.signers.carol).requestUint8({ gasLimit: 5_000_000 });
+    await tx2.wait();
+    const filter = this.oracle.filters.EventDecryptionEUint8;
+    const events = await this.oracle.queryFilter(filter, -1);
+    const event = events[0];
+    const args = event.args;
+    const requestID = args[0];
+    const handlesCTs = args[1];
+    // the relayer will call the endpoint getCipherText() on a node to get the ciphertexts bytes arrays from this array of handles
+    // + Merkle proof that the event was indeed emitted by the Oracle contract with this handle and send all this data to the KMS
+    // then the KMS will check the Merkle Proof of the event + check that indeed hash(ciphertext)=handleCT for each handleCT
+
+    const msgValue = args[4];
+
+    // Here we simulate the threshold decryption by the KMS
+    const resultDecryption = await this.oracle.connect(this.signers.bob).decryptTestUint8(requestID);
+
+    // Finally the relayer submit a tx to fulfill the decryption request and execute the callback before the timeout
+    const tx3 = await this.oracle
+      .connect(this.signers.bob)
+      .fulfillRequestUint8(requestID, [resultDecryption], { value: msgValue });
+    await tx3.wait();
+
+    const y = await this.contract.yUint8();
+    expect(y).to.equal(8);
+  });
+
+  it('test async decrypt uint16', async function () {
+    const tx2 = await this.contract.connect(this.signers.carol).requestUint16({ gasLimit: 5_000_000 });
+    await tx2.wait();
+    const filter = this.oracle.filters.EventDecryptionEUint16;
+    const events = await this.oracle.queryFilter(filter, -1);
+    const event = events[0];
+    const args = event.args;
+    const requestID = args[0];
+    const handlesCTs = args[1];
+    // the relayer will call the endpoint getCipherText() on a node to get the ciphertexts bytes arrays from this array of handles
+    // + Merkle proof that the event was indeed emitted by the Oracle contract with this handle and send all this data to the KMS
+    // then the KMS will check the Merkle Proof of the event + check that indeed hash(ciphertext)=handleCT for each handleCT
+
+    const msgValue = args[4];
+
+    // Here we simulate the threshold decryption by the KMS
+    const resultDecryption = await this.oracle.connect(this.signers.bob).decryptTestUint16(requestID);
+
+    // Finally the relayer submit a tx to fulfill the decryption request and execute the callback before the timeout
+    const tx3 = await this.oracle
+      .connect(this.signers.bob)
+      .fulfillRequestUint16(requestID, [resultDecryption], { value: msgValue });
+    await tx3.wait();
+
+    const y = await this.contract.yUint16();
+    expect(y).to.equal(16);
+  });
+
+  it('test async decrypt uint32', async function () {
+    const tx2 = await this.contract.connect(this.signers.carol).requestUint32(5, 15, { gasLimit: 5_000_000 });
     await tx2.wait();
     const filter = this.oracle.filters.EventDecryptionEUint32;
     const events = await this.oracle.queryFilter(filter, -1);
@@ -72,7 +156,7 @@ describe('TestAsyncDecrypt', function () {
     const msgValue = args[4];
 
     // Here we simulate the threshold decryption by the KMS
-    const resultDecryption = await this.oracle.connect(this.signers.bob).decryptTest(requestID);
+    const resultDecryption = await this.oracle.connect(this.signers.bob).decryptTestUint32(requestID);
 
     // Finally the relayer submit a tx to fulfill the decryption request and execute the callback before the timeout
     const tx3 = await this.oracle
@@ -80,7 +164,35 @@ describe('TestAsyncDecrypt', function () {
       .fulfillRequestUint32(requestID, [resultDecryption], { value: msgValue });
     await tx3.wait();
 
-    const y = await this.contract.y();
+    const y = await this.contract.yUint32();
     expect(y).to.equal(52); // 5+15+32
+  });
+
+  it('test async decrypt uint64', async function () {
+    const tx2 = await this.contract.connect(this.signers.carol).requestUint64({ gasLimit: 5_000_000 });
+    await tx2.wait();
+    const filter = this.oracle.filters.EventDecryptionEUint64;
+    const events = await this.oracle.queryFilter(filter, -1);
+    const event = events[0];
+    const args = event.args;
+    const requestID = args[0];
+    const handlesCTs = args[1];
+    // the relayer will call the endpoint getCipherText() on a node to get the ciphertexts bytes arrays from this array of handles
+    // + Merkle proof that the event was indeed emitted by the Oracle contract with this handle and send all this data to the KMS
+    // then the KMS will check the Merkle Proof of the event + check that indeed hash(ciphertext)=handleCT for each handleCT
+
+    const msgValue = args[4];
+
+    // Here we simulate the threshold decryption by the KMS
+    const resultDecryption = await this.oracle.connect(this.signers.bob).decryptTestUint64(requestID);
+
+    // Finally the relayer submit a tx to fulfill the decryption request and execute the callback before the timeout
+    const tx3 = await this.oracle
+      .connect(this.signers.bob)
+      .fulfillRequestUint64(requestID, [resultDecryption], { value: msgValue });
+    await tx3.wait();
+
+    const y = await this.contract.yUint64();
+    expect(y).to.equal(64);
   });
 });
