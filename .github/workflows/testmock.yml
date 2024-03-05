@@ -1,4 +1,4 @@
-name: Pull request tests
+name: Pull request tests with mocks
 
 on:
   pull_request:
