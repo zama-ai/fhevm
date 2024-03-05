@@ -1,5 +1,4 @@
 import overloads from './overloads.json';
-import { OverloadSignature, signatureContractMethodName } from './testgen';
 
 type OverloadTestJSON = {
   inputs: (number | bigint | string)[];
