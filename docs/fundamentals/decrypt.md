@@ -61,4 +61,4 @@ function balanceOf(
 }
 ```
 
-This signature can be generated on client side using [fhevmjs library](../guides/client-sdk/reencryption.md).
+This signature can be generated on client side using [fhevmjs library](../guides/reencryption.md).

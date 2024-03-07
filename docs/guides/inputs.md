@@ -1,4 +1,4 @@
-# Encrypt an input
+# How to encrypt an input
 
 The library provides a set of functions to encrypt integers of various sizes (Bool, 4, 8, 16, 32 and 64 bits) using the blockchain's public key. These encrypted integers can then be securely used as parameters for smart contract methods within the blockchain ecosystem.
 
