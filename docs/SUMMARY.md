@@ -2,16 +2,13 @@
 
 - [Welcome to fhEVM](README.md)
 
-## What is Zama's fhEVM
-
-- [Overview](overview.md)
-- [Whitepaper](https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper.pdf)
-
 ## Getting Started
 
+- [What is fhEVM](getting-started/overview.md)
 - [Connecting to Zama Devnet](getting_started/connect.md)
 - [Using Zama Faucet](getting_started/faucet.md)
 - [Local dev node](getting_started/local.md)
+- [Whitepaper](https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper.pdf)
 
 ## Fundamentals
 
@@ -21,9 +18,9 @@
   - [Other development environment](fundamentals/write_contract/others.md)
 - [Use encrypted types](fundamentals/types.md)
 - [Operations on encrypted types](fundamentals/operations.md)
-- [Generate random number](fundamentals/random.md)
 - [Write conditions](fundamentals/conditions.md)
 - [Decrypt and reencrypt](fundamentals/decrypt.md)
+- [Generate random number](fundamentals/random.md)
 
 ## Guides
 
@@ -38,6 +35,7 @@
 ## Tutorials
 
 - [See all tutorials](tutorials/see-all-tutorials.md)
+- [Write confidential smart contract with fhEVM](https://www.zama.ai/post/video-tutorial-how-to-write-confidential-smart-contracts-using-zamas-fhevm)
 
 ## References
 
@@ -46,5 +44,8 @@
 
 ## Developer
 
+- [Contributing](developer/contribute.md)
 - [Development roadmap](developer/roadmap.md)
-- [Contribute](developer/contribute.md)
+- [Release note](https://github.com/zama-ai/fhevm/releases)
+- [Feature request](https://github.com/zama-ai/fhevm/issues/new)
+- [Bug report](https://github.com/zama-ai/fhevm/issues/new)

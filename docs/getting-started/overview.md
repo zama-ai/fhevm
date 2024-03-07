@@ -1,8 +1,8 @@
-# Overview
+# What is fhEVM
 
 📙 [White paper](https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper.pdf) | 📁 [Github](https://github.com/zama-ai/fhevm) | 💛 [Community support](https://zama.ai/community) | 🟨 [Zama Bounty Program](https://github.com/zama-ai/bounty-program)
 
-<figure><img src=".gitbook/assets/zama_doc_header_fhevm.png" alt=""><figcaption></figcaption></figure>
+<figure><img src="../.gitbook/assets/zama_doc_header_fhevm.png" alt=""><figcaption></figcaption></figure>
 
 ## Bring confidential smart contracts to your blockchain with Zama's fhEVM
 
