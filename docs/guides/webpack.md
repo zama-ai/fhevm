@@ -1,4 +1,4 @@
-## How to fix webpack build
+# Use webpack build
 
 ## "Module not found: Error: Can't resolve 'tfhe_bg.wasm'"
 

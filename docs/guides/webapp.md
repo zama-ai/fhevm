@@ -1,4 +1,4 @@
-# How to build a web application
+# Build a web application
 
 ## Using a template
 

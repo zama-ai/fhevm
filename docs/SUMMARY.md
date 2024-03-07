@@ -29,11 +29,11 @@
 
 - [Gas estimation](guides/gas.md)
 - [Common pitfalls and best practises](guides/pitfalls.md)
-- [How to encrypt an input](guides/inputs.md)
-- [How to encrypt an input using a CLI](guides/cli.md)
-- [How to build a web application](guides/webapp.md)
-- [How to build with NodeJS](guides/node.md)
-- [How to debug webpack build](guides/webpack.md)
+- [Encrypt an input](guides/inputs.md)
+- [Use the CLI](guides/cli.md)
+- [Build a web application](guides/webapp.md)
+- [Build with Node](guides/node.md)
+- [Use webpack build](guides/webpack.md)
 
 ## Tutorials
 
