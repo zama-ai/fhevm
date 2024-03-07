@@ -25,7 +25,7 @@ FHE operations are typically more computationally expensive than classical opera
 | `shr`/`shl` (scalar) | 35,000  |
 | `eq`/`ne`            | 51,000  |
 | `ge`/`gt`/`le`/`lt`  | 70,000  |
-| `min`/`max`          | 116,000 |
+| `min`/`max`          | 121,000 |
 | `min`/`max` (scalar) | 121,000 |
 | `neg`                | 60,000  |
 | `not`                | 33,000  |
@@ -48,8 +48,8 @@ FHE operations are typically more computationally expensive than classical opera
 | `shr`/`shl` (scalar) | 35,000  |
 | `eq`/`ne`            | 53,000  |
 | `ge`/`gt`/`le`/`lt`  | 82,000  |
-| `min`/`max`          | 118,000 |
-| `min`/`max` (scalar) | 124,000 |
+| `min`/`max`          | 128,000 |
+| `min`/`max` (scalar) | 128,000 |
 | `neg`                | 95,000  |
 | `not`                | 34,000  |
 | `cmux`               | 47,000  |
