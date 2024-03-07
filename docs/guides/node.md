@@ -40,4 +40,4 @@ createFhevmInstance().then((instance) => {
 });
 ```
 
-You can now use your instance to encrypt parameters or do a reencryption.
+You can now use your instance to [encrypt parameters](inputs.md) or do a [reencryption](reencryption.md).
