@@ -13,13 +13,13 @@ yarn add fhevmjs
 pnpm add fhevmjs
 ```
 
-`fhevmjs` uses ESM format for web version and commonjs for node version. You need to set the [type to "commonjs" in your package.json](https://nodejs.org/api/packages.html#type) to load the correct version.
+`fhevmjs` uses ESM format for web version and commonjs for node version. You need to set the [type to "commonjs" in your package.json](https://nodejs.org/api/packages.html#type) to load the correct version of fhevmjs. If your node project use `"type": "module"`, you can force the loading of the Node version by using `import { createInstance } from 'fhevmjs/node';`
 
 ## Create an instance
 
 ```javascript
 const { createInstance } = require("fhevmjs");
-const ethers, { JsonRpcProvider } = require("ethers");
+const { ethers, JsonRpcProvider } = require("ethers");
 
 const provider = new JsonRpcProvider(`https://devnet.zama.ai/`);
 
@@ -40,4 +40,4 @@ createFhevmInstance().then((instance) => {
 });
 ```
 
-You can now use your instance to [encrypt parameters](inputs.md) or do a [reencryption](reencryption.md).
+You can now use your instance to [encrypt parameters](./inputs.md) or do a [reencryption](./reencryption.md).

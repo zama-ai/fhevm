@@ -31,7 +31,7 @@ yarn add fhevmjs
 pnpm add fhevmjs
 ```
 
-`fhevmjs` uses ESM format. You need to set the [type to "module" in your package.json](https://nodejs.org/api/packages.html#type).
+`fhevmjs` uses ESM format. You need to set the [type to "module" in your package.json](https://nodejs.org/api/packages.html#type). If your node project use `"type": "commonjs"` or no type, you can force the loading of the web version by using `import { createInstance } from 'fhevmjs/web';`
 
 To use the library in your project, you need to load the WASM of [TFHE](https://www.npmjs.com/package/tfhe) first with `initFhevm`.
 
@@ -53,7 +53,7 @@ Once the WASM is loaded, you can now create an instance. An instance needs two e
 - The blockchain' chain ID. This value is needed for reencryption process.
 
 ```javascript
-import { BrowserProvider } from "ethers";
+import { ethers, BrowserProvider } from "ethers";
 import { initFhevm, createInstance, getPublicKeyCallParams } from "fhevmjs";
 
 const createFhevmInstance = async () => {
@@ -80,4 +80,4 @@ init().then((instance) => {
 });
 ```
 
-You can now use your instance to [encrypt parameters](inputs.md) or do a [reencryption](reencryption.md).
+You can now use your instance to [encrypt parameters](./inputs.md) or do a [reencryption](./reencryption.md).
