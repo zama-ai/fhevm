@@ -14,7 +14,7 @@ From the homepage of your wallet, click on the network selector in the top left,
 MetaMask will open in a new tab in fullscreen mode. From here, find and the 'Add network manually' button at the bottom of the network list.</figcaption></figure>
 <!-- markdown-link-check-disable -->
 
-Add these informations to access to blockchain
+Add these information to access to blockchain
 {% tabs %}
 {% tab title="Zama devnet" %}
 

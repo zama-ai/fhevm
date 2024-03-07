@@ -7,7 +7,7 @@ fhevmjs provides two features:
 
 ## Instance
 
-Before using these features, you need to create an instance and provide some informations:
+Before using these features, you need to create an instance and provide some information:
 
 - The blockchain chainId
 - The blockchain's FHE public key
