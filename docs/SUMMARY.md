@@ -33,7 +33,7 @@
 - [Use the CLI](guides/cli.md)
 - [Build a web application](guides/webapp.md)
 - [Build with Node](guides/node.md)
-- [Use webpack build](guides/webpack.md)
+- [Common webpack errors](guides/webpack.md)
 
 ## Tutorials
 
