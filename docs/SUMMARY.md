@@ -27,20 +27,13 @@
 
 ## Guides
 
-- [Estimate gas](guides/gas.md)
+- [Gas estimation](guides/gas.md)
 - [Common pitfalls and best practises](guides/pitfalls.md)
-- [Client SDK](guides/client-sdk/README.md)
-  - [Installation](guides/client-sdk/getting_started/README.md)
-    - [Using Node](guides/client-sdk/getting_started/node.md)
-    - [Using a template](guides/client-sdk/getting_started/templates.md)
-    - [Other frontend tooling](guides/client-sdk/getting_started/browser.md)
-    - [Using CLI](guides/client-sdk/getting_started/cli.md)
-  - [Setup an instance](guides/client-sdk/instance.md)
-  - [Encrypt an input](guides/client-sdk/inputs.md)
-  - [Get a reencryption](guides/client-sdk/reencryption.md)
-  - [Examples](guides/client-sdk/examples/README.md)
-    - [Transfer tokens (node)](guides/client-sdk/examples/transfererc20.md)
-    - [Get balance (node)](guides/client-sdk/examples/getbalance.md)
+- [How to encrypt an input](guides/encrypt.md)
+- [How to encrypt an input using a CLI](guides/cli.md)
+- [How to build a web application](guides/webapp.md)
+- [How to build with NodeJS](guides/node.md)
+- [How to debug webpack build](guides/webpack.md)
 
 ## Tutorials
 
