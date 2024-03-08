@@ -218,8 +218,8 @@ library TFHE {
     });
   });
 
-  // TODO: Decide whether we want to have mixed-inputs for CMUX
-  supportedBits.forEach((bits) => res.push(tfheCmux(bits)));
+  // TODO: Decide whether we want to have mixed-inputs for CMUX/Select
+  supportedBits.forEach((bits) => res.push(tfheSelect(bits)));
   supportedBits.forEach((outputBits) => {
     supportedBits.forEach((inputBits) => {
       res.push(tfheAsEboolCustomCast(inputBits, outputBits));
@@ -507,12 +507,16 @@ function tfheShiftOperators(
   return res.join('');
 }
 
-function tfheCmux(inputBits: number): string {
+function tfheSelect(inputBits: number): string {
   return `
     // If 'control''s value is 'true', the result has the same value as 'a'.
     // If 'control''s value is 'false', the result has the same value as 'b'.
     function cmux(ebool control, euint${inputBits} a, euint${inputBits} b) internal pure returns (euint${inputBits}) {
-        return euint${inputBits}.wrap(Impl.cmux(ebool.unwrap(control), euint${inputBits}.unwrap(a), euint${inputBits}.unwrap(b)));
+        return euint${inputBits}.wrap(Impl.select(ebool.unwrap(control), euint${inputBits}.unwrap(a), euint${inputBits}.unwrap(b)));
+    }
+    
+    function select(ebool control, euint${inputBits} a, euint${inputBits} b) internal pure returns (euint${inputBits}) {
+        return euint${inputBits}.wrap(Impl.select(ebool.unwrap(control), euint${inputBits}.unwrap(a), euint${inputBits}.unwrap(b)));
     }`;
 }
 
@@ -780,7 +784,7 @@ function implCustomMethods(ctx: CodegenContext): string {
   return `
     // If 'control's value is 'true', the result has the same value as 'ifTrue'.
     // If 'control's value is 'false', the result has the same value as 'ifFalse'.
-    function cmux(uint256 control, uint256 ifTrue, uint256 ifFalse) internal pure returns (uint256 result) {
+    function select(uint256 control, uint256 ifTrue, uint256 ifFalse) internal pure returns (uint256 result) {
         result = FhevmLib(address(EXT_TFHE_LIBRARY)).fheIfThenElse(control, ifTrue, ifFalse);
     }
 
@@ -938,6 +942,15 @@ library Impl {
 
   function cmux(uint256 control, uint256 ifTrue, uint256 ifFalse) internal pure returns (uint256 result) {
       result = (control == 1) ? ifTrue : ifFalse;
+  }
+
+  function select(uint256 control, uint256 ifTrue, uint256 ifFalse) internal pure returns (uint256 result) {
+      result = (control == 1) ? ifTrue : ifFalse;
+  }
+
+  function optReq(uint256 ciphertext) internal view {
+      this; // silence state mutability warning
+      require(ciphertext == 1, "transaction execution reverted");
   }
 
   function reencrypt(uint256 ciphertext, bytes32 /*publicKey*/) internal view returns (bytes memory reencrypted) {

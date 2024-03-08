@@ -68,11 +68,11 @@ If a view function is using `TFHE.reencrypt` it is mandatory to protect its acce
 
 ## Best practises
 
-### Avoid using TFHE.decrypt, use TFHE.cmux instead
+### Avoid using TFHE.decrypt, use TFHE.select instead
 
 Any use of decryption should be avoided as much as possible. Current version of `TFHE.decrypt` will soon be deprecated and get replaced by an asynchronous version, so please consider this operator as a very expensive one which should be used only if absolutely necessary.
 
-Whenever your code contains a branch depending on the result of a decryption, we recommend to replace it by a `TFHE.cmux`.
+Whenever your code contains a branch depending on the result of a decryption, we recommend to replace it by a `TFHE.select`.
 
 ❌ For instance, instead of:
 
@@ -91,12 +91,12 @@ if(TFHE.decrypt(condition)){
 ```solidity
 euint32 x;
 ebool condition = TFHE.gt(x,5)
-x = TFHE.cmux(condition, TFHE.asEuint(0), TFHE.asEuint(42));
+x = TFHE.select(condition, TFHE.asEuint(0), TFHE.asEuint(42));
 ```
 
 ### Obfuscate branching
 
-The previous paragraph emphasized that branch logic should rely as much as possible on `TFHE.cmux` instead of decryptions. It hides effectively which branch has been executed.
+The previous paragraph emphasized that branch logic should rely as much as possible on `TFHE.select` instead of decryptions. It hides effectively which branch has been executed.
 
 However, this is sometimes not enough. Enhancing the privacy of smart contracts often requires revisiting your application's logic.
 
@@ -152,7 +152,7 @@ while(TFHE.decrypt(isTrue)){
 }
 ```
 
-If your code logic requires looping on an encrypted boolean condition, we highly suggest to try to replace it by a finite loop with an appropriate constant maximum number of steps and use `TFHE.cmux` inside the loop.
+If your code logic requires looping on an encrypted boolean condition, we highly suggest to try to replace it by a finite loop with an appropriate constant maximum number of steps and use `TFHE.select` inside the loop.
 
 ✅ For example, the previous code could maybe be replaced by the following snippet:
 
@@ -161,7 +161,7 @@ ebool isTrue;
 euint32 x;
 // some code
 for (uint32 i = 0; i < 5; i++) {
-    euint32 increment = TFHE.cmux(isTrue, 1, 0);
+    euint32 increment = TFHE.select(isTrue, 1, 0);
     x=TFHE.add(x, increment);
     // some other code
 }
@@ -185,7 +185,7 @@ function setXwithEncryptedIndex(bytes calldata encryptedIndex) public {
     euint32 index = TFHE.asEuint32(encryptedIndex);
     for (uint32 i = 0; i < encArray.length; i++) {
         ebool isEqual = TFHE.eq(index, i);
-        x = TFHE.cmux(isEqual, encArray[i], x);
+        x = TFHE.select(isEqual, encArray[i], x);
     }
 }
 ```
@@ -226,16 +226,16 @@ function mint(bytes calldata encryptedAmount) public {
 }
 ```
 
-✅ But you can fix this issue by using `TFHE.cmux` to cancel the mint in case of an overflow:
+✅ But you can fix this issue by using `TFHE.select` to cancel the mint in case of an overflow:
 
 ```solidity
 function mint(bytes calldata encryptedAmount) public {
   euint32 mintedAmount = TFHE.asEuint32(encryptedAmount);
   euint32 tempTotalSupply = TFHE.add(totalSupply, mintedAmount);
   ebool isOverflow = TFHE.lt(tempTotalSupply, totalSupply);
-  totalSupply = TFHE.cmux(isOverflow, totalSupply, tempTotalSupply);
+  totalSupply = TFHE.select(isOverflow, totalSupply, tempTotalSupply);
   euint32 tempBalanceOf = TFHE.add(balances[msg.sender], mintedAmount);
-  balances[msg.sender] = TFHE.cmux(isOverflow, balances[msg.sender], tempBalanceOf);
+  balances[msg.sender] = TFHE.select(isOverflow, balances[msg.sender], tempBalanceOf);
 }
 ```
 

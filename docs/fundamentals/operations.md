@@ -24,7 +24,7 @@ The `TFHE` library defines the following operations with FHE ciphertexts:
 | Max                          | `TFHE.max`          |        | Binary       |
 | Neg                          | `TFHE.neg`          | `-`    | Unary        |
 | Not                          | `TFHE.not`          | `~`    | Unary        |
-| Cmux                         | `TFHE.cmux`         |        | Ternary      |
+| Select                       | `TFHE.select`       |        | Ternary      |
 | Decrypt                      | `TFHE.decrypt()`    |        | Decryption   |
 | Reencrypt                    | `TFHE.reencrypt()`  |        | Reencryption |
 | Random unsigned int (mockup) | `TFHE.randEuintX()` |        | Random       |

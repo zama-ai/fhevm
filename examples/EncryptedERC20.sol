@@ -134,15 +134,15 @@ contract EncryptedERC20 is Reencrypt, Ownable2Step {
         // makes sure the owner has enough tokens
         ebool canTransfer = TFHE.le(amount, balances[owner]);
         ebool isTransferable = TFHE.and(canTransfer, allowedTransfer);
-        _approve(owner, spender, TFHE.cmux(isTransferable, currentAllowance - amount, currentAllowance));
+        _approve(owner, spender, TFHE.select(isTransferable, currentAllowance - amount, currentAllowance));
         return isTransferable;
     }
 
     // Transfers an encrypted amount.
     function _transfer(address from, address to, euint64 amount, ebool isTransferable) internal virtual {
         // Add to the balance of `to` and subract from the balance of `from`.
-        balances[to] = balances[to] + TFHE.cmux(isTransferable, amount, TFHE.asEuint64(0));
-        balances[from] = balances[from] - TFHE.cmux(isTransferable, amount, TFHE.asEuint64(0));
+        balances[to] = balances[to] + TFHE.select(isTransferable, amount, TFHE.asEuint64(0));
+        balances[from] = balances[from] - TFHE.select(isTransferable, amount, TFHE.asEuint64(0));
         emit Transfer(from, to);
     }
 }
