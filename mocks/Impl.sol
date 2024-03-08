@@ -105,11 +105,6 @@ library Impl {
         result = (control == 1) ? ifTrue : ifFalse;
     }
 
-    function optReq(uint256 ciphertext) internal view {
-        this; // silence state mutability warning
-        require(ciphertext == 1, "transaction execution reverted");
-    }
-
     function reencrypt(uint256 ciphertext, bytes32 /*publicKey*/) internal view returns (bytes memory reencrypted) {
         this; // silence state mutability warning
         reencrypted = new bytes(32);
