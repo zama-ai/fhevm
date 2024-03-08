@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import "../../lib/TFHE.sol";
 
 contract TFHEManualTestSuite {
-    function test_cmux(
+    function test_select(
         bytes calldata control,
         bytes calldata ifTrue,
         bytes calldata ifFalse
@@ -12,7 +12,7 @@ contract TFHEManualTestSuite {
         ebool controlProc = TFHE.asEbool(control);
         euint32 ifTrueProc = TFHE.asEuint32(ifTrue);
         euint32 ifFalseProc = TFHE.asEuint32(ifFalse);
-        return TFHE.decrypt(TFHE.cmux(controlProc, ifTrueProc, ifFalseProc));
+        return TFHE.decrypt(TFHE.select(controlProc, ifTrueProc, ifFalseProc));
     }
 
     function test_ebool_to_euint4_cast(bool input) public view returns (uint16) {

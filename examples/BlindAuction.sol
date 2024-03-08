@@ -65,11 +65,11 @@ contract BlindAuction is Reencrypt {
         if (TFHE.isInitialized(existingBid)) {
             ebool isHigher = TFHE.lt(existingBid, value);
             // Update bid with value
-            bids[msg.sender] = TFHE.cmux(isHigher, value, existingBid);
+            bids[msg.sender] = TFHE.select(isHigher, value, existingBid);
             // Transfer only the difference between existing and value
             euint64 toTransfer = value - existingBid;
             // Transfer only if bid is higher
-            euint64 amount = TFHE.cmux(isHigher, toTransfer, TFHE.asEuint64(0));
+            euint64 amount = TFHE.select(isHigher, toTransfer, TFHE.asEuint64(0));
             tokenContract.transferFrom(msg.sender, address(this), amount);
         } else {
             bidCounter++;
@@ -80,7 +80,7 @@ contract BlindAuction is Reencrypt {
         if (!TFHE.isInitialized(highestBid)) {
             highestBid = currentBid;
         } else {
-            highestBid = TFHE.cmux(TFHE.lt(highestBid, currentBid), currentBid, highestBid);
+            highestBid = TFHE.select(TFHE.lt(highestBid, currentBid), currentBid, highestBid);
         }
     }
 
@@ -115,7 +115,7 @@ contract BlindAuction is Reencrypt {
         ebool canClaim = TFHE.and(TFHE.le(highestBid, bids[msg.sender]), TFHE.not(objectClaimed));
 
         objectClaimed = canClaim;
-        bids[msg.sender] = TFHE.cmux(canClaim, TFHE.asEuint64(0), bids[msg.sender]);
+        bids[msg.sender] = TFHE.select(canClaim, TFHE.asEuint64(0), bids[msg.sender]);
         // emit Winner(msg.sender);
     }
 
@@ -132,8 +132,8 @@ contract BlindAuction is Reencrypt {
         euint64 bidValue = bids[msg.sender];
         ebool isHighestBid = TFHE.eq(bidValue, highestBid);
         ebool canWithdraw = TFHE.not(TFHE.and(isHighestBid, TFHE.not(objectClaimed)));
-        tokenContract.transfer(msg.sender, TFHE.cmux(canWithdraw, bidValue, TFHE.asEuint64(0)));
-        bids[msg.sender] = TFHE.cmux(canWithdraw, TFHE.asEuint64(0), bids[msg.sender]);
+        tokenContract.transfer(msg.sender, TFHE.select(canWithdraw, bidValue, TFHE.asEuint64(0)));
+        bids[msg.sender] = TFHE.select(canWithdraw, TFHE.asEuint64(0), bids[msg.sender]);
     }
 
     modifier onlyBeforeEnd() {

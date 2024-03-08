@@ -30,8 +30,8 @@ describe('TFHE manual operations', function () {
     this.instances = instances;
   });
 
-  it('Cmux works returning if false', async function () {
-    const res = await this.contract.test_cmux(
+  it('Select works returning if false', async function () {
+    const res = await this.contract.test_select(
       this.instances.alice.encryptBool(false),
       this.instances.alice.encrypt32(3),
       this.instances.alice.encrypt32(4),
@@ -39,8 +39,8 @@ describe('TFHE manual operations', function () {
     expect(res).to.equal(4);
   });
 
-  it('Cmux works returning if true', async function () {
-    const res = await this.contract.test_cmux(
+  it('Select works returning if true', async function () {
+    const res = await this.contract.test_select(
       this.instances.alice.encryptBool(true),
       this.instances.alice.encrypt32(3),
       this.instances.alice.encrypt32(4),

@@ -56,7 +56,7 @@ contract ERC20Rules {
 
         condition = TFHE.and(condition, c2cOK);
 
-        return TFHE.cmux(condition, amount, TFHE.asEuint64(0));
+        return TFHE.select(condition, amount, TFHE.asEuint64(0));
     }
 
     function checkLimitTransfer(

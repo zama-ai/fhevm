@@ -184,7 +184,7 @@ contract Comp is Reencrypt {
     function _updateAllowance(address owner, address spender, euint64 amount) internal {
         euint64 currentAllowance = _allowance(owner, spender);
         ebool canApprove = TFHE.le(amount, currentAllowance);
-        _approve(owner, spender, TFHE.cmux(canApprove, currentAllowance - amount, TFHE.asEuint64(0)));
+        _approve(owner, spender, TFHE.select(canApprove, currentAllowance - amount, TFHE.asEuint64(0)));
     }
 
     // Transfers an encrypted amount.
@@ -193,8 +193,8 @@ contract Comp is Reencrypt {
         ebool canTransfer = TFHE.le(amount, balances[from]);
 
         // Add to the balance of `to` and subract from the balance of `from`.
-        balances[to] = balances[to] + TFHE.cmux(canTransfer, amount, TFHE.asEuint64(0));
-        balances[from] = balances[from] - TFHE.cmux(canTransfer, amount, TFHE.asEuint64(0));
+        balances[to] = balances[to] + TFHE.select(canTransfer, amount, TFHE.asEuint64(0));
+        balances[from] = balances[from] - TFHE.select(canTransfer, amount, TFHE.asEuint64(0));
         emit Transfer(from, to, amount);
 
         _moveDelegates(delegates[from], delegates[to], amount);

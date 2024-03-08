@@ -5044,31 +5044,51 @@ library TFHE {
     // If 'control''s value is 'true', the result has the same value as 'a'.
     // If 'control''s value is 'false', the result has the same value as 'b'.
     function cmux(ebool control, euint4 a, euint4 b) internal pure returns (euint4) {
-        return euint4.wrap(Impl.cmux(ebool.unwrap(control), euint4.unwrap(a), euint4.unwrap(b)));
+        return euint4.wrap(Impl.select(ebool.unwrap(control), euint4.unwrap(a), euint4.unwrap(b)));
+    }
+
+    function select(ebool control, euint4 a, euint4 b) internal pure returns (euint4) {
+        return euint4.wrap(Impl.select(ebool.unwrap(control), euint4.unwrap(a), euint4.unwrap(b)));
     }
 
     // If 'control''s value is 'true', the result has the same value as 'a'.
     // If 'control''s value is 'false', the result has the same value as 'b'.
     function cmux(ebool control, euint8 a, euint8 b) internal pure returns (euint8) {
-        return euint8.wrap(Impl.cmux(ebool.unwrap(control), euint8.unwrap(a), euint8.unwrap(b)));
+        return euint8.wrap(Impl.select(ebool.unwrap(control), euint8.unwrap(a), euint8.unwrap(b)));
+    }
+
+    function select(ebool control, euint8 a, euint8 b) internal pure returns (euint8) {
+        return euint8.wrap(Impl.select(ebool.unwrap(control), euint8.unwrap(a), euint8.unwrap(b)));
     }
 
     // If 'control''s value is 'true', the result has the same value as 'a'.
     // If 'control''s value is 'false', the result has the same value as 'b'.
     function cmux(ebool control, euint16 a, euint16 b) internal pure returns (euint16) {
-        return euint16.wrap(Impl.cmux(ebool.unwrap(control), euint16.unwrap(a), euint16.unwrap(b)));
+        return euint16.wrap(Impl.select(ebool.unwrap(control), euint16.unwrap(a), euint16.unwrap(b)));
+    }
+
+    function select(ebool control, euint16 a, euint16 b) internal pure returns (euint16) {
+        return euint16.wrap(Impl.select(ebool.unwrap(control), euint16.unwrap(a), euint16.unwrap(b)));
     }
 
     // If 'control''s value is 'true', the result has the same value as 'a'.
     // If 'control''s value is 'false', the result has the same value as 'b'.
     function cmux(ebool control, euint32 a, euint32 b) internal pure returns (euint32) {
-        return euint32.wrap(Impl.cmux(ebool.unwrap(control), euint32.unwrap(a), euint32.unwrap(b)));
+        return euint32.wrap(Impl.select(ebool.unwrap(control), euint32.unwrap(a), euint32.unwrap(b)));
+    }
+
+    function select(ebool control, euint32 a, euint32 b) internal pure returns (euint32) {
+        return euint32.wrap(Impl.select(ebool.unwrap(control), euint32.unwrap(a), euint32.unwrap(b)));
     }
 
     // If 'control''s value is 'true', the result has the same value as 'a'.
     // If 'control''s value is 'false', the result has the same value as 'b'.
     function cmux(ebool control, euint64 a, euint64 b) internal pure returns (euint64) {
-        return euint64.wrap(Impl.cmux(ebool.unwrap(control), euint64.unwrap(a), euint64.unwrap(b)));
+        return euint64.wrap(Impl.select(ebool.unwrap(control), euint64.unwrap(a), euint64.unwrap(b)));
+    }
+
+    function select(ebool control, euint64 a, euint64 b) internal pure returns (euint64) {
+        return euint64.wrap(Impl.select(ebool.unwrap(control), euint64.unwrap(a), euint64.unwrap(b)));
     }
 
     // Cast an encrypted integer from euint8 to euint4.
