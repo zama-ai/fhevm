@@ -5479,30 +5479,6 @@ library TFHE {
         }
     }
 
-    // Optimistically require that 'b' is true.
-    //
-    // This function does not evaluate 'b' at the time of the call.
-    // Instead, it accumulates all optimistic requires and evaluates a single combined
-    // require at the end of the transaction. A side effect of this mechanism
-    // is that a method call with a failed optimistic require will always incur the full
-    // gas cost, as if all optimistic requires were true. Yet, the transaction will be
-    // reverted at the end if any of the optimisic requires were false.
-    //
-    // Exceptions to above rule are reencryptions and decryptions via
-    // TFHE.reencrypt() and TFHE.decrypt(), respectively. If either of them
-    // are encountered and if optimistic requires have been used before in the
-    // txn, the optimisic requires will be immediately evaluated. Rationale is
-    // that we want to avoid decrypting or reencrypting a value if the txn is about
-    // to fail and be reverted anyway at the end. Checking immediately and reverting on the spot
-    // would avoid unnecessary decryptions.
-    //
-    // The benefit of optimistic requires is that they are faster than non-optimistic ones,
-    // because there is a single call to the decryption oracle per transaction, irrespective
-    // of how many optimistic requires were used.
-    function optReq(ebool b) internal view {
-        Impl.optReq(euint8.unwrap(asEuint8(b)));
-    }
-
     // Reencrypt the given 'value' under the given 'publicKey'.
     // Return a serialized euint8 value.
     function reencrypt(ebool value, bytes32 publicKey) internal view returns (bytes memory reencrypted) {

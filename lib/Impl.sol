@@ -243,21 +243,6 @@ library Impl {
         result = FhevmLib(address(EXT_TFHE_LIBRARY)).fheIfThenElse(control, ifTrue, ifFalse);
     }
 
-    // We do assembly here because ordinary call will emit extcodesize check which is zero for our precompiles
-    // and revert the transaction because we don't return any data for this precompile method
-    function optReq(uint256 ciphertext) internal view {
-        bytes memory input = abi.encodeWithSignature("optimisticRequire(uint256)", ciphertext);
-        uint256 inputLen = input.length;
-
-        // Call the optimistic require method in precompile.
-        address precompile = EXT_TFHE_LIBRARY;
-        assembly {
-            if iszero(staticcall(gas(), precompile, add(input, 32), inputLen, 0, 0)) {
-                revert(0, 0)
-            }
-        }
-    }
-
     function reencrypt(uint256 ciphertext, bytes32 publicKey) internal view returns (bytes memory reencrypted) {
         return FhevmLib(address(EXT_TFHE_LIBRARY)).reencrypt(ciphertext, uint256(publicKey));
     }

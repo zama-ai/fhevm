@@ -25,7 +25,6 @@ function generateAllFiles() {
     'test/generated.ts',
     `
     export const FHE_LIB_ADDRESS = '${context.libFheAddress}';
-    export const OPTIMISTIC_REQUIRES_ENABLED: boolean = ${context.optimisticRequiresEnabled};
   `,
   );
 }

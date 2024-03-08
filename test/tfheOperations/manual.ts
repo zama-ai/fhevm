@@ -128,35 +128,4 @@ describe('TFHE manual operations', function () {
     expect(await this.contract.test_ebool_xor(true, false)).to.equal(true);
     expect(await this.contract.test_ebool_xor(true, true)).to.equal(false);
   });
-
-  if (OPTIMISTIC_REQUIRES_ENABLED) {
-    it('optimistic require with true succeeds', async function () {
-      await this.contract.test_opt_req(true);
-    });
-
-    it('optimistic require with false fails', async function () {
-      try {
-        await this.contract.test_opt_req(false);
-        fail('This should fail');
-      } catch (e: any) {
-        expect(e.message).to.contain('execution reverted');
-      }
-    });
-
-    it('stateful optimistic require with true succeeds', async function () {
-      const res = await this.contract.test_opt_req_stateful(true);
-      const receipt = await res.wait();
-      expect(receipt.status).to.equal(1);
-    });
-
-    it('stateful optimistic require with false fails', async function () {
-      try {
-        const res = await this.contract.test_opt_req_stateful(false);
-        const _ = await res.wait();
-        fail('This should fail');
-      } catch (e: any) {
-        expect(e.toString()).to.contain('transaction execution reverted');
-      }
-    });
-  }
 });
