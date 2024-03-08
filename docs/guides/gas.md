@@ -1,37 +1,134 @@
-# Estimate gas
+# Gas estimation
 
 FHE operations are typically more computationally expensive than classical operations due to their inherent complexity. As a reference, here is an approximation of the gas cost associated with each operation.
 
-| function name       | ebool/euint8 | euint16 | euint32 |
-| ------------------- | ------------ | ------- | ------- |
-| `TFHE.add`          | 120,000      | 150,000 | 180,000 |
-| `TFHE.add` (scalar) | 120,000      | 150,000 | 180,000 |
-| `TFHE.sub`          | 120,000      | 150,000 | 180,000 |
-| `TFHE.sub` (scalar) | 120,000      | 150,000 | 180,000 |
-| `TFHE.mul`          | 200,000      | 260,000 | 380,000 |
-| `TFHE.mul` (scalar) | 135,000      | 140,000 | 170,000 |
-| `TFHE.div` (scalar) | 450,000      | 500,000 | 550,000 |
-| `TFHE.rem` (scalar) | 450,000      | 500,000 | 550,000 |
-| `TFHE.and`          | 30,000       | 33,000  | 36,000  |
-| `TFHE.or`           | 30,000       | 33,000  | 36,000  |
-| `TFHE.xor`          | 30,000       | 33,000  | 36,000  |
-| `TFHE.shr`          | 150,000      | 180,000 | 210,000 |
-| `TFHE.shr` (scalar) | 32,000       | 32,000  | 32,000  |
-| `TFHE.shl`          | 150,000      | 180,000 | 210,000 |
-| `TFHE.shl` (scalar) | 32,000       | 32,000  | 32,000  |
-| `TFHE.eq`           | 56,000       | 67,000  | 89,000  |
-| `TFHE.ne`           | 56,000       | 67,000  | 89,000  |
-| `TFHE.ge`           | 56,000       | 67,000  | 89,000  |
-| `TFHE.gt`           | 56,000       | 67,000  | 89,000  |
-| `TFHE.le`           | 56,000       | 67,000  | 89,000  |
-| `TFHE.lt`           | 56,000       | 67,000  | 89,000  |
-| `TFHE.min`          | 220,000      | 280,000 | 340,000 |
-| `TFHE.max`          | 220,000      | 280,000 | 340,000 |
-| `TFHE.neg`          | 29,000       | 31,000  | 33,000  |
-| `TFHE.not`          | 29,000       | 31,000  | 33,000  |
-| `TFHE.cmux`         | 60,000       | 65,000  | 70,000  |
-| `TFHE.decrypt()`    | 500,000      | 500,000 | 500,000 |
-| `TFHE.randEuintX()` | 100,000      | 100,000 | 100,000 |
+## ebool
+
+| Function name    | Gas     |
+| ---------------- | ------- |
+| `and`/`or`/`xor` | 26,000  |
+| `not`            | 30,000  |
+| `decrypt`        | 500,000 |
+
+# euint4
+
+| function name        | Gas     |
+| -------------------- | ------- |
+| `add`/`sub`          | 65,000  |
+| `add`/`sub` (scalar) | 65,000  |
+| `mul`                | 150,000 |
+| `mul` (scalar)       | 88,000  |
+| `div` (scalar)       | 139,000 |
+| `rem` (scalar)       | 286,000 |
+| `and`/`or`/`xor`     | 32,000  |
+| `shr`/`shl`          | 116,000 |
+| `shr`/`shl` (scalar) | 35,000  |
+| `eq`/`ne`            | 51,000  |
+| `ge`/`gt`/`le`/`lt`  | 70,000  |
+| `min`/`max`          | 121,000 |
+| `min`/`max` (scalar) | 121,000 |
+| `neg`                | 60,000  |
+| `not`                | 33,000  |
+| `cmux`               | 45,000  |
+| `decrypt`            | 500,000 |
+| `randEuintX()`       | 100,000 |
+
+# euint8
+
+| Function name        | Gas     |
+| -------------------- | ------- |
+| `add`/`sub`          | 94,000  |
+| `add`/`sub` (scalar) | 94,000  |
+| `mul`                | 197,000 |
+| `mul` (scalar)       | 159,000 |
+| `div` (scalar)       | 238,000 |
+| `rem` (scalar)       | 460,000 |
+| `and`/`or`/`xor`     | 34,000  |
+| `shr`/`shl`          | 133,000 |
+| `shr`/`shl` (scalar) | 35,000  |
+| `eq`/`ne`            | 53,000  |
+| `ge`/`gt`/`le`/`lt`  | 82,000  |
+| `min`/`max`          | 128,000 |
+| `min`/`max` (scalar) | 128,000 |
+| `neg`                | 95,000  |
+| `not`                | 34,000  |
+| `cmux`               | 47,000  |
+| `decrypt`            | 500,000 |
+| `randEuintX()`       | 100,000 |
+
+# euint16
+
+| function name        | euint16 |
+| -------------------- | ------- |
+| `add`/`sub`          | 133,000 |
+| `add`/`sub` (scalar) | 133,000 |
+| `mul`                | 262,000 |
+| `mul` (scalar)       | 208,000 |
+| `div` (scalar)       | 314,000 |
+| `rem` (scalar)       | 622,000 |
+| `and`/`or`/`xor`     | 34,000  |
+| `shr`/`shl`          | 153,000 |
+| `shr`/`shl` (scalar) | 35,000  |
+| `eq`/`ne`            | 54,000  |
+| `ge`/`gt`/`le`/`lt`  | 105,000 |
+| `min`/`max`          | 153,000 |
+| `min`/`max` (scalar) | 150,000 |
+| `neg`                | 131,000 |
+| `not`                | 35,000  |
+| `cmux`               | 47,000  |
+| `decrypt`            | 500,000 |
+| `randEuintX()`       | 100,000 |
+
+# euint32
+
+| Function name        | Gas fee |
+| -------------------- | ------- |
+| `add`/`sub`          | 162,000 |
+| `add`/`sub` (scalar) | 162,000 |
+| `mul`                | 359,000 |
+| `mul` (scalar)       | 264,000 |
+| `div` (scalar)       | 398,000 |
+| `rem` (scalar)       | 805,000 |
+| `and`/`or`/`xor`     | 35,000  |
+| `shr`/`shl`          | 227,000 |
+| `shr`/`shl` (scalar) | 35,000  |
+| `eq`/`ne`            | 82,000  |
+| `ge`/`gt`/`le`/`lt`  | 128,000 |
+| `min`/`max`          | 183,000 |
+| `min`/`max` (scalar) | 164,000 |
+| `neg`                | 160,000 |
+| `not`                | 36,000  |
+| `cmux`               | 50,000  |
+| `decrypt`            | 500,000 |
+| `randEuintX()`       | 100,000 |
+
+# euint64
+
+| Function name        | Gas fee   |
+| -------------------- | --------- |
+| `add`/`sub`          | 188,000   |
+| `add`/`sub` (scalar) | 188,000   |
+| `mul`                | 641,000   |
+| `mul` (scalar)       | 356,000   |
+| `div` (scalar)       | 584,000   |
+| `rem` (scalar)       | 1,095,000 |
+| `and`/`or`/`xor`     | 38,000    |
+| `shr`/`shl`          | 210,000   |
+| `shr`/`shl` (scalar) | 38,000    |
+| `eq`/`ne`            | 86,000    |
+| `ge`/`gt`/`le`/`lt`  | 156,000   |
+| `min`/`max`          | 210,000   |
+| `min`/`max` (scalar) | 192,000   |
+| `neg`                | 199,000   |
+| `not`                | 37,000    |
+| `cmux`               | 53,000    |
+| `decrypt`            | 500,000   |
+
+# eaddress
+
+| Function name | Gas fee |
+| ------------- | ------- |
+| `eq`/`ne`     | 100,000 |
 
 ## Estimate gas
 

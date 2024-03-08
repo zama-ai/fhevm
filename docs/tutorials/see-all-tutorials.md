@@ -4,11 +4,11 @@
 
 - [\[Video tutorial\] How to Write Confidential Smart Contracts Using Zama's fhEVM](https://www.zama.ai/post/video-tutorial-how-to-write-confidential-smart-contracts-using-zamas-fhevm) - October 30, 2023
 
-## Go further&#x20;
+## Go further
 
 #### Code examples in GitHub
 
-- [ERC-20](https://github.com/zama-ai/fhevm/blob/main/examples/EncryptedERC20.sol): A variation of the standard ERC20 smart contract that incorporates encrypted balances, providing additional privacy for token holders. -&#x20;
+- [ERC-20](https://github.com/zama-ai/fhevm/blob/main/examples/EncryptedERC20.sol): A variation of the standard ERC20 smart contract that incorporates encrypted balances, providing additional privacy for token holders. -
 - [Mixnet](https://github.com/anonymousGifter/mixnet-core): A smart contract designed to enhance privacy by mixing transactions in a network, using encryption to obscure the details of the transactions. \[by [Remi Gai](https://github.com/remi-gai)]
 - [Darkpool](https://github.com/omurovec/fhe-darkpools): A smart contract that enables anonymous trading of cryptocurrencies or assets, typically used to execute large orders without affecting the market price.\[by [Owen Murovec](https://github.com/omurovec)]
 - [Cipherbomb](https://github.com/immortal-tofu/cipherbomb): A Hardhat-based template for developing Solidity smart contracts, with sensible defaults. - by Clément Danjou \[by Clément Danjou]
@@ -25,10 +25,8 @@
 - [On-chain Blind Auctions Using Homomorphic Encryption and the fhEVM](https://www.zama.ai/post/on-chain-blind-auctions-using-homomorphic-encryption) - July 10, 2023
 - [Confidential ERC-20 Tokens Using Homomorphic Encryption and the fhEVM](https://www.zama.ai/post/confidential-erc-20-tokens-using-homomorphic-encryption) - June 28, 2023
 
-#### Video tutorials:&#x20;
+#### Video tutorials:
 
 - [Accelerate your code testing and get code coverage using fhEVM mocks](https://www.zama.ai/post/video-tutorial-accelerate-your-code-testing-and-get-code-coverage-using-fhevm-mocks) - January 30, 2024
 - [Use the CMUX operator on Zama’s fhEVM](https://www.youtube.com/watch?v=7icM0EOSvU0) - October 27, 2023
 - [Workshop during ETHcc: Homomorphic Encryption in the EVM](https://www.youtube.com/watch?v=eivfVykPP8U) - July 18, 2023
-
-  \
