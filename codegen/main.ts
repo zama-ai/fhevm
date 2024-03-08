@@ -21,12 +21,6 @@ function generateAllFiles() {
     writeFileSync(`examples/tests/TFHETestSuite${os.shardNumber}.sol`, testgen.generateSmartContract(os));
   });
   writeFileSync('test/tfheOperations/tfheOperations.ts', testgen.generateTestCode(ovShards));
-  writeFileSync(
-    'test/generated.ts',
-    `
-    export const FHE_LIB_ADDRESS = '${context.libFheAddress}';
-  `,
-  );
 }
 
 generateAllFiles();
