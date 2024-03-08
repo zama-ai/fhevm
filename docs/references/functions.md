@@ -133,7 +133,7 @@ function gt(uint32 a, euint16 b) internal view returns (ebool)
 function gt(euint16 a, uint32 b) internal view returns (ebool)
 ```
 
-## Multiplexer operator (`cmux`)
+## Multiplexer operator (`select`)
 
 This operator takes three inputs. The first input `b` is of type `ebool` and the two others of type `euintX`.
 If `b` is an encryption of `true`, the first integer parameter is returned. Otherwise, the second integer parameter is returned.
@@ -142,8 +142,8 @@ If `b` is an encryption of `true`, the first integer parameter is returned. Othe
 
 ```solidity
 // if (b == true) return val1 else return val2
-function cmux(ebool b, euint8 val1, euint8 val2) internal view returns (euint8) {
-  return TFHE.cmux(b, val1, val2);
+function select(ebool b, euint8 val1, euint8 val2) internal view returns (euint8) {
+  return TFHE.select(b, val1, val2);
 }
 ```
 

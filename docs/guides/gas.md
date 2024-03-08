@@ -29,7 +29,7 @@ FHE operations are typically more computationally expensive than classical opera
 | `min`/`max` (scalar) | 121,000 |
 | `neg`                | 60,000  |
 | `not`                | 33,000  |
-| `cmux`               | 45,000  |
+| `select`             | 45,000  |
 | `decrypt`            | 500,000 |
 | `randEuintX()`       | 100,000 |
 
@@ -52,7 +52,7 @@ FHE operations are typically more computationally expensive than classical opera
 | `min`/`max` (scalar) | 128,000 |
 | `neg`                | 95,000  |
 | `not`                | 34,000  |
-| `cmux`               | 47,000  |
+| `select`             | 47,000  |
 | `decrypt`            | 500,000 |
 | `randEuintX()`       | 100,000 |
 
@@ -75,7 +75,7 @@ FHE operations are typically more computationally expensive than classical opera
 | `min`/`max` (scalar) | 150,000 |
 | `neg`                | 131,000 |
 | `not`                | 35,000  |
-| `cmux`               | 47,000  |
+| `select`             | 47,000  |
 | `decrypt`            | 500,000 |
 | `randEuintX()`       | 100,000 |
 
@@ -98,7 +98,7 @@ FHE operations are typically more computationally expensive than classical opera
 | `min`/`max` (scalar) | 164,000 |
 | `neg`                | 160,000 |
 | `not`                | 36,000  |
-| `cmux`               | 50,000  |
+| `select`             | 50,000  |
 | `decrypt`            | 500,000 |
 | `randEuintX()`       | 100,000 |
 
@@ -121,7 +121,7 @@ FHE operations are typically more computationally expensive than classical opera
 | `min`/`max` (scalar) | 192,000   |
 | `neg`                | 199,000   |
 | `not`                | 37,000    |
-| `cmux`               | 53,000    |
+| `select`             | 53,000    |
 | `decrypt`            | 500,000   |
 
 # eaddress

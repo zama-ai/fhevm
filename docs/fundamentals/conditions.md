@@ -4,7 +4,7 @@ The result of [comparison operations](../references/functions.md#comparison-oper
 
 ## Condition with encrypted boolean
 
-fhEVM provides a method which acts as a ternary operator on encrypted integers. This method is called [cmux](../references/functions.md#multiplexer-operator-cmux).
+fhEVM provides a method which acts as a ternary operator on encrypted integers. This method is called [select](../references/functions.md#multiplexer-operator-select).
 
 ```solidity
 function bid(bytes calldata encryptedBid) internal {
@@ -12,11 +12,11 @@ function bid(bytes calldata encryptedBid) internal {
   ebool isAbove = TFHE.le(bid, highestBid);
 
   // Replace highest bid
-  highestBid = TFHE.cmux(isAbove, bid, highestBid);
+  highestBid = TFHE.select(isAbove, bid, highestBid);
 }
 ```
 
-It is important to keep in mind that each time we assign a value using `TFHE.cmux`, the value changes, even if the plaintext value remains the same.
+It is important to keep in mind that each time we assign a value using `TFHE.select`, the value changes, even if the plaintext value remains the same.
 
 ## Error handling
 
@@ -44,10 +44,10 @@ function setLastError(euint8 error, address addr) private {
 function _transfer(address from, address to, euint32 amount) internal {
   // Make sure the sender has enough tokens.
   ebool canTransfer = TFHE.le(amount, balances[from]);
-  setLastError(TFHE.cmux(canTransfer, NO_ERROR, NOT_ENOUGH_FUND), msg.sender);
+  setLastError(TFHE.select(canTransfer, NO_ERROR, NOT_ENOUGH_FUND), msg.sender);
 
   // Add to the balance of `to` and subract from the balance of `from`.
-  balances[to] = balances[to] + TFHE.cmux(canTransfer, amount, TFHE.asEuint32(0));
-  balances[from] = balances[from] - TFHE.cmux(canTransfer, amount, TFHE.asEuint32(0));
+  balances[to] = balances[to] + TFHE.select(canTransfer, amount, TFHE.asEuint32(0));
+  balances[from] = balances[from] - TFHE.select(canTransfer, amount, TFHE.asEuint32(0));
 }
 ```
