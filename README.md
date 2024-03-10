@@ -136,7 +136,6 @@ _This example is explained in more detail in [here](https://github.com/zama-ai/f
 #### Finance
 
 - [ERC-20](https://github.com/zama-ai/fhevm/blob/main/examples/EncryptedERC20.sol): A variation of the standard ERC20 smart contract that incorporates encrypted balances, providing additional privacy for token holders.
-- [Mixnet](https://github.com/anonymousGifter/mixnet-core): A smart contract designed to enhance privacy by mixing transactions in a network, using encryption to obscure the details of the transactions. - by [Remi Gai](https://github.com/remi-gai)
 - [Darkpool](https://github.com/omurovec/fhe-darkpools): A smart contract that enables anonymous trading of cryptocurrencies or assets, typically used to execute large orders without affecting the market price. - by [Owen Murovec](https://github.com/omurovec)
 
 #### Games:
