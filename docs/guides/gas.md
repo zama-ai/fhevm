@@ -10,7 +10,7 @@ FHE operations are typically more computationally expensive than classical opera
 | `not`            | 30,000  |
 | `decrypt`        | 500,000 |
 
-# euint4
+## euint4
 
 | function name        | Gas     |
 | -------------------- | ------- |
@@ -33,7 +33,7 @@ FHE operations are typically more computationally expensive than classical opera
 | `decrypt`            | 500,000 |
 | `randEuintX()`       | 100,000 |
 
-# euint8
+## euint8
 
 | Function name        | Gas     |
 | -------------------- | ------- |
@@ -56,7 +56,7 @@ FHE operations are typically more computationally expensive than classical opera
 | `decrypt`            | 500,000 |
 | `randEuintX()`       | 100,000 |
 
-# euint16
+## euint16
 
 | function name        | euint16 |
 | -------------------- | ------- |
@@ -79,7 +79,7 @@ FHE operations are typically more computationally expensive than classical opera
 | `decrypt`            | 500,000 |
 | `randEuintX()`       | 100,000 |
 
-# euint32
+## euint32
 
 | Function name        | Gas fee |
 | -------------------- | ------- |
@@ -102,7 +102,7 @@ FHE operations are typically more computationally expensive than classical opera
 | `decrypt`            | 500,000 |
 | `randEuintX()`       | 100,000 |
 
-# euint64
+## euint64
 
 | Function name        | Gas fee   |
 | -------------------- | --------- |
@@ -124,11 +124,11 @@ FHE operations are typically more computationally expensive than classical opera
 | `select`             | 53,000    |
 | `decrypt`            | 500,000   |
 
-# eaddress
+## eaddress
 
 | Function name | Gas fee |
 | ------------- | ------- |
-| `eq`/`ne`     | 100,000 |
+| `eq`/`ne`     | 90,000  |
 
 ## Estimate gas
 
