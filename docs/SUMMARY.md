@@ -4,7 +4,7 @@
 
 ## Getting Started
 
-- [What is fhEVM](getting-started/overview.md)
+- [What is fhEVM](getting_started/overview.md)
 - [Connecting to Zama Devnet](getting_started/connect.md)
 - [Using Zama Faucet](getting_started/faucet.md)
 - [Local dev node](getting_started/local.md)
