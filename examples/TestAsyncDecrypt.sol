@@ -67,7 +67,6 @@ contract TestAsyncDecrypt is OracleCaller {
         addParamsUint(requestID, input2);
     }
 
-    // Transfers an encrypted amount from the message sender address to the `to` address.
     function callbackUint32(uint256 requestID, uint32 decryptedInput) public onlyOracle returns (uint32) {
         uint256[] memory params = getParamsUint(requestID);
         unchecked {

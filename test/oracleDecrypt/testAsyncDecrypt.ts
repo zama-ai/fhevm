@@ -35,8 +35,8 @@ describe('TestAsyncDecrypt', function () {
       // An oracle was already deployed at ORACLE_PREDEPLOY_ADDRESS, check that is indeed the OraclePredploy contract by comparing hashes
       const codeHash = ethers.keccak256(codeAtAddress);
       if (
-        codeHash === '0xb8363127c68f104f8a6f383a55b9e00ffb49f8470844c76788e149e4af49756f' ||
-        codeHash === '0x808db48789429e5f79adb9849400e0d01c5c0f017663f06c6b2ab48f2eeae10e'
+        codeHash === '0xb9a0b118998327f7300de4a614ffef104cfbb8291a8b3fa56a1b2cb9963dbb1e' ||
+        codeHash === '0xdaf4a2d93e079cdfa37674229078ecffd916dd3f813d0973bb23d5b691aa2e05'
       ) {
         // it is indeed the OraclePredploy because it codeHashes are matching on either hardhat node (mocked mode) or on the fhevm node
         this.oracle = await ethers.getContractAt('OraclePredeployTest', addressToCheck);

@@ -14,6 +14,14 @@ contract OraclePredeploy is Ownable2Step {
         uint256 maxTimestamp;
     }
 
+    struct DecryptionRequestEUint4 {
+        euint4[] cts;
+        address contractCaller;
+        bytes4 callbackSelector;
+        uint256 msgValue;
+        uint256 maxTimestamp;
+    }
+
     struct DecryptionRequestEUint8 {
         euint8[] cts;
         address contractCaller;
@@ -52,6 +60,7 @@ contract OraclePredeploy is Ownable2Step {
 
     mapping(address => bool) public isRelayer;
     mapping(uint256 => DecryptionRequestEBool) decryptionRequestsEBool;
+    mapping(uint256 => DecryptionRequestEUint4) decryptionRequestsEUint4;
     mapping(uint256 => DecryptionRequestEUint8) decryptionRequestsEUint8;
     mapping(uint256 => DecryptionRequestEUint16) decryptionRequestsEUint16;
     mapping(uint256 => DecryptionRequestEUint32) decryptionRequestsEUint32;
@@ -63,6 +72,15 @@ contract OraclePredeploy is Ownable2Step {
     event EventDecryptionEBool(
         uint256 indexed requestID,
         ebool[] cts,
+        address contractCaller,
+        bytes4 callbackSelector,
+        uint256 msgValue,
+        uint256 maxTimestamp
+    );
+
+    event EventDecryptionEUint4(
+        uint256 indexed requestID,
+        euint4[] cts,
         address contractCaller,
         bytes4 callbackSelector,
         uint256 msgValue,
@@ -110,6 +128,7 @@ contract OraclePredeploy is Ownable2Step {
     event RemovedRelayer(address indexed realyer);
 
     event ResultCallbackBool(uint256 indexed requestID, bool success, bytes result);
+    event ResultCallbackUint4(uint256 indexed requestID, bool success, bytes result);
     event ResultCallbackUint8(uint256 indexed requestID, bool success, bytes result);
     event ResultCallbackUint16(uint256 indexed requestID, bool success, bytes result);
     event ResultCallbackUint32(uint256 indexed requestID, bool success, bytes result);
@@ -152,6 +171,34 @@ contract OraclePredeploy is Ownable2Step {
         );
         decryptionRequestsEBool[initialCounter] = decryptionReq;
         emit EventDecryptionEBool(initialCounter, ct_r, msg.sender, callbackSelector, msgValue, maxTimestamp);
+        counter++;
+    }
+
+    // Requests the decryption of n ciphertexts `ct`s with the result returned in a callback.
+    // During callback, msg.sender is called with [callbackSelector,requestID,decrypt(ct[0]),decrypt(ct[1]),...,decrypt(ct[n-1])] as calldata via `fulfillRequestUint8`.
+    function requestDecryptionEUint4(
+        euint4[] memory ct,
+        bytes4 callbackSelector,
+        uint256 msgValue, // msg.value of callback tx, if callback is payable
+        uint256 maxTimestamp
+    ) external returns (uint256 initialCounter) {
+        initialCounter = counter;
+        uint256 len = ct.length;
+        euint4[] memory ct_r = new euint4[](len);
+        for (uint256 i = 0; i < len; i++) {
+            require(TFHE.isInitialized(ct[i]), "Ciphertext is not initialized");
+            ct_r[i] = TFHE.shl(ct[i], 0); // this is similar to no-op, except it would fail if ct is a "fake" handle,
+            // not corresponding to a verified ciphertext in privileged memory
+        }
+        DecryptionRequestEUint4 memory decryptionReq = DecryptionRequestEUint4(
+            ct_r,
+            msg.sender,
+            callbackSelector,
+            msgValue,
+            maxTimestamp
+        );
+        decryptionRequestsEUint4[initialCounter] = decryptionReq;
+        emit EventDecryptionEUint4(initialCounter, ct_r, msg.sender, callbackSelector, msgValue, maxTimestamp);
         counter++;
     }
 
@@ -284,6 +331,26 @@ contract OraclePredeploy is Ownable2Step {
             callbackCalldata
         );
         emit ResultCallbackBool(requestID, success, result);
+        isFulfilled[requestID] = true;
+    }
+
+    function fulfillRequestUint4(
+        uint256 requestID,
+        uint8[] memory decryptedCt /*, bytes memory signatureKMS */
+    ) external payable onlyRelayer {
+        // TODO: check EIP712-signature of the DecryptionRequest struct by the KMS (waiting for signature scheme specification of KMS to be decided first)
+        require(!isFulfilled[requestID], "Request is already fulfilled");
+        DecryptionRequestEUint4 memory decryptionReq = decryptionRequestsEUint4[requestID];
+        require(block.timestamp <= decryptionReq.maxTimestamp, "Too late");
+        uint256 len = decryptedCt.length;
+        bytes memory callbackCalldata = abi.encodeWithSelector(decryptionReq.callbackSelector, requestID);
+        for (uint256 i; i < len; i++) {
+            callbackCalldata = abi.encodePacked(callbackCalldata, abi.encode(decryptedCt[i]));
+        }
+        (bool success, bytes memory result) = (decryptionReq.contractCaller).call{value: decryptionReq.msgValue}(
+            callbackCalldata
+        );
+        emit ResultCallbackUint4(requestID, success, result);
         isFulfilled[requestID] = true;
     }
 
