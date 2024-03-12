@@ -1,11 +1,5 @@
 changelog:
   categories:
-    - title: Summary
-      labels:
-        - summary
-    - title: What's Changed
-      labels:
-        - changed
     - title: Breaking Changes
       labels:
         - breaking-changes
@@ -21,6 +15,3 @@ changelog:
     - title: Other Changes
       labels:
         - "*"
-    - title: Resources
-      labels:
-        - resources
