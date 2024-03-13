@@ -54,4 +54,15 @@ function mint(bytes calldata encryptedAmount) public onlyContractOwner {
 
 ## Contract state variables with encrypted types
 
-If you require a state variable that utilizes these encrypted types, you cannot directly assign the value with `immutable` or `constant` keyword. If you're using these types, the compiler attempts to ascertain the value of `TFHE.asEuintXX(yy)` during compilation, which is not feasible because `asEuintXX()` invokes a precompiled contract. To address this challenge, you must not declare your encrypted state variables as `immutable` or `constant`.
+If you require a state variable that utilizes these encrypted types, you cannot assign the value with `immutable` or `constant` keyword. If you're using these types, the compiler attempts to ascertain the value of `TFHE.asEuintXX(yy)` during compilation, which is not feasible because `asEuintXX()` invokes a precompiled contract. To address this challenge, you must not declare your encrypted state variables as `immutable` or `constant`. Still, you can use the following methods to set your variables:
+
+```solidity
+euint32 private totalSupply = TFHE.asEuint(0);
+```
+
+```solidity
+euint32 private totalSupply;
+constructor() {
+  totalSupply = TFHE.asEuint32(0);
+}
+```
