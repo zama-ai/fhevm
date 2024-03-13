@@ -9,7 +9,7 @@ task('task:mint')
 
     const signers = await ethers.getSigners();
 
-    const encryptedERC20 = await ethers.getContractAt('EncryptedERC20', EncryptedERC20.address);
+    const encryptedERC20 = (await ethers.getContractAt('EncryptedERC20', EncryptedERC20.address)) as any;
 
     await encryptedERC20.connect(signers[0]).mint(+taskArguments.mint);
 
