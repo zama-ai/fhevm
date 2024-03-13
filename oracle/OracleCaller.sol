@@ -11,6 +11,7 @@ contract OracleCaller {
         _;
     }
     mapping(uint256 => ebool[]) private paramsEBool;
+    mapping(uint256 => euint4[]) private paramsEUint4;
     mapping(uint256 => euint8[]) private paramsEUint8;
     mapping(uint256 => euint16[]) private paramsEUint16;
     mapping(uint256 => euint32[]) private paramsEUint32;
@@ -22,6 +23,10 @@ contract OracleCaller {
 
     function addParamsEBool(uint256 requestID, ebool _ebool) internal {
         paramsEBool[requestID].push(_ebool);
+    }
+
+    function addParamsEUint4(uint256 requestID, euint4 _euint4) internal {
+        paramsEUint4[requestID].push(_euint4);
     }
 
     function addParamsEUint8(uint256 requestID, euint8 _euint8) internal {
@@ -50,6 +55,10 @@ contract OracleCaller {
 
     function getParamsEBool(uint256 requestID) internal view returns (ebool[] memory) {
         return paramsEBool[requestID];
+    }
+
+    function getParamsEUint4(uint256 requestID) internal view returns (euint4[] memory) {
+        return paramsEUint4[requestID];
     }
 
     function getParamsEUint8(uint256 requestID) internal view returns (euint8[] memory) {
