@@ -25,6 +25,8 @@
     "task:getEthereumAddress": "hardhat task:getEthereumAddress",
     "task:deployIdentity": "hardhat task:deployIdentity",
     "task:deployOracle": "hardhat task:deployOracle",
+    "task:addRelayer": "hardhat task:addRelayer",
+    "task:removeRelayer": "hardhat task:removeRelayer",
     "fhevm:start": "docker run -i -p 8545:8545 --rm --name fhevm ghcr.io/zama-ai/ethermint-dev-node:v0.3.0-5",
     "fhevm:stop": "docker rm -f fhevm",
     "fhevm:restart": "fhevm:stop && fhevm:start",

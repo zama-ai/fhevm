@@ -15,6 +15,7 @@ import './tasks/getEthereumAddress';
 import './tasks/mint';
 import './tasks/taskDeploy';
 import './tasks/taskIdentity';
+import './tasks/taskOracleRelayer';
 
 // Function to recursively get all .sol files in a folder
 function getAllSolidityFiles(dir: string, fileList: string[] = []): string[] {

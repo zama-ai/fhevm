@@ -11,11 +11,10 @@ task('task:deployERC20').setAction(async function (taskArguments: TaskArguments,
 });
 
 task('task:deployOracle')
-  .addParam('privateKey', 'The user private key')
+  .addParam('privateKey', 'The deployer private key')
   .addParam('ownerAddress', 'The owner address')
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
-    console.log(taskArguments);
-    const deployer = new ethers.Wallet(taskArguments.deployerPrivateKey).connect(ethers.provider);
+    const deployer = new ethers.Wallet(taskArguments.privateKey).connect(ethers.provider);
     const oracleFactory = await ethers.getContractFactory('OraclePredeploy');
     const oracle = await oracleFactory.connect(deployer).deploy(taskArguments.ownerAddress);
     await oracle.waitForDeployment();
@@ -40,7 +39,6 @@ task('task:deployIdentity').setAction(async function (taskArguments: TaskArgumen
     .deploy(await identityRegistry.getAddress(), await erc20Rules.getAddress(), 'CompliantToken', 'CTOK');
   await compliantERC20.waitForDeployment();
 
-  // const erc20RulesAddress = await await erc20Rules.getAddress();
   const registryAddress = await identityRegistry.getAddress();
   const erc20Address = await compliantERC20.getAddress();
   console.log(chalk.bold('Available methods:'));
