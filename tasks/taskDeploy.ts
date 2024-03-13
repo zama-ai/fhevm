@@ -10,6 +10,19 @@ task('task:deployERC20').setAction(async function (taskArguments: TaskArguments,
   console.log('EncryptedERC20 deployed to: ', await encryptedERC20.getAddress());
 });
 
+task('task:deployOracle')
+  .addParam('privateKey', 'The user private key')
+  .addParam('ownerAddress', 'The owner address')
+  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    console.log(taskArguments);
+    const deployer = new ethers.Wallet(taskArguments.deployerPrivateKey).connect(ethers.provider);
+    const oracleFactory = await ethers.getContractFactory('OraclePredeploy');
+    const oracle = await oracleFactory.connect(deployer).deploy(taskArguments.ownerAddress);
+    await oracle.waitForDeployment();
+    const oraclePredeployAddress = await oracle.getAddress();
+    console.log('oracle was deployed at address: ', oraclePredeployAddress);
+  });
+
 task('task:deployIdentity').setAction(async function (taskArguments: TaskArguments, { ethers }) {
   const signers = await ethers.getSigners();
 
