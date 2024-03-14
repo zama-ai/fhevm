@@ -16,7 +16,7 @@ task('task:addRelayer')
     const tx = await oracle.addRelayer(taskArguments.relayerAddress);
     const rcpt = await tx.wait();
     if (rcpt!.status === 1) {
-      console.log(`Account ${taskArguments.oracleAddress} was succesfully added as an oracle relayer`);
+      console.log(`Account ${taskArguments.relayerAddress} was succesfully added as an oracle relayer`);
     } else {
       console.log('Adding relayer failed');
     }
@@ -36,7 +36,7 @@ task('task:removeRelayer')
     const tx = await oracle.removeRelayer(taskArguments.relayerAddress);
     const rcpt = await tx.wait();
     if (rcpt!.status === 1) {
-      console.log(`Account ${taskArguments.oracleAddress} was succesfully removed from authorized relayers`);
+      console.log(`Account ${taskArguments.relayerAddress} was succesfully removed from authorized relayers`);
     } else {
       console.log('Removing relayer failed');
     }

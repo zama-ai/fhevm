@@ -34,7 +34,7 @@ contract TestAsyncDecrypt is OracleCaller {
   }
 ```
 
-Note that an [`OraclePredeploy`](../../oracle/OraclePredeploy.sol) contract is already predeployed on the fhEVM testnet at the address `ORACLE_PREDEPLOY_ADDRESS` hardcoded inside [`fhevm/oracle/lib/PredeployAddress.sol`](../../oracle/lib/PredeployAddress.sol), and a default relayer account is already added. Relayers are the only accounts authorized to fulfil the decryption requests. However `OraclePredeploy` would still check the KMS signature during the fulfilment, so we trust the relayer only to forward the request on time, a rogue relayer could not cheat by sending fake decryption results.
+Note that an [`OraclePredeploy`](../../oracle/OraclePredeploy.sol) contract is already predeployed on the fhEVM testnet, and a default relayer account is already added. Relayers are the only accounts authorized to fulfil the decryption requests. However `OraclePredeploy` would still check the KMS signature during the fulfilment, so we trust the relayer only to forward the request on time, a rogue relayer could not cheat by sending fake decryption results.
 
 The interface of the `Oracle.requestDecryption` function from previous snippet is the following:
 
