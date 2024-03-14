@@ -1,31 +1,41 @@
+import { toBufferBE } from 'bigint-buffer';
 import { Signer } from 'ethers';
-import fhevmjs, { FhevmInstance } from 'fhevmjs';
+import fhevmjs, { FhevmInstance, getPublicKeyCallParams } from 'fhevmjs';
 import { ethers as hethers } from 'hardhat';
 
-export const FHE_LIB_ADDRESS = '0x000000000000000000000000000000000000005d';
+const HARDHAT_NETWORK = process.env.HARDHAT_NETWORK;
 
-let publicKey: string;
+let publicKey: string | undefined;
 let chainId: number;
 
 export const createInstance = async (contractAddress: string, account: Signer, ethers: typeof hethers) => {
-  if (!publicKey || !chainId) {
-    // 1. Get chain id
-    const provider = ethers.provider;
+  // 1. Get chain id
+  const provider = ethers.provider;
 
-    const network = await provider.getNetwork();
-    chainId = +network.chainId.toString(); // Need to be a number
-
+  const network = await provider.getNetwork();
+  chainId = +network.chainId.toString(); // Need to be a number
+  try {
     // Get blockchain public key
-    const ret = await provider.call({
-      to: FHE_LIB_ADDRESS,
-      // first four bytes of keccak256('fhePubKey(bytes1)') + 1 byte for library
-      data: '0xd9d47bb001',
-    });
+    const ret = await provider.call(getPublicKeyCallParams());
     const decoded = ethers.AbiCoder.defaultAbiCoder().decode(['bytes'], ret);
     publicKey = decoded[0];
+  } catch (e) {
+    publicKey = undefined;
   }
+
   const instance = await fhevmjs.createInstance({ chainId, publicKey });
+
+  if (HARDHAT_NETWORK === 'hardhat') {
+    instance.encryptBool = createUintToUint8ArrayFunction(1);
+    instance.encrypt4 = createUintToUint8ArrayFunction(4);
+    instance.encrypt8 = createUintToUint8ArrayFunction(8);
+    instance.encrypt16 = createUintToUint8ArrayFunction(16);
+    instance.encrypt32 = createUintToUint8ArrayFunction(32);
+    instance.encrypt64 = createUintToUint8ArrayFunction(64);
+    instance.decrypt = (_, hexadecimalString) => BigInt(hexadecimalString);
+  }
   await generatePublicKey(contractAddress, account, instance);
+
   return instance;
 };
 
@@ -34,7 +44,6 @@ const generatePublicKey = async (contractAddress: string, signer: Signer, instan
   const generatedToken = instance.generatePublicKey({
     verifyingContract: contractAddress,
   });
-
   // Sign the public key
   const signature = await signer.signTypedData(
     generatedToken.eip712.domain,
@@ -43,3 +52,11 @@ const generatePublicKey = async (contractAddress: string, signer: Signer, instan
   );
   instance.setSignature(contractAddress, signature);
 };
+
+function createUintToUint8ArrayFunction(numBits: number) {
+  const numBytes = Math.ceil(numBits / 8);
+  return function (uint: number | bigint | boolean) {
+    const buffer = toBufferBE(BigInt(uint), numBytes);
+    return buffer;
+  };
+}

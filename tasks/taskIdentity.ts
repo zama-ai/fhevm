@@ -18,7 +18,7 @@ task('task:identity:initRegistry')
     const contractAddress = taskArguments.registry;
 
     const signers = await ethers.getSigners();
-    const contract = (await ethers.getContractAt('IdentityRegistry', contractAddress)).connect(signers[0]);
+    const contract = (await ethers.getContractAt('IdentityRegistry', contractAddress)).connect(signers[0]) as any;
     console.log(chalk.bold('Step 1: Adding registrar'));
     console.log(chalk.italic('eg: registry.addRegistrar(wallet, id)'));
     try {
@@ -49,8 +49,8 @@ task('task:identity:initRegistry')
     console.log(chalk.italic("eg: registry.setIdentifier(wallet, 'country', Enc(1))"));
     const instance = await createInstance(contractAddress, signers[0], ethers);
 
-    const country1 = instance.encrypt32(1);
-    const country2 = instance.encrypt32(2);
+    const country1 = instance.encrypt64(1);
+    const country2 = instance.encrypt64(2);
 
     const tx1Identifier = await contract.connect(signers[1]).setIdentifier(signers[0], 'country', country1);
     const tx2Identifier = await contract.connect(signers[1]).setIdentifier(signers[1], 'country', country1);
@@ -69,7 +69,7 @@ task('task:identity:grantAccess')
     const erc20Address = taskArguments.erc20;
 
     const signers = await ethers.getSigners();
-    const registry = await ethers.getContractAt('IdentityRegistry', registryAddress);
+    const registry = (await ethers.getContractAt('IdentityRegistry', registryAddress)) as any;
     const erc20 = await ethers.getContractAt('CompliantERC20', erc20Address);
 
     console.log(chalk.bold('Step 1: Getting list of identifiers from ERC20 contract'));
@@ -111,8 +111,8 @@ task('task:identity:mint')
 
     console.log(chalk.bold('Step 2: Alice transfers some tokens'));
     console.log(chalk.italic('eg: erc20.transfer(wallet, Enc(20000))'));
-    const amount20k = instance.encrypt32(20000);
-    const amount10k = instance.encrypt32(10000);
+    const amount20k = instance.encrypt64(20000);
+    const amount10k = instance.encrypt64(10000);
 
     const txT1 = await erc20['transfer(address,bytes)'](signers[2], amount20k);
     const txT2 = await erc20['transfer(address,bytes)'](signers[3], amount10k);
@@ -134,13 +134,13 @@ task('task:identity:transfer')
     const to = taskArguments.to as keyof typeof signers;
     const amount = taskArguments.amount;
 
-    const erc20 = await ethers.getContractAt('CompliantERC20', erc20Address);
+    const erc20 = (await ethers.getContractAt('CompliantERC20', erc20Address)) as any;
 
     const instance = await createInstance(erc20Address, signers[from], ethers);
 
     console.log(chalk.bold(`Sending ${amount} from ${from} to ${to}`));
     console.log(chalk.italic(`eg: erc20.transfer(to, Enc(${amount}))`));
-    const encryptedAmount = instance.encrypt32(+amount);
+    const encryptedAmount = instance.encrypt64(+amount);
     const transaction = await erc20.connect(signers[from])['transfer(address,bytes)'](signers[to], encryptedAmount);
     await transaction.wait();
     console.log(`=> ${amount} tokens have been transferred from ${from} to ${to}`);
@@ -155,7 +155,7 @@ task('task:identity:balanceOf')
     const erc20Address = taskArguments.erc20;
     const user = taskArguments.user as keyof typeof signers;
 
-    const erc20 = await ethers.getContractAt('CompliantERC20', erc20Address);
+    const erc20 = (await ethers.getContractAt('CompliantERC20', erc20Address)) as any;
 
     const instance = await createInstance(erc20Address, signers[user], ethers);
 

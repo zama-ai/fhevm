@@ -10,6 +10,18 @@ task('task:deployERC20').setAction(async function (taskArguments: TaskArguments,
   console.log('EncryptedERC20 deployed to: ', await encryptedERC20.getAddress());
 });
 
+task('task:deployOracle')
+  .addParam('privateKey', 'The deployer private key')
+  .addParam('ownerAddress', 'The owner address')
+  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    const deployer = new ethers.Wallet(taskArguments.privateKey).connect(ethers.provider);
+    const oracleFactory = await ethers.getContractFactory('OraclePredeploy');
+    const oracle = await oracleFactory.connect(deployer).deploy(taskArguments.ownerAddress);
+    await oracle.waitForDeployment();
+    const oraclePredeployAddress = await oracle.getAddress();
+    console.log('oracle was deployed at address: ', oraclePredeployAddress);
+  });
+
 task('task:deployIdentity').setAction(async function (taskArguments: TaskArguments, { ethers }) {
   const signers = await ethers.getSigners();
 
@@ -27,7 +39,6 @@ task('task:deployIdentity').setAction(async function (taskArguments: TaskArgumen
     .deploy(await identityRegistry.getAddress(), await erc20Rules.getAddress(), 'CompliantToken', 'CTOK');
   await compliantERC20.waitForDeployment();
 
-  // const erc20RulesAddress = await await erc20Rules.getAddress();
   const registryAddress = await identityRegistry.getAddress();
   const erc20Address = await compliantERC20.getAddress();
   console.log(chalk.bold('Available methods:'));
