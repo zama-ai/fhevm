@@ -59,7 +59,7 @@ contract TFHEManualTestSuite {
 
     function test_eaddress_decrypt(bytes calldata addr) public view returns (address) {
         eaddress addProc = TFHE.asEaddress(addr);
-        return TFHE.decryptCustom(addProc);
+        return TFHE.decrypt(addProc);
     }
 
     function test_ebool_to_euint4_cast(bool input) public view returns (uint16) {
