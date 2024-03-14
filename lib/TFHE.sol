@@ -8,6 +8,7 @@ type euint8 is uint256;
 type euint16 is uint256;
 type euint32 is uint256;
 type euint64 is uint256;
+type eaddress is uint256;
 
 library Common {
     // Values used to communicate types to the runtime.
@@ -17,6 +18,8 @@ library Common {
     uint8 internal constant euint16_t = 3;
     uint8 internal constant euint32_t = 4;
     uint8 internal constant euint64_t = 5;
+    uint8 internal constant euint128_t = 6;
+    uint8 internal constant euint160_t = 7;
 }
 
 import "./Impl.sol";
@@ -5572,6 +5575,84 @@ library TFHE {
 
     function randEuint64(uint64 upperBound) internal view returns (euint64) {
         return euint64.wrap(Impl.randBounded(upperBound, Common.euint64_t));
+    }
+
+    // Decrypts the encrypted 'value'.
+    function decryptCustom(eaddress value) internal view returns (address) {
+        return address(uint160(Impl.decAddress(eaddress.unwrap(value))));
+    }
+
+    // From bytes to eaddress
+    function asEaddress(bytes memory ciphertext) internal pure returns (eaddress) {
+        return eaddress.wrap(Impl.verify(ciphertext, Common.euint160_t));
+    }
+
+    // Convert a plaintext value to an encrypted asEaddress.
+    function asEaddress(uint256 value) internal pure returns (eaddress) {
+        return eaddress.wrap(Impl.trivialEncrypt(value, Common.euint160_t));
+    }
+
+    // Return true if the enrypted integer is initialized and false otherwise.
+    function isInitialized(eaddress v) internal pure returns (bool) {
+        return eaddress.unwrap(v) != 0;
+    }
+
+    // Evaluate eq(a, b) and return the result.
+    function eq(eaddress a, eaddress b) internal pure returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEaddress(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEaddress(0);
+        }
+        return ebool.wrap(Impl.eq(eaddress.unwrap(a), eaddress.unwrap(b), false));
+    }
+
+    // Evaluate ne(a, b) and return the result.
+    function ne(eaddress a, eaddress b) internal pure returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEaddress(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEaddress(0);
+        }
+        return ebool.wrap(Impl.ne(eaddress.unwrap(a), eaddress.unwrap(b), false));
+    }
+
+    // Evaluate eq(a, b) and return the result.
+    function eq(eaddress a, address b) internal pure returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEaddress(0);
+        }
+        uint256 bProc = uint256(uint160(b));
+        return ebool.wrap(Impl.eq(eaddress.unwrap(a), bProc, true));
+    }
+
+    // Evaluate eq(a, b) and return the result.
+    function eq(address b, eaddress a) internal pure returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEaddress(0);
+        }
+        uint256 bProc = uint256(uint160(b));
+        return ebool.wrap(Impl.eq(eaddress.unwrap(a), bProc, true));
+    }
+
+    // Evaluate ne(a, b) and return the result.
+    function ne(eaddress a, address b) internal pure returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEaddress(0);
+        }
+        uint256 bProc = uint256(uint160(b));
+        return ebool.wrap(Impl.ne(eaddress.unwrap(a), bProc, true));
+    }
+
+    // Evaluate ne(a, b) and return the result.
+    function ne(address b, eaddress a) internal pure returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEaddress(0);
+        }
+        uint256 bProc = uint256(uint160(b));
+        return ebool.wrap(Impl.ne(eaddress.unwrap(a), bProc, true));
     }
 
     // Decrypts the encrypted 'value'.

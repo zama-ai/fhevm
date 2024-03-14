@@ -15,6 +15,53 @@ contract TFHEManualTestSuite {
         return TFHE.decrypt(TFHE.select(controlProc, ifTrueProc, ifFalseProc));
     }
 
+    function test_eq_eaddress_eaddress(bytes calldata a, bytes calldata b) public view returns (bool) {
+        eaddress aProc = TFHE.asEaddress(a);
+        eaddress bProc = TFHE.asEaddress(b);
+        ebool result = TFHE.eq(aProc, bProc);
+        return TFHE.decrypt(result);
+    }
+
+    function test_ne_eaddress_eaddress(bytes calldata a, bytes calldata b) public view returns (bool) {
+        eaddress aProc = TFHE.asEaddress(a);
+        eaddress bProc = TFHE.asEaddress(b);
+        ebool result = TFHE.ne(aProc, bProc);
+        return TFHE.decrypt(result);
+    }
+
+    function eq_eaddress_address(bytes calldata a, address b) public view returns (bool) {
+        eaddress aProc = TFHE.asEaddress(a);
+        address bProc = b;
+        ebool result = TFHE.eq(aProc, bProc);
+        return TFHE.decrypt(result);
+    }
+
+    function eq_address_eaddress(address b, bytes calldata a) public view returns (bool) {
+        eaddress aProc = TFHE.asEaddress(a);
+        address bProc = b;
+        ebool result = TFHE.eq(aProc, bProc);
+        return TFHE.decrypt(result);
+    }
+
+    function ne_eaddress_address(bytes calldata a, address b) public view returns (bool) {
+        eaddress aProc = TFHE.asEaddress(a);
+        address bProc = b;
+        ebool result = TFHE.ne(aProc, bProc);
+        return TFHE.decrypt(result);
+    }
+
+    function ne_address_eaddress(address b, bytes calldata a) public view returns (bool) {
+        eaddress aProc = TFHE.asEaddress(a);
+        address bProc = b;
+        ebool result = TFHE.ne(aProc, bProc);
+        return TFHE.decrypt(result);
+    }
+
+    function test_eaddress_decrypt(bytes calldata addr) public view returns (address) {
+        eaddress addProc = TFHE.asEaddress(addr);
+        return TFHE.decryptCustom(addProc);
+    }
+
     function test_ebool_to_euint4_cast(bool input) public view returns (uint16) {
         return TFHE.decrypt(TFHE.asEuint4(TFHE.asEbool(input)));
     }
