@@ -247,10 +247,6 @@ library Impl {
         return FhevmLib(address(EXT_TFHE_LIBRARY)).reencrypt(ciphertext, uint256(publicKey));
     }
 
-    function decAddress(uint256 ciphertext) internal view returns (uint256) {
-        return FhevmLib(address(EXT_TFHE_LIBRARY)).decrypt(ciphertext);
-    }
-
     function fhePubKey() internal view returns (bytes memory key) {
         // Set a byte value of 1 to signal the call comes from the library.
         key = FhevmLib(address(EXT_TFHE_LIBRARY)).fhePubKey(bytes1(0x01));

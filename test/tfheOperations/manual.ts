@@ -71,28 +71,28 @@ describe('TFHE manual operations', function () {
   it('eaddress eq scalar eaddress,address true', async function () {
     const a = this.instances.alice.encryptAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
     const b = '0x8ba1f109551bd432803012645ac136ddd64dba72';
-    const res = await this.contract.eq_eaddress_address(a, b);
+    const res = await this.contract.test_eq_eaddress_address(a, b);
     expect(res).to.equal(true);
   });
 
   it('eaddress eq scalar eaddress,address false', async function () {
     const a = this.instances.alice.encryptAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
     const b = '0x9aa1f109551bd432803012645ac136ddd64dba72';
-    const res = await this.contract.eq_eaddress_address(a, b);
+    const res = await this.contract.test_eq_eaddress_address(a, b);
     expect(res).to.equal(false);
   });
 
   it('eaddress eq scalar address,eaddress true', async function () {
     const a = this.instances.alice.encryptAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
     const b = '0x8ba1f109551bd432803012645ac136ddd64dba72';
-    const res = await this.contract.eq_address_eaddress(b, a);
+    const res = await this.contract.test_eq_address_eaddress(b, a);
     expect(res).to.equal(true);
   });
 
   it('eaddress eq scalar address,eaddress false', async function () {
     const a = this.instances.alice.encryptAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
     const b = '0x9aa1f109551bd432803012645ac136ddd64dba72';
-    const res = await this.contract.eq_address_eaddress(b, a);
+    const res = await this.contract.test_eq_address_eaddress(b, a);
     expect(res).to.equal(false);
   });
 
@@ -113,28 +113,28 @@ describe('TFHE manual operations', function () {
   it('eaddress ne scalar eaddress,address true', async function () {
     const a = this.instances.alice.encryptAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
     const b = '0x9aa1f109551bd432803012645ac136ddd64dba72';
-    const res = await this.contract.ne_eaddress_address(a, b);
+    const res = await this.contract.test_ne_eaddress_address(a, b);
     expect(res).to.equal(true);
   });
 
   it('eaddress ne scalar eaddress,address false', async function () {
     const a = this.instances.alice.encryptAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
     const b = '0x8ba1f109551bd432803012645ac136ddd64dba72';
-    const res = await this.contract.ne_eaddress_address(a, b);
+    const res = await this.contract.test_ne_eaddress_address(a, b);
     expect(res).to.equal(false);
   });
 
   it('eaddress ne scalar address,eaddress false', async function () {
     const a = this.instances.alice.encryptAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
     const b = '0x8ba1f109551bd432803012645ac136ddd64dba72';
-    const res = await this.contract.ne_address_eaddress(b, a);
+    const res = await this.contract.test_ne_address_eaddress(b, a);
     expect(res).to.equal(false);
   });
 
   it('eaddress ne scalar address,eaddress true', async function () {
     const a = this.instances.alice.encryptAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
     const b = '0x9aa1f109551bd432803012645ac136ddd64dba72';
-    const res = await this.contract.ne_address_eaddress(b, a);
+    const res = await this.contract.test_ne_address_eaddress(b, a);
     expect(res).to.equal(true);
   });
 
