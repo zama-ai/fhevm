@@ -22,6 +22,15 @@ library Oracle {
     }
 
     function requestDecryption(
+        euint4[] memory ct,
+        bytes4 callbackSelector,
+        uint256 msgValue,
+        uint256 maxTimestamp
+    ) internal returns (uint256 initialCounter) {
+        initialCounter = oraclePredeploy.requestDecryptionEUint4(ct, callbackSelector, msgValue, maxTimestamp);
+    }
+
+    function requestDecryption(
         euint8[] memory ct,
         bytes4 callbackSelector,
         uint256 msgValue,
