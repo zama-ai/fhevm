@@ -27,7 +27,7 @@
     "task:deployOracle": "hardhat task:deployOracle",
     "task:addRelayer": "hardhat task:addRelayer",
     "task:removeRelayer": "hardhat task:removeRelayer",
-    "fhevm:start": "docker run -i -p 8545:8545 --rm --name fhevm ghcr.io/zama-ai/ethermint-dev-node:v0.3.0-5",
+    "fhevm:start": " ./launch-fhevm.sh",
     "fhevm:stop": "docker rm -f fhevm",
     "fhevm:restart": "fhevm:stop && fhevm:start",
     "fhevm:faucet": "npm run fhevm:faucet:alice && sleep 5 && npm run fhevm:faucet:bob && sleep 5 && npm run fhevm:faucet:carol && sleep 5 && npm run fhevm:faucet:dave && sleep 5 && npm run fhevm:faucet:eve",

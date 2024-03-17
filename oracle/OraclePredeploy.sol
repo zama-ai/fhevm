@@ -156,21 +156,18 @@ contract OraclePredeploy is Ownable2Step {
     ) external returns (uint256 initialCounter) {
         initialCounter = counter;
         uint256 len = ct.length;
-        ebool[] memory ct_r = new ebool[](len);
         for (uint256 i = 0; i < len; i++) {
             require(TFHE.isInitialized(ct[i]), "Ciphertext is not initialized");
-            ct_r[i] = TFHE.and(ct[i], eTRUE); // this is similar to no-op, except it would fail if ct is a "fake" handle,
-            // not corresponding to a verified ciphertext in privileged memory
         }
         DecryptionRequestEBool memory decryptionReq = DecryptionRequestEBool(
-            ct_r,
+            ct,
             msg.sender,
             callbackSelector,
             msgValue,
             maxTimestamp
         );
         decryptionRequestsEBool[initialCounter] = decryptionReq;
-        emit EventDecryptionEBool(initialCounter, ct_r, msg.sender, callbackSelector, msgValue, maxTimestamp);
+        emit EventDecryptionEBool(initialCounter, ct, msg.sender, callbackSelector, msgValue, maxTimestamp);
         counter++;
     }
 
@@ -184,21 +181,18 @@ contract OraclePredeploy is Ownable2Step {
     ) external returns (uint256 initialCounter) {
         initialCounter = counter;
         uint256 len = ct.length;
-        euint4[] memory ct_r = new euint4[](len);
         for (uint256 i = 0; i < len; i++) {
             require(TFHE.isInitialized(ct[i]), "Ciphertext is not initialized");
-            ct_r[i] = TFHE.shl(ct[i], 0); // this is similar to no-op, except it would fail if ct is a "fake" handle,
-            // not corresponding to a verified ciphertext in privileged memory
         }
         DecryptionRequestEUint4 memory decryptionReq = DecryptionRequestEUint4(
-            ct_r,
+            ct,
             msg.sender,
             callbackSelector,
             msgValue,
             maxTimestamp
         );
         decryptionRequestsEUint4[initialCounter] = decryptionReq;
-        emit EventDecryptionEUint4(initialCounter, ct_r, msg.sender, callbackSelector, msgValue, maxTimestamp);
+        emit EventDecryptionEUint4(initialCounter, ct, msg.sender, callbackSelector, msgValue, maxTimestamp);
         counter++;
     }
 
@@ -212,21 +206,18 @@ contract OraclePredeploy is Ownable2Step {
     ) external returns (uint256 initialCounter) {
         initialCounter = counter;
         uint256 len = ct.length;
-        euint8[] memory ct_r = new euint8[](len);
         for (uint256 i = 0; i < len; i++) {
             require(TFHE.isInitialized(ct[i]), "Ciphertext is not initialized");
-            ct_r[i] = TFHE.shl(ct[i], 0); // this is similar to no-op, except it would fail if ct is a "fake" handle,
-            // not corresponding to a verified ciphertext in privileged memory
         }
         DecryptionRequestEUint8 memory decryptionReq = DecryptionRequestEUint8(
-            ct_r,
+            ct,
             msg.sender,
             callbackSelector,
             msgValue,
             maxTimestamp
         );
         decryptionRequestsEUint8[initialCounter] = decryptionReq;
-        emit EventDecryptionEUint8(initialCounter, ct_r, msg.sender, callbackSelector, msgValue, maxTimestamp);
+        emit EventDecryptionEUint8(initialCounter, ct, msg.sender, callbackSelector, msgValue, maxTimestamp);
         counter++;
     }
 
@@ -240,21 +231,18 @@ contract OraclePredeploy is Ownable2Step {
     ) external returns (uint256 initialCounter) {
         initialCounter = counter;
         uint256 len = ct.length;
-        euint16[] memory ct_r = new euint16[](len);
         for (uint256 i = 0; i < len; i++) {
             require(TFHE.isInitialized(ct[i]), "Ciphertext is not initialized");
-            ct_r[i] = TFHE.shl(ct[i], 0); // this is similar to no-op, except it would fail if ct is a "fake" handle,
-            // not corresponding to a verified ciphertext in privileged memory
         }
         DecryptionRequestEUint16 memory decryptionReq = DecryptionRequestEUint16(
-            ct_r,
+            ct,
             msg.sender,
             callbackSelector,
             msgValue,
             maxTimestamp
         );
         decryptionRequestsEUint16[initialCounter] = decryptionReq;
-        emit EventDecryptionEUint16(initialCounter, ct_r, msg.sender, callbackSelector, msgValue, maxTimestamp);
+        emit EventDecryptionEUint16(initialCounter, ct, msg.sender, callbackSelector, msgValue, maxTimestamp);
         counter++;
     }
 
@@ -268,21 +256,18 @@ contract OraclePredeploy is Ownable2Step {
     ) external returns (uint256 initialCounter) {
         initialCounter = counter;
         uint256 len = ct.length;
-        euint32[] memory ct_r = new euint32[](len);
         for (uint256 i = 0; i < len; i++) {
             require(TFHE.isInitialized(ct[i]), "Ciphertext is not initialized");
-            ct_r[i] = TFHE.shl(ct[i], 0); // this is similar to no-op, except it would fail if ct is a "fake" handle,
-            // not corresponding to a verified ciphertext in privileged memory
         }
         DecryptionRequestEUint32 memory decryptionReq = DecryptionRequestEUint32(
-            ct_r,
+            ct,
             msg.sender,
             callbackSelector,
             msgValue,
             maxTimestamp
         );
         decryptionRequestsEUint32[initialCounter] = decryptionReq;
-        emit EventDecryptionEUint32(initialCounter, ct_r, msg.sender, callbackSelector, msgValue, maxTimestamp);
+        emit EventDecryptionEUint32(initialCounter, ct, msg.sender, callbackSelector, msgValue, maxTimestamp);
         counter++;
     }
 
@@ -296,21 +281,18 @@ contract OraclePredeploy is Ownable2Step {
     ) external returns (uint256 initialCounter) {
         initialCounter = counter;
         uint256 len = ct.length;
-        euint64[] memory ct_r = new euint64[](len);
         for (uint256 i = 0; i < len; i++) {
             require(TFHE.isInitialized(ct[i]), "Ciphertext is not initialized");
-            ct_r[i] = TFHE.shl(ct[i], 0); // this is similar to no-op, except it would fail if ct is a "fake" handle,
-            // not corresponding to a verified ciphertext in privileged memory
         }
         DecryptionRequestEUint64 memory decryptionReq = DecryptionRequestEUint64(
-            ct_r,
+            ct,
             msg.sender,
             callbackSelector,
             msgValue,
             maxTimestamp
         );
         decryptionRequestsEUint64[initialCounter] = decryptionReq;
-        emit EventDecryptionEUint64(initialCounter, ct_r, msg.sender, callbackSelector, msgValue, maxTimestamp);
+        emit EventDecryptionEUint64(initialCounter, ct, msg.sender, callbackSelector, msgValue, maxTimestamp);
         counter++;
     }
 

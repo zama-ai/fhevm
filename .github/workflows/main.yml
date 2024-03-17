@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: large_ubuntu_16
+    runs-on: large_ubuntu_32
     strategy:
       matrix:
         node-version: [18.x]
@@ -23,7 +23,7 @@ jobs:
         run: |
           # sometimes not created and is not tailed
           touch fhevm.log
-          npm run fhevm:start &> fhevm.log &
-          tail -f fhevm.log | sed '/Starting JSON WebSocket server/ q'
+          npm run fhevm:start &
+          sleep 60
           npm run test:inband
           npm run fhevm:stop || true

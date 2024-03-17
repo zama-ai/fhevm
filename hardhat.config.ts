@@ -1,5 +1,4 @@
 import '@nomicfoundation/hardhat-toolbox';
-import { exec as oldExec } from 'child_process';
 import dotenv from 'dotenv';
 import * as fs from 'fs';
 import 'hardhat-deploy';
@@ -10,7 +9,6 @@ import { task } from 'hardhat/config';
 import type { NetworkUserConfig } from 'hardhat/types';
 import { resolve } from 'path';
 import * as path from 'path';
-import { promisify } from 'util';
 
 import './tasks/accounts';
 import './tasks/getEthereumAddress';
@@ -18,15 +16,6 @@ import './tasks/mint';
 import './tasks/taskDeploy';
 import './tasks/taskIdentity';
 import './tasks/taskOracleRelayer';
-
-const exec = promisify(oldExec);
-
-const getCoin = async (address: string) => {
-  const containerName = process.env['TEST_CONTAINER_NAME'] || 'fhevm';
-  const response = await exec(`docker exec -i ${containerName} faucet ${address} | grep height`);
-  const res = JSON.parse(response.stdout);
-  if (res.raw_log.match('account sequence mismatch')) await getCoin(address);
-};
 
 // Function to recursively get all .sol files in a folder
 function getAllSolidityFiles(dir: string, fileList: string[] = []): string[] {
@@ -40,6 +29,15 @@ function getAllSolidityFiles(dir: string, fileList: string[] = []): string[] {
   });
   return fileList;
 }
+
+task('compile:specific', 'Compiles only the specified contract')
+  .addParam('contract', "The contract's path")
+  .setAction(async ({ contract }, hre) => {
+    // Adjust the configuration to include only the specified contract
+    hre.config.paths.sources = contract;
+
+    await hre.run('compile');
+  });
 
 task('coverage-mock', 'Run coverage after running pre-process task').setAction(async function (args, env) {
   // Get all .sol files in the examples/ folder
@@ -121,45 +119,36 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
 
 task('test', async (taskArgs, hre, runSuper) => {
   // Run modified test task
-  const privKeyDeployer = process.env.PRIVATE_KEY_ORACLE_DEPLOYER;
-  const privKeyOwner = process.env.PRIVATE_KEY_ORACLE_OWNER;
-  const privKeyRelayer = process.env.PRIVATE_KEY_ORACLE_RELAYER;
-  const deployerAddress = new hre.ethers.Wallet(privKeyDeployer!).address;
-  const ownerAddress = new hre.ethers.Wallet(privKeyOwner!).address;
-  const relayerAddress = new hre.ethers.Wallet(privKeyRelayer!).address;
 
-  if (network !== 'hardhat') {
-    const p1 = getCoin(deployerAddress);
-    const p2 = getCoin(ownerAddress);
-    const p3 = getCoin(relayerAddress);
+  if (network === 'hardhat') {
+    // in fhevm mode all this block is done when launching the node via `pnmp fhevm:start`
+    const privKeyDeployer = process.env.PRIVATE_KEY_ORACLE_DEPLOYER;
+    const privKeyOwner = process.env.PRIVATE_KEY_ORACLE_OWNER;
+    const privKeyRelayer = process.env.PRIVATE_KEY_ORACLE_RELAYER;
+    const deployerAddress = new hre.ethers.Wallet(privKeyDeployer!).address;
+    const ownerAddress = new hre.ethers.Wallet(privKeyOwner!).address;
+    const relayerAddress = new hre.ethers.Wallet(privKeyRelayer!).address;
+
+    await hre.run('task:computePredeployAddress', { privateKey: privKeyDeployer });
+
+    const bal = '0x1000000000000000000000000000000000000000';
+    const p1 = hre.network.provider.send('hardhat_setBalance', [deployerAddress, bal]);
+    const p2 = hre.network.provider.send('hardhat_setBalance', [ownerAddress, bal]);
+    const p3 = hre.network.provider.send('hardhat_setBalance', [relayerAddress, bal]);
     await Promise.all([p1, p2, p3]);
+    await hre.run('compile');
+    await hre.run('task:deployOracle', { privateKey: privKeyDeployer, ownerAddress: ownerAddress });
+
+    const parsedEnv = dotenv.parse(fs.readFileSync('oracle/.env.oracle'));
+    const oraclePredeployAddress = parsedEnv.ORACLE_CONTRACT_PREDEPLOY_ADDRESS;
+
+    await hre.run('task:addRelayer', {
+      privateKey: privKeyOwner,
+      oracleAddress: oraclePredeployAddress,
+      relayerAddress: relayerAddress,
+    });
   }
 
-  await hre.run('compile');
-  await hre.run('task:deployOracle', { privateKey: privKeyDeployer, ownerAddress: ownerAddress });
-
-  const parsedEnv = dotenv.parse(fs.readFileSync('oracle/.env.oracle'));
-  const oraclePredeployAddress = parsedEnv.ORACLE_PREDEPLOY_ADDRESS;
-
-  const solidityTemplate = `// SPDX-License-Identifier: BSD-3-Clause-Clear
-    
-pragma solidity ^0.8.20;
-
-address constant ORACLE_PREDEPLOY_ADDRESS = ${oraclePredeployAddress};
-`;
-
-  try {
-    fs.writeFileSync('./oracle/lib/PredeployAddress.sol', solidityTemplate, { encoding: 'utf8', flag: 'w' });
-    console.log('oracle/lib/PredeployAddress.sol file has been generated successfully.');
-  } catch (error) {
-    console.error('Failed to write oracle/lib/PredeployAddress.sol', error);
-  }
-
-  await hre.run('task:addRelayer', {
-    privateKey: privKeyOwner,
-    oracleAddress: oraclePredeployAddress,
-    relayerAddress: relayerAddress,
-  });
   await runSuper();
 });
 

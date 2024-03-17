@@ -1,8 +1,8 @@
 import chalk from 'chalk';
+import dotenv from 'dotenv';
 import fs from 'fs';
 import { task } from 'hardhat/config';
 import type { TaskArguments } from 'hardhat/types';
-import path from 'path';
 
 task('task:deployERC20').setAction(async function (taskArguments: TaskArguments, { ethers }) {
   const signers = await ethers.getSigners();
@@ -21,16 +21,13 @@ task('task:deployOracle')
     const oracle = await oracleFactory.connect(deployer).deploy(taskArguments.ownerAddress);
     await oracle.waitForDeployment();
     const oraclePredeployAddress = await oracle.getAddress();
-    console.log('OraclePredeploy was deployed at address: ', oraclePredeployAddress);
-
-    const envFilePath = path.join(__dirname, '../oracle/.env.oracle');
-    const content = `ORACLE_PREDEPLOY_ADDRESS=${oraclePredeployAddress}\n`;
-    try {
-      fs.writeFileSync(envFilePath, content, { flag: 'w' });
-      console.log('oraclePredeployAddress written to oracle/.env.oracle successfully!');
-    } catch (err) {
-      console.error('Failed to write to oracle/.env.oracle:', err);
+    const envConfig = dotenv.parse(fs.readFileSync('oracle/.env.oracle'));
+    if (oraclePredeployAddress !== envConfig.ORACLE_CONTRACT_PREDEPLOY_ADDRESS) {
+      throw new Error(
+        `The nonce of the deployer account is not null. Please use another deployer private key or relaunch a clean instance of the fhEVM`,
+      );
     }
+    console.log('OraclePredeploy was deployed at address: ', oraclePredeployAddress);
   });
 
 task('task:deployIdentity').setAction(async function (taskArguments: TaskArguments, { ethers }) {

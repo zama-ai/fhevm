@@ -34,7 +34,7 @@ const faucet = async (address: string) => {
 };
 
 export const initSigners = async (quantity: number): Promise<void> => {
-  const q = process.env.HARDHAT_PARALLEL ? Math.min(quantity, 4) : 4;
+  const q = process.env.HARDHAT_PARALLEL ? Math.min(quantity, 5) : 5;
   if (!signers) {
     if (process.env.HARDHAT_PARALLEL && config.defaultNetwork === 'local') {
       signers = {
