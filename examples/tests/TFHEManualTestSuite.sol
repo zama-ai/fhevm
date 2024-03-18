@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.20;
 
+import "../../abstracts/Reencrypt.sol";
 import "../../lib/TFHE.sol";
 
-contract TFHEManualTestSuite {
+contract TFHEManualTestSuite is Reencrypt {
     function test_select(
         bytes calldata control,
         bytes calldata ifTrue,
@@ -60,6 +61,15 @@ contract TFHEManualTestSuite {
     function test_eaddress_decrypt(bytes calldata addr) public view returns (address) {
         eaddress addProc = TFHE.asEaddress(addr);
         return TFHE.decrypt(addProc);
+    }
+
+    function test_reencrypt_eaddress(
+        bytes calldata addr,
+        bytes32 publicKey,
+        bytes calldata signature
+    ) public view virtual onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
+        eaddress addProc = TFHE.asEaddress(addr);
+        return TFHE.reencrypt(addProc, publicKey);
     }
 
     function test_ebool_to_euint4_cast(bool input) public view returns (uint16) {

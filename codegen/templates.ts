@@ -781,6 +781,11 @@ function tfheCustomMethods(ctx: CodegenContext, mocked: boolean): string {
         return address(uint160(Impl.decrypt(eaddress.unwrap(value))));
     }
 
+    // Reencrypt  the encrypted 'value'.
+    function reencrypt(eaddress value, bytes32 publicKey) internal view returns (bytes memory reencrypted) {
+      return Impl.reencrypt(eaddress.unwrap(value), publicKey);
+  }
+
     // From bytes to eaddress
     function asEaddress(bytes memory ciphertext) internal pure returns (eaddress) {
       return eaddress.wrap(Impl.verify(ciphertext, Common.euint160_t));
