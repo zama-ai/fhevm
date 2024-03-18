@@ -72,7 +72,7 @@
     "eslint": "^8.28.0",
     "eslint-config-prettier": "^8.5.0",
     "ethers": "^6.8.0",
-    "fhevmjs": "^0.4.0-8",
+    "fhevmjs": "^0.4.0-9",
     "fs-extra": "^10.1.0",
     "ganache": "^7.9.0",
     "hardhat": "^2.19.4",
