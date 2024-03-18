@@ -1,10 +1,7 @@
-import { fail } from 'assert';
 import { expect } from 'chai';
-import { writeFile } from 'fs';
 import { ethers } from 'hardhat';
 
 import type { TFHEManualTestSuite } from '../../types/contracts/tests/TFHEManualTestSuite';
-import { OPTIMISTIC_REQUIRES_ENABLED } from '../generated';
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
 
@@ -43,6 +40,7 @@ describe('TFHE manual operations', function () {
   it('Select works returning if true', async function () {
     const res = await this.contract.test_select(
       this.instances.alice.encryptBool(true),
+      this.instances.alice.encrypt32(3),
       this.instances.alice.encrypt32(4),
     );
     expect(res).to.equal(3);
