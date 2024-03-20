@@ -1,4 +1,6 @@
 import chalk from 'chalk';
+import dotenv from 'dotenv';
+import fs from 'fs';
 import { task } from 'hardhat/config';
 import type { TaskArguments } from 'hardhat/types';
 
@@ -19,7 +21,13 @@ task('task:deployOracle')
     const oracle = await oracleFactory.connect(deployer).deploy(taskArguments.ownerAddress);
     await oracle.waitForDeployment();
     const oraclePredeployAddress = await oracle.getAddress();
-    console.log('oracle was deployed at address: ', oraclePredeployAddress);
+    const envConfig = dotenv.parse(fs.readFileSync('oracle/.env.oracle'));
+    if (oraclePredeployAddress !== envConfig.ORACLE_CONTRACT_PREDEPLOY_ADDRESS) {
+      throw new Error(
+        `The nonce of the deployer account is not null. Please use another deployer private key or relaunch a clean instance of the fhEVM`,
+      );
+    }
+    console.log('OraclePredeploy was deployed at address: ', oraclePredeployAddress);
   });
 
 task('task:deployIdentity').setAction(async function (taskArguments: TaskArguments, { ethers }) {

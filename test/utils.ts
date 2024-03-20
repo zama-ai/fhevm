@@ -5,7 +5,7 @@ import type { Counter } from '../types';
 import { TypedContractMethod } from '../types/common';
 import { getSigners } from './signers';
 
-export const waitForBlock = (blockNumber: bigint) => {
+export const waitForBlock = (blockNumber: bigint | number) => {
   if (process.env.HARDHAT_NETWORK === 'hardhat') {
     return new Promise((resolve, reject) => {
       const intervalId = setInterval(async () => {
@@ -34,6 +34,14 @@ export const waitForBlock = (blockNumber: bigint) => {
       });
     });
   }
+};
+
+export const waitNBlocks = async (Nblocks: number) => {
+  const currentBlock = await ethers.provider.getBlockNumber();
+  if (process.env.HARDHAT_NETWORK === 'hardhat') {
+    await produceDummyTransactions(Nblocks);
+  }
+  await waitForBlock(currentBlock + Nblocks);
 };
 
 export const waitForBalance = async (address: string): Promise<void> => {

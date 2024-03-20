@@ -3,13 +3,13 @@
 pragma solidity ^0.8.20;
 
 import "../OraclePredeploy.sol";
-import {ORACLE_PREDEPLOY_ADDRESS} from "./PredeployAddress.sol";
+import {ORACLE_CONTRACT_PREDEPLOY_ADDRESS} from "./PredeployAddress.sol";
 
-OraclePredeploy constant oraclePredeploy = OraclePredeploy(ORACLE_PREDEPLOY_ADDRESS);
+OraclePredeploy constant oraclePredeploy = OraclePredeploy(ORACLE_CONTRACT_PREDEPLOY_ADDRESS);
 
 library Oracle {
     function OraclePredeployAddress() internal pure returns (address) {
-        return ORACLE_PREDEPLOY_ADDRESS;
+        return ORACLE_CONTRACT_PREDEPLOY_ADDRESS;
     }
 
     function requestDecryption(

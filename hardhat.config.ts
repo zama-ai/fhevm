@@ -1,5 +1,5 @@
 import '@nomicfoundation/hardhat-toolbox';
-import { config as dotenvConfig } from 'dotenv';
+import dotenv from 'dotenv';
 import * as fs from 'fs';
 import 'hardhat-deploy';
 import 'hardhat-preprocessor';
@@ -30,6 +30,15 @@ function getAllSolidityFiles(dir: string, fileList: string[] = []): string[] {
   return fileList;
 }
 
+task('compile:specific', 'Compiles only the specified contract')
+  .addParam('contract', "The contract's path")
+  .setAction(async ({ contract }, hre) => {
+    // Adjust the configuration to include only the specified contract
+    hre.config.paths.sources = contract;
+
+    await hre.run('compile');
+  });
+
 task('coverage-mock', 'Run coverage after running pre-process task').setAction(async function (args, env) {
   // Get all .sol files in the examples/ folder
   const examplesPath = path.join(env.config.paths.root, 'examples/');
@@ -56,7 +65,7 @@ task('coverage-mock', 'Run coverage after running pre-process task').setAction(a
 });
 
 const dotenvConfigPath: string = process.env.DOTENV_CONFIG_PATH || './.env';
-dotenvConfig({ path: resolve(__dirname, dotenvConfigPath) });
+dotenv.config({ path: resolve(__dirname, dotenvConfigPath) });
 
 // Ensure that we have all the environment variables we need.
 const mnemonic: string | undefined = process.env.MNEMONIC;
@@ -107,6 +116,41 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
     url: jsonRpcUrl,
   };
 }
+
+task('test', async (taskArgs, hre, runSuper) => {
+  // Run modified test task
+
+  if (network === 'hardhat') {
+    // in fhevm mode all this block is done when launching the node via `pnmp fhevm:start`
+    const privKeyDeployer = process.env.PRIVATE_KEY_ORACLE_DEPLOYER;
+    const privKeyOwner = process.env.PRIVATE_KEY_ORACLE_OWNER;
+    const privKeyRelayer = process.env.PRIVATE_KEY_ORACLE_RELAYER;
+    const deployerAddress = new hre.ethers.Wallet(privKeyDeployer!).address;
+    const ownerAddress = new hre.ethers.Wallet(privKeyOwner!).address;
+    const relayerAddress = new hre.ethers.Wallet(privKeyRelayer!).address;
+
+    await hre.run('task:computePredeployAddress', { privateKey: privKeyDeployer });
+
+    const bal = '0x1000000000000000000000000000000000000000';
+    const p1 = hre.network.provider.send('hardhat_setBalance', [deployerAddress, bal]);
+    const p2 = hre.network.provider.send('hardhat_setBalance', [ownerAddress, bal]);
+    const p3 = hre.network.provider.send('hardhat_setBalance', [relayerAddress, bal]);
+    await Promise.all([p1, p2, p3]);
+    await hre.run('compile');
+    await hre.run('task:deployOracle', { privateKey: privKeyDeployer, ownerAddress: ownerAddress });
+
+    const parsedEnv = dotenv.parse(fs.readFileSync('oracle/.env.oracle'));
+    const oraclePredeployAddress = parsedEnv.ORACLE_CONTRACT_PREDEPLOY_ADDRESS;
+
+    await hre.run('task:addRelayer', {
+      privateKey: privKeyOwner,
+      oracleAddress: oraclePredeployAddress,
+      relayerAddress: relayerAddress,
+    });
+  }
+
+  await runSuper();
+});
 
 const config: HardhatUserConfig = {
   preprocess: {
