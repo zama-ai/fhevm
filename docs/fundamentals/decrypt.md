@@ -38,7 +38,7 @@ contract TestAsyncDecrypt is OracleCaller {
   }
 ```
 
-Note that an [`OraclePredeploy`](../../oracle/OraclePredeploy.sol) contract is already predeployed on the fhEVM testnet, and a default relayer account is already added. Relayers are the only accounts authorized to fulfil the decryption requests. However `OraclePredeploy` would still check the KMS signature during the fulfilment, so we trust the relayer only to forward the request on time, a rogue relayer could not cheat by sending fake decryption results.
+Note that an [`OraclePredeploy`](../../oracle/OraclePredeploy.sol) contract is already predeployed on the fhEVM testnet, and a default relayer account is added through the specification of the environment variable `PRIVATE_KEY_ORACLE_RELAYER` in the `.env` file. Relayers are the only accounts authorized to fulfil the decryption requests. However `OraclePredeploy` would still check the KMS signature during the fulfilment, so we trust the relayer only to forward the request on time, a rogue relayer could not cheat by sending fake decryption results (the KMS signature is in the works).
 
 The interface of the `Oracle.requestDecryption` function from previous snippet is the following:
 
@@ -68,7 +68,7 @@ Here `callbackName` is a custom name given by the developer to the callback func
 > **_WARNING:_**
 > Notice that the callback should be protected by the `onlyOracle` modifier to ensure security, as only the `OraclePredeploy` contract should be able to call it.
 
-Finally, if you need to pass additional arguments to be used inside the callback, you could use any of the following utility functions which would store additional values in the storage of your smart contract:
+Finally, if you need to pass additional arguments to be used inside the callback, you could use any of the following utility functions during the request, which would store additional values in the storage of your smart contract:
 
 ```solidity
 function addParamsEBool(uint256 requestID, ebool _ebool) internal;
@@ -86,7 +86,11 @@ function addParamsEUint64(uint256 requestID, euint64 _euint64) internal;
 function addParamsAddress(uint256 requestID, address _address) internal;
 
 function addParamsUint(uint256 requestID, uint256 _uint) internal;
+```
 
+With their corresponding getter functions to be used inside the callback:
+
+```solidity
 function getParamsEBool(uint256 requestID) internal;
 
 function getParamsEUint4(uint256 requestID) internal;
@@ -150,6 +154,38 @@ event ResultCallbackUint64(uint256 indexed requestID, bool success, bytes result
 ```
 
 The first argument is the `requestID` of the corresponding decryption request, `success` is a boolean assessing if the call to the callback succeeded, and `result` is the bytes array corresponding the to return data from the callback.
+
+In your hardhat tests, if you sent some transactions which are requesting one or several decryptions and you wish to await the fulfilment of those decryptions, you should import the two functions `asyncDecrypt` and `awaitAllDecryptionResults` from the `asyncDecrypt.ts` utility file. This would work both when testing on an fhEVM node or in mocked mode. Here is a simple hardhat test for the previous `TestAsyncDecrypt` contract (more examples can be seen [here](../../test/oracleDecrypt/testAsyncDecrypt.ts)):
+
+```js
+import { asyncDecrypt, awaitAllDecryptionResults } from "../asyncDecrypt";
+import { getSigners, initSigners } from "../signers";
+import { expect } from "chai";
+import { ethers } from "hardhat";
+
+describe("TestAsyncDecrypt", function () {
+  before(async function () {
+    await initSigners(3);
+    this.signers = await getSigners();
+    await asyncDecrypt();
+  });
+
+  beforeEach(async function () {
+    const contractFactory = await ethers.getContractFactory("TestAsyncDecrypt");
+    this.contract = await contractFactory.connect(this.signers.alice).deploy();
+  });
+
+  it("test async decrypt uint32", async function () {
+    const tx2 = await this.contract.connect(this.signers.carol).requestUint32(5, 15, { gasLimit: 500_000 }); // custom gasLimit to avoid gas estimation error in fhEVM mode
+    await tx2.wait();
+    await awaitAllDecryptionResults();
+    const y = await this.contract.yUint32();
+    expect(y).to.equal(52); // 5+15+32
+  });
+});
+```
+
+Notice that when testing on the fhEVM, a decryption is fulfilled usually 2 blocks after the request, while in mocked mode the fulfilment will always happen as soon as you call the `awaitAllDecryptionResults` function. A good way to standardize hardhat tests is hence to always call `awaitAllDecryptionResults` which will ensure decryption fulfilment in both modes.
 
 ## Reencrypt
 
