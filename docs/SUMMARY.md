@@ -26,6 +26,7 @@
 
 - [Gas estimation](guides/gas.md)
 - [Common pitfalls and best practises](guides/pitfalls.md)
+- [How can I break a loop ?](guides/loop.md)
 - [Encrypt an input](guides/inputs.md)
 - [Use the CLI](guides/cli.md)
 - [Build a web application](guides/webapp.md)

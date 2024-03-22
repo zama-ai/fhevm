@@ -1,6 +1,10 @@
 # Decrypt and reencrypt
 
-## Decrypt
+{% hint style="warning" %}
+**Deprecation warning** `TFHE.decrypt` is deprecated and will be removed in the next release. We strongly encourage users to migrate their code to use the new asynchronous decryption method.
+{% endhint %}
+
+## Asynchronous decryption
 
 We allow explicit decryption requests for any encrypted type. The values are decrypted with the network private key (the threshold decryption protocol is in the works).
 

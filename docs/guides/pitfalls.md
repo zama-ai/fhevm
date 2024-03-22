@@ -68,32 +68,6 @@ If a view function is using `TFHE.reencrypt` it is mandatory to protect its acce
 
 ## Best practises
 
-### Avoid using TFHE.decrypt, use TFHE.select instead
-
-Any use of decryption should be avoided as much as possible. Current version of `TFHE.decrypt` will soon be deprecated and get replaced by an asynchronous version, so please consider this operator as a very expensive one which should be used only if absolutely necessary.
-
-Whenever your code contains a branch depending on the result of a decryption, we recommend to replace it by a `TFHE.select`.
-
-❌ For instance, instead of:
-
-```solidity
-euint32 x;
-ebool condition = TFHE.gt(x,5)
-if(TFHE.decrypt(condition)){
-    x = TFHE.asEuint(0);
-} else {
-    x = TFHE.asEuint(42);
-}
-```
-
-✅ We recommend instead to use the following pattern:
-
-```solidity
-euint32 x;
-ebool condition = TFHE.gt(x,5)
-x = TFHE.select(condition, TFHE.asEuint(0), TFHE.asEuint(42));
-```
-
 ### Obfuscate branching
 
 The previous paragraph emphasized that branch logic should rely as much as possible on `TFHE.select` instead of decryptions. It hides effectively which branch has been executed.
@@ -137,35 +111,6 @@ For example, if implementing a simple AMM for two encrypted ERC20 tokens based o
 Notice that to preserve confidentiality, we had to make two inputs transfers on both tokens from the user to the AMM contract, and similarly two output transfers from the AMM to the user, even if technically most of the times it will make sense that one of the user inputs `encryptedAmountAIn` or `encryptedAmountBIn` is actually an encrypted zero.
 
 This is different from a classical non-confidential AMM with regular ERC20 tokens: in this case, the user would need to just do one input transfer to the AMM on the token being sold, and receive only one output transfer from the AMM on the token being bought.
-
-### Avoid using while loops with an encrypted condition
-
-❌ Avoid using this type of loop because it might require many decryption operations:
-
-```solidity
-ebool isTrue;
-euint32 x;
-// some code
-while(TFHE.decrypt(isTrue)){
-    x=TFHE.add(x, 1);
-    // some other code
-}
-```
-
-If your code logic requires looping on an encrypted boolean condition, we highly suggest to try to replace it by a finite loop with an appropriate constant maximum number of steps and use `TFHE.select` inside the loop.
-
-✅ For example, the previous code could maybe be replaced by the following snippet:
-
-```solidity
-ebool isTrue;
-euint32 x;
-// some code
-for (uint32 i = 0; i < 5; i++) {
-    euint32 increment = TFHE.select(isTrue, 1, 0);
-    x=TFHE.add(x, increment);
-    // some other code
-}
-```
 
 ### Avoid using encrypted indexes
 
