@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/access/Ownable2Step.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 
@@ -10,7 +10,9 @@ import "../../abstracts/Reencrypt.sol";
 
 import "../../lib/TFHE.sol";
 
-contract IdentityRegistry is Reencrypt, Ownable {
+contract IdentityRegistry is Reencrypt, Ownable2Step {
+    uint constant MAX_IDENTIFIERS_LENGTH = 20;
+
     // A mapping from wallet to registrarId
     mapping(address => uint) public registrars;
 
@@ -20,11 +22,13 @@ contract IdentityRegistry is Reencrypt, Ownable {
     struct Identity {
         uint registrarId;
         mapping(string => euint64) identifiers;
+        string[] identifierList;
     }
 
     mapping(address => mapping(address => mapping(string => bool))) permissions; // users => contracts => identifiers[]
 
     event NewRegistrar(address wallet, uint registrarId);
+    event RemoveRegistrar(address wallet);
     event NewDid(address wallet);
     event RemoveDid(address wallet);
 
@@ -37,7 +41,9 @@ contract IdentityRegistry is Reencrypt, Ownable {
     }
 
     function removeRegistrar(address wallet) public onlyOwner {
-        delete registrars[wallet];
+        require(registrars[wallet] > 0, "wallet is not registrar");
+        registrars[wallet] = 0;
+        emit RemoveRegistrar(wallet);
     }
 
     // Add user
@@ -45,14 +51,16 @@ contract IdentityRegistry is Reencrypt, Ownable {
         require(identities[wallet].registrarId == 0, "This wallet is already registered");
         Identity storage newIdentity = identities[wallet];
         newIdentity.registrarId = registrars[msg.sender];
-
         emit NewDid(wallet);
     }
 
     function removeDid(address wallet) public onlyExistingWallet(wallet) onlyRegistrarOf(wallet) {
-        require(identities[wallet].registrarId > 0, "This wallet isn't registered");
+        string[] memory identifierList_ = identities[wallet].identifierList;
+        uint identifierLength = identifierList_.length;
+        for (uint i; i < identifierLength; i++) {
+            identities[wallet].identifiers[identifierList_[i]] = euint64.wrap(0);
+        }
         delete identities[wallet];
-
         emit RemoveDid(wallet);
     }
 
@@ -64,10 +72,33 @@ contract IdentityRegistry is Reencrypt, Ownable {
 
     function setIdentifier(
         address wallet,
-        string calldata identifier,
+        string memory identifier,
         euint64 value
     ) internal onlyExistingWallet(wallet) onlyRegistrarOf(wallet) {
         identities[wallet].identifiers[identifier] = value;
+        string[] memory identifierList_ = identities[wallet].identifierList;
+        uint identifierLength = identifierList_.length;
+        for (uint i; i < identifierLength; i++) {
+            if (keccak256(bytes(identities[wallet].identifierList[i])) == keccak256(bytes(identifier))) return;
+        }
+        require(identifierLength + 1 <= MAX_IDENTIFIERS_LENGTH, "Too many identifiers");
+        identities[wallet].identifierList.push(identifier);
+    }
+
+    function removeIdentifier(
+        address wallet,
+        string memory identifier
+    ) internal onlyExistingWallet(wallet) onlyRegistrarOf(wallet) {
+        string[] memory identifierList_ = identities[wallet].identifierList;
+        uint identifierLength = identifierList_.length;
+        for (uint i; i < identifierLength; i++) {
+            if (keccak256(bytes(identities[wallet].identifierList[i])) == keccak256(bytes(identifier))) {
+                identities[wallet].identifierList[i] = identities[wallet].identifierList[identifierLength - 1];
+                identities[wallet].identifierList.pop();
+                return;
+            }
+        }
+        require(false, "Identifier not found");
     }
 
     // User handling permission permission
@@ -79,7 +110,7 @@ contract IdentityRegistry is Reencrypt, Ownable {
 
     function revokeAccess(address allowed, string[] calldata identifiers) public {
         for (uint i = 0; i < identifiers.length; i++) {
-            delete permissions[msg.sender][allowed][identifiers[i]];
+            permissions[msg.sender][allowed][identifiers[i]] = false;
         }
     }
 
