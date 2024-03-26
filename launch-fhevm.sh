@@ -20,3 +20,5 @@ npx hardhat compile:specific --contract lib
 npx hardhat compile:specific --contract oracle
 
 npx hardhat task:launchFhevm
+
+docker attach fhevm
