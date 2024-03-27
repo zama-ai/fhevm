@@ -37,7 +37,7 @@ describe('TestAsyncDecrypt', function () {
     await tx2.wait();
     await awaitAllDecryptionResults();
     const y = await this.contract.yUint8();
-    expect(y).to.equal(8);
+    expect(y).to.equal(42);
   });
 
   it('test async decrypt uint16', async function () {

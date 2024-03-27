@@ -23,7 +23,7 @@ contract TestAsyncDecrypt is OracleCaller {
     constructor() {
         xBool = TFHE.asEbool(true);
         xUint4 = TFHE.asEuint4(4);
-        xUint8 = TFHE.asEuint8(8);
+        xUint8 = TFHE.asEuint8(42);
         xUint16 = TFHE.asEuint16(16);
         xUint32 = TFHE.asEuint32(32);
         xUint64 = TFHE.asEuint64(64);
