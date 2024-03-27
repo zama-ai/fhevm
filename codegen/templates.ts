@@ -12,6 +12,7 @@ type euint8 is uint256;
 type euint16 is uint256;
 type euint32 is uint256;
 type euint64 is uint256;
+type eaddress is uint256;
 
 library Common {
     // Values used to communicate types to the runtime.
@@ -21,6 +22,8 @@ library Common {
     uint8 internal constant euint16_t = 3;
     uint8 internal constant euint32_t = 4;
     uint8 internal constant euint64_t = 5;
+    uint8 internal constant euint128_t = 6;
+    uint8 internal constant euint160_t = 7;
 }
 `;
 }
@@ -718,6 +721,8 @@ function tfheCustomMethods(ctx: CodegenContext, mocked: boolean): string {
         }
     }
 
+
+
     // Returns the network public FHE key.
     function fhePubKey() internal view returns (bytes memory) {
         return Impl.fhePubKey();
@@ -760,6 +765,90 @@ function tfheCustomMethods(ctx: CodegenContext, mocked: boolean): string {
     // Important: The random integer is generated in the plain! An FHE-based version is coming soon.
     function randEuint32(uint32 upperBound) internal view returns (euint32) {
       return euint32.wrap(Impl.randBounded(upperBound, Common.euint32_t));
+    }
+
+    // Decrypts the encrypted 'value'.
+    function decrypt(eaddress value) internal view returns (address) {
+        return address(uint160(Impl.decrypt(eaddress.unwrap(value))));
+    }
+
+    // Reencrypt  the encrypted 'value'.
+    function reencrypt(eaddress value, bytes32 publicKey) internal view returns (bytes memory reencrypted) {
+      return Impl.reencrypt(eaddress.unwrap(value), publicKey);
+  }
+
+    // From bytes to eaddress
+    function asEaddress(bytes memory ciphertext) internal pure returns (eaddress) {
+      return eaddress.wrap(Impl.verify(ciphertext, Common.euint160_t));
+
+    }
+
+    // Convert a plaintext value to an encrypted asEaddress.
+    function asEaddress(uint256 value) internal pure returns (eaddress) {
+        return eaddress.wrap(Impl.trivialEncrypt(value, Common.euint160_t));
+    }
+
+    // Return true if the enrypted integer is initialized and false otherwise.
+    function isInitialized(eaddress v) internal pure returns (bool) {
+        return eaddress.unwrap(v) != 0;
+    }
+
+    // Evaluate eq(a, b) and return the result.
+    function eq(eaddress a, eaddress b) internal pure returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEaddress(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEaddress(0);
+        }
+        return ebool.wrap(Impl.eq(eaddress.unwrap(a), eaddress.unwrap(b), false));
+    }
+
+    // Evaluate ne(a, b) and return the result.
+    function ne(eaddress a, eaddress b) internal pure returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEaddress(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEaddress(0);
+        }
+        return ebool.wrap(Impl.ne(eaddress.unwrap(a), eaddress.unwrap(b), false));
+    }
+
+    // Evaluate eq(a, b) and return the result.
+    function eq(eaddress a, address b) internal pure returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEaddress(0);
+        }
+        uint256 bProc = uint256(uint160(b));
+        return ebool.wrap(Impl.eq(eaddress.unwrap(a), bProc, true));
+    }
+
+    // Evaluate eq(a, b) and return the result.
+    function eq(address b, eaddress a) internal pure returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEaddress(0);
+        }
+        uint256 bProc = uint256(uint160(b));
+        return ebool.wrap(Impl.eq(eaddress.unwrap(a), bProc, true));
+    }
+
+    // Evaluate ne(a, b) and return the result.
+    function ne(eaddress a, address b) internal pure returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEaddress(0);
+        }
+        uint256 bProc = uint256(uint160(b));
+        return ebool.wrap(Impl.ne(eaddress.unwrap(a), bProc, true));
+    }
+
+    // Evaluate ne(a, b) and return the result.
+    function ne(address b, eaddress a) internal pure returns (ebool) {
+        if (!isInitialized(a)) {
+            a = asEaddress(0);
+        }
+        uint256 bProc = uint256(uint160(b));
+        return ebool.wrap(Impl.ne(eaddress.unwrap(a), bProc, true));
     }
 `;
   if (mocked) {
