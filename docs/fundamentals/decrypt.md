@@ -155,7 +155,7 @@ event ResultCallbackUint64(uint256 indexed requestID, bool success, bytes result
 
 The first argument is the `requestID` of the corresponding decryption request, `success` is a boolean assessing if the call to the callback succeeded, and `result` is the bytes array corresponding the to return data from the callback.
 
-In your hardhat tests, if you sent some transactions which are requesting one or several decryptions and you wish to await the fulfilment of those decryptions, you should import the two functions `asyncDecrypt` and `awaitAllDecryptionResults` from the `asyncDecrypt.ts` utility file. This would work both when testing on an fhEVM node or in mocked mode. Here is a simple hardhat test for the previous `TestAsyncDecrypt` contract (more examples can be seen [here](../../test/oracleDecrypt/testAsyncDecrypt.ts)):
+In your hardhat tests, if you sent some transactions which are requesting one or several decryptions and you wish to await the fulfilment of those decryptions, you should import the two methods `asyncDecrypt` and `awaitAllDecryptionResults` from the `asyncDecrypt.ts` utility file. This would work both when testing on an fhEVM node or in mocked mode. Here is a simple hardhat test for the previous `TestAsyncDecrypt` contract (more examples can be seen [here](../../test/oracleDecrypt/testAsyncDecrypt.ts)):
 
 ```js
 import { asyncDecrypt, awaitAllDecryptionResults } from "../asyncDecrypt";
@@ -167,10 +167,10 @@ describe("TestAsyncDecrypt", function () {
   before(async function () {
     await initSigners(3);
     this.signers = await getSigners();
-    await asyncDecrypt();
   });
 
   beforeEach(async function () {
+    await asyncDecrypt();
     const contractFactory = await ethers.getContractFactory("TestAsyncDecrypt");
     this.contract = await contractFactory.connect(this.signers.alice).deploy();
   });
@@ -185,7 +185,8 @@ describe("TestAsyncDecrypt", function () {
 });
 ```
 
-Notice that when testing on the fhEVM, a decryption is fulfilled usually 2 blocks after the request, while in mocked mode the fulfilment will always happen as soon as you call the `awaitAllDecryptionResults` function. A good way to standardize hardhat tests is hence to always call `awaitAllDecryptionResults` which will ensure decryption fulfilment in both modes.
+You should setup the oracle handler by calling `asyncDecrypt` at the top of the `beforeEach` block.
+Notice that when testing on the fhEVM, a decryption is fulfilled usually 2 blocks after the request, while in mocked mode the fulfilment will always happen as soon as you call the `awaitAllDecryptionResults`function. A good way to standardize hardhat tests is hence to always call`awaitAllDecryptionResults` which will ensure that all pending decryptions are fulfilled in both modes.
 
 ## Reencrypt
 
