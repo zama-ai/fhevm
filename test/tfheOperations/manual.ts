@@ -49,10 +49,13 @@ describe('TFHE manual operations', function () {
   it('eaddress reencrypt', async function () {
     const tokenAlice = this.instances.alice.getPublicKey(this.contractAddress)!;
     const input = this.instances.alice.encryptAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
-    const encryptedAddressAlice = await this.contract.test_reencrypt_eaddress(input, tokenAlice.publicKey, tokenAlice.signature);
+    const encryptedAddressAlice = await this.contract.test_reencrypt_eaddress(
+      input,
+      tokenAlice.publicKey,
+      tokenAlice.signature,
+    );
     const addressAlice = this.instances.alice.decryptAddress(this.contractAddress, encryptedAddressAlice);
     expect(addressAlice).to.equal('0x8ba1f109551bD432803012645Ac136ddd64DBA72');
-    
   });
 
   it('eaddress dec', async function () {
