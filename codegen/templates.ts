@@ -755,11 +755,21 @@ function tfheCustomMethods(ctx: CodegenContext, mocked: boolean): string {
       return euint32.wrap(Impl.rand(Common.euint32_t));
     }
 
+    // Generates a random encrypted 64-bit unsigned integer.
+    // Important: The random integer is generated in the plain! An FHE-based version is coming soon.
+    function randEuint64() internal view returns (euint64) {
+      return euint64.wrap(Impl.rand(Common.euint64_t));
+    }
+
     // Generates a random encrypted 32-bit unsigned integer in the [0, upperBound) range.
     // The upperBound must be a power of 2.
     // Important: The random integer is generated in the plain! An FHE-based version is coming soon.
     function randEuint32(uint32 upperBound) internal view returns (euint32) {
       return euint32.wrap(Impl.randBounded(upperBound, Common.euint32_t));
+    }
+
+    function randEuint64(uint64 upperBound) internal view returns (euint64) {
+      return euint64.wrap(Impl.randBounded(upperBound, Common.euint64_t));
     }
 `;
   if (mocked) {
