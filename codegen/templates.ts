@@ -858,6 +858,8 @@ function tfheCustomMethods(ctx: CodegenContext, mocked: boolean): string {
         }
         uint256 bProc = uint256(uint160(b));
         return ebool.wrap(Impl.ne(eaddress.unwrap(a), bProc, true));
+    function randEuint64(uint64 upperBound) internal view returns (euint64) {
+      return euint64.wrap(Impl.randBounded(upperBound, Common.euint64_t));
     }
 `;
   if (mocked) {
