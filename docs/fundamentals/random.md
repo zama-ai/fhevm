@@ -16,4 +16,5 @@ because PRNG state needs to be mutated on-chain during generation.
 euint8 r8 = TFHE.randEuint8();
 euint16 r16 = TFHE.randEuint16();
 euint32 r32 = TFHE.randEuint32();
+euint64 r64 = TFHE.randEuint64();
 ```

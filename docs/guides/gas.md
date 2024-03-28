@@ -31,7 +31,6 @@ FHE operations are typically more computationally expensive than classical opera
 | `not`                | 33,000  |
 | `select`             | 45,000  |
 | `decrypt`            | 500,000 |
-| `randEuintX()`       | 100,000 |
 
 ## euint8
 
@@ -54,7 +53,7 @@ FHE operations are typically more computationally expensive than classical opera
 | `not`                | 34,000  |
 | `select`             | 47,000  |
 | `decrypt`            | 500,000 |
-| `randEuintX()`       | 100,000 |
+| `randEuint8()`       | 100,000 |
 
 ## euint16
 
@@ -77,7 +76,7 @@ FHE operations are typically more computationally expensive than classical opera
 | `not`                | 35,000  |
 | `select`             | 47,000  |
 | `decrypt`            | 500,000 |
-| `randEuintX()`       | 100,000 |
+| `randEuint16()`      | 100,000 |
 
 ## euint32
 
@@ -100,7 +99,7 @@ FHE operations are typically more computationally expensive than classical opera
 | `not`                | 36,000  |
 | `select`             | 50,000  |
 | `decrypt`            | 500,000 |
-| `randEuintX()`       | 100,000 |
+| `randEuint32()`      | 100,000 |
 
 ## euint64
 
@@ -123,6 +122,7 @@ FHE operations are typically more computationally expensive than classical opera
 | `not`                | 37,000    |
 | `select`             | 53,000    |
 | `decrypt`            | 500,000   |
+| `randEuint64()`      | 100,000   |
 
 ## eaddress
 
