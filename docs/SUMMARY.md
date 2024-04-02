@@ -18,7 +18,7 @@
   - [Other development environment](fundamentals/write_contract/others.md)
 - [Use encrypted types](fundamentals/types.md)
 - [Operations on encrypted types](fundamentals/operations.md)
-- [Write conditions](fundamentals/conditions.md)
+- [Branching in FHE](fundamentals/conditions.md)
 - [Decrypt and reencrypt](fundamentals/decrypt.md)
 - [Generate random number](fundamentals/random.md)
 - [Contracts standard library](fundamentals/contracts.md)
