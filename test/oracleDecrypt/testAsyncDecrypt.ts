@@ -33,7 +33,7 @@ describe('TestAsyncDecrypt', function () {
   });
 
   it('test async decrypt uint8', async function () {
-    const tx2 = await this.contract.connect(this.signers.carol).requestUint8({ gasLimit: 500_000 });
+    const tx2 = await this.contract.connect(this.signers.carol).requestUint8({ gasLimit: 5_000_000 });
     await tx2.wait();
     await awaitAllDecryptionResults();
     const y = await this.contract.yUint8();
@@ -62,5 +62,13 @@ describe('TestAsyncDecrypt', function () {
     await awaitAllDecryptionResults();
     const y = await this.contract.yUint64();
     expect(y).to.equal(64);
+  });
+
+  it('test async decrypt uint160', async function () {
+    const tx2 = await this.contract.connect(this.signers.carol).requestUint160({ gasLimit: 500_000 });
+    await tx2.wait();
+    await awaitAllDecryptionResults();
+    const y = await this.contract.yUint160();
+    expect(y).to.equal(160);
   });
 });
