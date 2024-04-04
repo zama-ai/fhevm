@@ -13,8 +13,6 @@
 | name                  | function name       | type               | ETA             |
 | --------------------- | ------------------- | ------------------ | --------------- |
 | Random unsigned int   | `TFHE.randEuintX()` | Random             | Q3 '24          |
-| Circular shift right  | `TFHE.cshr()`       | Random             | Q3 '24          |
-| Circular shift left   | `TFHE.cshl()`       | Random             | Q3 '24          |
 | Add w/ overflow check | `TFHE.safeAdd`      | Binary, Decryption | Coming soon (1) |
 | Sub w/ overflow check | `TFHE.safeSub`      | Binary, Decryption | Coming soon (1) |
 | Mul w/ overflow check | `TFHE.safeMul`      | Binary, Decryption | Coming soon (1) |
