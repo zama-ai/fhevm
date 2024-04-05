@@ -65,7 +65,7 @@ describe('TestAsyncDecrypt', function () {
   });
 
   it('test async decrypt address', async function () {
-    const tx2 = await this.contract.connect(this.signers.carol).requestUint160({ gasLimit: 500_000 });
+    const tx2 = await this.contract.connect(this.signers.carol).requestAddress({ gasLimit: 500_000 });
     await tx2.wait();
     await awaitAllDecryptionResults();
     const y = await this.contract.yAddress();

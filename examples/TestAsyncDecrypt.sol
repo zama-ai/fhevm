@@ -104,13 +104,13 @@ contract TestAsyncDecrypt is OracleCaller {
         return decryptedInput;
     }
 
-    function requestUint160() public {
+    function requestAddress() public {
         eaddress[] memory cts = new eaddress[](1);
         cts[0] = xAddress;
-        Oracle.requestDecryption(cts, this.callbackUint160.selector, 0, block.timestamp + 100);
+        Oracle.requestDecryption(cts, this.callbackAddress.selector, 0, block.timestamp + 100);
     }
 
-    function callbackUint160(uint256 /*requestID*/, uint160 decryptedInput) public onlyOracle returns (address) {
+    function callbackAddress(uint256 /*requestID*/, uint160 decryptedInput) public onlyOracle returns (address) {
         yAddress = address(decryptedInput);
         return address(decryptedInput);
     }

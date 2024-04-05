@@ -24,7 +24,7 @@ const ifaceEventDecryptionEUint8 = new ethers.Interface(['event EventDecryptionE
 const ifaceEventDecryptionEUint16 = new ethers.Interface(['event EventDecryptionEUint16' + argEvents]);
 const ifaceEventDecryptionEUint32 = new ethers.Interface(['event EventDecryptionEUint32' + argEvents]);
 const ifaceEventDecryptionEUint64 = new ethers.Interface(['event EventDecryptionEUint64' + argEvents]);
-const ifaceEventDecryptionEUint160 = new ethers.Interface(['event EventDecryptionEUint160' + argEvents]);
+const ifaceEventDecryptionEAddress = new ethers.Interface(['event EventDecryptionEAddress' + argEvents]);
 
 const argEvents2 = '(uint256 indexed requestID, bool success, bytes result)';
 const ifaceResultCallbackBool = new ethers.Interface(['event ResultCallbackBool' + argEvents2]);
@@ -33,7 +33,7 @@ const ifaceResultCallbackUint8 = new ethers.Interface(['event ResultCallbackUint
 const ifaceResultCallbackUint16 = new ethers.Interface(['event ResultCallbackUint16' + argEvents2]);
 const ifaceResultCallbackUint32 = new ethers.Interface(['event ResultCallbackUint32' + argEvents2]);
 const ifaceResultCallbackUint64 = new ethers.Interface(['event ResultCallbackUint64' + argEvents2]);
-const ifaceResultCallbackUint160 = new ethers.Interface(['event ResultCallbackUint160' + argEvents2]);
+const ifaceResultcallbackAddress = new ethers.Interface(['event ResultcallbackAddress' + argEvents2]);
 
 let oracle: OraclePredeploy;
 let firstBlockListening: number;
@@ -116,7 +116,7 @@ export const asyncDecrypt = async (): Promise<void> => {
   });
 
   oracle.on(
-    'EventDecryptionEUint160',
+    'EventDecryptionEAddress',
     async (requestID, cts, contractCaller, callbackSelector, msgValue, maxTimestamp, eventData) => {
       const blockNumber = eventData.log.blockNumber;
       console.log(
@@ -124,7 +124,7 @@ export const asyncDecrypt = async (): Promise<void> => {
       );
     },
   );
-  oracle.on('ResultCallbackUint160', async (requestID, success, result, eventData) => {
+  oracle.on('ResultcallbackAddress', async (requestID, success, result, eventData) => {
     const blockNumber = eventData.log.blockNumber;
     console.log(`${await currentTime()} - Fulfilled euint160 decrypt on block ${blockNumber} (requestID ${requestID})`);
   });
@@ -198,15 +198,15 @@ const getAlreadyFulfilledDecryptions = async (): Promise<[bigint]> => {
   const pastResultsEuint64 = await ethers.provider.getLogs(filterDecryptionResultUint64);
   results = results.concat(pastResultsEuint64.map((result) => ifaceResultCallbackUint64.parseLog(result).args[0]));
 
-  const eventDecryptionResultEUint160 = await oracle.filters.ResultCallbackUint160().getTopicFilter();
-  const filterDecryptionResultUint160 = {
+  const eventDecryptionResultEAddress = await oracle.filters.ResultcallbackAddress().getTopicFilter();
+  const filterDecryptionResultAddress = {
     address: process.env.ORACLE_CONTRACT_PREDEPLOY_ADDRESS,
     fromBlock: firstBlockListening,
     toBlock: 'latest',
-    topics: eventDecryptionResultEUint160,
+    topics: eventDecryptionResultEAddress,
   };
-  const pastResultsEuint160 = await ethers.provider.getLogs(filterDecryptionResultUint160);
-  results = results.concat(pastResultsEuint160.map((result) => ifaceResultCallbackUint160.parseLog(result).args[0]));
+  const pastResultsEuint160 = await ethers.provider.getLogs(filterDecryptionResultAddress);
+  results = results.concat(pastResultsEuint160.map((result) => ifaceResultcallbackAddress.parseLog(result).args[0]));
 
   return results;
 };
@@ -379,16 +379,16 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
     }
   }
 
-  const eventDecryptionEUint160 = await oracle.filters.EventDecryptionEUint160().getTopicFilter();
-  const filterDecryptionEUint160 = {
+  const eventDecryptionEAddress = await oracle.filters.EventDecryptionEAddress().getTopicFilter();
+  const filterDecryptionEAddress = {
     address: process.env.ORACLE_CONTRACT_PREDEPLOY_ADDRESS,
     fromBlock: firstBlockListening,
     toBlock: 'latest',
-    topics: eventDecryptionEUint160,
+    topics: eventDecryptionEAddress,
   };
-  const pastRequestsEUint160 = await ethers.provider.getLogs(filterDecryptionEUint160);
-  for (const request of pastRequestsEUint160) {
-    const event = ifaceEventDecryptionEUint160.parseLog(request);
+  const pastRequestsEAddress = await ethers.provider.getLogs(filterDecryptionEAddress);
+  for (const request of pastRequestsEAddress) {
+    const event = ifaceEventDecryptionEAddress.parseLog(request);
     const requestID = event.args[0];
     const cts = event.args[1];
     const msgValue = event.args[4];
@@ -396,7 +396,7 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
       // if request is not already fulfilled
       if (mocked) {
         // in mocked mode, we trigger the decryption fulfillment manually
-        const tx = await oracle.connect(relayer).fulfillRequestUint160(requestID, [...cts], { value: msgValue });
+        const tx = await oracle.connect(relayer).fulfillrequestAddress(requestID, [...cts], { value: msgValue });
         await tx.wait();
       } else {
         // in fhEVM mode we must wait until the oracle service relayer submits the decryption fulfillment tx
