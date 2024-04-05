@@ -5594,7 +5594,7 @@ library TFHE {
 
     // Convert a plaintext value to an encrypted asEaddress.
     function asEaddress(uint256 value) internal pure returns (eaddress) {
-        return eaddress.wrap(Impl.trivialEncrypt(value, Common.euint160_t));
+        return eaddress.wrap(Impl.trivialEncrypt(uint160(value), Common.euint160_t));
     }
 
     // Return true if the enrypted integer is initialized and false otherwise.

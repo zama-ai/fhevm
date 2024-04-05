@@ -11,12 +11,10 @@ describe('TestAsyncDecrypt', function () {
     this.signers = await getSigners();
   });
 
-
   beforeEach(async function () {
     const contractFactory = await ethers.getContractFactory('TestAsyncDecrypt');
     this.contract = await contractFactory.connect(this.signers.alice).deploy();
   });
-
 
   it('test async decrypt bool', async function () {
     const tx2 = await this.contract.connect(this.signers.carol).requestBool({ gasLimit: 500_000 });

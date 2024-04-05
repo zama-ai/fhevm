@@ -379,7 +379,6 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
     }
   }
 
-
   const eventDecryptionEUint160 = await oracle.filters.EventDecryptionEUint160().getTopicFilter();
   const filterDecryptionEUint160 = {
     address: process.env.ORACLE_CONTRACT_PREDEPLOY_ADDRESS,

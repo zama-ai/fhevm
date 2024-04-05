@@ -114,5 +114,4 @@ contract TestAsyncDecrypt is OracleCaller {
         yAddress = address(decryptedInput);
         return address(decryptedInput);
     }
-
 }

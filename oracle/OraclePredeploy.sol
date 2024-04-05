@@ -315,7 +315,7 @@ contract OraclePredeploy is Ownable2Step {
         counter++;
     }
 
-        // Requests the decryption of n ciphertexts `ct`s with the result returned in a callback.
+    // Requests the decryption of n ciphertexts `ct`s with the result returned in a callback.
     // During callback, msg.sender is called with [callbackSelector,requestID,decrypt(ct[0]),decrypt(ct[1]),...,decrypt(ct[n-1])] as calldata via `fulfillRequestUint160`.
     function requestDecryptionEUint160(
         eaddress[] memory ct,

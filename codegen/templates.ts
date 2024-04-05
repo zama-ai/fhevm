@@ -794,7 +794,7 @@ function tfheCustomMethods(ctx: CodegenContext, mocked: boolean): string {
 
     // Convert a plaintext value to an encrypted asEaddress.
     function asEaddress(uint256 value) internal pure returns (eaddress) {
-        return eaddress.wrap(Impl.trivialEncrypt(value, Common.euint160_t));
+        return eaddress.wrap(Impl.trivialEncrypt(uint160(value), Common.euint160_t));
     }
 
     // Return true if the enrypted integer is initialized and false otherwise.
@@ -858,8 +858,6 @@ function tfheCustomMethods(ctx: CodegenContext, mocked: boolean): string {
         }
         uint256 bProc = uint256(uint160(b));
         return ebool.wrap(Impl.ne(eaddress.unwrap(a), bProc, true));
-    function randEuint64(uint64 upperBound) internal view returns (euint64) {
-      return euint64.wrap(Impl.randBounded(upperBound, Common.euint64_t));
     }
 `;
   if (mocked) {
