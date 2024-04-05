@@ -46,6 +46,22 @@ describe('TFHE manual operations', function () {
     expect(res).to.equal(3);
   });
 
+  it('Select works for eaddress returning if false', async function () {
+    const input = this.instances.alice.encryptAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
+    const input2 = this.instances.alice.encryptAddress('0x8881f109551bd432803012645ac136ddd64dba72');
+
+    const res = await this.contract.test_select_eaddress(this.instances.alice.encryptBool(false), input, input2);
+    expect(res).to.equal('0x8881f109551BD432803012645AC136Ddd64DbA72');
+  });
+
+  it('Select works for eaddress returning if true', async function () {
+    const input = this.instances.alice.encryptAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
+    const input2 = this.instances.alice.encryptAddress('0x8881f109551bd432803012645ac136ddd64dba72');
+
+    const res = await this.contract.test_select_eaddress(this.instances.alice.encryptBool(true), input, input2);
+    expect(res).to.equal('0x8ba1f109551bD432803012645Ac136ddd64DBA72');
+  });
+
   it('eaddress reencrypt', async function () {
     const tokenAlice = this.instances.alice.getPublicKey(this.contractAddress)!;
     const input = this.instances.alice.encryptAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');

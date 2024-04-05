@@ -859,6 +859,10 @@ function tfheCustomMethods(ctx: CodegenContext, mocked: boolean): string {
         uint256 bProc = uint256(uint160(b));
         return ebool.wrap(Impl.ne(eaddress.unwrap(a), bProc, true));
     }
+    
+    function select(ebool control, eaddress a, eaddress b) internal pure returns (eaddress) {
+        return eaddress.wrap(Impl.select(ebool.unwrap(control), eaddress.unwrap(a), eaddress.unwrap(b)));
+    }
 `;
   if (mocked) {
     result += `

@@ -16,6 +16,17 @@ contract TFHEManualTestSuite is Reencrypt {
         return TFHE.decrypt(TFHE.select(controlProc, ifTrueProc, ifFalseProc));
     }
 
+    function test_select_eaddress(
+        bytes calldata control,
+        bytes calldata ifTrue,
+        bytes calldata ifFalse
+    ) public view returns (address) {
+        ebool controlProc = TFHE.asEbool(control);
+        eaddress ifTrueProc = TFHE.asEaddress(ifTrue);
+        eaddress ifFalseProc = TFHE.asEaddress(ifFalse);
+        return TFHE.decrypt(TFHE.select(controlProc, ifTrueProc, ifFalseProc));
+    }
+
     function test_eq_eaddress_eaddress(bytes calldata a, bytes calldata b) public view returns (bool) {
         eaddress aProc = TFHE.asEaddress(a);
         eaddress bProc = TFHE.asEaddress(b);
