@@ -29,7 +29,7 @@ contract TestAsyncDecrypt is OracleCaller {
         xUint16 = TFHE.asEuint16(16);
         xUint32 = TFHE.asEuint32(32);
         xUint64 = TFHE.asEuint64(64);
-        xUint160 = TFHE.asEaddress(160);
+        xUint160 = TFHE.asEaddress(797161134358056856230896843146392277790002887282);
     }
 
     function requestBool() public {
@@ -104,7 +104,7 @@ contract TestAsyncDecrypt is OracleCaller {
         return decryptedInput;
     }
 
-    function requestUint160() public {
+    function requestUint160(bytes calldata addr) public {
         eaddress[] memory cts = new eaddress[](1);
         cts[0] = xUint160;
         Oracle.requestDecryption(cts, this.callbackUint160.selector, 0, block.timestamp + 100);
@@ -114,4 +114,5 @@ contract TestAsyncDecrypt is OracleCaller {
         yUint160 = decryptedInput;
         return decryptedInput;
     }
+
 }

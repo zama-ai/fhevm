@@ -63,6 +63,7 @@ library Oracle {
         uint256 msgValue,
         uint256 maxTimestamp
     ) internal returns (uint256 initialCounter) {
+        
         initialCounter = oraclePredeploy.requestDecryptionEUint64(ct, callbackSelector, msgValue, maxTimestamp);
     }
 
