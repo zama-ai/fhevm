@@ -59,7 +59,7 @@ describe('BlindAuction', function () {
     // When two tx are consecutive in the same block, if the similar second is asking more gas the tx will fail
     // because the allocated gas will be the first one gas amount.
     // This is typically the case for the bid method and the if, else branch inside, i.e. the first bid has no further computation
-    // concerning the highestBid but all the following need to check againt the current one.
+    // concerning the highestBid but all the following need to check against the current one.
     const txCarolBid = await this.blindAuction.connect(this.signers.carol).bid(carolBidAmount, { gasLimit: 5000000 });
     const txBobBid = await this.blindAuction.connect(this.signers.bob).bid(bobBidAmount, { gasLimit: 5000000 });
     await Promise.all([txCarolBid.wait(), txBobBid.wait()]);

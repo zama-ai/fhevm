@@ -1,5 +1,9 @@
 <p align="center">
-<img width=600 src="https://github.com/zama-ai/fhevm/assets/1384478/265d051c-e177-42b4-b9a2-d2b2e474131b" />
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/zama-ai/fhevm/assets/157474013/b07e7e65-12b2-4048-b5de-35e169ed96e4">
+  <source media="(prefers-color-scheme: light)" srcset="https://github.com/zama-ai/fhevm/assets/157474013/c0fab5b1-adef-4db4-9607-fa0a793acaf8">
+  <img width=600 alt="Zama fhEVM">
+</picture>
 </p>
 
 <hr/>
@@ -268,7 +272,7 @@ npm test
 <details>
   <summary>Error: insufficient funds</summary>
 
-Ensure the faucet command was succesful.
+Ensure the faucet command was successful.
 
 </details>
 
@@ -360,7 +364,11 @@ This software is distributed under the **BSD-3-Clause-Clear** license. If you ha
 ## Support
 
 <a target="_blank" href="https://community.zama.ai">
-  <img src="https://github.com/zama-ai/fhevm/assets/157474013/4e75e34e-df3f-4e9e-8a22-12b1d4013578">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/zama-ai/fhevm/assets/157474013/e249e1a8-d724-478c-afa8-e4fe01c1a0fd">
+  <source media="(prefers-color-scheme: light)" srcset="https://github.com/zama-ai/fhevm/assets/157474013/a72200cc-d93e-44c7-81a8-557901d8798d">
+  <img alt="Support">
+</picture>
 </a>
 
 🌟 If you find this project helpful or interesting, please consider giving it a star on GitHub! Your support helps to grow the community and motivates further development.

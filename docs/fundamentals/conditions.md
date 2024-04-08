@@ -1,4 +1,4 @@
-# Write conditions
+# Branching in FHE
 
 The result of [comparison operations](../references/functions.md#comparison-operation-eq-ne-ge-gt-le-lt) is of type `ebool`. Typical boolean operations are not supported for this type, because it is an encrypted boolean.
 
