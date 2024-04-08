@@ -22,6 +22,7 @@ export type Operator = {
   binarySolidityOperator?: string;
   unarySolidityOperator?: string;
   shiftOperator?: boolean;
+  rotateOperator?: boolean;
 };
 
 export type CodegenContext = {
@@ -136,6 +137,26 @@ export const ALL_OPERATORS: Operator[] = [
     returnType: ReturnType.Uint,
     leftScalarEncrypt: true,
     shiftOperator: true,
+  },
+  {
+    name: 'rotl',
+    precompileName: 'RotateLeft',
+    hasScalar: true,
+    hasEncrypted: true,
+    arguments: OperatorArguments.Binary,
+    returnType: ReturnType.Uint,
+    leftScalarEncrypt: true,
+    rotateOperator: true,
+  },
+  {
+    name: 'rotr',
+    precompileName: 'RotateRight',
+    hasScalar: true,
+    hasEncrypted: true,
+    arguments: OperatorArguments.Binary,
+    returnType: ReturnType.Uint,
+    leftScalarEncrypt: true,
+    rotateOperator: true,
   },
   {
     name: 'eq',

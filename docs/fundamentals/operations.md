@@ -14,6 +14,8 @@ The `TFHE` library defines the following operations with FHE ciphertexts:
 | BitXor                       | `TFHE.xor`          | `^`    | Binary       |
 | Shift Right                  | `TFHE.shr`          |        | Binary       |
 | Shift Left                   | `TFHE.shl`          |        | Binary       |
+| Rotate Right                 | `TFHE.rotr`         |        | Binary       |
+| Rotate Left                  | `TFHE.rotl`         |        | Binary       |
 | Equal                        | `TFHE.eq`           |        | Binary       |
 | Not equal                    | `TFHE.ne`           |        | Binary       |
 | Greater than or equal        | `TFHE.ge`           |        | Binary       |

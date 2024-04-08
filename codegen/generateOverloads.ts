@@ -146,6 +146,32 @@ export const SUPPORTED_FUNCTIONS: SupportedFunctions = {
       return BigInt(`0b${r.join('')}`);
     },
   },
+  rotl: {
+    supportedBits: SUPPORTED_BITS,
+    limit: 'bits',
+    evalTest: (lhsNumber, rhsNumber, lhs, rhs) => {
+      const bits = `${new Array(256).fill('0').join('')}${lhsNumber.toString(2)}`.slice(-lhs).split('');
+      const r = bits.map((_, index) => {
+        let newIndex = Number(BigInt(index) + (rhsNumber % BigInt(lhs)));
+        if (newIndex >= lhs) newIndex = newIndex % lhs;
+        return bits[newIndex];
+      });
+      return BigInt(`0b${r.join('')}`);
+    },
+  },
+  rotr: {
+    supportedBits: SUPPORTED_BITS,
+    limit: 'bits',
+    evalTest: (lhsNumber, rhsNumber, lhs, rhs) => {
+      const bits = `${new Array(256).fill('0').join('')}${lhsNumber.toString(2)}`.slice(-lhs).split('');
+      const r = bits.map((_, index) => {
+        let newIndex = Number(BigInt(index) - (rhsNumber % BigInt(lhs)));
+        if (newIndex < 0) newIndex = lhs + newIndex;
+        return bits[newIndex];
+      });
+      return BigInt(`0b${r.join('')}`);
+    },
+  },
   max: {
     supportedBits: SUPPORTED_BITS,
     unary: false,

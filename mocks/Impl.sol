@@ -51,6 +51,16 @@ library Impl {
         result = lhs >> rhs;
     }
 
+    function rotl(uint256 lhs, uint256 rhs, uint256 bits, bool /*scalar*/) internal pure returns (uint256 result) {
+        uint count = rhs;
+        result = (lhs << count) | (lhs >> (bits - count));
+    }
+
+    function rotr(uint256 lhs, uint256 rhs, uint256 bits, bool /*scalar*/) internal pure returns (uint256 result) {
+        uint count = rhs;
+        result = (lhs >> count) | (lhs << (bits - count));
+    }
+
     function eq(uint256 lhs, uint256 rhs, bool /*scalar*/) internal pure returns (uint256 result) {
         result = (lhs == rhs) ? 1 : 0;
     }
