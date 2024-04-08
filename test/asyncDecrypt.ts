@@ -120,13 +120,13 @@ export const asyncDecrypt = async (): Promise<void> => {
     async (requestID, cts, contractCaller, callbackSelector, msgValue, maxTimestamp, eventData) => {
       const blockNumber = eventData.log.blockNumber;
       console.log(
-        `${await currentTime()} - Requested euint160 decrypt on block ${blockNumber} (requestID ${requestID})`,
+        `${await currentTime()} - Requested eaddress decrypt on block ${blockNumber} (requestID ${requestID})`,
       );
     },
   );
   oracle.on('ResultcallbackAddress', async (requestID, success, result, eventData) => {
     const blockNumber = eventData.log.blockNumber;
-    console.log(`${await currentTime()} - Fulfilled euint160 decrypt on block ${blockNumber} (requestID ${requestID})`);
+    console.log(`${await currentTime()} - Fulfilled eaddress decrypt on block ${blockNumber} (requestID ${requestID})`);
   });
 };
 
@@ -205,8 +205,8 @@ const getAlreadyFulfilledDecryptions = async (): Promise<[bigint]> => {
     toBlock: 'latest',
     topics: eventDecryptionResultEAddress,
   };
-  const pastResultsEuint160 = await ethers.provider.getLogs(filterDecryptionResultAddress);
-  results = results.concat(pastResultsEuint160.map((result) => ifaceResultcallbackAddress.parseLog(result).args[0]));
+  const pastResultsEaddress = await ethers.provider.getLogs(filterDecryptionResultAddress);
+  results = results.concat(pastResultsEaddress.map((result) => ifaceResultcallbackAddress.parseLog(result).args[0]));
 
   return results;
 };
@@ -396,7 +396,7 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
       // if request is not already fulfilled
       if (mocked) {
         // in mocked mode, we trigger the decryption fulfillment manually
-        const tx = await oracle.connect(relayer).fulfillrequestAddress(requestID, [...cts], { value: msgValue });
+        const tx = await oracle.connect(relayer).fulfillRequestAddress(requestID, [...cts], { value: msgValue });
         await tx.wait();
       } else {
         // in fhEVM mode we must wait until the oracle service relayer submits the decryption fulfillment tx
