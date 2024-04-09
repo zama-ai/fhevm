@@ -318,8 +318,8 @@ function tfheEncryptedOperator(
     operator.returnType == ReturnType.Uint
       ? `euint${outputBits}`
       : operator.returnType == ReturnType.Ebool
-        ? `ebool`
-        : assert(false, 'Unknown return type');
+      ? `ebool`
+      : assert(false, 'Unknown return type');
   const returnTypeOverload: ArgumentType =
     operator.returnType == ReturnType.Uint ? ArgumentType.EUint : ArgumentType.Ebool;
   const scalarFlag = operator.hasEncrypted && operator.hasScalar ? ', false' : '';
@@ -372,8 +372,8 @@ function tfheScalarOperator(
     operator.returnType == ReturnType.Uint
       ? `euint${outputBits}`
       : operator.returnType == ReturnType.Ebool
-        ? `ebool`
-        : assert(false, 'Unknown return type');
+      ? `ebool`
+      : assert(false, 'Unknown return type');
   const returnTypeOverload = operator.returnType == ReturnType.Uint ? ArgumentType.EUint : ArgumentType.Ebool;
   var scalarFlag = operator.hasEncrypted && operator.hasScalar ? ', true' : '';
   const leftOpName = operator.leftScalarInvertOp ?? operator.name;
