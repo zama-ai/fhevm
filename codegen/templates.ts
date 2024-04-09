@@ -207,17 +207,20 @@ library TFHE {
   supportedBits.forEach((lhsBits) => {
     supportedBits.forEach((rhsBits) => {
       operators.forEach((operator) => {
-        if (!operator.shiftOperator) res.push(tfheEncryptedOperator(lhsBits, rhsBits, operator, signatures));
+        if (!operator.shiftOperator && !operator.rotateOperator)
+          res.push(tfheEncryptedOperator(lhsBits, rhsBits, operator, signatures));
       });
     });
     operators.forEach((operator) => {
-      if (!operator.shiftOperator) res.push(tfheScalarOperator(lhsBits, lhsBits, operator, signatures));
+      if (!operator.shiftOperator && !operator.rotateOperator)
+        res.push(tfheScalarOperator(lhsBits, lhsBits, operator, signatures));
     });
   });
 
   supportedBits.forEach((bits) => {
     operators.forEach((operator) => {
-      if (operator.shiftOperator) res.push(tfheShiftOperators(bits, operator, signatures, mocked));
+      if (operator.shiftOperator || operator.rotateOperator)
+        res.push(tfheShiftOperators(bits, operator, signatures, !!operator.rotateOperator, mocked));
     });
   });
 
@@ -435,6 +438,7 @@ function tfheShiftOperators(
   inputBits: number,
   operator: Operator,
   signatures: OverloadSignature[],
+  rotate: boolean,
   mocked: boolean,
 ): string {
   const res: string[] = [];
@@ -452,9 +456,13 @@ function tfheShiftOperators(
 
   const leftExpr = 'a';
   const rightExpr = castRightToLeft ? `asEuint${outputBits}(b)` : 'b';
-  let implExpression;
+  let implExpression: string;
   if (mocked) {
-    implExpression = `Impl.${operator.name}(euint${outputBits}.unwrap(${leftExpr}), euint${outputBits}.unwrap(${rightExpr}) % ${lhsBits}${scalarFlag})`;
+    if (rotate) {
+      implExpression = `Impl.${operator.name}(euint${outputBits}.unwrap(${leftExpr}), euint${outputBits}.unwrap(${rightExpr}) % ${lhsBits}, ${lhsBits}${scalarFlag})`;
+    } else {
+      implExpression = `Impl.${operator.name}(euint${outputBits}.unwrap(${leftExpr}), euint${outputBits}.unwrap(${rightExpr}) % ${lhsBits}${scalarFlag})`;
+    }
   } else {
     implExpression = `Impl.${operator.name}(euint${outputBits}.unwrap(${leftExpr}), euint${outputBits}.unwrap(${rightExpr})${scalarFlag})`;
   }
@@ -487,7 +495,11 @@ function tfheShiftOperators(
   scalarFlag = ', true';
   implExpression = `Impl.${operator.name}(euint${outputBits}.unwrap(a), uint256(b)${scalarFlag})`;
   if (mocked) {
-    implExpression = `Impl.${operator.name}(euint${outputBits}.unwrap(a), uint256(b) % ${lhsBits}${scalarFlag})`;
+    if (rotate) {
+      implExpression = `Impl.${operator.name}(euint${outputBits}.unwrap(a), uint256(b) % ${lhsBits}, ${lhsBits}${scalarFlag})`;
+    } else {
+      implExpression = `Impl.${operator.name}(euint${outputBits}.unwrap(a), uint256(b) % ${lhsBits}${scalarFlag})`;
+    }
   }
   signatures.push({
     name: operator.name,
@@ -506,7 +518,6 @@ function tfheShiftOperators(
         return ${returnType}.wrap(${implExpression});
     }
   `);
-
   return res.join('');
 }
 
@@ -990,6 +1001,16 @@ library Impl {
 
   function shr(uint256 lhs, uint256 rhs, bool /*scalar*/) internal pure returns (uint256 result) {
       result = lhs >> rhs;
+  }
+
+  function rotl(uint256 lhs, uint256 rhs, uint256 bits, bool /*scalar*/) internal pure returns (uint256 result) {
+      uint count = rhs;
+      result = (lhs << count) | (lhs >> (bits - count));
+  }
+
+  function rotr(uint256 lhs, uint256 rhs, uint256 bits, bool /*scalar*/) internal pure returns (uint256 result) {
+      uint count = rhs;
+      result = (lhs >> count) | (lhs << (bits - count));
   }
 
   function eq(uint256 lhs, uint256 rhs, bool /*scalar*/) internal pure returns (uint256 result) {

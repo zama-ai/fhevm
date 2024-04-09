@@ -25,6 +25,10 @@ interface FhevmLib {
 
     function fheShr(uint256 lhs, uint256 rhs, bytes1 scalarByte) external pure returns (uint256 result);
 
+    function fheRotl(uint256 lhs, uint256 rhs, bytes1 scalarByte) external pure returns (uint256 result);
+
+    function fheRotr(uint256 lhs, uint256 rhs, bytes1 scalarByte) external pure returns (uint256 result);
+
     function fheEq(uint256 lhs, uint256 rhs, bytes1 scalarByte) external pure returns (uint256 result);
 
     function fheNe(uint256 lhs, uint256 rhs, bytes1 scalarByte) external pure returns (uint256 result);
@@ -147,6 +151,26 @@ library Impl {
             scalarByte = 0x00;
         }
         result = FhevmLib(address(EXT_TFHE_LIBRARY)).fheShr(lhs, rhs, scalarByte);
+    }
+
+    function rotl(uint256 lhs, uint256 rhs, bool scalar) internal pure returns (uint256 result) {
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        result = FhevmLib(address(EXT_TFHE_LIBRARY)).fheRotl(lhs, rhs, scalarByte);
+    }
+
+    function rotr(uint256 lhs, uint256 rhs, bool scalar) internal pure returns (uint256 result) {
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        result = FhevmLib(address(EXT_TFHE_LIBRARY)).fheRotr(lhs, rhs, scalarByte);
     }
 
     function eq(uint256 lhs, uint256 rhs, bool scalar) internal pure returns (uint256 result) {

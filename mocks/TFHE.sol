@@ -4892,6 +4892,22 @@ library TFHE {
         return euint4.wrap(Impl.shr(euint4.unwrap(a), uint256(b) % 4, true));
     }
 
+    // Evaluate rotl(a, b) and return the result.
+    function rotl(euint4 a, uint8 b) internal pure returns (euint4) {
+        if (!isInitialized(a)) {
+            a = asEuint4(0);
+        }
+        return euint4.wrap(Impl.rotl(euint4.unwrap(a), uint256(b) % 4, 4, true));
+    }
+
+    // Evaluate rotr(a, b) and return the result.
+    function rotr(euint4 a, uint8 b) internal pure returns (euint4) {
+        if (!isInitialized(a)) {
+            a = asEuint4(0);
+        }
+        return euint4.wrap(Impl.rotr(euint4.unwrap(a), uint256(b) % 4, 4, true));
+    }
+
     // Evaluate shl(a, b) and return the result.
     function shl(euint8 a, euint8 b) internal pure returns (euint8) {
         if (!isInitialized(a)) {
@@ -4928,6 +4944,44 @@ library TFHE {
             a = asEuint8(0);
         }
         return euint8.wrap(Impl.shr(euint8.unwrap(a), uint256(b) % 8, true));
+    }
+
+    // Evaluate rotl(a, b) and return the result.
+    function rotl(euint8 a, euint8 b) internal pure returns (euint8) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+        return euint8.wrap(Impl.rotl(euint8.unwrap(a), euint8.unwrap(b) % 8, 8, false));
+    }
+
+    // Evaluate rotl(a, b) and return the result.
+    function rotl(euint8 a, uint8 b) internal pure returns (euint8) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        return euint8.wrap(Impl.rotl(euint8.unwrap(a), uint256(b) % 8, 8, true));
+    }
+
+    // Evaluate rotr(a, b) and return the result.
+    function rotr(euint8 a, euint8 b) internal pure returns (euint8) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+        return euint8.wrap(Impl.rotr(euint8.unwrap(a), euint8.unwrap(b) % 8, 8, false));
+    }
+
+    // Evaluate rotr(a, b) and return the result.
+    function rotr(euint8 a, uint8 b) internal pure returns (euint8) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        return euint8.wrap(Impl.rotr(euint8.unwrap(a), uint256(b) % 8, 8, true));
     }
 
     // Evaluate shl(a, b) and return the result.
@@ -4968,6 +5022,44 @@ library TFHE {
         return euint16.wrap(Impl.shr(euint16.unwrap(a), uint256(b) % 16, true));
     }
 
+    // Evaluate rotl(a, b) and return the result.
+    function rotl(euint16 a, euint8 b) internal pure returns (euint16) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+        return euint16.wrap(Impl.rotl(euint16.unwrap(a), euint16.unwrap(asEuint16(b)) % 16, 16, false));
+    }
+
+    // Evaluate rotl(a, b) and return the result.
+    function rotl(euint16 a, uint8 b) internal pure returns (euint16) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        return euint16.wrap(Impl.rotl(euint16.unwrap(a), uint256(b) % 16, 16, true));
+    }
+
+    // Evaluate rotr(a, b) and return the result.
+    function rotr(euint16 a, euint8 b) internal pure returns (euint16) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+        return euint16.wrap(Impl.rotr(euint16.unwrap(a), euint16.unwrap(asEuint16(b)) % 16, 16, false));
+    }
+
+    // Evaluate rotr(a, b) and return the result.
+    function rotr(euint16 a, uint8 b) internal pure returns (euint16) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        return euint16.wrap(Impl.rotr(euint16.unwrap(a), uint256(b) % 16, 16, true));
+    }
+
     // Evaluate shl(a, b) and return the result.
     function shl(euint32 a, euint8 b) internal pure returns (euint32) {
         if (!isInitialized(a)) {
@@ -5006,6 +5098,44 @@ library TFHE {
         return euint32.wrap(Impl.shr(euint32.unwrap(a), uint256(b) % 32, true));
     }
 
+    // Evaluate rotl(a, b) and return the result.
+    function rotl(euint32 a, euint8 b) internal pure returns (euint32) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+        return euint32.wrap(Impl.rotl(euint32.unwrap(a), euint32.unwrap(asEuint32(b)) % 32, 32, false));
+    }
+
+    // Evaluate rotl(a, b) and return the result.
+    function rotl(euint32 a, uint8 b) internal pure returns (euint32) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        return euint32.wrap(Impl.rotl(euint32.unwrap(a), uint256(b) % 32, 32, true));
+    }
+
+    // Evaluate rotr(a, b) and return the result.
+    function rotr(euint32 a, euint8 b) internal pure returns (euint32) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+        return euint32.wrap(Impl.rotr(euint32.unwrap(a), euint32.unwrap(asEuint32(b)) % 32, 32, false));
+    }
+
+    // Evaluate rotr(a, b) and return the result.
+    function rotr(euint32 a, uint8 b) internal pure returns (euint32) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        return euint32.wrap(Impl.rotr(euint32.unwrap(a), uint256(b) % 32, 32, true));
+    }
+
     // Evaluate shl(a, b) and return the result.
     function shl(euint64 a, euint8 b) internal pure returns (euint64) {
         if (!isInitialized(a)) {
@@ -5042,6 +5172,44 @@ library TFHE {
             a = asEuint64(0);
         }
         return euint64.wrap(Impl.shr(euint64.unwrap(a), uint256(b) % 64, true));
+    }
+
+    // Evaluate rotl(a, b) and return the result.
+    function rotl(euint64 a, euint8 b) internal pure returns (euint64) {
+        if (!isInitialized(a)) {
+            a = asEuint64(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+        return euint64.wrap(Impl.rotl(euint64.unwrap(a), euint64.unwrap(asEuint64(b)) % 64, 64, false));
+    }
+
+    // Evaluate rotl(a, b) and return the result.
+    function rotl(euint64 a, uint8 b) internal pure returns (euint64) {
+        if (!isInitialized(a)) {
+            a = asEuint64(0);
+        }
+        return euint64.wrap(Impl.rotl(euint64.unwrap(a), uint256(b) % 64, 64, true));
+    }
+
+    // Evaluate rotr(a, b) and return the result.
+    function rotr(euint64 a, euint8 b) internal pure returns (euint64) {
+        if (!isInitialized(a)) {
+            a = asEuint64(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+        return euint64.wrap(Impl.rotr(euint64.unwrap(a), euint64.unwrap(asEuint64(b)) % 64, 64, false));
+    }
+
+    // Evaluate rotr(a, b) and return the result.
+    function rotr(euint64 a, uint8 b) internal pure returns (euint64) {
+        if (!isInitialized(a)) {
+            a = asEuint64(0);
+        }
+        return euint64.wrap(Impl.rotr(euint64.unwrap(a), uint256(b) % 64, 64, true));
     }
 
     // If 'control''s value is 'true', the result has the same value as 'a'.
