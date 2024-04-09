@@ -471,7 +471,7 @@ contract OraclePredeploy is Ownable2Step {
         uint256 len = decryptedCt.length;
         bytes memory callbackCalldata = abi.encodeWithSelector(decryptionReq.callbackSelector, requestID);
         for (uint256 i; i < len; i++) {
-            callbackCalldata = abi.encodePacked(callbackCalldata, abi.encode(decryptedCt[i]));
+            callbackCalldata = abi.encodePacked(callbackCalldata, abi.encode(address(decryptedCt[i])));
         }
         (bool success, bytes memory result) = (decryptionReq.contractCaller).call{value: decryptionReq.msgValue}(
             callbackCalldata

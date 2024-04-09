@@ -16,6 +16,7 @@ contract OracleCaller {
     mapping(uint256 => euint16[]) private paramsEUint16;
     mapping(uint256 => euint32[]) private paramsEUint32;
     mapping(uint256 => euint64[]) private paramsEUint64;
+    mapping(uint256 => eaddress[]) private paramsEAddress;
     mapping(uint256 => address[]) private paramsAddress;
     mapping(uint256 => uint[]) private paramsUint;
 
@@ -43,6 +44,10 @@ contract OracleCaller {
 
     function addParamsEUint64(uint256 requestID, euint64 _euint64) internal {
         paramsEUint64[requestID].push(_euint64);
+    }
+
+    function addParamsEAddress(uint256 requestID, eaddress _eaddress) internal {
+        paramsEAddress[requestID].push(_eaddress);
     }
 
     function addParamsAddress(uint256 requestID, address _address) internal {
@@ -75,6 +80,10 @@ contract OracleCaller {
 
     function getParamsEUint64(uint256 requestID) internal view returns (euint64[] memory) {
         return paramsEUint64[requestID];
+    }
+
+    function getParamsEAddress(uint256 requestID) internal view returns (eaddress[] memory) {
+        return paramsEAddress[requestID];
     }
 
     function getParamsAddress(uint256 requestID) internal view returns (address[] memory) {

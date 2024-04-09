@@ -315,8 +315,8 @@ function tfheEncryptedOperator(
     operator.returnType == ReturnType.Uint
       ? `euint${outputBits}`
       : operator.returnType == ReturnType.Ebool
-      ? `ebool`
-      : assert(false, 'Unknown return type');
+        ? `ebool`
+        : assert(false, 'Unknown return type');
   const returnTypeOverload: ArgumentType =
     operator.returnType == ReturnType.Uint ? ArgumentType.EUint : ArgumentType.Ebool;
   const scalarFlag = operator.hasEncrypted && operator.hasScalar ? ', false' : '';
@@ -369,8 +369,8 @@ function tfheScalarOperator(
     operator.returnType == ReturnType.Uint
       ? `euint${outputBits}`
       : operator.returnType == ReturnType.Ebool
-      ? `ebool`
-      : assert(false, 'Unknown return type');
+        ? `ebool`
+        : assert(false, 'Unknown return type');
   const returnTypeOverload = operator.returnType == ReturnType.Uint ? ArgumentType.EUint : ArgumentType.Ebool;
   var scalarFlag = operator.hasEncrypted && operator.hasScalar ? ', true' : '';
   const leftOpName = operator.leftScalarInvertOp ?? operator.name;
@@ -793,7 +793,7 @@ function tfheCustomMethods(ctx: CodegenContext, mocked: boolean): string {
     }
 
     // Convert a plaintext value to an encrypted asEaddress.
-    function asEaddress(uint256 value) internal pure returns (eaddress) {
+    function asEaddress(address value) internal pure returns (eaddress) {
         return eaddress.wrap(Impl.trivialEncrypt(uint160(value), Common.euint160_t));
     }
 
@@ -805,10 +805,10 @@ function tfheCustomMethods(ctx: CodegenContext, mocked: boolean): string {
     // Evaluate eq(a, b) and return the result.
     function eq(eaddress a, eaddress b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
-            a = asEaddress(0);
+            a = asEaddress(address(0));
         }
         if (!isInitialized(b)) {
-            b = asEaddress(0);
+            b = asEaddress(address(0));
         }
         return ebool.wrap(Impl.eq(eaddress.unwrap(a), eaddress.unwrap(b), false));
     }
@@ -816,10 +816,10 @@ function tfheCustomMethods(ctx: CodegenContext, mocked: boolean): string {
     // Evaluate ne(a, b) and return the result.
     function ne(eaddress a, eaddress b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
-            a = asEaddress(0);
+            a = asEaddress(address(0));
         }
         if (!isInitialized(b)) {
-            b = asEaddress(0);
+            b = asEaddress(address(0));
         }
         return ebool.wrap(Impl.ne(eaddress.unwrap(a), eaddress.unwrap(b), false));
     }
@@ -827,7 +827,7 @@ function tfheCustomMethods(ctx: CodegenContext, mocked: boolean): string {
     // Evaluate eq(a, b) and return the result.
     function eq(eaddress a, address b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
-            a = asEaddress(0);
+            a = asEaddress(address(0));
         }
         uint256 bProc = uint256(uint160(b));
         return ebool.wrap(Impl.eq(eaddress.unwrap(a), bProc, true));
@@ -836,7 +836,7 @@ function tfheCustomMethods(ctx: CodegenContext, mocked: boolean): string {
     // Evaluate eq(a, b) and return the result.
     function eq(address b, eaddress a) internal pure returns (ebool) {
         if (!isInitialized(a)) {
-            a = asEaddress(0);
+            a = asEaddress(address(0));
         }
         uint256 bProc = uint256(uint160(b));
         return ebool.wrap(Impl.eq(eaddress.unwrap(a), bProc, true));
@@ -845,7 +845,7 @@ function tfheCustomMethods(ctx: CodegenContext, mocked: boolean): string {
     // Evaluate ne(a, b) and return the result.
     function ne(eaddress a, address b) internal pure returns (ebool) {
         if (!isInitialized(a)) {
-            a = asEaddress(0);
+            a = asEaddress(address(0));
         }
         uint256 bProc = uint256(uint160(b));
         return ebool.wrap(Impl.ne(eaddress.unwrap(a), bProc, true));
@@ -854,7 +854,7 @@ function tfheCustomMethods(ctx: CodegenContext, mocked: boolean): string {
     // Evaluate ne(a, b) and return the result.
     function ne(address b, eaddress a) internal pure returns (ebool) {
         if (!isInitialized(a)) {
-            a = asEaddress(0);
+            a = asEaddress(address(0));
         }
         uint256 bProc = uint256(uint160(b));
         return ebool.wrap(Impl.ne(eaddress.unwrap(a), bProc, true));
