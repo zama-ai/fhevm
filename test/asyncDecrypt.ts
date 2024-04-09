@@ -24,6 +24,7 @@ const ifaceEventDecryptionEUint8 = new ethers.Interface(['event EventDecryptionE
 const ifaceEventDecryptionEUint16 = new ethers.Interface(['event EventDecryptionEUint16' + argEvents]);
 const ifaceEventDecryptionEUint32 = new ethers.Interface(['event EventDecryptionEUint32' + argEvents]);
 const ifaceEventDecryptionEUint64 = new ethers.Interface(['event EventDecryptionEUint64' + argEvents]);
+const ifaceEventDecryptionEAddress = new ethers.Interface(['event EventDecryptionEAddress' + argEvents]);
 
 const argEvents2 = '(uint256 indexed requestID, bool success, bytes result)';
 const ifaceResultCallbackBool = new ethers.Interface(['event ResultCallbackBool' + argEvents2]);
@@ -32,6 +33,7 @@ const ifaceResultCallbackUint8 = new ethers.Interface(['event ResultCallbackUint
 const ifaceResultCallbackUint16 = new ethers.Interface(['event ResultCallbackUint16' + argEvents2]);
 const ifaceResultCallbackUint32 = new ethers.Interface(['event ResultCallbackUint32' + argEvents2]);
 const ifaceResultCallbackUint64 = new ethers.Interface(['event ResultCallbackUint64' + argEvents2]);
+const ifaceResultcallbackAddress = new ethers.Interface(['event ResultcallbackAddress' + argEvents2]);
 
 let oracle: OraclePredeploy;
 let firstBlockListening: number;
@@ -112,6 +114,20 @@ export const asyncDecrypt = async (): Promise<void> => {
     const blockNumber = eventData.log.blockNumber;
     console.log(`${await currentTime()} - Fulfilled euint64 decrypt on block ${blockNumber} (requestID ${requestID})`);
   });
+
+  oracle.on(
+    'EventDecryptionEAddress',
+    async (requestID, cts, contractCaller, callbackSelector, msgValue, maxTimestamp, eventData) => {
+      const blockNumber = eventData.log.blockNumber;
+      console.log(
+        `${await currentTime()} - Requested eaddress decrypt on block ${blockNumber} (requestID ${requestID})`,
+      );
+    },
+  );
+  oracle.on('ResultcallbackAddress', async (requestID, success, result, eventData) => {
+    const blockNumber = eventData.log.blockNumber;
+    console.log(`${await currentTime()} - Fulfilled eaddress decrypt on block ${blockNumber} (requestID ${requestID})`);
+  });
 };
 
 export const awaitAllDecryptionResults = async (): Promise<void> => {
@@ -181,6 +197,16 @@ const getAlreadyFulfilledDecryptions = async (): Promise<[bigint]> => {
   };
   const pastResultsEuint64 = await ethers.provider.getLogs(filterDecryptionResultUint64);
   results = results.concat(pastResultsEuint64.map((result) => ifaceResultCallbackUint64.parseLog(result).args[0]));
+
+  const eventDecryptionResultEAddress = await oracle.filters.ResultcallbackAddress().getTopicFilter();
+  const filterDecryptionResultAddress = {
+    address: process.env.ORACLE_CONTRACT_PREDEPLOY_ADDRESS,
+    fromBlock: firstBlockListening,
+    toBlock: 'latest',
+    topics: eventDecryptionResultEAddress,
+  };
+  const pastResultsEaddress = await ethers.provider.getLogs(filterDecryptionResultAddress);
+  results = results.concat(pastResultsEaddress.map((result) => ifaceResultcallbackAddress.parseLog(result).args[0]));
 
   return results;
 };
@@ -344,6 +370,33 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
       if (mocked) {
         // in mocked mode, we trigger the decryption fulfillment manually
         const tx = await oracle.connect(relayer).fulfillRequestUint64(requestID, [...cts], { value: msgValue });
+        await tx.wait();
+      } else {
+        // in fhEVM mode we must wait until the oracle service relayer submits the decryption fulfillment tx
+        await waitNBlocks(1);
+        await fulfillAllPastRequestsIds(mocked);
+      }
+    }
+  }
+
+  const eventDecryptionEAddress = await oracle.filters.EventDecryptionEAddress().getTopicFilter();
+  const filterDecryptionEAddress = {
+    address: process.env.ORACLE_CONTRACT_PREDEPLOY_ADDRESS,
+    fromBlock: firstBlockListening,
+    toBlock: 'latest',
+    topics: eventDecryptionEAddress,
+  };
+  const pastRequestsEAddress = await ethers.provider.getLogs(filterDecryptionEAddress);
+  for (const request of pastRequestsEAddress) {
+    const event = ifaceEventDecryptionEAddress.parseLog(request);
+    const requestID = event.args[0];
+    const cts = event.args[1];
+    const msgValue = event.args[4];
+    if (!results.includes(requestID)) {
+      // if request is not already fulfilled
+      if (mocked) {
+        // in mocked mode, we trigger the decryption fulfillment manually
+        const tx = await oracle.connect(relayer).fulfillRequestAddress(requestID, [...cts], { value: msgValue });
         await tx.wait();
       } else {
         // in fhEVM mode we must wait until the oracle service relayer submits the decryption fulfillment tx

@@ -54,6 +54,14 @@ contract OraclePredeploy is Ownable2Step {
         uint256 maxTimestamp;
     }
 
+    struct DecryptionRequestEAddress {
+        eaddress[] cts;
+        address contractCaller;
+        bytes4 callbackSelector;
+        uint256 msgValue;
+        uint256 maxTimestamp;
+    }
+
     ebool eTRUE = TFHE.asEbool(true);
 
     uint256 counter; // tracks the number of decryption requests
@@ -65,6 +73,7 @@ contract OraclePredeploy is Ownable2Step {
     mapping(uint256 => DecryptionRequestEUint16) decryptionRequestsEUint16;
     mapping(uint256 => DecryptionRequestEUint32) decryptionRequestsEUint32;
     mapping(uint256 => DecryptionRequestEUint64) decryptionRequestsEUint64;
+    mapping(uint256 => DecryptionRequestEAddress) decryptionRequestsEAddress;
     mapping(uint256 => bool) isFulfilled;
 
     constructor(address predeployOwner) Ownable(predeployOwner) {}
@@ -123,6 +132,15 @@ contract OraclePredeploy is Ownable2Step {
         uint256 maxTimestamp
     );
 
+    event EventDecryptionEAddress(
+        uint256 indexed requestID,
+        eaddress[] cts,
+        address contractCaller,
+        bytes4 callbackSelector,
+        uint256 msgValue,
+        uint256 maxTimestamp
+    );
+
     event AddedRelayer(address indexed realyer);
 
     event RemovedRelayer(address indexed realyer);
@@ -133,6 +151,7 @@ contract OraclePredeploy is Ownable2Step {
     event ResultCallbackUint16(uint256 indexed requestID, bool success, bytes result);
     event ResultCallbackUint32(uint256 indexed requestID, bool success, bytes result);
     event ResultCallbackUint64(uint256 indexed requestID, bool success, bytes result);
+    event ResultcallbackAddress(uint256 indexed requestID, bool success, bytes result);
 
     function addRelayer(address relayerAddress) external onlyOwner {
         require(!isRelayer[relayerAddress], "Address is already relayer");
@@ -296,6 +315,31 @@ contract OraclePredeploy is Ownable2Step {
         counter++;
     }
 
+    // Requests the decryption of n ciphertexts `ct`s with the result returned in a callback.
+    // During callback, msg.sender is called with [callbackSelector,requestID,decrypt(ct[0]),decrypt(ct[1]),...,decrypt(ct[n-1])] as calldata via `FulfillRequestAddress`.
+    function requestDecryptionAddress(
+        eaddress[] memory ct,
+        bytes4 callbackSelector,
+        uint256 msgValue, // msg.value of callback tx, if callback is payable
+        uint256 maxTimestamp
+    ) external returns (uint256 initialCounter) {
+        initialCounter = counter;
+        uint256 len = ct.length;
+        for (uint256 i = 0; i < len; i++) {
+            require(TFHE.isInitialized(ct[i]), "Ciphertext is not initialized");
+        }
+        DecryptionRequestEAddress memory decryptionReq = DecryptionRequestEAddress(
+            ct,
+            msg.sender,
+            callbackSelector,
+            msgValue,
+            maxTimestamp
+        );
+        decryptionRequestsEAddress[initialCounter] = decryptionReq;
+        emit EventDecryptionEAddress(initialCounter, ct, msg.sender, callbackSelector, msgValue, maxTimestamp);
+        counter++;
+    }
+
     function fulfillRequestBool(
         uint256 requestID,
         bool[] memory decryptedCt /*, bytes memory signatureKMS */
@@ -413,6 +457,26 @@ contract OraclePredeploy is Ownable2Step {
             callbackCalldata
         );
         emit ResultCallbackUint64(requestID, success, result);
+        isFulfilled[requestID] = true;
+    }
+
+    function fulfillRequestAddress(
+        uint256 requestID,
+        uint160[] memory decryptedCt /*, bytes memory signatureKMS */
+    ) external payable onlyRelayer {
+        // TODO: check EIP712-signature of the DecryptionRequest struct by the KMS (waiting for signature scheme specification of KMS to be decided first)
+        require(!isFulfilled[requestID], "Request is already fulfilled");
+        DecryptionRequestEAddress memory decryptionReq = decryptionRequestsEAddress[requestID];
+        require(block.timestamp <= decryptionReq.maxTimestamp, "Too late");
+        uint256 len = decryptedCt.length;
+        bytes memory callbackCalldata = abi.encodeWithSelector(decryptionReq.callbackSelector, requestID);
+        for (uint256 i; i < len; i++) {
+            callbackCalldata = abi.encodePacked(callbackCalldata, abi.encode(address(decryptedCt[i])));
+        }
+        (bool success, bytes memory result) = (decryptionReq.contractCaller).call{value: decryptionReq.msgValue}(
+            callbackCalldata
+        );
+        emit ResultcallbackAddress(requestID, success, result);
         isFulfilled[requestID] = true;
     }
 

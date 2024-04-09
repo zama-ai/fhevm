@@ -51,7 +51,7 @@ function requestDecryption(
 ) returns(uint256 requestID)
 ```
 
-The first argument, `ct`, should be an array of ciphertexts of a single same type i.e `eXXX` stands for either `ebool`, `euint4`, `euint8`, `euint16`, `euint32` or `euint64`. `ct` is the list of ciphertexts that are requested to be decrypted. Calling `requestDecryption` will emit an `EventDecryptionEXXX` on the `OraclePredeploy` contract which will be detected by a relayer. Then, the relayer will send the corresponding ciphertexts to the KMS for decryption before fulfilling the request.
+The first argument, `ct`, should be an array of ciphertexts of a single same type i.e `eXXX` stands for either `ebool`, `euint4`, `euint8`, `euint16`, `euint32`, `euint64` or `eaddress`. `ct` is the list of ciphertexts that are requested to be decrypted. Calling `requestDecryption` will emit an `EventDecryptionEXXX` on the `OraclePredeploy` contract which will be detected by a relayer. Then, the relayer will send the corresponding ciphertexts to the KMS for decryption before fulfilling the request.
 
 `callbackSelector` is the function selector of the callback function which will be called by the `OraclePredeploy` contract once the relayer fulfils the decryption request. Notice that the callback function should always follow this convention:
 
@@ -83,6 +83,8 @@ function addParamsEUint32(uint256 requestID, euint32 _euint32) internal;
 
 function addParamsEUint64(uint256 requestID, euint64 _euint64) internal;
 
+function addParamsEAddress(uint256 requestID, address _eaddress) internal;
+
 function addParamsAddress(uint256 requestID, address _address) internal;
 
 function addParamsUint(uint256 requestID, uint256 _uint) internal;
@@ -102,6 +104,8 @@ function getParamsEUint16(uint256 requestID) internal;
 function getParamsEUint32(uint256 requestID) internal;
 
 function getParamsEUint64(uint256 requestID) internal;
+
+function getParamsEAddress(uint256 requestID) internal;
 
 function getParamsAddress(uint256 requestID) internal;
 
@@ -151,6 +155,7 @@ event ResultCallbackUint8(uint256 indexed requestID, bool success, bytes result)
 event ResultCallbackUint16(uint256 indexed requestID, bool success, bytes result);
 event ResultCallbackUint32(uint256 indexed requestID, bool success, bytes result);
 event ResultCallbackUint64(uint256 indexed requestID, bool success, bytes result);
+event ResultCallbackAddress(uint256 indexed requestID, bool success, bytes result);
 ```
 
 The first argument is the `requestID` of the corresponding decryption request, `success` is a boolean assessing if the call to the callback succeeded, and `result` is the bytes array corresponding the to return data from the callback.

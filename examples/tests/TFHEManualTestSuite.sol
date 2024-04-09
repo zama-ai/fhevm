@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.20;
 
+import "../../abstracts/Reencrypt.sol";
 import "../../lib/TFHE.sol";
 
-contract TFHEManualTestSuite {
+contract TFHEManualTestSuite is Reencrypt {
     function test_select(
         bytes calldata control,
         bytes calldata ifTrue,
@@ -13,6 +14,73 @@ contract TFHEManualTestSuite {
         euint32 ifTrueProc = TFHE.asEuint32(ifTrue);
         euint32 ifFalseProc = TFHE.asEuint32(ifFalse);
         return TFHE.decrypt(TFHE.select(controlProc, ifTrueProc, ifFalseProc));
+    }
+
+    function test_select_eaddress(
+        bytes calldata control,
+        bytes calldata ifTrue,
+        bytes calldata ifFalse
+    ) public view returns (address) {
+        ebool controlProc = TFHE.asEbool(control);
+        eaddress ifTrueProc = TFHE.asEaddress(ifTrue);
+        eaddress ifFalseProc = TFHE.asEaddress(ifFalse);
+        return TFHE.decrypt(TFHE.select(controlProc, ifTrueProc, ifFalseProc));
+    }
+
+    function test_eq_eaddress_eaddress(bytes calldata a, bytes calldata b) public view returns (bool) {
+        eaddress aProc = TFHE.asEaddress(a);
+        eaddress bProc = TFHE.asEaddress(b);
+        ebool result = TFHE.eq(aProc, bProc);
+        return TFHE.decrypt(result);
+    }
+
+    function test_ne_eaddress_eaddress(bytes calldata a, bytes calldata b) public view returns (bool) {
+        eaddress aProc = TFHE.asEaddress(a);
+        eaddress bProc = TFHE.asEaddress(b);
+        ebool result = TFHE.ne(aProc, bProc);
+        return TFHE.decrypt(result);
+    }
+
+    function test_eq_eaddress_address(bytes calldata a, address b) public view returns (bool) {
+        eaddress aProc = TFHE.asEaddress(a);
+        address bProc = b;
+        ebool result = TFHE.eq(aProc, bProc);
+        return TFHE.decrypt(result);
+    }
+
+    function test_eq_address_eaddress(address b, bytes calldata a) public view returns (bool) {
+        eaddress aProc = TFHE.asEaddress(a);
+        address bProc = b;
+        ebool result = TFHE.eq(aProc, bProc);
+        return TFHE.decrypt(result);
+    }
+
+    function test_ne_eaddress_address(bytes calldata a, address b) public view returns (bool) {
+        eaddress aProc = TFHE.asEaddress(a);
+        address bProc = b;
+        ebool result = TFHE.ne(aProc, bProc);
+        return TFHE.decrypt(result);
+    }
+
+    function test_ne_address_eaddress(address b, bytes calldata a) public view returns (bool) {
+        eaddress aProc = TFHE.asEaddress(a);
+        address bProc = b;
+        ebool result = TFHE.ne(aProc, bProc);
+        return TFHE.decrypt(result);
+    }
+
+    function test_eaddress_decrypt(bytes calldata addr) public view returns (address) {
+        eaddress addProc = TFHE.asEaddress(addr);
+        return TFHE.decrypt(addProc);
+    }
+
+    function test_reencrypt_eaddress(
+        bytes calldata addr,
+        bytes32 publicKey,
+        bytes calldata signature
+    ) public view virtual onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
+        eaddress addProc = TFHE.asEaddress(addr);
+        return TFHE.reencrypt(addProc, publicKey);
     }
 
     function test_ebool_to_euint4_cast(bool input) public view returns (uint16) {

@@ -65,4 +65,13 @@ library Oracle {
     ) internal returns (uint256 initialCounter) {
         initialCounter = oraclePredeploy.requestDecryptionEUint64(ct, callbackSelector, msgValue, maxTimestamp);
     }
+
+    function requestDecryption(
+        eaddress[] memory ct,
+        bytes4 callbackSelector,
+        uint256 msgValue,
+        uint256 maxTimestamp
+    ) internal returns (uint256 initialCounter) {
+        initialCounter = oraclePredeploy.requestDecryptionAddress(ct, callbackSelector, msgValue, maxTimestamp);
+    }
 }
