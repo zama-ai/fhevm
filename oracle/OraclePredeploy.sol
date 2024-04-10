@@ -6,6 +6,8 @@ import "../lib/TFHE.sol";
 import "@openzeppelin/contracts/access/Ownable2Step.sol";
 
 contract OraclePredeploy is Ownable2Step {
+    uint256 public constant MAX_DELAY = 1 days;
+
     struct DecryptionRequestEBool {
         ebool[] cts;
         address contractCaller;
@@ -64,7 +66,7 @@ contract OraclePredeploy is Ownable2Step {
 
     ebool eTRUE = TFHE.asEbool(true);
 
-    uint256 counter; // tracks the number of decryption requests
+    uint256 public counter; // tracks the number of decryption requests
 
     mapping(address => bool) public isRelayer;
     mapping(uint256 => DecryptionRequestEBool) decryptionRequestsEBool;
@@ -165,6 +167,26 @@ contract OraclePredeploy is Ownable2Step {
         emit RemovedRelayer(relayerAddress);
     }
 
+    function isExpired(uint256 requestID) external view returns (bool) {
+        uint256 timeNow = block.timestamp;
+        return
+            isFulfilled[requestID] ||
+            (timeNow > decryptionRequestsEBool[requestID].maxTimestamp &&
+                decryptionRequestsEBool[requestID].maxTimestamp != 0) ||
+            (timeNow > decryptionRequestsEUint4[requestID].maxTimestamp &&
+                decryptionRequestsEUint4[requestID].maxTimestamp != 0) ||
+            (timeNow > decryptionRequestsEUint8[requestID].maxTimestamp &&
+                decryptionRequestsEUint8[requestID].maxTimestamp != 0) ||
+            (timeNow > decryptionRequestsEUint16[requestID].maxTimestamp &&
+                decryptionRequestsEUint16[requestID].maxTimestamp != 0) ||
+            (timeNow > decryptionRequestsEUint32[requestID].maxTimestamp &&
+                decryptionRequestsEUint32[requestID].maxTimestamp != 0) ||
+            (timeNow > decryptionRequestsEUint64[requestID].maxTimestamp &&
+                decryptionRequestsEUint64[requestID].maxTimestamp != 0) ||
+            (timeNow > decryptionRequestsEAddress[requestID].maxTimestamp &&
+                decryptionRequestsEAddress[requestID].maxTimestamp != 0);
+    }
+
     // Requests the decryption of n ciphertexts `ct`s with the result returned in a callback.
     // During callback, msg.sender is called with [callbackSelector,requestID,decrypt(ct[0]),decrypt(ct[1]),...,decrypt(ct[n-1])] as calldata via `fulfillRequestBool`.
     function requestDecryptionEBool(
@@ -173,6 +195,7 @@ contract OraclePredeploy is Ownable2Step {
         uint256 msgValue, // msg.value of callback tx, if callback is payable
         uint256 maxTimestamp
     ) external returns (uint256 initialCounter) {
+        require(maxTimestamp <= block.timestamp + MAX_DELAY, "maxTimestamp exceeded MAX_DELAY");
         initialCounter = counter;
         uint256 len = ct.length;
         for (uint256 i = 0; i < len; i++) {
@@ -198,6 +221,7 @@ contract OraclePredeploy is Ownable2Step {
         uint256 msgValue, // msg.value of callback tx, if callback is payable
         uint256 maxTimestamp
     ) external returns (uint256 initialCounter) {
+        require(maxTimestamp <= block.timestamp + MAX_DELAY, "maxTimestamp exceeded MAX_DELAY");
         initialCounter = counter;
         uint256 len = ct.length;
         for (uint256 i = 0; i < len; i++) {
@@ -223,6 +247,7 @@ contract OraclePredeploy is Ownable2Step {
         uint256 msgValue, // msg.value of callback tx, if callback is payable
         uint256 maxTimestamp
     ) external returns (uint256 initialCounter) {
+        require(maxTimestamp <= block.timestamp + MAX_DELAY, "maxTimestamp exceeded MAX_DELAY");
         initialCounter = counter;
         uint256 len = ct.length;
         for (uint256 i = 0; i < len; i++) {
@@ -248,6 +273,7 @@ contract OraclePredeploy is Ownable2Step {
         uint256 msgValue, // msg.value of callback tx, if callback is payable
         uint256 maxTimestamp
     ) external returns (uint256 initialCounter) {
+        require(maxTimestamp <= block.timestamp + MAX_DELAY, "maxTimestamp exceeded MAX_DELAY");
         initialCounter = counter;
         uint256 len = ct.length;
         for (uint256 i = 0; i < len; i++) {
@@ -273,6 +299,7 @@ contract OraclePredeploy is Ownable2Step {
         uint256 msgValue, // msg.value of callback tx, if callback is payable
         uint256 maxTimestamp
     ) external returns (uint256 initialCounter) {
+        require(maxTimestamp <= block.timestamp + MAX_DELAY, "maxTimestamp exceeded MAX_DELAY");
         initialCounter = counter;
         uint256 len = ct.length;
         for (uint256 i = 0; i < len; i++) {
@@ -298,6 +325,7 @@ contract OraclePredeploy is Ownable2Step {
         uint256 msgValue, // msg.value of callback tx, if callback is payable
         uint256 maxTimestamp
     ) external returns (uint256 initialCounter) {
+        require(maxTimestamp <= block.timestamp + MAX_DELAY, "maxTimestamp exceeded MAX_DELAY");
         initialCounter = counter;
         uint256 len = ct.length;
         for (uint256 i = 0; i < len; i++) {
@@ -323,6 +351,7 @@ contract OraclePredeploy is Ownable2Step {
         uint256 msgValue, // msg.value of callback tx, if callback is payable
         uint256 maxTimestamp
     ) external returns (uint256 initialCounter) {
+        require(maxTimestamp <= block.timestamp + MAX_DELAY, "maxTimestamp exceeded MAX_DELAY");
         initialCounter = counter;
         uint256 len = ct.length;
         for (uint256 i = 0; i < len; i++) {

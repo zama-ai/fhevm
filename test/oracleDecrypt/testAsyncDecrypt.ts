@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import { ethers } from 'hardhat';
+import { ethers, network } from 'hardhat';
 
 import { asyncDecrypt, awaitAllDecryptionResults } from '../asyncDecrypt';
 import { getSigners, initSigners } from '../signers';
@@ -14,6 +14,19 @@ describe('TestAsyncDecrypt', function () {
   beforeEach(async function () {
     const contractFactory = await ethers.getContractFactory('TestAsyncDecrypt');
     this.contract = await contractFactory.connect(this.signers.alice).deploy();
+  });
+
+  it('test async decrypt bool would fail if maxTimestamp is above 1 day', async function () {
+    if (network.name === 'hardhat') {
+      // mocked mode
+      await expect(this.contract.connect(this.signers.carol).requestBoolAboveDelay()).to.be.revertedWith(
+        'maxTimestamp exceeded MAX_DELAY',
+      );
+    } else {
+      // fhevm-mode
+      const tx = await this.contract.connect(this.signers.carol).requestBoolAboveDelay({ gasLimit: 1_000_000 });
+      await expect(tx.wait()).to.throw;
+    }
   });
 
   it('test async decrypt bool', async function () {
