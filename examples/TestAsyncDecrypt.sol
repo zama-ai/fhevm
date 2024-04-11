@@ -58,14 +58,14 @@ contract TestAsyncDecrypt is OracleCaller {
 
     function requestBoolAboveDelay() public {
         // should revert
-        ebool[] memory cts = new ebool[](1);
-        cts[0] = xBool;
+        Ciphertext[] memory cts = new Ciphertext[](1);
+        cts[0] = Oracle.toCiphertext(xBool);
         Oracle.requestDecryption(cts, this.callbackBool.selector, 0, block.timestamp + 2 days);
     }
 
     function requestBool() public {
-        ebool[] memory cts = new ebool[](1);
-        cts[0] = xBool;
+        Ciphertext[] memory cts = new Ciphertext[](1);
+        cts[0] = Oracle.toCiphertext(xBool);
         Oracle.requestDecryption(cts, this.callbackBool.selector, 0, block.timestamp + 100);
     }
 
@@ -78,12 +78,6 @@ contract TestAsyncDecrypt is OracleCaller {
     function callbackBool(uint256 /*requestID*/, bool decryptedInput) public onlyOracle returns (bool) {
         yBool = decryptedInput;
         return yBool;
-    }
-
-    function requestUint4() public {
-        euint4[] memory cts = new euint4[](1);
-        cts[0] = xUint4;
-        Oracle.requestDecryption(cts, this.callbackUint4.selector, 0, block.timestamp + 100);
     }
 
     function requestFakeUint4() public {
@@ -193,6 +187,37 @@ contract TestAsyncDecrypt is OracleCaller {
     function callbackAddress(uint256 /*requestID*/, address decryptedInput) public onlyOracle returns (address) {
         yAddress = decryptedInput;
         return decryptedInput;
+
+    function requestMixed() public {
+        Ciphertext[] memory cts = new Ciphertext[](10);
+        cts[0] = Oracle.toCiphertext(xBool);
+        cts[1] = Oracle.toCiphertext(xBool);
+        cts[2] = Oracle.toCiphertext(xUint4);
+        cts[3] = Oracle.toCiphertext(xUint8);
+        cts[4] = Oracle.toCiphertext(xUint16);
+        cts[5] = Oracle.toCiphertext(xUint32);
+        cts[6] = Oracle.toCiphertext(xUint64);
+        cts[7] = Oracle.toCiphertext(xUint64);
+        cts[8] = Oracle.toCiphertext(xUint64);
+        cts[9] = Oracle.toCiphertext(xAddress);
+        Oracle.requestDecryption(cts, this.callbackMixed.selector, 0, block.timestamp + 100);
+    }
+
+    function callbackMixed(
+        uint256 /*requestID*/,
+        bool decBool_1,
+        bool decBool_2,
+        uint8 decUint4,
+        uint8 decUint8,
+        uint16 decUint16,
+        uint32 decUint32,
+        uint64 decUint64_1,
+        uint64 decUint64_2,
+        uint64 decUint64_3,
+        address decAddress
+    ) public onlyOracle returns (uint8) {
+        yUint4 = decUint4;
+        return yUint4;
     }
 
     function callbackAddresses(
