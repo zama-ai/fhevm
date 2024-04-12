@@ -22,6 +22,8 @@ struct Ciphertext {
 }
 
 contract OraclePredeploy is Ownable2Step {
+    error NotImplementedError();
+
     uint256 public constant MAX_DELAY = 1 days;
 
     struct DecryptionRequest {
@@ -32,21 +34,11 @@ contract OraclePredeploy is Ownable2Step {
         uint256 maxTimestamp;
     }
 
-    ebool eTRUE = TFHE.asEbool(true);
-
     uint256 public counter; // tracks the number of decryption requests
 
     mapping(address => bool) public isRelayer;
     mapping(uint256 => DecryptionRequest) internal decryptionRequests;
     mapping(uint256 => bool) internal isFulfilled;
-
-    mapping(uint256 => ebool[]) internal verifiedEBools; // to check that ciphertexts have been honestly obtained via privileged storage
-    mapping(uint256 => euint4[]) internal verifiedEUint4s;
-    mapping(uint256 => euint8[]) internal verifiedEUint8s;
-    mapping(uint256 => euint16[]) internal verifiedEUint16s;
-    mapping(uint256 => euint32[]) internal verifiedEUint32s;
-    mapping(uint256 => euint64[]) internal verifiedEUint64s;
-    mapping(uint256 => eaddress[]) internal verifiedEAddresses;
 
     constructor(address predeployOwner) Ownable(predeployOwner) {}
 
@@ -84,48 +76,6 @@ contract OraclePredeploy is Ownable2Step {
             (timeNow > decryptionRequests[requestID].maxTimestamp && decryptionRequests[requestID].maxTimestamp != 0);
     }
 
-    function approveEBool(ebool x) external {
-        TFHE.and(x, eTRUE); // this is similar to no-op, except it would fail if x is a "fake" handle,
-        // not corresponding to a verified ciphertext in privileged memory
-        verifiedEBools[counter].push(x);
-    }
-
-    function approveEUint4(euint4 x) external {
-        TFHE.shl(x, 0); // this is similar to no-op, except it would fail if x is a "fake" handle,
-        // not corresponding to a verified ciphertext in privileged memory
-        verifiedEUint4s[counter].push(x);
-    }
-
-    function approveEUint8(euint8 x) external {
-        TFHE.shl(x, 0); // this is similar to no-op, except it would fail if x is a "fake" handle,
-        // not corresponding to a verified ciphertext in privileged memory
-        verifiedEUint8s[counter].push(x);
-    }
-
-    function approveEUint16(euint16 x) external {
-        TFHE.shl(x, 0); // this is similar to no-op, except it would fail if x is a "fake" handle,
-        // not corresponding to a verified ciphertext in privileged memory
-        verifiedEUint16s[counter].push(x);
-    }
-
-    function approveEUint32(euint32 x) external {
-        TFHE.shl(x, 0); // this is similar to no-op, except it would fail if x is a "fake" handle,
-        // not corresponding to a verified ciphertext in privileged memory
-        verifiedEUint32s[counter].push(x);
-    }
-
-    function approveEUint64(euint64 x) external {
-        TFHE.shl(x, 0); // this is similar to no-op, except it would fail if x is a "fake" handle,
-        // not corresponding to a verified ciphertext in privileged memory
-        verifiedEUint64s[counter].push(x);
-    }
-
-    function approveEAddress(eaddress x) external {
-        TFHE.eq(x, x); // this is similar to no-op, except it would fail if x is a "fake" handle,
-        // not corresponding to a verified ciphertext in privileged memory
-        verifiedEAddresses[counter].push(x);
-    }
-
     // Requests the decryption of n ciphertexts `ctsHandles` with the result returned in a callback.
     // `ctsHandles` is an array of handles. `ctsTypes` is an array of CiphertextTypes. `ctsHandles[i]`'s type MUST be `ctsTypes[i]`.
     // During callback, msg.sender is called with [callbackSelector,requestID,decrypt(ctsHandles[0]),decrypt(ctsHandles[1]),...,decrypt(ctsHandles[n-1])] as calldata via `fulfillRequest`.
@@ -141,7 +91,26 @@ contract OraclePredeploy is Ownable2Step {
         uint256 len = cts.length;
         DecryptionRequest storage decryptionReq = decryptionRequests[initialCounter];
         for (uint256 i = 0; i < len; i++) {
-            require(cts[i].ctHandle != 0, "Ciphertext is not initialized");
+            uint256 handle = cts[i].ctHandle;
+            require(handle != 0, "Ciphertext is not initialized");
+            uint8 ctType = uint8(cts[i].ctType);
+            if (ctType == 0) {
+                TFHE.and(ebool.wrap(handle), ebool.wrap(handle)); // this is similar to no-op, except it would fail if `handle` is a "fake" handle, needed to check that ciphertext is honestly obtained
+            } else if (ctType == 1) {
+                TFHE.and(euint4.wrap(handle), euint4.wrap(handle));
+            } else if (ctType == 2) {
+                TFHE.and(euint8.wrap(handle), euint8.wrap(handle));
+            } else if (ctType == 3) {
+                TFHE.and(euint16.wrap(handle), euint16.wrap(handle));
+            } else if (ctType == 4) {
+                TFHE.and(euint32.wrap(handle), euint32.wrap(handle));
+            } else if (ctType == 5) {
+                TFHE.and(euint64.wrap(handle), euint64.wrap(handle));
+            } else if (ctType == 6) {
+                revert NotImplementedError();
+            } else {
+                TFHE.eq(eaddress.wrap(handle), eaddress.wrap(handle));
+            }
             decryptionReq.cts.push(cts[i]);
         }
         decryptionReq.contractCaller = msg.sender;
