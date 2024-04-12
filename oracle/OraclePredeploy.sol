@@ -195,11 +195,14 @@ contract OraclePredeploy is Ownable2Step {
         uint256 msgValue, // msg.value of callback tx, if callback is payable
         uint256 maxTimestamp
     ) external returns (uint256 initialCounter) {
+        require(maxTimestamp > block.timestamp, "maxTimestamp must be a future date");
         require(maxTimestamp <= block.timestamp + MAX_DELAY, "maxTimestamp exceeded MAX_DELAY");
         initialCounter = counter;
         uint256 len = ct.length;
         for (uint256 i = 0; i < len; i++) {
             require(TFHE.isInitialized(ct[i]), "Ciphertext is not initialized");
+            TFHE.and(ct[i], eTRUE); // this is similar to no-op, except it would fail if ct is a "fake" handle,
+            // not corresponding to a verified ciphertext in privileged memory
         }
         DecryptionRequestEBool memory decryptionReq = DecryptionRequestEBool(
             ct,
@@ -221,11 +224,14 @@ contract OraclePredeploy is Ownable2Step {
         uint256 msgValue, // msg.value of callback tx, if callback is payable
         uint256 maxTimestamp
     ) external returns (uint256 initialCounter) {
+        require(maxTimestamp > block.timestamp, "maxTimestamp must be a future date");
         require(maxTimestamp <= block.timestamp + MAX_DELAY, "maxTimestamp exceeded MAX_DELAY");
         initialCounter = counter;
         uint256 len = ct.length;
         for (uint256 i = 0; i < len; i++) {
             require(TFHE.isInitialized(ct[i]), "Ciphertext is not initialized");
+            TFHE.shl(ct[i], 0); // this is similar to no-op, except it would fail if ct is a "fake" handle,
+            // not corresponding to a verified ciphertext in privileged memory
         }
         DecryptionRequestEUint4 memory decryptionReq = DecryptionRequestEUint4(
             ct,
@@ -247,11 +253,14 @@ contract OraclePredeploy is Ownable2Step {
         uint256 msgValue, // msg.value of callback tx, if callback is payable
         uint256 maxTimestamp
     ) external returns (uint256 initialCounter) {
+        require(maxTimestamp > block.timestamp, "maxTimestamp must be a future date");
         require(maxTimestamp <= block.timestamp + MAX_DELAY, "maxTimestamp exceeded MAX_DELAY");
         initialCounter = counter;
         uint256 len = ct.length;
         for (uint256 i = 0; i < len; i++) {
             require(TFHE.isInitialized(ct[i]), "Ciphertext is not initialized");
+            TFHE.shl(ct[i], 0); // this is similar to no-op, except it would fail if ct is a "fake" handle,
+            // not corresponding to a verified ciphertext in privileged memory
         }
         DecryptionRequestEUint8 memory decryptionReq = DecryptionRequestEUint8(
             ct,
@@ -273,11 +282,14 @@ contract OraclePredeploy is Ownable2Step {
         uint256 msgValue, // msg.value of callback tx, if callback is payable
         uint256 maxTimestamp
     ) external returns (uint256 initialCounter) {
+        require(maxTimestamp > block.timestamp, "maxTimestamp must be a future date");
         require(maxTimestamp <= block.timestamp + MAX_DELAY, "maxTimestamp exceeded MAX_DELAY");
         initialCounter = counter;
         uint256 len = ct.length;
         for (uint256 i = 0; i < len; i++) {
             require(TFHE.isInitialized(ct[i]), "Ciphertext is not initialized");
+            TFHE.shl(ct[i], 0); // this is similar to no-op, except it would fail if ct is a "fake" handle,
+            // not corresponding to a verified ciphertext in privileged memory
         }
         DecryptionRequestEUint16 memory decryptionReq = DecryptionRequestEUint16(
             ct,
@@ -299,11 +311,14 @@ contract OraclePredeploy is Ownable2Step {
         uint256 msgValue, // msg.value of callback tx, if callback is payable
         uint256 maxTimestamp
     ) external returns (uint256 initialCounter) {
+        require(maxTimestamp > block.timestamp, "maxTimestamp must be a future date");
         require(maxTimestamp <= block.timestamp + MAX_DELAY, "maxTimestamp exceeded MAX_DELAY");
         initialCounter = counter;
         uint256 len = ct.length;
         for (uint256 i = 0; i < len; i++) {
             require(TFHE.isInitialized(ct[i]), "Ciphertext is not initialized");
+            TFHE.shl(ct[i], 0); // this is similar to no-op, except it would fail if ct is a "fake" handle,
+            // not corresponding to a verified ciphertext in privileged memory
         }
         DecryptionRequestEUint32 memory decryptionReq = DecryptionRequestEUint32(
             ct,
@@ -325,11 +340,14 @@ contract OraclePredeploy is Ownable2Step {
         uint256 msgValue, // msg.value of callback tx, if callback is payable
         uint256 maxTimestamp
     ) external returns (uint256 initialCounter) {
+        require(maxTimestamp > block.timestamp, "maxTimestamp must be a future date");
         require(maxTimestamp <= block.timestamp + MAX_DELAY, "maxTimestamp exceeded MAX_DELAY");
         initialCounter = counter;
         uint256 len = ct.length;
         for (uint256 i = 0; i < len; i++) {
             require(TFHE.isInitialized(ct[i]), "Ciphertext is not initialized");
+            TFHE.shl(ct[i], 0); // this is similar to no-op, except it would fail if ct is a "fake" handle,
+            // not corresponding to a verified ciphertext in privileged memory
         }
         DecryptionRequestEUint64 memory decryptionReq = DecryptionRequestEUint64(
             ct,
@@ -351,11 +369,14 @@ contract OraclePredeploy is Ownable2Step {
         uint256 msgValue, // msg.value of callback tx, if callback is payable
         uint256 maxTimestamp
     ) external returns (uint256 initialCounter) {
+        require(maxTimestamp > block.timestamp, "maxTimestamp must be a future date");
         require(maxTimestamp <= block.timestamp + MAX_DELAY, "maxTimestamp exceeded MAX_DELAY");
         initialCounter = counter;
         uint256 len = ct.length;
         for (uint256 i = 0; i < len; i++) {
             require(TFHE.isInitialized(ct[i]), "Ciphertext is not initialized");
+            TFHE.eq(ct[i], ct[i]); // this is similar to no-op, except it would fail if ct is a "fake" handle,
+            // not corresponding to a verified ciphertext in privileged memory
         }
         DecryptionRequestEAddress memory decryptionReq = DecryptionRequestEAddress(
             ct,

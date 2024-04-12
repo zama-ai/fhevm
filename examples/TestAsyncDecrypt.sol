@@ -45,6 +45,12 @@ contract TestAsyncDecrypt is OracleCaller {
         Oracle.requestDecryption(cts, this.callbackBool.selector, 0, block.timestamp + 100);
     }
 
+    function requestFakeBool() public {
+        ebool[] memory cts = new ebool[](1);
+        cts[0] = ebool.wrap(42);
+        Oracle.requestDecryption(cts, this.callbackBool.selector, 0, block.timestamp + 100); // this should revert because previous ebool is not honestly obtained
+    }
+
     function callbackBool(uint256 /*requestID*/, bool decryptedInput) public onlyOracle returns (bool) {
         yBool = decryptedInput;
         return yBool;
@@ -54,6 +60,12 @@ contract TestAsyncDecrypt is OracleCaller {
         euint4[] memory cts = new euint4[](1);
         cts[0] = xUint4;
         Oracle.requestDecryption(cts, this.callbackUint4.selector, 0, block.timestamp + 100);
+    }
+
+    function requestFakeUint4() public {
+        euint4[] memory cts = new euint4[](1);
+        cts[0] = euint4.wrap(42);
+        Oracle.requestDecryption(cts, this.callbackUint4.selector, 0, block.timestamp + 100); // this should revert because previous ebool is not honestly obtained
     }
 
     function callbackUint4(uint256 /*requestID*/, uint8 decryptedInput) public onlyOracle returns (uint8) {
@@ -67,6 +79,12 @@ contract TestAsyncDecrypt is OracleCaller {
         Oracle.requestDecryption(cts, this.callbackUint8.selector, 0, block.timestamp + 100);
     }
 
+    function requestFakeUint8() public {
+        euint8[] memory cts = new euint8[](1);
+        cts[0] = euint8.wrap(42);
+        Oracle.requestDecryption(cts, this.callbackUint8.selector, 0, block.timestamp + 100); // this should revert because previous ebool is not honestly obtained
+    }
+
     function callbackUint8(uint256 /*requestID*/, uint8 decryptedInput) public onlyOracle returns (uint8) {
         yUint8 = decryptedInput;
         return decryptedInput;
@@ -76,6 +94,12 @@ contract TestAsyncDecrypt is OracleCaller {
         euint16[] memory cts = new euint16[](1);
         cts[0] = xUint16;
         Oracle.requestDecryption(cts, this.callbackUint16.selector, 0, block.timestamp + 100);
+    }
+
+    function requestFakeUint16() public {
+        euint16[] memory cts = new euint16[](1);
+        cts[0] = euint16.wrap(42);
+        Oracle.requestDecryption(cts, this.callbackUint16.selector, 0, block.timestamp + 100); // this should revert because previous ebool is not honestly obtained
     }
 
     function callbackUint16(uint256 /*requestID*/, uint16 decryptedInput) public onlyOracle returns (uint16) {
@@ -89,6 +113,12 @@ contract TestAsyncDecrypt is OracleCaller {
         uint256 requestID = Oracle.requestDecryption(cts, this.callbackUint32.selector, 0, block.timestamp + 100);
         addParamsUint(requestID, input1);
         addParamsUint(requestID, input2);
+    }
+
+    function requestFakeUint32() public {
+        euint32[] memory cts = new euint32[](1);
+        cts[0] = euint32.wrap(42);
+        Oracle.requestDecryption(cts, this.callbackUint32.selector, 0, block.timestamp + 100); // this should revert because previous ebool is not honestly obtained
     }
 
     function callbackUint32(uint256 requestID, uint32 decryptedInput) public onlyOracle returns (uint32) {
@@ -106,6 +136,12 @@ contract TestAsyncDecrypt is OracleCaller {
         Oracle.requestDecryption(cts, this.callbackUint64.selector, 0, block.timestamp + 100);
     }
 
+    function requestFakeUint64() public {
+        euint64[] memory cts = new euint64[](1);
+        cts[0] = euint64.wrap(42);
+        Oracle.requestDecryption(cts, this.callbackUint64.selector, 0, block.timestamp + 100); // this should revert because previous ebool is not honestly obtained
+    }
+
     function callbackUint64(uint256 /*requestID*/, uint64 decryptedInput) public onlyOracle returns (uint64) {
         yUint64 = decryptedInput;
         return decryptedInput;
@@ -115,6 +151,12 @@ contract TestAsyncDecrypt is OracleCaller {
         eaddress[] memory cts = new eaddress[](1);
         cts[0] = xAddress;
         Oracle.requestDecryption(cts, this.callbackAddress.selector, 0, block.timestamp + 100);
+    }
+
+    function requestFakeAddress() public {
+        eaddress[] memory cts = new eaddress[](1);
+        cts[0] = eaddress.wrap(42);
+        Oracle.requestDecryption(cts, this.callbackAddress.selector, 0, block.timestamp + 100); // this should revert because previous ebool is not honestly obtained
     }
 
     function callbackAddress(uint256 /*requestID*/, address decryptedInput) public onlyOracle returns (address) {
