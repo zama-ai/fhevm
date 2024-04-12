@@ -12,38 +12,31 @@ library Oracle {
         return ORACLE_CONTRACT_PREDEPLOY_ADDRESS;
     }
 
-    function toCiphertext(ebool newCT) internal returns (Ciphertext memory ct) {
-        oraclePredeploy.approveEBool(newCT); // to make sure that ciphertext is honestly obtained
+    function toCiphertext(ebool newCT) internal pure returns (Ciphertext memory ct) {
         ct = Ciphertext({ctHandle: ebool.unwrap(newCT), ctType: CiphertextType.EBOOL});
     }
 
-    function toCiphertext(euint4 newCT) internal returns (Ciphertext memory ct) {
-        oraclePredeploy.approveEUint4(newCT); // to make sure that ciphertext is honestly obtained
+    function toCiphertext(euint4 newCT) internal pure returns (Ciphertext memory ct) {
         ct = Ciphertext({ctHandle: euint4.unwrap(newCT), ctType: CiphertextType.EUINT4});
     }
 
-    function toCiphertext(euint8 newCT) internal returns (Ciphertext memory ct) {
-        oraclePredeploy.approveEUint8(newCT); // to make sure that ciphertext is honestly obtained
+    function toCiphertext(euint8 newCT) internal pure returns (Ciphertext memory ct) {
         ct = Ciphertext({ctHandle: euint8.unwrap(newCT), ctType: CiphertextType.EUINT8});
     }
 
-    function toCiphertext(euint16 newCT) internal returns (Ciphertext memory ct) {
-        oraclePredeploy.approveEUint16(newCT); // to make sure that ciphertext is honestly obtained
+    function toCiphertext(euint16 newCT) internal pure returns (Ciphertext memory ct) {
         ct = Ciphertext({ctHandle: euint16.unwrap(newCT), ctType: CiphertextType.EUINT16});
     }
 
-    function toCiphertext(euint32 newCT) internal returns (Ciphertext memory ct) {
-        oraclePredeploy.approveEUint32(newCT); // to make sure that ciphertext is honestly obtained
+    function toCiphertext(euint32 newCT) internal pure returns (Ciphertext memory ct) {
         ct = Ciphertext({ctHandle: euint32.unwrap(newCT), ctType: CiphertextType.EUINT32});
     }
 
-    function toCiphertext(euint64 newCT) internal returns (Ciphertext memory ct) {
-        oraclePredeploy.approveEUint64(newCT); // to make sure that ciphertext is honestly obtained
+    function toCiphertext(euint64 newCT) internal pure returns (Ciphertext memory ct) {
         ct = Ciphertext({ctHandle: euint64.unwrap(newCT), ctType: CiphertextType.EUINT64});
     }
 
-    function toCiphertext(eaddress newCT) internal returns (Ciphertext memory ct) {
-        oraclePredeploy.approveEAddress(newCT); // to make sure that ciphertext is honestly obtained
+    function toCiphertext(eaddress newCT) internal pure returns (Ciphertext memory ct) {
         ct = Ciphertext({ctHandle: eaddress.unwrap(newCT), ctType: CiphertextType.EADDRESS});
     }
 
