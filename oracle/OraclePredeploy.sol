@@ -32,6 +32,8 @@ contract OraclePredeploy is Ownable2Step {
         uint256 maxTimestamp;
     }
 
+    ebool eTRUE = TFHE.asEbool(true);
+
     uint256 public counter; // tracks the number of decryption requests
 
     mapping(address => bool) public isRelayer;
@@ -83,30 +85,44 @@ contract OraclePredeploy is Ownable2Step {
     }
 
     function approveEBool(ebool x) external {
+        TFHE.and(x, eTRUE); // this is similar to no-op, except it would fail if x is a "fake" handle,
+        // not corresponding to a verified ciphertext in privileged memory
         verifiedEBools[counter].push(x);
     }
 
     function approveEUint4(euint4 x) external {
+        TFHE.shl(x, 0); // this is similar to no-op, except it would fail if x is a "fake" handle,
+        // not corresponding to a verified ciphertext in privileged memory
         verifiedEUint4s[counter].push(x);
     }
 
     function approveEUint8(euint8 x) external {
+        TFHE.shl(x, 0); // this is similar to no-op, except it would fail if x is a "fake" handle,
+        // not corresponding to a verified ciphertext in privileged memory
         verifiedEUint8s[counter].push(x);
     }
 
     function approveEUint16(euint16 x) external {
+        TFHE.shl(x, 0); // this is similar to no-op, except it would fail if x is a "fake" handle,
+        // not corresponding to a verified ciphertext in privileged memory
         verifiedEUint16s[counter].push(x);
     }
 
     function approveEUint32(euint32 x) external {
+        TFHE.shl(x, 0); // this is similar to no-op, except it would fail if x is a "fake" handle,
+        // not corresponding to a verified ciphertext in privileged memory
         verifiedEUint32s[counter].push(x);
     }
 
     function approveEUint64(euint64 x) external {
+        TFHE.shl(x, 0); // this is similar to no-op, except it would fail if x is a "fake" handle,
+        // not corresponding to a verified ciphertext in privileged memory
         verifiedEUint64s[counter].push(x);
     }
 
     function approveEAddress(eaddress x) external {
+        TFHE.eq(x, x); // this is similar to no-op, except it would fail if x is a "fake" handle,
+        // not corresponding to a verified ciphertext in privileged memory
         verifiedEAddresses[counter].push(x);
     }
 
