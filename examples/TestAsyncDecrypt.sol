@@ -208,6 +208,7 @@ contract TestAsyncDecrypt is OracleCaller {
     function callbackAddress(uint256, address decryptedInput) public onlyOracle returns (address) {
         yAddress = decryptedInput;
         return decryptedInput;
+    }
 
     function requestMixed() public {
         Ciphertext[] memory cts = new Ciphertext[](10);
@@ -225,7 +226,7 @@ contract TestAsyncDecrypt is OracleCaller {
     }
 
     function callbackMixed(
-        uint256 /*requestID*/,
+        uint256,
         bool decBool_1,
         bool decBool_2,
         uint8 decUint4,
