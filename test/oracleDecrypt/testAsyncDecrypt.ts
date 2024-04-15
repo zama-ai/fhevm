@@ -36,8 +36,19 @@ describe('TestAsyncDecrypt', function () {
       );
     } else {
       // fhevm-mode
-      const tx = await this.contract.connect(this.signers.carol).requestBoolAboveDelay({ gasLimit: 1_000_000 });
-      await expect(tx.wait()).to.throw;
+      const txObject = await this.contract.requestBoolAboveDelay.populateTransaction({ gasLimit: 1_000_000 });
+      const tx = await this.signers.carol.sendTransaction(txObject);
+      let receipt = null;
+      let waitTime = 0;
+      while (receipt === null && waitTime < 15000) {
+        receipt = await ethers.provider.getTransactionReceipt(tx.hash);
+        if (receipt === null) {
+          console.log('Trying again to fetch txn receipt....');
+          await new Promise((resolve) => setTimeout(resolve, 5000)); // Wait for 5 seconds
+          waitTime += 5000;
+        }
+      }
+      receipt === null ? expect(waitTime >= 15000).to.be.true : expect(receipt!.status).to.equal(0);
     }
   });
 
@@ -55,9 +66,7 @@ describe('TestAsyncDecrypt', function () {
   it('test async decrypt FAKE bool', async function () {
     if (network.name !== 'hardhat') {
       // only in fhevm mode
-      const txObject = await this.contract
-        .connect(this.signers.carol)
-        .requestFakeBool.populateTransaction({ gasLimit: 5_000_000 });
+      const txObject = await this.contract.requestFakeBool.populateTransaction({ gasLimit: 5_000_000 });
       const tx = await this.signers.carol.sendTransaction(txObject);
       let receipt = null;
       let waitTime = 0;
@@ -69,7 +78,7 @@ describe('TestAsyncDecrypt', function () {
           waitTime += 5000;
         }
       }
-      expect(waitTime >= 15000).to.be.true;
+      receipt === null ? expect(waitTime >= 15000).to.be.true : expect(receipt!.status).to.equal(0);
     }
   });
 
@@ -87,9 +96,7 @@ describe('TestAsyncDecrypt', function () {
   it('test async decrypt FAKE uint4', async function () {
     if (network.name !== 'hardhat') {
       // only in fhevm mode
-      const txObject = await this.contract
-        .connect(this.signers.carol)
-        .requestFakeUint4.populateTransaction({ gasLimit: 5_000_000 });
+      const txObject = await this.contract.requestFakeUint4.populateTransaction({ gasLimit: 5_000_000 });
       const tx = await this.signers.carol.sendTransaction(txObject);
       let receipt = null;
       let waitTime = 0;
@@ -116,9 +123,7 @@ describe('TestAsyncDecrypt', function () {
   it('test async decrypt FAKE uint8', async function () {
     if (network.name !== 'hardhat') {
       // only in fhevm mode
-      const txObject = await this.contract
-        .connect(this.signers.carol)
-        .requestFakeUint8.populateTransaction({ gasLimit: 5_000_000 });
+      const txObject = await this.contract.requestFakeUint8.populateTransaction({ gasLimit: 5_000_000 });
       const tx = await this.signers.carol.sendTransaction(txObject);
       let receipt = null;
       let waitTime = 0;
@@ -145,9 +150,7 @@ describe('TestAsyncDecrypt', function () {
   it('test async decrypt FAKE uint16', async function () {
     if (network.name !== 'hardhat') {
       // only in fhevm mode
-      const txObject = await this.contract
-        .connect(this.signers.carol)
-        .requestFakeUint16.populateTransaction({ gasLimit: 5_000_000 });
+      const txObject = await this.contract.requestFakeUint16.populateTransaction({ gasLimit: 5_000_000 });
       const tx = await this.signers.carol.sendTransaction(txObject);
       let receipt = null;
       let waitTime = 0;
@@ -174,9 +177,7 @@ describe('TestAsyncDecrypt', function () {
   it('test async decrypt FAKE uint32', async function () {
     if (network.name !== 'hardhat') {
       // only in fhevm mode
-      const txObject = await this.contract
-        .connect(this.signers.carol)
-        .requestFakeUint32.populateTransaction({ gasLimit: 5_000_000 });
+      const txObject = await this.contract.requestFakeUint32.populateTransaction({ gasLimit: 5_000_000 });
       const tx = await this.signers.carol.sendTransaction(txObject);
       let receipt = null;
       let waitTime = 0;
@@ -203,9 +204,7 @@ describe('TestAsyncDecrypt', function () {
   it('test async decrypt FAKE uint64', async function () {
     if (network.name !== 'hardhat') {
       // only in fhevm mode
-      const txObject = await this.contract
-        .connect(this.signers.carol)
-        .requestFakeUint64.populateTransaction({ gasLimit: 5_000_000 });
+      const txObject = await this.contract.requestFakeUint64.populateTransaction({ gasLimit: 5_000_000 });
       const tx = await this.signers.carol.sendTransaction(txObject);
       let receipt = null;
       let waitTime = 0;
@@ -256,9 +255,7 @@ describe('TestAsyncDecrypt', function () {
   it('test async decrypt FAKE address', async function () {
     if (network.name !== 'hardhat') {
       // only in fhevm mode
-      const txObject = await this.contract
-        .connect(this.signers.carol)
-        .requestFakeAddress.populateTransaction({ gasLimit: 5_000_000 });
+      const txObject = await this.contract.requestFakeAddress.populateTransaction({ gasLimit: 5_000_000 });
       const tx = await this.signers.carol.sendTransaction(txObject);
       let receipt = null;
       let waitTime = 0;
