@@ -94,23 +94,14 @@ contract OraclePredeploy is Ownable2Step {
             uint256 handle = cts[i].ctHandle;
             require(handle != 0, "Ciphertext is not initialized");
             uint8 ctType = uint8(cts[i].ctType);
-            if (ctType == 0) {
-                TFHE.and(ebool.wrap(handle), ebool.wrap(handle)); // this is similar to no-op, except it would fail if `handle` is a "fake" handle, needed to check that ciphertext is honestly obtained
-            } else if (ctType == 1) {
-                TFHE.and(euint4.wrap(handle), euint4.wrap(handle));
-            } else if (ctType == 2) {
-                TFHE.and(euint8.wrap(handle), euint8.wrap(handle));
-            } else if (ctType == 3) {
-                TFHE.and(euint16.wrap(handle), euint16.wrap(handle));
-            } else if (ctType == 4) {
-                TFHE.and(euint32.wrap(handle), euint32.wrap(handle));
-            } else if (ctType == 5) {
-                TFHE.and(euint64.wrap(handle), euint64.wrap(handle));
-            } else if (ctType == 6) {
-                revert NotImplementedError();
+            if (ctType <= 5) {
+                Impl.and(handle, handle); // this is similar to no-op, except it would fail if `handle` is a "fake" handle, needed to check that ciphertext is honestly obtained
+            } else if (ctType == 7) {
+                Impl.eq(handle, handle, 0x00); // similar to previous no-op, used here because `` not supported by eaddress type
+            } 
             } else {
-                TFHE.eq(eaddress.wrap(handle), eaddress.wrap(handle));
-            }
+                revert NotImplementedError();
+            } 
             decryptionReq.cts.push(cts[i]);
         }
         decryptionReq.contractCaller = msg.sender;
