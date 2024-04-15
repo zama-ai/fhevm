@@ -70,73 +70,79 @@ contract TestAsyncDecrypt is OracleCaller {
     }
 
     function requestFakeBool() public {
-        ebool[] memory cts = new ebool[](1);
-        cts[0] = ebool.wrap(42);
+        Ciphertext[] memory cts = new Ciphertext[](1);
+        cts[0] = Ciphertext(42, CiphertextType.EBOOL);
         Oracle.requestDecryption(cts, this.callbackBool.selector, 0, block.timestamp + 100); // this should revert because previous ebool is not honestly obtained
     }
 
-    function callbackBool(uint256 /*requestID*/, bool decryptedInput) public onlyOracle returns (bool) {
+    function callbackBool(uint256, bool decryptedInput) public onlyOracle returns (bool) {
         yBool = decryptedInput;
         return yBool;
     }
 
-    function requestFakeUint4() public {
-        euint4[] memory cts = new euint4[](1);
-        cts[0] = euint4.wrap(42);
-        Oracle.requestDecryption(cts, this.callbackUint4.selector, 0, block.timestamp + 100); // this should revert because previous ebool is not honestly obtained
+    function requestUint4() public {
+        Ciphertext[] memory cts = new Ciphertext[](1);
+        cts[0] = Oracle.toCiphertext(xUint4);
+        Oracle.requestDecryption(cts, this.callbackUint4.selector, 0, block.timestamp + 100);
     }
 
-    function callbackUint4(uint256 /*requestID*/, uint8 decryptedInput) public onlyOracle returns (uint8) {
+    function requestFakeUint4() public {
+        Ciphertext[] memory cts = new Ciphertext[](1);
+        cts[0] = Ciphertext(42, CiphertextType.EUINT4);
+        Oracle.requestDecryption(cts, this.callbackUint4.selector, 0, block.timestamp + 100); // this should revert because previous handle is not honestly obtained
+    }
+
+    function callbackUint4(uint256, uint8 decryptedInput) public onlyOracle returns (uint8) {
         yUint4 = decryptedInput;
         return decryptedInput;
     }
 
     function requestUint8() public {
-        euint8[] memory cts = new euint8[](1);
-        cts[0] = xUint8;
+        Ciphertext[] memory cts = new Ciphertext[](1);
+        cts[0] = Oracle.toCiphertext(xUint8);
         Oracle.requestDecryption(cts, this.callbackUint8.selector, 0, block.timestamp + 100);
     }
 
     function requestFakeUint8() public {
-        euint8[] memory cts = new euint8[](1);
-        cts[0] = euint8.wrap(42);
-        Oracle.requestDecryption(cts, this.callbackUint8.selector, 0, block.timestamp + 100); // this should revert because previous ebool is not honestly obtained
+        Ciphertext[] memory cts = new Ciphertext[](1);
+        cts[0] = Ciphertext(42, CiphertextType.EUINT8);
+        Oracle.requestDecryption(cts, this.callbackUint8.selector, 0, block.timestamp + 100); // this should revert because previous handle is not honestly obtained
     }
 
-    function callbackUint8(uint256 /*requestID*/, uint8 decryptedInput) public onlyOracle returns (uint8) {
+    function callbackUint8(uint256, uint8 decryptedInput) public onlyOracle returns (uint8) {
         yUint8 = decryptedInput;
         return decryptedInput;
     }
 
     function requestUint16() public {
-        euint16[] memory cts = new euint16[](1);
-        cts[0] = xUint16;
+        Ciphertext[] memory cts = new Ciphertext[](1);
+        cts[0] = Oracle.toCiphertext(xUint16);
         Oracle.requestDecryption(cts, this.callbackUint16.selector, 0, block.timestamp + 100);
     }
 
     function requestFakeUint16() public {
-        euint16[] memory cts = new euint16[](1);
-        cts[0] = euint16.wrap(42);
-        Oracle.requestDecryption(cts, this.callbackUint16.selector, 0, block.timestamp + 100); // this should revert because previous ebool is not honestly obtained
+        Ciphertext[] memory cts = new Ciphertext[](1);
+        cts[0] = Ciphertext(42, CiphertextType.EUINT16);
+        Oracle.requestDecryption(cts, this.callbackUint16.selector, 0, block.timestamp + 100); // this should revert because previous handle is not honestly obtained
     }
 
-    function callbackUint16(uint256 /*requestID*/, uint16 decryptedInput) public onlyOracle returns (uint16) {
+    function callbackUint16(uint256, uint16 decryptedInput) public onlyOracle returns (uint16) {
         yUint16 = decryptedInput;
         return decryptedInput;
     }
 
     function requestUint32(uint32 input1, uint32 input2) public {
-        euint32[] memory cts = new euint32[](1);
-        cts[0] = xUint32;
+        Ciphertext[] memory cts = new Ciphertext[](1);
+        cts[0] = Oracle.toCiphertext(xUint32);
         uint256 requestID = Oracle.requestDecryption(cts, this.callbackUint32.selector, 0, block.timestamp + 100);
         addParamsUint(requestID, input1);
         addParamsUint(requestID, input2);
     }
 
     function requestFakeUint32() public {
-        euint32[] memory cts = new euint32[](1);
-        cts[0] = euint32.wrap(42);
-        Oracle.requestDecryption(cts, this.callbackUint32.selector, 0, block.timestamp + 100); // this should revert because previous ebool is not honestly obtained
+        Ciphertext[] memory cts = new Ciphertext[](1);
+        cts[0] = Ciphertext(42, CiphertextType.EUINT32);
+        Oracle.requestDecryption(cts, this.callbackUint32.selector, 0, block.timestamp + 100); // this should revert because previous handle is not honestly obtained
     }
 
     function callbackUint32(uint256 requestID, uint32 decryptedInput) public onlyOracle returns (uint32) {
@@ -149,25 +155,25 @@ contract TestAsyncDecrypt is OracleCaller {
     }
 
     function requestUint64() public {
-        euint64[] memory cts = new euint64[](1);
-        cts[0] = xUint64;
+        Ciphertext[] memory cts = new Ciphertext[](1);
+        cts[0] = Oracle.toCiphertext(xUint64);
         Oracle.requestDecryption(cts, this.callbackUint64.selector, 0, block.timestamp + 100);
     }
 
     function requestFakeUint64() public {
-        euint64[] memory cts = new euint64[](1);
-        cts[0] = euint64.wrap(42);
-        Oracle.requestDecryption(cts, this.callbackUint64.selector, 0, block.timestamp + 100); // this should revert because previous ebool is not honestly obtained
+        Ciphertext[] memory cts = new Ciphertext[](1);
+        cts[0] = Ciphertext(42, CiphertextType.EUINT64);
+        Oracle.requestDecryption(cts, this.callbackUint64.selector, 0, block.timestamp + 100); // this should revert because previous handle is not honestly obtained
     }
 
-    function callbackUint64(uint256 /*requestID*/, uint64 decryptedInput) public onlyOracle returns (uint64) {
+    function callbackUint64(uint256, uint64 decryptedInput) public onlyOracle returns (uint64) {
         yUint64 = decryptedInput;
         return decryptedInput;
     }
 
     function requestAddress() public {
-        eaddress[] memory cts = new eaddress[](1);
-        cts[0] = xAddress;
+        Ciphertext[] memory cts = new Ciphertext[](1);
+        cts[0] = Oracle.toCiphertext(xAddress);
         Oracle.requestDecryption(cts, this.callbackAddress.selector, 0, block.timestamp + 100);
     }
 
@@ -179,14 +185,15 @@ contract TestAsyncDecrypt is OracleCaller {
     }
 
     function requestFakeAddress() public {
-        eaddress[] memory cts = new eaddress[](1);
-        cts[0] = eaddress.wrap(42);
-        Oracle.requestDecryption(cts, this.callbackAddress.selector, 0, block.timestamp + 100); // this should revert because previous ebool is not honestly obtained
+        Ciphertext[] memory cts = new Ciphertext[](1);
+        cts[0] = Ciphertext(42, CiphertextType.EADDRESS);
+        Oracle.requestDecryption(cts, this.callbackAddress.selector, 0, block.timestamp + 100); // this should revert because previous handle is not honestly obtained
     }
 
-    function callbackAddress(uint256 /*requestID*/, address decryptedInput) public onlyOracle returns (address) {
+    function callbackAddress(uint256, address decryptedInput) public onlyOracle returns (address) {
         yAddress = decryptedInput;
         return decryptedInput;
+    }
 
     function requestMixed() public {
         Ciphertext[] memory cts = new Ciphertext[](10);
@@ -204,7 +211,7 @@ contract TestAsyncDecrypt is OracleCaller {
     }
 
     function callbackMixed(
-        uint256 /*requestID*/,
+        uint256,
         bool decBool_1,
         bool decBool_2,
         uint8 decUint4,

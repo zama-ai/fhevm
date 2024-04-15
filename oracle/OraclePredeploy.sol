@@ -97,11 +97,10 @@ contract OraclePredeploy is Ownable2Step {
             if (ctType <= 5) {
                 Impl.and(handle, handle); // this is similar to no-op, except it would fail if `handle` is a "fake" handle, needed to check that ciphertext is honestly obtained
             } else if (ctType == 7) {
-                Impl.eq(handle, handle, 0x00); // similar to previous no-op, used here because `` not supported by eaddress type
-            } 
+                Impl.eq(handle, handle, false); // similar to previous no-op, used here because `Impl.and` not supported by eaddress type
             } else {
                 revert NotImplementedError();
-            } 
+            }
             decryptionReq.cts.push(cts[i]);
         }
         decryptionReq.contractCaller = msg.sender;
