@@ -69,7 +69,7 @@ contract OraclePredeploy is Ownable2Step {
         emit RemovedRelayer(relayerAddress);
     }
 
-    function isExpired(uint256 requestID) external view returns (bool) {
+    function isExpiredOrFulfilled(uint256 requestID) external view returns (bool) {
         uint256 timeNow = block.timestamp;
         return
             isFulfilled[requestID] ||
