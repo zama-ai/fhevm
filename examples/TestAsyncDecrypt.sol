@@ -34,7 +34,7 @@ contract TestAsyncDecrypt is OracleCaller {
         xUint8 = TFHE.asEuint8(42);
         xUint16 = TFHE.asEuint16(16);
         xUint32 = TFHE.asEuint32(32);
-        xUint64 = TFHE.asEuint64(64);
+        xUint64 = TFHE.asEuint64(18446744073709551600);
         xUint64_2 = TFHE.asEuint64(76575465786);
         xUint64_3 = TFHE.asEuint64(6400);
         xAddress = TFHE.asEaddress(0x8ba1f109551bD432803012645Ac136ddd64DBA72);
@@ -195,7 +195,7 @@ contract TestAsyncDecrypt is OracleCaller {
         return decryptedInput;
     }
 
-    function requestMixed() public {
+    function requestMixed(uint32 input1, uint32 input2) public {
         Ciphertext[] memory cts = new Ciphertext[](10);
         cts[0] = Oracle.toCiphertext(xBool);
         cts[1] = Oracle.toCiphertext(xBool);
@@ -207,11 +207,13 @@ contract TestAsyncDecrypt is OracleCaller {
         cts[7] = Oracle.toCiphertext(xUint64);
         cts[8] = Oracle.toCiphertext(xUint64);
         cts[9] = Oracle.toCiphertext(xAddress);
-        Oracle.requestDecryption(cts, this.callbackMixed.selector, 0, block.timestamp + 100);
+        uint256 requestID = Oracle.requestDecryption(cts, this.callbackMixed.selector, 0, block.timestamp + 100);
+        addParamsUint(requestID, input1);
+        addParamsUint(requestID, input2);
     }
 
     function callbackMixed(
-        uint256,
+        uint256 requestID,
         bool decBool_1,
         bool decBool_2,
         uint8 decUint4,
@@ -223,7 +225,19 @@ contract TestAsyncDecrypt is OracleCaller {
         uint64 decUint64_3,
         address decAddress
     ) public onlyOracle returns (uint8) {
+        yBool = decBool_1;
+        require(decBool_1 == decBool_2, "Wrong decryption");
         yUint4 = decUint4;
+        yUint8 = decUint8;
+        yUint16 = decUint16;
+        uint256[] memory params = getParamsUint(requestID);
+        unchecked {
+            uint32 result = uint32(params[0]) + uint32(params[1]) + decUint32;
+            yUint32 = result;
+        }
+        yUint64 = decUint64_1;
+        require(decUint64_1 == decUint64_2 && decUint64_2 == decUint64_3, "Wrong decryption");
+        yAddress = decAddress;
         return yUint4;
     }
 
