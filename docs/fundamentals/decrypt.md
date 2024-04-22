@@ -8,6 +8,8 @@
 
 We allow explicit decryption requests for any encrypted type. The values are decrypted with the network private key (the threshold decryption protocol is in the works).
 
+![](asyncDecrypt.png)
+
 ### Example
 
 The decryption operation is asynchronous. To use it, your contract must extend the `OracleCaller` contract. This will import automatically the `Oracle` solidity library as well. See the following example:
