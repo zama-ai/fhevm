@@ -17,7 +17,7 @@ docker run -i -p 8545:8545 -p 8546:8546 --rm --name fhevm ghcr.io/zama-ai/etherm
 
 <!-- markdown-link-check-enable -->
 
-However, we advise developers to use directly `pnpm fhevm:start` or `npm run fhevm:start` commands instead of the previous command, as this will launch a bash script which will also deploy automatically the oracle contract and launch the oracle relayer service, which are needed for asynchornous decryption requests.
+However, we advise developers to use directly `pnpm fhevm:start` or `npm run fhevm:start` commands available within the [hardhat template](../fundamentals/write_contract/hardhat.md), instead of the previous command, as this will launch a bash script which will also deploy automatically the oracle contract and launch the oracle relayer service, which are needed for asynchronous decryption requests.
 
 > **_WARNING:_** > `OracleCaller.sol` must be imported at least once in one of your smart contracts if you wish to use the recommended `fhevm:start` command, or else the bash script will emit an error and decryptions would fail. This is needed because hardhat needs to compile the oracle predeploy contract before your initial deployment. This can be done simply by adding the following import at the top of any of the smart contracts used in your project:
 > `import "fhevm/oracle/OracleCaller.sol";`
