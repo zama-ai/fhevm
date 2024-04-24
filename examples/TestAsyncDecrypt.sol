@@ -13,6 +13,7 @@ contract TestAsyncDecrypt is OracleCaller {
     euint32 xUint32;
     euint64 xUint64;
     eaddress xAddress;
+    eaddress xAddress2;
 
     bool public yBool;
     uint8 public yUint4;
@@ -21,6 +22,7 @@ contract TestAsyncDecrypt is OracleCaller {
     uint32 public yUint32;
     uint64 public yUint64;
     address public yAddress;
+    address public yAddress2;
 
     constructor() {
         xBool = TFHE.asEbool(true);
@@ -30,6 +32,7 @@ contract TestAsyncDecrypt is OracleCaller {
         xUint32 = TFHE.asEuint32(32);
         xUint64 = TFHE.asEuint64(64);
         xAddress = TFHE.asEaddress(0x8ba1f109551bD432803012645Ac136ddd64DBA72);
+        xAddress2 = TFHE.asEaddress(0xf48b8840387ba3809DAE990c930F3b4766A86ca3);
     }
 
     function requestBoolInfinite() public {
@@ -168,6 +171,13 @@ contract TestAsyncDecrypt is OracleCaller {
         Oracle.requestDecryption(cts, this.callbackAddress.selector, 0, block.timestamp + 100);
     }
 
+    function requestSeveralAddresses() public {
+        eaddress[] memory cts = new eaddress[](2);
+        cts[0] = xAddress;
+        cts[1] = xAddress2;
+        Oracle.requestDecryption(cts, this.callbackAddresses.selector, 0, block.timestamp + 100);
+    }
+
     function requestFakeAddress() public {
         eaddress[] memory cts = new eaddress[](1);
         cts[0] = eaddress.wrap(42);
@@ -177,5 +187,15 @@ contract TestAsyncDecrypt is OracleCaller {
     function callbackAddress(uint256 /*requestID*/, address decryptedInput) public onlyOracle returns (address) {
         yAddress = decryptedInput;
         return decryptedInput;
+    }
+
+    function callbackAddresses(
+        uint256 /*requestID*/,
+        address decryptedInput1,
+        address decryptedInput2
+    ) public onlyOracle returns (address) {
+        yAddress = decryptedInput1;
+        yAddress2 = decryptedInput2;
+        return decryptedInput1;
     }
 }
