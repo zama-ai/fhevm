@@ -9,11 +9,23 @@ describe('TestAsyncDecrypt', function () {
     await asyncDecrypt();
     await initSigners(3);
     this.signers = await getSigners();
+    this.relayerAddress = '0x97F272ccfef4026A1F3f0e0E879d514627B84E69';
   });
 
   beforeEach(async function () {
     const contractFactory = await ethers.getContractFactory('TestAsyncDecrypt');
     this.contract = await contractFactory.connect(this.signers.alice).deploy();
+  });
+
+  it('test async decrypt bool infinite loop', async function () {
+    const balanceBefore = await ethers.provider.getBalance(this.relayerAddress);
+    const tx = await this.contract.connect(this.signers.carol).requestBoolInfinite({ gasLimit: 1_000_000 });
+    await tx.wait();
+    await awaitAllDecryptionResults();
+    const y = await this.contract.yBool();
+    console.log(y);
+    const balanceAfter = await ethers.provider.getBalance(this.relayerAddress);
+    console.log(balanceBefore - balanceAfter);
   });
 
   it('test async decrypt bool would fail if maxTimestamp is above 1 day', async function () {
@@ -30,11 +42,14 @@ describe('TestAsyncDecrypt', function () {
   });
 
   it('test async decrypt bool', async function () {
+    const balanceBefore = await ethers.provider.getBalance(this.relayerAddress);
     const tx2 = await this.contract.connect(this.signers.carol).requestBool({ gasLimit: 500_000 });
     await tx2.wait();
     await awaitAllDecryptionResults();
     const y = await this.contract.yBool();
     expect(y).to.equal(true);
+    const balanceAfter = await ethers.provider.getBalance(this.relayerAddress);
+    console.log(balanceBefore - balanceAfter);
   });
 
   it('test async decrypt FAKE bool', async function () {
@@ -59,11 +74,14 @@ describe('TestAsyncDecrypt', function () {
   });
 
   it('test async decrypt uint4', async function () {
+    const balanceBefore = await ethers.provider.getBalance(this.relayerAddress);
     const tx2 = await this.contract.connect(this.signers.carol).requestUint4({ gasLimit: 500_000 });
     await tx2.wait();
     await awaitAllDecryptionResults();
     const y = await this.contract.yUint4();
     expect(y).to.equal(4);
+    const balanceAfter = await ethers.provider.getBalance(this.relayerAddress);
+    console.log(balanceBefore - balanceAfter);
   });
 
   it('test async decrypt FAKE uint4', async function () {

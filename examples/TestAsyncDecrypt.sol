@@ -32,6 +32,21 @@ contract TestAsyncDecrypt is OracleCaller {
         xAddress = TFHE.asEaddress(0x8ba1f109551bD432803012645Ac136ddd64DBA72);
     }
 
+    function requestBoolInfinite() public {
+        ebool[] memory cts = new ebool[](1);
+        cts[0] = xBool;
+        Oracle.requestDecryption(cts, this.callbackBoolInfinite.selector, 0, block.timestamp + 100);
+    }
+
+    function callbackBoolInfinite(uint256 /*requestID*/, bool decryptedInput) public onlyOracle returns (bool) {
+        uint256 i = 0;
+        while (1 == 1) {
+            i++;
+        }
+        yBool = decryptedInput;
+        return yBool;
+    }
+
     function requestBoolAboveDelay() public {
         // should revert
         ebool[] memory cts = new ebool[](1);
