@@ -12,6 +12,8 @@ contract TestAsyncDecrypt is OracleCaller {
     euint16 xUint16;
     euint32 xUint32;
     euint64 xUint64;
+    euint64 xUint64_2;
+    euint64 xUint64_3;
     eaddress xAddress;
     eaddress xAddress2;
 
@@ -21,6 +23,8 @@ contract TestAsyncDecrypt is OracleCaller {
     uint16 public yUint16;
     uint32 public yUint32;
     uint64 public yUint64;
+    uint64 public yUint64_2;
+    uint64 public yUint64_3;
     address public yAddress;
     address public yAddress2;
 
@@ -31,6 +35,8 @@ contract TestAsyncDecrypt is OracleCaller {
         xUint16 = TFHE.asEuint16(16);
         xUint32 = TFHE.asEuint32(32);
         xUint64 = TFHE.asEuint64(64);
+        xUint64_2 = TFHE.asEuint64(76575465786);
+        xUint64_3 = TFHE.asEuint64(6400);
         xAddress = TFHE.asEaddress(0x8ba1f109551bD432803012645Ac136ddd64DBA72);
         xAddress2 = TFHE.asEaddress(0xf48b8840387ba3809DAE990c930F3b4766A86ca3);
     }
@@ -197,5 +203,27 @@ contract TestAsyncDecrypt is OracleCaller {
         yAddress = decryptedInput1;
         yAddress2 = decryptedInput2;
         return decryptedInput1;
+    }
+
+    function requestSeveralUint64WithDuplicates() public {
+        euint64[] memory cts = new euint64[](4);
+        cts[0] = xUint64;
+        cts[1] = xUint64_2;
+        cts[2] = xUint64_3;
+        cts[3] = xUint64_2;
+        Oracle.requestDecryption(cts, this.callbackSeveralUint64WithDuplicates.selector, 0, block.timestamp + 100);
+    }
+
+    function callbackSeveralUint64WithDuplicates(
+        uint256 /*requestID*/,
+        uint64 decryptedInput,
+        uint64 /*decryptedInput_2*/,
+        uint64 decryptedInput_3,
+        uint64 decryptedInput_4
+    ) public onlyOracle returns (uint64) {
+        yUint64 = decryptedInput;
+        yUint64_2 = decryptedInput_4;
+        yUint64_3 = decryptedInput_3;
+        return decryptedInput;
     }
 }

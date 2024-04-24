@@ -229,7 +229,7 @@ describe('TestAsyncDecrypt', function () {
     expect(y).to.equal('0x8ba1f109551bD432803012645Ac136ddd64DBA72');
   });
 
-  it.only('test async decrypt several addresses', async function () {
+  it('test async decrypt several addresses', async function () {
     const tx2 = await this.contract.connect(this.signers.carol).requestSeveralAddresses({ gasLimit: 500_000 });
     await tx2.wait();
     await awaitAllDecryptionResults();
@@ -237,6 +237,20 @@ describe('TestAsyncDecrypt', function () {
     const y2 = await this.contract.yAddress2();
     expect(y).to.equal('0x8ba1f109551bD432803012645Ac136ddd64DBA72');
     expect(y2).to.equal('0xf48b8840387ba3809DAE990c930F3b4766A86ca3');
+  });
+
+  it('test async decrypt several uint64s with duplicates', async function () {
+    const tx2 = await this.contract
+      .connect(this.signers.carol)
+      .requestSeveralUint64WithDuplicates({ gasLimit: 1_000_000 });
+    await tx2.wait();
+    await awaitAllDecryptionResults();
+    const y = await this.contract.yUint64();
+    const y2 = await this.contract.yUint64_2();
+    const y3 = await this.contract.yUint64_3();
+    expect(y).to.equal(64);
+    expect(y2).to.equal(76575465786);
+    expect(y3).to.equal(6400);
   });
 
   it('test async decrypt FAKE address', async function () {
