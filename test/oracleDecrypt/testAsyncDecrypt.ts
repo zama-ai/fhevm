@@ -9,11 +9,23 @@ describe('TestAsyncDecrypt', function () {
     await asyncDecrypt();
     await initSigners(3);
     this.signers = await getSigners();
+    this.relayerAddress = '0x97F272ccfef4026A1F3f0e0E879d514627B84E69';
   });
 
   beforeEach(async function () {
     const contractFactory = await ethers.getContractFactory('TestAsyncDecrypt');
     this.contract = await contractFactory.connect(this.signers.alice).deploy();
+  });
+
+  it('test async decrypt bool infinite loop', async function () {
+    const balanceBefore = await ethers.provider.getBalance(this.relayerAddress);
+    const tx = await this.contract.connect(this.signers.carol).requestBoolInfinite({ gasLimit: 1_000_000 });
+    await tx.wait();
+    await awaitAllDecryptionResults();
+    const y = await this.contract.yBool();
+    console.log(y);
+    const balanceAfter = await ethers.provider.getBalance(this.relayerAddress);
+    console.log(balanceBefore - balanceAfter);
   });
 
   it('test async decrypt bool would fail if maxTimestamp is above 1 day', async function () {
@@ -30,11 +42,14 @@ describe('TestAsyncDecrypt', function () {
   });
 
   it('test async decrypt bool', async function () {
+    const balanceBefore = await ethers.provider.getBalance(this.relayerAddress);
     const tx2 = await this.contract.connect(this.signers.carol).requestBool({ gasLimit: 500_000 });
     await tx2.wait();
     await awaitAllDecryptionResults();
     const y = await this.contract.yBool();
     expect(y).to.equal(true);
+    const balanceAfter = await ethers.provider.getBalance(this.relayerAddress);
+    console.log(balanceBefore - balanceAfter);
   });
 
   it('test async decrypt FAKE bool', async function () {
@@ -59,11 +74,14 @@ describe('TestAsyncDecrypt', function () {
   });
 
   it('test async decrypt uint4', async function () {
+    const balanceBefore = await ethers.provider.getBalance(this.relayerAddress);
     const tx2 = await this.contract.connect(this.signers.carol).requestUint4({ gasLimit: 500_000 });
     await tx2.wait();
     await awaitAllDecryptionResults();
     const y = await this.contract.yUint4();
     expect(y).to.equal(4);
+    const balanceAfter = await ethers.provider.getBalance(this.relayerAddress);
+    console.log(balanceBefore - balanceAfter);
   });
 
   it('test async decrypt FAKE uint4', async function () {
@@ -209,6 +227,30 @@ describe('TestAsyncDecrypt', function () {
     await awaitAllDecryptionResults();
     const y = await this.contract.yAddress();
     expect(y).to.equal('0x8ba1f109551bD432803012645Ac136ddd64DBA72');
+  });
+
+  it('test async decrypt several addresses', async function () {
+    const tx2 = await this.contract.connect(this.signers.carol).requestSeveralAddresses({ gasLimit: 500_000 });
+    await tx2.wait();
+    await awaitAllDecryptionResults();
+    const y = await this.contract.yAddress();
+    const y2 = await this.contract.yAddress2();
+    expect(y).to.equal('0x8ba1f109551bD432803012645Ac136ddd64DBA72');
+    expect(y2).to.equal('0xf48b8840387ba3809DAE990c930F3b4766A86ca3');
+  });
+
+  it('test async decrypt several uint64s with duplicates', async function () {
+    const tx2 = await this.contract
+      .connect(this.signers.carol)
+      .requestSeveralUint64WithDuplicates({ gasLimit: 1_000_000 });
+    await tx2.wait();
+    await awaitAllDecryptionResults();
+    const y = await this.contract.yUint64();
+    const y2 = await this.contract.yUint64_2();
+    const y3 = await this.contract.yUint64_3();
+    expect(y).to.equal(64);
+    expect(y2).to.equal(76575465786);
+    expect(y3).to.equal(6400);
   });
 
   it('test async decrypt FAKE address', async function () {
