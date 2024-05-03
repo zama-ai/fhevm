@@ -37,27 +37,27 @@ Access to additional resources and join the Zama community.
 
 Refer to the API and access additional resources for in-depth explanations while working with fhEVM.
 
-* [API function specifications](references/functions.md)
-* [Repositories](references/repositories.md)
+- [API function specifications](references/functions.md)
+- [Repositories](references/repositories.md)
 
 ### Supports
 
 Ask technical questions and discuss with the community. Our team of experts usually answers within 24 hours in working days.
 
-* [Community forum](https://community.zama.ai/c/fhevm/15)
-* [Discord channel](https://discord.com/invite/fhe-org)
-* [Telegram](https://t.me/+Ojt5y-I7oR42MTkx)
+- [Community forum](https://community.zama.ai/c/fhevm/15)
+- [Discord channel](https://discord.com/invite/fhe-org)
+- [Telegram](https://t.me/+Ojt5y-I7oR42MTkx)
 
 ### Developers
 
 Collaborate with us to advance the FHE spaces and drive innovation together.
 
-* [Contribute to fhEVM](developer/contribute.md)
-* [Follow the development roadmap](developer/roadmap.md)
-* [See the latest test release note](https://github.com/zama-ai/fhevm/releases)
-* [Request a feature](https://github.com/zama-ai/fhevm/issues/new)
-* [Report a bug](https://github.com/zama-ai/fhevm/issues/new)
+- [Contribute to fhEVM](developer/contribute.md)
+- [Follow the development roadmap](developer/roadmap.md)
+- [See the latest test release note](https://github.com/zama-ai/fhevm/releases)
+- [Request a feature](https://github.com/zama-ai/fhevm/issues/new)
+- [Report a bug](https://github.com/zama-ai/fhevm/issues/new)
 
-***
+---
 
 We value your feedback! [Take a 5-question developer survey](http://zama.ai/developer-survey) to improve the fhEVM library and the documentation and help other developers use FHE.
