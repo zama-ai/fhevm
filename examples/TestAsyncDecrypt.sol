@@ -42,23 +42,8 @@ contract TestAsyncDecrypt is OracleCaller {
     }
 
     function requestBoolInfinite() public {
-        ebool[] memory cts = new ebool[](1);
-        cts[0] = xBool;
-        Oracle.requestDecryption(cts, this.callbackBoolInfinite.selector, 0, block.timestamp + 100);
-    }
-
-    function callbackBoolInfinite(uint256 /*requestID*/, bool decryptedInput) public onlyOracle returns (bool) {
-        uint256 i = 0;
-        while (1 == 1) {
-            i++;
-        }
-        yBool = decryptedInput;
-        return yBool;
-    }
-
-    function requestBoolInfinite() public {
-        ebool[] memory cts = new ebool[](1);
-        cts[0] = xBool;
+        Ciphertext[] memory cts = new Ciphertext[](1);
+        cts[0] = Oracle.toCiphertext(xBool);
         Oracle.requestDecryption(cts, this.callbackBoolInfinite.selector, 0, block.timestamp + 100);
     }
 
@@ -193,10 +178,20 @@ contract TestAsyncDecrypt is OracleCaller {
     }
 
     function requestSeveralAddresses() public {
-        eaddress[] memory cts = new eaddress[](2);
-        cts[0] = xAddress;
-        cts[1] = xAddress2;
+        Ciphertext[] memory cts = new Ciphertext[](2);
+        cts[0] = Oracle.toCiphertext(xAddress);
+        cts[1] = Oracle.toCiphertext(xAddress2);
         Oracle.requestDecryption(cts, this.callbackAddresses.selector, 0, block.timestamp + 100);
+    }
+
+    function callbackAddresses(
+        uint256 /*requestID*/,
+        address decryptedInput1,
+        address decryptedInput2
+    ) public onlyOracle returns (address) {
+        yAddress = decryptedInput1;
+        yAddress2 = decryptedInput2;
+        return decryptedInput1;
     }
 
     function requestFakeAddress() public {
@@ -256,81 +251,4 @@ contract TestAsyncDecrypt is OracleCaller {
         return yUint4;
     }
 
-    function requestMixed(uint32 input1, uint32 input2) public {
-        Ciphertext[] memory cts = new Ciphertext[](10);
-        cts[0] = Oracle.toCiphertext(xBool);
-        cts[1] = Oracle.toCiphertext(xBool);
-        cts[2] = Oracle.toCiphertext(xUint4);
-        cts[3] = Oracle.toCiphertext(xUint8);
-        cts[4] = Oracle.toCiphertext(xUint16);
-        cts[5] = Oracle.toCiphertext(xUint32);
-        cts[6] = Oracle.toCiphertext(xUint64);
-        cts[7] = Oracle.toCiphertext(xUint64);
-        cts[8] = Oracle.toCiphertext(xUint64);
-        cts[9] = Oracle.toCiphertext(xAddress);
-        uint256 requestID = Oracle.requestDecryption(cts, this.callbackMixed.selector, 0, block.timestamp + 100);
-        addParamsUint(requestID, input1);
-        addParamsUint(requestID, input2);
-    }
-
-    function callbackMixed(
-        uint256 requestID,
-        bool decBool_1,
-        bool decBool_2,
-        uint8 decUint4,
-        uint8 decUint8,
-        uint16 decUint16,
-        uint32 decUint32,
-        uint64 decUint64_1,
-        uint64 decUint64_2,
-        uint64 decUint64_3,
-        address decAddress
-    ) public onlyOracle returns (uint8) {
-        yBool = decBool_1;
-        require(decBool_1 == decBool_2, "Wrong decryption");
-        yUint4 = decUint4;
-        yUint8 = decUint8;
-        yUint16 = decUint16;
-        uint256[] memory params = getParamsUint(requestID);
-        unchecked {
-            uint32 result = uint32(params[0]) + uint32(params[1]) + decUint32;
-            yUint32 = result;
-        }
-        yUint64 = decUint64_1;
-        require(decUint64_1 == decUint64_2 && decUint64_2 == decUint64_3, "Wrong decryption");
-        yAddress = decAddress;
-        return yUint4;
-    }
-
-    function callbackAddresses(
-        uint256 /*requestID*/,
-        address decryptedInput1,
-        address decryptedInput2
-    ) public onlyOracle returns (address) {
-        yAddress = decryptedInput1;
-        yAddress2 = decryptedInput2;
-        return decryptedInput1;
-    }
-
-    function requestSeveralUint64WithDuplicates() public {
-        euint64[] memory cts = new euint64[](4);
-        cts[0] = xUint64;
-        cts[1] = xUint64_2;
-        cts[2] = xUint64_3;
-        cts[3] = xUint64_2;
-        Oracle.requestDecryption(cts, this.callbackSeveralUint64WithDuplicates.selector, 0, block.timestamp + 100);
-    }
-
-    function callbackSeveralUint64WithDuplicates(
-        uint256 /*requestID*/,
-        uint64 decryptedInput,
-        uint64 /*decryptedInput_2*/,
-        uint64 decryptedInput_3,
-        uint64 decryptedInput_4
-    ) public onlyOracle returns (uint64) {
-        yUint64 = decryptedInput;
-        yUint64_2 = decryptedInput_4;
-        yUint64_3 = decryptedInput_3;
-        return decryptedInput;
-    }
 }
