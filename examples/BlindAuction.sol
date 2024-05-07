@@ -17,7 +17,7 @@ contract BlindAuction is Reencrypt {
     euint64 internal highestBid;
 
     // Mapping from bidder to their bid value.
-    mapping(address => euint64) public bids;
+    mapping(address => euint64) private bids;
 
     // Number of bid
     uint public bidCounter;
@@ -26,7 +26,7 @@ contract BlindAuction is Reencrypt {
     EncryptedERC20 public tokenContract;
 
     // Whether the auction object has been claimed.
-    ebool public objectClaimed;
+    ebool private objectClaimed;
 
     // If the token has been transferred to the beneficiary
     bool public tokenTransferred;
