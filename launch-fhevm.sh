@@ -12,7 +12,6 @@ docker run -d -i -p 8545:8545 --rm --name fhevm \
   -e PRIVATE_KEY_ORACLE_RELAYER="$PRIVATE_KEY_ORACLE_RELAYER" \
   -e ORACLE_CONTRACT_PREDEPLOY_ADDRESS="$ORACLE_CONTRACT_PREDEPLOY_ADDRESS" \
   ghcr.io/zama-ai/ethermint-dev-node:v0.5.0-1
->>>>>>> 31ffd10 (chore: updated docker image)
   
 sleep 10
 
