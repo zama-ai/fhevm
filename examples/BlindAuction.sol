@@ -45,8 +45,6 @@ contract BlindAuction is Reencrypt {
     // It cannot be called after `time`.
     error TooLate(uint time);
 
-    event Winner(address who);
-
     constructor(address _beneficiary, EncryptedERC20 _tokenContract, uint biddingTime, bool isStoppable) {
         beneficiary = _beneficiary;
         tokenContract = _tokenContract;
@@ -63,18 +61,25 @@ contract BlindAuction is Reencrypt {
         euint64 value = TFHE.asEuint64(encryptedValue);
         euint64 existingBid = bids[msg.sender];
         if (TFHE.isInitialized(existingBid)) {
+            euint64 balanceBefore = tokenContract.balanceOfMe();
             ebool isHigher = TFHE.lt(existingBid, value);
-            // Update bid with value
-            bids[msg.sender] = TFHE.select(isHigher, value, existingBid);
-            // Transfer only the difference between existing and value
             euint64 toTransfer = value - existingBid;
-            // Transfer only if bid is higher
+            // Transfer only if bid is higher, also to avoid overflow from previous line
             euint64 amount = TFHE.select(isHigher, toTransfer, TFHE.asEuint64(0));
             tokenContract.transferFrom(msg.sender, address(this), amount);
+
+            euint64 balanceAfter = tokenContract.balanceOfMe();
+            euint64 sentBalance = balanceAfter - balanceBefore;
+            euint64 newBid = existingBid + sentBalance;
+            // Update bid with value
+            bids[msg.sender] = newBid;
         } else {
             bidCounter++;
-            bids[msg.sender] = value;
+            euint64 balanceBefore = tokenContract.balanceOfMe();
             tokenContract.transferFrom(msg.sender, address(this), value);
+            euint64 balanceAfter = tokenContract.balanceOfMe();
+            euint64 sentBalance = balanceAfter - balanceBefore;
+            bids[msg.sender] = sentBalance;
         }
         euint64 currentBid = bids[msg.sender];
         if (!TFHE.isInitialized(highestBid)) {
@@ -97,7 +102,7 @@ contract BlindAuction is Reencrypt {
         manuallyStopped = true;
     }
 
-    // Returns an encrypted value of 0 or 1 under the caller's public key, indicating
+    // Returns an encrypted boolean under the caller's public key, indicating
     // if the caller has the highest bid.
     function doIHaveHighestBid(
         bytes32 publicKey,
@@ -106,17 +111,17 @@ contract BlindAuction is Reencrypt {
         if (TFHE.isInitialized(highestBid) && TFHE.isInitialized(bids[msg.sender])) {
             return TFHE.reencrypt(TFHE.le(highestBid, bids[msg.sender]), publicKey);
         } else {
-            return TFHE.reencrypt(TFHE.asEuint64(0), publicKey);
+            return TFHE.reencrypt(TFHE.asEbool(false), publicKey);
         }
     }
 
     // Claim the object. Succeeds only if the caller has the highest bid.
+    // WARNING : if there is a draw, only first highest bidder to claim will get the prize (an improved implementation could handle this case differently)
     function claim() public onlyAfterEnd {
         ebool canClaim = TFHE.and(TFHE.le(highestBid, bids[msg.sender]), TFHE.not(objectClaimed));
 
-        objectClaimed = canClaim;
+        objectClaimed = TFHE.or(canClaim, objectClaimed);
         bids[msg.sender] = TFHE.select(canClaim, TFHE.asEuint64(0), bids[msg.sender]);
-        // emit Winner(msg.sender);
     }
 
     // Transfer token to beneficiary
