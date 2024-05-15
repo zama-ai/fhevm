@@ -16,6 +16,7 @@ import './tasks/mint';
 import './tasks/taskDeploy';
 import './tasks/taskIdentity';
 import './tasks/taskOracleRelayer';
+import './tasks/taskTFHE';
 
 // Function to recursively get all .sol files in a folder
 function getAllSolidityFiles(dir: string, fileList: string[] = []): string[] {
@@ -206,7 +207,7 @@ const config: HardhatUserConfig = {
     tests: './test',
   },
   solidity: {
-    version: '0.8.22',
+    version: '0.8.25',
     settings: {
       metadata: {
         // Not including the metadata hash
@@ -219,7 +220,7 @@ const config: HardhatUserConfig = {
         enabled: true,
         runs: 800,
       },
-      evmVersion: 'shanghai',
+      evmVersion: 'cancun',
     },
   },
   typechain: {

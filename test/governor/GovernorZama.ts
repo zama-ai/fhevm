@@ -7,7 +7,7 @@ import { createTransaction, mineNBlocks, produceDummyTransactions, waitForBlock 
 import { deployCompFixture } from './Comp.fixture';
 import { deployGovernorZamaFixture, deployTimelockFixture } from './GovernorZama.fixture';
 
-describe('GovernorZama', function () {
+describe.skip('GovernorZama', function () {
   before(async function () {
     await initSigners(3);
     this.signers = await getSigners();

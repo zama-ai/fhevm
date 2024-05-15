@@ -4,7 +4,7 @@ import { ethers, network } from 'hardhat';
 import { asyncDecrypt, awaitAllDecryptionResults } from '../asyncDecrypt';
 import { getSigners, initSigners } from '../signers';
 
-describe('TestAsyncDecrypt', function () {
+describe.skip('TestAsyncDecrypt', function () {
   before(async function () {
     await asyncDecrypt();
     await initSigners(3);

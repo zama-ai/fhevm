@@ -124,7 +124,7 @@ contract IdentityRegistry is Reencrypt, Ownable2Step {
         euint64 ident = _getIdentifier(wallet, identifier);
         require(TFHE.isInitialized(ident), "This identifier is unknown");
 
-        return TFHE.reencrypt(ident, publicKey, 0);
+        return TFHE.reencrypt(ident, publicKey);
     }
 
     function getRegistrar(address wallet) public view returns (uint) {

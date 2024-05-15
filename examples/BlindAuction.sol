@@ -63,8 +63,11 @@ contract BlindAuction is Reencrypt {
         if (TFHE.isInitialized(existingBid)) {
             euint64 balanceBefore = tokenContract.balanceOfMe();
             ebool isHigher = TFHE.lt(existingBid, value);
-            euint64 toTransfer = value - existingBid;
-            // Transfer only if bid is higher, also to avoid overflow from previous line
+            // Update bid with value
+            bids[msg.sender] = TFHE.select(isHigher, value, existingBid);
+            // Transfer only the difference between existing and value
+            euint64 toTransfer = TFHE.sub(value, existingBid);
+            // Transfer only if bid is higher
             euint64 amount = TFHE.select(isHigher, toTransfer, TFHE.asEuint64(0));
             tokenContract.transferFrom(msg.sender, address(this), amount);
 
@@ -93,7 +96,7 @@ contract BlindAuction is Reencrypt {
         bytes32 publicKey,
         bytes calldata signature
     ) public view onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
-        return TFHE.reencrypt(bids[msg.sender], publicKey, 0);
+        return TFHE.reencrypt(bids[msg.sender], publicKey);
     }
 
     // Returns the user bid
@@ -108,11 +111,13 @@ contract BlindAuction is Reencrypt {
         bytes32 publicKey,
         bytes calldata signature
     ) public view onlyAfterEnd onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
-        if (TFHE.isInitialized(highestBid) && TFHE.isInitialized(bids[msg.sender])) {
-            return TFHE.reencrypt(TFHE.le(highestBid, bids[msg.sender]), publicKey);
-        } else {
-            return TFHE.reencrypt(TFHE.asEbool(false), publicKey);
-        }
+        // TODO
+        revert();
+        // if (TFHE.isInitialized(highestBid) && TFHE.isInitialized(bids[msg.sender])) {
+        //     return TFHE.reencrypt(TFHE.le(highestBid, bids[msg.sender]), publicKey);
+        // } else {
+        //    return TFHE.reencrypt(TFHE.asEuint64(0), publicKey);
+        // }
     }
 
     // Claim the object. Succeeds only if the caller has the highest bid.

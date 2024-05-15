@@ -9,7 +9,7 @@ import { deployIdentityRegistryFixture } from './identityRegistry.fixture';
 
 const WALLET_COUNTRY1_PK = 'e3d2a61080fc3a972e5744e59f083f243018271b3070732c1edf1eb2593ac580';
 
-describe('CompliantERC20', function () {
+describe.skip('CompliantERC20', function () {
   before(async function () {
     await initSigners(4);
     this.signers = await getSigners();

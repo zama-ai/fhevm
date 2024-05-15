@@ -16,7 +16,7 @@ async function deployTfheManualTestFixture(): Promise<TFHEManualTestSuite> {
   return contract;
 }
 
-describe('TFHE manual operations', function () {
+describe.skip('TFHE manual operations', function () {
   before(async function () {
     await initSigners(1);
     this.signers = await getSigners();

@@ -146,7 +146,7 @@ library Impl {
         key = hex"0123456789ABCDEF";
     }
 
-    function verify(bytes memory _ciphertextBytes, uint8 /*_toType*/) internal pure returns (uint256 result) {
+    function verify(bytes memory _ciphertextBytes, uint8 /*_toType*/) internal returns (uint256 result) {
         uint256 x;
         assembly {
             switch gt(mload(_ciphertextBytes), 31)
@@ -163,7 +163,7 @@ library Impl {
         return x;
     }
 
-    function cast(uint256 ciphertext, uint8 toType) internal pure returns (uint256 result) {
+    function cast(uint256 ciphertext, uint8 toType) internal returns (uint256 result) {
         if (toType == 0) {
             result = uint256(uint8(ciphertext));
         }
@@ -184,7 +184,7 @@ library Impl {
         }
     }
 
-    function trivialEncrypt(uint256 value, uint8 /*toType*/) internal pure returns (uint256 result) {
+    function trivialEncrypt(uint256 value, uint8 /*toType*/) internal returns (uint256 result) {
         result = value;
     }
 
@@ -193,7 +193,7 @@ library Impl {
         result = ciphertext;
     }
 
-    function rand(uint8 randType) internal view returns (uint256 result) {
+    function rand(uint8 randType) internal returns (uint256 result) {
         uint256 randomness = uint256(keccak256(abi.encodePacked(block.number, gasleft(), msg.sender))); // assuming no duplicated tx by same sender in a single block
         if (randType == Common.euint8_t) {
             result = uint8(randomness);
@@ -208,7 +208,7 @@ library Impl {
         }
     }
 
-    function randBounded(uint256 upperBound, uint8 randType) internal view returns (uint256 result) {
+    function randBounded(uint256 upperBound, uint8 randType) internal returns (uint256 result) {
         // Here, we assume upperBound is a power of 2. Therefore, using modulo is secure.
         // If not a power of 2, we might have to do something else (though might not matter
         // much as this is a mock).

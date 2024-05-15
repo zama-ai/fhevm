@@ -1,7 +1,7 @@
 import { exec as oldExec } from 'child_process';
 import dotenv from 'dotenv';
 import fs from 'fs';
-import { task } from 'hardhat/config';
+import { task, types } from 'hardhat/config';
 import type { TaskArguments } from 'hardhat/types';
 import path from 'path';
 import { promisify } from 'util';
@@ -87,29 +87,33 @@ task('task:removeRelayer')
     }
   });
 
-task('task:launchFhevm').setAction(async function (taskArgs, hre) {
-  const privKeyDeployer = process.env.PRIVATE_KEY_ORACLE_DEPLOYER;
-  const privKeyOwner = process.env.PRIVATE_KEY_ORACLE_OWNER;
-  const privKeyRelayer = process.env.PRIVATE_KEY_ORACLE_RELAYER;
-  const deployerAddress = new hre.ethers.Wallet(privKeyDeployer!).address;
-  const ownerAddress = new hre.ethers.Wallet(privKeyOwner!).address;
-  const relayerAddress = new hre.ethers.Wallet(privKeyRelayer!).address;
-  const p1 = getCoin(deployerAddress);
-  const p2 = getCoin(ownerAddress);
-  const p3 = getCoin(relayerAddress);
-  await Promise.all([p1, p2, p3]);
-  await new Promise((res) => setTimeout(res, 5000)); // wait 5 seconds
-  await hre.run('task:deployOracle', { privateKey: privKeyDeployer, ownerAddress: ownerAddress });
+task('task:launchFhevm')
+  .addOptionalParam('skipGetCoin', 'Skip calling getCoin()', false, types.boolean)
+  .setAction(async function (taskArgs, hre) {
+    const privKeyDeployer = process.env.PRIVATE_KEY_ORACLE_DEPLOYER;
+    const privKeyOwner = process.env.PRIVATE_KEY_ORACLE_OWNER;
+    const privKeyRelayer = process.env.PRIVATE_KEY_ORACLE_RELAYER;
+    const deployerAddress = new hre.ethers.Wallet(privKeyDeployer!).address;
+    const ownerAddress = new hre.ethers.Wallet(privKeyOwner!).address;
+    const relayerAddress = new hre.ethers.Wallet(privKeyRelayer!).address;
+    if (!taskArgs.skipGetCoin) {
+      const p1 = getCoin(deployerAddress);
+      const p2 = getCoin(ownerAddress);
+      const p3 = getCoin(relayerAddress);
+      await Promise.all([p1, p2, p3]);
+    }
+    await new Promise((res) => setTimeout(res, 5000)); // wait 5 seconds
+    await hre.run('task:deployOracle', { privateKey: privKeyDeployer, ownerAddress: ownerAddress });
 
-  const parsedEnv = dotenv.parse(fs.readFileSync('oracle/.env.oracle'));
-  const oraclePredeployAddress = parsedEnv.ORACLE_CONTRACT_PREDEPLOY_ADDRESS;
+    const parsedEnv = dotenv.parse(fs.readFileSync('oracle/.env.oracle'));
+    const oraclePredeployAddress = parsedEnv.ORACLE_CONTRACT_PREDEPLOY_ADDRESS;
 
-  await hre.run('task:addRelayer', {
-    privateKey: privKeyOwner,
-    oracleAddress: oraclePredeployAddress,
-    relayerAddress: relayerAddress,
+    await hre.run('task:addRelayer', {
+      privateKey: privKeyOwner,
+      oracleAddress: oraclePredeployAddress,
+      relayerAddress: relayerAddress,
+    });
   });
-});
 
 task('task:getBalances').setAction(async function (taskArgs, hre) {
   const privKeyDeployer = process.env.PRIVATE_KEY_ORACLE_DEPLOYER;

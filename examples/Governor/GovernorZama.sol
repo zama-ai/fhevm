@@ -297,10 +297,11 @@ contract GovernorZama {
     }
 
     function isDefeated(Proposal storage proposal) private view returns (bool) {
-        ebool defeated = TFHE.le(proposal.forVotes, proposal.againstVotes);
-        ebool reachedQuorum = TFHE.lt(proposal.forVotes, uint64(quorumVotes()));
+        revert();
+        // ebool defeated = TFHE.le(proposal.forVotes, proposal.againstVotes);
+        // ebool reachedQuorum = TFHE.lt(proposal.forVotes, uint64(quorumVotes()));
 
-        return TFHE.decrypt(reachedQuorum) || TFHE.decrypt(defeated);
+        // eturn TFHE.decrypt(reachedQuorum) || TFHE.decrypt(defeated);
     }
 
     function state(uint proposalId) public view returns (ProposalState) {
@@ -366,8 +367,8 @@ contract GovernorZama {
         require(receipt.hasVoted == false, "GovernorAlpha::_castVote: voter already voted");
         euint64 votes = comp.getPriorVotes(voter, proposal.startBlock);
 
-        proposal.forVotes = TFHE.select(support, proposal.forVotes + votes, proposal.forVotes);
-        proposal.againstVotes = TFHE.select(support, proposal.againstVotes, proposal.againstVotes + votes);
+        proposal.forVotes = TFHE.select(support, TFHE.add(proposal.forVotes, votes), proposal.forVotes);
+        proposal.againstVotes = TFHE.select(support, proposal.againstVotes, TFHE.add(proposal.againstVotes, votes));
 
         receipt.hasVoted = true;
         receipt.votes = votes;

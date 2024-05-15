@@ -39,7 +39,7 @@ contract ERC20Rules {
         return country2CountryRestrictions;
     }
 
-    function transfer(address from, address to, euint64 amount) public view returns (euint64) {
+    function transfer(address from, address to, euint64 amount) public returns (euint64) {
         ICompliantERC20 erc20 = ICompliantERC20(msg.sender);
         // Condition 1: 10k limit between two different countries
         ebool transferLimitOK = checkLimitTransfer(erc20, from, to, amount);
@@ -64,7 +64,7 @@ contract ERC20Rules {
         address from,
         address to,
         euint64 amount
-    ) internal view returns (ebool) {
+    ) internal returns (ebool) {
         euint8 fromCountry = TFHE.asEuint8(erc20.getIdentifier(from, "country"));
         euint8 toCountry = TFHE.asEuint8(erc20.getIdentifier(to, "country"));
         require(TFHE.isInitialized(fromCountry) && TFHE.isInitialized(toCountry), "You don't have access");
@@ -74,20 +74,20 @@ contract ERC20Rules {
         return TFHE.or(sameCountry, amountBelow10k);
     }
 
-    function checkBlacklist(ICompliantERC20 erc20, address from, address to) internal view returns (ebool) {
+    function checkBlacklist(ICompliantERC20 erc20, address from, address to) internal returns (ebool) {
         ebool fromBlacklisted = TFHE.asEbool(erc20.getIdentifier(from, "blacklist"));
         ebool toBlacklisted = TFHE.asEbool(erc20.getIdentifier(to, "blacklist"));
         return TFHE.not(TFHE.or(toBlacklisted, fromBlacklisted));
     }
 
-    function checkCountryToCountry(ICompliantERC20 erc20, address from, address to) internal view returns (ebool) {
+    function checkCountryToCountry(ICompliantERC20 erc20, address from, address to) internal returns (ebool) {
         // Disallow transfer from country 2 to country 1
         uint16[] memory c2cRestrictions = getC2CRestrictions();
 
         euint64 fromCountry = erc20.getIdentifier(from, "country");
         euint64 toCountry = erc20.getIdentifier(to, "country");
         require(TFHE.isInitialized(fromCountry) && TFHE.isInitialized(toCountry), "You don't have access");
-        euint16 countryToCountry = TFHE.shl(TFHE.asEuint16(fromCountry), 8) + TFHE.asEuint16(toCountry);
+        euint16 countryToCountry = TFHE.add(TFHE.shl(TFHE.asEuint16(fromCountry), 8), TFHE.asEuint16(toCountry));
         ebool condition = TFHE.asEbool(true);
 
         // Check all countryToCountry restrictions

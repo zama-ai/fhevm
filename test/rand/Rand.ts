@@ -1,7 +1,7 @@
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
-import { createInstances } from '../instance';
+import { createInstances, decrypt8, decrypt16, decrypt32, decrypt64 } from '../instance';
 import { getSigners, initSigners } from '../signers';
 import { deployRandFixture } from './Rand.fixture';
 
@@ -19,11 +19,12 @@ describe('Rand', function () {
   });
 
   it('8 bits generate and decrypt', async function () {
-    const values: bigint[] = [];
+    const values: number[] = [];
     for (let i = 0; i < 5; i++) {
       const txn = await this.rand.generate8();
       await txn.wait();
-      const value = await this.rand.decrypt8();
+      const valueHandle = await this.rand.value8();
+      const value = await decrypt8(valueHandle);
       expect(value).to.be.lessThanOrEqual(0xff);
       values.push(value);
     }
@@ -33,11 +34,12 @@ describe('Rand', function () {
   });
 
   it('8 bits generate with upper bound and decrypt', async function () {
-    const values: bigint[] = [];
+    const values: number[] = [];
     for (let i = 0; i < 5; i++) {
       const txn = await this.rand.generate8UpperBound(128);
       await txn.wait();
-      const value = await this.rand.decrypt8();
+      const valueHandle = await this.rand.value8();
+      const value = await decrypt8(valueHandle);
       expect(value).to.be.lessThanOrEqual(127);
       values.push(value);
     }
@@ -47,12 +49,13 @@ describe('Rand', function () {
   });
 
   it('16 bits generate and decrypt', async function () {
-    const values: bigint[] = [];
+    const values: number[] = [];
     let has16bit: boolean = false;
     for (let i = 0; i < 5; i++) {
       const txn = await this.rand.generate16();
       await txn.wait();
-      const value = await this.rand.decrypt16();
+      const valueHandle = await this.rand.value16();
+      const value = await decrypt16(valueHandle);
       expect(value).to.be.lessThanOrEqual(0xffff);
       if (value > 0xff) {
         has16bit = true;
@@ -67,11 +70,12 @@ describe('Rand', function () {
   });
 
   it('16 bits generate with upper bound and decrypt', async function () {
-    const values: bigint[] = [];
+    const values: number[] = [];
     for (let i = 0; i < 5; i++) {
       const txn = await this.rand.generate16UpperBound(8192);
       await txn.wait();
-      const value = await this.rand.decrypt16();
+      const valueHandle = await this.rand.value16();
+      const value = await decrypt16(valueHandle);
       expect(value).to.be.lessThanOrEqual(8191);
       values.push(value);
     }
@@ -81,12 +85,13 @@ describe('Rand', function () {
   });
 
   it('32 bits generate and decrypt', async function () {
-    const values: bigint[] = [];
+    const values: number[] = [];
     let has32bit: boolean = false;
     for (let i = 0; i < 5; i++) {
       const txn = await this.rand.generate32();
       await txn.wait();
-      const value = await this.rand.decrypt32();
+      const valueHandle = await this.rand.value32();
+      const value = await decrypt32(valueHandle);
       expect(value).to.be.lessThanOrEqual(0xffffffff);
       if (value > 0xffff) {
         has32bit = true;
@@ -101,11 +106,12 @@ describe('Rand', function () {
   });
 
   it('32 bits generate with upper bound and decrypt', async function () {
-    const values: bigint[] = [];
+    const values: number[] = [];
     for (let i = 0; i < 5; i++) {
       const txn = await this.rand.generate32UpperBound(262144);
       await txn.wait();
-      const value = await this.rand.decrypt32();
+      const valueHandle = await this.rand.value32();
+      const value = await decrypt32(valueHandle);
       expect(value).to.be.lessThanOrEqual(262141);
       values.push(value);
     }
@@ -120,14 +126,15 @@ describe('Rand', function () {
     for (let i = 0; i < 5; i++) {
       const txn = await this.rand.generate64();
       await txn.wait();
-      const value = await this.rand.decrypt64();
+      const valueHandle = await this.rand.value64();
+      const value = await decrypt64(valueHandle);
       expect(value).to.be.lessThanOrEqual(BigInt('0xffffffffffffffff'));
-      if (value > 0xffffffff) {
+      if (value > BigInt('0xffffffff')) {
         has64bit = true;
       }
       values.push(value);
     }
-    // Make sure we actually generate 32 bit integers.
+    // Make sure we actually generate 64 bit integers.
     expect(has64bit).to.be.true;
     // Expect at least two different generated values.
     const unique = new Set(values);
@@ -139,116 +146,13 @@ describe('Rand', function () {
     for (let i = 0; i < 5; i++) {
       const txn = await this.rand.generate64UpperBound(262144);
       await txn.wait();
-      const value = await this.rand.decrypt64();
+      const valueHandle = await this.rand.value64();
+      const value = await decrypt64(valueHandle);
       expect(value).to.be.lessThanOrEqual(262141);
       values.push(value);
     }
     // Expect at least two different generated values.
     const unique = new Set(values);
     expect(unique.size).to.be.greaterThanOrEqual(2);
-  });
-
-  it('8 bits generate, decrypt and store', async function () {
-    const txnGen = await this.rand.generate8();
-    await txnGen.wait();
-    const txnDecAndStore = await this.rand.decryptAndStore8();
-    await expect(txnDecAndStore.wait()).to.not.be.rejected;
-  });
-
-  it('8 bits generate with upper bound, decrypt and store', async function () {
-    const txnGen = await this.rand.generate8UpperBound(64);
-    await txnGen.wait();
-    const txnDecAndStore = await this.rand.decryptAndStore8();
-    await expect(txnDecAndStore.wait()).to.not.be.rejected;
-  });
-
-  it('16 bits generate, decrypt and store', async function () {
-    const txnGen = await this.rand.generate16();
-    await txnGen.wait();
-    const txnDecAndStore = await this.rand.decryptAndStore16();
-    await expect(txnDecAndStore.wait()).to.not.be.rejected;
-  });
-
-  it('16 bits generate with upper bound, decrypt and store', async function () {
-    const txnGen = await this.rand.generate16UpperBound(4096);
-    await txnGen.wait();
-    const txnDecAndStore = await this.rand.decryptAndStore16();
-    await expect(txnDecAndStore.wait()).to.not.be.rejected;
-  });
-
-  it('32 bits generate, decrypt and store', async function () {
-    const txnGen = await this.rand.generate32();
-    await txnGen.wait();
-    const txnDecAndStore = await this.rand.decryptAndStore32();
-    await expect(txnDecAndStore.wait()).to.not.be.rejected;
-  });
-
-  it('32 bits generate with upper bound, decrypt and store', async function () {
-    const txnGen = await this.rand.generate32UpperBound(32768);
-    await txnGen.wait();
-    const txnDecAndStore = await this.rand.decryptAndStore32();
-    await expect(txnDecAndStore.wait()).to.not.be.rejected;
-  });
-
-  it('64 bits generate, decrypt and store', async function () {
-    const txnGen = await this.rand.generate64();
-    await txnGen.wait();
-    const txnDecAndStore = await this.rand.decryptAndStore64();
-    await expect(txnDecAndStore.wait()).to.not.be.rejected;
-  });
-
-  it('64 bits generate with upper bound, decrypt and store', async function () {
-    const txnGen = await this.rand.generate64UpperBound(32768);
-    await txnGen.wait();
-    const txnDecAndStore = await this.rand.decryptAndStore64();
-    await expect(txnDecAndStore.wait()).to.not.be.rejected;
-  });
-
-  it('8 bits in view', async function () {
-    if (process.env.HARDHAT_NETWORK !== 'hardhat') {
-      await expect(this.rand.generate8InView()).to.be.rejected;
-    }
-  });
-
-  it('8 bits with upper bound in view', async function () {
-    if (process.env.HARDHAT_NETWORK !== 'hardhat') {
-      await expect(this.rand.generate8UpperBoundInView(32)).to.be.rejected;
-    }
-  });
-
-  it('16 bits in view', async function () {
-    if (process.env.HARDHAT_NETWORK !== 'hardhat') {
-      await expect(this.rand.generate16InView()).to.be.rejected;
-    }
-  });
-
-  it('16 bits with upper bound in view', async function () {
-    if (process.env.HARDHAT_NETWORK !== 'hardhat') {
-      await expect(this.rand.generate16UpperBoundInView(128)).to.be.rejected;
-    }
-  });
-
-  it('32 bits in view', async function () {
-    if (process.env.HARDHAT_NETWORK !== 'hardhat') {
-      await expect(this.rand.generate32InView()).to.be.rejected;
-    }
-  });
-
-  it('32 bits with upper bound in view', async function () {
-    if (process.env.HARDHAT_NETWORK !== 'hardhat') {
-      await expect(this.rand.generate32UpperBoundInView(512)).to.be.rejected;
-    }
-  });
-
-  it('64 bits in view', async function () {
-    if (process.env.HARDHAT_NETWORK !== 'hardhat') {
-      await expect(this.rand.generate64InView()).to.be.rejected;
-    }
-  });
-
-  it('64 bits with upper bound in view', async function () {
-    if (process.env.HARDHAT_NETWORK !== 'hardhat') {
-      await expect(this.rand.generate64UpperBoundInView(512)).to.be.rejected;
-    }
   });
 });

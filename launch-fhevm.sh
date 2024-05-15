@@ -8,9 +8,12 @@ PRIVATE_KEY_ORACLE_RELAYER=$(grep PRIVATE_KEY_ORACLE_RELAYER .env | cut -d '"' -
 
 ORACLE_CONTRACT_PREDEPLOY_ADDRESS=$(grep ORACLE_CONTRACT_PREDEPLOY_ADDRESS oracle/.env.oracle | cut -d '=' -f2)
 
+TFHE_EXECUTOR_CONTRACT_ADDRESS=$(grep TFHE_EXECUTOR_CONTRACT_ADDRESS lib/.env.exec | cut -d '=' -f2)
+
 docker run -d -i -p 8545:8545 --rm --name fhevm \
   -e PRIVATE_KEY_ORACLE_RELAYER="$PRIVATE_KEY_ORACLE_RELAYER" \
   -e ORACLE_CONTRACT_PREDEPLOY_ADDRESS="$ORACLE_CONTRACT_PREDEPLOY_ADDRESS" \
+  -e TFHE_EXECUTOR_CONTRACT_ADDRESS="$TFHE_EXECUTOR_CONTRACT_ADDRESS" \
   ghcr.io/zama-ai/ethermint-dev-node:v0.5.0-1
   
 sleep 10
@@ -18,6 +21,10 @@ sleep 10
 npx hardhat compile:specific --contract lib
 
 npx hardhat compile:specific --contract oracle
+
+npx hardhat task:deployACL
+
+npx hardhat task:deployTFHEExecutor
 
 npx hardhat task:launchFhevm
 

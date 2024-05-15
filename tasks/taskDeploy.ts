@@ -56,3 +56,29 @@ task('task:deployIdentity').setAction(async function (taskArguments: TaskArgumen
   console.log(`npx hardhat task:identity:transfer --erc20 ${erc20Address} --from carol --to dave --amount 2000`);
   console.log(`npx hardhat task:identity:balanceOf --erc20 ${erc20Address} --user alice`);
 });
+
+task('task:deployACL').setAction(async function (taskArguments: TaskArguments, { ethers }) {
+  const deployer = (await ethers.getSigners())[9];
+  const factory = await ethers.getContractFactory('ACL');
+  const acl = await factory.connect(deployer).deploy();
+  await acl.waitForDeployment();
+  const address = await acl.getAddress();
+  const envConfig = dotenv.parse(fs.readFileSync('lib/.env.acl'));
+  if (address !== envConfig.ACL_CONTRACT_ADDRESS) {
+    throw new Error(`The nonce of the deployer account is not corret. Please relaunch a clean instance of the fhEVM`);
+  }
+  console.log('ACL was deployed at address:', address);
+});
+
+task('task:deployTFHEExecutor').setAction(async function (taskArguments: TaskArguments, { ethers }) {
+  const deployer = (await ethers.getSigners())[9];
+  const factory = await ethers.getContractFactory('TFHEExecutor');
+  const exec = await factory.connect(deployer).deploy();
+  await exec.waitForDeployment();
+  const address = await exec.getAddress();
+  const envConfig = dotenv.parse(fs.readFileSync('lib/.env.exec'));
+  if (address !== envConfig.TFHE_EXECUTOR_CONTRACT_ADDRESS) {
+    throw new Error(`The nonce of the deployer account is not corret. Please relaunch a clean instance of the fhEVM`);
+  }
+  console.log('TFHEExecutor was deployed at address:', address);
+});

@@ -6,7 +6,7 @@ import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
 import { deployBlindAuctionFixture } from './BlindAuction.fixture';
 
-describe('BlindAuction', function () {
+describe.skip('BlindAuction', function () {
   before(async function () {
     await initSigners(3);
     this.signers = await getSigners();

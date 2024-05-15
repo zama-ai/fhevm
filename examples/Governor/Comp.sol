@@ -93,7 +93,7 @@ contract Comp is Reencrypt {
         bytes32 publicKey,
         bytes calldata signature
     ) public view onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
-        return TFHE.reencrypt(balances[msg.sender], publicKey, 0);
+        return TFHE.reencrypt(balances[msg.sender], publicKey);
     }
 
     /**
@@ -184,7 +184,7 @@ contract Comp is Reencrypt {
     function _updateAllowance(address owner, address spender, euint64 amount) internal {
         euint64 currentAllowance = _allowance(owner, spender);
         ebool canApprove = TFHE.le(amount, currentAllowance);
-        _approve(owner, spender, TFHE.select(canApprove, currentAllowance - amount, TFHE.asEuint64(0)));
+        _approve(owner, spender, TFHE.select(canApprove, TFHE.sub(currentAllowance, amount), TFHE.asEuint64(0)));
     }
 
     // Transfers an encrypted amount.
@@ -193,8 +193,8 @@ contract Comp is Reencrypt {
         ebool canTransfer = TFHE.le(amount, balances[from]);
 
         // Add to the balance of `to` and subract from the balance of `from`.
-        balances[to] = balances[to] + TFHE.select(canTransfer, amount, TFHE.asEuint64(0));
-        balances[from] = balances[from] - TFHE.select(canTransfer, amount, TFHE.asEuint64(0));
+        balances[to] = TFHE.add(balances[to], TFHE.select(canTransfer, amount, TFHE.asEuint64(0)));
+        balances[from] = TFHE.sub(balances[from], TFHE.select(canTransfer, amount, TFHE.asEuint64(0)));
         emit Transfer(from, to, amount);
 
         _moveDelegates(delegates[from], delegates[to], amount);
@@ -205,14 +205,14 @@ contract Comp is Reencrypt {
             if (srcRep != address(0)) {
                 uint32 srcRepNum = numCheckpoints[srcRep];
                 euint64 srcRepOld = srcRepNum > 0 ? checkpoints[srcRep][srcRepNum - 1].votes : TFHE.asEuint64(0);
-                euint64 srcRepNew = srcRepOld - amount;
+                euint64 srcRepNew = TFHE.sub(srcRepOld, amount);
                 _writeCheckpoint(srcRep, srcRepNum, srcRepOld, srcRepNew);
             }
 
             if (dstRep != address(0)) {
                 uint32 dstRepNum = numCheckpoints[dstRep];
                 euint64 dstRepOld = dstRepNum > 0 ? checkpoints[dstRep][dstRepNum - 1].votes : TFHE.asEuint64(0);
-                euint64 dstRepNew = dstRepOld + amount;
+                euint64 dstRepNew = TFHE.add(dstRepOld, amount);
                 _writeCheckpoint(dstRep, dstRepNum, dstRepOld, dstRepNew);
             }
         }
@@ -266,7 +266,7 @@ contract Comp is Reencrypt {
      * @param account The address to get votes balance
      * @return The number of current votes for `account`
      */
-    function getCurrentVotes(address account) external view onlyAllowedContract returns (euint64) {
+    function getCurrentVotes(address account) external onlyAllowedContract returns (euint64) {
         uint32 nCheckpoints = numCheckpoints[account];
         return nCheckpoints > 0 ? checkpoints[account][nCheckpoints - 1].votes : TFHE.asEuint64(0);
     }
@@ -278,7 +278,7 @@ contract Comp is Reencrypt {
      * @param blockNumber The block number to get the vote balance at
      * @return The number of votes the account had as of the given block
      */
-    function getPriorVotes(address account, uint blockNumber) public view onlyAllowedContract returns (euint64) {
+    function getPriorVotes(address account, uint blockNumber) public onlyAllowedContract returns (euint64) {
         require(blockNumber < block.number, "Comp::getPriorVotes: not yet determined");
 
         uint32 nCheckpoints = numCheckpoints[account];

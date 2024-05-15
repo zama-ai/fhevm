@@ -13,6 +13,8 @@ function generateAllFiles() {
   const ovShards = testgen.splitOverloadsToShards(overloads);
   writeFileSync('lib/Impl.sol', t.implSol(context, operators));
   writeFileSync('lib/TFHE.sol', tfheSolSource);
+  writeFileSync('lib/FhevmLib.sol', t.fhevmLibSol(operators));
+  writeFileSync('lib/TFHEExecutor.sol', t.tfheExecutorSol(context, operators));
   writeFileSync('mocks/Impl.sol', t.implSolMock(context, operators));
   const [tfheSolSourceMock, _] = t.tfheSol(context, operators, SUPPORTED_BITS, true);
   writeFileSync('mocks/TFHE.sol', tfheSolSourceMock);

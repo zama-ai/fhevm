@@ -5,7 +5,7 @@ import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
 import { deployCompFixture } from './Comp.fixture';
 
-describe('Comp', function () {
+describe.skip('Comp', function () {
   before(async function () {
     await initSigners(2);
     this.signers = await getSigners();

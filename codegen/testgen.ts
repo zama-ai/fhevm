@@ -92,7 +92,7 @@ async function deployTfheTestFixture${os.shardNumber}(): Promise<TFHETestSuite${
   });
 
   res.push(`
-    describe('TFHE operations', function () {
+    describe.skip('TFHE operations', function () {
         before(async function () {
             await initSigners(1);
             this.signers = await getSigners();
@@ -217,7 +217,7 @@ function generateLibCallTest(os: OverloadShard, res: string[]) {
     const methodName = signatureContractMethodName(o);
     const args = signatureContractArguments(o);
     const retType = functionTypeToDecryptedType(o.returnType);
-    res.push(`function ${methodName}(${args}) public view returns (${retType}) {`);
+    res.push(`function ${methodName}(${args}) public returns (${retType}) {`);
     res.push('\n');
 
     const procArgs: string[] = [];

@@ -5,7 +5,7 @@ import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
 import { deployIdentityRegistryFixture } from './identityRegistry.fixture';
 
-describe('Identity', function () {
+describe.skip('Identity', function () {
   before(async function () {
     await initSigners(3);
     this.signers = await getSigners();

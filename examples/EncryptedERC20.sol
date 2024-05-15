@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.25;
 
-import "../abstracts/Reencrypt.sol";
 import "../lib/TFHE.sol";
 import "@openzeppelin/contracts/access/Ownable2Step.sol";
 
-contract EncryptedERC20 is Reencrypt, Ownable2Step {
+contract EncryptedERC20 is Ownable2Step {
     event Transfer(address indexed from, address indexed to);
     event Approval(address indexed owner, address indexed spender);
     event Mint(address indexed to, uint64 amount);
@@ -14,7 +13,7 @@ contract EncryptedERC20 is Reencrypt, Ownable2Step {
     uint64 private _totalSupply;
     string private _name;
     string private _symbol;
-    uint8 public constant decimals = 0;
+    uint8 public constant decimals = 6;
 
     // A mapping from address to an encrypted balance.
     mapping(address => euint64) internal balances;
@@ -45,39 +44,28 @@ contract EncryptedERC20 is Reencrypt, Ownable2Step {
     // Sets the balance of the owner to the given encrypted balance.
     function mint(uint64 mintedAmount) public virtual onlyOwner {
         balances[owner()] = TFHE.add(balances[owner()], mintedAmount); // overflow impossible because of next line
+        TFHE.allow(balances[owner()], address(this));
+        TFHE.allow(balances[owner()], owner());
         _totalSupply = _totalSupply + mintedAmount;
         emit Mint(owner(), mintedAmount);
     }
 
     // Transfers an encrypted amount from the message sender address to the `to` address.
-    function transfer(address to, bytes calldata encryptedAmount) public virtual returns (bool) {
+    function transfer(address to, bytes calldata encryptedAmount) public virtual {
         transfer(to, TFHE.asEuint64(encryptedAmount));
-        return true;
     }
 
     // Transfers an amount from the message sender address to the `to` address.
-    function transfer(address to, euint64 amount) public virtual returns (bool) {
+    function transfer(address to, euint64 amount) public virtual {
+        require(TFHE.isSenderAllowed(amount));
         // makes sure the owner has enough tokens
         ebool canTransfer = TFHE.le(amount, balances[msg.sender]);
         _transfer(msg.sender, to, amount, canTransfer);
-        return true;
     }
 
     // Returns the balance of the caller encrypted under the provided public key.
-    function balanceOf(
-        address wallet,
-        bytes32 publicKey,
-        bytes calldata signature
-    ) public view virtual onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
-        if (wallet == msg.sender) {
-            return TFHE.reencrypt(balances[wallet], publicKey, 0);
-        }
-        return TFHE.reencrypt(TFHE.asEuint64(0), publicKey, 0);
-    }
-
-    // Returns the encrypted balance of the caller.
-    function balanceOfMe() public view virtual returns (euint64) {
-        return balances[msg.sender];
+    function balanceOf(address wallet) public view virtual returns (euint64) {
+        return balances[wallet];
     }
 
     // Sets the `encryptedAmount` as the allowance of `spender` over the caller's tokens.
@@ -88,6 +76,7 @@ contract EncryptedERC20 is Reencrypt, Ownable2Step {
 
     // Sets the `amount` as the allowance of `spender` over the caller's tokens.
     function approve(address spender, euint64 amount) public virtual returns (bool) {
+        require(TFHE.isSenderAllowed(amount));
         address owner = msg.sender;
         _approve(owner, spender, amount);
         emit Approval(owner, spender);
@@ -96,40 +85,32 @@ contract EncryptedERC20 is Reencrypt, Ownable2Step {
 
     // Returns the remaining number of tokens that `spender` is allowed to spend
     // on behalf of the caller. The returned ciphertext is under the caller public FHE key.
-    function allowance(
-        address owner,
-        address spender,
-        bytes32 publicKey,
-        bytes calldata signature
-    ) public view virtual onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
-        require(owner == msg.sender || spender == msg.sender);
-        return TFHE.reencrypt(_allowance(owner, spender), publicKey);
+    function allowance(address owner, address spender) public view virtual returns (euint64) {
+        return _allowance(owner, spender);
     }
 
     // Transfers `encryptedAmount` tokens using the caller's allowance.
-    function transferFrom(address from, address to, bytes calldata encryptedAmount) public virtual returns (bool) {
+    function transferFrom(address from, address to, bytes calldata encryptedAmount) public virtual {
         transferFrom(from, to, TFHE.asEuint64(encryptedAmount));
-        return true;
     }
 
     // Transfers `amount` tokens using the caller's allowance.
-    function transferFrom(address from, address to, euint64 amount) public virtual returns (bool) {
+    function transferFrom(address from, address to, euint64 amount) public virtual {
+        require(TFHE.isSenderAllowed(amount));
         address spender = msg.sender;
         ebool isTransferable = _updateAllowance(from, spender, amount);
         _transfer(from, to, amount, isTransferable);
-        return true;
     }
 
     function _approve(address owner, address spender, euint64 amount) internal virtual {
         allowances[owner][spender] = amount;
+        TFHE.allow(amount, address(this));
+        TFHE.allow(amount, owner);
+        TFHE.allow(amount, spender);
     }
 
     function _allowance(address owner, address spender) internal view virtual returns (euint64) {
-        if (TFHE.isInitialized(allowances[owner][spender])) {
-            return allowances[owner][spender];
-        } else {
-            return TFHE.asEuint64(0);
-        }
+        return allowances[owner][spender];
     }
 
     function _updateAllowance(address owner, address spender, euint64 amount) internal virtual returns (ebool) {
@@ -139,15 +120,21 @@ contract EncryptedERC20 is Reencrypt, Ownable2Step {
         // makes sure the owner has enough tokens
         ebool canTransfer = TFHE.le(amount, balances[owner]);
         ebool isTransferable = TFHE.and(canTransfer, allowedTransfer);
-        _approve(owner, spender, TFHE.select(isTransferable, currentAllowance - amount, currentAllowance));
+        _approve(owner, spender, TFHE.select(isTransferable, TFHE.sub(currentAllowance, amount), currentAllowance));
         return isTransferable;
     }
 
     // Transfers an encrypted amount.
     function _transfer(address from, address to, euint64 amount, ebool isTransferable) internal virtual {
         // Add to the balance of `to` and subract from the balance of `from`.
-        balances[to] = balances[to] + TFHE.select(isTransferable, amount, TFHE.asEuint64(0));
-        balances[from] = balances[from] - TFHE.select(isTransferable, amount, TFHE.asEuint64(0));
+        euint64 newBalanceTo = TFHE.add(balances[to], TFHE.select(isTransferable, amount, TFHE.asEuint64(0)));
+        balances[to] = newBalanceTo;
+        TFHE.allow(newBalanceTo, address(this));
+        TFHE.allow(newBalanceTo, to);
+        euint64 newBalanceFrom = TFHE.sub(balances[from], TFHE.select(isTransferable, amount, TFHE.asEuint64(0)));
+        balances[from] = newBalanceFrom;
+        TFHE.allow(newBalanceFrom, address(this));
+        TFHE.allow(newBalanceFrom, from);
         emit Transfer(from, to);
     }
 }

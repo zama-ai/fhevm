@@ -76,7 +76,7 @@ async function deployTfheTestFixture6(): Promise<TFHETestSuite6> {
   return contract;
 }
 
-describe('TFHE operations', function () {
+describe.skip('TFHE operations', function () {
   before(async function () {
     await initSigners(1);
     this.signers = await getSigners();

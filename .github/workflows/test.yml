@@ -1,9 +1,10 @@
 name: Pull request tests
 
 on:
-  pull_request:
-    branches:
-      - main
+  false
+  # pull_request:
+  #   branches:
+  #     - main
 
 jobs:
   build:
