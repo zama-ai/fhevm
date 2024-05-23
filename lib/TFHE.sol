@@ -5262,6 +5262,66 @@ library TFHE {
         return euint64.wrap(Impl.select(ebool.unwrap(control), euint64.unwrap(a), euint64.unwrap(b)));
     }
 
+    function eq(euint4[] memory a, euint4[] memory b) internal pure returns (ebool) {
+        uint256[] memory larray;
+        uint256[] memory rarray;
+        for (uint i = 0; i < a.length; i++) {
+            larray[i] = euint4.unwrap(a[i]);
+        }
+        for (uint i = 0; i < b.length; i++) {
+            rarray[i] = euint4.unwrap(a[i]);
+        }
+        return ebool.wrap(Impl.eq(larray, rarray));
+    }
+
+    function eq(euint8[] memory a, euint8[] memory b) internal pure returns (ebool) {
+        uint256[] memory larray;
+        uint256[] memory rarray;
+        for (uint i = 0; i < a.length; i++) {
+            larray[i] = euint8.unwrap(a[i]);
+        }
+        for (uint i = 0; i < b.length; i++) {
+            rarray[i] = euint8.unwrap(a[i]);
+        }
+        return ebool.wrap(Impl.eq(larray, rarray));
+    }
+
+    function eq(euint16[] memory a, euint16[] memory b) internal pure returns (ebool) {
+        uint256[] memory larray;
+        uint256[] memory rarray;
+        for (uint i = 0; i < a.length; i++) {
+            larray[i] = euint16.unwrap(a[i]);
+        }
+        for (uint i = 0; i < b.length; i++) {
+            rarray[i] = euint16.unwrap(a[i]);
+        }
+        return ebool.wrap(Impl.eq(larray, rarray));
+    }
+
+    function eq(euint32[] memory a, euint32[] memory b) internal pure returns (ebool) {
+        uint256[] memory larray;
+        uint256[] memory rarray;
+        for (uint i = 0; i < a.length; i++) {
+            larray[i] = euint32.unwrap(a[i]);
+        }
+        for (uint i = 0; i < b.length; i++) {
+            rarray[i] = euint32.unwrap(a[i]);
+        }
+        return ebool.wrap(Impl.eq(larray, rarray));
+    }
+
+    function eq(euint64[] memory a, euint64[] memory b) internal pure returns (ebool) {
+        uint256[] memory larray;
+        uint256[] memory rarray;
+        for (uint i = 0; i < a.length; i++) {
+            larray[i] = euint64.unwrap(a[i]);
+        }
+        for (uint i = 0; i < b.length; i++) {
+            rarray[i] = euint64.unwrap(a[i]);
+        }
+        return ebool.wrap(Impl.eq(larray, rarray));
+    }
+
     // Cast an encrypted integer from euint8 to euint4.
     function asEuint4(euint8 value) internal pure returns (euint4) {
         return euint4.wrap(Impl.cast(euint8.unwrap(value), Common.euint4_t));
