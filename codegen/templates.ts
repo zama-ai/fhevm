@@ -539,6 +539,7 @@ function tfheSelect(inputBits: number): string {
 function tfheEq(inputBits: number): string {
   return `
     function eq(euint${inputBits}[] memory a, euint${inputBits}[] memory b) internal pure returns (ebool) {
+        require(larray.length != rarray.length, "Both arrays are not of the same size.");
         uint256[] memory larray;
         uint256[] memory rarray;
         for (uint i = 0; i < a.length; i++) {
@@ -1043,7 +1044,7 @@ library Impl {
       }
       result = 1;
       for (uint i = 0; i < larray.length; i++) {
-        if (larray[i] != rarray[i]) result = 0;
+        if (larray[i] != rarray[i]) return;
       }
   }
 

@@ -5263,6 +5263,7 @@ library TFHE {
     }
 
     function eq(euint4[] memory a, euint4[] memory b) internal pure returns (ebool) {
+        require(larray.length != rarray.length, "Both arrays are not of the same size.");
         uint256[] memory larray;
         uint256[] memory rarray;
         for (uint i = 0; i < a.length; i++) {
@@ -5275,6 +5276,7 @@ library TFHE {
     }
 
     function eq(euint8[] memory a, euint8[] memory b) internal pure returns (ebool) {
+        require(larray.length != rarray.length, "Both arrays are not of the same size.");
         uint256[] memory larray;
         uint256[] memory rarray;
         for (uint i = 0; i < a.length; i++) {
@@ -5287,6 +5289,7 @@ library TFHE {
     }
 
     function eq(euint16[] memory a, euint16[] memory b) internal pure returns (ebool) {
+        require(larray.length != rarray.length, "Both arrays are not of the same size.");
         uint256[] memory larray;
         uint256[] memory rarray;
         for (uint i = 0; i < a.length; i++) {
@@ -5299,6 +5302,7 @@ library TFHE {
     }
 
     function eq(euint32[] memory a, euint32[] memory b) internal pure returns (ebool) {
+        require(larray.length != rarray.length, "Both arrays are not of the same size.");
         uint256[] memory larray;
         uint256[] memory rarray;
         for (uint i = 0; i < a.length; i++) {
@@ -5311,6 +5315,7 @@ library TFHE {
     }
 
     function eq(euint64[] memory a, euint64[] memory b) internal pure returns (ebool) {
+        require(larray.length != rarray.length, "Both arrays are not of the same size.");
         uint256[] memory larray;
         uint256[] memory rarray;
         for (uint i = 0; i < a.length; i++) {

@@ -67,11 +67,11 @@ library Impl {
 
     function eq(uint256[] memory larray, uint256[] memory rarray) internal pure returns (uint256 result) {
         if (larray.length != rarray.length) {
-            return false;
+            return 0;
         }
-        result = true;
+        result = 1;
         for (uint i = 0; i < larray.length; i++) {
-            if (larray[i] != rarray[i]) result = false;
+            if (larray[i] != rarray[i]) return;
         }
     }
 
