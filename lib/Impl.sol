@@ -63,12 +63,7 @@ interface FhevmLib {
 
     function fheIfThenElse(uint256 control, uint256 ifTrue, uint256 ifFalse) external pure returns (uint256 result);
 
-    function fheArrayEq(
-        uint256 llen,
-        uint256[] memory larray,
-        uint256 rlen,
-        uint256[] memory rarray
-    ) external pure returns (uint256 result);
+    function fheArrayEq(uint256[] memory larray, uint256[] memory rarray) external pure returns (uint256 result);
 
     function fheRand(bytes1 randType) external view returns (uint256 result);
 
@@ -275,7 +270,7 @@ library Impl {
     }
 
     function eq(uint256[] memory larray, uint256[] memory rarray) internal pure returns (uint256 result) {
-        result = FhevmLib(address(EXT_TFHE_LIBRARY)).fheArrayEq(larray.length, larray, rarray.length, rarray);
+        result = FhevmLib(address(EXT_TFHE_LIBRARY)).fheArrayEq(larray, rarray);
     }
 
     function reencrypt(uint256 ciphertext, bytes32 publicKey) internal view returns (bytes memory reencrypted) {
