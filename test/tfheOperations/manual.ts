@@ -28,6 +28,34 @@ describe('TFHE manual operations', function () {
     this.instances = instances;
   });
 
+  it('array of value eq euint8,euint8 true', async function () {
+    const a = this.instances.alice.encrypt8(2);
+    const b = this.instances.alice.encrypt8(2);
+    const res = await this.contract.test_eq_array_8(a, b);
+    expect(res).to.equal(true);
+  });
+
+  it('array of value eq euint16,euint16 true', async function () {
+    const a = this.instances.alice.encrypt16(872);
+    const b = this.instances.alice.encrypt16(872);
+    const res = await this.contract.test_eq_array_16(a, b);
+    expect(res).to.equal(true);
+  });
+
+  it('array of value eq euint32,euint32 true', async function () {
+    const a = this.instances.alice.encrypt32(23333333);
+    const b = this.instances.alice.encrypt32(23333333);
+    const res = await this.contract.test_eq_array_32(a, b);
+    expect(res).to.equal(true);
+  });
+
+  it('array of value eq euint64,euint64 true', async function () {
+    const a = this.instances.alice.encrypt64(71721075);
+    const b = this.instances.alice.encrypt64(71721075);
+    const res = await this.contract.test_eq_array_64(a, b);
+    expect(res).to.equal(true);
+  });
+
   it('Select works returning if false', async function () {
     const res = await this.contract.test_select(
       this.instances.alice.encryptBool(false),
