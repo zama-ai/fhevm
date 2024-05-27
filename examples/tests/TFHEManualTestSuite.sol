@@ -6,30 +6,54 @@ import "../../lib/TFHE.sol";
 
 contract TFHEManualTestSuite is Reencrypt {
     function test_eq_array_8(bytes calldata a, bytes calldata b) public view returns (bool) {
-        eaddress aProc = TFHE.asEuint8(a);
-        eaddress bProc = TFHE.asEuint8(b);
-        ebool result = TFHE.eq([aProc, aProc], [bProc, bProc]);
+        euint8 aProc = TFHE.asEuint8(a);
+        euint8 bProc = TFHE.asEuint8(b);
+        euint8[] memory arrA;
+        arrA[0] = aProc;
+        arrA[1] = aProc;
+        euint8[] memory arrB;
+        arrB[0] = bProc;
+        arrB[1] = bProc;
+        ebool result = TFHE.eq(arrA, arrB);
         return TFHE.decrypt(result);
     }
 
     function test_eq_array_16(bytes calldata a, bytes calldata b) public view returns (bool) {
-        eaddress aProc = TFHE.asEuint16(a);
-        eaddress bProc = TFHE.asEuint16(b);
-        ebool result = TFHE.eq([aProc, aProc], [bProc, bProc]);
+        euint16 aProc = TFHE.asEuint16(a);
+        euint16 bProc = TFHE.asEuint16(b);
+        euint16[] memory arrA;
+        arrA[0] = aProc;
+        arrA[1] = aProc;
+        euint16[] memory arrB;
+        arrB[0] = bProc;
+        arrB[1] = bProc;
+        ebool result = TFHE.eq(arrA, arrB);
         return TFHE.decrypt(result);
     }
 
     function test_eq_array_32(bytes calldata a, bytes calldata b) public view returns (bool) {
-        eaddress aProc = TFHE.asEuint32(a);
-        eaddress bProc = TFHE.asEuint32(b);
-        ebool result = TFHE.eq([aProc, aProc], [bProc, bProc]);
+        euint32 aProc = TFHE.asEuint32(a);
+        euint32 bProc = TFHE.asEuint32(b);
+        euint32[] memory arrA;
+        arrA[0] = aProc;
+        arrA[1] = aProc;
+        euint32[] memory arrB;
+        arrB[0] = bProc;
+        arrB[1] = bProc;
+        ebool result = TFHE.eq(arrA, arrB);
         return TFHE.decrypt(result);
     }
 
     function test_eq_array_64(bytes calldata a, bytes calldata b) public view returns (bool) {
-        eaddress aProc = TFHE.asEuint64(a);
-        eaddress bProc = TFHE.asEuint64(b);
-        ebool result = TFHE.eq([aProc, aProc], [bProc, bProc]);
+        euint64 aProc = TFHE.asEuint64(a);
+        euint64 bProc = TFHE.asEuint64(b);
+        euint64[] memory arrA;
+        arrA[0] = aProc;
+        arrA[1] = aProc;
+        euint64[] memory arrB;
+        arrB[0] = bProc;
+        arrB[1] = bProc;
+        ebool result = TFHE.eq(arrA, arrB);
         return TFHE.decrypt(result);
     }
 
