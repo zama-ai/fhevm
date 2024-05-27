@@ -8,10 +8,10 @@ contract TFHEManualTestSuite is Reencrypt {
     function test_eq_array_8(bytes calldata a, bytes calldata b) public view returns (bool) {
         euint8 aProc = TFHE.asEuint8(a);
         euint8 bProc = TFHE.asEuint8(b);
-        euint8[] memory arrA;
+        euint8[] memory arrA = new euint8[](2);
         arrA[0] = aProc;
         arrA[1] = aProc;
-        euint8[] memory arrB;
+        euint8[] memory arrB = new euint8[](2);
         arrB[0] = bProc;
         arrB[1] = bProc;
         ebool result = TFHE.eq(arrA, arrB);
@@ -21,10 +21,10 @@ contract TFHEManualTestSuite is Reencrypt {
     function test_eq_array_16(bytes calldata a, bytes calldata b) public view returns (bool) {
         euint16 aProc = TFHE.asEuint16(a);
         euint16 bProc = TFHE.asEuint16(b);
-        euint16[] memory arrA;
+        euint16[] memory arrA = new euint16[](2);
         arrA[0] = aProc;
         arrA[1] = aProc;
-        euint16[] memory arrB;
+        euint16[] memory arrB = new euint16[](2);
         arrB[0] = bProc;
         arrB[1] = bProc;
         ebool result = TFHE.eq(arrA, arrB);
@@ -34,10 +34,10 @@ contract TFHEManualTestSuite is Reencrypt {
     function test_eq_array_32(bytes calldata a, bytes calldata b) public view returns (bool) {
         euint32 aProc = TFHE.asEuint32(a);
         euint32 bProc = TFHE.asEuint32(b);
-        euint32[] memory arrA;
+        euint32[] memory arrA = new euint32[](2);
         arrA[0] = aProc;
         arrA[1] = aProc;
-        euint32[] memory arrB;
+        euint32[] memory arrB = new euint32[](2);
         arrB[0] = bProc;
         arrB[1] = bProc;
         ebool result = TFHE.eq(arrA, arrB);
@@ -47,10 +47,10 @@ contract TFHEManualTestSuite is Reencrypt {
     function test_eq_array_64(bytes calldata a, bytes calldata b) public view returns (bool) {
         euint64 aProc = TFHE.asEuint64(a);
         euint64 bProc = TFHE.asEuint64(b);
-        euint64[] memory arrA;
+        euint64[] memory arrA = new euint64[](2);
         arrA[0] = aProc;
         arrA[1] = aProc;
-        euint64[] memory arrB;
+        euint64[] memory arrB = new euint64[](2);
         arrB[0] = bProc;
         arrB[1] = bProc;
         ebool result = TFHE.eq(arrA, arrB);

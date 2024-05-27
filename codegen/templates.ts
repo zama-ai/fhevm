@@ -540,8 +540,8 @@ function tfheEq(inputBits: number): string {
   return `
     function eq(euint${inputBits}[] memory a, euint${inputBits}[] memory b) internal pure returns (ebool) {
         require(a.length != b.length, "Both arrays are not of the same size.");
-        uint256[] memory larray;
-        uint256[] memory rarray;
+        uint256[] memory larray = new uint256[](a.length);
+        uint256[] memory rarray = new uint256[](b.length);
         for (uint i = 0; i < a.length; i++) {
           larray[i] = euint${inputBits}.unwrap(a[i]);
         }
