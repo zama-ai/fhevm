@@ -5,6 +5,34 @@ import "../../abstracts/Reencrypt.sol";
 import "../../lib/TFHE.sol";
 
 contract TFHEManualTestSuite is Reencrypt {
+    function test_eq_array_8(bytes calldata a, bytes calldata b) public view returns (bool) {
+        eaddress aProc = TFHE.asEuint8(a);
+        eaddress bProc = TFHE.asEuint8(b);
+        ebool result = TFHE.eq([aProc, aProc], [bProc, bProc]);
+        return TFHE.decrypt(result);
+    }
+
+    function test_eq_array_16(bytes calldata a, bytes calldata b) public view returns (bool) {
+        eaddress aProc = TFHE.asEuint16(a);
+        eaddress bProc = TFHE.asEuint16(b);
+        ebool result = TFHE.eq([aProc, aProc], [bProc, bProc]);
+        return TFHE.decrypt(result);
+    }
+
+    function test_eq_array_32(bytes calldata a, bytes calldata b) public view returns (bool) {
+        eaddress aProc = TFHE.asEuint32(a);
+        eaddress bProc = TFHE.asEuint32(b);
+        ebool result = TFHE.eq([aProc, aProc], [bProc, bProc]);
+        return TFHE.decrypt(result);
+    }
+
+    function test_eq_array_64(bytes calldata a, bytes calldata b) public view returns (bool) {
+        eaddress aProc = TFHE.asEuint64(a);
+        eaddress bProc = TFHE.asEuint64(b);
+        ebool result = TFHE.eq([aProc, aProc], [bProc, bProc]);
+        return TFHE.decrypt(result);
+    }
+
     function test_select(
         bytes calldata control,
         bytes calldata ifTrue,
