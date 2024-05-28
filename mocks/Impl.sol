@@ -65,13 +65,11 @@ library Impl {
         result = (lhs == rhs) ? 1 : 0;
     }
 
-    function eq(uint256[] memory larray, uint256[] memory rarray) internal pure returns (uint256 result) {
-        if (larray.length != rarray.length) {
-            return 0;
-        }
+    function eq(uint256[] memory lhs, uint256[] memory rhs) internal pure returns (uint256 result) {
+        require(lhs.length == rhs.length, "Both arrays are not of the same size.");
         result = 1;
-        for (uint i = 0; i < larray.length; i++) {
-            if (larray[i] != rarray[i]) return;
+        for (uint i = 0; i < lhs.length; i++) {
+            if (lhs[i] != rhs[i]) return;
         }
     }
 

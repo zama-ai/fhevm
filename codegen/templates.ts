@@ -143,7 +143,7 @@ function fheLibCustomInterfaceFunctions(): string {
     function trivialEncrypt(uint256 ct, bytes1 toType) external pure returns (uint256 result);
     function decrypt(uint256 ct) external view returns (uint256 result);
     function fheIfThenElse(uint256 control, uint256 ifTrue, uint256 ifFalse) external pure returns (uint256 result);
-    function fheArrayEq(uint256[] memory larray, uint256[] memory rarray) external pure returns (uint256 result);
+    function fheArrayEq(uint256[] memory lhs, uint256[] memory rhs) external pure returns (uint256 result);
     function fheRand(bytes1 randType) external view returns (uint256 result);
     function fheRandBounded(uint256 upperBound, bytes1 randType) external view returns (uint256 result);
   `;
@@ -539,16 +539,16 @@ function tfheSelect(inputBits: number): string {
 function tfheEq(inputBits: number): string {
   return `
     function eq(euint${inputBits}[] memory a, euint${inputBits}[] memory b) internal pure returns (ebool) {
-        require(a.length != b.length, "Both arrays are not of the same size.");
-        uint256[] memory larray = new uint256[](a.length);
-        uint256[] memory rarray = new uint256[](b.length);
+        require(a.length == b.length, "Both arrays are not of the same size.");
+        uint256[] memory lhs = new uint256[](a.length);
+        uint256[] memory rhs = new uint256[](b.length);
         for (uint i = 0; i < a.length; i++) {
-          larray[i] = euint${inputBits}.unwrap(a[i]);
+          lhs[i] = euint${inputBits}.unwrap(a[i]);
         }
         for (uint i = 0; i < b.length; i++) {
-          rarray[i] = euint${inputBits}.unwrap(a[i]);
+          rhs[i] = euint${inputBits}.unwrap(a[i]);
         }
-        return ebool.wrap(Impl.eq(larray, rarray));
+        return ebool.wrap(Impl.eq(lhs, rhs));
     }
   `;
 }
@@ -918,8 +918,8 @@ function implCustomMethods(ctx: CodegenContext): string {
         result = FhevmLib(address(EXT_TFHE_LIBRARY)).fheIfThenElse(control, ifTrue, ifFalse);
     }
 
-    function eq(uint256[] memory larray, uint256[] memory rarray) internal pure returns (uint256 result) {
-        result = FhevmLib(address(EXT_TFHE_LIBRARY)).fheArrayEq(larray, rarray);
+    function eq(uint256[] memory lhs, uint256[] memory rhs) internal pure returns (uint256 result) {
+        result = FhevmLib(address(EXT_TFHE_LIBRARY)).fheArrayEq(lhs, rhs);
     }
 
     function reencrypt(uint256 ciphertext, bytes32 publicKey) internal view returns (bytes memory reencrypted) {
@@ -1038,13 +1038,11 @@ library Impl {
       result = (lhs == rhs) ? 1 : 0;
   }
 
-  function eq(uint256[] memory larray, uint256[] memory rarray) internal pure returns (uint256 result) {
-      if (larray.length != rarray.length) {
-        return 0;
-      }
+  function eq(uint256[] memory lhs, uint256[] memory rhs) internal pure returns (uint256 result) {
+      require(lhs.length == rhs.length, "Both arrays are not of the same size.");
       result = 1;
-      for (uint i = 0; i < larray.length; i++) {
-        if (larray[i] != rarray[i]) return;
+      for (uint i = 0; i < lhs.length; i++) {
+        if (lhs[i] != rhs[i]) return;
       }
   }
 
