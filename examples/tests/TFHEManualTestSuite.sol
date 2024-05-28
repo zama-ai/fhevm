@@ -5,6 +5,19 @@ import "../../abstracts/Reencrypt.sol";
 import "../../lib/TFHE.sol";
 
 contract TFHEManualTestSuite is Reencrypt {
+    function test_eq_array_4(bytes calldata a, bytes calldata b) public view returns (bool) {
+        euint4 aProc = TFHE.asEuint4(a);
+        euint4 bProc = TFHE.asEuint4(b);
+        euint4[] memory arrA = new euint4[](2);
+        arrA[0] = aProc;
+        arrA[1] = aProc;
+        euint4[] memory arrB = new euint4[](2);
+        arrB[0] = bProc;
+        arrB[1] = bProc;
+        ebool result = TFHE.eq(arrA, arrB);
+        return TFHE.decrypt(result);
+    }
+
     function test_eq_array_8(bytes calldata a, bytes calldata b) public view returns (bool) {
         euint8 aProc = TFHE.asEuint8(a);
         euint8 bProc = TFHE.asEuint8(b);
