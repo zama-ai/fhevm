@@ -5270,7 +5270,7 @@ library TFHE {
             lhs[i] = euint4.unwrap(a[i]);
         }
         for (uint i = 0; i < b.length; i++) {
-            rhs[i] = euint4.unwrap(a[i]);
+            rhs[i] = euint4.unwrap(b[i]);
         }
         return ebool.wrap(Impl.eq(lhs, rhs));
     }
@@ -5283,7 +5283,7 @@ library TFHE {
             lhs[i] = euint8.unwrap(a[i]);
         }
         for (uint i = 0; i < b.length; i++) {
-            rhs[i] = euint8.unwrap(a[i]);
+            rhs[i] = euint8.unwrap(b[i]);
         }
         return ebool.wrap(Impl.eq(lhs, rhs));
     }
@@ -5296,7 +5296,7 @@ library TFHE {
             lhs[i] = euint16.unwrap(a[i]);
         }
         for (uint i = 0; i < b.length; i++) {
-            rhs[i] = euint16.unwrap(a[i]);
+            rhs[i] = euint16.unwrap(b[i]);
         }
         return ebool.wrap(Impl.eq(lhs, rhs));
     }
@@ -5309,7 +5309,7 @@ library TFHE {
             lhs[i] = euint32.unwrap(a[i]);
         }
         for (uint i = 0; i < b.length; i++) {
-            rhs[i] = euint32.unwrap(a[i]);
+            rhs[i] = euint32.unwrap(b[i]);
         }
         return ebool.wrap(Impl.eq(lhs, rhs));
     }
@@ -5322,7 +5322,7 @@ library TFHE {
             lhs[i] = euint64.unwrap(a[i]);
         }
         for (uint i = 0; i < b.length; i++) {
-            rhs[i] = euint64.unwrap(a[i]);
+            rhs[i] = euint64.unwrap(b[i]);
         }
         return ebool.wrap(Impl.eq(lhs, rhs));
     }
