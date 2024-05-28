@@ -546,7 +546,7 @@ function tfheEq(inputBits: number): string {
           lhs[i] = euint${inputBits}.unwrap(a[i]);
         }
         for (uint i = 0; i < b.length; i++) {
-          rhs[i] = euint${inputBits}.unwrap(a[i]);
+          rhs[i] = euint${inputBits}.unwrap(b[i]);
         }
         return ebool.wrap(Impl.eq(lhs, rhs));
     }
