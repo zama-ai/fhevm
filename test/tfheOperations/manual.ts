@@ -28,6 +28,13 @@ describe('TFHE manual operations', function () {
     this.instances = instances;
   });
 
+  it('array of value eq euint4,euint4 true', async function () {
+    const a = this.instances.alice.encrypt4(2);
+    const b = this.instances.alice.encrypt4(2);
+    const res = await this.contract.test_eq_array_4(a, b);
+    expect(res).to.equal(true);
+  });
+
   it('array of value eq euint8,euint8 true', async function () {
     const a = this.instances.alice.encrypt8(2);
     const b = this.instances.alice.encrypt8(2);
