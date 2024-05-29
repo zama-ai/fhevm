@@ -143,6 +143,7 @@ function fheLibCustomInterfaceFunctions(): string {
     function trivialEncrypt(uint256 ct, bytes1 toType) external pure returns (uint256 result);
     function decrypt(uint256 ct) external view returns (uint256 result);
     function fheIfThenElse(uint256 control, uint256 ifTrue, uint256 ifFalse) external pure returns (uint256 result);
+    function fheArrayEq(uint256[] memory lhs, uint256[] memory rhs) external pure returns (uint256 result);
     function fheRand(bytes1 randType) external view returns (uint256 result);
     function fheRandBounded(uint256 upperBound, bytes1 randType) external view returns (uint256 result);
   `;
@@ -226,6 +227,7 @@ library TFHE {
 
   // TODO: Decide whether we want to have mixed-inputs for CMUX/Select
   supportedBits.forEach((bits) => res.push(tfheSelect(bits)));
+  supportedBits.forEach((bits) => res.push(tfheEq(bits)));
   supportedBits.forEach((outputBits) => {
     supportedBits.forEach((inputBits) => {
       res.push(tfheAsEboolCustomCast(inputBits, outputBits));
@@ -534,6 +536,23 @@ function tfheSelect(inputBits: number): string {
     }`;
 }
 
+function tfheEq(inputBits: number): string {
+  return `
+    function eq(euint${inputBits}[] memory a, euint${inputBits}[] memory b) internal pure returns (ebool) {
+        require(a.length == b.length, "Both arrays are not of the same size.");
+        uint256[] memory lhs = new uint256[](a.length);
+        uint256[] memory rhs = new uint256[](b.length);
+        for (uint i = 0; i < a.length; i++) {
+          lhs[i] = euint${inputBits}.unwrap(a[i]);
+        }
+        for (uint i = 0; i < b.length; i++) {
+          rhs[i] = euint${inputBits}.unwrap(b[i]);
+        }
+        return ebool.wrap(Impl.eq(lhs, rhs));
+    }
+  `;
+}
+
 function tfheAsEboolCustomCast(inputBits: number, outputBits: number): string {
   if (inputBits == outputBits) {
     return '';
@@ -732,8 +751,6 @@ function tfheCustomMethods(ctx: CodegenContext, mocked: boolean): string {
         }
     }
 
-
-
     // Returns the network public FHE key.
     function fhePubKey() internal view returns (bytes memory) {
         return Impl.fhePubKey();
@@ -901,6 +918,10 @@ function implCustomMethods(ctx: CodegenContext): string {
         result = FhevmLib(address(EXT_TFHE_LIBRARY)).fheIfThenElse(control, ifTrue, ifFalse);
     }
 
+    function eq(uint256[] memory lhs, uint256[] memory rhs) internal pure returns (uint256 result) {
+        result = FhevmLib(address(EXT_TFHE_LIBRARY)).fheArrayEq(lhs, rhs);
+    }
+
     function reencrypt(uint256 ciphertext, bytes32 publicKey) internal view returns (bytes memory reencrypted) {
         return FhevmLib(address(EXT_TFHE_LIBRARY)).reencrypt(ciphertext, uint256(publicKey));
     }
@@ -1015,6 +1036,14 @@ library Impl {
 
   function eq(uint256 lhs, uint256 rhs, bool /*scalar*/) internal pure returns (uint256 result) {
       result = (lhs == rhs) ? 1 : 0;
+  }
+
+  function eq(uint256[] memory lhs, uint256[] memory rhs) internal pure returns (uint256 result) {
+      require(lhs.length == rhs.length, "Both arrays are not of the same size.");
+      result = 1;
+      for (uint i = 0; i < lhs.length; i++) {
+        if (lhs[i] != rhs[i]) return;
+      }
   }
 
   function ne(uint256 lhs, uint256 rhs, bool /*scalar*/) internal pure returns (uint256 result) {
