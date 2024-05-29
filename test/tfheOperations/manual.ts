@@ -30,71 +30,91 @@ describe('TFHE manual operations', function () {
 
   it('array of value eq euint4,euint4 false', async function () {
     const a = this.instances.alice.encrypt4(2);
-    const b = this.instances.alice.encrypt4(1);
-    const res = await this.contract.test_eq_array_4(a, b);
+    const b = this.instances.alice.encrypt4(2);
+    const c = this.instances.alice.encrypt4(3);
+    const d = this.instances.alice.encrypt4(2);
+    const res = await this.contract.test_eq_array_4(a, b, c, d);
     expect(res).to.equal(false);
   });
 
   it('array of value eq euint4,euint4 true', async function () {
     const a = this.instances.alice.encrypt4(2);
-    const b = this.instances.alice.encrypt4(2);
-    const res = await this.contract.test_eq_array_4(a, b);
+    const b = this.instances.alice.encrypt4(3);
+    const c = this.instances.alice.encrypt4(2);
+    const d = this.instances.alice.encrypt4(3);
+    const res = await this.contract.test_eq_array_4(a, b, c, d);
     expect(res).to.equal(true);
   });
 
   it('array of value eq euint8,euint8 false', async function () {
     const a = this.instances.alice.encrypt8(2);
     const b = this.instances.alice.encrypt8(6);
-    const res = await this.contract.test_eq_array_8(a, b);
+    const c = this.instances.alice.encrypt8(3);
+    const d = this.instances.alice.encrypt8(0);
+    const res = await this.contract.test_eq_array_8(a, b, c, d);
     expect(res).to.equal(false);
   });
 
   it('array of value eq euint8,euint8 true', async function () {
-    const a = this.instances.alice.encrypt8(2);
-    const b = this.instances.alice.encrypt8(2);
-    const res = await this.contract.test_eq_array_8(a, b);
+    const a = this.instances.alice.encrypt8(22);
+    const b = this.instances.alice.encrypt8(61);
+    const c = this.instances.alice.encrypt8(22);
+    const d = this.instances.alice.encrypt8(61);
+    const res = await this.contract.test_eq_array_8(a, b, c, d);
     expect(res).to.equal(true);
   });
 
   it('array of value eq euint16,euint16 false', async function () {
     const a = this.instances.alice.encrypt16(82);
     const b = this.instances.alice.encrypt16(872);
-    const res = await this.contract.test_eq_array_16(a, b);
+    const c = this.instances.alice.encrypt16(98);
+    const d = this.instances.alice.encrypt16(3);
+    const res = await this.contract.test_eq_array_16(a, b, c, d);
     expect(res).to.equal(false);
   });
 
   it('array of value eq euint16,euint16 true', async function () {
     const a = this.instances.alice.encrypt16(872);
-    const b = this.instances.alice.encrypt16(872);
-    const res = await this.contract.test_eq_array_16(a, b);
+    const b = this.instances.alice.encrypt16(98);
+    const c = this.instances.alice.encrypt16(872);
+    const d = this.instances.alice.encrypt16(98);
+    const res = await this.contract.test_eq_array_16(a, b, c, d);
     expect(res).to.equal(true);
   });
 
   it('array of value eq euint32,euint32 false', async function () {
     const a = this.instances.alice.encrypt32(2333);
-    const b = this.instances.alice.encrypt32(23333333);
-    const res = await this.contract.test_eq_array_32(a, b);
+    const b = this.instances.alice.encrypt32(2383);
+    const c = this.instances.alice.encrypt32(2333);
+    const d = this.instances.alice.encrypt32(23);
+    const res = await this.contract.test_eq_array_32(a, b, c, d);
     expect(res).to.equal(false);
   });
 
   it('array of value eq euint32,euint32 true', async function () {
     const a = this.instances.alice.encrypt32(23333333);
-    const b = this.instances.alice.encrypt32(23333333);
-    const res = await this.contract.test_eq_array_32(a, b);
+    const b = this.instances.alice.encrypt32(98);
+    const c = this.instances.alice.encrypt32(23333333);
+    const d = this.instances.alice.encrypt32(98);
+    const res = await this.contract.test_eq_array_32(a, b, c, d);
     expect(res).to.equal(true);
   });
 
   it('array of value eq euint64,euint64 false', async function () {
     const a = this.instances.alice.encrypt64(71721057);
     const b = this.instances.alice.encrypt64(71721075);
-    const res = await this.contract.test_eq_array_64(a, b);
+    const c = this.instances.alice.encrypt64(71721057);
+    const d = this.instances.alice.encrypt64(98);
+    const res = await this.contract.test_eq_array_64(a, b, c, d);
     expect(res).to.equal(false);
   });
 
   it('array of value eq euint64,euint64 true', async function () {
     const a = this.instances.alice.encrypt64(71721075);
-    const b = this.instances.alice.encrypt64(71721075);
-    const res = await this.contract.test_eq_array_64(a, b);
+    const b = this.instances.alice.encrypt64(9822);
+    const c = this.instances.alice.encrypt64(71721075);
+    const d = this.instances.alice.encrypt64(9822);
+    const res = await this.contract.test_eq_array_64(a, b, c, d);
     expect(res).to.equal(true);
   });
 
