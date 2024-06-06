@@ -20,7 +20,7 @@ task('task:computeACLAddress').setAction(async function (taskArguments: TaskArgu
 
   const solidityTemplate = `// SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.25;
 
 address constant ACL_CONTRACT_ADDRESS = ${aclAddress};\n`;
 
@@ -49,7 +49,7 @@ task('task:computeTFHEExecutorAddress').setAction(async function (taskArguments:
 
   const solidityTemplate = `// SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.25;
 
 address constant TFHE_EXECUTOR_CONTRACT_ADDRESS = ${execAddress};\n`;
 
@@ -58,5 +58,34 @@ address constant TFHE_EXECUTOR_CONTRACT_ADDRESS = ${execAddress};\n`;
     console.log('./lib/TFHEExecutorAddress.sol file generated successfully!');
   } catch (error) {
     console.error('Failed to write ./lib/TFHEExecutorAddress.sol', error);
+  }
+});
+
+task('task:computeKmsVerifierAddress').setAction(async function (taskArguments: TaskArguments, { ethers }) {
+  const deployer = (await ethers.getSigners())[9].address;
+  const kmsVerfierAddress = ethers.getCreateAddress({
+    from: deployer,
+    nonce: 2, // using nonce of 2 for the Kms Verifier contract
+  });
+  const envFilePath = path.join(__dirname, '../lib/.env.kmsverifier');
+  const content = `KMS_VERIFIER_CONTRACT_ADDRESS=${kmsVerfierAddress}\n`;
+  try {
+    fs.writeFileSync(envFilePath, content, { flag: 'w' });
+    console.log(`Kms Verifier address ${kmsVerfierAddress} written successfully!`);
+  } catch (err) {
+    console.error('Failed to write Kms Verifier address:', err);
+  }
+
+  const solidityTemplate = `// SPDX-License-Identifier: BSD-3-Clause-Clear
+
+pragma solidity ^0.8.25;
+
+address constant Kms_VERIFIER_CONTRACT_ADDRESS = ${kmsVerfierAddress};\n`;
+
+  try {
+    fs.writeFileSync('./lib/KmsVerifierAddress.sol', solidityTemplate, { encoding: 'utf8', flag: 'w' });
+    console.log('./lib/KmsVerifierAddress.sol file generated successfully!');
+  } catch (error) {
+    console.error('Failed to write ./lib/KmsVerifierAddress.sol', error);
   }
 });

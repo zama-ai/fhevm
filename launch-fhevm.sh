@@ -1,12 +1,12 @@
 #!/bin/bash
 
-PRIVATE_KEY_ORACLE_DEPLOYER=$(grep PRIVATE_KEY_ORACLE_DEPLOYER .env | cut -d '"' -f 2)
+PRIVATE_KEY_GATEWAY_DEPLOYER=$(grep PRIVATE_KEY_GATEWAY_DEPLOYER .env | cut -d '"' -f 2)
 
-npx hardhat task:computePredeployAddress --private-key "$PRIVATE_KEY_ORACLE_DEPLOYER"
+npx hardhat task:computePredeployAddress --private-key "$PRIVATE_KEY_GATEWAY_DEPLOYER"
 
-PRIVATE_KEY_ORACLE_RELAYER=$(grep PRIVATE_KEY_ORACLE_RELAYER .env | cut -d '"' -f 2)
+PRIVATE_KEY_GATEWAY_RELAYER=$(grep PRIVATE_KEY_GATEWAY_RELAYER .env | cut -d '"' -f 2)
 
-ORACLE_CONTRACT_PREDEPLOY_ADDRESS=$(grep ORACLE_CONTRACT_PREDEPLOY_ADDRESS oracle/.env.oracle | cut -d '=' -f2)
+GATEWAY_CONTRACT_PREDEPLOY_ADDRESS=$(grep GATEWAY_CONTRACT_PREDEPLOY_ADDRESS gateway/.env.gateway | cut -d '=' -f2)
 
 TFHE_EXECUTOR_CONTRACT_ADDRESS=$(grep TFHE_EXECUTOR_CONTRACT_ADDRESS lib/.env.exec | cut -d '=' -f2)
 
@@ -20,7 +20,7 @@ sleep 10
 
 npx hardhat compile:specific --contract lib
 
-npx hardhat compile:specific --contract oracle
+npx hardhat compile:specific --contract gateway
 
 npx hardhat task:deployACL
 

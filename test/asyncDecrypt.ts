@@ -2,7 +2,7 @@ import dotenv from 'dotenv';
 import fs from 'fs';
 import { ethers } from 'hardhat';
 
-import { OraclePredeploy } from '../types';
+import { GatewayContract } from '../types';
 import { waitNBlocks } from './utils';
 
 const network = process.env.HARDHAT_NETWORK;
@@ -23,8 +23,8 @@ const currentTime = (): string => {
   return now.toLocaleTimeString('en-US', { hour12: true, hour: 'numeric', minute: 'numeric', second: 'numeric' });
 };
 
-const parsedEnv = dotenv.parse(fs.readFileSync('oracle/.env.oracle'));
-const privKeyRelayer = process.env.PRIVATE_KEY_ORACLE_RELAYER;
+const parsedEnv = dotenv.parse(fs.readFileSync('gateway/.env.gateway'));
+const privKeyRelayer = process.env.PRIVATE_KEY_GATEWAY_RELAYER;
 const relayer = new ethers.Wallet(privKeyRelayer!, ethers.provider);
 
 const argEvents =
@@ -34,37 +34,37 @@ const ifaceEventDecryption = new ethers.Interface(['event EventDecryption' + arg
 const argEvents2 = '(uint256 indexed requestID, bool success, bytes result)';
 const ifaceResultCallback = new ethers.Interface(['event ResultCallback' + argEvents2]);
 
-let oracle: OraclePredeploy;
+let gateway: GatewayContract;
 let firstBlockListening: number;
 
 export const asyncDecrypt = async (): Promise<void> => {
   firstBlockListening = await ethers.provider.getBlockNumber();
   // this function will emit logs for every request and fulfilment of a decryption
-  oracle = await ethers.getContractAt('OraclePredeploy', parsedEnv.ORACLE_CONTRACT_PREDEPLOY_ADDRESS);
-  oracle.on(
+  gateway = await ethers.getContractAt('GatewayContract', parsedEnv.GATEWAY_CONTRACT_PREDEPLOY_ADDRESS);
+  gateway.on(
     'EventDecryption',
     async (requestID, cts, contractCaller, callbackSelector, msgValue, maxTimestamp, eventData) => {
       const blockNumber = eventData.log.blockNumber;
       console.log(`${await currentTime()} - Requested decrypt on block ${blockNumber} (requestID ${requestID})`);
     },
   );
-  oracle.on('ResultCallback', async (requestID, success, result, eventData) => {
+  gateway.on('ResultCallback', async (requestID, success, result, eventData) => {
     const blockNumber = eventData.log.blockNumber;
     console.log(`${await currentTime()} - Fulfilled decrypt on block ${blockNumber} (requestID ${requestID})`);
   });
 };
 
 export const awaitAllDecryptionResults = async (): Promise<void> => {
-  oracle = await ethers.getContractAt('OraclePredeploy', parsedEnv.ORACLE_CONTRACT_PREDEPLOY_ADDRESS);
+  gateway = await ethers.getContractAt('GatewayContract', parsedEnv.GATEWAY_CONTRACT_PREDEPLOY_ADDRESS);
   await fulfillAllPastRequestsIds(network === 'hardhat');
   firstBlockListening = await ethers.provider.getBlockNumber();
 };
 
 const getAlreadyFulfilledDecryptions = async (): Promise<[bigint]> => {
   let results = [];
-  const eventDecryptionResult = await oracle.filters.ResultCallback().getTopicFilter();
+  const eventDecryptionResult = await gateway.filters.ResultCallback().getTopicFilter();
   const filterDecryptionResult = {
-    address: process.env.ORACLE_CONTRACT_PREDEPLOY_ADDRESS,
+    address: process.env.GATEWAY_CONTRACT_PREDEPLOY_ADDRESS,
     fromBlock: firstBlockListening,
     toBlock: 'latest',
     topics: eventDecryptionResult,
@@ -76,10 +76,10 @@ const getAlreadyFulfilledDecryptions = async (): Promise<[bigint]> => {
 };
 
 const fulfillAllPastRequestsIds = async (mocked: boolean) => {
-  const eventDecryption = await oracle.filters.EventDecryption().getTopicFilter();
+  const eventDecryption = await gateway.filters.EventDecryption().getTopicFilter();
   const results = await getAlreadyFulfilledDecryptions();
   const filterDecryption = {
-    address: process.env.ORACLE_CONTRACT_PREDEPLOY_ADDRESS,
+    address: process.env.GATEWAY_CONTRACT_PREDEPLOY_ADDRESS,
     fromBlock: firstBlockListening,
     toBlock: 'latest',
     topics: eventDecryption,
@@ -99,10 +99,10 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
         const types = typesEnum.map((num) => CiphertextType[num]);
         const values = handles.map((handle, index) => (typesEnum[index] === 7n ? handle.toString(16) : handle));
         const calldata = ethers.AbiCoder.defaultAbiCoder().encode(types, values);
-        const tx = await oracle.connect(relayer).fulfillRequest(requestID, calldata, { value: msgValue });
+        const tx = await gateway.connect(relayer).fulfillRequest(requestID, calldata, { value: msgValue });
         await tx.wait();
       } else {
-        // in fhEVM mode we must wait until the oracle service relayer submits the decryption fulfillment tx
+        // in fhEVM mode we must wait until the gateway service relayer submits the decryption fulfillment tx
         await waitNBlocks(1);
         await fulfillAllPastRequestsIds(mocked);
       }

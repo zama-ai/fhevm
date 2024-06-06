@@ -24,7 +24,7 @@
     "codegen:overloads": "npx ts-node codegen/generateOverloads.ts",
     "task:getEthereumAddress": "hardhat task:getEthereumAddress",
     "task:deployIdentity": "hardhat task:deployIdentity",
-    "task:deployOracle": "hardhat task:deployOracle",
+    "task:deployGateway": "hardhat task:deployGateway",
     "task:addRelayer": "hardhat task:addRelayer",
     "task:removeRelayer": "hardhat task:removeRelayer",
     "fhevm:start": " ./launch-fhevm.sh",

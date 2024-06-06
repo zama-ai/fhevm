@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.25;
 
-import "../OraclePredeploy.sol";
-import {ORACLE_CONTRACT_PREDEPLOY_ADDRESS} from "./PredeployAddress.sol";
+import "../GatewayContract.sol";
+import "../../lib/ACL.sol";
 
-OraclePredeploy constant oraclePredeploy = OraclePredeploy(ORACLE_CONTRACT_PREDEPLOY_ADDRESS);
+GatewayContract constant gatewayContract = GatewayContract(0xc8c9303Cd7F337fab769686B593B87DC3403E0ce); // Replace by GatewayContract address
+ACL constant acl = ACL(0x2Fb4341027eb1d2aD8B5D9708187df8633cAFA92); // Replace by ACL address
 
-library Oracle {
-    function OraclePredeployAddress() internal pure returns (address) {
-        return ORACLE_CONTRACT_PREDEPLOY_ADDRESS;
+library Gateway {
+    function GatewayGatewayAddress() internal pure returns (address) {
+        return address(gatewayContract);
     }
 
     function toCiphertext(ebool newCT) internal pure returns (Ciphertext memory ct) {
@@ -46,6 +47,12 @@ library Oracle {
         uint256 msgValue,
         uint256 maxTimestamp
     ) internal returns (uint256 requestID) {
-        requestID = oraclePredeploy.requestDecryption(cts, callbackSelector, msgValue, maxTimestamp);
+        uint256 len = cts.length;
+        uint256[] memory ctsHandles = new uint256[](len);
+        for (uint256 k = 0; k < len; k++) {
+            ctsHandles[k] = cts[k].ctHandle;
+        }
+        acl.allowForDecryption(ctsHandles);
+        requestID = gatewayContract.requestDecryption(cts, callbackSelector, msgValue, maxTimestamp);
     }
 }

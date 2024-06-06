@@ -15,7 +15,7 @@ import './tasks/getEthereumAddress';
 import './tasks/mint';
 import './tasks/taskDeploy';
 import './tasks/taskIdentity';
-import './tasks/taskOracleRelayer';
+import './tasks/taskGatewayRelayer';
 import './tasks/taskTFHE';
 
 // Function to recursively get all .sol files in a folder
@@ -123,9 +123,9 @@ task('test', async (taskArgs, hre, runSuper) => {
 
   if (network === 'hardhat') {
     // in fhevm mode all this block is done when launching the node via `pnmp fhevm:start`
-    const privKeyDeployer = process.env.PRIVATE_KEY_ORACLE_DEPLOYER;
-    const privKeyOwner = process.env.PRIVATE_KEY_ORACLE_OWNER;
-    const privKeyRelayer = process.env.PRIVATE_KEY_ORACLE_RELAYER;
+    const privKeyDeployer = process.env.PRIVATE_KEY_GATEWAY_DEPLOYER;
+    const privKeyOwner = process.env.PRIVATE_KEY_GATEWAY_OWNER;
+    const privKeyRelayer = process.env.PRIVATE_KEY_GATEWAY_RELAYER;
     const deployerAddress = new hre.ethers.Wallet(privKeyDeployer!).address;
     const ownerAddress = new hre.ethers.Wallet(privKeyOwner!).address;
     const relayerAddress = new hre.ethers.Wallet(privKeyRelayer!).address;
@@ -138,14 +138,14 @@ task('test', async (taskArgs, hre, runSuper) => {
     const p3 = hre.network.provider.send('hardhat_setBalance', [relayerAddress, bal]);
     await Promise.all([p1, p2, p3]);
     await hre.run('compile');
-    await hre.run('task:deployOracle', { privateKey: privKeyDeployer, ownerAddress: ownerAddress });
+    await hre.run('task:deployGateway', { privateKey: privKeyDeployer, ownerAddress: ownerAddress });
 
-    const parsedEnv = dotenv.parse(fs.readFileSync('oracle/.env.oracle'));
-    const oraclePredeployAddress = parsedEnv.ORACLE_CONTRACT_PREDEPLOY_ADDRESS;
+    const parsedEnv = dotenv.parse(fs.readFileSync('gateway/.env.gateway'));
+    const gatewayContractAddress = parsedEnv.GATEWAY_CONTRACT_PREDEPLOY_ADDRESS;
 
     await hre.run('task:addRelayer', {
       privateKey: privKeyOwner,
-      oracleAddress: oraclePredeployAddress,
+      gatewayAddress: gatewayContractAddress,
       relayerAddress: relayerAddress,
     });
   }

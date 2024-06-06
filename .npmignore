@@ -2,7 +2,7 @@
 !lib/**
 !mocks/**
 !abstracts/**
-!oracle/**
+!gateway/**
 !package.json
 !README.md
 !LICENSE

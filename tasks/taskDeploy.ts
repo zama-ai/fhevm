@@ -12,22 +12,23 @@ task('task:deployERC20').setAction(async function (taskArguments: TaskArguments,
   console.log('EncryptedERC20 deployed to: ', await encryptedERC20.getAddress());
 });
 
-task('task:deployOracle')
+task('task:deployGateway')
   .addParam('privateKey', 'The deployer private key')
   .addParam('ownerAddress', 'The owner address')
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
     const deployer = new ethers.Wallet(taskArguments.privateKey).connect(ethers.provider);
-    const oracleFactory = await ethers.getContractFactory('OraclePredeploy');
-    const oracle = await oracleFactory.connect(deployer).deploy(taskArguments.ownerAddress);
-    await oracle.waitForDeployment();
-    const oraclePredeployAddress = await oracle.getAddress();
-    const envConfig = dotenv.parse(fs.readFileSync('oracle/.env.oracle'));
-    if (oraclePredeployAddress !== envConfig.ORACLE_CONTRACT_PREDEPLOY_ADDRESS) {
+    const envConfig2 = dotenv.parse(fs.readFileSync('lib/.env.kmsverifier'));
+    const gatewayFactory = await ethers.getContractFactory('GatewayContract');
+    const Gateway = await gatewayFactory.connect(deployer).deploy(taskArguments.ownerAddress, envConfig2.KMS_VERIFIER_CONTRACT_ADDRESS);
+    await Gateway.waitForDeployment();
+    const GatewayContractAddress = await Gateway.getAddress();
+    const envConfig = dotenv.parse(fs.readFileSync('gateway/.env.gateway'));
+    if (GatewayContractAddress !== envConfig.GATEWAY_CONTRACT_PREDEPLOY_ADDRESS) {
       throw new Error(
         `The nonce of the deployer account is not null. Please use another deployer private key or relaunch a clean instance of the fhEVM`,
       );
     }
-    console.log('OraclePredeploy was deployed at address: ', oraclePredeployAddress);
+    console.log('GatewayContract was deployed at address: ', GatewayContractAddress);
   });
 
 task('task:deployIdentity').setAction(async function (taskArguments: TaskArguments, { ethers }) {
@@ -81,4 +82,17 @@ task('task:deployTFHEExecutor').setAction(async function (taskArguments: TaskArg
     throw new Error(`The nonce of the deployer account is not corret. Please relaunch a clean instance of the fhEVM`);
   }
   console.log('TFHEExecutor was deployed at address:', address);
+});
+
+task('task:deployKmsVerifier').setAction(async function (taskArguments: TaskArguments, { ethers }) {
+  const deployer = (await ethers.getSigners())[9];
+  const factory = await ethers.getContractFactory('KmsVerifier');
+  const exec = await factory.connect(deployer).deploy();
+  await exec.waitForDeployment();
+  const address = await exec.getAddress();
+  const envConfig = dotenv.parse(fs.readFileSync('lib/.env.kmsverifier'));
+  if (address !== envConfig.KMS_VERIFIER_CONTRACT_ADDRESS) {
+    throw new Error(`The nonce of the deployer account is not corret. Please relaunch a clean instance of the fhEVM`);
+  }
+  console.log('KmsVerifier was deployed at address:', address);
 });

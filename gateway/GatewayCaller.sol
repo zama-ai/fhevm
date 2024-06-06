@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.25;
 
 import "../lib/TFHE.sol";
-import "./lib/Oracle.sol";
+import "./lib/Gateway.sol";
 
-contract OracleCaller {
-    modifier onlyOracle() {
-        require(msg.sender == Oracle.OraclePredeployAddress());
+abstract contract GatewayCaller {
+    modifier onlyGateway() {
+        require(msg.sender == Gateway.GatewayGatewayAddress());
         _;
     }
     mapping(uint256 => ebool[]) private paramsEBool;
@@ -18,7 +18,7 @@ contract OracleCaller {
     mapping(uint256 => euint64[]) private paramsEUint64;
     mapping(uint256 => eaddress[]) private paramsEAddress;
     mapping(uint256 => address[]) private paramsAddress;
-    mapping(uint256 => uint[]) private paramsUint;
+    mapping(uint256 => uint256[]) private paramsUint;
 
     constructor() {}
 

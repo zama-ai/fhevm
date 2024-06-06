@@ -86,7 +86,7 @@ contract ACL {
         uint256 len = ctsHandles.length;
         for (uint256 k = 0; k < len; k++) {
             uint256 handle = ctsHandles[k];
-            require(allowedTransient(handle, msg.sender), "sender doesn't own on isAllowedTransient");
+            require(isAllowed(handle, msg.sender), "sender doesn't own on isAllowedTransient");
             allowedForDecryption[handle] = true;
         }
     }

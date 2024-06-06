@@ -44,7 +44,7 @@ jobs:
           docker container exec fhevm cat /config/aggregator.log
           echo "###################### Aggregator Errs ###########################"
           docker container exec fhevm cat /config/aggregator.err
-          echo "###################### Oracle logs ###########################"
-          docker container exec fhevm cat /config/oracle-service.log
-          echo "###################### Oracle Errs ###########################"
-          docker container exec fhevm cat /config/oracle-service.err
+          echo "###################### Gateway logs ###########################"
+          docker container exec fhevm cat /config/gateway-service.log
+          echo "###################### Gateway Errs ###########################"
+          docker container exec fhevm cat /config/gateway-service.err

@@ -12,15 +12,15 @@ We allow explicit decryption requests for any encrypted type. The values are dec
 
 ### Example
 
-The decryption operation is asynchronous. To use it, your contract must extend the `OracleCaller` contract. This will import automatically the `Oracle` solidity library as well. See the following example:
+The decryption operation is asynchronous. To use it, your contract must extend the `GatewayCaller` contract. This will import automatically the `Gateway` solidity library as well. See the following example:
 
 ```solidity
 pragma solidity ^0.8.20;
 
 import "fhevm/lib/TFHE.sol";
-import "fhevm/oracle/OracleCaller.sol";
+import "fhevm/gateway/GatewayCaller.sol";
 
-contract TestAsyncDecrypt is OracleCaller {
+contract TestAsyncDecrypt is GatewayCaller {
   ebool xBool;
   bool public yBool;
 
@@ -31,18 +31,18 @@ contract TestAsyncDecrypt is OracleCaller {
   function requestBool() public {
     ebool[] memory cts = new ebool[](1);
     cts[0] = xBool;
-    Oracle.requestDecryption(cts, this.myCustomCallback.selector, 0, block.timestamp + 100);
+    Gateway.requestDecryption(cts, this.myCustomCallback.selector, 0, block.timestamp + 100);
   }
 
-  function myCustomCallback(uint256 /*requestID*/, bool decryptedInput) public onlyOracle returns (bool) {
+  function myCustomCallback(uint256 /*requestID*/, bool decryptedInput) public onlyGateway returns (bool) {
     yBool = decryptedInput;
     return yBool;
   }
 ```
 
-Note that an [`OraclePredeploy`](../../oracle/OraclePredeploy.sol) contract is already predeployed on the fhEVM testnet, and a default relayer account is added through the specification of the environment variable `PRIVATE_KEY_ORACLE_RELAYER` in the `.env` file. Relayers are the only accounts authorized to fulfil the decryption requests. However `OraclePredeploy` would still check the KMS signature during the fulfilment, so we trust the relayer only to forward the request on time, a rogue relayer could not cheat by sending fake decryption results (the KMS signature is in the works).
+Note that an [`GatewayContract`](../../gateway/GatewayContract.sol) contract is already predeployed on the fhEVM testnet, and a default relayer account is added through the specification of the environment variable `PRIVATE_KEY_GATEWAY_RELAYER` in the `.env` file. Relayers are the only accounts authorized to fulfil the decryption requests. However `GatewayContract` would still check the KMS signature during the fulfilment, so we trust the relayer only to forward the request on time, a rogue relayer could not cheat by sending fake decryption results (the KMS signature is in the works).
 
-The interface of the `Oracle.requestDecryption` function from previous snippet is the following:
+The interface of the `Gateway.requestDecryption` function from previous snippet is the following:
 
 ```solidity
 function requestDecryption(
@@ -53,12 +53,12 @@ function requestDecryption(
 ) returns(uint256 requestID)
 ```
 
-The first argument, `ct`, should be an array of ciphertexts of a single same type i.e `eXXX` stands for either `ebool`, `euint4`, `euint8`, `euint16`, `euint32`, `euint64` or `eaddress`. `ct` is the list of ciphertexts that are requested to be decrypted. Calling `requestDecryption` will emit an `EventDecryptionEXXX` on the `OraclePredeploy` contract which will be detected by a relayer. Then, the relayer will send the corresponding ciphertexts to the KMS for decryption before fulfilling the request.
+The first argument, `ct`, should be an array of ciphertexts of a single same type i.e `eXXX` stands for either `ebool`, `euint4`, `euint8`, `euint16`, `euint32`, `euint64` or `eaddress`. `ct` is the list of ciphertexts that are requested to be decrypted. Calling `requestDecryption` will emit an `EventDecryptionEXXX` on the `GatewayContract` contract which will be detected by a relayer. Then, the relayer will send the corresponding ciphertexts to the KMS for decryption before fulfilling the request.
 
-`callbackSelector` is the function selector of the callback function which will be called by the `OraclePredeploy` contract once the relayer fulfils the decryption request. Notice that the callback function should always follow this convention:
+`callbackSelector` is the function selector of the callback function which will be called by the `GatewayContract` contract once the relayer fulfils the decryption request. Notice that the callback function should always follow this convention:
 
 ```solidity
-function [callbackName](uint256 requestID, XXX x_0, XXX x_1, ..., XXX x_N-1) external onlyOracle
+function [callbackName](uint256 requestID, XXX x_0, XXX x_1, ..., XXX x_N-1) external onlyGateway
 ```
 
 Here `callbackName` is a custom name given by the developer to the callback function, `requestID` will be the request id of the decryption (could be commented if not needed in the logic, but must be present) and `x_0`, `x_1`, ... `x_N-1` are the results of the decryption of the `ct` array values, i.e their number should be the size of the `ct` array.
@@ -68,7 +68,7 @@ Here `callbackName` is a custom name given by the developer to the callback func
 `maxTimestamp` is the maximum timestamp after which the callback will not be able to receive the results of decryption, i.e the fulfilment transaction will fail in this case. This can be used for time-sensitive applications, where we prefer to reject decryption results on too old, out-of-date, values.
 
 > **_WARNING:_**
-> Notice that the callback should be protected by the `onlyOracle` modifier to ensure security, as only the `OraclePredeploy` contract should be able to call it.
+> Notice that the callback should be protected by the `onlyGateway` modifier to ensure security, as only the `GatewayContract` contract should be able to call it.
 
 Finally, if you need to pass additional arguments to be used inside the callback, you could use any of the following utility functions during the request, which would store additional values in the storage of your smart contract:
 
@@ -120,9 +120,9 @@ For example, see this snippet where we add two `uint`s during the request call, 
 pragma solidity ^0.8.20;
 
 import "../lib/TFHE.sol";
-import "../oracle/OracleCaller.sol";
+import "../gateway/GatewayCaller.sol";
 
-contract TestAsyncDecrypt is OracleCaller {
+contract TestAsyncDecrypt is GatewayCaller {
   euint32 xUint32;
   uint32 public yUint32;
 
@@ -133,12 +133,12 @@ contract TestAsyncDecrypt is OracleCaller {
   function requestUint32(uint32 input1, uint32 input2) public {
       euint32[] memory cts = new euint32[](1);
       cts[0] = xUint32;
-      uint256 requestID = Oracle.requestDecryption(cts, this.callbackUint32.selector, 0, block.timestamp + 100);
+      uint256 requestID = Gateway.requestDecryption(cts, this.callbackUint32.selector, 0, block.timestamp + 100);
       addParamsUint(requestID, input1);
       addParamsUint(requestID, input2);
   }
 
-  function callbackUint32(uint256 requestID, uint32 decryptedInput) public onlyOracle returns (uint32) {
+  function callbackUint32(uint256 requestID, uint32 decryptedInput) public onlyGateway returns (uint32) {
     uint256[] memory params = getParamsUint(requestID);
     unchecked {
         uint32 result = uint32(params[0]) + uint32(params[1]) + decryptedInput;
@@ -148,7 +148,7 @@ contract TestAsyncDecrypt is OracleCaller {
 }
 ```
 
-When the decryption request is fufilled by the relayer, the `OraclePredeploy` contract, when calling the callback function, will also emit one of the following events, depending on the type of requested ciphertext:
+When the decryption request is fufilled by the relayer, the `GatewayContract` contract, when calling the callback function, will also emit one of the following events, depending on the type of requested ciphertext:
 
 ```solidity
 event ResultCallbackBool(uint256 indexed requestID, bool success, bytes result);
@@ -162,7 +162,7 @@ event ResultCallbackAddress(uint256 indexed requestID, bool success, bytes resul
 
 The first argument is the `requestID` of the corresponding decryption request, `success` is a boolean assessing if the call to the callback succeeded, and `result` is the bytes array corresponding the to return data from the callback.
 
-In your hardhat tests, if you sent some transactions which are requesting one or several decryptions and you wish to await the fulfilment of those decryptions, you should import the two helper methods `asyncDecrypt` and `awaitAllDecryptionResults` from the `asyncDecrypt.ts` utility file. This would work both when testing on an fhEVM node or in mocked mode. Here is a simple hardhat test for the previous `TestAsyncDecrypt` contract (more examples can be seen [here](../../test/oracleDecrypt/testAsyncDecrypt.ts)):
+In your hardhat tests, if you sent some transactions which are requesting one or several decryptions and you wish to await the fulfilment of those decryptions, you should import the two helper methods `asyncDecrypt` and `awaitAllDecryptionResults` from the `asyncDecrypt.ts` utility file. This would work both when testing on an fhEVM node or in mocked mode. Here is a simple hardhat test for the previous `TestAsyncDecrypt` contract (more examples can be seen [here](../../test/gatewayDecrypt/testAsyncDecrypt.ts)):
 
 ```js
 import { asyncDecrypt, awaitAllDecryptionResults } from "../asyncDecrypt";
@@ -192,7 +192,7 @@ describe("TestAsyncDecrypt", function () {
 });
 ```
 
-You should setup the oracle handler by calling `asyncDecrypt` at the top of the `before` block.
+You should setup the gateway handler by calling `asyncDecrypt` at the top of the `before` block.
 Notice that when testing on the fhEVM, a decryption is fulfilled usually 2 blocks after the request, while in mocked mode the fulfilment will always happen as soon as you call the `awaitAllDecryptionResults` helper function. A good way to standardize hardhat tests is hence to always call`awaitAllDecryptionResults` which will ensure that all pending decryptions are fulfilled in both modes.
 
 ## Reencrypt

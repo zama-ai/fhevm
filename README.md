@@ -39,7 +39,7 @@ Thanks to a breakthrough in homomorphic encryption, Zama’s fhEVM makes it poss
 - **High Precision Encrypted Integers :** Up to 256 bits of precision for integers
 - **Full range of Operators :** All typical operators are available: `+`, `-`, `*`, `/`, `<`, `>`, `==`, …
 - **Encrypted If-Else Conditionals :** Check conditions on encrypted states
-- **On-chain PRNG :** Generate secure randomness without using oracles
+- **On-chain PRNG :** Generate secure randomness without using gateways
 - **Configurable Decryption :** Threshold, centralized or KMS decryption
 - **Unbounded Compute Depth :** Unlimited consecutive FHE operations
 

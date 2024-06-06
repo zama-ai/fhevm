@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.25;
 
 import "../lib/TFHE.sol";
 import "@openzeppelin/contracts/access/Ownable2Step.sol";
+import "../lib/KmsVerifier.sol";
 
 enum CiphertextType {
     EBOOL,
@@ -21,8 +22,8 @@ struct Ciphertext {
     CiphertextType ctType;
 }
 
-contract OraclePredeploy is Ownable2Step {
-    error NotImplementedError();
+contract GatewayContract is Ownable2Step {
+    KmsVerifier immutable kmsVerifier;
 
     uint256 public constant MAX_DELAY = 1 days;
 
@@ -40,7 +41,9 @@ contract OraclePredeploy is Ownable2Step {
     mapping(uint256 => DecryptionRequest) internal decryptionRequests;
     mapping(uint256 => bool) internal isFulfilled;
 
-    constructor(address predeployOwner) Ownable(predeployOwner) {}
+    constructor(address _gatewayOwner, address _kmsVerifier) Ownable(_gatewayOwner) {
+        kmsVerifier = KmsVerifier(_kmsVerifier);
+    }
 
     event EventDecryption(
         uint256 indexed requestID,
@@ -88,21 +91,13 @@ contract OraclePredeploy is Ownable2Step {
         require(maxTimestamp > block.timestamp, "maxTimestamp must be a future date");
         require(maxTimestamp <= block.timestamp + MAX_DELAY, "maxTimestamp exceeded MAX_DELAY");
         initialCounter = counter;
-        uint256 len = cts.length;
         DecryptionRequest storage decryptionReq = decryptionRequests[initialCounter];
+
+        uint256 len = cts.length;
         for (uint256 i = 0; i < len; i++) {
-            uint256 handle = cts[i].ctHandle;
-            require(handle != 0, "Ciphertext is not initialized");
-            uint8 ctType = uint8(cts[i].ctType);
-            if (ctType <= 5) {
-                Impl.and(handle, handle); // this is similar to no-op, except it would fail if `handle` is a "fake" handle, needed to check that ciphertext is honestly obtained
-            } else if (ctType == 7) {
-                Impl.eq(handle, handle, false); // similar to previous no-op, used here because `Impl.and` not supported by eaddress type
-            } else {
-                revert NotImplementedError();
-            }
             decryptionReq.cts.push(cts[i]);
         }
+
         decryptionReq.contractCaller = msg.sender;
         decryptionReq.callbackSelector = callbackSelector;
         decryptionReq.msgValue = msgValue;
@@ -115,9 +110,13 @@ contract OraclePredeploy is Ownable2Step {
     // `decryptedCts` is a bytes array containing the abi-encoded concatenation of decryption results.
     function fulfillRequest(
         uint256 requestID,
-        bytes memory decryptedCts /*, bytes memory signatureKMS */
+        bytes memory decryptedCts,
+        bytes[] memory signatures
     ) external payable onlyRelayer {
-        // TODO: check EIP712-signature of the DecryptionRequest struct by the KMS (waiting for signature scheme specification of KMS to be decided first)
+        require(
+            kmsVerifier.verifySignatures(keccak256(abi.encode(decryptedCts)), signatures),
+            "KMS signature verification failed"
+        );
         require(!isFulfilled[requestID], "Request is already fulfilled");
         DecryptionRequest memory decryptionReq = decryptionRequests[requestID];
         require(block.timestamp <= decryptionReq.maxTimestamp, "Too late");

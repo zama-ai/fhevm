@@ -73,8 +73,8 @@ typings/
 # dotenv environment variables file
 .env
 .env.test
-oracle/.env.oracle
-oracle/lib/PredeployAddress.sol
+gateway/.env.gateway
+gateway/lib/PredeployAddress.sol
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
