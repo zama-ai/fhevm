@@ -5,9 +5,10 @@
 ## Getting Started
 
 - [What is fhEVM](getting_started/overview.md)
-- [Connecting to Zama Devnet](getting_started/connect.md)
-- [Using Zama Faucet](getting_started/faucet.md)
-- [Local dev node](getting_started/local.md)
+- [Deploy on Zama Devnet](getting_started/devnet/README.md)
+  - [Using Zama Faucet](getting_started/devnet/faucet.md)
+  - [Local dev node](getting_started/devnet/local.md)
+- [Deploy on Ethereum](getting_started/ethereum.md)
 - [Whitepaper](https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper.pdf)
 
 ## Fundamentals
@@ -25,7 +26,7 @@
 
 ## Guides
 
-- [Gas estimation](guides/gas.md)
+- [Gas estimation on devnet](guides/gas.md)
 - [Common pitfalls and best practises](guides/pitfalls.md)
 - [How can I break a loop ?](guides/loop.md)
 - [Encrypt an input](guides/inputs.md)

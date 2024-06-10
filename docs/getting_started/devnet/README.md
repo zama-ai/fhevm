@@ -1,4 +1,4 @@
-# Connecting to Zama Devnet
+# Zama Devnet
 
 <!-- markdown-link-check-disable -->
 
