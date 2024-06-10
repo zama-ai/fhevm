@@ -360,18 +360,22 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 #### FAQ
 
 **Is Zama’s technology free to use?**
->Zama’s libraries are free to use under the BSD 3-Clause Clear license only for development, research, prototyping, and experimentation purposes. However, for any commercial use of Zama's open source code, companies must purchase Zama’s commercial patent license.
+
+> Zama’s libraries are free to use under the BSD 3-Clause Clear license only for development, research, prototyping, and experimentation purposes. However, for any commercial use of Zama's open source code, companies must purchase Zama’s commercial patent license.
 >
->Everything we do is open source and we are very transparent on what it means for our users, you can read more about how we monetize our open source products at Zama in [this blog post](https://www.zama.ai/post/open-source).
+> Everything we do is open source and we are very transparent on what it means for our users, you can read more about how we monetize our open source products at Zama in [this blog post](https://www.zama.ai/post/open-source).
 
 **What do I need to do if I want to use Zama’s technology for commercial purposes?**
->To commercially use Zama’s technology you need to be granted Zama’s patent license. Please contact us at hello@zama.ai for more information.
+
+> To commercially use Zama’s technology you need to be granted Zama’s patent license. Please contact us at hello@zama.ai for more information.
 
 **Do you file IP on your technology?**
->Yes, all Zama’s technologies are patented.
+
+> Yes, all Zama’s technologies are patented.
 
 **Can you customize a solution for my specific use case?**
->We are open to collaborating and advancing the FHE space with our partners. If you have specific needs, please email us at hello@zama.ai.
+
+> We are open to collaborating and advancing the FHE space with our partners. If you have specific needs, please email us at hello@zama.ai.
 
 <p align="right">
   <a href="#table-of-contents" > ↑ Back to top </a> 
