@@ -69,7 +69,7 @@ library Impl {
         require(lhs.length == rhs.length, "Both arrays are not of the same size.");
         result = 1;
         for (uint i = 0; i < lhs.length; i++) {
-            if (lhs[i] != rhs[i]) return;
+            if (lhs[i] != rhs[i]) return 0;
         }
     }
 
