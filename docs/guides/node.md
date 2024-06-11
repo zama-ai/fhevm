@@ -18,7 +18,7 @@ pnpm add fhevmjs
 ## Create an instance
 
 ```javascript
-const { createInstance } = require("fhevmjs");
+const { createInstance, getPublicKeyCallParams } = require("fhevmjs");
 const { ethers, JsonRpcProvider } = require("ethers");
 
 const provider = new JsonRpcProvider(`https://devnet.zama.ai/`);

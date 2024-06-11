@@ -65,6 +65,14 @@ library Impl {
         result = (lhs == rhs) ? 1 : 0;
     }
 
+    function eq(uint256[] memory lhs, uint256[] memory rhs) internal pure returns (uint256 result) {
+        require(lhs.length == rhs.length, "Both arrays are not of the same size.");
+        result = 1;
+        for (uint i = 0; i < lhs.length; i++) {
+            if (lhs[i] != rhs[i]) return 0;
+        }
+    }
+
     function ne(uint256 lhs, uint256 rhs, bool /*scalar*/) internal pure returns (uint256 result) {
         result = (lhs != rhs) ? 1 : 0;
     }

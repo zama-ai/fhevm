@@ -29,6 +29,7 @@
 - [Common pitfalls and best practises](guides/pitfalls.md)
 - [How can I break a loop ?](guides/loop.md)
 - [Encrypt an input](guides/inputs.md)
+- [Reencryption](guides/reencryption.md)
 - [Use the CLI](guides/cli.md)
 - [Build a web application](guides/webapp.md)
 - [Build with Node](guides/node.md)
