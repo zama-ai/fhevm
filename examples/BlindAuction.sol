@@ -72,8 +72,8 @@ contract BlindAuction is Reencrypt {
             tokenContract.transferFrom(msg.sender, address(this), amount);
 
             euint64 balanceAfter = tokenContract.balanceOfMe();
-            euint64 sentBalance = balanceAfter - balanceBefore;
-            euint64 newBid = existingBid + sentBalance;
+            euint64 sentBalance = TFHE.sub(balanceAfter, balanceBefore);
+            euint64 newBid = TFHE.add(existingBid, sentBalance);
             // Update bid with value
             bids[msg.sender] = newBid;
         } else {
@@ -81,7 +81,7 @@ contract BlindAuction is Reencrypt {
             euint64 balanceBefore = tokenContract.balanceOfMe();
             tokenContract.transferFrom(msg.sender, address(this), value);
             euint64 balanceAfter = tokenContract.balanceOfMe();
-            euint64 sentBalance = balanceAfter - balanceBefore;
+            euint64 sentBalance = TFHE.sub(balanceAfter, balanceBefore);
             bids[msg.sender] = sentBalance;
         }
         euint64 currentBid = bids[msg.sender];

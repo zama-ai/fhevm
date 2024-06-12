@@ -10,7 +10,7 @@ contract TFHEManualTestSuite is Reencrypt {
         bytes calldata b,
         bytes calldata c,
         bytes calldata d
-    ) public view returns (bool) {
+    ) public returns (bool) {
         euint4 aProc = TFHE.asEuint4(a);
         euint4 bProc = TFHE.asEuint4(b);
         euint4 cProc = TFHE.asEuint4(c);
@@ -30,7 +30,7 @@ contract TFHEManualTestSuite is Reencrypt {
         bytes calldata b,
         bytes calldata c,
         bytes calldata d
-    ) public view returns (bool) {
+    ) public returns (bool) {
         euint8 aProc = TFHE.asEuint8(a);
         euint8 bProc = TFHE.asEuint8(b);
         euint8 cProc = TFHE.asEuint8(c);
@@ -50,7 +50,7 @@ contract TFHEManualTestSuite is Reencrypt {
         bytes calldata b,
         bytes calldata c,
         bytes calldata d
-    ) public view returns (bool) {
+    ) public returns (bool) {
         euint16 aProc = TFHE.asEuint16(a);
         euint16 bProc = TFHE.asEuint16(b);
         euint16 cProc = TFHE.asEuint16(c);
@@ -70,7 +70,7 @@ contract TFHEManualTestSuite is Reencrypt {
         bytes calldata b,
         bytes calldata c,
         bytes calldata d
-    ) public view returns (bool) {
+    ) public returns (bool) {
         euint32 aProc = TFHE.asEuint32(a);
         euint32 bProc = TFHE.asEuint32(b);
         euint32 cProc = TFHE.asEuint32(c);
@@ -90,7 +90,7 @@ contract TFHEManualTestSuite is Reencrypt {
         bytes calldata b,
         bytes calldata c,
         bytes calldata d
-    ) public view returns (bool) {
+    ) public returns (bool) {
         euint64 aProc = TFHE.asEuint64(a);
         euint64 bProc = TFHE.asEuint64(b);
         euint64 cProc = TFHE.asEuint64(c);

@@ -63,9 +63,14 @@ contract EncryptedERC20 is Ownable2Step {
         _transfer(msg.sender, to, amount, canTransfer);
     }
 
-    // Returns the balance of the caller encrypted under the provided public key.
+    // Returns the balance of the given address.
     function balanceOf(address wallet) public view virtual returns (euint64) {
         return balances[wallet];
+    }
+
+    // Returns the balance of the caller.
+    function balanceOfMe() public view virtual returns (euint64) {
+        return balances[msg.sender];
     }
 
     // Sets the `encryptedAmount` as the allowance of `spender` over the caller's tokens.
