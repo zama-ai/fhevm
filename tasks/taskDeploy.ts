@@ -19,7 +19,9 @@ task('task:deployGateway')
     const deployer = new ethers.Wallet(taskArguments.privateKey).connect(ethers.provider);
     const envConfig2 = dotenv.parse(fs.readFileSync('lib/.env.kmsverifier'));
     const gatewayFactory = await ethers.getContractFactory('GatewayContract');
-    const Gateway = await gatewayFactory.connect(deployer).deploy(taskArguments.ownerAddress, envConfig2.KMS_VERIFIER_CONTRACT_ADDRESS);
+    const Gateway = await gatewayFactory
+      .connect(deployer)
+      .deploy(taskArguments.ownerAddress, envConfig2.KMS_VERIFIER_CONTRACT_ADDRESS);
     await Gateway.waitForDeployment();
     const GatewayContractAddress = await Gateway.getAddress();
     const envConfig = dotenv.parse(fs.readFileSync('gateway/.env.gateway'));

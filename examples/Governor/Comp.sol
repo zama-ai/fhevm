@@ -112,9 +112,9 @@ contract Comp is Reencrypt {
      * @param encryptedAmount The number of tokens that are approved
      * @return bool Whether or not the approval succeeded
      */
-    function approve(address spender, bytes calldata encryptedAmount) external returns (bool) {
+    function approve(address spender, einput encryptedAmount, bytes calldata inputProof) external returns (bool) {
         address owner = msg.sender;
-        _approve(owner, spender, TFHE.asEuint64(encryptedAmount));
+        _approve(owner, spender, TFHE.asEuint64(encryptedAmount, inputProof));
         return true;
     }
 
@@ -142,8 +142,8 @@ contract Comp is Reencrypt {
      * @param to The address of the destination account
      * @param encryptedAmount The number of tokens to transfer
      */
-    function transfer(address to, bytes calldata encryptedAmount) public {
-        transfer(to, TFHE.asEuint64(encryptedAmount));
+    function transfer(address to, einput encryptedAmount, bytes calldata inputProof) public {
+        transfer(to, TFHE.asEuint64(encryptedAmount, inputProof));
     }
 
     /**
@@ -162,8 +162,13 @@ contract Comp is Reencrypt {
      * @param encryptedAmount The number of tokens to transfer
      * @return bool Whether or not the transfer succeeded
      */
-    function transferFrom(address from, address to, bytes calldata encryptedAmount) public returns (bool) {
-        transferFrom(from, to, TFHE.asEuint64(encryptedAmount));
+    function transferFrom(
+        address from,
+        address to,
+        einput encryptedAmount,
+        bytes calldata inputProof
+    ) public returns (bool) {
+        transferFrom(from, to, TFHE.asEuint64(encryptedAmount, inputProof));
         return true;
     }
 

@@ -103,8 +103,8 @@ task('task:launchFhevm')
       await Promise.all([p1, p2, p3]);
     }
     await new Promise((res) => setTimeout(res, 5000)); // wait 5 seconds
-    console.log(`privateKey ${privKeyDeployer}`)
-    console.log(`ownerAddress ${ownerAddress}`)
+    console.log(`privateKey ${privKeyDeployer}`);
+    console.log(`ownerAddress ${ownerAddress}`);
     await hre.run('task:deployGateway', { privateKey: privKeyDeployer, ownerAddress: ownerAddress });
 
     const parsedEnv = dotenv.parse(fs.readFileSync('gateway/.env.gateway'));

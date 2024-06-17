@@ -9,6 +9,8 @@ type euint16 is uint256;
 type euint32 is uint256;
 type euint64 is uint256;
 type eaddress is uint256;
+type ebytes256 is uint256;
+type einput is bytes32;
 
 library Common {
     // Values used to communicate types to the runtime.
@@ -20,6 +22,7 @@ library Common {
     uint8 internal constant euint64_t = 5;
     uint8 internal constant euint128_t = 6;
     uint8 internal constant euint160_t = 7;
+    uint8 internal constant ebytes256_t = 11;
 }
 
 import "./Impl.sol";
@@ -5383,8 +5386,8 @@ library TFHE {
     }
 
     // Convert a serialized 'ciphertext' to an encrypted euint8 integer.
-    function asEbool(bytes memory ciphertext) internal returns (ebool) {
-        return ebool.wrap(Impl.verify(ciphertext, Common.ebool_t));
+    function asEbool(einput inputHandle, bytes memory inputProof) internal returns (ebool) {
+        return ebool.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, Common.ebool_t));
     }
 
     // Convert a plaintext value to an encrypted euint8 integer.
@@ -5555,9 +5558,9 @@ library TFHE {
         return euint64.wrap(Impl.not(euint64.unwrap(value)));
     }
 
-    // Convert a serialized 'ciphertext' to an encrypted euint4 integer.
-    function asEuint4(bytes memory ciphertext) internal returns (euint4) {
-        return euint4.wrap(Impl.verify(ciphertext, Common.euint4_t));
+    // Convert the given inputHandle and inputProof to an encrypted euint4 integer.
+    function asEuint4(einput inputHandle, bytes memory inputProof) internal returns (euint4) {
+        return euint4.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, Common.euint4_t));
     }
 
     // Convert a plaintext value to an encrypted euint4 integer.
@@ -5576,9 +5579,9 @@ library TFHE {
         return Impl.reencrypt(euint4.unwrap(value) % 2 ** 4, publicKey);
     }
 
-    // Convert a serialized 'ciphertext' to an encrypted euint8 integer.
-    function asEuint8(bytes memory ciphertext) internal returns (euint8) {
-        return euint8.wrap(Impl.verify(ciphertext, Common.euint8_t));
+    // Convert the given inputHandle and inputProof to an encrypted euint8 integer.
+    function asEuint8(einput inputHandle, bytes memory inputProof) internal returns (euint8) {
+        return euint8.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, Common.euint8_t));
     }
 
     // Convert a plaintext value to an encrypted euint8 integer.
@@ -5597,9 +5600,9 @@ library TFHE {
         return Impl.reencrypt(euint8.unwrap(value) % 2 ** 8, publicKey);
     }
 
-    // Convert a serialized 'ciphertext' to an encrypted euint16 integer.
-    function asEuint16(bytes memory ciphertext) internal returns (euint16) {
-        return euint16.wrap(Impl.verify(ciphertext, Common.euint16_t));
+    // Convert the given inputHandle and inputProof to an encrypted euint16 integer.
+    function asEuint16(einput inputHandle, bytes memory inputProof) internal returns (euint16) {
+        return euint16.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, Common.euint16_t));
     }
 
     // Convert a plaintext value to an encrypted euint16 integer.
@@ -5618,9 +5621,9 @@ library TFHE {
         return Impl.reencrypt(euint16.unwrap(value) % 2 ** 16, publicKey);
     }
 
-    // Convert a serialized 'ciphertext' to an encrypted euint32 integer.
-    function asEuint32(bytes memory ciphertext) internal returns (euint32) {
-        return euint32.wrap(Impl.verify(ciphertext, Common.euint32_t));
+    // Convert the given inputHandle and inputProof to an encrypted euint32 integer.
+    function asEuint32(einput inputHandle, bytes memory inputProof) internal returns (euint32) {
+        return euint32.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, Common.euint32_t));
     }
 
     // Convert a plaintext value to an encrypted euint32 integer.
@@ -5639,9 +5642,9 @@ library TFHE {
         return Impl.reencrypt(euint32.unwrap(value) % 2 ** 32, publicKey);
     }
 
-    // Convert a serialized 'ciphertext' to an encrypted euint64 integer.
-    function asEuint64(bytes memory ciphertext) internal returns (euint64) {
-        return euint64.wrap(Impl.verify(ciphertext, Common.euint64_t));
+    // Convert the given inputHandle and inputProof to an encrypted euint64 integer.
+    function asEuint64(einput inputHandle, bytes memory inputProof) internal returns (euint64) {
+        return euint64.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, Common.euint64_t));
     }
 
     // Convert a plaintext value to an encrypted euint64 integer.
@@ -5826,9 +5829,9 @@ library TFHE {
         return Impl.reencrypt(eaddress.unwrap(value), publicKey);
     }
 
-    // From bytes to eaddress
-    function asEaddress(bytes memory ciphertext) internal returns (eaddress) {
-        return eaddress.wrap(Impl.verify(ciphertext, Common.euint160_t));
+    // Convert the given inputHandle and inputProof to an encrypted eaddress.
+    function asEaddress(einput inputHandle, bytes memory inputProof) internal returns (eaddress) {
+        return eaddress.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, Common.euint160_t));
     }
 
     // Convert a plaintext value to an encrypted asEaddress.
@@ -5836,9 +5839,19 @@ library TFHE {
         return eaddress.wrap(Impl.trivialEncrypt(uint160(value), Common.euint160_t));
     }
 
-    // Return true if the enrypted integer is initialized and false otherwise.
+    // Convert the given inputHandle and inputProof to an encrypted ebytes256 value.
+    function asEbytes256(einput inputHandle, bytes memory inputProof) internal returns (ebytes256) {
+        return ebytes256.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, Common.ebytes256_t));
+    }
+
+    // Return true if the enrypted value is initialized and false otherwise.
     function isInitialized(eaddress v) internal pure returns (bool) {
         return eaddress.unwrap(v) != 0;
+    }
+
+    // Return true if the enrypted value is initialized and false otherwise.
+    function isInitialized(ebytes256 v) internal pure returns (bool) {
+        return ebytes256.unwrap(v) != 0;
     }
 
     // Evaluate eq(a, b) and return the result.
@@ -5897,6 +5910,20 @@ library TFHE {
         }
         uint256 bProc = uint256(uint160(b));
         return ebool.wrap(Impl.ne(eaddress.unwrap(a), bProc, true));
+    }
+
+    // Evaluate eq(a, b) and return the result.
+    function eq(ebytes256 a, ebytes256 b) internal returns (ebool) {
+        require(isInitialized(a), "a is uninitialized");
+        require(isInitialized(b), "b is uninitialized");
+        return ebool.wrap(Impl.eq(ebytes256.unwrap(a), ebytes256.unwrap(b), false));
+    }
+
+    // Evaluate ne(a, b) and return the result.
+    function ne(ebytes256 a, ebytes256 b) internal returns (ebool) {
+        require(isInitialized(a), "a is uninitialized");
+        require(isInitialized(b), "b is uninitialized");
+        return ebool.wrap(Impl.ne(ebytes256.unwrap(a), ebytes256.unwrap(b), false));
     }
 
     function select(ebool control, eaddress a, eaddress b) internal returns (eaddress) {

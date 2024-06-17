@@ -14,8 +14,8 @@ import './tasks/accounts';
 import './tasks/getEthereumAddress';
 import './tasks/mint';
 import './tasks/taskDeploy';
-import './tasks/taskIdentity';
 import './tasks/taskGatewayRelayer';
+import './tasks/taskIdentity';
 import './tasks/taskTFHE';
 
 // Function to recursively get all .sol files in a folder

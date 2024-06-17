@@ -4,701 +4,701 @@ pragma solidity ^0.8.20;
 import "../../lib/TFHE.sol";
 
 contract TFHETestSuite5 {
-    function le_euint64_euint8(bytes calldata a, bytes calldata b) public returns (bool) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint8 bProc = TFHE.asEuint8(b);
+    function le_euint64_euint8(einput a, einput b, bytes calldata inputProof) public returns (bool) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint8 bProc = TFHE.asEuint8(b, inputProof);
         ebool result = TFHE.le(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function lt_euint64_euint8(bytes calldata a, bytes calldata b) public returns (bool) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint8 bProc = TFHE.asEuint8(b);
+    function lt_euint64_euint8(einput a, einput b, bytes calldata inputProof) public returns (bool) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint8 bProc = TFHE.asEuint8(b, inputProof);
         ebool result = TFHE.lt(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function min_euint64_euint8(bytes calldata a, bytes calldata b) public returns (uint64) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint8 bProc = TFHE.asEuint8(b);
+    function min_euint64_euint8(einput a, einput b, bytes calldata inputProof) public returns (uint64) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint8 bProc = TFHE.asEuint8(b, inputProof);
         euint64 result = TFHE.min(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function max_euint64_euint8(bytes calldata a, bytes calldata b) public returns (uint64) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint8 bProc = TFHE.asEuint8(b);
+    function max_euint64_euint8(einput a, einput b, bytes calldata inputProof) public returns (uint64) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint8 bProc = TFHE.asEuint8(b, inputProof);
         euint64 result = TFHE.max(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function add_euint64_euint16(bytes calldata a, bytes calldata b) public returns (uint64) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint16 bProc = TFHE.asEuint16(b);
+    function add_euint64_euint16(einput a, einput b, bytes calldata inputProof) public returns (uint64) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint16 bProc = TFHE.asEuint16(b, inputProof);
         euint64 result = TFHE.add(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function sub_euint64_euint16(bytes calldata a, bytes calldata b) public returns (uint64) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint16 bProc = TFHE.asEuint16(b);
+    function sub_euint64_euint16(einput a, einput b, bytes calldata inputProof) public returns (uint64) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint16 bProc = TFHE.asEuint16(b, inputProof);
         euint64 result = TFHE.sub(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function mul_euint64_euint16(bytes calldata a, bytes calldata b) public returns (uint64) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint16 bProc = TFHE.asEuint16(b);
+    function mul_euint64_euint16(einput a, einput b, bytes calldata inputProof) public returns (uint64) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint16 bProc = TFHE.asEuint16(b, inputProof);
         euint64 result = TFHE.mul(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function and_euint64_euint16(bytes calldata a, bytes calldata b) public returns (uint64) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint16 bProc = TFHE.asEuint16(b);
+    function and_euint64_euint16(einput a, einput b, bytes calldata inputProof) public returns (uint64) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint16 bProc = TFHE.asEuint16(b, inputProof);
         euint64 result = TFHE.and(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function or_euint64_euint16(bytes calldata a, bytes calldata b) public returns (uint64) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint16 bProc = TFHE.asEuint16(b);
+    function or_euint64_euint16(einput a, einput b, bytes calldata inputProof) public returns (uint64) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint16 bProc = TFHE.asEuint16(b, inputProof);
         euint64 result = TFHE.or(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function xor_euint64_euint16(bytes calldata a, bytes calldata b) public returns (uint64) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint16 bProc = TFHE.asEuint16(b);
+    function xor_euint64_euint16(einput a, einput b, bytes calldata inputProof) public returns (uint64) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint16 bProc = TFHE.asEuint16(b, inputProof);
         euint64 result = TFHE.xor(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function eq_euint64_euint16(bytes calldata a, bytes calldata b) public returns (bool) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint16 bProc = TFHE.asEuint16(b);
+    function eq_euint64_euint16(einput a, einput b, bytes calldata inputProof) public returns (bool) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint16 bProc = TFHE.asEuint16(b, inputProof);
         ebool result = TFHE.eq(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function ne_euint64_euint16(bytes calldata a, bytes calldata b) public returns (bool) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint16 bProc = TFHE.asEuint16(b);
+    function ne_euint64_euint16(einput a, einput b, bytes calldata inputProof) public returns (bool) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint16 bProc = TFHE.asEuint16(b, inputProof);
         ebool result = TFHE.ne(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function ge_euint64_euint16(bytes calldata a, bytes calldata b) public returns (bool) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint16 bProc = TFHE.asEuint16(b);
+    function ge_euint64_euint16(einput a, einput b, bytes calldata inputProof) public returns (bool) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint16 bProc = TFHE.asEuint16(b, inputProof);
         ebool result = TFHE.ge(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function gt_euint64_euint16(bytes calldata a, bytes calldata b) public returns (bool) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint16 bProc = TFHE.asEuint16(b);
+    function gt_euint64_euint16(einput a, einput b, bytes calldata inputProof) public returns (bool) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint16 bProc = TFHE.asEuint16(b, inputProof);
         ebool result = TFHE.gt(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function le_euint64_euint16(bytes calldata a, bytes calldata b) public returns (bool) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint16 bProc = TFHE.asEuint16(b);
+    function le_euint64_euint16(einput a, einput b, bytes calldata inputProof) public returns (bool) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint16 bProc = TFHE.asEuint16(b, inputProof);
         ebool result = TFHE.le(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function lt_euint64_euint16(bytes calldata a, bytes calldata b) public returns (bool) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint16 bProc = TFHE.asEuint16(b);
+    function lt_euint64_euint16(einput a, einput b, bytes calldata inputProof) public returns (bool) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint16 bProc = TFHE.asEuint16(b, inputProof);
         ebool result = TFHE.lt(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function min_euint64_euint16(bytes calldata a, bytes calldata b) public returns (uint64) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint16 bProc = TFHE.asEuint16(b);
+    function min_euint64_euint16(einput a, einput b, bytes calldata inputProof) public returns (uint64) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint16 bProc = TFHE.asEuint16(b, inputProof);
         euint64 result = TFHE.min(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function max_euint64_euint16(bytes calldata a, bytes calldata b) public returns (uint64) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint16 bProc = TFHE.asEuint16(b);
+    function max_euint64_euint16(einput a, einput b, bytes calldata inputProof) public returns (uint64) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint16 bProc = TFHE.asEuint16(b, inputProof);
         euint64 result = TFHE.max(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function add_euint64_euint32(bytes calldata a, bytes calldata b) public returns (uint64) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint32 bProc = TFHE.asEuint32(b);
+    function add_euint64_euint32(einput a, einput b, bytes calldata inputProof) public returns (uint64) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint32 bProc = TFHE.asEuint32(b, inputProof);
         euint64 result = TFHE.add(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function sub_euint64_euint32(bytes calldata a, bytes calldata b) public returns (uint64) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint32 bProc = TFHE.asEuint32(b);
+    function sub_euint64_euint32(einput a, einput b, bytes calldata inputProof) public returns (uint64) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint32 bProc = TFHE.asEuint32(b, inputProof);
         euint64 result = TFHE.sub(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function mul_euint64_euint32(bytes calldata a, bytes calldata b) public returns (uint64) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint32 bProc = TFHE.asEuint32(b);
+    function mul_euint64_euint32(einput a, einput b, bytes calldata inputProof) public returns (uint64) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint32 bProc = TFHE.asEuint32(b, inputProof);
         euint64 result = TFHE.mul(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function and_euint64_euint32(bytes calldata a, bytes calldata b) public returns (uint64) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint32 bProc = TFHE.asEuint32(b);
+    function and_euint64_euint32(einput a, einput b, bytes calldata inputProof) public returns (uint64) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint32 bProc = TFHE.asEuint32(b, inputProof);
         euint64 result = TFHE.and(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function or_euint64_euint32(bytes calldata a, bytes calldata b) public returns (uint64) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint32 bProc = TFHE.asEuint32(b);
+    function or_euint64_euint32(einput a, einput b, bytes calldata inputProof) public returns (uint64) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint32 bProc = TFHE.asEuint32(b, inputProof);
         euint64 result = TFHE.or(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function xor_euint64_euint32(bytes calldata a, bytes calldata b) public returns (uint64) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint32 bProc = TFHE.asEuint32(b);
+    function xor_euint64_euint32(einput a, einput b, bytes calldata inputProof) public returns (uint64) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint32 bProc = TFHE.asEuint32(b, inputProof);
         euint64 result = TFHE.xor(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function eq_euint64_euint32(bytes calldata a, bytes calldata b) public returns (bool) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint32 bProc = TFHE.asEuint32(b);
+    function eq_euint64_euint32(einput a, einput b, bytes calldata inputProof) public returns (bool) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint32 bProc = TFHE.asEuint32(b, inputProof);
         ebool result = TFHE.eq(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function ne_euint64_euint32(bytes calldata a, bytes calldata b) public returns (bool) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint32 bProc = TFHE.asEuint32(b);
+    function ne_euint64_euint32(einput a, einput b, bytes calldata inputProof) public returns (bool) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint32 bProc = TFHE.asEuint32(b, inputProof);
         ebool result = TFHE.ne(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function ge_euint64_euint32(bytes calldata a, bytes calldata b) public returns (bool) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint32 bProc = TFHE.asEuint32(b);
+    function ge_euint64_euint32(einput a, einput b, bytes calldata inputProof) public returns (bool) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint32 bProc = TFHE.asEuint32(b, inputProof);
         ebool result = TFHE.ge(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function gt_euint64_euint32(bytes calldata a, bytes calldata b) public returns (bool) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint32 bProc = TFHE.asEuint32(b);
+    function gt_euint64_euint32(einput a, einput b, bytes calldata inputProof) public returns (bool) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint32 bProc = TFHE.asEuint32(b, inputProof);
         ebool result = TFHE.gt(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function le_euint64_euint32(bytes calldata a, bytes calldata b) public returns (bool) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint32 bProc = TFHE.asEuint32(b);
+    function le_euint64_euint32(einput a, einput b, bytes calldata inputProof) public returns (bool) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint32 bProc = TFHE.asEuint32(b, inputProof);
         ebool result = TFHE.le(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function lt_euint64_euint32(bytes calldata a, bytes calldata b) public returns (bool) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint32 bProc = TFHE.asEuint32(b);
+    function lt_euint64_euint32(einput a, einput b, bytes calldata inputProof) public returns (bool) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint32 bProc = TFHE.asEuint32(b, inputProof);
         ebool result = TFHE.lt(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function min_euint64_euint32(bytes calldata a, bytes calldata b) public returns (uint64) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint32 bProc = TFHE.asEuint32(b);
+    function min_euint64_euint32(einput a, einput b, bytes calldata inputProof) public returns (uint64) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint32 bProc = TFHE.asEuint32(b, inputProof);
         euint64 result = TFHE.min(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function max_euint64_euint32(bytes calldata a, bytes calldata b) public returns (uint64) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint32 bProc = TFHE.asEuint32(b);
+    function max_euint64_euint32(einput a, einput b, bytes calldata inputProof) public returns (uint64) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint32 bProc = TFHE.asEuint32(b, inputProof);
         euint64 result = TFHE.max(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function add_euint64_euint64(bytes calldata a, bytes calldata b) public returns (uint64) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint64 bProc = TFHE.asEuint64(b);
+    function add_euint64_euint64(einput a, einput b, bytes calldata inputProof) public returns (uint64) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint64 bProc = TFHE.asEuint64(b, inputProof);
         euint64 result = TFHE.add(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function sub_euint64_euint64(bytes calldata a, bytes calldata b) public returns (uint64) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint64 bProc = TFHE.asEuint64(b);
+    function sub_euint64_euint64(einput a, einput b, bytes calldata inputProof) public returns (uint64) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint64 bProc = TFHE.asEuint64(b, inputProof);
         euint64 result = TFHE.sub(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function mul_euint64_euint64(bytes calldata a, bytes calldata b) public returns (uint64) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint64 bProc = TFHE.asEuint64(b);
+    function mul_euint64_euint64(einput a, einput b, bytes calldata inputProof) public returns (uint64) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint64 bProc = TFHE.asEuint64(b, inputProof);
         euint64 result = TFHE.mul(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function and_euint64_euint64(bytes calldata a, bytes calldata b) public returns (uint64) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint64 bProc = TFHE.asEuint64(b);
+    function and_euint64_euint64(einput a, einput b, bytes calldata inputProof) public returns (uint64) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint64 bProc = TFHE.asEuint64(b, inputProof);
         euint64 result = TFHE.and(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function or_euint64_euint64(bytes calldata a, bytes calldata b) public returns (uint64) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint64 bProc = TFHE.asEuint64(b);
+    function or_euint64_euint64(einput a, einput b, bytes calldata inputProof) public returns (uint64) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint64 bProc = TFHE.asEuint64(b, inputProof);
         euint64 result = TFHE.or(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function xor_euint64_euint64(bytes calldata a, bytes calldata b) public returns (uint64) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint64 bProc = TFHE.asEuint64(b);
+    function xor_euint64_euint64(einput a, einput b, bytes calldata inputProof) public returns (uint64) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint64 bProc = TFHE.asEuint64(b, inputProof);
         euint64 result = TFHE.xor(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function eq_euint64_euint64(bytes calldata a, bytes calldata b) public returns (bool) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint64 bProc = TFHE.asEuint64(b);
+    function eq_euint64_euint64(einput a, einput b, bytes calldata inputProof) public returns (bool) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint64 bProc = TFHE.asEuint64(b, inputProof);
         ebool result = TFHE.eq(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function ne_euint64_euint64(bytes calldata a, bytes calldata b) public returns (bool) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint64 bProc = TFHE.asEuint64(b);
+    function ne_euint64_euint64(einput a, einput b, bytes calldata inputProof) public returns (bool) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint64 bProc = TFHE.asEuint64(b, inputProof);
         ebool result = TFHE.ne(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function ge_euint64_euint64(bytes calldata a, bytes calldata b) public returns (bool) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint64 bProc = TFHE.asEuint64(b);
+    function ge_euint64_euint64(einput a, einput b, bytes calldata inputProof) public returns (bool) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint64 bProc = TFHE.asEuint64(b, inputProof);
         ebool result = TFHE.ge(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function gt_euint64_euint64(bytes calldata a, bytes calldata b) public returns (bool) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint64 bProc = TFHE.asEuint64(b);
+    function gt_euint64_euint64(einput a, einput b, bytes calldata inputProof) public returns (bool) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint64 bProc = TFHE.asEuint64(b, inputProof);
         ebool result = TFHE.gt(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function le_euint64_euint64(bytes calldata a, bytes calldata b) public returns (bool) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint64 bProc = TFHE.asEuint64(b);
+    function le_euint64_euint64(einput a, einput b, bytes calldata inputProof) public returns (bool) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint64 bProc = TFHE.asEuint64(b, inputProof);
         ebool result = TFHE.le(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function lt_euint64_euint64(bytes calldata a, bytes calldata b) public returns (bool) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint64 bProc = TFHE.asEuint64(b);
+    function lt_euint64_euint64(einput a, einput b, bytes calldata inputProof) public returns (bool) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint64 bProc = TFHE.asEuint64(b, inputProof);
         ebool result = TFHE.lt(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function min_euint64_euint64(bytes calldata a, bytes calldata b) public returns (uint64) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint64 bProc = TFHE.asEuint64(b);
+    function min_euint64_euint64(einput a, einput b, bytes calldata inputProof) public returns (uint64) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint64 bProc = TFHE.asEuint64(b, inputProof);
         euint64 result = TFHE.min(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function max_euint64_euint64(bytes calldata a, bytes calldata b) public returns (uint64) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint64 bProc = TFHE.asEuint64(b);
+    function max_euint64_euint64(einput a, einput b, bytes calldata inputProof) public returns (uint64) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint64 bProc = TFHE.asEuint64(b, inputProof);
         euint64 result = TFHE.max(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function add_euint64_uint64(bytes calldata a, uint64 b) public returns (uint64) {
-        euint64 aProc = TFHE.asEuint64(a);
+    function add_euint64_uint64(einput a, uint64 b, bytes calldata inputProof) public returns (uint64) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
         uint64 bProc = b;
         euint64 result = TFHE.add(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function add_uint64_euint64(uint64 a, bytes calldata b) public returns (uint64) {
+    function add_uint64_euint64(uint64 a, einput b, bytes calldata inputProof) public returns (uint64) {
         uint64 aProc = a;
-        euint64 bProc = TFHE.asEuint64(b);
+        euint64 bProc = TFHE.asEuint64(b, inputProof);
         euint64 result = TFHE.add(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function sub_euint64_uint64(bytes calldata a, uint64 b) public returns (uint64) {
-        euint64 aProc = TFHE.asEuint64(a);
+    function sub_euint64_uint64(einput a, uint64 b, bytes calldata inputProof) public returns (uint64) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
         uint64 bProc = b;
         euint64 result = TFHE.sub(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function sub_uint64_euint64(uint64 a, bytes calldata b) public returns (uint64) {
+    function sub_uint64_euint64(uint64 a, einput b, bytes calldata inputProof) public returns (uint64) {
         uint64 aProc = a;
-        euint64 bProc = TFHE.asEuint64(b);
+        euint64 bProc = TFHE.asEuint64(b, inputProof);
         euint64 result = TFHE.sub(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function mul_euint64_uint64(bytes calldata a, uint64 b) public returns (uint64) {
-        euint64 aProc = TFHE.asEuint64(a);
+    function mul_euint64_uint64(einput a, uint64 b, bytes calldata inputProof) public returns (uint64) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
         uint64 bProc = b;
         euint64 result = TFHE.mul(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function mul_uint64_euint64(uint64 a, bytes calldata b) public returns (uint64) {
+    function mul_uint64_euint64(uint64 a, einput b, bytes calldata inputProof) public returns (uint64) {
         uint64 aProc = a;
-        euint64 bProc = TFHE.asEuint64(b);
+        euint64 bProc = TFHE.asEuint64(b, inputProof);
         euint64 result = TFHE.mul(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function div_euint64_uint64(bytes calldata a, uint64 b) public returns (uint64) {
-        euint64 aProc = TFHE.asEuint64(a);
+    function div_euint64_uint64(einput a, uint64 b, bytes calldata inputProof) public returns (uint64) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
         uint64 bProc = b;
         euint64 result = TFHE.div(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function rem_euint64_uint64(bytes calldata a, uint64 b) public returns (uint64) {
-        euint64 aProc = TFHE.asEuint64(a);
+    function rem_euint64_uint64(einput a, uint64 b, bytes calldata inputProof) public returns (uint64) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
         uint64 bProc = b;
         euint64 result = TFHE.rem(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function eq_euint64_uint64(bytes calldata a, uint64 b) public returns (bool) {
-        euint64 aProc = TFHE.asEuint64(a);
+    function eq_euint64_uint64(einput a, uint64 b, bytes calldata inputProof) public returns (bool) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
         uint64 bProc = b;
         ebool result = TFHE.eq(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function eq_uint64_euint64(uint64 a, bytes calldata b) public returns (bool) {
+    function eq_uint64_euint64(uint64 a, einput b, bytes calldata inputProof) public returns (bool) {
         uint64 aProc = a;
-        euint64 bProc = TFHE.asEuint64(b);
+        euint64 bProc = TFHE.asEuint64(b, inputProof);
         ebool result = TFHE.eq(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function ne_euint64_uint64(bytes calldata a, uint64 b) public returns (bool) {
-        euint64 aProc = TFHE.asEuint64(a);
+    function ne_euint64_uint64(einput a, uint64 b, bytes calldata inputProof) public returns (bool) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
         uint64 bProc = b;
         ebool result = TFHE.ne(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function ne_uint64_euint64(uint64 a, bytes calldata b) public returns (bool) {
+    function ne_uint64_euint64(uint64 a, einput b, bytes calldata inputProof) public returns (bool) {
         uint64 aProc = a;
-        euint64 bProc = TFHE.asEuint64(b);
+        euint64 bProc = TFHE.asEuint64(b, inputProof);
         ebool result = TFHE.ne(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function ge_euint64_uint64(bytes calldata a, uint64 b) public returns (bool) {
-        euint64 aProc = TFHE.asEuint64(a);
+    function ge_euint64_uint64(einput a, uint64 b, bytes calldata inputProof) public returns (bool) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
         uint64 bProc = b;
         ebool result = TFHE.ge(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function ge_uint64_euint64(uint64 a, bytes calldata b) public returns (bool) {
+    function ge_uint64_euint64(uint64 a, einput b, bytes calldata inputProof) public returns (bool) {
         uint64 aProc = a;
-        euint64 bProc = TFHE.asEuint64(b);
+        euint64 bProc = TFHE.asEuint64(b, inputProof);
         ebool result = TFHE.ge(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function gt_euint64_uint64(bytes calldata a, uint64 b) public returns (bool) {
-        euint64 aProc = TFHE.asEuint64(a);
+    function gt_euint64_uint64(einput a, uint64 b, bytes calldata inputProof) public returns (bool) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
         uint64 bProc = b;
         ebool result = TFHE.gt(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function gt_uint64_euint64(uint64 a, bytes calldata b) public returns (bool) {
+    function gt_uint64_euint64(uint64 a, einput b, bytes calldata inputProof) public returns (bool) {
         uint64 aProc = a;
-        euint64 bProc = TFHE.asEuint64(b);
+        euint64 bProc = TFHE.asEuint64(b, inputProof);
         ebool result = TFHE.gt(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function le_euint64_uint64(bytes calldata a, uint64 b) public returns (bool) {
-        euint64 aProc = TFHE.asEuint64(a);
+    function le_euint64_uint64(einput a, uint64 b, bytes calldata inputProof) public returns (bool) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
         uint64 bProc = b;
         ebool result = TFHE.le(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function le_uint64_euint64(uint64 a, bytes calldata b) public returns (bool) {
+    function le_uint64_euint64(uint64 a, einput b, bytes calldata inputProof) public returns (bool) {
         uint64 aProc = a;
-        euint64 bProc = TFHE.asEuint64(b);
+        euint64 bProc = TFHE.asEuint64(b, inputProof);
         ebool result = TFHE.le(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function lt_euint64_uint64(bytes calldata a, uint64 b) public returns (bool) {
-        euint64 aProc = TFHE.asEuint64(a);
+    function lt_euint64_uint64(einput a, uint64 b, bytes calldata inputProof) public returns (bool) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
         uint64 bProc = b;
         ebool result = TFHE.lt(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function lt_uint64_euint64(uint64 a, bytes calldata b) public returns (bool) {
+    function lt_uint64_euint64(uint64 a, einput b, bytes calldata inputProof) public returns (bool) {
         uint64 aProc = a;
-        euint64 bProc = TFHE.asEuint64(b);
+        euint64 bProc = TFHE.asEuint64(b, inputProof);
         ebool result = TFHE.lt(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function min_euint64_uint64(bytes calldata a, uint64 b) public returns (uint64) {
-        euint64 aProc = TFHE.asEuint64(a);
+    function min_euint64_uint64(einput a, uint64 b, bytes calldata inputProof) public returns (uint64) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
         uint64 bProc = b;
         euint64 result = TFHE.min(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function min_uint64_euint64(uint64 a, bytes calldata b) public returns (uint64) {
+    function min_uint64_euint64(uint64 a, einput b, bytes calldata inputProof) public returns (uint64) {
         uint64 aProc = a;
-        euint64 bProc = TFHE.asEuint64(b);
+        euint64 bProc = TFHE.asEuint64(b, inputProof);
         euint64 result = TFHE.min(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function max_euint64_uint64(bytes calldata a, uint64 b) public returns (uint64) {
-        euint64 aProc = TFHE.asEuint64(a);
+    function max_euint64_uint64(einput a, uint64 b, bytes calldata inputProof) public returns (uint64) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
         uint64 bProc = b;
         euint64 result = TFHE.max(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function max_uint64_euint64(uint64 a, bytes calldata b) public returns (uint64) {
+    function max_uint64_euint64(uint64 a, einput b, bytes calldata inputProof) public returns (uint64) {
         uint64 aProc = a;
-        euint64 bProc = TFHE.asEuint64(b);
+        euint64 bProc = TFHE.asEuint64(b, inputProof);
         euint64 result = TFHE.max(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function shl_euint4_uint8(bytes calldata a, uint8 b) public returns (uint8) {
-        euint4 aProc = TFHE.asEuint4(a);
+    function shl_euint4_uint8(einput a, uint8 b, bytes calldata inputProof) public returns (uint8) {
+        euint4 aProc = TFHE.asEuint4(a, inputProof);
         uint8 bProc = b;
         euint4 result = TFHE.shl(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function shr_euint4_uint8(bytes calldata a, uint8 b) public returns (uint8) {
-        euint4 aProc = TFHE.asEuint4(a);
+    function shr_euint4_uint8(einput a, uint8 b, bytes calldata inputProof) public returns (uint8) {
+        euint4 aProc = TFHE.asEuint4(a, inputProof);
         uint8 bProc = b;
         euint4 result = TFHE.shr(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function rotl_euint4_uint8(bytes calldata a, uint8 b) public returns (uint8) {
-        euint4 aProc = TFHE.asEuint4(a);
+    function rotl_euint4_uint8(einput a, uint8 b, bytes calldata inputProof) public returns (uint8) {
+        euint4 aProc = TFHE.asEuint4(a, inputProof);
         uint8 bProc = b;
         euint4 result = TFHE.rotl(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function rotr_euint4_uint8(bytes calldata a, uint8 b) public returns (uint8) {
-        euint4 aProc = TFHE.asEuint4(a);
+    function rotr_euint4_uint8(einput a, uint8 b, bytes calldata inputProof) public returns (uint8) {
+        euint4 aProc = TFHE.asEuint4(a, inputProof);
         uint8 bProc = b;
         euint4 result = TFHE.rotr(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function shl_euint8_euint8(bytes calldata a, bytes calldata b) public returns (uint8) {
-        euint8 aProc = TFHE.asEuint8(a);
-        euint8 bProc = TFHE.asEuint8(b);
+    function shl_euint8_euint8(einput a, einput b, bytes calldata inputProof) public returns (uint8) {
+        euint8 aProc = TFHE.asEuint8(a, inputProof);
+        euint8 bProc = TFHE.asEuint8(b, inputProof);
         euint8 result = TFHE.shl(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function shl_euint8_uint8(bytes calldata a, uint8 b) public returns (uint8) {
-        euint8 aProc = TFHE.asEuint8(a);
+    function shl_euint8_uint8(einput a, uint8 b, bytes calldata inputProof) public returns (uint8) {
+        euint8 aProc = TFHE.asEuint8(a, inputProof);
         uint8 bProc = b;
         euint8 result = TFHE.shl(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function shr_euint8_euint8(bytes calldata a, bytes calldata b) public returns (uint8) {
-        euint8 aProc = TFHE.asEuint8(a);
-        euint8 bProc = TFHE.asEuint8(b);
+    function shr_euint8_euint8(einput a, einput b, bytes calldata inputProof) public returns (uint8) {
+        euint8 aProc = TFHE.asEuint8(a, inputProof);
+        euint8 bProc = TFHE.asEuint8(b, inputProof);
         euint8 result = TFHE.shr(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function shr_euint8_uint8(bytes calldata a, uint8 b) public returns (uint8) {
-        euint8 aProc = TFHE.asEuint8(a);
+    function shr_euint8_uint8(einput a, uint8 b, bytes calldata inputProof) public returns (uint8) {
+        euint8 aProc = TFHE.asEuint8(a, inputProof);
         uint8 bProc = b;
         euint8 result = TFHE.shr(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function rotl_euint8_euint8(bytes calldata a, bytes calldata b) public returns (uint8) {
-        euint8 aProc = TFHE.asEuint8(a);
-        euint8 bProc = TFHE.asEuint8(b);
+    function rotl_euint8_euint8(einput a, einput b, bytes calldata inputProof) public returns (uint8) {
+        euint8 aProc = TFHE.asEuint8(a, inputProof);
+        euint8 bProc = TFHE.asEuint8(b, inputProof);
         euint8 result = TFHE.rotl(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function rotl_euint8_uint8(bytes calldata a, uint8 b) public returns (uint8) {
-        euint8 aProc = TFHE.asEuint8(a);
+    function rotl_euint8_uint8(einput a, uint8 b, bytes calldata inputProof) public returns (uint8) {
+        euint8 aProc = TFHE.asEuint8(a, inputProof);
         uint8 bProc = b;
         euint8 result = TFHE.rotl(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function rotr_euint8_euint8(bytes calldata a, bytes calldata b) public returns (uint8) {
-        euint8 aProc = TFHE.asEuint8(a);
-        euint8 bProc = TFHE.asEuint8(b);
+    function rotr_euint8_euint8(einput a, einput b, bytes calldata inputProof) public returns (uint8) {
+        euint8 aProc = TFHE.asEuint8(a, inputProof);
+        euint8 bProc = TFHE.asEuint8(b, inputProof);
         euint8 result = TFHE.rotr(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function rotr_euint8_uint8(bytes calldata a, uint8 b) public returns (uint8) {
-        euint8 aProc = TFHE.asEuint8(a);
+    function rotr_euint8_uint8(einput a, uint8 b, bytes calldata inputProof) public returns (uint8) {
+        euint8 aProc = TFHE.asEuint8(a, inputProof);
         uint8 bProc = b;
         euint8 result = TFHE.rotr(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function shl_euint16_euint8(bytes calldata a, bytes calldata b) public returns (uint16) {
-        euint16 aProc = TFHE.asEuint16(a);
-        euint8 bProc = TFHE.asEuint8(b);
+    function shl_euint16_euint8(einput a, einput b, bytes calldata inputProof) public returns (uint16) {
+        euint16 aProc = TFHE.asEuint16(a, inputProof);
+        euint8 bProc = TFHE.asEuint8(b, inputProof);
         euint16 result = TFHE.shl(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function shl_euint16_uint8(bytes calldata a, uint8 b) public returns (uint16) {
-        euint16 aProc = TFHE.asEuint16(a);
+    function shl_euint16_uint8(einput a, uint8 b, bytes calldata inputProof) public returns (uint16) {
+        euint16 aProc = TFHE.asEuint16(a, inputProof);
         uint8 bProc = b;
         euint16 result = TFHE.shl(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function shr_euint16_euint8(bytes calldata a, bytes calldata b) public returns (uint16) {
-        euint16 aProc = TFHE.asEuint16(a);
-        euint8 bProc = TFHE.asEuint8(b);
+    function shr_euint16_euint8(einput a, einput b, bytes calldata inputProof) public returns (uint16) {
+        euint16 aProc = TFHE.asEuint16(a, inputProof);
+        euint8 bProc = TFHE.asEuint8(b, inputProof);
         euint16 result = TFHE.shr(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function shr_euint16_uint8(bytes calldata a, uint8 b) public returns (uint16) {
-        euint16 aProc = TFHE.asEuint16(a);
+    function shr_euint16_uint8(einput a, uint8 b, bytes calldata inputProof) public returns (uint16) {
+        euint16 aProc = TFHE.asEuint16(a, inputProof);
         uint8 bProc = b;
         euint16 result = TFHE.shr(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function rotl_euint16_euint8(bytes calldata a, bytes calldata b) public returns (uint16) {
-        euint16 aProc = TFHE.asEuint16(a);
-        euint8 bProc = TFHE.asEuint8(b);
+    function rotl_euint16_euint8(einput a, einput b, bytes calldata inputProof) public returns (uint16) {
+        euint16 aProc = TFHE.asEuint16(a, inputProof);
+        euint8 bProc = TFHE.asEuint8(b, inputProof);
         euint16 result = TFHE.rotl(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function rotl_euint16_uint8(bytes calldata a, uint8 b) public returns (uint16) {
-        euint16 aProc = TFHE.asEuint16(a);
+    function rotl_euint16_uint8(einput a, uint8 b, bytes calldata inputProof) public returns (uint16) {
+        euint16 aProc = TFHE.asEuint16(a, inputProof);
         uint8 bProc = b;
         euint16 result = TFHE.rotl(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function rotr_euint16_euint8(bytes calldata a, bytes calldata b) public returns (uint16) {
-        euint16 aProc = TFHE.asEuint16(a);
-        euint8 bProc = TFHE.asEuint8(b);
+    function rotr_euint16_euint8(einput a, einput b, bytes calldata inputProof) public returns (uint16) {
+        euint16 aProc = TFHE.asEuint16(a, inputProof);
+        euint8 bProc = TFHE.asEuint8(b, inputProof);
         euint16 result = TFHE.rotr(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function rotr_euint16_uint8(bytes calldata a, uint8 b) public returns (uint16) {
-        euint16 aProc = TFHE.asEuint16(a);
+    function rotr_euint16_uint8(einput a, uint8 b, bytes calldata inputProof) public returns (uint16) {
+        euint16 aProc = TFHE.asEuint16(a, inputProof);
         uint8 bProc = b;
         euint16 result = TFHE.rotr(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function shl_euint32_euint8(bytes calldata a, bytes calldata b) public returns (uint32) {
-        euint32 aProc = TFHE.asEuint32(a);
-        euint8 bProc = TFHE.asEuint8(b);
+    function shl_euint32_euint8(einput a, einput b, bytes calldata inputProof) public returns (uint32) {
+        euint32 aProc = TFHE.asEuint32(a, inputProof);
+        euint8 bProc = TFHE.asEuint8(b, inputProof);
         euint32 result = TFHE.shl(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function shl_euint32_uint8(bytes calldata a, uint8 b) public returns (uint32) {
-        euint32 aProc = TFHE.asEuint32(a);
+    function shl_euint32_uint8(einput a, uint8 b, bytes calldata inputProof) public returns (uint32) {
+        euint32 aProc = TFHE.asEuint32(a, inputProof);
         uint8 bProc = b;
         euint32 result = TFHE.shl(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function shr_euint32_euint8(bytes calldata a, bytes calldata b) public returns (uint32) {
-        euint32 aProc = TFHE.asEuint32(a);
-        euint8 bProc = TFHE.asEuint8(b);
+    function shr_euint32_euint8(einput a, einput b, bytes calldata inputProof) public returns (uint32) {
+        euint32 aProc = TFHE.asEuint32(a, inputProof);
+        euint8 bProc = TFHE.asEuint8(b, inputProof);
         euint32 result = TFHE.shr(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function shr_euint32_uint8(bytes calldata a, uint8 b) public returns (uint32) {
-        euint32 aProc = TFHE.asEuint32(a);
+    function shr_euint32_uint8(einput a, uint8 b, bytes calldata inputProof) public returns (uint32) {
+        euint32 aProc = TFHE.asEuint32(a, inputProof);
         uint8 bProc = b;
         euint32 result = TFHE.shr(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function rotl_euint32_euint8(bytes calldata a, bytes calldata b) public returns (uint32) {
-        euint32 aProc = TFHE.asEuint32(a);
-        euint8 bProc = TFHE.asEuint8(b);
+    function rotl_euint32_euint8(einput a, einput b, bytes calldata inputProof) public returns (uint32) {
+        euint32 aProc = TFHE.asEuint32(a, inputProof);
+        euint8 bProc = TFHE.asEuint8(b, inputProof);
         euint32 result = TFHE.rotl(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function rotl_euint32_uint8(bytes calldata a, uint8 b) public returns (uint32) {
-        euint32 aProc = TFHE.asEuint32(a);
+    function rotl_euint32_uint8(einput a, uint8 b, bytes calldata inputProof) public returns (uint32) {
+        euint32 aProc = TFHE.asEuint32(a, inputProof);
         uint8 bProc = b;
         euint32 result = TFHE.rotl(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function rotr_euint32_euint8(bytes calldata a, bytes calldata b) public returns (uint32) {
-        euint32 aProc = TFHE.asEuint32(a);
-        euint8 bProc = TFHE.asEuint8(b);
+    function rotr_euint32_euint8(einput a, einput b, bytes calldata inputProof) public returns (uint32) {
+        euint32 aProc = TFHE.asEuint32(a, inputProof);
+        euint8 bProc = TFHE.asEuint8(b, inputProof);
         euint32 result = TFHE.rotr(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function rotr_euint32_uint8(bytes calldata a, uint8 b) public returns (uint32) {
-        euint32 aProc = TFHE.asEuint32(a);
+    function rotr_euint32_uint8(einput a, uint8 b, bytes calldata inputProof) public returns (uint32) {
+        euint32 aProc = TFHE.asEuint32(a, inputProof);
         uint8 bProc = b;
         euint32 result = TFHE.rotr(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function shl_euint64_euint8(bytes calldata a, bytes calldata b) public returns (uint64) {
-        euint64 aProc = TFHE.asEuint64(a);
-        euint8 bProc = TFHE.asEuint8(b);
+    function shl_euint64_euint8(einput a, einput b, bytes calldata inputProof) public returns (uint64) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
+        euint8 bProc = TFHE.asEuint8(b, inputProof);
         euint64 result = TFHE.shl(aProc, bProc);
         return TFHE.decrypt(result);
     }
 
-    function shl_euint64_uint8(bytes calldata a, uint8 b) public returns (uint64) {
-        euint64 aProc = TFHE.asEuint64(a);
+    function shl_euint64_uint8(einput a, uint8 b, bytes calldata inputProof) public returns (uint64) {
+        euint64 aProc = TFHE.asEuint64(a, inputProof);
         uint8 bProc = b;
         euint64 result = TFHE.shl(aProc, bProc);
         return TFHE.decrypt(result);

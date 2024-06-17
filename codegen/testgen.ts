@@ -269,6 +269,7 @@ function signatureContractArguments(s: OverloadSignature): string {
     res.push(`${functionTypeToCalldataType(a)} ${String.fromCharCode(argName)}`);
     argName++;
   });
+  res.push('bytes calldata inputProof');
 
   return res.join(', ');
 }
@@ -289,7 +290,7 @@ function signatureContractEncryptedSignature(s: OverloadSignature): string {
 function castExpressionToType(argExpr: string, outputType: FunctionType): string {
   switch (outputType.type) {
     case ArgumentType.EUint:
-      return `TFHE.asEuint${outputType.bits}(${argExpr})`;
+      return `TFHE.asEuint${outputType.bits}(${argExpr}, inputProof)`;
     case ArgumentType.Uint:
       return argExpr;
     case ArgumentType.Ebool:
@@ -300,7 +301,7 @@ function castExpressionToType(argExpr: string, outputType: FunctionType): string
 function functionTypeToCalldataType(t: FunctionType): string {
   switch (t.type) {
     case ArgumentType.EUint:
-      return `bytes calldata`;
+      return `einput`;
     case ArgumentType.Uint:
       return getUint(t.bits);
     case ArgumentType.Ebool:

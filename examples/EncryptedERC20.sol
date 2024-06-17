@@ -51,8 +51,8 @@ contract EncryptedERC20 is Ownable2Step {
     }
 
     // Transfers an encrypted amount from the message sender address to the `to` address.
-    function transfer(address to, bytes calldata encryptedAmount) public virtual {
-        transfer(to, TFHE.asEuint64(encryptedAmount));
+    function transfer(address to, einput amount, bytes calldata inputProof) public virtual {
+        transfer(to, TFHE.asEuint64(amount, inputProof));
     }
 
     // Transfers an amount from the message sender address to the `to` address.
@@ -74,8 +74,8 @@ contract EncryptedERC20 is Ownable2Step {
     }
 
     // Sets the `encryptedAmount` as the allowance of `spender` over the caller's tokens.
-    function approve(address spender, bytes calldata encryptedAmount) public virtual returns (bool) {
-        approve(spender, TFHE.asEuint64(encryptedAmount));
+    function approve(address spender, einput encryptedAmount, bytes calldata inputProof) public virtual returns (bool) {
+        approve(spender, TFHE.asEuint64(encryptedAmount, inputProof));
         return true;
     }
 
@@ -95,8 +95,8 @@ contract EncryptedERC20 is Ownable2Step {
     }
 
     // Transfers `encryptedAmount` tokens using the caller's allowance.
-    function transferFrom(address from, address to, bytes calldata encryptedAmount) public virtual {
-        transferFrom(from, to, TFHE.asEuint64(encryptedAmount));
+    function transferFrom(address from, address to, einput encryptedAmount, bytes calldata inputProof) public virtual {
+        transferFrom(from, to, TFHE.asEuint64(encryptedAmount, inputProof));
     }
 
     // Transfers `amount` tokens using the caller's allowance.

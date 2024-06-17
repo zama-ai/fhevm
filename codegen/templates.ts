@@ -13,6 +13,8 @@ type euint16 is uint256;
 type euint32 is uint256;
 type euint64 is uint256;
 type eaddress is uint256;
+type ebytes256 is uint256;
+type einput is bytes32;
 
 library Common {
     // Values used to communicate types to the runtime.
@@ -24,6 +26,7 @@ library Common {
     uint8 internal constant euint64_t = 5;
     uint8 internal constant euint128_t = 6;
     uint8 internal constant euint160_t = 7;
+    uint8 internal constant ebytes256_t = 11;
 }
 `;
 }
@@ -216,7 +219,7 @@ function fheLibCustomInterfaceFunctions(): string {
   return `
     function reencrypt(uint256 ct, uint256 publicKey) external view returns (bytes memory);
     function fhePubKey(bytes1 fromLib) external view returns (bytes memory result);
-    function verifyCiphertext(bytes memory input) external pure returns (uint256 result);
+    function verifyCiphertext(bytes32 inputHandle, address callerAddress, bytes memory inputProof, bytes1 inputType) external pure returns (uint256 result);
     function cast(uint256 ct, bytes1 toType) external pure returns (uint256 result);
     function trivialEncrypt(uint256 ct, bytes1 toType) external pure returns (uint256 result);
     function decrypt(uint256 ct) external view returns (uint256 result);
@@ -236,8 +239,8 @@ function tfheExecutorCustomFunctions(): string {
     function fhePubKey(bytes1 fromLib) public view returns (bytes memory result) {
       return FhevmLib(address(EXT_TFHE_LIBRARY)).fhePubKey(fromLib);
     }
-    function verifyCiphertext(bytes memory input) public returns (uint256 result) {
-      result = FhevmLib(address(EXT_TFHE_LIBRARY)).verifyCiphertext(input);
+    function verifyCiphertext(bytes32 inputHandle, address callerAddress, bytes memory inputProof, bytes1 inputType) public returns (uint256 result) {
+      result = FhevmLib(address(EXT_TFHE_LIBRARY)).verifyCiphertext(inputHandle, callerAddress, inputProof, inputType);
       acl.allowTransient(result, msg.sender);
     }
     function cast(uint256 ct, bytes1 toType) public returns (uint256 result) {
@@ -702,8 +705,8 @@ function tfheAsEboolUnaryCast(bits: number): string {
   if (bits == 8) {
     res.push(`
     // Convert a serialized 'ciphertext' to an encrypted euint8 integer.
-    function asEbool(bytes memory ciphertext) internal returns (ebool) {
-        return ebool.wrap(Impl.verify(ciphertext, Common.ebool_t));
+    function asEbool(einput inputHandle, bytes memory inputProof) internal returns (ebool) {
+        return ebool.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, Common.ebool_t));
     }
 
     // Convert a plaintext value to an encrypted euint8 integer.
@@ -780,9 +783,9 @@ function tfheUnaryOperators(bits: number, operators: Operator[], signatures: Ove
 
 function tfheCustomUnaryOperators(bits: number, signatures: OverloadSignature[], mocked: boolean): string {
   let result = `
-    // Convert a serialized 'ciphertext' to an encrypted euint${bits} integer.
-    function asEuint${bits}(bytes memory ciphertext) internal returns (euint${bits}) {
-        return euint${bits}.wrap(Impl.verify(ciphertext, Common.euint${bits}_t));
+    // Convert the given inputHandle and inputProof to an encrypted euint${bits} integer.
+    function asEuint${bits}(einput inputHandle, bytes memory inputProof) internal returns (euint${bits}) {
+        return euint${bits}.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, Common.euint${bits}_t));
     }
 
     // Convert a plaintext value to an encrypted euint${bits} integer.
@@ -948,20 +951,29 @@ function tfheCustomMethods(ctx: CodegenContext, mocked: boolean): string {
       return Impl.reencrypt(eaddress.unwrap(value), publicKey);
   }
 
-    // From bytes to eaddress
-    function asEaddress(bytes memory ciphertext) internal returns (eaddress) {
-      return eaddress.wrap(Impl.verify(ciphertext, Common.euint160_t));
-
+    // Convert the given inputHandle and inputProof to an encrypted eaddress.
+    function asEaddress(einput inputHandle, bytes memory inputProof) internal returns (eaddress) {
+      return eaddress.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, Common.euint160_t));
     }
 
     // Convert a plaintext value to an encrypted asEaddress.
     function asEaddress(address value) internal returns (eaddress) {
         return eaddress.wrap(Impl.trivialEncrypt(uint160(value), Common.euint160_t));
     }
+    
+    // Convert the given inputHandle and inputProof to an encrypted ebytes256 value.
+    function asEbytes256(einput inputHandle, bytes memory inputProof) internal returns (ebytes256) {
+      return ebytes256.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, Common.ebytes256_t));
+    }
 
-    // Return true if the enrypted integer is initialized and false otherwise.
+    // Return true if the enrypted value is initialized and false otherwise.
     function isInitialized(eaddress v) internal pure returns (bool) {
         return eaddress.unwrap(v) != 0;
+    }
+    
+    // Return true if the enrypted value is initialized and false otherwise.
+    function isInitialized(ebytes256 v) internal pure returns (bool) {
+        return ebytes256.unwrap(v) != 0;
     }
 
     // Evaluate eq(a, b) and return the result.
@@ -1021,6 +1033,20 @@ function tfheCustomMethods(ctx: CodegenContext, mocked: boolean): string {
         uint256 bProc = uint256(uint160(b));
         return ebool.wrap(Impl.ne(eaddress.unwrap(a), bProc, true));
     }
+
+    // Evaluate eq(a, b) and return the result.
+    function eq(ebytes256 a, ebytes256 b) internal returns (ebool) {
+        require(isInitialized(a), "a is uninitialized");
+        require(isInitialized(b), "b is uninitialized");
+        return ebool.wrap(Impl.eq(ebytes256.unwrap(a), ebytes256.unwrap(b), false));
+    }
+
+    // Evaluate ne(a, b) and return the result.
+    function ne(ebytes256 a, ebytes256 b) internal returns (ebool) {
+        require(isInitialized(a), "a is uninitialized");
+        require(isInitialized(b), "b is uninitialized");
+        return ebool.wrap(Impl.ne(ebytes256.unwrap(a), ebytes256.unwrap(b), false));
+    }
     
     function select(ebool control, eaddress a, eaddress b) internal returns (eaddress) {
         return eaddress.wrap(Impl.select(ebool.unwrap(control), eaddress.unwrap(a), eaddress.unwrap(b)));
@@ -1070,11 +1096,11 @@ function implCustomMethods(ctx: CodegenContext): string {
     }
 
     function verify(
-        bytes memory _ciphertextBytes,
-        uint8 _toType
+        bytes32 inputHandle,
+        bytes memory inputProof,
+        uint8 toType
     ) internal returns (uint256 result) {
-        bytes memory input = bytes.concat(_ciphertextBytes, bytes1(_toType));
-        result = exec.verifyCiphertext(input);
+        result = exec.verifyCiphertext(inputHandle, msg.sender, inputProof, bytes1(toType));
         acl.allowTransient(result, msg.sender);
     }
 
@@ -1298,19 +1324,22 @@ library Impl {
       key = hex"0123456789ABCDEF";
   }
 
-  function verify(bytes memory _ciphertextBytes, uint8 /*_toType*/) internal returns (uint256 result) {
+  function verify(einput inputHandle,
+        bytes memory inputProof,
+        uint8 toType) internal returns (uint256 result) {
+      // TODO: fix implementation
       uint256 x;
       assembly {
-          switch gt(mload(_ciphertextBytes), 31)
+          switch gt(mload(inputProof), 31)
           case 1 {
-              x := mload(add(_ciphertextBytes, add(32, sub(mload(_ciphertextBytes), 32))))
+              x := mload(add(inputProof, add(32, sub(mload(inputProof), 32))))
           }
           default {
-              x := mload(add(_ciphertextBytes, 32))
+              x := mload(add(inputProof, 32))
           }
       }
-      if (_ciphertextBytes.length < 32) {
-          x = x >> ((32 - _ciphertextBytes.length) * 8);
+      if (inputProof.length < 32) {
+          x = x >> ((32 - inputProof.length) * 8);
       }
       return x;
   }

@@ -337,16 +337,23 @@ contract GovernorZama {
         }
     }
 
-    function castVote(uint proposalId, bytes calldata support) public {
-        return castVote(proposalId, TFHE.asEbool(support));
+    function castVote(uint proposalId, einput support, bytes calldata inputProof) public {
+        return castVote(proposalId, TFHE.asEbool(support, inputProof));
     }
 
     function castVote(uint proposalId, ebool support) public {
         return _castVote(msg.sender, proposalId, support);
     }
 
-    function castVoteBySig(uint proposalId, bytes calldata support, uint8 v, bytes32 r, bytes32 s) public {
-        return castVoteBySig(proposalId, TFHE.asEbool(support), v, r, s);
+    function castVoteBySig(
+        uint proposalId,
+        einput support,
+        bytes calldata inputProof,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) public {
+        return castVoteBySig(proposalId, TFHE.asEbool(support, inputProof), v, r, s);
     }
 
     function castVoteBySig(uint proposalId, ebool support, uint8 v, bytes32 r, bytes32 s) public {

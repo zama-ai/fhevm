@@ -65,8 +65,13 @@ contract IdentityRegistry is Reencrypt, Ownable2Step {
     }
 
     // Set user's identifiers
-    function setIdentifier(address wallet, string calldata identifier, bytes calldata encryptedValue) public {
-        euint64 value = TFHE.asEuint64(encryptedValue);
+    function setIdentifier(
+        address wallet,
+        string calldata identifier,
+        einput encryptedValue,
+        bytes calldata inputProof
+    ) public {
+        euint64 value = TFHE.asEuint64(encryptedValue, inputProof);
         setIdentifier(wallet, identifier, value);
     }
 

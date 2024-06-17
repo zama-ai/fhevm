@@ -51,7 +51,12 @@ interface FhevmLib {
 
     function fhePubKey(bytes1 fromLib) external view returns (bytes memory result);
 
-    function verifyCiphertext(bytes memory input) external pure returns (uint256 result);
+    function verifyCiphertext(
+        bytes32 inputHandle,
+        address callerAddress,
+        bytes memory inputProof,
+        bytes1 inputType
+    ) external pure returns (uint256 result);
 
     function cast(uint256 ct, bytes1 toType) external pure returns (uint256 result);
 

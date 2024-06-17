@@ -12,10 +12,10 @@ contract SELECT is Reencrypt {
     constructor() {}
 
     // Set result = if control { ifTrue } else { ifFalse }
-    function select(bytes calldata controlBytes, bytes calldata ifTrueBytes, bytes calldata ifFalseBytes) public {
-        ebool control = TFHE.asEbool(controlBytes);
-        euint8 ifTrue = TFHE.asEuint8(ifTrueBytes);
-        euint8 ifFalse = TFHE.asEuint8(ifFalseBytes);
+    function select(einput controlBytes, einput ifTrueBytes, einput ifFalseBytes, bytes calldata inputProof) public {
+        ebool control = TFHE.asEbool(controlBytes, inputProof);
+        euint8 ifTrue = TFHE.asEuint8(ifTrueBytes, inputProof);
+        euint8 ifFalse = TFHE.asEuint8(ifFalseBytes, inputProof);
         result = TFHE.select(control, ifTrue, ifFalse);
     }
 

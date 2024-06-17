@@ -247,8 +247,18 @@ contract TFHEExecutor {
         return FhevmLib(address(EXT_TFHE_LIBRARY)).fhePubKey(fromLib);
     }
 
-    function verifyCiphertext(bytes memory input) public returns (uint256 result) {
-        result = FhevmLib(address(EXT_TFHE_LIBRARY)).verifyCiphertext(input);
+    function verifyCiphertext(
+        bytes32 inputHandle,
+        address callerAddress,
+        bytes memory inputProof,
+        bytes1 inputType
+    ) public returns (uint256 result) {
+        result = FhevmLib(address(EXT_TFHE_LIBRARY)).verifyCiphertext(
+            inputHandle,
+            callerAddress,
+            inputProof,
+            inputType
+        );
         acl.allowTransient(result, msg.sender);
     }
 

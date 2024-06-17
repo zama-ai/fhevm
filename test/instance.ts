@@ -1,6 +1,5 @@
-import { toBufferBE } from 'bigint-buffer';
 import { Signer } from 'ethers';
-import fhevmjs, { FhevmInstance, clientKeyDecryptor, getCiphertextCallParams, getPublicKeyCallParams } from 'fhevmjs';
+import fhevmjs, { clientKeyDecryptor, getCiphertextCallParams, getPublicKeyCallParams } from 'fhevmjs';
 import { readFileSync } from 'fs';
 import { ethers, ethers as hethers } from 'hardhat';
 import { homedir } from 'os';
@@ -8,6 +7,8 @@ import path from 'path';
 
 import type { Signers } from './signers';
 import { FhevmInstances } from './types';
+
+const hre = require('hardhat');
 
 const HARDHAT_NETWORK = process.env.HARDHAT_NETWORK;
 const FHE_CLIENT_KEY_PATH = process.env.FHE_CLIENT_KEY_PATH;
@@ -37,9 +38,7 @@ export const createInstances = async (
 };
 
 export const createInstance = async (contractAddress: string, account: Signer, ethers: typeof hethers) => {
-  // 1. Get chain id
   const provider = ethers.provider;
-
   const network = await provider.getNetwork();
   chainId = +network.chainId.toString(); // Need to be a number
   try {
@@ -50,46 +49,9 @@ export const createInstance = async (contractAddress: string, account: Signer, e
   } catch (e) {
     publicKey = undefined;
   }
-
-  const instance = await fhevmjs.createInstance({ chainId, publicKey });
-
-  if (HARDHAT_NETWORK === 'hardhat') {
-    instance.encryptBool = createUintToUint8ArrayFunction(1);
-    instance.encrypt4 = createUintToUint8ArrayFunction(4);
-    instance.encrypt8 = createUintToUint8ArrayFunction(8);
-    instance.encrypt16 = createUintToUint8ArrayFunction(16);
-    instance.encrypt32 = createUintToUint8ArrayFunction(32);
-    instance.encrypt64 = createUintToUint8ArrayFunction(64);
-    instance.encryptAddress = createUintToUint8ArrayFunction(160);
-    instance.decrypt = (_, hexadecimalString) => BigInt(hexadecimalString);
-    instance.decryptAddress = (_, hexadecimalString) => ethers.getAddress(hexadecimalString.slice(26, 66));
-  }
-  await generatePublicKey(contractAddress, account, instance);
-
+  const instance = await fhevmjs.createInstance({ chainId, publicKey, networkUrl: hre.network.config.url });
   return instance;
 };
-
-const generatePublicKey = async (contractAddress: string, signer: Signer, instance: FhevmInstance) => {
-  // Generate token to decrypt
-  const generatedToken = instance.generatePublicKey({
-    verifyingContract: contractAddress,
-  });
-  // Sign the public key
-  const signature = await signer.signTypedData(
-    generatedToken.eip712.domain,
-    { Reencrypt: generatedToken.eip712.types.Reencrypt }, // Need to remove EIP712Domain from types
-    generatedToken.eip712.message,
-  );
-  instance.setSignature(contractAddress, signature);
-};
-
-function createUintToUint8ArrayFunction(numBits: number) {
-  const numBytes = Math.ceil(numBits / 8);
-  return function (uint: number | bigint | boolean) {
-    const buffer = toBufferBE(BigInt(uint), numBytes);
-    return buffer;
-  };
-}
 
 const getCiphertext = async (handle: bigint, ethers: typeof hethers): Promise<string> => {
   return ethers.provider.call(getCiphertextCallParams(handle));

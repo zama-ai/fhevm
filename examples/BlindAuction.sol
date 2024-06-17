@@ -57,8 +57,8 @@ contract BlindAuction is Reencrypt {
     }
 
     // Bid an `encryptedValue`.
-    function bid(bytes calldata encryptedValue) public onlyBeforeEnd {
-        euint64 value = TFHE.asEuint64(encryptedValue);
+    function bid(einput encryptedValue, bytes calldata inputProof) public onlyBeforeEnd {
+        euint64 value = TFHE.asEuint64(encryptedValue, inputProof);
         euint64 existingBid = bids[msg.sender];
         if (TFHE.isInitialized(existingBid)) {
             euint64 balanceBefore = tokenContract.balanceOfMe();

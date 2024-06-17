@@ -146,19 +146,20 @@ library Impl {
         key = hex"0123456789ABCDEF";
     }
 
-    function verify(bytes memory _ciphertextBytes, uint8 /*_toType*/) internal returns (uint256 result) {
+    function verify(einput inputHandle, bytes memory inputProof, uint8 toType) internal returns (uint256 result) {
+        // TODO: fix implementation
         uint256 x;
         assembly {
-            switch gt(mload(_ciphertextBytes), 31)
+            switch gt(mload(inputProof), 31)
             case 1 {
-                x := mload(add(_ciphertextBytes, add(32, sub(mload(_ciphertextBytes), 32))))
+                x := mload(add(inputProof, add(32, sub(mload(inputProof), 32))))
             }
             default {
-                x := mload(add(_ciphertextBytes, 32))
+                x := mload(add(inputProof, 32))
             }
         }
-        if (_ciphertextBytes.length < 32) {
-            x = x >> ((32 - _ciphertextBytes.length) * 8);
+        if (inputProof.length < 32) {
+            x = x >> ((32 - inputProof.length) * 8);
         }
         return x;
     }

@@ -126,9 +126,8 @@ library Impl {
         key = exec.fhePubKey(bytes1(0x01));
     }
 
-    function verify(bytes memory _ciphertextBytes, uint8 _toType) internal returns (uint256 result) {
-        bytes memory input = bytes.concat(_ciphertextBytes, bytes1(_toType));
-        result = exec.verifyCiphertext(input);
+    function verify(bytes32 inputHandle, bytes memory inputProof, uint8 toType) internal returns (uint256 result) {
+        result = exec.verifyCiphertext(inputHandle, msg.sender, inputProof, bytes1(toType));
         acl.allowTransient(result, msg.sender);
     }
 
