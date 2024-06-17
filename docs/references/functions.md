@@ -41,30 +41,6 @@ function asEuint16(uint16 value) internal view returns (euint16)
 
 The `asEbool` functions behave similarly to the `asEuint` functions, but for encrypted boolean values.
 
-## Reencrypt
-
-The reencrypt functions takes as inputs a ciphertext and a public encryption key (namely, a [NaCl box](https://nacl.cr.yp.to/index.html)).
-
-During reencryption, the ciphertext is decrypted using the network private key (the threshold decryption protocol is in the works).
-Then, the decrypted result is encrypted under the user-provided public encryption key.
-The result of this encryption is sent back to the caller as `bytes memory`.
-
-It is also possible to provide a default value to the `reencrypt` function.
-In this case, if the provided ciphertext is not initialized (i.e., if the ciphertext handle is `0`), the function will return an encryption of the provided default value.
-
-### Examples
-
-```solidity
-// returns the decryption of `ciphertext`, encrypted under `publicKey`.
-function reencrypt(euint32 ciphertext, bytes32 publicKey) internal view returns (bytes memory reencrypted)
-
-// if the handle of `ciphertext` is equal to `0`, returns `defaultValue` encrypted under `publicKey`.
-// otherwise, returns as above
-function reencrypt(euint32 ciphertext, bytes32 publicKey, uint32 defaultValue) internal view returns (bytes memory reencrypted)
-```
-
-> **_NOTE:_** If one of the following operations is called with an uninitialized ciphertext handle as an operand, this handle will be made to point to a trivial encryption of `0` before the operation is executed.
-
 ## Arithmetic operations (`add`, `sub`, `mul`, `div`, `rem`)
 
 Performs the operation homomorphically.
@@ -175,11 +151,6 @@ Random encrypted integers can be generated fully on-chain.
 
 That can only be done during transactions and not on an `eth_call` RPC method,
 because PRNG state needs to be mutated on-chain during generation.
-
-> **_WARNING:_** Not for use in production! Currently, integers are generated
-> in the plain via a PRNG whose seed and state are public, with the state being
-> on-chain. An FHE-based PRNG is coming soon, where the seed and state will be
-> encrypted.
 
 ### Example
 

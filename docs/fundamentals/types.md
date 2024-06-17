@@ -12,19 +12,26 @@ The `e(u)int` types are **wrappers** over these handles.
 
 The following encrypted data types are defined:
 
-| type       | supported       |
-| ---------- | --------------- |
-| `ebool`    | yes             |
-| `euint4`   | yes             |
-| `euint8`   | yes             |
-| `euint16`  | yes             |
-| `euint32`  | yes             |
-| `euint64`  | yes             |
-| `eaddress` | yes             |
-| `eint8`    | no, coming soon |
-| `eint16`   | no, coming soon |
-| `eint32`   | no, coming soon |
-| `eint64`   | no, coming soon |
+| type        | supported       |
+| ----------- | --------------- |
+| `ebool`     | yes             |
+| `euint4`    | yes             |
+| `euint8`    | yes             |
+| `euint16`   | yes             |
+| `euint32`   | yes             |
+| `euint64`   | yes             |
+| `euint128`  | no, coming soon |
+| `euint256`  | no, coming soon |
+| `eaddress`  | yes             |
+| `ebytes64`  | no, coming soon |
+| `ebytes128` | no, coming soon |
+| `ebytes256` | yes             |
+| `eint8`     | no, coming soon |
+| `eint16`    | no, coming soon |
+| `eint32`    | no, coming soon |
+| `eint64`    | no, coming soon |
+| `eint128`   | no, coming soon |
+| `eint256`   | no, coming soon |
 
 Higher-precision integers are supported in the `TFHE-rs` library and can be added as needed to `fhEVM`.
 
