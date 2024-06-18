@@ -18,9 +18,9 @@ contract TestAsyncDecrypt is GatewayCaller {
   }
 
   function requestBool() public {
-    ebool[] memory cts = new ebool[](1);
-    cts[0] = xBool;
-    TFHE.allowTransient(xBool, address(Gateway));
+    uint256[] memory cts = new uint256[](1);
+    cts[0] = Gateway.toUint256(xBool);
+    TFHE.allowForDecryption(cts);
     Gateway.requestDecryption(cts, this.myCustomCallback.selector, 0, block.timestamp + 100, false);
   }
 
@@ -36,10 +36,11 @@ The interface of the `Gateway.requestDecryption` function from previous snippet 
 
 ```solidity
 function requestDecryption(
-    eXXX[] memory ct,
+    uint256[] memory ct,
     bytes4 callbackSelector,
     uint256 msgValue,
-    uint256 maxTimestamp
+    uint256 maxTimestamp,
+    bool passSignaturesToCaller
 ) returns(uint256 requestID)
 ```
 
@@ -122,9 +123,9 @@ contract TestAsyncDecrypt is GatewayCaller {
   }
 
   function requestUint32(uint32 input1, uint32 input2) public {
-      euint32[] memory cts = new euint32[](1);
-      cts[0] = xUint32;
-      TFHE.allowTransient(xUint32, address(Gateway));
+      uint256[] memory cts = new uint256[](1);
+      cts[0] = Gateway.toUint256(xUint32);
+      TFHE.allowForDecryption(cts);
       uint256 requestID = Gateway.requestDecryption(cts, this.callbackUint32.selector, 0, block.timestamp + 100, false);
       addParamsUint256(requestID, input1);
       addParamsUint256(requestID, input2);
