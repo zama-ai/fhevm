@@ -15,25 +15,24 @@ pnpm add fhevmjs
 
 `fhevmjs` uses ESM format for web version and commonjs for node version. You need to set the [type to "commonjs" in your package.json](https://nodejs.org/api/packages.html#type) to load the correct version of fhevmjs. If your node project use `"type": "module"`, you can force the loading of the Node version by using `import { createInstance } from 'fhevmjs/node';`
 
+An instance receives an object containing:
+
+- `chainId`: the chainId of the network
+- `networkUrl` (optional): the URL of the network (used to fetch the public key)
+- `publicKey` (optional): if the public key has been fetched separately (cache), you can provide it
+- `reencryptionUrl` (optional): the URL of the gateway to retrieve a reencryption
+
 ## Create an instance
 
 ```javascript
-const { createInstance, getPublicKeyCallParams } = require("fhevmjs");
-const { ethers, JsonRpcProvider } = require("ethers");
-
-const provider = new JsonRpcProvider(`https://devnet.zama.ai/`);
+const { createInstance } = require("fhevmjs");
 
 const createFhevmInstance = async () => {
-  // 1. Get the chain id
-  const network = await provider.getNetwork();
-  const chainId = +network.chainId.toString();
-  // 2. Fetch the FHE public key from the blockchain
-  const ret = await provider.call(getPublicKeyCallParams());
-  const decoded = ethers.AbiCoder.defaultAbiCoder().decode(["bytes"], ret);
-  const publicKey = decoded[0];
-
-  // 3. Create the instance
-  return createInstance({ chainId, publicKey });
+  return createInstance({
+    chainId: 8009,
+    networkUrl: "https://devnet.zama.ai/",
+    reencryptionUrl: "https://gateway.zama.ai",
+  });
 };
 createFhevmInstance().then((instance) => {
   console.log(instance);

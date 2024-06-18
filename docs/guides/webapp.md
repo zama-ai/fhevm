@@ -47,27 +47,22 @@ init().then((instance) => {
 });
 ```
 
-Once the WASM is loaded, you can now create an instance. An instance needs two element:
+Once the WASM is loaded, you can now create an instance. An instance receives an object containing:
 
-- The blockchain public key. This key is needed to encrypt inputs
-- The blockchain' chain ID. This value is needed for reencryption process.
+- `chainId`: the chainId of the network
+- `networkUrl` (optional): the URL of the network (used to fetch the public key)
+- `publicKey` (optional): if the public key has been fetched separately (cache), you can provide it
+- `reencryptionUrl` (optional): the URL of the gateway to retrieve a reencryption
 
 ```javascript
-import { ethers, BrowserProvider } from "ethers";
-import { initFhevm, createInstance, getPublicKeyCallParams } from "fhevmjs";
+import { initFhevm, createInstance } from "fhevmjs";
 
 const createFhevmInstance = async () => {
-  const provider = new BrowserProvider(window.ethereum);
-  // 1. Get the chain id
-  const network = await provider.getNetwork();
-  const chainId = +network.chainId.toString();
-  // 2. Fetch the FHE public key from the blockchain
-  const ret = await provider.call(getPublicKeyCallParams());
-  const decoded = ethers.AbiCoder.defaultAbiCoder().decode(["bytes"], ret);
-  const publicKey = decoded[0];
-
-  // 3. Create the instance
-  return createInstance({ chainId, publicKey });
+  return createInstance({
+    chainId: 8009,
+    networkUrl: "https://devnet.zama.ai/",
+    reencryptionUrl: "https://gateway.zama.ai",
+  });
 };
 
 const init = async () => {
