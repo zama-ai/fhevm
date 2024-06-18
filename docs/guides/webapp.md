@@ -80,4 +80,4 @@ init().then((instance) => {
 });
 ```
 
-You can now use your instance to [encrypt parameters](./inputs.md) or do a [reencryption](./reencryption.md).
+You can now use your instance to [encrypt parameters](../fundamentals/inputs.md) or do a [reencryption](./reencryption.md).
