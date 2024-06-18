@@ -32,40 +32,6 @@ contract C {
 }
 ```
 
-### Never use public encrypted state variables
-
-Declaring an encrypted state variable as public exposes the variable to any external untrusted smart contract to access and potentially decrypt them, compromising their confidentiality.
-
-❌ In summary, never write in production:
-
-```solidity
-contract C {
-  euint32 public a;
-
-  constructor(uint32 _a) {
-    a = TFHE.asEuint32(_a);
-  }
-}
-```
-
-✅ Instead, you should declare the state variable as follow:
-
-```solidity
-contract C {
-  euint32 internal a;
-
-  constructor(uint32 _a) {
-    a = TFHE.asEuint32(_a);
-  }
-}
-```
-
-In this last snippet, the `internal` keyword could have been omitted (state variables are internal by default) or alternatively have been replaced by `private`.
-
-### Protect access of view functions using reencryptions
-
-If a view function is using `TFHE.reencrypt` it is mandatory to protect its access to not leak confidentiality, for instance this is doable easily via the `onlySignedPublicKey` modifier imported from `"fhevm/abstracts/Reencrypt.sol"`. See the example from the [Decrypt page](../fundamentals/decrypt.md#handle-private-reencryption). Failing to address this allows anyone to reencrypt another person's ciphertext. This vulnerability comes from the ability to impersonate any `msg.sender` address during a static call to a view function, as it does not require a signature, unlike transactions.
-
 ## Best practises
 
 ### Obfuscate branching
@@ -79,33 +45,27 @@ For example, if implementing a simple AMM for two encrypted ERC20 tokens based o
 ✅ Here is a very simplified example implementations, we suppose here that the the rate between tokenA and tokenB is constant and equals to 1:
 
 ```solidity
-    // typically either encryptedAmountAIn or encryptedAmountBIn is an encrypted null value
-    // ideally, the user already owns some amounts of both tokens and has pre-approved the AMM on both tokens
-    function swapTokensForTokens(
-        bytes calldata encryptedAmountAIn,
-        bytes calldata encryptedAmountBIn,
-    ) external {
-        euint32 encryptedAmountA = TFHE.asEuint32(encryptedAmountAIn); // even if amount is null, do a transfer to obfuscate trade direction
-        euint32 encryptedAmountB = TFHE.asEuint32(encryptedAmountBIn); // even if amount is null, do a transfer to obfuscate trade direction
+// typically either encryptedAmountAIn or encryptedAmountBIn is an encrypted null value
+// ideally, the user already owns some amounts of both tokens and has pre-approved the AMM on both tokens
+function swapTokensForTokens(einput encryptedAmountAIn, einput encryptedAmountBIn, bytes calldata inputProof) external {
+  euint32 encryptedAmountA = TFHE.asEuint32(encryptedAmountAIn, inputProof); // even if amount is null, do a transfer to obfuscate trade direction
+  euint32 encryptedAmountB = TFHE.asEuint32(encryptedAmountBIn, inputProof); // even if amount is null, do a transfer to obfuscate trade direction
 
-        // send tokens from user to AMM contract
-        IEncryptedERC20(tokenA).transferFrom(
-            msg.sender, address(this), encryptedAmountA
-        );
-        IEncryptedERC20(tokenB).transferFrom(
-            msg.sender, address(this), encryptedAmountB
-        );
+  // send tokens from user to AMM contract
+  TFHE.allowTransient(encryptedAmountA, tokenA);
+  IEncryptedERC20(tokenA).transferFrom(msg.sender, address(this), encryptedAmountA);
 
-        // send tokens from AMM contract to user
-        // Price of tokenA in tokenB is constant and equal to 1, so we just swap the encrypted amounts here
-        IEncryptedERC20(tokenA).transfer(
-            msg.sender, encryptedAmountB
-        );
-        IEncryptedERC20(tokenB).transferFrom(
-            msg.sender, address(this), encryptedAmountA
-        );
-    }
+  TFHE.allowTransient(encryptedAmountB, tokenB);
+  IEncryptedERC20(tokenB).transferFrom(msg.sender, address(this), encryptedAmountB);
 
+  // send tokens from AMM contract to user
+  // Price of tokenA in tokenB is constant and equal to 1, so we just swap the encrypted amounts here
+  TFHE.allowTransient(encryptedAmountB, tokenA);
+  IEncryptedERC20(tokenA).transfer(msg.sender, encryptedAmountB);
+
+  TFHE.allowTransient(encryptedAmountA, tokenB);
+  IEncryptedERC20(tokenB).transferFrom(msg.sender, address(this), encryptedAmountA);
+}
 ```
 
 Notice that to preserve confidentiality, we had to make two inputs transfers on both tokens from the user to the AMM contract, and similarly two output transfers from the AMM to the user, even if technically most of the times it will make sense that one of the user inputs `encryptedAmountAIn` or `encryptedAmountBIn` is actually an encrypted zero.
@@ -126,8 +86,8 @@ For instance, imagine you have an encrypted array called `encArray` and you want
 euint32 x;
 euint32[] encArray;
 
-function setXwithEncryptedIndex(bytes calldata encryptedIndex) public {
-    euint32 index = TFHE.asEuint32(encryptedIndex);
+function setXwithEncryptedIndex(einput encryptedIndex, bytes calldata inputProof) public {
+    euint32 index = TFHE.asEuint32(encryptedIndex, inputProof);
     for (uint32 i = 0; i < encArray.length; i++) {
         ebool isEqual = TFHE.eq(index, i);
         x = TFHE.select(isEqual, encArray[i], x);
@@ -164,23 +124,25 @@ TFHE arithmetic operators can overflow. Do not forget to take into account such 
 ❌ For example, if you wanted to create a mint function for an encrypted ERC20 tokens with an encrypted `totalSupply` state variable, this code is vulnerable to overflows:
 
 ```solidity
-function mint(bytes calldata encryptedAmount) public {
-  euint32 mintedAmount = TFHE.asEuint32(encryptedAmount);
+function mint(einput encryptedAmount, bytes calldata inputProof) public {
+  euint32 mintedAmount = TFHE.asEuint32(encryptedAmount, inputProof);
   totalSupply = TFHE.add(totalSupply, mintedAmount);
   balances[msg.sender] = TFHE.add(balances[msg.sender], mintedAmount);
+  TFHE.allow(balances[msg.sender], address(this))
 }
 ```
 
 ✅ But you can fix this issue by using `TFHE.select` to cancel the mint in case of an overflow:
 
 ```solidity
-function mint(bytes calldata encryptedAmount) public {
-  euint32 mintedAmount = TFHE.asEuint32(encryptedAmount);
+function mint(einput encryptedAmount, bytes calldata inputProof) public {
+  euint32 mintedAmount = TFHE.asEuint32(encryptedAmount, inputProof);
   euint32 tempTotalSupply = TFHE.add(totalSupply, mintedAmount);
   ebool isOverflow = TFHE.lt(tempTotalSupply, totalSupply);
   totalSupply = TFHE.select(isOverflow, totalSupply, tempTotalSupply);
   euint32 tempBalanceOf = TFHE.add(balances[msg.sender], mintedAmount);
   balances[msg.sender] = TFHE.select(isOverflow, balances[msg.sender], tempBalanceOf);
+  TFHE.allow(balances[msg.sender], address(this))
 }
 ```
 
