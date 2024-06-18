@@ -14,12 +14,14 @@ contract TestAsyncDecrypt is GatewayCaller {
 
   constructor() {
       xBool = TFHE.asEbool(true);
+      TFHE.allow(xBool, address(this));
   }
 
   function requestBool() public {
     ebool[] memory cts = new ebool[](1);
     cts[0] = xBool;
-    Gateway.requestDecryption(cts, this.myCustomCallback.selector, 0, block.timestamp + 100);
+    TFHE.allowTransient(xBool, address(Gateway));
+    Gateway.requestDecryption(cts, this.myCustomCallback.selector, 0, block.timestamp + 100, false);
   }
 
   function myCustomCallback(uint256 /*requestID*/, bool decryptedInput) public onlyGateway returns (bool) {
@@ -77,7 +79,7 @@ function addParamsEAddress(uint256 requestID, address _eaddress) internal;
 
 function addParamsAddress(uint256 requestID, address _address) internal;
 
-function addParamsUint(uint256 requestID, uint256 _uint) internal;
+function addParamsUint256(uint256 requestID, uint256 _uint) internal;
 ```
 
 With their corresponding getter functions to be used inside the callback:
@@ -99,7 +101,7 @@ function getParamsEAddress(uint256 requestID) internal;
 
 function getParamsAddress(uint256 requestID) internal;
 
-function getParamsUint(uint256 requestID) internal;
+function getParamsUint256(uint256 requestID) internal;
 ```
 
 For example, see this snippet where we add two `uint`s during the request call, to make them available later during the callback:
@@ -116,18 +118,20 @@ contract TestAsyncDecrypt is GatewayCaller {
 
   constructor() {
       xUint32 = TFHE.asEuint32(32);
+      TFHE.allow(xUint32, address(this));
   }
 
   function requestUint32(uint32 input1, uint32 input2) public {
       euint32[] memory cts = new euint32[](1);
       cts[0] = xUint32;
-      uint256 requestID = Gateway.requestDecryption(cts, this.callbackUint32.selector, 0, block.timestamp + 100);
-      addParamsUint(requestID, input1);
-      addParamsUint(requestID, input2);
+      TFHE.allowTransient(xUint32, address(Gateway));
+      uint256 requestID = Gateway.requestDecryption(cts, this.callbackUint32.selector, 0, block.timestamp + 100, false);
+      addParamsUint256(requestID, input1);
+      addParamsUint256(requestID, input2);
   }
 
   function callbackUint32(uint256 requestID, uint32 decryptedInput) public onlyGateway returns (uint32) {
-    uint256[] memory params = getParamsUint(requestID);
+    uint256[] memory params = getParamsUint256(requestID);
     unchecked {
         uint32 result = uint32(params[0]) + uint32(params[1]) + decryptedInput;
         yUint32 = result;
