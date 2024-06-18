@@ -20,7 +20,7 @@ pnpm add fhevm-contracts
 ```solidity
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import "fhevm/lib/TFHE.sol";
 import "fhevm-contracts/contracts/token/ERC20/EncryptedERC20.sol";
