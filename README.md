@@ -14,16 +14,13 @@
 
 <p align="center">
   <a href="https://github.com/zama-ai/fhevm/releases">
-    <img src="https://img.shields.io/github/v/release/zama-ai/fhevm?style=flat-square">
-  </a>
+    <img src="https://img.shields.io/github/v/release/zama-ai/fhevm?style=flat-square"></a>
   <a href="https://github.com/zama-ai/fhevm/blob/main/LICENSE">
     <!-- markdown-link-check-disable-next-line -->
-    <img src="https://img.shields.io/badge/License-BSD--3--Clause--Clear-%23ffb243?style=flat-square">
-  </a>
+    <img src="https://img.shields.io/badge/License-BSD--3--Clause--Clear-%23ffb243?style=flat-square"></a>
   <a href="https://github.com/zama-ai/bounty-program">
     <!-- markdown-link-check-disable-next-line -->
-    <img src="https://img.shields.io/badge/Contribute-Zama%20Bounty%20Program-%23ffd208?style=flat-square">
-  </a>
+    <img src="https://img.shields.io/badge/Contribute-Zama%20Bounty%20Program-%23ffd208?style=flat-square"></a>
 </p>
 
 ## About
