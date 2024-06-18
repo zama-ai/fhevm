@@ -21,14 +21,13 @@
   - [Operations on encrypted types](fundamentals/types/operations.md)
   - [Branching in FHE](fundamentals/types/conditions.md)
   - [Generate random number](fundamentals/types/random.md)
-- [Encrypted inputs](fundamentals/inputs.md)
+- [Encrypted input](fundamentals/inputs.md)
 - [ACL](fundamentals/acl.md)
 - [Decrypt and reencrypt](fundamentals/decrypt.md)
 - [Contracts standard library](fundamentals/contracts.md)
 
 ## Guides
 
-- [Encrypt an input](guides/inputs.md)
 - [Decryption](guides/decrypt.md)
 - [Reencryption](guides/reencryption.md)
 - [Build a web application](guides/webapp.md)
