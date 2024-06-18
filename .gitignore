@@ -131,6 +131,8 @@ coverage.json
 build
 cache
 types
+!docs/types
+!docs/**/types
 deployments
 typechain
 typechain-types
