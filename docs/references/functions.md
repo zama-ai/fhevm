@@ -90,6 +90,17 @@ function shl(euint16 a, euint8 b) internal view returns (euint16)
 function shr(euint32 a, euint16 b) internal view returns (euint32)
 ```
 
+## Rotate operations
+
+Rotates the bits of the base two representation of `a` by `b` positions.
+
+### Examples
+
+```solidity
+function rotl(euint16 a, euint8 b) internal view returns (euint16)
+function rotr(euint32 a, euint16 b) internal view returns (euint32)
+```
+
 ## Comparison operation (`eq`, `ne`, `ge`, `gt`, `le`, `lt`)
 
 Note that in the case of ciphertext-plaintext operations, since our backend only accepts plaintext right operands, calling the operation with a plaintext left operand will actually invert the operand order and call the _opposite_ comparison.
@@ -157,4 +168,33 @@ because PRNG state needs to be mutated on-chain during generation.
 ```solidity
 // Generate a random encrypted unsigned integer `r`.
 euint32 r = TFHE.randEuint32();
+```
+
+## ACL (`allow`, `allowTransient`, `isAllowed`, `isSenderAllowed`)
+
+Allow an address to use a ciphertext, which includes computation, decryption, and reencryption. The `allow` function will permanently store the allowance in a dedicated contract, while `allowTransient` will temporarily store it in transient storage.
+
+### Example
+
+```solidity
+// Store a value in the contract.
+r = TFHE.asEuint32(94);
+// Set the contract as allowed for this ciphertext.
+TFHE.allow(r, address(this));
+// Also set the caller as allowed for this ciphertext.
+TFHE.allow(r, msg.sender);
+```
+
+## ACL verification
+
+To verify whether an address is allowed, `isAllowed` will return true if the specified address has permission. `isSenderAllowed` is similar but uses `msg.sender` as the address.
+
+NOTE: These functions will return true if the ciphertext is authorized, regardless of whether the allowance is on the ACL contract or in transient storage.
+
+### Example
+
+```solidity
+// Store a value in the contract.
+r = TFHE.asEuint32(94);
+TFHE.isAllowed(r, address(this)); // returns true
 ```
