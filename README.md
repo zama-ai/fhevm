@@ -13,9 +13,17 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/zama-ai/fhevm/releases"><img src="https://img.shields.io/github/v/release/zama-ai/fhevm?style=flat-square"></a>
-  <a href="license"><img src="https://img.shields.io/badge/License-BSD--3--Clause--Clear-%23ffb243?style=flat-square"></a>
-  <a href="https://github.com/zama-ai/bounty-program"><img src="https://img.shields.io/badge/Contribute-Zama%20Bounty%20Program-%23ffd208?style=flat-square"></a>
+  <a href="https://github.com/zama-ai/fhevm/releases">
+    <img src="https://img.shields.io/github/v/release/zama-ai/fhevm?style=flat-square">
+  </a>
+  <a href="https://github.com/zama-ai/fhevm/blob/main/LICENSE">
+    <!-- markdown-link-check-disable-next-line -->
+    <img src="https://img.shields.io/badge/License-BSD--3--Clause--Clear-%23ffb243?style=flat-square">
+  </a>
+  <a href="https://github.com/zama-ai/bounty-program">
+    <!-- markdown-link-check-disable-next-line -->
+    <img src="https://img.shields.io/badge/Contribute-Zama%20Bounty%20Program-%23ffd208?style=flat-square">
+  </a>
 </p>
 
 ## About
@@ -125,7 +133,7 @@ contract Counter {
 _This example is explained in more detail in [here](https://github.com/zama-ai/fhevm/tree/main/examples)._
 
 <p align="right">
-  <a href="#about" > ↑ Back to top </a> 
+  <a href="#about" > ↑ Back to top </a>
 </p>
 
 ## Resources
@@ -171,7 +179,7 @@ _Explore more useful resources in [fhEVM tutorials](https://docs.zama.ai/fhevm/r
 Full, comprehensive documentation is available here: [https://docs.zama.ai/fhevm](https://docs.zama.ai/fhevm).
 
 <p align="right">
-  <a href="#about" > ↑ Back to top </a> 
+  <a href="#about" > ↑ Back to top </a>
 </p>
 
 ### Blockchain Implementation
@@ -215,7 +223,7 @@ test/tfheOperations/tfheOperations.ts
 ```
 
 <p align="right">
-  <a href="#about" > ↑ Back to top </a> 
+  <a href="#about" > ↑ Back to top </a>
 </p>
 
 #### Tests
@@ -288,7 +296,7 @@ npx hardhat test --network localNetwork1
 ```
 
 <p align="right">
-  <a href="#about" > ↑ Back to top </a> 
+  <a href="#about" > ↑ Back to top </a>
 </p>
 
 #### Adding new operators
@@ -316,7 +324,7 @@ Then open the file `coverage/index.html`. You can see there which line or branch
 > Due to intrinsic limitations of the original EVM, the mocked version differ in few corner cases from the real fhEVM, the most important change is the `TFHE.isInitialized` method which will always return `true` in the mocked version. Another big difference in mocked mode, compared to the real fhEVM implementation, is that there is no ciphertext verification neither checking that a ciphertext has been honestly obtained (see section 4 of the [whitepaper](https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper.pdf)). This means that before deploying to production, developers still need to run the tests with the original fhEVM node, as a final check in non-mocked mode, with `npm run test`.
 
 <p align="right">
-  <a href="#about" > ↑ Back to top </a> 
+  <a href="#about" > ↑ Back to top </a>
 </p>
 
 ### Citations
@@ -378,7 +386,7 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 > We are open to collaborating and advancing the FHE space with our partners. If you have specific needs, please email us at hello@zama.ai.
 
 <p align="right">
-  <a href="#table-of-contents" > ↑ Back to top </a> 
+  <a href="#table-of-contents" > ↑ Back to top </a>
 </p>
 
 ## Support
@@ -394,5 +402,5 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 🌟 If you find this project helpful or interesting, please consider giving it a star on GitHub! Your support helps to grow the community and motivates further development.
 
 <p align="right">
-  <a href="#about" > ↑ Back to top </a> 
+  <a href="#about" > ↑ Back to top </a>
 </p>
