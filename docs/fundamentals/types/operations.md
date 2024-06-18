@@ -33,6 +33,6 @@ The `TFHE` library defines the following operations with FHE ciphertexts:
 
 Overloaded operators `+`, `-`, `*`, `&`, ... on encrypted integers are supported ([using for](https://docs.soliditylang.org/en/v0.8.22/contracts.html#using-for)). As of now, overloaded operators will call the versions without an overflow check.
 
-More information about the supported operations can be found in the [function specifications](../references/functions.md) page or in the [TFHE-rs docs](https://docs.zama.ai/tfhe-rs/getting-started/operations#arithmetic-operations.).
+More information about the supported operations can be found in the [function specifications](../../references/functions.md) page or in the [TFHE-rs docs](https://docs.zama.ai/tfhe-rs/getting-started/operations#arithmetic-operations.).
 
-If you find yourself in search of a missing feature, we encourage you to [consult our roadmap](../developer/roadmap.md) for upcoming developments. Alternatively, don't hesitate to reach out to us on Discord or visit our community forum.
+If you find yourself in search of a missing feature, we encourage you to [consult our roadmap](../../developer/roadmap.md) for upcoming developments. Alternatively, don't hesitate to reach out to us on Discord or visit our community forum.
