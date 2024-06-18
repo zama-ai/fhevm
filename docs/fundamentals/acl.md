@@ -59,7 +59,7 @@ function randomize() {
 
 ## Security best practice: isSenderAllowed()
 
-When a function receives a ciphertext, it needs to verify that the sender also has access to this ciphertext. This is important because otherwise, a contract could send any ciphertext authorized for the contract and potentially exploit the function to retrieve the value.
+When a function receives a ciphertext (such as `ebool`, `euint8`, `eaddress`, ...), it needs to verify that the sender also has access to this ciphertext. This is important because otherwise, a contract could send any ciphertext authorized for the contract and potentially exploit the function to retrieve the value.
 For example, an attacker could transfer someone's balance as an encrypted amount. Without `require(TFHE.isSenderAllowed(encryptedAmount))`, an attacker who doesn't have access to this balance could determine the value by transferring the balance between two well-funded accounts.
 
 ## ACL for reencryption
