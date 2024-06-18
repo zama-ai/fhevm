@@ -18,11 +18,11 @@ function generateAllFiles() {
   writeFileSync('mocks/Impl.sol', t.implSolMock(context, operators));
   const [tfheSolSourceMock, _] = t.tfheSol(context, operators, SUPPORTED_BITS, true);
   writeFileSync('mocks/TFHE.sol', tfheSolSourceMock);
-  mkdirSync('examples/tests', { recursive: true });
-  ovShards.forEach((os) => {
-    writeFileSync(`examples/tests/TFHETestSuite${os.shardNumber}.sol`, testgen.generateSmartContract(os));
-  });
-  writeFileSync('test/tfheOperations/tfheOperations.ts', testgen.generateTestCode(ovShards));
+  // mkdirSync('examples/tests', { recursive: true });
+  // ovShards.forEach((os) => {
+  //   writeFileSync(`examples/tests/TFHETestSuite${os.shardNumber}.sol`, testgen.generateSmartContract(os));
+  // });
+  // writeFileSync('test/tfheOperations/tfheOperations.ts', testgen.generateTestCode(ovShards));
 }
 
 generateAllFiles();

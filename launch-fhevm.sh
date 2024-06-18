@@ -18,13 +18,15 @@ docker run -d -i -p 8545:8545 --rm --name fhevm \
   
 sleep 10
 
-npx hardhat compile:specific --contract lib
-
-npx hardhat compile:specific --contract gateway
-
+npx hardhat task:computeACLAddress
+npx hardhat task:computeTFHEExecutorAddress
+npx hardhat task:computeKMSVerifierAddress
 npx hardhat task:deployACL
-
 npx hardhat task:deployTFHEExecutor
+npx hardhat task:deployKMSVerifier
+
+npx hardhat compile:specific --contract lib
+npx hardhat compile:specific --contract gateway
 
 npx hardhat task:launchFhevm
 

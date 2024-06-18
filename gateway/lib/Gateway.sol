@@ -4,55 +4,73 @@ pragma solidity ^0.8.25;
 
 import "../GatewayContract.sol";
 import "../../lib/ACL.sol";
+import "../../lib/KMSVerifier.sol";
 
-GatewayContract constant gatewayContract = GatewayContract(0xc8c9303Cd7F337fab769686B593B87DC3403E0ce); // Replace by GatewayContract address
-ACL constant acl = ACL(0x2Fb4341027eb1d2aD8B5D9708187df8633cAFA92); // Replace by ACL address
+GatewayContract constant gatewayContract = GatewayContract(address(0)); // Replace by GatewayContract address
+ACL constant acl = ACL(address(0)); // Replace by ACL address
+KMSVerifier constant kmsVerifier = KMSVerifier(address(0)); // Replace by KMSVerifier address
 
 library Gateway {
-    function GatewayGatewayAddress() internal pure returns (address) {
+    function GatewayContractAddress() internal pure returns (address) {
         return address(gatewayContract);
     }
 
-    function toCiphertext(ebool newCT) internal pure returns (Ciphertext memory ct) {
-        ct = Ciphertext({ctHandle: ebool.unwrap(newCT), ctType: CiphertextType.EBOOL});
+    function toUint256(ebool newCT) internal pure returns (uint256 ct) {
+        ct = ebool.unwrap(newCT);
     }
 
-    function toCiphertext(euint4 newCT) internal pure returns (Ciphertext memory ct) {
-        ct = Ciphertext({ctHandle: euint4.unwrap(newCT), ctType: CiphertextType.EUINT4});
+    function toUint256(euint4 newCT) internal pure returns (uint256 ct) {
+        ct = euint4.unwrap(newCT);
     }
 
-    function toCiphertext(euint8 newCT) internal pure returns (Ciphertext memory ct) {
-        ct = Ciphertext({ctHandle: euint8.unwrap(newCT), ctType: CiphertextType.EUINT8});
+    function toUint256(euint8 newCT) internal pure returns (uint256 ct) {
+        ct = euint8.unwrap(newCT);
     }
 
-    function toCiphertext(euint16 newCT) internal pure returns (Ciphertext memory ct) {
-        ct = Ciphertext({ctHandle: euint16.unwrap(newCT), ctType: CiphertextType.EUINT16});
+    function toUint256(euint16 newCT) internal pure returns (uint256 ct) {
+        ct = euint16.unwrap(newCT);
     }
 
-    function toCiphertext(euint32 newCT) internal pure returns (Ciphertext memory ct) {
-        ct = Ciphertext({ctHandle: euint32.unwrap(newCT), ctType: CiphertextType.EUINT32});
+    function toUint256(euint32 newCT) internal pure returns (uint256 ct) {
+        ct = euint32.unwrap(newCT);
     }
 
-    function toCiphertext(euint64 newCT) internal pure returns (Ciphertext memory ct) {
-        ct = Ciphertext({ctHandle: euint64.unwrap(newCT), ctType: CiphertextType.EUINT64});
+    function toUint256(euint64 newCT) internal pure returns (uint256 ct) {
+        ct = euint64.unwrap(newCT);
     }
 
-    function toCiphertext(eaddress newCT) internal pure returns (Ciphertext memory ct) {
-        ct = Ciphertext({ctHandle: eaddress.unwrap(newCT), ctType: CiphertextType.EADDRESS});
+    function toUint256(eaddress newCT) internal pure returns (uint256 ct) {
+        ct = eaddress.unwrap(newCT);
     }
 
     function requestDecryption(
-        Ciphertext[] memory cts,
+        uint256[] memory ctsHandles,
         bytes4 callbackSelector,
         uint256 msgValue,
-        uint256 maxTimestamp
+        uint256 maxTimestamp,
+        bool passSignaturesToCaller
     ) internal returns (uint256 requestID) {
-        uint256 len = cts.length;
-        uint256[] memory ctsHandles = new uint256[](len);
-        for (uint256 k = 0; k < len; k++) {
-            ctsHandles[k] = cts[k].ctHandle;
-        }
         acl.allowForDecryption(ctsHandles);
-        requestID = gatewayContract.requestDecryption(cts, callbackSelector, msgValue, maxTimestamp);
+        requestID = gatewayContract.requestDecryption(
+            ctsHandles,
+            callbackSelector,
+            msgValue,
+            maxTimestamp,
+            passSignaturesToCaller
+        );
+    }
+
+    /// @dev this function is supposed to be called inside the callback function if the dev wants the dApp contract to verify the signatures
+    /// @dev this is useful to give dev the choice not to rely on trusting the GatewayContract.
+    /// @notice this could be used only when signatures are made available to the callback, i.e when `passSignaturesToCaller` is set to true during request
+    function verifySignatures(uint256[] memory handlesList, bytes[] memory signatures) internal returns (bool) {
+        uint256 start = 4 + 32; // start position after skipping the selector (4 bytes) and the first argument (index, 32 bytes)
+        uint256 numArgs = handlesList.length; // Number of arguments before signatures
+        uint256 length = numArgs * 32;
+        bytes memory decryptedResult = new bytes(length);
+        assembly {
+            calldatacopy(add(decryptedResult, 0x20), start, length) // Copy the relevant part of calldata to decryptedResult memory
+        }
+        return kmsVerifier.verifySignatures(handlesList, decryptedResult, signatures);
     }
 }

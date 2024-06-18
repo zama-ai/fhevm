@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.25;
 
 import "../lib/TFHE.sol";
 import "../gateway/GatewayCaller.sol";
@@ -28,29 +28,38 @@ contract TestAsyncDecrypt is GatewayCaller {
     address public yAddress;
     address public yAddress2;
 
+    uint256 public latestRequestID;
+
     constructor() {
         xBool = TFHE.asEbool(true);
+        TFHE.allow(xBool, address(this));
         xUint4 = TFHE.asEuint4(4);
+        TFHE.allow(xUint4, address(this));
         xUint8 = TFHE.asEuint8(42);
         TFHE.allow(xUint8, address(this));
         xUint16 = TFHE.asEuint16(16);
+        TFHE.allow(xUint16, address(this));
         xUint32 = TFHE.asEuint32(32);
+        TFHE.allow(xUint32, address(this));
         xUint64 = TFHE.asEuint64(18446744073709551600);
+        TFHE.allow(xUint64, address(this));
         xUint64_2 = TFHE.asEuint64(76575465786);
+        TFHE.allow(xUint64_2, address(this));
         xUint64_3 = TFHE.asEuint64(6400);
+        TFHE.allow(xUint64_3, address(this));
         xAddress = TFHE.asEaddress(0x8ba1f109551bD432803012645Ac136ddd64DBA72);
         xAddress2 = TFHE.asEaddress(0xf48b8840387ba3809DAE990c930F3b4766A86ca3);
     }
 
     function requestBoolInfinite() public {
-        Ciphertext[] memory cts = new Ciphertext[](1);
-        cts[0] = Gateway.toCiphertext(xBool);
-        Gateway.requestDecryption(cts, this.callbackBoolInfinite.selector, 0, block.timestamp + 100);
+        uint256[] memory cts = new uint256[](1);
+        cts[0] = Gateway.toUint256(xBool);
+        Gateway.requestDecryption(cts, this.callbackBoolInfinite.selector, 0, block.timestamp + 100, false);
     }
 
     function callbackBoolInfinite(uint256 /*requestID*/, bool decryptedInput) public onlyGateway returns (bool) {
         uint256 i = 0;
-        while (1 == 1) {
+        while (true) {
             i++;
         }
         yBool = decryptedInput;
@@ -59,21 +68,35 @@ contract TestAsyncDecrypt is GatewayCaller {
 
     function requestBoolAboveDelay() public {
         // should revert
-        Ciphertext[] memory cts = new Ciphertext[](1);
-        cts[0] = Gateway.toCiphertext(xBool);
-        Gateway.requestDecryption(cts, this.callbackBool.selector, 0, block.timestamp + 2 days);
+        uint256[] memory cts = new uint256[](1);
+        cts[0] = Gateway.toUint256(xBool);
+        Gateway.requestDecryption(cts, this.callbackBool.selector, 0, block.timestamp + 2 days, false);
     }
 
     function requestBool() public {
-        Ciphertext[] memory cts = new Ciphertext[](1);
-        cts[0] = Gateway.toCiphertext(xBool);
-        Gateway.requestDecryption(cts, this.callbackBool.selector, 0, block.timestamp + 100);
+        uint256[] memory cts = new uint256[](1);
+        cts[0] = Gateway.toUint256(xBool);
+        Gateway.requestDecryption(cts, this.callbackBool.selector, 0, block.timestamp + 100, false);
+    }
+
+    function requestBoolTrustless() public {
+        uint256[] memory cts = new uint256[](1);
+        cts[0] = Gateway.toUint256(xBool);
+        uint256 requestID = Gateway.requestDecryption(
+            cts,
+            this.callbackBoolTrustless.selector,
+            0,
+            block.timestamp + 100,
+            true
+        );
+        latestRequestID = requestID;
+        saveRequestedHandles(requestID, cts);
     }
 
     function requestFakeBool() public {
-        Ciphertext[] memory cts = new Ciphertext[](1);
-        cts[0] = Ciphertext(42, CiphertextType.EBOOL);
-        Gateway.requestDecryption(cts, this.callbackBool.selector, 0, block.timestamp + 100); // this should revert because previous ebool is not honestly obtained
+        uint256[] memory cts = new uint256[](1);
+        cts[0] = uint256(0x4200000000000000000000000000000000000000000000000000000000000000);
+        Gateway.requestDecryption(cts, this.callbackBool.selector, 0, block.timestamp + 100, false); // this should revert because previous ebool is not honestly obtained
     }
 
     function callbackBool(uint256, bool decryptedInput) public onlyGateway returns (bool) {
@@ -81,16 +104,29 @@ contract TestAsyncDecrypt is GatewayCaller {
         return yBool;
     }
 
+    function callbackBoolTrustless(
+        uint256 requestID,
+        bool decryptedInput,
+        bytes[] memory signatures
+    ) public onlyGateway returns (bool) {
+        require(latestRequestID == requestID, "wrong requestID passed by Gateway");
+        uint256[] memory requestedHandles = loadRequestedHandles(latestRequestID);
+        bool isKMSVerified = Gateway.verifySignatures(requestedHandles, signatures);
+        require(isKMSVerified, "KMS did not verify this decryption result");
+        yBool = decryptedInput;
+        return yBool;
+    }
+
     function requestUint4() public {
-        Ciphertext[] memory cts = new Ciphertext[](1);
-        cts[0] = Gateway.toCiphertext(xUint4);
-        Gateway.requestDecryption(cts, this.callbackUint4.selector, 0, block.timestamp + 100);
+        uint256[] memory cts = new uint256[](1);
+        cts[0] = Gateway.toUint256(xUint4);
+        Gateway.requestDecryption(cts, this.callbackUint4.selector, 0, block.timestamp + 100, false);
     }
 
     function requestFakeUint4() public {
-        Ciphertext[] memory cts = new Ciphertext[](1);
-        cts[0] = Ciphertext(42, CiphertextType.EUINT4);
-        Gateway.requestDecryption(cts, this.callbackUint4.selector, 0, block.timestamp + 100); // this should revert because previous handle is not honestly obtained
+        uint256[] memory cts = new uint256[](1);
+        cts[0] = uint256(0x4200000000000000000000000000000000000000000000000000000000000100);
+        Gateway.requestDecryption(cts, this.callbackUint4.selector, 0, block.timestamp + 100, false); // this should revert because previous handle is not honestly obtained
     }
 
     function callbackUint4(uint256, uint8 decryptedInput) public onlyGateway returns (uint8) {
@@ -99,15 +135,15 @@ contract TestAsyncDecrypt is GatewayCaller {
     }
 
     function requestUint8() public {
-        Ciphertext[] memory cts = new Ciphertext[](1);
-        cts[0] = Gateway.toCiphertext(xUint8);
-        Gateway.requestDecryption(cts, this.callbackUint8.selector, 0, block.timestamp + 100);
+        uint256[] memory cts = new uint256[](1);
+        cts[0] = Gateway.toUint256(xUint8);
+        Gateway.requestDecryption(cts, this.callbackUint8.selector, 0, block.timestamp + 100, false);
     }
 
     function requestFakeUint8() public {
-        Ciphertext[] memory cts = new Ciphertext[](1);
-        cts[0] = Ciphertext(42, CiphertextType.EUINT8);
-        Gateway.requestDecryption(cts, this.callbackUint8.selector, 0, block.timestamp + 100); // this should revert because previous handle is not honestly obtained
+        uint256[] memory cts = new uint256[](1);
+        cts[0] = uint256(0x4200000000000000000000000000000000000000000000000000000000000200);
+        Gateway.requestDecryption(cts, this.callbackUint8.selector, 0, block.timestamp + 100, false); // this should revert because previous handle is not honestly obtained
     }
 
     function callbackUint8(uint256, uint8 decryptedInput) public onlyGateway returns (uint8) {
@@ -116,15 +152,15 @@ contract TestAsyncDecrypt is GatewayCaller {
     }
 
     function requestUint16() public {
-        Ciphertext[] memory cts = new Ciphertext[](1);
-        cts[0] = Gateway.toCiphertext(xUint16);
-        Gateway.requestDecryption(cts, this.callbackUint16.selector, 0, block.timestamp + 100);
+        uint256[] memory cts = new uint256[](1);
+        cts[0] = Gateway.toUint256(xUint16);
+        Gateway.requestDecryption(cts, this.callbackUint16.selector, 0, block.timestamp + 100, false);
     }
 
     function requestFakeUint16() public {
-        Ciphertext[] memory cts = new Ciphertext[](1);
-        cts[0] = Ciphertext(42, CiphertextType.EUINT16);
-        Gateway.requestDecryption(cts, this.callbackUint16.selector, 0, block.timestamp + 100); // this should revert because previous handle is not honestly obtained
+        uint256[] memory cts = new uint256[](1);
+        cts[0] = uint256(0x4200000000000000000000000000000000000000000000000000000000000300);
+        Gateway.requestDecryption(cts, this.callbackUint16.selector, 0, block.timestamp + 100, false); // this should revert because previous handle is not honestly obtained
     }
 
     function callbackUint16(uint256, uint16 decryptedInput) public onlyGateway returns (uint16) {
@@ -133,21 +169,27 @@ contract TestAsyncDecrypt is GatewayCaller {
     }
 
     function requestUint32(uint32 input1, uint32 input2) public {
-        Ciphertext[] memory cts = new Ciphertext[](1);
-        cts[0] = Gateway.toCiphertext(xUint32);
-        uint256 requestID = Gateway.requestDecryption(cts, this.callbackUint32.selector, 0, block.timestamp + 100);
-        addParamsUint(requestID, input1);
-        addParamsUint(requestID, input2);
+        uint256[] memory cts = new uint256[](1);
+        cts[0] = Gateway.toUint256(xUint32);
+        uint256 requestID = Gateway.requestDecryption(
+            cts,
+            this.callbackUint32.selector,
+            0,
+            block.timestamp + 100,
+            false
+        );
+        addParamsUint256(requestID, input1);
+        addParamsUint256(requestID, input2);
     }
 
     function requestFakeUint32() public {
-        Ciphertext[] memory cts = new Ciphertext[](1);
-        cts[0] = Ciphertext(42, CiphertextType.EUINT32);
-        Gateway.requestDecryption(cts, this.callbackUint32.selector, 0, block.timestamp + 100); // this should revert because previous handle is not honestly obtained
+        uint256[] memory cts = new uint256[](1);
+        cts[0] = uint256(0x4200000000000000000000000000000000000000000000000000000000000400);
+        Gateway.requestDecryption(cts, this.callbackUint32.selector, 0, block.timestamp + 100, false); // this should revert because previous handle is not honestly obtained
     }
 
     function callbackUint32(uint256 requestID, uint32 decryptedInput) public onlyGateway returns (uint32) {
-        uint256[] memory params = getParamsUint(requestID);
+        uint256[] memory params = getParamsUint256(requestID);
         unchecked {
             uint32 result = uint32(params[0]) + uint32(params[1]) + decryptedInput;
             yUint32 = result;
@@ -156,15 +198,15 @@ contract TestAsyncDecrypt is GatewayCaller {
     }
 
     function requestUint64() public {
-        Ciphertext[] memory cts = new Ciphertext[](1);
-        cts[0] = Gateway.toCiphertext(xUint64);
-        Gateway.requestDecryption(cts, this.callbackUint64.selector, 0, block.timestamp + 100);
+        uint256[] memory cts = new uint256[](1);
+        cts[0] = Gateway.toUint256(xUint64);
+        Gateway.requestDecryption(cts, this.callbackUint64.selector, 0, block.timestamp + 100, false);
     }
 
     function requestFakeUint64() public {
-        Ciphertext[] memory cts = new Ciphertext[](1);
-        cts[0] = Ciphertext(42, CiphertextType.EUINT64);
-        Gateway.requestDecryption(cts, this.callbackUint64.selector, 0, block.timestamp + 100); // this should revert because previous handle is not honestly obtained
+        uint256[] memory cts = new uint256[](1);
+        cts[0] = uint256(0x4200000000000000000000000000000000000000000000000000000000000500);
+        Gateway.requestDecryption(cts, this.callbackUint64.selector, 0, block.timestamp + 100, false); // this should revert because previous handle is not honestly obtained
     }
 
     function callbackUint64(uint256, uint64 decryptedInput) public onlyGateway returns (uint64) {
@@ -173,16 +215,16 @@ contract TestAsyncDecrypt is GatewayCaller {
     }
 
     function requestAddress() public {
-        Ciphertext[] memory cts = new Ciphertext[](1);
-        cts[0] = Gateway.toCiphertext(xAddress);
-        Gateway.requestDecryption(cts, this.callbackAddress.selector, 0, block.timestamp + 100);
+        uint256[] memory cts = new uint256[](1);
+        cts[0] = Gateway.toUint256(xAddress);
+        Gateway.requestDecryption(cts, this.callbackAddress.selector, 0, block.timestamp + 100, false);
     }
 
     function requestSeveralAddresses() public {
-        Ciphertext[] memory cts = new Ciphertext[](2);
-        cts[0] = Gateway.toCiphertext(xAddress);
-        cts[1] = Gateway.toCiphertext(xAddress2);
-        Gateway.requestDecryption(cts, this.callbackAddresses.selector, 0, block.timestamp + 100);
+        uint256[] memory cts = new uint256[](2);
+        cts[0] = Gateway.toUint256(xAddress);
+        cts[1] = Gateway.toUint256(xAddress2);
+        Gateway.requestDecryption(cts, this.callbackAddresses.selector, 0, block.timestamp + 100, false);
     }
 
     function callbackAddresses(
@@ -196,9 +238,9 @@ contract TestAsyncDecrypt is GatewayCaller {
     }
 
     function requestFakeAddress() public {
-        Ciphertext[] memory cts = new Ciphertext[](1);
-        cts[0] = Ciphertext(42, CiphertextType.EADDRESS);
-        Gateway.requestDecryption(cts, this.callbackAddress.selector, 0, block.timestamp + 100); // this should revert because previous handle is not honestly obtained
+        uint256[] memory cts = new uint256[](1);
+        cts[0] = uint256(0x4200000000000000000000000000000000000000000000000000000000000700);
+        Gateway.requestDecryption(cts, this.callbackAddress.selector, 0, block.timestamp + 100, false); // this should revert because previous handle is not honestly obtained
     }
 
     function callbackAddress(uint256, address decryptedInput) public onlyGateway returns (address) {
@@ -207,20 +249,26 @@ contract TestAsyncDecrypt is GatewayCaller {
     }
 
     function requestMixed(uint32 input1, uint32 input2) public {
-        Ciphertext[] memory cts = new Ciphertext[](10);
-        cts[0] = Gateway.toCiphertext(xBool);
-        cts[1] = Gateway.toCiphertext(xBool);
-        cts[2] = Gateway.toCiphertext(xUint4);
-        cts[3] = Gateway.toCiphertext(xUint8);
-        cts[4] = Gateway.toCiphertext(xUint16);
-        cts[5] = Gateway.toCiphertext(xUint32);
-        cts[6] = Gateway.toCiphertext(xUint64);
-        cts[7] = Gateway.toCiphertext(xUint64);
-        cts[8] = Gateway.toCiphertext(xUint64);
-        cts[9] = Gateway.toCiphertext(xAddress);
-        uint256 requestID = Gateway.requestDecryption(cts, this.callbackMixed.selector, 0, block.timestamp + 100);
-        addParamsUint(requestID, input1);
-        addParamsUint(requestID, input2);
+        uint256[] memory cts = new uint256[](10);
+        cts[0] = Gateway.toUint256(xBool);
+        cts[1] = Gateway.toUint256(xBool);
+        cts[2] = Gateway.toUint256(xUint4);
+        cts[3] = Gateway.toUint256(xUint8);
+        cts[4] = Gateway.toUint256(xUint16);
+        cts[5] = Gateway.toUint256(xUint32);
+        cts[6] = Gateway.toUint256(xUint64);
+        cts[7] = Gateway.toUint256(xUint64);
+        cts[8] = Gateway.toUint256(xUint64);
+        cts[9] = Gateway.toUint256(xAddress);
+        uint256 requestID = Gateway.requestDecryption(
+            cts,
+            this.callbackMixed.selector,
+            0,
+            block.timestamp + 100,
+            false
+        );
+        addParamsUint256(requestID, input1);
+        addParamsUint256(requestID, input2);
     }
 
     function callbackMixed(
@@ -241,7 +289,7 @@ contract TestAsyncDecrypt is GatewayCaller {
         yUint4 = decUint4;
         yUint8 = decUint8;
         yUint16 = decUint16;
-        uint256[] memory params = getParamsUint(requestID);
+        uint256[] memory params = getParamsUint256(requestID);
         unchecked {
             uint32 result = uint32(params[0]) + uint32(params[1]) + decUint32;
             yUint32 = result;

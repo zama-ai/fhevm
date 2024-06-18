@@ -1,193 +1,316 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.25;
 
 import "./TFHE.sol";
-import "./TFHEExecutor.sol";
-import "./TFHEExecutorAddress.sol";
-import "./ACL.sol";
+import "./FHEVMCoprocessorAddress.sol";
 import "./ACLAddress.sol";
 
+interface IFHEVMCoprocessor {
+    function fheAdd(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+
+    function fheSub(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+
+    function fheMul(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+
+    function fheDiv(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+
+    function fheRem(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+
+    function fheBitAnd(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+
+    function fheBitOr(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+
+    function fheBitXor(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+
+    function fheShl(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+
+    function fheShr(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+
+    function fheRotl(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+
+    function fheRotr(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+
+    function fheEq(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+
+    function fheNe(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+
+    function fheGe(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+
+    function fheGt(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+
+    function fheLe(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+
+    function fheLt(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+
+    function fheMin(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+
+    function fheMax(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
+
+    function fheNeg(uint256 ct) external returns (uint256 result);
+
+    function fheNot(uint256 ct) external returns (uint256 result);
+
+    function verifyCiphertext(
+        bytes32 inputHandle,
+        address callerAddress,
+        bytes memory inputProof,
+        bytes1 inputType
+    ) external returns (uint256 result);
+
+    function cast(uint256 ct, bytes1 toType) external returns (uint256 result);
+
+    function trivialEncrypt(uint256 ct, bytes1 toType) external returns (uint256 result);
+
+    function fheIfThenElse(uint256 control, uint256 ifTrue, uint256 ifFalse) external returns (uint256 result);
+
+    function fheRand(bytes1 randType) external returns (uint256 result);
+
+    function fheRandBounded(uint256 upperBound, bytes1 randType) external returns (uint256 result);
+
+    function cleanTransientStorage() external;
+}
+
+interface IACL {
+    function allowTransient(uint256 ciphertext, address account) external;
+
+    function allow(uint256 handle, address account) external;
+
+    function cleanTransientStorage() external;
+
+    function isAllowed(uint256 handle, address account) external view returns (bool);
+}
+
 library Impl {
-    // 32 bytes for the 'byte' type header + 48 bytes for the NaCl anonymous
-    // box overhead + 4 bytes for the plaintext value.
-    uint256 constant reencryptedSize = 32 + 48 + 4;
-
-    // 32 bytes for the 'byte' header + 16553 bytes of key data.
-    uint256 constant fhePubKeySize = 32 + 16553;
-
-    ACL private constant acl = ACL(address(ACL_CONTRACT_ADDRESS));
-    TFHEExecutor private constant exec = TFHEExecutor(address(TFHE_EXECUTOR_CONTRACT_ADDRESS));
-
     function add(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
-        result = exec.fheAdd(lhs, rhs, scalar);
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        result = IFHEVMCoprocessor(fhevmCoprocessorAdd).fheAdd(lhs, rhs, scalarByte);
     }
 
     function sub(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
-        result = exec.fheSub(lhs, rhs, scalar);
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        result = IFHEVMCoprocessor(fhevmCoprocessorAdd).fheSub(lhs, rhs, scalarByte);
     }
 
     function mul(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
-        result = exec.fheMul(lhs, rhs, scalar);
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        result = IFHEVMCoprocessor(fhevmCoprocessorAdd).fheMul(lhs, rhs, scalarByte);
     }
 
     function div(uint256 lhs, uint256 rhs) internal returns (uint256 result) {
-        result = exec.fheDiv(lhs, rhs);
+        bytes1 scalarByte = 0x01;
+        result = IFHEVMCoprocessor(fhevmCoprocessorAdd).fheDiv(lhs, rhs, scalarByte);
     }
 
     function rem(uint256 lhs, uint256 rhs) internal returns (uint256 result) {
-        result = exec.fheRem(lhs, rhs);
+        bytes1 scalarByte = 0x01;
+        result = IFHEVMCoprocessor(fhevmCoprocessorAdd).fheRem(lhs, rhs, scalarByte);
     }
 
     function and(uint256 lhs, uint256 rhs) internal returns (uint256 result) {
-        result = exec.fheBitAnd(lhs, rhs);
+        bytes1 scalarByte = 0x00;
+        result = IFHEVMCoprocessor(fhevmCoprocessorAdd).fheBitAnd(lhs, rhs, scalarByte);
     }
 
     function or(uint256 lhs, uint256 rhs) internal returns (uint256 result) {
-        result = exec.fheBitOr(lhs, rhs);
+        bytes1 scalarByte = 0x00;
+        result = IFHEVMCoprocessor(fhevmCoprocessorAdd).fheBitOr(lhs, rhs, scalarByte);
     }
 
     function xor(uint256 lhs, uint256 rhs) internal returns (uint256 result) {
-        result = exec.fheBitXor(lhs, rhs);
+        bytes1 scalarByte = 0x00;
+        result = IFHEVMCoprocessor(fhevmCoprocessorAdd).fheBitXor(lhs, rhs, scalarByte);
     }
 
     function shl(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
-        result = exec.fheShl(lhs, rhs, scalar);
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        result = IFHEVMCoprocessor(fhevmCoprocessorAdd).fheShl(lhs, rhs, scalarByte);
     }
 
     function shr(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
-        result = exec.fheShr(lhs, rhs, scalar);
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        result = IFHEVMCoprocessor(fhevmCoprocessorAdd).fheShr(lhs, rhs, scalarByte);
     }
 
     function rotl(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
-        result = exec.fheRotl(lhs, rhs, scalar);
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        result = IFHEVMCoprocessor(fhevmCoprocessorAdd).fheRotl(lhs, rhs, scalarByte);
     }
 
     function rotr(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
-        result = exec.fheRotr(lhs, rhs, scalar);
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        result = IFHEVMCoprocessor(fhevmCoprocessorAdd).fheRotr(lhs, rhs, scalarByte);
     }
 
     function eq(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
-        result = exec.fheEq(lhs, rhs, scalar);
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        result = IFHEVMCoprocessor(fhevmCoprocessorAdd).fheEq(lhs, rhs, scalarByte);
     }
 
     function ne(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
-        result = exec.fheNe(lhs, rhs, scalar);
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        result = IFHEVMCoprocessor(fhevmCoprocessorAdd).fheNe(lhs, rhs, scalarByte);
     }
 
     function ge(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
-        result = exec.fheGe(lhs, rhs, scalar);
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        result = IFHEVMCoprocessor(fhevmCoprocessorAdd).fheGe(lhs, rhs, scalarByte);
     }
 
     function gt(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
-        result = exec.fheGt(lhs, rhs, scalar);
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        result = IFHEVMCoprocessor(fhevmCoprocessorAdd).fheGt(lhs, rhs, scalarByte);
     }
 
     function le(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
-        result = exec.fheLe(lhs, rhs, scalar);
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        result = IFHEVMCoprocessor(fhevmCoprocessorAdd).fheLe(lhs, rhs, scalarByte);
     }
 
     function lt(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
-        result = exec.fheLt(lhs, rhs, scalar);
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        result = IFHEVMCoprocessor(fhevmCoprocessorAdd).fheLt(lhs, rhs, scalarByte);
     }
 
     function min(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
-        result = exec.fheMin(lhs, rhs, scalar);
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        result = IFHEVMCoprocessor(fhevmCoprocessorAdd).fheMin(lhs, rhs, scalarByte);
     }
 
     function max(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
-        result = exec.fheMax(lhs, rhs, scalar);
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        result = IFHEVMCoprocessor(fhevmCoprocessorAdd).fheMax(lhs, rhs, scalarByte);
     }
 
     function neg(uint256 ct) internal returns (uint256 result) {
-        result = exec.fheNeg(ct);
+        result = IFHEVMCoprocessor(fhevmCoprocessorAdd).fheNeg(ct);
     }
 
     function not(uint256 ct) internal returns (uint256 result) {
-        result = exec.fheNot(ct);
+        result = IFHEVMCoprocessor(fhevmCoprocessorAdd).fheNot(ct);
     }
 
     // If 'control's value is 'true', the result has the same value as 'ifTrue'.
     // If 'control's value is 'false', the result has the same value as 'ifFalse'.
     function select(uint256 control, uint256 ifTrue, uint256 ifFalse) internal returns (uint256 result) {
-        result = exec.fheIfThenElse(control, ifTrue, ifFalse);
-    }
-
-    function eq(uint256[] memory lhs, uint256[] memory rhs) internal pure returns (uint256 result) {
-        result = FhevmLib(address(EXT_TFHE_LIBRARY)).fheArrayEq(lhs, rhs);
-    }
-
-    function reencrypt(uint256 ciphertext, bytes32 publicKey) internal view returns (bytes memory reencrypted) {
-        return exec.reencrypt(ciphertext, uint256(publicKey));
-    }
-
-    function fhePubKey() internal view returns (bytes memory key) {
-        // Set a byte value of 1 to signal the call comes from the library.
-        key = exec.fhePubKey(bytes1(0x01));
+        result = IFHEVMCoprocessor(fhevmCoprocessorAdd).fheIfThenElse(control, ifTrue, ifFalse);
     }
 
     function verify(bytes32 inputHandle, bytes memory inputProof, uint8 toType) internal returns (uint256 result) {
-        result = exec.verifyCiphertext(inputHandle, msg.sender, inputProof, bytes1(toType));
-        acl.allowTransient(result, msg.sender);
+        result = IFHEVMCoprocessor(fhevmCoprocessorAdd).verifyCiphertext(
+            inputHandle,
+            msg.sender,
+            inputProof,
+            bytes1(toType)
+        );
+        IACL(aclAdd).allowTransient(result, msg.sender);
     }
 
     function cast(uint256 ciphertext, uint8 toType) internal returns (uint256 result) {
-        result = exec.cast(ciphertext, bytes1(toType));
+        result = IFHEVMCoprocessor(fhevmCoprocessorAdd).cast(ciphertext, bytes1(toType));
     }
 
     function trivialEncrypt(uint256 value, uint8 toType) internal returns (uint256 result) {
-        result = exec.trivialEncrypt(value, bytes1(toType));
-    }
-
-    function decrypt(uint256 ciphertext) internal view returns (uint256 result) {
-        result = exec.decrypt(ciphertext);
+        result = IFHEVMCoprocessor(fhevmCoprocessorAdd).trivialEncrypt(value, bytes1(toType));
     }
 
     function rand(uint8 randType) internal returns (uint256 result) {
-        result = exec.fheRand(bytes1(randType));
+        result = IFHEVMCoprocessor(fhevmCoprocessorAdd).fheRand(bytes1(randType));
     }
 
     function randBounded(uint256 upperBound, uint8 randType) internal returns (uint256 result) {
-        result = exec.fheRandBounded(upperBound, bytes1(randType));
+        result = IFHEVMCoprocessor(fhevmCoprocessorAdd).fheRandBounded(upperBound, bytes1(randType));
     }
 
     function allowTransient(uint256 handle, address account) internal {
-        acl.allowTransient(handle, account);
-    }
-
-    function allowedTransient(uint256 handle, address account) internal view returns (bool) {
-        return acl.allowedTransient(handle, account);
-    }
-
-    function cleanAllTransientAllowed() internal {
-        acl.cleanAllTransientAllowed();
+        IACL(aclAdd).allowTransient(handle, account);
     }
 
     function allow(uint256 handle, address account) internal {
-        acl.allow(handle, account);
+        IACL(aclAdd).allow(handle, account);
     }
 
-    function persistAllowed(uint256 handle, address account) internal view returns (bool) {
-        return acl.persistAllowed(handle, account);
+    function cleanTransientStorage() internal {
+        IACL(aclAdd).cleanTransientStorage();
+        IFHEVMCoprocessor(fhevmCoprocessorAdd).cleanTransientStorage();
     }
 
     function isAllowed(uint256 handle, address account) internal view returns (bool) {
-        return acl.isAllowed(handle, account);
-    }
-
-    function delegateAccount(address delegatee) internal {
-        acl.delegateAccount(delegatee);
-    }
-
-    function removeDelegation(address delegatee) internal {
-        acl.removeDelegation(delegatee);
-    }
-
-    function allowedOnBehalf(address delegatee, uint256 handle, address account) internal view returns (bool) {
-        return acl.allowedOnBehalf(delegatee, handle, account);
-    }
-
-    function allowForDecryption(uint256[] memory ctsHandles) internal {
-        acl.allowForDecryption(ctsHandles);
+        return IACL(aclAdd).isAllowed(handle, account);
     }
 }

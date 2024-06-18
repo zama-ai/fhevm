@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.25;
 
 interface FhevmLib {
     function fheAdd(uint256 lhs, uint256 rhs, bytes1 scalarByte) external pure returns (uint256 result);
@@ -47,8 +47,6 @@ interface FhevmLib {
 
     function fheNot(uint256 ct) external pure returns (uint256 result);
 
-    function reencrypt(uint256 ct, uint256 publicKey) external view returns (bytes memory);
-
     function fhePubKey(bytes1 fromLib) external view returns (bytes memory result);
 
     function verifyCiphertext(
@@ -62,13 +60,11 @@ interface FhevmLib {
 
     function trivialEncrypt(uint256 ct, bytes1 toType) external pure returns (uint256 result);
 
-    function decrypt(uint256 ct) external view returns (uint256 result);
-
     function fheIfThenElse(uint256 control, uint256 ifTrue, uint256 ifFalse) external pure returns (uint256 result);
 
     function fheArrayEq(uint256[] memory lhs, uint256[] memory rhs) external pure returns (uint256 result);
 
-    function fheRand(bytes1 randType) external view returns (uint256 result);
+    function fheRand(bytes1 randType, uint256 seed) external view returns (uint256 result);
 
-    function fheRandBounded(uint256 upperBound, bytes1 randType) external view returns (uint256 result);
+    function fheRandBounded(uint256 upperBound, bytes1 randType, uint256 seed) external view returns (uint256 result);
 }

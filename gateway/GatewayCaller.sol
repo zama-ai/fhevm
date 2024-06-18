@@ -7,7 +7,7 @@ import "./lib/Gateway.sol";
 
 abstract contract GatewayCaller {
     modifier onlyGateway() {
-        require(msg.sender == Gateway.GatewayGatewayAddress());
+        require(msg.sender == Gateway.GatewayContractAddress());
         _;
     }
     mapping(uint256 => ebool[]) private paramsEBool;
@@ -18,7 +18,8 @@ abstract contract GatewayCaller {
     mapping(uint256 => euint64[]) private paramsEUint64;
     mapping(uint256 => eaddress[]) private paramsEAddress;
     mapping(uint256 => address[]) private paramsAddress;
-    mapping(uint256 => uint256[]) private paramsUint;
+    mapping(uint256 => uint256[]) private paramsUint256;
+    mapping(uint256 => uint256[]) private requestedHandles;
 
     constructor() {}
 
@@ -54,8 +55,18 @@ abstract contract GatewayCaller {
         paramsAddress[requestID].push(_address);
     }
 
-    function addParamsUint(uint256 requestID, uint256 _uint) internal {
-        paramsUint[requestID].push(_uint);
+    function addParamsUint256(uint256 requestID, uint256 _uint) internal {
+        paramsUint256[requestID].push(_uint);
+    }
+
+    function saveRequestedHandles(uint256 requestID, uint256[] memory handlesList) internal {
+        require(requestedHandles[requestID].length == 0, "requested handles already saved");
+        requestedHandles[requestID] = handlesList;
+    }
+
+    function loadRequestedHandles(uint256 requestID) internal view returns (uint256[] memory) {
+        require(requestedHandles[requestID].length != 0, "requested handles were not saved for this requestID");
+        return requestedHandles[requestID];
     }
 
     function getParamsEBool(uint256 requestID) internal view returns (ebool[] memory) {
@@ -90,7 +101,7 @@ abstract contract GatewayCaller {
         return paramsAddress[requestID];
     }
 
-    function getParamsUint(uint256 requestID) internal view returns (uint256[] memory) {
-        return paramsUint[requestID];
+    function getParamsUint256(uint256 requestID) internal view returns (uint256[] memory) {
+        return paramsUint256[requestID];
     }
 }

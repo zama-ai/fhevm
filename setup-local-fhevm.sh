@@ -7,12 +7,14 @@
 PRIVATE_KEY_GATEWAY_DEPLOYER=$(grep PRIVATE_KEY_GATEWAY_DEPLOYER .env | cut -d '"' -f 2)
 npx hardhat task:computePredeployAddress --private-key "$PRIVATE_KEY_GATEWAY_DEPLOYER"
 
-npx hardhat compile:specific --contract lib
-npx hardhat compile:specific --contract gateway
-
+npx hardhat task:computeACLAddress
+npx hardhat task:computeTFHEExecutorAddress
+npx hardhat task:computeKMSVerifierAddress
 npx hardhat task:deployACL
 npx hardhat task:deployTFHEExecutor
-npx hardhat task:computeKmsVerifierAddress
-npx hardhat task:deployKmsVerifier
+npx hardhat task:deployKMSVerifier
+
+npx hardhat compile:specific --contract lib
+npx hardhat compile:specific --contract gateway
 
 npx hardhat task:launchFhevm --skip-get-coin true

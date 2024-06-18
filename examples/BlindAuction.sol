@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.25;
 
 import "../lib/TFHE.sol";
 
@@ -92,12 +92,12 @@ contract BlindAuction is Reencrypt {
         }
     }
 
-    function getBid(
-        bytes32 publicKey,
-        bytes calldata signature
-    ) public view onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
-        return TFHE.reencrypt(bids[msg.sender], publicKey);
-    }
+    // function getBid(
+    //     bytes32 publicKey,
+    //     bytes calldata signature
+    // ) public view onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
+    //     return TFHE.reencrypt(bids[msg.sender], publicKey);
+    // }
 
     // Returns the user bid
     function stop() public onlyContractOwner {

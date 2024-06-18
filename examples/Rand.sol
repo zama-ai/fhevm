@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.25;
 
 import "../lib/TFHE.sol";
 
@@ -48,21 +48,5 @@ contract Rand {
     function generate64UpperBound(uint32 upperBound) public {
         value64 = TFHE.randEuint64(upperBound);
         TFHE.allow(value64, address(this));
-    }
-
-    function decrypt8() public view returns (uint8) {
-        return TFHE.decrypt(value8);
-    }
-
-    function decrypt16() public view returns (uint16) {
-        return TFHE.decrypt(value16);
-    }
-
-    function decrypt32() public view returns (uint32) {
-        return TFHE.decrypt(value32);
-    }
-
-    function decrypt64() public view returns (uint64) {
-        return TFHE.decrypt(value64);
     }
 }

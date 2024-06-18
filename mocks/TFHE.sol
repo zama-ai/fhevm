@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.25;
 
 type ebool is uint256;
 type euint4 is uint256;
@@ -22,6 +22,9 @@ library Common {
     uint8 internal constant euint64_t = 5;
     uint8 internal constant euint128_t = 6;
     uint8 internal constant euint160_t = 7;
+    uint8 internal constant euint256_t = 8;
+    uint8 internal constant ebytes64_t = 9;
+    uint8 internal constant ebytes128_t = 10;
     uint8 internal constant ebytes256_t = 11;
 }
 
@@ -34,7 +37,7 @@ library TFHE {
     euint32 constant NIL32 = euint32.wrap(0);
     euint64 constant NIL64 = euint64.wrap(0);
 
-    // Return true if the enrypted integer is initialized and false otherwise.
+    // Return true if the enrypted bool is initialized and false otherwise.
     function isInitialized(ebool /*v*/) internal pure returns (bool) {
         return true;
     }
@@ -5217,117 +5220,32 @@ library TFHE {
 
     // If 'control''s value is 'true', the result has the same value as 'a'.
     // If 'control''s value is 'false', the result has the same value as 'b'.
-    function cmux(ebool control, euint4 a, euint4 b) internal returns (euint4) {
-        return euint4.wrap(Impl.select(ebool.unwrap(control), euint4.unwrap(a), euint4.unwrap(b)));
-    }
-
     function select(ebool control, euint4 a, euint4 b) internal returns (euint4) {
         return euint4.wrap(Impl.select(ebool.unwrap(control), euint4.unwrap(a), euint4.unwrap(b)));
     }
 
     // If 'control''s value is 'true', the result has the same value as 'a'.
     // If 'control''s value is 'false', the result has the same value as 'b'.
-    function cmux(ebool control, euint8 a, euint8 b) internal returns (euint8) {
-        return euint8.wrap(Impl.select(ebool.unwrap(control), euint8.unwrap(a), euint8.unwrap(b)));
-    }
-
     function select(ebool control, euint8 a, euint8 b) internal returns (euint8) {
         return euint8.wrap(Impl.select(ebool.unwrap(control), euint8.unwrap(a), euint8.unwrap(b)));
     }
 
     // If 'control''s value is 'true', the result has the same value as 'a'.
     // If 'control''s value is 'false', the result has the same value as 'b'.
-    function cmux(ebool control, euint16 a, euint16 b) internal returns (euint16) {
-        return euint16.wrap(Impl.select(ebool.unwrap(control), euint16.unwrap(a), euint16.unwrap(b)));
-    }
-
     function select(ebool control, euint16 a, euint16 b) internal returns (euint16) {
         return euint16.wrap(Impl.select(ebool.unwrap(control), euint16.unwrap(a), euint16.unwrap(b)));
     }
 
     // If 'control''s value is 'true', the result has the same value as 'a'.
     // If 'control''s value is 'false', the result has the same value as 'b'.
-    function cmux(ebool control, euint32 a, euint32 b) internal returns (euint32) {
-        return euint32.wrap(Impl.select(ebool.unwrap(control), euint32.unwrap(a), euint32.unwrap(b)));
-    }
-
     function select(ebool control, euint32 a, euint32 b) internal returns (euint32) {
         return euint32.wrap(Impl.select(ebool.unwrap(control), euint32.unwrap(a), euint32.unwrap(b)));
     }
 
     // If 'control''s value is 'true', the result has the same value as 'a'.
     // If 'control''s value is 'false', the result has the same value as 'b'.
-    function cmux(ebool control, euint64 a, euint64 b) internal returns (euint64) {
-        return euint64.wrap(Impl.select(ebool.unwrap(control), euint64.unwrap(a), euint64.unwrap(b)));
-    }
-
     function select(ebool control, euint64 a, euint64 b) internal returns (euint64) {
         return euint64.wrap(Impl.select(ebool.unwrap(control), euint64.unwrap(a), euint64.unwrap(b)));
-    }
-
-    function eq(euint4[] memory a, euint4[] memory b) internal pure returns (ebool) {
-        require(a.length == b.length, "Both arrays are not of the same size.");
-        uint256[] memory lhs = new uint256[](a.length);
-        uint256[] memory rhs = new uint256[](b.length);
-        for (uint i = 0; i < a.length; i++) {
-            lhs[i] = euint4.unwrap(a[i]);
-        }
-        for (uint i = 0; i < b.length; i++) {
-            rhs[i] = euint4.unwrap(b[i]);
-        }
-        return ebool.wrap(Impl.eq(lhs, rhs));
-    }
-
-    function eq(euint8[] memory a, euint8[] memory b) internal pure returns (ebool) {
-        require(a.length == b.length, "Both arrays are not of the same size.");
-        uint256[] memory lhs = new uint256[](a.length);
-        uint256[] memory rhs = new uint256[](b.length);
-        for (uint i = 0; i < a.length; i++) {
-            lhs[i] = euint8.unwrap(a[i]);
-        }
-        for (uint i = 0; i < b.length; i++) {
-            rhs[i] = euint8.unwrap(b[i]);
-        }
-        return ebool.wrap(Impl.eq(lhs, rhs));
-    }
-
-    function eq(euint16[] memory a, euint16[] memory b) internal pure returns (ebool) {
-        require(a.length == b.length, "Both arrays are not of the same size.");
-        uint256[] memory lhs = new uint256[](a.length);
-        uint256[] memory rhs = new uint256[](b.length);
-        for (uint i = 0; i < a.length; i++) {
-            lhs[i] = euint16.unwrap(a[i]);
-        }
-        for (uint i = 0; i < b.length; i++) {
-            rhs[i] = euint16.unwrap(b[i]);
-        }
-        return ebool.wrap(Impl.eq(lhs, rhs));
-    }
-
-    function eq(euint32[] memory a, euint32[] memory b) internal pure returns (ebool) {
-        require(a.length == b.length, "Both arrays are not of the same size.");
-        uint256[] memory lhs = new uint256[](a.length);
-        uint256[] memory rhs = new uint256[](b.length);
-        for (uint i = 0; i < a.length; i++) {
-            lhs[i] = euint32.unwrap(a[i]);
-        }
-        for (uint i = 0; i < b.length; i++) {
-            rhs[i] = euint32.unwrap(b[i]);
-        }
-        return ebool.wrap(Impl.eq(lhs, rhs));
-    }
-
-    function eq(euint64[] memory a, euint64[] memory b) internal pure returns (ebool) {
-        require(a.length == b.length, "Both arrays are not of the same size.");
-        uint256[] memory lhs = new uint256[](a.length);
-        uint256[] memory rhs = new uint256[](b.length);
-        for (uint i = 0; i < a.length; i++) {
-            lhs[i] = euint64.unwrap(a[i]);
-        }
-        for (uint i = 0; i < b.length; i++) {
-            rhs[i] = euint64.unwrap(b[i]);
-        }
-        return ebool.wrap(Impl.eq(lhs, rhs));
     }
 
     // Cast an encrypted integer from euint8 to euint4.
@@ -5385,12 +5303,12 @@ library TFHE {
         return ne(value, 0);
     }
 
-    // Convert a serialized 'ciphertext' to an encrypted euint8 integer.
+    // Convert an inputHandle with corresponding inputProof to an encrypted boolean.
     function asEbool(einput inputHandle, bytes memory inputProof) internal returns (ebool) {
         return ebool.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, Common.ebool_t));
     }
 
-    // Convert a plaintext value to an encrypted euint8 integer.
+    // Convert a plaintext value to an encrypted boolean.
     function asEbool(uint256 value) internal returns (ebool) {
         return ebool.wrap(Impl.trivialEncrypt(value, Common.ebool_t));
     }
@@ -5558,7 +5476,7 @@ library TFHE {
         return euint64.wrap(Impl.not(euint64.unwrap(value)));
     }
 
-    // Convert the given inputHandle and inputProof to an encrypted euint4 integer.
+    // Convert an inputHandle with corresponding inputProof to an encrypted euint4 integer.
     function asEuint4(einput inputHandle, bytes memory inputProof) internal returns (euint4) {
         return euint4.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, Common.euint4_t));
     }
@@ -5568,18 +5486,7 @@ library TFHE {
         return euint4.wrap(Impl.trivialEncrypt(value, Common.euint4_t));
     }
 
-    // Decrypts the encrypted 'value'.
-    function decrypt(euint4 value) internal view returns (uint8) {
-        return uint8(Impl.decrypt(euint4.unwrap(value)) % 2 ** 4);
-    }
-
-    // Reencrypt the given 'value' under the given 'publicKey'.
-    // Return a serialized euint4 ciphertext.
-    function reencrypt(euint4 value, bytes32 publicKey) internal view returns (bytes memory reencrypted) {
-        return Impl.reencrypt(euint4.unwrap(value) % 2 ** 4, publicKey);
-    }
-
-    // Convert the given inputHandle and inputProof to an encrypted euint8 integer.
+    // Convert an inputHandle with corresponding inputProof to an encrypted euint8 integer.
     function asEuint8(einput inputHandle, bytes memory inputProof) internal returns (euint8) {
         return euint8.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, Common.euint8_t));
     }
@@ -5589,18 +5496,7 @@ library TFHE {
         return euint8.wrap(Impl.trivialEncrypt(value, Common.euint8_t));
     }
 
-    // Decrypts the encrypted 'value'.
-    function decrypt(euint8 value) internal view returns (uint8) {
-        return uint8(Impl.decrypt(euint8.unwrap(value)) % 2 ** 8);
-    }
-
-    // Reencrypt the given 'value' under the given 'publicKey'.
-    // Return a serialized euint8 ciphertext.
-    function reencrypt(euint8 value, bytes32 publicKey) internal view returns (bytes memory reencrypted) {
-        return Impl.reencrypt(euint8.unwrap(value) % 2 ** 8, publicKey);
-    }
-
-    // Convert the given inputHandle and inputProof to an encrypted euint16 integer.
+    // Convert an inputHandle with corresponding inputProof to an encrypted euint16 integer.
     function asEuint16(einput inputHandle, bytes memory inputProof) internal returns (euint16) {
         return euint16.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, Common.euint16_t));
     }
@@ -5610,18 +5506,7 @@ library TFHE {
         return euint16.wrap(Impl.trivialEncrypt(value, Common.euint16_t));
     }
 
-    // Decrypts the encrypted 'value'.
-    function decrypt(euint16 value) internal view returns (uint16) {
-        return uint16(Impl.decrypt(euint16.unwrap(value)) % 2 ** 16);
-    }
-
-    // Reencrypt the given 'value' under the given 'publicKey'.
-    // Return a serialized euint16 ciphertext.
-    function reencrypt(euint16 value, bytes32 publicKey) internal view returns (bytes memory reencrypted) {
-        return Impl.reencrypt(euint16.unwrap(value) % 2 ** 16, publicKey);
-    }
-
-    // Convert the given inputHandle and inputProof to an encrypted euint32 integer.
+    // Convert an inputHandle with corresponding inputProof to an encrypted euint32 integer.
     function asEuint32(einput inputHandle, bytes memory inputProof) internal returns (euint32) {
         return euint32.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, Common.euint32_t));
     }
@@ -5631,18 +5516,7 @@ library TFHE {
         return euint32.wrap(Impl.trivialEncrypt(value, Common.euint32_t));
     }
 
-    // Decrypts the encrypted 'value'.
-    function decrypt(euint32 value) internal view returns (uint32) {
-        return uint32(Impl.decrypt(euint32.unwrap(value)) % 2 ** 32);
-    }
-
-    // Reencrypt the given 'value' under the given 'publicKey'.
-    // Return a serialized euint32 ciphertext.
-    function reencrypt(euint32 value, bytes32 publicKey) internal view returns (bytes memory reencrypted) {
-        return Impl.reencrypt(euint32.unwrap(value) % 2 ** 32, publicKey);
-    }
-
-    // Convert the given inputHandle and inputProof to an encrypted euint64 integer.
+    // Convert an inputHandle with corresponding inputProof to an encrypted euint64 integer.
     function asEuint64(einput inputHandle, bytes memory inputProof) internal returns (euint64) {
         return euint64.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, Common.euint64_t));
     }
@@ -5650,124 +5524,6 @@ library TFHE {
     // Convert a plaintext value to an encrypted euint64 integer.
     function asEuint64(uint256 value) internal returns (euint64) {
         return euint64.wrap(Impl.trivialEncrypt(value, Common.euint64_t));
-    }
-
-    // Decrypts the encrypted 'value'.
-    function decrypt(euint64 value) internal view returns (uint64) {
-        return uint64(Impl.decrypt(euint64.unwrap(value)) % 2 ** 64);
-    }
-
-    // Reencrypt the given 'value' under the given 'publicKey'.
-    // Return a serialized euint64 ciphertext.
-    function reencrypt(euint64 value, bytes32 publicKey) internal view returns (bytes memory reencrypted) {
-        return Impl.reencrypt(euint64.unwrap(value) % 2 ** 64, publicKey);
-    }
-
-    function allowTransient(ebool handle, address account) internal {
-        Impl.allowTransient(ebool.unwrap(handle), account);
-    }
-
-    function allow(ebool handle, address account) internal {
-        Impl.allow(ebool.unwrap(handle), account);
-    }
-
-    function isAllowed(ebool handle, address account) internal view returns (bool) {
-        return Impl.isAllowed(ebool.unwrap(handle), account);
-    }
-
-    function isSenderAllowed(ebool handle) internal view returns (bool) {
-        return Impl.isAllowed(ebool.unwrap(handle), msg.sender);
-    }
-
-    function allowTransient(euint4 handle, address account) internal {
-        Impl.allowTransient(euint4.unwrap(handle), account);
-    }
-
-    function allow(euint4 handle, address account) internal {
-        Impl.allow(euint4.unwrap(handle), account);
-    }
-
-    function isAllowed(euint4 handle, address account) internal view returns (bool) {
-        return Impl.isAllowed(euint4.unwrap(handle), account);
-    }
-
-    function isSenderAllowed(euint4 handle) internal view returns (bool) {
-        return Impl.isAllowed(euint4.unwrap(handle), msg.sender);
-    }
-
-    function allowTransient(euint8 handle, address account) internal {
-        Impl.allowTransient(euint8.unwrap(handle), account);
-    }
-
-    function allow(euint8 handle, address account) internal {
-        Impl.allow(euint8.unwrap(handle), account);
-    }
-
-    function isAllowed(euint8 handle, address account) internal view returns (bool) {
-        return Impl.isAllowed(euint8.unwrap(handle), account);
-    }
-
-    function isSenderAllowed(euint8 handle) internal view returns (bool) {
-        return Impl.isAllowed(euint8.unwrap(handle), msg.sender);
-    }
-
-    function allowTransient(euint16 handle, address account) internal {
-        Impl.allowTransient(euint16.unwrap(handle), account);
-    }
-
-    function allow(euint16 handle, address account) internal {
-        Impl.allow(euint16.unwrap(handle), account);
-    }
-
-    function isAllowed(euint16 handle, address account) internal view returns (bool) {
-        return Impl.isAllowed(euint16.unwrap(handle), account);
-    }
-
-    function isSenderAllowed(euint16 handle) internal view returns (bool) {
-        return Impl.isAllowed(euint16.unwrap(handle), msg.sender);
-    }
-
-    function allowTransient(euint32 handle, address account) internal {
-        Impl.allowTransient(euint32.unwrap(handle), account);
-    }
-
-    function allow(euint32 handle, address account) internal {
-        Impl.allow(euint32.unwrap(handle), account);
-    }
-
-    function isAllowed(euint32 handle, address account) internal view returns (bool) {
-        return Impl.isAllowed(euint32.unwrap(handle), account);
-    }
-
-    function isSenderAllowed(euint32 handle) internal view returns (bool) {
-        return Impl.isAllowed(euint32.unwrap(handle), msg.sender);
-    }
-
-    function allowTransient(euint64 handle, address account) internal {
-        Impl.allowTransient(euint64.unwrap(handle), account);
-    }
-
-    function allow(euint64 handle, address account) internal {
-        Impl.allow(euint64.unwrap(handle), account);
-    }
-
-    function isAllowed(euint64 handle, address account) internal view returns (bool) {
-        return Impl.isAllowed(euint64.unwrap(handle), account);
-    }
-
-    function isSenderAllowed(euint64 handle) internal view returns (bool) {
-        return Impl.isAllowed(euint64.unwrap(handle), msg.sender);
-    }
-
-    // Reencrypt the given 'value' under the given 'publicKey'.
-    // Return a serialized euint8 value.
-    function reencrypt(ebool value, bytes32 publicKey) internal view returns (bytes memory reencrypted) {
-        return Impl.reencrypt(ebool.unwrap(value), publicKey);
-    }
-
-    // Returns the network public FHE key.
-    function fhePubKey() internal view returns (bytes memory) {
-        return Impl.fhePubKey();
     }
 
     // Generates a random encrypted 8-bit unsigned integer.
@@ -5802,12 +5558,6 @@ library TFHE {
         return euint32.wrap(Impl.rand(Common.euint32_t));
     }
 
-    // Generates a random encrypted 64-bit unsigned integer.
-    // Important: The random integer is generated in the plain! An FHE-based version is coming soon.
-    function randEuint64() internal returns (euint64) {
-        return euint64.wrap(Impl.rand(Common.euint64_t));
-    }
-
     // Generates a random encrypted 32-bit unsigned integer in the [0, upperBound) range.
     // The upperBound must be a power of 2.
     // Important: The random integer is generated in the plain! An FHE-based version is coming soon.
@@ -5815,21 +5565,20 @@ library TFHE {
         return euint32.wrap(Impl.randBounded(upperBound, Common.euint32_t));
     }
 
+    // Generates a random encrypted 64-bit unsigned integer.
+    // Important: The random integer is generated in the plain! An FHE-based version is coming soon.
+    function randEuint64() internal returns (euint64) {
+        return euint64.wrap(Impl.rand(Common.euint64_t));
+    }
+
+    // Generates a random encrypted 64-bit unsigned integer in the [0, upperBound) range.
+    // The upperBound must be a power of 2.
+    // Important: The random integer is generated in the plain! An FHE-based version is coming soon.
     function randEuint64(uint64 upperBound) internal returns (euint64) {
         return euint64.wrap(Impl.randBounded(upperBound, Common.euint64_t));
     }
 
-    // Decrypts the encrypted 'value'.
-    function decrypt(eaddress value) internal view returns (address) {
-        return address(uint160(Impl.decrypt(eaddress.unwrap(value))));
-    }
-
-    // Reencrypt  the encrypted 'value'.
-    function reencrypt(eaddress value, bytes32 publicKey) internal view returns (bytes memory reencrypted) {
-        return Impl.reencrypt(eaddress.unwrap(value), publicKey);
-    }
-
-    // Convert the given inputHandle and inputProof to an encrypted eaddress.
+    // Convert an inputHandle with corresponding inputProof to an encrypted eaddress.
     function asEaddress(einput inputHandle, bytes memory inputProof) internal returns (eaddress) {
         return eaddress.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, Common.euint160_t));
     }
@@ -5844,7 +5593,7 @@ library TFHE {
         return ebytes256.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, Common.ebytes256_t));
     }
 
-    // Return true if the enrypted value is initialized and false otherwise.
+    // Return true if the enrypted address is initialized and false otherwise.
     function isInitialized(eaddress v) internal pure returns (bool) {
         return eaddress.unwrap(v) != 0;
     }
@@ -5912,6 +5661,12 @@ library TFHE {
         return ebool.wrap(Impl.ne(eaddress.unwrap(a), bProc, true));
     }
 
+    // If 'control''s value is 'true', the result has the same value as 'a'.
+    // If 'control''s value is 'false', the result has the same value as 'b'.
+    function select(ebool control, eaddress a, eaddress b) internal returns (eaddress) {
+        return eaddress.wrap(Impl.select(ebool.unwrap(control), eaddress.unwrap(a), eaddress.unwrap(b)));
+    }
+
     // Evaluate eq(a, b) and return the result.
     function eq(ebytes256 a, ebytes256 b) internal returns (ebool) {
         require(isInitialized(a), "a is uninitialized");
@@ -5926,16 +5681,121 @@ library TFHE {
         return ebool.wrap(Impl.ne(ebytes256.unwrap(a), ebytes256.unwrap(b), false));
     }
 
-    function select(ebool control, eaddress a, eaddress b) internal returns (eaddress) {
-        return eaddress.wrap(Impl.select(ebool.unwrap(control), eaddress.unwrap(a), eaddress.unwrap(b)));
+    // cleans the transient storage of ACL containing all the allowedTransient accounts
+    // to be used for integration with Account Abstraction or when bundling UserOps calling the FHEVMCoprocessor
+    function cleanTransientStorage() internal {
+        return Impl.cleanTransientStorage();
     }
 
-    function cleanAllTransientAllowed() internal {
-        Impl.cleanAllTransientAllowed();
+    function isAllowed(ebool value, address account) internal view returns (bool) {
+        return Impl.isAllowed(ebool.unwrap(value), account);
     }
 
-    // Decrypts the encrypted 'value'.
-    function decrypt(ebool value) internal view returns (bool) {
-        return (Impl.decrypt(ebool.unwrap(value)) % 2 == 1);
+    function isAllowed(euint4 value, address account) internal view returns (bool) {
+        return Impl.isAllowed(euint4.unwrap(value), account);
+    }
+
+    function isAllowed(euint8 value, address account) internal view returns (bool) {
+        return Impl.isAllowed(euint8.unwrap(value), account);
+    }
+
+    function isAllowed(euint16 value, address account) internal view returns (bool) {
+        return Impl.isAllowed(euint16.unwrap(value), account);
+    }
+
+    function isAllowed(euint32 value, address account) internal view returns (bool) {
+        return Impl.isAllowed(euint32.unwrap(value), account);
+    }
+
+    function isAllowed(euint64 value, address account) internal view returns (bool) {
+        return Impl.isAllowed(euint64.unwrap(value), account);
+    }
+
+    function isAllowed(eaddress value, address account) internal view returns (bool) {
+        return Impl.isAllowed(eaddress.unwrap(value), account);
+    }
+
+    function isSenderAllowed(ebool value) internal view returns (bool) {
+        return Impl.isAllowed(ebool.unwrap(value), msg.sender);
+    }
+
+    function isSenderAllowed(euint4 value) internal view returns (bool) {
+        return Impl.isAllowed(euint4.unwrap(value), msg.sender);
+    }
+
+    function isSenderAllowed(euint8 value) internal view returns (bool) {
+        return Impl.isAllowed(euint8.unwrap(value), msg.sender);
+    }
+
+    function isSenderAllowed(euint16 value) internal view returns (bool) {
+        return Impl.isAllowed(euint16.unwrap(value), msg.sender);
+    }
+
+    function isSenderAllowed(euint32 value) internal view returns (bool) {
+        return Impl.isAllowed(euint32.unwrap(value), msg.sender);
+    }
+
+    function isSenderAllowed(euint64 value) internal view returns (bool) {
+        return Impl.isAllowed(euint64.unwrap(value), msg.sender);
+    }
+
+    function isSenderAllowed(eaddress value) internal view returns (bool) {
+        return Impl.isAllowed(eaddress.unwrap(value), msg.sender);
+    }
+
+    function allow(ebool value, address account) internal {
+        Impl.allow(ebool.unwrap(value), account);
+    }
+
+    function allow(euint4 value, address account) internal {
+        Impl.allow(euint4.unwrap(value), account);
+    }
+
+    function allow(euint8 value, address account) internal {
+        Impl.allow(euint8.unwrap(value), account);
+    }
+
+    function allow(euint16 value, address account) internal {
+        Impl.allow(euint16.unwrap(value), account);
+    }
+
+    function allow(euint32 value, address account) internal {
+        Impl.allow(euint32.unwrap(value), account);
+    }
+
+    function allow(euint64 value, address account) internal {
+        Impl.allow(euint64.unwrap(value), account);
+    }
+
+    function allow(eaddress value, address account) internal {
+        Impl.allow(eaddress.unwrap(value), account);
+    }
+
+    function allowTransient(ebool value, address account) internal {
+        Impl.allowTransient(ebool.unwrap(value), account);
+    }
+
+    function allowTransient(euint4 value, address account) internal {
+        Impl.allowTransient(euint4.unwrap(value), account);
+    }
+
+    function allowTransient(euint8 value, address account) internal {
+        Impl.allowTransient(euint8.unwrap(value), account);
+    }
+
+    function allowTransient(euint16 value, address account) internal {
+        Impl.allowTransient(euint16.unwrap(value), account);
+    }
+
+    function allowTransient(euint32 value, address account) internal {
+        Impl.allowTransient(euint32.unwrap(value), account);
+    }
+
+    function allowTransient(euint64 value, address account) internal {
+        Impl.allowTransient(euint64.unwrap(value), account);
+    }
+
+    function allowTransient(eaddress value, address account) internal {
+        Impl.allowTransient(eaddress.unwrap(value), account);
     }
 }

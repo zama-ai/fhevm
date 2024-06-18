@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.25;
 
 import "../abstracts/Reencrypt.sol";
 import "../lib/TFHE.sol";
@@ -19,10 +19,10 @@ contract SELECT is Reencrypt {
         result = TFHE.select(control, ifTrue, ifFalse);
     }
 
-    function getResult(
-        bytes32 publicKey,
-        bytes calldata signature
-    ) public view onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
-        return TFHE.reencrypt(result, publicKey);
-    }
+    // function getResult(
+    //     bytes32 publicKey,
+    //     bytes calldata signature
+    // ) public view onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
+    //     return TFHE.reencrypt(result, publicKey);
+    // }
 }

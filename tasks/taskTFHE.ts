@@ -22,7 +22,7 @@ task('task:computeACLAddress').setAction(async function (taskArguments: TaskArgu
 
 pragma solidity ^0.8.25;
 
-address constant ACL_CONTRACT_ADDRESS = ${aclAddress};\n`;
+address constant aclAdd = ${aclAddress};\n`;
 
   try {
     fs.writeFileSync('./lib/ACLAddress.sol', solidityTemplate, { encoding: 'utf8', flag: 'w' });
@@ -47,21 +47,21 @@ task('task:computeTFHEExecutorAddress').setAction(async function (taskArguments:
     console.error('Failed to write TFHE Executor address:', err);
   }
 
-  const solidityTemplate = `// SPDX-License-Identifier: BSD-3-Clause-Clear
+  const solidityTemplateCoprocessor = `// SPDX-License-Identifier: BSD-3-Clause-Clear
 
 pragma solidity ^0.8.25;
 
-address constant TFHE_EXECUTOR_CONTRACT_ADDRESS = ${execAddress};\n`;
+address constant fhevmCoprocessorAdd = ${execAddress};\n`;
 
   try {
-    fs.writeFileSync('./lib/TFHEExecutorAddress.sol', solidityTemplate, { encoding: 'utf8', flag: 'w' });
-    console.log('./lib/TFHEExecutorAddress.sol file generated successfully!');
+    fs.writeFileSync('./lib/FHEVMCoprocessorAddress.sol', solidityTemplateCoprocessor, { encoding: 'utf8', flag: 'w' });
+    console.log('./lib/FHEVMCoprocessorAddress.sol file generated successfully!');
   } catch (error) {
-    console.error('Failed to write ./lib/TFHEExecutorAddress.sol', error);
+    console.error('Failed to write ./lib/FHEVMCoprocessorAddress.sol', error);
   }
 });
 
-task('task:computeKmsVerifierAddress').setAction(async function (taskArguments: TaskArguments, { ethers }) {
+task('task:computeKMSVerifierAddress').setAction(async function (taskArguments: TaskArguments, { ethers }) {
   const deployer = (await ethers.getSigners())[9].address;
   const kmsVerfierAddress = ethers.getCreateAddress({
     from: deployer,
@@ -71,21 +71,21 @@ task('task:computeKmsVerifierAddress').setAction(async function (taskArguments: 
   const content = `KMS_VERIFIER_CONTRACT_ADDRESS=${kmsVerfierAddress}\n`;
   try {
     fs.writeFileSync(envFilePath, content, { flag: 'w' });
-    console.log(`Kms Verifier address ${kmsVerfierAddress} written successfully!`);
+    console.log(`KMS Verifier address ${kmsVerfierAddress} written successfully!`);
   } catch (err) {
-    console.error('Failed to write Kms Verifier address:', err);
+    console.error('Failed to write KMS Verifier address:', err);
   }
 
   const solidityTemplate = `// SPDX-License-Identifier: BSD-3-Clause-Clear
 
 pragma solidity ^0.8.25;
 
-address constant Kms_VERIFIER_CONTRACT_ADDRESS = ${kmsVerfierAddress};\n`;
+address constant KMS_VERIFIER_CONTRACT_ADDRESS = ${kmsVerfierAddress};\n`;
 
   try {
-    fs.writeFileSync('./lib/KmsVerifierAddress.sol', solidityTemplate, { encoding: 'utf8', flag: 'w' });
-    console.log('./lib/KmsVerifierAddress.sol file generated successfully!');
+    fs.writeFileSync('./lib/KMSVerifierAddress.sol', solidityTemplate, { encoding: 'utf8', flag: 'w' });
+    console.log('./lib/KMSVerifierAddress.sol file generated successfully!');
   } catch (error) {
-    console.error('Failed to write ./lib/KmsVerifierAddress.sol', error);
+    console.error('Failed to write ./lib/KMSVerifierAddress.sol', error);
   }
 });

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.25;
 
 import "../../abstracts/Reencrypt.sol";
 
@@ -85,24 +85,24 @@ contract Comp is Reencrypt {
         allowedContract = contractAddress;
     }
 
-    /**
-     * @notice Get the number of tokens held by the `account`
-     * @return reencrypted The number of tokens held
-     */
-    function balanceOf(
-        bytes32 publicKey,
-        bytes calldata signature
-    ) public view onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
-        return TFHE.reencrypt(balances[msg.sender], publicKey);
-    }
+    // /**
+    //  * @notice Get the number of tokens held by the `account`
+    //  * @return reencrypted The number of tokens held
+    //  */
+    // function balanceOf(
+    //     bytes32 publicKey,
+    //     bytes calldata signature
+    // ) public view onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
+    //     return TFHE.reencrypt(balances[msg.sender], publicKey);
+    // }
 
-    /**
-     * @notice Get the number of tokens
-     * @return reencrypted The number of tokens
-     */
-    function getTotalSupply() public view returns (uint64) {
-        return TFHE.decrypt(totalSupply);
-    }
+    // /**
+    //  * @notice Get the number of tokens
+    //  * @return reencrypted The number of tokens
+    //  */
+    // function getTotalSupply() public view returns (uint64) {
+    //     return TFHE.decrypt(totalSupply);
+    // }
 
     /**
      * @notice Approve `spender` to transfer up to `amount` from `src`
@@ -123,15 +123,15 @@ contract Comp is Reencrypt {
         allowances[owner][spender] = amount;
     }
 
-    /**
-     * @notice Get the number of tokens `spender` is approved to spend on behalf of `account`
-     * @param spender The address of the account spending the funds
-     * @return reencrypted The number of tokens approved
-     */
-    function allowance(address spender) public view returns (bytes memory reencrypted) {
-        address owner = msg.sender;
-        return TFHE.reencrypt(_allowance(owner, spender), 0);
-    }
+    // /**
+    //  * @notice Get the number of tokens `spender` is approved to spend on behalf of `account`
+    //  * @param spender The address of the account spending the funds
+    //  * @return reencrypted The number of tokens approved
+    //  */
+    // function allowance(address spender) public view returns (bytes memory reencrypted) {
+    //     address owner = msg.sender;
+    //     return TFHE.reencrypt(_allowance(owner, spender), 0);
+    // }
 
     function _allowance(address owner, address spender) internal view returns (euint64) {
         return allowances[owner][spender];

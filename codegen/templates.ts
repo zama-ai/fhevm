@@ -26,20 +26,32 @@ library Common {
     uint8 internal constant euint64_t = 5;
     uint8 internal constant euint128_t = 6;
     uint8 internal constant euint160_t = 7;
+    uint8 internal constant euint256_t = 8;
+    uint8 internal constant ebytes64_t = 9;
+    uint8 internal constant ebytes128_t = 10;
     uint8 internal constant ebytes256_t = 11;
 }
 `;
 }
 
-function binaryOperatorImpl(op: Operator, isScalar: boolean, isEncrypted: boolean): string {
+function binaryOperatorImpl(op: Operator): string {
   const fname = operatorFheLibFunction(op);
-  const scalarAndEncrypted = isScalar && isEncrypted;
-  const scalarArg = scalarAndEncrypted ? ', bool scalar' : '';
-  const scalarParam = scalarAndEncrypted ? ', scalar' : '';
+  const scalarArg = op.hasScalar && op.hasEncrypted ? ', bool scalar' : '';
+  const scalarByte = op.hasScalar ? '0x01' : '0x00';
+  const scalarSection =
+    op.hasScalar && op.hasEncrypted
+      ? `bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }`
+      : `bytes1 scalarByte = ${scalarByte};`;
   return (
     `
     function ${op.name}(uint256 lhs, uint256 rhs${scalarArg}) internal returns (uint256 result) {
-        result = exec.${fname}(lhs, rhs${scalarParam});
+        ${scalarSection}
+        result = IFHEVMCoprocessor(fhevmCoprocessorAdd).${fname}(lhs, rhs, scalarByte);
     }` + '\n'
   );
 }
@@ -47,33 +59,29 @@ function binaryOperatorImpl(op: Operator, isScalar: boolean, isEncrypted: boolea
 export function implSol(ctx: CodegenContext, operators: Operator[]): string {
   const res: string[] = [];
 
+  const coprocessorInterface = generateImplCoprocessorInterface(operators);
+  const aclInterface = generateACLInterface();
+
   res.push(`
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.25;
 
 import "./TFHE.sol";
-import "./TFHEExecutor.sol";
-import "./TFHEExecutorAddress.sol";
-import "./ACL.sol";
+import "./FHEVMCoprocessorAddress.sol";
 import "./ACLAddress.sol";
 
+${coprocessorInterface}
+
+${aclInterface}
+
 library Impl {
-    // 32 bytes for the 'byte' type header + 48 bytes for the NaCl anonymous
-    // box overhead + 4 bytes for the plaintext value.
-    uint256 constant reencryptedSize = 32 + 48 + 4;
-
-    // 32 bytes for the 'byte' header + 16553 bytes of key data.
-    uint256 constant fhePubKeySize = 32 + 16553;
-
-    ACL private constant acl = ACL(address(ACL_CONTRACT_ADDRESS));
-    TFHEExecutor private constant exec = TFHEExecutor(address(TFHE_EXECUTOR_CONTRACT_ADDRESS));
 `);
 
   operators.forEach((op) => {
     switch (op.arguments) {
       case OperatorArguments.Binary:
-        res.push(binaryOperatorImpl(op, op.hasScalar, op.hasEncrypted));
+        res.push(binaryOperatorImpl(op));
         break;
       case OperatorArguments.Unary:
         res.push(unaryOperatorImpl(op));
@@ -96,7 +104,7 @@ export function fhevmLibSol(operators: Operator[]): string {
   res.push(`
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.25;
 
 ${fheLibInterface}
 
@@ -113,7 +121,7 @@ export function tfheExecutorSol(ctx: CodegenContext, operators: Operator[]): str
   res.push(`
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.25;
 
 import "./ACL.sol";
 import "./ACLAddress.sol";
@@ -145,34 +153,34 @@ function generatelImplTFHEExecutor(operators: Operator[]): string {
   const res: string[] = [];
 
   res.push('contract TFHEExecutor {');
-  res.push('ACL private constant acl = ACL(address(ACL_CONTRACT_ADDRESS));');
+  res.push('ACL private constant acl = ACL(address(aclAdd));');
   operators.forEach((op) => {
     let functionName = operatorFheLibFunction(op);
     let functionArguments: string;
     switch (op.arguments) {
       case OperatorArguments.Binary:
-        const scalarArg = op.hasScalar && op.hasEncrypted ? ', bool scalar' : '';
-        const scalarByte = op.hasScalar ? '0x01' : '0x00';
-        const scalarSection =
-          op.hasScalar && op.hasEncrypted
-            ? `bytes1 scalarByte;
-              if (scalar) {
-                  scalarByte = 0x01;
-              } else {
-                  require(acl.isAllowed(rhs, msg.sender));
-              }`
-            : `bytes1 scalarByte = ${scalarByte};`;
-        functionArguments = `(uint256 lhs, uint256 rhs${scalarArg})`;
-        const tailBinary = `public returns (uint256 result) {
+        let requireRhsIfNotScalar: string = '';
+        if (op.hasScalar && op.hasEncrypted) {
+          requireRhsIfNotScalar = `
+            if (scalarByte == 0x00) {
+               require(acl.isAllowed(rhs, msg.sender));
+            }
+          `;
+        } else if (op.hasEncrypted) {
+          requireRhsIfNotScalar = `require(acl.isAllowed(rhs, msg.sender));`;
+        }
+
+        functionArguments = `(uint256 lhs, uint256 rhs, bytes1 scalarByte)`;
+        const tailBinary = `external returns (uint256 result) {
           require(acl.isAllowed(lhs, msg.sender));
-          ${scalarSection}
+          ${requireRhsIfNotScalar}
           result = FhevmLib(address(EXT_TFHE_LIBRARY)).${functionName}(lhs, rhs, scalarByte);
           acl.allowTransient(result, msg.sender); }`;
         res.push(`  function ${functionName}${functionArguments} ${tailBinary}`);
         break;
       case OperatorArguments.Unary:
         functionArguments = '(uint256 ct)';
-        const tailUnary = `public returns (uint256 result) {
+        const tailUnary = `external returns (uint256 result) {
           require(acl.isAllowed(ct, msg.sender));
           result = FhevmLib(address(EXT_TFHE_LIBRARY)).${functionName}(ct);
           acl.allowTransient(result, msg.sender); }`;
@@ -215,62 +223,100 @@ function generateImplFhevmLibInterface(operators: Operator[]): string {
   return res.join('\n');
 }
 
+function generateImplCoprocessorInterface(operators: Operator[]): string {
+  const res: string[] = [];
+
+  res.push('interface IFHEVMCoprocessor {');
+  operators.forEach((op) => {
+    let functionName = operatorFheLibFunction(op);
+    const tail = 'external returns (uint256 result);';
+    let functionArguments: string;
+    switch (op.arguments) {
+      case OperatorArguments.Binary:
+        functionArguments = '(uint256 lhs, uint256 rhs, bytes1 scalarByte)';
+        res.push(`  function ${functionName}${functionArguments} ${tail}`);
+        break;
+      case OperatorArguments.Unary:
+        functionArguments = '(uint256 ct)';
+        res.push(`  function ${functionName}${functionArguments} ${tail}`);
+        break;
+    }
+  });
+
+  res.push(coprocessorInterfaceCustomFunctions());
+
+  res.push('}');
+
+  return res.join('');
+}
+
 function fheLibCustomInterfaceFunctions(): string {
   return `
-    function reencrypt(uint256 ct, uint256 publicKey) external view returns (bytes memory);
     function fhePubKey(bytes1 fromLib) external view returns (bytes memory result);
     function verifyCiphertext(bytes32 inputHandle, address callerAddress, bytes memory inputProof, bytes1 inputType) external pure returns (uint256 result);
     function cast(uint256 ct, bytes1 toType) external pure returns (uint256 result);
     function trivialEncrypt(uint256 ct, bytes1 toType) external pure returns (uint256 result);
-    function decrypt(uint256 ct) external view returns (uint256 result);
     function fheIfThenElse(uint256 control, uint256 ifTrue, uint256 ifFalse) external pure returns (uint256 result);
     function fheArrayEq(uint256[] memory lhs, uint256[] memory rhs) external pure returns (uint256 result);
-    function fheRand(bytes1 randType) external view returns (uint256 result);
-    function fheRandBounded(uint256 upperBound, bytes1 randType) external view returns (uint256 result);
+    function fheRand(bytes1 randType, uint256 seed) external view returns (uint256 result);
+    function fheRandBounded(uint256 upperBound, bytes1 randType, uint256 seed) external view returns (uint256 result);
+  `;
+}
+
+function coprocessorInterfaceCustomFunctions(): string {
+  return `
+    function verifyCiphertext(bytes32 inputHandle, address callerAddress, bytes memory inputProof, bytes1 inputType) external returns (uint256 result);
+    function cast(uint256 ct, bytes1 toType) external returns (uint256 result);
+    function trivialEncrypt(uint256 ct, bytes1 toType) external returns (uint256 result);
+    function fheIfThenElse(uint256 control, uint256 ifTrue, uint256 ifFalse) external returns (uint256 result);
+    function fheRand(bytes1 randType) external returns (uint256 result);
+    function fheRandBounded(uint256 upperBound, bytes1 randType) external returns (uint256 result);
+    function cleanTransientStorage() external;
+  `;
+}
+
+function generateACLInterface(): string {
+  return `
+  interface IACL {
+    function allowTransient(uint256 ciphertext, address account) external;
+    function allow(uint256 handle, address account) external;
+    function cleanTransientStorage() external;
+    function isAllowed(uint256 handle, address account) external view returns(bool);
+  }
   `;
 }
 
 function tfheExecutorCustomFunctions(): string {
   return `
-    function reencrypt(uint256 ct, uint256 publicKey) public view returns (bytes memory) {
-      require(acl.isAllowed(ct, msg.sender));
-      return FhevmLib(address(EXT_TFHE_LIBRARY)).reencrypt(ct, publicKey);
-    }
-    function fhePubKey(bytes1 fromLib) public view returns (bytes memory result) {
-      return FhevmLib(address(EXT_TFHE_LIBRARY)).fhePubKey(fromLib);
-    }
-    function verifyCiphertext(bytes32 inputHandle, address callerAddress, bytes memory inputProof, bytes1 inputType) public returns (uint256 result) {
+    function verifyCiphertext(bytes32 inputHandle, address callerAddress, bytes memory inputProof, bytes1 inputType) external returns (uint256 result) {
       result = FhevmLib(address(EXT_TFHE_LIBRARY)).verifyCiphertext(inputHandle, callerAddress, inputProof, inputType);
       acl.allowTransient(result, msg.sender);
     }
-    function cast(uint256 ct, bytes1 toType) public returns (uint256 result) {
+    function cast(uint256 ct, bytes1 toType) external returns (uint256 result) {
       require(acl.isAllowed(ct, msg.sender));
       result = FhevmLib(address(EXT_TFHE_LIBRARY)).cast(ct, toType);
       acl.allowTransient(result, msg.sender);
     }
-    function trivialEncrypt(uint256 plaintext, bytes1 toType) public returns (uint256 result) {
+    function trivialEncrypt(uint256 plaintext, bytes1 toType) external returns (uint256 result) {
       result = FhevmLib(address(EXT_TFHE_LIBRARY)).trivialEncrypt(plaintext, toType);
       acl.allowTransient(result, msg.sender);
     }
-    function decrypt(uint256 ct) public view returns (uint256 result) {
-      require(acl.isAllowed(ct, msg.sender));
-      return FhevmLib(address(EXT_TFHE_LIBRARY)).decrypt(ct);
-    }
-    function fheIfThenElse(uint256 control, uint256 ifTrue, uint256 ifFalse) public returns (uint256 result) {
+    function fheIfThenElse(uint256 control, uint256 ifTrue, uint256 ifFalse) external returns (uint256 result) {
       require(acl.isAllowed(control, msg.sender));
       require(acl.isAllowed(ifTrue, msg.sender));
       require(acl.isAllowed(ifFalse, msg.sender));
       result = FhevmLib(address(EXT_TFHE_LIBRARY)).fheIfThenElse(control, ifTrue, ifFalse);
       acl.allowTransient(result, msg.sender);
     }
-    function fheRand(bytes1 randType) public returns (uint256 result) {
-      result = FhevmLib(address(EXT_TFHE_LIBRARY)).fheRand(randType);
+    function fheRand(bytes1 randType) external returns (uint256 result) {
+      result = FhevmLib(address(EXT_TFHE_LIBRARY)).fheRand(randType, 0);
       acl.allowTransient(result, msg.sender);
     }
-    function fheRandBounded(uint256 upperBound, bytes1 randType) public returns (uint256 result) {
-      result = FhevmLib(address(EXT_TFHE_LIBRARY)).fheRandBounded(upperBound, randType);
+    function fheRandBounded(uint256 upperBound, bytes1 randType) external returns (uint256 result) {
+      result = FhevmLib(address(EXT_TFHE_LIBRARY)).fheRandBounded(upperBound, randType, 0);
       acl.allowTransient(result, msg.sender);
     }
+    function cleanTransientStorage() external {}
   `;
 }
 
@@ -285,7 +331,7 @@ export function tfheSol(
 
   res.push(`// SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.25;
 
 ${commonSolLib()}
 
@@ -300,7 +346,7 @@ library TFHE {
   });
   if (mocked) {
     res.push(`
-    // Return true if the enrypted integer is initialized and false otherwise.
+    // Return true if the enrypted bool is initialized and false otherwise.
     function isInitialized(ebool /*v*/) internal pure returns (bool) {
         return true;
     }
@@ -315,7 +361,7 @@ library TFHE {
     });
   } else {
     res.push(`
-    // Return true if the enrypted integer is initialized and false otherwise.
+    // Return true if the enrypted bool is initialized and false otherwise.
     function isInitialized(ebool v) internal pure returns (bool) {
         return ebool.unwrap(v) != 0;
     }
@@ -352,7 +398,6 @@ library TFHE {
 
   // TODO: Decide whether we want to have mixed-inputs for CMUX/Select
   supportedBits.forEach((bits) => res.push(tfheSelect(bits)));
-  supportedBits.forEach((bits) => res.push(tfheEq(bits)));
   supportedBits.forEach((outputBits) => {
     supportedBits.forEach((inputBits) => {
       res.push(tfheAsEboolCustomCast(inputBits, outputBits));
@@ -362,9 +407,9 @@ library TFHE {
   supportedBits.forEach((bits) => res.push(tfheUnaryOperators(bits, operators, signatures)));
   supportedBits.forEach((bits) => res.push(tfheCustomUnaryOperators(bits, signatures, mocked)));
 
-  res.push(tfheAclMethods(supportedBits));
-
   res.push(tfheCustomMethods(ctx, mocked));
+
+  res.push(tfheAclMethods(supportedBits));
 
   res.push('}\n');
 
@@ -654,10 +699,6 @@ function tfheSelect(inputBits: number): string {
   return `
     // If 'control''s value is 'true', the result has the same value as 'a'.
     // If 'control''s value is 'false', the result has the same value as 'b'.
-    function cmux(ebool control, euint${inputBits} a, euint${inputBits} b) internal returns (euint${inputBits}) {
-        return euint${inputBits}.wrap(Impl.select(ebool.unwrap(control), euint${inputBits}.unwrap(a), euint${inputBits}.unwrap(b)));
-    }
-    
     function select(ebool control, euint${inputBits} a, euint${inputBits} b) internal returns (euint${inputBits}) {
         return euint${inputBits}.wrap(Impl.select(ebool.unwrap(control), euint${inputBits}.unwrap(a), euint${inputBits}.unwrap(b)));
     }`;
@@ -704,12 +745,12 @@ function tfheAsEboolUnaryCast(bits: number): string {
 
   if (bits == 8) {
     res.push(`
-    // Convert a serialized 'ciphertext' to an encrypted euint8 integer.
+    // Convert an inputHandle with corresponding inputProof to an encrypted boolean.
     function asEbool(einput inputHandle, bytes memory inputProof) internal returns (ebool) {
         return ebool.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, Common.ebool_t));
     }
 
-    // Convert a plaintext value to an encrypted euint8 integer.
+    // Convert a plaintext value to an encrypted boolean.
     function asEbool(uint256 value) internal returns (ebool) {
         return ebool.wrap(Impl.trivialEncrypt(value, Common.ebool_t));
     }
@@ -783,7 +824,7 @@ function tfheUnaryOperators(bits: number, operators: Operator[], signatures: Ove
 
 function tfheCustomUnaryOperators(bits: number, signatures: OverloadSignature[], mocked: boolean): string {
   let result = `
-    // Convert the given inputHandle and inputProof to an encrypted euint${bits} integer.
+    // Convert an inputHandle with corresponding inputProof to an encrypted euint${bits} integer.
     function asEuint${bits}(einput inputHandle, bytes memory inputProof) internal returns (euint${bits}) {
         return euint${bits}.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, Common.euint${bits}_t));
     }
@@ -794,33 +835,6 @@ function tfheCustomUnaryOperators(bits: number, signatures: OverloadSignature[],
     }
 
     `;
-  if (mocked) {
-    result += `
-    // Decrypts the encrypted 'value'.
-    function decrypt(euint${bits} value) internal view returns (${getUint(bits)}) {
-        return ${getUint(bits)}(Impl.decrypt(euint${bits}.unwrap(value)) % 2**${bits});
-    }
-
-    // Reencrypt the given 'value' under the given 'publicKey'.
-    // Return a serialized euint${bits} ciphertext.
-    function reencrypt(euint${bits} value, bytes32 publicKey) internal view returns (bytes memory reencrypted) {
-        return Impl.reencrypt(euint${bits}.unwrap(value) % 2**${bits}, publicKey);
-    }
-    `;
-  } else {
-    result += `
-    // Decrypts the encrypted 'value'.
-    function decrypt(euint${bits} value) internal view returns (${getUint(bits)}) {
-        return ${getUint(bits)}(Impl.decrypt(euint${bits}.unwrap(value)));
-    }
-
-    // Reencrypt the given 'value' under the given 'publicKey'.
-    // Return a serialized euint${bits} ciphertext.
-    function reencrypt(euint${bits} value, bytes32 publicKey) internal view returns (bytes memory reencrypted) {
-        return Impl.reencrypt(euint${bits}.unwrap(value), publicKey);
-    }
-    `;
-  }
   return result;
 }
 
@@ -828,7 +842,7 @@ function unaryOperatorImpl(op: Operator): string {
   let fname = operatorFheLibFunction(op);
   return `
     function ${op.name}(uint256 ct) internal returns (uint256 result) {
-      result = exec.${fname}(ct);
+      result = IFHEVMCoprocessor(fhevmCoprocessorAdd).${fname}(ct);
     }
   `;
 }
@@ -838,20 +852,32 @@ function tfheAclMethods(supportedBits: number[]): string {
 
   res.push(
     `
-    function allowTransient(ebool handle, address account) internal {
-      Impl.allowTransient(ebool.unwrap(handle), account);
+    // cleans the transient storage of ACL containing all the allowedTransient accounts
+    // to be used for integration with Account Abstraction or when bundling UserOps calling the FHEVMCoprocessor
+    function cleanTransientStorage() internal {
+      return Impl.cleanTransientStorage();
     }
 
-    function allow(ebool handle, address account) internal {
-      Impl.allow(ebool.unwrap(handle), account);
+    function isAllowed(ebool value, address account) internal view returns (bool) {
+      return Impl.isAllowed(ebool.unwrap(value), account);
+    }
+  `,
+  );
+
+  supportedBits.forEach((bits) =>
+    res.push(`function isAllowed(euint${bits} value, address account) internal view returns (bool) {
+      return Impl.isAllowed(euint${bits}.unwrap(value), account);
+    }`),
+  );
+
+  res.push(
+    `
+    function isAllowed(eaddress value, address account) internal view returns(bool) {
+      return Impl.isAllowed(eaddress.unwrap(value), account);
     }
 
-    function isAllowed(ebool handle, address account) internal view returns (bool) {
-      return Impl.isAllowed(ebool.unwrap(handle), account);
-    }
-
-    function isSenderAllowed(ebool handle) internal view returns (bool) {
-      return Impl.isAllowed(ebool.unwrap(handle), msg.sender);
+    function isSenderAllowed(ebool value) internal view returns (bool) {
+      return Impl.isAllowed(ebool.unwrap(value), msg.sender);
     }
     `,
   );
@@ -859,40 +885,78 @@ function tfheAclMethods(supportedBits: number[]): string {
   supportedBits.forEach((bits) =>
     res.push(
       `
-    function allowTransient(euint${bits} handle, address account) internal {
-      Impl.allowTransient(euint${bits}.unwrap(handle), account);
-    }
+      function isSenderAllowed(euint${bits} value) internal view returns (bool) {
+        return Impl.isAllowed(euint${bits}.unwrap(value), msg.sender);
+      }
+      `,
+    ),
+  );
 
-    function allow(euint${bits} handle, address account) internal {
-      Impl.allow(euint${bits}.unwrap(handle), account);
+  res.push(
+    `
+    function isSenderAllowed(eaddress value) internal view returns(bool) {
+      return Impl.isAllowed(eaddress.unwrap(value), msg.sender);
     }
+    `,
+  );
 
-    function isAllowed(euint${bits} handle, address account) internal view returns (bool) {
-      return Impl.isAllowed(euint${bits}.unwrap(handle), account);
+  res.push(
+    `
+    function allow(ebool value, address account) internal {
+      Impl.allow(ebool.unwrap(value), account);
     }
+    `,
+  );
 
-    function isSenderAllowed(euint${bits} handle) internal view returns (bool) {
-      return Impl.isAllowed(euint${bits}.unwrap(handle), msg.sender);
+  supportedBits.forEach((bits) =>
+    res.push(
+      `
+    function allow(euint${bits} value, address account) internal {
+      Impl.allow(euint${bits}.unwrap(value), account);
     }
     \n`,
     ),
   );
+
+  res.push(
+    `
+    function allow(eaddress value, address account) internal {
+      Impl.allow(eaddress.unwrap(value), account);
+    }
+    `,
+  );
+
+  res.push(
+    `
+    function allowTransient(ebool value, address account) internal {
+      Impl.allowTransient(ebool.unwrap(value), account);
+    }
+    `,
+  );
+
+  supportedBits.forEach((bits) =>
+    res.push(
+      `
+    function allowTransient(euint${bits} value, address account) internal {
+      Impl.allowTransient(euint${bits}.unwrap(value), account);
+    }
+    \n`,
+    ),
+  );
+
+  res.push(
+    `
+    function allowTransient(eaddress value, address account) internal {
+      Impl.allowTransient(eaddress.unwrap(value), account);
+    }
+    `,
+  );
+
   return res.join('');
 }
 
 function tfheCustomMethods(ctx: CodegenContext, mocked: boolean): string {
   let result = `
-    // Reencrypt the given 'value' under the given 'publicKey'.
-    // Return a serialized euint8 value.
-    function reencrypt(ebool value, bytes32 publicKey) internal view returns (bytes memory reencrypted) {
-        return Impl.reencrypt(ebool.unwrap(value), publicKey);
-    }
-
-    // Returns the network public FHE key.
-    function fhePubKey() internal view returns (bytes memory) {
-        return Impl.fhePubKey();
-    }
-
     // Generates a random encrypted 8-bit unsigned integer.
     // Important: The random integer is generated in the plain! An FHE-based version is coming soon.
     function randEuint8() internal returns (euint8) {
@@ -925,12 +989,6 @@ function tfheCustomMethods(ctx: CodegenContext, mocked: boolean): string {
       return euint32.wrap(Impl.rand(Common.euint32_t));
     }
 
-    // Generates a random encrypted 64-bit unsigned integer.
-    // Important: The random integer is generated in the plain! An FHE-based version is coming soon.
-    function randEuint64() internal returns (euint64) {
-      return euint64.wrap(Impl.rand(Common.euint64_t));
-    }
-
     // Generates a random encrypted 32-bit unsigned integer in the [0, upperBound) range.
     // The upperBound must be a power of 2.
     // Important: The random integer is generated in the plain! An FHE-based version is coming soon.
@@ -938,20 +996,20 @@ function tfheCustomMethods(ctx: CodegenContext, mocked: boolean): string {
       return euint32.wrap(Impl.randBounded(upperBound, Common.euint32_t));
     }
 
+    // Generates a random encrypted 64-bit unsigned integer.
+    // Important: The random integer is generated in the plain! An FHE-based version is coming soon.
+    function randEuint64() internal returns (euint64) {
+      return euint64.wrap(Impl.rand(Common.euint64_t));
+    }
+
+    // Generates a random encrypted 64-bit unsigned integer in the [0, upperBound) range.
+    // The upperBound must be a power of 2.
+    // Important: The random integer is generated in the plain! An FHE-based version is coming soon.
     function randEuint64(uint64 upperBound) internal returns (euint64) {
       return euint64.wrap(Impl.randBounded(upperBound, Common.euint64_t));
     }
-    // Decrypts the encrypted 'value'.
-    function decrypt(eaddress value) internal view returns (address) {
-        return address(uint160(Impl.decrypt(eaddress.unwrap(value))));
-    }
 
-    // Reencrypt  the encrypted 'value'.
-    function reencrypt(eaddress value, bytes32 publicKey) internal view returns (bytes memory reencrypted) {
-      return Impl.reencrypt(eaddress.unwrap(value), publicKey);
-  }
-
-    // Convert the given inputHandle and inputProof to an encrypted eaddress.
+    // Convert an inputHandle with corresponding inputProof to an encrypted eaddress.
     function asEaddress(einput inputHandle, bytes memory inputProof) internal returns (eaddress) {
       return eaddress.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, Common.euint160_t));
     }
@@ -966,7 +1024,7 @@ function tfheCustomMethods(ctx: CodegenContext, mocked: boolean): string {
       return ebytes256.wrap(Impl.verify(einput.unwrap(inputHandle), inputProof, Common.ebytes256_t));
     }
 
-    // Return true if the enrypted value is initialized and false otherwise.
+    // Return true if the enrypted address is initialized and false otherwise.
     function isInitialized(eaddress v) internal pure returns (bool) {
         return eaddress.unwrap(v) != 0;
     }
@@ -1034,6 +1092,12 @@ function tfheCustomMethods(ctx: CodegenContext, mocked: boolean): string {
         return ebool.wrap(Impl.ne(eaddress.unwrap(a), bProc, true));
     }
 
+    // If 'control''s value is 'true', the result has the same value as 'a'.
+    // If 'control''s value is 'false', the result has the same value as 'b'.
+    function select(ebool control, eaddress a, eaddress b) internal returns (eaddress) {
+        return eaddress.wrap(Impl.select(ebool.unwrap(control), eaddress.unwrap(a), eaddress.unwrap(b)));
+    }
+
     // Evaluate eq(a, b) and return the result.
     function eq(ebytes256 a, ebytes256 b) internal returns (ebool) {
         require(isInitialized(a), "a is uninitialized");
@@ -1047,30 +1111,7 @@ function tfheCustomMethods(ctx: CodegenContext, mocked: boolean): string {
         require(isInitialized(b), "b is uninitialized");
         return ebool.wrap(Impl.ne(ebytes256.unwrap(a), ebytes256.unwrap(b), false));
     }
-    
-    function select(ebool control, eaddress a, eaddress b) internal returns (eaddress) {
-        return eaddress.wrap(Impl.select(ebool.unwrap(control), eaddress.unwrap(a), eaddress.unwrap(b)));
-    }
-
-    function cleanAllTransientAllowed() internal {
-      Impl.cleanAllTransientAllowed();
-    }
 `;
-  if (mocked) {
-    result += `
-    // Decrypts the encrypted 'value'.
-    function decrypt(ebool value) internal view returns (bool) {
-        return (Impl.decrypt(ebool.unwrap(value)) % 2 == 1);
-    }
-    `;
-  } else {
-    result += `
-    // Decrypts the encrypted 'value'.
-    function decrypt(ebool value) internal view returns (bool) {
-        return (Impl.decrypt(ebool.unwrap(value)) != 0);
-    }
-    `;
-  }
   return result;
 }
 
@@ -1079,20 +1120,7 @@ function implCustomMethods(ctx: CodegenContext): string {
     // If 'control's value is 'true', the result has the same value as 'ifTrue'.
     // If 'control's value is 'false', the result has the same value as 'ifFalse'.
     function select(uint256 control, uint256 ifTrue, uint256 ifFalse) internal returns (uint256 result) {
-        result = exec.fheIfThenElse(control, ifTrue, ifFalse);
-    }
-
-    function eq(uint256[] memory lhs, uint256[] memory rhs) internal pure returns (uint256 result) {
-        result = FhevmLib(address(EXT_TFHE_LIBRARY)).fheArrayEq(lhs, rhs);
-    }
-
-    function reencrypt(uint256 ciphertext, bytes32 publicKey) internal view returns (bytes memory reencrypted) {
-        return exec.reencrypt(ciphertext, uint256(publicKey));
-    }
-
-    function fhePubKey() internal view returns (bytes memory key) {
-        // Set a byte value of 1 to signal the call comes from the library.
-        key = exec.fhePubKey(bytes1(0x01));
+        result = IFHEVMCoprocessor(fhevmCoprocessorAdd).fheIfThenElse(control, ifTrue, ifFalse);
     }
 
     function verify(
@@ -1100,74 +1128,47 @@ function implCustomMethods(ctx: CodegenContext): string {
         bytes memory inputProof,
         uint8 toType
     ) internal returns (uint256 result) {
-        result = exec.verifyCiphertext(inputHandle, msg.sender, inputProof, bytes1(toType));
-        acl.allowTransient(result, msg.sender);
+        result = IFHEVMCoprocessor(fhevmCoprocessorAdd).verifyCiphertext(inputHandle, msg.sender, inputProof, bytes1(toType));
+        IACL(aclAdd).allowTransient(result, msg.sender);
     }
 
     function cast(
         uint256 ciphertext,
         uint8 toType
     ) internal returns (uint256 result) {
-        result = exec.cast(ciphertext, bytes1(toType));
+        result = IFHEVMCoprocessor(fhevmCoprocessorAdd).cast(ciphertext, bytes1(toType));
     }
 
     function trivialEncrypt(
         uint256 value,
         uint8 toType
     ) internal returns (uint256 result) {
-        result = exec.trivialEncrypt(value, bytes1(toType));
-    }
-
-    function decrypt(uint256 ciphertext) internal view returns(uint256 result) {
-        result = exec.decrypt(ciphertext);
+        result = IFHEVMCoprocessor(fhevmCoprocessorAdd).trivialEncrypt(value, bytes1(toType));
     }
 
     function rand(uint8 randType) internal returns(uint256 result) {
-      result = exec.fheRand(bytes1(randType));
+      result = IFHEVMCoprocessor(fhevmCoprocessorAdd).fheRand(bytes1(randType));
     }
 
     function randBounded(uint256 upperBound, uint8 randType) internal returns(uint256 result) {
-      result = exec.fheRandBounded(upperBound, bytes1(randType));
+      result = IFHEVMCoprocessor(fhevmCoprocessorAdd).fheRandBounded(upperBound, bytes1(randType));
     }
 
     function allowTransient(uint256 handle, address account) internal {
-      acl.allowTransient(handle, account);
-    }
-
-    function allowedTransient(uint256 handle, address account) internal view returns (bool) {
-      return acl.allowedTransient(handle, account);
-    }
-
-    function cleanAllTransientAllowed() internal {
-      acl.cleanAllTransientAllowed();
+      IACL(aclAdd).allowTransient(handle, account);
     }
 
     function allow(uint256 handle, address account) internal {
-      acl.allow(handle, account);
+      IACL(aclAdd).allow(handle, account);
     }
 
-    function persistAllowed(uint256 handle, address account) internal view returns (bool) {
-      return acl.persistAllowed(handle, account);
+    function cleanTransientStorage() internal {
+      IACL(aclAdd).cleanTransientStorage();
+      IFHEVMCoprocessor(fhevmCoprocessorAdd).cleanTransientStorage();
     }
 
     function isAllowed(uint256 handle, address account) internal view returns (bool) {
-      return acl.isAllowed(handle, account);
-    }
-
-    function delegateAccount(address delegatee) internal {
-      acl.delegateAccount(delegatee);
-    }
-
-    function removeDelegation(address delegatee) internal {
-        acl.removeDelegation(delegatee);
-    }
-
-    function allowedOnBehalf(address delegatee, uint256 handle, address account) internal view returns (bool) {
-        return acl.allowedOnBehalf(delegatee, handle, account);
-    }
-
-    function allowForDecryption(uint256[] memory ctsHandles) internal {
-      acl.allowForDecryption(ctsHandles);
+      return IACL(aclAdd).isAllowed(handle, account);
     }
     `;
 }
@@ -1178,7 +1179,7 @@ export function implSolMock(ctx: CodegenContext, operators: Operator[]): string 
   res.push(`
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.25;
 
 import "./TFHE.sol";
 
@@ -1297,7 +1298,7 @@ library Impl {
       return y;
   }
 
-  function cmux(uint256 control, uint256 ifTrue, uint256 ifFalse) internal pure returns (uint256 result) {
+  function select(uint256 control, uint256 ifTrue, uint256 ifFalse) internal pure returns (uint256 result) {
       result = (control == 1) ? ifTrue : ifFalse;
   }
 
@@ -1308,15 +1309,6 @@ library Impl {
   function optReq(uint256 ciphertext) internal view {
       this; // silence state mutability warning
       require(ciphertext == 1, "transaction execution reverted");
-  }
-
-  function reencrypt(uint256 ciphertext, bytes32 /*publicKey*/) internal view returns (bytes memory reencrypted) {
-      this; // silence state mutability warning
-      reencrypted = new bytes(32);
-        assembly {
-            mstore(add(reencrypted, 32), ciphertext)
-        }
-        return reencrypted;
   }
 
   function fhePubKey() internal view returns (bytes memory key) {
@@ -1367,11 +1359,6 @@ library Impl {
 
   function trivialEncrypt(uint256 value, uint8 /*toType*/) internal returns (uint256 result) {
       result = value;
-  }
-
-  function decrypt(uint256 ciphertext) internal view returns (uint256 result) {
-      this; // silence state mutability warning
-      result = ciphertext;
   }
 
   function rand(uint8 randType) internal returns (uint256 result) {

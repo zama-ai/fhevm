@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.25;
 
 import "./TFHE.sol";
 
@@ -119,7 +119,7 @@ library Impl {
         return y;
     }
 
-    function cmux(uint256 control, uint256 ifTrue, uint256 ifFalse) internal pure returns (uint256 result) {
+    function select(uint256 control, uint256 ifTrue, uint256 ifFalse) internal pure returns (uint256 result) {
         result = (control == 1) ? ifTrue : ifFalse;
     }
 
@@ -130,15 +130,6 @@ library Impl {
     function optReq(uint256 ciphertext) internal view {
         this; // silence state mutability warning
         require(ciphertext == 1, "transaction execution reverted");
-    }
-
-    function reencrypt(uint256 ciphertext, bytes32 /*publicKey*/) internal view returns (bytes memory reencrypted) {
-        this; // silence state mutability warning
-        reencrypted = new bytes(32);
-        assembly {
-            mstore(add(reencrypted, 32), ciphertext)
-        }
-        return reencrypted;
     }
 
     function fhePubKey() internal view returns (bytes memory key) {
@@ -187,11 +178,6 @@ library Impl {
 
     function trivialEncrypt(uint256 value, uint8 /*toType*/) internal returns (uint256 result) {
         result = value;
-    }
-
-    function decrypt(uint256 ciphertext) internal view returns (uint256 result) {
-        this; // silence state mutability warning
-        result = ciphertext;
     }
 
     function rand(uint8 randType) internal returns (uint256 result) {

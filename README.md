@@ -109,7 +109,7 @@ _Find more details on implementation instructions in [this repository](https://g
 ```solidity
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.25;
 
 import "fhevm/lib/TFHE.sol";
 

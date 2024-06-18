@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.25;
 
 import "../../lib/TFHE.sol";
 
@@ -144,77 +144,77 @@ contract GovernorZama {
         guardian = guardian_;
     }
 
-    function propose(
-        address[] memory targets,
-        uint[] memory values,
-        string[] memory signatures,
-        bytes[] memory calldatas,
-        uint customVotingPeriod,
-        string memory description
-    ) public returns (uint) {
-        require(
-            TFHE.decrypt(TFHE.lt(proposalThreshold(), comp.getPriorVotes(msg.sender, block.number - 1))),
-            "GovernorAlpha::propose: proposer votes below proposal threshold"
-        );
-        require(
-            targets.length == values.length &&
-                targets.length == signatures.length &&
-                targets.length == calldatas.length,
-            "GovernorAlpha::propose: proposal function information arity mismatch"
-        );
-        require(targets.length != 0, "GovernorAlpha::propose: must provide actions");
-        require(targets.length <= proposalMaxOperations(), "GovernorAlpha::propose: too many actions");
+    // function propose(
+    //     address[] memory targets,
+    //     uint[] memory values,
+    //     string[] memory signatures,
+    //     bytes[] memory calldatas,
+    //     uint customVotingPeriod,
+    //     string memory description
+    // ) public returns (uint) {
+    //     require(
+    //         TFHE.decrypt(TFHE.lt(proposalThreshold(), comp.getPriorVotes(msg.sender, block.number - 1))),
+    //         "GovernorAlpha::propose: proposer votes below proposal threshold"
+    //     );
+    //     require(
+    //         targets.length == values.length &&
+    //             targets.length == signatures.length &&
+    //             targets.length == calldatas.length,
+    //         "GovernorAlpha::propose: proposal function information arity mismatch"
+    //     );
+    //     require(targets.length != 0, "GovernorAlpha::propose: must provide actions");
+    //     require(targets.length <= proposalMaxOperations(), "GovernorAlpha::propose: too many actions");
 
-        uint latestProposalId = latestProposalIds[msg.sender];
-        if (latestProposalId != 0) {
-            ProposalState proposersLatestProposalState = state(latestProposalId);
-            require(
-                proposersLatestProposalState != ProposalState.Active,
-                "GovernorAlpha::propose: one live proposal per proposer, found an already active proposal"
-            );
-            require(
-                proposersLatestProposalState != ProposalState.Pending,
-                "GovernorAlpha::propose: one live proposal per proposer, found an already pending proposal"
-            );
-        }
+    //     uint latestProposalId = latestProposalIds[msg.sender];
+    //     if (latestProposalId != 0) {
+    //         ProposalState proposersLatestProposalState = state(latestProposalId);
+    //         require(
+    //             proposersLatestProposalState != ProposalState.Active,
+    //             "GovernorAlpha::propose: one live proposal per proposer, found an already active proposal"
+    //         );
+    //         require(
+    //             proposersLatestProposalState != ProposalState.Pending,
+    //             "GovernorAlpha::propose: one live proposal per proposer, found an already pending proposal"
+    //         );
+    //     }
 
-        uint startBlock = add256(block.number, votingDelay());
-        uint endBlock = add256(startBlock, customVotingPeriod != 0 ? customVotingPeriod : votingPeriod());
+    //     uint startBlock = add256(block.number, votingDelay());
+    //     uint endBlock = add256(startBlock, customVotingPeriod != 0 ? customVotingPeriod : votingPeriod());
 
-        proposalCount++;
-        uint proposalId = proposalCount;
-        Proposal storage newProposal = proposals[proposalId];
-        // This should never happen but add a check in case.
-        require(newProposal.id == 0, "GovernorAlpha::propose: ProposalID collsion");
-        newProposal.id = proposalId;
-        newProposal.proposer = msg.sender;
-        newProposal.eta = 0;
-        newProposal.targets = targets;
-        newProposal.values = values;
-        newProposal.signatures = signatures;
-        newProposal.forVotes = TFHE.asEuint64(0);
-        newProposal.againstVotes = TFHE.asEuint64(0);
-        newProposal.calldatas = calldatas;
-        newProposal.startBlock = startBlock;
-        newProposal.endBlock = endBlock;
-        newProposal.canceled = false;
-        newProposal.executed = false;
+    //     proposalCount++;
+    //     uint proposalId = proposalCount;
+    //     Proposal storage newProposal = proposals[proposalId];
+    //     // This should never happen but add a check in case.
+    //     require(newProposal.id == 0, "GovernorAlpha::propose: ProposalID collsion");
+    //     newProposal.id = proposalId;
+    //     newProposal.proposer = msg.sender;
+    //     newProposal.eta = 0;
+    //     newProposal.targets = targets;
+    //     newProposal.values = values;
+    //     newProposal.signatures = signatures;
+    //     newProposal.forVotes = TFHE.asEuint64(0);
+    //     newProposal.againstVotes = TFHE.asEuint64(0);
+    //     newProposal.calldatas = calldatas;
+    //     newProposal.startBlock = startBlock;
+    //     newProposal.endBlock = endBlock;
+    //     newProposal.canceled = false;
+    //     newProposal.executed = false;
 
-        latestProposalIds[newProposal.proposer] = newProposal.id;
+    //     latestProposalIds[newProposal.proposer] = newProposal.id;
 
-        emit ProposalCreated(
-            newProposal.id,
-            msg.sender,
-            targets,
-            values,
-            signatures,
-            calldatas,
-            startBlock,
-            endBlock,
-            description
-        );
-        return newProposal.id;
-    }
+    //     emit ProposalCreated(
+    //         newProposal.id,
+    //         msg.sender,
+    //         targets,
+    //         values,
+    //         signatures,
+    //         calldatas,
+    //         startBlock,
+    //         endBlock,
+    //         description
+    //     );
+    //     return newProposal.id;
+    // }
 
     function queue(uint proposalId) public {
         require(
@@ -257,29 +257,29 @@ contract GovernorZama {
         emit ProposalExecuted(proposalId);
     }
 
-    function cancel(uint proposalId) public {
-        ProposalState proposalState = state(proposalId);
-        require(proposalState != ProposalState.Executed, "GovernorAlpha::cancel: cannot cancel executed proposal");
+    // function cancel(uint proposalId) public {
+    //     ProposalState proposalState = state(proposalId);
+    //     require(proposalState != ProposalState.Executed, "GovernorAlpha::cancel: cannot cancel executed proposal");
 
-        Proposal storage proposal = proposals[proposalId];
+    //     Proposal storage proposal = proposals[proposalId];
 
-        ebool proposerAboveThreshold = TFHE.lt(proposalThreshold(), comp.getPriorVotes(msg.sender, block.number - 1));
+    //     ebool proposerAboveThreshold = TFHE.lt(proposalThreshold(), comp.getPriorVotes(msg.sender, block.number - 1));
 
-        require(msg.sender == guardian || TFHE.decrypt(proposerAboveThreshold));
+    //     require(msg.sender == guardian || TFHE.decrypt(proposerAboveThreshold));
 
-        proposal.canceled = true;
-        for (uint i = 0; i < proposal.targets.length; i++) {
-            timelock.cancelTransaction(
-                proposal.targets[i],
-                proposal.values[i],
-                proposal.signatures[i],
-                proposal.calldatas[i],
-                proposal.eta
-            );
-        }
+    //     proposal.canceled = true;
+    //     for (uint i = 0; i < proposal.targets.length; i++) {
+    //         timelock.cancelTransaction(
+    //             proposal.targets[i],
+    //             proposal.values[i],
+    //             proposal.signatures[i],
+    //             proposal.calldatas[i],
+    //             proposal.eta
+    //         );
+    //     }
 
-        emit ProposalCanceled(proposalId);
-    }
+    //     emit ProposalCanceled(proposalId);
+    // }
 
     function getActions(
         uint proposalId

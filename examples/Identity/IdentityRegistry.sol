@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.25;
 
 import "@openzeppelin/contracts/access/Ownable2Step.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
@@ -119,18 +119,18 @@ contract IdentityRegistry is Reencrypt, Ownable2Step {
         }
     }
 
-    // Get encrypted identifiers
-    function reencryptIdentifier(
-        address wallet,
-        string calldata identifier,
-        bytes32 publicKey,
-        bytes calldata signature
-    ) public view onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
-        euint64 ident = _getIdentifier(wallet, identifier);
-        require(TFHE.isInitialized(ident), "This identifier is unknown");
+    // // Get encrypted identifiers
+    // function reencryptIdentifier(
+    //     address wallet,
+    //     string calldata identifier,
+    //     bytes32 publicKey,
+    //     bytes calldata signature
+    // ) public view onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
+    //     euint64 ident = _getIdentifier(wallet, identifier);
+    //     require(TFHE.isInitialized(ident), "This identifier is unknown");
 
-        return TFHE.reencrypt(ident, publicKey);
-    }
+    //     return TFHE.reencrypt(ident, publicKey);
+    // }
 
     function getRegistrar(address wallet) public view returns (uint) {
         return identities[wallet].registrarId;
