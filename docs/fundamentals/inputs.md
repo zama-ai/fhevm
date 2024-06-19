@@ -1,4 +1,4 @@
-# Encrypted input
+# Encrypted inputs
 
 Inputs are a cornerstone of fhEVM: they allow users to push encrypted data onto the blockchain. To prevent any attacks, a user must provide proof of knowledge of the plaintext value underlying the ciphertext. This prevents the reuse of a ciphertext already stored on the blockchain.
 

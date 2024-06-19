@@ -1,8 +1,8 @@
-# ACL
+# Access Control List
 
 ## How it works?
 
-The fhEVM includes an ACL (Access Control List) system that allows you to define which addresses have the right to manipulate a ciphertext. This feature prevents any address from accessing the contents of any ciphertext.
+fhEVM includes an Access Control List (ACL) system that allows you to define which addresses have the right to manipulate a ciphertext. This feature prevents any address from accessing the contents of any ciphertext.
 
 These ACLs can be adjusted in two ways:
 
@@ -64,7 +64,8 @@ For example, an attacker could transfer someone's balance as an encrypted amount
 
 ## ACL for reencryption
 
-If a ciphertext must be reencrypted by a user, then explicit access must be granted to them. If this authorization is not given, the user will be unable to request a reencryption of this ciphertext. Let's take, for example, a transfer in an ERC20:
+If a ciphertext must be reencrypted by a user, then explicit access must be granted to them. If this authorization is not given, the user will be unable to request a reencryption of this ciphertext. Due to the reencryption mechanism, a user signs a public key associated with a specific contract; therefore, the ciphertext also needs to be allowed for the contract.
+Let's take, for example, a transfer in an ERC20:
 
 ```solidity
 function transfer(address to, euint64 encryptedAmount) public {

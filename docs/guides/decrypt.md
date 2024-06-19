@@ -58,6 +58,8 @@ Here `callbackName` is a custom name given by the developer to the callback func
 
 `maxTimestamp` is the maximum timestamp after which the callback will not be able to receive the results of decryption, i.e the fulfilment transaction will fail in this case. This can be used for time-sensitive applications, where we prefer to reject decryption results on too old, out-of-date, values.
 
+`passSignaturesToCaller` determines whether the callback needs to transmit signatures from the KMS or not.
+
 > **_WARNING:_**
 > Notice that the callback should be protected by the `onlyGateway` modifier to ensure security, as only the `GatewayContract` contract should be able to call it.
 
