@@ -2,7 +2,8 @@
 
 ## Implementation
 
-- [fhEVM on evmos](https://github.com/zama-ai/fhevm-evmos/)
+- [fhevm-go](https://github.com/zama-ai/fhevm-go/)
+- [go-ethereum that integrates fhevm-go](https://github.com/zama-ai/zbc-go-ethereum/)
 
 ## Libraries
 

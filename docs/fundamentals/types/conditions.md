@@ -1,10 +1,10 @@
 # Branching in FHE
 
-The result of [comparison operations](../references/functions.md#comparison-operation-eq-ne-ge-gt-le-lt) is of type `ebool`. Typical boolean operations are not supported for this type, because it is an encrypted boolean.
+The result of [comparison operations](../../references/functions.md#comparison-operation-eq-ne-ge-gt-le-lt) is of type `ebool`. Typical boolean operations are not supported for this type, because it is an encrypted boolean.
 
 ## Condition with encrypted boolean
 
-fhEVM provides a method which acts as a ternary operator on encrypted integers. This method is called [select](../references/functions.md#multiplexer-operator-select).
+fhEVM provides a method which acts as a ternary operator on encrypted integers. This method is called [select](../../references/functions.md#multiplexer-operator-select).
 
 ```solidity
 function bid(bytes calldata encryptedBid) internal {
