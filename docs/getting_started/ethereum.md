@@ -5,5 +5,6 @@ You can deploy any fhEVM contract on Ethereum Sepolia. In this scenario, our Cop
 Ensure you import the appropriate configuration before deploying to Ethereum:
 
 ```solidity
-import `fhevm/networks/ethereum.sol`;
+import "fhevm/networks/ethereum.sol";
+import "fhevm/lib/TFHE.sol";
 ```

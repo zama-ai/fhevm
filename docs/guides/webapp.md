@@ -52,7 +52,7 @@ Once the WASM is loaded, you can now create an instance. An instance receives an
 - `chainId`: the chainId of the network
 - `networkUrl` (optional): the URL of the network (used to fetch the public key)
 - `publicKey` (optional): if the public key has been fetched separately (cache), you can provide it
-- `reencryptionUrl` (optional): the URL of the gateway to retrieve a reencryption
+- `gatewayUrl` (optional): the URL of the gateway to retrieve a reencryption
 
 ```javascript
 import { initFhevm, createInstance } from "fhevmjs";
@@ -61,7 +61,7 @@ const createFhevmInstance = async () => {
   return createInstance({
     chainId: 8009,
     networkUrl: "https://devnet.zama.ai/",
-    reencryptionUrl: "https://gateway.zama.ai",
+    gatewayUrl: "https://gateway.zama.ai",
   });
 };
 
