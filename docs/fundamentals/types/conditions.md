@@ -48,11 +48,11 @@ function _transfer(address from, address to, euint32 amount) internal {
   setLastError(TFHE.select(canTransfer, NO_ERROR, NOT_ENOUGH_FUND), msg.sender);
 
   // Add to the balance of `to` and subract from the balance of `from`.
-  balances[to] = balances[to] + TFHE.select(canTransfer, amount, TFHE.asEuint32(0));
+  balances[to] = TFHE.add(balances[to], TFHE.select(canTransfer, amount, TFHE.asEuint32(0)));
   TFHE.allow(balances[to], address(this));
   TFHE.allow(balances[to], to);
 
-  balances[from] = balances[from] - TFHE.select(canTransfer, amount, TFHE.asEuint32(0));
+  balances[from] = TFHE.sub(balances[from], TFHE.select(canTransfer, amount, TFHE.asEuint32(0)));
   TFHE.allow(balances[from], address(this));
   TFHE.allow(balances[from], from);
 }
