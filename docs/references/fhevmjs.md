@@ -2,6 +2,23 @@
 
 [fhevmjs](https://github.com/zama-ai/fhevmjs/) is designed to assist in creating encrypted inputs and retrieving reencryption data off-chain through a gateway. The library works with any fhEVM and fhEVM Coprocessors.
 
+## Init (browser)
+
+If you are using `fhevmjs` in a web application, you need to initialize it before creating an instance. To do this, you should call `initFhevm` and wait for the promise to resolve.
+
+```javascript
+import { initFhevm, createInstance } from "fhevmjs";
+
+
+initFhevm().then(() => {
+  const instance = await createInstance({
+    chainId: 8009,
+    networkUrl: "https://devnet.zama.ai/",
+    gatewayUrl: "https://gateway.zama.ai/",
+  });
+});
+```
+
 ## Create instance
 
 This function returns an instance of fhevmjs, which accepts an object containing:
