@@ -232,6 +232,7 @@ contract TFHEExecutor {
         result = FhevmLib(address(EXT_TFHE_LIBRARY)).verifyCiphertext(
             inputHandle,
             callerAddress,
+            msg.sender,
             inputProof,
             inputType
         );

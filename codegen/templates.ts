@@ -253,7 +253,7 @@ function generateImplCoprocessorInterface(operators: Operator[]): string {
 function fheLibCustomInterfaceFunctions(): string {
   return `
     function fhePubKey(bytes1 fromLib) external view returns (bytes memory result);
-    function verifyCiphertext(bytes32 inputHandle, address callerAddress, bytes memory inputProof, bytes1 inputType) external pure returns (uint256 result);
+    function verifyCiphertext(bytes32 inputHandle, address callerAddress, address contractAddress, bytes memory inputProof, bytes1 inputType) external pure returns (uint256 result);
     function cast(uint256 ct, bytes1 toType) external pure returns (uint256 result);
     function trivialEncrypt(uint256 ct, bytes1 toType) external pure returns (uint256 result);
     function fheIfThenElse(uint256 control, uint256 ifTrue, uint256 ifFalse) external pure returns (uint256 result);
@@ -289,7 +289,7 @@ function generateACLInterface(): string {
 function tfheExecutorCustomFunctions(): string {
   return `
     function verifyCiphertext(bytes32 inputHandle, address callerAddress, bytes memory inputProof, bytes1 inputType) external returns (uint256 result) {
-      result = FhevmLib(address(EXT_TFHE_LIBRARY)).verifyCiphertext(inputHandle, callerAddress, inputProof, inputType);
+      result = FhevmLib(address(EXT_TFHE_LIBRARY)).verifyCiphertext(inputHandle, callerAddress, msg.sender, inputProof, inputType);
       acl.allowTransient(result, msg.sender);
     }
     function cast(uint256 ct, bytes1 toType) external returns (uint256 result) {

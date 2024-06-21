@@ -116,18 +116,15 @@ import "fhevm/lib/TFHE.sol";
 contract Counter {
   euint32 counter;
 
-  function add(bytes calldata encryptedValue) public {
-    euint32 value = TFHE.asEuint32(encryptedValue);
-    counter = counter + value;
-  }
-
-  function getCounter(bytes32 publicKey) returns (bytes memory) {
-    return TFHE.reencrypt(counter, publicKey);
+  function add(einput valueInput, bytes calldata inputProof) public {
+    euint32 value = TFHE.asEuint32(valueInput, inputProof);
+    counter = TFHE.add(counter, value);
+    TFHE.allow(counter, address(this));
   }
 }
 ```
 
-_This example is explained in more detail in [here](https://github.com/zama-ai/fhevm/tree/main/examples)._
+_More examples are available [here](https://github.com/zama-ai/fhevm/tree/main/examples)._
 
 <p align="right">
   <a href="#about" > ↑ Back to top </a>
@@ -149,7 +146,7 @@ _This example is explained in more detail in [here](https://github.com/zama-ai/f
 
 #### Games:
 
-- [Ciperbomb](https://github.com/immortal-tofu/cipherbomb): A Hardhat-based template for developing Solidity smart contracts, with sensible defaults. - by Clément Danjou
+- [Cipherbomb](https://github.com/immortal-tofu/cipherbomb): A Hardhat-based template for developing Solidity smart contracts, with sensible defaults. - by Clément Danjou
 - [Battleship](https://github.com/battleship-fhevm/battleship-hardhat): A smart contract that replicates the classic Battleship game on a blockchain in a transparent manner. - by [Owen Murovec](https://github.com/omurovec)
 
 #### Others

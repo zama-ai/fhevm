@@ -52,6 +52,7 @@ interface FhevmLib {
     function verifyCiphertext(
         bytes32 inputHandle,
         address callerAddress,
+        address contractAddress,
         bytes memory inputProof,
         bytes1 inputType
     ) external pure returns (uint256 result);
