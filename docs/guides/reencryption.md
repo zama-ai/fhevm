@@ -33,8 +33,9 @@ const USER_ADDRESS = accounts[0];
 
 // Create a fhevmjs instance using the Zama's network and the Zama's Gateway
 const instance = await createInstance({
+  chainId: 8009,
   networkUrl: "https://devnet.zama.ai",
-  reencryptionUrl: "https://gateway.zama.ai",
+  gatewayUrl: "https://gateway.zama.ai",
 });
 
 // Generate the private and public key, used for the reencryption

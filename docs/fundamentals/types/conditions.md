@@ -7,12 +7,13 @@ The result of [comparison operations](../../references/functions.md#comparison-o
 fhEVM provides a method which acts as a ternary operator on encrypted integers. This method is called [select](../../references/functions.md#multiplexer-operator-select).
 
 ```solidity
-function bid(bytes calldata encryptedBid) internal {
-  euint32 bid = TFHE.asEuint32(encryptedBid);
-  ebool isAbove = TFHE.le(bid, highestBid);
+function bid(einput encryptedValue, bytes calldata inputProof) public onlyBeforeEnd {
+  euint64 bid = TFHE.asEuint64(encryptedValue, inputProof);
+  ebool isAbove = TFHE.lt(highestBid, bid);
 
   // Replace highest bid
   highestBid = TFHE.select(isAbove, bid, highestBid);
+  TFHE.allow(highestBid, address(this));
 }
 ```
 
@@ -47,7 +48,12 @@ function _transfer(address from, address to, euint32 amount) internal {
   setLastError(TFHE.select(canTransfer, NO_ERROR, NOT_ENOUGH_FUND), msg.sender);
 
   // Add to the balance of `to` and subract from the balance of `from`.
-  balances[to] = balances[to] + TFHE.select(canTransfer, amount, TFHE.asEuint32(0));
-  balances[from] = balances[from] - TFHE.select(canTransfer, amount, TFHE.asEuint32(0));
+  balances[to] = TFHE.add(balances[to], TFHE.select(canTransfer, amount, TFHE.asEuint32(0)));
+  TFHE.allow(balances[to], address(this));
+  TFHE.allow(balances[to], to);
+
+  balances[from] = TFHE.sub(balances[from], TFHE.select(canTransfer, amount, TFHE.asEuint32(0)));
+  TFHE.allow(balances[from], address(this));
+  TFHE.allow(balances[from], from);
 }
 ```

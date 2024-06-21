@@ -45,7 +45,8 @@
 
 ## References
 
-- [API Function specifications](references/functions.md)
+- [API function specifications](references/functions.md)
+- [fhevmjs function specifications](references/fhevmjs.md)
 - [Repositories](references/repositories.md)
 
 ## Developer
