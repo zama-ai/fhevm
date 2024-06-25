@@ -20,7 +20,6 @@ contract TestAsyncDecrypt is GatewayCaller {
   function requestBool() public {
     uint256[] memory cts = new uint256[](1);
     cts[0] = Gateway.toUint256(xBool);
-    TFHE.allowForDecryption(cts);
     Gateway.requestDecryption(cts, this.myCustomCallback.selector, 0, block.timestamp + 100, false);
   }
 
@@ -30,7 +29,7 @@ contract TestAsyncDecrypt is GatewayCaller {
   }
 ```
 
-Note that an [`GatewayContract`](../../gateway/GatewayContract.sol) contract is already predeployed on the fhEVM testnet, and a default relayer account is added through the specification of the environment variable `PRIVATE_KEY_GATEWAY_RELAYER` in the `.env` file. Relayers are the only accounts authorized to fulfil the decryption requests. However `GatewayContract` would still check the KMS signature during the fulfilment, so we trust the relayer only to forward the request on time, a rogue relayer could not cheat by sending fake decryption results (the KMS signature is in the works).
+Note that a [`GatewayContract`](../../gateway/GatewayContract.sol) contract is already predeployed on the fhEVM testnet, and a default relayer account is added through the specification of the environment variable `PRIVATE_KEY_GATEWAY_RELAYER` in the `.env` file. Relayers are the only accounts authorized to fulfil the decryption requests. However `GatewayContract` would still check the KMS signature during the fulfilment, so we trust the relayer only to forward the request on time, a rogue relayer could not cheat by sending fake decryption results (the KMS signature is in the works).
 
 The interface of the `Gateway.requestDecryption` function from previous snippet is the following:
 
@@ -44,13 +43,31 @@ function requestDecryption(
 ) returns(uint256 requestID)
 ```
 
-The first argument, `ct`, should be an array of ciphertexts of a single same type i.e `eXXX` stands for either `ebool`, `euint4`, `euint8`, `euint16`, `euint32`, `euint64` or `eaddress`. `ct` is the list of ciphertexts that are requested to be decrypted. Calling `requestDecryption` will emit an `EventDecryptionEXXX` on the `GatewayContract` contract which will be detected by a relayer. Then, the relayer will send the corresponding ciphertexts to the KMS for decryption before fulfilling the request.
+The first argument, `ct`, should be an array of ciphertexts handles which could be of different types, i.e `uint256` values coming from unwrapping handles of type either `ebool`, `euint4`, `euint8`, `euint16`, `euint32`, `euint64` or `eaddress`. `ct` is the list of ciphertexts that are requested to be decrypted. Calling `requestDecryption` will emit an `EventDecryption` on the `GatewayContract` contract which will be detected by a relayer. Then, the relayer will send the corresponding ciphertexts to the KMS for decryption before fulfilling the request.
 
-`callbackSelector` is the function selector of the callback function which will be called by the `GatewayContract` contract once the relayer fulfils the decryption request. Notice that the callback function should always follow this convention:
+`callbackSelector` is the function selector of the callback function which will be called by the `GatewayContract` contract once the relayer fulfils the decryption request. Notice that the callback function should always follow this convention, if `passSignaturesToCaller` is set to `false`:
 
 ```solidity
 function [callbackName](uint256 requestID, XXX x_0, XXX x_1, ..., XXX x_N-1) external onlyGateway
 ```
+
+Or, alternatively, if `passSignaturesToCaller` is set to `true`:
+
+```solidity
+function [callbackName](uint256 requestID, XXX x_0, XXX x_1, ..., XXX x_N-1, bytes[] memory signatures) external onlyGateway
+```
+
+Notice that `XXX` should be the decrypted type, which is a native Solidity type corresponding to the original ciphertext type, following this table of conventions:
+
+| Ciphertext type | Decrypted type |
+| --------------- | -------------- |
+| ebool           | bool           |
+| euint4          | uint8          |
+| euint8          | uint8          |
+| euint16         | uint16         |
+| euint32         | uint32         |
+| euint64         | uint64         |
+| eaddress        | address        |
 
 Here `callbackName` is a custom name given by the developer to the callback function, `requestID` will be the request id of the decryption (could be commented if not needed in the logic, but must be present) and `x_0`, `x_1`, ... `x_N-1` are the results of the decryption of the `ct` array values, i.e their number should be the size of the `ct` array.
 
@@ -58,7 +75,7 @@ Here `callbackName` is a custom name given by the developer to the callback func
 
 `maxTimestamp` is the maximum timestamp after which the callback will not be able to receive the results of decryption, i.e the fulfilment transaction will fail in this case. This can be used for time-sensitive applications, where we prefer to reject decryption results on too old, out-of-date, values.
 
-`passSignaturesToCaller` determines whether the callback needs to transmit signatures from the KMS or not.
+`passSignaturesToCaller` determines whether the callback needs to transmit signatures from the KMS or not. This is useful if the dApp developer wants to remove trust from the Gateway service and prefers to check the KMS signatures directly from within his dApp smart contract. A concrete example of how to verify the KMS signatures inside a dApp is available [here](../../examples/TestAsyncDecrypt.sol#L82-L94) in the `requestBoolTrustless` function.
 
 > **_WARNING:_**
 > Notice that the callback should be protected by the `onlyGateway` modifier to ensure security, as only the `GatewayContract` contract should be able to call it.
@@ -107,7 +124,7 @@ function getParamsAddress(uint256 requestID) internal;
 function getParamsUint256(uint256 requestID) internal;
 ```
 
-For example, see this snippet where we add two `uint`s during the request call, to make them available later during the callback:
+For example, see this snippet where we add two `uint256`s during the request call, to make them available later during the callback:
 
 ```solidity
 pragma solidity ^0.8.25;
@@ -127,7 +144,6 @@ contract TestAsyncDecrypt is GatewayCaller {
   function requestUint32(uint32 input1, uint32 input2) public {
       uint256[] memory cts = new uint256[](1);
       cts[0] = Gateway.toUint256(xUint32);
-      TFHE.allowForDecryption(cts);
       uint256 requestID = Gateway.requestDecryption(cts, this.callbackUint32.selector, 0, block.timestamp + 100, false);
       addParamsUint256(requestID, input1);
       addParamsUint256(requestID, input2);
@@ -143,16 +159,10 @@ contract TestAsyncDecrypt is GatewayCaller {
 }
 ```
 
-When the decryption request is fufilled by the relayer, the `GatewayContract` contract, when calling the callback function, will also emit one of the following events, depending on the type of requested ciphertext:
+When the decryption request is fufilled by the relayer, the `GatewayContract` contract, when calling the callback function, will also emit the following event:
 
 ```solidity
-event ResultCallbackBool(uint256 indexed requestID, bool success, bytes result);
-event ResultCallbackUint4(uint256 indexed requestID, bool success, bytes result);
-event ResultCallbackUint8(uint256 indexed requestID, bool success, bytes result);
-event ResultCallbackUint16(uint256 indexed requestID, bool success, bytes result);
-event ResultCallbackUint32(uint256 indexed requestID, bool success, bytes result);
-event ResultCallbackUint64(uint256 indexed requestID, bool success, bytes result);
-event ResultCallbackAddress(uint256 indexed requestID, bool success, bytes result);
+event ResultCallback(uint256 indexed requestID, bool success, bytes result);
 ```
 
 The first argument is the `requestID` of the corresponding decryption request, `success` is a boolean assessing if the call to the callback succeeded, and `result` is the bytes array corresponding the to return data from the callback.
