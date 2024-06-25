@@ -29,7 +29,7 @@ contract TestAsyncDecrypt is GatewayCaller {
   }
 ```
 
-Note that a [`GatewayContract`](../../gateway/GatewayContract.sol) contract is already predeployed on the fhEVM testnet, and a default relayer account is added through the specification of the environment variable `PRIVATE_KEY_GATEWAY_RELAYER` in the `.env` file. Relayers are the only accounts authorized to fulfil the decryption requests. However `GatewayContract` would still check the KMS signature during the fulfilment, so we trust the relayer only to forward the request on time, a rogue relayer could not cheat by sending fake decryption results (the KMS signature is in the works).
+Note that a [`GatewayContract`](../../gateway/GatewayContract.sol) contract is already predeployed on the fhEVM testnet, and a default relayer account is added through the specification of the environment variable `PRIVATE_KEY_GATEWAY_RELAYER` in the `.env` file. Relayers are the only accounts authorized to fulfil the decryption requests. However `GatewayContract` would still check the KMS signature during the fulfilment, so we trust the relayer only to forward the request on time, a rogue relayer could not cheat by sending fake decryption results.
 
 The interface of the `Gateway.requestDecryption` function from previous snippet is the following:
 
