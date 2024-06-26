@@ -1,0 +1,8 @@
+version: '3'
+
+services:
+  validator:
+    # To avoid panic this env variable is added at run and not init (calling setup.sh)
+    environment:
+      - FHEVM_GO_KEYS_DIR=/root/.ethermintd/zama/keys/network-fhe-keys
+    entrypoint: /usr/bin/ethermintd  start --home /root/.ethermintd --pruning=nothing --log_level info  --minimum-gas-prices=0.0001aphoton  --json-rpc.gas-cap=50000000  --json-rpc.api eth,txpool,net,web3 --rpc.laddr tcp://0.0.0.0:26657
