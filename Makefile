@@ -45,7 +45,7 @@ $(WORKDIR)/:
 
 clone-fhevm-solidity: $(WORKDIR)/
 	$(info Cloning fhevm-solidity version $(FHEVM_SOLIDITY_VERSION))
-	cd $(WORKDIR) && git clone git@github.com:zama-ai/fhevm.git
+	cd $(WORKDIR) && git clone https://github.com/zama-ai/fhevm.git
 	cd $(FHEVM_SOLIDITY_PATH) && git checkout $(FHEVM_SOLIDITY_VERSION)
 
 check-fhevm-solidity: $(WORKDIR)/
