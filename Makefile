@@ -125,6 +125,9 @@ prepare-e2e-test: check-all-test-repo
 run-async-test:
 	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test --grep 'test async decrypt uint8' 
 
+run-true-input-async-test:
+	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test --grep 'test async decrypt uint64 non-trivial' 
+
 e2e-test:
 	@$(MAKE) check-all-test-repo
 	@$(MAKE) init-ethermint-node-from-registry
