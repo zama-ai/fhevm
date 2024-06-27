@@ -21,7 +21,7 @@ KMS_DEV_VERSION ?= aa90d98
 FHEVM_SOLIDITY_REPO ?= fhevm
 FHEVM_SOLIDITY_PATH ?= $(WORKDIR)/$(FHEVM_SOLIDITY_REPO)
 FHEVM_SOLIDITY_PATH_EXISTS := $(shell test -d $(FHEVM_SOLIDITY_PATH)/.git && echo "true" || echo "false")
-FHEVM_SOLIDITY_VERSION ?= v0.5.0-1
+FHEVM_SOLIDITY_VERSION ?= fixture/async-decrypt-test-v1-gateway
 
 export GO111MODULE = on
 
