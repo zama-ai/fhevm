@@ -1,10 +1,11 @@
-# How to run the new fhEVM
+# Demo of fhEVM + KMS (centralized)
 
-THis documentation is only temporary, it allows to run the last fhEVM with the fhe keys generated using kms-core dedicated binary. 
+This documentation purpose is to show how to run fhEVM for FHE execution and KMS for async decryption and reencryption. 
 
- # Key generation
 
- Please update `KEY_GEN` value in `.env`
+ ## Key generation
+
+ Please update `KEY_GEN` value in `.env`. Default is `false`
 
 | KEY_GEN | Purpose                                                                       |
 |---------|-------------------------------------------------------------------------------|
@@ -14,9 +15,9 @@ THis documentation is only temporary, it allows to run the last fhEVM with the f
 
 
 
-# Fast run and test
+## Fast run and test
 
-Running a single async decrypt test for uint8 + a non trivial test
+Execute the following commands:
 
 ```bash
 # Init node and copy or gen fhe keys
@@ -111,11 +112,12 @@ Account 0x97F272ccfef4026A1F3f0e0E879d514627B84E69 was succesfully added as an g
 make init-ethermint-node 
 ```
 
-This will initialize and generate the fhe keys or copy then based on `KEY_GEN` value in .env.
+Initialize and generate/copy FHE keys based on `KEY_GEN` value in `.env`.
 
-IMPORTANT: if KEY_GEN is `false`, ensure to have 15 GB of empty ram to generate the keys.
+> [!NOTE]  
+> If KEY_GEN is set to `false`, ensure to have 15 GB of empty RAM to generate the keys. On Mac, do not forget to increase the allocated RAM to docker process. 
 
-# Run fhEVM + KMS components
+## Run fhEVM + KMS components
 
 ```bash
 make run-full
@@ -124,6 +126,8 @@ docker logs zama-kms-validator-1 -f
 # Check logs for Gateway
 docker logs zama-kms-gateway-1 -f     
 ```
+
+You should see the following docker images:
 
 ```
 zama-kms-gateway-1		            ghcr.io/zama-ai/kms-blockchain-gateway-dev:aa90d98
@@ -134,22 +138,23 @@ zama-kms-kv-store-1		            ghcr.io/zama-ai/kms-blockchain-gateway-dev:aa90
 zama-kms-blockchain-validator-1		ghcr.io/zama-ai/kms-blockchain-asc-dev:50872c4
 ```
 
-# Stop fhEVM
+## Stop fhEVM + KMS 
 
 ```bash
 make stop-full
 ```
 
-# Fresh start
+## Fresh start
 
 ```bash
 make clean
 ```
 
-Note: Fhe keys are in res/keys folder, delete them to regenerate new keys at ```make init-ethermint-node```
+> [!NOTE]  
+> FHE keys are in res/keys folder, delete them to regenerate new keys at ```make init-ethermint-node``` step.
 
 
-# Test using fhevm
+## Test using fhevm
 
 ```bash
 # if not executed before
