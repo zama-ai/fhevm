@@ -4,7 +4,7 @@ import { ethers, network } from 'hardhat';
 import { asyncDecrypt, awaitAllDecryptionResults } from '../asyncDecrypt';
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
-import { toBigIntBE, toBufferBE } from 'bigint-buffer';
+import { bigIntToBytes } from '../utils';
 
 describe('TestAsyncDecrypt', function () {
   before(async function () {
@@ -340,9 +340,3 @@ function bigint256ToHexPadded(bigintValue: BigInt): string {
   const padding = '0'.repeat(paddingLength);
   return '0x' + padding + hexString;
 }
-
-
-const bigIntToBytes = (value: bigint) => {
-  const byteArrayLength = Math.ceil(value.toString(2).length / 8);
-  return new Uint8Array(toBufferBE(value, byteArrayLength));
-};

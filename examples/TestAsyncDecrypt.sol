@@ -228,7 +228,7 @@ contract TestAsyncDecrypt is GatewayCaller {
     function requestEbytes256NonTrivial(einput inputHandle, bytes calldata inputProof) public {
         ebytes256 inputNonTrivial = TFHE.asEbytes256(inputHandle, inputProof);
         uint256[] memory cts = new uint256[](1);
-        cts[0] = ebytes256.unwrap(inputNonTrivial);
+        cts[0] = Gateway.toUint256(inputNonTrivial);
         Gateway.requestDecryption(cts, this.callbackBytes256.selector, 0, block.timestamp + 100, false);
     }
 
@@ -328,7 +328,7 @@ contract TestAsyncDecrypt is GatewayCaller {
         uint256[] memory cts = new uint256[](3);
         cts[0] = Gateway.toUint256(xBool);
         cts[1] = Gateway.toUint256(xAddress);
-        cts[2] = ebytes256.unwrap(xBytes256);
+        cts[2] = Gateway.toUint256(xBytes256);
         uint256 requestID = Gateway.requestDecryption(
             cts,
             this.callbackMixedBytes256.selector,
