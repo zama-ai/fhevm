@@ -2,6 +2,17 @@
 
 THis documentation is only temporary, it allows to run the last fhEVM with the fhe keys generated using kms-core dedicated binary. 
 
+ # Key generation
+
+ Please update `KEY_GEN` value in `.env`
+
+| KEY_GEN | Purpose                                                                       |
+|---------|-------------------------------------------------------------------------------|
+| true    | FHE keys are generated on the fly in res/keys (requires at elast 15GB of RAM) |
+| false   | FHE keys are copied from kms-service-dev image in res/keys                    |
+
+
+
 
 # Fast run and test
 

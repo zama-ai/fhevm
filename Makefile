@@ -136,14 +136,3 @@ print-info:
 	@echo 'FHEVM_SOLIDITY_VERSION: $(FHEVM_SOLIDITY_VERSION) ---extracted from Makefile'
 	@bash scripts/get_repository_info.sh fhevm $(FHEVM_SOLIDITY_PATH)
 
-check_key_gen:
-	@echo 'KEY_GEN is set to $(KEY_GEN)'
-ifeq ($(KEY_GEN),false)
-	@echo "KEY_GEN is false, executing corresponding commands..."
-	# Add the commands to run when KEY_GEN is false
-else ifeq ($(KEY_GEN),true)
-	@echo "KEY_GEN is true, executing corresponding commands..."
-	# Add the commands to run when KEY_GEN is true
-else
-	@echo "KEY_GEN is set to an unrecognized value: $(KEY_GEN)"
-endif
