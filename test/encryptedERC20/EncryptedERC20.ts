@@ -40,8 +40,8 @@ describe('EncryptedERC20', function () {
     const encryptedTransferAmount = input.encrypt();
     const tx = await this.erc20['transfer(address,bytes32,bytes)'](
       this.signers.bob.address,
-      encryptedTransferAmount.inputs[0],
-      encryptedTransferAmount.data,
+      encryptedTransferAmount.handles[0],
+      encryptedTransferAmount.inputProof,
     );
     const t2 = await tx.wait();
     expect(t2?.status).to.eq(1);
@@ -66,8 +66,8 @@ describe('EncryptedERC20', function () {
     const encryptedTransferAmount = input.encrypt();
     const tx = await this.erc20['transfer(address,bytes32,bytes)'](
       this.signers.bob.address,
-      encryptedTransferAmount.inputs[0],
-      encryptedTransferAmount.data,
+      encryptedTransferAmount.handles[0],
+      encryptedTransferAmount.inputProof,
     );
     await tx.wait();
 
@@ -91,8 +91,8 @@ describe('EncryptedERC20', function () {
     const encryptedAllowanceAmount = inputAlice.encrypt();
     const tx = await this.erc20['approve(address,bytes32,bytes)'](
       this.signers.bob.address,
-      encryptedAllowanceAmount.inputs[0],
-      encryptedAllowanceAmount.data,
+      encryptedAllowanceAmount.handles[0],
+      encryptedAllowanceAmount.inputProof,
     );
     await tx.wait();
 
@@ -103,8 +103,8 @@ describe('EncryptedERC20', function () {
     const tx2 = await bobErc20['transferFrom(address,address,bytes32,bytes)'](
       this.signers.alice.address,
       this.signers.bob.address,
-      encryptedTransferAmount.inputs[0],
-      encryptedTransferAmount.data,
+      encryptedTransferAmount.handles[0],
+      encryptedTransferAmount.inputProof,
     );
     await tx2.wait();
 
@@ -124,8 +124,8 @@ describe('EncryptedERC20', function () {
     const tx3 = await bobErc20['transferFrom(address,address,bytes32,bytes)'](
       this.signers.alice.address,
       this.signers.bob.address,
-      encryptedTransferAmount2.inputs[0],
-      encryptedTransferAmount2.data,
+      encryptedTransferAmount2.handles[0],
+      encryptedTransferAmount2.inputProof,
     );
     await tx3.wait();
 
