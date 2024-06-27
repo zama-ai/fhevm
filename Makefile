@@ -113,6 +113,18 @@ run-e2e-test: check-all-test-repo
 	@cd $(FHEVM_SOLIDITY_PATH) && ./setup-local-fhevm.sh
 	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test
 
+
+prepare-e2e-test: check-all-test-repo
+	@cd $(FHEVM_SOLIDITY_PATH) && npm ci
+	@sleep 5
+	@./scripts/fund_test_addresses_docker.sh
+	@cd $(FHEVM_SOLIDITY_PATH) && cp .env.example .env
+	@cd $(FHEVM_SOLIDITY_PATH) && npm i
+	@cd $(FHEVM_SOLIDITY_PATH) && ./setup-local-fhevm.sh
+
+run-async-test:
+	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test --grep 'test async decrypt uint8' 
+
 e2e-test:
 	@$(MAKE) check-all-test-repo
 	@$(MAKE) init-ethermint-node-from-registry
