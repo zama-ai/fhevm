@@ -43,6 +43,10 @@ library Gateway {
         ct = eaddress.unwrap(newCT);
     }
 
+    function toUint256(ebytes256 newCT) internal pure returns (uint256 ct) {
+        ct = ebytes256.unwrap(newCT);
+    }
+
     function requestDecryption(
         uint256[] memory ctsHandles,
         bytes4 callbackSelector,
