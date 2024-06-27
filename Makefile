@@ -77,7 +77,7 @@ init-ethermint-node:
 	@$(MAKE) init-ethermint-node-from-registry
 
 init-ethermint-node-from-registry:
-	@docker compose -f docker-compose/docker-compose.validator.yml run validator bash /config/setup.sh
+	@docker compose -f docker-compose/docker-compose-full.yml run validator bash /config/setup.sh
 	$(MAKE) change-running-node-owner
 	$(MAKE) generate-fhe-keys-registry
 
@@ -93,13 +93,13 @@ else
 endif
 	
 
-run-ethermint:
-	@docker compose  -f docker-compose/docker-compose.validator.yml -f docker-compose/docker-compose.validator.override.yml  up --detach
+run-full:
+	@docker compose  -f docker-compose/docker-compose-full.yml -f docker-compose/docker-compose-full.override.yml  up --detach
 	@echo 'sleep a little to let the docker start up'
 	sleep 10
 
-stop-ethermint:
-	@docker compose  -f docker-compose/docker-compose.validator.yml down
+stop-full:
+	@docker compose  -f docker-compose/docker-compose-full.yml down
 
 TEST_FILE := run_tests.sh
 TEST_IF_FROM_REGISTRY := 
@@ -116,9 +116,9 @@ run-e2e-test: check-all-test-repo
 e2e-test:
 	@$(MAKE) check-all-test-repo
 	@$(MAKE) init-ethermint-node-from-registry
-	$(MAKE) run-ethermint
+	$(MAKE) run-full
 	$(MAKE) run-e2e-test
-	$(MAKE) stop-ethermint
+	$(MAKE) stop-full
 
 
 clean-node-storage:
@@ -126,7 +126,7 @@ clean-node-storage:
 	sudo rm -rf running_node
 
 clean: clean-node-storage
-	$(MAKE) stop-ethermint
+	$(MAKE) stop-full
 	rm -rf $(BUILDDIR)/
 	rm -rf $(WORKDIR)/ 
 
