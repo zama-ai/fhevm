@@ -26,14 +26,41 @@ make run-full
 # Deploy ACL, Gateway ...
 make prepare-e2e-test
 # This test will fail (first event catch is buggy - we are on it)
-make make run-async-test
+make run-async-test
 # This one is working
-make make run-async-test
+make run-async-test
 # A non trivial test
 make run-true-input-async-test
 # Manual test
 cd work_dir/fhevm & npx hardhat test --grep 'test async decrypt uint32'
 ```
+
+
+
+<details><summary>Docker logs</summary>
+<p>
+
+```bash
+# Check logs for Gateway
+docker logs zama-kms-gateway-1 -f 
+
+# On the second try you should see
+
+# 2024-06-27T16:59:35.432399Z  INFO gateway::events::manager: ⭐ event_decryption: 1
+# 2024-06-27T16:59:35.432410Z  INFO gateway::events::manager: Handled event decryption: 1
+# 2024-06-27T16:59:35.432460Z  INFO gateway::blockchain::ciphertext_provider: Getting ciphertext for ct_handle: "aa9f8f90ebf0fa8e30caee92f0b97e158f1ec659b363101d07beac9b0cc90200"
+# 2024-06-27T16:59:35.436144Z  INFO gateway::blockchain::handlers: 🚀 request_id: 1, fhe_type: euint8
+# 2024-06-27T16:59:35.439802Z  INFO gateway::blockchain::kms_blockchain: 📦 Stored ciphertext, handle: 00008138b65173b5c57fc98d0fce54e5ff10635127e526144ffbe21d7099e3a1e1516574
+# 2024-06-27T16:59:35.439813Z  INFO gateway::blockchain::kms_blockchain: 🍊 Decrypting ciphertext of size: 33080
+
+# Check the logs for the node
+docker logs zama-kms-validator-1 -f
+```
+
+</p>
+</details>
+
+
 
 <details><summary>Pre deployment</summary>
 <p>
@@ -75,9 +102,8 @@ Account 0x97F272ccfef4026A1F3f0e0E879d514627B84E69 was succesfully added as an g
 <br />
 
 
-
-Note: if you get `override the existing name orchestrator [y/N]: `, just ^C and  run `make clean-node-storage` to remove the state.
-
+> [!NOTE]  
+> If you get `override the existing name orchestrator [y/N]: `, just ^C and  run `make clean-node-storage` to remove the state.
 
 # Init fhEVM
 
@@ -85,8 +111,9 @@ Note: if you get `override the existing name orchestrator [y/N]: `, just ^C and 
 make init-ethermint-node 
 ```
 
-This will initialize and generate the fhe keys.
-IMPORTANT: ensure to have 15 GB of empty ram to generate the keys.
+This will initialize and generate the fhe keys or copy then based on `KEY_GEN` value in .env.
+
+IMPORTANT: if KEY_GEN is `false`, ensure to have 15 GB of empty ram to generate the keys.
 
 # Run fhEVM + KMS components
 
