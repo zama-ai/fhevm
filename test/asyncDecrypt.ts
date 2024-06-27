@@ -28,7 +28,7 @@ const privKeyRelayer = process.env.PRIVATE_KEY_GATEWAY_RELAYER;
 const relayer = new ethers.Wallet(privKeyRelayer!, ethers.provider);
 
 const argEvents =
-  '(uint256 indexed requestID, tuple(uint256 ctHandle, uint8 ctType)[] cts, address contractCaller, bytes4 callbackSelector, uint256 msgValue, uint256 maxTimestamp)';
+  '(uint256 indexed requestID, uint256[] cts, address contractCaller, bytes4 callbackSelector, uint256 msgValue, uint256 maxTimestamp, bool passSignaturesToCaller)';
 const ifaceEventDecryption = new ethers.Interface(['event EventDecryption' + argEvents]);
 
 const argEvents2 = '(uint256 indexed requestID, bool success, bytes result)';

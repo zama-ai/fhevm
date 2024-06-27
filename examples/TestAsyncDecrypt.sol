@@ -16,6 +16,7 @@ contract TestAsyncDecrypt is GatewayCaller {
     euint64 xUint64_3;
     eaddress xAddress;
     eaddress xAddress2;
+    bytes xBytes256;
 
     bool public yBool;
     uint8 public yUint4;
@@ -27,6 +28,7 @@ contract TestAsyncDecrypt is GatewayCaller {
     uint64 public yUint64_3;
     address public yAddress;
     address public yAddress2;
+    bytes public yBytes256;
 
     uint256 public latestRequestID;
 
@@ -48,7 +50,9 @@ contract TestAsyncDecrypt is GatewayCaller {
         xUint64_3 = TFHE.asEuint64(6400);
         TFHE.allow(xUint64_3, address(this));
         xAddress = TFHE.asEaddress(0x8ba1f109551bD432803012645Ac136ddd64DBA72);
+        TFHE.allow(xAddress, address(this));
         xAddress2 = TFHE.asEaddress(0xf48b8840387ba3809DAE990c930F3b4766A86ca3);
+        TFHE.allow(xAddress2, address(this));
     }
 
     function requestBoolInfinite() public {
@@ -209,8 +213,27 @@ contract TestAsyncDecrypt is GatewayCaller {
         Gateway.requestDecryption(cts, this.callbackUint64.selector, 0, block.timestamp + 100, false); // this should revert because previous handle is not honestly obtained
     }
 
+    function requestUint64NonTrivial(einput inputHandle, bytes calldata inputProof) public {
+        euint64 inputNonTrivial = TFHE.asEuint64(inputHandle, inputProof);
+        uint256[] memory cts = new uint256[](1);
+        cts[0] = Gateway.toUint256(inputNonTrivial);
+        Gateway.requestDecryption(cts, this.callbackUint64.selector, 0, block.timestamp + 100, false);
+    }
+
     function callbackUint64(uint256, uint64 decryptedInput) public onlyGateway returns (uint64) {
         yUint64 = decryptedInput;
+        return decryptedInput;
+    }
+
+    function requestEbytes256NonTrivial(einput inputHandle, bytes calldata inputProof) public {
+        ebytes256 inputNonTrivial = TFHE.asEbytes256(inputHandle, inputProof);
+        uint256[] memory cts = new uint256[](1);
+        cts[0] = ebytes256.unwrap(inputNonTrivial);
+        Gateway.requestDecryption(cts, this.callbackBytes256.selector, 0, block.timestamp + 100, false);
+    }
+
+    function callbackBytes256(uint256, bytes calldata decryptedInput) public onlyGateway returns (bytes memory) {
+        yBytes256 = decryptedInput;
         return decryptedInput;
     }
 
@@ -298,5 +321,31 @@ contract TestAsyncDecrypt is GatewayCaller {
         require(decUint64_1 == decUint64_2 && decUint64_2 == decUint64_3, "Wrong decryption");
         yAddress = decAddress;
         return yUint4;
+    }
+
+    function requestMixedBytes256(einput inputHandle, bytes calldata inputProof) public {
+        ebytes256 xBytes256 = TFHE.asEbytes256(inputHandle, inputProof);
+        uint256[] memory cts = new uint256[](3);
+        cts[0] = Gateway.toUint256(xBool);
+        cts[1] = Gateway.toUint256(xAddress);
+        cts[2] = ebytes256.unwrap(xBytes256);
+        uint256 requestID = Gateway.requestDecryption(
+            cts,
+            this.callbackMixedBytes256.selector,
+            0,
+            block.timestamp + 100,
+            false
+        );
+    }
+
+    function callbackMixedBytes256(
+        uint256,
+        bool decBool,
+        address decAddress,
+        bytes memory bytesRes
+    ) public onlyGateway {
+        yBool = decBool;
+        yAddress = decAddress;
+        yBytes256 = bytesRes;
     }
 }

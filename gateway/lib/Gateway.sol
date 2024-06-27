@@ -6,9 +6,9 @@ import "../GatewayContract.sol";
 import "../../lib/ACL.sol";
 import "../../lib/KMSVerifier.sol";
 
-GatewayContract constant gatewayContract = GatewayContract(address(0)); // Replace by GatewayContract address
-ACL constant acl = ACL(address(0)); // Replace by ACL address
-KMSVerifier constant kmsVerifier = KMSVerifier(address(0)); // Replace by KMSVerifier address
+GatewayContract constant gatewayContract = GatewayContract(0xc8c9303Cd7F337fab769686B593B87DC3403E0ce); // Replace by GatewayContract address
+ACL constant acl = ACL(0x2Fb4341027eb1d2aD8B5D9708187df8633cAFA92); // Replace by ACL address
+KMSVerifier constant kmsVerifier = KMSVerifier(address(0x12B064FB845C1cc05e9493856a1D637a73e944bE));
 
 library Gateway {
     function GatewayContractAddress() internal pure returns (address) {
@@ -66,7 +66,7 @@ library Gateway {
     function verifySignatures(uint256[] memory handlesList, bytes[] memory signatures) internal returns (bool) {
         uint256 start = 4 + 32; // start position after skipping the selector (4 bytes) and the first argument (index, 32 bytes)
         uint256 numArgs = handlesList.length; // Number of arguments before signatures
-        uint256 length = numArgs * 32;
+        uint256 length = numArgs * 32; // TODO: fix the way we compute length in case the type of the handle is an ebytes256 (loop over all handles and add correct length corresponding to each type)
         bytes memory decryptedResult = new bytes(length);
         assembly {
             calldatacopy(add(decryptedResult, 0x20), start, length) // Copy the relevant part of calldata to decryptedResult memory

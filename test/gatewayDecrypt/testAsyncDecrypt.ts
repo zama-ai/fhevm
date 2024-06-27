@@ -2,9 +2,11 @@ import { expect } from 'chai';
 import { ethers, network } from 'hardhat';
 
 import { asyncDecrypt, awaitAllDecryptionResults } from '../asyncDecrypt';
+import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
+import { toBigIntBE, toBufferBE } from 'bigint-buffer';
 
-describe.skip('TestAsyncDecrypt', function () {
+describe('TestAsyncDecrypt', function () {
   before(async function () {
     await asyncDecrypt();
     await initSigners(3);
@@ -15,6 +17,8 @@ describe.skip('TestAsyncDecrypt', function () {
   beforeEach(async function () {
     const contractFactory = await ethers.getContractFactory('TestAsyncDecrypt');
     this.contract = await contractFactory.connect(this.signers.alice).deploy();
+    this.contractAddress = await this.contract.getAddress();
+    this.instances = await createInstances(this.contractAddress, ethers, this.signers);
   });
 
   it('test async decrypt bool infinite loop', async function () {
@@ -113,7 +117,7 @@ describe.skip('TestAsyncDecrypt', function () {
   });
 
   it('test async decrypt uint8', async function () {
-    const tx2 = await this.contract.connect(this.signers.carol).requestUint8({ gasLimit: 500_000 });
+    const tx2 = await this.contract.connect(this.signers.carol).requestUint8({ gasLimit: 5_000_000 });
     await tx2.wait();
     await awaitAllDecryptionResults();
     const y = await this.contract.yUint8();
@@ -278,4 +282,67 @@ describe.skip('TestAsyncDecrypt', function () {
     y = await contract2.yUint64();
     expect(y).to.equal(18446744073709551600n);
   });
+
+  it('test async decrypt uint64 non-trivial', async function () {
+    // console.log(this.instances.alice)
+    // console.log(this.instances.alice.address)
+    const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    inputAlice.add64(18446744073709550042n);
+    const encryptedAmount = inputAlice.encrypt();
+    const tx = await await this.contract.requestUint64NonTrivial(
+      encryptedAmount.handles[0],
+      encryptedAmount.inputProof,
+      { gasLimit: 5_000_000 },
+    );
+    await tx.wait();
+    await awaitAllDecryptionResults();
+    const y = await this.contract.yUint64();
+    expect(y).to.equal(18446744073709550042n);
+  });
+
+  it('test async decrypt ebytes256 non-trivial', async function () {
+    const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    inputAlice.addBytes256(bigIntToBytes(18446744073709550022n));
+    const encryptedAmount = inputAlice.encrypt();
+    const tx = await await this.contract.requestEbytes256NonTrivial(
+      encryptedAmount.handles[0],
+      encryptedAmount.inputProof,
+      { gasLimit: 5_000_000 },
+    );
+    await tx.wait();
+    await awaitAllDecryptionResults();
+    const y = await this.contract.yBytes256();
+    expect(y).to.equal(bigint256ToHexPadded(18446744073709550022n));
+  });
+
+  it('test async decrypt mixed with ebytes256', async function () {
+    const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    inputAlice.addBytes256(bigIntToBytes(18446744073709550032n));
+    const encryptedAmount = inputAlice.encrypt();
+    const tx = await await this.contract.requestMixedBytes256(encryptedAmount.handles[0], encryptedAmount.inputProof, {
+      gasLimit: 5_000_000,
+    });
+    await tx.wait();
+    await awaitAllDecryptionResults();
+    const y = await this.contract.yBytes256();
+    expect(y).to.equal(bigint256ToHexPadded(18446744073709550032n));
+    const yb = await this.contract.yBool();
+    expect(yb).to.equal(true);
+    const yAdd = await this.contract.yAddress();
+    expect(yAdd).to.equal('0x8ba1f109551bD432803012645Ac136ddd64DBA72');
+  });
 });
+
+function bigint256ToHexPadded(bigintValue: BigInt): string {
+  let hexString = bigintValue.toString(16);
+  const totalHexChars = 512;
+  const paddingLength = totalHexChars - hexString.length;
+  const padding = '0'.repeat(paddingLength);
+  return '0x' + padding + hexString;
+}
+
+
+const bigIntToBytes = (value: bigint) => {
+  const byteArrayLength = Math.ceil(value.toString(2).length / 8);
+  return new Uint8Array(toBufferBE(value, byteArrayLength));
+};
