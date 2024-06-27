@@ -4,8 +4,9 @@ import { ethers, network } from 'hardhat';
 import { asyncDecrypt, awaitAllDecryptionResults } from '../asyncDecrypt';
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
+import { toBigIntBE, toBufferBE } from 'bigint-buffer';
 
-describe.skip('TestAsyncDecrypt', function () {
+describe('TestAsyncDecrypt', function () {
   before(async function () {
     await asyncDecrypt();
     await initSigners(3);
@@ -16,6 +17,7 @@ describe.skip('TestAsyncDecrypt', function () {
   beforeEach(async function () {
     const contractFactory = await ethers.getContractFactory('TestAsyncDecrypt');
     this.contract = await contractFactory.connect(this.signers.alice).deploy();
+    this.contractAddress = await this.contract.getAddress();
     this.instances = await createInstances(this.contractAddress, ethers, this.signers);
   });
 
@@ -115,7 +117,7 @@ describe.skip('TestAsyncDecrypt', function () {
   });
 
   it('test async decrypt uint8', async function () {
-    const tx2 = await this.contract.connect(this.signers.carol).requestUint8({ gasLimit: 500_000 });
+    const tx2 = await this.contract.connect(this.signers.carol).requestUint8({ gasLimit: 5_000_000 });
     await tx2.wait();
     await awaitAllDecryptionResults();
     const y = await this.contract.yUint8();
@@ -282,13 +284,15 @@ describe.skip('TestAsyncDecrypt', function () {
   });
 
   it('test async decrypt uint64 non-trivial', async function () {
-    const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.contractAddress);
+    // console.log(this.instances.alice)
+    // console.log(this.instances.alice.address)
+    const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     inputAlice.add64(18446744073709550042n);
     const encryptedAmount = inputAlice.encrypt();
     const tx = await await this.contract.requestUint64NonTrivial(
       encryptedAmount.handles[0],
       encryptedAmount.inputProof,
-      { gasLimit: 500_000 },
+      { gasLimit: 5_000_000 },
     );
     await tx.wait();
     await awaitAllDecryptionResults();
@@ -297,13 +301,13 @@ describe.skip('TestAsyncDecrypt', function () {
   });
 
   it('test async decrypt ebytes256 non-trivial', async function () {
-    const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.contractAddress);
-    inputAlice.addBytes256(18446744073709550022n);
+    const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    inputAlice.addBytes256(bigIntToBytes(18446744073709550022n));
     const encryptedAmount = inputAlice.encrypt();
     const tx = await await this.contract.requestEbytes256NonTrivial(
       encryptedAmount.handles[0],
       encryptedAmount.inputProof,
-      { gasLimit: 500_000 },
+      { gasLimit: 5_000_000 },
     );
     await tx.wait();
     await awaitAllDecryptionResults();
@@ -312,11 +316,11 @@ describe.skip('TestAsyncDecrypt', function () {
   });
 
   it('test async decrypt mixed with ebytes256', async function () {
-    const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.contractAddress);
-    inputAlice.addBytes256(18446744073709550032n);
+    const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    inputAlice.addBytes256(bigIntToBytes(18446744073709550032n));
     const encryptedAmount = inputAlice.encrypt();
     const tx = await await this.contract.requestMixedBytes256(encryptedAmount.handles[0], encryptedAmount.inputProof, {
-      gasLimit: 500_000,
+      gasLimit: 5_000_000,
     });
     await tx.wait();
     await awaitAllDecryptionResults();
@@ -336,3 +340,9 @@ function bigint256ToHexPadded(bigintValue: BigInt): string {
   const padding = '0'.repeat(paddingLength);
   return '0x' + padding + hexString;
 }
+
+
+const bigIntToBytes = (value: bigint) => {
+  const byteArrayLength = Math.ceil(value.toString(2).length / 8);
+  return new Uint8Array(toBufferBE(value, byteArrayLength));
+};

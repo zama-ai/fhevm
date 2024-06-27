@@ -35,7 +35,7 @@ describe('EncryptedERC20', function () {
     const t1 = await transaction.wait();
     expect(t1?.status).to.eq(1);
 
-    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.contractAddress);
+    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     input.add64(1337);
     const encryptedTransferAmount = input.encrypt();
     const tx = await this.erc20['transfer(address,bytes32,bytes)'](
@@ -61,7 +61,7 @@ describe('EncryptedERC20', function () {
     const transaction = await this.erc20.mint(1000);
     await transaction.wait();
 
-    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.contractAddress);
+    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     input.add64(1337);
     const encryptedTransferAmount = input.encrypt();
     const tx = await this.erc20['transfer(address,bytes32,bytes)'](
@@ -86,7 +86,7 @@ describe('EncryptedERC20', function () {
     const transaction = await this.erc20.mint(10000);
     await transaction.wait();
 
-    const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.contractAddress);
+    const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     inputAlice.add64(1337);
     const encryptedAllowanceAmount = inputAlice.encrypt();
     const tx = await this.erc20['approve(address,bytes32,bytes)'](
@@ -97,7 +97,7 @@ describe('EncryptedERC20', function () {
     await tx.wait();
 
     const bobErc20 = this.erc20.connect(this.signers.bob);
-    const inputBob1 = this.instances.bob.createEncryptedInput(this.contractAddress, this.contractAddress);
+    const inputBob1 = this.instances.bob.createEncryptedInput(this.contractAddress, this.signers.bob.address);
     inputBob1.add64(1338); // above allowance so next tx should actually not send any token
     const encryptedTransferAmount = inputBob1.encrypt();
     const tx2 = await bobErc20['transferFrom(address,address,bytes32,bytes)'](
@@ -118,7 +118,7 @@ describe('EncryptedERC20', function () {
     const balanceBob = await decrypt64(balanceHandleBob);
     expect(balanceBob).to.equal(0); // check that transfer did not happen, as expected
 
-    const inputBob2 = this.instances.bob.createEncryptedInput(this.contractAddress, this.contractAddress);
+    const inputBob2 = this.instances.bob.createEncryptedInput(this.contractAddress, this.signers.bob.address);
     inputBob2.add64(1337); // below allowance so next tx should send token
     const encryptedTransferAmount2 = inputBob2.encrypt();
     const tx3 = await bobErc20['transferFrom(address,address,bytes32,bytes)'](

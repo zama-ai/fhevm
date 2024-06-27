@@ -6,9 +6,9 @@ import "../GatewayContract.sol";
 import "../../lib/ACL.sol";
 import "../../lib/KMSVerifier.sol";
 
-GatewayContract constant gatewayContract = GatewayContract(address(0)); // Replace by GatewayContract address
-ACL constant acl = ACL(address(0)); // Replace by ACL address
-KMSVerifier constant kmsVerifier = KMSVerifier(address(0)); // Replace by KMSVerifier address
+GatewayContract constant gatewayContract = GatewayContract(0xc8c9303Cd7F337fab769686B593B87DC3403E0ce); // Replace by GatewayContract address
+ACL constant acl = ACL(0x2Fb4341027eb1d2aD8B5D9708187df8633cAFA92); // Replace by ACL address
+KMSVerifier constant kmsVerifier = KMSVerifier(address(0x12B064FB845C1cc05e9493856a1D637a73e944bE));
 
 library Gateway {
     function GatewayContractAddress() internal pure returns (address) {
