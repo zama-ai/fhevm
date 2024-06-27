@@ -54,7 +54,7 @@ echo "###########################################################"
 echo "$NETWORK_KEYS_PUBLIC_PATH"
 echo "$NETWORK_KEYS_PRIVATE_PATH"
 
-MANDATORY_KEYS_LIST=('PUB/ServerKey/04a1aa8ba5e95fb4dc42e06add00b0c2ce3ea424' 'PRIV/FhePrivateKey/04a1aa8ba5e95fb4dc42e06add00b0c2ce3ea424' 'PUB/PublicKey/04a1aa8ba5e95fb4dc42e06add00b0c2ce3ea424')
+MANDATORY_KEYS_LIST=('PUB/ServerKey/408d8cbaa51dece7f782fe04ba0b1c1d017b1088' 'PRIV/FhePrivateKey/408d8cbaa51dece7f782fe04ba0b1c1d017b1088' 'PUB/PublicKey/408d8cbaa51dece7f782fe04ba0b1c1d017b1088')
 
 for key in "${MANDATORY_KEYS_LIST[@]}"; do
     if [ ! -f "$KEYS_FULL_PATH/$key" ]; then
@@ -73,16 +73,16 @@ echo "###########################################################"
 mkdir -p $NETWORK_KEYS_PUBLIC_PATH
 mkdir -p $NETWORK_KEYS_PRIVATE_PATH
 
-key="PUB/ServerKey/04a1aa8ba5e95fb4dc42e06add00b0c2ce3ea424"
+key="PUB/ServerKey/408d8cbaa51dece7f782fe04ba0b1c1d017b1088"
 echo "Copying $key to $NETWORK_KEYS_PUBLIC_PATH, please wait ..."
 cp $KEYS_FULL_PATH/$key $NETWORK_KEYS_PUBLIC_PATH/sks
 
-key="PUB/PublicKey/04a1aa8ba5e95fb4dc42e06add00b0c2ce3ea424"
+key="PUB/PublicKey/408d8cbaa51dece7f782fe04ba0b1c1d017b1088"
 echo "Copying $key to $NETWORK_KEYS_PUBLIC_PATH, please wait ..."
 cp $KEYS_FULL_PATH/$key $NETWORK_KEYS_PUBLIC_PATH/pks
 
 
-key="PRIV/FhePrivateKey/04a1aa8ba5e95fb4dc42e06add00b0c2ce3ea424"
+key="PRIV/FhePrivateKey/408d8cbaa51dece7f782fe04ba0b1c1d017b1088"
 echo "Copying $key to $NETWORK_KEYS_PRIVATE_PATH, please wait ..."
 cp $KEYS_FULL_PATH/$key $NETWORK_KEYS_PRIVATE_PATH/cks
 # TODO remove it after, for now npx hardhat test expects cks

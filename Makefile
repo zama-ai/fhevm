@@ -16,7 +16,7 @@ SUDO := $(shell which sudo)
 
 
 # used also for key gen
-KMS_DEV_VERSION ?= 9b94bec
+KMS_DEV_VERSION ?= aa90d98
 
 FHEVM_SOLIDITY_REPO ?= fhevm
 FHEVM_SOLIDITY_PATH ?= $(WORKDIR)/$(FHEVM_SOLIDITY_REPO)
