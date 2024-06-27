@@ -66,7 +66,7 @@ library Gateway {
     function verifySignatures(uint256[] memory handlesList, bytes[] memory signatures) internal returns (bool) {
         uint256 start = 4 + 32; // start position after skipping the selector (4 bytes) and the first argument (index, 32 bytes)
         uint256 numArgs = handlesList.length; // Number of arguments before signatures
-        uint256 length = numArgs * 32;
+        uint256 length = numArgs * 32; // TODO: fix the way we compute length in case the type of the handle is an ebytes256 (loop over all handles and add correct length corresponding to each type)
         bytes memory decryptedResult = new bytes(length);
         assembly {
             calldatacopy(add(decryptedResult, 0x20), start, length) // Copy the relevant part of calldata to decryptedResult memory
