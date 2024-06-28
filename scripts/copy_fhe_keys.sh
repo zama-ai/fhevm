@@ -22,6 +22,16 @@ DOCKER_IMAGE=ghcr.io/zama-ai/kms-service-dev:"$KMS_DEV_VERSION"
 echo "$DOCKER_IMAGE"
 CURRENT_FOLDER=$PWD
 
+DOCKER_COMPOSE_KMS_VERSION=
+DOCKER_COMPOSE_KMS_VERSION=$(./scripts/get_kms_core_version.sh ./docker-compose/docker-compose-full.yml kms-service-dev)
+
+if [ "$DOCKER_COMPOSE_KMS_VERSION" != "$KMS_DEV_VERSION" ]; then
+    echo "Versions do not match!"
+    echo "DOCKER_COMPOSE_KMS_VERSION in docker-compose-full.yml: $DOCKER_COMPOSE_KMS_VERSION"
+    echo "KMS_DEV_VERSION given to key copy/gen script: $KMS_DEV_VERSION"
+    exit 1
+fi
+
 
 KEYS_FULL_PATH=$CURRENT_FOLDER/res/keys
 mkdir -p $KEYS_FULL_PATH

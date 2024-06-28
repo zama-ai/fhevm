@@ -15,8 +15,9 @@ SUDO := $(shell which sudo)
 
 
 
-# used also for key gen
-KMS_DEV_VERSION ?= aa90d98
+# This version must the same as in docker-compose-full.yml
+# TODO add check
+KMS_DEV_VERSION ?= v0.4.5
 
 FHEVM_SOLIDITY_REPO ?= fhevm
 FHEVM_SOLIDITY_PATH ?= $(WORKDIR)/$(FHEVM_SOLIDITY_REPO)
