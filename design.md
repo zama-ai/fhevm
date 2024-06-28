@@ -3,7 +3,9 @@
 The following describes how the KMS is used in conjunction with an fhEVM blockchain, including the external components needed.
 While the KMS can be used with multiple fhEVMs, for simplicity, we will in the following document assume there is only a single fhEVM.
 
-At the highest level, the system consists of two subsystems: an *fhEVM blockchain* and a *KMS*. The KMS in turn consists of a *KMS blockchain* and a *KMS core*. These are in turn composed of the following components:
+At the highest level, the system consists of two subsystems: an *fhEVM blockchain* and a *KMS*. The KMS in turn consists of a *KMS blockchain* and a *KMS core*. These are in turn composed of the following components, which we illustrate in the pictures below
+![Centralized KMS system](central.png "Centralized KMS system")
+![Threshold KMS system](threshold.png "Threshold KMS system")
 
 - *fhEVM validator*: The validator node running the fhEVM blockchain.
 
