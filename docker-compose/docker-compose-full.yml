@@ -3,7 +3,7 @@ name: zama-kms
 services:
 
   kv-store:
-    image: ghcr.io/zama-ai/kms-blockchain-gateway-dev:3057a02  
+    image: ghcr.io/zama-ai/kms-blockchain-gateway-dev:v0.4.5
     command:
       - "kv_store"
     ports:
@@ -12,7 +12,7 @@ services:
 
 
   blockchain-validator:
-    image: ghcr.io/zama-ai/kms-blockchain-asc-dev:50872c4
+    image: ghcr.io/zama-ai/kms-blockchain-asc-dev:v0.4.5
     ports:
       - "36656:26656"
       - "36657:26657"
@@ -27,7 +27,7 @@ services:
       start_period: 10s
 
   connector:
-    image: ghcr.io/zama-ai/kms-blockchain-connector-dev:50872c4
+    image: ghcr.io/zama-ai/kms-blockchain-connector-dev:v0.4.5
     command:
       - "kms-blockchain-connector"
     environment:
@@ -45,7 +45,7 @@ services:
         condition: service_healthy
 
   core:
-    image: ghcr.io/zama-ai/kms-service-dev:3057a02 
+    image: ghcr.io/zama-ai/kms-service-dev:v0.4.5
     ports:
       - "50051:50051"
     healthcheck:
@@ -56,7 +56,7 @@ services:
       start_period: 10s
 
   gateway:
-    image: ghcr.io/zama-ai/kms-blockchain-gateway-dev:3057a02  
+    image: ghcr.io/zama-ai/kms-blockchain-gateway-dev:v0.4.5
     ports:
       - "7077:7077"
     command:
