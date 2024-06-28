@@ -45,7 +45,7 @@ services:
         condition: service_healthy
 
   core:
-    image: ghcr.io/zama-ai/kms-service-dev:aa90d98 
+    image: ghcr.io/zama-ai/kms-service-dev:3057a02 
     ports:
       - "50051:50051"
     healthcheck:
@@ -57,6 +57,8 @@ services:
 
   gateway:
     image: ghcr.io/zama-ai/kms-blockchain-gateway-dev:3057a02  
+    ports:
+      - "7077:7077"
     command:
       - "gateway"
     volumes:
