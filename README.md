@@ -96,7 +96,7 @@ cd work_dir/fhevm & npx hardhat test --grep 'test async decrypt several addresse
 
 ```bash
 # Check logs for Gateway
-docker logs zama-kms-gateway-1 -f 
+docker logs zama-dev-gateway-1 -f 
 
 # On the second try you should see
 
@@ -108,7 +108,7 @@ docker logs zama-kms-gateway-1 -f
 # 2024-06-27T16:59:35.439813Z  INFO gateway::blockchain::kms_blockchain: 🍊 Decrypting ciphertext of size: 33080
 
 # Check the logs for the node
-docker logs zama-kms-validator-1 -f
+docker logs zama-dev-fhevm-validator-1 -f
 ```
 
 </p>
@@ -175,20 +175,20 @@ Initialize and generate/copy FHE keys based on `KEY_GEN` value in `.env`.
 ```bash
 make run-full
 # Check the logs for the node
-docker logs zama-kms-validator-1 -f
+docker logs zama-dev-fhevm-validator-1 -f
 # Check logs for Gateway
-docker logs zama-kms-gateway-1 -f     
+docker logs zama-dev-gateway-1 -f     
 ```
 
 You should see the following docker images:
 
 ```
-zama-kms-gateway-1                ghcr.io/zama-ai/kms-blockchain-gateway-dev:aa90d98
-zama-kms-connector-1            ghcr.io/zama-ai/kms-blockchain-connector-dev:50872c4
-zama-kms-validator-1            ghcr.io/zama-ai/ethermint-node:v0.5.0
-zama-kms-core-1                   ghcr.io/zama-ai/kms-service-dev:aa90d98
-zama-kms-kv-store-1               ghcr.io/zama-ai/kms-blockchain-gateway-dev:aa90d98
-zama-kms-blockchain-validator-1   ghcr.io/zama-ai/kms-blockchain-asc-dev:50872c4
+zama-dev-gateway-1		            ghcr.io/zama-ai/kms-blockchain-gateway-dev:aa90d98
+zama-dev-kms-connector-1		    ghcr.io/zama-ai/kms-blockchain-connector-dev:50872c4
+zama-dev-fhevm-validator-1		    ghcr.io/zama-ai/ethermint-node:v0.5.0
+zama-dev-kms-core-1		            ghcr.io/zama-ai/kms-service-dev:aa90d98
+zama-dev-gateway-store-1		    ghcr.io/zama-ai/kms-blockchain-gateway-dev:aa90d98
+zama-dev-kms-validator-1		    ghcr.io/zama-ai/kms-blockchain-asc-dev:50872c4
 ```
 
 ### Stop fhEVM-native + KMS 
