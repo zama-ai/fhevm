@@ -12,6 +12,8 @@ We now briefly outline each of these components along with their constituents:
 
 - *Gateway KMS Connector*: A simple translation service that offers a gRPC interface for the gateway to communicate with the KMS blockchain. Calls from the gateway are submitted as transactions to the KMS blockchain, and result events from the KMS blockchain are returned to the gateway.
 
+- *KV-store*: A simple storage service that holds the actual FHE ciphertexts on behalf of the KMS blockchain (which instead stores a hash digest of the ciphertext).
+
 - *KMS Validator*: The validator node running the KMS blockchain.
 
 - *KMS Connector*: A simple translation service that listens for request events from the KMS blockchain and turn these into gRPC calls to the KMS Core. Likewise, results from the KMS Core are submitted as transactions back to the KMS blockchain.
@@ -28,7 +30,7 @@ On the fhEVM blockchain the following smart contracts are deployed:
 
 On the KMS blockchain the following smart contracts are deployed:
 
-- *fhEVM ASC*: Smart contract to which transaction from the gateway (connector) are submitted to. This constract contains all customization logic required to work with the specific fhEVM blockchain.
+- *fhEVM ASC*: Smart contract to which transaction from the gateway (connector) are submitted to. This contract contains all customization logic required to work with the specific fhEVM blockchain.
 
 Finally, dApp smart contracts use the *TFHE* Solidity library to perform operations on encrypted data on the fhEVM blockchain. This library is embedded into the dApp smart contract, and calls an executor smart contract under the hood.
 
