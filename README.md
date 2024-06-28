@@ -22,9 +22,9 @@ Execute the following commands:
 ```bash
 # Init node and copy or gen fhe keys
 make init-ethermint-node
-# Run fhEVM + full KMS components
+# Run fhEVM + full KMS components 
 make run-full
-# Deploy ACL, Gateway ...
+# Deploy ACL, Gateway ..., please wait until the end before testing!!!
 make prepare-e2e-test
 # This test will fail (first event catch is buggy - we are on it)
 make run-async-test
@@ -34,6 +34,8 @@ make run-async-test
 make run-true-input-async-test
 # Manual test
 cd work_dir/fhevm & npx hardhat test --grep 'test async decrypt uint32'
+cd work_dir/fhevm & npx hardhat test --grep 'test async decrypt uint64'
+cd work_dir/fhevm & npx hardhat test --grep 'test async decrypt several addresses'
 ```
 
 
