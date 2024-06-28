@@ -1,24 +1,39 @@
-# fhEVM usage of the KMS
+# Overall architecture
 
 The following describes how the KMS is used in conjunction with an fhEVM blockchain, including the external components needed.
 While the KMS can be used with multiple fhEVMs, for simplicity, we will in the following document assume there is only a single fhEVM.
 
-The overall system is considered to consistent of the following:
+At the highest level, the system consists of two subsystems: an *fhEVM blockchain* and a *KMS*. The KMS in turn consists of a *KMS blockchain* and a *KMS core*. These are in turn composed of the following components:
 
-- *fhEVM*: Which again consist of multiple distinct components:
-  - *KMS smart contract*: A smart contract used to communicate with the KMS and ensure an up-to-date view of the KMS state.
-  - TODO someone on the fhevm please add details about the other smart contracts that are currently there
+- *fhEVM validator*: The validator node running the fhEVM blockchain.
 
-- *Gateway service*: An intermediate component which is responsible to act as a bridge and facilitate communication between the fhEVM and the KMS. It again consists of components:
-  - Gateway: The actual gateway which relays requests and responses between the fhEVM and the KMS blockchain.
-  - fhEVM Connector: A light-client which will reads requests from the fhEVM blockchain and relay them to the Gateway. It is also responsible for writing responses from the KMS back to the fhEVM blockchain after receiving them from the Gateway.
-  - KMS Connector: A light-client which will reads results and updates from the KMS blockchain and pass them onward to the Gateway. It is also responsible for writing requests from the fhEVM to the KMS blockchain after receiving them from the Gateway.
+- *Gateway*: An intermediate component which is responsible to act as a bridge and facilitate communication between the fhEVM and the KMS. The actual gateway which relays requests and responses between the fhEVM and the KMS blockchain.
+
+- *Gateway KMS Connector*: A light-client which will reads results and updates from the KMS blockchain and pass them onward to the Gateway. It is also responsible for writing requests from the fhEVM to the KMS blockchain after receiving them from the Gateway.
+
+- *KMS validator*
+
+- *Core*
 
 - *KMS*: The Key Management System, which is responsible for managing the keys used by the fhEVM. It consists of components:
   - Frontend: The frontend makes up the public interface of the KMS, through which all requests are going. It consists of the following the KMS blockchain, and more specifically an Application Smart Contract (ASC) which provides the link between the KMS and each fhEVM by holding all the requests and responses to be relayed between the KMS and the fhEVM.
   - Backend: The actual cryptographic system that handles key management requests. It comes in both a _centralized_ and _threshold_ flavor. Regardless it consists of the following components:
     - Connector: A light-client which is responsible for reading requests from the KMS blockchain and relaying these to the KMS Core. Similarly, it is responsible for polling the KMS Core for results and post these back to the KMS blockchain.
     - Core Service: gRPC server which asynchronously handles requests from the Connector and forwards these either to an internal centralized cryptographic _Engine_ or to the threshold cryptographic _Engine_ depending on the mode.
+
+
+On the fhEVM blockchain the following smart contracts are deployed:
+
+- *ACL smart contract*: Smart contract deployed on the fhEVM blockchain to manage access control of ciphertexts. dApp contracts use this to persists their own access rights and to delegate access to other contracts.
+
+- *Gateway smart contract*: Smart contract deployed on the fhEVM blockchain that is used by a dApp smart contract to request a decrypt. This emits an event that triggers the gateway.
+
+- *KMS smart contract*: Smart contract running on the fhEVM blockchain that is used by a dApp contract to verify decryption results from the KMS by containing the identity of the KMS.
+
+Finally, dApp smart contracts use the *TFHE* Solidity library to perform operations on encrypted data on the fhEVM blockchain. This library is embedded into the dApp smart contract, and calls an executor smart contract under the hood.
+
+
+
 
 Below we now go in detail on each of these components, their features and why they have been designed as they are.
 
