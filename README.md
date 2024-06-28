@@ -1,10 +1,11 @@
-# How to run the new fhEVM
+# Demo of fhEVM + KMS (centralized)
 
-THis documentation is only temporary, it allows to run the last fhEVM with the fhe keys generated using kms-core dedicated binary. 
+This documentation purpose is to show how to run fhEVM for FHE execution and KMS for async decryption and reencryption. 
 
- # Key generation
 
- Please update `KEY_GEN` value in `.env`
+ ## Key generation
+
+ Please update `KEY_GEN` value in `.env`. Default is `false`
 
 | KEY_GEN | Purpose                                                                       |
 |---------|-------------------------------------------------------------------------------|
@@ -14,59 +15,56 @@ THis documentation is only temporary, it allows to run the last fhEVM with the f
 
 
 
-# Fast run and test
+## Fast run and test
 
-
-```bash
-make e2e-test
-```
-
-Note: if you get `override the existing name orchestrator [y/N]: `, just ^C and  run `make clean-node-storage` to remove the state.
-
-
-# Init fhEVM
+Execute the following commands:
 
 ```bash
-make init-ethermint-node 
+# Init node and copy or gen fhe keys
+make init-ethermint-node
+# Run fhEVM + full KMS components
+make run-full
+# Deploy ACL, Gateway ...
+make prepare-e2e-test
+# This test will fail (first event catch is buggy - we are on it)
+make run-async-test
+# This one is working
+make run-async-test
+# A non trivial test
+make run-true-input-async-test
+# Manual test
+cd work_dir/fhevm & npx hardhat test --grep 'test async decrypt uint32'
 ```
 
-This will initialize and generate the fhe keys.
-IMPORTANT: ensure to have 15 GB of empty ram to generate the keys.
 
-# Run fhEVM
+
+<details><summary>Docker logs</summary>
+<p>
 
 ```bash
-make run-ethermint
-# Check the logs
-docker logs ethermintnode0 -f     
+# Check logs for Gateway
+docker logs zama-kms-gateway-1 -f 
+
+# On the second try you should see
+
+# 2024-06-27T16:59:35.432399Z  INFO gateway::events::manager: ⭐ event_decryption: 1
+# 2024-06-27T16:59:35.432410Z  INFO gateway::events::manager: Handled event decryption: 1
+# 2024-06-27T16:59:35.432460Z  INFO gateway::blockchain::ciphertext_provider: Getting ciphertext for ct_handle: "aa9f8f90ebf0fa8e30caee92f0b97e158f1ec659b363101d07beac9b0cc90200"
+# 2024-06-27T16:59:35.436144Z  INFO gateway::blockchain::handlers: 🚀 request_id: 1, fhe_type: euint8
+# 2024-06-27T16:59:35.439802Z  INFO gateway::blockchain::kms_blockchain: 📦 Stored ciphertext, handle: 00008138b65173b5c57fc98d0fce54e5ff10635127e526144ffbe21d7099e3a1e1516574
+# 2024-06-27T16:59:35.439813Z  INFO gateway::blockchain::kms_blockchain: 🍊 Decrypting ciphertext of size: 33080
+
+# Check the logs for the node
+docker logs zama-kms-validator-1 -f
 ```
 
-# Stop fhEVM
-
-```bash
-make stop-ethermint
-```
-
-# Fresh start
-
-```bash
-make clean
-```
-
-Note: Fhe keys are in res/keys folder, delete them to regenerate new keys at ```make init-ethermint-node```
+</p>
+</details>
 
 
-# Test using fhevm
 
-```bash
-# if not executed before
-make init-ethermint-node 
-# if not executed before
-make run-ethermint
-# In new terminal
-make run-e2e-test
-```
-
+<details><summary>Pre deployment</summary>
+<p>
 You should see the pre-processing steps, i.e. deployment of ACL, Gateway, KMSVerifier ...
 
 ```bash
@@ -97,22 +95,81 @@ ownerAddress 0x305F1F471e9baCFF2b3549F9601f9A4BEafc94e1
 GatewayContract was deployed at address:  0xc8c9303Cd7F337fab769686B593B87DC3403E0ce
 Account 0x97F272ccfef4026A1F3f0e0E879d514627B84E69 was succesfully added as an gateway relayer
 
-
 ```
 
-Then some tests, only ERC20 and rand for now: 
+</p>
+</details>
+
+<br />
+
+
+> [!NOTE]  
+> If you get `override the existing name orchestrator [y/N]: `, just ^C and  run `make clean-node-storage` to remove the state.
+
+# Init fhEVM
 
 ```bash
-EncryptedERC20
-    ✔ should mint the contract (5083ms)
-    ✔ should transfer tokens between two users (12342ms)
-    ✔ should not transfer tokens between two users (12324ms)
-    ✔ should be able to transferFrom only if allowance is sufficient (23991ms)
-
-
-Rand
-    ✔ 8 bits generate and decrypt (25643ms)
-    ✔ 8 bits generate with upper bound and decrypt (25160ms)
-    ✔ 16 bits generate and decrypt (25706
+make init-ethermint-node 
 ```
+
+Initialize and generate/copy FHE keys based on `KEY_GEN` value in `.env`.
+
+> [!NOTE]  
+> If KEY_GEN is set to `false`, ensure to have 15 GB of empty RAM to generate the keys. On Mac, do not forget to increase the allocated RAM to docker process. 
+
+## Run fhEVM + KMS components
+
+```bash
+make run-full
+# Check the logs for the node
+docker logs zama-kms-validator-1 -f
+# Check logs for Gateway
+docker logs zama-kms-gateway-1 -f     
+```
+
+You should see the following docker images:
+
+```
+zama-kms-gateway-1		            ghcr.io/zama-ai/kms-blockchain-gateway-dev:aa90d98
+zama-kms-connector-1		        ghcr.io/zama-ai/kms-blockchain-connector-dev:50872c4
+zama-kms-validator-1		        ghcr.io/zama-ai/ethermint-node:v0.5.0
+zama-kms-core-1		                ghcr.io/zama-ai/kms-service-dev:aa90d98
+zama-kms-kv-store-1		            ghcr.io/zama-ai/kms-blockchain-gateway-dev:aa90d98
+zama-kms-blockchain-validator-1		ghcr.io/zama-ai/kms-blockchain-asc-dev:50872c4
+```
+
+## Stop fhEVM + KMS 
+
+```bash
+make stop-full
+```
+
+## Fresh start
+
+```bash
+make clean
+```
+
+> [!NOTE]  
+> FHE keys are in res/keys folder, delete them to regenerate new keys at ```make init-ethermint-node``` step.
+
+
+## Test using fhevm
+
+```bash
+# if not executed before
+make init-ethermint-node 
+# if not executed before
+make run-full
+# In new terminal
+make run-e2e-test
+```
+
+or in one command 
+
+```bash
+make e2e-test
+```
+
+
 
