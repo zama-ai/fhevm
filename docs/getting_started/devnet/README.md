@@ -1,5 +1,9 @@
 # Zama Devnet
 
+{% hint style="warning" %}
+**Devnet down** Our devnet is currently offline but will be up soon! In the meantime, develop your contracts using a local instance.
+{% endhint %}
+
 <!-- markdown-link-check-disable -->
 
 Here are the main steps from the [official guide](https://support.metamask.io/hc/en-us/articles/360043227612-How-to-add-a-custom-network-RPC) provided by Metamask:
