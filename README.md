@@ -34,6 +34,8 @@ make run-async-test
 make run-true-input-async-test
 # Manual test
 cd work_dir/fhevm & npx hardhat test --grep 'test async decrypt uint32'
+cd work_dir/fhevm & npx hardhat test --grep 'test async decrypt uint64'
+cd work_dir/fhevm & npx hardhat test --grep 'test async decrypt several addresses'
 ```
 
 
