@@ -1,0 +1,136 @@
+<mxfile host="Electron" modified="2024-06-28T14:19:30.972Z" agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/24.6.4 Chrome/124.0.6367.207 Electron/30.0.6 Safari/537.36" etag="Ix8uBlMe2b1bBUCYBdwc" version="24.6.4" type="device">
+  <diagram name="Page-1" id="FpsxUlfm9SSa0UdNBrvg">
+    <mxGraphModel dx="914" dy="824" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="4pm-2qYC4wzhBg7R6dqF-63" value="&lt;font style=&quot;font-size: 20px;&quot;&gt;&lt;b&gt;KMS blockchain&lt;/b&gt;&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontColor=none;noLabel=1;labelBackgroundColor=none;" vertex="1" parent="1">
+          <mxGeometry x="756.5" y="12" width="290" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="4pm-2qYC4wzhBg7R6dqF-51" value="&lt;font style=&quot;font-size: 20px;&quot;&gt;&lt;b&gt;KMS blockchain&lt;/b&gt;&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontColor=none;noLabel=1;labelBackgroundColor=none;" vertex="1" parent="1">
+          <mxGeometry x="251" y="43.5" width="222.75" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="4pm-2qYC4wzhBg7R6dqF-40" value="&lt;font style=&quot;font-size: 20px;&quot;&gt;&lt;b&gt;KMS blockchain&lt;/b&gt;&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontColor=none;noLabel=1;labelBackgroundColor=none;" vertex="1" parent="1">
+          <mxGeometry x="500" width="223.5" height="240" as="geometry" />
+        </mxCell>
+        <mxCell id="4pm-2qYC4wzhBg7R6dqF-1" value="S3" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
+          <mxGeometry x="993.25" y="72" width="40" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="4pm-2qYC4wzhBg7R6dqF-4" value="Engine" style="whiteSpace=wrap;html=1;aspect=fixed;" vertex="1" parent="1">
+          <mxGeometry x="896.5" y="82" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="4pm-2qYC4wzhBg7R6dqF-9" value="Nitro" style="sketch=0;pointerEvents=1;shadow=0;dashed=0;html=1;strokeColor=none;fillColor=#505050;labelPosition=center;verticalLabelPosition=bottom;verticalAlign=top;outlineConnect=0;align=center;shape=mxgraph.office.security.lock_protected;" vertex="1" parent="1">
+          <mxGeometry x="946.5" y="132" width="28" height="37" as="geometry" />
+        </mxCell>
+        <mxCell id="4pm-2qYC4wzhBg7R6dqF-10" value="" style="endArrow=classic;startArrow=classic;html=1;rounded=0;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0;entryDx=0;entryDy=37.5;entryPerimeter=0;" edge="1" parent="1" source="4pm-2qYC4wzhBg7R6dqF-4" target="4pm-2qYC4wzhBg7R6dqF-1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="992.5" y="102" as="sourcePoint" />
+            <mxPoint x="1042.5" y="52" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="4pm-2qYC4wzhBg7R6dqF-21" value="Core Service" style="whiteSpace=wrap;html=1;aspect=fixed;" vertex="1" parent="1">
+          <mxGeometry x="836.5" y="82" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="4pm-2qYC4wzhBg7R6dqF-28" value="KMS Connector" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="776.5" y="83.5" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="4pm-2qYC4wzhBg7R6dqF-34" value="Validator" style="whiteSpace=wrap;html=1;aspect=fixed;" vertex="1" parent="1">
+          <mxGeometry x="580" y="40" width="63.5" height="63.5" as="geometry" />
+        </mxCell>
+        <mxCell id="4pm-2qYC4wzhBg7R6dqF-35" value="Validator" style="whiteSpace=wrap;html=1;aspect=fixed;" vertex="1" parent="1">
+          <mxGeometry x="516.5" y="153.25" width="63.5" height="63.5" as="geometry" />
+        </mxCell>
+        <mxCell id="4pm-2qYC4wzhBg7R6dqF-36" value="Validator" style="whiteSpace=wrap;html=1;aspect=fixed;" vertex="1" parent="1">
+          <mxGeometry x="650" y="153.25" width="63.5" height="63.5" as="geometry" />
+        </mxCell>
+        <mxCell id="4pm-2qYC4wzhBg7R6dqF-37" value="" style="endArrow=classic;startArrow=classic;html=1;rounded=0;entryX=0;entryY=1;entryDx=0;entryDy=0;exitX=0.5;exitY=0;exitDx=0;exitDy=0;" edge="1" parent="1" source="4pm-2qYC4wzhBg7R6dqF-35" target="4pm-2qYC4wzhBg7R6dqF-34">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="810" y="170" as="sourcePoint" />
+            <mxPoint x="860" y="120" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="4pm-2qYC4wzhBg7R6dqF-38" value="" style="endArrow=classic;startArrow=classic;html=1;rounded=0;entryX=1;entryY=1;entryDx=0;entryDy=0;exitX=0.5;exitY=0;exitDx=0;exitDy=0;" edge="1" parent="1" source="4pm-2qYC4wzhBg7R6dqF-36" target="4pm-2qYC4wzhBg7R6dqF-34">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="558" y="163" as="sourcePoint" />
+            <mxPoint x="590" y="114" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="4pm-2qYC4wzhBg7R6dqF-39" value="" style="endArrow=classic;startArrow=classic;html=1;rounded=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" edge="1" parent="1" source="4pm-2qYC4wzhBg7R6dqF-35" target="4pm-2qYC4wzhBg7R6dqF-36">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="568" y="173" as="sourcePoint" />
+            <mxPoint x="600" y="124" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="4pm-2qYC4wzhBg7R6dqF-41" value="&lt;font style=&quot;font-size: 20px;&quot;&gt;&lt;b&gt;KMS Blockchain&lt;/b&gt;&lt;/font&gt;" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="516.5" width="180" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="4pm-2qYC4wzhBg7R6dqF-42" value="" style="endArrow=classic;startArrow=classic;html=1;rounded=0;entryX=0.002;entryY=0.558;entryDx=0;entryDy=0;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryPerimeter=0;" edge="1" parent="1" source="4pm-2qYC4wzhBg7R6dqF-40" target="4pm-2qYC4wzhBg7R6dqF-63">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="730" y="210" as="sourcePoint" />
+            <mxPoint x="866.5" y="243.5" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="4pm-2qYC4wzhBg7R6dqF-46" value="Gateway" style="whiteSpace=wrap;html=1;aspect=fixed;" vertex="1" parent="1">
+          <mxGeometry x="333.75" y="103.5" width="58" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="4pm-2qYC4wzhBg7R6dqF-47" value="KMS Connector" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="393.75" y="101.5" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="4pm-2qYC4wzhBg7R6dqF-48" value="" style="endArrow=classic;startArrow=classic;html=1;rounded=0;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" edge="1" parent="1" source="4pm-2qYC4wzhBg7R6dqF-51" target="4pm-2qYC4wzhBg7R6dqF-40">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="480" y="120" as="sourcePoint" />
+            <mxPoint x="780" y="130" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="4pm-2qYC4wzhBg7R6dqF-50" value="fhEVM Connector" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="273.75" y="103.5" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="4pm-2qYC4wzhBg7R6dqF-52" value="&lt;font style=&quot;font-size: 20px;&quot;&gt;&lt;b&gt;Gateway Service&lt;/b&gt;&lt;/font&gt;" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="272.75" y="53.5" width="180" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="4pm-2qYC4wzhBg7R6dqF-53" value="&lt;font style=&quot;font-size: 20px;&quot;&gt;&lt;b&gt;KMS blockchain&lt;/b&gt;&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontColor=none;noLabel=1;labelBackgroundColor=none;" vertex="1" parent="1">
+          <mxGeometry width="223.5" height="240" as="geometry" />
+        </mxCell>
+        <mxCell id="4pm-2qYC4wzhBg7R6dqF-54" value="Validator" style="whiteSpace=wrap;html=1;aspect=fixed;" vertex="1" parent="1">
+          <mxGeometry x="80" y="40" width="63.5" height="63.5" as="geometry" />
+        </mxCell>
+        <mxCell id="4pm-2qYC4wzhBg7R6dqF-55" value="Validator" style="whiteSpace=wrap;html=1;aspect=fixed;" vertex="1" parent="1">
+          <mxGeometry x="16.5" y="153.25" width="63.5" height="63.5" as="geometry" />
+        </mxCell>
+        <mxCell id="4pm-2qYC4wzhBg7R6dqF-56" value="Validator" style="whiteSpace=wrap;html=1;aspect=fixed;" vertex="1" parent="1">
+          <mxGeometry x="150" y="153.25" width="63.5" height="63.5" as="geometry" />
+        </mxCell>
+        <mxCell id="4pm-2qYC4wzhBg7R6dqF-57" value="" style="endArrow=classic;startArrow=classic;html=1;rounded=0;entryX=0;entryY=1;entryDx=0;entryDy=0;exitX=0.5;exitY=0;exitDx=0;exitDy=0;" edge="1" parent="1" source="4pm-2qYC4wzhBg7R6dqF-55" target="4pm-2qYC4wzhBg7R6dqF-54">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="310" y="170" as="sourcePoint" />
+            <mxPoint x="360" y="120" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="4pm-2qYC4wzhBg7R6dqF-58" value="" style="endArrow=classic;startArrow=classic;html=1;rounded=0;entryX=1;entryY=1;entryDx=0;entryDy=0;exitX=0.5;exitY=0;exitDx=0;exitDy=0;" edge="1" parent="1" source="4pm-2qYC4wzhBg7R6dqF-56" target="4pm-2qYC4wzhBg7R6dqF-54">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="58" y="163" as="sourcePoint" />
+            <mxPoint x="90" y="114" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="4pm-2qYC4wzhBg7R6dqF-59" value="" style="endArrow=classic;startArrow=classic;html=1;rounded=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" edge="1" parent="1" source="4pm-2qYC4wzhBg7R6dqF-55" target="4pm-2qYC4wzhBg7R6dqF-56">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="68" y="173" as="sourcePoint" />
+            <mxPoint x="100" y="124" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="4pm-2qYC4wzhBg7R6dqF-60" value="&lt;font style=&quot;font-size: 20px;&quot;&gt;&lt;b&gt;fhEVM Blockchain&lt;/b&gt;&lt;/font&gt;" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="6.5" width="200" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="4pm-2qYC4wzhBg7R6dqF-61" value="" style="endArrow=classic;startArrow=classic;html=1;rounded=0;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="4pm-2qYC4wzhBg7R6dqF-53" target="4pm-2qYC4wzhBg7R6dqF-51">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="480" y="117" as="sourcePoint" />
+            <mxPoint x="510" y="120" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="4pm-2qYC4wzhBg7R6dqF-64" value="&lt;span style=&quot;font-size: 20px;&quot;&gt;&lt;b&gt;Central Core&lt;/b&gt;&lt;/span&gt;" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="831.5" y="22" width="140" height="40" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
