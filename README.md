@@ -1,6 +1,15 @@
-# Demo of fhEVM + KMS (centralized)
+# Demo of fhEVM-native + KMS (centralized)
 
-This documentation purpose is to show how to run fhEVM for FHE execution and KMS for async decryption and reencryption. 
+📢 Announcement:
+
+⚠️ Warning: This is still an early version.
+
+The purpose of this repository is to demonstrate the integration between fhEVM-native and a fully dockerized centralized KMS.
+
+The KMS encompasses all sub-components, including the gateway, KMS blockchain, and centralized KMS backend. This is still an early version with support for (asynchronous) decryption, and support for reencryption is coming soon.
+
+We are still working on reencryption and are making good progress. 🔧 Since this is a fully Dockerized version, we will provide you with a more robust, tested, and feature-rich version next week. 🚀
+
 
 
  ## Key generation
@@ -108,7 +117,7 @@ Account 0x97F272ccfef4026A1F3f0e0E879d514627B84E69 was succesfully added as an g
 > [!NOTE]  
 > If you get `override the existing name orchestrator [y/N]: `, just ^C and  run `make clean-node-storage` to remove the state.
 
-# Init fhEVM
+# Init fhEVM-native
 
 ```bash
 make init-ethermint-node 
@@ -119,7 +128,7 @@ Initialize and generate/copy FHE keys based on `KEY_GEN` value in `.env`.
 > [!NOTE]  
 > If KEY_GEN is set to `false`, ensure to have 15 GB of empty RAM to generate the keys. On Mac, do not forget to increase the allocated RAM to docker process. 
 
-## Run fhEVM + KMS components
+## Run fhEVM-native + KMS components
 
 ```bash
 make run-full
@@ -140,7 +149,7 @@ zama-kms-kv-store-1		            ghcr.io/zama-ai/kms-blockchain-gateway-dev:aa90
 zama-kms-blockchain-validator-1		ghcr.io/zama-ai/kms-blockchain-asc-dev:50872c4
 ```
 
-## Stop fhEVM + KMS 
+## Stop fhEVM-native + KMS 
 
 ```bash
 make stop-full
