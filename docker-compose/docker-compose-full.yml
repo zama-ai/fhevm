@@ -9,8 +9,6 @@ services:
     ports:
       - "8088:8088"
 
-
-
   blockchain-validator:
     image: ghcr.io/zama-ai/kms-blockchain-asc-dev:50872c4
     ports:
