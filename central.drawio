@@ -1,4 +1,4 @@
-<mxfile host="Electron" modified="2024-06-28T14:57:47.054Z" agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/24.6.4 Chrome/124.0.6367.207 Electron/30.0.6 Safari/537.36" etag="aM9cjU1sq029NFdlBzMk" version="24.6.4" type="device">
+<mxfile host="Electron" modified="2024-06-28T15:52:34.048Z" agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/24.6.4 Chrome/124.0.6367.207 Electron/30.0.6 Safari/537.36" etag="KuZtbmIn9IqAyy6GxShJ" version="24.6.4" type="device">
   <diagram name="Page-1" id="FpsxUlfm9SSa0UdNBrvg">
     <mxGraphModel dx="914" dy="824" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
       <root>
@@ -37,7 +37,7 @@
         <mxCell id="4pm-2qYC4wzhBg7R6dqF-34" value="Validator" style="whiteSpace=wrap;html=1;aspect=fixed;" parent="1" vertex="1">
           <mxGeometry x="520" y="103.5" width="63.5" height="63.5" as="geometry" />
         </mxCell>
-        <mxCell id="JiTltuqQd8X32mj_rh5E-2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="4pm-2qYC4wzhBg7R6dqF-36">
+        <mxCell id="JiTltuqQd8X32mj_rh5E-2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" parent="1" edge="1">
           <mxGeometry relative="1" as="geometry">
             <mxPoint x="570" y="185" as="targetPoint" />
           </mxGeometry>
@@ -107,6 +107,27 @@
         </mxCell>
         <mxCell id="4pm-2qYC4wzhBg7R6dqF-64" value="&lt;span style=&quot;font-size: 20px;&quot;&gt;&lt;b&gt;Central Core&lt;/b&gt;&lt;/span&gt;" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" parent="1" vertex="1">
           <mxGeometry x="725" y="22" width="140" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="uqOfu4qLd0jLRNO7fjob-1" value="&lt;font style=&quot;font-size: 20px;&quot;&gt;&lt;b&gt;KMS blockchain&lt;/b&gt;&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontColor=none;noLabel=1;labelBackgroundColor=none;" parent="1" vertex="1">
+          <mxGeometry x="480" y="220" width="140" height="161.5" as="geometry" />
+        </mxCell>
+        <mxCell id="uqOfu4qLd0jLRNO7fjob-2" value="&lt;font style=&quot;font-size: 20px;&quot;&gt;&lt;b&gt;KV-Store&lt;/b&gt;&lt;/font&gt;" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" parent="1" vertex="1">
+          <mxGeometry x="496.75" y="230" width="110" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="uqOfu4qLd0jLRNO7fjob-3" value="KV-Store" style="whiteSpace=wrap;html=1;aspect=fixed;" parent="1" vertex="1">
+          <mxGeometry x="516" y="280" width="58" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="uqOfu4qLd0jLRNO7fjob-4" value="" style="endArrow=classic;startArrow=none;html=1;rounded=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;startFill=0;" parent="1" source="4pm-2qYC4wzhBg7R6dqF-47" target="uqOfu4qLd0jLRNO7fjob-1" edge="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="390" y="270" as="sourcePoint" />
+            <mxPoint x="490" y="129" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="uqOfu4qLd0jLRNO7fjob-5" value="" style="endArrow=none;startArrow=classic;html=1;rounded=0;entryX=1.014;entryY=0.545;entryDx=0;entryDy=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryPerimeter=0;endFill=0;" parent="1" source="4pm-2qYC4wzhBg7R6dqF-28" target="uqOfu4qLd0jLRNO7fjob-1" edge="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="391" y="169" as="sourcePoint" />
+            <mxPoint x="490" y="311" as="targetPoint" />
+          </mxGeometry>
         </mxCell>
       </root>
     </mxGraphModel>
