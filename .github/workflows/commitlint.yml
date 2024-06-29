@@ -13,7 +13,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
         with:
-          node-version: 20.x
+          node-version: 18.x
       - run: npm ci
       - name: Install commitlint
         run: |
