@@ -1,4 +1,3 @@
-import { Signer } from 'ethers';
 import fhevmjs, { clientKeyDecryptor, getCiphertextCallParams, getPublicKeyCallParams } from 'fhevmjs';
 import { readFileSync } from 'fs';
 import { ethers, ethers as hethers } from 'hardhat';
@@ -13,45 +12,22 @@ const hre = require('hardhat');
 const HARDHAT_NETWORK = process.env.HARDHAT_NETWORK;
 const FHE_CLIENT_KEY_PATH = process.env.FHE_CLIENT_KEY_PATH;
 
-let publicKey: string | undefined;
 let clientKey: Uint8Array | undefined;
-let chainId: number;
 
-export const createInstances = async (
-  contractAddress: string,
-  ethers: typeof hethers,
-  accounts: Signers,
-): Promise<FhevmInstances> => {
+export const createInstances = async (accounts: Signers): Promise<FhevmInstances> => {
   // Create instance
   const instances: FhevmInstances = {} as FhevmInstances;
   await Promise.all(
     Object.keys(accounts).map(async (k) => {
-      instances[k as keyof FhevmInstances] = await createInstance(
-        contractAddress,
-        accounts[k as keyof Signers],
-        ethers,
-      );
+      instances[k as keyof FhevmInstances] = await createInstance();
     }),
   );
 
   return instances;
 };
 
-export const createInstance = async (contractAddress: string, account: Signer, ethers: typeof hethers) => {
-  const provider = ethers.provider;
-  const network = await provider.getNetwork();
-  chainId = +network.chainId.toString(); // Need to be a number
-  try {
-    // Get blockchain public key
-    const ret = await provider.call(getPublicKeyCallParams());
-    const decoded = ethers.AbiCoder.defaultAbiCoder().decode(['bytes'], ret);
-    publicKey = decoded[0];
-  } catch (e) {
-    publicKey = undefined;
-  }
+export const createInstance = async () => {
   const instance = await fhevmjs.createInstance({
-    chainId,
-    publicKey,
     networkUrl: hre.network.config.url,
     gatewayUrl: 'http://localhost:7077',
   });

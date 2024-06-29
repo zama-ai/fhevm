@@ -15,7 +15,7 @@ describe('EncryptedERC20', function () {
     const contract = await deployEncryptedERC20Fixture();
     this.contractAddress = await contract.getAddress();
     this.erc20 = contract;
-    this.instances = await createInstances(this.contractAddress, ethers, this.signers);
+    this.instances = await createInstances(this.signers);
   });
 
   it('should mint the contract', async function () {
