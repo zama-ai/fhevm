@@ -5,7 +5,7 @@
 ## Getting Started
 
 - [What is fhEVM](getting_started/overview.md)
-- [Deploy on Zama Devnet](getting_started/devnet/README.md)
+- [Deploy on fhEVM native](getting_started/devnet/README.md)
   - [Using Zama Faucet](getting_started/devnet/faucet.md)
   - [Local dev node](getting_started/devnet/local.md)
 - [Deploy on Ethereum](getting_started/ethereum.md)
