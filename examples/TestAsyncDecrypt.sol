@@ -16,7 +16,6 @@ contract TestAsyncDecrypt is GatewayCaller {
     euint64 xUint64_3;
     eaddress xAddress;
     eaddress xAddress2;
-    bytes xBytes256;
 
     bool public yBool;
     uint8 public yUint4;
@@ -329,13 +328,7 @@ contract TestAsyncDecrypt is GatewayCaller {
         cts[0] = Gateway.toUint256(xBool);
         cts[1] = Gateway.toUint256(xAddress);
         cts[2] = Gateway.toUint256(xBytes256);
-        uint256 requestID = Gateway.requestDecryption(
-            cts,
-            this.callbackMixedBytes256.selector,
-            0,
-            block.timestamp + 100,
-            false
-        );
+        Gateway.requestDecryption(cts, this.callbackMixedBytes256.selector, 0, block.timestamp + 100, false);
     }
 
     function callbackMixedBytes256(

@@ -49,7 +49,12 @@ export const createInstance = async (contractAddress: string, account: Signer, e
   } catch (e) {
     publicKey = undefined;
   }
-  const instance = await fhevmjs.createInstance({ chainId, publicKey, networkUrl: hre.network.config.url });
+  const instance = await fhevmjs.createInstance({
+    chainId,
+    publicKey,
+    networkUrl: hre.network.config.url,
+    gatewayUrl: 'http://localhost:7077',
+  });
   return instance;
 };
 

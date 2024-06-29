@@ -2,12 +2,16 @@
   "name": "fhevm",
   "description": "A Solidity library for interacting with the Zama Blockchain",
   "version": "0.5.0",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "main": "lib/TFHE.sol",
   "directories": {
     "example": "examples",
     "lib": "lib"
   },
   "scripts": {
+    "preinstall": "node -e \"if (parseFloat(process.versions.node) < 20.0) throw new Error('Unsupported Node.js version. Please use Node.js >= 20.0.0.');\"",
     "clean": "rimraf ./artifacts ./cache ./coverage ./types ./coverage.json && npm run typechain",
     "compile": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat compile",
     "deploy:contracts": "hardhat deploy",
@@ -72,7 +76,7 @@
     "eslint": "^8.28.0",
     "eslint-config-prettier": "^8.5.0",
     "ethers": "^6.8.0",
-    "fhevmjs": "^0.5.0-13",
+    "fhevmjs": "^0.5.0",
     "fs-extra": "^10.1.0",
     "ganache": "^7.9.0",
     "hardhat": "^2.19.4",

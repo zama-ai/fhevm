@@ -57,6 +57,43 @@ describe('EncryptedERC20', function () {
     expect(balanceBob).to.equal(1337);
   });
 
+  it('reencrypt - should transfer tokens between two users', async function () {
+    const transaction = await this.erc20.mint(10000);
+    const t1 = await transaction.wait();
+    expect(t1?.status).to.eq(1);
+
+    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    input.add64(1337);
+    const encryptedTransferAmount = input.encrypt();
+    const tx = await this.erc20['transfer(address,bytes32,bytes)'](
+      this.signers.bob.address,
+      encryptedTransferAmount.handles[0],
+      encryptedTransferAmount.inputProof,
+    );
+    const t2 = await tx.wait();
+    expect(t2?.status).to.eq(1);
+
+    // Decrypt Alice's balance
+    const balanceHandleAlice = await this.erc20.balanceOf(this.signers.alice);
+    const { publicKey, privateKey } = this.instances.alice.generateKeypair();
+    const eip712 = this.instances.alice.createEIP712(publicKey, this.contractAddress);
+    const signature = await this.signers.alice.signTypedData(
+      eip712.domain,
+      { Reencrypt: eip712.types.Reencrypt },
+      eip712.message,
+    );
+    const balanceAlice = await this.instances.alice.reencrypt(
+      balanceHandleAlice,
+      privateKey,
+      publicKey,
+      signature.replace('0x', ''),
+      this.contractAddress,
+      this.signers.alice.address,
+    );
+
+    expect(balanceAlice).to.equal(10000 - 1337);
+  });
+
   it('should not transfer tokens between two users', async function () {
     const transaction = await this.erc20.mint(1000);
     await transaction.wait();
