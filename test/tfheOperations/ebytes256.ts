@@ -25,8 +25,7 @@ describe('Ebytes256 operations', function () {
     const contract = await deployTfheManualTestFixture();
     this.contractAddress = await contract.getAddress();
     this.contract = contract;
-    const instances = await createInstances(this.contractAddress, ethers, this.signers);
-    this.instances = instances;
+    this.instances = await createInstances(this.signers);
   });
 
   it('eq ebytes256,ebytes256 true', async function () {

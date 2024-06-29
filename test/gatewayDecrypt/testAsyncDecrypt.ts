@@ -18,7 +18,7 @@ describe('TestAsyncDecrypt', function () {
     const contractFactory = await ethers.getContractFactory('TestAsyncDecrypt');
     this.contract = await contractFactory.connect(this.signers.alice).deploy();
     this.contractAddress = await this.contract.getAddress();
-    this.instances = await createInstances(this.contractAddress, ethers, this.signers);
+    this.instances = await createInstances(this.signers);
   });
 
   it('test async decrypt bool infinite loop', async function () {

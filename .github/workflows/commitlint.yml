@@ -13,10 +13,10 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
         with:
-          node-version: 18.x
+          node-version: 20.x
       - run: npm ci
       - name: Install commitlint
         run: |
-          npm install -g @commitlint/cli @commitlint/config-conventional
+          npm install -g @commitlint/cli@^18
       - name: Validate all commits from PR
         run: npx commitlint --config .github/config/commitlint.config.js --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }} --verbose
