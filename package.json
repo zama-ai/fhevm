@@ -11,7 +11,6 @@
     "lib": "lib"
   },
   "scripts": {
-    "preinstall": "node scripts/checkNodeVersion.js",
     "clean": "rimraf ./artifacts ./cache ./coverage ./types ./coverage.json && npm run typechain",
     "compile": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat compile",
     "deploy:contracts": "hardhat deploy",
