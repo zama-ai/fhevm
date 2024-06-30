@@ -1,5 +1,4 @@
 import { expect } from 'chai';
-import { ethers } from 'hardhat';
 
 import { createInstances, decrypt64 } from '../instance';
 import { getSigners, initSigners } from '../signers';
