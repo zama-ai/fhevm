@@ -22,14 +22,17 @@ describe('TestAsyncDecrypt', function () {
   });
 
   it.skip('test async decrypt bool infinite loop', async function () {
-    const balanceBefore = await ethers.provider.getBalance(this.relayerAddress);
+    const balanceBeforeR = await ethers.provider.getBalance(this.relayerAddress);
+    const balanceBeforeU = await ethers.provider.getBalance(this.signers.carol.address);
     const tx = await this.contract.connect(this.signers.carol).requestBoolInfinite({ gasLimit: 5_000_000 });
     await tx.wait();
+    const balanceAfterU = await ethers.provider.getBalance(this.signers.carol.address);
     await awaitAllDecryptionResults();
     const y = await this.contract.yBool();
     console.log(y);
-    const balanceAfter = await ethers.provider.getBalance(this.relayerAddress);
-    console.log(balanceBefore - balanceAfter);
+    const balanceAfterR = await ethers.provider.getBalance(this.relayerAddress);
+    console.log('gas paid by relayer (fulfil tx) : ', balanceBeforeR - balanceAfterR);
+    console.log('gas paid by user (request tx) : ', balanceBeforeU - balanceAfterU);
   });
 
   it.skip('test async decrypt bool would fail if maxTimestamp is above 1 day', async function () {
@@ -57,14 +60,17 @@ describe('TestAsyncDecrypt', function () {
   });
 
   it('test async decrypt bool', async function () {
-    const balanceBefore = await ethers.provider.getBalance(this.relayerAddress);
+    const balanceBeforeR = await ethers.provider.getBalance(this.relayerAddress);
+    const balanceBeforeU = await ethers.provider.getBalance(this.signers.carol.address);
     const tx2 = await this.contract.connect(this.signers.carol).requestBool({ gasLimit: 5_000_000 });
     await tx2.wait();
+    const balanceAfterU = await ethers.provider.getBalance(this.signers.carol.address);
     await awaitAllDecryptionResults();
     const y = await this.contract.yBool();
     expect(y).to.equal(true);
-    const balanceAfter = await ethers.provider.getBalance(this.relayerAddress);
-    console.log(balanceBefore - balanceAfter);
+    const balanceAfterR = await ethers.provider.getBalance(this.relayerAddress);
+    console.log('gas paid by relayer (fulfil tx) : ', balanceBeforeR - balanceAfterR);
+    console.log('gas paid by user (request tx) : ', balanceBeforeU - balanceAfterU);
   });
 
   it.skip('test async decrypt FAKE bool', async function () {
