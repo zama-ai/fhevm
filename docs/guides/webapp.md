@@ -39,35 +39,28 @@ To use the library in your project, you need to load the WASM of [TFHE](https://
 import { initFhevm } from "fhevmjs";
 
 const init = async () => {
-  await initFhevm(); // Load TFHE
+  await initFhevm(); // Load needed WASM
 };
-
-init().then((instance) => {
-  console.log(instance);
-});
 ```
 
 Once the WASM is loaded, you can now create an instance. An instance receives an object containing:
 
-- `chainId`: the chainId of the network
-- `networkUrl` (optional): the URL of the network (used to fetch the public key)
+- `chainId` (optional): the chainId of the network
+- `network` (optional): the Eip1193 object provided by `window.ethereum` (used to fetch the public key and/or chain id)
+- `networkUrl` (optional): the URL of the network (used to fetch the public key and/or chain id)
 - `publicKey` (optional): if the public key has been fetched separately (cache), you can provide it
 - `gatewayUrl` (optional): the URL of the gateway to retrieve a reencryption
+- `coprocessorUrl` (optional): the URL of the coprocessor
 
 ```javascript
 import { initFhevm, createInstance } from "fhevmjs";
 
-const createFhevmInstance = async () => {
-  return createInstance({
-    chainId: 8009,
-    networkUrl: "https://devnet.zama.ai/",
-    gatewayUrl: "https://gateway.zama.ai",
-  });
-};
-
 const init = async () => {
   await initFhevm(); // Load TFHE
-  return createFhevmInstance();
+  return createInstance({
+    network: window.ethereum,
+    gatewayUrl: "https://gateway.zama.ai/",
+  });
 };
 
 init().then((instance) => {

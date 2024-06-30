@@ -17,10 +17,12 @@ pnpm add fhevmjs
 
 An instance receives an object containing:
 
-- `chainId`: the chainId of the network
-- `networkUrl` (optional): the URL of the network (used to fetch the public key)
+- `chainId` (optional): the chainId of the network
+- `network` (optional): the Eip1193 object provided by `window.ethereum` (used to fetch the public key and/or chain id)
+- `networkUrl` (optional): the URL of the network (used to fetch the public key and/or chain id)
 - `publicKey` (optional): if the public key has been fetched separately (cache), you can provide it
 - `gatewayUrl` (optional): the URL of the gateway to retrieve a reencryption
+- `coprocessorUrl` (optional): the URL of the coprocessor
 
 ## Create an instance
 
