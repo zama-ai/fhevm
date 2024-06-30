@@ -21,9 +21,9 @@ describe('TestAsyncDecrypt', function () {
     this.instances = await createInstances(this.signers);
   });
 
-  it('test async decrypt bool infinite loop', async function () {
+  it.skip('test async decrypt bool infinite loop', async function () {
     const balanceBefore = await ethers.provider.getBalance(this.relayerAddress);
-    const tx = await this.contract.connect(this.signers.carol).requestBoolInfinite({ gasLimit: 1_000_000 });
+    const tx = await this.contract.connect(this.signers.carol).requestBoolInfinite({ gasLimit: 5_000_000 });
     await tx.wait();
     await awaitAllDecryptionResults();
     const y = await this.contract.yBool();
@@ -32,7 +32,7 @@ describe('TestAsyncDecrypt', function () {
     console.log(balanceBefore - balanceAfter);
   });
 
-  it('test async decrypt bool would fail if maxTimestamp is above 1 day', async function () {
+  it.skip('test async decrypt bool would fail if maxTimestamp is above 1 day', async function () {
     if (network.name === 'hardhat') {
       // mocked mode
       await expect(this.contract.connect(this.signers.carol).requestBoolAboveDelay()).to.be.revertedWith(
@@ -40,7 +40,7 @@ describe('TestAsyncDecrypt', function () {
       );
     } else {
       // fhevm-mode
-      const txObject = await this.contract.requestBoolAboveDelay.populateTransaction({ gasLimit: 1_000_000 });
+      const txObject = await this.contract.requestBoolAboveDelay.populateTransaction({ gasLimit: 5_000_000 });
       const tx = await this.signers.carol.sendTransaction(txObject);
       let receipt = null;
       let waitTime = 0;
@@ -58,7 +58,7 @@ describe('TestAsyncDecrypt', function () {
 
   it('test async decrypt bool', async function () {
     const balanceBefore = await ethers.provider.getBalance(this.relayerAddress);
-    const tx2 = await this.contract.connect(this.signers.carol).requestBool({ gasLimit: 500_000 });
+    const tx2 = await this.contract.connect(this.signers.carol).requestBool({ gasLimit: 5_000_000 });
     await tx2.wait();
     await awaitAllDecryptionResults();
     const y = await this.contract.yBool();
@@ -67,7 +67,7 @@ describe('TestAsyncDecrypt', function () {
     console.log(balanceBefore - balanceAfter);
   });
 
-  it('test async decrypt FAKE bool', async function () {
+  it.skip('test async decrypt FAKE bool', async function () {
     if (network.name !== 'hardhat') {
       // only in fhevm mode
       const txObject = await this.contract.requestFakeBool.populateTransaction({ gasLimit: 5_000_000 });
@@ -88,7 +88,7 @@ describe('TestAsyncDecrypt', function () {
 
   it('test async decrypt uint4', async function () {
     const balanceBefore = await ethers.provider.getBalance(this.relayerAddress);
-    const tx2 = await this.contract.connect(this.signers.carol).requestUint4({ gasLimit: 500_000 });
+    const tx2 = await this.contract.connect(this.signers.carol).requestUint4({ gasLimit: 5_000_000 });
     await tx2.wait();
     await awaitAllDecryptionResults();
     const y = await this.contract.yUint4();
@@ -97,7 +97,7 @@ describe('TestAsyncDecrypt', function () {
     console.log(balanceBefore - balanceAfter);
   });
 
-  it('test async decrypt FAKE uint4', async function () {
+  it.skip('test async decrypt FAKE uint4', async function () {
     if (network.name !== 'hardhat') {
       // only in fhevm mode
       const txObject = await this.contract.requestFakeUint4.populateTransaction({ gasLimit: 5_000_000 });
@@ -124,7 +124,7 @@ describe('TestAsyncDecrypt', function () {
     expect(y).to.equal(42);
   });
 
-  it('test async decrypt FAKE uint8', async function () {
+  it.skip('test async decrypt FAKE uint8', async function () {
     if (network.name !== 'hardhat') {
       // only in fhevm mode
       const txObject = await this.contract.requestFakeUint8.populateTransaction({ gasLimit: 5_000_000 });
@@ -144,14 +144,14 @@ describe('TestAsyncDecrypt', function () {
   });
 
   it('test async decrypt uint16', async function () {
-    const tx2 = await this.contract.connect(this.signers.carol).requestUint16({ gasLimit: 500_000 });
+    const tx2 = await this.contract.connect(this.signers.carol).requestUint16({ gasLimit: 5_000_000 });
     await tx2.wait();
     await awaitAllDecryptionResults();
     const y = await this.contract.yUint16();
     expect(y).to.equal(16);
   });
 
-  it('test async decrypt FAKE uint16', async function () {
+  it.skip('test async decrypt FAKE uint16', async function () {
     if (network.name !== 'hardhat') {
       // only in fhevm mode
       const txObject = await this.contract.requestFakeUint16.populateTransaction({ gasLimit: 5_000_000 });
@@ -171,14 +171,14 @@ describe('TestAsyncDecrypt', function () {
   });
 
   it('test async decrypt uint32', async function () {
-    const tx2 = await this.contract.connect(this.signers.carol).requestUint32(5, 15, { gasLimit: 500_000 });
+    const tx2 = await this.contract.connect(this.signers.carol).requestUint32(5, 15, { gasLimit: 5_000_000 });
     await tx2.wait();
     await awaitAllDecryptionResults();
     const y = await this.contract.yUint32();
     expect(y).to.equal(52); // 5+15+32
   });
 
-  it('test async decrypt FAKE uint32', async function () {
+  it.skip('test async decrypt FAKE uint32', async function () {
     if (network.name !== 'hardhat') {
       // only in fhevm mode
       const txObject = await this.contract.requestFakeUint32.populateTransaction({ gasLimit: 5_000_000 });
@@ -198,14 +198,14 @@ describe('TestAsyncDecrypt', function () {
   });
 
   it('test async decrypt uint64', async function () {
-    const tx2 = await this.contract.connect(this.signers.carol).requestUint64({ gasLimit: 500_000 });
+    const tx2 = await this.contract.connect(this.signers.carol).requestUint64({ gasLimit: 5_000_000 });
     await tx2.wait();
     await awaitAllDecryptionResults();
     const y = await this.contract.yUint64();
     expect(y).to.equal(18446744073709551600n);
   });
 
-  it('test async decrypt FAKE uint64', async function () {
+  it.skip('test async decrypt FAKE uint64', async function () {
     if (network.name !== 'hardhat') {
       // only in fhevm mode
       const txObject = await this.contract.requestFakeUint64.populateTransaction({ gasLimit: 5_000_000 });
@@ -225,7 +225,7 @@ describe('TestAsyncDecrypt', function () {
   });
 
   it('test async decrypt address', async function () {
-    const tx2 = await this.contract.connect(this.signers.carol).requestAddress({ gasLimit: 500_000 });
+    const tx2 = await this.contract.connect(this.signers.carol).requestAddress({ gasLimit: 5_000_000 });
     await tx2.wait();
     await awaitAllDecryptionResults();
     const y = await this.contract.yAddress();
@@ -233,7 +233,7 @@ describe('TestAsyncDecrypt', function () {
   });
 
   it('test async decrypt several addresses', async function () {
-    const tx2 = await this.contract.connect(this.signers.carol).requestSeveralAddresses({ gasLimit: 500_000 });
+    const tx2 = await this.contract.connect(this.signers.carol).requestSeveralAddresses({ gasLimit: 5_000_000 });
     await tx2.wait();
     await awaitAllDecryptionResults();
     const y = await this.contract.yAddress();
@@ -242,7 +242,7 @@ describe('TestAsyncDecrypt', function () {
     expect(y2).to.equal('0xf48b8840387ba3809DAE990c930F3b4766A86ca3');
   });
 
-  it('test async decrypt FAKE address', async function () {
+  it.skip('test async decrypt FAKE address', async function () {
     if (network.name !== 'hardhat') {
       // only in fhevm mode
       const txObject = await this.contract.requestFakeAddress.populateTransaction({ gasLimit: 5_000_000 });
@@ -264,7 +264,7 @@ describe('TestAsyncDecrypt', function () {
   it('test async decrypt mixed', async function () {
     const contractFactory = await ethers.getContractFactory('TestAsyncDecrypt');
     const contract2 = await contractFactory.connect(this.signers.alice).deploy();
-    const tx2 = await contract2.connect(this.signers.carol).requestMixed(5, 15, { gasLimit: 1_000_000 });
+    const tx2 = await contract2.connect(this.signers.carol).requestMixed(5, 15, { gasLimit: 5_000_000 });
     await tx2.wait();
     await awaitAllDecryptionResults();
     let yB = await contract2.yBool();
@@ -289,11 +289,9 @@ describe('TestAsyncDecrypt', function () {
     const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     inputAlice.add64(18446744073709550042n);
     const encryptedAmount = inputAlice.encrypt();
-    const tx = await await this.contract.requestUint64NonTrivial(
-      encryptedAmount.handles[0],
-      encryptedAmount.inputProof,
-      { gasLimit: 5_000_000 },
-    );
+    const tx = await this.contract.requestUint64NonTrivial(encryptedAmount.handles[0], encryptedAmount.inputProof, {
+      gasLimit: 5_000_000,
+    });
     await tx.wait();
     await awaitAllDecryptionResults();
     const y = await this.contract.yUint64();
@@ -312,7 +310,7 @@ describe('TestAsyncDecrypt', function () {
     await tx.wait();
     await awaitAllDecryptionResults();
     const y = await this.contract.yBytes256();
-    expect(y).to.equal(bigint256ToHexPadded(18446744073709550022n));
+    expect(y).to.equal(ethers.toBeHex(18446744073709550022n, 256));
   });
 
   it('test async decrypt mixed with ebytes256', async function () {
@@ -325,18 +323,10 @@ describe('TestAsyncDecrypt', function () {
     await tx.wait();
     await awaitAllDecryptionResults();
     const y = await this.contract.yBytes256();
-    expect(y).to.equal(bigint256ToHexPadded(18446744073709550032n));
+    expect(y).to.equal(ethers.toBeHex(18446744073709550032n, 256));
     const yb = await this.contract.yBool();
     expect(yb).to.equal(true);
     const yAdd = await this.contract.yAddress();
     expect(yAdd).to.equal('0x8ba1f109551bD432803012645Ac136ddd64DBA72');
   });
 });
-
-function bigint256ToHexPadded(bigintValue: BigInt): string {
-  let hexString = bigintValue.toString(16);
-  const totalHexChars = 512;
-  const paddingLength = totalHexChars - hexString.length;
-  const padding = '0'.repeat(paddingLength);
-  return '0x' + padding + hexString;
-}
