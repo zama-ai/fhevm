@@ -24,7 +24,7 @@ function myExample(
 On client side for the previous function, using [fhevmjs](https://github.com/zama-ai/fhevmjs), the code will be:
 
 ```javascript
-const instance = createInstance({ networkUrl: "https://devnet.zama.ai" });
+const instance = await createInstance({ networkUrl: "http://localhost:8545" });
 
 const input = instance.createEncryptedInput(contractAddress, userAddress);
 const { inputs, data } = input.add64(64).addBool(true).add8(4).encrypt(); // Encrypt the three parameters
