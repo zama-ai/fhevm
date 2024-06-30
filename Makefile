@@ -17,7 +17,7 @@ SUDO := $(shell which sudo)
 
 # This version must the same as in docker-compose-full.yml
 # TODO add check
-KMS_DEV_VERSION ?= v0.6.0
+KMS_DEV_VERSION ?= v0.7.0
 
 FHEVM_SOLIDITY_REPO ?= fhevm
 FHEVM_SOLIDITY_PATH ?= $(WORKDIR)/$(FHEVM_SOLIDITY_REPO)
