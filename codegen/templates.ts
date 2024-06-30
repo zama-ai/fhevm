@@ -1302,10 +1302,6 @@ library Impl {
       result = (control == 1) ? ifTrue : ifFalse;
   }
 
-  function select(uint256 control, uint256 ifTrue, uint256 ifFalse) internal pure returns (uint256 result) {
-      result = (control == 1) ? ifTrue : ifFalse;
-  }
-
   function optReq(uint256 ciphertext) internal view {
       this; // silence state mutability warning
       require(ciphertext == 1, "transaction execution reverted");
@@ -1316,7 +1312,7 @@ library Impl {
       key = hex"0123456789ABCDEF";
   }
 
-  function verify(einput inputHandle,
+  function verify(bytes32 inputHandle,
         bytes memory inputProof,
         uint8 toType) internal returns (uint256 result) {
       // TODO: fix implementation
@@ -1381,6 +1377,23 @@ library Impl {
     // If not a power of 2, we might have to do something else (though might not matter
     // much as this is a mock).
     result = rand(randType) % upperBound;
+  }
+
+  function allowTransient(uint256 handle, address account) internal {
+    // Not yet implemented
+  }
+
+  function allow(uint256 handle, address account) internal {
+    // Not yet implemented
+  }
+
+  function cleanTransientStorage() internal {
+    // Not yet implemented
+  }
+
+  function isAllowed(uint256 handle, address account) internal view returns (bool) {
+    // Not yet implemented
+    return true;
   }
 `);
 
