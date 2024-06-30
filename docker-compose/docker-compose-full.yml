@@ -3,14 +3,14 @@ name: zama-kms
 services:
 
   kv-store:
-    image: ghcr.io/zama-ai/kms-blockchain-gateway-dev:v0.5.0
+    image: ghcr.io/zama-ai/kms-blockchain-gateway-dev:v0.6.0
     command:
       - "kv_store"
     ports:
       - "8088:8088"
 
   blockchain-validator:
-    image: ghcr.io/zama-ai/kms-blockchain-asc-dev:v0.5.0
+    image: ghcr.io/zama-ai/kms-blockchain-asc-dev:v0.6.0
     ports:
       - "36656:26656"
       - "36657:26657"
@@ -25,7 +25,7 @@ services:
       start_period: 10s
 
   connector:
-    image: ghcr.io/zama-ai/kms-blockchain-connector-dev:v0.5.0
+    image: ghcr.io/zama-ai/kms-blockchain-connector-dev:v0.6.0
     command:
       - "kms-blockchain-connector"
     environment:
@@ -43,7 +43,7 @@ services:
         condition: service_healthy
 
   core:
-    image: ghcr.io/zama-ai/kms-service-dev:v0.5.0
+    image: ghcr.io/zama-ai/kms-service-dev:v0.6.0
     ports:
       - "50051:50051"
     healthcheck:
@@ -54,7 +54,7 @@ services:
       start_period: 10s
 
   gateway:
-    image: ghcr.io/zama-ai/kms-blockchain-gateway-dev:v0.5.0
+    image: ghcr.io/zama-ai/kms-blockchain-gateway-dev:v0.6.0
     ports:
       - "7077:7077"
     command:
@@ -82,7 +82,7 @@ services:
   validator:
     environment:
       - TFHE_EXECUTOR_CONTRACT_ADDRESS=0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c
-    image: ghcr.io/zama-ai/ethermint-node:v0.5.0
+    image: ghcr.io/zama-ai/ethermint-node:v0.6.0
     ports:
       - "26656-26657:26656-26657"
       - "8545-8546:8545-8546"
