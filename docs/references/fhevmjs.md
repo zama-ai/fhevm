@@ -23,8 +23,9 @@ initFhevm().then(() => {
 
 This function returns an instance of fhevmjs, which accepts an object containing:
 
-- `chainId`: the chainId of the network
-- `networkUrl` (optional): the URL of the network (used to fetch the public key)
+- `chainId` (optional): the chainId of the network
+- `network` (optional): the Eip1193 object provided by `window.ethereum` (used to fetch the public key and/or chain id)
+- `networkUrl` (optional): the URL of the network (used to fetch the public key and/or chain id)
 - `publicKey` (optional): if the public key has been fetched separately (cache), you can provide it
 - `gatewayUrl` (optional): the URL of the gateway to retrieve a reencryption
 - `coprocessorUrl` (optional): the URL of the coprocessor
@@ -33,8 +34,18 @@ This function returns an instance of fhevmjs, which accepts an object containing
 import { createInstance } from "fhevmjs";
 
 const instance = await createInstance({
-  chainId: 8009,
   networkUrl: "https://devnet.zama.ai/",
+  gatewayUrl: "https://gateway.zama.ai/",
+});
+```
+
+Using `window.ethereum` object:
+
+```javascript
+import { createInstance } from "fhevmjs";
+
+const instance = await createInstance({
+  network: window.ethereum,
   gatewayUrl: "https://gateway.zama.ai/",
 });
 ```
