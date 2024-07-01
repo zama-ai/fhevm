@@ -39,7 +39,7 @@ services:
     depends_on:
       kms-validator:
         condition: service_healthy
-      core:
+      kms-core:
         condition: service_healthy
 
   kms-core:
@@ -63,8 +63,8 @@ services:
       - ../default.toml:/app/gateway/config/default.toml:Z
     environment:
       - GATEWAY__ETHEREUM__LISTENER_TYPE=FHEVM_V1_1
-      - GATEWAY__ETHEREUM__WSS_URL=ws://validator:8546
-      - GATEWAY__ETHEREUM__HTTP_URL=http://validator:8545
+      - GATEWAY__ETHEREUM__WSS_URL=ws://fhevm-validator:8546
+      - GATEWAY__ETHEREUM__HTTP_URL=http://fhevm-validator:8545
       - GATEWAY__ETHEREUM__FHE_LIB_ADDRESS=000000000000000000000000000000000000005d
       - GATEWAY__ETHEREUM__ORACLE_PREDEPLOY_ADDRESS=c8c9303Cd7F337fab769686B593B87DC3403E0ce
       - GATEWAY__KMS__ADDRESS=http://kms-validator:9090
@@ -74,7 +74,7 @@ services:
       - GATEWAY__ETHEREUM__RELAYER_KEY=7ec931411ad75a7c201469a385d6f18a325d4923f9f213bd882bbea87e160b67
       - RUST_BACKTRACE=1
     depends_on:
-      validator:
+      fhevm-validator:
         condition: service_healthy
       kms-validator:
         condition: service_healthy
