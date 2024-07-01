@@ -3,14 +3,14 @@ name: zama-kms
 services:
 
   kv-store:
-    image: ghcr.io/zama-ai/kms-blockchain-gateway-dev:3057a02  
+    image: ghcr.io/zama-ai/kms-blockchain-gateway-dev:v0.7.0
     command:
       - "kv_store"
     ports:
       - "8088:8088"
 
   blockchain-validator:
-    image: ghcr.io/zama-ai/kms-blockchain-asc-dev:50872c4
+    image: ghcr.io/zama-ai/kms-blockchain-asc-dev:v0.7.0
     ports:
       - "36656:26656"
       - "36657:26657"
@@ -25,7 +25,7 @@ services:
       start_period: 10s
 
   connector:
-    image: ghcr.io/zama-ai/kms-blockchain-connector-dev:50872c4
+    image: ghcr.io/zama-ai/kms-blockchain-connector-dev:v0.7.0
     command:
       - "kms-blockchain-connector"
     environment:
@@ -43,7 +43,7 @@ services:
         condition: service_healthy
 
   core:
-    image: ghcr.io/zama-ai/kms-service-dev:3057a02 
+    image: ghcr.io/zama-ai/kms-service-dev:v0.7.0
     ports:
       - "50051:50051"
     healthcheck:
@@ -54,7 +54,7 @@ services:
       start_period: 10s
 
   gateway:
-    image: ghcr.io/zama-ai/kms-blockchain-gateway-dev:3057a02  
+    image: ghcr.io/zama-ai/kms-blockchain-gateway-dev:v0.7.0
     ports:
       - "7077:7077"
     command:
@@ -64,6 +64,7 @@ services:
     environment:
       - GATEWAY__ETHEREUM__LISTENER_TYPE=FHEVM_V1_1
       - GATEWAY__ETHEREUM__WSS_URL=ws://validator:8546
+      - GATEWAY__ETHEREUM__HTTP_URL=http://validator:8545
       - GATEWAY__ETHEREUM__FHE_LIB_ADDRESS=000000000000000000000000000000000000005d
       - GATEWAY__ETHEREUM__ORACLE_PREDEPLOY_ADDRESS=c8c9303Cd7F337fab769686B593B87DC3403E0ce
       - GATEWAY__KMS__ADDRESS=http://blockchain-validator:9090
@@ -96,7 +97,3 @@ services:
       timeout: 3s
       retries: 5
       start_period: 20s
-
-
-
-
