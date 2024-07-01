@@ -1,9 +1,50 @@
-# Demo of fhEVM + KMS (centralized)
+<p align="center">
+<!-- product name logo -->
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="KMS-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="KMS-light.png">
+  <img width=600 alt="Zama KMS">
+</picture>
+</p>
 
-This documentation purpose is to show how to run fhEVM for FHE execution and KMS for async decryption and reencryption. 
+
+<p align="center">
+  <a href=""> 📒 White paper</a> | <a href="https://github.com/zama-ai/kms-whitepaper"> 📚 The KMS Whitepaper by Zama</a>
+</p>
 
 
- ## Key generation
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-BSD--3--Clause--Clear-%23ffb243?style=flat-square"></a>
+  <a href="https://github.com/zama-ai/bounty-program"><img src="https://img.shields.io/badge/Contribute-Zama%20Bounty%20Program-%23ffd208?style=flat-square"></a>
+</p>
+
+## About
+
+
+### What is the Zama KMS for fhEVM
+The Zama KMS is a fully decentralized key management solution for TFHE, more specifically [TFHE-rs](https://github.com/zama-ai/tfhe-rs), based on a maliciously secure and robust [MPC protocol](https://eprint.iacr.org/2023/815).
+
+The system facilitates this through a the use of blockchain which provides a means of fulfilling payments to the MPC parties, along with providing an immutable audit log.
+
+Interaction with the same KMS will happen either through an external Ethereum blockchain (fhEVM), providing an API via a smart contract, or through a gateway service.
+
+### Main features
+Please consult the [design specification](design.md) for details.
+
+### Implementation
+
+The KMS is implemented as a gRPC service using the [tonic](https://github.com/hyperium/tonic) crate.
+Communication between full nodes and the KMS service is defined by [protobuf](/proto/kms.proto) messages.
+The rest of the communication is defined by existing standards and uses JSON-RPC.
+For the light client, we currently use CometBFT's [light](https://pkg.go.dev/github.com/cometbft/cometbft/light) package, which provides a service that connects to any CometBFT full node to serve trusted state roots on-demand.
+The light client package handles the logic of sequentially verifying block headers.
+
+## Installation
+Docker images that a ready for use can be found [here](https://github.com/zama-ai/kms/actions/workflows/publish-docker-image.yml).
+
+## Getting started
+
+### Key generation
 
  Please update `KEY_GEN` value in `.env`. Default is `false`
 
@@ -15,7 +56,7 @@ This documentation purpose is to show how to run fhEVM for FHE execution and KMS
 
 
 
-## Fast run and test
+### Fast run and test
 
 Execute the following commands:
 
@@ -119,7 +160,7 @@ Initialize and generate/copy FHE keys based on `KEY_GEN` value in `.env`.
 > [!NOTE]  
 > If KEY_GEN is set to `false`, ensure to have 15 GB of empty RAM to generate the keys. On Mac, do not forget to increase the allocated RAM to docker process. 
 
-## Run fhEVM + KMS components
+### Run fhEVM + KMS components
 
 ```bash
 make run-full
@@ -132,21 +173,21 @@ docker logs zama-kms-gateway-1 -f
 You should see the following docker images:
 
 ```
-zama-kms-gateway-1		            ghcr.io/zama-ai/kms-blockchain-gateway-dev:aa90d98
-zama-kms-connector-1		        ghcr.io/zama-ai/kms-blockchain-connector-dev:50872c4
-zama-kms-validator-1		        ghcr.io/zama-ai/ethermint-node:v0.5.0
-zama-kms-core-1		                ghcr.io/zama-ai/kms-service-dev:aa90d98
-zama-kms-kv-store-1		            ghcr.io/zama-ai/kms-blockchain-gateway-dev:aa90d98
-zama-kms-blockchain-validator-1		ghcr.io/zama-ai/kms-blockchain-asc-dev:50872c4
+zama-kms-gateway-1                ghcr.io/zama-ai/kms-blockchain-gateway-dev:aa90d98
+zama-kms-connector-1            ghcr.io/zama-ai/kms-blockchain-connector-dev:50872c4
+zama-kms-validator-1            ghcr.io/zama-ai/ethermint-node:v0.5.0
+zama-kms-core-1                   ghcr.io/zama-ai/kms-service-dev:aa90d98
+zama-kms-kv-store-1               ghcr.io/zama-ai/kms-blockchain-gateway-dev:aa90d98
+zama-kms-blockchain-validator-1   ghcr.io/zama-ai/kms-blockchain-asc-dev:50872c4
 ```
 
-## Stop fhEVM + KMS 
+### Stop fhEVM + KMS 
 
 ```bash
 make stop-full
 ```
 
-## Fresh start
+### Fresh start
 
 ```bash
 make clean
@@ -156,7 +197,7 @@ make clean
 > FHE keys are in res/keys folder, delete them to regenerate new keys at ```make init-ethermint-node``` step.
 
 
-## Test using fhevm
+### Test using fhevm
 
 ```bash
 # if not executed before
@@ -174,4 +215,76 @@ make e2e-test
 ```
 
 
+### A simple example
+For an example of usage consult the [technical specification](https://github.com/zama-ai/tech-spec/tree/main/kms).
 
+
+## Resources
+
+### Theory
+- [Noah's Ark: Efficient Threshold-FHE Using Noise Flooding](https://eprint.iacr.org/2023/815)
+
+### Whitepaper 
+- [KMS Whitepaper](https://github.com/zama-ai/kms-whitepaper)
+
+### Technical specification
+- [Tech spec](https://github.com/zama-ai/tech-spec/tree/main/kms)
+
+### Docker images and high level usage
+- [fhEVM integration](https://github.com/zama-ai/fhevm-L1-demo)
+
+## Working with KMS
+
+### Disclaimers
+
+#### Audits
+The Zama KMS is not yet audited and should be considered in the early alpha stage. Known bugs and security issues are present as reflected by issue tracking.
+
+#### Parameters
+The default parameters for the Zama KMS are chosen to ensure a failure probability of 2^-64 and symmetric equivalent security of 128 bits.
+
+#### Side-channel attacks
+
+Mitigation for side-channel attacks has not been implemented directly in the Zama KMS. The smart contract of the blockchain from which calls originate is responsible to ensure the validity of calls. In particular that new ciphertexts are correctly constructed (through a proof-of-knowledge).
+
+### Citations
+To cite KMS in academic papers, please use the following entry:
+```
+@Misc{zama-kms,
+  title={{Zama KMS: A Pure Rust Implementation of a Threshold Key Management System for TFHE}},
+  author={Zama},
+  year={2024},
+  note={\url{https://github.com/zama-ai/kms-core}},
+}
+```
+
+### License
+This software is distributed under the **BSD-3-Clause-Clear** license. Read [this](LICENSE.txt) for more details.
+
+#### FAQ
+**Is Zama’s technology free to use?**
+>Zama’s libraries are free to use under the BSD 3-Clause Clear license only for development, research, prototyping, and experimentation purposes. However, for any commercial use of Zama's open source code, companies must purchase Zama’s commercial patent license.
+>
+>Everything we do is open source and we are very transparent on what it means for our users, you can read more about how we monetize our open source products at Zama in [this blog post](https://www.zama.ai/post/open-source).
+
+**What do I need to do if I want to use Zama’s technology for commercial purposes?**
+>To commercially use Zama’s technology you need to be granted Zama’s patent license. Please contact us hello@zama.ai for more information.
+
+**Do you file IP on your technology?**
+>Yes, all Zama’s technologies are patented.
+
+**Can you customize a solution for my specific use case?**
+>We are open to collaborating and advancing the FHE space with our partners. If you have specific needs, please email us at hello@zama.ai.
+
+
+## Support
+
+<a target="_blank" href="https://community.zama.ai">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/zama-ai/tfhe-rs/assets/157474013/08656d0a-3f44-4126-b8b6-8c601dff5380">
+  <source media="(prefers-color-scheme: light)" srcset="https://github.com/zama-ai/tfhe-rs/assets/157474013/1c9c9308-50ac-4aab-a4b9-469bb8c536a4">
+  <img alt="Support">
+</picture>
+</a>
+
+🌟 If you find this project helpful or interesting, please consider giving it a star on GitHub! Your support helps to grow the community and motivates further development.
