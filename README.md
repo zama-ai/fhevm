@@ -99,13 +99,14 @@ cd work_dir/fhevm & npx hardhat test --grep 'test async decrypt several addresse
 docker logs zama-dev-gateway-1 -f 
 
 # On the second try you should see
+# 2024-07-04T09:29:06.649194Z  INFO gateway::events::manager: ⭐ event_decryption: 1
+# 2024-07-04T09:29:06.649215Z  INFO gateway::events::manager: Handled event decryption: 1
+# 2024-07-04T09:29:06.649255Z  INFO gateway::blockchain::handlers: 🧵 decrypt thread started
+# 2024-07-04T09:29:06.654205Z  INFO gateway::blockchain::ciphertext_provider: Getting ciphertext for ct_handle: "aa9f8f90ebf0fa8e30caee92f0b97e158f1ec659b363101d07beac9b0cc90200"
+# 2024-07-04T09:29:06.667907Z  INFO gateway::blockchain::kms_blockchain: 📦 Stored ciphertext, handle: 00008138b65173b5c57fc98d0fce54e5ff10635127e526144ffbe21d7099e3a1e1516574
+# 2024-07-04T09:29:06.667927Z  INFO gateway::blockchain::kms_blockchain: 🍊 Decrypting ciphertext of size: 33080
+# 2024-07-04T09:29:06.670033Z  INFO execute_contract: kms_blockchain_client::client: Body Raw bytes length: 609
 
-# 2024-06-27T16:59:35.432399Z  INFO gateway::events::manager: ⭐ event_decryption: 1
-# 2024-06-27T16:59:35.432410Z  INFO gateway::events::manager: Handled event decryption: 1
-# 2024-06-27T16:59:35.432460Z  INFO gateway::blockchain::ciphertext_provider: Getting ciphertext for ct_handle: "aa9f8f90ebf0fa8e30caee92f0b97e158f1ec659b363101d07beac9b0cc90200"
-# 2024-06-27T16:59:35.436144Z  INFO gateway::blockchain::handlers: 🚀 request_id: 1, fhe_type: euint8
-# 2024-06-27T16:59:35.439802Z  INFO gateway::blockchain::kms_blockchain: 📦 Stored ciphertext, handle: 00008138b65173b5c57fc98d0fce54e5ff10635127e526144ffbe21d7099e3a1e1516574
-# 2024-06-27T16:59:35.439813Z  INFO gateway::blockchain::kms_blockchain: 🍊 Decrypting ciphertext of size: 33080
 
 # Check the logs for the node
 docker logs zama-dev-fhevm-validator-1 -f
@@ -183,12 +184,12 @@ docker logs zama-dev-gateway-1 -f
 You should see the following docker images:
 
 ```
-zama-dev-gateway-1		            ghcr.io/zama-ai/kms-blockchain-gateway-dev:aa90d98
-zama-dev-kms-connector-1		    ghcr.io/zama-ai/kms-blockchain-connector-dev:50872c4
-zama-dev-fhevm-validator-1		    ghcr.io/zama-ai/ethermint-node:v0.5.0
-zama-dev-kms-core-1		            ghcr.io/zama-ai/kms-service-dev:aa90d98
-zama-dev-gateway-store-1		    ghcr.io/zama-ai/kms-blockchain-gateway-dev:aa90d98
-zama-dev-kms-validator-1		    ghcr.io/zama-ai/kms-blockchain-asc-dev:50872c4
+zama-dev-gateway-1	ghcr.io/zama-ai/kms-blockchain-gateway-dev:v0.7.1
+zama-dev-connector-1	ghcr.io/zama-ai/kms-blockchain-connector-dev:v0.7.1
+zama-dev-fhevm-validator-1	ghcr.io/zama-ai/ethermint-node:v0.5.0
+zama-dev-kms-core-1	ghcr.io/zama-ai/kms-service-dev:v0.7.1
+zama-dev-kms-validator-1	ghcr.io/zama-ai/kms-blockchain-asc-dev:v0.7.1
+zama-dev-gateway-store-1	ghcr.io/zama-ai/kms-blockchain-gateway-dev:v0.7.1
 ```
 
 ### Stop fhEVM-native + KMS 
