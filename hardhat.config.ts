@@ -1,17 +1,16 @@
-import '@nomicfoundation/hardhat-toolbox';
 import dotenv from 'dotenv';
 import * as fs from 'fs';
-import 'hardhat-deploy';
-import 'hardhat-preprocessor';
-import { TASK_PREPROCESS } from 'hardhat-preprocessor';
-import type { HardhatUserConfig, extendProvider } from 'hardhat/config';
-import { task } from 'hardhat/config';
-import type { NetworkUserConfig } from 'hardhat/types';
 import { resolve } from 'path';
 import * as path from 'path';
 
+import '@nomicfoundation/hardhat-toolbox';
+import 'hardhat-deploy';
+import 'hardhat-preprocessor';
+import { TASK_PREPROCESS } from 'hardhat-preprocessor';
+import { task } from 'hardhat/config';
+import type { HardhatUserConfig, extendProvider } from 'hardhat/config';
+
 import CustomProvider from './CustomProvider';
-// Adjust the import path as needed
 import './tasks/accounts';
 import './tasks/getEthereumAddress';
 import './tasks/mint';
@@ -19,6 +18,7 @@ import './tasks/taskDeploy';
 import './tasks/taskGatewayRelayer';
 import './tasks/taskIdentity';
 import './tasks/taskTFHE';
+
 
 extendProvider(async (provider, config, network) => {
   const newProvider = new CustomProvider(provider);
