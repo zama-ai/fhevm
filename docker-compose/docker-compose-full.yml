@@ -1,15 +1,15 @@
-name: zama-kms
+name: zama-dev
 
 services:
 
-  kv-store:
+  gateway-store:
     image: ghcr.io/zama-ai/kms-blockchain-gateway-dev:v0.7.1
     command:
       - "kv_store"
     ports:
       - "8088:8088"
 
-  blockchain-validator:
+  kms-validator:
     image: ghcr.io/zama-ai/kms-blockchain-asc-dev:v0.7.1
     ports:
       - "36656:26656"
@@ -29,20 +29,20 @@ services:
     command:
       - "kms-blockchain-connector"
     environment:
-      - ASC_CONN__BLOCKCHAIN__ADDRESSES=http://blockchain-validator:9090
-      - ASC_CONN__CORE__ADDRESSES=http://core:50051
-      - ASC_CONN__STORE__URL=http://kv-store:8088
+      - ASC_CONN__BLOCKCHAIN__ADDRESSES=http://kms-validator:9090
+      - ASC_CONN__CORE__ADDRESSES=http://kms-core:50051
+      - ASC_CONN__STORE__URL=http://gateway-store:8088
       - ASC_CONN__CORE__TIMEOUT_CONFIG__DECRYPTION__INITIAL_WAIT_TIME=1
       - ASC_CONN__CORE__TIMEOUT_CONFIG__DECRYPTION__RETRY_INTERVAL=1
       - ASC_CONN__CORE__TIMEOUT_CONFIG__REENCRYPTION__INITIAL_WAIT_TIME=1
       - ASC_CONN__CORE__TIMEOUT_CONFIG__REENCRYPTION__RETRY_INTERVAL=1
     depends_on:
-      blockchain-validator:
+      kms-validator:
         condition: service_healthy
-      core:
+      kms-core:
         condition: service_healthy
 
-  core:
+  kms-core:
     image: ghcr.io/zama-ai/kms-service-dev:v0.7.1
     ports:
       - "50051:50051"
@@ -63,23 +63,23 @@ services:
       - ../default.toml:/app/gateway/config/default.toml:Z
     environment:
       - GATEWAY__ETHEREUM__LISTENER_TYPE=FHEVM_V1_1
-      - GATEWAY__ETHEREUM__WSS_URL=ws://validator:8546
-      - GATEWAY__ETHEREUM__HTTP_URL=http://validator:8545
+      - GATEWAY__ETHEREUM__WSS_URL=ws://fhevm-validator:8546
+      - GATEWAY__ETHEREUM__HTTP_URL=http://fhevm-validator:8545
       - GATEWAY__ETHEREUM__FHE_LIB_ADDRESS=000000000000000000000000000000000000005d
       - GATEWAY__ETHEREUM__ORACLE_PREDEPLOY_ADDRESS=c8c9303Cd7F337fab769686B593B87DC3403E0ce
-      - GATEWAY__KMS__ADDRESS=http://blockchain-validator:9090
+      - GATEWAY__KMS__ADDRESS=http://kms-validator:9090
       - GATEWAY__KMS__KEY_ID=408d8cbaa51dece7f782fe04ba0b1c1d017b1088
-      - GATEWAY__STORAGE__URL=http://kv-store:8088
-      - ASC_CONN__BLOCKCHAIN__ADDRESSES=http://blockchain-validator:9090
+      - GATEWAY__STORAGE__URL=http://gateway-store:8088
+      - ASC_CONN__BLOCKCHAIN__ADDRESSES=http://kms-validator:9090
       - GATEWAY__ETHEREUM__RELAYER_KEY=7ec931411ad75a7c201469a385d6f18a325d4923f9f213bd882bbea87e160b67
       - RUST_BACKTRACE=1
     depends_on:
-      validator:
+      fhevm-validator:
         condition: service_healthy
-      blockchain-validator:
+      kms-validator:
         condition: service_healthy
 
-  validator:
+  fhevm-validator:
     environment:
       - TFHE_EXECUTOR_CONTRACT_ADDRESS=0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c
     image: ghcr.io/zama-ai/ethermint-node:v0.5.0

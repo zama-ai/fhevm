@@ -78,7 +78,7 @@ init-ethermint-node:
 	@$(MAKE) init-ethermint-node-from-registry
 
 init-ethermint-node-from-registry:
-	@docker compose -f docker-compose/docker-compose-full.yml run validator bash /config/setup.sh
+	@docker compose -f docker-compose/docker-compose-full.yml run fhevm-validator bash /config/setup.sh
 	$(MAKE) change-running-node-owner
 	$(MAKE) generate-fhe-keys-registry
 

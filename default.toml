@@ -2,10 +2,10 @@ tick_interval_secs = 1
 storage_path = "./temp/events.toml"
 
 [oracle]
-addresses = ["http://validator:26657"]
+addresses = ["http://fhevm-validator:26657"]
 
 [blockchain]
-addresses = ["http://blockchain-validator:9090"]
+addresses = ["http://kms-validator:9090"]
 contract = "wasm14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9s0phg4d"
 
 [blockchain.signkey]

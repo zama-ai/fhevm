@@ -1,7 +1,7 @@
 version: '3'
 
 services:
-  validator:
+  fhevm-validator:
     # To avoid panic this env variable is added at run and not init (calling setup.sh)
     environment:
       - FHEVM_GO_KEYS_DIR=/root/.ethermintd/zama/keys/network-fhe-keys
