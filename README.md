@@ -26,9 +26,7 @@
 
 The purpose of this repository is to demonstrate the integration between fhEVM-native and a fully dockerized centralized KMS.
 
-The KMS encompasses all sub-components, including the gateway, KMS blockchain, and centralized KMS backend. This is still an early version with support for (asynchronous) decryption, and support for reencryption is coming soon.
-
-We are still working on reencryption and are making good progress. 🔧 Since this is a fully Dockerized version, we will provide you with a more robust, tested, and feature-rich version next week. 🚀
+The KMS encompasses all sub-components, including the gateway, KMS blockchain, and centralized KMS backend. This is still an early version with support for (asynchronous) decryption, and reencryption.
 
 
 ### What is the Zama KMS for fhEVM
