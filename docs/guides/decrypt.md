@@ -3,7 +3,7 @@
 The decryption operation is asynchronous. To use it, your contract must extend the `GatewayCaller` contract. This will import automatically the `Gateway` solidity library as well. See the following example:
 
 ```solidity
-pragma solidity ^0.8.25;
+pragma solidity ^0.8.24;
 
 import "fhevm/lib/TFHE.sol";
 import "fhevm/gateway/GatewayCaller.sol";
@@ -127,7 +127,7 @@ function getParamsUint256(uint256 requestID) internal;
 For example, see this snippet where we add two `uint256`s during the request call, to make them available later during the callback:
 
 ```solidity
-pragma solidity ^0.8.25;
+pragma solidity ^0.8.24;
 
 import "../lib/TFHE.sol";
 import "../gateway/GatewayCaller.sol";

@@ -65,7 +65,7 @@ export function implSol(ctx: CodegenContext, operators: Operator[]): string {
   res.push(`
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity ^0.8.25;
+pragma solidity ^0.8.24;
 
 import "./TFHE.sol";
 import "./FHEVMCoprocessorAddress.sol";
@@ -104,7 +104,7 @@ export function fhevmLibSol(operators: Operator[]): string {
   res.push(`
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity ^0.8.25;
+pragma solidity ^0.8.24;
 
 ${fheLibInterface}
 
@@ -121,7 +121,7 @@ export function tfheExecutorSol(ctx: CodegenContext, operators: Operator[]): str
   res.push(`
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity ^0.8.25;
+pragma solidity ^0.8.24;
 
 import "./ACL.sol";
 import "./ACLAddress.sol";
@@ -331,7 +331,7 @@ export function tfheSol(
 
   res.push(`// SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity ^0.8.25;
+pragma solidity ^0.8.24;
 
 ${commonSolLib()}
 
@@ -492,8 +492,8 @@ function tfheEncryptedOperator(
     operator.returnType == ReturnType.Uint
       ? `euint${outputBits}`
       : operator.returnType == ReturnType.Ebool
-      ? `ebool`
-      : assert(false, 'Unknown return type');
+        ? `ebool`
+        : assert(false, 'Unknown return type');
   const returnTypeOverload: ArgumentType =
     operator.returnType == ReturnType.Uint ? ArgumentType.EUint : ArgumentType.Ebool;
   const scalarFlag = operator.hasEncrypted && operator.hasScalar ? ', false' : '';
@@ -546,8 +546,8 @@ function tfheScalarOperator(
     operator.returnType == ReturnType.Uint
       ? `euint${outputBits}`
       : operator.returnType == ReturnType.Ebool
-      ? `ebool`
-      : assert(false, 'Unknown return type');
+        ? `ebool`
+        : assert(false, 'Unknown return type');
   const returnTypeOverload = operator.returnType == ReturnType.Uint ? ArgumentType.EUint : ArgumentType.Ebool;
   var scalarFlag = operator.hasEncrypted && operator.hasScalar ? ', true' : '';
   const leftOpName = operator.leftScalarInvertOp ?? operator.name;
@@ -1179,7 +1179,7 @@ export function implSolMock(ctx: CodegenContext, operators: Operator[]): string 
   res.push(`
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity ^0.8.25;
+pragma solidity ^0.8.24;
 
 import "./TFHE.sol";
 

@@ -2,6 +2,7 @@ import '@nomicfoundation/hardhat-toolbox';
 import dotenv from 'dotenv';
 import * as fs from 'fs';
 import 'hardhat-deploy';
+import 'hardhat-ignore-warnings';
 import 'hardhat-preprocessor';
 import { TASK_PREPROCESS } from 'hardhat-preprocessor';
 import type { HardhatUserConfig, extendProvider } from 'hardhat/config';
@@ -214,7 +215,7 @@ const config: HardhatUserConfig = {
     tests: './test',
   },
   solidity: {
-    version: '0.8.25',
+    version: '0.8.24',
     settings: {
       metadata: {
         // Not including the metadata hash
@@ -228,6 +229,11 @@ const config: HardhatUserConfig = {
         runs: 800,
       },
       evmVersion: 'cancun',
+    },
+  },
+  warnings: {
+    '*': {
+      'transient-storage': false,
     },
   },
   typechain: {
