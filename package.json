@@ -81,6 +81,8 @@
     "hardhat": "^2.22.5",
     "hardhat-deploy": "^0.11.29",
     "hardhat-gas-reporter": "^1.0.2",
+    "hardhat-ignore-warnings": "^0.2.11",
+    "hardhat-preprocessor": "^0.1.5",
     "lodash": "^4.17.21",
     "mocha": "^10.1.0",
     "prettier": "^3.0.0",
@@ -93,8 +95,6 @@
     "typescript": "^5.1.6"
   },
   "dependencies": {
-    "@openzeppelin/contracts": "^5.0.1",
-    "hardhat-ignore-warnings": "^0.2.11",
-    "hardhat-preprocessor": "^0.1.5"
+    "@openzeppelin/contracts": "^5.0.1"
   }
 }
