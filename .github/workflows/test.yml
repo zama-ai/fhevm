@@ -20,6 +20,7 @@ jobs:
           node-version: ${{ matrix.node-version }}
       - run: cp .env.example .env
       - run: npm ci --include=optional
+      - run: npm install solidity-comments-linux-x64-gnu
       - run: npm run prettier:check
       - name: "npm CI test"
         run: |
