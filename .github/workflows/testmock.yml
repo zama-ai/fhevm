@@ -19,7 +19,7 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
       - run: cp .env.example .env
-      - run: npm ci
+      - run: npm ci --include=optional
       - name: "npm CI test"
         run: |
           # sometimes not created and is not tailed
