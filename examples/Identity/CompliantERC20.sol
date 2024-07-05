@@ -3,7 +3,6 @@
 pragma solidity ^0.8.24;
 
 import "../../lib/TFHE.sol";
-import "../../abstracts/Reencrypt.sol";
 import "../EncryptedERC20.sol";
 import "./ERC20Rules.sol";
 import "./IdentityRegistry.sol";
