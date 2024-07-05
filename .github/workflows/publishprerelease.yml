@@ -8,14 +8,14 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
-      id-token: 'write'
+      id-token: "write"
     steps:
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
       - uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
         with:
           node-version: 20.x
       - run: cp .env.example .env
-      - run: npm ci
+      - run: npm ci --include=optional
       - run: npm run compile
       - uses: JS-DevTools/npm-publish@19c28f1ef146469e409470805ea4279d47c3d35c # v3.1.1
         with:
