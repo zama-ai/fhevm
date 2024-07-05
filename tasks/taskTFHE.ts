@@ -20,7 +20,7 @@ task('task:computeACLAddress').setAction(async function (taskArguments: TaskArgu
 
   const solidityTemplate = `// SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity ^0.8.25;
+pragma solidity ^0.8.24;
 
 address constant aclAdd = ${aclAddress};\n`;
 
@@ -49,7 +49,7 @@ task('task:computeTFHEExecutorAddress').setAction(async function (taskArguments:
 
   const solidityTemplateCoprocessor = `// SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity ^0.8.25;
+pragma solidity ^0.8.24;
 
 address constant fhevmCoprocessorAdd = ${execAddress};\n`;
 
@@ -78,7 +78,7 @@ task('task:computeKMSVerifierAddress').setAction(async function (taskArguments: 
 
   const solidityTemplate = `// SPDX-License-Identifier: BSD-3-Clause-Clear
 
-pragma solidity ^0.8.25;
+pragma solidity ^0.8.24;
 
 address constant KMS_VERIFIER_CONTRACT_ADDRESS = ${kmsVerfierAddress};\n`;
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.25;
+pragma solidity ^0.8.24;
 
 // Importing OpenZeppelin contracts for cryptographic signature verification and access control.
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
@@ -50,7 +50,7 @@ contract KMSVerifier is Ownable2Step, EIP712 {
 
     /// @notice Sets the threshold for the number of verifiers required for a signature to be valid
     function applyThreshold() internal {
-        threshold = verifiers.length / 2 + 1;
+        threshold = (verifiers.length - 1) / 3 + 1;
     }
 
     /// @notice Adds a new verifier

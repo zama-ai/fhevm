@@ -1,7 +1,7 @@
 {
   "name": "fhevm",
   "description": "A Solidity library for interacting with the Zama Blockchain",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "engines": {
     "node": ">=20.0.0"
   },
@@ -94,6 +94,7 @@
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.0.1",
+    "hardhat-ignore-warnings": "^0.2.11",
     "hardhat-preprocessor": "^0.1.5"
   }
 }

@@ -1,7 +1,5 @@
 *
 !lib/**
-!mocks/**
-!abstracts/**
 !gateway/**
 !package.json
 !README.md
