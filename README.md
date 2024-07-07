@@ -9,11 +9,6 @@
 
 
 <p align="center">
-  <a href=""> 📒 White paper</a> | <a href="https://github.com/zama-ai/kms-whitepaper"> 📚 The KMS Whitepaper by Zama</a>
-</p>
-
-
-<p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-BSD--3--Clause--Clear-%23ffb243?style=flat-square"></a>
   <a href="https://github.com/zama-ai/bounty-program"><img src="https://img.shields.io/badge/Contribute-Zama%20Bounty%20Program-%23ffd208?style=flat-square"></a>
 </p>
@@ -46,9 +41,6 @@ Communication between full nodes and the KMS service is defined by [protobuf](/p
 The rest of the communication is defined by existing standards and uses JSON-RPC.
 For the light client, we currently use CometBFT's [light](https://pkg.go.dev/github.com/cometbft/cometbft/light) package, which provides a service that connects to any CometBFT full node to serve trusted state roots on-demand.
 The light client package handles the logic of sequentially verifying block headers.
-
-## Installation
-Docker images that a ready for use can be found [here](https://github.com/zama-ai/kms/actions/workflows/publish-docker-image.yml).
 
 ## Getting started
 
@@ -224,23 +216,10 @@ make e2e-test
 ```
 
 
-### A simple example
-For an example of usage consult the [technical specification](https://github.com/zama-ai/tech-spec/tree/main/kms).
-
-
 ## Resources
 
 ### Theory
 - [Noah's Ark: Efficient Threshold-FHE Using Noise Flooding](https://eprint.iacr.org/2023/815)
-
-### Whitepaper 
-- [KMS Whitepaper](https://github.com/zama-ai/kms-whitepaper)
-
-### Technical specification
-- [Tech spec](https://github.com/zama-ai/tech-spec/tree/main/kms)
-
-### Docker images and high level usage
-- [fhEVM integration](https://github.com/zama-ai/fhevm-L1-demo)
 
 ## Working with KMS
 
@@ -257,7 +236,7 @@ The default parameters for the Zama KMS are chosen to ensure a failure probabili
 Mitigation for side-channel attacks has not been implemented directly in the Zama KMS. The smart contract of the blockchain from which calls originate is responsible to ensure the validity of calls. In particular that new ciphertexts are correctly constructed (through a proof-of-knowledge).
 
 ### Citations
-To cite KMS in academic papers, please use the following entry:
+To cite the KMS in academic papers, please use the following entry:
 ```
 @Misc{zama-kms,
   title={{Zama KMS: A Pure Rust Implementation of a Threshold Key Management System for TFHE}},
