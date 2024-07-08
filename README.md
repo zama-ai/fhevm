@@ -229,7 +229,7 @@ make e2e-test
 The Zama KMS is not yet audited and should be considered in the early alpha stage. Known bugs and security issues are present as reflected by issue tracking.
 
 #### Parameters
-The default parameters for the Zama KMS are chosen to ensure a failure probability of 2^-64 and symmetric equivalent security of 128 bits.
+The default parameters for the Zama KMS are chosen to ensure a failure probability of 2^-64 and symmetric equivalent security of 132 bits.
 
 #### Side-channel attacks
 
