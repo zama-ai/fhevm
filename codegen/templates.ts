@@ -876,6 +876,10 @@ function tfheAclMethods(supportedBits: number[]): string {
       return Impl.isAllowed(eaddress.unwrap(value), account);
     }
 
+    function isAllowed(ebytes256 value, address account) internal view returns (bool) {
+      return Impl.isAllowed(ebytes256.unwrap(value), account);
+    }
+
     function isSenderAllowed(ebool value) internal view returns (bool) {
       return Impl.isAllowed(ebool.unwrap(value), msg.sender);
     }
@@ -896,6 +900,10 @@ function tfheAclMethods(supportedBits: number[]): string {
     `
     function isSenderAllowed(eaddress value) internal view returns(bool) {
       return Impl.isAllowed(eaddress.unwrap(value), msg.sender);
+    }
+
+    function isSenderAllowed(ebytes256 value) internal view returns(bool) {
+      return Impl.isAllowed(ebytes256.unwrap(value), msg.sender);
     }
     `,
   );
@@ -923,6 +931,10 @@ function tfheAclMethods(supportedBits: number[]): string {
     function allow(eaddress value, address account) internal {
       Impl.allow(eaddress.unwrap(value), account);
     }
+
+    function allow(ebytes256 value, address account) internal {
+      Impl.allow(ebytes256.unwrap(value), account);
+    }
     `,
   );
 
@@ -948,6 +960,10 @@ function tfheAclMethods(supportedBits: number[]): string {
     `
     function allowTransient(eaddress value, address account) internal {
       Impl.allowTransient(eaddress.unwrap(value), account);
+    }
+
+    function allowTransient(ebytes256 value, address account) internal {
+      Impl.allowTransient(ebytes256.unwrap(value), account);
     }
     `,
   );
