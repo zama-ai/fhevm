@@ -13,6 +13,22 @@ BUILDDIR ?= $(CURDIR)/build
 WORKDIR ?= $(CURDIR)/work_dir
 SUDO := $(shell which sudo)
 
+OS := $(shell uname -s)
+
+ifeq ($(OS),Linux)
+    IS_LINUX := true
+else
+    IS_LINUX := false
+endif
+
+check_os:
+	@echo "Operating System: $(OS)"
+	@if [ "$(IS_LINUX)" = "true" ]; then \
+	    echo "This is a Linux system."; \
+	else \
+	    echo "This is not a Linux system."; \
+	fi
+
 
 
 # This version must the same as in docker-compose-full.yml
@@ -106,22 +122,24 @@ TEST_FILE := run_tests.sh
 TEST_IF_FROM_REGISTRY := 
 
 run-e2e-test: check-all-test-repo
-	@cd $(FHEVM_SOLIDITY_PATH) && npm ci
-	@sleep 5
-	@./scripts/fund_test_addresses_docker.sh
-	@cd $(FHEVM_SOLIDITY_PATH) && cp .env.example .env
-	@cd $(FHEVM_SOLIDITY_PATH) && npm i
-	@cd $(FHEVM_SOLIDITY_PATH) && ./setup-local-fhevm.sh
+	$(MAKE) prepare-e2e-test
 	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test
 
 
+install-packages:
+	@cd $(FHEVM_SOLIDITY_PATH) && npm i
+	@if [ "$(IS_LINUX)" = "true" ]; then \
+	    cd $(FHEVM_SOLIDITY_PATH) && npm i solidity-comments-linux-x64-gnu; \
+	fi
+
+
 prepare-e2e-test: check-all-test-repo
-	@cd $(FHEVM_SOLIDITY_PATH) && npm ci
+	$(MAKE) install-packages
 	@sleep 5
 	@./scripts/fund_test_addresses_docker.sh
 	@cd $(FHEVM_SOLIDITY_PATH) && cp .env.example .env
-	@cd $(FHEVM_SOLIDITY_PATH) && npm i
 	@cd $(FHEVM_SOLIDITY_PATH) && ./setup-local-fhevm.sh
+	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test
 
 run-async-test:
 	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test --grep 'test async decrypt uint8' 
