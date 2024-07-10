@@ -94,9 +94,7 @@ init-ethermint-node:
 	@$(MAKE) init-ethermint-node-from-registry
 
 init-ethermint-node-from-registry:
-	@docker compose -f docker-compose/docker-compose-full.yml run fhevm-validator bash /config/setup.sh
-	$(MAKE) change-running-node-owner
-	$(MAKE) generate-fhe-keys-registry
+	$(MAKE) generate-fhe-keys-registry-dev-image
 
 generate-fhe-keys-registry:
 ifeq ($(KEY_GEN),false)
@@ -108,10 +106,22 @@ else ifeq ($(KEY_GEN),true)
 else
 	@echo "KEY_GEN is set to an unrecognized value: $(KEY_GEN)"
 endif
+
+generate-fhe-keys-registry-dev-image:
+ifeq ($(KEY_GEN),false)
+	@echo "KEY_GEN is false, executing corresponding commands..."
+	@bash ./scripts/copy_fhe_keys.sh $(KMS_DEV_VERSION) $(PWD)/network-fhe-keys $(PWD)/kms-fhe-keys
+else ifeq ($(KEY_GEN),true)
+	@echo "KEY_GEN is true, executing corresponding commands..."
+	@bash ./scripts/prepare_volumes_from_kms_core.sh $(KMS_DEV_VERSION) $(PWD)/network-fhe-keys $(PWD)/kms-fhe-keys
+else
+	@echo "KEY_GEN is set to an unrecognized value: $(KEY_GEN)"
+endif
 	
 
 run-full:
-	@docker compose  -f docker-compose/docker-compose-full.yml -f docker-compose/docker-compose-full.override.yml  up --detach
+	$(MAKE) generate-fhe-keys-registry-dev-image
+	@docker compose  -f docker-compose/docker-compose-full.yml  up --detach
 	@echo 'sleep a little to let the docker start up'
 	sleep 10
 
