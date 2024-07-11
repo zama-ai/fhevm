@@ -44,6 +44,8 @@ services:
 
   kms-core:
     image: ghcr.io/zama-ai/kms-service-dev:v0.7.1
+    volumes:  
+      - $PWD/res/keys:/app/kms/core/service/keys:Z
     ports:
       - "50051:50051"
     healthcheck:
