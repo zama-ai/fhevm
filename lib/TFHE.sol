@@ -5223,31 +5223,26 @@ library TFHE {
     function select(ebool control, euint4 a, euint4 b) internal returns (euint4) {
         return euint4.wrap(Impl.select(ebool.unwrap(control), euint4.unwrap(a), euint4.unwrap(b)));
     }
-
     // If 'control''s value is 'true', the result has the same value as 'a'.
     // If 'control''s value is 'false', the result has the same value as 'b'.
     function select(ebool control, euint8 a, euint8 b) internal returns (euint8) {
         return euint8.wrap(Impl.select(ebool.unwrap(control), euint8.unwrap(a), euint8.unwrap(b)));
     }
-
     // If 'control''s value is 'true', the result has the same value as 'a'.
     // If 'control''s value is 'false', the result has the same value as 'b'.
     function select(ebool control, euint16 a, euint16 b) internal returns (euint16) {
         return euint16.wrap(Impl.select(ebool.unwrap(control), euint16.unwrap(a), euint16.unwrap(b)));
     }
-
     // If 'control''s value is 'true', the result has the same value as 'a'.
     // If 'control''s value is 'false', the result has the same value as 'b'.
     function select(ebool control, euint32 a, euint32 b) internal returns (euint32) {
         return euint32.wrap(Impl.select(ebool.unwrap(control), euint32.unwrap(a), euint32.unwrap(b)));
     }
-
     // If 'control''s value is 'true', the result has the same value as 'a'.
     // If 'control''s value is 'false', the result has the same value as 'b'.
     function select(ebool control, euint64 a, euint64 b) internal returns (euint64) {
         return euint64.wrap(Impl.select(ebool.unwrap(control), euint64.unwrap(a), euint64.unwrap(b)));
     }
-
     // Cast an encrypted integer from euint8 to euint4.
     function asEuint4(euint8 value) internal returns (euint4) {
         return euint4.wrap(Impl.cast(euint8.unwrap(value), Common.euint4_t));
@@ -5690,29 +5685,27 @@ library TFHE {
     function isAllowed(ebool value, address account) internal view returns (bool) {
         return Impl.isAllowed(ebool.unwrap(value), account);
     }
-
     function isAllowed(euint4 value, address account) internal view returns (bool) {
         return Impl.isAllowed(euint4.unwrap(value), account);
     }
-
     function isAllowed(euint8 value, address account) internal view returns (bool) {
         return Impl.isAllowed(euint8.unwrap(value), account);
     }
-
     function isAllowed(euint16 value, address account) internal view returns (bool) {
         return Impl.isAllowed(euint16.unwrap(value), account);
     }
-
     function isAllowed(euint32 value, address account) internal view returns (bool) {
         return Impl.isAllowed(euint32.unwrap(value), account);
     }
-
     function isAllowed(euint64 value, address account) internal view returns (bool) {
         return Impl.isAllowed(euint64.unwrap(value), account);
     }
-
     function isAllowed(eaddress value, address account) internal view returns (bool) {
         return Impl.isAllowed(eaddress.unwrap(value), account);
+    }
+
+    function isAllowed(ebytes256 value, address account) internal view returns (bool) {
+        return Impl.isAllowed(ebytes256.unwrap(value), account);
     }
 
     function isSenderAllowed(ebool value) internal view returns (bool) {
@@ -5743,6 +5736,10 @@ library TFHE {
         return Impl.isAllowed(eaddress.unwrap(value), msg.sender);
     }
 
+    function isSenderAllowed(ebytes256 value) internal view returns (bool) {
+        return Impl.isAllowed(ebytes256.unwrap(value), msg.sender);
+    }
+
     function allow(ebool value, address account) internal {
         Impl.allow(ebool.unwrap(value), account);
     }
@@ -5771,6 +5768,10 @@ library TFHE {
         Impl.allow(eaddress.unwrap(value), account);
     }
 
+    function allow(ebytes256 value, address account) internal {
+        Impl.allow(ebytes256.unwrap(value), account);
+    }
+
     function allowTransient(ebool value, address account) internal {
         Impl.allowTransient(ebool.unwrap(value), account);
     }
@@ -5797,5 +5798,9 @@ library TFHE {
 
     function allowTransient(eaddress value, address account) internal {
         Impl.allowTransient(eaddress.unwrap(value), account);
+    }
+
+    function allowTransient(ebytes256 value, address account) internal {
+        Impl.allowTransient(ebytes256.unwrap(value), account);
     }
 }
