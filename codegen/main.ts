@@ -15,9 +15,6 @@ function generateAllFiles() {
   writeFileSync('lib/TFHE.sol', tfheSolSource);
   writeFileSync('lib/FhevmLib.sol', t.fhevmLibSol(operators));
   writeFileSync('lib/TFHEExecutor.sol', t.tfheExecutorSol(context, operators));
-  writeFileSync('mocks/Impl.sol', t.implSolMock(context, operators));
-  const [tfheSolSourceMock, _] = t.tfheSol(context, operators, SUPPORTED_BITS, true);
-  writeFileSync('mocks/TFHE.sol', tfheSolSourceMock);
   // mkdirSync('examples/tests', { recursive: true });
   // ovShards.forEach((os) => {
   //   writeFileSync(`examples/tests/TFHETestSuite${os.shardNumber}.sol`, testgen.generateSmartContract(os));
