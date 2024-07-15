@@ -148,6 +148,13 @@ Account 0x97F272ccfef4026A1F3f0e0E879d514627B84E69 was succesfully added as an g
 > [!NOTE]  
 > If you get `override the existing name orchestrator [y/N]: `, just ^C and  run `make clean-node-storage` to remove the state.
 
+### Trouble shooting
+If you encoding 
+```
+Error: The nonce of the deployer account is not null. Please use another deployer private key or relaunch a clean instance of the fhEVM
+```
+Then something went wrong in a step and you will need to run `make clean` and then start over the flow described [above](#fast-run-and-test).
+
 # Init fhEVM-native
 
 ```bash
@@ -215,6 +222,10 @@ make e2e-test
 
 
 ## Resources
+
+### Presentations
+
+- [EthCC 2024 TKMS presentation](EthCC24-tkms.pdf)
 
 ### Theory
 - [Noah's Ark: Efficient Threshold-FHE Using Noise Flooding](https://eprint.iacr.org/2023/815)
