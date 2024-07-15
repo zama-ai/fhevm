@@ -69,8 +69,6 @@ Docker images that a ready for use can be found [here](https://github.com/zama-a
 Execute the following commands:
 
 ```bash
-# Init node and copy or gen fhe keys
-make init-ethermint-node
 # Run fhEVM + full KMS components 
 make run-full
 # Deploy ACL, Gateway ..., please wait until the end before testing!!!

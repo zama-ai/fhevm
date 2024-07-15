@@ -82,12 +82,12 @@ services:
   fhevm-validator:
     environment:
       - TFHE_EXECUTOR_CONTRACT_ADDRESS=0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c
-    image: ghcr.io/zama-ai/ethermint-node:v0.5.0
+    image: ghcr.io/zama-ai/ethermint-dev-node:v0.5.0-2
     ports:
       - "26656-26657:26656-26657"
       - "8545-8546:8545-8546"
     volumes:
-      - ../running_node/node2:/root:Z
+      - $PWD/network-fhe-keys:/network-fhe-keys:Z
       - ../setup.sh:/config/setup.sh:Z
     security_opt:
       - no-new-privileges:true

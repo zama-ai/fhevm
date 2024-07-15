@@ -1,7 +1,5 @@
 #!/bin/bash
 
-make init-ethermint-node
-# Run fhEVM + full KMS components 
 make run-full
 # Deploy ACL, Gateway ..., please wait until the end before testing!!!
 make prepare-e2e-test
