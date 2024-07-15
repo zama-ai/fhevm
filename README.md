@@ -39,15 +39,15 @@ Thanks to a breakthrough in homomorphic encryption, Zama’s fhEVM makes it poss
 
 ### Main features
 
-- **Solidity Integration:** fhEVM contracts are simple solidity contracts that are built using traditional solidity toolchains.
-- **Simple Developer Experience:** Developers can use the `euint` data types to mark which part of their contracts should be private.
-- **Programmable Privacy:** All the logic for access control of encrypted states is defined by developers in their smart contracts.
-- **High Precision Encrypted Integers :** Up to 256 bits of precision for integers
-- **Full range of Operators :** All typical operators are available: `+`, `-`, `*`, `/`, `<`, `>`, `==`, …
-- **Encrypted If-Else Conditionals :** Check conditions on encrypted states
+- **Solidity integration:** fhEVM contracts are simple solidity contracts that are built using traditional solidity toolchains.
+- **Simple developer experience:** Developers can use the `euint` data types to mark which part of their contracts should be private.
+- **Programmable privacy:** All the logic for access control of encrypted states is defined by developers in their smart contracts.
+- **High precision encrypted integers :** Up to 256 bits of precision for integers
+- **Full range of operators :** All typical operators are available: `+`, `-`, `*`, `/`, `<`, `>`, `==`, …
+- **Encrypted if-else conditionals :** Check conditions on encrypted states
 - **On-chain PRNG :** Generate secure randomness without using oracles
-- **Configurable Decryption :** Threshold, centralized or KMS decryption
-- **Unbounded Compute Depth :** Unlimited consecutive FHE operations
+- **Configurable decryption :** Threshold, centralized or KMS decryption
+- **Unbounded compute Depth :** Unlimited consecutive FHE operations
 
 _Learn more about fhEVM features in the [documentation](https://docs.zama.ai/fhevm)._
 <br></br>
@@ -63,7 +63,7 @@ fhEVM is built for developers to write confidential smart contracts without lear
 - **Encrypted DIDs**: Store identities on-chain and generate attestations without ZK.
 - **Private transfers**: Keep balances and amounts private, without using mixers.
 
-_Learn more use cases in the [list of examples](https://docs.zama.ai/fhevm/resources/examples)._
+_Learn more use cases in the [list of examples](https://docs.zama.ai/fhevm/tutorials/see-all-tutorials)._
 <br></br>
 
 ## Table of Contents
@@ -166,7 +166,7 @@ _If you have built awesome projects using fhEVM, please let us know and we will 
 - [On-chain Blind Auctions Using Homomorphic Encryption and the fhEVM](https://www.zama.ai/post/on-chain-blind-auctions-using-homomorphic-encryption)
 - [Programmable Privacy and Onchain Compliance using Homomorphic Encryption](https://www.zama.ai/post/programmable-privacy-and-onchain-compliance-using-homomorphic-encryption)
 
-_Explore more useful resources in [fhEVM tutorials](https://docs.zama.ai/fhevm/resources/tutorials) and [Awesome Zama repo](https://github.com/zama-ai/awesome-zama)._
+_Explore more useful resources in [fhEVM tutorials](https://docs.zama.ai/fhevm/tutorials/see-all-tutorials) and [Awesome Zama repo](https://github.com/zama-ai/awesome-zama)._
 <br></br>
 
 ### Documentation

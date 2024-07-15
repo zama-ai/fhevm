@@ -6,7 +6,7 @@
 
 - [What is fhEVM](getting_started/overview.md)
 - [Deploy on fhEVM native](getting_started/devnet/README.md)
-  - [Using Zama Faucet](getting_started/devnet/faucet.md)
+  - [Zama devnet](getting_started/devnet/devnet.md)
   - [Local dev node](getting_started/devnet/local.md)
 - [Deploy on Ethereum](getting_started/ethereum.md)
 - [Whitepaper](https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper.pdf)
