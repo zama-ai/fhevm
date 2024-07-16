@@ -196,14 +196,12 @@ make clean
 ```
 
 > [!NOTE]  
-> FHE keys are in res/keys folder, delete them to regenerate new keys at ```make init-ethermint-node``` step.
+> FHE keys are in res/keys folder, delete them to regenerate new keys at ```make run-full``` step.
 
 
 ### Test using fhevm
 
 ```bash
-# if not executed before
-make init-ethermint-node 
 # if not executed before
 make run-full
 # In new terminal
