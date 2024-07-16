@@ -83,29 +83,8 @@ else
 endif
 
 
-check-all-test-repo: check-fhevm-solidity
+check-all-test-repo: check-fhevm-solidity 
 
-
-change-running-node-owner:
-	@$(SUDO) chown -R $(USER): running_node/
-
-
-init-ethermint-node:
-	@$(MAKE) init-ethermint-node-from-registry
-
-init-ethermint-node-from-registry:
-	$(MAKE) generate-fhe-keys-registry-dev-image
-
-generate-fhe-keys-registry:
-ifeq ($(KEY_GEN),false)
-	@echo "KEY_GEN is false, executing corresponding commands..."
-	@bash ./scripts/copy_fhe_keys.sh $(KMS_DEV_VERSION) $(PWD)/running_node/node2/.ethermintd/zama/keys/network-fhe-keys $(PWD)/running_node/node2/.ethermintd/zama/keys/kms-fhe-keys
-else ifeq ($(KEY_GEN),true)
-	@echo "KEY_GEN is true, executing corresponding commands..."
-	@bash ./scripts/prepare_volumes_from_kms_core.sh $(KMS_DEV_VERSION) $(PWD)/running_node/node2/.ethermintd/zama/keys/network-fhe-keys $(PWD)/running_node/node2/.ethermintd/zama/keys/kms-fhe-keys
-else
-	@echo "KEY_GEN is set to an unrecognized value: $(KEY_GEN)"
-endif
 
 generate-fhe-keys-registry-dev-image:
 ifeq ($(KEY_GEN),false)
@@ -121,9 +100,18 @@ endif
 
 run-full:
 	$(MAKE) generate-fhe-keys-registry-dev-image
+ifeq ($(KEY_GEN),false)
+	@echo "KEY_GEN is false, executing corresponding commands..."
 	@docker compose  -f docker-compose/docker-compose-full.yml  up --detach
+else ifeq ($(KEY_GEN),true)
+	@echo "KEY_GEN is true, mounting fhe keys into kms-core..."
+	@docker compose  -f docker-compose/docker-compose-full.yml -f docker-compose/docker-compose-full.override.yml up --detach
+else
+	@echo "KEY_GEN is set to an unrecognized value: $(KEY_GEN)"
+endif
+	
 	@echo 'sleep a little to let the docker start up'
-	sleep 10
+	sleep 5
 
 stop-full:
 	@docker compose  -f docker-compose/docker-compose-full.yml down
@@ -159,20 +147,18 @@ run-true-input-async-test:
 
 e2e-test:
 	@$(MAKE) check-all-test-repo
-	@$(MAKE) init-ethermint-node-from-registry
 	$(MAKE) run-full
 	$(MAKE) run-e2e-test
 	$(MAKE) stop-full
 
 
-clean-node-storage:
-	@echo 'clean node storage'
-	sudo rm -rf running_node
 
-clean: clean-node-storage
+clean:
 	$(MAKE) stop-full
 	rm -rf $(BUILDDIR)/
 	rm -rf $(WORKDIR)/ 
+	rm -rf network-fhe-keys
+	rm -rf kms-fhe-keys
 
 
 print-info:

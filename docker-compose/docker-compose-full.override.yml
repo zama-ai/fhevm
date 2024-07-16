@@ -1,0 +1,7 @@
+name: zama-dev
+
+services:
+
+  kms-core:
+    volumes:  
+      - $PWD/res/keys:/app/kms/core/service/keys:Z
