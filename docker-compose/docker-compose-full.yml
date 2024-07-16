@@ -89,6 +89,7 @@ services:
       - "26656-26657:26656-26657"
       - "8545-8546:8545-8546"
     volumes:
+      - $PWD/network-fhe-keys:/network-fhe-keys:Z
       - ../setup.sh:/config/setup.sh:Z
     security_opt:
       - no-new-privileges:true
