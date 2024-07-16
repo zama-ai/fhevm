@@ -144,10 +144,6 @@ Account 0x97F272ccfef4026A1F3f0e0E879d514627B84E69 was succesfully added as an g
 
 <br />
 
-
-> [!NOTE]  
-> If you get `override the existing name orchestrator [y/N]: `, just ^C and  run `make clean-node-storage` to remove the state.
-
 ### Trouble shooting
 If you encoding 
 ```
@@ -164,7 +160,7 @@ make init-ethermint-node
 Initialize and generate/copy FHE keys based on `KEY_GEN` value in `.env`.
 
 > [!NOTE]  
-> If KEY_GEN is set to `false`, ensure to have 15 GB of empty RAM to generate the keys. On Mac, do not forget to increase the allocated RAM to docker process. 
+> If KEY_GEN is set to `true`, ensure to have 15 GB of empty RAM to generate the keys. On Mac, do not forget to increase the allocated RAM to docker process. 
 
 ### Run fhEVM-native + KMS components
 
