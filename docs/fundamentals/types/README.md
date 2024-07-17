@@ -1,14 +1,18 @@
 # Use encrypted types
+This document explains how to implement and manage encrypted integer types in smart contracts using `TFHE` library.
 
+## Introduction
 The `TFHE` library provides encrypted integer types and a type system that is checked both at compile time and at run time.
 
-Encrypted integers behave as much as possible as Solidity's integer types. Currently, however, behaviour such as "revert on overflow" is not supported as this would leak some information about the encrypted value. Therefore, arithmetic on `e(u)int` types is [unchecked](https://docs.soliditylang.org/en/latest/control-structures.html#checked-or-unchecked-arithmetic), i.e. there is wrap-around on overflow.
+Encrypted integers function similarly to Solidity's integer types. However, features like "revert on overflow" are not supported, as this would expose certain information about the encrypted value. Therefore, arithmetic on `e(u)int`` types is [unchecked](https://docs.soliditylang.org/en/latest/control-structures.html#checked-or-unchecked-arithmetic), which means overflow will wrap around.
 
-Encrypted integers with overflow checking are coming soon to the `TFHE` library. They will allow reversal in case of an overflow, but will leak some information about the operands.
+{% hint style="info" %}
+Encrypted integers with overflow checking will be available soon in the `TFHE` library. They will allow reversal in case of an overflow, but will reveal some information about the operands.
+{% endhint %}
 
-In terms of implementation in the `fhEVM`, encrypted integers take the form of FHE ciphertexts.
-The `TFHE` library abstracts away that and, instead, exposes ciphertext handles to smart contract developers.
-The `e(u)int` types are **wrappers** over these handles.
+In fhEVM, encrypted integers are implemented as FHE ciphertexts. The `TFHE` library abstracts this, presenting ciphertext handles to smart contract developers. The `e(u)int` types act as **wrappers** over these handles.
+
+## List of encrypted types
 
 The following encrypted data types are defined:
 
@@ -37,7 +41,7 @@ Higher-precision integers are supported in the `TFHE-rs` library and can be adde
 
 ## Casting
 
-You can cast types with `asEuint`/`asEbool` methods.
+You can cast types with `asEuint`/`asEbool` methods:
 
 ```solidity
 euint64 value64 = TFHE.asEuint64(7262);
@@ -45,9 +49,11 @@ euint32 value32 = TFHE.asEuint32(value64);
 ebool valueBool = TFHE.asEbool(value32);
 ```
 
-## Contract state variables with encrypted types
+## Contracting state variables
+When using encrypted types for state variables, you cannot use the `immutable` or `constant` keywords. This is because the compiler attempts to resolve the value of T`FHE.asEuintXX(yy)` during compilation, which is not feasible because `asEuintXX()` calls a precompiled contract. 
 
-If you require a state variable that utilizes these encrypted types, you cannot assign the value with `immutable` or `constant` keyword. If you're using these types, the compiler attempts to ascertain the value of `TFHE.asEuintXX(yy)` during compilation, which is not feasible because `asEuintXX()` invokes a precompiled contract. To address this challenge, you must not declare your encrypted state variables as `immutable` or `constant`. Still, you can use the following methods to set your variables:
+To handle this, do not declare your encrypted state variables as `immutabl`e or `constant`. Instead, use the following methods to set your variables:
+
 
 ```solidity
 euint64 private totalSupply = TFHE.asEuint64(0);

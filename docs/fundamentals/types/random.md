@@ -1,9 +1,10 @@
 # Generate random number
 
-Random encrypted integers can be generated fully on-chain.
+This document shows you how to generate random encrypted integers fully on-chain.
 
-That can only be done during transactions and not on an `eth_call` RPC method,
-because PRNG state needs to be mutated on-chain during generation.
+{% hint style="info" %}
+This operation must be performed during transactions, as it requires the pseudo-random number generator (PRNG) state to be mutated on-chain during generation. Therefore, it cannot be executed using the `eth_call` RPC method.
+{% endhint %}
 
 ## Example
 

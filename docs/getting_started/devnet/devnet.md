@@ -1,5 +1,5 @@
 # Zama Devnet
-This document explains how to configure the Zama Devnet for deploying smart contracts on fhEVM-native chains.
+This document explains how to configure the Zama Devnet for deploying smart contracts on fhEVM native.
 
 {% hint style="warning" %}
 **Devnet down** Our devnet is currently offline but will be up soon! In the meantime, develop your contracts using a local instance.

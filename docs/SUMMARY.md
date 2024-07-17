@@ -5,11 +5,8 @@
 ## Getting Started
 
 - [What is fhEVM](getting_started/overview.md)
-- Deploy on fhEVM native
-  - [Zama devnet](getting_started/devnet/devnet.md)
-  - [Local dev node](getting_started/devnet/local.md)
+- [Deploy on fhEVM native](getting_started/devnet/devnet.md)
 - [Deploy on Ethereum](getting_started/ethereum.md)
-- [Installation](getting_started/installation.md)
 - [Whitepaper](https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper.pdf)
 
 ## Fundamentals
@@ -18,7 +15,9 @@
   - [Using Hardhat](fundamentals/write_contract/hardhat.md)
   - [Using Remix](fundamentals/write_contract/remix.md)
   - [Other development environment](fundamentals/write_contract/others.md)
-- [Encrypted types](fundamentals/types/README.md)
+  - [Installing packages](getting_started/installation.md)
+- Encrypted types
+  - [Supported types](fundamentals/types/README.md)
   - [Operations on encrypted types](fundamentals/types/operations.md)
   - [Branching in FHE](fundamentals/types/conditions.md)
   - [Generate random number](fundamentals/types/random.md)
