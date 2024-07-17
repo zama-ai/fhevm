@@ -24,6 +24,7 @@ The same tests should (almost always) pass without any modification: neither the
 
 The mocked mode does not actually encrypt the encrypted types. It runs the tests on a local hardhat node which is implementing the original EVM (non-fhEVM).
 
+### Running mocked tests
 Run the mocked tests using:
 
 ```
@@ -38,6 +39,7 @@ HARDHAT_NETWORK=hardhat npx hardhat test --network hardhat
 
 In mocked mode, all tests should pass in few seconds instead of few minutes, allowing a better developer experience.
 
+### Coverage in mocked mode
 Furthermore, getting the coverage of tests is only possible in mocked mode. Use:
 
 ```

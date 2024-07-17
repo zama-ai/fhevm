@@ -5,17 +5,16 @@
 ## Getting Started
 
 - [What is fhEVM](getting_started/overview.md)
-- [Deploy on fhEVM native](getting_started/devnet/devnet.md)
-- [Deploy on Ethereum](getting_started/ethereum.md)
-- [Whitepaper](https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper.pdf)
-
-## Fundamentals
-
 - Write contract
   - [Using Hardhat](fundamentals/write_contract/hardhat.md)
   - [Using Remix](fundamentals/write_contract/remix.md)
   - [Other development environment](fundamentals/write_contract/others.md)
-  - [Installing packages](getting_started/installation.md)
+  - [Installing packages](fundamentals/write_contract/installation.md)
+- [Deploy on fhEVM native](getting_started/devnet.md)
+- [Deploy on Ethereum](getting_started/ethereum.md)
+- [Whitepaper](https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper.pdf)
+
+## Fundamentals
 - Encrypted types
   - [Supported types](fundamentals/types/README.md)
   - [Operations on encrypted types](fundamentals/types/operations.md)
