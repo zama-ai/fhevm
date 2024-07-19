@@ -15,11 +15,11 @@ function generateAllFiles() {
   writeFileSync('lib/TFHE.sol', tfheSolSource);
   writeFileSync('lib/FhevmLib.sol', t.fhevmLibSol(operators));
   writeFileSync('lib/TFHEExecutor.sol', t.tfheExecutorSol(context, operators));
-  // mkdirSync('examples/tests', { recursive: true });
-  // ovShards.forEach((os) => {
-  //   writeFileSync(`examples/tests/TFHETestSuite${os.shardNumber}.sol`, testgen.generateSmartContract(os));
-  // });
-  // writeFileSync('test/tfheOperations/tfheOperations.ts', testgen.generateTestCode(ovShards));
+  mkdirSync('examples/tests', { recursive: true });
+  ovShards.forEach((os) => {
+    writeFileSync(`examples/tests/TFHETestSuite${os.shardNumber}.sol`, testgen.generateSmartContract(os));
+  });
+  writeFileSync('test/tfheOperations/tfheOperations.ts', testgen.generateTestCode(ovShards));
 }
 
 generateAllFiles();
