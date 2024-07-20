@@ -5,6 +5,7 @@ import * as t from './templates';
 import * as testgen from './testgen';
 
 function generateAllFiles() {
+  const numSplits = 12;
   const operators = checks(ALL_OPERATORS);
 
   const network = Network[(process.env.TARGET_NETWORK as keyof typeof Network) || 'Evmos'];
@@ -19,7 +20,8 @@ function generateAllFiles() {
   ovShards.forEach((os) => {
     writeFileSync(`examples/tests/TFHETestSuite${os.shardNumber}.sol`, testgen.generateSmartContract(os));
   });
-  writeFileSync('test/tfheOperations/tfheOperations.ts', testgen.generateTestCode(ovShards));
+  const tsSplits: string[] = testgen.generateTestCode(ovShards, numSplits);
+  tsSplits.forEach((split, splitIdx) => writeFileSync(`test/tfheOperations/tfheOperations${splitIdx + 1}.ts`, split));
 }
 
 generateAllFiles();

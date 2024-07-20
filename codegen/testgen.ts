@@ -59,25 +59,23 @@ export function splitOverloadsToShards(overloads: OverloadSignature[]): Overload
   return res;
 }
 
-export function generateTestCode(shards: OverloadShard[]): string {
-  const res: string[] = [];
-
-  res.push(`
+function generateIntroTestCode(shards: OverloadShard[], idxSplit: number): string {
+  const intro: string[] = [];
+  intro.push(`
     import { expect } from 'chai';
     import { ethers } from 'hardhat';
     import { createInstances, decrypt4, decrypt8, decrypt16, decrypt32, decrypt64, decryptBool } from '../instance';
     import { getSigners, initSigners } from '../signers';
 
   `);
-
   shards.forEach((os) => {
-    res.push(`
-    import type { TFHETestSuite${os.shardNumber} } from '../../types/contracts/tests/TFHETestSuite${os.shardNumber}';
-    `);
+    intro.push(`
+  import type { TFHETestSuite${os.shardNumber} } from '../../types/contracts/tests/TFHETestSuite${os.shardNumber}';
+  `);
   });
 
   shards.forEach((os) => {
-    res.push(`
+    intro.push(`
 async function deployTfheTestFixture${os.shardNumber}(): Promise<TFHETestSuite${os.shardNumber}> {
   const signers = await getSigners();
   const admin = signers.alice;
@@ -91,8 +89,8 @@ async function deployTfheTestFixture${os.shardNumber}(): Promise<TFHETestSuite${
     `);
   });
 
-  res.push(`
-    describe('TFHE operations', function () {
+  intro.push(`
+    describe('TFHE operations ${idxSplit}', function () {
         before(async function () {
             await initSigners(1);
             this.signers = await getSigners();
@@ -100,23 +98,35 @@ async function deployTfheTestFixture${os.shardNumber}(): Promise<TFHETestSuite${
   `);
 
   shards.forEach((os) => {
-    res.push(`
+    intro.push(`
             const contract${os.shardNumber} = await deployTfheTestFixture${os.shardNumber}();
             this.contract${os.shardNumber}Address = await contract${os.shardNumber}.getAddress();
             this.contract${os.shardNumber} = contract${os.shardNumber};
     `);
   });
 
-  res.push(`
+  intro.push(`
   const instances = await createInstances(this.signers);
   this.instances = instances;
         });
   `);
+  return intro.join('');
+}
 
-  // don't allow user to add test for method that doesn't exist
+export function generateTestCode(shards: OverloadShard[], numTsSplits: number): string[] {
+  const numSolTest = shards.reduce((sum, os) => sum + os.overloads.length, 0);
+  let idxTsTest = 0;
+
+  let listRes: string[] = [];
+
+  const sizeTsShard = Math.floor(numSolTest / numTsSplits);
+
+  let res: string[] = [];
+
   const overloadUsages: { [methodName: string]: boolean } = {};
   shards.forEach((os) => {
     os.overloads.forEach((o) => {
+      if (idxTsTest % sizeTsShard === 0) res.push(generateIntroTestCode(shards, idxTsTest / sizeTsShard + 1));
       const testName = `test operator "${o.name}" overload ${signatureContractEncryptedSignature(o)}`;
       const methodName = signatureContractMethodName(o);
       overloadUsages[methodName] = true;
@@ -167,6 +177,14 @@ async function deployTfheTestFixture${os.shardNumber}(): Promise<TFHETestSuite${
             `);
         testIndex++;
       });
+      idxTsTest++;
+      if (idxTsTest % sizeTsShard === 0 || idxTsTest === numSolTest) {
+        res.push(`
+      });
+    `);
+        listRes.push(res.join(''));
+        res = [];
+      }
     });
   });
 
@@ -174,11 +192,7 @@ async function deployTfheTestFixture${os.shardNumber}(): Promise<TFHETestSuite${
     assert(overloadUsages[key], `No such overload '${key}' exists for which test data is defined`);
   }
 
-  res.push(`
-    });
-  `);
-
-  return res.join('');
+  return listRes;
 }
 
 function ensureNumberAcceptableInBitRange(bits: number, input: number | bigint) {
