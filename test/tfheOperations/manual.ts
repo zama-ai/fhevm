@@ -43,7 +43,7 @@ describe('TFHE manual operations', function () {
     input.addBool(false);
     input.add32(3);
     input.add32(4);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract.test_select(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -60,7 +60,7 @@ describe('TFHE manual operations', function () {
     input.addBool(true);
     input.add32(3);
     input.add32(4);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract.test_select(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -77,7 +77,7 @@ describe('TFHE manual operations', function () {
     input.addBool(false);
     input.addAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
     input.addAddress('0x8881f109551bd432803012645ac136ddd64dba72');
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract.test_select_eaddress(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -94,7 +94,7 @@ describe('TFHE manual operations', function () {
     input.addBool(true);
     input.addAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
     input.addAddress('0x8881f109551bd432803012645ac136ddd64dba72');
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract.test_select_eaddress(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
