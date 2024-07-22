@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "io.grpc.fhevmcoprocessor";
+option java_outer_classname = "FhevmCoprocessor";
+
+package coprocessor;
+
+service FhevmCoprocessor {
+  rpc ScheduleComputations (SchedulerBatch) returns (GenericResponse) {}
+  rpc UploadCiphertexts (CiphertextUploadBatch) returns (GenericResponse) {}
+  rpc WaitComputations (SchedulerBatch) returns (FhevmResponses) {}
+  // for debugging, should be removed in prod
+  rpc DebugDecryptCiphertext (DebugDecryptRequest) returns (DebugDecryptResponse) {}
+  // for debugging, should be removed in prod
+  rpc DebugEncryptCiphertext (DebugEncryptRequest) returns (GenericResponse) {}
+}
+
+message DebugEncryptRequest {
+  string handle = 1;
+  int32 original_value = 2;
+}
+
+message DebugDecryptRequest {
+  string handle = 1;
+}
+
+message DebugDecryptResponse {
+  string value = 1;
+}
+
+message CiphertextToCompute {
+  int32 fhe_operation = 1;
+  string output_handle = 2;
+  repeated string input_handles = 3;
+}
+
+message CiphertextToUpload {
+  int32 ciphertext_type = 1;
+  string ciphertext_handle = 2;
+  bytes ciphertext_bytes = 3;
+}
+
+// The request message containing the user's name.
+message SchedulerBatch {
+  repeated CiphertextToCompute input_handles = 1;
+}
+
+message CiphertextUploadBatch {
+  repeated CiphertextToUpload input_ciphertexts = 1;
+}
+
+message WaitBatch {
+  repeated string ciphertext_handles = 1;
+}
+
+message GenericResponse {
+  int32 responseCode = 1;
+}
+
+message FhevmResponses {
+  repeated string ciphertext_handles = 1;
+}
