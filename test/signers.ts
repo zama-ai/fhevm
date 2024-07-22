@@ -20,7 +20,7 @@ let signers: Signers;
 const keys: (keyof Signers)[] = ['alice', 'bob', 'carol', 'dave', 'eve'];
 
 const getCoin = async (address: string) => {
-  const containerName = process.env['TEST_CONTAINER_NAME'] || 'fhevm';
+  const containerName = process.env['TEST_CONTAINER_NAME'] || 'zama-dev-fhevm-validator-1';
   const response = await exec(`docker exec -i ${containerName} faucet ${address} | grep height`);
   const res = JSON.parse(response.stdout);
   if (res.raw_log.match('account sequence mismatch')) await getCoin(address);
