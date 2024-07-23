@@ -168,7 +168,7 @@ export function generateTestCode(shards: OverloadShard[], numTsSplits: number): 
                 it('${testName} test ${testIndex} (${testArgs})', async function () {
                     const input = this.instances.alice.createEncryptedInput(this.contract${os.shardNumber}Address, this.signers.alice.address);
                     ${inputsAdd}
-                    const encryptedAmount = input.encrypt();
+                    const encryptedAmount = await input.encrypt();
                     const tx = await this.contract${os.shardNumber}.${methodName}(${testArgsEncrypted}, encryptedAmount.inputProof);
                     await tx.wait();
                     const res = await decrypt${o.returnType.type === 1 ? o.returnType.bits : 'Bool'}(await this.contract${os.shardNumber}.res${o.returnType.type === 1 ? o.returnType.bits : 'b'}());

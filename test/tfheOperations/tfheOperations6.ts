@@ -113,7 +113,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(46663n);
     input.add8(31n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.max_euint16_euint8(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -128,7 +128,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(27n);
     input.add8(31n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.max_euint16_euint8(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -143,7 +143,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(31n);
     input.add8(31n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.max_euint16_euint8(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -158,7 +158,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(31n);
     input.add8(27n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.max_euint16_euint8(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -173,7 +173,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(12135n);
     input.add16(15379n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.add_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -188,7 +188,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(12131n);
     input.add16(12135n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.add_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -203,7 +203,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(12135n);
     input.add16(12135n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.add_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -218,7 +218,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(12135n);
     input.add16(12131n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.add_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -233,7 +233,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(3171n);
     input.add16(3171n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.sub_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -248,7 +248,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(3171n);
     input.add16(3167n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.sub_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -263,7 +263,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(78n);
     input.add16(381n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.mul_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -278,7 +278,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(155n);
     input.add16(155n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.mul_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -293,7 +293,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(155n);
     input.add16(155n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.mul_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -308,7 +308,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(155n);
     input.add16(155n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.mul_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -323,7 +323,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(3535n);
     input.add16(5032n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.and_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -338,7 +338,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(3531n);
     input.add16(3535n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.and_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -353,7 +353,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(3535n);
     input.add16(3535n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.and_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -368,7 +368,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(3535n);
     input.add16(3531n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.and_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -383,7 +383,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(33634n);
     input.add16(27003n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.or_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -398,7 +398,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(26999n);
     input.add16(27003n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.or_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -413,7 +413,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(27003n);
     input.add16(27003n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.or_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -428,7 +428,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(27003n);
     input.add16(26999n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.or_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -443,7 +443,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(64619n);
     input.add16(2520n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.xor_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -458,7 +458,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(2516n);
     input.add16(2520n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.xor_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -473,7 +473,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(2520n);
     input.add16(2520n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.xor_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -488,7 +488,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(2520n);
     input.add16(2516n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.xor_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -503,7 +503,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(63705n);
     input.add16(3249n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.eq_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -518,7 +518,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(3245n);
     input.add16(3249n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.eq_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -533,7 +533,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(3249n);
     input.add16(3249n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.eq_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -548,7 +548,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(3249n);
     input.add16(3245n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.eq_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -563,7 +563,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(27750n);
     input.add16(23851n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.ne_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -578,7 +578,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(23847n);
     input.add16(23851n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.ne_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -593,7 +593,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(23851n);
     input.add16(23851n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.ne_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -608,7 +608,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(23851n);
     input.add16(23847n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.ne_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -623,7 +623,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(8825n);
     input.add16(39131n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.ge_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -638,7 +638,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(8821n);
     input.add16(8825n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.ge_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -653,7 +653,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(8825n);
     input.add16(8825n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.ge_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -668,7 +668,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(8825n);
     input.add16(8821n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.ge_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -683,7 +683,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(33735n);
     input.add16(54333n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.gt_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -698,7 +698,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(33731n);
     input.add16(33735n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.gt_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -713,7 +713,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(33735n);
     input.add16(33735n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.gt_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -728,7 +728,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(33735n);
     input.add16(33731n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.gt_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -743,7 +743,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(38605n);
     input.add16(53936n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.le_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -758,7 +758,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(38601n);
     input.add16(38605n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.le_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -773,7 +773,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(38605n);
     input.add16(38605n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.le_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -788,7 +788,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(38605n);
     input.add16(38601n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.le_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -803,7 +803,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(59332n);
     input.add16(12427n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.lt_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -818,7 +818,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(12423n);
     input.add16(12427n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.lt_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -833,7 +833,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(12427n);
     input.add16(12427n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.lt_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -848,7 +848,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(12427n);
     input.add16(12423n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.lt_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -863,7 +863,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(18209n);
     input.add16(14696n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.min_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -878,7 +878,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(14692n);
     input.add16(14696n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.min_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -893,7 +893,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(14696n);
     input.add16(14696n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.min_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -908,7 +908,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(14696n);
     input.add16(14692n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.min_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -923,7 +923,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(35722n);
     input.add16(7688n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.max_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -938,7 +938,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(7684n);
     input.add16(7688n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.max_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -953,7 +953,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(7688n);
     input.add16(7688n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.max_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -968,7 +968,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(7688n);
     input.add16(7684n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.max_euint16_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -983,7 +983,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(2n);
     input.add32(40496n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.add_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -998,7 +998,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(18317n);
     input.add32(18319n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.add_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1013,7 +1013,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(18319n);
     input.add32(18319n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.add_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1028,7 +1028,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(18319n);
     input.add32(18317n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.add_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1043,7 +1043,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(17812n);
     input.add32(17812n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.sub_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1058,7 +1058,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(17812n);
     input.add32(17808n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.sub_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1073,7 +1073,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(2n);
     input.add32(18411n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.mul_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1088,7 +1088,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(139n);
     input.add32(139n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.mul_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1103,7 +1103,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(139n);
     input.add32(139n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.mul_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1118,7 +1118,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(139n);
     input.add32(139n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.mul_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1133,7 +1133,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(27862n);
     input.add32(1736690738n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.and_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1148,7 +1148,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(27858n);
     input.add32(27862n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.and_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1163,7 +1163,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(27862n);
     input.add32(27862n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.and_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1178,7 +1178,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(27862n);
     input.add32(27858n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.and_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1193,7 +1193,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(440n);
     input.add32(1863142416n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.or_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1208,7 +1208,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(436n);
     input.add32(440n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.or_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1223,7 +1223,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(440n);
     input.add32(440n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.or_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1238,7 +1238,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(440n);
     input.add32(436n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.or_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1253,7 +1253,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(51717n);
     input.add32(501889469n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.xor_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1268,7 +1268,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(51713n);
     input.add32(51717n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.xor_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1283,7 +1283,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(51717n);
     input.add32(51717n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.xor_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1298,7 +1298,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(51717n);
     input.add32(51713n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.xor_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1313,7 +1313,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(19428n);
     input.add32(3260350416n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.eq_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1328,7 +1328,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(19424n);
     input.add32(19428n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.eq_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1343,7 +1343,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(19428n);
     input.add32(19428n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.eq_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1358,7 +1358,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(19428n);
     input.add32(19424n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.eq_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1373,7 +1373,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(4461n);
     input.add32(3322499889n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.ne_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1388,7 +1388,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(4457n);
     input.add32(4461n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.ne_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1403,7 +1403,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(4461n);
     input.add32(4461n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.ne_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1418,7 +1418,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(4461n);
     input.add32(4457n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.ne_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1433,7 +1433,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(23826n);
     input.add32(3191695510n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.ge_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1448,7 +1448,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(23822n);
     input.add32(23826n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.ge_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1463,7 +1463,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(23826n);
     input.add32(23826n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.ge_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1478,7 +1478,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(23826n);
     input.add32(23822n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.ge_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1493,7 +1493,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(20452n);
     input.add32(2742403767n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.gt_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1508,7 +1508,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(20448n);
     input.add32(20452n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.gt_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1523,7 +1523,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(20452n);
     input.add32(20452n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.gt_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1538,7 +1538,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(20452n);
     input.add32(20448n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.gt_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1553,7 +1553,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(32489n);
     input.add32(2097840840n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.le_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1568,7 +1568,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(32485n);
     input.add32(32489n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.le_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1583,7 +1583,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(32489n);
     input.add32(32489n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.le_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1598,7 +1598,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(32489n);
     input.add32(32485n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.le_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1613,7 +1613,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(46117n);
     input.add32(3066026054n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.lt_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1628,7 +1628,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(46113n);
     input.add32(46117n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.lt_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1643,7 +1643,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(46117n);
     input.add32(46117n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.lt_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1658,7 +1658,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(46117n);
     input.add32(46113n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.lt_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1673,7 +1673,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(5231n);
     input.add32(2030449754n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.min_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1688,7 +1688,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(5227n);
     input.add32(5231n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.min_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1703,7 +1703,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(5231n);
     input.add32(5231n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.min_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1718,7 +1718,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(5231n);
     input.add32(5227n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.min_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1733,7 +1733,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(34046n);
     input.add32(3126513605n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.max_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1748,7 +1748,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(34042n);
     input.add32(34046n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.max_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1763,7 +1763,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(34046n);
     input.add32(34046n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.max_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1778,7 +1778,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(34046n);
     input.add32(34042n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.max_euint16_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1793,7 +1793,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(2n);
     input.add64(65506n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.add_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1808,7 +1808,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(12725n);
     input.add64(12729n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.add_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1823,7 +1823,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(12729n);
     input.add64(12729n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.add_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1838,7 +1838,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(12729n);
     input.add64(12725n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.add_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1853,7 +1853,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(45021n);
     input.add64(45021n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.sub_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1868,7 +1868,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(45021n);
     input.add64(45017n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.sub_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1883,7 +1883,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(2n);
     input.add64(32761n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.mul_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1898,7 +1898,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(221n);
     input.add64(221n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.mul_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1913,7 +1913,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(221n);
     input.add64(221n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.mul_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1928,7 +1928,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(221n);
     input.add64(221n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.mul_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1943,7 +1943,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(17953n);
     input.add64(18443736631892089939n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.and_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1958,7 +1958,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(17949n);
     input.add64(17953n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.and_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1973,7 +1973,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(17953n);
     input.add64(17953n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.and_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1988,7 +1988,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(17953n);
     input.add64(17949n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.and_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2003,7 +2003,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(12837n);
     input.add64(18444850378165005521n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.or_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2018,7 +2018,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(12833n);
     input.add64(12837n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.or_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2033,7 +2033,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(12837n);
     input.add64(12837n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.or_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2048,7 +2048,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(12837n);
     input.add64(12833n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.or_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2063,7 +2063,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(12673n);
     input.add64(18438027026491597713n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.xor_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2078,7 +2078,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(12669n);
     input.add64(12673n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.xor_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2093,7 +2093,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(12673n);
     input.add64(12673n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.xor_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2108,7 +2108,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(12673n);
     input.add64(12669n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.xor_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2123,7 +2123,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(15185n);
     input.add64(18442214214141554887n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.eq_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2138,7 +2138,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(15181n);
     input.add64(15185n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.eq_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2153,7 +2153,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(15185n);
     input.add64(15185n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.eq_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2168,7 +2168,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(15185n);
     input.add64(15181n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.eq_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2183,7 +2183,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(6072n);
     input.add64(18442627728041568827n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.ne_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2198,7 +2198,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(6068n);
     input.add64(6072n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.ne_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2213,7 +2213,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(6072n);
     input.add64(6072n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.ne_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2228,7 +2228,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(6072n);
     input.add64(6068n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.ne_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2243,7 +2243,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(63199n);
     input.add64(18444428591303537867n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.ge_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2258,7 +2258,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(63195n);
     input.add64(63199n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.ge_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2273,7 +2273,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(63199n);
     input.add64(63199n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.ge_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2288,7 +2288,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(63199n);
     input.add64(63195n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.ge_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2303,7 +2303,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(63105n);
     input.add64(18440430414982980885n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.gt_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2318,7 +2318,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(63101n);
     input.add64(63105n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.gt_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2333,7 +2333,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(63105n);
     input.add64(63105n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.gt_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2348,7 +2348,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(63105n);
     input.add64(63101n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.gt_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2363,7 +2363,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(46492n);
     input.add64(18439416152876310159n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.le_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2378,7 +2378,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(46488n);
     input.add64(46492n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.le_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2393,7 +2393,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(46492n);
     input.add64(46492n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.le_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2408,7 +2408,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(46492n);
     input.add64(46488n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.le_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2423,7 +2423,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(20266n);
     input.add64(18439286572290779257n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.lt_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2438,7 +2438,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(20262n);
     input.add64(20266n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.lt_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2453,7 +2453,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(20266n);
     input.add64(20266n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.lt_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2468,7 +2468,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(20266n);
     input.add64(20262n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.lt_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2483,7 +2483,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(44251n);
     input.add64(18443711845572494969n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.min_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2498,7 +2498,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(44247n);
     input.add64(44251n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.min_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2513,7 +2513,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(44251n);
     input.add64(44251n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.min_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2528,7 +2528,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(44251n);
     input.add64(44247n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.min_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2543,7 +2543,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(28367n);
     input.add64(18440532375906129937n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.max_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2558,7 +2558,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(28363n);
     input.add64(28367n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.max_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2573,7 +2573,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(28367n);
     input.add64(28367n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.max_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -2588,7 +2588,7 @@ describe('TFHE operations 6', function () {
     const input = this.instances.alice.createEncryptedInput(this.contract3Address, this.signers.alice.address);
     input.add16(28367n);
     input.add64(28363n);
-    const encryptedAmount = input.encrypt();
+    const encryptedAmount = await input.encrypt();
     const tx = await this.contract3.max_euint16_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
