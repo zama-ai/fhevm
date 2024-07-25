@@ -1,4 +1,5 @@
 # Zama Devnet
+
 This document explains how to configure the Zama Devnet for deploying smart contracts on fhEVM native.
 
 {% hint style="warning" %}
@@ -6,9 +7,10 @@ This document explains how to configure the Zama Devnet for deploying smart cont
 {% endhint %}
 
 ## Configuring MetaMask
+
 <!-- markdown-link-check-disable -->
 
-To configure the [MetaMask]((https://support.metamask.io/hc/en-us/articles/360043227612-How-to-add-a-custom-network-RPC)) for Zama Devnet, follow the steps: 
+To configure the [MetaMask](<(https://support.metamask.io/hc/en-us/articles/360043227612-How-to-add-a-custom-network-RPC)>) for Zama Devnet, follow the steps:
 
 <!-- markdown-link-check-enable -->
 
@@ -23,8 +25,8 @@ To configure the [MetaMask]((https://support.metamask.io/hc/en-us/articles/36004
 <!-- markdown-link-check-disable -->
 
 3. Add these information to access to blockchain
-{% tabs %}
-{% tab title="Zama devnet" %}
+   {% tabs %}
+   {% tab title="Zama devnet" %}
 
 | Fields                        | Value                         |
 | ----------------------------- | ----------------------------- |

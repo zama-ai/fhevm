@@ -1,11 +1,12 @@
 This document guides you to install fhEVM Solidity library in your project and explains the basic workflow of writing confidential smart contract.
 
 ## Introduction
+
 fhEVM compiles seamlessly with the traditional Solidity compiler and is generally compatible with traditional Solidity tools. However, it is designed to function exclusively on an fhEVM. Therefore, this library is not intended for deployment on a classic EVM, such as Goerli or Ganache.
 
 ## Installation
 
-To get started with fhEVM Solidity library, you need to install it as a dependency in your JavaScript project. You can do this using npm (Node Package Manager) or Yarn. 
+To get started with fhEVM Solidity library, you need to install it as a dependency in your JavaScript project. You can do this using npm (Node Package Manager) or Yarn.
 
 Open your terminal and navigate to your project's directory, then run one of the following commands:
 

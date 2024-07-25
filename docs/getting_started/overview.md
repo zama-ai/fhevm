@@ -4,7 +4,7 @@
 
 ## Introduction
 
-There used to be a dilemma in blockchain: keep your application and user data on-chain, allowing everyone to see it, or keep it privately off-chain and lose contract composability. 
+There used to be a dilemma in blockchain: keep your application and user data on-chain, allowing everyone to see it, or keep it privately off-chain and lose contract composability.
 
 **fhEVM** is a technology that enables confidential smart contracts on the EVM using Fully Homomorphic Encryption (FHE).
 
@@ -20,7 +20,7 @@ Thanks to a breakthrough in FHE, Zama’s fhEVM makes it possible to run confide
 - **Simple developer experience**: Developers can use the euint data types to mark which part of their contracts should be private.
 - **Programmable privacy**: All the logic for access control of encrypted states is defined by developers in their smart contracts.
 - **High precision encrypted integers** : Up to 256 bits of precision for integers
--Full range of Operators : All typical operators are available: +, -, *, /, <, >, ==, …
+  -Full range of Operators : All typical operators are available: +, -, \*, /, <, >, ==, …
 - **Encrypted `if-else` conditionals**: Check conditions on encrypted states
 - **On-chain PRNG**: Generate secure randomness without using oracles
 - **Configurable decryption**: Threshold, centralized or KMS decryption
