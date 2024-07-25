@@ -1,6 +1,7 @@
 # Branching in FHE
+This document explains how to perform branching with encrypted booleans in fhEVM, including methods for condition handling and error management.
 
-The result of [comparison operations](../../references/functions.md#comparison-operation-eq-ne-ge-gt-le-lt) is of type `ebool`. Typical boolean operations are not supported for this type, because it is an encrypted boolean.
+When you perform [comparison operations](../../references/functions.md#comparison-operation-eq-ne-ge-gt-le-lt) in fhEVM, the result is an encrypted boolean `ebool`, which does not support typical boolean operations.
 
 ## Condition with encrypted boolean
 
@@ -17,11 +18,13 @@ function bid(einput encryptedValue, bytes calldata inputProof) public onlyBefore
 }
 ```
 
-It is important to keep in mind that each time we assign a value using `TFHE.select`, the value changes, even if the plaintext value remains the same.
+Keep in mind that each time we assign a value using `TFHE.select`, the value changes, even if the plaintext value remains the same.
 
 ## Error handling
 
-If a condition is not satisfied, the transaction will not be reverted, potentially posing a challenge when attempting to communicate issues to users. A recommended approach to address this is by implementing an error handler in which the contract stores the latest error information for all wallets.
+If a condition is not satisfied, the transaction will not be reverted, which can be challenging to communicate issues to users. 
+
+To address this, a recommended approach is to implement an error handler that stores the latest error information for all wallets:
 
 ```solidity
 struct LastError {
