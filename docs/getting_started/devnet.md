@@ -16,11 +16,11 @@ To configure the [MetaMask](<(https://support.metamask.io/hc/en-us/articles/3600
 
 1. From the homepage of your wallet, click on the network selector in the top left, and then on 'Add network'
 
-<figure><img src="../../.gitbook/assets/metamask_add_network.gif" alt="How to add network from popup" width="300"><figcaption>
+<figure><img src="../.gitbook/assets/metamask_add_network.gif" alt="How to add network from popup" width="300"><figcaption>
 </figcaption></figure>
 
 2. MetaMask will open in a new tab in fullscreen mode. From here, find and the 'Add network manually' button at the bottom of the network list.
-<figure><img src="../../.gitbook/assets/metamask_add_network2.webp" alt="How to add network"><figcaption>
+<figure><img src="../.gitbook/assets/metamask_add_network2.webp" alt="How to add network"><figcaption>
 </figcaption></figure>
 <!-- markdown-link-check-disable -->
 
@@ -53,7 +53,7 @@ To configure the [MetaMask](<(https://support.metamask.io/hc/en-us/articles/3600
 <!-- markdown-link-check-enable -->
 
 4. Choose the Zama Devnet
-<figure><img src="../../.gitbook/assets/metamask_select_network.png" alt="How to select correct network on Metamask" width="300"><figcaption>
+<figure><img src="../.gitbook/assets/metamask_select_network.png" alt="How to select correct network on Metamask" width="300"><figcaption>
 </figcaption></figure>
 
 ## Using Zama Faucet
