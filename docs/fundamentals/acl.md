@@ -14,28 +14,43 @@ Permanent allowance will store the ACL in a dedicated contract, while a temporar
 To illustrate, here is a simple example where one function calls another:
 
 ```solidity
-function giveMySecret() {
-  // Create my secret (note: an onchain encryption is not secret)
-  euint16 mySecret = TFHE.asEuint16(42);
+import "fhevm/lib/TFHE.sol";
 
-  // Allow temporary the SecretStore contract to manipulate `mySecret`
-  TFHE.allowTransient(mySecret, address(SecretStore));
+contract SecretGiver {
+  SecretStore public secretStore;
 
-  // Call `storeSecret` with `mySecret`
-  SecretStore.storeSecret(mySecret);
+  constructor() {
+    secretStore = new SecretStore();
+  }
+
+  function giveMySecret() public {
+    // Create my secret - asEuint16 gives automatically transient allowance for the resulting handle (note: an onchain trivial encryption is not secret)
+    euint16 mySecret = TFHE.asEuint16(42);
+
+    // Allow temporarily the SecretStore contract to manipulate `mySecret`
+    TFHE.allowTransient(mySecret, address(secretStore));
+
+    // Call `secretStore` with `mySecret`
+    secretStore.storeSecret(mySecret);
+  }
 }
-```
 
-```solidity
-function storeSecret(callerSecret euint16) {
-  // Verify that the caller has also access to this ciphertext
-  require(TFHE.isSenderAllowed(callerSecret), "The caller is not authorized to access this secret.");
+contract SecretStore {
+  euint16 public secretResult;
 
-  // Store this ciphertext
-  secret = callerSecret;
+  function storeSecret(euint16 callerSecret) public {
+    // Verify that the caller has also access to this ciphertext
+    require(TFHE.isSenderAllowed(callerSecret), "The caller is not authorized to access this secret.");
 
-  // Store the temporary access for this ciphertext permanently
-  TFHE.allow(callerSecret, address(this));
+    // do some FHE computation (result is automatically put in the ACL transient storage)
+    euint16 computationResult = TFHE.add(callerSecret, 3);
+
+    // then store the resulting ciphertext handle in the contract storage
+    secretResult = computationResult;
+
+    // Make the temporary allowance for this ciphertext permanent to let the contract able to reuse it at a later stage or request a decryption of it
+    TFHE.allow(secretResult, address(this));
+  }
 }
 ```
 
