@@ -33,12 +33,12 @@ check_os:
 
 # This version must the same as in docker-compose-full.yml
 # TODO add check
-KMS_DEV_VERSION ?= v0.7.1
+KMS_DEV_VERSION ?= v0.8.1-rc2
 
 FHEVM_SOLIDITY_REPO ?= fhevm
 FHEVM_SOLIDITY_PATH ?= $(WORKDIR)/$(FHEVM_SOLIDITY_REPO)
 FHEVM_SOLIDITY_PATH_EXISTS := $(shell test -d $(FHEVM_SOLIDITY_PATH)/.git && echo "true" || echo "false")
-FHEVM_SOLIDITY_VERSION ?= v0.5.2
+FHEVM_SOLIDITY_VERSION ?= v0.5.4-0
 
 export GO111MODULE = on
 
@@ -120,7 +120,6 @@ TEST_FILE := run_tests.sh
 TEST_IF_FROM_REGISTRY := 
 
 run-e2e-test: check-all-test-repo
-	$(MAKE) prepare-e2e-test
 	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test
 
 
@@ -137,7 +136,6 @@ prepare-e2e-test: check-all-test-repo
 	@./scripts/fund_test_addresses_docker.sh
 	@cd $(FHEVM_SOLIDITY_PATH) && cp .env.example .env
 	@cd $(FHEVM_SOLIDITY_PATH) && ./setup-local-fhevm.sh
-	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test
 
 run-async-test:
 	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test --grep 'test async decrypt uint8' 
@@ -148,6 +146,7 @@ run-true-input-async-test:
 e2e-test:
 	@$(MAKE) check-all-test-repo
 	$(MAKE) run-full
+	$(MAKE) prepare-e2e-test
 	$(MAKE) run-e2e-test
 	$(MAKE) stop-full
 
