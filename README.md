@@ -65,7 +65,7 @@ Execute the following commands:
 make run-full
 # Deploy ACL, Gateway ..., please wait until the end before testing!!!
 make prepare-e2e-test
-# This test will fail (first event catch is buggy - we are on it)
+# This test could fail (first event catch is buggy - we are on it)
 make run-async-test
 # This one is working
 make run-async-test
@@ -76,6 +76,10 @@ cd work_dir/fhevm & npx hardhat test --grep 'test async decrypt uint32'
 cd work_dir/fhevm & npx hardhat test --grep 'test async decrypt uint64'
 cd work_dir/fhevm & npx hardhat test --grep 'test async decrypt several addresses'
 ```
+
+
+> :bulb: **Tip:** If one of the test is blocked after a few seconds, check the logs of the gateway with `docker logs zama-dev-gateway-1 -f`. If you do not see any progress after a line like 
+`🍊 Waiting for callback from KMS, txn_id: "85fa7..."`; **stop the test and retry**. We will fix it soon! 
 
 
 
@@ -175,12 +179,12 @@ docker logs zama-dev-gateway-1 -f
 You should see the following docker images:
 
 ```
-zama-dev-gateway-1	ghcr.io/zama-ai/kms-blockchain-gateway-dev:v0.7.1
-zama-dev-connector-1	ghcr.io/zama-ai/kms-blockchain-connector-dev:v0.7.1
-zama-dev-fhevm-validator-1	ghcr.io/zama-ai/ethermint-node:v0.5.0
-zama-dev-kms-core-1	ghcr.io/zama-ai/kms-service-dev:v0.7.1
-zama-dev-kms-validator-1	ghcr.io/zama-ai/kms-blockchain-asc-dev:v0.7.1
-zama-dev-gateway-store-1	ghcr.io/zama-ai/kms-blockchain-gateway-dev:v0.7.1
+zama-dev-gateway-1	ghcr.io/zama-ai/kms-blockchain-gateway-dev:v0.8.1-rc2
+zama-dev-connector-1	ghcr.io/zama-ai/kms-blockchain-connector-dev:v0.8.1-rc2
+zama-dev-fhevm-validator-1	ghcr.io/zama-ai/ethermint-node:v0.5.1
+zama-dev-kms-core-1	ghcr.io/zama-ai/kms-service-dev:v0.8.1-rc2
+zama-dev-kms-validator-1	ghcr.io/zama-ai/kms-blockchain-asc-dev:v0.8.1-rc2
+zama-dev-gateway-store-1	ghcr.io/zama-ai/kms-blockchain-gateway-dev:v0.8.1-rc2
 ```
 
 ### Stop fhEVM-native + KMS 
