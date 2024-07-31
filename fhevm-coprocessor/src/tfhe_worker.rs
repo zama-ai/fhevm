@@ -46,14 +46,15 @@ async fn tfhe_worker_cycle(args: &crate::cli::Args) -> Result<(), Box<dyn std::e
 
         // this query locks our work items so other worker doesn't select them
         let mut the_work = query!("
-            SELECT tenant_id, output_handle, dependencies_handles, fhe_operation
+            SELECT tenant_id, output_handle, dependencies_handles, fhe_operation, is_scalar
             FROM computations c
             WHERE is_completed = false
             AND is_error = false
             AND NOT EXISTS (
                 SELECT 1
-                FROM unnest(c.dependencies_handles) AS v
-                WHERE (c.tenant_id, v) NOT IN ( SELECT tenant_id, handle FROM ciphertexts )
+                FROM unnest(c.dependencies_handles) WITH ORDINALITY AS elems(v, dep_index)
+                WHERE (c.tenant_id, elems.v) NOT IN ( SELECT tenant_id, handle FROM ciphertexts )
+                AND ( NOT c.is_scalar OR c.is_scalar AND NOT elems.dep_index = 2 )
             )
             LIMIT $1
             FOR UPDATE SKIP LOCKED
@@ -128,9 +129,16 @@ async fn tfhe_worker_cycle(args: &crate::cli::Args) -> Result<(), Box<dyn std::e
             let tenant_key_cache = tenant_key_cache.clone();
 
             let mut work_ciphertexts: Vec<(i16, Vec<u8>)> = Vec::with_capacity(w.dependencies_handles.len());
-            for dh in &w.dependencies_handles {
-                let ct_map_val = ciphertext_map.get(&(w.tenant_id, dh.as_str())).expect("Me must get ciphertext here");
-                work_ciphertexts.push((ct_map_val.ciphertext_type, ct_map_val.ciphertext.clone()));
+            for (idx, dh) in w.dependencies_handles.iter().enumerate() {
+                let is_operand_scalar = w.is_scalar && idx == 1;
+                if is_operand_scalar {
+                    let bytes = hex::decode(&dh[2..])
+                        .expect("we checked before inserting into db that this is correctly formed hex string");
+                    work_ciphertexts.push((-1, bytes));
+                } else {
+                    let ct_map_val = ciphertext_map.get(&(w.tenant_id, dh.as_str())).expect("Me must get ciphertext here");
+                    work_ciphertexts.push((ct_map_val.ciphertext_type, ct_map_val.ciphertext.clone()));
+                }
             }
 
             // copy for setting error in database
@@ -148,14 +156,29 @@ async fn tfhe_worker_cycle(args: &crate::cli::Args) -> Result<(), Box<dyn std::e
                 }
                 
                 let mut deserialized_cts: Vec<SupportedFheCiphertexts> = Vec::with_capacity(work_ciphertexts.len());
-                for (ct_type, ct_bytes) in &work_ciphertexts {
-                    deserialized_cts.push(deserialize_fhe_ciphertext(
-                        *ct_type, ct_bytes.as_slice()
-                    ).map_err(|e| (e, w.tenant_id, w.output_handle.clone()))?);
+                for (idx, (ct_type, ct_bytes)) in work_ciphertexts.iter().enumerate() {
+                    let is_operand_scalar = w.is_scalar && idx == 1;
+                    if is_operand_scalar {
+                        let mut the_int = tfhe::integer::U256::default();
+                        assert!(ct_bytes.len() <= 32, "we don't support larger numbers than 32 bytes");
+                        let mut padded: Vec<u8> = Vec::with_capacity(32);
+                        for byte in ct_bytes.iter().rev() {
+                            padded.push(*byte);
+                        }
+                        while padded.len() < 32 {
+                            padded.push(0x00);
+                        }
+                        the_int.copy_from_le_byte_slice(&padded);
+                        deserialized_cts.push(SupportedFheCiphertexts::Scalar(the_int));
+                    } else {
+                        deserialized_cts.push(deserialize_fhe_ciphertext(
+                            *ct_type, ct_bytes.as_slice()
+                        ).map_err(|e| (e, w.tenant_id, w.output_handle.clone()))?);
+                    }
                 }
 
                 let res = perform_fhe_operation(
-                    w.fhe_operation, &deserialized_cts
+                    w.fhe_operation, &deserialized_cts,
                 ).map_err(|e| (e, w.tenant_id, w.output_handle.clone()))?;
                 let (db_type, db_bytes) = res.serialize();
 

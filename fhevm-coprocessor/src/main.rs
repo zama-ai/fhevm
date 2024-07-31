@@ -1,4 +1,4 @@
-use server::coprocessor::SchedulerBatch;
+use server::coprocessor::AsyncComputeRequest;
 use tokio::task::JoinSet;
 use tonic::metadata::MetadataValue;
 
@@ -65,13 +65,14 @@ async fn custom_function() -> Result<(), Box<dyn std::error::Error + Send + Sync
         let client_key = bincode::serialize(&client_key).unwrap();
         let server_key = bincode::serialize(&server_key).unwrap();
         let compact_key = bincode::serialize(&compact_key).unwrap();
-        std::fs::write("cks", client_key).unwrap();
-        std::fs::write("pks", compact_key).unwrap();
-        std::fs::write("sks", server_key).unwrap();
+        std::fs::create_dir_all("fhevm-keys").unwrap();
+        std::fs::write("fhevm-keys/cks", client_key).unwrap();
+        std::fs::write("fhevm-keys/pks", compact_key).unwrap();
+        std::fs::write("fhevm-keys/sks", server_key).unwrap();
     }
 
     use crate::server::coprocessor::fhevm_coprocessor_client::FhevmCoprocessorClient;
-    use crate::server::coprocessor::{DebugEncryptRequest, DebugDecryptRequest, CiphertextToCompute};
+    use crate::server::coprocessor::{DebugEncryptRequest, DebugDecryptRequest, AsyncComputation};
     let mut client = FhevmCoprocessorClient::connect(
         "http://127.0.0.1:50051"
     ).await?;
@@ -81,7 +82,7 @@ async fn custom_function() -> Result<(), Box<dyn std::error::Error + Send + Sync
     // ciphertext A
     {
         let mut encrypt_request = tonic::Request::new(DebugEncryptRequest {
-            handle: "abc".to_string(),
+            handle: "0x0abc".to_string(),
             original_value: 123,
         });
         encrypt_request.metadata_mut().append("authorization", MetadataValue::from_static(api_key));
@@ -92,7 +93,7 @@ async fn custom_function() -> Result<(), Box<dyn std::error::Error + Send + Sync
     // ciphertext B
     {
         let mut encrypt_request = tonic::Request::new(DebugEncryptRequest {
-            handle: "abd".to_string(),
+            handle: "0x0abd".to_string(),
             original_value: 124,
         });
         encrypt_request.metadata_mut().append("authorization", MetadataValue::from_static(api_key));
@@ -102,34 +103,56 @@ async fn custom_function() -> Result<(), Box<dyn std::error::Error + Send + Sync
 
     // compute
     {
-        let mut compute_request = tonic::Request::new(SchedulerBatch {
-            input_handles: vec![
-                CiphertextToCompute {
-                    fhe_operation: 1,
-                    output_handle: "abe".to_string(),
+        let mut compute_request = tonic::Request::new(AsyncComputeRequest {
+            computations: vec![
+                AsyncComputation {
+                    operation: 1,
+                    is_scalar: false,
+                    output_handle: "0x0abe".to_string(),
                     input_handles: vec![
-                        "abc".to_string(),
-                        "abd".to_string(),
+                        "0x0abc".to_string(),
+                        "0x0abd".to_string(),
                     ]
-                }
+                },
+                AsyncComputation {
+                    operation: 1,
+                    is_scalar: true,
+                    output_handle: "0x0abf".to_string(),
+                    input_handles: vec![
+                        "0x0abe".to_string(),
+                        "0x0010".to_string(),
+                    ]
+                },
             ]
         });
         compute_request.metadata_mut().append("authorization", MetadataValue::from_static(api_key));
-        let resp = client.schedule_computations(compute_request).await?;
+        let resp = client.async_compute(compute_request).await?;
         println!("compute request: {:?}", resp);
     }
 
     println!("sleeping for computation to complete...");
     tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
 
-    // decrypt
+    // decrypt first
     {
         let mut decrypt_request = tonic::Request::new(DebugDecryptRequest {
-            handle: "abe".to_string()
+            handle: "0x0abe".to_string()
         });
         decrypt_request.metadata_mut().append("authorization", MetadataValue::from_static(api_key));
         let resp = client.debug_decrypt_ciphertext(decrypt_request).await?;
         println!("decrypt request: {:?}", resp);
+        assert_eq!(resp.get_ref().value, "247");
+    }
+
+    // decrypt second
+    {
+        let mut decrypt_request = tonic::Request::new(DebugDecryptRequest {
+            handle: "0x0abf".to_string()
+        });
+        decrypt_request.metadata_mut().append("authorization", MetadataValue::from_static(api_key));
+        let resp = client.debug_decrypt_ciphertext(decrypt_request).await?;
+        println!("decrypt request: {:?}", resp);
+        assert_eq!(resp.get_ref().value, "263");
     }
 
     Ok(())

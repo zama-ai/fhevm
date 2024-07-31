@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS computations (
     fhe_operation SMALLINT NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     completed_at TIMESTAMP,
+    is_scalar BOOLEAN NOT NULL,
     is_completed BOOLEAN NOT NULL DEFAULT 'f',
     is_error BOOLEAN NOT NULL DEFAULT 'f',
     error_message TEXT,

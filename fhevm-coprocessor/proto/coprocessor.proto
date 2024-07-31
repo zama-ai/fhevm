@@ -7,9 +7,9 @@ option java_outer_classname = "FhevmCoprocessor";
 package coprocessor;
 
 service FhevmCoprocessor {
-  rpc ScheduleComputations (SchedulerBatch) returns (GenericResponse) {}
+  rpc AsyncCompute (AsyncComputeRequest) returns (GenericResponse) {}
   rpc UploadCiphertexts (CiphertextUploadBatch) returns (GenericResponse) {}
-  rpc WaitComputations (SchedulerBatch) returns (FhevmResponses) {}
+  rpc WaitComputations (AsyncComputeRequest) returns (FhevmResponses) {}
   // for debugging, should be removed in prod
   rpc DebugDecryptCiphertext (DebugDecryptRequest) returns (DebugDecryptResponse) {}
   // for debugging, should be removed in prod
@@ -29,10 +29,11 @@ message DebugDecryptResponse {
   string value = 1;
 }
 
-message CiphertextToCompute {
-  int32 fhe_operation = 1;
-  string output_handle = 2;
-  repeated string input_handles = 3;
+message AsyncComputation {
+  int32 operation = 1;
+  bool is_scalar = 2;
+  string output_handle = 3;
+  repeated string input_handles = 4;
 }
 
 message CiphertextToUpload {
@@ -42,8 +43,8 @@ message CiphertextToUpload {
 }
 
 // The request message containing the user's name.
-message SchedulerBatch {
-  repeated CiphertextToCompute input_handles = 1;
+message AsyncComputeRequest {
+  repeated AsyncComputation computations = 1;
 }
 
 message CiphertextUploadBatch {

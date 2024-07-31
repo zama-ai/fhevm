@@ -8,7 +8,7 @@ use tonic::transport::Server;
 use crate::db_queries::{check_if_api_key_is_valid, check_if_ciphertexts_exist_in_db};
 use crate::utils::check_valid_ciphertext_handle;
 use crate::types::{CoprocessorError, SupportedFheCiphertexts};
-use crate::tfhe_ops::{self, current_ciphertext_version};
+use crate::tfhe_ops::{self, check_fhe_operand_types, current_ciphertext_version};
 use crate::server::coprocessor::GenericResponse;
 
 pub mod coprocessor {
@@ -164,9 +164,9 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
         return Ok(tonic::Response::new(GenericResponse { response_code: 0 }));
     }
 
-    async fn schedule_computations(
+    async fn async_compute(
           &self,
-          request: tonic::Request<coprocessor::SchedulerBatch>,
+          request: tonic::Request<coprocessor::AsyncComputeRequest>,
     ) -> std::result::Result<
         tonic::Response<coprocessor::GenericResponse>,
         tonic::Status,
@@ -184,53 +184,73 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
             return Err(tonic::Status::not_found("tenant not found"));
         }
 
-        if req.input_handles.is_empty() {
+        if req.computations.is_empty() {
             return Ok(tonic::Response::new(GenericResponse { response_code: 0 }));
         }
 
         let mut output_handles: HashSet<&str> = HashSet::new();
-        for ct in &req.input_handles {
-            check_valid_ciphertext_handle(ct.output_handle.as_str())?;
-            if !output_handles.insert(ct.output_handle.as_str()) {
+        for comp in &req.computations {
+            check_valid_ciphertext_handle(comp.output_handle.as_str())?;
+            if !output_handles.insert(comp.output_handle.as_str()) {
                 return Err(
                     tonic::Status::from_error(
-                        Box::new(CoprocessorError::DuplicateOutputHandleInBatch(ct.output_handle.clone()))
+                        Box::new(CoprocessorError::DuplicateOutputHandleInBatch(comp.output_handle.clone()))
                     )
                 );
             }
         }
 
         let mut handles_to_check_in_db: BTreeSet<String> = BTreeSet::new();
-        for ct in &req.input_handles {
-            for ih in &ct.input_handles {
+        for comp in &req.computations {
+            for (idx, ih) in comp.input_handles.iter().enumerate() {
                 check_valid_ciphertext_handle(ih.as_str())?;
-                if ih == &ct.output_handle {
+                if ih == &comp.output_handle {
                     return Err(tonic::Status::from_error(
                         Box::new(CoprocessorError::OutputHandleIsAlsoInputHandle(ih.clone()))
                     ));
                 }
 
-                if !output_handles.contains(ih.as_str()) {
+                let is_scalar_operand = comp.is_scalar && idx == 1;
+
+                if !is_scalar_operand && !output_handles.contains(ih.as_str()) {
                     handles_to_check_in_db.insert(ih.clone());
                 }
             }
         }
 
-        check_if_ciphertexts_exist_in_db(handles_to_check_in_db, tenant_id, &self.pool).await?;
-        // TODO: check that input handles for operation are of uniform type and correct amount of inputs for fhe operation
+        let mut ct_types = check_if_ciphertexts_exist_in_db(handles_to_check_in_db, tenant_id, &self.pool).await?;
+        for comp in &req.computations {
+            let mut handle_types = Vec::with_capacity(comp.input_handles.len());
+            for (idx, ih) in comp.input_handles.iter().enumerate() {
+                let is_operand_scalar = comp.is_scalar && idx == 1;
+                if is_operand_scalar {
+                    handle_types.push(-1);
+                } else {
+                    // operand may be scalar, but this will be checked in check_fhe_operand_types, we don't want to panic
+                    let ct_type = ct_types.get(ih).expect("this must be found if operand is non scalar");
+                    handle_types.push(*ct_type);
+                }
+            }
+
+            // check before we insert computation that it has
+            // to succeed according to the type system
+            let output_type = check_fhe_operand_types(comp.operation, &handle_types, comp.is_scalar)?;
+            // fill in types with output handles that are computed as we go
+            assert!(ct_types.insert(comp.output_handle.clone(), output_type).is_none());
+        }
         
         let mut trx = self.pool.begin().await.map_err(Into::<CoprocessorError>::into)?;
         let mut new_work_available = false;
-        for ct in &req.input_handles {
+        for comp in &req.computations {
             let fhe_operation: i16 =
-                ct.fhe_operation.try_into().map_err(|_| CoprocessorError::UnknownFheOperation(ct.fhe_operation))?;
+                comp.operation.try_into().map_err(|_| CoprocessorError::UnknownFheOperation(comp.operation))?;
             let res = query!(
                 "
-                    INSERT INTO computations(tenant_id, output_handle, dependencies_handles, fhe_operation, is_completed)
-                    VALUES($1, $2, $3, $4, false)
+                    INSERT INTO computations(tenant_id, output_handle, dependencies_handles, fhe_operation, is_completed, is_scalar)
+                    VALUES($1, $2, $3, $4, false, $5)
                     ON CONFLICT (tenant_id, output_handle) DO NOTHING
                 ",
-                tenant_id, ct.output_handle, &ct.input_handles, fhe_operation
+                tenant_id, comp.output_handle, &comp.input_handles, fhe_operation, comp.is_scalar
             ).execute(trx.as_mut()).await.map_err(Into::<CoprocessorError>::into)?;
             if res.rows_affected() > 0 {
                 new_work_available = true;
@@ -245,7 +265,7 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
 
     async fn wait_computations(
           &self,
-          _request: tonic::Request<coprocessor::SchedulerBatch>,
+          _request: tonic::Request<coprocessor::AsyncComputeRequest>,
     ) -> std::result::Result<
         tonic::Response<coprocessor::FhevmResponses>,
         tonic::Status,

@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::str::FromStr;
 
 use sqlx::{query, Postgres};
@@ -43,25 +43,29 @@ pub async fn check_if_api_key_is_valid<T>(req: &tonic::Request<T>, pool: &sqlx::
     }
 }
 
-pub async fn check_if_ciphertexts_exist_in_db(cts: BTreeSet<String>, tenant_id: i32, pool: &sqlx::Pool<Postgres>) -> Result<(), CoprocessorError> {
-    let handles_to_check_in_db_vec = cts.into_iter().collect::<Vec<_>>();
-    let handles_to_check_in_db = handles_to_check_in_db_vec.join(",");
-    let unexisting_cts = query!(
+/// Returns ciphertext types
+pub async fn check_if_ciphertexts_exist_in_db(mut cts: BTreeSet<String>, tenant_id: i32, pool: &sqlx::Pool<Postgres>) -> Result<HashMap<String, i16>, CoprocessorError> {
+    let handles_to_check_in_db_vec = cts.iter().cloned().collect::<Vec<_>>();
+    let ciphertexts = query!(
         "
-            SELECT handle
-            FROM unnest(string_to_array($1, ',')) AS t(handle)
-            EXCEPT
-            SELECT handle
+            SELECT handle, ciphertext_type
             FROM ciphertexts
-            WHERE tenant_id = $2
+            WHERE handle = ANY($1::TEXT[])
+            AND tenant_id = $2
         ",
-        handles_to_check_in_db,
+        &handles_to_check_in_db_vec,
         tenant_id,
     ).fetch_all(pool).await.map_err(Into::<CoprocessorError>::into)?;
 
-    if !unexisting_cts.is_empty() {
-        return Err(CoprocessorError::UnexistingInputCiphertextsFound(handles_to_check_in_db_vec));
+    let mut result = HashMap::with_capacity(cts.len());
+    for ct in ciphertexts {
+        assert!(cts.remove(&ct.handle), "any ciphertext selected must exist");
+        assert!(result.insert(ct.handle.clone(), ct.ciphertext_type).is_none());
     }
 
-    Ok(())
+    if !cts.is_empty() {
+        return Err(CoprocessorError::UnexistingInputCiphertextsFound(cts.into_iter().collect()));
+    }
+
+    Ok(result)
 }

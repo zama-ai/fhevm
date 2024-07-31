@@ -575,6 +575,7 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "clap",
+ "hex",
  "lazy_static",
  "lru",
  "prost",
@@ -2040,9 +2041,9 @@ dependencies = [
 
 [[package]]
 name = "tfhe"
-version = "0.7.2"
+version = "0.8.0-alpha.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0623aaa0dc7836f4f7aa96602ef9c6a55f87cbcb962a94ed7a9e6d00daa32cfb"
+checksum = "67f2f9fc14bdb2ae1c4d249ba50dea8b0b5717259f538c8f3cc2a2c8d5d9b144"
 dependencies = [
  "aligned-vec",
  "bincode",

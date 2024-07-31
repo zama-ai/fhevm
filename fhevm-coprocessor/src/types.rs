@@ -1,4 +1,4 @@
-use tfhe::prelude::FheDecrypt;
+use tfhe::{integer::U256, prelude::FheDecrypt};
 
 #[derive(Debug)]
 pub enum CoprocessorError {
@@ -8,10 +8,29 @@ pub enum CoprocessorError {
     UnknownFheType(i32),
     DuplicateOutputHandleInBatch(String),
     CiphertextHandleLongerThan64Bytes,
+    CiphertextHandleMustBeAtLeast4Bytes(String),
+    CiphertextHandleMustHaveEvenAmountOfHexNibblets(String),
     InvalidHandle(String),
     UnexistingInputCiphertextsFound(Vec<String>),
     OutputHandleIsAlsoInputHandle(String),
     UnknownCiphertextType(i16),
+    UnexpectedOperandCountForFheOperation {
+        fhe_operation: i32,
+        fhe_operation_name: String,
+        expected_operands: usize,
+        got_operands: usize,
+    },
+    FheOperationDoesntSupportScalar {
+        fhe_operation: i32,
+        fhe_operation_name: String,
+        scalar_requested: bool,
+        scalar_supported: bool,
+    },
+    FheOperationDoesntHaveUniformTypesAsInput {
+        fhe_operation: i32,
+        fhe_operation_name: String,
+        operand_types: Vec<i16>,
+    },
 }
 
 impl std::fmt::Display for CoprocessorError {
@@ -35,6 +54,12 @@ impl std::fmt::Display for CoprocessorError {
             CoprocessorError::CiphertextHandleLongerThan64Bytes => {
                 write!(f, "Found ciphertext handle longer than 64 bytes")
             }
+            CoprocessorError::CiphertextHandleMustBeAtLeast4Bytes(handle) => {
+                write!(f, "Found ciphertext handle less than 4 bytes: {handle}")
+            }
+            CoprocessorError::CiphertextHandleMustHaveEvenAmountOfHexNibblets(handle) => {
+                write!(f, "Found uneven amount of hex nibblets in handle, can't deserialize to bytes: {handle}")
+            }
             CoprocessorError::InvalidHandle(handle) => {
                 write!(f, "Invalid handle found: {}", handle)
             }
@@ -47,6 +72,15 @@ impl std::fmt::Display for CoprocessorError {
             CoprocessorError::UnknownCiphertextType(the_type) => {
                 write!(f, "Unknown input ciphertext type: {}", the_type)
             }
+            CoprocessorError::UnexpectedOperandCountForFheOperation { fhe_operation, fhe_operation_name, expected_operands, got_operands } => {
+                write!(f, "fhe operation number {fhe_operation} ({fhe_operation_name}) received unexpected operand count, expected: {expected_operands}, received: {got_operands}")
+            },
+            CoprocessorError::FheOperationDoesntSupportScalar { fhe_operation, fhe_operation_name, .. } => {
+                write!(f, "fhe operation number {fhe_operation} ({fhe_operation_name}) doesn't support scalar computation")
+            },
+            CoprocessorError::FheOperationDoesntHaveUniformTypesAsInput { fhe_operation, fhe_operation_name, operand_types } => {
+                write!(f, "fhe operation number {fhe_operation} ({fhe_operation_name}) expects uniform types as input, received: {:?}", operand_types)
+            },
         }
     }
 }
@@ -77,6 +111,21 @@ pub enum SupportedFheCiphertexts {
     FheUint8(tfhe::FheUint8),
     FheUint16(tfhe::FheUint16),
     FheUint32(tfhe::FheUint32),
+    Scalar(U256),
+}
+
+#[derive(Clone, Copy, Debug)]
+#[repr(i8)]
+pub enum SupportedFheOperations {
+    FheAdd = 1,
+    FheNot = 2,
+    FheIfThenElse = 3,
+}
+
+pub enum FheOperationType {
+    Binary,
+    Unary,
+    Other,
 }
 
 impl SupportedFheCiphertexts {
@@ -86,6 +135,9 @@ impl SupportedFheCiphertexts {
             SupportedFheCiphertexts::FheUint8(v) => (2, bincode::serialize(v).unwrap()),
             SupportedFheCiphertexts::FheUint16(v) => (3, bincode::serialize(v).unwrap()),
             SupportedFheCiphertexts::FheUint32(v) => (4, bincode::serialize(v).unwrap()),
+            SupportedFheCiphertexts::Scalar(_) => {
+                panic!("we should never need to serialize scalar")
+            }
         }
     }
 
@@ -95,6 +147,59 @@ impl SupportedFheCiphertexts {
             SupportedFheCiphertexts::FheUint8(v) => FheDecrypt::<u8>::decrypt(v, client_key).to_string(),
             SupportedFheCiphertexts::FheUint16(v) => FheDecrypt::<u16>::decrypt(v, client_key).to_string(),
             SupportedFheCiphertexts::FheUint32(v) => FheDecrypt::<u32>::decrypt(v, client_key).to_string(),
+            SupportedFheCiphertexts::Scalar(v) => {
+                let (l, h) = v.to_low_high_u128();
+                format!("{l}{h}")
+            },
         }
+    }
+}
+
+impl SupportedFheOperations {
+    pub fn op_type(&self) -> FheOperationType {
+        match self {
+            SupportedFheOperations::FheAdd => FheOperationType::Binary,
+            SupportedFheOperations::FheNot => FheOperationType::Unary,
+            SupportedFheOperations::FheIfThenElse => FheOperationType::Other,
+        }
+    }
+}
+
+impl TryFrom<i16> for SupportedFheOperations {
+    type Error = CoprocessorError;
+
+    fn try_from(value: i16) -> Result<Self, Self::Error> {
+        let res = match value {
+            1 => Ok(SupportedFheOperations::FheAdd),
+            _ => Err(CoprocessorError::UnknownFheOperation(value as i32))
+        };
+
+        // ensure we're always having the same value serialized back and forth
+        if let Ok(v) = &res {
+            assert_eq!(v.clone() as i16, value);
+        }
+
+        res
+    }
+}
+
+// we get i32 from protobuf (smaller types unsupported)
+// but in database we store i16
+impl TryFrom<i32> for SupportedFheOperations {
+    type Error = CoprocessorError;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        let initial_value: i16 = value.try_into().map_err(|_| {
+            CoprocessorError::UnknownFheOperation(value)
+        })?;
+
+        let final_value: Result<SupportedFheOperations, Self::Error> = initial_value.try_into();
+        final_value
+    }
+}
+
+impl From<SupportedFheOperations> for i16 {
+    fn from(value: SupportedFheOperations) -> Self {
+        value as i16
     }
 }
