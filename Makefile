@@ -158,6 +158,7 @@ clean:
 	rm -rf $(WORKDIR)/ 
 	rm -rf network-fhe-keys
 	rm -rf kms-fhe-keys
+	rm -rf res
 
 
 print-info:
