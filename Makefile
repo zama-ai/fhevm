@@ -33,7 +33,7 @@ check_os:
 
 # This version must the same as in docker-compose-full.yml
 # TODO add check
-KMS_DEV_VERSION ?= v0.8.1-rc2
+KMS_DEV_VERSION ?= v0.8.1-rc3
 
 FHEVM_SOLIDITY_REPO ?= fhevm
 FHEVM_SOLIDITY_PATH ?= $(WORKDIR)/$(FHEVM_SOLIDITY_REPO)
