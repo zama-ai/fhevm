@@ -66,6 +66,8 @@ async fn tfhe_worker_cycle(args: &crate::cli::Args) -> Result<(), Box<dyn std::e
             continue;
         }
 
+        println!("Processing {} work items", the_work.len());
+
         // make sure we process each tenant sequentially not to
         // load different keys in cache by different tenants
         the_work.sort_by_key(|k| k.tenant_id);
