@@ -14,6 +14,10 @@ pub enum CoprocessorError {
     UnexistingInputCiphertextsFound(Vec<String>),
     OutputHandleIsAlsoInputHandle(String),
     UnknownCiphertextType(i16),
+    CiphertextComputationDependencyLoopDetected {
+        uncomputable_output_handle: String,
+        uncomputable_handle_dependencies: Vec<String>,
+    },
     UnexpectedOperandCountForFheOperation {
         fhe_operation: i32,
         fhe_operation_name: String,
@@ -80,6 +84,9 @@ impl std::fmt::Display for CoprocessorError {
             },
             CoprocessorError::FheOperationDoesntHaveUniformTypesAsInput { fhe_operation, fhe_operation_name, operand_types } => {
                 write!(f, "fhe operation number {fhe_operation} ({fhe_operation_name}) expects uniform types as input, received: {:?}", operand_types)
+            },
+            CoprocessorError::CiphertextComputationDependencyLoopDetected { uncomputable_output_handle, uncomputable_handle_dependencies  } => {
+                write!(f, "fhe computation with output handle {uncomputable_output_handle} with dependencies {:?} has circular dependency and is uncomputable", uncomputable_handle_dependencies)
             },
         }
     }

@@ -107,20 +107,20 @@ async fn custom_function() -> Result<(), Box<dyn std::error::Error + Send + Sync
             computations: vec![
                 AsyncComputation {
                     operation: 1,
-                    is_scalar: false,
-                    output_handle: "0x0abe".to_string(),
-                    input_handles: vec![
-                        "0x0abc".to_string(),
-                        "0x0abd".to_string(),
-                    ]
-                },
-                AsyncComputation {
-                    operation: 1,
                     is_scalar: true,
                     output_handle: "0x0abf".to_string(),
                     input_handles: vec![
                         "0x0abe".to_string(),
                         "0x0010".to_string(),
+                    ]
+                },
+                AsyncComputation {
+                    operation: 1,
+                    is_scalar: false,
+                    output_handle: "0x0abe".to_string(),
+                    input_handles: vec![
+                        "0x0abc".to_string(),
+                        "0x0abd".to_string(),
                     ]
                 },
             ]

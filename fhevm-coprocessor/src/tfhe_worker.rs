@@ -54,6 +54,7 @@ async fn tfhe_worker_cycle(args: &crate::cli::Args) -> Result<(), Box<dyn std::e
                 SELECT 1
                 FROM unnest(c.dependencies_handles) WITH ORDINALITY AS elems(v, dep_index)
                 WHERE (c.tenant_id, elems.v) NOT IN ( SELECT tenant_id, handle FROM ciphertexts )
+                -- don't select scalar operands
                 AND ( NOT c.is_scalar OR c.is_scalar AND NOT elems.dep_index = 2 )
             )
             LIMIT $1

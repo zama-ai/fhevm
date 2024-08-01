@@ -1,12 +1,10 @@
-use std::collections::{BTreeSet, HashSet};
-
 use coprocessor::DebugDecryptResponse;
 use sqlx::query;
 use tfhe::prelude::FheTryTrivialEncrypt;
 use tfhe::FheUint32;
 use tonic::transport::Server;
 use crate::db_queries::{check_if_api_key_is_valid, check_if_ciphertexts_exist_in_db};
-use crate::utils::check_valid_ciphertext_handle;
+use crate::utils::sort_computations_by_dependencies;
 use crate::types::{CoprocessorError, SupportedFheCiphertexts};
 use crate::tfhe_ops::{self, check_fhe_operand_types, current_ciphertext_version};
 use crate::server::coprocessor::GenericResponse;
@@ -174,52 +172,18 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
         let tenant_id = check_if_api_key_is_valid(&request, &self.pool).await?;
 
         let req = request.get_ref();
-        let tenant =
-            query!("SELECT tenant_id FROM tenants WHERE tenant_id = $1", tenant_id)
-                .fetch_all(&self.pool)
-                .await
-                .map_err(Into::<CoprocessorError>::into)?;
-
-        if tenant.is_empty() {
-            return Err(tonic::Status::not_found("tenant not found"));
-        }
 
         if req.computations.is_empty() {
             return Ok(tonic::Response::new(GenericResponse { response_code: 0 }));
         }
 
-        let mut output_handles: HashSet<&str> = HashSet::new();
-        for comp in &req.computations {
-            check_valid_ciphertext_handle(comp.output_handle.as_str())?;
-            if !output_handles.insert(comp.output_handle.as_str()) {
-                return Err(
-                    tonic::Status::from_error(
-                        Box::new(CoprocessorError::DuplicateOutputHandleInBatch(comp.output_handle.clone()))
-                    )
-                );
-            }
-        }
-
-        let mut handles_to_check_in_db: BTreeSet<String> = BTreeSet::new();
-        for comp in &req.computations {
-            for (idx, ih) in comp.input_handles.iter().enumerate() {
-                check_valid_ciphertext_handle(ih.as_str())?;
-                if ih == &comp.output_handle {
-                    return Err(tonic::Status::from_error(
-                        Box::new(CoprocessorError::OutputHandleIsAlsoInputHandle(ih.clone()))
-                    ));
-                }
-
-                let is_scalar_operand = comp.is_scalar && idx == 1;
-
-                if !is_scalar_operand && !output_handles.contains(ih.as_str()) {
-                    handles_to_check_in_db.insert(ih.clone());
-                }
-            }
-        }
+        // computations are now sorted based on dependencies or error should have
+        // been returned if there's circular dependency
+        let (sorted_computations, handles_to_check_in_db) =
+            sort_computations_by_dependencies(&req.computations)?;
 
         let mut ct_types = check_if_ciphertexts_exist_in_db(handles_to_check_in_db, tenant_id, &self.pool).await?;
-        for comp in &req.computations {
+        for comp in &sorted_computations {
             let mut handle_types = Vec::with_capacity(comp.input_handles.len());
             for (idx, ih) in comp.input_handles.iter().enumerate() {
                 let is_operand_scalar = comp.is_scalar && idx == 1;
@@ -241,7 +205,7 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
         
         let mut trx = self.pool.begin().await.map_err(Into::<CoprocessorError>::into)?;
         let mut new_work_available = false;
-        for comp in &req.computations {
+        for comp in &sorted_computations {
             let fhe_operation: i16 =
                 comp.operation.try_into().map_err(|_| CoprocessorError::UnknownFheOperation(comp.operation))?;
             let res = query!(
