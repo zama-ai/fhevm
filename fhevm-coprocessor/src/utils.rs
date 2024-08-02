@@ -65,6 +65,9 @@ pub fn sort_computations_by_dependencies<'a>(input: &'a [AsyncComputation]) -> R
                 }
             }
         }
+        // the further dependency is in array the later it should be processed
+        this_deps.sort();
+        this_deps.reverse();
         computation_dependencies.push((idx, this_deps));
     }
 
