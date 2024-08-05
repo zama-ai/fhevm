@@ -60,4 +60,8 @@ Collaborate with us to advance the FHE spaces and drive innovation together.
 
 ---
 
-We value your feedback! [Take a 5-question developer survey](http://zama.ai/developer-survey) to improve the fhEVM library and the documentation and help other developers use FHE.
+{% hint style="success" %}
+**Zama 5-Question Developer Survey**
+
+We want to hear from you! Take 1 minute to share your thoughts and helping us enhance our documentation and libraries. **👉** [**Click here**](https://zvajd6l0ngk.typeform.com/to/I7mXXanI) to participate.
+{% endhint %}
