@@ -14,6 +14,10 @@ pub enum CoprocessorError {
     UnexistingInputCiphertextsFound(Vec<String>),
     OutputHandleIsAlsoInputHandle(String),
     UnknownCiphertextType(i16),
+    TooManyCiphertextsInBatch {
+        maximum_allowed: usize,
+        got: usize,
+    },
     CiphertextComputationDependencyLoopDetected {
         uncomputable_output_handle: String,
         uncomputable_handle_dependencies: Vec<String>,
@@ -88,6 +92,9 @@ impl std::fmt::Display for CoprocessorError {
             CoprocessorError::CiphertextComputationDependencyLoopDetected { uncomputable_output_handle, uncomputable_handle_dependencies  } => {
                 write!(f, "fhe computation with output handle {uncomputable_output_handle} with dependencies {:?} has circular dependency and is uncomputable", uncomputable_handle_dependencies)
             },
+            CoprocessorError::TooManyCiphertextsInBatch { maximum_allowed, got } => {
+                write!(f, "maximum ciphertexts exceeded in batch, maximum: {maximum_allowed}, got: {got}")
+            },
         }
     }
 }
@@ -124,7 +131,8 @@ pub enum SupportedFheCiphertexts {
 #[derive(Clone, Copy, Debug)]
 #[repr(i8)]
 pub enum SupportedFheOperations {
-    FheAdd = 1,
+    FheAdd = 0,
+    FheSub = 1,
     FheNot = 2,
     FheIfThenElse = 3,
 }
@@ -165,7 +173,7 @@ impl SupportedFheCiphertexts {
 impl SupportedFheOperations {
     pub fn op_type(&self) -> FheOperationType {
         match self {
-            SupportedFheOperations::FheAdd => FheOperationType::Binary,
+            SupportedFheOperations::FheAdd | SupportedFheOperations::FheSub => FheOperationType::Binary,
             SupportedFheOperations::FheNot => FheOperationType::Unary,
             SupportedFheOperations::FheIfThenElse => FheOperationType::Other,
         }
@@ -177,7 +185,8 @@ impl TryFrom<i16> for SupportedFheOperations {
 
     fn try_from(value: i16) -> Result<Self, Self::Error> {
         let res = match value {
-            1 => Ok(SupportedFheOperations::FheAdd),
+            0 => Ok(SupportedFheOperations::FheAdd),
+            1 => Ok(SupportedFheOperations::FheSub),
             _ => Err(CoprocessorError::UnknownFheOperation(value as i32))
         };
 

@@ -15,6 +15,7 @@ pub mod coprocessor {
 
 pub struct CoprocessorService {
     pool: sqlx::Pool<sqlx::Postgres>,
+    args: crate::cli::Args,
 }
 
 pub async fn run_server(args: crate::cli::Args) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -29,6 +30,7 @@ pub async fn run_server(args: crate::cli::Args) -> Result<(), Box<dyn std::error
 
     let service = CoprocessorService {
         pool,
+        args,
     };
 
     Server::builder()
@@ -169,9 +171,15 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
         tonic::Response<coprocessor::GenericResponse>,
         tonic::Status,
     > {
-        let tenant_id = check_if_api_key_is_valid(&request, &self.pool).await?;
-
         let req = request.get_ref();
+        if req.computations.len() > self.args.server_maximum_ciphertexts_to_schedule {
+            return Err(tonic::Status::from_error(Box::new(CoprocessorError::TooManyCiphertextsInBatch {
+                maximum_allowed: self.args.server_maximum_ciphertexts_to_schedule,
+                got: req.computations.len(),
+            })));
+        }
+
+        let tenant_id = check_if_api_key_is_valid(&request, &self.pool).await?;
 
         if req.computations.is_empty() {
             return Ok(tonic::Response::new(GenericResponse { response_code: 0 }));

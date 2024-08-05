@@ -29,8 +29,13 @@ message DebugDecryptResponse {
   string value = 1;
 }
 
+enum FheOperation {
+  FHE_ADD = 0;
+  FHE_SUB = 1;
+}
+
 message AsyncComputation {
-  int32 operation = 1;
+  FheOperation operation = 1;
   bool is_scalar = 2;
   string output_handle = 3;
   repeated string input_handles = 4;

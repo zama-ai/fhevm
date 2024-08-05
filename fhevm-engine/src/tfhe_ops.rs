@@ -29,6 +29,7 @@ pub fn perform_fhe_operation(fhe_operation: i16, input_operands: &[SupportedFheC
                 }
             }
         }
+        SupportedFheOperations::FheSub => todo!(),
         SupportedFheOperations::FheNot => todo!(),
         SupportedFheOperations::FheIfThenElse => todo!(),
     }

@@ -1,4 +1,4 @@
-use server::coprocessor::AsyncComputeRequest;
+use server::coprocessor::{AsyncComputeRequest, FheOperation};
 use tokio::task::JoinSet;
 use tonic::metadata::MetadataValue;
 
@@ -9,12 +9,17 @@ mod types;
 mod utils;
 mod tfhe_worker;
 mod tfhe_ops;
+mod tests;
 
 fn main() {
     let args = crate::cli::parse_args();
     assert!(args.work_items_batch_size < args.tenant_key_cache_size, "Work items batch size must be less than tenant key cache size");
 
-    // TODO: check that computation has uniform input types
+    start_runtime(args);
+}
+
+// separate function for testing
+pub fn start_runtime(args: crate::cli::Args) {
     tokio::runtime::Builder::new_multi_thread()
         .worker_threads(args.tokio_threads)
         // not using tokio main to specify max blocking threads
@@ -106,7 +111,7 @@ async fn custom_function() -> Result<(), Box<dyn std::error::Error + Send + Sync
         let mut compute_request = tonic::Request::new(AsyncComputeRequest {
             computations: vec![
                 AsyncComputation {
-                    operation: 1,
+                    operation: FheOperation::FheAdd.into(),
                     is_scalar: true,
                     output_handle: "0x0abf".to_string(),
                     input_handles: vec![
@@ -115,7 +120,7 @@ async fn custom_function() -> Result<(), Box<dyn std::error::Error + Send + Sync
                     ]
                 },
                 AsyncComputation {
-                    operation: 1,
+                    operation: FheOperation::FheAdd.into(),
                     is_scalar: false,
                     output_handle: "0x0abe".to_string(),
                     input_handles: vec![

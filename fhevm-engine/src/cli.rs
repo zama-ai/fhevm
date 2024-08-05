@@ -15,6 +15,10 @@ pub struct Args {
     #[arg(long)]
     pub run_custom_function: bool,
 
+    /// Server maximum ciphertexts to schedule per batch
+    #[arg(long, default_value_t = 5000)]
+    pub server_maximum_ciphertexts_to_schedule: usize,
+
     /// Work items batch size
     #[arg(long, default_value_t = 10)]
     pub work_items_batch_size: i32,
