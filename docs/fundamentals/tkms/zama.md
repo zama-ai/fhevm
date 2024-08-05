@@ -10,3 +10,10 @@ The Key Management System (TKMS) is a self-contained service for performing sens
 
 One KMS instance can support multiple applications at the same time. This is implemented via per application or per application type smart contracts running in the KMS. These smart contracts are customizable to for instance implement application specific authorization logic (e.g. ACLs).
 
+## Gateway
+
+The KMS system is facilitated through a gateway service which is designed _not_ to be required to be trusted, thus a malicious Gateway Service will _not_ be able to compromise correctness or privacy of the system, but at most be able to block requests and responses between the fhEVM and the KMS. However, this can be prevented by simply deploying multiple Gateways Services.
+
+Furthermore we observe that it is possible to implement payment to a Gateway service through the KMS blockchain, thus incentivizing such a service to be honest and reliable.
+
+The Gateway Service consists of two different Connectors in order to decouple a specific fhEVM from a specific KMS. This will make it simpler to roll new blockchain protocols on either the fhEVM or KMS side without requiring modifications to the Gateway, but instead only require the writing of new Connectors.
