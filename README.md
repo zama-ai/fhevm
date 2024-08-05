@@ -1,12 +1,17 @@
 <p align="center">
 <!-- product name logo -->
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="KMS-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="KMS-light.png">
-  <img width=600 alt="Zama KMS">
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/d7c9d88b-fc49-46f4-802b-65d1c944e2d9">
+  <source media="(prefers-color-scheme: light)" srcset="https://github.com/user-attachments/assets/b50f98a7-4190-492c-969b-7762f522dcf7">
+  <img width=600 alt="Zama fhEVM & KMS">
 </picture>
 </p>
 
+---
+
+<p align="center">
+  <a href="./fhevm-whitepaper.pdf"> 📃 Read white paper</a> |<a href="https://docs.zama.ai/fhevm"> 📒 Documentation</a> | <a href="https://zama.ai/community"> 💛 Community support</a> | <a href="https://github.com/zama-ai/awesome-zama"> 📚 FHE resources by Zama</a>
+</p>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-BSD--3--Clause--Clear-%23ffb243?style=flat-square"></a>
@@ -15,9 +20,8 @@
 
 ## About
 
-📢 Announcement:
-
-⚠️ Warning: This is still an early version.
+> [!Warning]
+> This demo is an early beta version.
 
 The purpose of this repository is to demonstrate the integration between fhEVM-native and a fully dockerized centralized KMS.
 
@@ -42,6 +46,30 @@ The rest of the communication is defined by existing standards and uses JSON-RPC
 For the light client, we currently use CometBFT's [light](https://pkg.go.dev/github.com/cometbft/cometbft/light) package, which provides a service that connects to any CometBFT full node to serve trusted state roots on-demand.
 The light client package handles the logic of sequentially verifying block headers.
 
+  <br></br>
+
+  
+## Table of Contents
+
+- **[Getting Started](#getting-started)**
+  - [Key generation](#key-generation)
+  - [Fast run and test](#fast-run-and-test)
+  - [Trouble shooting](#trouble-shooting)
+  - [Init fhEVM-native](#init-fhevm-native)
+  - [Run fhEVM-native + KMS components](#run-fhevm-native--kms-components)
+  - [Stop fhEVM-native + KMS](#stop-fhevm-native--kms)
+  - [Fresh start](#fresh-start)
+  - [Test using fhevm](#test-using-fhevm)
+- **[Resources](#resources)**
+  - [Presentations](#presentations)
+  - [Theory](#theory)
+- **[Working with KMS](#working-with-kms)**
+  - [Disclaimers](#disclaimers)
+  - [Citations](#citations)
+  - [License](#license)
+- **[Support](#support)**
+  <br></br>
+  
 ## Getting started
 
 ### Key generation
@@ -77,8 +105,8 @@ cd work_dir/fhevm & npx hardhat test --grep 'test async decrypt uint64'
 cd work_dir/fhevm & npx hardhat test --grep 'test async decrypt several addresses'
 ```
 
-
-> :bulb: **Tip:** If one of the test is blocked after a few seconds, check the logs of the gateway with `docker logs zama-dev-gateway-1 -f`. If you do not see any progress after a line like 
+> [!TIP]  
+> If one of the test is blocked after a few seconds, check the logs of the gateway with `docker logs zama-dev-gateway-1 -f`. If you do not see any progress after a line like 
 `🍊 Waiting for callback from KMS, txn_id: "85fa7..."`; **stop the test and retry**. We will fix it soon! 
 
 
@@ -155,7 +183,7 @@ Error: The nonce of the deployer account is not null. Please use another deploye
 ```
 Then something went wrong in a step and you will need to run `make clean` and then start over the flow described [above](#fast-run-and-test).
 
-# Init fhEVM-native
+### Init fhEVM-native
 
 ```bash
 make init-ethermint-node 
@@ -217,7 +245,7 @@ or in one command
 ```bash
 make e2e-test
 ```
-
+<br></br>
 
 ## Resources
 
@@ -228,6 +256,8 @@ make e2e-test
 ### Theory
 - [Noah's Ark: Efficient Threshold-FHE Using Noise Flooding](https://eprint.iacr.org/2023/815)
 
+  <br></br>
+  
 ## Working with KMS
 
 ### Disclaimers
@@ -271,6 +301,7 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 **Can you customize a solution for my specific use case?**
 >We are open to collaborating and advancing the FHE space with our partners. If you have specific needs, please email us at hello@zama.ai.
 
+<br></br>
 
 ## Support
 
