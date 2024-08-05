@@ -48,10 +48,10 @@ The light client package handles the logic of sequentially verifying block heade
 
  Please update `KEY_GEN` value in `.env`. Default is `false`
 
-| KEY_GEN | Purpose                                                                       |
-|---------|-------------------------------------------------------------------------------|
-| true    | FHE keys are generated on the fly in res/keys (requires at elast 15GB of RAM) |
-| false   | FHE keys are copied from kms-service-dev image in res/keys                    |
+| KEY_GEN | Purpose |
+| --- | --- |
+| true    | FHE keys are generated on the fly in `res/keys`. Old keys are overwritten. This requires at elast 15GB of RAM. |
+| false   | FHE keys are copied from the `kms-service-dev` image in `res/keys` |
 
 
 
@@ -61,7 +61,7 @@ The light client package handles the logic of sequentially verifying block heade
 Execute the following commands:
 
 ```bash
-# Run fhEVM + full KMS components 
+# Run fhEVM + full KMS components
 make run-full
 # Deploy ACL, Gateway ..., please wait until the end before testing!!!
 make prepare-e2e-test
@@ -78,8 +78,8 @@ cd work_dir/fhevm & npx hardhat test --grep 'test async decrypt several addresse
 ```
 
 
-> :bulb: **Tip:** If one of the test is blocked after a few seconds, check the logs of the gateway with `docker logs zama-dev-gateway-1 -f`. If you do not see any progress after a line like 
-`🍊 Waiting for callback from KMS, txn_id: "85fa7..."`; **stop the test and retry**. We will fix it soon! 
+> :bulb: **Tip:** If one of the test is blocked after a few seconds, check the logs of the gateway with `docker logs zama-dev-gateway-1 -f`. If you do not see any progress after a line like
+`🍊 Waiting for callback from KMS, txn_id: "85fa7..."`; **stop the test and retry**. We will fix it soon!
 
 
 
@@ -88,7 +88,7 @@ cd work_dir/fhevm & npx hardhat test --grep 'test async decrypt several addresse
 
 ```bash
 # Check logs for Gateway
-docker logs zama-dev-gateway-1 -f 
+docker logs zama-dev-gateway-1 -f
 
 # On the second try you should see
 # 2024-07-04T09:29:06.649194Z  INFO gateway::events::manager: ⭐ event_decryption: 1
@@ -106,7 +106,6 @@ docker logs zama-dev-fhevm-validator-1 -f
 
 </p>
 </details>
-
 
 
 <details><summary>Pre deployment</summary>
@@ -149,7 +148,7 @@ Account 0x97F272ccfef4026A1F3f0e0E879d514627B84E69 was succesfully added as an g
 <br />
 
 ### Trouble shooting
-If you encoding 
+If you encounter
 ```
 Error: The nonce of the deployer account is not null. Please use another deployer private key or relaunch a clean instance of the fhEVM
 ```
@@ -158,13 +157,13 @@ Then something went wrong in a step and you will need to run `make clean` and th
 # Init fhEVM-native
 
 ```bash
-make init-ethermint-node 
+make init-ethermint-node
 ```
 
 Initialize and generate/copy FHE keys based on `KEY_GEN` value in `.env`.
 
-> [!NOTE]  
-> If KEY_GEN is set to `true`, ensure to have 15 GB of empty RAM to generate the keys. On Mac, do not forget to increase the allocated RAM to docker process. 
+> [!NOTE]
+> If `KEY_GEN` is set to `true`, ensure to have at least 15 GB of empty RAM to generate the keys. On Mac, do not forget to increase the allocated RAM to the docker process.
 
 ### Run fhEVM-native + KMS components
 
@@ -173,7 +172,7 @@ make run-full
 # Check the logs for the node
 docker logs zama-dev-fhevm-validator-1 -f
 # Check logs for Gateway
-docker logs zama-dev-gateway-1 -f     
+docker logs zama-dev-gateway-1 -f
 ```
 
 You should see the following docker images:
@@ -187,7 +186,7 @@ zama-dev-kms-validator-1	ghcr.io/zama-ai/kms-blockchain-asc-dev:v0.8.1-rc3
 zama-dev-gateway-store-1	ghcr.io/zama-ai/kms-blockchain-gateway-dev:v0.8.1-rc3
 ```
 
-### Stop fhEVM-native + KMS 
+### Stop fhEVM-native + KMS
 
 ```bash
 make stop-full
@@ -199,7 +198,7 @@ make stop-full
 make clean
 ```
 
-> [!NOTE]  
+> [!NOTE]
 > FHE keys are in res/keys folder, delete them to regenerate new keys at ```make run-full``` step.
 
 
@@ -212,7 +211,7 @@ make run-full
 make run-e2e-test
 ```
 
-or in one command 
+or in one command
 
 ```bash
 make e2e-test
@@ -233,14 +232,14 @@ make e2e-test
 ### Disclaimers
 
 #### Audits
-The Zama KMS is not yet audited and should be considered in the early alpha stage. Known bugs and security issues are present as reflected by issue tracking.
+The Zama KMS is not yet audited and should be considered in an early alpha stage. Known bugs and security issues are present as reflected by issue tracking.
 
 #### Parameters
 The default parameters for the Zama KMS are chosen to ensure a failure probability of 2^-64 and symmetric equivalent security of 132 bits.
 
 #### Side-channel attacks
 
-Mitigation for side-channel attacks has not been implemented directly in the Zama KMS. The smart contract of the blockchain from which calls originate is responsible to ensure the validity of calls. In particular that new ciphertexts are correctly constructed (through a proof-of-knowledge).
+Mitigations for side-channel attacks have not been implemented directly in the Zama KMS. The smart contract of the blockchain from which calls originate is responsible to ensure the validity of calls. In particular that new ciphertexts are correctly constructed (through a proof-of-knowledge).
 
 ### Citations
 To cite the KMS in academic papers, please use the following entry:
