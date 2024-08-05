@@ -1,5 +1,5 @@
 [package]
-name = "fhevm-coprocessor"
+name = "fhevm-engine"
 version = "0.1.0"
 edition = "2021"
 
