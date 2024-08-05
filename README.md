@@ -25,14 +25,14 @@ The KMS encompasses all sub-components, including the gateway, KMS blockchain, a
 
 
 ### What is the Zama KMS for fhEVM
-The Zama KMS is a fully decentralized key management solution for TFHE, more specifically [TFHE-rs](https://github.com/zama-ai/tfhe-rs), based on a maliciously secure and robust [MPC protocol](https://eprint.iacr.org/2023/815).
+The Zama KMS is a full key management solution for TFHE, more specifically [TFHE-rs](https://github.com/zama-ai/tfhe-rs), based on a maliciously secure and robust [MPC protocol](https://eprint.iacr.org/2023/815).
 
-The system facilitates this through a the use of blockchain which provides a means of fulfilling payments to the MPC parties, along with providing an immutable audit log.
+The system facilitates this through a the use of a blockchain which provides a means of fulfilling payments to the MPC parties, along with providing an immutable audit log.
 
 Interaction with the same KMS will happen either through an external Ethereum blockchain (fhEVM), providing an API via a smart contract, or through a gateway service.
 
-### Main features
-Please consult the [design specification](design.md) for details.
+### Design
+Please consult the [design specification](design.md) for details on the design and the individual components. 
 
 ### Implementation
 
@@ -44,16 +44,16 @@ The light client package handles the logic of sequentially verifying block heade
 
 ## Getting started
 
-### Key generation
+### Prerequisite 
 
- Please update `KEY_GEN` value in `.env`. Default is `false`
+Ensure that Docker (at least version 27) is installed and running.
+
+_Optionally_ you may update `KEY_GEN` value in `.env`. Default is `false`
 
 | KEY_GEN | Purpose |
 | --- | --- |
 | true    | FHE keys are generated on the fly in `res/keys`. Old keys are overwritten. This requires at elast 15GB of RAM. |
 | false   | FHE keys are copied from the `kms-service-dev` image in `res/keys` |
-
-
 
 
 ### Fast run and test
@@ -154,7 +154,7 @@ Error: The nonce of the deployer account is not null. Please use another deploye
 ```
 Then something went wrong in a step and you will need to run `make clean` and then start over the flow described [above](#fast-run-and-test).
 
-# Init fhEVM-native
+### Init fhEVM-native
 
 ```bash
 make init-ethermint-node
