@@ -113,3 +113,9 @@ describe('Rand', function () {
 In the previous snippet, the first test will be run in every case, whether in "real" non-mocked mode (`pnpm test`), testing mocked mode (`pnpm test:mock`) or coverage (mocked) mode (`pnpm coverage:mock`). On the other hand, the second test will be run **only** in testing mocked mode, i.e only when running `pnpm test:mock`, since snapshots only works in that specific case. Actually, the second test will be skipped if run in coverage mode, since its description string ends with `[skip-on-coverage]` and similarly, we avoid the test to fail in non-mocked mode since we check that the network name is `hardhat`.
 
 ⚠️ **Warning :** Due to intrinsic limitations of the original EVM, the mocked version differ in few corner cases from the real fhEVM, the main difference is the difference in gas prices for the FHE operations. This means that before deploying to production, developers still need to run the tests with the original fhEVM node, as a final check in non-mocked mode, with `pnpm test` or `npx hardhat test`.
+
+{% hint style="success" %}
+**Zama 5-Question Developer Survey**
+
+We want to hear from you! Take 1 minute to share your thoughts and helping us enhance our documentation and libraries. **👉** [**Click here**](https://www.zama.ai/developer-survey) to participate.
+{% endhint %}
