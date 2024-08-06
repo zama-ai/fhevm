@@ -6,8 +6,7 @@
 
 - [Quick start](getting_started/quick_start.md)
 - fhEVM
-  - [go-ethereum integration](getting_started/fhevm/geth.md)
-  - [Run Coprocessor](getting_started/fhevm/coprocessor.md)
+  - [geth integration](getting_started/fhevm/geth.md)
   - [Run Native](getting_started/fhevm/native.md)
   - [Deploy initial contracts](getting_started/fhevm/contracts.md)
   - [Configuration](getting_started/fhevm/configuration.md)
