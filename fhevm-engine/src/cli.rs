@@ -11,9 +11,9 @@ pub struct Args {
     #[arg(long)]
     pub run_bg_worker: bool,
 
-    /// Run custom function, for debugging
+    /// Generate fhe keys and exit
     #[arg(long)]
-    pub run_custom_function: bool,
+    pub generate_fhe_keys: bool,
 
     /// Server maximum ciphertexts to schedule per batch
     #[arg(long, default_value_t = 5000)]
@@ -42,6 +42,10 @@ pub struct Args {
     /// Server socket address
     #[arg(long, default_value = "127.0.0.1:50051")]
     pub server_addr: String,
+
+    /// Postgres database url. If unspecified DATABASE_URL environment variable is used
+    #[arg(long)]
+    pub database_url: Option<String>,
 }
 
 pub fn parse_args() -> Args {

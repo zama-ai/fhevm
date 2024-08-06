@@ -102,7 +102,10 @@ pub fn sort_computations_by_dependencies<'a>(input: &'a [AsyncComputation]) -> R
     Ok((res, handles_to_check_in_db))
 }
 
-pub fn db_url() -> String {
+pub fn db_url(args: &crate::cli::Args) -> String {
+    if let Some(db_url) = &args.database_url {
+        return db_url.clone();
+    }
     std::env::var("DATABASE_URL").expect("DATABASE_URL is undefined")
 }
 

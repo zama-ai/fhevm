@@ -20,7 +20,7 @@ pub struct CoprocessorService {
 
 pub async fn run_server(args: crate::cli::Args) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let addr = args.server_addr.parse().expect("Can't parse server address");
-    let db_url = crate::utils::db_url();
+    let db_url = crate::utils::db_url(&args);
 
     println!("Coprocessor listening on {}", addr);
     let pool = sqlx::postgres::PgPoolOptions::new()

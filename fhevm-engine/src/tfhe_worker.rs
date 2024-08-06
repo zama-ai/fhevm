@@ -18,7 +18,7 @@ async fn tfhe_worker_cycle(args: &crate::cli::Args) -> Result<(), Box<dyn std::e
     let tenant_key_cache: std::sync::Arc<tokio::sync::RwLock<lru::LruCache<i32, TfheTenantKeys>>> =
         std::sync::Arc::new(tokio::sync::RwLock::new(lru::LruCache::new(NonZeroUsize::new(key_cache_size).unwrap())));
 
-    let db_url = crate::utils::db_url();
+    let db_url = crate::utils::db_url(args);
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(args.pg_pool_max_connections)
         .connect(&db_url)
