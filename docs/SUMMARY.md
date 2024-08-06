@@ -40,7 +40,7 @@
   - [Blockchain](fundamentals/tkms/blockchain.md)
   - [Threshold protocol](fundamentals/tkms/threshold.md)
   - [Zama's TKMS](fundamentals/tkms/zama.md)
-- [Glossary](getting_started/glossary.md)
+- [Glossary](fundamentals/glossary.md)
 
 ## Guides
 

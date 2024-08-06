@@ -44,9 +44,11 @@ Collaborate with us to advance the FHE spaces and drive innovation together.
 
 - [Contribute to fhEVM](developer/contribute.md)
 - [Follow the development roadmap](developer/roadmap.md)
+<!-- markdown-link-check-disable -->
 - [See the latest test release note](https://github.com/zama-ai/fhevm-backend/releases)
 - [Request a feature](https://github.com/zama-ai/fhevm-backend/issues/new)
 - [Report a bug](https://github.com/zama-ai/fhevm-backend/issues/new)
+<!-- markdown-link-check-enable -->
 
 ---
 
