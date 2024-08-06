@@ -1,28 +1,46 @@
-import fhevmjs, { clientKeyDecryptor, getCiphertextCallParams, getPublicKeyCallParams } from 'fhevmjs';
+import fhevmjs, { clientKeyDecryptor, getCiphertextCallParams } from 'fhevmjs';
 import { readFileSync } from 'fs';
 import { ethers, ethers as hethers } from 'hardhat';
 import { homedir } from 'os';
 import path from 'path';
 
+import { awaitCoprocessor, getClearText } from './coprocessorUtils';
+import { createEncryptedInputMocked, reencryptRequestMocked } from './fhevmjsMocked';
 import type { Signers } from './signers';
 import { FhevmInstances } from './types';
 
 const hre = require('hardhat');
 
-const HARDHAT_NETWORK = process.env.HARDHAT_NETWORK;
 const FHE_CLIENT_KEY_PATH = process.env.FHE_CLIENT_KEY_PATH;
 
 let clientKey: Uint8Array | undefined;
 
+const createInstanceMocked = async () => {
+  const instance = await fhevmjs.createInstance({
+    chainId: hre.network.config.chainId,
+  });
+  instance.reencrypt = reencryptRequestMocked;
+  instance.createEncryptedInput = createEncryptedInputMocked;
+  instance.getPublicKey = () => '0xFFAA44433';
+  return instance;
+};
+
 export const createInstances = async (accounts: Signers): Promise<FhevmInstances> => {
   // Create instance
   const instances: FhevmInstances = {} as FhevmInstances;
-  await Promise.all(
-    Object.keys(accounts).map(async (k) => {
-      instances[k as keyof FhevmInstances] = await createInstance();
-    }),
-  );
-
+  if (hre.network.name === 'hardhat') {
+    await Promise.all(
+      Object.keys(accounts).map(async (k) => {
+        instances[k as keyof FhevmInstances] = await createInstanceMocked();
+      }),
+    );
+  } else {
+    await Promise.all(
+      Object.keys(accounts).map(async (k) => {
+        instances[k as keyof FhevmInstances] = await createInstance();
+      }),
+    );
+  }
   return instances;
 };
 
@@ -52,29 +70,66 @@ const getDecryptor = () => {
 };
 
 export const decryptBool = async (handle: bigint): Promise<boolean> => {
-  return getDecryptor().decryptBool(await getCiphertext(handle, ethers));
+  if (hre.network.name === 'hardhat') {
+    await awaitCoprocessor();
+    return (await getClearText(handle)) === '1';
+  } else {
+    return getDecryptor().decryptBool(await getCiphertext(handle, ethers));
+  }
 };
 
-export const decrypt4 = async (handle: bigint): Promise<number> => {
-  return getDecryptor().decrypt4(await getCiphertext(handle, ethers));
+export const decrypt4 = async (handle: bigint): Promise<bigint> => {
+  if (hre.network.name === 'hardhat') {
+    await awaitCoprocessor();
+    return BigInt(await getClearText(handle));
+  } else {
+    return getDecryptor().decrypt4(await getCiphertext(handle, ethers));
+  }
 };
 
-export const decrypt8 = async (handle: bigint): Promise<number> => {
-  return getDecryptor().decrypt8(await getCiphertext(handle, ethers));
+export const decrypt8 = async (handle: bigint): Promise<bigint> => {
+  if (hre.network.name === 'hardhat') {
+    await awaitCoprocessor();
+    return BigInt(await getClearText(handle));
+  } else {
+    return getDecryptor().decrypt8(await getCiphertext(handle, ethers));
+  }
 };
 
-export const decrypt16 = async (handle: bigint): Promise<number> => {
-  return getDecryptor().decrypt16(await getCiphertext(handle, ethers));
+export const decrypt16 = async (handle: bigint): Promise<bigint> => {
+  if (hre.network.name === 'hardhat') {
+    await awaitCoprocessor();
+    return BigInt(await getClearText(handle));
+  } else {
+    return getDecryptor().decrypt16(await getCiphertext(handle, ethers));
+  }
 };
 
-export const decrypt32 = async (handle: bigint): Promise<number> => {
-  return getDecryptor().decrypt32(await getCiphertext(handle, ethers));
+export const decrypt32 = async (handle: bigint): Promise<bigint> => {
+  if (hre.network.name === 'hardhat') {
+    await awaitCoprocessor();
+    return BigInt(await getClearText(handle));
+  } else {
+    return getDecryptor().decrypt32(await getCiphertext(handle, ethers));
+  }
 };
 
 export const decrypt64 = async (handle: bigint): Promise<bigint> => {
-  return getDecryptor().decrypt64(await getCiphertext(handle, ethers));
+  if (hre.network.name === 'hardhat') {
+    await awaitCoprocessor();
+    return BigInt(await getClearText(handle));
+  } else {
+    return getDecryptor().decrypt64(await getCiphertext(handle, ethers));
+  }
 };
 
 export const decryptAddress = async (handle: bigint): Promise<string> => {
-  return getDecryptor().decryptAddress(await getCiphertext(handle, ethers));
+  if (hre.network.name === 'hardhat') {
+    await awaitCoprocessor();
+    const bigintAdd = BigInt(await getClearText(handle));
+    const handleStr = '0x' + bigintAdd.toString(16).padStart(40, '0');
+    return handleStr;
+  } else {
+    return getDecryptor().decryptAddress(await getCiphertext(handle, ethers));
+  }
 };

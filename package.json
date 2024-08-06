@@ -77,12 +77,10 @@
     "eslint-config-prettier": "^8.5.0",
     "ethers": "^6.8.0",
     "fhevmjs": "^0.5.0",
-    "fs-extra": "^10.1.0",
     "hardhat": "^2.22.5",
     "hardhat-deploy": "^0.11.29",
     "hardhat-gas-reporter": "^1.0.2",
     "hardhat-ignore-warnings": "^0.2.11",
-    "hardhat-preprocessor": "^0.1.5",
     "lodash": "^4.17.21",
     "mocha": "^10.1.0",
     "prettier": "^3.0.0",
@@ -95,6 +93,8 @@
     "typescript": "^5.1.6"
   },
   "dependencies": {
-    "@openzeppelin/contracts": "^5.0.1"
+    "@openzeppelin/contracts": "^5.0.1",
+    "extra-bigint": "^1.1.18",
+    "sqlite3": "^5.1.7"
   }
 }
