@@ -28,7 +28,6 @@
   - [Execution](fundamentals/fhevm/execution.md)
   - [Storage](fundamentals/fhevm/storage.md)
   - [Inputs](fundamentals/fhevm/inputs.md)
-  - [Data Availability Layer](fundamentals/fhevm/dal.md)
   - [Genesis](fundamentals/fhevm/genesis.md)
 - Gateway
   - [Decryption](fundamentals/gateway/decryption.md)
@@ -44,7 +43,7 @@
 
 ## Guides
 
-- [Node hardware](guides/hardware.md)
+- [Node and gateway hardware](guides/hardware.md)
 - [Run a benchmark](guides/benchmark.md)
 
 ## References
