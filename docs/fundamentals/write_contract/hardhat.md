@@ -36,7 +36,7 @@ pnpm coverage:mock
 Or equivalently:
 
 ```
-npx hardhat coverage-mock --network hardhat
+npx hardhat coverage --network hardhat
 ```
 
 Then open the file `coverage/index.html`. This will allow increased security by pointing out missing branches not covered yet by the current test suite.
