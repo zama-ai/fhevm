@@ -60,3 +60,9 @@ For more information about the supported operations, refer to the [function spec
 If you need a feature that is not currently available, please [consult our roadmap](../../developer/roadmap.md) for upcoming developments. You can also reach out to us on Discord or visit our community forum.
 
 If you find yourself in search of a missing feature, we encourage you to [consult our roadmap](../../developer/roadmap.md) for upcoming developments. Alternatively, don't hesitate to reach out to us on [Discord](https://discord.com/invite/fhe-org) or visit our [Community Forum](https://community.zama.ai/c/fhevm/15).
+
+{% hint style="success" %}
+**Zama 5-Question Developer Survey**
+
+We want to hear from you! Take 1 minute to share your thoughts and helping us enhance our documentation and libraries. **👉** [**Click here**](https://www.zama.ai/developer-survey) to participate.
+{% endhint %}

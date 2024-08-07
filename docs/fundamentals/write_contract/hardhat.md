@@ -2,6 +2,7 @@
 
 This document explains how to start writing smart contract using [Zama Hardhat template](https://github.com/zama-ai/fhevm-hardhat-template).
 
+
 The Hardhat template allows you to start a fhEVM docker image and run your smart contract on it. Refer to the [README](https://github.com/zama-ai/fhevm-hardhat-template/blob/main/README.md) for more information.
 
 ## Developing and testing
@@ -62,3 +63,9 @@ Then open the file `coverage/index.html`. This increases security by pointing ou
 Another big difference in mocked mode, compared to the real fhEVM implementation, is that there is no ciphertext verification, neither the checking if a ciphertext has been honestly obtained (see section `4` of the [whitepaper](../../../fhevm-whitepaper.pdf)).
 
 Before deploying to production, you must run the tests with the original fhEVM node as a final check in non-mocked mode, using `pnpm test` or `npx hardhat test`.{% endhint %}
+
+{% hint style="success" %}
+**Zama 5-Question Developer Survey**
+
+We want to hear from you! Take 1 minute to share your thoughts and helping us enhance our documentation and libraries. **👉** [**Click here**](https://www.zama.ai/developer-survey) to participate.
+{% endhint %}
