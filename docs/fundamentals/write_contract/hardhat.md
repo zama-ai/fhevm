@@ -36,7 +36,7 @@ pnpm test:mock
 Or equivalently:
 
 ```
-HARDHAT_NETWORK=hardhat npx hardhat test --network hardhat
+npx hardhat test --network hardhat
 ```
 
 In mocked mode, all tests should pass in few seconds instead of few minutes, allowing a better developer experience.
@@ -52,7 +52,7 @@ pnpm coverage:mock
 Or equivalently:
 
 ```
-HARDHAT_NETWORK=hardhat npx hardhat coverage-mock --network hardhat
+npx hardhat coverage-mock --network hardhat
 ```
 
 Then open the file `coverage/index.html`. This increases security by pointing out missing branches not covered yet by the current test suite.

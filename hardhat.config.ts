@@ -55,16 +55,6 @@ if (!mnemonic) {
   throw new Error('Please set your MNEMONIC in a .env file');
 }
 
-const network = process.env.HARDHAT_NETWORK;
-
-function getRemappings() {
-  return fs
-    .readFileSync('remappings.txt', 'utf8')
-    .split('\n')
-    .filter(Boolean) // remove empty lines
-    .map((line: string) => line.trim().split('='));
-}
-
 const chainIds = {
   zama: 8009,
   local: 9000,

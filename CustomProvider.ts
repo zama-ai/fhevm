@@ -4,11 +4,13 @@ import { ProviderWrapper } from 'hardhat/plugins';
 class CustomProvider extends ProviderWrapper {
   public lastBlockSnapshot: number;
   public lastCounterRand: number;
+  public lastBlockSnapshotForDecrypt: number;
 
   constructor(protected readonly _wrappedProvider: any) {
     super(_wrappedProvider);
     this.lastBlockSnapshot = 0; // Initialize the variable
     this.lastCounterRand = 0;
+    this.lastBlockSnapshotForDecrypt = 0;
   }
 
   async request(args: { method: string; params?: any[] }) {
@@ -21,6 +23,7 @@ class CustomProvider extends ProviderWrapper {
       const result = await this._wrappedProvider.request(args);
       const blockNumberHex = await this._wrappedProvider.request({ method: 'eth_blockNumber' });
       this.lastBlockSnapshot = parseInt(blockNumberHex);
+      this.lastBlockSnapshotForDecrypt = parseInt(blockNumberHex);
 
       const callData = {
         to: '0x000000000000000000000000000000000000005d',
@@ -35,9 +38,16 @@ class CustomProvider extends ProviderWrapper {
     if (args.method === 'get_lastBlockSnapshot') {
       return [this.lastBlockSnapshot, this.lastCounterRand];
     }
+    if (args.method === 'get_lastBlockSnapshotForDecrypt') {
+      return this.lastBlockSnapshotForDecrypt;
+    }
     if (args.method === 'set_lastBlockSnapshot') {
       this.lastBlockSnapshot = args.params![0];
       return this.lastBlockSnapshot;
+    }
+    if (args.method === 'set_lastBlockSnapshotForDecrypt') {
+      this.lastBlockSnapshotForDecrypt = args.params![0];
+      return this.lastBlockSnapshotForDecrypt;
     }
     const result = this._wrappedProvider.request(args);
     return result;
