@@ -10,8 +10,8 @@ It's essential to run tests of the final contract version using the real fhEVM. 
 
 ## Mocked mode
 
-For faster testing iterations, instead of launching all the tests on the local fhEVM node via `pnpm test`or `npx hardhat test` which could last several minutes, you could use instead a mocked version of the `TFHE.sol` library.
-The same tests should (almost always) pass, as is, without any modification: neither the javascript files neither the solidity files need to be changed between the mocked and the real version. The mocked mode does not actually use encryption for encrypted types and runs the tests on a local hardhat node which is implementing the original EVM (i.e non-fhEVM).
+For faster testing iterations, instead of launching all the tests on the local fhEVM node via `pnpm test`or `npx hardhat test` which could last several minutes, you could use instead a mocked version of the fhEVM.
+The same tests should (almost always) pass, as is, without any modification: neither the javascript files neither the solidity files need to be changed between the mocked and the real version. The mocked mode does not actually real encryption for encrypted types and runs the tests on a local hardhat node which is implementing the original EVM (i.e non-fhEVM). Additionally, the mocked mode will let you use all the hardhat related special testing/debugging methods, such as `evm_mine`, `evm_snapshot`, `evm_revert` etc, which are very helpful for testing.
 
 To run the mocked tests use either:
 
@@ -22,7 +22,7 @@ pnpm test:mock
 Or equivalently:
 
 ```
-HARDHAT_NETWORK=hardhat npx hardhat test --network hardhat
+npx hardhat test --network hardhat
 ```
 
 In mocked mode, all tests should pass in few seconds instead of few minutes, allowing a better developer experience.
@@ -36,10 +36,9 @@ pnpm coverage:mock
 Or equivalently:
 
 ```
-HARDHAT_NETWORK=hardhat npx hardhat coverage-mock --network hardhat
+npx hardhat coverage-mock --network hardhat
 ```
 
 Then open the file `coverage/index.html`. This will allow increased security by pointing out missing branches not covered yet by the current test suite.
 
-⚠️ **Warning :** Notice that, due to intrinsic limitations of the original EVM, the mocked version differ in few corner cases from the real fhEVM, the most important change is the `TFHE.isInitialized` method which will always return `true` in the mocked version. Another big difference in mocked mode, compared to the real fhEVM implementation, is that there is no ciphertext verification neither checking that a ciphertext has been honestly obtained in the mocked version (see section `4` of the [whitepaper](../../../fhevm-whitepaper.pdf)).
-This means that before deploying to production, developers still need to run the tests with the original fhEVM node, as a final check in non-mocked mode, with `pnpm test` or `npx hardhat test`.
+⚠️ **Warning :** Due to intrinsic limitations of the original EVM, the mocked version differ in few corner cases from the real fhEVM, the main difference is the difference in gas prices for the FHE operations. This means that before deploying to production, developers still need to run the tests with the original fhEVM node, as a final check in non-mocked mode, with `pnpm test` or `npx hardhat test`.
