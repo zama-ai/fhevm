@@ -20,8 +20,8 @@
     "prettier": "prettier --write \"**/*.{js,json,md,sol,ts,yml}\"",
     "test:inband": "hardhat test",
     "test": "HARDHAT_PARALLEL=1 hardhat test --parallel",
-    "test:mock": "HARDHAT_NETWORK=hardhat hardhat test --network hardhat",
-    "coverage:mock": "HARDHAT_NETWORK=hardhat hardhat coverage-mock --network hardhat",
+    "test:mock": "hardhat test --network hardhat",
+    "coverage:mock": "hardhat coverage-mock --network hardhat",
     "typechain": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat typechain",
     "codegen": "npx ts-node codegen/main.ts && npm run prettier",
     "codegen:overloads": "npx ts-node codegen/generateOverloads.ts",
@@ -77,12 +77,10 @@
     "eslint-config-prettier": "^8.5.0",
     "ethers": "^6.8.0",
     "fhevmjs": "^0.5.0",
-    "fs-extra": "^10.1.0",
     "hardhat": "^2.22.5",
     "hardhat-deploy": "^0.11.29",
     "hardhat-gas-reporter": "^1.0.2",
     "hardhat-ignore-warnings": "^0.2.11",
-    "hardhat-preprocessor": "^0.1.5",
     "lodash": "^4.17.21",
     "mocha": "^10.1.0",
     "prettier": "^3.0.0",
@@ -95,6 +93,8 @@
     "typescript": "^5.1.6"
   },
   "dependencies": {
-    "@openzeppelin/contracts": "^5.0.1"
+    "@openzeppelin/contracts": "^5.0.1",
+    "extra-bigint": "^1.1.18",
+    "sqlite3": "^5.1.7"
   }
 }

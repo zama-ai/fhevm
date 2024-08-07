@@ -97,10 +97,18 @@ task('task:launchFhevm')
     const ownerAddress = new hre.ethers.Wallet(privKeyOwner!).address;
     const relayerAddress = new hre.ethers.Wallet(privKeyRelayer!).address;
     if (!taskArgs.skipGetCoin) {
-      const p1 = getCoin(deployerAddress);
-      const p2 = getCoin(ownerAddress);
-      const p3 = getCoin(relayerAddress);
-      await Promise.all([p1, p2, p3]);
+      if (hre.network.name === 'hardhat') {
+        const bal = '0x1000000000000000000000000000000000000000';
+        const p1 = hre.network.provider.send('hardhat_setBalance', [deployerAddress, bal]);
+        const p2 = hre.network.provider.send('hardhat_setBalance', [ownerAddress, bal]);
+        const p3 = hre.network.provider.send('hardhat_setBalance', [relayerAddress, bal]);
+        await Promise.all([p1, p2, p3]);
+      } else {
+        const p1 = getCoin(deployerAddress);
+        const p2 = getCoin(ownerAddress);
+        const p3 = getCoin(relayerAddress);
+        await Promise.all([p1, p2, p3]);
+      }
     }
     await new Promise((res) => setTimeout(res, 5000)); // wait 5 seconds
     console.log(`privateKey ${privKeyDeployer}`);

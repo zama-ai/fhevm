@@ -17,7 +17,9 @@ describe('Reencryption', function () {
     this.instances = await createInstances(this.signers);
 
     const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
-    inputAlice.addBytes256(bigIntToBytes(18446744073709550022n));
+    inputAlice.addBytes256(
+      bigIntToBytes(184467440737095500228978978978978970980978908978978907890778907089780970897890n),
+    );
     const encryptedAmount = inputAlice.encrypt();
     const tx = await this.contract.setEBytes256(encryptedAmount.handles[0], encryptedAmount.inputProof, {
       gasLimit: 5_000_000,
@@ -182,6 +184,6 @@ describe('Reencryption', function () {
       this.contractAddress,
       this.signers.alice.address,
     );
-    expect(decryptedValue).to.equal(18446744073709550022n);
+    expect(decryptedValue).to.equal(184467440737095500228978978978978970980978908978978907890778907089780970897890n);
   });
 });
