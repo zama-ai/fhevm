@@ -1,12 +1,10 @@
-use coprocessor::DebugDecryptResponse;
-use sqlx::query;
-use tfhe::prelude::FheTryTrivialEncrypt;
-use tfhe::FheUint32;
+use coprocessor::{DebugDecryptResponse, DebugDecryptResponseSingle};
+use sqlx::{query, Acquire};
 use tonic::transport::Server;
 use crate::db_queries::{check_if_api_key_is_valid, check_if_ciphertexts_exist_in_db};
 use crate::utils::sort_computations_by_dependencies;
-use crate::types::{CoprocessorError, SupportedFheCiphertexts};
-use crate::tfhe_ops::{self, check_fhe_operand_types, current_ciphertext_version};
+use crate::types::CoprocessorError;
+use crate::tfhe_ops::{self, check_fhe_operand_types, current_ciphertext_version, debug_trivial_encrypt_le_bytes};
 use crate::server::coprocessor::GenericResponse;
 
 pub mod coprocessor {
@@ -63,20 +61,40 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
 
         let public_key = public_key.pop().unwrap();
 
-        let value_to_encrypt = req.original_value as u32;
-        let handle = req.handle.clone();
-        let (db_type, db_bytes) = tokio::task::spawn_blocking(move || {
+        let cloned = req.values.clone();
+        let out_cts = tokio::task::spawn_blocking(move || {
             let server_key: tfhe::ServerKey = bincode::deserialize(&public_key.sks_key).unwrap();
             tfhe::set_server_key(server_key);
-            let encrypted = FheUint32::try_encrypt_trivial(value_to_encrypt).unwrap();
-            SupportedFheCiphertexts::FheUint32(encrypted).serialize()
+
+            // single threaded implementation as this is debug function and it is simple to implement
+            let mut res: Vec<(String, i16, Vec<u8>)> = Vec::with_capacity(cloned.len());
+            for v in cloned {
+                let ct = debug_trivial_encrypt_le_bytes(v.output_type as i16, &v.le_value);
+                let (ct_type, ct_bytes) = ct.serialize();
+                res.push((
+                    v.handle,
+                    ct_type,
+                    ct_bytes
+                ));
+            }
+
+            res
         }).await.unwrap();
 
-        sqlx::query!("
-          INSERT INTO ciphertexts(tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type)
-          VALUES ($1, $2, $3, $4, $5)
-        ", tenant_id, handle, db_bytes, current_ciphertext_version(), db_type)
-        .execute(&self.pool).await.map_err(Into::<CoprocessorError>::into)?;
+        let mut conn = self.pool.acquire().await.map_err(Into::<CoprocessorError>::into)?;
+        let mut trx = conn.begin().await.map_err(Into::<CoprocessorError>::into)?;
+
+        for (handle, db_type, db_bytes) in out_cts {
+            sqlx::query!("
+                    INSERT INTO ciphertexts(tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type)
+                    VALUES ($1, $2, $3, $4, $5)
+                ",
+                tenant_id, handle, db_bytes, current_ciphertext_version(), db_type as i16
+            )
+            .execute(trx.as_mut()).await.map_err(Into::<CoprocessorError>::into)?;
+        }
+
+        trx.commit().await.map_err(Into::<CoprocessorError>::into)?;
 
         return Ok(tonic::Response::new(GenericResponse { response_code: 0 }));
     }
@@ -103,13 +121,13 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
 
         assert_eq!(priv_key.len(), 1);
 
-        let mut cts = sqlx::query!("
-          SELECT ciphertext, ciphertext_type
+        let cts = sqlx::query!("
+          SELECT ciphertext, ciphertext_type, handle
           FROM ciphertexts
           WHERE tenant_id = $1
-          AND handle = $2
+          AND handle = ANY($2::TEXT[])
           AND ciphertext_version = $3
-        ", tenant_id, &req.handle, current_ciphertext_version())
+        ", tenant_id, &req.handles, current_ciphertext_version())
         .fetch_all(&self.pool)
         .await.map_err(Into::<CoprocessorError>::into)?;
 
@@ -117,18 +135,24 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
             return Err(tonic::Status::not_found("ciphertext not found"));
         }
 
-        assert_eq!(cts.len(), 1);
-
         let priv_key = priv_key.pop().unwrap().cks_key.unwrap();
-        let ciphertext = cts.pop().unwrap();
 
-        let value = tokio::task::spawn_blocking(move || {
+        let values = tokio::task::spawn_blocking(move || {
             let client_key: tfhe::ClientKey = bincode::deserialize(&priv_key).unwrap();
-            let deserialized = tfhe_ops::deserialize_fhe_ciphertext(ciphertext.ciphertext_type, &ciphertext.ciphertext).unwrap();
-            deserialized.decrypt(&client_key)
+
+            let mut decrypted: Vec<DebugDecryptResponseSingle> = Vec::with_capacity(cts.len());
+            for ct in cts {
+                let deserialized = tfhe_ops::deserialize_fhe_ciphertext(ct.ciphertext_type, &ct.ciphertext).unwrap();
+                decrypted.push(DebugDecryptResponseSingle {
+                    output_type: ct.ciphertext_type as i32,
+                    value: deserialized.decrypt(&client_key),
+                });
+            }
+
+            decrypted
         }).await.unwrap();
 
-        return Ok(tonic::Response::new(DebugDecryptResponse { value }));
+        return Ok(tonic::Response::new(DebugDecryptResponse { values }));
     }
 
     async fn upload_ciphertexts(

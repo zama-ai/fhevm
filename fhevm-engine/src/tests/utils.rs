@@ -8,6 +8,7 @@ pub struct TestInstance {
     // send message to this on destruction to stop the app
     app_close_channel: tokio::sync::watch::Sender<bool>,
     app_url: String,
+    db_url: String,
 }
 
 impl Drop for TestInstance {
@@ -21,6 +22,14 @@ impl TestInstance {
     pub fn app_url(&self) -> &str {
         self.app_url.as_str()
     }
+
+    pub fn db_url(&self) -> &str {
+        self.db_url.as_str()
+    }
+}
+
+pub fn default_api_key() -> &'static str {
+    "a1503fb6-d79b-4e9e-826d-44cf262f3e05"
 }
 
 pub async fn setup_test_app() -> Result<TestInstance, Box<dyn std::error::Error>> {
@@ -77,7 +86,7 @@ pub async fn setup_test_app() -> Result<TestInstance, Box<dyn std::error::Error>
         tokio_threads: 2,
         pg_pool_max_connections: 2,
         server_addr: format!("127.0.0.1:{app_port}"),
-        database_url: Some(db_url),
+        database_url: Some(db_url.clone()),
     };
 
     std::thread::spawn(move || {
@@ -91,5 +100,6 @@ pub async fn setup_test_app() -> Result<TestInstance, Box<dyn std::error::Error>
         _container: container,
         app_close_channel,
         app_url: format!("http://127.0.0.1:{app_port}"),
+        db_url,
     })
 }

@@ -17,16 +17,26 @@ service FhevmCoprocessor {
 }
 
 message DebugEncryptRequest {
+  repeated DebugEncryptRequestSingle values = 1;
+}
+
+message DebugEncryptRequestSingle {
   string handle = 1;
-  int32 original_value = 2;
+  bytes le_value = 2;
+  int32 output_type = 3;
 }
 
 message DebugDecryptRequest {
-  string handle = 1;
+  repeated string handles = 1;
 }
 
 message DebugDecryptResponse {
-  string value = 1;
+  repeated DebugDecryptResponseSingle values = 1;
+}
+
+message DebugDecryptResponseSingle {
+  int32 output_type = 1;
+  string value = 2;
 }
 
 enum FheOperation {

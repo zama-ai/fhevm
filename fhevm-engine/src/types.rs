@@ -39,6 +39,12 @@ pub enum CoprocessorError {
         fhe_operation_name: String,
         operand_types: Vec<i16>,
     },
+    // TODO: implement scalar division by zero error
+    // FheOperationScalarDivisionByZero {
+    //     lhs_handle: String,
+    //     fhe_operation: i32,
+    //     fhe_operation_name: String,
+    // },
 }
 
 impl std::fmt::Display for CoprocessorError {
@@ -128,15 +134,18 @@ pub enum SupportedFheCiphertexts {
     Scalar(U256),
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, strum::EnumIter)]
 #[repr(i8)]
 pub enum SupportedFheOperations {
     FheAdd = 0,
     FheSub = 1,
-    FheNot = 2,
-    FheIfThenElse = 3,
+    FheMul = 2,
+    FheDiv = 3,
+    FheNot = 4,
+    FheIfThenElse = 5,
 }
 
+#[derive(PartialEq, Eq)]
 pub enum FheOperationType {
     Binary,
     Unary,
@@ -173,7 +182,11 @@ impl SupportedFheCiphertexts {
 impl SupportedFheOperations {
     pub fn op_type(&self) -> FheOperationType {
         match self {
-            SupportedFheOperations::FheAdd | SupportedFheOperations::FheSub => FheOperationType::Binary,
+            SupportedFheOperations::FheAdd |
+            SupportedFheOperations::FheSub |
+            SupportedFheOperations::FheMul |
+            SupportedFheOperations::FheDiv
+            => FheOperationType::Binary,
             SupportedFheOperations::FheNot => FheOperationType::Unary,
             SupportedFheOperations::FheIfThenElse => FheOperationType::Other,
         }
@@ -187,6 +200,8 @@ impl TryFrom<i16> for SupportedFheOperations {
         let res = match value {
             0 => Ok(SupportedFheOperations::FheAdd),
             1 => Ok(SupportedFheOperations::FheSub),
+            2 => Ok(SupportedFheOperations::FheMul),
+            3 => Ok(SupportedFheOperations::FheDiv),
             _ => Err(CoprocessorError::UnknownFheOperation(value as i32))
         };
 

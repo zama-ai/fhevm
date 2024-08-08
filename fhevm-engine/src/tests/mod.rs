@@ -1,8 +1,12 @@
+use std::str::FromStr;
+
 use tonic::metadata::MetadataValue;
+use utils::default_api_key;
 use crate::server::coprocessor::fhevm_coprocessor_client::FhevmCoprocessorClient;
-use crate::server::coprocessor::{AsyncComputeRequest, FheOperation, DebugEncryptRequest, DebugDecryptRequest, AsyncComputation};
+use crate::server::coprocessor::{AsyncComputation, AsyncComputeRequest, DebugDecryptRequest, DebugEncryptRequest, DebugEncryptRequestSingle, FheOperation};
 
 mod utils;
+mod operators;
 
 #[tokio::test]
 async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
@@ -10,26 +14,26 @@ async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
 
-    let api_key = "Bearer a1503fb6-d79b-4e9e-826d-44cf262f3e05";
+    let api_key_header = format!("Bearer {}", default_api_key());
+    let ct_type = 4; // i32
 
-    // ciphertext A
+    // encrypt two ciphertexts
     {
         let mut encrypt_request = tonic::Request::new(DebugEncryptRequest {
-            handle: "0x0abc".to_string(),
-            original_value: 123,
+            values: vec![
+                DebugEncryptRequestSingle {
+                    handle: "0x0abc".to_string(),
+                    le_value: vec![123],
+                    output_type: ct_type,
+                },
+                DebugEncryptRequestSingle {
+                    handle: "0x0abd".to_string(),
+                    le_value: vec![124],
+                    output_type: ct_type,
+                },
+            ],
         });
-        encrypt_request.metadata_mut().append("authorization", MetadataValue::from_static(api_key));
-        let resp = client.debug_encrypt_ciphertext(encrypt_request).await?;
-        println!("encryption request: {:?}", resp);
-    }
-
-    // ciphertext B
-    {
-        let mut encrypt_request = tonic::Request::new(DebugEncryptRequest {
-            handle: "0x0abd".to_string(),
-            original_value: 124,
-        });
-        encrypt_request.metadata_mut().append("authorization", MetadataValue::from_static(api_key));
+        encrypt_request.metadata_mut().append("authorization", MetadataValue::from_str(&api_key_header).unwrap());
         let resp = client.debug_encrypt_ciphertext(encrypt_request).await?;
         println!("encryption request: {:?}", resp);
     }
@@ -58,7 +62,7 @@ async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
                 },
             ]
         });
-        compute_request.metadata_mut().append("authorization", MetadataValue::from_static(api_key));
+        compute_request.metadata_mut().append("authorization", MetadataValue::from_str(&api_key_header).unwrap());
         let resp = client.async_compute(compute_request).await?;
         println!("compute request: {:?}", resp);
     }
@@ -66,26 +70,24 @@ async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
     println!("sleeping for computation to complete...");
     tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
 
-    // decrypt first
+    // decrypt values
     {
         let mut decrypt_request = tonic::Request::new(DebugDecryptRequest {
-            handle: "0x0abe".to_string()
+            handles: vec![
+                "0x0abe".to_string(),
+                "0x0abf".to_string(),
+            ],
         });
-        decrypt_request.metadata_mut().append("authorization", MetadataValue::from_static(api_key));
+        decrypt_request.metadata_mut().append("authorization", MetadataValue::from_str(&api_key_header).unwrap());
         let resp = client.debug_decrypt_ciphertext(decrypt_request).await?;
         println!("decrypt request: {:?}", resp);
-        assert_eq!(resp.get_ref().value, "247");
-    }
-
-    // decrypt second
-    {
-        let mut decrypt_request = tonic::Request::new(DebugDecryptRequest {
-            handle: "0x0abf".to_string()
-        });
-        decrypt_request.metadata_mut().append("authorization", MetadataValue::from_static(api_key));
-        let resp = client.debug_decrypt_ciphertext(decrypt_request).await?;
-        println!("decrypt request: {:?}", resp);
-        assert_eq!(resp.get_ref().value, "263");
+        assert_eq!(resp.get_ref().values.len(), 2);
+        // first value
+        assert_eq!(resp.get_ref().values[0].value, "247");
+        assert_eq!(resp.get_ref().values[0].output_type, ct_type);
+        // second value
+        assert_eq!(resp.get_ref().values[1].value, "263");
+        assert_eq!(resp.get_ref().values[1].output_type, ct_type);
     }
 
     Ok(())
