@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 import { log2 } from 'extra-bigint';
 import * as fs from 'fs';
 import { ethers } from 'hardhat';
+import hre from 'hardhat';
 import { Database } from 'sqlite3';
 
 const parsedEnvCoprocessor = dotenv.parse(fs.readFileSync('lib/.env.exec'));
@@ -775,10 +776,13 @@ async function getAllPastTransactionHashes() {
   const latestBlockNumber = await provider.getBlockNumber();
   let txHashes: [string, number][] = [];
 
-  [lastBlockSnapshot, lastCounterRand] = await provider.send('get_lastBlockSnapshot');
-  if (lastBlockSnapshot < firstBlockListening) {
-    firstBlockListening = lastBlockSnapshot + 1;
-    counterRand = Number(lastCounterRand);
+  if (hre.__SOLIDITY_COVERAGE_RUNNING !== true) {
+    // evm_snapshot is not supported in coverage mode
+    [lastBlockSnapshot, lastCounterRand] = await provider.send('get_lastBlockSnapshot');
+    if (lastBlockSnapshot < firstBlockListening) {
+      firstBlockListening = lastBlockSnapshot + 1;
+      counterRand = Number(lastCounterRand);
+    }
   }
 
   // Iterate through all blocks and collect transaction hashes
@@ -789,8 +793,10 @@ async function getAllPastTransactionHashes() {
     });
   }
   firstBlockListening = latestBlockNumber + 1;
-  await provider.send('set_lastBlockSnapshot', [firstBlockListening]);
-
+  if (hre.__SOLIDITY_COVERAGE_RUNNING !== true) {
+    // evm_snapshot is not supported in coverage mode
+    await provider.send('set_lastBlockSnapshot', [firstBlockListening]);
+  }
   return txHashes;
 }
 
