@@ -37,7 +37,7 @@ npx hardhat coverage
 
 Then open the file `coverage/index.html` to see the coverage results. This will increase security by pointing out missing branches not covered yet by the current test suite.
 
-**Notice :** Due to limitations in the solidity-coverage package, the coverage computation in fhEVM does not support tests involving the `evm_snapshot` hardhat testing method, however, this method is still supported when running tests in mocked mode! In case you are using hardhat snapshots, we recommend you to end your test description by the `[skip-on-coverage]` tag. Here is a concrete example for illustration purpose:
+**Notice :** Due to limitations in the `solidity-coverage` package, the coverage computation in fhEVM does not support tests involving the `evm_snapshot`hardhat testing method, however, this method is still supported when running tests in mocked mode! In case you are using hardhat snapshots, we recommend you to end your test description by the`[skip-on-coverage]` tag. Here is a concrete example for illustration purpose:
 
 ```js
 import { expect } from 'chai';
