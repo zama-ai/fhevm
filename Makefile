@@ -33,7 +33,7 @@ check_os:
 
 # This version must the same as in docker-compose-full.yml
 # TODO add check
-KMS_DEV_VERSION ?= v0.8.1-rc3
+KMS_DEV_VERSION ?= v0.8.1-rc4
 
 FHEVM_SOLIDITY_REPO ?= fhevm
 FHEVM_SOLIDITY_PATH ?= $(WORKDIR)/$(FHEVM_SOLIDITY_REPO)
@@ -83,7 +83,7 @@ else
 endif
 
 
-check-all-test-repo: check-fhevm-solidity 
+check-all-test-repo: check-fhevm-solidity
 
 
 generate-fhe-keys-registry-dev-image:
@@ -96,7 +96,7 @@ else ifeq ($(KEY_GEN),true)
 else
 	@echo "KEY_GEN is set to an unrecognized value: $(KEY_GEN)"
 endif
-	
+
 
 run-full:
 	$(MAKE) generate-fhe-keys-registry-dev-image
@@ -109,7 +109,7 @@ else ifeq ($(KEY_GEN),true)
 else
 	@echo "KEY_GEN is set to an unrecognized value: $(KEY_GEN)"
 endif
-	
+
 	@echo 'sleep a little to let the docker start up'
 	sleep 5
 
@@ -117,7 +117,7 @@ stop-full:
 	@docker compose  -f docker-compose/docker-compose-full.yml down
 
 TEST_FILE := run_tests.sh
-TEST_IF_FROM_REGISTRY := 
+TEST_IF_FROM_REGISTRY :=
 
 run-e2e-test: check-all-test-repo
 	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test
@@ -138,10 +138,10 @@ prepare-e2e-test: check-all-test-repo
 	@cd $(FHEVM_SOLIDITY_PATH) && ./setup-local-fhevm.sh
 
 run-async-test:
-	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test --grep 'test async decrypt uint8' 
+	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test --grep 'test async decrypt uint8'
 
 run-true-input-async-test:
-	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test --grep 'test async decrypt uint64 non-trivial' 
+	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test --grep 'test async decrypt uint64 non-trivial'
 
 e2e-test:
 	@$(MAKE) check-all-test-repo
@@ -155,7 +155,7 @@ e2e-test:
 clean:
 	$(MAKE) stop-full
 	rm -rf $(BUILDDIR)/
-	rm -rf $(WORKDIR)/ 
+	rm -rf $(WORKDIR)/
 	rm -rf network-fhe-keys
 	rm -rf kms-fhe-keys
 	rm -rf res
@@ -165,4 +165,3 @@ print-info:
 	@echo 'KMS_DEV_VERSION: $(KMS_DEV_VERSION) for KEY_GEN---extracted from Makefile'
 	@echo 'FHEVM_SOLIDITY_VERSION: $(FHEVM_SOLIDITY_VERSION) ---extracted from Makefile'
 	@bash scripts/get_repository_info.sh fhevm $(FHEVM_SOLIDITY_PATH)
-
