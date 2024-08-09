@@ -93,7 +93,6 @@ task('test', async (taskArgs, hre, runSuper) => {
   // Run modified test task
   if (hre.network.name === 'hardhat') {
     // in fhevm mode all this block is done when launching the node via `pnmp fhevm:start`
-    await hre.run('clean');
     await hre.run('compile:specific', { contract: 'lib' });
 
     const targetAddress = '0x000000000000000000000000000000000000005d';
