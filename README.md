@@ -32,7 +32,7 @@ The system facilitates this through a the use of a blockchain which provides a m
 Interaction with the same KMS will happen either through an external Ethereum blockchain (fhEVM), providing an API via a smart contract, or through a gateway service.
 
 ### Design
-Please consult the [design specification](design.md) for details on the design and the individual components. 
+Please consult the [design specification](design.md) for details on the design and the individual components.
 
 ### Implementation
 
@@ -44,7 +44,7 @@ The light client package handles the logic of sequentially verifying block heade
 
 ## Getting started
 
-### Prerequisite 
+### Prerequisite
 
 Ensure that Docker (at least version 27) is installed and running.
 
@@ -178,12 +178,12 @@ docker logs zama-dev-gateway-1 -f
 You should see the following docker images:
 
 ```
-zama-dev-gateway-1	ghcr.io/zama-ai/kms-blockchain-gateway-dev:v0.8.1-rc3
-zama-dev-connector-1	ghcr.io/zama-ai/kms-blockchain-connector-dev:v0.8.1-rc3
+zama-dev-gateway-1	ghcr.io/zama-ai/kms-blockchain-gateway-dev:v0.8.1-rc4
+zama-dev-connector-1	ghcr.io/zama-ai/kms-blockchain-connector-dev:v0.8.1-rc4
 zama-dev-fhevm-validator-1	ghcr.io/zama-ai/ethermint-node:v0.5.1
-zama-dev-kms-core-1	ghcr.io/zama-ai/kms-service-dev:v0.8.1-rc3
-zama-dev-kms-validator-1	ghcr.io/zama-ai/kms-blockchain-asc-dev:v0.8.1-rc3
-zama-dev-gateway-store-1	ghcr.io/zama-ai/kms-blockchain-gateway-dev:v0.8.1-rc3
+zama-dev-kms-core-1	ghcr.io/zama-ai/kms-service-dev:v0.8.1-rc4
+zama-dev-kms-validator-1	ghcr.io/zama-ai/kms-blockchain-asc-dev:v0.8.1-rc4
+zama-dev-gateway-store-1	ghcr.io/zama-ai/kms-blockchain-gateway-dev:v0.8.1-rc4
 ```
 
 ### Stop fhEVM-native + KMS

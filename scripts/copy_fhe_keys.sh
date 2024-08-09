@@ -7,7 +7,7 @@
 # - the LOCAL_BUILD_PUBLIC_KEY_PATH as the second optional parameter.
 # - the LOCAL_BUILD_PRIVATE_KEY_PATH as the third optional parameter.
 
-# mkdir -p temp; docker run --rm -v $PWD/temp:/keys ghcr.io/zama-ai/kms-service-dev:v0.8.1-rc3 ./bin/kms-gen-keys centralized --write-privkey --pub-url file://./keys --priv-url file://./keys --overwrite
+# mkdir -p temp; docker run --rm -v $PWD/temp:/keys ghcr.io/zama-ai/kms-service-dev:v0.8.1-rc4 ./bin/kms-gen-keys centralized --write-privkey --pub-url file://./keys --priv-url file://./keys --overwrite
 
 set -Eeuo pipefail
 
