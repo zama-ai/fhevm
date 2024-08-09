@@ -316,7 +316,7 @@ npm run coverage:mock
 Then open the file `coverage/index.html`. You can see there which line or branch for each contract which has been covered or missed by your test suite. This allows increased security by pointing out missing branches not covered yet by the current tests.
 
 > [!Note]
-> Due to intrinsic limitations of the original EVM, the mocked version differ in few corner cases from the real fhEVM, the most important change is the `TFHE.isInitialized` method which will always return `true` in the mocked version. Another big difference in mocked mode, compared to the real fhEVM implementation, is that there is no ciphertext verification neither checking that a ciphertext has been honestly obtained (see section 4 of the [whitepaper](https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper.pdf)). This means that before deploying to production, developers still need to run the tests with the original fhEVM node, as a final check in non-mocked mode, with `npm run test`.
+> Due to intrinsic limitations of the original EVM, the mocked version differ in few corner cases from the real fhEVM, the main difference is the difference in gas prices for the FHE operations. This means that before deploying to production, developers still need to run the tests with the original fhEVM node, as a final check in non-mocked mode, with `npm run test`.
 
 <p align="right">
   <a href="#about" > ↑ Back to top </a>

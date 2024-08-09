@@ -45,7 +45,8 @@ let lastBlockSnapshotForDecrypt: number;
 
 export const asyncDecrypt = async (): Promise<void> => {
   firstBlockListening = await ethers.provider.getBlockNumber();
-  if (networkName === 'hardhat') {
+  if (networkName === 'hardhat' && hre.__SOLIDITY_COVERAGE_RUNNING !== true) {
+    // evm_snapshot is not supported in coverage mode
     await ethers.provider.send('set_lastBlockSnapshotForDecrypt', [firstBlockListening]);
   }
   // this function will emit logs for every request and fulfilment of a decryption
@@ -66,7 +67,8 @@ export const asyncDecrypt = async (): Promise<void> => {
 export const awaitAllDecryptionResults = async (): Promise<void> => {
   gateway = await ethers.getContractAt('GatewayContract', parsedEnv.GATEWAY_CONTRACT_PREDEPLOY_ADDRESS);
   const provider = ethers.provider;
-  if (networkName === 'hardhat') {
+  if (networkName === 'hardhat' && hre.__SOLIDITY_COVERAGE_RUNNING !== true) {
+    // evm_snapshot is not supported in coverage mode
     lastBlockSnapshotForDecrypt = await provider.send('get_lastBlockSnapshotForDecrypt');
     if (lastBlockSnapshotForDecrypt < firstBlockListening) {
       firstBlockListening = lastBlockSnapshotForDecrypt + 1;
@@ -74,7 +76,8 @@ export const awaitAllDecryptionResults = async (): Promise<void> => {
   }
   await fulfillAllPastRequestsIds(networkName === 'hardhat');
   firstBlockListening = (await ethers.provider.getBlockNumber()) + 1;
-  if (networkName === 'hardhat') {
+  if (networkName === 'hardhat' && hre.__SOLIDITY_COVERAGE_RUNNING !== true) {
+    // evm_snapshot is not supported in coverage mode
     await provider.send('set_lastBlockSnapshotForDecrypt', [firstBlockListening]);
   }
 };

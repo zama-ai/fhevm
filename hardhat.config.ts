@@ -1,13 +1,11 @@
 import '@nomicfoundation/hardhat-toolbox';
 import dotenv from 'dotenv';
-import * as fs from 'fs';
 import 'hardhat-deploy';
 import 'hardhat-ignore-warnings';
 import type { HardhatUserConfig, extendProvider } from 'hardhat/config';
 import { task } from 'hardhat/config';
 import type { NetworkUserConfig } from 'hardhat/types';
 import { resolve } from 'path';
-import * as path from 'path';
 
 import CustomProvider from './CustomProvider';
 // Adjust the import path as needed
@@ -23,19 +21,6 @@ extendProvider(async (provider, config, network) => {
   const newProvider = new CustomProvider(provider);
   return newProvider;
 });
-
-// Function to recursively get all .sol files in a folder
-function getAllSolidityFiles(dir: string, fileList: string[] = []): string[] {
-  fs.readdirSync(dir).forEach((file) => {
-    const filePath = path.join(dir, file);
-    if (fs.statSync(filePath).isDirectory()) {
-      getAllSolidityFiles(filePath, fileList);
-    } else if (filePath.endsWith('.sol')) {
-      fileList.push(filePath);
-    }
-  });
-  return fileList;
-}
 
 task('compile:specific', 'Compiles only the specified contract')
   .addParam('contract', "The contract's path")
@@ -89,11 +74,17 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
   };
 }
 
+task('coverage').setAction(async (taskArgs, hre, runSuper) => {
+  hre.config.networks.hardhat.allowUnlimitedContractSize = true;
+  hre.config.networks.hardhat.blockGasLimit = 1099511627775;
+
+  await runSuper(taskArgs);
+});
+
 task('test', async (taskArgs, hre, runSuper) => {
   // Run modified test task
   if (hre.network.name === 'hardhat') {
     // in fhevm mode all this block is done when launching the node via `pnmp fhevm:start`
-    await hre.run('clean');
     await hre.run('compile:specific', { contract: 'lib' });
 
     const targetAddress = '0x000000000000000000000000000000000000005d';
@@ -139,7 +130,6 @@ const config: HardhatUserConfig = {
         mnemonic,
         path: "m/44'/60'/0'/0",
       },
-      gasPrice: 20000000000, // 20 Gwei
     },
     zama: getChainConfig('zama'),
     localDev: getChainConfig('local'),

@@ -4,4 +4,8 @@ module.exports = {
     mnemonic: process.env.MNEMONIC,
   },
   skipFiles: ["test"],
+  mocha: {
+    fgrep: "[skip-on-coverage]",
+    invert: true,
+  },
 };
