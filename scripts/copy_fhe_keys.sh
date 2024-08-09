@@ -2,12 +2,12 @@
 
 # This bash script creates global fhe keys
 # and copy them to the right folder in volumes directory.
-# It accepts 
+# It accepts
 # - the version of kms-dev as the first parameter
 # - the LOCAL_BUILD_PUBLIC_KEY_PATH as the second optional parameter.
 # - the LOCAL_BUILD_PRIVATE_KEY_PATH as the third optional parameter.
 
-# mkdir -p temp; docker run --rm -v $PWD/temp:/keys ghcr.io/zama-ai/kms-service:c744ada ./bin/kms-gen-keys centralized  --write-privkey --pub-path /keys --priv-path /keys
+# mkdir -p temp; docker run --rm -v $PWD/temp:/keys ghcr.io/zama-ai/kms-service-dev:v0.8.1-rc3 ./bin/kms-gen-keys centralized --write-privkey --pub-url file://./keys --priv-url file://./keys --overwrite
 
 set -Eeuo pipefail
 
@@ -99,5 +99,3 @@ cp $KEYS_FULL_PATH/$key $NETWORK_KEYS_PRIVATE_PATH/cks
 # in $HOME/network-fhe-keys/cks
 mkdir -p $HOME/network-fhe-keys
 cp $KEYS_FULL_PATH/$key $HOME/network-fhe-keys/cks
-
-
