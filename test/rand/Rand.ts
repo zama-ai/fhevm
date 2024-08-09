@@ -15,7 +15,7 @@ describe('Rand', function () {
     const contract = await deployRandFixture();
     this.contractAddress = await contract.getAddress();
     this.rand = contract;
-    this.instances = await createInstances(this.contractAddress, ethers, this.signers);
+    this.instances = await createInstances(this.signers);
   });
 
   it('8 bits generate and decrypt', async function () {
