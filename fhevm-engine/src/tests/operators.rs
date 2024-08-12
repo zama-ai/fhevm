@@ -10,7 +10,8 @@ use crate::server::coprocessor::{AsyncComputation, AsyncComputeRequest, DebugDec
 struct BinaryOperatorTestCase {
     bits: i32,
     operand: i32,
-    operand_types: i32,
+    input_types: i32,
+    expected_output_type: i32,
     lhs: BigInt,
     rhs: BigInt,
     expected_output: BigInt,
@@ -30,6 +31,7 @@ fn supported_bits() -> &'static [i32] {
         8,
         16,
         32,
+        64,
     ]
 }
 
@@ -38,6 +40,7 @@ fn supported_bits_to_bit_type_in_db(inp: i32) -> i32 {
         8 => 2,
         16 => 3,
         32 => 4,
+        64 => 5,
         other => panic!("unknown supported bits: {other}")
     }
 }
@@ -82,7 +85,7 @@ async fn test_fhe_binary_operands() -> Result<(), Box<dyn std::error::Error>> {
             DebugEncryptRequestSingle {
                 handle: lhs_handle.clone(),
                 le_value: lhs_bytes,
-                output_type: op.operand_types,
+                output_type: op.input_types,
             }
         );
         if !op.is_scalar {
@@ -90,7 +93,7 @@ async fn test_fhe_binary_operands() -> Result<(), Box<dyn std::error::Error>> {
             enc_request_payload.push(DebugEncryptRequestSingle {
                 handle: rhs_handle.clone(),
                 le_value: rhs_bytes,
-                output_type: op.operand_types,
+                output_type: op.input_types,
             });
         }
 
@@ -150,8 +153,14 @@ async fn test_fhe_binary_operands() -> Result<(), Box<dyn std::error::Error>> {
         let decr_response = &resp.get_ref().values[idx];
         println!("Checking computation for binary test bits:{} op:{} is_scalar:{} lhs:{} rhs:{} output:{}",
             op.bits, op.operand, op.is_scalar, op.lhs.to_string(), op.rhs.to_string(), op.expected_output.to_string());
-        assert_eq!(decr_response.output_type, op.operand_types, "operand types not equal");
-        assert_eq!(decr_response.value, op.expected_output.to_string(), "operand output values not equal");
+        assert_eq!(decr_response.output_type, op.expected_output_type, "operand types not equal");
+        let value_to_compare = match decr_response.value.as_str() {
+            // for FheBool outputs
+            "true" => "1",
+            "false" => "0",
+            other => other,
+        };
+        assert_eq!(value_to_compare, op.expected_output.to_string(), "operand output values not equal");
     }
 
     Ok(())
@@ -260,17 +269,33 @@ async fn test_fhe_unary_operands() -> Result<(), Box<dyn std::error::Error>> {
 
 fn generate_binary_test_cases() -> Vec<BinaryOperatorTestCase> {
     let mut cases = Vec::new();
+    let bit_shift_ops = [
+        SupportedFheOperations::FheShl,
+        SupportedFheOperations::FheShr,
+        SupportedFheOperations::FheRotl,
+        SupportedFheOperations::FheRotr,
+    ];
     let mut push_case = |bits: i32, is_scalar: bool, shift_by: i32, op: SupportedFheOperations| {
         let mut lhs = BigInt::from(12);
         let mut rhs = BigInt::from(7);
         lhs <<= shift_by;
-        rhs <<= shift_by;
-        let expected_output = compute_expected_binary_output(&lhs, &rhs, op);
+        // don't shift by much for bit shift opts not to make result 0
+        if bit_shift_ops.contains(&op) {
+            rhs = BigInt::from(2);
+        } else {
+            rhs <<= shift_by;
+        }
+        let expected_output = compute_expected_binary_output(&lhs, &rhs, op, bits);
         let operand = op as i32;
+        let expected_output_type =
+            if op.is_comparison() {
+                1 // FheBool
+            } else { supported_bits_to_bit_type_in_db(bits) };
         cases.push(BinaryOperatorTestCase {
             bits,
             operand,
-            operand_types: supported_bits_to_bit_type_in_db(bits),
+            expected_output_type,
+            input_types: supported_bits_to_bit_type_in_db(bits),
             lhs,
             rhs,
             expected_output,
@@ -349,16 +374,95 @@ fn compute_expected_unary_output(inp: &BigInt, op: SupportedFheOperations, bits:
                 }
             }
         },
+        SupportedFheOperations::FheNeg => {
+            match bits {
+                8 => {
+                    let inp: i8 = inp.try_into().unwrap();
+                    BigInt::from(-inp as u8)
+                }
+                16 => {
+                    let inp: i16 = inp.try_into().unwrap();
+                    BigInt::from(-inp as u16)
+                }
+                32 => {
+                    let inp: i32 = inp.try_into().unwrap();
+                    BigInt::from(-inp as u32)
+                }
+                other => {
+                    panic!("unknown bits: {other}")
+                }
+            }
+        }
         other => panic!("unsupported binary operation: {:?}", other),
     }
 }
 
-fn compute_expected_binary_output(lhs: &BigInt, rhs: &BigInt, op: SupportedFheOperations) -> BigInt {
+fn compute_expected_binary_output(lhs: &BigInt, rhs: &BigInt, op: SupportedFheOperations, bits: i32) -> BigInt {
     match op {
+        SupportedFheOperations::FheEq => BigInt::from(lhs.eq(rhs)),
+        SupportedFheOperations::FheNe => BigInt::from(lhs.ne(rhs)),
+        SupportedFheOperations::FheGe => BigInt::from(lhs.ge(rhs)),
+        SupportedFheOperations::FheGt => BigInt::from(lhs.gt(rhs)),
+        SupportedFheOperations::FheLe => BigInt::from(lhs.le(rhs)),
+        SupportedFheOperations::FheLt => BigInt::from(lhs.lt(rhs)),
+        SupportedFheOperations::FheMin => lhs.min(rhs).clone(),
+        SupportedFheOperations::FheMax => lhs.max(rhs).clone(),
         SupportedFheOperations::FheAdd => lhs + rhs,
         SupportedFheOperations::FheSub => lhs - rhs,
         SupportedFheOperations::FheMul => lhs * rhs,
         SupportedFheOperations::FheDiv => lhs / rhs,
+        SupportedFheOperations::FheRem => lhs % rhs,
+        SupportedFheOperations::FheBitAnd => lhs & rhs,
+        SupportedFheOperations::FheBitOr => lhs | rhs,
+        SupportedFheOperations::FheBitXor => lhs ^ rhs,
+        SupportedFheOperations::FheShl => lhs << (TryInto::<u64>::try_into(rhs).unwrap()),
+        SupportedFheOperations::FheShr => lhs >> (TryInto::<u64>::try_into(rhs).unwrap()),
+        SupportedFheOperations::FheRotl => {
+            match bits {
+                8 => {
+                    BigInt::from(TryInto::<u8>::try_into(lhs).unwrap()
+                        .rotate_left(TryInto::<u32>::try_into(rhs).unwrap()))
+                }
+                16 => {
+                    BigInt::from(TryInto::<u16>::try_into(lhs).unwrap()
+                        .rotate_left(TryInto::<u32>::try_into(rhs).unwrap()))
+                }
+                32 => {
+                    BigInt::from(TryInto::<u32>::try_into(lhs).unwrap()
+                        .rotate_left(TryInto::<u32>::try_into(rhs).unwrap()))
+                }
+                64 => {
+                    BigInt::from(TryInto::<u64>::try_into(lhs).unwrap()
+                        .rotate_left(TryInto::<u32>::try_into(rhs).unwrap()))
+                }
+                other => {
+                    panic!("unsupported bits for rotl: {other}")
+                }
+            }
+        }
+        SupportedFheOperations::FheRotr => {
+            match bits {
+                8 => {
+                    BigInt::from(TryInto::<u8>::try_into(lhs).unwrap()
+                        .rotate_right(TryInto::<u32>::try_into(rhs).unwrap()))
+                }
+                16 => {
+                    BigInt::from(TryInto::<u16>::try_into(lhs).unwrap()
+                        .rotate_right(TryInto::<u32>::try_into(rhs).unwrap()))
+                }
+                32 => {
+                    BigInt::from(TryInto::<u32>::try_into(lhs).unwrap()
+                        .rotate_right(TryInto::<u32>::try_into(rhs).unwrap()))
+                }
+                64 => {
+                    BigInt::from(TryInto::<u64>::try_into(lhs).unwrap()
+                        .rotate_right(TryInto::<u32>::try_into(rhs).unwrap()))
+                }
+                other => {
+                    panic!("unsupported bits for rotr: {other}")
+                }
+            }
+        }
         other => panic!("unsupported binary operation: {:?}", other),
     }
 }

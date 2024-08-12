@@ -134,6 +134,7 @@ pub enum SupportedFheCiphertexts {
     FheUint8(tfhe::FheUint8),
     FheUint16(tfhe::FheUint16),
     FheUint32(tfhe::FheUint32),
+    FheUint64(tfhe::FheUint64),
     Scalar(U256),
 }
 
@@ -144,8 +145,25 @@ pub enum SupportedFheOperations {
     FheSub = 1,
     FheMul = 2,
     FheDiv = 3,
-    FheNot = 4,
-    FheIfThenElse = 5,
+    FheRem = 4,
+    FheBitAnd = 5,
+    FheBitOr = 6,
+    FheBitXor = 7,
+    FheShl = 8,
+    FheShr = 9,
+    FheRotl = 10,
+    FheRotr = 11,
+    FheEq = 12,
+    FheNe = 13,
+    FheGe = 14,
+    FheGt = 15,
+    FheLe = 16,
+    FheLt = 17,
+    FheMin = 18,
+    FheMax = 19,
+    FheNeg = 20,
+    FheNot = 21,
+    FheIfThenElse = 40,
 }
 
 #[derive(PartialEq, Eq)]
@@ -162,6 +180,7 @@ impl SupportedFheCiphertexts {
             SupportedFheCiphertexts::FheUint8(v) => (2, bincode::serialize(v).unwrap()),
             SupportedFheCiphertexts::FheUint16(v) => (3, bincode::serialize(v).unwrap()),
             SupportedFheCiphertexts::FheUint32(v) => (4, bincode::serialize(v).unwrap()),
+            SupportedFheCiphertexts::FheUint64(v) => (5, bincode::serialize(v).unwrap()),
             SupportedFheCiphertexts::Scalar(_) => {
                 panic!("we should never need to serialize scalar")
             }
@@ -174,6 +193,7 @@ impl SupportedFheCiphertexts {
             SupportedFheCiphertexts::FheUint8(v) => FheDecrypt::<u8>::decrypt(v, client_key).to_string(),
             SupportedFheCiphertexts::FheUint16(v) => FheDecrypt::<u16>::decrypt(v, client_key).to_string(),
             SupportedFheCiphertexts::FheUint32(v) => FheDecrypt::<u32>::decrypt(v, client_key).to_string(),
+            SupportedFheCiphertexts::FheUint64(v) => FheDecrypt::<u64>::decrypt(v, client_key).to_string(),
             SupportedFheCiphertexts::Scalar(v) => {
                 let (l, h) = v.to_low_high_u128();
                 format!("{l}{h}")
@@ -188,10 +208,40 @@ impl SupportedFheOperations {
             SupportedFheOperations::FheAdd |
             SupportedFheOperations::FheSub |
             SupportedFheOperations::FheMul |
-            SupportedFheOperations::FheDiv
+            SupportedFheOperations::FheDiv |
+            SupportedFheOperations::FheRem |
+            SupportedFheOperations::FheBitAnd |
+            SupportedFheOperations::FheBitOr |
+            SupportedFheOperations::FheBitXor |
+            SupportedFheOperations::FheShl |
+            SupportedFheOperations::FheShr |
+            SupportedFheOperations::FheRotl |
+            SupportedFheOperations::FheRotr |
+            SupportedFheOperations::FheEq |
+            SupportedFheOperations::FheNe |
+            SupportedFheOperations::FheGe |
+            SupportedFheOperations::FheGt |
+            SupportedFheOperations::FheLe |
+            SupportedFheOperations::FheLt |
+            SupportedFheOperations::FheMin |
+            SupportedFheOperations::FheMax
             => FheOperationType::Binary,
-            SupportedFheOperations::FheNot => FheOperationType::Unary,
+            SupportedFheOperations::FheNot | SupportedFheOperations::FheNeg
+            => FheOperationType::Unary,
             SupportedFheOperations::FheIfThenElse => FheOperationType::Other,
+        }
+    }
+
+    pub fn is_comparison(&self) -> bool {
+        match self {
+            SupportedFheOperations::FheEq |
+            SupportedFheOperations::FheNe |
+            SupportedFheOperations::FheGe |
+            SupportedFheOperations::FheGt |
+            SupportedFheOperations::FheLe |
+            SupportedFheOperations::FheLt
+            => true,
+            _ => false,
         }
     }
 }
@@ -205,7 +255,24 @@ impl TryFrom<i16> for SupportedFheOperations {
             1 => Ok(SupportedFheOperations::FheSub),
             2 => Ok(SupportedFheOperations::FheMul),
             3 => Ok(SupportedFheOperations::FheDiv),
-            4 => Ok(SupportedFheOperations::FheNot),
+            4 => Ok(SupportedFheOperations::FheRem),
+            5 => Ok(SupportedFheOperations::FheBitAnd),
+            6 => Ok(SupportedFheOperations::FheBitOr),
+            7 => Ok(SupportedFheOperations::FheBitXor),
+            8 => Ok(SupportedFheOperations::FheShl),
+            9 => Ok(SupportedFheOperations::FheShr),
+            10 => Ok(SupportedFheOperations::FheRotl),
+            11 => Ok(SupportedFheOperations::FheRotr),
+            12 => Ok(SupportedFheOperations::FheEq),
+            13 => Ok(SupportedFheOperations::FheNe),
+            14 => Ok(SupportedFheOperations::FheGe),
+            15 => Ok(SupportedFheOperations::FheGt),
+            16 => Ok(SupportedFheOperations::FheLe),
+            17 => Ok(SupportedFheOperations::FheLt),
+            18 => Ok(SupportedFheOperations::FheMin),
+            19 => Ok(SupportedFheOperations::FheMax),
+            20 => Ok(SupportedFheOperations::FheNeg),
+            21 => Ok(SupportedFheOperations::FheNot),
             _ => Err(CoprocessorError::UnknownFheOperation(value as i32))
         };
 

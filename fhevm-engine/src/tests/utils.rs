@@ -80,7 +80,7 @@ pub async fn setup_test_app() -> Result<TestInstance, Box<dyn std::error::Error>
         run_server: true,
         generate_fhe_keys: false,
         server_maximum_ciphertexts_to_schedule: 5000,
-        work_items_batch_size: 10,
+        work_items_batch_size: 40,
         tenant_key_cache_size: 4,
         coprocessor_fhe_threads: 4,
         tokio_threads: 2,
