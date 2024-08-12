@@ -19,12 +19,5 @@ jobs:
           node-version: ${{ matrix.node-version }}
       - run: cp .env.example .env
       - run: npm ci --include=optional
-      - run: npm install solidity-comments-linux-x64-gnu
       - name: "npm CI test"
-        run: |
-          # sometimes not created and is not tailed
-          touch fhevm.log
-          npm run fhevm:start &
-          sleep 60
-          npm run test:inband
-          npm run fhevm:stop || true
+        run: npm run test:mock
