@@ -1,6 +1,6 @@
 use tfhe::{prelude::FheTryTrivialEncrypt, FheBool, FheUint16, FheUint32, FheUint8};
 
-use crate::types::{CoprocessorError, FheOperationType, SupportedFheCiphertexts, SupportedFheOperations};
+use crate::{types::{CoprocessorError, FheOperationType, SupportedFheCiphertexts, SupportedFheOperations}, utils::check_if_handle_is_zero};
 
 pub fn current_ciphertext_version() -> i16 {
     1
@@ -154,7 +154,24 @@ pub fn perform_fhe_operation(fhe_operation: i16, input_operands: &[SupportedFheC
                 }
             }
         },
-        SupportedFheOperations::FheNot => todo!(),
+        SupportedFheOperations::FheNot => {
+            assert_eq!(input_operands.len(), 1);
+
+            match &input_operands[0] {
+                SupportedFheCiphertexts::FheUint8(a) => {
+                    Ok(SupportedFheCiphertexts::FheUint8(!a))
+                }
+                SupportedFheCiphertexts::FheUint16(a) => {
+                    Ok(SupportedFheCiphertexts::FheUint16(!a))
+                }
+                SupportedFheCiphertexts::FheUint32(a) => {
+                    Ok(SupportedFheCiphertexts::FheUint32(!a))
+                }
+                _ => {
+                    panic!("Unsupported fhe types");
+                }
+            }
+        },
         SupportedFheOperations::FheIfThenElse => todo!(),
     }
 }
@@ -213,7 +230,7 @@ pub fn deserialize_fhe_ciphertext(input_type: i16, input_bytes: &[u8]) -> Result
 }
 
 // return output ciphertext type
-pub fn check_fhe_operand_types(fhe_operation: i32, input_types: &[i16], is_scalar: bool) -> Result<i16, CoprocessorError> {
+pub fn check_fhe_operand_types(fhe_operation: i32, input_types: &[i16], is_scalar: bool, input_handles: &[String]) -> Result<i16, CoprocessorError> {
     let fhe_op: SupportedFheOperations = fhe_operation.try_into()?;
 
     if is_scalar && !does_fhe_operation_support_scalar(&fhe_op) {
@@ -243,6 +260,18 @@ pub fn check_fhe_operand_types(fhe_operation: i32, input_types: &[i16], is_scala
                     fhe_operation_name: format!("{:?}", fhe_op),
                     operand_types: input_types.to_vec(),
                 });
+            }
+
+            // special case for div operation
+            if is_scalar && fhe_op == SupportedFheOperations::FheDiv {
+                if check_if_handle_is_zero(input_handles[1].as_str()) {
+                    return Err(CoprocessorError::FheOperationScalarDivisionByZero {
+                        lhs_handle: input_handles[0].clone(),
+                        rhs_value: input_handles[1].clone(),
+                        fhe_operation,
+                        fhe_operation_name: format!("{:?}", SupportedFheOperations::FheDiv),
+                    });
+                }
             }
 
             return Ok(input_types[0]);

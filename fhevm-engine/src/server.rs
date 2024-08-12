@@ -230,7 +230,7 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
 
             // check before we insert computation that it has
             // to succeed according to the type system
-            let output_type = check_fhe_operand_types(comp.operation, &handle_types, comp.is_scalar)?;
+            let output_type = check_fhe_operand_types(comp.operation, &handle_types, comp.is_scalar, &comp.input_handles)?;
             // fill in types with output handles that are computed as we go
             assert!(ct_types.insert(comp.output_handle.clone(), output_type).is_none());
         }

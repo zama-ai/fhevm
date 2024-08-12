@@ -39,12 +39,12 @@ pub enum CoprocessorError {
         fhe_operation_name: String,
         operand_types: Vec<i16>,
     },
-    // TODO: implement scalar division by zero error
-    // FheOperationScalarDivisionByZero {
-    //     lhs_handle: String,
-    //     fhe_operation: i32,
-    //     fhe_operation_name: String,
-    // },
+    FheOperationScalarDivisionByZero {
+        lhs_handle: String,
+        rhs_value: String,
+        fhe_operation: i32,
+        fhe_operation_name: String,
+    },
 }
 
 impl std::fmt::Display for CoprocessorError {
@@ -100,6 +100,9 @@ impl std::fmt::Display for CoprocessorError {
             },
             CoprocessorError::TooManyCiphertextsInBatch { maximum_allowed, got } => {
                 write!(f, "maximum ciphertexts exceeded in batch, maximum: {maximum_allowed}, got: {got}")
+            },
+            CoprocessorError::FheOperationScalarDivisionByZero { lhs_handle, rhs_value, fhe_operation, fhe_operation_name  } => {
+                write!(f, "zero on the right side of scalar division, lhs handle: {lhs_handle}, rhs value: {rhs_value}, fhe operation: {fhe_operation} fhe operation name:{fhe_operation_name}")
             },
         }
     }
@@ -202,6 +205,7 @@ impl TryFrom<i16> for SupportedFheOperations {
             1 => Ok(SupportedFheOperations::FheSub),
             2 => Ok(SupportedFheOperations::FheMul),
             3 => Ok(SupportedFheOperations::FheDiv),
+            4 => Ok(SupportedFheOperations::FheNot),
             _ => Err(CoprocessorError::UnknownFheOperation(value as i32))
         };
 

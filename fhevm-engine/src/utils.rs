@@ -3,6 +3,14 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use lazy_static::lazy_static;
 use crate::{server::coprocessor::AsyncComputation, types::CoprocessorError};
 
+pub fn check_if_handle_is_zero(inp: &str) -> bool {
+    lazy_static! {
+        static ref TARGET_HANDLE_REGEX: regex::Regex = regex::Regex::new("^0x[0]+$").unwrap();
+    }
+
+    TARGET_HANDLE_REGEX.is_match(inp)
+}
+
 // handle must be serializable to bytes for scalar operations
 pub fn check_valid_ciphertext_handle(inp: &str) -> Result<(), CoprocessorError> {
     lazy_static! {

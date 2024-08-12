@@ -14,7 +14,7 @@ async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
 
-    let api_key_header = format!("Bearer {}", default_api_key());
+    let api_key_header = format!("bearer {}", default_api_key());
     let ct_type = 4; // i32
 
     // encrypt two ciphertexts

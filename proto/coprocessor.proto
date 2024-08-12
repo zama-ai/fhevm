@@ -42,6 +42,8 @@ message DebugDecryptResponseSingle {
 enum FheOperation {
   FHE_ADD = 0;
   FHE_SUB = 1;
+  FHE_MUL = 2;
+  FHE_DIV = 3;
 }
 
 message AsyncComputation {
