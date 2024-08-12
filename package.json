@@ -1,7 +1,7 @@
 {
   "name": "fhevm",
   "description": "A Solidity library for interacting with the Zama Blockchain",
-  "version": "0.5.3",
+  "version": "0.5.7",
   "engines": {
     "node": ">=20.0.0"
   },
@@ -80,7 +80,6 @@
     "hardhat": "^2.22.8",
     "hardhat-deploy": "^0.11.29",
     "hardhat-gas-reporter": "^1.0.2",
-    "hardhat-ignore-warnings": "^0.2.11",
     "lodash": "^4.17.21",
     "mocha": "^10.1.0",
     "prettier": "^3.0.0",

@@ -1,7 +1,6 @@
 import '@nomicfoundation/hardhat-toolbox';
 import dotenv from 'dotenv';
 import 'hardhat-deploy';
-import 'hardhat-ignore-warnings';
 import type { HardhatUserConfig, extendProvider } from 'hardhat/config';
 import { task } from 'hardhat/config';
 import type { NetworkUserConfig } from 'hardhat/types';
@@ -158,11 +157,6 @@ const config: HardhatUserConfig = {
         runs: 800,
       },
       evmVersion: 'cancun',
-    },
-  },
-  warnings: {
-    '*': {
-      'transient-storage': false,
     },
   },
   typechain: {
