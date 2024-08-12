@@ -1,10 +1,9 @@
 name: Pull request tests
 
 on:
-  false
-  # pull_request:
-  #   branches:
-  #     - main
+  pull_request:
+    branches:
+      - main
 
 jobs:
   build:
@@ -20,32 +19,6 @@ jobs:
           node-version: ${{ matrix.node-version }}
       - run: cp .env.example .env
       - run: npm ci --include=optional
-      - run: npm install solidity-comments-linux-x64-gnu
       - run: npm run prettier:check
       - name: "npm CI test"
-        run: |
-          # sometimes not created and is not tailed
-          touch fhevm.log
-          npm run fhevm:start &
-          sleep 60
-          npm run test:inband
-      - name: "Print logs"
-        shell: bash
-        if: success() || failure()
-        run: |
-          echo "###################### KMS Sync logs ###########################"
-          docker container exec fhevm cat /config/kms-server-sync.log
-          echo "###################### KMS Sync Errs ###########################"
-          docker container exec fhevm cat /config/kms-server-sync.err
-          echo "###################### KMS Async logs ###########################"
-          docker container exec fhevm cat /config/kms-server-async.log
-          echo "###################### KMS Async Errs ###########################"
-          docker container exec fhevm cat /config/kms-server-async.err
-          echo "###################### Aggregator logs ###########################"
-          docker container exec fhevm cat /config/aggregator.log
-          echo "###################### Aggregator Errs ###########################"
-          docker container exec fhevm cat /config/aggregator.err
-          echo "###################### Gateway logs ###########################"
-          docker container exec fhevm cat /config/gateway-service.log
-          echo "###################### Gateway Errs ###########################"
-          docker container exec fhevm cat /config/gateway-service.err
+        run: npm run test:mock
