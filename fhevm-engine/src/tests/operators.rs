@@ -369,6 +369,10 @@ fn compute_expected_unary_output(inp: &BigInt, op: SupportedFheOperations, bits:
                     let inp: u32 = inp.try_into().unwrap();
                     BigInt::from(inp.not())
                 }
+                64 => {
+                    let inp: u64 = inp.try_into().unwrap();
+                    BigInt::from(inp.not())
+                }
                 other => {
                     panic!("unknown bits: {other}")
                 }
@@ -387,6 +391,10 @@ fn compute_expected_unary_output(inp: &BigInt, op: SupportedFheOperations, bits:
                 32 => {
                     let inp: i32 = inp.try_into().unwrap();
                     BigInt::from(-inp as u32)
+                }
+                64 => {
+                    let inp: i64 = inp.try_into().unwrap();
+                    BigInt::from(-inp as u64)
                 }
                 other => {
                     panic!("unknown bits: {other}")
