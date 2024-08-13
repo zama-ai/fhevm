@@ -16,15 +16,14 @@
   - [Use Zama's TKMS](getting_started/tkms/zama.md)
   - [Request the creation of a new private key](getting_started/tkms/create.md)
   - [Application Smart Contract](getting_started/tkms/contract.md)
-  - [Run a KMS](getting_started/tkms/run.md)
+  - [Run a TKMS](getting_started/tkms/run.md)
 
 ## Fundamentals
 
-- [Architecture](fundamentals/overview.md)
+- [Overview](fundamentals/overview.md)
 - fhEVM
   - [Architecture](fundamentals/fhevm/architecture.md)
   - [Contracts](fundamentals/fhevm/contracts.md)
-  - [Backend](fundamentals/fhevm/backend.md)
   - [Execution](fundamentals/fhevm/execution.md)
   - [Storage](fundamentals/fhevm/storage.md)
   - [Inputs](fundamentals/fhevm/inputs.md)
