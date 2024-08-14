@@ -8,19 +8,26 @@ pub enum CoprocessorError {
     UnknownFheType(i32),
     DuplicateOutputHandleInBatch(String),
     CiphertextHandleLongerThan64Bytes,
-    CiphertextHandleMustBeAtLeast4Bytes(String),
-    CiphertextHandleMustHaveEvenAmountOfHexNibblets(String),
-    InvalidHandle(String),
+    CiphertextHandleMustBeAtLeast1Byte(String),
     UnexistingInputCiphertextsFound(Vec<String>),
     OutputHandleIsAlsoInputHandle(String),
     UnknownCiphertextType(i16),
+    ComputationInputIsUndefined {
+        computation_output_handle: String,
+        computation_inputs_index: usize,
+    },
+    OnlySecondOperandCanBeScalar {
+        computation_output_handle: String,
+        scalar_input_index: usize,
+        only_allowed_scalar_input_index: usize,
+    },
     TooManyCiphertextsInBatch {
         maximum_allowed: usize,
         got: usize,
     },
     CiphertextComputationDependencyLoopDetected {
         uncomputable_output_handle: String,
-        uncomputable_handle_dependencies: Vec<String>,
+        uncomputable_handle_dependency: String,
     },
     UnexpectedOperandCountForFheOperation {
         fhe_operation: i32,
@@ -68,14 +75,8 @@ impl std::fmt::Display for CoprocessorError {
             CoprocessorError::CiphertextHandleLongerThan64Bytes => {
                 write!(f, "Found ciphertext handle longer than 64 bytes")
             }
-            CoprocessorError::CiphertextHandleMustBeAtLeast4Bytes(handle) => {
+            CoprocessorError::CiphertextHandleMustBeAtLeast1Byte(handle) => {
                 write!(f, "Found ciphertext handle less than 4 bytes: {handle}")
-            }
-            CoprocessorError::CiphertextHandleMustHaveEvenAmountOfHexNibblets(handle) => {
-                write!(f, "Found uneven amount of hex nibblets in handle, can't deserialize to bytes: {handle}")
-            }
-            CoprocessorError::InvalidHandle(handle) => {
-                write!(f, "Invalid handle found: {}", handle)
             }
             CoprocessorError::UnexistingInputCiphertextsFound(handles) => {
                 write!(f, "Ciphertexts not found: {:?}", handles)
@@ -95,14 +96,20 @@ impl std::fmt::Display for CoprocessorError {
             CoprocessorError::FheOperationDoesntHaveUniformTypesAsInput { fhe_operation, fhe_operation_name, operand_types } => {
                 write!(f, "fhe operation number {fhe_operation} ({fhe_operation_name}) expects uniform types as input, received: {:?}", operand_types)
             },
-            CoprocessorError::CiphertextComputationDependencyLoopDetected { uncomputable_output_handle, uncomputable_handle_dependencies  } => {
-                write!(f, "fhe computation with output handle {uncomputable_output_handle} with dependencies {:?} has circular dependency and is uncomputable", uncomputable_handle_dependencies)
+            CoprocessorError::CiphertextComputationDependencyLoopDetected { uncomputable_output_handle, uncomputable_handle_dependency  } => {
+                write!(f, "fhe computation with output handle {uncomputable_output_handle} with dependency {:?} has circular dependency and is uncomputable", uncomputable_handle_dependency)
             },
             CoprocessorError::TooManyCiphertextsInBatch { maximum_allowed, got } => {
                 write!(f, "maximum ciphertexts exceeded in batch, maximum: {maximum_allowed}, got: {got}")
             },
             CoprocessorError::FheOperationScalarDivisionByZero { lhs_handle, rhs_value, fhe_operation, fhe_operation_name  } => {
                 write!(f, "zero on the right side of scalar division, lhs handle: {lhs_handle}, rhs value: {rhs_value}, fhe operation: {fhe_operation} fhe operation name:{fhe_operation_name}")
+            },
+            CoprocessorError::ComputationInputIsUndefined { computation_output_handle, computation_inputs_index } => {
+                write!(f, "computation has undefined input, output handle: {computation_output_handle}, input index: {computation_inputs_index}")
+            },
+            CoprocessorError::OnlySecondOperandCanBeScalar { computation_output_handle, scalar_input_index, only_allowed_scalar_input_index } => {
+                write!(f, "computation has scalar operand which is not the second operand, output handle: {computation_output_handle}, scalar input index: {scalar_input_index}, only allowed scalar input index: {only_allowed_scalar_input_index}")
             },
         }
     }

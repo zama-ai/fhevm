@@ -1,10 +1,11 @@
+use coprocessor::async_computation_input::Input;
 use coprocessor::{DebugDecryptResponse, DebugDecryptResponseSingle};
 use sqlx::{query, Acquire};
 use tonic::transport::Server;
 use crate::db_queries::{check_if_api_key_is_valid, check_if_ciphertexts_exist_in_db};
 use crate::utils::sort_computations_by_dependencies;
 use crate::types::CoprocessorError;
-use crate::tfhe_ops::{self, check_fhe_operand_types, current_ciphertext_version, debug_trivial_encrypt_le_bytes};
+use crate::tfhe_ops::{self, check_fhe_operand_types, current_ciphertext_version, debug_trivial_encrypt_be_bytes};
 use crate::server::coprocessor::GenericResponse;
 
 pub mod coprocessor {
@@ -67,9 +68,9 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
             tfhe::set_server_key(server_key);
 
             // single threaded implementation as this is debug function and it is simple to implement
-            let mut res: Vec<(String, i16, Vec<u8>)> = Vec::with_capacity(cloned.len());
+            let mut res: Vec<(Vec<u8>, i16, Vec<u8>)> = Vec::with_capacity(cloned.len());
             for v in cloned {
-                let ct = debug_trivial_encrypt_le_bytes(v.output_type as i16, &v.le_value);
+                let ct = debug_trivial_encrypt_be_bytes(v.output_type as i16, &v.le_value);
                 let (ct_type, ct_bytes) = ct.serialize();
                 res.push((
                     v.handle,
@@ -125,7 +126,7 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
           SELECT ciphertext, ciphertext_type, handle
           FROM ciphertexts
           WHERE tenant_id = $1
-          AND handle = ANY($2::TEXT[])
+          AND handle = ANY($2::BYTEA[])
           AND ciphertext_version = $3
         ", tenant_id, &req.handles, current_ciphertext_version())
         .fetch_all(&self.pool)
@@ -214,39 +215,53 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
         let (sorted_computations, handles_to_check_in_db) =
             sort_computations_by_dependencies(&req.computations)?;
 
+        // to insert to db
         let mut ct_types = check_if_ciphertexts_exist_in_db(handles_to_check_in_db, tenant_id, &self.pool).await?;
+        let mut computations_inputs: Vec<Vec<Vec<u8>>> = Vec::with_capacity(sorted_computations.len());
+        let mut are_comps_scalar: Vec<bool> = Vec::with_capacity(sorted_computations.len());
         for comp in &sorted_computations {
-            let mut handle_types = Vec::with_capacity(comp.input_handles.len());
-            for (idx, ih) in comp.input_handles.iter().enumerate() {
-                let is_operand_scalar = comp.is_scalar && idx == 1;
-                if is_operand_scalar {
-                    handle_types.push(-1);
-                } else {
-                    // operand may be scalar, but this will be checked in check_fhe_operand_types, we don't want to panic
-                    let ct_type = ct_types.get(ih).expect("this must be found if operand is non scalar");
-                    handle_types.push(*ct_type);
+            let mut handle_types = Vec::with_capacity(comp.inputs.len());
+            let mut is_computation_scalar = false;
+            let mut this_comp_inputs: Vec<Vec<u8>> = Vec::with_capacity(comp.inputs.len());
+            for (idx, ih) in comp.inputs.iter().enumerate() {
+                if let Some(input) = &ih.input {
+                    match input {
+                        Input::InputHandle(ih) => {
+                            let ct_type = ct_types.get(ih).expect("this must be found if operand is non scalar");
+                            handle_types.push(*ct_type);
+                            this_comp_inputs.push(ih.clone());
+                        }
+                        Input::Scalar(sc) => {
+                            is_computation_scalar = true;
+                            handle_types.push(-1);
+                            this_comp_inputs.push(sc.clone());
+                            assert!(idx == 1, "we should have checked earlier that only second operand can be scalar");
+                        }
+                    }
                 }
             }
 
+            computations_inputs.push(this_comp_inputs);
+            are_comps_scalar.push(is_computation_scalar);
             // check before we insert computation that it has
             // to succeed according to the type system
-            let output_type = check_fhe_operand_types(comp.operation, &handle_types, comp.is_scalar, &comp.input_handles)?;
+            let output_type = check_fhe_operand_types(comp.operation, &handle_types, is_computation_scalar, &comp.inputs)?;
             // fill in types with output handles that are computed as we go
             assert!(ct_types.insert(comp.output_handle.clone(), output_type).is_none());
         }
         
         let mut trx = self.pool.begin().await.map_err(Into::<CoprocessorError>::into)?;
         let mut new_work_available = false;
-        for comp in &sorted_computations {
+        for (idx, comp) in sorted_computations.iter().enumerate() {
             let fhe_operation: i16 =
                 comp.operation.try_into().map_err(|_| CoprocessorError::UnknownFheOperation(comp.operation))?;
             let res = query!(
                 "
-                    INSERT INTO computations(tenant_id, output_handle, dependencies_handles, fhe_operation, is_completed, is_scalar)
+                    INSERT INTO computations(tenant_id, output_handle, dependencies, fhe_operation, is_completed, is_scalar)
                     VALUES($1, $2, $3, $4, false, $5)
                     ON CONFLICT (tenant_id, output_handle) DO NOTHING
                 ",
-                tenant_id, comp.output_handle, &comp.input_handles, fhe_operation, comp.is_scalar
+                tenant_id, comp.output_handle, &computations_inputs[idx], fhe_operation, are_comps_scalar[idx]
             ).execute(trx.as_mut()).await.map_err(Into::<CoprocessorError>::into)?;
             if res.rows_affected() > 0 {
                 new_work_available = true;

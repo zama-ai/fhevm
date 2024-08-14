@@ -1,6 +1,6 @@
 use tfhe::{prelude::{FheEq, FheMax, FheMin, FheOrd, FheTryTrivialEncrypt, RotateLeft, RotateRight}, FheBool, FheUint16, FheUint32, FheUint64, FheUint8};
 
-use crate::{types::{CoprocessorError, FheOperationType, SupportedFheCiphertexts, SupportedFheOperations}, utils::check_if_handle_is_zero};
+use crate::{server::coprocessor::{async_computation_input::Input, AsyncComputationInput}, types::{CoprocessorError, FheOperationType, SupportedFheCiphertexts, SupportedFheOperations}};
 
 pub fn current_ciphertext_version() -> i16 {
     1
@@ -957,7 +957,7 @@ pub fn perform_fhe_operation(fhe_operation: i16, input_operands: &[SupportedFheC
 }
 
 /// Function assumes encryption key already set
-pub fn debug_trivial_encrypt_le_bytes(output_type: i16, input_bytes: &[u8]) -> SupportedFheCiphertexts {
+pub fn debug_trivial_encrypt_be_bytes(output_type: i16, input_bytes: &[u8]) -> SupportedFheCiphertexts {
     match output_type {
         1 => {
             SupportedFheCiphertexts::FheBool(FheBool::try_encrypt_trivial(input_bytes[0] > 0).unwrap())
@@ -967,23 +967,29 @@ pub fn debug_trivial_encrypt_le_bytes(output_type: i16, input_bytes: &[u8]) -> S
         }
         3 => {
             let mut padded: [u8; 2] = [0; 2];
+            let padded_len = padded.len();
+            let copy_from = padded_len - input_bytes.len();
             let len = padded.len().min(input_bytes.len());
-            padded[0..len].copy_from_slice(&input_bytes[0..len]);
-            let res = u16::from_le_bytes(padded);
+            padded[copy_from..padded_len].copy_from_slice(&input_bytes[0..len]);
+            let res = u16::from_be_bytes(padded);
             SupportedFheCiphertexts::FheUint16(FheUint16::try_encrypt_trivial(res).unwrap())
         }
         4 => {
             let mut padded: [u8; 4] = [0; 4];
+            let padded_len = padded.len();
+            let copy_from = padded_len - input_bytes.len();
             let len = padded.len().min(input_bytes.len());
-            padded[0..len].copy_from_slice(&input_bytes[0..len]);
-            let res: u32 = u32::from_le_bytes(padded);
+            padded[copy_from..padded_len].copy_from_slice(&input_bytes[0..len]);
+            let res: u32 = u32::from_be_bytes(padded);
             SupportedFheCiphertexts::FheUint32(FheUint32::try_encrypt_trivial(res).unwrap())
         }
         5 => {
             let mut padded: [u8; 8] = [0; 8];
+            let padded_len = padded.len();
+            let copy_from = padded_len - input_bytes.len();
             let len = padded.len().min(input_bytes.len());
-            padded[0..len].copy_from_slice(&input_bytes[0..len]);
-            let res: u64 = u64::from_le_bytes(padded);
+            padded[copy_from..padded_len].copy_from_slice(&input_bytes[0..len]);
+            let res: u64 = u64::from_be_bytes(padded);
             SupportedFheCiphertexts::FheUint64(FheUint64::try_encrypt_trivial(res).unwrap())
         }
         other => {
@@ -1020,8 +1026,20 @@ pub fn deserialize_fhe_ciphertext(input_type: i16, input_bytes: &[u8]) -> Result
     }
 }
 
+fn encode_comp_input_to_handle(input: &AsyncComputationInput) -> String {
+    match &input.input {
+        Some(Input::Scalar(sc)) => {
+            format!("0x{}", hex::encode(sc))
+        },
+        Some(Input::InputHandle(handle)) => {
+            format!("0x{}", hex::encode(handle))
+        }
+        None => panic!("we assume we get something here"),
+    }
+}
+
 // return output ciphertext type
-pub fn check_fhe_operand_types(fhe_operation: i32, input_types: &[i16], is_scalar: bool, input_handles: &[String]) -> Result<i16, CoprocessorError> {
+pub fn check_fhe_operand_types(fhe_operation: i32, input_types: &[i16], is_scalar: bool, input_handles: &[AsyncComputationInput]) -> Result<i16, CoprocessorError> {
     let fhe_op: SupportedFheOperations = fhe_operation.try_into()?;
 
     if is_scalar && !does_fhe_operation_support_scalar(&fhe_op) {
@@ -1053,15 +1071,20 @@ pub fn check_fhe_operand_types(fhe_operation: i32, input_types: &[i16], is_scala
                 });
             }
 
-            // special case for div operation
+            // special case for div operation, rhs for scalar must be zero
             if is_scalar && fhe_op == SupportedFheOperations::FheDiv {
-                if check_if_handle_is_zero(input_handles[1].as_str()) {
-                    return Err(CoprocessorError::FheOperationScalarDivisionByZero {
-                        lhs_handle: input_handles[0].clone(),
-                        rhs_value: input_handles[1].clone(),
-                        fhe_operation,
-                        fhe_operation_name: format!("{:?}", SupportedFheOperations::FheDiv),
-                    });
+                if let Some(Input::Scalar(sc)) = &input_handles[1].input {
+                    let all_zeroes = sc.iter().all(|i| *i == 0u8);
+                    if all_zeroes {
+                        return Err(CoprocessorError::FheOperationScalarDivisionByZero {
+                            lhs_handle: encode_comp_input_to_handle(&input_handles[0]),
+                            rhs_value: encode_comp_input_to_handle(&input_handles[1]),
+                            fhe_operation,
+                            fhe_operation_name: format!("{:?}", SupportedFheOperations::FheDiv),
+                        });
+                    }
+                } else {
+                    panic!("rhs operand must be scalar here")
                 }
             }
 

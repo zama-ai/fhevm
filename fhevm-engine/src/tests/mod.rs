@@ -2,8 +2,9 @@ use std::str::FromStr;
 
 use tonic::metadata::MetadataValue;
 use utils::default_api_key;
+use crate::server::coprocessor::async_computation_input::Input;
 use crate::server::coprocessor::fhevm_coprocessor_client::FhevmCoprocessorClient;
-use crate::server::coprocessor::{AsyncComputation, AsyncComputeRequest, DebugDecryptRequest, DebugEncryptRequest, DebugEncryptRequestSingle, FheOperation};
+use crate::server::coprocessor::{AsyncComputation, AsyncComputationInput, AsyncComputeRequest, DebugDecryptRequest, DebugEncryptRequest, DebugEncryptRequestSingle, FheOperation};
 
 mod utils;
 mod operators;
@@ -22,12 +23,12 @@ async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
         let mut encrypt_request = tonic::Request::new(DebugEncryptRequest {
             values: vec![
                 DebugEncryptRequestSingle {
-                    handle: "0x0abc".to_string(),
+                    handle: vec![0x0a, 0xbc],
                     le_value: vec![123],
                     output_type: ct_type,
                 },
                 DebugEncryptRequestSingle {
-                    handle: "0x0abd".to_string(),
+                    handle: vec![0x0a, 0xbd],
                     le_value: vec![124],
                     output_type: ct_type,
                 },
@@ -44,20 +45,26 @@ async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
             computations: vec![
                 AsyncComputation {
                     operation: FheOperation::FheAdd.into(),
-                    is_scalar: true,
-                    output_handle: "0x0abf".to_string(),
-                    input_handles: vec![
-                        "0x0abe".to_string(),
-                        "0x0010".to_string(),
+                    output_handle: vec![0x0a, 0xbf],
+                    inputs: vec![
+                        AsyncComputationInput {
+                            input: Some(Input::InputHandle(vec![0x0a, 0xbe])),
+                        },
+                        AsyncComputationInput {
+                            input: Some(Input::Scalar(vec![0x00, 0x10])),
+                        },
                     ]
                 },
                 AsyncComputation {
                     operation: FheOperation::FheAdd.into(),
-                    is_scalar: false,
-                    output_handle: "0x0abe".to_string(),
-                    input_handles: vec![
-                        "0x0abc".to_string(),
-                        "0x0abd".to_string(),
+                    output_handle: vec![0x0a, 0xbe],
+                    inputs: vec![
+                        AsyncComputationInput {
+                            input: Some(Input::InputHandle(vec![0x0a, 0xbc])),
+                        },
+                        AsyncComputationInput {
+                            input: Some(Input::InputHandle(vec![0x0a, 0xbd])),
+                        },
                     ]
                 },
             ]
@@ -74,8 +81,8 @@ async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
     {
         let mut decrypt_request = tonic::Request::new(DebugDecryptRequest {
             handles: vec![
-                "0x0abe".to_string(),
-                "0x0abf".to_string(),
+                vec![0x0a, 0xbe],
+                vec![0x0a, 0xbf],
             ],
         });
         decrypt_request.metadata_mut().append("authorization", MetadataValue::from_str(&api_key_header).unwrap());

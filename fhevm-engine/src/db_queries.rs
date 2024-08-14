@@ -44,13 +44,13 @@ pub async fn check_if_api_key_is_valid<T>(req: &tonic::Request<T>, pool: &sqlx::
 }
 
 /// Returns ciphertext types
-pub async fn check_if_ciphertexts_exist_in_db(mut cts: BTreeSet<String>, tenant_id: i32, pool: &sqlx::Pool<Postgres>) -> Result<HashMap<String, i16>, CoprocessorError> {
+pub async fn check_if_ciphertexts_exist_in_db(mut cts: BTreeSet<Vec<u8>>, tenant_id: i32, pool: &sqlx::Pool<Postgres>) -> Result<HashMap<Vec<u8>, i16>, CoprocessorError> {
     let handles_to_check_in_db_vec = cts.iter().cloned().collect::<Vec<_>>();
     let ciphertexts = query!(
         "
             SELECT handle, ciphertext_type
             FROM ciphertexts
-            WHERE handle = ANY($1::TEXT[])
+            WHERE handle = ANY($1::BYTEA[])
             AND tenant_id = $2
         ",
         &handles_to_check_in_db_vec,
@@ -64,7 +64,9 @@ pub async fn check_if_ciphertexts_exist_in_db(mut cts: BTreeSet<String>, tenant_
     }
 
     if !cts.is_empty() {
-        return Err(CoprocessorError::UnexistingInputCiphertextsFound(cts.into_iter().collect()));
+        return Err(CoprocessorError::UnexistingInputCiphertextsFound(cts.into_iter().map(|i| {
+            format!("0x{}", hex::encode(i))
+        }).collect()));
     }
 
     Ok(result)

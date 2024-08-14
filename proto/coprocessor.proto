@@ -21,13 +21,13 @@ message DebugEncryptRequest {
 }
 
 message DebugEncryptRequestSingle {
-  string handle = 1;
+  bytes handle = 1;
   bytes le_value = 2;
   int32 output_type = 3;
 }
 
 message DebugDecryptRequest {
-  repeated string handles = 1;
+  repeated bytes handles = 1;
 }
 
 message DebugDecryptResponse {
@@ -44,18 +44,43 @@ enum FheOperation {
   FHE_SUB = 1;
   FHE_MUL = 2;
   FHE_DIV = 3;
+  FHE_REM = 4;
+  FHE_BIT_AND = 5;
+  FHE_BIT_OR = 6;
+  FHE_BIT_XOR = 7;
+  FHE_SHL = 8;
+  FHE_SHR = 9;
+  FHE_ROTL = 10;
+  FHE_ROTR = 11;
+  FHE_EQ = 12;
+  FHE_NE = 13;
+  FHE_GE = 14;
+  FHE_GT = 15;
+  FHE_LE = 16;
+  FHE_LT = 17;
+  FHE_MIN = 18;
+  FHE_MAX = 19;
+  FHE_NEG = 20;
+  FHE_NOT = 21;
+  FHE_IF_THEN_ELSE = 40;
 }
 
 message AsyncComputation {
   FheOperation operation = 1;
-  bool is_scalar = 2;
-  string output_handle = 3;
-  repeated string input_handles = 4;
+  bytes output_handle = 3;
+  repeated AsyncComputationInput inputs = 4;
+}
+
+message AsyncComputationInput {
+  oneof input {
+    bytes input_handle = 1;
+    bytes scalar = 2;
+  }
 }
 
 message CiphertextToUpload {
   int32 ciphertext_type = 1;
-  string ciphertext_handle = 2;
+  bytes ciphertext_handle = 2;
   bytes ciphertext_bytes = 3;
 }
 

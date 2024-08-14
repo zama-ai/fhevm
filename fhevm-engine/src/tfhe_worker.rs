@@ -46,13 +46,13 @@ async fn tfhe_worker_cycle(args: &crate::cli::Args) -> Result<(), Box<dyn std::e
 
         // this query locks our work items so other worker doesn't select them
         let mut the_work = query!("
-            SELECT tenant_id, output_handle, dependencies_handles, fhe_operation, is_scalar
+            SELECT tenant_id, output_handle, dependencies, fhe_operation, is_scalar
             FROM computations c
             WHERE is_completed = false
             AND is_error = false
             AND NOT EXISTS (
                 SELECT 1
-                FROM unnest(c.dependencies_handles) WITH ORDINALITY AS elems(v, dep_index)
+                FROM unnest(c.dependencies) WITH ORDINALITY AS elems(v, dep_index)
                 WHERE (c.tenant_id, elems.v) NOT IN ( SELECT tenant_id, handle FROM ciphertexts )
                 -- don't select scalar operands
                 AND ( NOT c.is_scalar OR c.is_scalar AND NOT elems.dep_index = 2 )
@@ -73,7 +73,7 @@ async fn tfhe_worker_cycle(args: &crate::cli::Args) -> Result<(), Box<dyn std::e
         // load different keys in cache by different tenants
         the_work.sort_by_key(|k| k.tenant_id);
 
-        let mut cts_to_query: BTreeSet<&str> = BTreeSet::new();
+        let mut cts_to_query: BTreeSet<&[u8]> = BTreeSet::new();
         let mut tenants_to_query: BTreeSet<i32> = BTreeSet::new();
         let mut keys_to_query: BTreeSet<i32> = BTreeSet::new();
         let key_cache = tenant_key_cache.read().await;
@@ -82,13 +82,13 @@ async fn tfhe_worker_cycle(args: &crate::cli::Args) -> Result<(), Box<dyn std::e
             if !key_cache.contains(&w.tenant_id) {
                 let _ = keys_to_query.insert(w.tenant_id);
             }
-            for dh in &w.dependencies_handles {
-                let _ = cts_to_query.insert(dh.as_str());
+            for dh in &w.dependencies {
+                let _ = cts_to_query.insert(&dh);
             }
         }
         drop(key_cache);
 
-        let cts_to_query = cts_to_query.into_iter().map(|i| i.to_string()).collect::<Vec<_>>();
+        let cts_to_query = cts_to_query.into_iter().map(|i| i.to_vec()).collect::<Vec<_>>();
         let tenants_to_query = tenants_to_query.into_iter().collect::<Vec<_>>();
         let keys_to_query = keys_to_query.into_iter().collect::<Vec<_>>();
 
@@ -117,13 +117,13 @@ async fn tfhe_worker_cycle(args: &crate::cli::Args) -> Result<(), Box<dyn std::e
             SELECT tenant_id, handle, ciphertext, ciphertext_type
             FROM ciphertexts
             WHERE tenant_id = ANY($1::INT[])
-            AND handle = ANY($2::TEXT[])
+            AND handle = ANY($2::BYTEA[])
         ", &tenants_to_query, &cts_to_query).fetch_all(trx.as_mut()).await?;
 
         // index ciphertexts in hashmap
-        let mut ciphertext_map: HashMap<(i32, &str), _> = HashMap::with_capacity(ciphertexts_rows.len());
+        let mut ciphertext_map: HashMap<(i32, &[u8]), _> = HashMap::with_capacity(ciphertexts_rows.len());
         for row in &ciphertexts_rows {
-            let _ = ciphertext_map.insert((row.tenant_id, row.handle.as_str()), row);
+            let _ = ciphertext_map.insert((row.tenant_id, &row.handle), row);
         }
 
         let mut tfhe_work_set = tokio::task::JoinSet::new();
@@ -131,21 +131,19 @@ async fn tfhe_worker_cycle(args: &crate::cli::Args) -> Result<(), Box<dyn std::e
         for w in the_work {
             let tenant_key_cache = tenant_key_cache.clone();
 
-            let mut work_ciphertexts: Vec<(i16, Vec<u8>)> = Vec::with_capacity(w.dependencies_handles.len());
-            for (idx, dh) in w.dependencies_handles.iter().enumerate() {
+            let mut work_ciphertexts: Vec<(i16, Vec<u8>)> = Vec::with_capacity(w.dependencies.len());
+            for (idx, dh) in w.dependencies.iter().enumerate() {
                 let is_operand_scalar = w.is_scalar && idx == 1;
                 if is_operand_scalar {
-                    let bytes = hex::decode(&dh[2..])
-                        .expect("we checked before inserting into db that this is correctly formed hex string");
-                    work_ciphertexts.push((-1, bytes));
+                    work_ciphertexts.push((-1, dh.clone()));
                 } else {
-                    let ct_map_val = ciphertext_map.get(&(w.tenant_id, dh.as_str())).expect("Me must get ciphertext here");
+                    let ct_map_val = ciphertext_map.get(&(w.tenant_id, &dh)).expect("Me must get ciphertext here");
                     work_ciphertexts.push((ct_map_val.ciphertext_type, ct_map_val.ciphertext.clone()));
                 }
             }
 
             // copy for setting error in database
-            tfhe_work_set.spawn_blocking(move || -> Result<_, (Box<(dyn std::error::Error + Send + Sync)>, i32, String)> {
+            tfhe_work_set.spawn_blocking(move || -> Result<_, (Box<(dyn std::error::Error + Send + Sync)>, i32, Vec<u8>)> {
                 thread_local! {
                     static TFHE_TENANT_ID: Cell<i32> = Cell::new(-1);
                 }

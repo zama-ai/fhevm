@@ -2,7 +2,7 @@ use bigdecimal::num_bigint::BigInt;
 use strum::IntoEnumIterator;
 use tonic::metadata::MetadataValue;
 use std::{ops::Not, str::FromStr};
-use crate::{tests::utils::{setup_test_app, default_api_key}, tfhe_ops::{does_fhe_operation_support_both_encrypted_operands, does_fhe_operation_support_scalar}, types::{FheOperationType, SupportedFheOperations}};
+use crate::{server::coprocessor::{async_computation_input::Input, AsyncComputationInput}, tests::utils::{default_api_key, setup_test_app}, tfhe_ops::{does_fhe_operation_support_both_encrypted_operands, does_fhe_operation_support_scalar}, types::{FheOperationType, SupportedFheOperations}};
 use crate::server::coprocessor::fhevm_coprocessor_client::FhevmCoprocessorClient;
 use crate::server::coprocessor::{AsyncComputation, AsyncComputeRequest, DebugDecryptRequest, DebugEncryptRequest, DebugEncryptRequestSingle};
 
@@ -58,9 +58,9 @@ async fn test_fhe_binary_operands() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut handle_counter = 0;
     let mut next_handle = || {
-        let out = handle_counter;
+        let out: i32 = handle_counter;
         handle_counter += 1;
-        format!("{:#08x}", out)
+        out.to_be_bytes().to_vec()
     };
 
     let api_key_header = format!("bearer {}", default_api_key());
@@ -72,12 +72,12 @@ async fn test_fhe_binary_operands() -> Result<(), Box<dyn std::error::Error>> {
         let lhs_handle = next_handle();
         let rhs_handle = if op.is_scalar {
             let (_, bytes) = op.rhs.to_bytes_be();
-            format!("0x{}", hex::encode(bytes))
+            bytes
         } else { next_handle() };
         let output_handle = next_handle();
         output_handles.push(output_handle.clone());
 
-        let (_, lhs_bytes) = op.lhs.to_bytes_le();
+        let (_, lhs_bytes) = op.lhs.to_bytes_be();
 
         println!("Encrypting inputs for binary test bits:{} op:{} is_scalar:{} lhs:{} rhs:{}",
             op.bits, op.operand, op.is_scalar, op.lhs.to_string(), op.rhs.to_string());
@@ -89,7 +89,7 @@ async fn test_fhe_binary_operands() -> Result<(), Box<dyn std::error::Error>> {
             }
         );
         if !op.is_scalar {
-            let (_, rhs_bytes) = op.rhs.to_bytes_le();
+            let (_, rhs_bytes) = op.rhs.to_bytes_be();
             enc_request_payload.push(DebugEncryptRequestSingle {
                 handle: rhs_handle.clone(),
                 le_value: rhs_bytes,
@@ -97,17 +97,28 @@ async fn test_fhe_binary_operands() -> Result<(), Box<dyn std::error::Error>> {
             });
         }
 
-        println!("rhs handle:{}", rhs_handle);
+        println!("rhs handle: 0x{}", hex::encode(&rhs_handle));
         println!("Scheduling computation for binary test bits:{} op:{} is_scalar:{} lhs:{} rhs:{} output:{}",
             op.bits, op.operand, op.is_scalar, op.lhs.to_string(), op.rhs.to_string(), op.expected_output.to_string());
+
+        let mut inputs = vec![
+            AsyncComputationInput {
+                input: Some(Input::InputHandle(lhs_handle)),
+            },
+        ];
+        if op.is_scalar {
+            inputs.push(AsyncComputationInput {
+                input: Some(Input::Scalar(rhs_handle)),
+            });
+        } else {
+            inputs.push(AsyncComputationInput {
+                input: Some(Input::InputHandle(rhs_handle)),
+            });
+        }
         async_computations.push(AsyncComputation {
             operation: op.operand,
-            is_scalar: op.is_scalar,
             output_handle: output_handle,
-            input_handles: vec![
-                lhs_handle.clone(),
-                rhs_handle.clone(),
-            ]
+            inputs,
         });
     }
 
@@ -179,9 +190,9 @@ async fn test_fhe_unary_operands() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut handle_counter = 0;
     let mut next_handle = || {
-        let out = handle_counter;
+        let out: i32 = handle_counter;
         handle_counter += 1;
-        format!("{:#08x}", out)
+        out.to_be_bytes().to_vec()
     };
 
     let api_key_header = format!("bearer {}", default_api_key());
@@ -194,7 +205,7 @@ async fn test_fhe_unary_operands() -> Result<(), Box<dyn std::error::Error>> {
         let output_handle = next_handle();
         output_handles.push(output_handle.clone());
 
-        let (_, inp_bytes) = op.inp.to_bytes_le();
+        let (_, inp_bytes) = op.inp.to_bytes_be();
 
         println!("Encrypting inputs for unary test bits:{} op:{} input:{}",
             op.bits, op.operand, op.inp.to_string());
@@ -210,11 +221,12 @@ async fn test_fhe_unary_operands() -> Result<(), Box<dyn std::error::Error>> {
             op.bits, op.operand, op.inp.to_string(), op.expected_output.to_string());
         async_computations.push(AsyncComputation {
             operation: op.operand,
-            is_scalar: false,
             output_handle: output_handle,
-            input_handles: vec![
-                input_handle.clone(),
-            ]
+            inputs: vec![
+                AsyncComputationInput {
+                    input: Some(Input::InputHandle(input_handle)),
+                }
+            ],
         });
     }
 

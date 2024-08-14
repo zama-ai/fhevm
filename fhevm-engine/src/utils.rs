@@ -1,76 +1,73 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-use lazy_static::lazy_static;
-use crate::{server::coprocessor::AsyncComputation, types::CoprocessorError};
+use crate::{server::coprocessor::{async_computation_input::Input, AsyncComputation, AsyncComputationInput}, types::CoprocessorError};
 
-pub fn check_if_handle_is_zero(inp: &str) -> bool {
-    lazy_static! {
-        static ref TARGET_HANDLE_REGEX: regex::Regex = regex::Regex::new("^0x[0]+$").unwrap();
-    }
-
-    TARGET_HANDLE_REGEX.is_match(inp)
-}
-
-// handle must be serializable to bytes for scalar operations
-pub fn check_valid_ciphertext_handle(inp: &str) -> Result<(), CoprocessorError> {
-    lazy_static! {
-        static ref VALID_HANDLE_REGEX: regex::Regex = regex::Regex::new("^0x[0-9a-f]+$").unwrap();
-    }
-
-    // 66 including 0x in front
-    if inp.len() > 66 {
+pub fn check_valid_ciphertext_handle(inp: &[u8]) -> Result<(), CoprocessorError> {
+    if inp.len() > 64 {
         return Err(CoprocessorError::CiphertextHandleLongerThan64Bytes);
     }
 
-    // at least one hex nibble
-    if inp.len() < 4 {
-        return Err(CoprocessorError::CiphertextHandleMustBeAtLeast4Bytes(inp.to_string()));
-    }
-
-    if inp.len() % 2 != 0 {
-        return Err(CoprocessorError::CiphertextHandleMustHaveEvenAmountOfHexNibblets(inp.to_string()));
-    }
-
-    if !VALID_HANDLE_REGEX.is_match(inp) {
-        return Err(CoprocessorError::InvalidHandle(inp.to_string()));
+    if inp.len() < 1 {
+        return Err(CoprocessorError::CiphertextHandleMustBeAtLeast1Byte(format!("0x{}", hex::encode(inp))));
     }
 
     Ok(())
 }
 
 /// Returns computations in order for dependency resolution and not found handles for checking in database
-pub fn sort_computations_by_dependencies<'a>(input: &'a [AsyncComputation]) -> Result<(Vec<&'a AsyncComputation>, BTreeSet<String>), CoprocessorError> {
+pub fn sort_computations_by_dependencies<'a>(input: &'a [AsyncComputation]) -> Result<(Vec<&'a AsyncComputation>, BTreeSet<Vec<u8>>), CoprocessorError> {
     let mut res = Vec::with_capacity(input.len());
 
-    let mut output_handles: HashMap<&str, usize> = HashMap::new();
+    let mut output_handles: HashMap<&[u8], usize> = HashMap::new();
     for (idx, comp) in input.iter().enumerate() {
-        check_valid_ciphertext_handle(comp.output_handle.as_str())?;
-        if output_handles.insert(comp.output_handle.as_str(), idx).is_some() {
-            return Err(CoprocessorError::DuplicateOutputHandleInBatch(comp.output_handle.clone()));
+        check_valid_ciphertext_handle(&comp.output_handle)?;
+        if output_handles.insert(&comp.output_handle, idx).is_some() {
+            return Err(CoprocessorError::DuplicateOutputHandleInBatch(format!("0x{}", hex::encode(&comp.output_handle))));
         }
     }
 
     let mut computation_dependencies: Vec<(usize, Vec<usize>)> = Vec::with_capacity(input.len());
-    let mut handles_to_check_in_db: BTreeSet<String> = BTreeSet::new();
+    let mut handles_to_check_in_db: BTreeSet<Vec<u8>> = BTreeSet::new();
     for (idx, comp) in input.iter().enumerate() {
-        let mut this_deps = Vec::with_capacity(comp.input_handles.len());
-        for (dep_idx, ih) in comp.input_handles.iter().enumerate() {
-            check_valid_ciphertext_handle(ih.as_str())?;
-            if ih == &comp.output_handle {
-                return Err(CoprocessorError::OutputHandleIsAlsoInputHandle(ih.clone()));
-            }
+        let mut this_deps = Vec::with_capacity(comp.inputs.len());
+        let mut this_scalar_operands = Vec::with_capacity(comp.inputs.len());
+        for (dep_idx, ih) in comp.inputs.iter().enumerate() {
+            let mut is_scalar_operand = false;
+            if let Some(ih_input) = &ih.input {
+                match ih_input {
+                    Input::InputHandle(ih_bytes) => {
+                        check_valid_ciphertext_handle(&ih_bytes)?;
+                        if ih_bytes == &comp.output_handle {
+                            return Err(CoprocessorError::OutputHandleIsAlsoInputHandle(format!("0x{}", hex::encode(ih_bytes))));
+                        }
 
-            let is_scalar_operand = comp.is_scalar && dep_idx == 1;
-
-            if !is_scalar_operand {
-                match output_handles.get(ih.as_str()) {
-                    Some(dep_idx) => {
-                        this_deps.push(*dep_idx);
+                        match output_handles.get(ih_bytes.as_slice()) {
+                            Some(dep_idx) => {
+                                this_deps.push(*dep_idx);
+                            }
+                            None => {
+                                handles_to_check_in_db.insert(ih_bytes.clone());
+                            }
+                        }
                     }
-                    None => {
-                        handles_to_check_in_db.insert(ih.clone());
+                    Input::Scalar(sc_bytes) => {
+                        check_valid_ciphertext_handle(&sc_bytes)?;
+                        if dep_idx != 1 {
+                            return Err(CoprocessorError::OnlySecondOperandCanBeScalar {
+                                computation_output_handle: format!("0x{}", hex::encode(&comp.output_handle)),
+                                scalar_input_index: dep_idx,
+                                only_allowed_scalar_input_index: 1,
+                            });
+                        }
+                        is_scalar_operand = true;
                     }
                 }
+                this_scalar_operands.push(is_scalar_operand);
+            } else {
+                return Err(CoprocessorError::ComputationInputIsUndefined {
+                    computation_output_handle: format!("0x{}", hex::encode(&comp.output_handle)),
+                    computation_inputs_index: idx,
+                });
             }
         }
         // the further dependency is in array the later it should be processed
@@ -83,26 +80,25 @@ pub fn sort_computations_by_dependencies<'a>(input: &'a [AsyncComputation]) -> R
     // least dependencies goes to the left, most dependencies to the right
     computation_dependencies.sort_by(|(_, deps_a), (_, deps_b)| deps_a.cmp(deps_b));
 
-    let mut simulation_completed_outputs: HashSet<&str> = HashSet::new();
+    let mut simulation_completed_outputs: HashSet<&[u8]> = HashSet::new();
     for (inp_idx, _) in computation_dependencies {
         let async_comp = &input[inp_idx];
 
-        for (dep_idx, ih) in async_comp.input_handles.iter().enumerate() {
-
-            let is_scalar_operand = async_comp.is_scalar && dep_idx == 1;
-
-            if !is_scalar_operand && !handles_to_check_in_db.contains(ih) && !simulation_completed_outputs.contains(ih.as_str()) {
+        for ih in &async_comp.inputs {
+            if let Some(Input::InputHandle(ih)) = &ih.input {
                 // this must be loop if we don't see that handle is completed here, for example
                 // [output: 1, deps: [0, 2, 3]]
                 // [output: 0, deps: [1, 2, 3]]
-                return Err(CoprocessorError::CiphertextComputationDependencyLoopDetected {
-                    uncomputable_output_handle: async_comp.output_handle.clone(),
-                    uncomputable_handle_dependencies: async_comp.input_handles.clone(),
-                });
+                if !handles_to_check_in_db.contains(ih.as_slice()) && !simulation_completed_outputs.contains(ih.as_slice()) {
+                    return Err(CoprocessorError::CiphertextComputationDependencyLoopDetected {
+                        uncomputable_output_handle: format!("0x{}", hex::encode(&async_comp.output_handle)),
+                        uncomputable_handle_dependency: format!("0x{}", hex::encode(ih)),
+                    });
+                }
             }
         }
 
-        simulation_completed_outputs.insert(async_comp.output_handle.as_str());
+        simulation_completed_outputs.insert(&async_comp.output_handle);
 
         res.push(async_comp);
     }
@@ -122,42 +118,21 @@ fn test_invalid_handle_too_short() {
     let comp = vec![
         AsyncComputation {
             operation: 1,
-            is_scalar: false,
-            output_handle: "0x".to_string(),
-            input_handles: vec![
-                "0x01".to_string(),
-                "0x02".to_string(),
-            ]
+            output_handle: vec![],
+            inputs: vec![
+                AsyncComputationInput {
+                    input: Some(Input::InputHandle(vec![1])),
+                },
+                AsyncComputationInput {
+                    input: Some(Input::InputHandle(vec![2])),
+                },
+            ], 
         },
     ];
 
     match sort_computations_by_dependencies(&comp) {
-        Err(CoprocessorError::CiphertextHandleMustBeAtLeast4Bytes(handle)) => {
+        Err(CoprocessorError::CiphertextHandleMustBeAtLeast1Byte(handle)) => {
             assert_eq!(handle, "0x");
-        },
-        other => {
-            panic!("Unexpected result: {:?}", other);
-        }
-    }
-}
-
-#[test]
-fn test_invalid_handle_uneven_hex_nibblets() {
-    let comp = vec![
-        AsyncComputation {
-            operation: 1,
-            is_scalar: false,
-            output_handle: "0x000".to_string(),
-            input_handles: vec![
-                "0x01".to_string(),
-                "0x02".to_string(),
-            ]
-        },
-    ];
-
-    match sort_computations_by_dependencies(&comp) {
-        Err(CoprocessorError::CiphertextHandleMustHaveEvenAmountOfHexNibblets(h)) => {
-            assert_eq!(h, "0x000");
         },
         other => {
             panic!("Unexpected result: {:?}", other);
@@ -170,12 +145,15 @@ fn test_invalid_handle_too_long() {
     let comp = vec![
         AsyncComputation {
             operation: 1,
-            is_scalar: false,
-            output_handle: "0x00000000000000000000000000000000000000000000000000000000000000000".to_string(),
-            input_handles: vec![
-                "0x01".to_string(),
-                "0x02".to_string(),
-            ]
+            output_handle: vec![0u8; 65],
+            inputs: vec![
+                AsyncComputationInput {
+                    input: Some(Input::InputHandle(vec![1])),
+                },
+                AsyncComputationInput {
+                    input: Some(Input::InputHandle(vec![2])),
+                },
+            ], 
         },
     ];
 
@@ -188,56 +166,38 @@ fn test_invalid_handle_too_long() {
 }
 
 #[test]
-fn test_invalid_handle_bad_symbol() {
-    let comp = vec![
-        AsyncComputation {
-            operation: 1,
-            is_scalar: false,
-            output_handle: "0x@@".to_string(),
-            input_handles: vec![
-                "0x01".to_string(),
-                "0x02".to_string(),
-            ]
-        },
-    ];
-
-    match sort_computations_by_dependencies(&comp) {
-        Err(CoprocessorError::InvalidHandle(handle)) => {
-            assert_eq!(handle, "0x@@");
-        },
-        other => {
-            panic!("Unexpected result: {:?}", other);
-        }
-    }
-}
-
-#[test]
 fn test_simple_circular_dependency_detection() {
     let comp = vec![
         AsyncComputation {
             operation: 1,
-            is_scalar: false,
-            output_handle: "0x00".to_string(),
-            input_handles: vec![
-                "0x01".to_string(),
-                "0x02".to_string(),
-            ]
+            output_handle: vec![0],
+            inputs: vec![
+                AsyncComputationInput {
+                    input: Some(Input::InputHandle(vec![1])),
+                },
+                AsyncComputationInput {
+                    input: Some(Input::InputHandle(vec![2])),
+                },
+            ], 
         },
         AsyncComputation {
             operation: 1,
-            is_scalar: false,
-            output_handle: "0x01".to_string(),
-            input_handles: vec![
-                "0x00".to_string(),
-                "0x02".to_string(),
-            ]
+            output_handle: vec![1],
+            inputs: vec![
+                AsyncComputationInput {
+                    input: Some(Input::InputHandle(vec![0])),
+                },
+                AsyncComputationInput {
+                    input: Some(Input::InputHandle(vec![2])),
+                },
+            ], 
         },
     ];
 
     match sort_computations_by_dependencies(&comp) {
-        Err(CoprocessorError::CiphertextComputationDependencyLoopDetected { uncomputable_output_handle, uncomputable_handle_dependencies }) => {
+        Err(CoprocessorError::CiphertextComputationDependencyLoopDetected { uncomputable_output_handle, uncomputable_handle_dependency }) => {
             assert_eq!(uncomputable_output_handle, "0x01");
-            assert_eq!(uncomputable_handle_dependencies, ["0x00", "0x02"]);
+            assert_eq!(uncomputable_handle_dependency, "0x00");
         }
         other => {
             panic!("Unexpected result: {:?}", other);
@@ -251,37 +211,46 @@ fn test_multi_level_circular_dependency_detection() {
     let comp = vec![
         AsyncComputation {
             operation: 1,
-            is_scalar: false,
-            output_handle: "0x00".to_string(),
-            input_handles: vec![
-                "0x01".to_string(),
-                "0x03".to_string(),
-            ]
+            output_handle: vec![0],
+            inputs: vec![
+                AsyncComputationInput {
+                    input: Some(Input::InputHandle(vec![1])),
+                },
+                AsyncComputationInput {
+                    input: Some(Input::InputHandle(vec![3])),
+                },
+            ], 
         },
         AsyncComputation {
             operation: 1,
-            is_scalar: false,
-            output_handle: "0x03".to_string(),
-            input_handles: vec![
-                "0x02".to_string(),
-                "0x04".to_string(),
-            ]
+            output_handle: vec![3],
+            inputs: vec![
+                AsyncComputationInput {
+                    input: Some(Input::InputHandle(vec![2])),
+                },
+                AsyncComputationInput {
+                    input: Some(Input::InputHandle(vec![4])),
+                },
+            ], 
         },
         AsyncComputation {
             operation: 1,
-            is_scalar: false,
-            output_handle: "0x04".to_string(),
-            input_handles: vec![
-                "0x00".to_string(),
-                "0x02".to_string(),
-            ]
+            output_handle: vec![4],
+            inputs: vec![
+                AsyncComputationInput {
+                    input: Some(Input::InputHandle(vec![0])),
+                },
+                AsyncComputationInput {
+                    input: Some(Input::InputHandle(vec![2])),
+                },
+            ], 
         },
     ];
 
     match sort_computations_by_dependencies(&comp) {
-        Err(CoprocessorError::CiphertextComputationDependencyLoopDetected { uncomputable_output_handle, uncomputable_handle_dependencies }) => {
+        Err(CoprocessorError::CiphertextComputationDependencyLoopDetected { uncomputable_output_handle, uncomputable_handle_dependency }) => {
             assert_eq!(uncomputable_output_handle, "0x04");
-            assert_eq!(uncomputable_handle_dependencies, ["0x00", "0x02"]);
+            assert_eq!(uncomputable_handle_dependency, "0x00");
         }
         other => {
             panic!("Unexpected result: {:?}", other);
