@@ -24,7 +24,7 @@ We now briefly outline each of these components along with their constituents:
 
 - *KMS Engine*: The actual computational engine carrying out the FHE cryptographic key operations in a Nitro enclave
 
-- *S3*: Public S3 instance storing the public keys for the FHE schemes for easy access. 
+- *S3*: Public S3 instance storing the public keys for the FHE schemes for easy access.
 
 ## Frontend
 
@@ -54,7 +54,7 @@ Note that the KMS blockchain may be operated by a single validator if decentrali
 
 ### Backend
 
-The backend consists of the KMS core. 
+The backend consists of the KMS core.
 It is the most security critical component of the entire system and a compromise of this could lead to breakage of both correctness, confidentiality and robustness.
 Because of this we have designed it to support threshold security and Enclave support, along with isolation of the security critical _Engine_ from the general Internet.
 
@@ -118,8 +118,8 @@ The storage component is used to make available public material that is not suit
 
 The storage component can be entirely untrusted from a security perspective, and comes in two flavors with different availability properties:
 
-- Centralized using AWS S3 buckets.
-- Decentralized using for instance IPFS.
+- AWS S3 buckets.
+- The local file system.
 
 The storage component is expected to have high availability, although all material stored therein can easily be replicated without security risk.
 

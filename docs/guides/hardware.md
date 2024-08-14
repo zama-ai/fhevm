@@ -6,4 +6,8 @@ Validators perform all operations on ciphertext, which requires powerful machine
 
 ## Gateway
 
-The gateway can run on a medium machine with 4 cores and 8 GB of RAM, such as a [t3.xlarge](https://aws.amazon.com/fr/ec2/instance-types/t3/).
+The gateway can run on a medium machine with 4 cores and 8 GB of RAM, such as a [t3.xlarge](https://aws.amazon.com/ec2/instance-types/t3/).
+
+## TKMS
+
+The TKMS needs to carry out heavy cryptographic operations on the ciphertexts. We recommend using at least a [c5.4xlarge](https://aws.amazon.com/ec2/instance-types/c5/) instance or equivalent, with at least 16 physical cores.
