@@ -1,12 +1,21 @@
-use tfhe::{prelude::{FheEq, FheMax, FheMin, FheOrd, FheTryTrivialEncrypt, RotateLeft, RotateRight}, FheBool, FheUint16, FheUint32, FheUint64, FheUint8};
+use tfhe::{
+    prelude::{FheEq, FheMax, FheMin, FheOrd, FheTryTrivialEncrypt, RotateLeft, RotateRight},
+    FheBool, FheUint16, FheUint32, FheUint64, FheUint8,
+};
 
-use crate::{server::coprocessor::{async_computation_input::Input, AsyncComputationInput}, types::{CoprocessorError, FheOperationType, SupportedFheCiphertexts, SupportedFheOperations}};
+use crate::{
+    server::coprocessor::{async_computation_input::Input, AsyncComputationInput},
+    types::{CoprocessorError, FheOperationType, SupportedFheCiphertexts, SupportedFheOperations},
+};
 
 pub fn current_ciphertext_version() -> i16 {
     1
 }
 
-pub fn perform_fhe_operation(fhe_operation: i16, input_operands: &[SupportedFheCiphertexts]) -> Result<SupportedFheCiphertexts, Box<dyn std::error::Error + Send + Sync>> {
+pub fn perform_fhe_operation(
+    fhe_operation: i16,
+    input_operands: &[SupportedFheCiphertexts],
+) -> Result<SupportedFheCiphertexts, Box<dyn std::error::Error + Send + Sync>> {
     let fhe_operation: SupportedFheOperations = fhe_operation.try_into()?;
     match fhe_operation {
         SupportedFheOperations::FheAdd => {
@@ -99,7 +108,7 @@ pub fn perform_fhe_operation(fhe_operation: i16, input_operands: &[SupportedFheC
                     panic!("Unsupported fhe types");
                 }
             }
-        },
+        }
         SupportedFheOperations::FheMul => {
             assert_eq!(input_operands.len(), 2);
 
@@ -144,7 +153,7 @@ pub fn perform_fhe_operation(fhe_operation: i16, input_operands: &[SupportedFheC
                     panic!("Unsupported fhe types");
                 }
             }
-        },
+        }
         SupportedFheOperations::FheDiv => {
             assert_eq!(input_operands.len(), 2);
 
@@ -189,7 +198,7 @@ pub fn perform_fhe_operation(fhe_operation: i16, input_operands: &[SupportedFheC
                     panic!("Unsupported fhe types");
                 }
             }
-        },
+        }
         SupportedFheOperations::FheRem => {
             assert_eq!(input_operands.len(), 2);
 
@@ -234,7 +243,7 @@ pub fn perform_fhe_operation(fhe_operation: i16, input_operands: &[SupportedFheC
                     panic!("Unsupported fhe types");
                 }
             }
-        },
+        }
         SupportedFheOperations::FheBitAnd => {
             assert_eq!(input_operands.len(), 2);
 
@@ -279,7 +288,7 @@ pub fn perform_fhe_operation(fhe_operation: i16, input_operands: &[SupportedFheC
                     panic!("Unsupported fhe types");
                 }
             }
-        },
+        }
         SupportedFheOperations::FheBitOr => {
             assert_eq!(input_operands.len(), 2);
 
@@ -324,7 +333,7 @@ pub fn perform_fhe_operation(fhe_operation: i16, input_operands: &[SupportedFheC
                     panic!("Unsupported fhe types");
                 }
             }
-        },
+        }
         SupportedFheOperations::FheBitXor => {
             assert_eq!(input_operands.len(), 2);
 
@@ -369,7 +378,7 @@ pub fn perform_fhe_operation(fhe_operation: i16, input_operands: &[SupportedFheC
                     panic!("Unsupported fhe types");
                 }
             }
-        },
+        }
         SupportedFheOperations::FheShl => {
             assert_eq!(input_operands.len(), 2);
 
@@ -414,7 +423,7 @@ pub fn perform_fhe_operation(fhe_operation: i16, input_operands: &[SupportedFheC
                     panic!("Unsupported fhe types");
                 }
             }
-        },
+        }
         SupportedFheOperations::FheShr => {
             assert_eq!(input_operands.len(), 2);
 
@@ -459,7 +468,7 @@ pub fn perform_fhe_operation(fhe_operation: i16, input_operands: &[SupportedFheC
                     panic!("Unsupported fhe types");
                 }
             }
-        },
+        }
         SupportedFheOperations::FheRotl => {
             assert_eq!(input_operands.len(), 2);
 
@@ -504,7 +513,7 @@ pub fn perform_fhe_operation(fhe_operation: i16, input_operands: &[SupportedFheC
                     panic!("Unsupported fhe types");
                 }
             }
-        },
+        }
         SupportedFheOperations::FheRotr => {
             assert_eq!(input_operands.len(), 2);
 
@@ -549,7 +558,7 @@ pub fn perform_fhe_operation(fhe_operation: i16, input_operands: &[SupportedFheC
                     panic!("Unsupported fhe types");
                 }
             }
-        },
+        }
         SupportedFheOperations::FheMin => {
             assert_eq!(input_operands.len(), 2);
 
@@ -594,7 +603,7 @@ pub fn perform_fhe_operation(fhe_operation: i16, input_operands: &[SupportedFheC
                     panic!("Unsupported fhe types");
                 }
             }
-        },
+        }
         SupportedFheOperations::FheMax => {
             assert_eq!(input_operands.len(), 2);
 
@@ -639,7 +648,7 @@ pub fn perform_fhe_operation(fhe_operation: i16, input_operands: &[SupportedFheC
                     panic!("Unsupported fhe types");
                 }
             }
-        },
+        }
         SupportedFheOperations::FheEq => {
             assert_eq!(input_operands.len(), 2);
 
@@ -684,7 +693,7 @@ pub fn perform_fhe_operation(fhe_operation: i16, input_operands: &[SupportedFheC
                     panic!("Unsupported fhe types");
                 }
             }
-        },
+        }
         SupportedFheOperations::FheNe => {
             assert_eq!(input_operands.len(), 2);
 
@@ -729,7 +738,7 @@ pub fn perform_fhe_operation(fhe_operation: i16, input_operands: &[SupportedFheC
                     panic!("Unsupported fhe types");
                 }
             }
-        },
+        }
         SupportedFheOperations::FheGe => {
             assert_eq!(input_operands.len(), 2);
 
@@ -774,7 +783,7 @@ pub fn perform_fhe_operation(fhe_operation: i16, input_operands: &[SupportedFheC
                     panic!("Unsupported fhe types");
                 }
             }
-        },
+        }
         SupportedFheOperations::FheGt => {
             assert_eq!(input_operands.len(), 2);
 
@@ -819,7 +828,7 @@ pub fn perform_fhe_operation(fhe_operation: i16, input_operands: &[SupportedFheC
                     panic!("Unsupported fhe types");
                 }
             }
-        },
+        }
         SupportedFheOperations::FheLe => {
             assert_eq!(input_operands.len(), 2);
 
@@ -864,7 +873,7 @@ pub fn perform_fhe_operation(fhe_operation: i16, input_operands: &[SupportedFheC
                     panic!("Unsupported fhe types");
                 }
             }
-        },
+        }
         SupportedFheOperations::FheLt => {
             assert_eq!(input_operands.len(), 2);
 
@@ -909,62 +918,49 @@ pub fn perform_fhe_operation(fhe_operation: i16, input_operands: &[SupportedFheC
                     panic!("Unsupported fhe types");
                 }
             }
-        },
+        }
         SupportedFheOperations::FheNot => {
             assert_eq!(input_operands.len(), 1);
 
             match &input_operands[0] {
-                SupportedFheCiphertexts::FheUint8(a) => {
-                    Ok(SupportedFheCiphertexts::FheUint8(!a))
-                }
-                SupportedFheCiphertexts::FheUint16(a) => {
-                    Ok(SupportedFheCiphertexts::FheUint16(!a))
-                }
-                SupportedFheCiphertexts::FheUint32(a) => {
-                    Ok(SupportedFheCiphertexts::FheUint32(!a))
-                }
-                SupportedFheCiphertexts::FheUint64(a) => {
-                    Ok(SupportedFheCiphertexts::FheUint64(!a))
-                }
+                SupportedFheCiphertexts::FheUint8(a) => Ok(SupportedFheCiphertexts::FheUint8(!a)),
+                SupportedFheCiphertexts::FheUint16(a) => Ok(SupportedFheCiphertexts::FheUint16(!a)),
+                SupportedFheCiphertexts::FheUint32(a) => Ok(SupportedFheCiphertexts::FheUint32(!a)),
+                SupportedFheCiphertexts::FheUint64(a) => Ok(SupportedFheCiphertexts::FheUint64(!a)),
                 _ => {
                     panic!("Unsupported fhe types");
                 }
             }
-        },
+        }
         SupportedFheOperations::FheNeg => {
             assert_eq!(input_operands.len(), 1);
 
             match &input_operands[0] {
-                SupportedFheCiphertexts::FheUint8(a) => {
-                    Ok(SupportedFheCiphertexts::FheUint8(-a))
-                }
-                SupportedFheCiphertexts::FheUint16(a) => {
-                    Ok(SupportedFheCiphertexts::FheUint16(-a))
-                }
-                SupportedFheCiphertexts::FheUint32(a) => {
-                    Ok(SupportedFheCiphertexts::FheUint32(-a))
-                }
-                SupportedFheCiphertexts::FheUint64(a) => {
-                    Ok(SupportedFheCiphertexts::FheUint64(-a))
-                }
+                SupportedFheCiphertexts::FheUint8(a) => Ok(SupportedFheCiphertexts::FheUint8(-a)),
+                SupportedFheCiphertexts::FheUint16(a) => Ok(SupportedFheCiphertexts::FheUint16(-a)),
+                SupportedFheCiphertexts::FheUint32(a) => Ok(SupportedFheCiphertexts::FheUint32(-a)),
+                SupportedFheCiphertexts::FheUint64(a) => Ok(SupportedFheCiphertexts::FheUint64(-a)),
                 _ => {
                     panic!("Unsupported fhe types");
                 }
             }
-        },
+        }
         SupportedFheOperations::FheIfThenElse => todo!(),
     }
 }
 
 /// Function assumes encryption key already set
-pub fn debug_trivial_encrypt_be_bytes(output_type: i16, input_bytes: &[u8]) -> SupportedFheCiphertexts {
+pub fn debug_trivial_encrypt_be_bytes(
+    output_type: i16,
+    input_bytes: &[u8],
+) -> SupportedFheCiphertexts {
     match output_type {
-        1 => {
-            SupportedFheCiphertexts::FheBool(FheBool::try_encrypt_trivial(input_bytes[0] > 0).unwrap())
-        }
-        2 => {
-            SupportedFheCiphertexts::FheUint8(FheUint8::try_encrypt_trivial(input_bytes[0]).unwrap())
-        }
+        1 => SupportedFheCiphertexts::FheBool(
+            FheBool::try_encrypt_trivial(input_bytes[0] > 0).unwrap(),
+        ),
+        2 => SupportedFheCiphertexts::FheUint8(
+            FheUint8::try_encrypt_trivial(input_bytes[0]).unwrap(),
+        ),
         3 => {
             let mut padded: [u8; 2] = [0; 2];
             let padded_len = padded.len();
@@ -998,7 +994,10 @@ pub fn debug_trivial_encrypt_be_bytes(output_type: i16, input_bytes: &[u8]) -> S
     }
 }
 
-pub fn deserialize_fhe_ciphertext(input_type: i16, input_bytes: &[u8]) -> Result<SupportedFheCiphertexts, Box<dyn std::error::Error + Send + Sync>> {
+pub fn deserialize_fhe_ciphertext(
+    input_type: i16,
+    input_bytes: &[u8],
+) -> Result<SupportedFheCiphertexts, Box<dyn std::error::Error + Send + Sync>> {
     match input_type {
         1 => {
             let v: tfhe::FheBool = bincode::deserialize(input_bytes)?;
@@ -1021,7 +1020,9 @@ pub fn deserialize_fhe_ciphertext(input_type: i16, input_bytes: &[u8]) -> Result
             Ok(SupportedFheCiphertexts::FheUint64(v))
         }
         _ => {
-            return Err(Box::new(CoprocessorError::UnknownCiphertextType(input_type)));
+            return Err(Box::new(CoprocessorError::UnknownCiphertextType(
+                input_type,
+            )));
         }
     }
 }
@@ -1030,7 +1031,7 @@ fn encode_comp_input_to_handle(input: &AsyncComputationInput) -> String {
     match &input.input {
         Some(Input::Scalar(sc)) => {
             format!("0x{}", hex::encode(sc))
-        },
+        }
         Some(Input::InputHandle(handle)) => {
             format!("0x{}", hex::encode(handle))
         }
@@ -1039,7 +1040,12 @@ fn encode_comp_input_to_handle(input: &AsyncComputationInput) -> String {
 }
 
 // return output ciphertext type
-pub fn check_fhe_operand_types(fhe_operation: i32, input_types: &[i16], is_scalar: bool, input_handles: &[AsyncComputationInput]) -> Result<i16, CoprocessorError> {
+pub fn check_fhe_operand_types(
+    fhe_operation: i32,
+    input_types: &[i16],
+    is_scalar: bool,
+    input_handles: &[AsyncComputationInput],
+) -> Result<i16, CoprocessorError> {
     let fhe_op: SupportedFheOperations = fhe_operation.try_into()?;
 
     if is_scalar && !does_fhe_operation_support_scalar(&fhe_op) {
@@ -1064,11 +1070,13 @@ pub fn check_fhe_operand_types(fhe_operation: i32, input_types: &[i16], is_scala
             }
 
             if !is_scalar && input_types[0] != input_types[1] {
-                return Err(CoprocessorError::FheOperationDoesntHaveUniformTypesAsInput {
-                    fhe_operation,
-                    fhe_operation_name: format!("{:?}", fhe_op),
-                    operand_types: input_types.to_vec(),
-                });
+                return Err(
+                    CoprocessorError::FheOperationDoesntHaveUniformTypesAsInput {
+                        fhe_operation,
+                        fhe_operation_name: format!("{:?}", fhe_op),
+                        operand_types: input_types.to_vec(),
+                    },
+                );
             }
 
             // special case for div operation, rhs for scalar must be zero
@@ -1123,7 +1131,7 @@ pub fn check_fhe_operand_types(fhe_operation: i32, input_types: &[i16], is_scala
                     }
 
                     todo!("special type checking for certain operands")
-                },
+                }
                 other => {
                     panic!("Unexpected branch: {:?}", other)
                 }
@@ -1137,7 +1145,7 @@ pub fn check_fhe_operand_types(fhe_operation: i32, input_types: &[i16], is_scala
 pub fn does_fhe_operation_support_both_encrypted_operands(op: &SupportedFheOperations) -> bool {
     match op {
         SupportedFheOperations::FheDiv => false,
-        _ => true
+        _ => true,
     }
 }
 

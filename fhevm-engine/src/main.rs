@@ -1,18 +1,21 @@
 use tokio::task::JoinSet;
 
-mod server;
-mod db_queries;
 mod cli;
-mod types;
-mod utils;
-mod tfhe_worker;
-mod tfhe_ops;
+mod db_queries;
+mod server;
 #[cfg(test)]
 mod tests;
+mod tfhe_ops;
+mod tfhe_worker;
+mod types;
+mod utils;
 
 fn main() {
     let args = crate::cli::parse_args();
-    assert!(args.work_items_batch_size < args.tenant_key_cache_size, "Work items batch size must be less than tenant key cache size");
+    assert!(
+        args.work_items_batch_size < args.tenant_key_cache_size,
+        "Work items batch size must be less than tenant key cache size"
+    );
 
     if args.generate_fhe_keys {
         generate_fhe_keys();
@@ -22,7 +25,10 @@ fn main() {
 }
 
 // separate function for testing
-pub fn start_runtime(args: crate::cli::Args, close_recv: Option<tokio::sync::watch::Receiver<bool>>) {
+pub fn start_runtime(
+    args: crate::cli::Args,
+    close_recv: Option<tokio::sync::watch::Receiver<bool>>,
+) {
     tokio::runtime::Builder::new_multi_thread()
         .worker_threads(args.tokio_threads)
         // not using tokio main to specify max blocking threads
@@ -50,7 +56,9 @@ pub fn start_runtime(args: crate::cli::Args, close_recv: Option<tokio::sync::wat
         })
 }
 
-async fn async_main(args: crate::cli::Args) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn async_main(
+    args: crate::cli::Args,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut set = JoinSet::new();
     if args.run_server {
         println!("Initializing api server");

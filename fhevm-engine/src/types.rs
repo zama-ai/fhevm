@@ -82,35 +82,73 @@ impl std::fmt::Display for CoprocessorError {
                 write!(f, "Ciphertexts not found: {:?}", handles)
             }
             CoprocessorError::OutputHandleIsAlsoInputHandle(handle) => {
-                write!(f, "Output handle is also on of the input handles: {}", handle)
+                write!(
+                    f,
+                    "Output handle is also on of the input handles: {}",
+                    handle
+                )
             }
             CoprocessorError::UnknownCiphertextType(the_type) => {
                 write!(f, "Unknown input ciphertext type: {}", the_type)
             }
-            CoprocessorError::UnexpectedOperandCountForFheOperation { fhe_operation, fhe_operation_name, expected_operands, got_operands } => {
+            CoprocessorError::UnexpectedOperandCountForFheOperation {
+                fhe_operation,
+                fhe_operation_name,
+                expected_operands,
+                got_operands,
+            } => {
                 write!(f, "fhe operation number {fhe_operation} ({fhe_operation_name}) received unexpected operand count, expected: {expected_operands}, received: {got_operands}")
-            },
-            CoprocessorError::FheOperationDoesntSupportScalar { fhe_operation, fhe_operation_name, .. } => {
+            }
+            CoprocessorError::FheOperationDoesntSupportScalar {
+                fhe_operation,
+                fhe_operation_name,
+                ..
+            } => {
                 write!(f, "fhe operation number {fhe_operation} ({fhe_operation_name}) doesn't support scalar computation")
-            },
-            CoprocessorError::FheOperationDoesntHaveUniformTypesAsInput { fhe_operation, fhe_operation_name, operand_types } => {
+            }
+            CoprocessorError::FheOperationDoesntHaveUniformTypesAsInput {
+                fhe_operation,
+                fhe_operation_name,
+                operand_types,
+            } => {
                 write!(f, "fhe operation number {fhe_operation} ({fhe_operation_name}) expects uniform types as input, received: {:?}", operand_types)
-            },
-            CoprocessorError::CiphertextComputationDependencyLoopDetected { uncomputable_output_handle, uncomputable_handle_dependency  } => {
+            }
+            CoprocessorError::CiphertextComputationDependencyLoopDetected {
+                uncomputable_output_handle,
+                uncomputable_handle_dependency,
+            } => {
                 write!(f, "fhe computation with output handle {uncomputable_output_handle} with dependency {:?} has circular dependency and is uncomputable", uncomputable_handle_dependency)
-            },
-            CoprocessorError::TooManyCiphertextsInBatch { maximum_allowed, got } => {
-                write!(f, "maximum ciphertexts exceeded in batch, maximum: {maximum_allowed}, got: {got}")
-            },
-            CoprocessorError::FheOperationScalarDivisionByZero { lhs_handle, rhs_value, fhe_operation, fhe_operation_name  } => {
+            }
+            CoprocessorError::TooManyCiphertextsInBatch {
+                maximum_allowed,
+                got,
+            } => {
+                write!(
+                    f,
+                    "maximum ciphertexts exceeded in batch, maximum: {maximum_allowed}, got: {got}"
+                )
+            }
+            CoprocessorError::FheOperationScalarDivisionByZero {
+                lhs_handle,
+                rhs_value,
+                fhe_operation,
+                fhe_operation_name,
+            } => {
                 write!(f, "zero on the right side of scalar division, lhs handle: {lhs_handle}, rhs value: {rhs_value}, fhe operation: {fhe_operation} fhe operation name:{fhe_operation_name}")
-            },
-            CoprocessorError::ComputationInputIsUndefined { computation_output_handle, computation_inputs_index } => {
+            }
+            CoprocessorError::ComputationInputIsUndefined {
+                computation_output_handle,
+                computation_inputs_index,
+            } => {
                 write!(f, "computation has undefined input, output handle: {computation_output_handle}, input index: {computation_inputs_index}")
-            },
-            CoprocessorError::OnlySecondOperandCanBeScalar { computation_output_handle, scalar_input_index, only_allowed_scalar_input_index } => {
+            }
+            CoprocessorError::OnlySecondOperandCanBeScalar {
+                computation_output_handle,
+                scalar_input_index,
+                only_allowed_scalar_input_index,
+            } => {
                 write!(f, "computation has scalar operand which is not the second operand, output handle: {computation_output_handle}, scalar input index: {scalar_input_index}, only allowed scalar input index: {only_allowed_scalar_input_index}")
-            },
+            }
         }
     }
 }
@@ -197,14 +235,22 @@ impl SupportedFheCiphertexts {
     pub fn decrypt(&self, client_key: &tfhe::ClientKey) -> String {
         match self {
             SupportedFheCiphertexts::FheBool(v) => v.decrypt(client_key).to_string(),
-            SupportedFheCiphertexts::FheUint8(v) => FheDecrypt::<u8>::decrypt(v, client_key).to_string(),
-            SupportedFheCiphertexts::FheUint16(v) => FheDecrypt::<u16>::decrypt(v, client_key).to_string(),
-            SupportedFheCiphertexts::FheUint32(v) => FheDecrypt::<u32>::decrypt(v, client_key).to_string(),
-            SupportedFheCiphertexts::FheUint64(v) => FheDecrypt::<u64>::decrypt(v, client_key).to_string(),
+            SupportedFheCiphertexts::FheUint8(v) => {
+                FheDecrypt::<u8>::decrypt(v, client_key).to_string()
+            }
+            SupportedFheCiphertexts::FheUint16(v) => {
+                FheDecrypt::<u16>::decrypt(v, client_key).to_string()
+            }
+            SupportedFheCiphertexts::FheUint32(v) => {
+                FheDecrypt::<u32>::decrypt(v, client_key).to_string()
+            }
+            SupportedFheCiphertexts::FheUint64(v) => {
+                FheDecrypt::<u64>::decrypt(v, client_key).to_string()
+            }
             SupportedFheCiphertexts::Scalar(v) => {
                 let (l, h) = v.to_low_high_u128();
                 format!("{l}{h}")
-            },
+            }
         }
     }
 }
@@ -212,42 +258,41 @@ impl SupportedFheCiphertexts {
 impl SupportedFheOperations {
     pub fn op_type(&self) -> FheOperationType {
         match self {
-            SupportedFheOperations::FheAdd |
-            SupportedFheOperations::FheSub |
-            SupportedFheOperations::FheMul |
-            SupportedFheOperations::FheDiv |
-            SupportedFheOperations::FheRem |
-            SupportedFheOperations::FheBitAnd |
-            SupportedFheOperations::FheBitOr |
-            SupportedFheOperations::FheBitXor |
-            SupportedFheOperations::FheShl |
-            SupportedFheOperations::FheShr |
-            SupportedFheOperations::FheRotl |
-            SupportedFheOperations::FheRotr |
-            SupportedFheOperations::FheEq |
-            SupportedFheOperations::FheNe |
-            SupportedFheOperations::FheGe |
-            SupportedFheOperations::FheGt |
-            SupportedFheOperations::FheLe |
-            SupportedFheOperations::FheLt |
-            SupportedFheOperations::FheMin |
-            SupportedFheOperations::FheMax
-            => FheOperationType::Binary,
-            SupportedFheOperations::FheNot | SupportedFheOperations::FheNeg
-            => FheOperationType::Unary,
+            SupportedFheOperations::FheAdd
+            | SupportedFheOperations::FheSub
+            | SupportedFheOperations::FheMul
+            | SupportedFheOperations::FheDiv
+            | SupportedFheOperations::FheRem
+            | SupportedFheOperations::FheBitAnd
+            | SupportedFheOperations::FheBitOr
+            | SupportedFheOperations::FheBitXor
+            | SupportedFheOperations::FheShl
+            | SupportedFheOperations::FheShr
+            | SupportedFheOperations::FheRotl
+            | SupportedFheOperations::FheRotr
+            | SupportedFheOperations::FheEq
+            | SupportedFheOperations::FheNe
+            | SupportedFheOperations::FheGe
+            | SupportedFheOperations::FheGt
+            | SupportedFheOperations::FheLe
+            | SupportedFheOperations::FheLt
+            | SupportedFheOperations::FheMin
+            | SupportedFheOperations::FheMax => FheOperationType::Binary,
+            SupportedFheOperations::FheNot | SupportedFheOperations::FheNeg => {
+                FheOperationType::Unary
+            }
             SupportedFheOperations::FheIfThenElse => FheOperationType::Other,
         }
     }
 
     pub fn is_comparison(&self) -> bool {
         match self {
-            SupportedFheOperations::FheEq |
-            SupportedFheOperations::FheNe |
-            SupportedFheOperations::FheGe |
-            SupportedFheOperations::FheGt |
-            SupportedFheOperations::FheLe |
-            SupportedFheOperations::FheLt
-            => true,
+            SupportedFheOperations::FheEq
+            | SupportedFheOperations::FheNe
+            | SupportedFheOperations::FheGe
+            | SupportedFheOperations::FheGt
+            | SupportedFheOperations::FheLe
+            | SupportedFheOperations::FheLt => true,
             _ => false,
         }
     }
@@ -280,7 +325,7 @@ impl TryFrom<i16> for SupportedFheOperations {
             19 => Ok(SupportedFheOperations::FheMax),
             20 => Ok(SupportedFheOperations::FheNeg),
             21 => Ok(SupportedFheOperations::FheNot),
-            _ => Err(CoprocessorError::UnknownFheOperation(value as i32))
+            _ => Err(CoprocessorError::UnknownFheOperation(value as i32)),
         };
 
         // ensure we're always having the same value serialized back and forth
@@ -298,9 +343,9 @@ impl TryFrom<i32> for SupportedFheOperations {
     type Error = CoprocessorError;
 
     fn try_from(value: i32) -> Result<Self, Self::Error> {
-        let initial_value: i16 = value.try_into().map_err(|_| {
-            CoprocessorError::UnknownFheOperation(value)
-        })?;
+        let initial_value: i16 = value
+            .try_into()
+            .map_err(|_| CoprocessorError::UnknownFheOperation(value))?;
 
         let final_value: Result<SupportedFheOperations, Self::Error> = initial_value.try_into();
         final_value

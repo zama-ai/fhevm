@@ -1,11 +1,20 @@
+use crate::server::coprocessor::fhevm_coprocessor_client::FhevmCoprocessorClient;
+use crate::server::coprocessor::{
+    AsyncComputation, AsyncComputeRequest, DebugDecryptRequest, DebugEncryptRequest,
+    DebugEncryptRequestSingle,
+};
+use crate::{
+    server::coprocessor::{async_computation_input::Input, AsyncComputationInput},
+    tests::utils::{default_api_key, setup_test_app},
+    tfhe_ops::{
+        does_fhe_operation_support_both_encrypted_operands, does_fhe_operation_support_scalar,
+    },
+    types::{FheOperationType, SupportedFheOperations},
+};
 use bigdecimal::num_bigint::BigInt;
+use std::{ops::Not, str::FromStr};
 use strum::IntoEnumIterator;
 use tonic::metadata::MetadataValue;
-use std::{ops::Not, str::FromStr};
-use crate::{server::coprocessor::{async_computation_input::Input, AsyncComputationInput}, tests::utils::{default_api_key, setup_test_app}, tfhe_ops::{does_fhe_operation_support_both_encrypted_operands, does_fhe_operation_support_scalar}, types::{FheOperationType, SupportedFheOperations}};
-use crate::server::coprocessor::fhevm_coprocessor_client::FhevmCoprocessorClient;
-use crate::server::coprocessor::{AsyncComputation, AsyncComputeRequest, DebugDecryptRequest, DebugEncryptRequest, DebugEncryptRequestSingle};
-
 
 struct BinaryOperatorTestCase {
     bits: i32,
@@ -27,12 +36,7 @@ struct UnaryOperatorTestCase {
 }
 
 fn supported_bits() -> &'static [i32] {
-    &[
-        8,
-        16,
-        32,
-        64,
-    ]
+    &[8, 16, 32, 64]
 }
 
 fn supported_bits_to_bit_type_in_db(inp: i32) -> i32 {
@@ -41,7 +45,7 @@ fn supported_bits_to_bit_type_in_db(inp: i32) -> i32 {
         16 => 3,
         32 => 4,
         64 => 5,
-        other => panic!("unknown supported bits: {other}")
+        other => panic!("unknown supported bits: {other}"),
     }
 }
 
@@ -73,21 +77,27 @@ async fn test_fhe_binary_operands() -> Result<(), Box<dyn std::error::Error>> {
         let rhs_handle = if op.is_scalar {
             let (_, bytes) = op.rhs.to_bytes_be();
             bytes
-        } else { next_handle() };
+        } else {
+            next_handle()
+        };
         let output_handle = next_handle();
         output_handles.push(output_handle.clone());
 
         let (_, lhs_bytes) = op.lhs.to_bytes_be();
 
-        println!("Encrypting inputs for binary test bits:{} op:{} is_scalar:{} lhs:{} rhs:{}",
-            op.bits, op.operand, op.is_scalar, op.lhs.to_string(), op.rhs.to_string());
-        enc_request_payload.push(
-            DebugEncryptRequestSingle {
-                handle: lhs_handle.clone(),
-                le_value: lhs_bytes,
-                output_type: op.input_types,
-            }
+        println!(
+            "Encrypting inputs for binary test bits:{} op:{} is_scalar:{} lhs:{} rhs:{}",
+            op.bits,
+            op.operand,
+            op.is_scalar,
+            op.lhs.to_string(),
+            op.rhs.to_string()
         );
+        enc_request_payload.push(DebugEncryptRequestSingle {
+            handle: lhs_handle.clone(),
+            le_value: lhs_bytes,
+            output_type: op.input_types,
+        });
         if !op.is_scalar {
             let (_, rhs_bytes) = op.rhs.to_bytes_be();
             enc_request_payload.push(DebugEncryptRequestSingle {
@@ -101,11 +111,9 @@ async fn test_fhe_binary_operands() -> Result<(), Box<dyn std::error::Error>> {
         println!("Scheduling computation for binary test bits:{} op:{} is_scalar:{} lhs:{} rhs:{} output:{}",
             op.bits, op.operand, op.is_scalar, op.lhs.to_string(), op.rhs.to_string(), op.expected_output.to_string());
 
-        let mut inputs = vec![
-            AsyncComputationInput {
-                input: Some(Input::InputHandle(lhs_handle)),
-            },
-        ];
+        let mut inputs = vec![AsyncComputationInput {
+            input: Some(Input::InputHandle(lhs_handle)),
+        }];
         if op.is_scalar {
             inputs.push(AsyncComputationInput {
                 input: Some(Input::Scalar(rhs_handle)),
@@ -126,24 +134,31 @@ async fn test_fhe_binary_operands() -> Result<(), Box<dyn std::error::Error>> {
     let mut encrypt_request = tonic::Request::new(DebugEncryptRequest {
         values: enc_request_payload,
     });
-    encrypt_request.metadata_mut().append("authorization", MetadataValue::from_str(&api_key_header).unwrap());
+    encrypt_request.metadata_mut().append(
+        "authorization",
+        MetadataValue::from_str(&api_key_header).unwrap(),
+    );
     let _resp = client.debug_encrypt_ciphertext(encrypt_request).await?;
 
     println!("Scheduling computations...");
     let mut compute_request = tonic::Request::new(AsyncComputeRequest {
-        computations: async_computations
+        computations: async_computations,
     });
-    compute_request.metadata_mut().append("authorization", MetadataValue::from_str(&api_key_header).unwrap());
+    compute_request.metadata_mut().append(
+        "authorization",
+        MetadataValue::from_str(&api_key_header).unwrap(),
+    );
     let _resp = client.async_compute(compute_request).await?;
 
     println!("Computations scheduled, waiting upon completion...");
 
     loop {
         tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
-        let count =
-            sqlx::query!("SELECT count(*) FROM computations WHERE NOT is_completed AND NOT is_error")
-                .fetch_one(&pool)
-                .await?;
+        let count = sqlx::query!(
+            "SELECT count(*) FROM computations WHERE NOT is_completed AND NOT is_error"
+        )
+        .fetch_one(&pool)
+        .await?;
         let current_count = count.count.unwrap();
         if current_count == 0 {
             println!("All computations completed");
@@ -156,22 +171,36 @@ async fn test_fhe_binary_operands() -> Result<(), Box<dyn std::error::Error>> {
     let mut decrypt_request = tonic::Request::new(DebugDecryptRequest {
         handles: output_handles.clone(),
     });
-    decrypt_request.metadata_mut().append("authorization", MetadataValue::from_str(&api_key_header).unwrap());
+    decrypt_request.metadata_mut().append(
+        "authorization",
+        MetadataValue::from_str(&api_key_header).unwrap(),
+    );
     let resp = client.debug_decrypt_ciphertext(decrypt_request).await?;
 
-    assert_eq!(resp.get_ref().values.len(), output_handles.len(), "Outputs length doesn't match");
+    assert_eq!(
+        resp.get_ref().values.len(),
+        output_handles.len(),
+        "Outputs length doesn't match"
+    );
     for (idx, op) in ops.iter().enumerate() {
         let decr_response = &resp.get_ref().values[idx];
         println!("Checking computation for binary test bits:{} op:{} is_scalar:{} lhs:{} rhs:{} output:{}",
             op.bits, op.operand, op.is_scalar, op.lhs.to_string(), op.rhs.to_string(), op.expected_output.to_string());
-        assert_eq!(decr_response.output_type, op.expected_output_type, "operand types not equal");
+        assert_eq!(
+            decr_response.output_type, op.expected_output_type,
+            "operand types not equal"
+        );
         let value_to_compare = match decr_response.value.as_str() {
             // for FheBool outputs
             "true" => "1",
             "false" => "0",
             other => other,
         };
-        assert_eq!(value_to_compare, op.expected_output.to_string(), "operand output values not equal");
+        assert_eq!(
+            value_to_compare,
+            op.expected_output.to_string(),
+            "operand output values not equal"
+        );
     }
 
     Ok(())
@@ -207,26 +236,31 @@ async fn test_fhe_unary_operands() -> Result<(), Box<dyn std::error::Error>> {
 
         let (_, inp_bytes) = op.inp.to_bytes_be();
 
-        println!("Encrypting inputs for unary test bits:{} op:{} input:{}",
-            op.bits, op.operand, op.inp.to_string());
-        enc_request_payload.push(
-            DebugEncryptRequestSingle {
-                handle: input_handle.clone(),
-                le_value: inp_bytes,
-                output_type: op.operand_types,
-            }
+        println!(
+            "Encrypting inputs for unary test bits:{} op:{} input:{}",
+            op.bits,
+            op.operand,
+            op.inp.to_string()
         );
+        enc_request_payload.push(DebugEncryptRequestSingle {
+            handle: input_handle.clone(),
+            le_value: inp_bytes,
+            output_type: op.operand_types,
+        });
 
-        println!("Scheduling computation for binary test bits:{} op:{} input:{} output:{}",
-            op.bits, op.operand, op.inp.to_string(), op.expected_output.to_string());
+        println!(
+            "Scheduling computation for binary test bits:{} op:{} input:{} output:{}",
+            op.bits,
+            op.operand,
+            op.inp.to_string(),
+            op.expected_output.to_string()
+        );
         async_computations.push(AsyncComputation {
             operation: op.operand,
             output_handle: output_handle,
-            inputs: vec![
-                AsyncComputationInput {
-                    input: Some(Input::InputHandle(input_handle)),
-                }
-            ],
+            inputs: vec![AsyncComputationInput {
+                input: Some(Input::InputHandle(input_handle)),
+            }],
         });
     }
 
@@ -234,24 +268,31 @@ async fn test_fhe_unary_operands() -> Result<(), Box<dyn std::error::Error>> {
     let mut encrypt_request = tonic::Request::new(DebugEncryptRequest {
         values: enc_request_payload,
     });
-    encrypt_request.metadata_mut().append("authorization", MetadataValue::from_str(&api_key_header).unwrap());
+    encrypt_request.metadata_mut().append(
+        "authorization",
+        MetadataValue::from_str(&api_key_header).unwrap(),
+    );
     let _resp = client.debug_encrypt_ciphertext(encrypt_request).await?;
 
     println!("Scheduling computations...");
     let mut compute_request = tonic::Request::new(AsyncComputeRequest {
-        computations: async_computations
+        computations: async_computations,
     });
-    compute_request.metadata_mut().append("authorization", MetadataValue::from_str(&api_key_header).unwrap());
+    compute_request.metadata_mut().append(
+        "authorization",
+        MetadataValue::from_str(&api_key_header).unwrap(),
+    );
     let _resp = client.async_compute(compute_request).await?;
 
     println!("Computations scheduled, waiting upon completion...");
 
     loop {
         tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
-        let count =
-            sqlx::query!("SELECT count(*) FROM computations WHERE NOT is_completed AND NOT is_error")
-                .fetch_one(&pool)
-                .await?;
+        let count = sqlx::query!(
+            "SELECT count(*) FROM computations WHERE NOT is_completed AND NOT is_error"
+        )
+        .fetch_one(&pool)
+        .await?;
         let current_count = count.count.unwrap();
         if current_count == 0 {
             println!("All computations completed");
@@ -264,16 +305,35 @@ async fn test_fhe_unary_operands() -> Result<(), Box<dyn std::error::Error>> {
     let mut decrypt_request = tonic::Request::new(DebugDecryptRequest {
         handles: output_handles.clone(),
     });
-    decrypt_request.metadata_mut().append("authorization", MetadataValue::from_str(&api_key_header).unwrap());
+    decrypt_request.metadata_mut().append(
+        "authorization",
+        MetadataValue::from_str(&api_key_header).unwrap(),
+    );
     let resp = client.debug_decrypt_ciphertext(decrypt_request).await?;
 
-    assert_eq!(resp.get_ref().values.len(), output_handles.len(), "Outputs length doesn't match");
+    assert_eq!(
+        resp.get_ref().values.len(),
+        output_handles.len(),
+        "Outputs length doesn't match"
+    );
     for (idx, op) in ops.iter().enumerate() {
         let decr_response = &resp.get_ref().values[idx];
-        println!("Checking computation for binary test bits:{} op:{} input:{} output:{}",
-            op.bits, op.operand, op.inp.to_string(), op.expected_output.to_string());
-        assert_eq!(decr_response.output_type, op.operand_types, "operand types not equal");
-        assert_eq!(decr_response.value, op.expected_output.to_string(), "operand output values not equal");
+        println!(
+            "Checking computation for binary test bits:{} op:{} input:{} output:{}",
+            op.bits,
+            op.operand,
+            op.inp.to_string(),
+            op.expected_output.to_string()
+        );
+        assert_eq!(
+            decr_response.output_type, op.operand_types,
+            "operand types not equal"
+        );
+        assert_eq!(
+            decr_response.value,
+            op.expected_output.to_string(),
+            "operand output values not equal"
+        );
     }
 
     Ok(())
@@ -299,10 +359,11 @@ fn generate_binary_test_cases() -> Vec<BinaryOperatorTestCase> {
         }
         let expected_output = compute_expected_binary_output(&lhs, &rhs, op, bits);
         let operand = op as i32;
-        let expected_output_type =
-            if op.is_comparison() {
-                1 // FheBool
-            } else { supported_bits_to_bit_type_in_db(bits) };
+        let expected_output_type = if op.is_comparison() {
+            1 // FheBool
+        } else {
+            supported_bits_to_bit_type_in_db(bits)
+        };
         cases.push(BinaryOperatorTestCase {
             bits,
             operand,
@@ -389,35 +450,38 @@ fn compute_expected_unary_output(inp: &BigInt, op: SupportedFheOperations, bits:
                     panic!("unknown bits: {other}")
                 }
             }
-        },
-        SupportedFheOperations::FheNeg => {
-            match bits {
-                8 => {
-                    let inp: i8 = inp.try_into().unwrap();
-                    BigInt::from(-inp as u8)
-                }
-                16 => {
-                    let inp: i16 = inp.try_into().unwrap();
-                    BigInt::from(-inp as u16)
-                }
-                32 => {
-                    let inp: i32 = inp.try_into().unwrap();
-                    BigInt::from(-inp as u32)
-                }
-                64 => {
-                    let inp: i64 = inp.try_into().unwrap();
-                    BigInt::from(-inp as u64)
-                }
-                other => {
-                    panic!("unknown bits: {other}")
-                }
-            }
         }
+        SupportedFheOperations::FheNeg => match bits {
+            8 => {
+                let inp: i8 = inp.try_into().unwrap();
+                BigInt::from(-inp as u8)
+            }
+            16 => {
+                let inp: i16 = inp.try_into().unwrap();
+                BigInt::from(-inp as u16)
+            }
+            32 => {
+                let inp: i32 = inp.try_into().unwrap();
+                BigInt::from(-inp as u32)
+            }
+            64 => {
+                let inp: i64 = inp.try_into().unwrap();
+                BigInt::from(-inp as u64)
+            }
+            other => {
+                panic!("unknown bits: {other}")
+            }
+        },
         other => panic!("unsupported binary operation: {:?}", other),
     }
 }
 
-fn compute_expected_binary_output(lhs: &BigInt, rhs: &BigInt, op: SupportedFheOperations, bits: i32) -> BigInt {
+fn compute_expected_binary_output(
+    lhs: &BigInt,
+    rhs: &BigInt,
+    op: SupportedFheOperations,
+    bits: i32,
+) -> BigInt {
     match op {
         SupportedFheOperations::FheEq => BigInt::from(lhs.eq(rhs)),
         SupportedFheOperations::FheNe => BigInt::from(lhs.ne(rhs)),
@@ -437,52 +501,56 @@ fn compute_expected_binary_output(lhs: &BigInt, rhs: &BigInt, op: SupportedFheOp
         SupportedFheOperations::FheBitXor => lhs ^ rhs,
         SupportedFheOperations::FheShl => lhs << (TryInto::<u64>::try_into(rhs).unwrap()),
         SupportedFheOperations::FheShr => lhs >> (TryInto::<u64>::try_into(rhs).unwrap()),
-        SupportedFheOperations::FheRotl => {
-            match bits {
-                8 => {
-                    BigInt::from(TryInto::<u8>::try_into(lhs).unwrap()
-                        .rotate_left(TryInto::<u32>::try_into(rhs).unwrap()))
-                }
-                16 => {
-                    BigInt::from(TryInto::<u16>::try_into(lhs).unwrap()
-                        .rotate_left(TryInto::<u32>::try_into(rhs).unwrap()))
-                }
-                32 => {
-                    BigInt::from(TryInto::<u32>::try_into(lhs).unwrap()
-                        .rotate_left(TryInto::<u32>::try_into(rhs).unwrap()))
-                }
-                64 => {
-                    BigInt::from(TryInto::<u64>::try_into(lhs).unwrap()
-                        .rotate_left(TryInto::<u32>::try_into(rhs).unwrap()))
-                }
-                other => {
-                    panic!("unsupported bits for rotl: {other}")
-                }
+        SupportedFheOperations::FheRotl => match bits {
+            8 => BigInt::from(
+                TryInto::<u8>::try_into(lhs)
+                    .unwrap()
+                    .rotate_left(TryInto::<u32>::try_into(rhs).unwrap()),
+            ),
+            16 => BigInt::from(
+                TryInto::<u16>::try_into(lhs)
+                    .unwrap()
+                    .rotate_left(TryInto::<u32>::try_into(rhs).unwrap()),
+            ),
+            32 => BigInt::from(
+                TryInto::<u32>::try_into(lhs)
+                    .unwrap()
+                    .rotate_left(TryInto::<u32>::try_into(rhs).unwrap()),
+            ),
+            64 => BigInt::from(
+                TryInto::<u64>::try_into(lhs)
+                    .unwrap()
+                    .rotate_left(TryInto::<u32>::try_into(rhs).unwrap()),
+            ),
+            other => {
+                panic!("unsupported bits for rotl: {other}")
             }
-        }
-        SupportedFheOperations::FheRotr => {
-            match bits {
-                8 => {
-                    BigInt::from(TryInto::<u8>::try_into(lhs).unwrap()
-                        .rotate_right(TryInto::<u32>::try_into(rhs).unwrap()))
-                }
-                16 => {
-                    BigInt::from(TryInto::<u16>::try_into(lhs).unwrap()
-                        .rotate_right(TryInto::<u32>::try_into(rhs).unwrap()))
-                }
-                32 => {
-                    BigInt::from(TryInto::<u32>::try_into(lhs).unwrap()
-                        .rotate_right(TryInto::<u32>::try_into(rhs).unwrap()))
-                }
-                64 => {
-                    BigInt::from(TryInto::<u64>::try_into(lhs).unwrap()
-                        .rotate_right(TryInto::<u32>::try_into(rhs).unwrap()))
-                }
-                other => {
-                    panic!("unsupported bits for rotr: {other}")
-                }
+        },
+        SupportedFheOperations::FheRotr => match bits {
+            8 => BigInt::from(
+                TryInto::<u8>::try_into(lhs)
+                    .unwrap()
+                    .rotate_right(TryInto::<u32>::try_into(rhs).unwrap()),
+            ),
+            16 => BigInt::from(
+                TryInto::<u16>::try_into(lhs)
+                    .unwrap()
+                    .rotate_right(TryInto::<u32>::try_into(rhs).unwrap()),
+            ),
+            32 => BigInt::from(
+                TryInto::<u32>::try_into(lhs)
+                    .unwrap()
+                    .rotate_right(TryInto::<u32>::try_into(rhs).unwrap()),
+            ),
+            64 => BigInt::from(
+                TryInto::<u64>::try_into(lhs)
+                    .unwrap()
+                    .rotate_right(TryInto::<u32>::try_into(rhs).unwrap()),
+            ),
+            other => {
+                panic!("unsupported bits for rotr: {other}")
             }
-        }
+        },
         other => panic!("unsupported binary operation: {:?}", other),
     }
 }

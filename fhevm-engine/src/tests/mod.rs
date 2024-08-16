@@ -1,13 +1,16 @@
 use std::str::FromStr;
 
-use tonic::metadata::MetadataValue;
-use utils::default_api_key;
 use crate::server::coprocessor::async_computation_input::Input;
 use crate::server::coprocessor::fhevm_coprocessor_client::FhevmCoprocessorClient;
-use crate::server::coprocessor::{AsyncComputation, AsyncComputationInput, AsyncComputeRequest, DebugDecryptRequest, DebugEncryptRequest, DebugEncryptRequestSingle, FheOperation};
+use crate::server::coprocessor::{
+    AsyncComputation, AsyncComputationInput, AsyncComputeRequest, DebugDecryptRequest,
+    DebugEncryptRequest, DebugEncryptRequestSingle, FheOperation,
+};
+use tonic::metadata::MetadataValue;
+use utils::default_api_key;
 
-mod utils;
 mod operators;
+mod utils;
 
 #[tokio::test]
 async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
@@ -34,7 +37,10 @@ async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
                 },
             ],
         });
-        encrypt_request.metadata_mut().append("authorization", MetadataValue::from_str(&api_key_header).unwrap());
+        encrypt_request.metadata_mut().append(
+            "authorization",
+            MetadataValue::from_str(&api_key_header).unwrap(),
+        );
         let resp = client.debug_encrypt_ciphertext(encrypt_request).await?;
         println!("encryption request: {:?}", resp);
     }
@@ -53,7 +59,7 @@ async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
                         AsyncComputationInput {
                             input: Some(Input::Scalar(vec![0x00, 0x10])),
                         },
-                    ]
+                    ],
                 },
                 AsyncComputation {
                     operation: FheOperation::FheAdd.into(),
@@ -65,11 +71,14 @@ async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
                         AsyncComputationInput {
                             input: Some(Input::InputHandle(vec![0x0a, 0xbd])),
                         },
-                    ]
+                    ],
                 },
-            ]
+            ],
         });
-        compute_request.metadata_mut().append("authorization", MetadataValue::from_str(&api_key_header).unwrap());
+        compute_request.metadata_mut().append(
+            "authorization",
+            MetadataValue::from_str(&api_key_header).unwrap(),
+        );
         let resp = client.async_compute(compute_request).await?;
         println!("compute request: {:?}", resp);
     }
@@ -80,12 +89,12 @@ async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
     // decrypt values
     {
         let mut decrypt_request = tonic::Request::new(DebugDecryptRequest {
-            handles: vec![
-                vec![0x0a, 0xbe],
-                vec![0x0a, 0xbf],
-            ],
+            handles: vec![vec![0x0a, 0xbe], vec![0x0a, 0xbf]],
         });
-        decrypt_request.metadata_mut().append("authorization", MetadataValue::from_str(&api_key_header).unwrap());
+        decrypt_request.metadata_mut().append(
+            "authorization",
+            MetadataValue::from_str(&api_key_header).unwrap(),
+        );
         let resp = client.debug_decrypt_ciphertext(decrypt_request).await?;
         println!("decrypt request: {:?}", resp);
         assert_eq!(resp.get_ref().values.len(), 2);

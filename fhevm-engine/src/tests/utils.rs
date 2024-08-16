@@ -1,6 +1,6 @@
-use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage, ImageExt};
-use std::sync::atomic::{AtomicU16, Ordering};
 use crate::cli::Args;
+use std::sync::atomic::{AtomicU16, Ordering};
+use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage, ImageExt};
 
 pub struct TestInstance {
     // just to destroy container
@@ -42,7 +42,9 @@ pub async fn setup_test_app() -> Result<TestInstance, Box<dyn std::error::Error>
     }
 
     let container = GenericImage::new("postgres", "15.7")
-        .with_wait_for(WaitFor::message_on_stderr("database system is ready to accept connections"))
+        .with_wait_for(WaitFor::message_on_stderr(
+            "database system is ready to accept connections",
+        ))
         .with_env_var("POSTGRES_USER", "postgres")
         .with_env_var("POSTGRES_PASSWORD", "postgres")
         .start()
@@ -68,9 +70,7 @@ pub async fn setup_test_app() -> Result<TestInstance, Box<dyn std::error::Error>
         .await?;
 
     println!("Running migrations...");
-    sqlx::migrate!("./migrations")
-        .run(&pool)
-        .await?;
+    sqlx::migrate!("./migrations").run(&pool).await?;
 
     println!("DB prepared");
 
