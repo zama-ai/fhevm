@@ -35,6 +35,17 @@ pub enum CoprocessorError {
         expected_operands: usize,
         got_operands: usize,
     },
+    UnexpectedCastOperandTypes {
+        fhe_operation: i32,
+        fhe_operation_name: String,
+        expected_operator_combination: Vec<String>,
+    },
+    UnexpectedCastOperandSizeForScalarOperand {
+        fhe_operation: i32,
+        fhe_operation_name: String,
+        expected_scalar_operand_bytes: usize,
+        got_bytes: usize,
+    },
     FheOperationDoesntSupportScalar {
         fhe_operation: i32,
         fhe_operation_name: String,
@@ -149,6 +160,21 @@ impl std::fmt::Display for CoprocessorError {
             } => {
                 write!(f, "computation has scalar operand which is not the second operand, output handle: {computation_output_handle}, scalar input index: {scalar_input_index}, only allowed scalar input index: {only_allowed_scalar_input_index}")
             }
+            CoprocessorError::UnexpectedCastOperandTypes {
+                fhe_operation,
+                fhe_operation_name,
+                expected_operator_combination,
+            } => {
+                write!(f, "unexpected operand types for cast, fhe operation: {fhe_operation}, fhe operation name: {fhe_operation_name}, expected operand combination: {:?}", expected_operator_combination)
+            }
+            CoprocessorError::UnexpectedCastOperandSizeForScalarOperand {
+                fhe_operation,
+                fhe_operation_name,
+                expected_scalar_operand_bytes,
+                got_bytes,
+            } => {
+                write!(f, "unexpected operand size for cast, fhe operation: {fhe_operation}, fhe operation name: {fhe_operation_name}, expected bytes: {}, got bytes: {}", expected_scalar_operand_bytes, got_bytes)
+            }
         }
     }
 }
@@ -208,7 +234,8 @@ pub enum SupportedFheOperations {
     FheMax = 19,
     FheNeg = 20,
     FheNot = 21,
-    FheIfThenElse = 40,
+    FheCast = 30,
+    FheIfThenElse = 31,
 }
 
 #[derive(PartialEq, Eq)]
@@ -220,12 +247,26 @@ pub enum FheOperationType {
 
 impl SupportedFheCiphertexts {
     pub fn serialize(&self) -> (i16, Vec<u8>) {
+        let type_num = self.type_num();
         match self {
-            SupportedFheCiphertexts::FheBool(v) => (1, bincode::serialize(v).unwrap()),
-            SupportedFheCiphertexts::FheUint8(v) => (2, bincode::serialize(v).unwrap()),
-            SupportedFheCiphertexts::FheUint16(v) => (3, bincode::serialize(v).unwrap()),
-            SupportedFheCiphertexts::FheUint32(v) => (4, bincode::serialize(v).unwrap()),
-            SupportedFheCiphertexts::FheUint64(v) => (5, bincode::serialize(v).unwrap()),
+            SupportedFheCiphertexts::FheBool(v) => (type_num, bincode::serialize(v).unwrap()),
+            SupportedFheCiphertexts::FheUint8(v) => (type_num, bincode::serialize(v).unwrap()),
+            SupportedFheCiphertexts::FheUint16(v) => (type_num, bincode::serialize(v).unwrap()),
+            SupportedFheCiphertexts::FheUint32(v) => (type_num, bincode::serialize(v).unwrap()),
+            SupportedFheCiphertexts::FheUint64(v) => (type_num, bincode::serialize(v).unwrap()),
+            SupportedFheCiphertexts::Scalar(_) => {
+                panic!("we should never need to serialize scalar")
+            }
+        }
+    }
+
+    pub fn type_num(&self) -> i16 {
+        match self {
+            SupportedFheCiphertexts::FheBool(_) => 1,
+            SupportedFheCiphertexts::FheUint8(_) => 2,
+            SupportedFheCiphertexts::FheUint16(_) => 3,
+            SupportedFheCiphertexts::FheUint32(_) => 4,
+            SupportedFheCiphertexts::FheUint64(_) => 5,
             SupportedFheCiphertexts::Scalar(_) => {
                 panic!("we should never need to serialize scalar")
             }
@@ -281,7 +322,9 @@ impl SupportedFheOperations {
             SupportedFheOperations::FheNot | SupportedFheOperations::FheNeg => {
                 FheOperationType::Unary
             }
-            SupportedFheOperations::FheIfThenElse => FheOperationType::Other,
+            SupportedFheOperations::FheIfThenElse | SupportedFheOperations::FheCast => {
+                FheOperationType::Other
+            }
         }
     }
 
@@ -325,6 +368,8 @@ impl TryFrom<i16> for SupportedFheOperations {
             19 => Ok(SupportedFheOperations::FheMax),
             20 => Ok(SupportedFheOperations::FheNeg),
             21 => Ok(SupportedFheOperations::FheNot),
+            30 => Ok(SupportedFheOperations::FheCast),
+            31 => Ok(SupportedFheOperations::FheIfThenElse),
             _ => Err(CoprocessorError::UnknownFheOperation(value as i32)),
         };
 

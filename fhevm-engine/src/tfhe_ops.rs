@@ -1,5 +1,7 @@
 use tfhe::{
-    prelude::{FheEq, FheMax, FheMin, FheOrd, FheTryTrivialEncrypt, RotateLeft, RotateRight},
+    prelude::{
+        CastInto, FheEq, FheMax, FheMin, FheOrd, FheTryTrivialEncrypt, RotateLeft, RotateRight,
+    },
     FheBool, FheUint16, FheUint32, FheUint64, FheUint8,
 };
 
@@ -946,6 +948,156 @@ pub fn perform_fhe_operation(
             }
         }
         SupportedFheOperations::FheIfThenElse => todo!(),
+        SupportedFheOperations::FheCast => match (&input_operands[0], &input_operands[1]) {
+            (SupportedFheCiphertexts::FheBool(inp), SupportedFheCiphertexts::Scalar(op)) => {
+                let (l, h) = op.to_low_high_u128();
+                assert_eq!(h, 0, "Not supported yet");
+                let l = l as i16;
+                let type_id = input_operands[0].type_num();
+                if l == type_id {
+                    return Ok(SupportedFheCiphertexts::FheBool(inp.clone()));
+                } else {
+                    match l {
+                        2 => {
+                            let out: tfhe::FheUint8 = inp.clone().cast_into();
+                            Ok(SupportedFheCiphertexts::FheUint8(out))
+                        }
+                        3 => {
+                            let out: tfhe::FheUint16 = inp.clone().cast_into();
+                            Ok(SupportedFheCiphertexts::FheUint16(out))
+                        }
+                        4 => {
+                            let out: tfhe::FheUint32 = inp.clone().cast_into();
+                            Ok(SupportedFheCiphertexts::FheUint32(out))
+                        }
+                        5 => {
+                            let out: tfhe::FheUint64 = inp.clone().cast_into();
+                            Ok(SupportedFheCiphertexts::FheUint64(out))
+                        }
+                        other => panic!("unexpected type: {other}"),
+                    }
+                }
+            }
+            (SupportedFheCiphertexts::FheUint8(inp), SupportedFheCiphertexts::Scalar(op)) => {
+                let (l, h) = op.to_low_high_u128();
+                assert_eq!(h, 0, "Not supported yet");
+                let l = l as i16;
+                let type_id = input_operands[0].type_num();
+                if l == type_id {
+                    return Ok(SupportedFheCiphertexts::FheUint8(inp.clone()));
+                } else {
+                    match l {
+                        1 => {
+                            let out: tfhe::FheBool = inp.gt(0);
+                            Ok(SupportedFheCiphertexts::FheBool(out))
+                        }
+                        3 => {
+                            let out: tfhe::FheUint16 = inp.clone().cast_into();
+                            Ok(SupportedFheCiphertexts::FheUint16(out))
+                        }
+                        4 => {
+                            let out: tfhe::FheUint32 = inp.clone().cast_into();
+                            Ok(SupportedFheCiphertexts::FheUint32(out))
+                        }
+                        5 => {
+                            let out: tfhe::FheUint64 = inp.clone().cast_into();
+                            Ok(SupportedFheCiphertexts::FheUint64(out))
+                        }
+                        other => panic!("unexpected type: {other}"),
+                    }
+                }
+            }
+            (SupportedFheCiphertexts::FheUint16(inp), SupportedFheCiphertexts::Scalar(op)) => {
+                let (l, h) = op.to_low_high_u128();
+                assert_eq!(h, 0, "Not supported yet");
+                let l = l as i16;
+                let type_id = input_operands[0].type_num();
+                if l == type_id {
+                    return Ok(SupportedFheCiphertexts::FheUint16(inp.clone()));
+                } else {
+                    match l {
+                        1 => {
+                            let out: tfhe::FheBool = inp.gt(0);
+                            Ok(SupportedFheCiphertexts::FheBool(out))
+                        }
+                        2 => {
+                            let out: tfhe::FheUint8 = inp.clone().cast_into();
+                            Ok(SupportedFheCiphertexts::FheUint8(out))
+                        }
+                        4 => {
+                            let out: tfhe::FheUint32 = inp.clone().cast_into();
+                            Ok(SupportedFheCiphertexts::FheUint32(out))
+                        }
+                        5 => {
+                            let out: tfhe::FheUint64 = inp.clone().cast_into();
+                            Ok(SupportedFheCiphertexts::FheUint64(out))
+                        }
+                        other => panic!("unexpected type: {other}"),
+                    }
+                }
+            }
+            (SupportedFheCiphertexts::FheUint32(inp), SupportedFheCiphertexts::Scalar(op)) => {
+                let (l, h) = op.to_low_high_u128();
+                assert_eq!(h, 0, "Not supported yet");
+                let l = l as i16;
+                let type_id = input_operands[0].type_num();
+                if l == type_id {
+                    return Ok(SupportedFheCiphertexts::FheUint32(inp.clone()));
+                } else {
+                    match l {
+                        1 => {
+                            let out: tfhe::FheBool = inp.gt(0);
+                            Ok(SupportedFheCiphertexts::FheBool(out))
+                        }
+                        2 => {
+                            let out: tfhe::FheUint8 = inp.clone().cast_into();
+                            Ok(SupportedFheCiphertexts::FheUint8(out))
+                        }
+                        3 => {
+                            let out: tfhe::FheUint16 = inp.clone().cast_into();
+                            Ok(SupportedFheCiphertexts::FheUint16(out))
+                        }
+                        5 => {
+                            let out: tfhe::FheUint64 = inp.clone().cast_into();
+                            Ok(SupportedFheCiphertexts::FheUint64(out))
+                        }
+                        other => panic!("unexpected type: {other}"),
+                    }
+                }
+            }
+            (SupportedFheCiphertexts::FheUint64(inp), SupportedFheCiphertexts::Scalar(op)) => {
+                let (l, h) = op.to_low_high_u128();
+                assert_eq!(h, 0, "Not supported yet");
+                let l = l as i16;
+                let type_id = input_operands[0].type_num();
+                if l == type_id {
+                    return Ok(SupportedFheCiphertexts::FheUint64(inp.clone()));
+                } else {
+                    match l {
+                        1 => {
+                            let out: tfhe::FheBool = inp.gt(0);
+                            Ok(SupportedFheCiphertexts::FheBool(out))
+                        }
+                        2 => {
+                            let out: tfhe::FheUint8 = inp.clone().cast_into();
+                            Ok(SupportedFheCiphertexts::FheUint8(out))
+                        }
+                        3 => {
+                            let out: tfhe::FheUint16 = inp.clone().cast_into();
+                            Ok(SupportedFheCiphertexts::FheUint16(out))
+                        }
+                        4 => {
+                            let out: tfhe::FheUint32 = inp.clone().cast_into();
+                            Ok(SupportedFheCiphertexts::FheUint32(out))
+                        }
+                        other => panic!("unexpected type: {other}"),
+                    }
+                }
+            }
+            _ => {
+                panic!("unknown cast pair")
+            }
+        },
     }
 }
 
@@ -991,6 +1143,13 @@ pub fn debug_trivial_encrypt_be_bytes(
         other => {
             panic!("Unknown input type for trivial encryption: {other}")
         }
+    }
+}
+
+pub fn validate_fhe_type(input_type: i16) -> Result<(), CoprocessorError> {
+    match input_type {
+        1 | 2 | 3 | 4 | 5 => Ok(()),
+        _ => Err(CoprocessorError::UnknownCiphertextType(input_type)),
     }
 }
 
@@ -1132,9 +1291,64 @@ pub fn check_fhe_operand_types(
 
                     todo!("special type checking for certain operands")
                 }
+                SupportedFheOperations::FheCast => {
+                    let expected_operands = 2;
+                    if input_types.len() != expected_operands {
+                        return Err(CoprocessorError::UnexpectedOperandCountForFheOperation {
+                            fhe_operation,
+                            fhe_operation_name: format!("{:?}", fhe_op),
+                            expected_operands,
+                            got_operands: input_types.len(),
+                        });
+                    }
+
+                    match (&input_handles[0].input, &input_handles[1].input) {
+                        (Some(a), Some(b)) => match (a, b) {
+                            (Input::InputHandle(_ih), Input::Scalar(op)) => {
+                                if op.len() != 1 {
+                                    return Err(CoprocessorError::UnexpectedCastOperandSizeForScalarOperand {
+                                            fhe_operation,
+                                            fhe_operation_name: format!("{:?}", fhe_op),
+                                            expected_scalar_operand_bytes: 1,
+                                            got_bytes: op.len(),
+                                        });
+                                }
+
+                                let output_type = op[0] as i16;
+                                validate_fhe_type(output_type)?;
+                                Ok(output_type)
+                            }
+                            _ => {
+                                return Err(CoprocessorError::UnexpectedCastOperandTypes {
+                                    fhe_operation,
+                                    fhe_operation_name: format!("{:?}", fhe_op),
+                                    expected_operator_combination: vec![
+                                        "handle".to_string(),
+                                        "scalar".to_string(),
+                                    ],
+                                });
+                            }
+                        },
+                        _ => panic!("operands should always be some here, we checked earlier"),
+                    }
+                }
                 other => {
                     panic!("Unexpected branch: {:?}", other)
                 }
+            }
+        }
+    }
+}
+
+pub fn does_fhe_operation_support_scalar(op: &SupportedFheOperations) -> bool {
+    match op.op_type() {
+        FheOperationType::Binary => true,
+        FheOperationType::Unary => false,
+        FheOperationType::Other => {
+            match op {
+                // second operand determines which type to cast to
+                SupportedFheOperations::FheCast => true,
+                _ => false,
             }
         }
     }
@@ -1146,13 +1360,5 @@ pub fn does_fhe_operation_support_both_encrypted_operands(op: &SupportedFheOpera
     match op {
         SupportedFheOperations::FheDiv => false,
         _ => true,
-    }
-}
-
-pub fn does_fhe_operation_support_scalar(op: &SupportedFheOperations) -> bool {
-    match op.op_type() {
-        FheOperationType::Binary => true,
-        FheOperationType::Unary => false,
-        FheOperationType::Other => false,
     }
 }

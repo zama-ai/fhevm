@@ -1,7 +1,7 @@
 use crate::server::coprocessor::fhevm_coprocessor_client::FhevmCoprocessorClient;
 use crate::server::coprocessor::{
     AsyncComputation, AsyncComputeRequest, DebugDecryptRequest, DebugEncryptRequest,
-    DebugEncryptRequestSingle,
+    DebugEncryptRequestSingle, FheOperation,
 };
 use crate::{
     server::coprocessor::{async_computation_input::Input, AsyncComputationInput},
@@ -37,6 +37,16 @@ struct UnaryOperatorTestCase {
 
 fn supported_bits() -> &'static [i32] {
     &[8, 16, 32, 64]
+}
+
+fn supported_types() -> &'static [i32] {
+    &[
+        1, // bool
+        2, // 8 bit
+        3, // 16 bit
+        4, // 32 bit
+        5, // 64 bit
+    ]
 }
 
 fn supported_bits_to_bit_type_in_db(inp: i32) -> i32 {
@@ -332,6 +342,159 @@ async fn test_fhe_unary_operands() -> Result<(), Box<dyn std::error::Error>> {
         assert_eq!(
             decr_response.value,
             op.expected_output.to_string(),
+            "operand output values not equal"
+        );
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_fhe_casts() -> Result<(), Box<dyn std::error::Error>> {
+    let app = setup_test_app().await?;
+    let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
+    // needed for polling status
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(app.db_url())
+        .await?;
+
+    let mut handle_counter = 0;
+    let mut next_handle = || {
+        let out: i32 = handle_counter;
+        handle_counter += 1;
+        out.to_be_bytes().to_vec()
+    };
+
+    let api_key_header = format!("bearer {}", default_api_key());
+
+    struct CastOutput {
+        type_from: i32,
+        type_to: i32,
+        input: i32,
+        expected_result: String,
+    }
+
+    let mut output_handles = Vec::new();
+    let mut enc_request_payload = Vec::new();
+    let mut async_computations = Vec::new();
+    let mut cast_outputs: Vec<CastOutput> = Vec::new();
+    for type_from in supported_types() {
+        for type_to in supported_types() {
+            let input_handle = next_handle();
+            let output_handle = next_handle();
+            let input = 7;
+            let (_, inp_bytes) = BigInt::from(input).to_bytes_be();
+            let output = if *type_to == 1 || *type_from == 1 {
+                // if bool output is 1
+                1
+            } else {
+                input
+            };
+
+            println!(
+                "Encrypting inputs for cast test type from:{type_from} type to:{type_to} input:{input} output:{output}",
+            );
+            enc_request_payload.push(DebugEncryptRequestSingle {
+                handle: input_handle.clone(),
+                le_value: inp_bytes,
+                output_type: *type_from,
+            });
+            cast_outputs.push(CastOutput {
+                type_from: *type_from,
+                type_to: *type_to,
+                input,
+                expected_result: if *type_to == 1 {
+                    (output > 0).to_string()
+                } else {
+                    output.to_string()
+                },
+            });
+
+            output_handles.push(output_handle.clone());
+            async_computations.push(AsyncComputation {
+                operation: FheOperation::FheCast.into(),
+                output_handle,
+                inputs: vec![
+                    AsyncComputationInput {
+                        input: Some(Input::InputHandle(input_handle.clone())),
+                    },
+                    AsyncComputationInput {
+                        input: Some(Input::Scalar(vec![*type_to as u8])),
+                    },
+                ],
+            });
+        }
+    }
+
+    println!("Encrypting inputs...");
+    let mut encrypt_request = tonic::Request::new(DebugEncryptRequest {
+        values: enc_request_payload,
+    });
+    encrypt_request.metadata_mut().append(
+        "authorization",
+        MetadataValue::from_str(&api_key_header).unwrap(),
+    );
+    let _resp = client.debug_encrypt_ciphertext(encrypt_request).await?;
+
+    println!("Scheduling computations...");
+    let mut compute_request = tonic::Request::new(AsyncComputeRequest {
+        computations: async_computations,
+    });
+    compute_request.metadata_mut().append(
+        "authorization",
+        MetadataValue::from_str(&api_key_header).unwrap(),
+    );
+    let _resp = client.async_compute(compute_request).await?;
+
+    println!("Computations scheduled, waiting upon completion...");
+
+    loop {
+        tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+        let count = sqlx::query!(
+            "SELECT count(*) FROM computations WHERE NOT is_completed AND NOT is_error"
+        )
+        .fetch_one(&pool)
+        .await?;
+        let current_count = count.count.unwrap();
+        if current_count == 0 {
+            println!("All computations completed");
+            break;
+        } else {
+            println!("{current_count} computations remaining, waiting...");
+        }
+    }
+
+    let mut decrypt_request = tonic::Request::new(DebugDecryptRequest {
+        handles: output_handles.clone(),
+    });
+    decrypt_request.metadata_mut().append(
+        "authorization",
+        MetadataValue::from_str(&api_key_header).unwrap(),
+    );
+    let resp = client.debug_decrypt_ciphertext(decrypt_request).await?;
+
+    assert_eq!(
+        resp.get_ref().values.len(),
+        output_handles.len(),
+        "Outputs length doesn't match"
+    );
+    for (idx, co) in cast_outputs.iter().enumerate() {
+        let decr_response = &resp.get_ref().values[idx];
+        println!(
+            "Checking computation for cast test from:{} to:{} input:{} output:{}",
+            co.type_from, co.type_to, co.input, co.expected_result,
+        );
+        println!(
+            "Response output type: {}, response result: {}",
+            decr_response.output_type, decr_response.value
+        );
+        assert_eq!(
+            decr_response.output_type, co.type_to,
+            "operand types not equal"
+        );
+        assert_eq!(
+            decr_response.value, co.expected_result,
             "operand output values not equal"
         );
     }

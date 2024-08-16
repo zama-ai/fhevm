@@ -62,7 +62,8 @@ enum FheOperation {
   FHE_MAX = 19;
   FHE_NEG = 20;
   FHE_NOT = 21;
-  FHE_IF_THEN_ELSE = 40;
+  FHE_CAST = 30;
+  FHE_IF_THEN_ELSE = 31;
 }
 
 message AsyncComputation {

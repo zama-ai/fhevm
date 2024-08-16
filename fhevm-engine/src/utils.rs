@@ -1,9 +1,10 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
+#[cfg(test)]
+use crate::server::coprocessor::AsyncComputationInput;
+
 use crate::{
-    server::coprocessor::{
-        async_computation_input::Input, AsyncComputation, AsyncComputationInput,
-    },
+    server::coprocessor::{async_computation_input::Input, AsyncComputation},
     types::CoprocessorError,
 };
 
