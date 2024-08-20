@@ -11,6 +11,10 @@ mod types;
 mod utils;
 
 fn main() {
+
+    // TODO: remove, just to make sure it works
+    let _ = fhevm_engine_common::add(5, 5);
+
     let args = crate::cli::parse_args();
     assert!(
         args.work_items_batch_size < args.tenant_key_cache_size,

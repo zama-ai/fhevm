@@ -1,0 +1,33 @@
+[package]
+name = "coprocessor"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Common dependencies
+tokio = { version = "1.0", features = ["rt-multi-thread", "macros"] }
+prost = "0.13"
+tonic = { version = "0.12", features = ["server"] }
+# Optional dependencies
+tonic-web = "0.12"
+tonic-health = "0.12"
+tonic-types = "0.12"
+tokio-util = "0.7"
+tfhe.workspace = true
+sqlx = { version = "0.7", features = ["runtime-tokio", "tls-rustls", "postgres", "uuid"] }
+serde_json = "1.0"
+regex = "1.10.5"
+lazy_static = "1.5.0"
+clap.workspace = true
+lru = "0.12.3"
+bincode = "1.3.3"
+hex = "0.4"
+strum = { version = "0.26", features = ["derive"] }
+bigdecimal = "0.4"
+fhevm-engine-common = { path = "../fhevm-engine-common" }
+
+[dev-dependencies]
+testcontainers = "0.21"
+
+[build-dependencies]
+tonic-build = "0.12"
