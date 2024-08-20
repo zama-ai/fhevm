@@ -9,6 +9,7 @@ contract Rand {
     euint16 public value16;
     euint32 public value32;
     euint64 public value64;
+    euint64 public value64Bounded;
 
     function generate8() public {
         value8 = TFHE.randEuint8();
@@ -48,5 +49,17 @@ contract Rand {
     function generate64UpperBound(uint32 upperBound) public {
         value64 = TFHE.randEuint64(upperBound);
         TFHE.allow(value64, address(this));
+    }
+
+    function generate64Reverting() public {
+        try this.failingCall() {} catch {}
+        value64Bounded = TFHE.randEuint64(1024);
+        TFHE.allow(value64Bounded, address(this));
+    }
+
+    function failingCall() public {
+        value64 = TFHE.randEuint64();
+        TFHE.allow(value64, address(this));
+        revert();
     }
 }

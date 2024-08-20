@@ -66,20 +66,6 @@ export const getClearText = async (handle: BigInt): Promise<string> => {
     executeQuery();
   });
 };
-/*export const getClearText = async (handle: BigInt): Promise<string> => {
-  const handleStr = '0x' + handle.toString(16).padStart(64, '0');
-  return new Promise((resolve, reject) => {
-    db.get('SELECT clearText FROM ciphertexts WHERE handle = ?', [handleStr], (err, row) => {
-      if (err) {
-        reject(new Error(`Error querying database: ${err.message}`));
-      } else if (row) {
-        resolve(row.clearText);
-      } else {
-        reject(new Error('No record found'));
-      }
-    });
-  });
-};*/
 
 db.serialize(() => db.run('CREATE TABLE IF NOT EXISTS ciphertexts (handle BINARY PRIMARY KEY,clearText TEXT)'));
 
@@ -195,12 +181,12 @@ function getRandomBigInt(numBits: number): bigint {
   return randomBigInt;
 }
 
-async function insertHandle(obj: EvmState, blockNo: number) {
+async function insertHandle(obj2: EvmState, validIdxes: [number]) {
+  const obj = obj2.value;
   if (isCoprocAdd(obj!.stack.at(-2))) {
     const argsOffset = Number(`0x${obj!.stack.at(-4)}`);
     const argsSize = Number(`0x${obj!.stack.at(-5)}`);
     const calldata = extractCalldata(obj.memory, argsOffset, argsSize);
-    //console.log('calldata : ', calldata);
     const currentSelector = '0x' + calldata.slice(0, 8);
     const decodedData = iface.decodeFunctionData(currentSelector, '0x' + calldata);
 
@@ -707,28 +693,32 @@ async function insertHandle(obj: EvmState, blockNo: number) {
         break;
 
       case 'fheRand(bytes1)':
-        resultType = parseInt(decodedData[0], 16);
-        handle = ethers.keccak256(
-          ethers.solidityPacked(['uint8', 'bytes1', 'uint256'], [Operators.fheRand, decodedData[0], counterRand]),
-        );
-        handle = appendType(handle, resultType);
-        clearText = getRandomBigInt(Number(NumBits[resultType]));
-        insertSQL(handle, clearText, true);
-        counterRand++;
+        if (validIdxes.includes(obj2.index)) {
+          resultType = parseInt(decodedData[0], 16);
+          handle = ethers.keccak256(
+            ethers.solidityPacked(['uint8', 'bytes1', 'uint256'], [Operators.fheRand, decodedData[0], counterRand]),
+          );
+          handle = appendType(handle, resultType);
+          clearText = getRandomBigInt(Number(NumBits[resultType]));
+          insertSQL(handle, clearText, true);
+          counterRand++;
+        }
         break;
 
       case 'fheRandBounded(uint256,bytes1)':
-        resultType = parseInt(decodedData[1], 16);
-        handle = ethers.keccak256(
-          ethers.solidityPacked(
-            ['uint8', 'uint256', 'bytes1', 'uint256'],
-            [Operators.fheRandBounded, decodedData[0], decodedData[1], counterRand],
-          ),
-        );
-        handle = appendType(handle, resultType);
-        clearText = getRandomBigInt(Number(log2(BigInt(decodedData[0]))));
-        insertSQL(handle, clearText, true);
-        counterRand++;
+        if (validIdxes.includes(obj2.index)) {
+          resultType = parseInt(decodedData[1], 16);
+          handle = ethers.keccak256(
+            ethers.solidityPacked(
+              ['uint8', 'uint256', 'bytes1', 'uint256'],
+              [Operators.fheRandBounded, decodedData[0], decodedData[1], counterRand],
+            ),
+          );
+          handle = appendType(handle, resultType);
+          clearText = getRandomBigInt(Number(log2(BigInt(decodedData[0]))));
+          insertSQL(handle, clearText, true);
+          counterRand++;
+        }
         break;
     }
   }
@@ -754,9 +744,11 @@ function isCoprocAdd(longString: string): boolean {
   return normalizedLongString === coprocAdd;
 }
 
-async function processLogs(trace, blockNo) {
-  for (const obj of trace.structLogs.filter((obj) => obj.op === 'CALL')) {
-    await insertHandle(obj, blockNo);
+async function processLogs(trace, validSubcallsIndexes) {
+  for (const obj of trace.structLogs
+    .map((value, index) => ({ value, index }))
+    .filter((obj) => obj.value.op === 'CALL')) {
+    await insertHandle(obj, validSubcallsIndexes);
   }
 }
 
@@ -766,7 +758,9 @@ export const awaitCoprocessor = async (): Promise<void> => {
     const trace = await ethers.provider.send('debug_traceTransaction', [txHash[0]]);
 
     if (!trace.failed) {
-      await processLogs(trace, txHash[1]);
+      const callTree = await buildCallTree(trace, txHash[1]);
+      const validSubcallsIndexes = getValidSubcallsIds(callTree)[1];
+      await processLogs(trace, validSubcallsIndexes);
     }
   }
 };
@@ -774,7 +768,7 @@ export const awaitCoprocessor = async (): Promise<void> => {
 async function getAllPastTransactionHashes() {
   const provider = ethers.provider;
   const latestBlockNumber = await provider.getBlockNumber();
-  let txHashes: [string, number][] = [];
+  let txHashes = [];
 
   if (hre.__SOLIDITY_COVERAGE_RUNNING !== true) {
     // evm_snapshot is not supported in coverage mode
@@ -787,9 +781,10 @@ async function getAllPastTransactionHashes() {
 
   // Iterate through all blocks and collect transaction hashes
   for (let i = firstBlockListening; i <= latestBlockNumber; i++) {
-    const block = await provider.getBlock(i);
-    block!.transactions.forEach((tx) => {
-      txHashes.push([tx, i]);
+    const block = await provider.getBlock(i, true);
+    block!.transactions.forEach((tx, index) => {
+      const rcpt = block?.prefetchedTransactions[index];
+      txHashes.push([tx, { to: rcpt.to, status: rcpt.status }]);
     });
   }
   firstBlockListening = latestBlockNumber + 1;
@@ -800,9 +795,7 @@ async function getAllPastTransactionHashes() {
   return txHashes;
 }
 
-async function buildCallTree(receipt) {
-  const txHash = receipt.hash;
-  const trace = await ethers.provider.send('debug_traceTransaction', [txHash, {}]);
+async function buildCallTree(trace, receipt) {
   const structLogs = trace.structLogs;
 
   const callStack = [];
@@ -812,6 +805,7 @@ async function buildCallTree(receipt) {
     revert: receipt.status === 1 ? false : true,
     to: !!receipt.to ? receipt.to : null,
     calls: [],
+    indexTrace: 0,
   };
   let currentNode = callTree;
   const lenStructLogs = structLogs.length;
@@ -842,6 +836,7 @@ async function buildCallTree(receipt) {
               calls: [],
               revert: true,
               outofgasOrOther: false,
+              indexTrace: i,
             };
             currentNode.calls.push(newNode);
             callStack.push(currentNode);
@@ -870,4 +865,37 @@ async function buildCallTree(receipt) {
     }
   }
   return callTree;
+}
+
+function logCallContextsTree(callContext, indent = 0) {
+  const indentation = ' '.repeat(indent);
+  console.log(`${indentation}id: ${callContext.id}, type: ${callContext.type}, revert: ${callContext.revert}`);
+
+  if (callContext.calls.length > 0) {
+    console.log(`${indentation}  Calls:`);
+    for (const call of callContext.calls) {
+      logCallContextsTree(call, indent + 4);
+    }
+  }
+}
+
+function getValidSubcallsIds(tree) {
+  const result = [];
+  const resultIndexes = [];
+
+  function traverse(node, ancestorReverted) {
+    if (ancestorReverted || node.revert) {
+      ancestorReverted = true;
+    } else {
+      result.push(node.id);
+      resultIndexes.push(node.indexTrace);
+    }
+    for (const child of node.calls) {
+      traverse(child, ancestorReverted);
+    }
+  }
+
+  traverse(tree, false);
+
+  return [result, resultIndexes];
 }

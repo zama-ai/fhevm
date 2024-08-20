@@ -210,4 +210,12 @@ describe('Rand', function () {
       expect(unique3.size).to.be.greaterThanOrEqual(2);
     }
   });
+
+  it('generating rand in reverting sub-call', async function () {
+    const txn = await this.rand.generate64Reverting();
+    await txn.wait();
+    const valueHandle = await this.rand.value64Bounded();
+    const value = await decrypt16(valueHandle);
+    expect(value).to.be.lessThan(1024);
+  });
 });
