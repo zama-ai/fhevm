@@ -1,6 +1,6 @@
 use tfhe::{
     prelude::{
-        CastInto, FheEq, FheMax, FheMin, FheOrd, FheTryTrivialEncrypt, RotateLeft, RotateRight,
+        CastInto, FheEq, FheMax, FheMin, FheOrd, FheTryTrivialEncrypt, IfThenElse, RotateLeft, RotateRight
     },
     FheBool, FheUint16, FheUint32, FheUint64, FheUint8,
 };
@@ -947,7 +947,39 @@ pub fn perform_fhe_operation(
                 }
             }
         }
-        SupportedFheOperations::FheIfThenElse => todo!(),
+        SupportedFheOperations::FheIfThenElse => {
+            assert_eq!(input_operands.len(), 3);
+
+            let SupportedFheCiphertexts::FheBool(flag) = &input_operands[0] else {
+                panic!("flag for if-then-else must be boolean")
+            };
+
+            match (&input_operands[1], &input_operands[2]) {
+                (SupportedFheCiphertexts::FheBool(a), SupportedFheCiphertexts::FheBool(b)) => {
+                    let res = flag.select(a, b);
+                    Ok(SupportedFheCiphertexts::FheBool(res))
+                }
+                (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
+                    let res = flag.select(a, b);
+                    Ok(SupportedFheCiphertexts::FheUint8(res))
+                }
+                (SupportedFheCiphertexts::FheUint16(a), SupportedFheCiphertexts::FheUint16(b)) => {
+                    let res = flag.select(a, b);
+                    Ok(SupportedFheCiphertexts::FheUint16(res))
+                }
+                (SupportedFheCiphertexts::FheUint32(a), SupportedFheCiphertexts::FheUint32(b)) => {
+                    let res = flag.select(a, b);
+                    Ok(SupportedFheCiphertexts::FheUint32(res))
+                }
+                (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::FheUint64(b)) => {
+                    let res = flag.select(a, b);
+                    Ok(SupportedFheCiphertexts::FheUint64(res))
+                }
+                _ => {
+                    panic!("Mismatch between cmux operand types")
+                }
+            }
+        },
         SupportedFheOperations::FheCast => match (&input_operands[0], &input_operands[1]) {
             (SupportedFheCiphertexts::FheBool(inp), SupportedFheCiphertexts::Scalar(op)) => {
                 let (l, h) = op.to_low_high_u128();
@@ -1289,7 +1321,28 @@ pub fn check_fhe_operand_types(
                         });
                     }
 
-                    todo!("special type checking for certain operands")
+                    // TODO: figure out typing system with constants
+                    let fhe_bool_type = 1;
+                    if input_types[0] != fhe_bool_type {
+                        return Err(CoprocessorError::FheIfThenElseUnexpectedOperandTypes {
+                            fhe_operation,
+                            fhe_operation_name: format!("{:?}", fhe_op),
+                            first_expected_operand_type: fhe_bool_type,
+                            first_expected_operand_type_name: "FheBool".to_string(),
+                            first_operand_type: input_types[0],
+                        });
+                    }
+
+                    if input_types[1] != input_types[2] {
+                        return Err(CoprocessorError::FheIfThenElseMismatchingSecondAndThirdOperatorTypes {
+                            fhe_operation,
+                            fhe_operation_name: format!("{:?}", fhe_op),
+                            second_operand_type: input_types[1],
+                            third_operand_type: input_types[2],
+                        });
+                    }
+
+                    Ok(input_types[1])
                 }
                 SupportedFheOperations::FheCast => {
                     let expected_operands = 2;

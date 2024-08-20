@@ -3,6 +3,7 @@ use crate::server::coprocessor::{
     AsyncComputation, AsyncComputeRequest, DebugDecryptRequest, DebugEncryptRequest,
     DebugEncryptRequestSingle, FheOperation,
 };
+use crate::tests::utils::wait_until_all_ciphertexts_computed;
 use crate::{
     server::coprocessor::{async_computation_input::Input, AsyncComputationInput},
     tests::utils::{default_api_key, setup_test_app},
@@ -64,11 +65,6 @@ async fn test_fhe_binary_operands() -> Result<(), Box<dyn std::error::Error>> {
     let ops = generate_binary_test_cases();
     let app = setup_test_app().await?;
     let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
-    // needed for polling status
-    let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(2)
-        .connect(app.db_url())
-        .await?;
 
     let mut handle_counter = 0;
     let mut next_handle = || {
@@ -162,21 +158,7 @@ async fn test_fhe_binary_operands() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Computations scheduled, waiting upon completion...");
 
-    loop {
-        tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
-        let count = sqlx::query!(
-            "SELECT count(*) FROM computations WHERE NOT is_completed AND NOT is_error"
-        )
-        .fetch_one(&pool)
-        .await?;
-        let current_count = count.count.unwrap();
-        if current_count == 0 {
-            println!("All computations completed");
-            break;
-        } else {
-            println!("{current_count} computations remaining, waiting...");
-        }
-    }
+    wait_until_all_ciphertexts_computed(&app).await?;
 
     let mut decrypt_request = tonic::Request::new(DebugDecryptRequest {
         handles: output_handles.clone(),
@@ -221,11 +203,6 @@ async fn test_fhe_unary_operands() -> Result<(), Box<dyn std::error::Error>> {
     let ops = generate_unary_test_cases();
     let app = setup_test_app().await?;
     let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
-    // needed for polling status
-    let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(2)
-        .connect(app.db_url())
-        .await?;
 
     let mut handle_counter = 0;
     let mut next_handle = || {
@@ -296,21 +273,7 @@ async fn test_fhe_unary_operands() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Computations scheduled, waiting upon completion...");
 
-    loop {
-        tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
-        let count = sqlx::query!(
-            "SELECT count(*) FROM computations WHERE NOT is_completed AND NOT is_error"
-        )
-        .fetch_one(&pool)
-        .await?;
-        let current_count = count.count.unwrap();
-        if current_count == 0 {
-            println!("All computations completed");
-            break;
-        } else {
-            println!("{current_count} computations remaining, waiting...");
-        }
-    }
+    wait_until_all_ciphertexts_computed(&app).await?;
 
     let mut decrypt_request = tonic::Request::new(DebugDecryptRequest {
         handles: output_handles.clone(),
@@ -353,11 +316,6 @@ async fn test_fhe_unary_operands() -> Result<(), Box<dyn std::error::Error>> {
 async fn test_fhe_casts() -> Result<(), Box<dyn std::error::Error>> {
     let app = setup_test_app().await?;
     let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
-    // needed for polling status
-    let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(2)
-        .connect(app.db_url())
-        .await?;
 
     let mut handle_counter = 0;
     let mut next_handle = || {
@@ -449,21 +407,7 @@ async fn test_fhe_casts() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Computations scheduled, waiting upon completion...");
 
-    loop {
-        tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
-        let count = sqlx::query!(
-            "SELECT count(*) FROM computations WHERE NOT is_completed AND NOT is_error"
-        )
-        .fetch_one(&pool)
-        .await?;
-        let current_count = count.count.unwrap();
-        if current_count == 0 {
-            println!("All computations completed");
-            break;
-        } else {
-            println!("{current_count} computations remaining, waiting...");
-        }
-    }
+    wait_until_all_ciphertexts_computed(&app).await?;
 
     let mut decrypt_request = tonic::Request::new(DebugDecryptRequest {
         handles: output_handles.clone(),
@@ -491,6 +435,164 @@ async fn test_fhe_casts() -> Result<(), Box<dyn std::error::Error>> {
         );
         assert_eq!(
             decr_response.output_type, co.type_to,
+            "operand types not equal"
+        );
+        assert_eq!(
+            decr_response.value, co.expected_result,
+            "operand output values not equal"
+        );
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_fhe_if_then_else() -> Result<(), Box<dyn std::error::Error>> {
+    let app = setup_test_app().await?;
+    let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
+
+    let mut handle_counter = 0;
+    let mut next_handle = || {
+        let out: i32 = handle_counter;
+        handle_counter += 1;
+        out.to_be_bytes().to_vec()
+    };
+
+    let api_key_header = format!("bearer {}", default_api_key());
+
+    struct IfThenElseOutput {
+        input_type: i32,
+        left_input: i32,
+        right_input: i32,
+        input_bool: bool,
+        expected_result: String,
+    }
+
+    let mut output_handles = Vec::new();
+    let mut enc_request_payload = Vec::new();
+    let mut async_computations = Vec::new();
+    let mut if_then_else_outputs: Vec<IfThenElseOutput> = Vec::new();
+
+    let false_handle = next_handle();
+    let true_handle = next_handle();
+    enc_request_payload.push(DebugEncryptRequestSingle {
+        handle: false_handle.clone(),
+        le_value: BigInt::from(0).to_bytes_be().1,
+        output_type: 1,
+    });
+    enc_request_payload.push(DebugEncryptRequestSingle {
+        handle: true_handle.clone(),
+        le_value: BigInt::from(1).to_bytes_be().1,
+        output_type: 1,
+    });
+
+    for input_types in supported_types() {
+        let left_handle = next_handle();
+        let right_handle = next_handle();
+        let is_input_bool = *input_types == 1;
+        let (left_input, right_input) =
+            if is_input_bool {
+                (0, 1)
+            } else {
+                (7, 12)
+            };
+        enc_request_payload.push(DebugEncryptRequestSingle {
+            handle: left_handle.clone(),
+            le_value: BigInt::from(left_input).to_bytes_be().1,
+            output_type: *input_types,
+        });
+        enc_request_payload.push(DebugEncryptRequestSingle {
+            handle: right_handle.clone(),
+            le_value: BigInt::from(right_input).to_bytes_be().1,
+            output_type: *input_types,
+        });
+
+        for test_value in [false, true] {
+            let output_handle = next_handle();
+            let (expected_result, input_handle) = if test_value {
+                (left_input, &true_handle)
+            } else { (right_input, &false_handle) };
+            if_then_else_outputs.push(IfThenElseOutput {
+                input_type: *input_types,
+                input_bool: test_value,
+                left_input,
+                right_input,
+                expected_result: if *input_types == 1 {
+                    (expected_result > 0).to_string()
+                } else {
+                    expected_result.to_string()
+                },
+            });
+
+            output_handles.push(output_handle.clone());
+            async_computations.push(AsyncComputation {
+                operation: FheOperation::FheIfThenElse.into(),
+                output_handle,
+                inputs: vec![
+                    AsyncComputationInput {
+                        input: Some(Input::InputHandle(input_handle.clone())),
+                    },
+                    AsyncComputationInput {
+                        input: Some(Input::InputHandle(left_handle.clone())),
+                    },
+                    AsyncComputationInput {
+                        input: Some(Input::InputHandle(right_handle.clone())),
+                    },
+                ],
+            });
+        }
+    }
+
+    println!("Encrypting inputs...");
+    let mut encrypt_request = tonic::Request::new(DebugEncryptRequest {
+        values: enc_request_payload,
+    });
+    encrypt_request.metadata_mut().append(
+        "authorization",
+        MetadataValue::from_str(&api_key_header).unwrap(),
+    );
+    let _resp = client.debug_encrypt_ciphertext(encrypt_request).await?;
+
+    println!("Scheduling computations...");
+    let mut compute_request = tonic::Request::new(AsyncComputeRequest {
+        computations: async_computations,
+    });
+    compute_request.metadata_mut().append(
+        "authorization",
+        MetadataValue::from_str(&api_key_header).unwrap(),
+    );
+    let _resp = client.async_compute(compute_request).await?;
+
+    println!("Computations scheduled, waiting upon completion...");
+
+    wait_until_all_ciphertexts_computed(&app).await?;
+
+    let mut decrypt_request = tonic::Request::new(DebugDecryptRequest {
+        handles: output_handles.clone(),
+    });
+    decrypt_request.metadata_mut().append(
+        "authorization",
+        MetadataValue::from_str(&api_key_header).unwrap(),
+    );
+    let resp = client.debug_decrypt_ciphertext(decrypt_request).await?;
+
+    assert_eq!(
+        resp.get_ref().values.len(),
+        output_handles.len(),
+        "Outputs length doesn't match"
+    );
+    for (idx, co) in if_then_else_outputs.iter().enumerate() {
+        let decr_response = &resp.get_ref().values[idx];
+        println!(
+            "Checking if then else computation for test type:{} control:{} lhs:{} rhs:{} output:{}",
+            co.input_type, co.input_bool, co.left_input, co.right_input, co.expected_result,
+        );
+        println!(
+            "Response output type: {}, response result: {}",
+            decr_response.output_type, decr_response.value
+        );
+        assert_eq!(
+            decr_response.output_type, co.input_type,
             "operand types not equal"
         );
         assert_eq!(

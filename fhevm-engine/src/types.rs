@@ -35,6 +35,19 @@ pub enum CoprocessorError {
         expected_operands: usize,
         got_operands: usize,
     },
+    FheIfThenElseUnexpectedOperandTypes {
+        fhe_operation: i32,
+        fhe_operation_name: String,
+        first_operand_type: i16,
+        first_expected_operand_type: i16,
+        first_expected_operand_type_name: String,
+    },
+    FheIfThenElseMismatchingSecondAndThirdOperatorTypes {
+        fhe_operation: i32,
+        fhe_operation_name: String,
+        second_operand_type: i16,
+        third_operand_type: i16,
+    },
     UnexpectedCastOperandTypes {
         fhe_operation: i32,
         fhe_operation_name: String,
@@ -174,6 +187,12 @@ impl std::fmt::Display for CoprocessorError {
                 got_bytes,
             } => {
                 write!(f, "unexpected operand size for cast, fhe operation: {fhe_operation}, fhe operation name: {fhe_operation_name}, expected bytes: {}, got bytes: {}", expected_scalar_operand_bytes, got_bytes)
+            }
+            CoprocessorError::FheIfThenElseUnexpectedOperandTypes { fhe_operation, fhe_operation_name, first_operand_type, first_expected_operand_type, .. } => {
+                write!(f, "fhe if then else first operand should always be FheBool, fhe operation: {fhe_operation}, fhe operation name: {fhe_operation_name}, first operand type: {first_operand_type}, first operand expected type: {first_expected_operand_type}")
+            }
+            CoprocessorError::FheIfThenElseMismatchingSecondAndThirdOperatorTypes { fhe_operation, fhe_operation_name, second_operand_type, third_operand_type } => {
+                write!(f, "fhe if then else second and third operand types don't match, fhe operation: {fhe_operation}, fhe operation name: {fhe_operation_name}, second operand type: {second_operand_type}, third operand type: {third_operand_type}")
             }
         }
     }

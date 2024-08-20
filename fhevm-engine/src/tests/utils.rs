@@ -103,3 +103,28 @@ pub async fn setup_test_app() -> Result<TestInstance, Box<dyn std::error::Error>
         db_url,
     })
 }
+
+pub async fn wait_until_all_ciphertexts_computed(test_instance: &TestInstance) -> Result<(), Box<dyn std::error::Error>> {
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(test_instance.db_url())
+        .await?;
+
+    loop {
+        tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+        let count = sqlx::query!(
+            "SELECT count(*) FROM computations WHERE NOT is_completed AND NOT is_error"
+        )
+        .fetch_one(&pool)
+        .await?;
+        let current_count = count.count.unwrap();
+        if current_count == 0 {
+            println!("All computations completed");
+            break;
+        } else {
+            println!("{current_count} computations remaining, waiting...");
+        }
+    }
+
+    Ok(())
+}

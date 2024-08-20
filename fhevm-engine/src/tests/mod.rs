@@ -7,7 +7,7 @@ use crate::server::coprocessor::{
     DebugEncryptRequest, DebugEncryptRequestSingle, FheOperation,
 };
 use tonic::metadata::MetadataValue;
-use utils::default_api_key;
+use utils::{default_api_key, wait_until_all_ciphertexts_computed};
 
 mod operators;
 mod utils;
@@ -84,7 +84,7 @@ async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!("sleeping for computation to complete...");
-    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+    wait_until_all_ciphertexts_computed(&app).await?;
 
     // decrypt values
     {
