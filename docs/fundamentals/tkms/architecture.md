@@ -24,7 +24,7 @@ We now briefly outline each of these components along with their constituents:
 
 - *KMS Engine*: The actual computational engine carrying out the FHE cryptographic key operations in a Nitro enclave
 
-- *S3*: Public S3 instance storing the public keys for the FHE schemes for easy access. 
+- *S3*: Public S3 instance storing the public keys for the FHE schemes for easy access.
 
 ## Frontend
 
@@ -39,14 +39,14 @@ The frontend makes up the public interface of the KMS, through which all request
 
 It consists of the following components:
 
-- Smart contracts: ASC and Config SC.
+- Smart contracts: ISC, ASC and Config SC.
   - Responsible for receiving, validating and processing requests and updates from the fhEVM. Including decryption, reencryption, validator updates, key generation and setup.
 - KMS validators (realized through CometBFT).
   - The entities realizing the KMS blockchain. There may, or may not, be a 1-1 mapping between each validator and a threshold party in the KMS backend.
 
-Multiple application smart contracts (ASC) are deployed on the blockchain, typically one for each application (e.g. fhEVM blockchain) or application type (e.g. EVM blockchain). Each of these can keep application-specific state in order to verify requests from the application. For instance, an ASC for an fhEVM blockchain holds the identity of the current set of validators, so that access controls lists (ACLs) in decryption and reencryption requests can be validated by checking state inclusion proofs against the state roof of the fhEVM blockchain.
+Multiple ISCs are deployed on the blockchain, typically one for each application (e.g. fhEVM blockchain) or application type (e.g. EVM blockchain). Each of these can keep application-specific state in order to verify requests from the application. For instance, an ISC for an fhEVM blockchain holds the identity of the current set of validators, so that access controls lists (ACLs) in decryption and reencryption requests can be validated by checking state inclusion proofs against the state roof of the fhEVM blockchain.
 
-All decryption and reencryption requests are submitted as transactions to an ASC. If approved then the ASC calls the backend by emitting an event that will trigger the backend to actually fulfill the request. Once the request has been fulfilled, the backend submits a fulfillment transaction back to the ASC.
+All decryption and reencryption requests are submitted as transactions to an ASC. The ASC performs universal validation and forwards ACL validation to the appropriate ISC. If all validations are ok then the ASC calls the backend by emitting an event that will trigger the backend to actually fulfill the request. Once the request has been fulfilled, the backend submits a fulfillment transaction back to the ASC.
 
 All payments to the KMS is also handled through the ASC to which the transaction is submitted. These payments are used to incentivize the KMS operators.
 
@@ -54,7 +54,7 @@ Note that the KMS blockchain may be operated by a single validator if decentrali
 
 ### Backend
 
-The backend consists of the KMS core. 
+The backend consists of the KMS core.
 It is the most security critical component of the entire system and a compromise of this could lead to breakage of both correctness, confidentiality and robustness.
 Because of this we have designed it to support threshold security and Enclave support, along with isolation of the security critical _Engine_ from the general Internet.
 
@@ -118,8 +118,8 @@ The storage component is used to make available public material that is not suit
 
 The storage component can be entirely untrusted from a security perspective, and comes in two flavors with different availability properties:
 
-- Centralized using AWS S3 buckets.
-- Decentralized using for instance IPFS.
+- AWS S3 buckets.
+- The local file system.
 
 The storage component is expected to have high availability, although all material stored therein can easily be replicated without security risk.
 
