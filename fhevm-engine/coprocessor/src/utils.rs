@@ -1,5 +1,7 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
+use fhevm_engine_common::types::FhevmError;
+
 #[cfg(test)]
 use crate::server::coprocessor::AsyncComputationInput;
 
@@ -69,14 +71,13 @@ pub fn sort_computations_by_dependencies<'a>(
                     Input::Scalar(sc_bytes) => {
                         check_valid_ciphertext_handle(&sc_bytes)?;
                         if dep_idx != 1 {
-                            return Err(CoprocessorError::OnlySecondOperandCanBeScalar {
-                                computation_output_handle: format!(
-                                    "0x{}",
-                                    hex::encode(&comp.output_handle)
-                                ),
-                                scalar_input_index: dep_idx,
-                                only_allowed_scalar_input_index: 1,
-                            });
+                            // TODO: remove wrapping after refactor
+                            return Err(CoprocessorError::FhevmError(
+                                FhevmError::FheOperationOnlySecondOperandCanBeScalar {
+                                    scalar_input_index: dep_idx,
+                                    only_allowed_scalar_input_index: 1,
+                                }
+                            ));
                         }
                         is_scalar_operand = true;
                     }

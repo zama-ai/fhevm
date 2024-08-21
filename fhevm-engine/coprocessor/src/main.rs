@@ -1,3 +1,4 @@
+use fhevm_engine_common::generate_fhe_keys;
 use tokio::task::JoinSet;
 
 mod cli;
@@ -5,16 +6,11 @@ mod db_queries;
 mod server;
 #[cfg(test)]
 mod tests;
-mod tfhe_ops;
 mod tfhe_worker;
 mod types;
 mod utils;
 
 fn main() {
-
-    // TODO: remove, just to make sure it works
-    let _ = fhevm_engine_common::add(5, 5);
-
     let args = crate::cli::parse_args();
     assert!(
         args.work_items_batch_size < args.tenant_key_cache_size,
@@ -22,7 +18,7 @@ fn main() {
     );
 
     if args.generate_fhe_keys {
-        generate_fhe_keys();
+        generate_dump_fhe_keys();
     } else {
         start_runtime(args, None);
     }
@@ -85,20 +81,16 @@ async fn async_main(
     Ok(())
 }
 
-fn generate_fhe_keys() {
+fn generate_dump_fhe_keys() {
     let output_dir = "fhevm-keys";
     println!("Generating keys...");
-    let (client_key, server_key) = tfhe::generate_keys(tfhe::ConfigBuilder::default().build());
-    let compact_key = tfhe::CompactPublicKey::new(&client_key);
-    let client_key = bincode::serialize(&client_key).unwrap();
-    let server_key = bincode::serialize(&server_key).unwrap();
-    let compact_key = bincode::serialize(&compact_key).unwrap();
+    let keys = generate_fhe_keys();
     println!("Creating directory {output_dir}");
     std::fs::create_dir_all(output_dir).unwrap();
     println!("Creating file {output_dir}/cks");
-    std::fs::write(format!("{output_dir}/cks"), client_key).unwrap();
+    std::fs::write(format!("{output_dir}/cks"), keys.client_key).unwrap();
     println!("Creating file {output_dir}/pks");
-    std::fs::write(format!("{output_dir}/pks"), compact_key).unwrap();
+    std::fs::write(format!("{output_dir}/pks"), keys.compact_public_key).unwrap();
     println!("Creating file {output_dir}/sks");
-    std::fs::write(format!("{output_dir}/sks"), server_key).unwrap();
+    std::fs::write(format!("{output_dir}/sks"), keys.server_key).unwrap();
 }
