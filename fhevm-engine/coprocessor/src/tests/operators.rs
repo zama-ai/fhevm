@@ -7,14 +7,12 @@ use crate::tests::utils::wait_until_all_ciphertexts_computed;
 use crate::{
     server::coprocessor::{async_computation_input::Input, AsyncComputationInput},
     tests::utils::{default_api_key, setup_test_app},
-    tfhe_ops::{
-        does_fhe_operation_support_both_encrypted_operands, does_fhe_operation_support_scalar,
-    },
-    types::{FheOperationType, SupportedFheOperations},
 };
 use bigdecimal::num_bigint::BigInt;
-use std::{ops::Not, str::FromStr};
+use fhevm_engine_common::tfhe_ops::{does_fhe_operation_support_both_encrypted_operands, does_fhe_operation_support_scalar};
+use fhevm_engine_common::types::{FheOperationType, SupportedFheOperations};
 use strum::IntoEnumIterator;
+use std::{ops::Not, str::FromStr};
 use tonic::metadata::MetadataValue;
 
 struct BinaryOperatorTestCase {

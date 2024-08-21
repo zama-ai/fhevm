@@ -20,11 +20,11 @@ regex = "1.10.5"
 lazy_static = "1.5.0"
 clap.workspace = true
 lru = "0.12.3"
-bincode = "1.3.3"
 hex = "0.4"
-strum = { version = "0.26", features = ["derive"] }
 bigdecimal = "0.4"
 fhevm-engine-common = { path = "../fhevm-engine-common" }
+strum = { version = "0.26", features = ["derive"] }
+bincode = "1.3.3"
 
 [dev-dependencies]
 testcontainers = "0.21"

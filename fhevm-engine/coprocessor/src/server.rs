@@ -1,8 +1,7 @@
 use crate::db_queries::{check_if_api_key_is_valid, check_if_ciphertexts_exist_in_db};
 use crate::server::coprocessor::GenericResponse;
-use crate::tfhe_ops::{
-    self, check_fhe_operand_types, current_ciphertext_version, debug_trivial_encrypt_be_bytes,
-};
+use fhevm_engine_common::tfhe_ops::{check_fhe_operand_types, current_ciphertext_version, debug_trivial_encrypt_be_bytes, deserialize_fhe_ciphertext};
+use fhevm_engine_common::types::FhevmError;
 use crate::types::CoprocessorError;
 use crate::utils::sort_computations_by_dependencies;
 use coprocessor::async_computation_input::Input;
@@ -167,7 +166,7 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
             let mut decrypted: Vec<DebugDecryptResponseSingle> = Vec::with_capacity(cts.len());
             for ct in cts {
                 let deserialized =
-                    tfhe_ops::deserialize_fhe_ciphertext(ct.ciphertext_type, &ct.ciphertext)
+                    deserialize_fhe_ciphertext(ct.ciphertext_type, &ct.ciphertext)
                         .unwrap();
                 decrypted.push(DebugDecryptResponseSingle {
                     output_type: ct.ciphertext_type as i32,
@@ -205,7 +204,7 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
             let ciphertext_type: i16 = i_ct
                 .ciphertext_type
                 .try_into()
-                .map_err(|_e| CoprocessorError::UnknownFheType(i_ct.ciphertext_type))?;
+                .map_err(|_e| CoprocessorError::FhevmError(FhevmError::UnknownFheType(i_ct.ciphertext_type)))?;
             let _ = sqlx::query!("
               INSERT INTO ciphertexts(tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type)
               VALUES($1, $2, $3, $4, $5)
@@ -254,6 +253,7 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
             let mut handle_types = Vec::with_capacity(comp.inputs.len());
             let mut is_computation_scalar = false;
             let mut this_comp_inputs: Vec<Vec<u8>> = Vec::with_capacity(comp.inputs.len());
+            let mut is_scalar_op_vec: Vec<bool> = Vec::with_capacity(comp.inputs.len());
             for (idx, ih) in comp.inputs.iter().enumerate() {
                 if let Some(input) = &ih.input {
                     match input {
@@ -263,27 +263,30 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
                                 .expect("this must be found if operand is non scalar");
                             handle_types.push(*ct_type);
                             this_comp_inputs.push(ih.clone());
+                            is_scalar_op_vec.push(false);
                         }
                         Input::Scalar(sc) => {
                             is_computation_scalar = true;
                             handle_types.push(-1);
                             this_comp_inputs.push(sc.clone());
+                            is_scalar_op_vec.push(true);
                             assert!(idx == 1, "we should have checked earlier that only second operand can be scalar");
                         }
                     }
                 }
             }
 
-            computations_inputs.push(this_comp_inputs);
-            are_comps_scalar.push(is_computation_scalar);
             // check before we insert computation that it has
             // to succeed according to the type system
             let output_type = check_fhe_operand_types(
                 comp.operation,
                 &handle_types,
-                is_computation_scalar,
-                &comp.inputs,
-            )?;
+                &this_comp_inputs,
+                &is_scalar_op_vec,
+            ).map_err(|e| CoprocessorError::FhevmError(e))?;
+
+            computations_inputs.push(this_comp_inputs);
+            are_comps_scalar.push(is_computation_scalar);
             // fill in types with output handles that are computed as we go
             assert!(ct_types
                 .insert(comp.output_handle.clone(), output_type)
@@ -300,7 +303,7 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
             let fhe_operation: i16 = comp
                 .operation
                 .try_into()
-                .map_err(|_| CoprocessorError::UnknownFheOperation(comp.operation))?;
+                .map_err(|_| CoprocessorError::FhevmError(FhevmError::UnknownFheOperation(comp.operation)))?;
             let res = query!(
                 "
                     INSERT INTO computations(tenant_id, output_handle, dependencies, fhe_operation, is_completed, is_scalar)

@@ -1,7 +1,8 @@
-use crate::tfhe_ops::{
+use fhevm_engine_common::tfhe_ops::{
     current_ciphertext_version, deserialize_fhe_ciphertext, perform_fhe_operation,
 };
-use crate::types::{SupportedFheCiphertexts, TfheTenantKeys};
+use crate::types::TfheTenantKeys;
+use fhevm_engine_common::types::SupportedFheCiphertexts;
 use sqlx::{postgres::PgListener, query, Acquire};
 use std::{
     cell::Cell,
@@ -223,13 +224,19 @@ async fn tfhe_worker_cycle(
                         } else {
                             deserialized_cts.push(
                                 deserialize_fhe_ciphertext(*ct_type, ct_bytes.as_slice())
-                                    .map_err(|e| (e, w.tenant_id, w.output_handle.clone()))?,
+                                    .map_err(|e| {
+                                        let err: Box<dyn std::error::Error + Send + Sync> = Box::new(e);
+                                        (err, w.tenant_id, w.output_handle.clone())
+                                    })?,
                             );
                         }
                     }
 
                     let res = perform_fhe_operation(w.fhe_operation, &deserialized_cts)
-                        .map_err(|e| (e, w.tenant_id, w.output_handle.clone()))?;
+                        .map_err(|e| {
+                            let err: Box<dyn std::error::Error + Send + Sync> = Box::new(e);
+                            (err, w.tenant_id, w.output_handle.clone())
+                        })?;
                     let (db_type, db_bytes) = res.serialize();
 
                     Ok((w, db_type, db_bytes))
