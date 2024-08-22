@@ -3,5 +3,8 @@ resolver = "2"
 members = ["coprocessor", "executor", "fhevm-engine-common"]
 
 [workspace.dependencies]
-tfhe = { version = "0.8.0-alpha.2", features = ["boolean", "shortint", "integer", "aarch64-unix", "zk-pok"] }
+tfhe = { version = "0.8.0-alpha.2", features = ["boolean", "shortint", "integer", "aarch64-unix", "zk-pok", "experimental-force_fft_algo_dif4"] }
 clap = { version = "4.5", features = ["derive"] }
+tokio = { version = "1.0", features = ["rt-multi-thread", "macros"] }
+prost = "0.13"
+tonic = { version = "0.12", features = ["server"] }

@@ -13,8 +13,12 @@ use coprocessor::{DebugDecryptResponse, DebugDecryptResponseSingle, InputCiphert
 use sqlx::{query, Acquire};
 use tonic::transport::Server;
 
+pub mod common {
+    tonic::include_proto!("fhevm.common");
+}
+
 pub mod coprocessor {
-    tonic::include_proto!("coprocessor");
+    tonic::include_proto!("fhevm.coprocessor");
 }
 
 pub struct CoprocessorService {

@@ -1,8 +1,9 @@
 use crate::server::coprocessor::fhevm_coprocessor_client::FhevmCoprocessorClient;
 use crate::server::coprocessor::{
     AsyncComputation, AsyncComputeRequest, DebugDecryptRequest, DebugEncryptRequest,
-    DebugEncryptRequestSingle, FheOperation,
+    DebugEncryptRequestSingle,
 };
+use crate::server::common::FheOperation;
 use crate::tests::utils::wait_until_all_ciphertexts_computed;
 use crate::{
     server::coprocessor::{async_computation_input::Input, AsyncComputationInput},

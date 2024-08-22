@@ -4,7 +4,9 @@ option java_multiple_files = true;
 option java_package = "io.grpc.fhevmcoprocessor";
 option java_outer_classname = "FhevmCoprocessor";
 
-package coprocessor;
+package fhevm.coprocessor;
+
+import "common.proto";
 
 service FhevmCoprocessor {
   rpc AsyncCompute (AsyncComputeRequest) returns (GenericResponse) {}
@@ -40,35 +42,8 @@ message DebugDecryptResponseSingle {
   string value = 2;
 }
 
-enum FheOperation {
-  FHE_ADD = 0;
-  FHE_SUB = 1;
-  FHE_MUL = 2;
-  FHE_DIV = 3;
-  FHE_REM = 4;
-  FHE_BIT_AND = 5;
-  FHE_BIT_OR = 6;
-  FHE_BIT_XOR = 7;
-  FHE_SHL = 8;
-  FHE_SHR = 9;
-  FHE_ROTL = 10;
-  FHE_ROTR = 11;
-  FHE_EQ = 12;
-  FHE_NE = 13;
-  FHE_GE = 14;
-  FHE_GT = 15;
-  FHE_LE = 16;
-  FHE_LT = 17;
-  FHE_MIN = 18;
-  FHE_MAX = 19;
-  FHE_NEG = 20;
-  FHE_NOT = 21;
-  FHE_CAST = 30;
-  FHE_IF_THEN_ELSE = 31;
-}
-
 message AsyncComputation {
-  FheOperation operation = 1;
+  fhevm.common.FheOperation operation = 1;
   bytes output_handle = 3;
   repeated AsyncComputationInput inputs = 4;
 }

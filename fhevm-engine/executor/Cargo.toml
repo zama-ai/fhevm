@@ -4,3 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+clap.workspace = true
+tokio.workspace = true
+prost.workspace = true
+tonic.workspace = true
+fhevm-engine-common = { path = "../fhevm-engine-common" }
+
+[build-dependencies]
+tonic-build = "0.12"

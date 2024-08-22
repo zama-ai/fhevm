@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "io.grpc.fhevmexecutor";
+option java_outer_classname = "FhevmExecutor";
+
+package fhevm.executor;
+
+import "common.proto";
+
+service FhevmExecutor {
+    // Returns when computation of all operations has been completed.
+    rpc SyncCompute (SyncComputeRequest) returns (SyncComputeResponse);
+}
+
+message SyncComputeRequest {
+    // Ordered list of computations.
+    repeated SyncComputation computations = 1;
+}
+
+message SyncComputeResponse {
+    oneof result {
+        SyncComputeError error = 1;
+
+        // Note: handles in `result_ciphertexts` will be the same ones as `SyncComputeRequest.result_handles`.
+        ResultCiphertexts result_ciphertexts = 2;
+    }
+}
+
+message ResultCiphertexts {
+    repeated Ciphertext ciphertexts = 1; 
+}
+
+message SyncComputation {
+    fhevm.common.FheOperation operation = 1;
+
+    // A list of ordered computations.
+    repeated SyncInput inputs = 2;
+
+    // The result handles after execution the operation on the inputs.
+    repeated bytes result_handles = 3;
+
+    // The input lists if there are input ciphertexts in the computation. Empty if no inputs.
+    repeated bytes input_lists = 4;
+}
+
+enum SyncComputeError {
+    BAD_INPUT = 0;
+}
+
+// Represents a ciphertext that is an expanded input or a result of FHE computation.
+message Ciphertext {
+    bytes handle = 1;
+    bytes ciphertext = 2;
+}
+
+message SyncInput {
+    oneof input {
+        // A ciphertext and its corresponding handle.
+        Ciphertext ciphertext = 1;
+
+        // A handle that points to an input ciphertext in `SyncComputation.input_lists`.
+        bytes input_handle = 2;
+
+        // A scalar value. Dependent on the operation, but typically big-endian integers.
+        bytes scalar = 3;
+    }
+}

@@ -4,8 +4,9 @@ use crate::server::coprocessor::async_computation_input::Input;
 use crate::server::coprocessor::fhevm_coprocessor_client::FhevmCoprocessorClient;
 use crate::server::coprocessor::{
     AsyncComputation, AsyncComputationInput, AsyncComputeRequest, DebugDecryptRequest,
-    DebugEncryptRequest, DebugEncryptRequestSingle, FheOperation,
+    DebugEncryptRequest, DebugEncryptRequestSingle,
 };
+use crate::server::common::FheOperation;
 use tonic::metadata::MetadataValue;
 use utils::{default_api_key, wait_until_all_ciphertexts_computed};
 
