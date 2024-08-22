@@ -108,9 +108,9 @@ task('task:launchFhevm')
         const p2 = getCoin(ownerAddress);
         const p3 = getCoin(relayerAddress);
         await Promise.all([p1, p2, p3]);
+        await new Promise((res) => setTimeout(res, 5000)); // wait 5 seconds
       }
     }
-    await new Promise((res) => setTimeout(res, 5000)); // wait 5 seconds
     console.log(`privateKey ${privKeyDeployer}`);
     console.log(`ownerAddress ${ownerAddress}`);
     await hre.run('task:deployGateway', { privateKey: privKeyDeployer, ownerAddress: ownerAddress });
