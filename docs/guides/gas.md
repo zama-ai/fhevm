@@ -4,11 +4,10 @@ FHE operations are typically more computationally expensive than classical opera
 
 ## ebool
 
-| Function name    | Gas     |
-| ---------------- | ------- |
-| `and`/`or`/`xor` | 26,000  |
-| `not`            | 30,000  |
-| `decrypt`        | 500,000 |
+| Function name    | Gas    |
+| ---------------- | ------ |
+| `and`/`or`/`xor` | 26,000 |
+| `not`            | 30,000 |
 
 ## euint4
 
@@ -32,7 +31,6 @@ FHE operations are typically more computationally expensive than classical opera
 | `neg`                  | 60,000  |
 | `not`                  | 33,000  |
 | `select`               | 45,000  |
-| `decrypt`              | 500,000 |
 
 ## euint8
 
@@ -56,7 +54,6 @@ FHE operations are typically more computationally expensive than classical opera
 | `neg`                  | 95,000  |
 | `not`                  | 34,000  |
 | `select`               | 47,000  |
-| `decrypt`              | 500,000 |
 | `randEuint8()`         | 100,000 |
 
 ## euint16
@@ -81,7 +78,6 @@ FHE operations are typically more computationally expensive than classical opera
 | `neg`                  | 131,000 |
 | `not`                  | 35,000  |
 | `select`               | 47,000  |
-| `decrypt`              | 500,000 |
 | `randEuint16()`        | 100,000 |
 
 ## euint32
@@ -106,7 +102,6 @@ FHE operations are typically more computationally expensive than classical opera
 | `neg`                  | 160,000 |
 | `not`                  | 36,000  |
 | `select`               | 50,000  |
-| `decrypt`              | 500,000 |
 | `randEuint32()`        | 100,000 |
 
 ## euint64
@@ -131,7 +126,6 @@ FHE operations are typically more computationally expensive than classical opera
 | `neg`                  | 199,000   |
 | `not`                  | 37,000    |
 | `select`               | 53,000    |
-| `decrypt`              | 500,000   |
 | `randEuint64()`        | 100,000   |
 
 ## eaddress
@@ -139,37 +133,6 @@ FHE operations are typically more computationally expensive than classical opera
 | Function name | Gas fee |
 | ------------- | ------- |
 | `eq`/`ne`     | 90,000  |
-
-## Estimate gas
-
-When you call estimate gas method, we can’t determine accurately the gas usage if your function uses `TFHE.decrypt`. During gas estimation, all `TFHE.decrypt()` will return `1`.
-
-### What does it mean?
-
-- `require(TFHE.decrypt(ebool));` will be ok but `require(!TFHE.decrypt(ebool));` will fail during estimation (revert transaction)
-- A loop, where you expect a decrypt to be false to break, will never end in gas estimate method (and fails), since the decrypt will always return `1` (true)
-- On the other hand, if your loop should last 2 or 3 cycles, until the value is 1, the estimation will be below.
-- If you have branches (if/else) based on a decryption, the estimation will use the branch running when the decryption is `1`
-
-While it’s challenging to accurately estimate gas consumption when using `TFHE.decrypt`, we strongly encourage you to take this into consideration.
-
-### What can I do?
-
-A possible solution is to overestimate your gas estimation. You can take this function (with ethers.js) as an example where we multiply the gas limit by `1.2`.
-
-```typescript
-export const createTransaction = async <A extends [...{ [I in keyof A]-?: A[I] | Typed }]>(
-  method: TypedContractMethod<A>,
-  ...params: A
-) => {
-  const gasLimit = await method.estimateGas(...params);
-  const updatedParams: ContractMethodArgs<A> = [
-    ...params,
-    { gasLimit: Math.min(Math.round(+gasLimit.toString() * 1.2), 10000000) },
-  ];
-  return method(...updatedParams);
-};
-```
 
 ## Gas limit
 
