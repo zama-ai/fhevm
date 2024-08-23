@@ -3,6 +3,7 @@
 pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/utils/Strings.sol";
+import "./TFHEExecutorAddress.sol";
 
 contract ACL {
     /// @notice Name of the contract
@@ -13,7 +14,7 @@ contract ACL {
     uint256 private constant MINOR_VERSION = 1;
     uint256 private constant PATCH_VERSION = 0;
 
-    address public immutable fhEVMcoprocessorAddress;
+    address public immutable tfheExecutorAddress = tfheExecutorAdd;
 
     mapping(uint256 => bool) public allowedForDecryption;
 
@@ -28,15 +29,11 @@ contract ACL {
     event RevokedDelegation(address indexed sender, address indexed delegatee, address indexed contractAddress);
     event AllowedForDecryption(uint256[] handlesList);
 
-    constructor(address _coprocessorAddress) {
-        fhEVMcoprocessorAddress = _coprocessorAddress;
-    }
-
     // allowTransient use of `handle` for address `account`.
     // The caller must be allowed to use `handle` for allowTransient() to succeed. If not, allowTransient() reverts.
     // @note: The Coprocessor contract can always `allowTransient`, contrarily to `allow`
     function allowTransient(uint256 handle, address account) public {
-        if (msg.sender != fhEVMcoprocessorAddress) {
+        if (msg.sender != tfheExecutorAddress) {
             require(isAllowed(handle, msg.sender), "sender isn't allowed");
         }
         bytes32 key = keccak256(abi.encodePacked(handle, account));
@@ -59,7 +56,7 @@ contract ACL {
     }
 
     function cleanTransientStorage() external {
-        // this function removes the transient allowances, could be useful for integration with Account Abstraction when bundling several UserOps calling the FHEVMCoprocessor
+        // this function removes the transient allowances, could be useful for integration with Account Abstraction when bundling several UserOps calling the TFHEExecutorCoprocessor
         assembly {
             let length := tload(0)
             tstore(0, 0)

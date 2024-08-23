@@ -51,7 +51,7 @@ function binaryOperatorImpl(op: Operator): string {
     `
     function ${op.name}(uint256 lhs, uint256 rhs${scalarArg}) internal returns (uint256 result) {
         ${scalarSection}
-        result = IFHEVMCoprocessor(fhevmCoprocessorAdd).${fname}(lhs, rhs, scalarByte);
+        result = ITFHEExecutor(tfheExecutorAdd).${fname}(lhs, rhs, scalarByte);
     }` + '\n'
   );
 }
@@ -68,7 +68,7 @@ export function implSol(ctx: CodegenContext, operators: Operator[]): string {
 pragma solidity ^0.8.24;
 
 import "./TFHE.sol";
-import "./FHEVMCoprocessorAddress.sol";
+import "./TFHEExecutorAddress.sol";
 import "./ACLAddress.sol";
 
 ${coprocessorInterface}
@@ -113,29 +113,6 @@ ${fheLibInterface}
   return res.join('');
 }
 
-export function tfheExecutorSol(ctx: CodegenContext, operators: Operator[]): string {
-  const res: string[] = [];
-
-  const tfheExecutor = generatelImplTFHEExecutor(operators);
-
-  res.push(`
-// SPDX-License-Identifier: BSD-3-Clause-Clear
-
-pragma solidity ^0.8.24;
-
-import "./ACL.sol";
-import "./ACLAddress.sol";
-import "./FhevmLib.sol";
-
-address constant EXT_TFHE_LIBRARY = address(${ctx.libFheAddress});
-
-${tfheExecutor}
-
-`);
-
-  return res.join('');
-}
-
 function operatorFheLibFunction(op: Operator): string {
   if (op.fheLibName) {
     return op.fheLibName;
@@ -149,75 +126,11 @@ function capitalizeFirstLetter(input: string): string {
   return `${firstLetter}${theRest}`;
 }
 
-function generatelImplTFHEExecutor(operators: Operator[]): string {
-  const res: string[] = [];
-
-  res.push('contract TFHEExecutor {');
-  res.push('ACL private constant acl = ACL(address(aclAdd));');
-  operators.forEach((op) => {
-    let functionName = operatorFheLibFunction(op);
-    let functionArguments: string;
-    switch (op.arguments) {
-      case OperatorArguments.Binary:
-        let requireRhsIfNotScalar: string = '';
-        if (op.hasScalar && op.hasEncrypted) {
-          requireRhsIfNotScalar = `
-            if (scalarByte == 0x00) {
-               require(acl.isAllowed(rhs, msg.sender));
-            }
-          `;
-        } else if (op.hasEncrypted) {
-          requireRhsIfNotScalar = `require(acl.isAllowed(rhs, msg.sender));`;
-        }
-
-        functionArguments = `(uint256 lhs, uint256 rhs, bytes1 scalarByte)`;
-        const tailBinary = `external returns (uint256 result) {
-          require(acl.isAllowed(lhs, msg.sender));
-          ${requireRhsIfNotScalar}
-          result = FhevmLib(address(EXT_TFHE_LIBRARY)).${functionName}(lhs, rhs, scalarByte);
-          acl.allowTransient(result, msg.sender); }`;
-        res.push(`  function ${functionName}${functionArguments} ${tailBinary}`);
-        break;
-      case OperatorArguments.Unary:
-        functionArguments = '(uint256 ct)';
-        const tailUnary = `external returns (uint256 result) {
-          require(acl.isAllowed(ct, msg.sender));
-          result = FhevmLib(address(EXT_TFHE_LIBRARY)).${functionName}(ct);
-          acl.allowTransient(result, msg.sender); }`;
-        res.push(`  function ${functionName}${functionArguments} ${tailUnary}`);
-        break;
-    }
-  });
-
-  res.push(tfheExecutorCustomFunctions());
-
-  res.push('}');
-
-  return res.join('\n');
-}
-
 function generateImplFhevmLibInterface(operators: Operator[]): string {
   const res: string[] = [];
 
   res.push('interface FhevmLib {');
-  operators.forEach((op) => {
-    let functionName = operatorFheLibFunction(op);
-    const tail = 'external pure returns (uint256 result);';
-    let functionArguments: string;
-    switch (op.arguments) {
-      case OperatorArguments.Binary:
-        functionArguments = '(uint256 lhs, uint256 rhs, bytes1 scalarByte)';
-        res.push(`  function ${functionName}${functionArguments} ${tail}`);
-        break;
-      case OperatorArguments.Unary:
-        functionArguments = '(uint256 ct)';
-        res.push(`  function ${functionName}${functionArguments} ${tail}`);
-        break;
-    }
-  });
-
   res.push(fheLibCustomInterfaceFunctions());
-
   res.push('}');
 
   return res.join('\n');
@@ -226,7 +139,7 @@ function generateImplFhevmLibInterface(operators: Operator[]): string {
 function generateImplCoprocessorInterface(operators: Operator[]): string {
   const res: string[] = [];
 
-  res.push('interface IFHEVMCoprocessor {');
+  res.push('interface ITFHEExecutor {');
   operators.forEach((op) => {
     let functionName = operatorFheLibFunction(op);
     const tail = 'external returns (uint256 result);';
@@ -252,14 +165,7 @@ function generateImplCoprocessorInterface(operators: Operator[]): string {
 
 function fheLibCustomInterfaceFunctions(): string {
   return `
-    function fhePubKey(bytes1 fromLib) external view returns (bytes memory result);
     function verifyCiphertext(bytes32 inputHandle, address callerAddress, address contractAddress, bytes memory inputProof, bytes1 inputType) external pure returns (uint256 result);
-    function cast(uint256 ct, bytes1 toType) external pure returns (uint256 result);
-    function trivialEncrypt(uint256 ct, bytes1 toType) external pure returns (uint256 result);
-    function fheIfThenElse(uint256 control, uint256 ifTrue, uint256 ifFalse) external pure returns (uint256 result);
-    function fheArrayEq(uint256[] memory lhs, uint256[] memory rhs) external pure returns (uint256 result);
-    function fheRand(bytes1 randType, uint256 seed) external view returns (uint256 result);
-    function fheRandBounded(uint256 upperBound, bytes1 randType, uint256 seed) external view returns (uint256 result);
   `;
 }
 
@@ -283,40 +189,6 @@ function generateACLInterface(): string {
     function cleanTransientStorage() external;
     function isAllowed(uint256 handle, address account) external view returns(bool);
   }
-  `;
-}
-
-function tfheExecutorCustomFunctions(): string {
-  return `
-    function verifyCiphertext(bytes32 inputHandle, address callerAddress, bytes memory inputProof, bytes1 inputType) external returns (uint256 result) {
-      result = FhevmLib(address(EXT_TFHE_LIBRARY)).verifyCiphertext(inputHandle, callerAddress, msg.sender, inputProof, inputType);
-      acl.allowTransient(result, msg.sender);
-    }
-    function cast(uint256 ct, bytes1 toType) external returns (uint256 result) {
-      require(acl.isAllowed(ct, msg.sender));
-      result = FhevmLib(address(EXT_TFHE_LIBRARY)).cast(ct, toType);
-      acl.allowTransient(result, msg.sender);
-    }
-    function trivialEncrypt(uint256 plaintext, bytes1 toType) external returns (uint256 result) {
-      result = FhevmLib(address(EXT_TFHE_LIBRARY)).trivialEncrypt(plaintext, toType);
-      acl.allowTransient(result, msg.sender);
-    }
-    function fheIfThenElse(uint256 control, uint256 ifTrue, uint256 ifFalse) external returns (uint256 result) {
-      require(acl.isAllowed(control, msg.sender));
-      require(acl.isAllowed(ifTrue, msg.sender));
-      require(acl.isAllowed(ifFalse, msg.sender));
-      result = FhevmLib(address(EXT_TFHE_LIBRARY)).fheIfThenElse(control, ifTrue, ifFalse);
-      acl.allowTransient(result, msg.sender);
-    }
-    function fheRand(bytes1 randType) external returns (uint256 result) {
-      result = FhevmLib(address(EXT_TFHE_LIBRARY)).fheRand(randType, 0);
-      acl.allowTransient(result, msg.sender);
-    }
-    function fheRandBounded(uint256 upperBound, bytes1 randType) external returns (uint256 result) {
-      result = FhevmLib(address(EXT_TFHE_LIBRARY)).fheRandBounded(upperBound, randType, 0);
-      acl.allowTransient(result, msg.sender);
-    }
-    function cleanTransientStorage() external {}
   `;
 }
 
@@ -842,7 +714,7 @@ function unaryOperatorImpl(op: Operator): string {
   let fname = operatorFheLibFunction(op);
   return `
     function ${op.name}(uint256 ct) internal returns (uint256 result) {
-      result = IFHEVMCoprocessor(fhevmCoprocessorAdd).${fname}(ct);
+      result = ITFHEExecutor(tfheExecutorAdd).${fname}(ct);
     }
   `;
 }
@@ -1136,7 +1008,7 @@ function implCustomMethods(ctx: CodegenContext): string {
     // If 'control's value is 'true', the result has the same value as 'ifTrue'.
     // If 'control's value is 'false', the result has the same value as 'ifFalse'.
     function select(uint256 control, uint256 ifTrue, uint256 ifFalse) internal returns (uint256 result) {
-        result = IFHEVMCoprocessor(fhevmCoprocessorAdd).fheIfThenElse(control, ifTrue, ifFalse);
+        result = ITFHEExecutor(tfheExecutorAdd).fheIfThenElse(control, ifTrue, ifFalse);
     }
 
     function verify(
@@ -1144,7 +1016,7 @@ function implCustomMethods(ctx: CodegenContext): string {
         bytes memory inputProof,
         uint8 toType
     ) internal returns (uint256 result) {
-        result = IFHEVMCoprocessor(fhevmCoprocessorAdd).verifyCiphertext(inputHandle, msg.sender, inputProof, bytes1(toType));
+        result = ITFHEExecutor(tfheExecutorAdd).verifyCiphertext(inputHandle, msg.sender, inputProof, bytes1(toType));
         IACL(aclAdd).allowTransient(result, msg.sender);
     }
 
@@ -1152,22 +1024,22 @@ function implCustomMethods(ctx: CodegenContext): string {
         uint256 ciphertext,
         uint8 toType
     ) internal returns (uint256 result) {
-        result = IFHEVMCoprocessor(fhevmCoprocessorAdd).cast(ciphertext, bytes1(toType));
+        result = ITFHEExecutor(tfheExecutorAdd).cast(ciphertext, bytes1(toType));
     }
 
     function trivialEncrypt(
         uint256 value,
         uint8 toType
     ) internal returns (uint256 result) {
-        result = IFHEVMCoprocessor(fhevmCoprocessorAdd).trivialEncrypt(value, bytes1(toType));
+        result = ITFHEExecutor(tfheExecutorAdd).trivialEncrypt(value, bytes1(toType));
     }
 
     function rand(uint8 randType) internal returns(uint256 result) {
-      result = IFHEVMCoprocessor(fhevmCoprocessorAdd).fheRand(bytes1(randType));
+      result = ITFHEExecutor(tfheExecutorAdd).fheRand(bytes1(randType));
     }
 
     function randBounded(uint256 upperBound, uint8 randType) internal returns(uint256 result) {
-      result = IFHEVMCoprocessor(fhevmCoprocessorAdd).fheRandBounded(upperBound, bytes1(randType));
+      result = ITFHEExecutor(tfheExecutorAdd).fheRandBounded(upperBound, bytes1(randType));
     }
 
     function allowTransient(uint256 handle, address account) internal {
@@ -1180,7 +1052,7 @@ function implCustomMethods(ctx: CodegenContext): string {
 
     function cleanTransientStorage() internal {
       IACL(aclAdd).cleanTransientStorage();
-      IFHEVMCoprocessor(fhevmCoprocessorAdd).cleanTransientStorage();
+      ITFHEExecutor(tfheExecutorAdd).cleanTransientStorage();
     }
 
     function isAllowed(uint256 handle, address account) internal view returns (bool) {

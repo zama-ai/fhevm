@@ -1,4 +1,6 @@
+import dotenv from 'dotenv';
 import { ethers } from 'ethers';
+import * as fs from 'fs';
 import { ProviderWrapper } from 'hardhat/plugins';
 
 class CustomProvider extends ProviderWrapper {
@@ -24,9 +26,10 @@ class CustomProvider extends ProviderWrapper {
       const blockNumberHex = await this._wrappedProvider.request({ method: 'eth_blockNumber' });
       this.lastBlockSnapshot = parseInt(blockNumberHex);
       this.lastBlockSnapshotForDecrypt = parseInt(blockNumberHex);
-
+      const parsedEnvCoprocessor = dotenv.parse(fs.readFileSync('lib/.env.exec'));
+      const coprocAdd = parsedEnvCoprocessor.TFHE_EXECUTOR_CONTRACT_ADDRESS;
       const callData = {
-        to: '0x000000000000000000000000000000000000005d',
+        to: coprocAdd,
         data: '0x1f20d85c',
       };
       this.lastCounterRand = await this._wrappedProvider.request({
