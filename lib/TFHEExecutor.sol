@@ -79,10 +79,12 @@ contract TFHEExecutor {
         require((1 << typeCt) & supportedTypes > 0, "Unsupported type");
     }
 
-    function unaryOp(Operators op, uint256 ct) internal pure returns (uint256 result) {
+    function unaryOp(Operators op, uint256 ct) internal returns (uint256 result) {
+        require(acl.isAllowed(ct, msg.sender), "Sender doesn't own ct on op");
         result = uint256(keccak256(abi.encodePacked(op, ct)));
         uint8 typeCt = typeOf(ct);
         result = appendType(result, typeCt);
+        acl.allowTransient(result, msg.sender);
     }
 
     function binaryOp(
@@ -91,18 +93,24 @@ contract TFHEExecutor {
         uint256 rhs,
         bytes1 scalarByte,
         uint8 resultType
-    ) internal pure returns (uint256 result) {
+    ) internal returns (uint256 result) {
         bytes1 scalar = scalarByte & 0x01;
+        require(acl.isAllowed(lhs, msg.sender), "Sender doesn't own lhs on op");
         if (scalar == 0x00) {
+            require(acl.isAllowed(rhs, msg.sender), "Sender doesn't own rhs on op");
             uint8 typeRhs = typeOf(rhs);
             uint8 typeLhs = typeOf(lhs);
             require(typeLhs == typeRhs, "Incompatible types for lhs and rhs");
         }
         result = uint256(keccak256(abi.encodePacked(op, lhs, rhs, scalar)));
         result = appendType(result, resultType);
+        acl.allowTransient(result, msg.sender);
     }
 
     function ternaryOp(Operators op, uint256 lhs, uint256 middle, uint256 rhs) internal returns (uint256 result) {
+        require(acl.isAllowed(lhs, msg.sender), "Sender doesn't own lhs on op");
+        require(acl.isAllowed(middle, msg.sender), "Sender doesn't own middle on op");
+        require(acl.isAllowed(rhs, msg.sender), "Sender doesn't own rhs on op");
         uint8 typeLhs = typeOf(lhs);
         uint8 typeMiddle = typeOf(middle);
         uint8 typeRhs = typeOf(rhs);
@@ -110,235 +118,144 @@ contract TFHEExecutor {
         require(typeMiddle == typeRhs, "Incompatible types for middle and rhs");
         result = uint256(keccak256(abi.encodePacked(op, lhs, middle, rhs)));
         result = appendType(result, typeMiddle);
+        acl.allowTransient(result, msg.sender);
     }
 
     function fheAdd(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
-        require(acl.isAllowed(lhs, msg.sender));
-        if (scalarByte == 0x00) {
-            require(acl.isAllowed(rhs, msg.sender));
-        }
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(lhs, supportedTypes);
         result = binaryOp(Operators.fheAdd, lhs, rhs, scalarByte, typeOf(lhs));
-        acl.allowTransient(result, msg.sender);
     }
 
     function fheSub(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
-        require(acl.isAllowed(lhs, msg.sender));
-        if (scalarByte == 0x00) {
-            require(acl.isAllowed(rhs, msg.sender));
-        }
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(lhs, supportedTypes);
         result = binaryOp(Operators.fheSub, lhs, rhs, scalarByte, typeOf(lhs));
-        acl.allowTransient(result, msg.sender);
     }
 
     function fheMul(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
-        require(acl.isAllowed(lhs, msg.sender));
-        if (scalarByte == 0x00) {
-            require(acl.isAllowed(rhs, msg.sender));
-        }
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(lhs, supportedTypes);
         result = binaryOp(Operators.fheMul, lhs, rhs, scalarByte, typeOf(lhs));
-        acl.allowTransient(result, msg.sender);
     }
 
     function fheDiv(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
-        require(acl.isAllowed(lhs, msg.sender));
         require(scalarByte == 0x01, "Only fheDiv by a scalar is supported");
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(lhs, supportedTypes);
         result = binaryOp(Operators.fheDiv, lhs, rhs, scalarByte, typeOf(lhs));
-        acl.allowTransient(result, msg.sender);
     }
 
     function fheRem(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
-        require(acl.isAllowed(lhs, msg.sender));
         require(scalarByte == 0x01, "Only fheRem by a scalar is supported");
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(lhs, supportedTypes);
         result = binaryOp(Operators.fheRem, lhs, rhs, scalarByte, typeOf(lhs));
-        acl.allowTransient(result, msg.sender);
     }
 
     function fheBitAnd(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
-        require(acl.isAllowed(lhs, msg.sender));
-        require(acl.isAllowed(rhs, msg.sender));
         require(scalarByte == 0x00, "Only fheBitAnd by a ciphertext is supported");
         uint256 supportedTypes = (1 << 0) + (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(lhs, supportedTypes);
         result = binaryOp(Operators.fheBitAnd, lhs, rhs, scalarByte, typeOf(lhs));
-        acl.allowTransient(result, msg.sender);
     }
 
     function fheBitOr(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
-        require(acl.isAllowed(lhs, msg.sender));
-        require(acl.isAllowed(rhs, msg.sender));
         require(scalarByte == 0x00, "Only fheBitOr by a ciphertext is supported");
         uint256 supportedTypes = (1 << 0) + (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(lhs, supportedTypes);
         result = binaryOp(Operators.fheBitOr, lhs, rhs, scalarByte, typeOf(lhs));
-        acl.allowTransient(result, msg.sender);
     }
 
     function fheBitXor(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
-        require(acl.isAllowed(lhs, msg.sender));
-        require(acl.isAllowed(rhs, msg.sender));
         require(scalarByte == 0x00, "Only fheBitXor by a ciphertext is supported");
         uint256 supportedTypes = (1 << 0) + (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(lhs, supportedTypes);
         result = binaryOp(Operators.fheBitXor, lhs, rhs, scalarByte, typeOf(lhs));
-        acl.allowTransient(result, msg.sender);
     }
 
     function fheShl(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
-        require(acl.isAllowed(lhs, msg.sender));
-        if (scalarByte == 0x00) {
-            require(acl.isAllowed(rhs, msg.sender));
-        }
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(lhs, supportedTypes);
         result = binaryOp(Operators.fheShl, lhs, rhs, scalarByte, typeOf(lhs));
-        acl.allowTransient(result, msg.sender);
     }
 
     function fheShr(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
-        require(acl.isAllowed(lhs, msg.sender));
-        if (scalarByte == 0x00) {
-            require(acl.isAllowed(rhs, msg.sender));
-        }
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(lhs, supportedTypes);
         result = binaryOp(Operators.fheShr, lhs, rhs, scalarByte, typeOf(lhs));
-        acl.allowTransient(result, msg.sender);
     }
 
     function fheRotl(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
-        require(acl.isAllowed(lhs, msg.sender));
-        if (scalarByte == 0x00) {
-            require(acl.isAllowed(rhs, msg.sender));
-        }
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(lhs, supportedTypes);
         result = binaryOp(Operators.fheRotl, lhs, rhs, scalarByte, typeOf(lhs));
-        acl.allowTransient(result, msg.sender);
     }
 
     function fheRotr(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
-        require(acl.isAllowed(lhs, msg.sender));
-        if (scalarByte == 0x00) {
-            require(acl.isAllowed(rhs, msg.sender));
-        }
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(lhs, supportedTypes);
         result = binaryOp(Operators.fheRotr, lhs, rhs, scalarByte, typeOf(lhs));
-        acl.allowTransient(result, msg.sender);
     }
 
     function fheEq(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
-        require(acl.isAllowed(lhs, msg.sender));
-        if (scalarByte == 0x00) {
-            require(acl.isAllowed(rhs, msg.sender));
-        }
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5) + (1 << 7) + (1 << 11);
         requireType(lhs, supportedTypes);
         result = binaryOp(Operators.fheEq, lhs, rhs, scalarByte, 0);
-        acl.allowTransient(result, msg.sender);
     }
 
     function fheNe(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
-        require(acl.isAllowed(lhs, msg.sender));
-        if (scalarByte == 0x00) {
-            require(acl.isAllowed(rhs, msg.sender));
-        }
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5) + (1 << 7) + (1 << 11);
         requireType(lhs, supportedTypes);
         result = binaryOp(Operators.fheNe, lhs, rhs, scalarByte, 0);
-        acl.allowTransient(result, msg.sender);
     }
 
     function fheGe(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
-        require(acl.isAllowed(lhs, msg.sender));
-        if (scalarByte == 0x00) {
-            require(acl.isAllowed(rhs, msg.sender));
-        }
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(lhs, supportedTypes);
         result = binaryOp(Operators.fheGe, lhs, rhs, scalarByte, 0);
-        acl.allowTransient(result, msg.sender);
     }
 
     function fheGt(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
-        require(acl.isAllowed(lhs, msg.sender));
-        if (scalarByte == 0x00) {
-            require(acl.isAllowed(rhs, msg.sender));
-        }
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(lhs, supportedTypes);
         result = binaryOp(Operators.fheGt, lhs, rhs, scalarByte, 0);
-        acl.allowTransient(result, msg.sender);
     }
 
     function fheLe(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
-        require(acl.isAllowed(lhs, msg.sender));
-        if (scalarByte == 0x00) {
-            require(acl.isAllowed(rhs, msg.sender));
-        }
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(lhs, supportedTypes);
         result = binaryOp(Operators.fheLe, lhs, rhs, scalarByte, 0);
-        acl.allowTransient(result, msg.sender);
     }
 
     function fheLt(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
-        require(acl.isAllowed(lhs, msg.sender));
-        if (scalarByte == 0x00) {
-            require(acl.isAllowed(rhs, msg.sender));
-        }
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(lhs, supportedTypes);
         result = binaryOp(Operators.fheLt, lhs, rhs, scalarByte, 0);
-        acl.allowTransient(result, msg.sender);
     }
 
     function fheMin(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
-        require(acl.isAllowed(lhs, msg.sender));
-        if (scalarByte == 0x00) {
-            require(acl.isAllowed(rhs, msg.sender));
-        }
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(lhs, supportedTypes);
         result = binaryOp(Operators.fheMin, lhs, rhs, scalarByte, typeOf(lhs));
-        acl.allowTransient(result, msg.sender);
     }
 
     function fheMax(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
-        require(acl.isAllowed(lhs, msg.sender));
-        if (scalarByte == 0x00) {
-            require(acl.isAllowed(rhs, msg.sender));
-        }
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(lhs, supportedTypes);
         result = binaryOp(Operators.fheMax, lhs, rhs, scalarByte, typeOf(lhs));
-        acl.allowTransient(result, msg.sender);
     }
 
     function fheNeg(uint256 ct) external returns (uint256 result) {
-        require(acl.isAllowed(ct, msg.sender));
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(ct, supportedTypes);
         result = unaryOp(Operators.fheNeg, ct);
-        acl.allowTransient(result, msg.sender);
     }
 
     function fheNot(uint256 ct) external returns (uint256 result) {
-        require(acl.isAllowed(ct, msg.sender));
         uint256 supportedTypes = (1 << 0) + (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(ct, supportedTypes);
         result = unaryOp(Operators.fheNot, ct);
-        acl.allowTransient(result, msg.sender);
     }
 
     function verifyCiphertext(
@@ -358,7 +275,7 @@ contract TFHEExecutor {
     }
 
     function cast(uint256 ct, bytes1 toType) external returns (uint256 result) {
-        require(acl.isAllowed(ct, msg.sender));
+        require(acl.isAllowed(ct, msg.sender), "Sender doesn't own ct on cast");
         uint256 supportedTypesInput = (1 << 0) + (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(ct, supportedTypesInput);
         uint256 supportedTypesOutput = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5); // @note: unsupported casting to ebool (use fheNe instead)
@@ -379,13 +296,9 @@ contract TFHEExecutor {
     }
 
     function fheIfThenElse(uint256 control, uint256 ifTrue, uint256 ifFalse) external returns (uint256 result) {
-        require(acl.isAllowed(control, msg.sender));
-        require(acl.isAllowed(ifTrue, msg.sender));
-        require(acl.isAllowed(ifFalse, msg.sender));
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5) + (1 << 7);
         requireType(ifTrue, supportedTypes);
         result = ternaryOp(Operators.fheIfThenElse, control, ifTrue, ifFalse);
-        acl.allowTransient(result, msg.sender);
     }
 
     function fheRand(bytes1 randType) external returns (uint256 result) {
@@ -393,8 +306,8 @@ contract TFHEExecutor {
         require((1 << uint8(randType)) & supportedTypes > 0, "Unsupported erandom type");
         result = uint256(keccak256(abi.encodePacked(Operators.fheRand, randType, counterRand)));
         result = appendType(result, uint8(randType));
-        counterRand++;
         acl.allowTransient(result, msg.sender);
+        counterRand++;
     }
 
     function fheRandBounded(uint256 upperBound, bytes1 randType) external returns (uint256 result) {
@@ -403,11 +316,9 @@ contract TFHEExecutor {
         require(isPowerOfTwo(upperBound), "UpperBound must be a power of 2");
         result = uint256(keccak256(abi.encodePacked(Operators.fheRandBounded, upperBound, randType, counterRand)));
         result = appendType(result, uint8(randType));
-        counterRand++;
         acl.allowTransient(result, msg.sender);
+        counterRand++;
     }
-
-    function cleanTransientStorage() external {}
 
     /// @notice Getter for the name and version of the contract
     /// @return string representing the name and the version of the contract

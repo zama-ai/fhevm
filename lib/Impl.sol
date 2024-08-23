@@ -40,7 +40,6 @@ interface ITFHEExecutor {
     function fheIfThenElse(uint256 control, uint256 ifTrue, uint256 ifFalse) external returns (uint256 result);
     function fheRand(bytes1 randType) external returns (uint256 result);
     function fheRandBounded(uint256 upperBound, bytes1 randType) external returns (uint256 result);
-    function cleanTransientStorage() external;
 }
 
 interface IACL {
@@ -271,7 +270,6 @@ library Impl {
 
     function cleanTransientStorage() internal {
         IACL(aclAdd).cleanTransientStorage();
-        ITFHEExecutor(tfheExecutorAdd).cleanTransientStorage();
     }
 
     function isAllowed(uint256 handle, address account) internal view returns (bool) {
