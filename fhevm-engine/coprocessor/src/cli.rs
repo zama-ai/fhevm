@@ -27,6 +27,14 @@ pub struct Args {
     #[arg(long, default_value_t = 32)]
     pub tenant_key_cache_size: i32,
 
+    /// Maximum compact inputs to upload
+    #[arg(long, default_value_t = 8)]
+    pub maximimum_compact_inputs_upload: usize,
+
+    /// Maximum compact inputs to upload
+    #[arg(long, default_value_t = 255)]
+    pub maximum_handles_per_input: u8,
+
     /// Coprocessor FHE processing threads
     #[arg(long, default_value_t = 8)]
     pub coprocessor_fhe_threads: usize,

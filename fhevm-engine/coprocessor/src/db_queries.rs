@@ -1,7 +1,7 @@
 use std::collections::{BTreeSet, HashMap};
 use std::str::FromStr;
 
-use crate::types::CoprocessorError;
+use crate::types::{CoprocessorError, TfheTenantKeys};
 use sqlx::{query, Postgres};
 
 /// Returns tenant id upon valid authorization request
@@ -55,12 +55,19 @@ pub async fn check_if_ciphertexts_exist_in_db(
 ) -> Result<HashMap<Vec<u8>, i16>, CoprocessorError> {
     let handles_to_check_in_db_vec = cts.iter().cloned().collect::<Vec<_>>();
     let ciphertexts = query!(
-        "
-            SELECT handle, ciphertext_type
+        r#"
+            -- existing computations
+            SELECT handle AS "handle!", ciphertext_type AS "ciphertext_type!"
             FROM ciphertexts
-            WHERE handle = ANY($1::BYTEA[])
-            AND tenant_id = $2
-        ",
+            WHERE tenant_id = $2
+            AND handle = ANY($1::BYTEA[])
+                UNION
+            -- pending computations
+            SELECT output_handle AS "handle!", output_type AS "ciphertext_type!"
+            FROM computations
+            WHERE tenant_id = $2
+            AND output_handle = ANY($1::BYTEA[])
+        "#,
         &handles_to_check_in_db_vec,
         tenant_id,
     )
@@ -85,4 +92,70 @@ pub async fn check_if_ciphertexts_exist_in_db(
     }
 
     Ok(result)
+}
+
+pub async fn fetch_tenant_server_key<'a, T>(tenant_id: i32, pool: T, tenant_key_cache: &std::sync::Arc<tokio::sync::RwLock<lru::LruCache<i32, TfheTenantKeys>>>)
+-> Result<tfhe::ServerKey, Box<dyn std::error::Error + Send + Sync>>
+where T: sqlx::PgExecutor<'a> + Copy
+{
+    // try getting from cache until it succeeds with populating cache
+    loop {
+        {
+            let mut w = tenant_key_cache.write().await;
+            if let Some(key) = w.get(&tenant_id) {
+                return Ok(key.sks.clone());
+            }
+        }
+
+        populate_cache_with_tenant_keys(vec![tenant_id], pool, &tenant_key_cache).await?;
+    }
+}
+
+pub async fn query_tenant_keys<'a, T>(tenants_to_query: Vec<i32>, conn: T)
+-> Result<Vec<TfheTenantKeys>, Box<dyn std::error::Error + Send + Sync>>
+where T: sqlx::PgExecutor<'a>
+{
+    let mut res = Vec::with_capacity(tenants_to_query.len());
+    let keys = query!(
+        "
+            SELECT tenant_id, pks_key, sks_key
+            FROM tenants
+            WHERE tenant_id = ANY($1::INT[])
+        ",
+        &tenants_to_query
+    )
+    .fetch_all(conn)
+    .await?;
+
+    for key in keys {
+        let sks: tfhe::ServerKey = bincode::deserialize(&key.sks_key)
+            .expect("We can't deserialize our own validated sks key");
+        let pks: tfhe::CompactPublicKey = bincode::deserialize(&key.pks_key)
+            .expect("We can't deserialize our own validated pks key");
+        res.push(TfheTenantKeys { tenant_id: key.tenant_id, sks, pks });
+    }
+
+    Ok(res)
+}
+
+pub async fn populate_cache_with_tenant_keys<'a, T>(tenants_to_query: Vec<i32>, conn: T, tenant_key_cache: &std::sync::Arc<tokio::sync::RwLock<lru::LruCache<i32, TfheTenantKeys>>>)
+-> Result<(), Box<dyn std::error::Error + Send + Sync>>
+where T: sqlx::PgExecutor<'a>
+{
+    if !tenants_to_query.is_empty() {
+        let keys = query_tenant_keys(tenants_to_query, conn).await?;
+
+        assert!(
+            keys.len() > 0,
+            "We should have keys here, otherwise our database is corrupt"
+        );
+
+        let mut key_cache = tenant_key_cache.write().await;
+
+        for key in keys {
+            key_cache.put(key.tenant_id, key);
+        }
+    }
+
+    Ok(())
 }

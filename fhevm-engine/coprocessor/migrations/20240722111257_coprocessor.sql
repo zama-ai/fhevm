@@ -2,6 +2,7 @@
 CREATE TABLE IF NOT EXISTS computations (
     tenant_id INT NOT NULL,
     output_handle BYTEA NOT NULL,
+    output_type SMALLINT NOT NULL,
     -- can be handle or scalar, depends on is_scalar field
     -- only second dependency can ever be scalar
     dependencies BYTEA[] NOT NULL,
@@ -21,8 +22,21 @@ CREATE TABLE IF NOT EXISTS ciphertexts (
     ciphertext BYTEA NOT NULL,
     ciphertext_version SMALLINT NOT NULL,
     ciphertext_type SMALLINT NOT NULL,
+    -- if ciphertext came from blob we have its reference
+    input_blob_hash BYTEA,
+    input_blob_index INT NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT NOW(),
     PRIMARY KEY (tenant_id, handle, ciphertext_version)
+);
+
+-- store for audits and historical reference
+CREATE TABLE IF NOT EXISTS input_blobs (
+    tenant_id INT NOT NULL,
+    blob_hash BYTEA NOT NULL,
+    blob_data BYTEA NOT NULL,
+    blob_ciphertext_count INT NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    PRIMARY KEY (tenant_id, blob_hash)
 );
 
 CREATE TABLE IF NOT EXISTS tenants (

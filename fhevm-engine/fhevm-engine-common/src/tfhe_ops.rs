@@ -33,9 +33,7 @@ pub fn deserialize_fhe_ciphertext(
             Ok(SupportedFheCiphertexts::FheUint64(v))
         }
         _ => {
-            return Err(FhevmError::UnknownCiphertextType(
-                input_type,
-            ));
+            return Err(FhevmError::UnknownFheType(input_type as i32));
         }
     }
 }
@@ -87,6 +85,74 @@ pub fn debug_trivial_encrypt_be_bytes(
 
 pub fn current_ciphertext_version() -> i16 {
     1
+}
+
+pub fn try_expand_ciphertext_list(
+    input_ciphertext: &[u8],
+    server_key: &tfhe::ServerKey,
+) -> Result<Vec<SupportedFheCiphertexts>, FhevmError> {
+    let mut res = Vec::new();
+
+    let the_list: tfhe::CompactCiphertextList =
+        bincode::deserialize(input_ciphertext)
+            .map_err(|e| {
+                let err: Box<(dyn std::error::Error + Send + Sync)> = e;
+                FhevmError::DeserializationError(err)
+            })?;
+
+    let expanded = the_list.expand_with_key(server_key)
+        .map_err(|e| {
+            FhevmError::CiphertextExpansionError(e)
+        })?;
+
+    for idx in 0..expanded.len() {
+        let Some(data_kind) = expanded.get_kind_of(idx) else {
+            panic!("we're itering over what ciphertext told us how many ciphertexts are there, it must exist")
+        };
+
+        match data_kind {
+            tfhe::FheTypes::Bool => {
+                let ct: tfhe::FheBool = expanded.get(idx)
+                    .expect("Index must exist")
+                    .expect("Must succeed, we just checked this is the type");
+
+                res.push(SupportedFheCiphertexts::FheBool(ct));
+            },
+            tfhe::FheTypes::Uint8 => {
+                let ct: tfhe::FheUint8 = expanded.get(idx)
+                    .expect("Index must exist")
+                    .expect("Must succeed, we just checked this is the type");
+
+                res.push(SupportedFheCiphertexts::FheUint8(ct));
+            },
+            tfhe::FheTypes::Uint16 => {
+                let ct: tfhe::FheUint16 = expanded.get(idx)
+                    .expect("Index must exist")
+                    .expect("Must succeed, we just checked this is the type");
+
+                res.push(SupportedFheCiphertexts::FheUint16(ct));
+            },
+            tfhe::FheTypes::Uint32 => {
+                let ct: tfhe::FheUint32 = expanded.get(idx)
+                    .expect("Index must exist")
+                    .expect("Must succeed, we just checked this is the type");
+
+                res.push(SupportedFheCiphertexts::FheUint32(ct));
+            },
+            tfhe::FheTypes::Uint64 => {
+                let ct: tfhe::FheUint64 = expanded.get(idx)
+                    .expect("Index must exist")
+                    .expect("Must succeed, we just checked this is the type");
+
+                res.push(SupportedFheCiphertexts::FheUint64(ct));
+            },
+            other => {
+                return Err(FhevmError::CiphertextExpansionUnsupportedCiphertextKind(other));
+            }
+        }
+    }
+
+    Ok(res)
 }
 
 // return output ciphertext type
@@ -254,9 +320,9 @@ pub fn check_fhe_operand_types(
                                 });
                             }
 
-                            let output_type = op[0] as i16;
+                            let output_type = op[0] as i32;
                             validate_fhe_type(output_type)?;
-                            Ok(output_type)
+                            Ok(output_type as i16)
                         }
                         (other_left, other_right) => {
                             let bool_to_op = |inp| {
@@ -286,10 +352,11 @@ pub fn check_fhe_operand_types(
     }
 }
 
-pub fn validate_fhe_type(input_type: i16) -> Result<(), FhevmError> {
-    match input_type {
+pub fn validate_fhe_type(input_type: i32) -> Result<(), FhevmError> {
+    let i16_type: i16 = input_type.try_into().or(Err(FhevmError::UnknownFheType(input_type)))?;
+    match i16_type {
         1 | 2 | 3 | 4 | 5 => Ok(()),
-        _ => Err(FhevmError::UnknownCiphertextType(input_type)),
+        _ => Err(FhevmError::UnknownFheType(input_type)),
     }
 }
 

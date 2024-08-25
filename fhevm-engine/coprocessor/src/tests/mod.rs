@@ -11,6 +11,7 @@ use utils::{default_api_key, wait_until_all_ciphertexts_computed};
 
 mod operators;
 mod utils;
+mod inputs;
 
 #[tokio::test]
 async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {

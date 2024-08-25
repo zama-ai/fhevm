@@ -5,8 +5,9 @@ use tfhe::prelude::FheDecrypt;
 pub enum FhevmError {
     UnknownFheOperation(i32),
     UnknownFheType(i32),
-    UnknownCiphertextType(i16),
     DeserializationError(Box<dyn std::error::Error + Sync + Send>),
+    CiphertextExpansionError(tfhe::Error),
+    CiphertextExpansionUnsupportedCiphertextKind(tfhe::FheTypes),
     FheOperationOnlyOneOperandCanBeScalar {
         fhe_operation: i32,
         fhe_operation_name: String,
@@ -78,11 +79,14 @@ impl std::fmt::Display for FhevmError {
             Self::UnknownFheType(op) => {
                 write!(f, "Unknown fhe type: {}", op)
             }
-            Self::UnknownCiphertextType(the_type) => {
-                write!(f, "Unknown input ciphertext type: {}", the_type)
-            }
             Self::DeserializationError(e) => {
                 write!(f, "error deserializing ciphertext: {:?}", e)
+            },
+            Self::CiphertextExpansionError(e) => {
+                write!(f, "error expanding compact ciphertext list: {:?}", e)
+            },
+            Self::CiphertextExpansionUnsupportedCiphertextKind(e) => {
+                write!(f, "unsupported tfhe type found while expanding ciphertexts: {:?}", e)
             },
             Self::FheOperationDoesntSupportScalar {
                 fhe_operation,

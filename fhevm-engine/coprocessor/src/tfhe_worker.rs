@@ -1,7 +1,7 @@
 use fhevm_engine_common::tfhe_ops::{
     current_ciphertext_version, deserialize_fhe_ciphertext, perform_fhe_operation,
 };
-use crate::types::TfheTenantKeys;
+use crate::{db_queries::populate_cache_with_tenant_keys, types::TfheTenantKeys};
 use fhevm_engine_common::types::SupportedFheCiphertexts;
 use sqlx::{postgres::PgListener, query, Acquire};
 use std::{
@@ -28,10 +28,9 @@ pub async fn run_tfhe_worker(
 async fn tfhe_worker_cycle(
     args: &crate::cli::Args,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let key_cache_size = 32;
     let tenant_key_cache: std::sync::Arc<tokio::sync::RwLock<lru::LruCache<i32, TfheTenantKeys>>> =
         std::sync::Arc::new(tokio::sync::RwLock::new(lru::LruCache::new(
-            NonZeroUsize::new(key_cache_size).unwrap(),
+            NonZeroUsize::new(args.tenant_key_cache_size as usize).unwrap(),
         )));
 
     let db_url = crate::utils::db_url(args);
@@ -116,42 +115,16 @@ async fn tfhe_worker_cycle(
         let tenants_to_query = tenants_to_query.into_iter().collect::<Vec<_>>();
         let keys_to_query = keys_to_query.into_iter().collect::<Vec<_>>();
 
-        if !keys_to_query.is_empty() {
-            let keys = query!(
-                "
-                SELECT tenant_id, pks_key, sks_key
-                FROM tenants
-                WHERE tenant_id = ANY($1::INT[])
-            ",
-                &keys_to_query
-            )
-            .fetch_all(trx.as_mut())
-            .await?;
-
-            assert!(
-                keys.len() > 0,
-                "We should have keys here, otherwise our database is corrupt"
-            );
-
-            let mut key_cache = tenant_key_cache.write().await;
-
-            for key in keys {
-                let sks: tfhe::ServerKey = bincode::deserialize(&key.sks_key)
-                    .expect("We can't deserialize our own validated sks key");
-                let pks: tfhe::CompactPublicKey = bincode::deserialize(&key.pks_key)
-                    .expect("We can't deserialize our own validated pks key");
-                key_cache.put(key.tenant_id, TfheTenantKeys { sks, pks });
-            }
-        }
+        populate_cache_with_tenant_keys(keys_to_query, trx.as_mut(), &tenant_key_cache).await?;
 
         // TODO: select all the ciphertexts where they're contained in the tuples
         let ciphertexts_rows = query!(
             "
-            SELECT tenant_id, handle, ciphertext, ciphertext_type
-            FROM ciphertexts
-            WHERE tenant_id = ANY($1::INT[])
-            AND handle = ANY($2::BYTEA[])
-        ",
+                SELECT tenant_id, handle, ciphertext, ciphertext_type
+                FROM ciphertexts
+                WHERE tenant_id = ANY($1::INT[])
+                AND handle = ANY($2::BYTEA[])
+            ",
             &tenants_to_query,
             &cts_to_query
         )
@@ -257,11 +230,11 @@ async fn tfhe_worker_cycle(
                     .await?;
                     let _ = query!(
                         "
-                        UPDATE computations
-                        SET is_completed = true
-                        WHERE tenant_id = $1
-                        AND output_handle = $2
-                    ",
+                            UPDATE computations
+                            SET is_completed = true
+                            WHERE tenant_id = $1
+                            AND output_handle = $2
+                        ",
                         w.tenant_id,
                         w.output_handle
                     )
@@ -271,11 +244,11 @@ async fn tfhe_worker_cycle(
                 Err((err, tenant_id, output_handle)) => {
                     let _ = query!(
                         "
-                        UPDATE computations
-                        SET is_error = true, error_message = $1
-                        WHERE tenant_id = $2
-                        AND output_handle = $3
-                    ",
+                            UPDATE computations
+                            SET is_error = true, error_message = $1
+                            WHERE tenant_id = $2
+                            AND output_handle = $3
+                        ",
                         err.to_string(),
                         tenant_id,
                         output_handle

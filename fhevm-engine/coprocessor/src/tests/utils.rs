@@ -32,6 +32,10 @@ pub fn default_api_key() -> &'static str {
     "a1503fb6-d79b-4e9e-826d-44cf262f3e05"
 }
 
+pub fn default_tenant_id() -> i32 {
+    1
+}
+
 pub async fn setup_test_app() -> Result<TestInstance, Box<dyn std::error::Error>> {
     static PORT_COUNTER: AtomicU16 = AtomicU16::new(10000);
 
@@ -83,10 +87,12 @@ pub async fn setup_test_app() -> Result<TestInstance, Box<dyn std::error::Error>
         work_items_batch_size: 40,
         tenant_key_cache_size: 4,
         coprocessor_fhe_threads: 4,
+        maximum_handles_per_input: 255,
         tokio_threads: 2,
         pg_pool_max_connections: 2,
         server_addr: format!("127.0.0.1:{app_port}"),
         database_url: Some(db_url.clone()),
+        maximimum_compact_inputs_upload: 10,
     };
 
     std::thread::spawn(move || {
@@ -113,7 +119,7 @@ pub async fn wait_until_all_ciphertexts_computed(test_instance: &TestInstance) -
     loop {
         tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
         let count = sqlx::query!(
-            "SELECT count(*) FROM computations WHERE NOT is_completed AND NOT is_error"
+            "SELECT count(*) FROM computations WHERE NOT is_completed"
         )
         .fetch_one(&pool)
         .await?;

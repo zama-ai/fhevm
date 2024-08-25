@@ -9,7 +9,20 @@ pub enum CoprocessorError {
     CiphertextHandleLongerThan64Bytes,
     CiphertextHandleMustBeAtLeast1Byte(String),
     UnexistingInputCiphertextsFound(Vec<String>),
+    AlreadyExistingResultHandlesFound(Vec<String>),
     OutputHandleIsAlsoInputHandle(String),
+    DuplicateResultHandleInInputsUploaded {
+        hex_handle: String,
+    },
+    MoreThanMaximumCompactInputCiphertextsUploaded {
+        input_count: usize,
+        maximum_allowed: usize,
+    },
+    CompactInputCiphertextHasMoreCiphertextThanLimitAllows {
+        input_blob_index: usize,
+        input_ciphertexts_in_blob: usize,
+        input_maximum_ciphertexts_allowed: usize,
+    },
     ComputationInputIsUndefined {
         computation_output_handle: String,
         computation_inputs_index: usize,
@@ -36,6 +49,15 @@ impl std::fmt::Display for CoprocessorError {
             Self::DuplicateOutputHandleInBatch(op) => {
                 write!(f, "Duplicate output handle in ciphertext batch: {}", op)
             }
+            Self::DuplicateResultHandleInInputsUploaded { hex_handle } => {
+                write!(f, "Duplicate result handle in inputs detected: {hex_handle}")
+            }
+            Self::MoreThanMaximumCompactInputCiphertextsUploaded { input_count, maximum_allowed } => {
+                write!(f, "More than maximum input blobs uploaded, maximum allowed: {maximum_allowed}, uploaded: {input_count}")
+            }
+            Self::CompactInputCiphertextHasMoreCiphertextThanLimitAllows { input_blob_index, input_ciphertexts_in_blob, input_maximum_ciphertexts_allowed  } => {
+                write!(f, "Input blob contains mismatching amount of ciphertexts, input blob index: {input_blob_index}, ciphertexts in blob: {input_ciphertexts_in_blob}, maximum ciphertexts in blob allowed: {input_maximum_ciphertexts_allowed}")
+            }
             Self::CiphertextHandleLongerThan64Bytes => {
                 write!(f, "Found ciphertext handle longer than 64 bytes")
             }
@@ -44,6 +66,9 @@ impl std::fmt::Display for CoprocessorError {
             }
             Self::UnexistingInputCiphertextsFound(handles) => {
                 write!(f, "Ciphertexts not found: {:?}", handles)
+            }
+            Self::AlreadyExistingResultHandlesFound(e) => {
+                write!(f, "Handles not found in the database: {:?}", e)
             }
             Self::OutputHandleIsAlsoInputHandle(handle) => {
                 write!(
@@ -95,6 +120,7 @@ impl From<CoprocessorError> for tonic::Status {
 }
 
 pub struct TfheTenantKeys {
+    pub tenant_id: i32,
     pub sks: tfhe::ServerKey,
     // maybe we'll need this
     #[allow(dead_code)]
