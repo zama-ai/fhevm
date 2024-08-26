@@ -63,8 +63,7 @@ task('task:deployIdentity').setAction(async function (taskArguments: TaskArgumen
 task('task:deployACL').setAction(async function (taskArguments: TaskArguments, { ethers }) {
   const deployer = (await ethers.getSigners())[9];
   const factory = await ethers.getContractFactory('ACL');
-  const envConfigExec = dotenv.parse(fs.readFileSync('lib/.env.exec'));
-  const acl = await factory.connect(deployer).deploy(envConfigExec.TFHE_EXECUTOR_CONTRACT_ADDRESS);
+  const acl = await factory.connect(deployer).deploy();
   await acl.waitForDeployment();
   const address = await acl.getAddress();
   const envConfigAcl = dotenv.parse(fs.readFileSync('lib/.env.acl'));

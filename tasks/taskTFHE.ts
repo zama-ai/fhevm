@@ -51,13 +51,13 @@ task('task:computeTFHEExecutorAddress').setAction(async function (taskArguments:
 
 pragma solidity ^0.8.24;
 
-address constant fhevmCoprocessorAdd = ${execAddress};\n`;
+address constant tfheExecutorAdd = ${execAddress};\n`;
 
   try {
-    fs.writeFileSync('./lib/FHEVMCoprocessorAddress.sol', solidityTemplateCoprocessor, { encoding: 'utf8', flag: 'w' });
-    console.log('./lib/FHEVMCoprocessorAddress.sol file generated successfully!');
+    fs.writeFileSync('./lib/TFHEExecutorAddress.sol', solidityTemplateCoprocessor, { encoding: 'utf8', flag: 'w' });
+    console.log('./lib/TFHEExecutorAddress.sol file generated successfully!');
   } catch (error) {
-    console.error('Failed to write ./lib/FHEVMCoprocessorAddress.sol', error);
+    console.error('Failed to write ./lib/TFHEExecutorAddress.sol', error);
   }
 });
 
