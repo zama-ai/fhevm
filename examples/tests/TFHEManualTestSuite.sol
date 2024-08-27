@@ -12,6 +12,10 @@ contract TFHEManualTestSuite {
     euint64 public res64;
     eaddress public resAdd;
 
+    constructor() payable {
+        TFHE.depositForThis(msg.value);
+    }
+
     function eqEbytes256(einput inp1, bytes calldata inputProof1, einput inp2, bytes calldata inputProof2) external {
         ebytes256 input1 = TFHE.asEbytes256(inp1, inputProof1);
         ebytes256 input2 = TFHE.asEbytes256(inp2, inputProof2);

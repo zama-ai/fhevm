@@ -98,3 +98,16 @@ task('task:deployKMSVerifier').setAction(async function (taskArguments: TaskArgu
   }
   console.log('KMSVerifier was deployed at address:', address);
 });
+
+task('task:deployFHEPayment').setAction(async function (taskArguments: TaskArguments, { ethers }) {
+  const deployer = (await ethers.getSigners())[9];
+  const factory = await ethers.getContractFactory('FHEPayment');
+  const exec = await factory.connect(deployer).deploy();
+  await exec.waitForDeployment();
+  const address = await exec.getAddress();
+  const envConfig = dotenv.parse(fs.readFileSync('lib/.env.fhepayment'));
+  if (address !== envConfig.FHE_PAYMENT_CONTRACT_ADDRESS) {
+    throw new Error(`The nonce of the deployer account is not corret. Please relaunch a clean instance of the fhEVM`);
+  }
+  console.log('FHEPayment was deployed at address:', address);
+});

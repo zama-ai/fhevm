@@ -55,7 +55,8 @@ contract BlindAuction is Ownable2Step, GatewayCaller {
         EncryptedERC20 _tokenContract,
         uint256 biddingTime,
         bool isStoppable
-    ) Ownable(msg.sender) {
+    ) payable Ownable(msg.sender) {
+        TFHE.depositForThis(msg.value);
         beneficiary = _beneficiary;
         tokenContract = _tokenContract;
         endTime = block.timestamp + biddingTime;

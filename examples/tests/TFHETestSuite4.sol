@@ -10,6 +10,10 @@ contract TFHETestSuite4 {
     euint32 public res32;
     euint64 public res64;
 
+    constructor() payable {
+        TFHE.depositForThis(msg.value);
+    }
+
     function or_euint32_euint8(einput a, einput b, bytes calldata inputProof) public {
         euint32 aProc = TFHE.asEuint32(a, inputProof);
         euint8 bProc = TFHE.asEuint8(b, inputProof);

@@ -5,6 +5,7 @@ pragma solidity ^0.8.24;
 import "./TFHE.sol";
 import "./TFHEExecutorAddress.sol";
 import "./ACLAddress.sol";
+import "./FHEPaymentAddress.sol";
 
 interface ITFHEExecutor {
     function fheAdd(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
@@ -47,6 +48,12 @@ interface IACL {
     function allow(uint256 handle, address account) external;
     function cleanTransientStorage() external;
     function isAllowed(uint256 handle, address account) external view returns (bool);
+}
+
+interface IFHEPayment {
+    function depositETH(address account) external payable;
+    function withdrawETH(uint256 amount, address receiver) external;
+    function getAvailableDepositsETH(address account) external view returns (uint256);
 }
 
 library Impl {
@@ -274,5 +281,17 @@ library Impl {
 
     function isAllowed(uint256 handle, address account) internal view returns (bool) {
         return IACL(aclAdd).isAllowed(handle, account);
+    }
+
+    function depositForAccount(address account, uint256 amount) internal {
+        IFHEPayment(fhePaymentAdd).depositETH{value: amount}(account);
+    }
+
+    function withdrawToAccount(address account, uint256 amount) internal {
+        IFHEPayment(fhePaymentAdd).withdrawETH(amount, account);
+    }
+
+    function getDepositedBalance(address account) internal view returns (uint256) {
+        return IFHEPayment(fhePaymentAdd).getAvailableDepositsETH(account);
     }
 }

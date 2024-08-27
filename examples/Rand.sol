@@ -11,6 +11,10 @@ contract Rand {
     euint64 public value64;
     euint64 public value64Bounded;
 
+    constructor() payable {
+        TFHE.depositForThis(msg.value);
+    }
+
     function generate8() public {
         value8 = TFHE.randEuint8();
         TFHE.allow(value8, address(this));

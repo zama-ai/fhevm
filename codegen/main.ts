@@ -1,6 +1,8 @@
 import { mkdirSync, writeFileSync } from 'fs';
 
 import { ALL_OPERATORS, Network, SUPPORTED_BITS, checks, networkCodegenContext } from './common';
+import operatorsPrices from './operatorsPrices.json';
+import { generateFHEPayment } from './payments';
 import * as t from './templates';
 import * as testgen from './testgen';
 
@@ -15,6 +17,7 @@ function generateAllFiles() {
   writeFileSync('lib/Impl.sol', t.implSol(context, operators));
   writeFileSync('lib/TFHE.sol', tfheSolSource);
   writeFileSync('lib/FhevmLib.sol', t.fhevmLibSol(operators));
+  writeFileSync('lib/FHEPayment.sol', generateFHEPayment(operatorsPrices));
   mkdirSync('examples/tests', { recursive: true });
   ovShards.forEach((os) => {
     writeFileSync(`examples/tests/TFHETestSuite${os.shardNumber}.sol`, testgen.generateSmartContract(os));

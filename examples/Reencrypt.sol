@@ -14,7 +14,9 @@ contract Reencrypt {
     eaddress public xAddress;
     ebytes256 public yBytes256;
 
-    constructor() {
+    constructor() payable {
+        TFHE.depositForThis(msg.value);
+
         xBool = TFHE.asEbool(true);
         TFHE.allow(xBool, address(this));
         TFHE.allow(xBool, msg.sender);

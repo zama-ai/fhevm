@@ -5803,4 +5803,28 @@ library TFHE {
     function allowTransient(ebytes256 value, address account) internal {
         Impl.allowTransient(ebytes256.unwrap(value), account);
     }
+
+    function depositForAccount(address account, uint256 amount) internal {
+        Impl.depositForAccount(account, amount);
+    }
+
+    function depositForThis(uint256 amount) internal {
+        Impl.depositForAccount(address(this), amount);
+    }
+
+    function withdrawToAccount(address account, uint256 amount) internal {
+        Impl.withdrawToAccount(account, amount);
+    }
+
+    function withdrawToThis(uint256 amount) internal {
+        Impl.withdrawToAccount(address(this), amount);
+    }
+
+    function getDepositedBalanceOfAccount(address account) internal view returns (uint256) {
+        return Impl.getDepositedBalance(account);
+    }
+
+    function getDepositedBalanceOfThis() internal view returns (uint256) {
+        return Impl.getDepositedBalance(address(this));
+    }
 }

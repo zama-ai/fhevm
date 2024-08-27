@@ -31,7 +31,8 @@ contract TestAsyncDecrypt is GatewayCaller {
 
     uint256 public latestRequestID;
 
-    constructor() {
+    constructor() payable {
+        TFHE.depositForThis(msg.value);
         xBool = TFHE.asEbool(true);
         TFHE.allow(xBool, address(this));
         xUint4 = TFHE.asEuint4(4);

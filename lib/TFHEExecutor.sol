@@ -3,7 +3,10 @@
 pragma solidity ^0.8.24;
 
 import "./ACL.sol";
+import "./FHEPayment.sol";
+import "./FhevmLib.sol";
 import "./ACLAddress.sol";
+import "./FHEPaymentAddress.sol";
 import "./FhevmLib.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 
@@ -21,7 +24,8 @@ contract TFHEExecutor {
     uint256 private constant MINOR_VERSION = 1;
     uint256 private constant PATCH_VERSION = 0;
 
-    ACL private constant acl = ACL(address(aclAdd));
+    ACL private constant acl = ACL(aclAdd);
+    FHEPayment private constant fhePayment = FHEPayment(fhePaymentAdd);
 
     uint256 public counterRand = 0; // counter used for computing handles of randomness operators
 
@@ -91,10 +95,9 @@ contract TFHEExecutor {
         Operators op,
         uint256 lhs,
         uint256 rhs,
-        bytes1 scalarByte,
+        bytes1 scalar,
         uint8 resultType
     ) internal returns (uint256 result) {
-        bytes1 scalar = scalarByte & 0x01;
         require(acl.isAllowed(lhs, msg.sender), "Sender doesn't own lhs on op");
         if (scalar == 0x00) {
             require(acl.isAllowed(rhs, msg.sender), "Sender doesn't own rhs on op");
@@ -124,137 +127,201 @@ contract TFHEExecutor {
     function fheAdd(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(lhs, supportedTypes);
-        result = binaryOp(Operators.fheAdd, lhs, rhs, scalarByte, typeOf(lhs));
+        uint8 lhsType = typeOf(lhs);
+        bytes1 scalar = scalarByte & 0x01;
+        fhePayment.payForFheAdd(msg.sender, lhsType, scalar);
+        result = binaryOp(Operators.fheAdd, lhs, rhs, scalar, lhsType);
     }
 
     function fheSub(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(lhs, supportedTypes);
-        result = binaryOp(Operators.fheSub, lhs, rhs, scalarByte, typeOf(lhs));
+        uint8 lhsType = typeOf(lhs);
+        bytes1 scalar = scalarByte & 0x01;
+        fhePayment.payForFheSub(msg.sender, lhsType, scalar);
+        result = binaryOp(Operators.fheSub, lhs, rhs, scalar, lhsType);
     }
 
     function fheMul(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(lhs, supportedTypes);
-        result = binaryOp(Operators.fheMul, lhs, rhs, scalarByte, typeOf(lhs));
+        uint8 lhsType = typeOf(lhs);
+        bytes1 scalar = scalarByte & 0x01;
+        fhePayment.payForFheMul(msg.sender, lhsType, scalar);
+        result = binaryOp(Operators.fheMul, lhs, rhs, scalar, lhsType);
     }
 
     function fheDiv(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
-        require(scalarByte == 0x01, "Only fheDiv by a scalar is supported");
+        require(scalarByte & 0x01 == 0x01, "Only fheDiv by a scalar is supported");
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(lhs, supportedTypes);
-        result = binaryOp(Operators.fheDiv, lhs, rhs, scalarByte, typeOf(lhs));
+        uint8 lhsType = typeOf(lhs);
+        bytes1 scalar = scalarByte & 0x01;
+        fhePayment.payForFheDiv(msg.sender, lhsType, scalar);
+        result = binaryOp(Operators.fheDiv, lhs, rhs, scalar, lhsType);
     }
 
     function fheRem(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
-        require(scalarByte == 0x01, "Only fheRem by a scalar is supported");
+        require(scalarByte & 0x01 == 0x01, "Only fheRem by a scalar is supported");
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(lhs, supportedTypes);
-        result = binaryOp(Operators.fheRem, lhs, rhs, scalarByte, typeOf(lhs));
+        uint8 lhsType = typeOf(lhs);
+        bytes1 scalar = scalarByte & 0x01;
+        fhePayment.payForFheRem(msg.sender, lhsType, scalar);
+        result = binaryOp(Operators.fheRem, lhs, rhs, scalar, lhsType);
     }
 
     function fheBitAnd(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
-        require(scalarByte == 0x00, "Only fheBitAnd by a ciphertext is supported");
+        require(scalarByte & 0x01 == 0x00, "Only fheBitAnd by a ciphertext is supported");
         uint256 supportedTypes = (1 << 0) + (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(lhs, supportedTypes);
-        result = binaryOp(Operators.fheBitAnd, lhs, rhs, scalarByte, typeOf(lhs));
+        uint8 lhsType = typeOf(lhs);
+        bytes1 scalar = scalarByte & 0x01;
+        fhePayment.payForFheBitAnd(msg.sender, lhsType, scalar);
+        result = binaryOp(Operators.fheBitAnd, lhs, rhs, scalar, lhsType);
     }
 
     function fheBitOr(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
-        require(scalarByte == 0x00, "Only fheBitOr by a ciphertext is supported");
+        require(scalarByte & 0x01 == 0x00, "Only fheBitOr by a ciphertext is supported");
         uint256 supportedTypes = (1 << 0) + (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(lhs, supportedTypes);
-        result = binaryOp(Operators.fheBitOr, lhs, rhs, scalarByte, typeOf(lhs));
+        uint8 lhsType = typeOf(lhs);
+        bytes1 scalar = scalarByte & 0x01;
+        fhePayment.payForFheBitOr(msg.sender, lhsType, scalar);
+        result = binaryOp(Operators.fheBitOr, lhs, rhs, scalar, lhsType);
     }
 
     function fheBitXor(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
-        require(scalarByte == 0x00, "Only fheBitXor by a ciphertext is supported");
+        require(scalarByte & 0x01 == 0x00, "Only fheBitXor by a ciphertext is supported");
         uint256 supportedTypes = (1 << 0) + (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(lhs, supportedTypes);
-        result = binaryOp(Operators.fheBitXor, lhs, rhs, scalarByte, typeOf(lhs));
+        uint8 lhsType = typeOf(lhs);
+        bytes1 scalar = scalarByte & 0x01;
+        fhePayment.payForFheBitXor(msg.sender, lhsType, scalar);
+        result = binaryOp(Operators.fheBitXor, lhs, rhs, scalar, lhsType);
     }
 
     function fheShl(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(lhs, supportedTypes);
-        result = binaryOp(Operators.fheShl, lhs, rhs, scalarByte, typeOf(lhs));
+        uint8 lhsType = typeOf(lhs);
+        bytes1 scalar = scalarByte & 0x01;
+        fhePayment.payForFheShl(msg.sender, lhsType, scalar);
+        result = binaryOp(Operators.fheShl, lhs, rhs, scalar, lhsType);
     }
 
     function fheShr(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(lhs, supportedTypes);
-        result = binaryOp(Operators.fheShr, lhs, rhs, scalarByte, typeOf(lhs));
+        uint8 lhsType = typeOf(lhs);
+        bytes1 scalar = scalarByte & 0x01;
+        fhePayment.payForFheShr(msg.sender, lhsType, scalar);
+        result = binaryOp(Operators.fheShr, lhs, rhs, scalar, lhsType);
     }
 
     function fheRotl(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(lhs, supportedTypes);
-        result = binaryOp(Operators.fheRotl, lhs, rhs, scalarByte, typeOf(lhs));
+        uint8 lhsType = typeOf(lhs);
+        bytes1 scalar = scalarByte & 0x01;
+        fhePayment.payForFheRotl(msg.sender, lhsType, scalar);
+        result = binaryOp(Operators.fheRotl, lhs, rhs, scalar, lhsType);
     }
 
     function fheRotr(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(lhs, supportedTypes);
-        result = binaryOp(Operators.fheRotr, lhs, rhs, scalarByte, typeOf(lhs));
+        uint8 lhsType = typeOf(lhs);
+        bytes1 scalar = scalarByte & 0x01;
+        fhePayment.payForFheRotr(msg.sender, lhsType, scalar);
+        result = binaryOp(Operators.fheRotr, lhs, rhs, scalar, lhsType);
     }
 
     function fheEq(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5) + (1 << 7) + (1 << 11);
         requireType(lhs, supportedTypes);
-        result = binaryOp(Operators.fheEq, lhs, rhs, scalarByte, 0);
+        uint8 lhsType = typeOf(lhs);
+        bytes1 scalar = scalarByte & 0x01;
+        fhePayment.payForFheEq(msg.sender, lhsType, scalar);
+        result = binaryOp(Operators.fheEq, lhs, rhs, scalar, 0);
     }
 
     function fheNe(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5) + (1 << 7) + (1 << 11);
         requireType(lhs, supportedTypes);
-        result = binaryOp(Operators.fheNe, lhs, rhs, scalarByte, 0);
+        uint8 lhsType = typeOf(lhs);
+        bytes1 scalar = scalarByte & 0x01;
+        fhePayment.payForFheNe(msg.sender, lhsType, scalar);
+        result = binaryOp(Operators.fheNe, lhs, rhs, scalar, 0);
     }
 
     function fheGe(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(lhs, supportedTypes);
-        result = binaryOp(Operators.fheGe, lhs, rhs, scalarByte, 0);
+        uint8 lhsType = typeOf(lhs);
+        bytes1 scalar = scalarByte & 0x01;
+        fhePayment.payForFheGe(msg.sender, lhsType, scalar);
+        result = binaryOp(Operators.fheGe, lhs, rhs, scalar, 0);
     }
 
     function fheGt(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(lhs, supportedTypes);
-        result = binaryOp(Operators.fheGt, lhs, rhs, scalarByte, 0);
+        uint8 lhsType = typeOf(lhs);
+        bytes1 scalar = scalarByte & 0x01;
+        fhePayment.payForFheGt(msg.sender, lhsType, scalar);
+        result = binaryOp(Operators.fheGt, lhs, rhs, scalar, 0);
     }
 
     function fheLe(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(lhs, supportedTypes);
-        result = binaryOp(Operators.fheLe, lhs, rhs, scalarByte, 0);
+        uint8 lhsType = typeOf(lhs);
+        bytes1 scalar = scalarByte & 0x01;
+        fhePayment.payForFheLe(msg.sender, lhsType, scalar);
+        result = binaryOp(Operators.fheLe, lhs, rhs, scalar, 0);
     }
 
     function fheLt(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(lhs, supportedTypes);
-        result = binaryOp(Operators.fheLt, lhs, rhs, scalarByte, 0);
+        uint8 lhsType = typeOf(lhs);
+        bytes1 scalar = scalarByte & 0x01;
+        fhePayment.payForFheLt(msg.sender, lhsType, scalar);
+        result = binaryOp(Operators.fheLt, lhs, rhs, scalar, 0);
     }
 
     function fheMin(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(lhs, supportedTypes);
-        result = binaryOp(Operators.fheMin, lhs, rhs, scalarByte, typeOf(lhs));
+        uint8 lhsType = typeOf(lhs);
+        bytes1 scalar = scalarByte & 0x01;
+        fhePayment.payForFheMin(msg.sender, lhsType, scalar);
+        result = binaryOp(Operators.fheMin, lhs, rhs, scalar, lhsType);
     }
 
     function fheMax(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result) {
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(lhs, supportedTypes);
-        result = binaryOp(Operators.fheMax, lhs, rhs, scalarByte, typeOf(lhs));
+        uint8 lhsType = typeOf(lhs);
+        bytes1 scalar = scalarByte & 0x01;
+        fhePayment.payForFheMax(msg.sender, lhsType, scalar);
+        result = binaryOp(Operators.fheMax, lhs, rhs, scalar, lhsType);
     }
 
     function fheNeg(uint256 ct) external returns (uint256 result) {
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(ct, supportedTypes);
+        uint8 typeCt = typeOf(ct);
+        fhePayment.payForFheNeg(msg.sender, typeCt);
         result = unaryOp(Operators.fheNeg, ct);
     }
 
     function fheNot(uint256 ct) external returns (uint256 result) {
         uint256 supportedTypes = (1 << 0) + (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
         requireType(ct, supportedTypes);
+        uint8 typeCt = typeOf(ct);
+        fhePayment.payForFheNot(msg.sender, typeCt);
         result = unaryOp(Operators.fheNot, ct);
     }
 
@@ -282,6 +349,7 @@ contract TFHEExecutor {
         require((1 << uint8(toType)) & supportedTypesOutput > 0, "Unsupported output type");
         uint8 typeCt = typeOf(ct);
         require(bytes1(typeCt) != toType, "Cannot cast to same type");
+        fhePayment.payForCast(msg.sender, typeCt);
         result = uint256(keccak256(abi.encodePacked(Operators.cast, ct, toType)));
         result = appendType(result, uint8(toType));
         acl.allowTransient(result, msg.sender);
@@ -289,33 +357,41 @@ contract TFHEExecutor {
 
     function trivialEncrypt(uint256 pt, bytes1 toType) external returns (uint256 result) {
         uint256 supportedTypes = (1 << 0) + (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5) + (1 << 7);
-        require((1 << uint8(toType)) & supportedTypes > 0, "Unsupported type");
+        uint8 toT = uint8(toType);
+        require((1 << toT) & supportedTypes > 0, "Unsupported type");
+        fhePayment.payForTrivialEncrypt(msg.sender, toT);
         result = uint256(keccak256(abi.encodePacked(Operators.trivialEncrypt, pt, toType)));
-        result = appendType(result, uint8(toType));
+        result = appendType(result, toT);
         acl.allowTransient(result, msg.sender);
     }
 
     function fheIfThenElse(uint256 control, uint256 ifTrue, uint256 ifFalse) external returns (uint256 result) {
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5) + (1 << 7);
         requireType(ifTrue, supportedTypes);
+        uint8 typeCt = typeOf(ifTrue);
+        fhePayment.payForIfThenElse(msg.sender, typeCt);
         result = ternaryOp(Operators.fheIfThenElse, control, ifTrue, ifFalse);
     }
 
     function fheRand(bytes1 randType) external returns (uint256 result) {
         uint256 supportedTypes = (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
-        require((1 << uint8(randType)) & supportedTypes > 0, "Unsupported erandom type");
+        uint8 randT = uint8(randType);
+        require((1 << randT) & supportedTypes > 0, "Unsupported erandom type");
+        fhePayment.payForFheRand(msg.sender, randT);
         result = uint256(keccak256(abi.encodePacked(Operators.fheRand, randType, counterRand)));
-        result = appendType(result, uint8(randType));
+        result = appendType(result, randT);
         acl.allowTransient(result, msg.sender);
         counterRand++;
     }
 
     function fheRandBounded(uint256 upperBound, bytes1 randType) external returns (uint256 result) {
         uint256 supportedTypes = (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5);
-        require((1 << uint8(randType)) & supportedTypes > 0, "Unsupported erandom type");
+        uint8 randT = uint8(randType);
+        require((1 << randT) & supportedTypes > 0, "Unsupported erandom type");
         require(isPowerOfTwo(upperBound), "UpperBound must be a power of 2");
+        fhePayment.payForFheRandBounded(msg.sender, randT);
         result = uint256(keccak256(abi.encodePacked(Operators.fheRandBounded, upperBound, randType, counterRand)));
-        result = appendType(result, uint8(randType));
+        result = appendType(result, randT);
         acl.allowTransient(result, msg.sender);
         counterRand++;
     }
