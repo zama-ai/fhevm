@@ -1,6 +1,14 @@
+use std::{sync::Arc, time::Duration};
+
 use clap::Parser;
 use executor::{cli::Args, server};
-use fhevm_engine_common::keys::{FhevmKeys, SerializedFhevmKeys};
+use fhevm_engine_common::{
+    keys::{FhevmKeys, SerializedFhevmKeys},
+    tfhe_ops::current_ciphertext_version,
+    types::Handle,
+};
+use sha3::{Digest, Keccak256};
+use tokio::{sync::OnceCell, time::sleep};
 
 pub struct TestInstance {
     pub keys: FhevmKeys,
@@ -8,7 +16,7 @@ pub struct TestInstance {
 }
 
 impl TestInstance {
-    pub fn new() -> Self {
+    pub async fn new() -> Self {
         // Get defaults by parsing a cmd line without any arguments.
         let args = Args::parse_from(&["test"]);
 
@@ -20,8 +28,24 @@ impl TestInstance {
         std::thread::spawn(move || server::start(&args).expect("start server"));
 
         // TODO: a hacky way to wait for the server to start
-        std::thread::sleep(std::time::Duration::from_millis(150));
+        sleep(Duration::from_secs(6)).await;
 
         instance
     }
+
+    pub fn input_handle(&self, list: &[u8], index: u8, ct_type: u8) -> Handle {
+        let mut handle: Handle = Keccak256::digest(list).into();
+        handle[29] = index;
+        handle[30] = ct_type;
+        handle[31] = current_ciphertext_version() as u8;
+        handle
+    }
+}
+
+static TEST: OnceCell<Arc<TestInstance>> = OnceCell::const_new();
+
+pub async fn get_test() -> Arc<TestInstance> {
+    TEST.get_or_init(|| async { Arc::new(TestInstance::new().await) })
+        .await
+        .clone()
 }

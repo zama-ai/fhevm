@@ -1,5 +1,6 @@
 use tfhe::integer::U256;
 use tfhe::prelude::FheDecrypt;
+use tfhe::CompressedCiphertextListBuilder;
 
 #[derive(Debug)]
 pub enum FhevmError {
@@ -86,13 +87,17 @@ impl std::fmt::Display for FhevmError {
             }
             Self::DeserializationError(e) => {
                 write!(f, "error deserializing ciphertext: {:?}", e)
-            },
+            }
             Self::CiphertextExpansionError(e) => {
                 write!(f, "error expanding compact ciphertext list: {:?}", e)
-            },
+            }
             Self::CiphertextExpansionUnsupportedCiphertextKind(e) => {
-                write!(f, "unsupported tfhe type found while expanding ciphertexts: {:?}", e)
-            },
+                write!(
+                    f,
+                    "unsupported tfhe type found while expanding ciphertexts: {:?}",
+                    e
+                )
+            }
             Self::FheOperationDoesntSupportScalar {
                 fhe_operation,
                 fhe_operation_name,
@@ -152,19 +157,36 @@ impl std::fmt::Display for FhevmError {
             } => {
                 write!(f, "unexpected operand size for cast, fhe operation: {fhe_operation}, fhe operation name: {fhe_operation_name}, expected bytes: {}, got bytes: {}", expected_scalar_operand_bytes, got_bytes)
             }
-            Self::FheIfThenElseUnexpectedOperandTypes { fhe_operation, fhe_operation_name, first_operand_type, first_expected_operand_type, .. } => {
+            Self::FheIfThenElseUnexpectedOperandTypes {
+                fhe_operation,
+                fhe_operation_name,
+                first_operand_type,
+                first_expected_operand_type,
+                ..
+            } => {
                 write!(f, "fhe if then else first operand should always be FheBool, fhe operation: {fhe_operation}, fhe operation name: {fhe_operation_name}, first operand type: {first_operand_type}, first operand expected type: {first_expected_operand_type}")
             }
-            Self::FheIfThenElseMismatchingSecondAndThirdOperatorTypes { fhe_operation, fhe_operation_name, second_operand_type, third_operand_type } => {
+            Self::FheIfThenElseMismatchingSecondAndThirdOperatorTypes {
+                fhe_operation,
+                fhe_operation_name,
+                second_operand_type,
+                third_operand_type,
+            } => {
                 write!(f, "fhe if then else second and third operand types don't match, fhe operation: {fhe_operation}, fhe operation name: {fhe_operation_name}, second operand type: {second_operand_type}, third operand type: {third_operand_type}")
             }
-            Self::FheOperationOnlyOneOperandCanBeScalar { fhe_operation, fhe_operation_name, scalar_operand_count, max_scalar_operands  } => {
+            Self::FheOperationOnlyOneOperandCanBeScalar {
+                fhe_operation,
+                fhe_operation_name,
+                scalar_operand_count,
+                max_scalar_operands,
+            } => {
                 write!(f, "only one operand can be scalar, fhe operation: {fhe_operation}, fhe operation name: {fhe_operation_name}, second operand count: {scalar_operand_count}, max scalar operands: {max_scalar_operands}")
             }
         }
     }
 }
 
+#[derive(Clone)]
 pub enum SupportedFheCiphertexts {
     FheBool(tfhe::FheBool),
     FheUint8(tfhe::FheUint8),
@@ -201,6 +223,7 @@ pub enum SupportedFheOperations {
     FheNot = 21,
     FheCast = 30,
     FheIfThenElse = 31,
+    FheGetInputCiphertext = 32,
 }
 
 #[derive(PartialEq, Eq)]
@@ -259,6 +282,23 @@ impl SupportedFheCiphertexts {
             }
         }
     }
+
+    pub fn compress(self) -> Vec<u8> {
+        let mut builder = CompressedCiphertextListBuilder::new();
+        match self {
+            SupportedFheCiphertexts::FheBool(c) => builder.push(c),
+            SupportedFheCiphertexts::FheUint8(c) => builder.push(c),
+            SupportedFheCiphertexts::FheUint16(c) => builder.push(c),
+            SupportedFheCiphertexts::FheUint32(c) => builder.push(c),
+            SupportedFheCiphertexts::FheUint64(c) => builder.push(c),
+            SupportedFheCiphertexts::Scalar(_) => {
+                // TODO: Need to fix that, scalars are not ciphertexts.
+                panic!("cannot compress a scalar");
+            }
+        };
+        let list = builder.build().expect("ciphertext compression");
+        bincode::serialize(&list).expect("compressed list serialization")
+    }
 }
 
 impl SupportedFheOperations {
@@ -290,6 +330,7 @@ impl SupportedFheOperations {
             SupportedFheOperations::FheIfThenElse | SupportedFheOperations::FheCast => {
                 FheOperationType::Other
             }
+            SupportedFheOperations::FheGetInputCiphertext => FheOperationType::Other,
         }
     }
 
@@ -344,6 +385,7 @@ impl TryFrom<i16> for SupportedFheOperations {
             21 => Ok(SupportedFheOperations::FheNot),
             30 => Ok(SupportedFheOperations::FheCast),
             31 => Ok(SupportedFheOperations::FheIfThenElse),
+            32 => Ok(SupportedFheOperations::FheGetInputCiphertext),
             _ => Err(FhevmError::UnknownFheOperation(value as i32)),
         };
 
@@ -376,3 +418,5 @@ impl From<SupportedFheOperations> for i16 {
         value as i16
     }
 }
+
+pub type Handle = [u8; 32];

@@ -1,11 +1,11 @@
 use crate::types::{FheOperationType, FhevmError, SupportedFheCiphertexts, SupportedFheOperations};
 use tfhe::{
     prelude::{
-        CastInto, FheEq, FheMax, FheMin, FheOrd, FheTryTrivialEncrypt, IfThenElse, RotateLeft, RotateRight
+        CastInto, FheEq, FheMax, FheMin, FheOrd, FheTryTrivialEncrypt, IfThenElse, RotateLeft,
+        RotateRight,
     },
     FheBool, FheUint16, FheUint32, FheUint64, FheUint8,
 };
-
 
 pub fn deserialize_fhe_ciphertext(
     input_type: i16,
@@ -13,23 +13,28 @@ pub fn deserialize_fhe_ciphertext(
 ) -> Result<SupportedFheCiphertexts, FhevmError> {
     match input_type {
         1 => {
-            let v: tfhe::FheBool = bincode::deserialize(input_bytes).map_err(|e| FhevmError::DeserializationError(e))?;
+            let v: tfhe::FheBool = bincode::deserialize(input_bytes)
+                .map_err(|e| FhevmError::DeserializationError(e))?;
             Ok(SupportedFheCiphertexts::FheBool(v))
         }
         2 => {
-            let v: tfhe::FheUint8 = bincode::deserialize(input_bytes).map_err(|e| FhevmError::DeserializationError(e))?;
+            let v: tfhe::FheUint8 = bincode::deserialize(input_bytes)
+                .map_err(|e| FhevmError::DeserializationError(e))?;
             Ok(SupportedFheCiphertexts::FheUint8(v))
         }
         3 => {
-            let v: tfhe::FheUint16 = bincode::deserialize(input_bytes).map_err(|e| FhevmError::DeserializationError(e))?;
+            let v: tfhe::FheUint16 = bincode::deserialize(input_bytes)
+                .map_err(|e| FhevmError::DeserializationError(e))?;
             Ok(SupportedFheCiphertexts::FheUint16(v))
         }
         4 => {
-            let v: tfhe::FheUint32 = bincode::deserialize(input_bytes).map_err(|e| FhevmError::DeserializationError(e))?;
+            let v: tfhe::FheUint32 = bincode::deserialize(input_bytes)
+                .map_err(|e| FhevmError::DeserializationError(e))?;
             Ok(SupportedFheCiphertexts::FheUint32(v))
         }
         5 => {
-            let v: tfhe::FheUint64 = bincode::deserialize(input_bytes).map_err(|e| FhevmError::DeserializationError(e))?;
+            let v: tfhe::FheUint64 = bincode::deserialize(input_bytes)
+                .map_err(|e| FhevmError::DeserializationError(e))?;
             Ok(SupportedFheCiphertexts::FheUint64(v))
         }
         _ => {
@@ -84,7 +89,7 @@ pub fn debug_trivial_encrypt_be_bytes(
 }
 
 pub fn current_ciphertext_version() -> i16 {
-    1
+    0
 }
 
 pub fn try_expand_ciphertext_list(
@@ -94,16 +99,14 @@ pub fn try_expand_ciphertext_list(
     let mut res = Vec::new();
 
     let the_list: tfhe::CompactCiphertextList =
-        bincode::deserialize(input_ciphertext)
-            .map_err(|e| {
-                let err: Box<(dyn std::error::Error + Send + Sync)> = e;
-                FhevmError::DeserializationError(err)
-            })?;
-
-    let expanded = the_list.expand_with_key(server_key)
-        .map_err(|e| {
-            FhevmError::CiphertextExpansionError(e)
+        bincode::deserialize(input_ciphertext).map_err(|e| {
+            let err: Box<(dyn std::error::Error + Send + Sync)> = e;
+            FhevmError::DeserializationError(err)
         })?;
+
+    let expanded = the_list
+        .expand_with_key(server_key)
+        .map_err(|e| FhevmError::CiphertextExpansionError(e))?;
 
     for idx in 0..expanded.len() {
         let Some(data_kind) = expanded.get_kind_of(idx) else {
@@ -112,42 +115,49 @@ pub fn try_expand_ciphertext_list(
 
         match data_kind {
             tfhe::FheTypes::Bool => {
-                let ct: tfhe::FheBool = expanded.get(idx)
+                let ct: tfhe::FheBool = expanded
+                    .get(idx)
                     .expect("Index must exist")
                     .expect("Must succeed, we just checked this is the type");
 
                 res.push(SupportedFheCiphertexts::FheBool(ct));
-            },
+            }
             tfhe::FheTypes::Uint8 => {
-                let ct: tfhe::FheUint8 = expanded.get(idx)
+                let ct: tfhe::FheUint8 = expanded
+                    .get(idx)
                     .expect("Index must exist")
                     .expect("Must succeed, we just checked this is the type");
 
                 res.push(SupportedFheCiphertexts::FheUint8(ct));
-            },
+            }
             tfhe::FheTypes::Uint16 => {
-                let ct: tfhe::FheUint16 = expanded.get(idx)
+                let ct: tfhe::FheUint16 = expanded
+                    .get(idx)
                     .expect("Index must exist")
                     .expect("Must succeed, we just checked this is the type");
 
                 res.push(SupportedFheCiphertexts::FheUint16(ct));
-            },
+            }
             tfhe::FheTypes::Uint32 => {
-                let ct: tfhe::FheUint32 = expanded.get(idx)
+                let ct: tfhe::FheUint32 = expanded
+                    .get(idx)
                     .expect("Index must exist")
                     .expect("Must succeed, we just checked this is the type");
 
                 res.push(SupportedFheCiphertexts::FheUint32(ct));
-            },
+            }
             tfhe::FheTypes::Uint64 => {
-                let ct: tfhe::FheUint64 = expanded.get(idx)
+                let ct: tfhe::FheUint64 = expanded
+                    .get(idx)
                     .expect("Index must exist")
                     .expect("Must succeed, we just checked this is the type");
 
                 res.push(SupportedFheCiphertexts::FheUint64(ct));
-            },
+            }
             other => {
-                return Err(FhevmError::CiphertextExpansionUnsupportedCiphertextKind(other));
+                return Err(FhevmError::CiphertextExpansionUnsupportedCiphertextKind(
+                    other,
+                ));
             }
         }
     }
@@ -167,7 +177,9 @@ pub fn check_fhe_operand_types(
     let fhe_op: SupportedFheOperations = fhe_operation.try_into()?;
     let fhe_bool_type = 1;
 
-    let scalar_operands = is_input_handle_scalar.iter().enumerate()
+    let scalar_operands = is_input_handle_scalar
+        .iter()
+        .enumerate()
         .filter(|(_, is_scalar)| **is_scalar)
         .collect::<Vec<_>>();
 
@@ -184,7 +196,8 @@ pub fn check_fhe_operand_types(
 
     if is_scalar {
         assert_eq!(
-            scalar_operands.len(), 1,
+            scalar_operands.len(),
+            1,
             "We checked already that not more than 1 scalar operand can be present"
         );
 
@@ -197,7 +210,7 @@ pub fn check_fhe_operand_types(
             });
         }
 
-        let scalar_input_index =scalar_operands[0].0;
+        let scalar_input_index = scalar_operands[0].0;
         if scalar_input_index != 1 {
             return Err(FhevmError::FheOperationOnlySecondOperandCanBeScalar {
                 scalar_input_index,
@@ -219,13 +232,11 @@ pub fn check_fhe_operand_types(
             }
 
             if !is_scalar && input_types[0] != input_types[1] {
-                return Err(
-                    FhevmError::FheOperationDoesntHaveUniformTypesAsInput {
-                        fhe_operation,
-                        fhe_operation_name: format!("{:?}", fhe_op),
-                        operand_types: input_types.to_vec(),
-                    },
-                );
+                return Err(FhevmError::FheOperationDoesntHaveUniformTypesAsInput {
+                    fhe_operation,
+                    fhe_operation_name: format!("{:?}", fhe_op),
+                    operand_types: input_types.to_vec(),
+                });
             }
 
             if input_types[0] == fhe_bool_type && !fhe_op.supports_bool_inputs() {
@@ -305,12 +316,14 @@ pub fn check_fhe_operand_types(
                     }
 
                     if input_types[1] != input_types[2] {
-                        return Err(FhevmError::FheIfThenElseMismatchingSecondAndThirdOperatorTypes {
-                            fhe_operation,
-                            fhe_operation_name: format!("{:?}", fhe_op),
-                            second_operand_type: input_types[1],
-                            third_operand_type: input_types[2],
-                        });
+                        return Err(
+                            FhevmError::FheIfThenElseMismatchingSecondAndThirdOperatorTypes {
+                                fhe_operation,
+                                fhe_operation_name: format!("{:?}", fhe_op),
+                                second_operand_type: input_types[1],
+                                third_operand_type: input_types[2],
+                            },
+                        );
                     }
 
                     Ok(input_types[1])
@@ -330,12 +343,14 @@ pub fn check_fhe_operand_types(
                         (false, true) => {
                             let op = &input_handles[1];
                             if op.len() != 1 {
-                                return Err(FhevmError::UnexpectedCastOperandSizeForScalarOperand {
-                                    fhe_operation,
-                                    fhe_operation_name: format!("{:?}", fhe_op),
-                                    expected_scalar_operand_bytes: 1,
-                                    got_bytes: op.len(),
-                                });
+                                return Err(
+                                    FhevmError::UnexpectedCastOperandSizeForScalarOperand {
+                                        fhe_operation,
+                                        fhe_operation_name: format!("{:?}", fhe_op),
+                                        expected_scalar_operand_bytes: 1,
+                                        got_bytes: op.len(),
+                                    },
+                                );
                             }
 
                             let output_type = op[0] as i32;
@@ -343,9 +358,8 @@ pub fn check_fhe_operand_types(
                             Ok(output_type as i16)
                         }
                         (other_left, other_right) => {
-                            let bool_to_op = |inp| {
-                                (if inp { "scalar" } else { "handle" }).to_string()
-                            };
+                            let bool_to_op =
+                                |inp| (if inp { "scalar" } else { "handle" }).to_string();
 
                             return Err(FhevmError::UnexpectedCastOperandTypes {
                                 fhe_operation,
@@ -371,7 +385,9 @@ pub fn check_fhe_operand_types(
 }
 
 pub fn validate_fhe_type(input_type: i32) -> Result<(), FhevmError> {
-    let i16_type: i16 = input_type.try_into().or(Err(FhevmError::UnknownFheType(input_type)))?;
+    let i16_type: i16 = input_type
+        .try_into()
+        .or(Err(FhevmError::UnknownFheType(input_type)))?;
     match i16_type {
         1 | 2 | 3 | 4 | 5 => Ok(()),
         _ => Err(FhevmError::UnknownFheType(input_type)),
@@ -401,10 +417,10 @@ pub fn does_fhe_operation_support_both_encrypted_operands(op: &SupportedFheOpera
 }
 
 pub fn perform_fhe_operation(
-    fhe_operation: i16,
+    fhe_operation_int: i16,
     input_operands: &[SupportedFheCiphertexts],
 ) -> Result<SupportedFheCiphertexts, FhevmError> {
-    let fhe_operation: SupportedFheOperations = fhe_operation.try_into()?;
+    let fhe_operation: SupportedFheOperations = fhe_operation_int.try_into()?;
     match fhe_operation {
         SupportedFheOperations::FheAdd => {
             assert_eq!(input_operands.len(), 2);
@@ -1382,7 +1398,7 @@ pub fn perform_fhe_operation(
                     panic!("Mismatch between cmux operand types")
                 }
             }
-        },
+        }
         SupportedFheOperations::FheCast => match (&input_operands[0], &input_operands[1]) {
             (SupportedFheCiphertexts::FheBool(inp), SupportedFheCiphertexts::Scalar(op)) => {
                 let (l, h) = op.to_low_high_u128();
@@ -1533,5 +1549,8 @@ pub fn perform_fhe_operation(
                 panic!("unknown cast pair")
             }
         },
+        SupportedFheOperations::FheGetInputCiphertext => {
+            Err(FhevmError::UnknownFheOperation(fhe_operation_int as i32))
+        }
     }
 }

@@ -31,4 +31,5 @@ enum FheOperation {
   FHE_NOT = 21;
   FHE_CAST = 30;
   FHE_IF_THEN_ELSE = 31;
+  FHE_GET_INPUT_CIPHERTEXT = 32;
 }

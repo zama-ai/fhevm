@@ -16,10 +16,13 @@ service FhevmExecutor {
 message SyncComputeRequest {
     // Ordered list of computations.
     repeated SyncComputation computations = 1;
+
+    // The input lists if there are input ciphertexts in the computation. Empty if no inputs.
+    repeated bytes input_lists = 2;
 }
 
 message SyncComputeResponse {
-    oneof result {
+    oneof resp {
         SyncComputeError error = 1;
 
         // Note: handles in `result_ciphertexts` will be the same ones as `SyncComputeRequest.result_handles`.
@@ -39,13 +42,14 @@ message SyncComputation {
 
     // The result handles after execution the operation on the inputs.
     repeated bytes result_handles = 3;
-
-    // The input lists if there are input ciphertexts in the computation. Empty if no inputs.
-    repeated bytes input_lists = 4;
 }
 
 enum SyncComputeError {
-    BAD_INPUT = 0;
+    BAD_INPUT_LIST = 0;
+    INVALID_OPERATION = 1;
+    UNSUPPORTED_OPERATION = 2;
+    BAD_INPUTS = 3;
+    UNKNOWN_HANDLE = 4;
 }
 
 // Represents a ciphertext that is an expanded input or a result of FHE computation.
@@ -59,7 +63,7 @@ message SyncInput {
         // A ciphertext and its corresponding handle.
         Ciphertext ciphertext = 1;
 
-        // A handle that points to an input ciphertext in `SyncComputation.input_lists`.
+        // A handle that points to an input ciphertext in `SyncComputeRequest.input_lists`.
         bytes input_handle = 2;
 
         // A scalar value. Dependent on the operation, but typically big-endian integers.
