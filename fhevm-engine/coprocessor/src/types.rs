@@ -56,13 +56,13 @@ impl std::fmt::Display for CoprocessorError {
                 write!(f, "More than maximum input blobs uploaded, maximum allowed: {maximum_allowed}, uploaded: {input_count}")
             }
             Self::CompactInputCiphertextHasMoreCiphertextThanLimitAllows { input_blob_index, input_ciphertexts_in_blob, input_maximum_ciphertexts_allowed  } => {
-                write!(f, "Input blob contains mismatching amount of ciphertexts, input blob index: {input_blob_index}, ciphertexts in blob: {input_ciphertexts_in_blob}, maximum ciphertexts in blob allowed: {input_maximum_ciphertexts_allowed}")
+                write!(f, "Input blob contains too many ciphertexts, input blob index: {input_blob_index}, ciphertexts in blob: {input_ciphertexts_in_blob}, maximum ciphertexts in blob allowed: {input_maximum_ciphertexts_allowed}")
             }
             Self::CiphertextHandleLongerThan64Bytes => {
                 write!(f, "Found ciphertext handle longer than 64 bytes")
             }
             Self::CiphertextHandleMustBeAtLeast1Byte(handle) => {
-                write!(f, "Found ciphertext handle less than 4 bytes: {handle}")
+                write!(f, "Found ciphertext handle is empty: {handle}")
             }
             Self::UnexistingInputCiphertextsFound(handles) => {
                 write!(f, "Ciphertexts not found: {:?}", handles)

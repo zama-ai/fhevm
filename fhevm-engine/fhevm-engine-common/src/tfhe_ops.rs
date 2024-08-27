@@ -165,6 +165,7 @@ pub fn check_fhe_operand_types(
     assert_eq!(input_handles.len(), is_input_handle_scalar.len());
 
     let fhe_op: SupportedFheOperations = fhe_operation.try_into()?;
+    let fhe_bool_type = 1;
 
     let scalar_operands = is_input_handle_scalar.iter().enumerate()
         .filter(|(_, is_scalar)| **is_scalar)
@@ -227,6 +228,14 @@ pub fn check_fhe_operand_types(
                 );
             }
 
+            if input_types[0] == fhe_bool_type && !fhe_op.supports_bool_inputs() {
+                return Err(FhevmError::OperationDoesntSupportBooleanInputs {
+                    fhe_operation,
+                    fhe_operation_name: format!("{:?}", fhe_op),
+                    operand_type: fhe_bool_type,
+                });
+            }
+
             // special case for div operation, rhs for scalar must be zero
             if is_scalar && fhe_op == SupportedFheOperations::FheDiv {
                 let all_zeroes = input_handles[1].iter().all(|i| *i == 0u8);
@@ -241,7 +250,7 @@ pub fn check_fhe_operand_types(
             }
 
             if fhe_op.is_comparison() {
-                return Ok(1); // fhe bool type
+                return Ok(fhe_bool_type); // fhe bool type
             }
 
             return Ok(input_types[0]);
@@ -254,6 +263,15 @@ pub fn check_fhe_operand_types(
                     fhe_operation_name: format!("{:?}", fhe_op),
                     expected_operands,
                     got_operands: input_types.len(),
+                });
+            }
+
+            let fhe_bool_type = 1;
+            if input_types[0] == fhe_bool_type && !fhe_op.supports_bool_inputs() {
+                return Err(FhevmError::OperationDoesntSupportBooleanInputs {
+                    fhe_operation,
+                    fhe_operation_name: format!("{:?}", fhe_op),
+                    operand_type: fhe_bool_type,
                 });
             }
 
@@ -1023,6 +1041,9 @@ pub fn perform_fhe_operation(
             assert_eq!(input_operands.len(), 2);
 
             match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheBool(a), SupportedFheCiphertexts::FheBool(b)) => {
+                    Ok(SupportedFheCiphertexts::FheBool(a.eq(b)))
+                }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
                     Ok(SupportedFheCiphertexts::FheBool(a.eq(b)))
                 }
@@ -1034,6 +1055,11 @@ pub fn perform_fhe_operation(
                 }
                 (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::FheUint64(b)) => {
                     Ok(SupportedFheCiphertexts::FheBool(a.eq(b)))
+                }
+                (SupportedFheCiphertexts::FheBool(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    let (l, h) = b.to_low_high_u128();
+                    let non_zero = l > 0 || h > 0;
+                    Ok(SupportedFheCiphertexts::FheBool(a.eq(non_zero)))
                 }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
                     // TODO: figure out type to add correctly 256 bit operands from handles
@@ -1068,6 +1094,9 @@ pub fn perform_fhe_operation(
             assert_eq!(input_operands.len(), 2);
 
             match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheBool(a), SupportedFheCiphertexts::FheBool(b)) => {
+                    Ok(SupportedFheCiphertexts::FheBool(a.ne(b)))
+                }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
                     Ok(SupportedFheCiphertexts::FheBool(a.ne(b)))
                 }
@@ -1079,6 +1108,11 @@ pub fn perform_fhe_operation(
                 }
                 (SupportedFheCiphertexts::FheUint64(a), SupportedFheCiphertexts::FheUint64(b)) => {
                     Ok(SupportedFheCiphertexts::FheBool(a.ne(b)))
+                }
+                (SupportedFheCiphertexts::FheBool(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    let (l, h) = b.to_low_high_u128();
+                    let non_zero = l > 0 || h > 0;
+                    Ok(SupportedFheCiphertexts::FheBool(a.ne(non_zero)))
                 }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
                     // TODO: figure out type to add correctly 256 bit operands from handles
@@ -1293,6 +1327,7 @@ pub fn perform_fhe_operation(
             assert_eq!(input_operands.len(), 1);
 
             match &input_operands[0] {
+                SupportedFheCiphertexts::FheBool(a) => Ok(SupportedFheCiphertexts::FheBool(!a)),
                 SupportedFheCiphertexts::FheUint8(a) => Ok(SupportedFheCiphertexts::FheUint8(!a)),
                 SupportedFheCiphertexts::FheUint16(a) => Ok(SupportedFheCiphertexts::FheUint16(!a)),
                 SupportedFheCiphertexts::FheUint32(a) => Ok(SupportedFheCiphertexts::FheUint32(!a)),
