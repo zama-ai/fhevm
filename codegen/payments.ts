@@ -14,8 +14,9 @@ export function generateFHEPayment(priceData: PriceData): string {
   
   import "./TFHEExecutorAddress.sol";
   import "@openzeppelin/contracts/utils/Strings.sol";
+  import "@openzeppelin/contracts/access/Ownable2Step.sol";
   
-  contract FHEPayment {
+  contract FHEPayment is Ownable2Step {
       /// @notice Name of the contract
       string private constant CONTRACT_NAME = "FHEPayment";
   
@@ -27,10 +28,20 @@ export function generateFHEPayment(priceData: PriceData): string {
   
       uint256 private constant FHE_GAS_BLOCKLIMIT = 10_000_000;
   
-      uint128 private lastBlock;
-      uint128 private currentBlockConsumption;
+      uint64 private lastBlock;
+      uint64 private currentBlockConsumption;
+      uint64 public claimableUsedFHEGas;
   
       mapping(address payer => uint256 depositedAmount) private depositsETH;
+
+      constructor() Ownable(msg.sender) {}
+
+      function recoverBurntFunds(address receiver) external onlyOwner {
+        uint64 claimableUsedFHEGas_ = claimableUsedFHEGas;
+        claimableUsedFHEGas = 0;
+        (bool success, ) = receiver.call{value: claimableUsedFHEGas_}("");
+        require(success, "Withdrawal failed");
+      }
   
       function depositETH(address account) external payable {
           depositsETH[account] += msg.value;
@@ -47,7 +58,7 @@ export function generateFHEPayment(priceData: PriceData): string {
       }
   
       function checkIfNewBlock() private {
-          uint128 lastBlock_ = uint128(block.number);
+          uint64 lastBlock_ = uint64(block.number);
           if (block.number > lastBlock) {
               lastBlock = lastBlock_;
               currentBlockConsumption = 0;
@@ -115,6 +126,7 @@ function generatePriceChecks(prices: { [key: string]: number }): string {
       ([resultType, price]) => `        if (resultType == ${resultType}) {
             depositsETH[payer] -= ${price};
             currentBlockConsumption += ${price};
+            claimableUsedFHEGas += ${price};
         }`,
     )
     .join(' else ');
