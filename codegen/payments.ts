@@ -15,6 +15,14 @@ export function generateFHEPayment(priceData: PriceData): string {
   import "./TFHEExecutorAddress.sol";
   import "@openzeppelin/contracts/utils/Strings.sol";
   import "@openzeppelin/contracts/access/Ownable2Step.sol";
+
+  error FHEGasBlockLimitExceeded();
+  error CallerMustBeTFHEExecutorContract();
+  error OnlyScalarOperationsAreSupported();
+  error OnlyNonScalarOperationsAreSupported();
+  error RecoveryFailed();
+  error WithdrawalFailed();
+  error AccountNotEnoughFunded();
   
   contract FHEPayment is Ownable2Step {
       /// @notice Name of the contract
@@ -40,7 +48,7 @@ export function generateFHEPayment(priceData: PriceData): string {
         uint64 claimableUsedFHEGas_ = claimableUsedFHEGas;
         claimableUsedFHEGas = 0;
         (bool success, ) = receiver.call{value: claimableUsedFHEGas_}("");
-        require(success, "Withdrawal failed");
+        if(!success) revert RecoveryFailed();
       }
   
       function depositETH(address account) external payable {
@@ -50,11 +58,21 @@ export function generateFHEPayment(priceData: PriceData): string {
       function withdrawETH(uint256 amount, address receiver) external {
           depositsETH[msg.sender] -= amount;
           (bool success, ) = receiver.call{value: amount}("");
-          require(success, "Withdrawal failed");
+          if(!success) revert WithdrawalFailed();
       }
   
       function getAvailableDepositsETH(address account) external view returns (uint256) {
           return depositsETH[account];
+      }
+
+      function updateFunding(address payer, uint256 paidAmount) private {
+        uint256 depositedAmount = depositsETH[payer];
+        if(paidAmount>depositedAmount) revert AccountNotEnoughFunded();
+        unchecked{
+          depositsETH[payer] = depositedAmount - paidAmount;
+        }
+        currentBlockConsumption += uint64(paidAmount);
+        claimableUsedFHEGas += uint64(paidAmount);
       }
   
       function checkIfNewBlock() private {
@@ -69,12 +87,12 @@ export function generateFHEPayment(priceData: PriceData): string {
     const functionName = `payFor${operation.charAt(0).toUpperCase() + operation.slice(1)}`;
     if (data.binary) {
       output += `    function ${functionName}(address payer, uint8 resultType, bytes1 scalarByte) external {
-        require(msg.sender == tfheExecutorAddress, "Caller must be TFHEExecutor contract");
+        if(msg.sender != tfheExecutorAddress) revert CallerMustBeTFHEExecutorContract();
         checkIfNewBlock();
 `;
     } else {
       output += `    function ${functionName}(address payer, uint8 resultType) external {
-        require(msg.sender == tfheExecutorAddress, "Caller must be TFHEExecutor contract");
+        if(msg.sender != tfheExecutorAddress) revert CallerMustBeTFHEExecutorContract();
 `;
     }
 
@@ -85,16 +103,16 @@ ${generatePriceChecks(data.scalar)}
 ${generatePriceChecks(data.nonScalar)}
         }`;
     } else if (data.scalar) {
-      output += `        require(scalarByte == 0x01, "Only scalar operations are supported");`;
+      output += `        if(scalarByte != 0x01) revert OnlyScalarOperationsAreSupported();`;
       output += `${generatePriceChecks(data.scalar)}`;
     } else if (data.nonScalar) {
-      output += `        require(scalarByte == 0x00, "Only non-scalar operations are supported");`;
+      output += `        if(scalarByte != 0x00) revert OnlyNonScalarOperationsAreSupported();`;
       output += `${generatePriceChecks(data.nonScalar)}`;
     } else {
       if (data.types) output += `${generatePriceChecks(data.types)}`;
     }
 
-    output += `require(currentBlockConsumption <= FHE_GAS_BLOCKLIMIT, "FHEGas block limit exceeded");
+    output += `if (currentBlockConsumption >= FHE_GAS_BLOCKLIMIT) revert FHEGasBlockLimitExceeded();
     }\n\n`;
   }
 
@@ -124,9 +142,7 @@ function generatePriceChecks(prices: { [key: string]: number }): string {
   return Object.entries(prices)
     .map(
       ([resultType, price]) => `        if (resultType == ${resultType}) {
-            depositsETH[payer] -= ${price};
-            currentBlockConsumption += ${price};
-            claimableUsedFHEGas += ${price};
+        updateFunding(payer, ${price});
         }`,
     )
     .join(' else ');
