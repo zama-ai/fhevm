@@ -41,6 +41,11 @@ pub enum FhevmError {
         expected_operands: usize,
         got_operands: usize,
     },
+    OperationDoesntSupportBooleanInputs {
+        fhe_operation: i32,
+        fhe_operation_name: String,
+        operand_type: i16,
+    },
     FheIfThenElseUnexpectedOperandTypes {
         fhe_operation: i32,
         fhe_operation_name: String,
@@ -117,6 +122,13 @@ impl std::fmt::Display for FhevmError {
                 got_operands,
             } => {
                 write!(f, "fhe operation number {fhe_operation} ({fhe_operation_name}) received unexpected operand count, expected: {expected_operands}, received: {got_operands}")
+            }
+            Self::OperationDoesntSupportBooleanInputs {
+                fhe_operation,
+                fhe_operation_name,
+                operand_type,
+            } => {
+                write!(f, "fhe operation number {fhe_operation} ({fhe_operation_name}) does not support booleans as inputs, input type: {operand_type}")
             }
             Self::FheOperationOnlySecondOperandCanBeScalar {
                 scalar_input_index,
@@ -289,6 +301,15 @@ impl SupportedFheOperations {
             | SupportedFheOperations::FheGt
             | SupportedFheOperations::FheLe
             | SupportedFheOperations::FheLt => true,
+            _ => false,
+        }
+    }
+
+    pub fn supports_bool_inputs(&self) -> bool {
+        match self {
+            SupportedFheOperations::FheEq
+            | SupportedFheOperations::FheNe
+            | SupportedFheOperations::FheNot => true,
             _ => false,
         }
     }
