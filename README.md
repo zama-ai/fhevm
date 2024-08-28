@@ -24,8 +24,6 @@
   <a href="https://slsa.dev"><img alt="SLSA 3" src="https://slsa.dev/images/gh-badge-level3.svg" /></a>
 </p>
 
-
-
 ## About
 
 ### What is fhEVM
@@ -133,10 +131,9 @@ _More examples are available [here](https://github.com/zama-ai/fhevm/tree/main/e
   <a href="#about" > ↑ Back to top </a>
 </p>
 
->[!Note]
->**Zama 5-Question Developer Survey**
+> [!Note] >**Zama 5-Question Developer Survey**
 >
->We want to hear from you! Take 1 minute to share your thoughts and helping us enhance our documentation and libraries. 👉 **[Click here](https://www.zama.ai/developer-survey)** to participate. 
+> We want to hear from you! Take 1 minute to share your thoughts and helping us enhance our documentation and libraries. 👉 **[Click here](https://www.zama.ai/developer-survey)** to participate.
 
 ## Resources
 

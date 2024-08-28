@@ -1,6 +1,5 @@
 # See all tutorials
 
-
 ## Start here
 
 - [\[Video tutorial\] How to Write Confidential Smart Contracts Using Zama's fhEVM](https://www.zama.ai/post/video-tutorial-how-to-write-confidential-smart-contracts-using-zamas-fhevm) - October 2023
