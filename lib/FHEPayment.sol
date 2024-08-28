@@ -25,17 +25,19 @@ contract FHEPayment is Ownable2Step {
     address public immutable tfheExecutorAddress = tfheExecutorAdd;
 
     uint256 private constant FHE_GAS_BLOCKLIMIT = 10_000_000;
+    uint256 private constant MIN_FHE_GASPRICE = 10_000_000; // minimum of 0.01 Gwei
+    uint256 private constant FHE_GASPRICE_NATIVE_RATIO = 1000; // fhe gas price is set to 0.1% of native gas price (if above minimum)
 
-    uint64 private lastBlock;
-    uint64 private currentBlockConsumption;
-    uint64 public claimableUsedFHEGas;
+    uint256 private lastBlock;
+    uint256 private currentBlockConsumption;
+    uint256 public claimableUsedFHEGas;
 
     mapping(address payer => uint256 depositedAmount) private depositsETH;
 
     constructor() Ownable(msg.sender) {}
 
     function recoverBurntFunds(address receiver) external onlyOwner {
-        uint64 claimableUsedFHEGas_ = claimableUsedFHEGas;
+        uint256 claimableUsedFHEGas_ = claimableUsedFHEGas;
         claimableUsedFHEGas = 0;
         (bool success, ) = receiver.call{value: claimableUsedFHEGas_}("");
         if (!success) revert RecoveryFailed();
@@ -55,18 +57,21 @@ contract FHEPayment is Ownable2Step {
         return depositsETH[account];
     }
 
-    function updateFunding(address payer, uint256 paidAmount) private {
+    function updateFunding(address payer, uint256 paidAmountGas) private {
+        uint256 ratio_gas = (tx.gasprice * FHE_GASPRICE_NATIVE_RATIO) / 1_000_000;
+        uint256 effective_fhe_gasPrice = ratio_gas > MIN_FHE_GASPRICE ? ratio_gas : MIN_FHE_GASPRICE;
+        uint256 paidAmountWei = effective_fhe_gasPrice * paidAmountGas;
         uint256 depositedAmount = depositsETH[payer];
-        if (paidAmount > depositedAmount) revert AccountNotEnoughFunded();
+        if (paidAmountWei > depositedAmount) revert AccountNotEnoughFunded();
         unchecked {
-            depositsETH[payer] = depositedAmount - paidAmount;
+            depositsETH[payer] = depositedAmount - paidAmountWei;
         }
-        currentBlockConsumption += uint64(paidAmount);
-        claimableUsedFHEGas += uint64(paidAmount);
+        currentBlockConsumption += paidAmountGas;
+        claimableUsedFHEGas += paidAmountWei;
     }
 
     function checkIfNewBlock() private {
-        uint64 lastBlock_ = uint64(block.number);
+        uint256 lastBlock_ = block.number;
         if (block.number > lastBlock) {
             lastBlock = lastBlock_;
             currentBlockConsumption = 0;

@@ -21,7 +21,7 @@ async function deployTfheManualTestFixture(): Promise<TFHEManualTestSuite> {
 
   const contractFactory = await ethers.getContractFactory('TFHEManualTestSuite');
   const contract = await contractFactory.connect(admin).deploy({
-    value: ethers.parseEther('0.0001'),
+    value: ethers.parseEther('0.001'),
   });
   await contract.waitForDeployment();
 

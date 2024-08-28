@@ -82,7 +82,7 @@ async function deployTfheTestFixture${os.shardNumber}(): Promise<TFHETestSuite${
 
   const contractFactory = await ethers.getContractFactory('TFHETestSuite${os.shardNumber}');
   const contract = await contractFactory.connect(admin).deploy({
-    value: ethers.parseEther('0.0001'),
+    value: ethers.parseEther('0.001'),
   });
   await contract.waitForDeployment();
 

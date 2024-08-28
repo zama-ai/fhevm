@@ -8,7 +8,7 @@ export async function deployRandFixture(): Promise<Rand> {
 
   const contractFactory = await ethers.getContractFactory('Rand');
   const contract = await contractFactory.connect(signers.alice).deploy({
-    value: ethers.parseEther('0.0001'),
+    value: ethers.parseEther('0.001'),
   });
   await contract.waitForDeployment();
 

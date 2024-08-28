@@ -16,7 +16,7 @@ describe('TestAsyncDecrypt', function () {
     // TODO: remove following 8 lines when the gateway bug will be fixed
     const contractFactory = await ethers.getContractFactory('TestAsyncDecrypt');
     this.contract = await contractFactory.connect(this.signers.alice).deploy({
-      value: ethers.parseEther('0.0001'),
+      value: ethers.parseEther('0.001'),
     });
     await this.contract.waitForDeployment();
     this.contractAddress = await this.contract.getAddress();
@@ -30,7 +30,7 @@ describe('TestAsyncDecrypt', function () {
 
   beforeEach(async function () {
     const contractFactory = await ethers.getContractFactory('TestAsyncDecrypt');
-    this.contract = await contractFactory.connect(this.signers.alice).deploy({ value: ethers.parseEther('0.0001') });
+    this.contract = await contractFactory.connect(this.signers.alice).deploy({ value: ethers.parseEther('0.001') });
     this.contractAddress = await this.contract.getAddress();
     this.instances = await createInstances(this.signers);
   });
