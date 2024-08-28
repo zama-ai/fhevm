@@ -41,11 +41,15 @@ fn supported_bits() -> &'static [i32] {
 
 fn supported_types() -> &'static [i32] {
     &[
-        1, // bool
+        0, // bool
+        // 1, TODO: add 4 bit support
         2, // 8 bit
         3, // 16 bit
         4, // 32 bit
         5, // 64 bit
+        // 6, TODO: add 128 bit support
+        // 7, TODO: add 160 bit support
+        // 8, TODO: add 256 bit support
     ]
 }
 
@@ -332,6 +336,7 @@ async fn test_fhe_casts() -> Result<(), Box<dyn std::error::Error>> {
         expected_result: String,
     }
 
+    let fhe_bool = 0;
     let mut output_handles = Vec::new();
     let mut enc_request_payload = Vec::new();
     let mut async_computations = Vec::new();
@@ -342,7 +347,7 @@ async fn test_fhe_casts() -> Result<(), Box<dyn std::error::Error>> {
             let output_handle = next_handle();
             let input = 7;
             let (_, inp_bytes) = BigInt::from(input).to_bytes_be();
-            let output = if *type_to == 1 || *type_from == 1 {
+            let output = if *type_to == fhe_bool || *type_from == fhe_bool {
                 // if bool output is 1
                 1
             } else {
@@ -361,7 +366,7 @@ async fn test_fhe_casts() -> Result<(), Box<dyn std::error::Error>> {
                 type_from: *type_from,
                 type_to: *type_to,
                 input,
-                expected_result: if *type_to == 1 {
+                expected_result: if *type_to == fhe_bool {
                     (output > 0).to_string()
                 } else {
                     output.to_string()
@@ -472,23 +477,25 @@ async fn test_fhe_if_then_else() -> Result<(), Box<dyn std::error::Error>> {
     let mut async_computations = Vec::new();
     let mut if_then_else_outputs: Vec<IfThenElseOutput> = Vec::new();
 
+    let fhe_bool_type = 0;
     let false_handle = next_handle();
     let true_handle = next_handle();
     enc_request_payload.push(DebugEncryptRequestSingle {
         handle: false_handle.clone(),
         le_value: BigInt::from(0).to_bytes_be().1,
-        output_type: 1,
+        output_type: fhe_bool_type,
     });
     enc_request_payload.push(DebugEncryptRequestSingle {
         handle: true_handle.clone(),
         le_value: BigInt::from(1).to_bytes_be().1,
-        output_type: 1,
+        output_type: fhe_bool_type,
     });
 
+    let fhe_bool_type = 0;
     for input_types in supported_types() {
         let left_handle = next_handle();
         let right_handle = next_handle();
-        let is_input_bool = *input_types == 1;
+        let is_input_bool = *input_types == fhe_bool_type;
         let (left_input, right_input) =
             if is_input_bool {
                 (0, 1)
@@ -516,7 +523,7 @@ async fn test_fhe_if_then_else() -> Result<(), Box<dyn std::error::Error>> {
                 input_bool: test_value,
                 left_input,
                 right_input,
-                expected_result: if *input_types == 1 {
+                expected_result: if *input_types == fhe_bool_type {
                     (expected_result > 0).to_string()
                 } else {
                     expected_result.to_string()
@@ -623,8 +630,9 @@ fn generate_binary_test_cases() -> Vec<BinaryOperatorTestCase> {
         }
         let expected_output = compute_expected_binary_output(&lhs, &rhs, op, bits);
         let operand = op as i32;
+        let fhe_bool_type = 0;
         let expected_output_type = if op.is_comparison() {
-            1 // FheBool
+            fhe_bool_type
         } else {
             supported_bits_to_bit_type_in_db(bits)
         };

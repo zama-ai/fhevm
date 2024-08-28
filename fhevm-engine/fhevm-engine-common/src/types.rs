@@ -236,6 +236,10 @@ pub enum SupportedFheOperations {
     FheNot = 21,
     FheCast = 30,
     FheIfThenElse = 31,
+    FheCast = 23,
+    FheIfThenElse = 25,
+    FheRand = 26,
+    FheRandBounded = 27,
     FheGetInputCiphertext = 32,
 }
 
@@ -263,7 +267,9 @@ impl SupportedFheCiphertexts {
 
     pub fn type_num(&self) -> i16 {
         match self {
-            SupportedFheCiphertexts::FheBool(_) => 1,
+            // values taken to match with solidity library
+            SupportedFheCiphertexts::FheBool(_) => 0,
+            // TODO: add FheUint4 support
             SupportedFheCiphertexts::FheUint8(_) => 2,
             SupportedFheCiphertexts::FheUint16(_) => 3,
             SupportedFheCiphertexts::FheUint32(_) => 4,
@@ -362,7 +368,10 @@ impl SupportedFheOperations {
             SupportedFheOperations::FheNot | SupportedFheOperations::FheNeg => {
                 FheOperationType::Unary
             }
-            SupportedFheOperations::FheIfThenElse | SupportedFheOperations::FheCast => {
+            SupportedFheOperations::FheIfThenElse
+            | SupportedFheOperations::FheCast
+            | SupportedFheOperations::FheRand
+            | SupportedFheOperations::FheRandBounded => {
                 FheOperationType::Other
             }
             SupportedFheOperations::FheGetInputCiphertext => FheOperationType::Other,
@@ -418,8 +427,10 @@ impl TryFrom<i16> for SupportedFheOperations {
             19 => Ok(SupportedFheOperations::FheMax),
             20 => Ok(SupportedFheOperations::FheNeg),
             21 => Ok(SupportedFheOperations::FheNot),
-            30 => Ok(SupportedFheOperations::FheCast),
-            31 => Ok(SupportedFheOperations::FheIfThenElse),
+            23 => Ok(SupportedFheOperations::FheCast),
+            25 => Ok(SupportedFheOperations::FheIfThenElse),
+            26 => Ok(SupportedFheOperations::FheRand),
+            27 => Ok(SupportedFheOperations::FheRandBounded),
             32 => Ok(SupportedFheOperations::FheGetInputCiphertext),
             _ => Err(FhevmError::UnknownFheOperation(value as i32)),
         };

@@ -69,7 +69,7 @@ async fn test_fhe_inputs() -> Result<(), Box<dyn std::error::Error>> {
     let resp = resp.get_ref();
     assert_eq!(resp.values.len(), 5);
 
-    assert_eq!(resp.values[0].output_type, 1);
+    assert_eq!(resp.values[0].output_type, 0);
     assert_eq!(resp.values[0].value, "false");
     assert_eq!(resp.values[1].output_type, 2);
     assert_eq!(resp.values[1].value, "1");
@@ -77,6 +77,97 @@ async fn test_fhe_inputs() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(resp.values[2].value, "2");
     assert_eq!(resp.values[3].output_type, 4);
     assert_eq!(resp.values[3].value, "3");
+    assert_eq!(resp.values[4].output_type, 5);
+    assert_eq!(resp.values[4].value, "4");
+
+    Ok(())
+}
+
+#[ignore]
+#[tokio::test]
+// custom function for integration testing in development environment
+// uploads ciphertext batch from inputs to local coprocessor database
+async fn custom_insert_inputs() -> Result<(), Box<dyn std::error::Error>> {
+    let grpc_url = "http://127.0.0.1:50051";
+    let db_url = "postgres://postgres:postgres@localhost/coprocessor";
+    let api_key_header = format!("bearer {}", default_api_key());
+
+    let mut client = FhevmCoprocessorClient::connect(grpc_url).await?;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(&db_url)
+        .await?;
+
+    let keys = query_tenant_keys(vec![default_tenant_id()], &pool).await.map_err(|e| {
+        let e: Box<dyn std::error::Error> = e;
+        e
+    })?;
+    let keys = &keys[0];
+
+    let mut builder = tfhe::CompactCiphertextListBuilder::new(&keys.pks);
+    let the_list = builder
+        .push(false)
+        .push(1u8)
+        .push(2u16)
+        .push(3u32)
+        .push(4u64)
+        .push(5u64)
+        .build();
+
+    let serialized = bincode::serialize(&the_list).unwrap();
+
+    println!("Encrypting inputs...");
+    let mut input_request = tonic::Request::new(InputUploadBatch {
+        input_ciphertexts: vec![
+            InputToUpload {
+                input_payload: serialized,
+                signature: Vec::new(),
+            }
+        ]
+    });
+    input_request.metadata_mut().append(
+        "authorization",
+        MetadataValue::from_str(&api_key_header).unwrap(),
+    );
+
+    let uploaded = client.upload_inputs(input_request).await?;
+    let response = uploaded.get_ref();
+
+    for (idx, ur) in response.upload_responses.iter().enumerate() {
+        println!("request {idx}");
+        for (idx, h) in ur.input_handles.iter().enumerate() {
+            println!(" ct {idx} 0x{}", hex::encode(&h.handle));
+        }
+    }
+
+    Ok(())
+}
+
+#[ignore]
+#[tokio::test]
+// custom function to decrypt the ciphertext from grpc
+// ct_to_decrypt should be changed to your environment
+async fn custom_decrypt_ct() -> Result<(), Box<dyn std::error::Error>> {
+    let grpc_url = "http://127.0.0.1:50051";
+    let api_key_header = format!("bearer {}", default_api_key());
+    let ct_to_decrypt = "5bcaeef7d5bee3b5dffff3dfbfafcfb73cf57ddbbff73f777ffdfe677ebc0500";
+
+    let mut client = FhevmCoprocessorClient::connect(grpc_url).await?;
+    println!("Encrypting inputs...");
+    let mut input_request = tonic::Request::new(DebugDecryptRequest {
+        handles: vec![
+            hex::decode(ct_to_decrypt).unwrap()
+        ]
+    });
+    input_request.metadata_mut().append(
+        "authorization",
+        MetadataValue::from_str(&api_key_header).unwrap(),
+    );
+
+    let uploaded = client.debug_decrypt_ciphertext(input_request).await?;
+    let response = uploaded.get_ref();
+
+    println!("{:#?}", response);
 
     Ok(())
 }

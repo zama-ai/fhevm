@@ -12,7 +12,7 @@ pub fn deserialize_fhe_ciphertext(
     input_bytes: &[u8],
 ) -> Result<SupportedFheCiphertexts, FhevmError> {
     match input_type {
-        1 => {
+        0 => {
             let v: tfhe::FheBool = bincode::deserialize(input_bytes)
                 .map_err(|e| FhevmError::DeserializationError(e))?;
             Ok(SupportedFheCiphertexts::FheBool(v))
@@ -49,7 +49,7 @@ pub fn debug_trivial_encrypt_be_bytes(
     input_bytes: &[u8],
 ) -> SupportedFheCiphertexts {
     match output_type {
-        1 => SupportedFheCiphertexts::FheBool(
+        0 => SupportedFheCiphertexts::FheBool(
             FheBool::try_encrypt_trivial(input_bytes[0] > 0).unwrap(),
         ),
         2 => SupportedFheCiphertexts::FheUint8(
@@ -89,6 +89,7 @@ pub fn debug_trivial_encrypt_be_bytes(
 }
 
 pub fn current_ciphertext_version() -> i16 {
+    0
     0
 }
 
@@ -175,7 +176,8 @@ pub fn check_fhe_operand_types(
     assert_eq!(input_handles.len(), is_input_handle_scalar.len());
 
     let fhe_op: SupportedFheOperations = fhe_operation.try_into()?;
-    let fhe_bool_type = 1;
+    // TODO: figure out typing system with constants
+    let fhe_bool_type = 0;
 
     let scalar_operands = is_input_handle_scalar
         .iter()
@@ -277,7 +279,6 @@ pub fn check_fhe_operand_types(
                 });
             }
 
-            let fhe_bool_type = 1;
             if input_types[0] == fhe_bool_type && !fhe_op.supports_bool_inputs() {
                 return Err(FhevmError::OperationDoesntSupportBooleanInputs {
                     fhe_operation,
@@ -303,8 +304,6 @@ pub fn check_fhe_operand_types(
                         });
                     }
 
-                    // TODO: figure out typing system with constants
-                    let fhe_bool_type = 1;
                     if input_types[0] != fhe_bool_type {
                         return Err(FhevmError::FheIfThenElseUnexpectedOperandTypes {
                             fhe_operation,
@@ -389,7 +388,7 @@ pub fn validate_fhe_type(input_type: i32) -> Result<(), FhevmError> {
         .try_into()
         .or(Err(FhevmError::UnknownFheType(input_type)))?;
     match i16_type {
-        1 | 2 | 3 | 4 | 5 => Ok(()),
+        0 | 2 | 3 | 4 | 5 => Ok(()),
         _ => Err(FhevmError::UnknownFheType(input_type)),
     }
 }
@@ -1438,7 +1437,7 @@ pub fn perform_fhe_operation(
                     return Ok(SupportedFheCiphertexts::FheUint8(inp.clone()));
                 } else {
                     match l {
-                        1 => {
+                        0 => {
                             let out: tfhe::FheBool = inp.gt(0);
                             Ok(SupportedFheCiphertexts::FheBool(out))
                         }
@@ -1467,7 +1466,7 @@ pub fn perform_fhe_operation(
                     return Ok(SupportedFheCiphertexts::FheUint16(inp.clone()));
                 } else {
                     match l {
-                        1 => {
+                        0 => {
                             let out: tfhe::FheBool = inp.gt(0);
                             Ok(SupportedFheCiphertexts::FheBool(out))
                         }
@@ -1496,7 +1495,7 @@ pub fn perform_fhe_operation(
                     return Ok(SupportedFheCiphertexts::FheUint32(inp.clone()));
                 } else {
                     match l {
-                        1 => {
+                        0 => {
                             let out: tfhe::FheBool = inp.gt(0);
                             Ok(SupportedFheCiphertexts::FheBool(out))
                         }
@@ -1525,7 +1524,7 @@ pub fn perform_fhe_operation(
                     return Ok(SupportedFheCiphertexts::FheUint64(inp.clone()));
                 } else {
                     match l {
-                        1 => {
+                        0 => {
                             let out: tfhe::FheBool = inp.gt(0);
                             Ok(SupportedFheCiphertexts::FheBool(out))
                         }
@@ -1549,8 +1548,7 @@ pub fn perform_fhe_operation(
                 panic!("unknown cast pair")
             }
         },
-        SupportedFheOperations::FheGetInputCiphertext => {
-            Err(FhevmError::UnknownFheOperation(fhe_operation_int as i32))
-        }
+        SupportedFheOperations::FheRand => todo!("Implement FheRand"),
+        SupportedFheOperations::FheRandBounded => todo!("Implement FheRandBounded"),
     }
 }

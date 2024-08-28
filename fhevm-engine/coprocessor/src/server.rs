@@ -164,12 +164,12 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
                 let ciphertext_version = current_ciphertext_version();
                 let mut handle_hash = Keccak256::new();
                 handle_hash.update(&blob_hash);
-                handle_hash.update(&[idx as u8]);
+                handle_hash.update(&[ct_idx as u8]);
                 let mut handle = handle_hash.finalize().to_vec();
                 assert_eq!(handle.len(), 32);
                 // idx cast to u8 must succeed because we don't allow
                 // more handles than u8 size
-                handle[29] = idx as u8;
+                handle[29] = ct_idx as u8;
                 handle[30] = serialized_type as u8;
                 handle[31] = ciphertext_version as u8;
 
@@ -424,6 +424,11 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
             return Err(tonic::Status::not_found("tenant private key not found"));
         }
 
+        let mut ct_indexes: BTreeMap<&[u8], usize> = BTreeMap::new();
+        for (idx, h) in req.handles.iter().enumerate() {
+            ct_indexes.insert(h.as_slice(), idx);
+        }
+
         assert_eq!(priv_key.len(), 1);
 
         let cts = sqlx::query!(
@@ -448,24 +453,30 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
 
         let priv_key = priv_key.pop().unwrap().cks_key.unwrap();
 
-        let values = tokio::task::spawn_blocking(move || {
+        let mut values = tokio::task::spawn_blocking(move || {
             let client_key: tfhe::ClientKey = bincode::deserialize(&priv_key).unwrap();
 
-            let mut decrypted: Vec<DebugDecryptResponseSingle> = Vec::with_capacity(cts.len());
+            let mut decrypted: Vec<(Vec<u8>, DebugDecryptResponseSingle)> = Vec::with_capacity(cts.len());
             for ct in cts {
                 let deserialized =
                     deserialize_fhe_ciphertext(ct.ciphertext_type, &ct.ciphertext)
                         .unwrap();
-                decrypted.push(DebugDecryptResponseSingle {
+                decrypted.push((ct.handle, DebugDecryptResponseSingle {
                     output_type: ct.ciphertext_type as i32,
                     value: deserialized.decrypt(&client_key),
-                });
+                }));
             }
 
             decrypted
         })
         .await
         .unwrap();
+
+        values.sort_by_key(|(h, _)| {
+            ct_indexes.get(h.as_slice()).unwrap()
+        });
+
+        let values = values.into_iter().map(|i| i.1).collect::<Vec<_>>();
 
         return Ok(tonic::Response::new(DebugDecryptResponse { values }));
     }

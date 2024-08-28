@@ -98,35 +98,64 @@ pub fn sort_computations_by_dependencies<'a>(
 
     // least dependencies goes to the left, most dependencies to the right
     computation_dependencies.sort_by(|(_, deps_a), (_, deps_b)| deps_a.cmp(deps_b));
-
     let mut simulation_completed_outputs: HashSet<&[u8]> = HashSet::new();
-    for (inp_idx, _) in computation_dependencies {
-        let async_comp = &input[inp_idx];
 
-        for ih in &async_comp.inputs {
-            if let Some(Input::InputHandle(ih)) = &ih.input {
-                // this must be loop if we don't see that handle is completed here, for example
-                // [output: 1, deps: [0, 2, 3]]
-                // [output: 0, deps: [1, 2, 3]]
-                if !handles_to_check_in_db.contains(ih.as_slice())
-                    && !simulation_completed_outputs.contains(ih.as_slice())
-                {
-                    return Err(
-                        CoprocessorError::CiphertextComputationDependencyLoopDetected {
-                            uncomputable_output_handle: format!(
-                                "0x{}",
-                                hex::encode(&async_comp.output_handle)
-                            ),
-                            uncomputable_handle_dependency: format!("0x{}", hex::encode(ih)),
-                        },
-                    );
+    loop {
+        let mut progress_made_in_iteration = false;
+        let mut new_computation_dependencies: Vec<(usize, Vec<usize>)> = Vec::new();
+
+        let mut first_uncomputable_handle: &[u8] = [].as_slice();
+        let mut first_uncomputable_handle_dependency: &[u8] = [].as_slice();
+
+        for (inp_idx, deps) in computation_dependencies {
+            let async_comp = &input[inp_idx];
+
+            let mut can_compute_this = true;
+            for ih in &async_comp.inputs {
+                if let Some(Input::InputHandle(ih)) = &ih.input {
+                    if !handles_to_check_in_db.contains(ih.as_slice())
+                        && !simulation_completed_outputs.contains(ih.as_slice())
+                    {
+                        if first_uncomputable_handle.is_empty() {
+                            first_uncomputable_handle = async_comp.output_handle.as_slice();
+                            first_uncomputable_handle_dependency = ih.as_slice();
+                        }
+                        can_compute_this = false;
+                    }
                 }
+            }
+
+            if can_compute_this {
+                progress_made_in_iteration = true;
+                simulation_completed_outputs.insert(&async_comp.output_handle);
+                res.push(async_comp);
+            } else {
+                // push uncomputable to new queue to try again later
+                new_computation_dependencies.push((inp_idx, deps));
             }
         }
 
-        simulation_completed_outputs.insert(&async_comp.output_handle);
+        if !progress_made_in_iteration {
+            // this must be loop if we don't see progress made
+            // [output: 1, deps: [0, 2, 3]]
+            // [output: 0, deps: [1, 2, 3]]
+            return Err(
+                CoprocessorError::CiphertextComputationDependencyLoopDetected {
+                    uncomputable_output_handle: format!(
+                        "0x{}",
+                        hex::encode(&first_uncomputable_handle)
+                    ),
+                    uncomputable_handle_dependency: format!("0x{}", hex::encode(first_uncomputable_handle_dependency)),
+                },
+            );
+        }
 
-        res.push(async_comp);
+        if new_computation_dependencies.is_empty() {
+            // everything computed, break loop
+            break;
+        }
+
+        computation_dependencies = new_computation_dependencies;
     }
 
     Ok((res, handles_to_check_in_db))
