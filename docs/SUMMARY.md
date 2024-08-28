@@ -6,10 +6,10 @@
 
 - [What is fhEVM](getting_started/overview.md)
 - Write contract
-  - [Using Hardhat](fundamentals/write_contract/hardhat.md)
-  - [Using Remix](fundamentals/write_contract/remix.md)
-  - [Other development environment](fundamentals/write_contract/others.md)
-  - [Installing packages](fundamentals/write_contract/installation.md)
+  - [Using Hardhat](getting_started/write_contract/hardhat.md)
+  - [Using Remix](getting_started/write_contract/remix.md)
+  - [Other development environment](getting_started/write_contract/others.md)
+  - [Installing packages](getting_started/write_contract/installation.md)
 - [Deploy on fhEVM native](getting_started/devnet.md)
 - [Deploy on Ethereum](getting_started/ethereum.md)
 - [Whitepaper](https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper.pdf)

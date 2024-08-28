@@ -6,6 +6,8 @@ This document explains how to configure the Zama Devnet for deploying smart cont
 
 Our devnet is up and running.
 
+<!-- markdown-link-check-disable -->
+
 | Fields             | Value                            |
 | ------------------ | -------------------------------- |
 | New RPC URL        | https://devnet.zama.ai           |
@@ -14,6 +16,8 @@ Our devnet is up and running.
 | Gateway URL        | https://gateway.devnet.zama.ai   |
 | Faucet URL         | https://faucet.devnet.zama.ai    |
 | Block explorer URL | https://explorer.gateway.zama.ai |
+
+<!-- markdown-link-check-enable -->
 
 ## Configuring MetaMask
 
