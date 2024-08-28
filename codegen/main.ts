@@ -18,6 +18,7 @@ function generateAllFiles() {
   writeFileSync('lib/TFHE.sol', tfheSolSource);
   writeFileSync('lib/FhevmLib.sol', t.fhevmLibSol(operators));
   writeFileSync('lib/FHEPayment.sol', generateFHEPayment(operatorsPrices));
+  writeFileSync('payment/Payment.sol', t.paymentSol());
   mkdirSync('examples/tests', { recursive: true });
   ovShards.forEach((os) => {
     writeFileSync(`examples/tests/TFHETestSuite${os.shardNumber}.sol`, testgen.generateSmartContract(os));

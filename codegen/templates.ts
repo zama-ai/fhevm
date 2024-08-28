@@ -61,7 +61,6 @@ export function implSol(ctx: CodegenContext, operators: Operator[]): string {
 
   const coprocessorInterface = generateImplCoprocessorInterface(operators);
   const aclInterface = generateACLInterface();
-  const fhePaymentInterface = generateFHEPaymentInterface();
 
   res.push(`
 // SPDX-License-Identifier: BSD-3-Clause-Clear
@@ -71,13 +70,10 @@ pragma solidity ^0.8.24;
 import "./TFHE.sol";
 import "./TFHEExecutorAddress.sol";
 import "./ACLAddress.sol";
-import "./FHEPaymentAddress.sol";
 
 ${coprocessorInterface}
 
 ${aclInterface}
-
-${fhePaymentInterface}
 
 library Impl {
 `);
@@ -195,16 +191,6 @@ function generateACLInterface(): string {
   `;
 }
 
-function generateFHEPaymentInterface(): string {
-  return `
-  interface IFHEPayment {
-    function depositETH(address account) external payable;
-    function withdrawETH(uint256 amount, address receiver) external;
-    function getAvailableDepositsETH(address account) external view returns(uint256);
-  }
-  `;
-}
-
 export function tfheSol(
   ctx: CodegenContext,
   operators: Operator[],
@@ -296,68 +282,9 @@ library TFHE {
 
   res.push(tfheAclMethods(supportedBits));
 
-  res.push(tfheFHEPaymentMethods());
-
   res.push('}\n');
 
-  // supportedBits.forEach((bits) => {
-  //   operators.forEach((op) => {
-  //     res.push(tfheSolidityOperator(bits, op, signatures));
-  //   });
-  // });
-
   return [res.join(''), signatures];
-}
-
-function tfheSolidityOperator(bits: number, operator: Operator, os: OverloadSignature[]): string {
-  const res: string[] = [];
-
-  if (operator.hasEncrypted && operator.binarySolidityOperator) {
-    const fname = `tfheBinaryOperator${capitalizeFirstLetter(operator.name)}${bits}`;
-    res.push(`
-      using {${fname} as ${operator.binarySolidityOperator}} for euint${bits} global;
-    `);
-
-    res.push(`
-      function ${fname}(euint${bits} lhs, euint${bits} rhs) pure returns (euint${bits}) {
-        return TFHE.${operator.name}(lhs, rhs);
-      }
-    `);
-
-    // os.push({
-    //   binaryOperator: operator.binarySolidityOperator,
-    //   arguments: [
-    //     { type: ArgumentType.EUint, bits },
-    //     { type: ArgumentType.EUint, bits },
-    //   ],
-
-    //   name: `bin_op_${operator.name}`,
-    //   returnType: { type: ArgumentType.EUint, bits },
-    // });
-  }
-
-  if (operator.hasEncrypted && operator.unarySolidityOperator) {
-    const fname = `tfheUnaryOperator${capitalizeFirstLetter(operator.name)}${bits}`;
-    res.push(`
-      using {${fname} as ${operator.unarySolidityOperator}} for euint${bits} global;
-    `);
-
-    res.push(`
-      function ${fname}(euint${bits} input) pure returns (euint${bits}) {
-        return TFHE.${operator.name}(input);
-      }
-    `);
-
-    // os.push({
-    //   unaryOperator: operator.unarySolidityOperator,
-    //   arguments: [{ type: ArgumentType.EUint, bits }],
-
-    //   name: `unary_op_${operator.name}`,
-    //   returnType: { type: ArgumentType.EUint, bits },
-    // });
-  }
-
-  return res.join('');
 }
 
 function tfheEncryptedOperator(
@@ -589,23 +516,6 @@ function tfheSelect(inputBits: number): string {
     function select(ebool control, euint${inputBits} a, euint${inputBits} b) internal returns (euint${inputBits}) {
         return euint${inputBits}.wrap(Impl.select(ebool.unwrap(control), euint${inputBits}.unwrap(a), euint${inputBits}.unwrap(b)));
     }`;
-}
-
-function tfheEq(inputBits: number): string {
-  return `
-    function eq(euint${inputBits}[] memory a, euint${inputBits}[] memory b) internal pure returns (ebool) {
-        require(a.length == b.length, "Both arrays are not of the same size.");
-        uint256[] memory lhs = new uint256[](a.length);
-        uint256[] memory rhs = new uint256[](b.length);
-        for (uint i = 0; i < a.length; i++) {
-          lhs[i] = euint${inputBits}.unwrap(a[i]);
-        }
-        for (uint i = 0; i < b.length; i++) {
-          rhs[i] = euint${inputBits}.unwrap(b[i]);
-        }
-        return ebool.wrap(Impl.eq(lhs, rhs));
-    }
-  `;
 }
 
 function tfheAsEboolCustomCast(inputBits: number, outputBits: number): string {
@@ -858,39 +768,6 @@ function tfheAclMethods(supportedBits: number[]): string {
   return res.join('');
 }
 
-function tfheFHEPaymentMethods(): string {
-  const res: string[] = [];
-
-  res.push(
-    `
-    function depositForAccount(address account, uint256 amount) internal {
-      Impl.depositForAccount(account, amount);
-    }
-
-    function depositForThis(uint256 amount) internal {
-      Impl.depositForAccount(address(this), amount);
-    }
-
-    function withdrawToAccount(address account, uint256 amount) internal {
-      Impl.withdrawToAccount(account, amount);
-    }
-
-    function withdrawToThis(uint256 amount) internal {
-      Impl.withdrawToAccount(address(this), amount);
-    }
-
-    function getDepositedBalanceOfAccount(address account) internal view returns (uint256) {
-      return Impl.getDepositedBalance(account);
-    }
-
-    function getDepositedBalanceOfThis() internal view returns (uint256) {
-      return Impl.getDepositedBalance(address(this));
-    }
-  `,
-  );
-  return res.join('');
-}
-
 function tfheCustomMethods(ctx: CodegenContext, mocked: boolean): string {
   let result = `
     // Generates a random encrypted 8-bit unsigned integer.
@@ -1105,17 +982,44 @@ function implCustomMethods(ctx: CodegenContext): string {
     function isAllowed(uint256 handle, address account) internal view returns (bool) {
       return IACL(aclAdd).isAllowed(handle, account);
     }
+    `;
+}
 
+export function paymentSol(): string {
+  const res: string = `import "../lib/FHEPaymentAddress.sol";
+
+interface IFHEPayment {
+  function depositETH(address account) external payable;
+  function withdrawETH(uint256 amount, address receiver) external;
+  function getAvailableDepositsETH(address account) external view returns(uint256);
+}
+
+library Payment {
     function depositForAccount(address account, uint256 amount) internal {
       IFHEPayment(fhePaymentAdd).depositETH{value: amount}(account);
+    }
+
+    function depositForThis(uint256 amount) internal {
+      IFHEPayment(fhePaymentAdd).depositETH{value: amount}(address(this));
     }
 
     function withdrawToAccount(address account, uint256 amount) internal {
       IFHEPayment(fhePaymentAdd).withdrawETH(amount, account);
     }
 
-    function getDepositedBalance(address account) internal view returns (uint256) {
+    function withdrawToThis(uint256 amount) internal {
+      IFHEPayment(fhePaymentAdd).withdrawETH(amount, address(this));
+    }
+
+    function getDepositedBalanceOfAccount(address account) internal view returns (uint256) {
       return IFHEPayment(fhePaymentAdd).getAvailableDepositsETH(account);
     }
-    `;
+
+    function getDepositedBalanceOfThis() internal view returns (uint256) {
+      return IFHEPayment(fhePaymentAdd).getAvailableDepositsETH(address(this));
+    }
+  }
+  `;
+
+  return res;
 }
