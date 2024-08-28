@@ -2,9 +2,18 @@
 
 This document explains how to configure the Zama Devnet for deploying smart contracts on fhEVM native.
 
-{% hint style="warning" %}
-**Devnet down** Our devnet is currently offline but will be up soon! In the meantime, develop your contracts using a local instance.
-{% endhint %}
+## Devnet information
+
+Our devnet is up and running.
+
+| Fields             | Value                            |
+| ------------------ | -------------------------------- |
+| New RPC URL        | https://devnet.zama.ai           |
+| Chain ID           | 9000                             |
+| Currency symbol    | ZAMA                             |
+| Gateway URL        | https://gateway.devnet.zama.ai   |
+| Faucet URL         | https://faucet.devnet.zama.ai    |
+| Block explorer URL | https://explorer.gateway.zama.ai |
 
 ## Configuring MetaMask
 
@@ -25,6 +34,7 @@ To configure the [MetaMask](<(https://support.metamask.io/hc/en-us/articles/3600
 <!-- markdown-link-check-disable -->
 
 3. Add these information to access to blockchain
+
    {% tabs %}
    {% tab title="Zama devnet" %}
 
@@ -32,7 +42,7 @@ To configure the [MetaMask](<(https://support.metamask.io/hc/en-us/articles/3600
 | ----------------------------- | ----------------------------- |
 | Network Name                  | Zama Network                  |
 | New RPC URL                   | https://devnet.zama.ai        |
-| Chain ID                      | 8009                          |
+| Chain ID                      | 9000                          |
 | Currency symbol               | ZAMA                          |
 | Block explorer URL (Optional) | https://main.explorer.zama.ai |
 

@@ -1,5 +1,13 @@
 # Using Remix
 
-Previously, we had a Remix version working with fhEVM. Since fhEVM v0.5.0, we can no longer maintain this fork, so we are working on a plugin for Remix IDE to interact with fhEVM chains. Stay tuned!
+We have decided to deprecate our Remix fork in favor of a new plugin we are currently developing. This plugin will enable you to develop your contracts directly on [the official Remix IDE](https://remix.ethereum.org) by simply loading the fhEVM plugin.
 
-In the meantime, you can use [the official Remix IDE](https://remix.ethereum.org) to deploy and interact with your contracts, but without the possibility to encrypt inputs or decrypt ciphertexts.
+To use it:
+
+1. Go to the "Plugin Manager" page
+2. Click on "Connect to a Local Plugin"
+3. Fill the name with "Zama" and the "Url" with "https://remix.zama.ai/"
+4. Keep "Iframe" and "Side panel" and validate
+
+<figure><img src="../../.gitbook/assets/remixide.png" alt="How to install Remix IDE plugin" width="300"><figcaption>
+</figcaption></figure>
