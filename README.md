@@ -131,6 +131,10 @@ _More examples are available [here](https://github.com/zama-ai/fhevm/tree/main/e
   <a href="#about" > ↑ Back to top </a>
 </p>
 
+> [!Note] >**Zama 5-Question Developer Survey**
+>
+> We want to hear from you! Take 1 minute to share your thoughts and helping us enhance our documentation and libraries. 👉 **[Click here](https://www.zama.ai/developer-survey)** to participate.
+
 ## Resources
 
 ### White paper
