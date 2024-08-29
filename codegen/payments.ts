@@ -23,6 +23,10 @@ export function generateFHEPayment(priceData: PriceData): string {
   error RecoveryFailed();
   error WithdrawalFailed();
   error AccountNotEnoughFunded();
+  error AlreadyAuthorizedAllContracts();
+  error AlreadyWhitelistedContract();
+  error AllContractsNotAuthorized();
+  error ContractNotWhitelisted();
   
   contract FHEPayment is Ownable2Step {
       /// @notice Name of the contract
@@ -43,6 +47,8 @@ export function generateFHEPayment(priceData: PriceData): string {
       uint256 public claimableUsedFHEGas;
   
       mapping(address payer => uint256 depositedAmount) private depositsETH;
+      mapping(address user => bool allowedAllContracts) private allowedAll;
+      mapping(address user => mapping(address dappContract => bool isWhitelisted)) private whitelistedDapps;
 
       constructor() Ownable(msg.sender) {}
 
@@ -67,19 +73,81 @@ export function generateFHEPayment(priceData: PriceData): string {
           return depositsETH[account];
       }
 
-      function updateFunding(address payer, uint256 paidAmountGas) private {
-        uint256 ratio_gas = (tx.gasprice*FHE_GASPRICE_NATIVE_RATIO)/1_000_000;
-        uint256 effective_fhe_gasPrice = ratio_gas > MIN_FHE_GASPRICE ? ratio_gas : MIN_FHE_GASPRICE;
-        uint256 paidAmountWei = effective_fhe_gasPrice*paidAmountGas;
-        uint256 depositedAmount = depositsETH[payer];
-        if(paidAmountWei>depositedAmount) revert AccountNotEnoughFunded();
-        unchecked{
-          depositsETH[payer] = depositedAmount - paidAmountWei;
-        }
-        currentBlockConsumption += paidAmountGas;
-        claimableUsedFHEGas += paidAmountWei;
+      function didAuthorizeAllContracts(address account) external view returns (bool) {
+          return allowedAll[account];
       }
-  
+
+      function didWhitelistContract(address user, address dappContract) external view returns (bool) {
+          return whitelistedDapps[user][dappContract];
+      }
+
+      function authorizeAllContracts() external {
+          if (allowedAll[msg.sender]) revert AlreadyAuthorizedAllContracts();
+          allowedAll[msg.sender] = true;
+      }
+
+      function whitelistContract(address dappContract) external {
+          if (whitelistedDapps[msg.sender][dappContract]) revert AlreadyWhitelistedContract();
+          whitelistedDapps[msg.sender][dappContract] = true;
+      }
+
+      function removeAuthorizationAllContracts() external {
+          if (!allowedAll[msg.sender]) revert AllContractsNotAuthorized();
+          allowedAll[msg.sender] = false;
+      }
+
+      function removeWhitelistedContract(address dappContract) external {
+          if (!whitelistedDapps[msg.sender][dappContract]) revert ContractNotWhitelisted();
+          whitelistedDapps[msg.sender][dappContract] = false;
+      }
+
+      // @notice: to be used in the context of account abstraction, before an FHE tx, to make the contract address replace tx.origin as a spender
+      function becomeTransientSpender() external {
+        assembly {
+            tstore(0, caller())
+        }
+      }
+
+      // @notice: to be used in the context of account abstraction, after an FHE tx, to avoid issues if batched with other userOps
+      function stopBeingTransientSpender() external {
+        assembly {
+            tstore(0, 0)
+        }
+      }
+
+      function updateFunding(address payer, uint256 paidAmountGas) private {
+          uint256 ratio_gas = (tx.gasprice * FHE_GASPRICE_NATIVE_RATIO) / 1_000_000;
+          uint256 effective_fhe_gasPrice = ratio_gas > MIN_FHE_GASPRICE ? ratio_gas : MIN_FHE_GASPRICE;
+          uint256 paidAmountWei = effective_fhe_gasPrice * paidAmountGas;
+          uint256 depositedAmount = depositsETH[payer];
+          if (paidAmountWei > depositedAmount) {
+              // if dApp is not enough funded, fallbacks to user (tx.origin by default, in case of an EOA, 
+              // otherwise a smart contract account should call \`becomeTransientSpender\` before, in the same tx
+              address spender;
+              assembly {
+                spender := tload(0)
+              }
+              spender = spender == address(0) ? tx.origin : spender;
+              if (allowedAll[spender] || whitelistedDapps[spender][payer]) {
+                  uint256 depositedAmountUser = depositsETH[spender];
+                  if (paidAmountWei > depositedAmountUser) revert AccountNotEnoughFunded();
+                  unchecked {
+                      depositsETH[spender] = depositedAmountUser - paidAmountWei;
+                  }
+                  currentBlockConsumption += paidAmountGas;
+                  claimableUsedFHEGas += paidAmountWei;
+              } else {
+                  revert AccountNotEnoughFunded();
+              }
+          } else {
+              unchecked {
+                  depositsETH[payer] = depositedAmount - paidAmountWei;
+              }
+              currentBlockConsumption += paidAmountGas;
+              claimableUsedFHEGas += paidAmountWei;
+          }
+      }
+
       function checkIfNewBlock() private {
           uint256 lastBlock_ = block.number;
           if (block.number > lastBlock) {
