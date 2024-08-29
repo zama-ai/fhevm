@@ -8,14 +8,14 @@ Our devnet is up and running.
 
 <!-- markdown-link-check-disable -->
 
-| Fields             | Value                           |
-| ------------------ | ------------------------------- |
-| New RPC URL        | https://devnet.zama.ai          |
-| Chain ID           | 9000                            |
-| Currency symbol    | ZAMA                            |
-| Gateway URL        | https://gateway.devnet.zama.ai  |
-| Faucet URL         | https://faucet.devnet.zama.ai   |
-| Block explorer URL | https://explorer.devnet.zama.ai |
+| Fields             | Value                                         |
+| ------------------ | --------------------------------------------- |
+| New RPC URL        | https://devnet.zama.ai                        |
+| Chain ID           | 9000                                          |
+| Currency symbol    | ZAMA                                          |
+| Gateway URL        | https://gateway.devnet.zama.ai                |
+| Faucet URL         | https://faucet.zama.ai                        |
+| Block explorer URL | https://explorer.devnet.zama.ai (coming soon) |
 
 <!-- markdown-link-check-enable -->
 
@@ -42,13 +42,13 @@ To configure the [MetaMask](<(https://support.metamask.io/hc/en-us/articles/3600
    {% tabs %}
    {% tab title="Zama devnet" %}
 
-| Fields                        | Value                         |
-| ----------------------------- | ----------------------------- |
-| Network Name                  | Zama Network                  |
-| New RPC URL                   | https://devnet.zama.ai        |
-| Chain ID                      | 9000                          |
-| Currency symbol               | ZAMA                          |
-| Block explorer URL (Optional) | https://main.explorer.zama.ai |
+| Fields                        | Value                           |
+| ----------------------------- | ------------------------------- |
+| Network Name                  | Zama Network                    |
+| New RPC URL                   | https://devnet.zama.ai          |
+| Chain ID                      | 9000                            |
+| Currency symbol               | ZAMA                            |
+| Block explorer URL (Optional) | https://explorer.devnet.zama.ai |
 
 {% endtab %}
 {% tab title="Local devnet" %}
