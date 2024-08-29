@@ -2,9 +2,22 @@
 
 This document explains how to configure the Zama Devnet for deploying smart contracts on fhEVM native.
 
-{% hint style="warning" %}
-**Devnet down** Our devnet is currently offline but will be up soon! In the meantime, develop your contracts using a local instance.
-{% endhint %}
+## Devnet information
+
+Our devnet is up and running.
+
+<!-- markdown-link-check-disable -->
+
+| Fields             | Value                                         |
+| ------------------ | --------------------------------------------- |
+| New RPC URL        | https://devnet.zama.ai                        |
+| Chain ID           | 9000                                          |
+| Currency symbol    | ZAMA                                          |
+| Gateway URL        | https://gateway.devnet.zama.ai                |
+| Faucet URL         | https://faucet.zama.ai                        |
+| Block explorer URL | https://explorer.devnet.zama.ai (coming soon) |
+
+<!-- markdown-link-check-enable -->
 
 ## Configuring MetaMask
 
@@ -25,16 +38,17 @@ To configure the [MetaMask](<(https://support.metamask.io/hc/en-us/articles/3600
 <!-- markdown-link-check-disable -->
 
 3. Add these information to access to blockchain
+
    {% tabs %}
    {% tab title="Zama devnet" %}
 
-| Fields                        | Value                         |
-| ----------------------------- | ----------------------------- |
-| Network Name                  | Zama Network                  |
-| New RPC URL                   | https://devnet.zama.ai        |
-| Chain ID                      | 8009                          |
-| Currency symbol               | ZAMA                          |
-| Block explorer URL (Optional) | https://main.explorer.zama.ai |
+| Fields                        | Value                           |
+| ----------------------------- | ------------------------------- |
+| Network Name                  | Zama Network                    |
+| New RPC URL                   | https://devnet.zama.ai          |
+| Chain ID                      | 9000                            |
+| Currency symbol               | ZAMA                            |
+| Block explorer URL (Optional) | https://explorer.devnet.zama.ai |
 
 {% endtab %}
 {% tab title="Local devnet" %}
