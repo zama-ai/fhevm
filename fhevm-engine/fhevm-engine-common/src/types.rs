@@ -1,6 +1,8 @@
+use std::error::Error;
+
 use tfhe::integer::U256;
 use tfhe::prelude::FheDecrypt;
-use tfhe::CompressedCiphertextListBuilder;
+use tfhe::{CompressedCiphertextList, CompressedCiphertextListBuilder};
 
 #[derive(Debug)]
 pub enum FhevmError {
@@ -72,6 +74,8 @@ pub enum FhevmError {
         expected_scalar_operand_bytes: usize,
         got_bytes: usize,
     },
+    BadInputs,
+    MissingTfheRsData,
 }
 
 impl std::error::Error for FhevmError {}
@@ -181,6 +185,12 @@ impl std::fmt::Display for FhevmError {
                 max_scalar_operands,
             } => {
                 write!(f, "only one operand can be scalar, fhe operation: {fhe_operation}, fhe operation name: {fhe_operation_name}, second operand count: {scalar_operand_count}, max scalar operands: {max_scalar_operands}")
+            }
+            Self::BadInputs => {
+                write!(f, "Bad inputs")
+            }
+            Self::MissingTfheRsData => {
+                write!(f, "Missing TFHE-rs data")
             }
         }
     }
@@ -298,6 +308,33 @@ impl SupportedFheCiphertexts {
         };
         let list = builder.build().expect("ciphertext compression");
         bincode::serialize(&list).expect("compressed list serialization")
+    }
+
+    pub fn decompress(ct_type: i16, list: &[u8]) -> Result<Self, Box<dyn Error>> {
+        let list: CompressedCiphertextList = bincode::deserialize(list)?;
+        match ct_type {
+            1 => Ok(SupportedFheCiphertexts::FheBool(
+                list.get(0)?
+                    .ok_or(Box::new(FhevmError::MissingTfheRsData))?,
+            )),
+            2 => Ok(SupportedFheCiphertexts::FheUint8(
+                list.get(0)?
+                    .ok_or(Box::new(FhevmError::MissingTfheRsData))?,
+            )),
+            3 => Ok(SupportedFheCiphertexts::FheUint16(
+                list.get(0)?
+                    .ok_or(Box::new(FhevmError::MissingTfheRsData))?,
+            )),
+            4 => Ok(SupportedFheCiphertexts::FheUint32(
+                list.get(0)?
+                    .ok_or(Box::new(FhevmError::MissingTfheRsData))?,
+            )),
+            5 => Ok(SupportedFheCiphertexts::FheUint64(
+                list.get(0)?
+                    .ok_or(Box::new(FhevmError::MissingTfheRsData))?,
+            )),
+            _ => Err(Box::new(FhevmError::UnknownFheType(ct_type as i32))),
+        }
     }
 }
 
@@ -419,4 +456,7 @@ impl From<SupportedFheOperations> for i16 {
     }
 }
 
-pub type Handle = [u8; 32];
+pub type Handle = Vec<u8>;
+pub const HANDLE_LEN: usize = 32;
+pub const SCALAR_LEN: usize = 32;
+

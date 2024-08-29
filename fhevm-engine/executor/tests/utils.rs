@@ -5,9 +5,10 @@ use executor::{cli::Args, server};
 use fhevm_engine_common::{
     keys::{FhevmKeys, SerializedFhevmKeys},
     tfhe_ops::current_ciphertext_version,
-    types::Handle,
+    types::{Handle, SupportedFheCiphertexts},
 };
 use sha3::{Digest, Keccak256};
+use tfhe::set_server_key;
 use tokio::{sync::OnceCell, time::sleep};
 
 pub struct TestInstance {
@@ -34,11 +35,23 @@ impl TestInstance {
     }
 
     pub fn input_handle(&self, list: &[u8], index: u8, ct_type: u8) -> Handle {
-        let mut handle: Handle = Keccak256::digest(list).into();
+        let mut handle: Handle = Keccak256::digest(list).to_vec();
         handle[29] = index;
         handle[30] = ct_type;
         handle[31] = current_ciphertext_version() as u8;
         handle
+    }
+
+    pub fn ciphertext_handle(&self, ciphertext: &[u8], ct_type: u8) -> Handle {
+        let mut handle: Handle = Keccak256::digest(&ciphertext).to_vec();
+        handle[30] = ct_type;
+        handle[31] = current_ciphertext_version() as u8;
+        handle
+    }
+
+    pub fn compress(&self, ct: SupportedFheCiphertexts) -> Vec<u8> {
+        set_server_key(self.keys.server_key.clone());
+        ct.compress()
     }
 }
 

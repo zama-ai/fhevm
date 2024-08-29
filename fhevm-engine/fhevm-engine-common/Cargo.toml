@@ -5,6 +5,12 @@ edition = "2021"
 
 [dependencies]
 tfhe.workspace = true
+sha3.workspace = true
+anyhow.workspace = true
 strum = { version = "0.26", features = ["derive"] }
 bincode = "1.3.3"
 hex = "0.4"
+
+[[bin]]
+name = "generate-keys"
+path = "src/bin/generate_keys.rs"

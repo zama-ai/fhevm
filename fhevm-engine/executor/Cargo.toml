@@ -11,6 +11,7 @@ tonic.workspace = true
 tfhe.workspace = true
 bincode.workspace = true
 sha3.workspace = true
+anyhow.workspace = true
 fhevm-engine-common = { path = "../fhevm-engine-common" }
 
 [build-dependencies]

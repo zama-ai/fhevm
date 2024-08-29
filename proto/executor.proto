@@ -50,6 +50,8 @@ enum SyncComputeError {
     UNSUPPORTED_OPERATION = 2;
     BAD_INPUTS = 3;
     UNKNOWN_HANDLE = 4;
+    COMPUTATION_FAILED = 5;
+    BAD_RESULT_HANDLES = 6;
 }
 
 // Represents a ciphertext that is an expanded input or a result of FHE computation.
