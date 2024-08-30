@@ -14,7 +14,7 @@ function bid(einput encryptedValue, bytes calldata inputProof) public onlyBefore
 
   // Replace highest bid
   highestBid = TFHE.select(isAbove, bid, highestBid);
-  TFHE.allow(highestBid, address(this));
+  TFHE.allowThis(highestBid);
 }
 ```
 
@@ -52,11 +52,11 @@ function _transfer(address from, address to, euint32 amount) internal {
 
   // Add to the balance of `to` and subract from the balance of `from`.
   balances[to] = TFHE.add(balances[to], TFHE.select(canTransfer, amount, TFHE.asEuint32(0)));
-  TFHE.allow(balances[to], address(this));
+  TFHE.allowThis(balances[to]);
   TFHE.allow(balances[to], to);
 
   balances[from] = TFHE.sub(balances[from], TFHE.select(canTransfer, amount, TFHE.asEuint32(0)));
-  TFHE.allow(balances[from], address(this));
+  TFHE.allowThis(balances[from]);
   TFHE.allow(balances[from], from);
 }
 ```

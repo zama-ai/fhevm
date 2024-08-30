@@ -15,7 +15,7 @@ contract C {
 
   constructor(uint32 _b) {
     b = TFHE.asEuint32(_b);
-    TFHE.allow(b, address(this));
+    TFHE.allowThis(b);
   }
 }
 ```
@@ -29,7 +29,7 @@ contract C {
 
   constructor(uint32 _b) {
     b = TFHE.asEuint32(_b);
-    TFHE.allow(b, address(this));
+    TFHE.allowThis(b);
   }
 }
 ```
@@ -94,7 +94,7 @@ function setXwithEncryptedIndex(einput encryptedIndex, bytes calldata inputProof
         ebool isEqual = TFHE.eq(index, i);
         x = TFHE.select(isEqual, encArray[i], x);
     }
-    TFHE.allow(x, address(this));
+    TFHE.allowThis(x);
 }
 ```
 
@@ -131,7 +131,7 @@ function mint(einput encryptedAmount, bytes calldata inputProof) public {
   euint32 mintedAmount = TFHE.asEuint32(encryptedAmount, inputProof);
   totalSupply = TFHE.add(totalSupply, mintedAmount);
   balances[msg.sender] = TFHE.add(balances[msg.sender], mintedAmount);
-  TFHE.allow(balances[msg.sender], address(this));
+  TFHE.allowThis(balances[msg.sender]);
   TFHE.allow(balances[msg.sender], msg.sender);
 }
 ```
@@ -146,7 +146,7 @@ function mint(einput encryptedAmount, bytes calldata inputProof) public {
   totalSupply = TFHE.select(isOverflow, totalSupply, tempTotalSupply);
   euint32 tempBalanceOf = TFHE.add(balances[msg.sender], mintedAmount);
   balances[msg.sender] = TFHE.select(isOverflow, balances[msg.sender], tempBalanceOf);
-  TFHE.allow(balances[msg.sender], address(this));
+  TFHE.allowThis(balances[msg.sender]);
   TFHE.allow(balances[msg.sender], msg.sender);
 }
 ```

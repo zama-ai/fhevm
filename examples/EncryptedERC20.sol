@@ -46,7 +46,7 @@ contract EncryptedERC20 is Ownable2Step {
     // Sets the balance of the owner to the given encrypted balance.
     function mint(uint64 mintedAmount) public virtual onlyOwner {
         balances[owner()] = TFHE.add(balances[owner()], mintedAmount); // overflow impossible because of next line
-        TFHE.allow(balances[owner()], address(this));
+        TFHE.allowThis(balances[owner()]);
         TFHE.allow(balances[owner()], owner());
         _totalSupply = _totalSupply + mintedAmount;
         emit Mint(owner(), mintedAmount);
@@ -115,7 +115,7 @@ contract EncryptedERC20 is Ownable2Step {
 
     function _approve(address owner, address spender, euint64 amount) internal virtual {
         allowances[owner][spender] = amount;
-        TFHE.allow(amount, address(this));
+        TFHE.allowThis(amount);
         TFHE.allow(amount, owner);
         TFHE.allow(amount, spender);
     }
@@ -141,11 +141,11 @@ contract EncryptedERC20 is Ownable2Step {
         euint64 transferValue = TFHE.select(isTransferable, amount, TFHE.asEuint64(0));
         euint64 newBalanceTo = TFHE.add(balances[to], transferValue);
         balances[to] = newBalanceTo;
-        TFHE.allow(newBalanceTo, address(this));
+        TFHE.allowThis(newBalanceTo);
         TFHE.allow(newBalanceTo, to);
         euint64 newBalanceFrom = TFHE.sub(balances[from], transferValue);
         balances[from] = newBalanceFrom;
-        TFHE.allow(newBalanceFrom, address(this));
+        TFHE.allowThis(newBalanceFrom);
         TFHE.allow(newBalanceFrom, from);
         emit Transfer(from, to);
     }

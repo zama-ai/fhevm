@@ -5744,32 +5744,64 @@ library TFHE {
         Impl.allow(ebool.unwrap(value), account);
     }
 
+    function allowThis(ebool value) internal {
+        Impl.allow(ebool.unwrap(value), address(this));
+    }
+
     function allow(euint4 value, address account) internal {
         Impl.allow(euint4.unwrap(value), account);
+    }
+
+    function allowThis(euint4 value) internal {
+        Impl.allow(euint4.unwrap(value), address(this));
     }
 
     function allow(euint8 value, address account) internal {
         Impl.allow(euint8.unwrap(value), account);
     }
 
+    function allowThis(euint8 value) internal {
+        Impl.allow(euint8.unwrap(value), address(this));
+    }
+
     function allow(euint16 value, address account) internal {
         Impl.allow(euint16.unwrap(value), account);
+    }
+
+    function allowThis(euint16 value) internal {
+        Impl.allow(euint16.unwrap(value), address(this));
     }
 
     function allow(euint32 value, address account) internal {
         Impl.allow(euint32.unwrap(value), account);
     }
 
+    function allowThis(euint32 value) internal {
+        Impl.allow(euint32.unwrap(value), address(this));
+    }
+
     function allow(euint64 value, address account) internal {
         Impl.allow(euint64.unwrap(value), account);
+    }
+
+    function allowThis(euint64 value) internal {
+        Impl.allow(euint64.unwrap(value), address(this));
     }
 
     function allow(eaddress value, address account) internal {
         Impl.allow(eaddress.unwrap(value), account);
     }
 
+    function allowThis(eaddress value) internal {
+        Impl.allow(eaddress.unwrap(value), address(this));
+    }
+
     function allow(ebytes256 value, address account) internal {
         Impl.allow(ebytes256.unwrap(value), account);
+    }
+
+    function allowThis(ebytes256 value) internal {
+        Impl.allow(ebytes256.unwrap(value), address(this));
     }
 
     function allowTransient(ebool value, address account) internal {

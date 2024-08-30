@@ -62,7 +62,7 @@ contract BlindAuction is Ownable2Step, GatewayCaller {
         tokenContract = _tokenContract;
         endTime = block.timestamp + biddingTime;
         objectClaimed = TFHE.asEbool(false);
-        TFHE.allow(objectClaimed, address(this));
+        TFHE.allowThis(objectClaimed);
         tokenTransferred = false;
         bidCounter = 0;
         stoppable = isStoppable;
@@ -97,7 +97,7 @@ contract BlindAuction is Ownable2Step, GatewayCaller {
             bids[msg.sender] = sentBalance;
         }
         euint64 currentBid = bids[msg.sender];
-        TFHE.allow(currentBid, address(this));
+        TFHE.allowThis(currentBid);
         TFHE.allow(currentBid, msg.sender);
 
         euint64 randTicket = TFHE.randEuint64();
@@ -117,8 +117,8 @@ contract BlindAuction is Ownable2Step, GatewayCaller {
             highestBid = TFHE.select(isNewWinner, currentBid, highestBid);
             winningTicket = TFHE.select(isNewWinner, userTicket, winningTicket);
         }
-        TFHE.allow(highestBid, address(this));
-        TFHE.allow(winningTicket, address(this));
+        TFHE.allowThis(highestBid);
+        TFHE.allowThis(winningTicket);
         TFHE.allow(userTicket, msg.sender);
     }
 
@@ -158,10 +158,10 @@ contract BlindAuction is Ownable2Step, GatewayCaller {
     function claim() public onlyAfterEnd {
         ebool canClaim = TFHE.and(TFHE.eq(winningTicket, userTickets[msg.sender]), TFHE.not(objectClaimed));
         objectClaimed = TFHE.or(canClaim, objectClaimed);
-        TFHE.allow(objectClaimed, address(this));
+        TFHE.allowThis(objectClaimed);
         euint64 newBid = TFHE.select(canClaim, TFHE.asEuint64(0), bids[msg.sender]);
         bids[msg.sender] = newBid;
-        TFHE.allow(bids[msg.sender], address(this));
+        TFHE.allowThis(bids[msg.sender]);
         TFHE.allow(bids[msg.sender], msg.sender);
     }
 
@@ -182,7 +182,7 @@ contract BlindAuction is Ownable2Step, GatewayCaller {
         tokenContract.transfer(msg.sender, amount);
         euint64 newBid = TFHE.select(canWithdraw, TFHE.asEuint64(0), bids[msg.sender]);
         bids[msg.sender] = newBid;
-        TFHE.allow(newBid, address(this));
+        TFHE.allowThis(newBid);
         TFHE.allow(newBid, msg.sender);
     }
 

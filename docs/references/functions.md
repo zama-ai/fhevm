@@ -180,7 +180,7 @@ Allow an address to use a ciphertext, which includes computation, decryption, an
 // Store a value in the contract.
 r = TFHE.asEuint32(94);
 // Set the contract as allowed for this ciphertext.
-TFHE.allow(r, address(this));
+TFHE.allowThis(r);
 // Also set the caller as allowed for this ciphertext.
 TFHE.allow(r, msg.sender);
 ```

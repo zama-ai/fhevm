@@ -19,37 +19,37 @@ contract Reencrypt {
         Payment.depositForThis(msg.value);
 
         xBool = TFHE.asEbool(true);
-        TFHE.allow(xBool, address(this));
+        TFHE.allowThis(xBool);
         TFHE.allow(xBool, msg.sender);
 
         xUint4 = TFHE.asEuint4(4);
-        TFHE.allow(xUint4, address(this));
+        TFHE.allowThis(xUint4);
         TFHE.allow(xUint4, msg.sender);
 
         xUint8 = TFHE.asEuint8(42);
-        TFHE.allow(xUint8, address(this));
+        TFHE.allowThis(xUint8);
         TFHE.allow(xUint8, msg.sender);
 
         xUint16 = TFHE.asEuint16(16);
-        TFHE.allow(xUint16, address(this));
+        TFHE.allowThis(xUint16);
         TFHE.allow(xUint16, msg.sender);
 
         xUint32 = TFHE.asEuint32(32);
-        TFHE.allow(xUint32, address(this));
+        TFHE.allowThis(xUint32);
         TFHE.allow(xUint32, msg.sender);
 
         xUint64 = TFHE.asEuint64(18446744073709551600);
-        TFHE.allow(xUint64, address(this));
+        TFHE.allowThis(xUint64);
         TFHE.allow(xUint64, msg.sender);
 
         xAddress = TFHE.asEaddress(0x8ba1f109551bD432803012645Ac136ddd64DBA72);
-        TFHE.allow(xAddress, address(this));
+        TFHE.allowThis(xAddress);
         TFHE.allow(xAddress, msg.sender);
     }
 
     function setEBytes256(einput inputHandleEBytes256, bytes memory inputProofEBytes256) external {
         yBytes256 = TFHE.asEbytes256(inputHandleEBytes256, inputProofEBytes256);
-        TFHE.allow(yBytes256, address(this));
+        TFHE.allowThis(yBytes256);
         TFHE.allow(yBytes256, msg.sender);
     }
 }
