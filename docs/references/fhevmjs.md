@@ -59,7 +59,7 @@ An input can include **multiple values of various types**, resulting in a single
 const userAddress = "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80";
 const contractAddress = "0xfCefe53c7012a075b8a711df391100d9c431c468";
 
-const input = instance.createEncryptedInput(userAddress, contractAddress);
+const input = instance.createEncryptedInput(contractAddress, userAddress);
 ```
 
 ### input.addBool, input.add8, ...
@@ -75,7 +75,7 @@ Input object has different method to add values:
 - `addAddress`
 
 ```javascript
-const input = instance.createEncryptedInput(userAddress, contractAddress);
+const input = instance.createEncryptedInput(contractAddress, userAddress);
 
 input.addBool(true);
 input.add16(239);
@@ -91,9 +91,17 @@ These methods process values and return the necessary data for use on the blockc
 input.addBool(true);
 input.addBool(true);
 input.add8(4);
-const { inputs, data } = input.encrypt(); // or input.send() if using a coprocessor
+const inputs = input.encrypt(); // or input.send() if using a coprocessor
 
-contract.myExample("0xa5e1defb98EFe38EBb2D958CEe052410247F4c80", inputs[0], 32, inputs[1], inputs[2], data);
+contract.myExample(
+  "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80",
+  inputs.handles[0],
+  32,
+  inputs.handles[1],
+  inputs.handles[2],
+  true,
+  inputs.inputProof,
+);
 ```
 
 ## Reencryption
