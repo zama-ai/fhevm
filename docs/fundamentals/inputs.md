@@ -27,9 +27,17 @@ On client side for the previous function, using [fhevmjs](https://github.com/zam
 const instance = await createInstance({ networkUrl: "http://localhost:8545" });
 
 const input = instance.createEncryptedInput(contractAddress, userAddress);
-const { inputs, data } = input.add64(64).addBool(true).add8(4).encrypt(); // Encrypt the three parameters
+const inputs = input.add64(64).addBool(true).add8(4).encrypt(); // Encrypt the three parameters
 
-contract.myExample("0xa5e1defb98EFe38EBb2D958CEe052410247F4c80", inputs[0], 32, inputs[1], inputs[2], data);
+contract.myExample(
+  "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80",
+  inputs.handles[0],
+  32,
+  inputs.handles[1],
+  inputs.handles[2],
+  true,
+  inputs.inputProof,
+);
 ```
 
 ### Validate input
