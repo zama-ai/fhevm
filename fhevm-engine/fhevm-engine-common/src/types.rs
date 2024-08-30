@@ -76,6 +76,7 @@ pub enum FhevmError {
     },
     BadInputs,
     MissingTfheRsData,
+    InvalidHandle,
 }
 
 impl std::error::Error for FhevmError {}
@@ -191,6 +192,9 @@ impl std::fmt::Display for FhevmError {
             }
             Self::MissingTfheRsData => {
                 write!(f, "Missing TFHE-rs data")
+            }
+            Self::InvalidHandle => {
+                write!(f, "Invalid ciphertext handle")
             }
         }
     }
@@ -460,3 +464,9 @@ pub type Handle = Vec<u8>;
 pub const HANDLE_LEN: usize = 32;
 pub const SCALAR_LEN: usize = 32;
 
+pub fn get_ct_type(handle: &[u8]) -> Result<i16, FhevmError> {
+    match handle.len() {
+        HANDLE_LEN => Ok(handle[30] as i16),
+        _ => Err(FhevmError::InvalidHandle),
+    }
+}

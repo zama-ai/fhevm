@@ -17,8 +17,13 @@ message SyncComputeRequest {
     // Ordered list of computations.
     repeated SyncComputation computations = 1;
 
-    // The input lists if there are input ciphertexts in the computation. Empty if no inputs.
-    repeated bytes input_lists = 2;
+    // Multiple serialized `tfhe::CompactCiphertextList`s. A list can contain multiple ciphertexts.
+    // Note: used for inputs by fhEVM-native.
+    repeated bytes compact_ciphertext_lists = 2;
+
+    // Multiple compressed ciphertexts.
+    // Note: used for ciphertexts stored in the state of fhEVM-native.
+    repeated CompressedCiphertext compressed_ciphertexts = 3;
 }
 
 message SyncComputeResponse {
@@ -31,7 +36,7 @@ message SyncComputeResponse {
 }
 
 message ResultCiphertexts {
-    repeated Ciphertext ciphertexts = 1; 
+    repeated CompressedCiphertext ciphertexts = 1; 
 }
 
 message SyncComputation {
@@ -46,29 +51,29 @@ message SyncComputation {
 
 enum SyncComputeError {
     BAD_INPUT_LIST = 0;
-    INVALID_OPERATION = 1;
-    UNSUPPORTED_OPERATION = 2;
-    BAD_INPUTS = 3;
-    UNKNOWN_HANDLE = 4;
-    COMPUTATION_FAILED = 5;
-    BAD_RESULT_HANDLES = 6;
+    BAD_INPUT_CIPHERTEXT = 1;
+    INVALID_OPERATION = 2;
+    UNSUPPORTED_OPERATION = 3;
+    BAD_INPUTS = 4;
+    UNKNOWN_HANDLE = 5;
+    COMPUTATION_FAILED = 6;
+    BAD_RESULT_HANDLES = 7;
 }
 
-// Represents a ciphertext that is an expanded input or a result of FHE computation.
-message Ciphertext {
+message CompressedCiphertext {
     bytes handle = 1;
-    bytes ciphertext = 2;
+
+    // Serialized as a `tfhe::CompressedCiphertextList`. A list contains one ciphertext.
+    bytes serialization = 2;
 }
 
 message SyncInput {
     oneof input {
-        // A ciphertext and its corresponding handle.
-        Ciphertext ciphertext = 1;
-
-        // A handle that points to an input ciphertext in `SyncComputeRequest.input_lists`.
-        bytes input_handle = 2;
+        // A handle that points to either an input ciphertext in `SyncComputeRequest.compact_ciphertext_lists`
+        // or `SyncComputeRequest.compressed_ciphertext_lists`.
+        bytes handle = 1;
 
         // A scalar value. Dependent on the operation, but typically big-endian integers.
-        bytes scalar = 3;
+        bytes scalar = 2;
     }
 }

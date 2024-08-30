@@ -5,13 +5,13 @@ use executor::{
     fhevm_executor_server::{FhevmExecutor, FhevmExecutorServer},
     sync_compute_response::Resp,
     sync_input::Input,
-    Ciphertext, ResultCiphertexts, SyncComputation, SyncComputeError, SyncComputeRequest,
+    CompressedCiphertext, ResultCiphertexts, SyncComputation, SyncComputeError, SyncComputeRequest,
     SyncComputeResponse, SyncInput,
 };
 use fhevm_engine_common::{
     keys::{FhevmKeys, SerializedFhevmKeys},
     tfhe_ops::{current_ciphertext_version, perform_fhe_operation, try_expand_ciphertext_list},
-    types::{FhevmError, Handle, SupportedFheCiphertexts, HANDLE_LEN, SCALAR_LEN},
+    types::{get_ct_type, FhevmError, Handle, SupportedFheCiphertexts, HANDLE_LEN, SCALAR_LEN},
 };
 use sha3::{Digest, Keccak256};
 use tfhe::{integer::U256, set_server_key};
@@ -77,12 +77,23 @@ impl FhevmExecutor for FhevmExecutorService {
                 SERVER_KEY_IS_SET.set(true);
             }
 
-            // Exapnd inputs that are global to the whole request.
             let req = req.get_ref();
             let mut state = ComputationState::default();
-            if Self::expand_inputs(&req.input_lists, &keys, &mut state).is_err() {
+
+            // Exapnd compact ciphertext lists for the whole request.
+            if Self::expand_compact_lists(&req.compact_ciphertext_lists, &keys, &mut state).is_err()
+            {
                 return SyncComputeResponse {
                     resp: Some(Resp::Error(SyncComputeError::BadInputList.into())),
+                };
+            }
+
+            // Decompress compressed ciphertexts for the whole request.
+            if Self::decompress_compressed_ciphertexts(&req.compressed_ciphertexts, &mut state)
+                .is_err()
+            {
+                return SyncComputeResponse {
+                    resp: Some(Resp::Error(SyncComputeError::BadInputCiphertext.into())),
                 };
             }
 
@@ -127,7 +138,7 @@ impl FhevmExecutorService {
     fn process_computation(
         comp: &SyncComputation,
         state: &mut ComputationState,
-    ) -> Result<Vec<Ciphertext>, SyncComputeError> {
+    ) -> Result<Vec<CompressedCiphertext>, SyncComputeError> {
         // For now, assume only one result handle.
         let result_handle = comp
             .result_handles
@@ -145,7 +156,7 @@ impl FhevmExecutorService {
         }
     }
 
-    fn expand_inputs(
+    fn expand_compact_lists(
         lists: &Vec<Vec<u8>>,
         keys: &FhevmKeys,
         state: &mut ComputationState,
@@ -170,15 +181,33 @@ impl FhevmExecutorService {
         Ok(())
     }
 
+    fn decompress_compressed_ciphertexts(
+        cts: &Vec<CompressedCiphertext>,
+        state: &mut ComputationState,
+    ) -> Result<(), Box<dyn Error>> {
+        for ct in cts.iter() {
+            let ct_type = get_ct_type(&ct.handle)?;
+            let supported_ct = SupportedFheCiphertexts::decompress(ct_type, &ct.serialization)?;
+            state.ciphertexts.insert(
+                ct.handle.clone(),
+                InMemoryCiphertext {
+                    expanded: supported_ct,
+                    compressed: ct.serialization.clone(),
+                },
+            );
+        }
+        Ok(())
+    }
+
     fn get_ciphertext(
         comp: &SyncComputation,
         result_handle: &Handle,
         state: &ComputationState,
-    ) -> Result<Vec<Ciphertext>, SyncComputeError> {
+    ) -> Result<Vec<CompressedCiphertext>, SyncComputeError> {
         match (comp.inputs.first(), comp.inputs.len()) {
             (
                 Some(SyncInput {
-                    input: Some(Input::InputHandle(handle)),
+                    input: Some(Input::Handle(handle)),
                 }),
                 1,
             ) => {
@@ -186,9 +215,9 @@ impl FhevmExecutorService {
                     if *handle != *result_handle {
                         Err(SyncComputeError::BadInputs)
                     } else {
-                        Ok(vec![Ciphertext {
+                        Ok(vec![CompressedCiphertext {
                             handle: result_handle.to_vec(),
-                            ciphertext: in_mem_ciphertext.compressed.clone(),
+                            serialization: in_mem_ciphertext.compressed.clone(),
                         }])
                     }
                 } else {
@@ -203,18 +232,14 @@ impl FhevmExecutorService {
         comp: &SyncComputation,
         result_handle: Handle,
         state: &mut ComputationState,
-    ) -> Result<Vec<Ciphertext>, SyncComputeError> {
+    ) -> Result<Vec<CompressedCiphertext>, SyncComputeError> {
         // Collect computation inputs.
         let inputs: Result<Vec<SupportedFheCiphertexts>, Box<dyn Error>> = comp
             .inputs
             .iter()
             .map(|sync_input| match &sync_input.input {
                 Some(input) => match input {
-                    Input::Ciphertext(c) if c.handle.len() == HANDLE_LEN => {
-                        let ct_type = c.handle[30] as i16;
-                        Ok(SupportedFheCiphertexts::decompress(ct_type, &c.ciphertext)?)
-                    }
-                    Input::InputHandle(h) => {
+                    Input::Handle(h) => {
                         let ct = state.ciphertexts.get(h).ok_or(FhevmError::BadInputs)?;
                         Ok(ct.expanded.clone())
                     }
@@ -241,9 +266,9 @@ impl FhevmExecutorService {
                             compressed: compressed.clone(),
                         },
                     );
-                    Ok(vec![Ciphertext {
+                    Ok(vec![CompressedCiphertext {
                         handle: result_handle,
-                        ciphertext: compressed,
+                        serialization: compressed,
                     }])
                 }
                 Err(_) => Err(SyncComputeError::ComputationFailed),
