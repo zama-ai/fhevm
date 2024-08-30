@@ -2,12 +2,14 @@
 
 ## How it works?
 
-fhEVM includes an Access Control List (ACL) system that allows you to define which addresses have the right to manipulate a ciphertext. This feature prevents any address from accessing the contents of any ciphertext.
+fhEVM includes an Access Control List (ACL) system that allows you to define which addresses have the right to manipulate a ciphertext. This feature prevents any address from accessing the contents of unauthorized ciphertexts.
 
 These ACLs can be adjusted in two ways:
 
 - `TFHE.allow(ciphertext, address)` Permanently, on the blockchain. This allows a ciphertext to be used by a specific address at any time.
 - `TFHE.allowTransient(ciphertext, address)` Temporarily. The ciphertext is then authorized only for the duration of the transaction.
+
+Note that you can also use: `TFHE.allowThis(ciphertext)` which is just syntactic sugar instead of `TFHE.allow(ciphertext, address(this))`. This function is commonly used inside a dApp smart contract, in order to authorize the same contract to reuse a new `ciphertext` handle which has just been computed in a future transaction.
 
 Permanent allowance will store the ACL in a dedicated contract, while a temporary allowance will store it in [transient storage](https://eips.ethereum.org/EIPS/eip-1153), allowing developers to save gas. Transient allowance is particularly useful when calling an external function using a ciphertext as a parameter.
 
@@ -49,18 +51,18 @@ contract SecretStore {
     secretResult = computationResult;
 
     // Make the temporary allowance for this ciphertext permanent to let the contract able to reuse it at a later stage or request a decryption of it
-    TFHE.allow(secretResult, address(this));
+    TFHE.allowThis(secretResult); // this is strictly equivalent to `TFHE.allow(secretResult, address(this));``
   }
 }
 ```
 
 ## Automatic (transient) allowance
 
-To simplify matters, a number of functions automatically generate temporary access (using `TFHE.allowTransient`) for the contract that calls the function. This applies to:
+To simplify matters, a number of functions automatically generate temporary access (using `TFHE.allowTransient` under the hood) for the contract that calls the function. This applies to:
 
 - `TFHE.asEuintXX()`, `TFHE.asEaddress()`, `TFHE.asEbool()`
 - `TFHE.randXX()`
-- All results from computation (`TFHE.add()`, `TFHE.select()`, ...)
+- All results from computations (`TFHE.add()`, `TFHE.select()`, ...)
 
 ```solidity
 function randomize() {
@@ -68,7 +70,7 @@ function randomize() {
   random = TFHE.randEuint64();
 
   // Permanently store the temporary access for this ciphertext.
-  TFHE.allow(random, address(this));
+  TFHE.allowThis(random);
 }
 ```
 
@@ -91,13 +93,13 @@ function transfer(address to, euint64 encryptedAmount) public {
   euint64 newBalanceTo = TFHE.add(balances[to], TFHE.select(canTransfer, amount, TFHE.asEuint64(0)));
   balances[to] = newBalanceTo;
   // Allow this new balance for both the contract and the owner.
-  TFHE.allow(newBalanceTo, address(this));
+  TFHE.allowThis(newBalanceTo);
   TFHE.allow(newBalanceTo, to);
 
   euint64 newBalanceFrom = TFHE.sub(balances[from], TFHE.select(canTransfer, amount, TFHE.asEuint64(0)));
   balances[from] = newBalanceFrom;
   // Allow this new balance for both the contract and the owner.
-  TFHE.allow(newBalanceFrom, address(this));
+  TFHE.allowThis(newBalanceFrom);
   TFHE.allow(newBalanceFrom, from);
 }
 ```

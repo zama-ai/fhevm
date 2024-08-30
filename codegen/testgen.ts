@@ -297,7 +297,7 @@ function generateLibCallTest(os: OverloadShard, res: string[]) {
       res.push(`${functionTypeToEncryptedType(o.returnType)} result = TFHE.${o.name}(${tfheArgs});`);
       res.push('\n');
     }
-    res.push('TFHE.allow(result, address(this));');
+    res.push('TFHE.allowThis(result);');
     res.push(`${stateVar[functionTypeToEncryptedType(o.returnType) as keyof typeof stateVar]} = result;
         }
     `);

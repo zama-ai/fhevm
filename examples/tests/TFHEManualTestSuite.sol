@@ -21,7 +21,7 @@ contract TFHEManualTestSuite {
         ebytes256 input1 = TFHE.asEbytes256(inp1, inputProof1);
         ebytes256 input2 = TFHE.asEbytes256(inp2, inputProof2);
         ebool result = TFHE.eq(input1, input2);
-        TFHE.allow(result, address(this));
+        TFHE.allowThis(result);
         resb = result;
     }
 
@@ -29,7 +29,7 @@ contract TFHEManualTestSuite {
         ebytes256 input1 = TFHE.asEbytes256(inp1, inputProof1);
         ebytes256 input2 = TFHE.asEbytes256(inp2, inputProof2);
         ebool result = TFHE.ne(input1, input2);
-        TFHE.allow(result, address(this));
+        TFHE.allowThis(result);
         resb = result;
     }
 
@@ -38,7 +38,7 @@ contract TFHEManualTestSuite {
         euint32 ifTrueProc = TFHE.asEuint32(ifTrue, inputProof);
         euint32 ifFalseProc = TFHE.asEuint32(ifFalse, inputProof);
         euint32 result = TFHE.select(controlProc, ifTrueProc, ifFalseProc);
-        TFHE.allow(result, address(this));
+        TFHE.allowThis(result);
         res32 = result;
     }
 
@@ -47,7 +47,7 @@ contract TFHEManualTestSuite {
         eaddress ifTrueProc = TFHE.asEaddress(ifTrue, inputProof);
         eaddress ifFalseProc = TFHE.asEaddress(ifFalse, inputProof);
         eaddress result = TFHE.select(controlProc, ifTrueProc, ifFalseProc);
-        TFHE.allow(result, address(this));
+        TFHE.allowThis(result);
         resAdd = result;
     }
 
@@ -55,7 +55,7 @@ contract TFHEManualTestSuite {
         eaddress aProc = TFHE.asEaddress(a, inputProof);
         eaddress bProc = TFHE.asEaddress(b, inputProof);
         ebool result = TFHE.eq(aProc, bProc);
-        TFHE.allow(result, address(this));
+        TFHE.allowThis(result);
         resb = result;
     }
 
@@ -63,35 +63,35 @@ contract TFHEManualTestSuite {
         eaddress aProc = TFHE.asEaddress(a, inputProof);
         eaddress bProc = TFHE.asEaddress(b, inputProof);
         ebool result = TFHE.ne(aProc, bProc);
-        TFHE.allow(result, address(this));
+        TFHE.allowThis(result);
         resb = result;
     }
 
     function test_eq_eaddress_address(einput a, address b, bytes calldata inputProof) public {
         eaddress aProc = TFHE.asEaddress(a, inputProof);
         ebool result = TFHE.eq(aProc, b);
-        TFHE.allow(result, address(this));
+        TFHE.allowThis(result);
         resb = result;
     }
 
     function test_eq_address_eaddress(einput a, address b, bytes calldata inputProof) public {
         eaddress aProc = TFHE.asEaddress(a, inputProof);
         ebool result = TFHE.eq(b, aProc);
-        TFHE.allow(result, address(this));
+        TFHE.allowThis(result);
         resb = result;
     }
 
     function test_ne_eaddress_address(einput a, address b, bytes calldata inputProof) public {
         eaddress aProc = TFHE.asEaddress(a, inputProof);
         ebool result = TFHE.ne(aProc, b);
-        TFHE.allow(result, address(this));
+        TFHE.allowThis(result);
         resb = result;
     }
 
     function test_ne_address_eaddress(einput a, address b, bytes calldata inputProof) public {
         eaddress aProc = TFHE.asEaddress(a, inputProof);
         ebool result = TFHE.ne(b, aProc);
-        TFHE.allow(result, address(this));
+        TFHE.allowThis(result);
         resb = result;
     }
 

@@ -14,7 +14,7 @@ contract TestAsyncDecrypt is GatewayCaller {
 
   constructor() {
       xBool = TFHE.asEbool(true);
-      TFHE.allow(xBool, address(this));
+      TFHE.allowThis(xBool);
   }
 
   function requestBool() public {
@@ -138,7 +138,7 @@ contract TestAsyncDecrypt is GatewayCaller {
 
   constructor() {
       xUint32 = TFHE.asEuint32(32);
-      TFHE.allow(xUint32, address(this));
+      TFHE.allowThis(xUint32);
   }
 
   function requestUint32(uint32 input1, uint32 input2) public {

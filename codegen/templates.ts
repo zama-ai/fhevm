@@ -710,6 +710,10 @@ function tfheAclMethods(supportedBits: number[]): string {
     function allow(ebool value, address account) internal {
       Impl.allow(ebool.unwrap(value), account);
     }
+
+    function allowThis(ebool value) internal {
+      Impl.allow(ebool.unwrap(value), address(this));
+    }
     `,
   );
 
@@ -718,6 +722,10 @@ function tfheAclMethods(supportedBits: number[]): string {
       `
     function allow(euint${bits} value, address account) internal {
       Impl.allow(euint${bits}.unwrap(value), account);
+    }
+
+    function allowThis(euint${bits} value) internal {
+      Impl.allow(euint${bits}.unwrap(value), address(this));
     }
     \n`,
     ),
@@ -729,8 +737,16 @@ function tfheAclMethods(supportedBits: number[]): string {
       Impl.allow(eaddress.unwrap(value), account);
     }
 
+    function allowThis(eaddress value) internal {
+      Impl.allow(eaddress.unwrap(value), address(this));
+    }
+
     function allow(ebytes256 value, address account) internal {
       Impl.allow(ebytes256.unwrap(value), account);
+    }
+
+    function allowThis(ebytes256 value) internal {
+      Impl.allow(ebytes256.unwrap(value), address(this));
     }
     `,
   );
@@ -986,7 +1002,11 @@ function implCustomMethods(ctx: CodegenContext): string {
 }
 
 export function paymentSol(): string {
-  const res: string = `import "../lib/FHEPaymentAddress.sol";
+  const res: string = `// SPDX-License-Identifier: BSD-3-Clause-Clear
+
+pragma solidity ^0.8.24;
+  
+import "../lib/FHEPaymentAddress.sol";
 
 interface IFHEPayment {
   function depositETH(address account) external payable;

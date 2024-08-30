@@ -18,53 +18,53 @@ contract Rand {
 
     function generate8() public {
         value8 = TFHE.randEuint8();
-        TFHE.allow(value8, address(this));
+        TFHE.allowThis(value8);
     }
 
     function generate8UpperBound(uint8 upperBound) public {
         value8 = TFHE.randEuint8(upperBound);
-        TFHE.allow(value8, address(this));
+        TFHE.allowThis(value8);
     }
 
     function generate16() public {
         value16 = TFHE.randEuint16();
-        TFHE.allow(value16, address(this));
+        TFHE.allowThis(value16);
     }
 
     function generate16UpperBound(uint16 upperBound) public {
         value16 = TFHE.randEuint16(upperBound);
-        TFHE.allow(value16, address(this));
+        TFHE.allowThis(value16);
     }
 
     function generate32() public {
         value32 = TFHE.randEuint32();
-        TFHE.allow(value32, address(this));
+        TFHE.allowThis(value32);
     }
 
     function generate32UpperBound(uint32 upperBound) public {
         value32 = TFHE.randEuint32(upperBound);
-        TFHE.allow(value32, address(this));
+        TFHE.allowThis(value32);
     }
 
     function generate64() public {
         value64 = TFHE.randEuint64();
-        TFHE.allow(value64, address(this));
+        TFHE.allowThis(value64);
     }
 
     function generate64UpperBound(uint32 upperBound) public {
         value64 = TFHE.randEuint64(upperBound);
-        TFHE.allow(value64, address(this));
+        TFHE.allowThis(value64);
     }
 
     function generate64Reverting() public {
         try this.failingCall() {} catch {}
         value64Bounded = TFHE.randEuint64(1024);
-        TFHE.allow(value64Bounded, address(this));
+        TFHE.allowThis(value64Bounded);
     }
 
     function failingCall() public {
         value64 = TFHE.randEuint64();
-        TFHE.allow(value64, address(this));
+        TFHE.allowThis(value64);
         revert();
     }
 }
