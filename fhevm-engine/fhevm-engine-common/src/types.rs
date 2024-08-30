@@ -1,5 +1,4 @@
-use std::error::Error;
-
+use anyhow::Result;
 use tfhe::integer::U256;
 use tfhe::prelude::FheDecrypt;
 use tfhe::{CompressedCiphertextList, CompressedCiphertextListBuilder};
@@ -314,30 +313,25 @@ impl SupportedFheCiphertexts {
         bincode::serialize(&list).expect("compressed list serialization")
     }
 
-    pub fn decompress(ct_type: i16, list: &[u8]) -> Result<Self, Box<dyn Error>> {
+    pub fn decompress(ct_type: i16, list: &[u8]) -> Result<Self> {
         let list: CompressedCiphertextList = bincode::deserialize(list)?;
         match ct_type {
             1 => Ok(SupportedFheCiphertexts::FheBool(
-                list.get(0)?
-                    .ok_or(Box::new(FhevmError::MissingTfheRsData))?,
+                list.get(0)?.ok_or(FhevmError::MissingTfheRsData)?,
             )),
             2 => Ok(SupportedFheCiphertexts::FheUint8(
-                list.get(0)?
-                    .ok_or(Box::new(FhevmError::MissingTfheRsData))?,
+                list.get(0)?.ok_or(FhevmError::MissingTfheRsData)?,
             )),
             3 => Ok(SupportedFheCiphertexts::FheUint16(
-                list.get(0)?
-                    .ok_or(Box::new(FhevmError::MissingTfheRsData))?,
+                list.get(0)?.ok_or(FhevmError::MissingTfheRsData)?,
             )),
             4 => Ok(SupportedFheCiphertexts::FheUint32(
-                list.get(0)?
-                    .ok_or(Box::new(FhevmError::MissingTfheRsData))?,
+                list.get(0)?.ok_or(FhevmError::MissingTfheRsData)?,
             )),
             5 => Ok(SupportedFheCiphertexts::FheUint64(
-                list.get(0)?
-                    .ok_or(Box::new(FhevmError::MissingTfheRsData))?,
+                list.get(0)?.ok_or(FhevmError::MissingTfheRsData)?,
             )),
-            _ => Err(Box::new(FhevmError::UnknownFheType(ct_type as i32))),
+            _ => Err(FhevmError::UnknownFheType(ct_type as i32).into()),
         }
     }
 }

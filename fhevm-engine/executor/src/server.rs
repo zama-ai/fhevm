@@ -1,5 +1,6 @@
-use std::{cell::Cell, collections::HashMap, error::Error, sync::Arc};
+use std::{cell::Cell, collections::HashMap, sync::Arc};
 
+use anyhow::Result;
 use common::FheOperation;
 use executor::{
     fhevm_executor_server::{FhevmExecutor, FhevmExecutorServer},
@@ -26,7 +27,7 @@ pub mod executor {
     tonic::include_proto!("fhevm.executor");
 }
 
-pub fn start(args: &crate::cli::Args) -> Result<(), Box<dyn Error>> {
+pub fn start(args: &crate::cli::Args) -> Result<()> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(args.tokio_threads)
         .max_blocking_threads(args.fhe_compute_threads)
@@ -41,7 +42,7 @@ pub fn start(args: &crate::cli::Args) -> Result<(), Box<dyn Error>> {
             .add_service(FhevmExecutorServer::new(executor))
             .serve(addr)
             .await?;
-        Ok::<(), Box<dyn Error>>(())
+        Ok::<(), anyhow::Error>(())
     })?;
     Ok(())
 }
@@ -184,7 +185,7 @@ impl FhevmExecutorService {
     fn decompress_compressed_ciphertexts(
         cts: &Vec<CompressedCiphertext>,
         state: &mut ComputationState,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<()> {
         for ct in cts.iter() {
             let ct_type = get_ct_type(&ct.handle)?;
             let supported_ct = SupportedFheCiphertexts::decompress(ct_type, &ct.serialization)?;
@@ -234,7 +235,7 @@ impl FhevmExecutorService {
         state: &mut ComputationState,
     ) -> Result<Vec<CompressedCiphertext>, SyncComputeError> {
         // Collect computation inputs.
-        let inputs: Result<Vec<SupportedFheCiphertexts>, Box<dyn Error>> = comp
+        let inputs: Result<Vec<SupportedFheCiphertexts>> = comp
             .inputs
             .iter()
             .map(|sync_input| match &sync_input.input {

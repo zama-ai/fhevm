@@ -1,9 +1,9 @@
-use std::error::Error;
+use anyhow::Result;
 
 mod cli;
 mod server;
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> Result<()> {
     let args = cli::parse_args();
     server::start(&args)?;
     Ok(())
