@@ -3,6 +3,7 @@
 pragma solidity ^0.8.24;
 
 import "../lib/TFHE.sol";
+import "../payment/Payment.sol";
 import "@openzeppelin/contracts/access/Ownable2Step.sol";
 
 contract EncryptedERC20 is Ownable2Step {
@@ -21,7 +22,8 @@ contract EncryptedERC20 is Ownable2Step {
     // A mapping of the form mapping(owner => mapping(spender => allowance)).
     mapping(address => mapping(address => euint64)) internal allowances;
 
-    constructor(string memory name_, string memory symbol_) Ownable(msg.sender) {
+    constructor(string memory name_, string memory symbol_) payable Ownable(msg.sender) {
+        Payment.depositForThis(msg.value);
         _name = name_;
         _symbol = symbol_;
     }

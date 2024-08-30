@@ -3,6 +3,7 @@
 pragma solidity ^0.8.24;
 
 import "../lib/TFHE.sol";
+import "../payment/Payment.sol";
 
 contract Reencrypt {
     ebool public xBool;
@@ -14,7 +15,9 @@ contract Reencrypt {
     eaddress public xAddress;
     ebytes256 public yBytes256;
 
-    constructor() {
+    constructor() payable {
+        Payment.depositForThis(msg.value);
+
         xBool = TFHE.asEbool(true);
         TFHE.allow(xBool, address(this));
         TFHE.allow(xBool, msg.sender);

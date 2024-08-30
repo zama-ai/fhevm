@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "../../lib/TFHE.sol";
+import "../../payment/Payment.sol";
 
 contract TFHEManualTestSuite {
     ebool public resb;
@@ -11,6 +12,10 @@ contract TFHEManualTestSuite {
     euint32 public res32;
     euint64 public res64;
     eaddress public resAdd;
+
+    constructor() payable {
+        Payment.depositForThis(msg.value);
+    }
 
     function eqEbytes256(einput inp1, bytes calldata inputProof1, einput inp2, bytes calldata inputProof2) external {
         ebytes256 input1 = TFHE.asEbytes256(inp1, inputProof1);

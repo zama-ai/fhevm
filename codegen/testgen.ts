@@ -81,7 +81,9 @@ async function deployTfheTestFixture${os.shardNumber}(): Promise<TFHETestSuite${
   const admin = signers.alice;
 
   const contractFactory = await ethers.getContractFactory('TFHETestSuite${os.shardNumber}');
-  const contract = await contractFactory.connect(admin).deploy();
+  const contract = await contractFactory.connect(admin).deploy({
+    value: ethers.parseEther('0.001'),
+  });
   await contract.waitForDeployment();
 
   return contract;
@@ -229,6 +231,8 @@ export function generateSmartContract(os: OverloadShard): string {
         pragma solidity ^0.8.24;
 
         import "../../lib/TFHE.sol";
+        import "../../payment/Payment.sol";
+
         contract TFHETestSuite${os.shardNumber} {
           ebool public resb;
           euint4 public res4;
@@ -236,6 +240,10 @@ export function generateSmartContract(os: OverloadShard): string {
           euint16 public res16;
           euint32 public res32;
           euint64 public res64;
+
+          constructor() payable {
+            Payment.depositForThis(msg.value);
+          }
 
     `);
 

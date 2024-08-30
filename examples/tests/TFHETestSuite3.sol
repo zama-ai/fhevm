@@ -2,6 +2,8 @@
 pragma solidity ^0.8.24;
 
 import "../../lib/TFHE.sol";
+import "../../payment/Payment.sol";
+
 contract TFHETestSuite3 {
     ebool public resb;
     euint4 public res4;
@@ -9,6 +11,10 @@ contract TFHETestSuite3 {
     euint16 public res16;
     euint32 public res32;
     euint64 public res64;
+
+    constructor() payable {
+        Payment.depositForThis(msg.value);
+    }
 
     function min_euint16_euint4(einput a, einput b, bytes calldata inputProof) public {
         euint16 aProc = TFHE.asEuint16(a, inputProof);

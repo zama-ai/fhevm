@@ -42,9 +42,9 @@ task('task:computeTFHEExecutorAddress').setAction(async function (taskArguments:
   const content = `TFHE_EXECUTOR_CONTRACT_ADDRESS=${execAddress}\n`;
   try {
     fs.writeFileSync(envFilePath, content, { flag: 'w' });
-    console.log(`TFHE Executor address ${execAddress} written successfully!`);
+    console.log(`TFHEExecutor address ${execAddress} written successfully!`);
   } catch (err) {
-    console.error('Failed to write TFHE Executor address:', err);
+    console.error('Failed to write TFHEExecutor address:', err);
   }
 
   const solidityTemplateCoprocessor = `// SPDX-License-Identifier: BSD-3-Clause-Clear
@@ -71,21 +71,50 @@ task('task:computeKMSVerifierAddress').setAction(async function (taskArguments: 
   const content = `KMS_VERIFIER_CONTRACT_ADDRESS=${kmsVerfierAddress}\n`;
   try {
     fs.writeFileSync(envFilePath, content, { flag: 'w' });
-    console.log(`KMS Verifier address ${kmsVerfierAddress} written successfully!`);
+    console.log(`KMSVerifier address ${kmsVerfierAddress} written successfully!`);
   } catch (err) {
-    console.error('Failed to write KMS Verifier address:', err);
+    console.error('Failed to write KMSVerifier address:', err);
   }
 
   const solidityTemplate = `// SPDX-License-Identifier: BSD-3-Clause-Clear
 
 pragma solidity ^0.8.24;
 
-address constant KMS_VERIFIER_CONTRACT_ADDRESS = ${kmsVerfierAddress};\n`;
+address constant kmsVerifierAdd = ${kmsVerfierAddress};\n`;
 
   try {
     fs.writeFileSync('./lib/KMSVerifierAddress.sol', solidityTemplate, { encoding: 'utf8', flag: 'w' });
     console.log('./lib/KMSVerifierAddress.sol file generated successfully!');
   } catch (error) {
     console.error('Failed to write ./lib/KMSVerifierAddress.sol', error);
+  }
+});
+
+task('task:computeFHEPaymentAddress').setAction(async function (taskArguments: TaskArguments, { ethers }) {
+  const deployer = (await ethers.getSigners())[9].address;
+  const fhePaymentAddress = ethers.getCreateAddress({
+    from: deployer,
+    nonce: 3, // using nonce of 3 for the FHEPayment contract
+  });
+  const envFilePath = path.join(__dirname, '../lib/.env.fhepayment');
+  const content = `FHE_PAYMENT_CONTRACT_ADDRESS=${fhePaymentAddress}\n`;
+  try {
+    fs.writeFileSync(envFilePath, content, { flag: 'w' });
+    console.log(`FHEPayment address ${fhePaymentAddress} written successfully!`);
+  } catch (err) {
+    console.error('Failed to write FHEPayment address:', err);
+  }
+
+  const solidityTemplate = `// SPDX-License-Identifier: BSD-3-Clause-Clear
+
+pragma solidity ^0.8.24;
+
+address constant fhePaymentAdd = ${fhePaymentAddress};\n`;
+
+  try {
+    fs.writeFileSync('./lib/FHEPaymentAddress.sol', solidityTemplate, { encoding: 'utf8', flag: 'w' });
+    console.log('./lib/FHEPaymentAddress.sol file generated successfully!');
+  } catch (error) {
+    console.error('Failed to write ./lib/FHEPaymentAddress.sol', error);
   }
 });

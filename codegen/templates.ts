@@ -284,64 +284,7 @@ library TFHE {
 
   res.push('}\n');
 
-  // supportedBits.forEach((bits) => {
-  //   operators.forEach((op) => {
-  //     res.push(tfheSolidityOperator(bits, op, signatures));
-  //   });
-  // });
-
   return [res.join(''), signatures];
-}
-
-function tfheSolidityOperator(bits: number, operator: Operator, os: OverloadSignature[]): string {
-  const res: string[] = [];
-
-  if (operator.hasEncrypted && operator.binarySolidityOperator) {
-    const fname = `tfheBinaryOperator${capitalizeFirstLetter(operator.name)}${bits}`;
-    res.push(`
-      using {${fname} as ${operator.binarySolidityOperator}} for euint${bits} global;
-    `);
-
-    res.push(`
-      function ${fname}(euint${bits} lhs, euint${bits} rhs) pure returns (euint${bits}) {
-        return TFHE.${operator.name}(lhs, rhs);
-      }
-    `);
-
-    // os.push({
-    //   binaryOperator: operator.binarySolidityOperator,
-    //   arguments: [
-    //     { type: ArgumentType.EUint, bits },
-    //     { type: ArgumentType.EUint, bits },
-    //   ],
-
-    //   name: `bin_op_${operator.name}`,
-    //   returnType: { type: ArgumentType.EUint, bits },
-    // });
-  }
-
-  if (operator.hasEncrypted && operator.unarySolidityOperator) {
-    const fname = `tfheUnaryOperator${capitalizeFirstLetter(operator.name)}${bits}`;
-    res.push(`
-      using {${fname} as ${operator.unarySolidityOperator}} for euint${bits} global;
-    `);
-
-    res.push(`
-      function ${fname}(euint${bits} input) pure returns (euint${bits}) {
-        return TFHE.${operator.name}(input);
-      }
-    `);
-
-    // os.push({
-    //   unaryOperator: operator.unarySolidityOperator,
-    //   arguments: [{ type: ArgumentType.EUint, bits }],
-
-    //   name: `unary_op_${operator.name}`,
-    //   returnType: { type: ArgumentType.EUint, bits },
-    // });
-  }
-
-  return res.join('');
 }
 
 function tfheEncryptedOperator(
@@ -573,23 +516,6 @@ function tfheSelect(inputBits: number): string {
     function select(ebool control, euint${inputBits} a, euint${inputBits} b) internal returns (euint${inputBits}) {
         return euint${inputBits}.wrap(Impl.select(ebool.unwrap(control), euint${inputBits}.unwrap(a), euint${inputBits}.unwrap(b)));
     }`;
-}
-
-function tfheEq(inputBits: number): string {
-  return `
-    function eq(euint${inputBits}[] memory a, euint${inputBits}[] memory b) internal pure returns (ebool) {
-        require(a.length == b.length, "Both arrays are not of the same size.");
-        uint256[] memory lhs = new uint256[](a.length);
-        uint256[] memory rhs = new uint256[](b.length);
-        for (uint i = 0; i < a.length; i++) {
-          lhs[i] = euint${inputBits}.unwrap(a[i]);
-        }
-        for (uint i = 0; i < b.length; i++) {
-          rhs[i] = euint${inputBits}.unwrap(b[i]);
-        }
-        return ebool.wrap(Impl.eq(lhs, rhs));
-    }
-  `;
 }
 
 function tfheAsEboolCustomCast(inputBits: number, outputBits: number): string {
@@ -1059,218 +985,41 @@ function implCustomMethods(ctx: CodegenContext): string {
     `;
 }
 
-export function implSolMock(ctx: CodegenContext, operators: Operator[]): string {
-  const res: string[] = [];
+export function paymentSol(): string {
+  const res: string = `import "../lib/FHEPaymentAddress.sol";
 
-  res.push(`
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+interface IFHEPayment {
+  function depositETH(address account) external payable;
+  function withdrawETH(uint256 amount, address receiver) external;
+  function getAvailableDepositsETH(address account) external view returns(uint256);
+}
 
-pragma solidity ^0.8.24;
+library Payment {
+    function depositForAccount(address account, uint256 amount) internal {
+      IFHEPayment(fhePaymentAdd).depositETH{value: amount}(account);
+    }
 
-import "./TFHE.sol";
+    function depositForThis(uint256 amount) internal {
+      IFHEPayment(fhePaymentAdd).depositETH{value: amount}(address(this));
+    }
 
-library Impl {
-  function add(uint256 lhs, uint256 rhs, bool /*scalar*/) internal pure returns (uint256 result) {
-    unchecked {
-        result = lhs + rhs;
+    function withdrawToAccount(address account, uint256 amount) internal {
+      IFHEPayment(fhePaymentAdd).withdrawETH(amount, account);
+    }
+
+    function withdrawToThis(uint256 amount) internal {
+      IFHEPayment(fhePaymentAdd).withdrawETH(amount, address(this));
+    }
+
+    function getDepositedBalanceOfAccount(address account) internal view returns (uint256) {
+      return IFHEPayment(fhePaymentAdd).getAvailableDepositsETH(account);
+    }
+
+    function getDepositedBalanceOfThis() internal view returns (uint256) {
+      return IFHEPayment(fhePaymentAdd).getAvailableDepositsETH(address(this));
     }
   }
+  `;
 
-  function sub(uint256 lhs, uint256 rhs, bool /*scalar*/) internal pure returns (uint256 result) {
-      unchecked {
-          result = lhs - rhs;
-      }
-  }
-
-  function mul(uint256 lhs, uint256 rhs, bool /*scalar*/) internal pure returns (uint256 result) {
-      unchecked {
-          result = lhs * rhs;
-      }
-  }
-
-  function div(uint256 lhs, uint256 rhs) internal pure returns (uint256 result) {
-      result = lhs / rhs; // unchecked does not change behaviour even when dividing by 0
-  }
-
-  function rem(uint256 lhs, uint256 rhs) internal pure returns (uint256 result) {
-      result = lhs % rhs;
-  }
-
-  function and(uint256 lhs, uint256 rhs) internal pure returns (uint256 result) {
-      result = lhs & rhs;
-  }
-
-  function or(uint256 lhs, uint256 rhs) internal pure returns (uint256 result) {
-      result = lhs | rhs;
-  }
-
-  function xor(uint256 lhs, uint256 rhs) internal pure returns (uint256 result) {
-      result = lhs ^ rhs;
-  }
-
-  function shl(uint256 lhs, uint256 rhs, bool /*scalar*/) internal pure returns (uint256 result) {
-      result = lhs << rhs;
-  }
-
-  function shr(uint256 lhs, uint256 rhs, bool /*scalar*/) internal pure returns (uint256 result) {
-      result = lhs >> rhs;
-  }
-
-  function rotl(uint256 lhs, uint256 rhs, uint256 bits, bool /*scalar*/) internal pure returns (uint256 result) {
-      uint count = rhs;
-      result = (lhs << count) | (lhs >> (bits - count));
-  }
-
-  function rotr(uint256 lhs, uint256 rhs, uint256 bits, bool /*scalar*/) internal pure returns (uint256 result) {
-      uint count = rhs;
-      result = (lhs >> count) | (lhs << (bits - count));
-  }
-
-  function eq(uint256 lhs, uint256 rhs, bool /*scalar*/) internal pure returns (uint256 result) {
-      result = (lhs == rhs) ? 1 : 0;
-  }
-
-  function eq(uint256[] memory lhs, uint256[] memory rhs) internal pure returns (uint256 result) {
-      require(lhs.length == rhs.length, "Both arrays are not of the same size.");
-      result = 1;
-      for (uint i = 0; i < lhs.length; i++) {
-        if (lhs[i] != rhs[i]) return 0;
-      }
-  }
-
-  function ne(uint256 lhs, uint256 rhs, bool /*scalar*/) internal pure returns (uint256 result) {
-      result = (lhs != rhs) ? 1 : 0;
-  }
-
-  function ge(uint256 lhs, uint256 rhs, bool /*scalar*/) internal pure returns (uint256 result) {
-      result = (lhs >= rhs) ? 1 : 0;
-  }
-
-  function gt(uint256 lhs, uint256 rhs, bool /*scalar*/) internal pure returns (uint256 result) {
-      result = (lhs > rhs) ? 1 : 0;
-  }
-
-  function le(uint256 lhs, uint256 rhs, bool /*scalar*/) internal pure returns (uint256 result) {
-      result = (lhs <= rhs) ? 1 : 0;
-  }
-
-  function lt(uint256 lhs, uint256 rhs, bool /*scalar*/) internal pure returns (uint256 result) {
-      result = (lhs < rhs) ? 1 : 0;
-  }
-
-  function min(uint256 lhs, uint256 rhs, bool /*scalar*/) internal pure returns (uint256 result) {
-      result = (lhs < rhs) ? lhs : rhs;
-  }
-
-  function max(uint256 lhs, uint256 rhs, bool /*scalar*/) internal pure returns (uint256 result) {
-      result = (lhs > rhs) ? lhs : rhs;
-  }
-
-  function neg(uint256 ct) internal pure returns (uint256 result) {
-      uint256 y;
-      assembly {
-          y := not(ct)
-      }
-      unchecked {
-          return y + 1;
-      }
-  }
-
-  function not(uint256 ct) internal pure returns (uint256 result) {
-      uint256 y;
-      assembly {
-          y := not(ct)
-      }
-      return y;
-  }
-
-  function select(uint256 control, uint256 ifTrue, uint256 ifFalse) internal pure returns (uint256 result) {
-      result = (control == 1) ? ifTrue : ifFalse;
-  }
-
-  function select(uint256 control, uint256 ifTrue, uint256 ifFalse) internal pure returns (uint256 result) {
-      result = (control == 1) ? ifTrue : ifFalse;
-  }
-
-  function optReq(uint256 ciphertext) internal view {
-      this; // silence state mutability warning
-      require(ciphertext == 1, "transaction execution reverted");
-  }
-
-  function fhePubKey() internal view returns (bytes memory key) {
-      this; // silence state mutability warning
-      key = hex"0123456789ABCDEF";
-  }
-
-  function verify(einput inputHandle,
-        bytes memory inputProof,
-        uint8 toType) internal returns (uint256 result) {
-      // TODO: fix implementation
-      uint256 x;
-      assembly {
-          switch gt(mload(inputProof), 31)
-          case 1 {
-              x := mload(add(inputProof, add(32, sub(mload(inputProof), 32))))
-          }
-          default {
-              x := mload(add(inputProof, 32))
-          }
-      }
-      if (inputProof.length < 32) {
-          x = x >> ((32 - inputProof.length) * 8);
-      }
-      return x;
-  }
-
-  function cast(uint256 ciphertext, uint8 toType) internal returns (uint256 result) {
-    if (toType == 0) {
-        result = uint256(uint8(ciphertext));
-    }
-    if (toType == 1) {
-        result = uint256(uint8(ciphertext));
-    }
-    if (toType == 2) {
-        result = uint256(uint8(ciphertext));
-    }
-    if (toType == 3) {
-        result = uint256(uint16(ciphertext));
-    }
-    if (toType == 4) {
-        result = uint256(uint32(ciphertext));
-    }
-    if (toType == 5) {
-        result = uint256(uint64(ciphertext));
-    }
-  }
-
-  function trivialEncrypt(uint256 value, uint8 /*toType*/) internal returns (uint256 result) {
-      result = value;
-  }
-
-  function rand(uint8 randType) internal returns (uint256 result) {
-      uint256 randomness = uint256(keccak256(abi.encodePacked(block.number, gasleft(), msg.sender))); // assuming no duplicated tx by same sender in a single block
-      if (randType == Common.euint8_t) {
-        result = uint8(randomness);
-      } else if (randType == Common.euint16_t) {
-        result = uint16(randomness);
-      } else if (randType == Common.euint32_t) {
-        result = uint32(randomness);
-      } else if (randType == Common.euint64_t) {
-        result = uint64(randomness);
-      } else {
-        revert("rand() mock invalid type");
-      }
-  }
-
-  function randBounded(uint256 upperBound, uint8 randType) internal returns (uint256 result) {
-    // Here, we assume upperBound is a power of 2. Therefore, using modulo is secure.
-    // If not a power of 2, we might have to do something else (though might not matter
-    // much as this is a mock).
-    result = rand(randType) % upperBound;
-  }
-`);
-
-  res.push('}\n');
-
-  return res.join('');
+  return res;
 }

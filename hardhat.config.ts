@@ -100,9 +100,11 @@ task('test', async (taskArgs, hre, runSuper) => {
     await hre.run('task:computeACLAddress');
     await hre.run('task:computeTFHEExecutorAddress');
     await hre.run('task:computeKMSVerifierAddress');
+    await hre.run('task:computeFHEPaymentAddress');
     await hre.run('task:deployACL');
     await hre.run('task:deployTFHEExecutor');
     await hre.run('task:deployKMSVerifier');
+    await hre.run('task:deployFHEPayment');
     await hre.run('task:launchFhevm', { skipGetCoin: false });
   }
   await hre.run('compile:specific', { contract: 'examples' });
