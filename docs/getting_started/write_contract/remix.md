@@ -1,8 +1,7 @@
 # Using Remix
+This document provides guidance on using the new Zama plugin for the [the official Remix IDE](https://remix.ethereum.org), which replaces the deprecated Remix fork. This allows you to develop and manage contracts directly in Remix by simply loading the fhEVM plugin.
 
-We have decided to deprecate our Remix fork in favor of a new plugin we are currently developing. This plugin will enable you to develop your contracts directly on [the official Remix IDE](https://remix.ethereum.org) by simply loading the fhEVM plugin.
-
-To use it:
+## Installing the Zama plugin
 
 1. Go to the "Plugin Manager" page
 2. Click on "Connect to a Local Plugin"
@@ -12,7 +11,13 @@ To use it:
 <figure><img src="../../.gitbook/assets/remixide.png" alt="How to install Remix IDE plugin" width="300"><figcaption>
 </figcaption></figure>
 
-After connecting to the Zama Plugin, you should click on the plugin button located on the left of the screen, and then add a Gateway URL to be able to request reencryption of ciphertexts, as shown in the picture below. The default recommended Gateway URL is: `https://gateway.devnet.zama.ai`.
+## Configuring the Zama plugin
+After connecting to the Zama Plugin, follow the steps to configure it:
+
+ 1. Click on the plugin button located on the left of the screen
+ 2. Add a Gateway URL to be able to request reencryption of ciphertexts, as shown in the picture below. 
+
+The default recommended Gateway URL is: `https://gateway.devnet.zama.ai`.
 
 <figure><img src="../../.gitbook/assets/useGateway.png" alt="How to install Remix IDE plugin" width="300"><figcaption>
 </figcaption></figure>

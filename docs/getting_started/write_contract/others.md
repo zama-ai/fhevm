@@ -1,4 +1,5 @@
 # Other development environment
+This document provides guidance on using the fhEVM in other development environments.
 
 ## Foundry
 

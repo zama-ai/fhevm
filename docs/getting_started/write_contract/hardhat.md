@@ -1,14 +1,21 @@
 # Using Hardhat
+This document guides you to start with fhEVM by using our [Hardhat template](https://github.com/zama-ai/fhevm-hardhat-template).
 
-The best way to start writing smart contracts with fhEVM is to use our [Hardhat template](https://github.com/zama-ai/fhevm-hardhat-template).
-It allows you to start a fhEVM docker image and run your smart contract on it. Read the [README](https://github.com/zama-ai/fhevm-hardhat-template/blob/main/README.md) for more information.
-When developing confidential contracts, we recommend to use first the mocked version of fhEVM for faster testing with `pnpm test:mock` and coverage computation via `pnpm coverage:mock`, this will lead to a better developer experience. However, keep in mind that the mocked fhEVM has some limitations and discrepancies compared to the real fhEVM node, as explained in the warning section at the end of this page.
-It's essential to run tests of the final contract version using the real fhEVM. You can do this by running `pnpm test` before deployment.
+## Using Hardhat with fhEVM
+To start writing smart contracts with fhEVM, we recommend use our [Hardhat template](https://github.com/zama-ai/fhevm-hardhat-template). This template allows you to launch an fhEVM Docker image and run your smart contract on it. For more information, refer to the [README](https://github.com/zama-ai/fhevm-hardhat-template/blob/main/README.md).
+
+When developing confidential contracts, we recommend using the mocked version of fhEVM first for faster testing. You can achieve this by running `pnpm test:mock` for tests and `pnpm coverage:mock` for coverage computation. This approach provides a better developer experience. However, keep in mind that the mocked fhEVM has limitations and discrepancies compared to the real fhEVM node, as detailed in the [limitations](#limitations) section below.
+
+It's essential to test the final contract version with the real fhEVM before deployment. Run `pnpm test` to ensure everything works correctly.
 
 ## Mocked mode
 
-For faster testing iterations, instead of launching all the tests on the local fhEVM node via `pnpm test`or `npx hardhat test` which could last several minutes, you could use instead a mocked version of the fhEVM.
-The same tests should (almost always) pass, as is, without any modification: neither the javascript files neither the solidity files need to be changed between the mocked and the real version. The mocked mode does not actually real encryption for encrypted types and runs the tests on a local hardhat node which is implementing the original EVM (i.e non-fhEVM). Additionally, the mocked mode will let you use all the hardhat related special testing/debugging methods, such as `evm_mine`, `evm_snapshot`, `evm_revert` etc, which are very helpful for testing.
+For faster testing iterations, you can use the mocked version of the fhEVM instead of launching all tests on a local fhEVM node with `pnpm test` or `npx hardhat test`, which can take several minutes. 
+
+The same tests should generally pass without modification—no changes to the JavaScript or Solidity files are required when switching between the mocked and real versions.
+
+In mocked mode, actual encryption for encrypted types is not performed. Instead, the tests run on a local Hardhat node that implements the original EVM (non-fhEVM). Additionally, this mode supports all Hardhat-related testing and debugging methods, such as `evm_mine`, `evm_snapshot`, and `evm_revert`, which are highly useful for testing.
+
 
 To run the mocked tests use either:
 
@@ -23,7 +30,10 @@ npx hardhat test --network hardhat
 ```
 
 In mocked mode, all tests should pass in few seconds instead of few minutes, allowing a better developer experience.
-Furthermore, getting the coverage of tests is only possible in mocked mode. Just use the following command:
+
+### Coverage in mocked mode
+Coverage computation is only possible in mocked mode. Run the following command to compute coverage:
+
 
 ```
 pnpm coverage:mock
@@ -35,9 +45,11 @@ Or equivalently:
 npx hardhat coverage
 ```
 
-Then open the file `coverage/index.html` to see the coverage results. This will increase security by pointing out missing branches not covered yet by the current test suite.
 
-**Notice :** Due to limitations in the `solidity-coverage` package, the coverage computation in fhEVM does not support tests involving the `evm_snapshot`hardhat testing method, however, this method is still supported when running tests in mocked mode! In case you are using hardhat snapshots, we recommend you to end your test description by the`[skip-on-coverage]` tag. Here is a concrete example for illustration purpose:
+After running the command, open the `coverage/index.html` file to view the results. This helps identify any missing branches not covered by the current test suite, increasing the security of your contracts.
+
+#### Important note
+Due to limitations in the `solidity-coverage` package, coverage computation in fhEVM does not support tests involving the `evm_snapshot` Hardhat testing method. However, this method is still supported when running tests in mocked mode. If you are using Hardhat snapshots, we recommend to end your your test description with the `[skip-on-coverage]` tag to to avoid coverage issues. Here is an example:
 
 ```js
 import { expect } from 'chai';
@@ -110,9 +122,12 @@ describe('Rand', function () {
 });
 ```
 
-In the previous snippet, the first test will be run in every case, whether in "real" non-mocked mode (`pnpm test`), testing mocked mode (`pnpm test:mock`) or coverage (mocked) mode (`pnpm coverage:mock`). On the other hand, the second test will be run **only** in testing mocked mode, i.e only when running `pnpm test:mock`, since snapshots only works in that specific case. Actually, the second test will be skipped if run in coverage mode, since its description string ends with `[skip-on-coverage]` and similarly, we avoid the test to fail in non-mocked mode since we check that the network name is `hardhat`.
+In this snippet, the first test will always run, whether in "real" non-mocked mode (`pnpm test`), testing mocked mode (`pnpm test:mock`) or coverage (mocked) mode (`pnpm coverage:mock`). On the other hand, the second test will be run **only** in testing mocked mode(`pnpm test:mock`), because snapshots only works in that specific case. 
+Actually, the second test will be skipped if run in coverage mode, since its description string ends with `[skip-on-coverage]` and similarly, we avoid the test to fail in non-mocked mode since we check that the network name is `hardhat`.
 
-⚠️ **Warning :** Due to intrinsic limitations of the original EVM, the mocked version differ in few corner cases from the real fhEVM, the main difference is the difference in gas prices for the FHE operations. This means that before deploying to production, developers still need to run the tests with the original fhEVM node, as a final check in non-mocked mode, with `pnpm test` or `npx hardhat test`.
+### Limitations
+
+⚠️ **Warning :** Due to intrinsic limitations of the original EVM, the mocked version differ in few corner cases from the real fhEVM, mainly in gas prices for the FHE operations. This means that before deploying to production, developers still need to run the tests with the original fhEVM node, as a final check in non-mocked mode, with `pnpm test` or `npx hardhat test`.
 
 {% hint style="success" %}
 **Zama 5-Question Developer Survey**
