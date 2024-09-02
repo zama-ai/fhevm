@@ -234,8 +234,6 @@ pub enum SupportedFheOperations {
     FheMax = 19,
     FheNeg = 20,
     FheNot = 21,
-    FheCast = 30,
-    FheIfThenElse = 31,
     FheCast = 23,
     FheIfThenElse = 25,
     FheRand = 26,

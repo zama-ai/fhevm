@@ -90,7 +90,6 @@ pub fn debug_trivial_encrypt_be_bytes(
 
 pub fn current_ciphertext_version() -> i16 {
     0
-    0
 }
 
 pub fn try_expand_ciphertext_list(
@@ -1550,5 +1549,6 @@ pub fn perform_fhe_operation(
         },
         SupportedFheOperations::FheRand => todo!("Implement FheRand"),
         SupportedFheOperations::FheRandBounded => todo!("Implement FheRandBounded"),
+        SupportedFheOperations::FheGetInputCiphertext => todo!("Implement FheGetInputCiphertext"),
     }
 }
