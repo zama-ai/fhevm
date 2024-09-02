@@ -1,4 +1,5 @@
 # Gas estimation
+This document provides an overview of gas estimation for Fully Homomorphic Encryption (FHE) operations, detailing the gas costs associated with various operations across different data types. 
 
 FHE operations are typically more computationally expensive than classical operations due to their inherent complexity. As a reference, here is an approximation of the gas cost associated with each operation.
 

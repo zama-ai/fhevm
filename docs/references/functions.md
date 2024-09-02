@@ -1,5 +1,7 @@
 # Function specifications
 
+This document provides an overview of the functions available in the `TFHE` Solidity library.
+
 The functions exposed by the `TFHE` Solidity library come in various shapes and sizes in order to facilitate developer experience.
 For example, most binary operators (e.g., `add`) can take as input any combination of the supported data types.
 

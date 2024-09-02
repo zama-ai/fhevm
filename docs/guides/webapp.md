@@ -1,4 +1,5 @@
 # Build a web application
+This document guides you through building a web application using the fhevmjs library. You can either start with a template or directly integrate the library into your project. 
 
 ## Using a template
 
@@ -18,7 +19,8 @@ You can also use [this template](https://github.com/zama-ai/fhevmjs-next-templat
 
 ## Using directly the library
 
-First, you need to install the library.
+### Step 1: Install the library
+Install the `fhevmjs` library to your project:
 
 ```bash
 # Using npm
@@ -30,6 +32,7 @@ yarn add fhevmjs
 # Using pnpm
 pnpm add fhevmjs
 ```
+### Step 2: Initialize your project
 
 `fhevmjs` uses ESM format. You need to set the [type to "module" in your package.json](https://nodejs.org/api/packages.html#type). If your node project use `"type": "commonjs"` or no type, you can force the loading of the web version by using `import { createInstance } from 'fhevmjs/web';`
 
@@ -42,7 +45,7 @@ const init = async () => {
   await initFhevm(); // Load needed WASM
 };
 ```
-
+### Step 3: Create an instance
 Once the WASM is loaded, you can now create an instance. An instance receives an object containing:
 
 - `chainId` (optional): the chainId of the network

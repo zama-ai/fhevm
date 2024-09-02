@@ -1,6 +1,8 @@
 # Build with Node
+This document provides instructions on how to build with `Node.js` using the `fhevmjs` library.
 
-First, you need to install the library.
+## Install the library
+First, you need to install the library:
 
 ```bash
 # Using npm
@@ -15,6 +17,8 @@ pnpm add fhevmjs
 
 `fhevmjs` uses ESM format for web version and commonjs for node version. You need to set the [type to "commonjs" in your package.json](https://nodejs.org/api/packages.html#type) to load the correct version of fhevmjs. If your node project use `"type": "module"`, you can force the loading of the Node version by using `import { createInstance } from 'fhevmjs/node';`
 
+## Create an instance
+
 An instance receives an object containing:
 
 - `chainId` (optional): the chainId of the network
@@ -24,7 +28,7 @@ An instance receives an object containing:
 - `gatewayUrl` (optional): the URL of the gateway to retrieve a reencryption
 - `coprocessorUrl` (optional): the URL of the coprocessor
 
-## Create an instance
+
 
 ```javascript
 const { createInstance } = require("fhevmjs");

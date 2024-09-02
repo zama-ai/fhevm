@@ -1,6 +1,9 @@
 # Use the CLI
 
-fhevmjs include a Command-Line Interface (CLI) tool. With this handy utility, you can encrypt 8/16/32bits integer with the blockchain's FHE public key.
+This document provides instructions on how to use the Command-Line Interface (CLI) tool included in the `fhevmjs` package for encrypting integers with a blockchain's Fully Homomorphic Encryption (FHE) public key.
+
+`fhevmjs` include a CLI tool. With this handy utility, you can encrypt 8/16/32bits integer with the blockchain's FHE public key.
+
 To get started with fhevmjs CLI, first, ensure you have Node.js installed on your system. Next, install the fhevmjs package globally using the '-g' flag, which allows you to access the CLI tool from any directory:
 
 ```bash

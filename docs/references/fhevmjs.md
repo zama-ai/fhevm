@@ -1,6 +1,7 @@
 # fhevmjs function specifications
+This document provides an overview of the `fhevmjs` library, detailing its initialization, instance creation, input handling, encryption, and re-encryption processes.
 
-[fhevmjs](https://github.com/zama-ai/fhevmjs/) is designed to assist in creating encrypted inputs and retrieving reencryption data off-chain through a gateway. The library works with any fhEVM and fhEVM Coprocessors.
+[fhevmjs](https://github.com/zama-ai/fhevmjs/) is designed to assist in creating encrypted inputs and retrieving re-encryption data off-chain through a gateway. The library works with any fhEVM and fhEVM Coprocessors.
 
 ## Init (browser)
 
