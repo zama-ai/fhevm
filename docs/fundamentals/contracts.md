@@ -1,8 +1,7 @@
 # Contracts standard library
+This document provides guidance on how to use the standard contracts.
 
-## Getting Started
-
-### Installation
+## Installation
 
 ```bash
 # Using npm

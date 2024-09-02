@@ -1,8 +1,9 @@
 # Decrypt and reencrypt
+This document explains how to decrypt and reencrypt data on the blockchain using a Key Management Service (KMS) and the Gateway service. The process ensures secure handling of sensitive data without exposing the blockchain's private key.
 
 ## How it's working
 
-Validators of the blockchain do not own the blockchain's private key. Instead, the private key is owned by a Key Management Service (KMS). If the plaintext value is needed at some point, there are two ways to obtain it. Both methods are handled by a service called the Gateway.
+Validators of the blockchain do not own the blockchain's private key. Instead, the private key is owned by a KMS. If the plaintext value is needed at some point, there are two ways to obtain it. Both methods are handled by a service called the Gateway.
 
 - If the plaintext is needed for some logic in a contract, the Gateway acts as an oracle service: it will listen to decryption request events and return the decrypted value through a callback function.
 - If the plaintext is needed by a dApp, the Gateway provides an API to reencrypt a ciphertext with the dApp's public key.

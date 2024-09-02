@@ -1,15 +1,14 @@
 # Access Control List
+This document explains the Access Control List (ACL) system in fhEVM, which defines which addresses have the right to manipulate a ciphertext. By using ACLs, you can prevent unauthorized addresses from accessing ciphertext contents. 
 
 ## How it works?
 
-fhEVM includes an Access Control List (ACL) system that allows you to define which addresses have the right to manipulate a ciphertext. This feature prevents any address from accessing the contents of unauthorized ciphertexts.
+You can configure the ACLs in two ways:
 
-These ACLs can be adjusted in two ways:
+- **Permanent allowance**: `TFHE.allow(ciphertext, address)` allows a ciphertext to be used by a specific address at any time.
+- **Transient allowance**: `TFHE.allowTransient(ciphertext, address)` authorizes access to the ciphertext only for the duration of the transaction.
 
-- `TFHE.allow(ciphertext, address)` Permanently, on the blockchain. This allows a ciphertext to be used by a specific address at any time.
-- `TFHE.allowTransient(ciphertext, address)` Temporarily. The ciphertext is then authorized only for the duration of the transaction.
-
-Note that you can also use: `TFHE.allowThis(ciphertext)` which is just syntactic sugar instead of `TFHE.allow(ciphertext, address(this))`. This function is commonly used inside a dApp smart contract, in order to authorize the same contract to reuse a new `ciphertext` handle which has just been computed in a future transaction.
+Additionally, you can use `TFHE.allowThis(ciphertext)` as syntactic sugar for `TFHE.allow(ciphertext, address(this))`. This function is commonly used within dApp smart contracts to authorize the same contract to reuse a newly computed ciphertext handle in a future transaction.
 
 Permanent allowance will store the ACL in a dedicated contract, while a temporary allowance will store it in [transient storage](https://eips.ethereum.org/EIPS/eip-1153), allowing developers to save gas. Transient allowance is particularly useful when calling an external function using a ciphertext as a parameter.
 
@@ -76,12 +75,18 @@ function randomize() {
 
 ## Security best practice: isSenderAllowed()
 
-When a function receives a ciphertext (such as `ebool`, `euint8`, `eaddress`, ...), it needs to verify that the sender also has access to this ciphertext. This is important because otherwise, a contract could send any ciphertext authorized for the contract and potentially exploit the function to retrieve the value.
-For example, an attacker could transfer someone's balance as an encrypted amount. Without `require(TFHE.isSenderAllowed(encryptedAmount))`, an attacker who doesn't have access to this balance could determine the value by transferring the balance between two well-funded accounts.
+When a function receives a ciphertext (such as `ebool`, `euint8`, `eaddress`, ...), it needs to verify that the sender also has access to this ciphertext. This verification is crucial for security.
+
+Without this check, a contract could send any ciphertext authorized for the contract and potentially exploit the function to retrieve the value. For example, an attacker could transfer someone's balance as an encrypted amount. 
+
+If the function does not include `require(TFHE.isSenderAllowed(encryptedAmount))`, an attacker who doesn't have access to this balance could determine the value by transferring the balance between two well-funded accounts.
 
 ## ACL for reencryption
 
-If a ciphertext must be reencrypted by a user, then explicit access must be granted to them. If this authorization is not given, the user will be unable to request a reencryption of this ciphertext. Due to the reencryption mechanism, a user signs a public key associated with a specific contract; therefore, the ciphertext also needs to be allowed for the contract.
+If a ciphertext must be reencrypted by a user, then explicit access must be granted to them. If this authorization is not given, the user will be unable to request a reencryption of this ciphertext. 
+
+Due to the reencryption mechanism, a user signs a public key associated with a specific contract; therefore, the ciphertext also needs to be allowed for the contract.
+
 Let's take, for example, a transfer in an ERC20:
 
 ```solidity
