@@ -30,4 +30,6 @@
 
 ### TKMS
 
-- _fhEVM ASC_: Smart contract to which transaction from the gateway (connector) are submitted to. This contract contains all customization logic required to work with the specific fhEVM blockchain.
+- _fhEVM ISC_: Smart contract which contains all the custom logic needed to validate whether an operation such as decryption, is permitted on a given fhEVM chain. Specifically this involves inclusion proofs of an ACL. Note there is _one_ ISC for _each_ fhEVM.
+
+- _fhEVM ASC_: Smart contract to which transactions from the gateway (connector) are submitted to. This contract contains all logic required to work with _any_ fhEVM blockchain. It handles any fhEVM chain-specific logic (such as ACL validation) by calling the ISC associated with the given fhEVM chain.
