@@ -36,7 +36,15 @@ struct UnaryOperatorTestCase {
 }
 
 fn supported_bits() -> &'static [i32] {
-    &[8, 16, 32, 64]
+    &[
+        8,
+        16,
+        32,
+        64,
+        128,
+        160,
+        256,
+    ]
 }
 
 fn supported_types() -> &'static [i32] {
@@ -47,9 +55,9 @@ fn supported_types() -> &'static [i32] {
         3, // 16 bit
         4, // 32 bit
         5, // 64 bit
-        // 6, TODO: add 128 bit support
-        // 7, TODO: add 160 bit support
-        // 8, TODO: add 256 bit support
+        6, // 128 bit
+        7, // 160 bit
+        8, // 256 bit
     ]
 }
 
@@ -59,6 +67,9 @@ fn supported_bits_to_bit_type_in_db(inp: i32) -> i32 {
         16 => 3,
         32 => 4,
         64 => 5,
+        128 => 6,
+        160 => 7,
+        256 => 8,
         other => panic!("unknown supported bits: {other}"),
     }
 }
@@ -104,14 +115,14 @@ async fn test_fhe_binary_operands() -> Result<(), Box<dyn std::error::Error>> {
         );
         enc_request_payload.push(DebugEncryptRequestSingle {
             handle: lhs_handle.clone(),
-            le_value: lhs_bytes,
+            be_value: lhs_bytes,
             output_type: op.input_types,
         });
         if !op.is_scalar {
             let (_, rhs_bytes) = op.rhs.to_bytes_be();
             enc_request_payload.push(DebugEncryptRequestSingle {
                 handle: rhs_handle.clone(),
-                le_value: rhs_bytes,
+                be_value: rhs_bytes,
                 output_type: op.input_types,
             });
         }
@@ -234,7 +245,7 @@ async fn test_fhe_unary_operands() -> Result<(), Box<dyn std::error::Error>> {
         );
         enc_request_payload.push(DebugEncryptRequestSingle {
             handle: input_handle.clone(),
-            le_value: inp_bytes,
+            be_value: inp_bytes,
             output_type: op.operand_types,
         });
 
@@ -359,7 +370,7 @@ async fn test_fhe_casts() -> Result<(), Box<dyn std::error::Error>> {
             );
             enc_request_payload.push(DebugEncryptRequestSingle {
                 handle: input_handle.clone(),
-                le_value: inp_bytes,
+                be_value: inp_bytes,
                 output_type: *type_from,
             });
             cast_outputs.push(CastOutput {
@@ -482,12 +493,12 @@ async fn test_fhe_if_then_else() -> Result<(), Box<dyn std::error::Error>> {
     let true_handle = next_handle();
     enc_request_payload.push(DebugEncryptRequestSingle {
         handle: false_handle.clone(),
-        le_value: BigInt::from(0).to_bytes_be().1,
+        be_value: BigInt::from(0).to_bytes_be().1,
         output_type: fhe_bool_type,
     });
     enc_request_payload.push(DebugEncryptRequestSingle {
         handle: true_handle.clone(),
-        le_value: BigInt::from(1).to_bytes_be().1,
+        be_value: BigInt::from(1).to_bytes_be().1,
         output_type: fhe_bool_type,
     });
 
@@ -504,12 +515,12 @@ async fn test_fhe_if_then_else() -> Result<(), Box<dyn std::error::Error>> {
             };
         enc_request_payload.push(DebugEncryptRequestSingle {
             handle: left_handle.clone(),
-            le_value: BigInt::from(left_input).to_bytes_be().1,
+            be_value: BigInt::from(left_input).to_bytes_be().1,
             output_type: *input_types,
         });
         enc_request_payload.push(DebugEncryptRequestSingle {
             handle: right_handle.clone(),
-            le_value: BigInt::from(right_input).to_bytes_be().1,
+            be_value: BigInt::from(right_input).to_bytes_be().1,
             output_type: *input_types,
         });
 
@@ -718,6 +729,17 @@ fn compute_expected_unary_output(inp: &BigInt, op: SupportedFheOperations, bits:
                     let inp: u64 = inp.try_into().unwrap();
                     BigInt::from(inp.not())
                 }
+                128 => {
+                    let inp: u128 = inp.try_into().unwrap();
+                    BigInt::from(inp.not())
+                }
+                160 | 256 => {
+                    let (_, mut bytes) = inp.to_bytes_be();
+                    for byte in bytes.iter_mut() {
+                        *byte = byte.not();
+                    }
+                    BigInt::from(inp.not())
+                }
                 other => {
                     panic!("unknown bits: {other}")
                 }
@@ -740,12 +762,54 @@ fn compute_expected_unary_output(inp: &BigInt, op: SupportedFheOperations, bits:
                 let inp: i64 = inp.try_into().unwrap();
                 BigInt::from(-inp as u64)
             }
+            128 => {
+                let inp: i128 = inp.try_into().unwrap();
+                BigInt::from(-inp as u128)
+            }
+            160 | 256 => {
+                inp * -1
+            }
             other => {
                 panic!("unknown bits: {other}")
             }
         },
         other => panic!("unsupported binary operation: {:?}", other),
     }
+}
+
+fn rotate_left_big_int(inp: &BigInt, rot_by: u32) -> BigInt {
+    let mut new_num = inp.clone();
+    let mut idx_vec = Vec::new();
+    for bit in 0..inp.bits() {
+        idx_vec.push(bit);
+    }
+    idx_vec.rotate_left(rot_by as usize);
+    for bit in 0..inp.bits() {
+        new_num.set_bit(idx_vec[bit as usize], inp.bit(bit));
+    }
+    new_num
+}
+
+fn rotate_right_big_int(inp: &BigInt, rot_by: u32) -> BigInt {
+    let mut new_num = inp.clone();
+    let mut idx_vec = Vec::new();
+    for bit in 0..inp.bits() {
+        idx_vec.push(bit);
+    }
+    idx_vec.rotate_right(rot_by as usize);
+    for bit in 0..inp.bits() {
+        new_num.set_bit(idx_vec[bit as usize], inp.bit(bit));
+    }
+    new_num
+}
+
+#[test]
+fn big_int_rotation() {
+    let the_int = BigInt::from(22);
+    let left_rot: u8 = rotate_left_big_int(&the_int, 1).try_into().unwrap();
+    let right_rot: u8 = rotate_right_big_int(&the_int, 1).try_into().unwrap();
+    assert_eq!(left_rot, 13);
+    assert_eq!(right_rot, 11);
 }
 
 fn compute_expected_binary_output(
@@ -794,6 +858,15 @@ fn compute_expected_binary_output(
                     .unwrap()
                     .rotate_left(TryInto::<u32>::try_into(rhs).unwrap()),
             ),
+            128 => BigInt::from(
+                TryInto::<u128>::try_into(lhs)
+                    .unwrap()
+                    .rotate_left(TryInto::<u32>::try_into(rhs).unwrap()),
+            ),
+            160 | 256 => {
+                let rot_by = TryInto::<u32>::try_into(rhs).unwrap();
+                rotate_left_big_int(lhs, rot_by)
+            }
             other => {
                 panic!("unsupported bits for rotl: {other}")
             }
@@ -819,6 +892,15 @@ fn compute_expected_binary_output(
                     .unwrap()
                     .rotate_right(TryInto::<u32>::try_into(rhs).unwrap()),
             ),
+            128 => BigInt::from(
+                TryInto::<u128>::try_into(lhs)
+                    .unwrap()
+                    .rotate_left(TryInto::<u32>::try_into(rhs).unwrap()),
+            ),
+            160 | 256 => {
+                let rot_by = TryInto::<u32>::try_into(rhs).unwrap();
+                rotate_right_big_int(lhs, rot_by)
+            }
             other => {
                 panic!("unsupported bits for rotr: {other}")
             }

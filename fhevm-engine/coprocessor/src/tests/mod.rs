@@ -30,12 +30,12 @@ async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
             values: vec![
                 DebugEncryptRequestSingle {
                     handle: vec![0x0a, 0xbc],
-                    le_value: vec![123],
+                    be_value: vec![123],
                     output_type: ct_type,
                 },
                 DebugEncryptRequestSingle {
                     handle: vec![0x0a, 0xbd],
-                    le_value: vec![124],
+                    be_value: vec![124],
                     output_type: ct_type,
                 },
             ],

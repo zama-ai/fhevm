@@ -885,6 +885,7 @@ name = "fhevm-engine-common"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bigdecimal",
  "bincode",
  "hex",
  "sha3",

@@ -1,4 +1,5 @@
 use anyhow::Result;
+use bigdecimal::num_bigint::BigInt;
 use tfhe::integer::U256;
 use tfhe::prelude::FheDecrypt;
 use tfhe::{CompressedCiphertextList, CompressedCiphertextListBuilder};
@@ -206,6 +207,9 @@ pub enum SupportedFheCiphertexts {
     FheUint16(tfhe::FheUint16),
     FheUint32(tfhe::FheUint32),
     FheUint64(tfhe::FheUint64),
+    FheUint128(tfhe::FheUint128),
+    FheUint160(tfhe::FheUint160),
+    FheUint256(tfhe::FheUint256),
     Scalar(U256),
 }
 
@@ -257,6 +261,9 @@ impl SupportedFheCiphertexts {
             SupportedFheCiphertexts::FheUint16(v) => (type_num, bincode::serialize(v).unwrap()),
             SupportedFheCiphertexts::FheUint32(v) => (type_num, bincode::serialize(v).unwrap()),
             SupportedFheCiphertexts::FheUint64(v) => (type_num, bincode::serialize(v).unwrap()),
+            SupportedFheCiphertexts::FheUint128(v) => (type_num, bincode::serialize(v).unwrap()),
+            SupportedFheCiphertexts::FheUint160(v) => (type_num, bincode::serialize(v).unwrap()),
+            SupportedFheCiphertexts::FheUint256(v) => (type_num, bincode::serialize(v).unwrap()),
             SupportedFheCiphertexts::Scalar(_) => {
                 panic!("we should never need to serialize scalar")
             }
@@ -272,6 +279,9 @@ impl SupportedFheCiphertexts {
             SupportedFheCiphertexts::FheUint16(_) => 3,
             SupportedFheCiphertexts::FheUint32(_) => 4,
             SupportedFheCiphertexts::FheUint64(_) => 5,
+            SupportedFheCiphertexts::FheUint128(_) => 6,
+            SupportedFheCiphertexts::FheUint160(_) => 7,
+            SupportedFheCiphertexts::FheUint256(_) => 8,
             SupportedFheCiphertexts::Scalar(_) => {
                 panic!("we should never need to serialize scalar")
             }
@@ -293,6 +303,22 @@ impl SupportedFheCiphertexts {
             SupportedFheCiphertexts::FheUint64(v) => {
                 FheDecrypt::<u64>::decrypt(v, client_key).to_string()
             }
+            SupportedFheCiphertexts::FheUint128(v) => {
+                FheDecrypt::<u128>::decrypt(v, client_key).to_string()
+            },
+            SupportedFheCiphertexts::FheUint160(v) => {
+                let dec = FheDecrypt::<U256>::decrypt(v, client_key);
+                let mut slice: [u8; 32] = [0; 32];
+                dec.copy_to_be_byte_slice(&mut slice);
+                let final_slice = &slice[slice.len()-20..];
+                BigInt::from_bytes_be(bigdecimal::num_bigint::Sign::Plus, &final_slice).to_string()
+            },
+            SupportedFheCiphertexts::FheUint256(v) => {
+                let dec = FheDecrypt::<U256>::decrypt(v, client_key);
+                let mut slice: [u8; 32] = [0; 32];
+                dec.copy_to_be_byte_slice(&mut slice);
+                BigInt::from_bytes_be(bigdecimal::num_bigint::Sign::Plus, &slice).to_string()
+            },
             SupportedFheCiphertexts::Scalar(v) => {
                 let (l, h) = v.to_low_high_u128();
                 format!("{l}{h}")
@@ -308,6 +334,9 @@ impl SupportedFheCiphertexts {
             SupportedFheCiphertexts::FheUint16(c) => builder.push(c),
             SupportedFheCiphertexts::FheUint32(c) => builder.push(c),
             SupportedFheCiphertexts::FheUint64(c) => builder.push(c),
+            SupportedFheCiphertexts::FheUint128(c) => builder.push(c),
+            SupportedFheCiphertexts::FheUint160(c) => builder.push(c),
+            SupportedFheCiphertexts::FheUint256(c) => builder.push(c),
             SupportedFheCiphertexts::Scalar(_) => {
                 // TODO: Need to fix that, scalars are not ciphertexts.
                 panic!("cannot compress a scalar");

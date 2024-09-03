@@ -3,6 +3,7 @@ use std::num::NonZeroUsize;
 
 use crate::db_queries::{check_if_api_key_is_valid, check_if_ciphertexts_exist_in_db, fetch_tenant_server_key};
 use crate::server::coprocessor::GenericResponse;
+use bigdecimal::num_bigint::BigUint;
 use fhevm_engine_common::tfhe_ops::{check_fhe_operand_types, current_ciphertext_version, debug_trivial_encrypt_be_bytes, deserialize_fhe_ciphertext, try_expand_ciphertext_list};
 use fhevm_engine_common::types::{FhevmError, SupportedFheCiphertexts};
 use sha3::{Digest, Keccak256};
@@ -346,7 +347,7 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
 
         let mut public_key = sqlx::query!(
             "
-                SELECT sks_key
+                SELECT sks_key, cks_key
                 FROM tenants
                 WHERE tenant_id = $1
             ",
@@ -360,6 +361,9 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
 
         let public_key = public_key.pop().unwrap();
 
+        // for checking if decryption equals to trivial encryption value
+        let client_key: tfhe::ClientKey = bincode::deserialize(&public_key.cks_key.unwrap()).unwrap();
+
         let cloned = req.values.clone();
         let out_cts = tokio::task::spawn_blocking(move || {
             let server_key: tfhe::ServerKey = bincode::deserialize(&public_key.sks_key).unwrap();
@@ -368,7 +372,10 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
             // single threaded implementation as this is debug function and it is simple to implement
             let mut res: Vec<(Vec<u8>, i16, Vec<u8>)> = Vec::with_capacity(cloned.len());
             for v in cloned {
-                let ct = debug_trivial_encrypt_be_bytes(v.output_type as i16, &v.le_value);
+                let the_num = BigUint::from_bytes_be(&v.be_value).to_string();
+                let ct = debug_trivial_encrypt_be_bytes(v.output_type as i16, &v.be_value);
+                let decr = ct.decrypt(&client_key);
+                assert_eq!(the_num, decr, "Trivial encryption must preserve the original value");
                 let (ct_type, ct_bytes) = ct.serialize();
                 res.push((v.handle, ct_type, ct_bytes));
             }
