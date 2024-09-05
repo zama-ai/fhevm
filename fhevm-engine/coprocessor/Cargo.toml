@@ -3,6 +3,11 @@ name = "coprocessor"
 version = "0.1.0"
 edition = "2021"
 
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+tfhe = { version = "0.8.0-alpha.2", features = ["boolean", "shortint", "integer", "x86_64-unix", "zk-pok", "experimental-force_fft_algo_dif4"] }
+[target.'cfg(target_arch = "aarch64")'.dependencies]
+tfhe = { version = "0.8.0-alpha.2", features = ["boolean", "shortint", "integer", "aarch64-unix", "zk-pok", "experimental-force_fft_algo_dif4"] }
+
 [dependencies]
 # Common dependencies
 tokio.workspace = true
@@ -13,7 +18,6 @@ tonic-web = "0.12"
 tonic-health = "0.12"
 tonic-types = "0.12"
 tokio-util = "0.7"
-tfhe.workspace = true
 sqlx = { version = "0.7", features = ["runtime-tokio", "tls-rustls", "postgres", "uuid"] }
 serde_json = "1.0"
 regex = "1.10.5"
