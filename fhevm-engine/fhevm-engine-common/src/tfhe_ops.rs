@@ -433,7 +433,7 @@ pub fn validate_fhe_type(input_type: i32) -> Result<(), FhevmError> {
         .try_into()
         .or(Err(FhevmError::UnknownFheType(input_type)))?;
     match i16_type {
-        0 | 2 | 3 | 4 | 5 => Ok(()),
+        0 | 2 | 3 | 4 | 5 | 6 | 7 | 8 => Ok(()),
         _ => Err(FhevmError::UnknownFheType(input_type)),
     }
 }

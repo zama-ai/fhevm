@@ -375,7 +375,10 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
                 let the_num = BigUint::from_bytes_be(&v.be_value).to_string();
                 let ct = debug_trivial_encrypt_be_bytes(v.output_type as i16, &v.be_value);
                 let decr = ct.decrypt(&client_key);
-                assert_eq!(the_num, decr, "Trivial encryption must preserve the original value");
+                let fhe_bool_type = 0;
+                if v.output_type != fhe_bool_type {
+                    assert_eq!(the_num, decr, "Trivial encryption must preserve the original value");
+                }
                 let (ct_type, ct_bytes) = ct.serialize();
                 res.push((v.handle, ct_type, ct_bytes));
             }

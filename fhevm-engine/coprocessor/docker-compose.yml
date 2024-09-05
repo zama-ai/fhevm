@@ -10,6 +10,16 @@ services:
       - '5432:5432'
     volumes: 
       - db:/var/lib/postgresql/data
+  coproc:
+    image: coproc:v1
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/coprocessor
+    ports:
+      - '50051:50051'
+    command:
+      - --run-bg-worker
+      - --run-server
+      - --server-addr=0.0.0.0:50051
 volumes:
   db:
     driver: local

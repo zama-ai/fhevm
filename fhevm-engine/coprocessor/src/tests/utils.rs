@@ -4,9 +4,9 @@ use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage, ImageExt
 
 pub struct TestInstance {
     // just to destroy container
-    _container: testcontainers::ContainerAsync<testcontainers::GenericImage>,
+    _container: Option<testcontainers::ContainerAsync<testcontainers::GenericImage>>,
     // send message to this on destruction to stop the app
-    app_close_channel: tokio::sync::watch::Sender<bool>,
+    app_close_channel: Option<tokio::sync::watch::Sender<bool>>,
     app_url: String,
     db_url: String,
 }
@@ -14,7 +14,9 @@ pub struct TestInstance {
 impl Drop for TestInstance {
     fn drop(&mut self) {
         println!("Shutting down the app with signal");
-        let _ = self.app_close_channel.send_replace(true);
+        if let Some(chan) = &self.app_close_channel {
+            let _ = chan.send_replace(true);
+        }
     }
 }
 
@@ -37,6 +39,23 @@ pub fn default_tenant_id() -> i32 {
 }
 
 pub async fn setup_test_app() -> Result<TestInstance, Box<dyn std::error::Error>> {
+    if std::env::var("COPROCESSOR_TEST_LOCALHOST").is_ok() {
+        setup_test_app_existing_localhost().await
+    } else {
+        setup_test_app_custom_docker().await
+    }
+}
+
+pub async fn setup_test_app_existing_localhost() -> Result<TestInstance, Box<dyn std::error::Error>> {
+    Ok(TestInstance {
+        _container: None,
+        app_close_channel: None,
+        app_url: "http://127.0.0.1:50051".to_string(),
+        db_url: "postgresql://postgres:postgres@127.0.0.1:5432/coprocessor".to_string(),
+    })
+}
+
+pub async fn setup_test_app_custom_docker() -> Result<TestInstance, Box<dyn std::error::Error>> {
     static PORT_COUNTER: AtomicU16 = AtomicU16::new(10000);
 
     let app_port = PORT_COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -103,8 +122,8 @@ pub async fn setup_test_app() -> Result<TestInstance, Box<dyn std::error::Error>
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
     Ok(TestInstance {
-        _container: container,
-        app_close_channel,
+        _container: Some(container),
+        app_close_channel: Some(app_close_channel),
         app_url: format!("http://127.0.0.1:{app_port}"),
         db_url,
     })

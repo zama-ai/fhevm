@@ -12,6 +12,7 @@ use crate::{
 use bigdecimal::num_bigint::BigInt;
 use fhevm_engine_common::tfhe_ops::{does_fhe_operation_support_both_encrypted_operands, does_fhe_operation_support_scalar};
 use fhevm_engine_common::types::{FheOperationType, SupportedFheOperations};
+use random::Source;
 use strum::IntoEnumIterator;
 use std::{ops::Not, str::FromStr};
 use tonic::metadata::MetadataValue;
@@ -74,15 +75,22 @@ fn supported_bits_to_bit_type_in_db(inp: i32) -> i32 {
     }
 }
 
+fn random_handle_start() -> u64 {
+    let time = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+        .unwrap().as_nanos();
+    let mut random_gen = random::default(time as u64);
+    random_gen.read_u64()
+}
+
 #[tokio::test]
 async fn test_fhe_binary_operands() -> Result<(), Box<dyn std::error::Error>> {
     let ops = generate_binary_test_cases();
     let app = setup_test_app().await?;
     let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
 
-    let mut handle_counter = 0;
+    let mut handle_counter: u64 = random_handle_start();
     let mut next_handle = || {
-        let out: i32 = handle_counter;
+        let out: u64 = handle_counter;
         handle_counter += 1;
         out.to_be_bytes().to_vec()
     };
@@ -218,9 +226,9 @@ async fn test_fhe_unary_operands() -> Result<(), Box<dyn std::error::Error>> {
     let app = setup_test_app().await?;
     let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
 
-    let mut handle_counter = 0;
+    let mut handle_counter: u64 = random_handle_start();
     let mut next_handle = || {
-        let out: i32 = handle_counter;
+        let out: u64 = handle_counter;
         handle_counter += 1;
         out.to_be_bytes().to_vec()
     };
@@ -331,9 +339,9 @@ async fn test_fhe_casts() -> Result<(), Box<dyn std::error::Error>> {
     let app = setup_test_app().await?;
     let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
 
-    let mut handle_counter = 0;
+    let mut handle_counter = random_handle_start();
     let mut next_handle = || {
-        let out: i32 = handle_counter;
+        let out: u64 = handle_counter;
         handle_counter += 1;
         out.to_be_bytes().to_vec()
     };
@@ -466,9 +474,9 @@ async fn test_fhe_if_then_else() -> Result<(), Box<dyn std::error::Error>> {
     let app = setup_test_app().await?;
     let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
 
-    let mut handle_counter = 0;
+    let mut handle_counter = random_handle_start();
     let mut next_handle = || {
-        let out: i32 = handle_counter;
+        let out: u64 = handle_counter;
         handle_counter += 1;
         out.to_be_bytes().to_vec()
     };
@@ -639,7 +647,7 @@ fn generate_binary_test_cases() -> Vec<BinaryOperatorTestCase> {
         } else {
             rhs <<= shift_by;
         }
-        let expected_output = compute_expected_binary_output(&lhs, &rhs, op, bits);
+        let expected_output = compute_expected_binary_output(&lhs, &rhs, op);
         let operand = op as i32;
         let fhe_bool_type = 0;
         let expected_output_type = if op.is_comparison() {
@@ -692,7 +700,7 @@ fn generate_unary_test_cases() -> Vec<UnaryOperatorTestCase> {
             if op.op_type() == FheOperationType::Unary {
                 let mut inp = BigInt::from(7);
                 inp <<= shift_by;
-                let expected_output = compute_expected_unary_output(&inp, op, bits);
+                let expected_output = compute_expected_unary_output(&inp, op);
                 let operand = op as i32;
                 cases.push(UnaryOperatorTestCase {
                     bits,
@@ -708,115 +716,31 @@ fn generate_unary_test_cases() -> Vec<UnaryOperatorTestCase> {
     cases
 }
 
-fn compute_expected_unary_output(inp: &BigInt, op: SupportedFheOperations, bits: i32) -> BigInt {
+fn compute_expected_unary_output(inp: &BigInt, op: SupportedFheOperations) -> BigInt {
     match op {
         SupportedFheOperations::FheNot => {
-            // TODO: find how this is done appropriately in big int crate
-            match bits {
-                8 => {
-                    let inp: u8 = inp.try_into().unwrap();
-                    BigInt::from(inp.not())
-                }
-                16 => {
-                    let inp: u16 = inp.try_into().unwrap();
-                    BigInt::from(inp.not())
-                }
-                32 => {
-                    let inp: u32 = inp.try_into().unwrap();
-                    BigInt::from(inp.not())
-                }
-                64 => {
-                    let inp: u64 = inp.try_into().unwrap();
-                    BigInt::from(inp.not())
-                }
-                128 => {
-                    let inp: u128 = inp.try_into().unwrap();
-                    BigInt::from(inp.not())
-                }
-                160 | 256 => {
-                    let (_, mut bytes) = inp.to_bytes_be();
-                    for byte in bytes.iter_mut() {
-                        *byte = byte.not();
-                    }
-                    BigInt::from(inp.not())
-                }
-                other => {
-                    panic!("unknown bits: {other}")
-                }
+            let (_, mut bytes) = inp.to_bytes_be();
+            for byte in bytes.iter_mut() {
+                *byte = byte.not();
             }
+            BigInt::from_bytes_be(bigdecimal::num_bigint::Sign::Plus, &bytes)
         }
-        SupportedFheOperations::FheNeg => match bits {
-            8 => {
-                let inp: i8 = inp.try_into().unwrap();
-                BigInt::from(-inp as u8)
+        SupportedFheOperations::FheNeg => {
+            let (_, mut bytes) = inp.to_bytes_be();
+            for byte in bytes.iter_mut() {
+                *byte = byte.not();
             }
-            16 => {
-                let inp: i16 = inp.try_into().unwrap();
-                BigInt::from(-inp as u16)
-            }
-            32 => {
-                let inp: i32 = inp.try_into().unwrap();
-                BigInt::from(-inp as u32)
-            }
-            64 => {
-                let inp: i64 = inp.try_into().unwrap();
-                BigInt::from(-inp as u64)
-            }
-            128 => {
-                let inp: i128 = inp.try_into().unwrap();
-                BigInt::from(-inp as u128)
-            }
-            160 | 256 => {
-                inp * -1
-            }
-            other => {
-                panic!("unknown bits: {other}")
-            }
+            let num = BigInt::from_bytes_be(bigdecimal::num_bigint::Sign::Plus, &bytes);
+            num + 1
         },
-        other => panic!("unsupported binary operation: {:?}", other),
+        other => panic!("unsupported unary operation: {:?}", other),
     }
-}
-
-fn rotate_left_big_int(inp: &BigInt, rot_by: u32) -> BigInt {
-    let mut new_num = inp.clone();
-    let mut idx_vec = Vec::new();
-    for bit in 0..inp.bits() {
-        idx_vec.push(bit);
-    }
-    idx_vec.rotate_left(rot_by as usize);
-    for bit in 0..inp.bits() {
-        new_num.set_bit(idx_vec[bit as usize], inp.bit(bit));
-    }
-    new_num
-}
-
-fn rotate_right_big_int(inp: &BigInt, rot_by: u32) -> BigInt {
-    let mut new_num = inp.clone();
-    let mut idx_vec = Vec::new();
-    for bit in 0..inp.bits() {
-        idx_vec.push(bit);
-    }
-    idx_vec.rotate_right(rot_by as usize);
-    for bit in 0..inp.bits() {
-        new_num.set_bit(idx_vec[bit as usize], inp.bit(bit));
-    }
-    new_num
-}
-
-#[test]
-fn big_int_rotation() {
-    let the_int = BigInt::from(22);
-    let left_rot: u8 = rotate_left_big_int(&the_int, 1).try_into().unwrap();
-    let right_rot: u8 = rotate_right_big_int(&the_int, 1).try_into().unwrap();
-    assert_eq!(left_rot, 13);
-    assert_eq!(right_rot, 11);
 }
 
 fn compute_expected_binary_output(
     lhs: &BigInt,
     rhs: &BigInt,
     op: SupportedFheOperations,
-    bits: i32,
 ) -> BigInt {
     match op {
         SupportedFheOperations::FheEq => BigInt::from(lhs.eq(rhs)),
@@ -837,74 +761,10 @@ fn compute_expected_binary_output(
         SupportedFheOperations::FheBitXor => lhs ^ rhs,
         SupportedFheOperations::FheShl => lhs << (TryInto::<u64>::try_into(rhs).unwrap()),
         SupportedFheOperations::FheShr => lhs >> (TryInto::<u64>::try_into(rhs).unwrap()),
-        SupportedFheOperations::FheRotl => match bits {
-            8 => BigInt::from(
-                TryInto::<u8>::try_into(lhs)
-                    .unwrap()
-                    .rotate_left(TryInto::<u32>::try_into(rhs).unwrap()),
-            ),
-            16 => BigInt::from(
-                TryInto::<u16>::try_into(lhs)
-                    .unwrap()
-                    .rotate_left(TryInto::<u32>::try_into(rhs).unwrap()),
-            ),
-            32 => BigInt::from(
-                TryInto::<u32>::try_into(lhs)
-                    .unwrap()
-                    .rotate_left(TryInto::<u32>::try_into(rhs).unwrap()),
-            ),
-            64 => BigInt::from(
-                TryInto::<u64>::try_into(lhs)
-                    .unwrap()
-                    .rotate_left(TryInto::<u32>::try_into(rhs).unwrap()),
-            ),
-            128 => BigInt::from(
-                TryInto::<u128>::try_into(lhs)
-                    .unwrap()
-                    .rotate_left(TryInto::<u32>::try_into(rhs).unwrap()),
-            ),
-            160 | 256 => {
-                let rot_by = TryInto::<u32>::try_into(rhs).unwrap();
-                rotate_left_big_int(lhs, rot_by)
-            }
-            other => {
-                panic!("unsupported bits for rotl: {other}")
-            }
-        },
-        SupportedFheOperations::FheRotr => match bits {
-            8 => BigInt::from(
-                TryInto::<u8>::try_into(lhs)
-                    .unwrap()
-                    .rotate_right(TryInto::<u32>::try_into(rhs).unwrap()),
-            ),
-            16 => BigInt::from(
-                TryInto::<u16>::try_into(lhs)
-                    .unwrap()
-                    .rotate_right(TryInto::<u32>::try_into(rhs).unwrap()),
-            ),
-            32 => BigInt::from(
-                TryInto::<u32>::try_into(lhs)
-                    .unwrap()
-                    .rotate_right(TryInto::<u32>::try_into(rhs).unwrap()),
-            ),
-            64 => BigInt::from(
-                TryInto::<u64>::try_into(lhs)
-                    .unwrap()
-                    .rotate_right(TryInto::<u32>::try_into(rhs).unwrap()),
-            ),
-            128 => BigInt::from(
-                TryInto::<u128>::try_into(lhs)
-                    .unwrap()
-                    .rotate_left(TryInto::<u32>::try_into(rhs).unwrap()),
-            ),
-            160 | 256 => {
-                let rot_by = TryInto::<u32>::try_into(rhs).unwrap();
-                rotate_right_big_int(lhs, rot_by)
-            }
-            other => {
-                panic!("unsupported bits for rotr: {other}")
-            }
-        },
+        // we don't shift by as much as to overlap the register
+        // in tests, so should be same as bit shifts
+        SupportedFheOperations::FheRotl => lhs << (TryInto::<u64>::try_into(rhs).unwrap()),
+        SupportedFheOperations::FheRotr => lhs >> (TryInto::<u64>::try_into(rhs).unwrap()),
         other => panic!("unsupported binary operation: {:?}", other),
     }
 }
