@@ -30,10 +30,6 @@ jobs:
 
       - name: Check out repo
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          ref: ${{ inputs.ref_to_geth }}
-          lfs: true
 
       - name: Check OS
         run: |
