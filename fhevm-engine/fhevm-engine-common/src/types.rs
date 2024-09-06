@@ -1,5 +1,6 @@
 use anyhow::Result;
 use bigdecimal::num_bigint::BigInt;
+use tfhe::integer::bigint::StaticUnsignedBigInt;
 use tfhe::integer::U256;
 use tfhe::prelude::FheDecrypt;
 use tfhe::{CompressedCiphertextList, CompressedCiphertextListBuilder};
@@ -35,6 +36,12 @@ pub enum FhevmError {
     FheOperationScalarDivisionByZero {
         lhs_handle: String,
         rhs_value: String,
+        fhe_operation: i32,
+        fhe_operation_name: String,
+    },
+    FheOperationDoesntSupportEbytesAsInput {
+        lhs_handle: String,
+        rhs_handle: String,
         fhe_operation: i32,
         fhe_operation_name: String,
     },
@@ -125,6 +132,14 @@ impl std::fmt::Display for FhevmError {
             } => {
                 write!(f, "zero on the right side of scalar division, lhs handle: {lhs_handle}, rhs value: {rhs_value}, fhe operation: {fhe_operation} fhe operation name:{fhe_operation_name}")
             }
+            Self::FheOperationDoesntSupportEbytesAsInput {
+                lhs_handle,
+                rhs_handle: rhs_value,
+                fhe_operation,
+                fhe_operation_name,
+            } => {
+                write!(f, "zero on the right side of scalar division, lhs handle: {lhs_handle}, rhs value: {rhs_value}, fhe operation: {fhe_operation} fhe operation name:{fhe_operation_name}")
+            }
             Self::UnexpectedOperandCountForFheOperation {
                 fhe_operation,
                 fhe_operation_name,
@@ -210,6 +225,9 @@ pub enum SupportedFheCiphertexts {
     FheUint128(tfhe::FheUint128),
     FheUint160(tfhe::FheUint160),
     FheUint256(tfhe::FheUint256),
+    FheBytes64(tfhe::FheUint512),
+    FheBytes128(tfhe::FheUint1024),
+    FheBytes256(tfhe::FheUint2048),
     Scalar(U256),
 }
 
@@ -264,6 +282,9 @@ impl SupportedFheCiphertexts {
             SupportedFheCiphertexts::FheUint128(v) => (type_num, bincode::serialize(v).unwrap()),
             SupportedFheCiphertexts::FheUint160(v) => (type_num, bincode::serialize(v).unwrap()),
             SupportedFheCiphertexts::FheUint256(v) => (type_num, bincode::serialize(v).unwrap()),
+            SupportedFheCiphertexts::FheBytes64(v) => (type_num, bincode::serialize(v).unwrap()),
+            SupportedFheCiphertexts::FheBytes128(v) => (type_num, bincode::serialize(v).unwrap()),
+            SupportedFheCiphertexts::FheBytes256(v) => (type_num, bincode::serialize(v).unwrap()),
             SupportedFheCiphertexts::Scalar(_) => {
                 panic!("we should never need to serialize scalar")
             }
@@ -282,6 +303,9 @@ impl SupportedFheCiphertexts {
             SupportedFheCiphertexts::FheUint128(_) => 6,
             SupportedFheCiphertexts::FheUint160(_) => 7,
             SupportedFheCiphertexts::FheUint256(_) => 8,
+            SupportedFheCiphertexts::FheBytes64(_) => 9,
+            SupportedFheCiphertexts::FheBytes128(_) => 10,
+            SupportedFheCiphertexts::FheBytes256(_) => 11,
             SupportedFheCiphertexts::Scalar(_) => {
                 panic!("we should never need to serialize scalar")
             }
@@ -319,6 +343,24 @@ impl SupportedFheCiphertexts {
                 dec.copy_to_be_byte_slice(&mut slice);
                 BigInt::from_bytes_be(bigdecimal::num_bigint::Sign::Plus, &slice).to_string()
             },
+            SupportedFheCiphertexts::FheBytes64(v) => {
+                let dec = FheDecrypt::<StaticUnsignedBigInt<8>>::decrypt(v, client_key);
+                let mut slice: [u8; 64] = [0; 64];
+                dec.copy_to_be_byte_slice(&mut slice);
+                BigInt::from_bytes_be(bigdecimal::num_bigint::Sign::Plus, &slice).to_string()
+            },
+            SupportedFheCiphertexts::FheBytes128(v) => {
+                let dec = FheDecrypt::<StaticUnsignedBigInt<16>>::decrypt(v, client_key);
+                let mut slice: [u8; 128] = [0; 128];
+                dec.copy_to_be_byte_slice(&mut slice);
+                BigInt::from_bytes_be(bigdecimal::num_bigint::Sign::Plus, &slice).to_string()
+            },
+            SupportedFheCiphertexts::FheBytes256(v) => {
+                let dec = FheDecrypt::<StaticUnsignedBigInt<32>>::decrypt(v, client_key);
+                let mut slice: [u8; 256] = [0; 256];
+                dec.copy_to_be_byte_slice(&mut slice);
+                BigInt::from_bytes_be(bigdecimal::num_bigint::Sign::Plus, &slice).to_string()
+            },
             SupportedFheCiphertexts::Scalar(v) => {
                 let (l, h) = v.to_low_high_u128();
                 format!("{l}{h}")
@@ -337,6 +379,9 @@ impl SupportedFheCiphertexts {
             SupportedFheCiphertexts::FheUint128(c) => builder.push(c),
             SupportedFheCiphertexts::FheUint160(c) => builder.push(c),
             SupportedFheCiphertexts::FheUint256(c) => builder.push(c),
+            SupportedFheCiphertexts::FheBytes64(c) => builder.push(c),
+            SupportedFheCiphertexts::FheBytes128(c) => builder.push(c),
+            SupportedFheCiphertexts::FheBytes256(c) => builder.push(c),
             SupportedFheCiphertexts::Scalar(_) => {
                 // TODO: Need to fix that, scalars are not ciphertexts.
                 panic!("cannot compress a scalar");
@@ -364,7 +409,36 @@ impl SupportedFheCiphertexts {
             5 => Ok(SupportedFheCiphertexts::FheUint64(
                 list.get(0)?.ok_or(FhevmError::MissingTfheRsData)?,
             )),
+            6 => Ok(SupportedFheCiphertexts::FheUint128(
+                list.get(0)?.ok_or(FhevmError::MissingTfheRsData)?,
+            )),
+            7 => Ok(SupportedFheCiphertexts::FheUint160(
+                list.get(0)?.ok_or(FhevmError::MissingTfheRsData)?,
+            )),
+            8 => Ok(SupportedFheCiphertexts::FheUint256(
+                list.get(0)?.ok_or(FhevmError::MissingTfheRsData)?,
+            )),
+            9 => Ok(SupportedFheCiphertexts::FheBytes64(
+                list.get(0)?.ok_or(FhevmError::MissingTfheRsData)?,
+            )),
             _ => Err(FhevmError::UnknownFheType(ct_type as i32).into()),
+        }
+    }
+
+    pub fn is_ebytes(&self) -> bool {
+        match self {
+            SupportedFheCiphertexts::FheBytes64(_)
+            | SupportedFheCiphertexts::FheBytes128(_)
+            | SupportedFheCiphertexts::FheBytes256(_) => true,
+            SupportedFheCiphertexts::FheBool(_)
+            | SupportedFheCiphertexts::FheUint8(_)
+            | SupportedFheCiphertexts::FheUint16(_)
+            | SupportedFheCiphertexts::FheUint32(_)
+            | SupportedFheCiphertexts::FheUint64(_)
+            | SupportedFheCiphertexts::FheUint128(_)
+            | SupportedFheCiphertexts::FheUint160(_)
+            | SupportedFheCiphertexts::FheUint256(_)
+            | SupportedFheCiphertexts::Scalar(_) => false,
         }
     }
 }
@@ -423,6 +497,42 @@ impl SupportedFheOperations {
             | SupportedFheOperations::FheNe
             | SupportedFheOperations::FheNot => true,
             _ => false,
+        }
+    }
+
+    pub fn supports_ebytes_inputs(&self) -> bool {
+        match self {
+            SupportedFheOperations::FheBitAnd
+            | SupportedFheOperations::FheBitOr
+            | SupportedFheOperations::FheBitXor
+            | SupportedFheOperations::FheShl
+            | SupportedFheOperations::FheShr
+            | SupportedFheOperations::FheRotl
+            | SupportedFheOperations::FheRotr
+            | SupportedFheOperations::FheEq
+            | SupportedFheOperations::FheNe
+            | SupportedFheOperations::FheGe
+            | SupportedFheOperations::FheGt
+            | SupportedFheOperations::FheLe
+            | SupportedFheOperations::FheLt
+            | SupportedFheOperations::FheMin
+            | SupportedFheOperations::FheMax
+            | SupportedFheOperations::FheNot
+            | SupportedFheOperations::FheNeg
+            | SupportedFheOperations::FheIfThenElse
+            | SupportedFheOperations::FheCast => {
+                true
+            },
+            SupportedFheOperations::FheAdd
+            | SupportedFheOperations::FheSub
+            | SupportedFheOperations::FheMul
+            | SupportedFheOperations::FheDiv
+            | SupportedFheOperations::FheRem
+            | SupportedFheOperations::FheRand
+            | SupportedFheOperations::FheRandBounded
+            | SupportedFheOperations::FheGetInputCiphertext => {
+                false
+            },
         }
     }
 }
@@ -501,4 +611,8 @@ pub fn get_ct_type(handle: &[u8]) -> Result<i16, FhevmError> {
         HANDLE_LEN => Ok(handle[30] as i16),
         _ => Err(FhevmError::InvalidHandle),
     }
+}
+
+pub fn is_ebytes_type(inp: i16) -> bool {
+    inp >= 9 && inp <= 11
 }

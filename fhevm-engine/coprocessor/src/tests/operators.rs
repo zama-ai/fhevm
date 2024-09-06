@@ -45,6 +45,9 @@ fn supported_bits() -> &'static [i32] {
         128,
         160,
         256,
+        512,
+        1024,
+        2048,
     ]
 }
 
@@ -59,6 +62,9 @@ fn supported_types() -> &'static [i32] {
         6, // 128 bit
         7, // 160 bit
         8, // 256 bit
+        9, // ebytes 64
+        10, // ebytes 128
+        11, // ebytes 256
     ]
 }
 
@@ -71,6 +77,9 @@ fn supported_bits_to_bit_type_in_db(inp: i32) -> i32 {
         128 => 6,
         160 => 7,
         256 => 8,
+        512 => 9,
+        1024 => 10,
+        2048 => 11,
         other => panic!("unknown supported bits: {other}"),
     }
 }
@@ -671,17 +680,19 @@ fn generate_binary_test_cases() -> Vec<BinaryOperatorTestCase> {
         let bits = *bits;
         let mut shift_by = bits - 8;
         for op in SupportedFheOperations::iter() {
-            if op == SupportedFheOperations::FheMul {
-                // don't go out of bit bounds when multiplying two numbers, so we shift by less
-                shift_by /= 2;
-            }
-            if op.op_type() == FheOperationType::Binary {
-                if does_fhe_operation_support_both_encrypted_operands(&op) {
-                    push_case(bits, false, shift_by, op);
+            if bits <= 256 || op.supports_ebytes_inputs() {
+                if op == SupportedFheOperations::FheMul {
+                    // don't go out of bit bounds when multiplying two numbers, so we shift by less
+                    shift_by /= 2;
                 }
+                if op.op_type() == FheOperationType::Binary {
+                    if does_fhe_operation_support_both_encrypted_operands(&op) {
+                        push_case(bits, false, shift_by, op);
+                    }
 
-                if does_fhe_operation_support_scalar(&op) {
-                    push_case(bits, true, shift_by, op);
+                    if does_fhe_operation_support_scalar(&op) && bits <= 256 {
+                        push_case(bits, true, shift_by, op);
+                    }
                 }
             }
         }
