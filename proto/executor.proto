@@ -58,6 +58,7 @@ enum SyncComputeError {
     UNKNOWN_HANDLE = 5;
     COMPUTATION_FAILED = 6;
     BAD_RESULT_HANDLES = 7;
+    UNSATISFIED_DEPENDENCE = 8;
 }
 
 message CompressedCiphertext {

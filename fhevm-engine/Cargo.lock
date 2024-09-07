@@ -1651,6 +1651,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "daggy"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "91a9304e55e9d601a39ae4deaba85406d5c0980e106f65afcf0460e9af1e7602"
+dependencies = [
+ "petgraph",
+]
+
+[[package]]
 name = "darling"
 version = "0.20.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1910,6 +1919,7 @@ dependencies = [
  "anyhow",
  "bincode",
  "clap",
+ "daggy",
  "fhevm-engine-common",
  "prost",
  "sha3",
