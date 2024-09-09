@@ -549,13 +549,14 @@ dependencies = [
 
 [[package]]
 name = "concrete-fft"
-version = "0.4.1"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3144f883422ee22c65d4f408c11b3406513eadc0d50b3d65bfadcb97852817e0"
+checksum = "86ff7397e00e903afb03f0adca6a5f3bec3a6e96a7cdb70bdc088e01b125e170"
 dependencies = [
  "aligned-vec",
  "bytemuck",
  "dyn-stack",
+ "js-sys",
  "num-complex",
  "pulp",
  "serde",
@@ -563,9 +564,9 @@ dependencies = [
 
 [[package]]
 name = "concrete-ntt"
-version = "0.1.2"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4f4643dbd5de069e099122ae6c2bbd3db70d69ffec348dfc228448d635f949e"
+checksum = "bea708a14b4cfe650eec644eac11889a187404a3a0738a41a5524b0f548850a1"
 dependencies = [
  "aligned-vec",
  "pulp",
@@ -809,9 +810,9 @@ checksum = "1aaf95b3e5c8f23aa320147307562d361db0ae0d51242340f558153b4eb2439b"
 
 [[package]]
 name = "dyn-stack"
-version = "0.9.1"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7fe7f8d7bcc523381d3c437b82cf74805de3931de0da69309ae0fe1bdf7a256e"
+checksum = "56e53799688f5632f364f8fb387488dd05db9fe45db7011be066fc20e7027f8b"
 dependencies = [
  "bytemuck",
  "reborrow",
@@ -2767,9 +2768,9 @@ dependencies = [
 
 [[package]]
 name = "tfhe"
-version = "0.8.0-alpha.3"
+version = "0.8.0-alpha.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "05b4ec8ada6d84e3b0bc233deb8d51e42edb0ec1cf4bb4343f1e6ed184fff4d7"
+checksum = "79019e02932ee4b0f9b5b93369e9e2d4366b0ae13d66a71ca7b068d87232ea8f"
 dependencies = [
  "aligned-vec",
  "bincode",

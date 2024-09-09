@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use tfhe::integer::U256;
+use tfhe::integer::{bigint::StaticUnsignedBigInt, U256};
 use tonic::metadata::MetadataValue;
 
 use crate::{db_queries::query_tenant_keys, server::coprocessor::{fhevm_coprocessor_client::FhevmCoprocessorClient, DebugDecryptRequest, InputToUpload, InputUploadBatch}, tests::utils::{default_api_key, default_tenant_id, setup_test_app}};
@@ -32,9 +32,9 @@ async fn test_fhe_inputs() -> Result<(), Box<dyn std::error::Error>> {
         .push(5u128)
         // TODO: 160 bits test
         .push(U256::from(7u32))
-        // .push(StaticUnsignedBigInt::<8>::from(8u32))
-        // .push(StaticUnsignedBigInt::<16>::from(9u32))
-        // .push(StaticUnsignedBigInt::<32>::from(10u32))
+        .push(StaticUnsignedBigInt::<8>::from(8u32))
+        .push(StaticUnsignedBigInt::<16>::from(9u32))
+        .push(StaticUnsignedBigInt::<32>::from(10u32))
         .build();
 
     let serialized = bincode::serialize(&the_list).unwrap();
@@ -58,7 +58,7 @@ async fn test_fhe_inputs() -> Result<(), Box<dyn std::error::Error>> {
 
     let first_resp = &resp.upload_responses[0];
 
-    assert_eq!(first_resp.input_handles.len(), 7);
+    assert_eq!(first_resp.input_handles.len(), 10);
 
     let mut decr_handles: Vec<Vec<u8>> = Vec::new();
     for handle in &first_resp.input_handles {
@@ -74,9 +74,7 @@ async fn test_fhe_inputs() -> Result<(), Box<dyn std::error::Error>> {
     );
     let resp = client.debug_decrypt_ciphertext(decrypt_request).await?;
     let resp = resp.get_ref();
-    assert_eq!(resp.values.len(), 7);
-    // TODO: add ebytes support, we only support 256 bits max
-    // assert_eq!(resp.values.len(), 10);
+    assert_eq!(resp.values.len(), 10);
 
     assert_eq!(resp.values[0].output_type, 0);
     assert_eq!(resp.values[0].value, "false");
@@ -92,12 +90,12 @@ async fn test_fhe_inputs() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(resp.values[5].value, "5");
     assert_eq!(resp.values[6].output_type, 8);
     assert_eq!(resp.values[6].value, "7");
-    // assert_eq!(resp.values[7].output_type, 9);
-    // assert_eq!(resp.values[7].value, "8");
-    // assert_eq!(resp.values[8].output_type, 10);
-    // assert_eq!(resp.values[8].value, "9");
-    // assert_eq!(resp.values[9].output_type, 11);
-    // assert_eq!(resp.values[9].value, "10");
+    assert_eq!(resp.values[7].output_type, 9);
+    assert_eq!(resp.values[7].value, "8");
+    assert_eq!(resp.values[8].output_type, 10);
+    assert_eq!(resp.values[8].value, "9");
+    assert_eq!(resp.values[9].output_type, 11);
+    assert_eq!(resp.values[9].value, "10");
 
     Ok(())
 }

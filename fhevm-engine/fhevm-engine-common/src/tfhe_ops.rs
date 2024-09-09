@@ -272,6 +272,30 @@ pub fn try_expand_ciphertext_list(
 
                 res.push(SupportedFheCiphertexts::FheUint256(ct));
             }
+            tfhe::FheTypes::Uint512 => {
+                let ct: tfhe::FheUint512 = expanded
+                    .get(idx)
+                    .expect("Index must exist")
+                    .expect("Must succeed, we just checked this is the type");
+
+                res.push(SupportedFheCiphertexts::FheBytes64(ct));
+            }
+            tfhe::FheTypes::Uint1024 => {
+                let ct: tfhe::FheUint1024 = expanded
+                    .get(idx)
+                    .expect("Index must exist")
+                    .expect("Must succeed, we just checked this is the type");
+
+                res.push(SupportedFheCiphertexts::FheBytes128(ct));
+            }
+            tfhe::FheTypes::Uint2048 => {
+                let ct: tfhe::FheUint2048 = expanded
+                    .get(idx)
+                    .expect("Index must exist")
+                    .expect("Must succeed, we just checked this is the type");
+
+                res.push(SupportedFheCiphertexts::FheBytes256(ct));
+            }
             other => {
                 return Err(FhevmError::CiphertextExpansionUnsupportedCiphertextKind(
                     other,
