@@ -2018,7 +2018,7 @@ pub fn perform_fhe_operation(
         }
         SupportedFheOperations::FheCast => match (&input_operands[0], &input_operands[1]) {
             (SupportedFheCiphertexts::FheBool(inp), SupportedFheCiphertexts::Scalar(op)) => {
-                let (l, h) = op.to_low_high_u128();
+                let (l, _) = op.to_low_high_u128();
                 let l = l as i16;
                 let type_id = input_operands[0].type_num();
                 if l == type_id {
@@ -2070,7 +2070,7 @@ pub fn perform_fhe_operation(
                 }
             }
             (SupportedFheCiphertexts::FheUint8(inp), SupportedFheCiphertexts::Scalar(op)) => {
-                let (l, h) = op.to_low_high_u128();
+                let (l, _) = op.to_low_high_u128();
                 let l = l as i16;
                 let type_id = input_operands[0].type_num();
                 if l == type_id {
@@ -2122,7 +2122,7 @@ pub fn perform_fhe_operation(
                 }
             }
             (SupportedFheCiphertexts::FheUint16(inp), SupportedFheCiphertexts::Scalar(op)) => {
-                let (l, h) = op.to_low_high_u128();
+                let (l, _) = op.to_low_high_u128();
                 let l = l as i16;
                 let type_id = input_operands[0].type_num();
                 if l == type_id {
@@ -2174,7 +2174,7 @@ pub fn perform_fhe_operation(
                 }
             }
             (SupportedFheCiphertexts::FheUint32(inp), SupportedFheCiphertexts::Scalar(op)) => {
-                let (l, h) = op.to_low_high_u128();
+                let (l, _) = op.to_low_high_u128();
                 let l = l as i16;
                 let type_id = input_operands[0].type_num();
                 if l == type_id {
@@ -2226,7 +2226,7 @@ pub fn perform_fhe_operation(
                 }
             }
             (SupportedFheCiphertexts::FheUint64(inp), SupportedFheCiphertexts::Scalar(op)) => {
-                let (l, h) = op.to_low_high_u128();
+                let (l, _) = op.to_low_high_u128();
                 let l = l as i16;
                 let type_id = input_operands[0].type_num();
                 if l == type_id {
@@ -2278,7 +2278,7 @@ pub fn perform_fhe_operation(
                 }
             }
             (SupportedFheCiphertexts::FheUint128(inp), SupportedFheCiphertexts::Scalar(op)) => {
-                let (l, h) = op.to_low_high_u128();
+                let (l, _) = op.to_low_high_u128();
                 let l = l as i16;
                 let type_id = input_operands[0].type_num();
                 if l == type_id {
@@ -2330,7 +2330,7 @@ pub fn perform_fhe_operation(
                 }
             }
             (SupportedFheCiphertexts::FheUint160(inp), SupportedFheCiphertexts::Scalar(op)) => {
-                let (l, h) = op.to_low_high_u128();
+                let (l, _) = op.to_low_high_u128();
                 let l = l as i16;
                 let type_id = input_operands[0].type_num();
                 if l == type_id {
@@ -2382,7 +2382,7 @@ pub fn perform_fhe_operation(
                 }
             }
             (SupportedFheCiphertexts::FheUint256(inp), SupportedFheCiphertexts::Scalar(op)) => {
-                let (l, h) = op.to_low_high_u128();
+                let (l, _) = op.to_low_high_u128();
                 let l = l as i16;
                 let type_id = input_operands[0].type_num();
                 if l == type_id {
@@ -2434,7 +2434,7 @@ pub fn perform_fhe_operation(
                 }
             }
             (SupportedFheCiphertexts::FheBytes64(inp), SupportedFheCiphertexts::Scalar(op)) => {
-                let (l, h) = op.to_low_high_u128();
+                let (l, _) = op.to_low_high_u128();
                 let l = l as i16;
                 let type_id = input_operands[0].type_num();
                 if l == type_id {
@@ -2486,7 +2486,7 @@ pub fn perform_fhe_operation(
                 }
             }
             (SupportedFheCiphertexts::FheBytes128(inp), SupportedFheCiphertexts::Scalar(op)) => {
-                let (l, h) = op.to_low_high_u128();
+                let (l, _) = op.to_low_high_u128();
                 let l = l as i16;
                 let type_id = input_operands[0].type_num();
                 if l == type_id {
@@ -2538,7 +2538,7 @@ pub fn perform_fhe_operation(
                 }
             }
             (SupportedFheCiphertexts::FheBytes256(inp), SupportedFheCiphertexts::Scalar(op)) => {
-                let (l, h) = op.to_low_high_u128();
+                let (l, _) = op.to_low_high_u128();
                 let l = l as i16;
                 let type_id = input_operands[0].type_num();
                 if l == type_id {
