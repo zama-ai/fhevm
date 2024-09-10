@@ -2,17 +2,53 @@
 
 pragma solidity ^0.8.24;
 
-import "../GatewayContract.sol";
-import "../../lib/ACL.sol";
-import "../../lib/KMSVerifier.sol";
+import "./GatewayContractAddress.sol";
+import "../../lib/Impl.sol";
 
-GatewayContract constant gatewayContract = GatewayContract(0xc8c9303Cd7F337fab769686B593B87DC3403E0ce); // Replace by GatewayContract address
-ACL constant acl = ACL(0x2Fb4341027eb1d2aD8B5D9708187df8633cAFA92); // Replace by ACL address
-KMSVerifier constant kmsVerifier = KMSVerifier(address(0x12B064FB845C1cc05e9493856a1D637a73e944bE));
+interface IGatewayContract {
+    function requestDecryption(
+        uint256[] calldata ctsHandles,
+        bytes4 callbackSelector,
+        uint256 msgValue,
+        uint256 maxTimestamp,
+        bool passSignaturesToCaller
+    ) external returns (uint256);
+}
+
+interface IKMSVerifier {
+    function verifySignatures(
+        uint256[] memory handlesList,
+        bytes memory decryptedResult,
+        bytes[] memory signatures
+    ) external returns (bool);
+}
 
 library Gateway {
-    function GatewayContractAddress() internal pure returns (address) {
-        return address(gatewayContract);
+    struct GatewayConfigStruct {
+        address GatewayContractAddress;
+    }
+
+    // keccak256(abi.encode(uint256(keccak256("fhevm.storage.GatewayConfig")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant GatewayLocation = 0x93ab6e17f2c461cce6ea5d4ec117e51dda77a64affc2b2c05f8cd440def0e700;
+
+    function defaultGatewayAddress() internal pure returns (address) {
+        return GATEWAY_CONTRACT_PREDEPLOY_ADDRESS;
+    }
+
+    function getGetwayConfig() internal pure returns (GatewayConfigStruct storage $) {
+        assembly {
+            $.slot := GatewayLocation
+        }
+    }
+
+    function setGateway(address gatewayAddress) internal {
+        GatewayConfigStruct storage $ = getGetwayConfig();
+        $.GatewayContractAddress = gatewayAddress;
+    }
+
+    function gatewayContractAddress() internal view returns (address) {
+        GatewayConfigStruct storage $ = getGetwayConfig();
+        return $.GatewayContractAddress;
     }
 
     function toUint256(ebool newCT) internal pure returns (uint256 ct) {
@@ -54,8 +90,10 @@ library Gateway {
         uint256 maxTimestamp,
         bool passSignaturesToCaller
     ) internal returns (uint256 requestID) {
-        acl.allowForDecryption(ctsHandles);
-        requestID = gatewayContract.requestDecryption(
+        FHEVMConfig.FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
+        IACL($.ACLAddress).allowForDecryption(ctsHandles);
+        GatewayConfigStruct storage $$ = getGetwayConfig();
+        requestID = IGatewayContract($$.GatewayContractAddress).requestDecryption(
             ctsHandles,
             callbackSelector,
             msgValue,
@@ -75,6 +113,7 @@ library Gateway {
         assembly {
             calldatacopy(add(decryptedResult, 0x20), start, length) // Copy the relevant part of calldata to decryptedResult memory
         }
-        return kmsVerifier.verifySignatures(handlesList, decryptedResult, signatures);
+        FHEVMConfig.FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
+        return IKMSVerifier($.KMSVerifierAddress).verifySignatures(handlesList, decryptedResult, signatures);
     }
 }

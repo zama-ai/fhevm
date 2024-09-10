@@ -57,6 +57,8 @@ contract BlindAuction is Ownable2Step, GatewayCaller {
         uint256 biddingTime,
         bool isStoppable
     ) payable Ownable(msg.sender) {
+        TFHE.setFHEVM(FHEVMConfig.defaultConfig());
+        Gateway.setGateway(Gateway.defaultGatewayAddress());
         Payment.depositForThis(msg.value);
         beneficiary = _beneficiary;
         tokenContract = _tokenContract;

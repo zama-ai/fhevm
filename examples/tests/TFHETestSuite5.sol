@@ -13,6 +13,7 @@ contract TFHETestSuite5 {
     euint64 public res64;
 
     constructor() payable {
+        TFHE.setFHEVM(FHEVMConfig.defaultConfig());
         Payment.depositForThis(msg.value);
     }
 

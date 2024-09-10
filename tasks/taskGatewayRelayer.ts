@@ -40,10 +40,10 @@ address constant GATEWAY_CONTRACT_PREDEPLOY_ADDRESS = ${gatewayContractAddressPr
         `;
 
     try {
-      fs.writeFileSync('./gateway/lib/PredeployAddress.sol', solidityTemplate, { encoding: 'utf8', flag: 'w' });
-      console.log('gateway/lib/PredeployAddress.sol file has been generated successfully.');
+      fs.writeFileSync('./gateway/lib/GatewayContractAddress.sol', solidityTemplate, { encoding: 'utf8', flag: 'w' });
+      console.log('gateway/lib/GatewayContractAddress.sol file has been generated successfully.');
     } catch (error) {
-      console.error('Failed to write gateway/lib/PredeployAddress.sol', error);
+      console.error('Failed to write gateway/lib/GatewayContractAddress.sol', error);
     }
   });
 

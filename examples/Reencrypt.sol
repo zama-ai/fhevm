@@ -16,6 +16,8 @@ contract Reencrypt {
     ebytes256 public yBytes256;
 
     constructor() payable {
+        TFHE.setFHEVM(FHEVMConfig.defaultConfig());
+
         Payment.depositForThis(msg.value);
 
         xBool = TFHE.asEbool(true);
