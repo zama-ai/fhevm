@@ -112,6 +112,7 @@ pub async fn setup_test_app_custom_docker() -> Result<TestInstance, Box<dyn std:
         server_addr: format!("127.0.0.1:{app_port}"),
         database_url: Some(db_url.clone()),
         maximimum_compact_inputs_upload: 10,
+        coprocessor_private_key: "./coprocessor.key".to_string(),
     };
 
     std::thread::spawn(move || {

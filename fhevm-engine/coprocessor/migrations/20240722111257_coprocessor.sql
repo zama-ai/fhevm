@@ -42,6 +42,10 @@ CREATE TABLE IF NOT EXISTS input_blobs (
 CREATE TABLE IF NOT EXISTS tenants (
     tenant_id SERIAL PRIMARY KEY,
     tenant_api_key UUID NOT NULL DEFAULT gen_random_uuid(),
+    -- for EIP712 signatures
+    chain_id INT NOT NULL,
+    -- for EIP712 signatures
+    verifying_contract_address TEXT NOT NULL,
     pks_key BYTEA NOT NULL,
     sks_key BYTEA NOT NULL,
     -- for debugging, can be null

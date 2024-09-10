@@ -1,8 +1,12 @@
 use std::collections::BTreeMap;
 use std::num::NonZeroUsize;
+use std::str::FromStr;
 
 use crate::db_queries::{check_if_api_key_is_valid, check_if_ciphertexts_exist_in_db, fetch_tenant_server_key};
 use crate::server::coprocessor::GenericResponse;
+use alloy::signers::local::PrivateKeySigner;
+use alloy::signers::SignerSync;
+use alloy::sol_types::SolStruct;
 use bigdecimal::num_bigint::BigUint;
 use fhevm_engine_common::tfhe_ops::{check_fhe_operand_types, current_ciphertext_version, debug_trivial_encrypt_be_bytes, deserialize_fhe_ciphertext, try_expand_ciphertext_list};
 use fhevm_engine_common::types::{FhevmError, SupportedFheCiphertexts};
@@ -26,6 +30,7 @@ pub struct CoprocessorService {
     pool: sqlx::Pool<sqlx::Postgres>,
     args: crate::cli::Args,
     tenant_key_cache: std::sync::Arc<tokio::sync::RwLock<lru::LruCache<i32, TfheTenantKeys>>>,
+    signer: PrivateKeySigner,
 }
 
 pub async fn run_server(
@@ -36,6 +41,13 @@ pub async fn run_server(
         .parse()
         .expect("Can't parse server address");
     let db_url = crate::utils::db_url(&args);
+
+    let coprocessor_key_file =
+        tokio::fs::read_to_string(&args.coprocessor_private_key)
+            .await?;
+
+    let signer = PrivateKeySigner::from_str(coprocessor_key_file.trim())?;
+    println!("Coprocessor signer address: {}", signer.address());
 
     println!("Coprocessor listening on {}", addr);
     let pool = sqlx::postgres::PgPoolOptions::new()
@@ -48,7 +60,7 @@ pub async fn run_server(
             NonZeroUsize::new(args.tenant_key_cache_size as usize).unwrap(),
         )));
 
-    let service = CoprocessorService { pool, args, tenant_key_cache };
+    let service = CoprocessorService { pool, args, tenant_key_cache, signer };
 
     Server::builder()
         .add_service(
@@ -61,6 +73,39 @@ pub async fn run_server(
 
     Ok(())
 }
+
+// for EIP712 signature
+alloy::sol! {
+    struct CiphertextVerification {
+        uint256[] handlesList;
+        address contractAddress;
+        address callerAddress;
+    }
+}
+
+// copied from go coprocessor
+// theData := signerApi.TypedData{
+//     Types: signerApi.Types{
+//         "EIP712Domain": domainType,
+//         "CiphertextVerification": []signerApi.Type{
+//             {Name: "handlesList", Type: "uint256[]"},
+//             {Name: "contractAddress", Type: "address"},
+//             {Name: "callerAddress", Type: "address"},
+//         },
+//     },
+//     Domain: signerApi.TypedDataDomain{
+//         Name:              "FHEVMCoprocessor",
+//         Version:           "1",
+//         ChainId:           chainId,
+//         VerifyingContract: verifyingContract.Hex(),
+//     },
+//     PrimaryType: "CiphertextVerification",
+//     Message: signerApi.TypedDataMessage{
+//         "handlesList":     hexInputs,
+//         "contractAddress": contractAddress.Hex(),
+//         "callerAddress":   callerAddress.Hex(),
+//     },
+// }
 
 #[tonic::async_trait]
 impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorService {
@@ -87,17 +132,55 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
             return Ok(tonic::Response::new(response));
         }
 
-        let server_key = {
+        let fetch_key_response = {
             fetch_tenant_server_key(tenant_id, &self.pool, &self.tenant_key_cache)
                 .await
                 .map_err(|e| {
                     tonic::Status::from_error(e)
                 })?
         };
+        let chain_id = fetch_key_response.chain_id;
+        let server_key = fetch_key_response.server_key;
+        let verifying_contract_address = fetch_key_response.verifying_contract_address;
+        let verifying_contract_address = alloy::primitives::Address::from_str(&verifying_contract_address)
+            .map_err(|e| {
+                tonic::Status::from_error(Box::new(CoprocessorError::CannotParseTenantEthereumAddress {
+                    bad_address: verifying_contract_address.clone(),
+                    parsing_error: e.to_string(),
+                }))
+            })?;
+
+        let eip_712_domain = alloy::sol_types::eip712_domain! {
+            name: "FHEVMCoprocessor",
+            version: "1",
+            chain_id: chain_id as u64,
+            verifying_contract: verifying_contract_address,
+        };
+
         let mut tfhe_work_set = tokio::task::JoinSet::new();
 
         // server key is biiig, clone the pointer
         let server_key = std::sync::Arc::new(server_key);
+        let mut contract_addresses = Vec::with_capacity(req.input_ciphertexts.len());
+        let mut caller_addresses = Vec::with_capacity(req.input_ciphertexts.len());
+        for ci in &req.input_ciphertexts {
+            // parse addresses
+            contract_addresses.push(alloy::primitives::Address::from_str(&ci.contract_address)
+                .map_err(|e| {
+                    CoprocessorError::CannotParseEthereumAddress {
+                        bad_address: ci.contract_address.clone(),
+                        parsing_error: e.to_string(),
+                    }
+                })?);
+            caller_addresses.push(alloy::primitives::Address::from_str(&ci.caller_address)
+                .map_err(|e| {
+                    CoprocessorError::CannotParseEthereumAddress {
+                        bad_address: ci.contract_address.clone(),
+                        parsing_error: e.to_string(),
+                    }
+                })?);
+        }
+
         for (idx, ci) in req.input_ciphertexts.iter().enumerate() {
             let cloned_input = ci.clone();
             let server_key = server_key.clone();
@@ -156,8 +239,18 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
             ", tenant_id, &blob_hash, &input_blob.input_payload, corresponding_unpacked.len() as i32)
             .execute(trx.as_mut()).await.map_err(Into::<CoprocessorError>::into)?;
 
+            let mut ct_verification = CiphertextVerification {
+                contractAddress: contract_addresses[idx],
+                callerAddress: caller_addresses[idx],
+                handlesList: Vec::with_capacity(corresponding_unpacked.len()),
+            };
+
             let mut ct_resp = InputCiphertextResponse {
                 input_handles: Vec::with_capacity(corresponding_unpacked.len()),
+                eip712_signature: Vec::new(),
+                eip712_contract_address: contract_addresses[idx].to_string(),
+                eip712_caller_address: caller_addresses[idx].to_string(),
+                eip712_signer_address: self.signer.address().to_string(),
             };
 
             for (ct_idx, the_ct) in corresponding_unpacked.iter().enumerate() {
@@ -189,11 +282,20 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
                 ", tenant_id, &handle, &serialized_ct, ciphertext_version, serialized_type, &blob_hash, ct_idx as i32)
                 .execute(trx.as_mut()).await.map_err(Into::<CoprocessorError>::into)?;
 
+                ct_verification.handlesList.push(alloy::primitives::U256::from_be_slice(&handle));
                 ct_resp.input_handles.push(InputCiphertextResponseHandle {
                     handle: handle.to_vec(),
                     ciphertext_type: serialized_type as i32,
                 });
             }
+
+            let signing_hash = ct_verification.eip712_signing_hash(&eip_712_domain);
+            let eip_712_signature = self.signer.sign_hash_sync(&signing_hash)
+                .map_err(|e| {
+                    CoprocessorError::Eip712SigningFailure { error: e.to_string() }
+                })?;
+
+            ct_resp.eip712_signature = eip_712_signature.as_bytes().to_vec();
 
             response.upload_responses.push(ct_resp);
         }

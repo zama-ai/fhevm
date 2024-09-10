@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use tonic::metadata::MetadataValue;
-use crate::{db_queries::query_tenant_keys, server::{common::FheOperation, coprocessor::{async_computation_input::Input, fhevm_coprocessor_client::FhevmCoprocessorClient, AsyncComputation, AsyncComputationInput, AsyncComputeRequest, InputToUpload, InputUploadBatch}}, tests::utils::{default_api_key, default_tenant_id, setup_test_app}};
+use crate::{db_queries::query_tenant_keys, server::{common::FheOperation, coprocessor::{async_computation_input::Input, fhevm_coprocessor_client::FhevmCoprocessorClient, AsyncComputation, AsyncComputationInput, AsyncComputeRequest, InputToUpload, InputUploadBatch}}, tests::{inputs::{test_random_caller_address, test_random_contract_address}, utils::{default_api_key, default_tenant_id, setup_test_app}}};
 
 #[tokio::test]
 async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error>> {
@@ -36,6 +36,8 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
             input_ciphertexts.push(InputToUpload {
                 input_payload: serialized.clone(),
                 signature: Vec::new(),
+                caller_address: test_random_caller_address(),
+                contract_address: test_random_contract_address(),
             });
         }
 
@@ -74,6 +76,8 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
         input_ciphertexts.push(InputToUpload {
             input_payload: serialized[0..32].to_vec(),
             signature: Vec::new(),
+            caller_address: test_random_caller_address(),
+            contract_address: test_random_contract_address(),
         });
 
         println!("Encrypting inputs...");
@@ -108,6 +112,8 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
         input_ciphertexts.push(InputToUpload {
             input_payload: serialized,
             signature: Vec::new(),
+            caller_address: test_random_caller_address(),
+            contract_address: test_random_contract_address(),
         });
 
         println!("Encrypting inputs...");
@@ -259,6 +265,8 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
         input_ciphertexts.push(InputToUpload {
             input_payload: serialized,
             signature: Vec::new(),
+            caller_address: test_random_caller_address(),
+            contract_address: test_random_contract_address(),
         });
 
         println!("Encrypting inputs...");

@@ -94,8 +94,15 @@ pub async fn check_if_ciphertexts_exist_in_db(
     Ok(result)
 }
 
+pub struct FetchTenantKeyResult {
+    pub chain_id: i32,
+    pub verifying_contract_address: String,
+    pub server_key: tfhe::ServerKey,
+}
+
+/// Returns chain id and verifying contract address for EIP712 signature and tfhe server key
 pub async fn fetch_tenant_server_key<'a, T>(tenant_id: i32, pool: T, tenant_key_cache: &std::sync::Arc<tokio::sync::RwLock<lru::LruCache<i32, TfheTenantKeys>>>)
--> Result<tfhe::ServerKey, Box<dyn std::error::Error + Send + Sync>>
+-> Result<FetchTenantKeyResult, Box<dyn std::error::Error + Send + Sync>>
 where T: sqlx::PgExecutor<'a> + Copy
 {
     // try getting from cache until it succeeds with populating cache
@@ -103,7 +110,11 @@ where T: sqlx::PgExecutor<'a> + Copy
         {
             let mut w = tenant_key_cache.write().await;
             if let Some(key) = w.get(&tenant_id) {
-                return Ok(key.sks.clone());
+                return Ok(FetchTenantKeyResult {
+                    chain_id: key.chain_id,
+                    verifying_contract_address: key.verifying_contract_address.clone(),
+                    server_key: key.sks.clone(),
+                });
             }
         }
 
@@ -118,7 +129,7 @@ where T: sqlx::PgExecutor<'a>
     let mut res = Vec::with_capacity(tenants_to_query.len());
     let keys = query!(
         "
-            SELECT tenant_id, pks_key, sks_key
+            SELECT tenant_id, chain_id, verifying_contract_address, pks_key, sks_key
             FROM tenants
             WHERE tenant_id = ANY($1::INT[])
         ",
@@ -132,7 +143,12 @@ where T: sqlx::PgExecutor<'a>
             .expect("We can't deserialize our own validated sks key");
         let pks: tfhe::CompactPublicKey = bincode::deserialize(&key.pks_key)
             .expect("We can't deserialize our own validated pks key");
-        res.push(TfheTenantKeys { tenant_id: key.tenant_id, sks, pks });
+        res.push(TfheTenantKeys {
+            tenant_id: key.tenant_id,
+            sks, pks,
+            chain_id: key.chain_id,
+            verifying_contract_address: key.verifying_contract_address,
+        });
     }
 
     Ok(res)

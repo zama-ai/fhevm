@@ -11,6 +11,17 @@ pub enum CoprocessorError {
     UnexistingInputCiphertextsFound(Vec<String>),
     AlreadyExistingResultHandlesFound(Vec<String>),
     OutputHandleIsAlsoInputHandle(String),
+    CannotParseTenantEthereumAddress {
+        bad_address: String,
+        parsing_error: String,
+    },
+    CannotParseEthereumAddress {
+        bad_address: String,
+        parsing_error: String,
+    },
+    Eip712SigningFailure {
+        error: String,
+    },
     DuplicateResultHandleInInputsUploaded {
         hex_handle: String,
     },
@@ -77,6 +88,29 @@ impl std::fmt::Display for CoprocessorError {
                     handle
                 )
             }
+            Self::CannotParseTenantEthereumAddress { bad_address, parsing_error } => {
+                write!(
+                    f,
+                    "Cannot parse tenant ethereum verifying contract address: {}, error: {}",
+                    bad_address,
+                    parsing_error,
+                )
+            }
+            Self::CannotParseEthereumAddress { bad_address, parsing_error } => {
+                write!(
+                    f,
+                    "Cannot parse ethereum address: {}, error: {}",
+                    bad_address,
+                    parsing_error,
+                )
+            }
+            Self::Eip712SigningFailure { error } => {
+                write!(
+                    f,
+                    "Error when signing EIP712 hash: {}",
+                    error,
+                )
+            }
             Self::CiphertextComputationDependencyLoopDetected {
                 uncomputable_output_handle,
                 uncomputable_handle_dependency,
@@ -121,6 +155,8 @@ impl From<CoprocessorError> for tonic::Status {
 
 pub struct TfheTenantKeys {
     pub tenant_id: i32,
+    pub chain_id: i32,
+    pub verifying_contract_address: String,
     pub sks: tfhe::ServerKey,
     // maybe we'll need this
     #[allow(dead_code)]

@@ -64,7 +64,9 @@ message CiphertextToUpload {
 
 message InputToUpload {
   bytes input_payload = 1;
-  bytes signature = 2;
+  string contract_address = 2;
+  string caller_address = 3;
+  bytes signature = 4;
 }
 
 message InputCiphertextResponseHandle {
@@ -74,6 +76,10 @@ message InputCiphertextResponseHandle {
 
 message InputCiphertextResponse {
   repeated InputCiphertextResponseHandle input_handles = 1;
+  string eip712ContractAddress = 2;
+  string eip712CallerAddress = 3;
+  string eip712SignerAddress = 4;
+  bytes eip712Signature = 5;
 }
 
 message InputUploadResponse {

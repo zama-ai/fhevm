@@ -54,6 +54,11 @@ pub struct Args {
     /// Postgres database url. If unspecified DATABASE_URL environment variable is used
     #[arg(long)]
     pub database_url: Option<String>,
+
+    /// Coprocessor private key file path.
+    /// Private key is in plain text 0x1234.. format.
+    #[arg(long, default_value = "./coprocessor.key")]
+    pub coprocessor_private_key: String,
 }
 
 pub fn parse_args() -> Args {

@@ -19,6 +19,7 @@ tonic-health = "0.12"
 tonic-types = "0.12"
 tokio-util = "0.7"
 sqlx = { version = "0.7", features = ["runtime-tokio", "tls-rustls", "postgres", "uuid"] }
+alloy = { version = "0.3.2", features = ["eip712", "sol-types", "signer-local"] }
 serde_json = "1.0"
 regex = "1.10.5"
 lazy_static = "1.5.0"

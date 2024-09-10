@@ -5,6 +5,15 @@ use tonic::metadata::MetadataValue;
 
 use crate::{db_queries::query_tenant_keys, server::coprocessor::{fhevm_coprocessor_client::FhevmCoprocessorClient, DebugDecryptRequest, InputToUpload, InputUploadBatch}, tests::utils::{default_api_key, default_tenant_id, setup_test_app}};
 
+pub fn test_random_caller_address() -> String {
+    let _private_key = "bd2400c676871534a682ca1c5e4cd647ec9c3e122f188c6e3f54e6900d586c7b";
+    let public_key = "0x1BdA2a485c339C95a9AbfDe52E80ca38e34C199E";
+    public_key.to_string()
+}
+
+pub fn test_random_contract_address() -> String {
+    "0x76c222560Db6b8937B291196eAb4Dad8930043aE".to_string()
+}
 
 #[tokio::test]
 async fn test_fhe_inputs() -> Result<(), Box<dyn std::error::Error>> {
@@ -45,6 +54,8 @@ async fn test_fhe_inputs() -> Result<(), Box<dyn std::error::Error>> {
             InputToUpload {
                 input_payload: serialized,
                 signature: Vec::new(),
+                caller_address: test_random_caller_address(),
+                contract_address: test_random_contract_address(),
             }
         ]
     });
@@ -139,6 +150,8 @@ async fn custom_insert_inputs() -> Result<(), Box<dyn std::error::Error>> {
             InputToUpload {
                 input_payload: serialized,
                 signature: Vec::new(),
+                caller_address: test_random_caller_address(),
+                contract_address: test_random_contract_address(),
             }
         ]
     });
