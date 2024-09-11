@@ -1,4 +1,7 @@
 use crate::cli::Args;
+use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, deserialize_fhe_ciphertext};
+use rand::RngCore;
+use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU16, Ordering};
 use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage, ImageExt};
 
@@ -46,7 +49,8 @@ pub async fn setup_test_app() -> Result<TestInstance, Box<dyn std::error::Error>
     }
 }
 
-pub async fn setup_test_app_existing_localhost() -> Result<TestInstance, Box<dyn std::error::Error>> {
+pub async fn setup_test_app_existing_localhost() -> Result<TestInstance, Box<dyn std::error::Error>>
+{
     Ok(TestInstance {
         _container: None,
         app_close_channel: None,
@@ -130,7 +134,9 @@ pub async fn setup_test_app_custom_docker() -> Result<TestInstance, Box<dyn std:
     })
 }
 
-pub async fn wait_until_all_ciphertexts_computed(test_instance: &TestInstance) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn wait_until_all_ciphertexts_computed(
+    test_instance: &TestInstance,
+) -> Result<(), Box<dyn std::error::Error>> {
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(2)
         .connect(test_instance.db_url())
@@ -138,11 +144,9 @@ pub async fn wait_until_all_ciphertexts_computed(test_instance: &TestInstance) -
 
     loop {
         tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
-        let count = sqlx::query!(
-            "SELECT count(*) FROM computations WHERE NOT is_completed"
-        )
-        .fetch_one(&pool)
-        .await?;
+        let count = sqlx::query!("SELECT count(*) FROM computations WHERE NOT is_completed")
+            .fetch_one(&pool)
+            .await?;
         let current_count = count.count.unwrap();
         if current_count == 0 {
             println!("All computations completed");
@@ -153,4 +157,89 @@ pub async fn wait_until_all_ciphertexts_computed(test_instance: &TestInstance) -
     }
 
     Ok(())
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct DecryptionResult {
+    pub value: String,
+    pub output_type: i16,
+}
+
+pub async fn decrypt_ciphertexts(
+    pool: &sqlx::PgPool,
+    tenant_id: i32,
+    input: Vec<Vec<u8>>,
+) -> Result<Vec<DecryptionResult>, Box<dyn std::error::Error>> {
+    let mut priv_key = sqlx::query!(
+        "
+            SELECT cks_key
+            FROM tenants
+            WHERE tenant_id = $1
+        ",
+        tenant_id
+    )
+    .fetch_all(pool)
+    .await?;
+
+    if priv_key.is_empty() || priv_key[0].cks_key.is_none() {
+        panic!("tenant private key not found");
+    }
+
+    let mut ct_indexes: BTreeMap<&[u8], usize> = BTreeMap::new();
+    for (idx, h) in input.iter().enumerate() {
+        ct_indexes.insert(h.as_slice(), idx);
+    }
+
+    assert_eq!(priv_key.len(), 1);
+
+    let cts = sqlx::query!(
+        "
+            SELECT ciphertext, ciphertext_type, handle
+            FROM ciphertexts
+            WHERE tenant_id = $1
+            AND handle = ANY($2::BYTEA[])
+            AND ciphertext_version = $3
+        ",
+        tenant_id,
+        &input,
+        current_ciphertext_version()
+    )
+    .fetch_all(pool)
+    .await?;
+
+    if cts.is_empty() {
+        panic!("ciphertext not found");
+    }
+
+    let priv_key = priv_key.pop().unwrap().cks_key.unwrap();
+
+    let mut values = tokio::task::spawn_blocking(move || {
+        let client_key: tfhe::ClientKey = bincode::deserialize(&priv_key).unwrap();
+
+        let mut decrypted: Vec<(Vec<u8>, DecryptionResult)> = Vec::with_capacity(cts.len());
+        for ct in cts {
+            let deserialized =
+                deserialize_fhe_ciphertext(ct.ciphertext_type, &ct.ciphertext).unwrap();
+            decrypted.push((
+                ct.handle,
+                DecryptionResult {
+                    output_type: ct.ciphertext_type,
+                    value: deserialized.decrypt(&client_key),
+                },
+            ));
+        }
+
+        decrypted
+    })
+    .await
+    .unwrap();
+
+    values.sort_by_key(|(h, _)| ct_indexes.get(h.as_slice()).unwrap());
+
+    let values = values.into_iter().map(|i| i.1).collect::<Vec<_>>();
+    Ok(values)
+}
+
+pub fn random_handle_start() -> u64 {
+    rand::thread_rng().next_u64()
 }

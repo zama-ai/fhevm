@@ -3,7 +3,13 @@ use std::str::FromStr;
 use tfhe::integer::{bigint::StaticUnsignedBigInt, U256};
 use tonic::metadata::MetadataValue;
 
-use crate::{db_queries::query_tenant_keys, server::coprocessor::{fhevm_coprocessor_client::FhevmCoprocessorClient, DebugDecryptRequest, InputToUpload, InputUploadBatch}, tests::utils::{default_api_key, default_tenant_id, setup_test_app}};
+use crate::{
+    db_queries::query_tenant_keys,
+    server::coprocessor::{
+        fhevm_coprocessor_client::FhevmCoprocessorClient, InputToUpload, InputUploadBatch,
+    },
+    tests::utils::{decrypt_ciphertexts, default_api_key, default_tenant_id, setup_test_app},
+};
 
 pub fn test_random_caller_address() -> String {
     let _private_key = "bd2400c676871534a682ca1c5e4cd647ec9c3e122f188c6e3f54e6900d586c7b";
@@ -25,10 +31,12 @@ async fn test_fhe_inputs() -> Result<(), Box<dyn std::error::Error>> {
         .connect(app.db_url())
         .await?;
 
-    let keys = query_tenant_keys(vec![default_tenant_id()], &pool).await.map_err(|e| {
-        let e: Box<dyn std::error::Error> = e;
-        e
-    })?;
+    let keys = query_tenant_keys(vec![default_tenant_id()], &pool)
+        .await
+        .map_err(|e| {
+            let e: Box<dyn std::error::Error> = e;
+            e
+        })?;
     let keys = &keys[0];
 
     let mut builder = tfhe::CompactCiphertextListBuilder::new(&keys.pks);
@@ -50,14 +58,12 @@ async fn test_fhe_inputs() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Encrypting inputs...");
     let mut input_request = tonic::Request::new(InputUploadBatch {
-        input_ciphertexts: vec![
-            InputToUpload {
-                input_payload: serialized,
-                signature: Vec::new(),
-                caller_address: test_random_caller_address(),
-                contract_address: test_random_contract_address(),
-            }
-        ]
+        input_ciphertexts: vec![InputToUpload {
+            input_payload: serialized,
+            signature: Vec::new(),
+            caller_address: test_random_caller_address(),
+            contract_address: test_random_contract_address(),
+        }],
     });
     input_request.metadata_mut().append(
         "authorization",
@@ -76,37 +82,29 @@ async fn test_fhe_inputs() -> Result<(), Box<dyn std::error::Error>> {
         decr_handles.push(handle.handle.clone());
     }
 
-    let mut decrypt_request = tonic::Request::new(DebugDecryptRequest {
-        handles: decr_handles,
-    });
-    decrypt_request.metadata_mut().append(
-        "authorization",
-        MetadataValue::from_str(&api_key_header).unwrap(),
-    );
-    let resp = client.debug_decrypt_ciphertext(decrypt_request).await?;
-    let resp = resp.get_ref();
-    assert_eq!(resp.values.len(), 10);
+    let resp = decrypt_ciphertexts(&pool, 1, decr_handles).await?;
+    assert_eq!(resp.len(), 10);
 
-    assert_eq!(resp.values[0].output_type, 0);
-    assert_eq!(resp.values[0].value, "false");
-    assert_eq!(resp.values[1].output_type, 2);
-    assert_eq!(resp.values[1].value, "1");
-    assert_eq!(resp.values[2].output_type, 3);
-    assert_eq!(resp.values[2].value, "2");
-    assert_eq!(resp.values[3].output_type, 4);
-    assert_eq!(resp.values[3].value, "3");
-    assert_eq!(resp.values[4].output_type, 5);
-    assert_eq!(resp.values[4].value, "4");
-    assert_eq!(resp.values[5].output_type, 6);
-    assert_eq!(resp.values[5].value, "5");
-    assert_eq!(resp.values[6].output_type, 8);
-    assert_eq!(resp.values[6].value, "7");
-    assert_eq!(resp.values[7].output_type, 9);
-    assert_eq!(resp.values[7].value, "8");
-    assert_eq!(resp.values[8].output_type, 10);
-    assert_eq!(resp.values[8].value, "9");
-    assert_eq!(resp.values[9].output_type, 11);
-    assert_eq!(resp.values[9].value, "10");
+    assert_eq!(resp[0].output_type, 0);
+    assert_eq!(resp[0].value, "false");
+    assert_eq!(resp[1].output_type, 2);
+    assert_eq!(resp[1].value, "1");
+    assert_eq!(resp[2].output_type, 3);
+    assert_eq!(resp[2].value, "2");
+    assert_eq!(resp[3].output_type, 4);
+    assert_eq!(resp[3].value, "3");
+    assert_eq!(resp[4].output_type, 5);
+    assert_eq!(resp[4].value, "4");
+    assert_eq!(resp[5].output_type, 6);
+    assert_eq!(resp[5].value, "5");
+    assert_eq!(resp[6].output_type, 8);
+    assert_eq!(resp[6].value, "7");
+    assert_eq!(resp[7].output_type, 9);
+    assert_eq!(resp[7].value, "8");
+    assert_eq!(resp[8].output_type, 10);
+    assert_eq!(resp[8].value, "9");
+    assert_eq!(resp[9].output_type, 11);
+    assert_eq!(resp[9].value, "10");
 
     Ok(())
 }
@@ -126,10 +124,12 @@ async fn custom_insert_inputs() -> Result<(), Box<dyn std::error::Error>> {
         .connect(&db_url)
         .await?;
 
-    let keys = query_tenant_keys(vec![default_tenant_id()], &pool).await.map_err(|e| {
-        let e: Box<dyn std::error::Error> = e;
-        e
-    })?;
+    let keys = query_tenant_keys(vec![default_tenant_id()], &pool)
+        .await
+        .map_err(|e| {
+            let e: Box<dyn std::error::Error> = e;
+            e
+        })?;
     let keys = &keys[0];
 
     let mut builder = tfhe::CompactCiphertextListBuilder::new(&keys.pks);
@@ -146,14 +146,12 @@ async fn custom_insert_inputs() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Encrypting inputs...");
     let mut input_request = tonic::Request::new(InputUploadBatch {
-        input_ciphertexts: vec![
-            InputToUpload {
-                input_payload: serialized,
-                signature: Vec::new(),
-                caller_address: test_random_caller_address(),
-                contract_address: test_random_contract_address(),
-            }
-        ]
+        input_ciphertexts: vec![InputToUpload {
+            input_payload: serialized,
+            signature: Vec::new(),
+            caller_address: test_random_caller_address(),
+            contract_address: test_random_contract_address(),
+        }],
     });
     input_request.metadata_mut().append(
         "authorization",
@@ -169,35 +167,6 @@ async fn custom_insert_inputs() -> Result<(), Box<dyn std::error::Error>> {
             println!(" ct {idx} 0x{}", hex::encode(&h.handle));
         }
     }
-
-    Ok(())
-}
-
-#[ignore]
-#[tokio::test]
-// custom function to decrypt the ciphertext from grpc
-// ct_to_decrypt should be changed to your environment
-async fn custom_decrypt_ct() -> Result<(), Box<dyn std::error::Error>> {
-    let grpc_url = "http://127.0.0.1:50051";
-    let api_key_header = format!("bearer {}", default_api_key());
-    let ct_to_decrypt = "5bcaeef7d5bee3b5dffff3dfbfafcfb73cf57ddbbff73f777ffdfe677ebc0500";
-
-    let mut client = FhevmCoprocessorClient::connect(grpc_url).await?;
-    println!("Encrypting inputs...");
-    let mut input_request = tonic::Request::new(DebugDecryptRequest {
-        handles: vec![
-            hex::decode(ct_to_decrypt).unwrap()
-        ]
-    });
-    input_request.metadata_mut().append(
-        "authorization",
-        MetadataValue::from_str(&api_key_header).unwrap(),
-    );
-
-    let uploaded = client.debug_decrypt_ciphertext(input_request).await?;
-    let response = uploaded.get_ref();
-
-    println!("{:#?}", response);
 
     Ok(())
 }

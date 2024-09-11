@@ -12,7 +12,7 @@ type FheLibMethod struct {
 	Name string
 	// types of the arguments that the fhelib function take. format is "(type1,type2...)" (e.g "(uint256,bytes1)")
 	ArgTypes          string
-	runFunction       func(sess CoprocessorSession, input []byte, outputHandle []byte) error
+	runFunction       func(sess CoprocessorSession, input []byte, ed ExtraData, outputHandle []byte) error
 	ScalarSupport     bool
 	NonScalarDisabled bool
 }

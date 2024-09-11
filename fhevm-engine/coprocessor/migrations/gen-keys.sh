@@ -1,9 +1,10 @@
 #!/bin/sh
 
 echo "
-INSERT INTO tenants(tenant_api_key, chain_id, verifying_contract_address, pks_key, sks_key, cks_key)
+INSERT INTO tenants(tenant_api_key, tenant_id, chain_id, verifying_contract_address, pks_key, sks_key, cks_key)
 VALUES (
   'a1503fb6-d79b-4e9e-826d-44cf262f3e05',
+  1,
   12345,
   '0x6819e3aDc437fAf9D533490eD3a7552493fCE3B1',
   decode('$(cat ../../fhevm-keys/pks | xxd -p | tr -d '\n')','hex'),

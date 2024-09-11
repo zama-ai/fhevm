@@ -34,7 +34,7 @@ sha3.workspace = true
 
 [dev-dependencies]
 testcontainers = "0.21"
-random = "0.14.0"
+rand = "0.8.5"
 
 [build-dependencies]
 tonic-build = "0.12"

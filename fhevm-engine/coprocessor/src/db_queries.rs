@@ -101,9 +101,13 @@ pub struct FetchTenantKeyResult {
 }
 
 /// Returns chain id and verifying contract address for EIP712 signature and tfhe server key
-pub async fn fetch_tenant_server_key<'a, T>(tenant_id: i32, pool: T, tenant_key_cache: &std::sync::Arc<tokio::sync::RwLock<lru::LruCache<i32, TfheTenantKeys>>>)
--> Result<FetchTenantKeyResult, Box<dyn std::error::Error + Send + Sync>>
-where T: sqlx::PgExecutor<'a> + Copy
+pub async fn fetch_tenant_server_key<'a, T>(
+    tenant_id: i32,
+    pool: T,
+    tenant_key_cache: &std::sync::Arc<tokio::sync::RwLock<lru::LruCache<i32, TfheTenantKeys>>>,
+) -> Result<FetchTenantKeyResult, Box<dyn std::error::Error + Send + Sync>>
+where
+    T: sqlx::PgExecutor<'a> + Copy,
 {
     // try getting from cache until it succeeds with populating cache
     loop {
@@ -122,9 +126,12 @@ where T: sqlx::PgExecutor<'a> + Copy
     }
 }
 
-pub async fn query_tenant_keys<'a, T>(tenants_to_query: Vec<i32>, conn: T)
--> Result<Vec<TfheTenantKeys>, Box<dyn std::error::Error + Send + Sync>>
-where T: sqlx::PgExecutor<'a>
+pub async fn query_tenant_keys<'a, T>(
+    tenants_to_query: Vec<i32>,
+    conn: T,
+) -> Result<Vec<TfheTenantKeys>, Box<dyn std::error::Error + Send + Sync>>
+where
+    T: sqlx::PgExecutor<'a>,
 {
     let mut res = Vec::with_capacity(tenants_to_query.len());
     let keys = query!(
@@ -145,7 +152,8 @@ where T: sqlx::PgExecutor<'a>
             .expect("We can't deserialize our own validated pks key");
         res.push(TfheTenantKeys {
             tenant_id: key.tenant_id,
-            sks, pks,
+            sks,
+            pks,
             chain_id: key.chain_id,
             verifying_contract_address: key.verifying_contract_address,
         });
@@ -154,9 +162,13 @@ where T: sqlx::PgExecutor<'a>
     Ok(res)
 }
 
-pub async fn populate_cache_with_tenant_keys<'a, T>(tenants_to_query: Vec<i32>, conn: T, tenant_key_cache: &std::sync::Arc<tokio::sync::RwLock<lru::LruCache<i32, TfheTenantKeys>>>)
--> Result<(), Box<dyn std::error::Error + Send + Sync>>
-where T: sqlx::PgExecutor<'a>
+pub async fn populate_cache_with_tenant_keys<'a, T>(
+    tenants_to_query: Vec<i32>,
+    conn: T,
+    tenant_key_cache: &std::sync::Arc<tokio::sync::RwLock<lru::LruCache<i32, TfheTenantKeys>>>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+where
+    T: sqlx::PgExecutor<'a>,
 {
     if !tenants_to_query.is_empty() {
         let keys = query_tenant_keys(tenants_to_query, conn).await?;

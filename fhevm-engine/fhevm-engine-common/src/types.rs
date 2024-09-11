@@ -81,6 +81,23 @@ pub enum FhevmError {
         expected_scalar_operand_bytes: usize,
         got_bytes: usize,
     },
+    UnexpectedRandOperandSizeForOutputType {
+        fhe_operation: i32,
+        fhe_operation_name: String,
+        expected_operand_bytes: usize,
+        got_bytes: usize,
+    },
+    RandOperationUpperBoundCannotBeZero {
+        fhe_operation: i32,
+        fhe_operation_name: String,
+        upper_bound_value: String,
+    },
+    RandOperationInputsMustAllBeScalar {
+        fhe_operation: i32,
+        fhe_operation_name: String,
+        scalar_operand_count: usize,
+        expected_scalar_operand_count: usize,
+    },
     BadInputs,
     MissingTfheRsData,
     InvalidHandle,
@@ -201,6 +218,29 @@ impl std::fmt::Display for FhevmError {
                 max_scalar_operands,
             } => {
                 write!(f, "only one operand can be scalar, fhe operation: {fhe_operation}, fhe operation name: {fhe_operation_name}, second operand count: {scalar_operand_count}, max scalar operands: {max_scalar_operands}")
+            }
+            Self::UnexpectedRandOperandSizeForOutputType {
+                fhe_operation,
+                fhe_operation_name,
+                expected_operand_bytes,
+                got_bytes,
+            } => {
+                write!(f, "operation must have only one byte for output operand type {fhe_operation} ({fhe_operation_name}) expects bytes {}, received: {}", expected_operand_bytes, got_bytes)
+            }
+            Self::RandOperationUpperBoundCannotBeZero {
+                fhe_operation,
+                fhe_operation_name,
+                upper_bound_value,
+            } => {
+                write!(f, "rand bounded operation cannot receive zero as upper bound {fhe_operation} ({fhe_operation_name}) received: {}", upper_bound_value)
+            },
+            Self::RandOperationInputsMustAllBeScalar {
+                fhe_operation,
+                fhe_operation_name,
+                scalar_operand_count,
+                expected_scalar_operand_count,
+            } => {
+                write!(f, "operation must have all operands as scalar {fhe_operation} ({fhe_operation_name}) expected scalar operands {}, received: {}", expected_scalar_operand_count, scalar_operand_count)
             }
             Self::BadInputs => {
                 write!(f, "Bad inputs")
@@ -421,6 +461,12 @@ impl SupportedFheCiphertexts {
             9 => Ok(SupportedFheCiphertexts::FheBytes64(
                 list.get(0)?.ok_or(FhevmError::MissingTfheRsData)?,
             )),
+            10 => Ok(SupportedFheCiphertexts::FheBytes128(
+                list.get(0)?.ok_or(FhevmError::MissingTfheRsData)?,
+            )),
+            11 => Ok(SupportedFheCiphertexts::FheBytes128(
+                list.get(0)?.ok_or(FhevmError::MissingTfheRsData)?,
+            )),
             _ => Err(FhevmError::UnknownFheType(ct_type as i32).into()),
         }
     }
@@ -487,6 +533,14 @@ impl SupportedFheOperations {
             | SupportedFheOperations::FheGt
             | SupportedFheOperations::FheLe
             | SupportedFheOperations::FheLt => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_random(&self) -> bool {
+        match self {
+            SupportedFheOperations::FheRand
+            | SupportedFheOperations::FheRandBounded => true,
             _ => false,
         }
     }

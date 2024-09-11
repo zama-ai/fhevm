@@ -8,13 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
-	ethCrypto "github.com/ethereum/go-ethereum/crypto"
 	_ "github.com/mattn/go-sqlite3"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -32,6 +29,7 @@ const (
 	FheUint64    FheUintType = 5
 	FheUint128   FheUintType = 6
 	FheUint160   FheUintType = 7
+	FheUint256   FheUintType = 8
 	FheUserBytes FheUintType = 255
 )
 
@@ -112,8 +110,12 @@ type CoprocessorApi interface {
 
 type SegmentId int
 
+type ExtraData struct {
+	RandomCounter common.Hash
+}
+
 type CoprocessorSession interface {
-	Execute(input []byte, output []byte) error
+	Execute(input []byte, ed ExtraData, output []byte) error
 	ContractAddress() common.Address
 	NextSegment() SegmentId
 	InvalidateSinceSegment(id SegmentId) SegmentId
@@ -127,9 +129,8 @@ type ComputationStore interface {
 }
 
 type ApiImpl struct {
-	store          *SqliteCiphertextStore
-	address        common.Address
-	coprocessorKey *ecdsa.PrivateKey
+	store   *SqliteComputationStore
+	address common.Address
 }
 
 type SessionImpl struct {
@@ -161,7 +162,7 @@ type SessionComputationStore struct {
 	segmentCount              int
 }
 
-type SqliteCiphertextStore struct {
+type SqliteComputationStore struct {
 	dbMutex           sync.Mutex
 	dbConn            *sql.DB
 	coprocessorUrl    string
@@ -181,9 +182,8 @@ type ciphertextSegment struct {
 
 func (coprocApi *ApiImpl) CreateSession() CoprocessorSession {
 	return &SessionImpl{
-		address:        coprocApi.address,
-		coprocessorKey: coprocApi.coprocessorKey,
-		isCommitted:    false,
+		address:     coprocApi.address,
+		isCommitted: false,
 		sessionStore: &SessionComputationStore{
 			isCommitted:               false,
 			inserts:                   make([]ComputationToInsert, 0),
@@ -212,7 +212,7 @@ func (sessionApi *SessionImpl) Commit() error {
 	return nil
 }
 
-func (sessionApi *SessionImpl) Execute(data []byte, output []byte) error {
+func (sessionApi *SessionImpl) Execute(data []byte, ed ExtraData, output []byte) error {
 	if len(data) < 4 {
 		return fmt.Errorf("input data must be at least 4 bytes for signature, got %d", len(data))
 	}
@@ -226,7 +226,7 @@ func (sessionApi *SessionImpl) Execute(data []byte, output []byte) error {
 		if len(output) >= 32 {
 			// where to get output handle from?
 			outputHandle := output[0:32]
-			return method.runFunction(sessionApi, callData, outputHandle)
+			return method.runFunction(sessionApi, callData, ed, outputHandle)
 		} else {
 			return errors.New("no output data provided")
 		}
@@ -278,7 +278,7 @@ func (dbApi *SessionComputationStore) InsertComputation(computation ComputationT
 
 func (dbApi *SessionComputationStore) Commit() error {
 	if dbApi.isCommitted {
-		return errors.New("session ciphertext store already committed")
+		return errors.New("session computation store already committed")
 	}
 
 	dbApi.isCommitted = true
@@ -290,7 +290,7 @@ func (dbApi *SessionComputationStore) Commit() error {
 		}
 	}
 
-	fmt.Printf("Inserting %d ciphertexts into database\n", len(finalInserts))
+	fmt.Printf("Inserting %d computations into database\n", len(finalInserts))
 
 	err := dbApi.underlyingCiphertextStore.InsertComputationBatch(finalInserts)
 	if err != nil {
@@ -325,7 +325,7 @@ func computationToAsyncComputation(computation ComputationToInsert) AsyncComputa
 	}
 }
 
-func (dbApi *SqliteCiphertextStore) InsertComputation(computation ComputationToInsert) error {
+func (dbApi *SqliteComputationStore) InsertComputation(computation ComputationToInsert) error {
 	dbApi.dbMutex.Lock()
 	defer dbApi.dbMutex.Unlock()
 
@@ -345,7 +345,7 @@ func (dbApi *SqliteCiphertextStore) InsertComputation(computation ComputationToI
 	return nil
 }
 
-func (dbApi *SqliteCiphertextStore) InsertComputationBatch(computations []ComputationToInsert) error {
+func (dbApi *SqliteComputationStore) InsertComputationBatch(computations []ComputationToInsert) error {
 	dbApi.dbMutex.Lock()
 	defer dbApi.dbMutex.Unlock()
 
@@ -382,11 +382,6 @@ func InitCoprocessor() (CoprocessorApi, error) {
 		}
 		fhevmContractAddress := common.HexToAddress(contractAddr)
 
-		keyFile, hasKey := os.LookupEnv("FHEVM_COPROCESSOR_PRIVATE_KEY_FILE")
-		if !hasKey {
-			return nil, errors.New("FHEVM_CIPHERTEXTS_DB is set but FHEVM_COPROCESSOR_PRIVATE_KEY_FILE is not set")
-		}
-
 		coprocUrl, hasUrl := os.LookupEnv("FHEVM_COPROCESSOR_URL")
 		if !hasUrl {
 			return nil, errors.New("FHEVM_COPROCESSOR_URL is not configured")
@@ -402,49 +397,9 @@ func InitCoprocessor() (CoprocessorApi, error) {
 			return nil, err
 		}
 
-		keyBytes, err := os.ReadFile(keyFile)
-		if err != nil {
-			if !os.IsNotExist(err) {
-				return nil, err
-			}
-			// key file doesn't exist, generate
-			fmt.Printf("Key file not found in %s, generating and saving\n", keyFile)
-			privKey, err := ethCrypto.GenerateKey()
-			if err != nil {
-				return nil, err
-			}
-			keyBytes = []byte(hexutil.Encode(ethCrypto.FromECDSA(privKey)))
-			err = os.WriteFile(keyFile, keyBytes, 0o600)
-			if err != nil {
-				return nil, err
-			}
-			fmt.Printf("Generated and saved ECDSA private key in %s\n", keyFile)
-		}
-
-		privKeyString := strings.TrimSpace(string(keyBytes))
-		privKeyBytes, err := hexutil.Decode(privKeyString)
-		if err != nil {
-			return nil, err
-		}
-
-		privKey, err := ethCrypto.ToECDSA(privKeyBytes)
-		if err != nil {
-			return nil, err
-		}
-
-		pubKey := privKey.Public()
-		publicKeyECDSA, ok := pubKey.(*ecdsa.PublicKey)
-		if !ok {
-			return nil, errors.New("can't get ethereum public key from private")
-		}
-
-		pubKeyAddr := ethCrypto.PubkeyToAddress(*publicKeyECDSA)
-		fmt.Printf("Public coprocessor eth address: %s\n", pubKeyAddr)
-
 		apiImpl := ApiImpl{
-			store:          ciphertextDb,
-			address:        fhevmContractAddress,
-			coprocessorKey: privKey,
+			store:   ciphertextDb,
+			address: fhevmContractAddress,
 		}
 
 		// background job to submit computations to coprocessor
@@ -482,45 +437,53 @@ func scheduleCoprocessorFlushes(impl *ApiImpl) {
 	}()
 }
 
-func flushWorkItemsToCoprocessor(store *SqliteCiphertextStore) (int, error) {
+func queryCurrentComputeRequests(store *SqliteComputationStore) (*AsyncComputeRequest, [][]byte, error) {
 	var asyncCompReq *AsyncComputeRequest
 	handlesToMarkDone := make([][]byte, 0)
-	{
-		store.dbMutex.Lock()
-		defer store.dbMutex.Unlock()
 
-		// query all ciphertexts
-		response, err := store.dbConn.Query("SELECT output_handle, payload FROM computations WHERE is_sent = 0 LIMIT 700")
+	store.dbMutex.Lock()
+	defer store.dbMutex.Unlock()
+
+	// query all ciphertexts
+	response, err := store.dbConn.Query("SELECT output_handle, payload FROM computations WHERE is_sent = 0 LIMIT 700")
+	if err != nil {
+		return nil, handlesToMarkDone, err
+	}
+
+	requests := make([]*AsyncComputation, 0, 16)
+	for response.Next() {
+		var outputHandle, payload []byte
+		err = response.Scan(&outputHandle, &payload)
 		if err != nil {
-			return 0, err
+			return nil, handlesToMarkDone, err
+		}
+		var ac AsyncComputation
+		err = proto.Unmarshal(payload, &ac)
+		if err != nil {
+			return nil, handlesToMarkDone, err
 		}
 
-		requests := make([]*AsyncComputation, 0, 16)
-		for response.Next() {
-			var outputHandle, payload []byte
-			err = response.Scan(&outputHandle, &payload)
-			if err != nil {
-				return 0, err
-			}
-			var ac AsyncComputation
-			err = proto.Unmarshal(payload, &ac)
-			if err != nil {
-				return 0, err
-			}
+		requests = append(requests, &ac)
+		handlesToMarkDone = append(handlesToMarkDone, outputHandle)
+	}
 
-			requests = append(requests, &ac)
-			handlesToMarkDone = append(handlesToMarkDone, outputHandle)
-		}
+	if response.Err() != nil {
+		return nil, handlesToMarkDone, err
+	}
 
-		if response.Err() != nil {
-			return 0, err
+	if len(requests) > 0 {
+		asyncCompReq = &AsyncComputeRequest{
+			Computations: requests,
 		}
+	}
 
-		if len(requests) > 0 {
-			asyncCompReq = &AsyncComputeRequest{
-				Computations: requests,
-			}
-		}
+	return asyncCompReq, handlesToMarkDone, nil
+}
+
+func flushWorkItemsToCoprocessor(store *SqliteComputationStore) (int, error) {
+	asyncCompReq, handlesToMarkDone, err := queryCurrentComputeRequests(store)
+	if err != nil {
+		return 0, err
 	}
 
 	if asyncCompReq != nil {
@@ -562,7 +525,7 @@ func flushWorkItemsToCoprocessor(store *SqliteCiphertextStore) (int, error) {
 	return 0, nil
 }
 
-func CreateSqliteCiphertextStore(dbPath string, ctx context.Context, coprocUrl, coprocApiKey string) (*SqliteCiphertextStore, error) {
+func CreateSqliteCiphertextStore(dbPath string, ctx context.Context, coprocUrl, coprocApiKey string) (*SqliteComputationStore, error) {
 	dbConn, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		return nil, err
@@ -573,7 +536,7 @@ func CreateSqliteCiphertextStore(dbPath string, ctx context.Context, coprocUrl, 
 		return nil, err
 	}
 
-	return &SqliteCiphertextStore{
+	return &SqliteComputationStore{
 		dbConn:            dbConn,
 		dbMutex:           sync.Mutex{},
 		coprocessorUrl:    coprocUrl,

@@ -10,7 +10,7 @@ func handleType(handle []byte) FheUintType {
 	return FheUintType(handle[30])
 }
 
-func fheAddRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byte) error {
+func fheAddRun(sess CoprocessorSession, unslicedInput []byte, _ ExtraData, outputHandle []byte) error {
 	if len(unslicedInput) < 65 {
 		return fmt.Errorf("expected at least 65 bytes as input, got %d", len(unslicedInput))
 	}
@@ -80,7 +80,7 @@ func fheAddRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byt
 	}
 }
 
-func fheSubRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byte) error {
+func fheSubRun(sess CoprocessorSession, unslicedInput []byte, _ ExtraData, outputHandle []byte) error {
 	if len(unslicedInput) < 65 {
 		return fmt.Errorf("expected at least 65 bytes as input, got %d", len(unslicedInput))
 	}
@@ -150,7 +150,7 @@ func fheSubRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byt
 	}
 }
 
-func fheMulRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byte) error {
+func fheMulRun(sess CoprocessorSession, unslicedInput []byte, _ ExtraData, outputHandle []byte) error {
 	if len(unslicedInput) < 65 {
 		return fmt.Errorf("expected at least 65 bytes as input, got %d", len(unslicedInput))
 	}
@@ -220,7 +220,7 @@ func fheMulRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byt
 	}
 }
 
-func fheRemRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byte) error {
+func fheRemRun(sess CoprocessorSession, unslicedInput []byte, _ ExtraData, outputHandle []byte) error {
 	if len(unslicedInput) < 65 {
 		return fmt.Errorf("expected at least 65 bytes as input, got %d", len(unslicedInput))
 	}
@@ -289,7 +289,7 @@ func fheRemRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byt
 	}
 }
 
-func fheBitAndRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byte) error {
+func fheBitAndRun(sess CoprocessorSession, unslicedInput []byte, _ ExtraData, outputHandle []byte) error {
 	if len(unslicedInput) < 65 {
 		return fmt.Errorf("expected at least 65 bytes as input, got %d", len(unslicedInput))
 	}
@@ -333,7 +333,7 @@ func fheBitAndRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []
 	}
 }
 
-func fheBitOrRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byte) error {
+func fheBitOrRun(sess CoprocessorSession, unslicedInput []byte, _ ExtraData, outputHandle []byte) error {
 	if len(unslicedInput) < 65 {
 		return fmt.Errorf("expected at least 65 bytes as input, got %d", len(unslicedInput))
 	}
@@ -377,7 +377,7 @@ func fheBitOrRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []b
 	}
 }
 
-func fheBitXorRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byte) error {
+func fheBitXorRun(sess CoprocessorSession, unslicedInput []byte, _ ExtraData, outputHandle []byte) error {
 	if len(unslicedInput) < 65 {
 		return fmt.Errorf("expected at least 65 bytes as input, got %d", len(unslicedInput))
 	}
@@ -421,7 +421,7 @@ func fheBitXorRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []
 	}
 }
 
-func fheShlRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byte) error {
+func fheShlRun(sess CoprocessorSession, unslicedInput []byte, _ ExtraData, outputHandle []byte) error {
 	if len(unslicedInput) < 65 {
 		return fmt.Errorf("expected at least 65 bytes as input, got %d", len(unslicedInput))
 	}
@@ -489,7 +489,7 @@ func fheShlRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byt
 	}
 }
 
-func fheShrRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byte) error {
+func fheShrRun(sess CoprocessorSession, unslicedInput []byte, _ ExtraData, outputHandle []byte) error {
 	if len(unslicedInput) < 65 {
 		return fmt.Errorf("expected at least 65 bytes as input, got %d", len(unslicedInput))
 	}
@@ -557,7 +557,7 @@ func fheShrRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byt
 	}
 }
 
-func fheRotlRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byte) error {
+func fheRotlRun(sess CoprocessorSession, unslicedInput []byte, _ ExtraData, outputHandle []byte) error {
 	if len(unslicedInput) < 65 {
 		return fmt.Errorf("expected at least 65 bytes as input, got %d", len(unslicedInput))
 	}
@@ -625,7 +625,7 @@ func fheRotlRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []by
 	}
 }
 
-func fheRotrRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byte) error {
+func fheRotrRun(sess CoprocessorSession, unslicedInput []byte, _ ExtraData, outputHandle []byte) error {
 	if len(unslicedInput) < 65 {
 		return fmt.Errorf("expected at least 65 bytes as input, got %d", len(unslicedInput))
 	}
@@ -693,7 +693,7 @@ func fheRotrRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []by
 	}
 }
 
-func fheEqRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byte) error {
+func fheEqRun(sess CoprocessorSession, unslicedInput []byte, _ ExtraData, outputHandle []byte) error {
 	if len(unslicedInput) < 65 {
 		return fmt.Errorf("expected at least 65 bytes as input, got %d", len(unslicedInput))
 	}
@@ -761,7 +761,7 @@ func fheEqRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byte
 	}
 }
 
-func fheNeRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byte) error {
+func fheNeRun(sess CoprocessorSession, unslicedInput []byte, _ ExtraData, outputHandle []byte) error {
 	if len(unslicedInput) < 65 {
 		return fmt.Errorf("expected at least 65 bytes as input, got %d", len(unslicedInput))
 	}
@@ -829,7 +829,7 @@ func fheNeRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byte
 	}
 }
 
-func fheGeRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byte) error {
+func fheGeRun(sess CoprocessorSession, unslicedInput []byte, _ ExtraData, outputHandle []byte) error {
 	if len(unslicedInput) < 65 {
 		return fmt.Errorf("expected at least 65 bytes as input, got %d", len(unslicedInput))
 	}
@@ -897,7 +897,7 @@ func fheGeRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byte
 	}
 }
 
-func fheGtRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byte) error {
+func fheGtRun(sess CoprocessorSession, unslicedInput []byte, _ ExtraData, outputHandle []byte) error {
 	if len(unslicedInput) < 65 {
 		return fmt.Errorf("expected at least 65 bytes as input, got %d", len(unslicedInput))
 	}
@@ -965,7 +965,7 @@ func fheGtRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byte
 	}
 }
 
-func fheLeRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byte) error {
+func fheLeRun(sess CoprocessorSession, unslicedInput []byte, _ ExtraData, outputHandle []byte) error {
 	if len(unslicedInput) < 65 {
 		return fmt.Errorf("expected at least 65 bytes as input, got %d", len(unslicedInput))
 	}
@@ -1033,7 +1033,7 @@ func fheLeRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byte
 	}
 }
 
-func fheLtRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byte) error {
+func fheLtRun(sess CoprocessorSession, unslicedInput []byte, _ ExtraData, outputHandle []byte) error {
 	if len(unslicedInput) < 65 {
 		return fmt.Errorf("expected at least 65 bytes as input, got %d", len(unslicedInput))
 	}
@@ -1101,7 +1101,7 @@ func fheLtRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byte
 	}
 }
 
-func fheMinRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byte) error {
+func fheMinRun(sess CoprocessorSession, unslicedInput []byte, _ ExtraData, outputHandle []byte) error {
 	if len(unslicedInput) < 65 {
 		return fmt.Errorf("expected at least 65 bytes as input, got %d", len(unslicedInput))
 	}
@@ -1169,7 +1169,7 @@ func fheMinRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byt
 	}
 }
 
-func fheMaxRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byte) error {
+func fheMaxRun(sess CoprocessorSession, unslicedInput []byte, _ ExtraData, outputHandle []byte) error {
 	if len(unslicedInput) < 65 {
 		return fmt.Errorf("expected at least 65 bytes as input, got %d", len(unslicedInput))
 	}
@@ -1237,7 +1237,7 @@ func fheMaxRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byt
 	}
 }
 
-func fheNegRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byte) error {
+func fheNegRun(sess CoprocessorSession, unslicedInput []byte, _ ExtraData, outputHandle []byte) error {
 	if len(unslicedInput) < 32 {
 		return fmt.Errorf("expected at least 65 bytes as input, got %d", len(unslicedInput))
 	}
@@ -1267,7 +1267,7 @@ func fheNegRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byt
 	return nil
 }
 
-func fheNotRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byte) error {
+func fheNotRun(sess CoprocessorSession, unslicedInput []byte, _ ExtraData, outputHandle []byte) error {
 	if len(unslicedInput) < 32 {
 		return fmt.Errorf("expected at least 65 bytes as input, got %d", len(unslicedInput))
 	}
@@ -1297,7 +1297,7 @@ func fheNotRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byt
 	return nil
 }
 
-func fheIfThenElseRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byte) error {
+func fheIfThenElseRun(sess CoprocessorSession, unslicedInput []byte, _ ExtraData, outputHandle []byte) error {
 	if len(unslicedInput) < 96 {
 		return fmt.Errorf("expected at least 96 bytes as input, got %d", len(unslicedInput))
 	}
@@ -1341,7 +1341,7 @@ func fheIfThenElseRun(sess CoprocessorSession, unslicedInput []byte, outputHandl
 	return nil
 }
 
-func castRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byte) error {
+func castRun(sess CoprocessorSession, unslicedInput []byte, _ ExtraData, outputHandle []byte) error {
 	if len(unslicedInput) < 33 {
 		return fmt.Errorf("expected at least 33 bytes as input, got %d", len(unslicedInput))
 	}
@@ -1382,7 +1382,7 @@ func castRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byte)
 	return nil
 }
 
-func fheRandRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byte) error {
+func fheRandRun(sess CoprocessorSession, unslicedInput []byte, ed ExtraData, outputHandle []byte) error {
 	if len(unslicedInput) < 1 {
 		return fmt.Errorf("expected at least 1 bytes as input, got %d", len(unslicedInput))
 	}
@@ -1397,7 +1397,12 @@ func fheRandRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []by
 		OutputHandle: outputHandle,
 		Operands: []ComputationOperand{
 			{
-				Handle:      outputHandle,
+				Handle:      ed.RandomCounter[:],
+				FheUintType: FheUint256,
+				IsScalar:    true,
+			},
+			{
+				Handle:      []byte{resultTypeByte},
 				FheUintType: FheUint8,
 				IsScalar:    true,
 			},
@@ -1410,7 +1415,7 @@ func fheRandRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []by
 	return nil
 }
 
-func fheRandBoundedRun(sess CoprocessorSession, unslicedInput []byte, outputHandle []byte) error {
+func fheRandBoundedRun(sess CoprocessorSession, unslicedInput []byte, ed ExtraData, outputHandle []byte) error {
 	if len(unslicedInput) < 33 {
 		return fmt.Errorf("expected at least 1 bytes as input, got %d", len(unslicedInput))
 	}
@@ -1428,12 +1433,17 @@ func fheRandBoundedRun(sess CoprocessorSession, unslicedInput []byte, outputHand
 		OutputHandle: outputHandle,
 		Operands: []ComputationOperand{
 			{
-				Handle:      unslicedInput[0:32],
-				FheUintType: FheUint32,
+				Handle:      ed.RandomCounter[:],
+				FheUintType: FheUint256,
 				IsScalar:    true,
 			},
 			{
-				Handle:      outputHandle,
+				Handle:      unslicedInput[0:32],
+				FheUintType: FheUint256,
+				IsScalar:    true,
+			},
+			{
+				Handle:      []byte{resultTypeByte},
 				FheUintType: FheUint8,
 				IsScalar:    true,
 			},

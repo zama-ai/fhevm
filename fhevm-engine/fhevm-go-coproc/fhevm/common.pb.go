@@ -23,32 +23,33 @@ const (
 type FheOperation int32
 
 const (
-	FheOperation_FHE_ADD          FheOperation = 0
-	FheOperation_FHE_SUB          FheOperation = 1
-	FheOperation_FHE_MUL          FheOperation = 2
-	FheOperation_FHE_DIV          FheOperation = 3
-	FheOperation_FHE_REM          FheOperation = 4
-	FheOperation_FHE_BIT_AND      FheOperation = 5
-	FheOperation_FHE_BIT_OR       FheOperation = 6
-	FheOperation_FHE_BIT_XOR      FheOperation = 7
-	FheOperation_FHE_SHL          FheOperation = 8
-	FheOperation_FHE_SHR          FheOperation = 9
-	FheOperation_FHE_ROTL         FheOperation = 10
-	FheOperation_FHE_ROTR         FheOperation = 11
-	FheOperation_FHE_EQ           FheOperation = 12
-	FheOperation_FHE_NE           FheOperation = 13
-	FheOperation_FHE_GE           FheOperation = 14
-	FheOperation_FHE_GT           FheOperation = 15
-	FheOperation_FHE_LE           FheOperation = 16
-	FheOperation_FHE_LT           FheOperation = 17
-	FheOperation_FHE_MIN          FheOperation = 18
-	FheOperation_FHE_MAX          FheOperation = 19
-	FheOperation_FHE_NEG          FheOperation = 20
-	FheOperation_FHE_NOT          FheOperation = 21
-	FheOperation_FHE_CAST         FheOperation = 23
-	FheOperation_FHE_IF_THEN_ELSE FheOperation = 25
-	FheOperation_FHE_RAND         FheOperation = 26
-	FheOperation_FHE_RAND_BOUNDED FheOperation = 27
+	FheOperation_FHE_ADD            FheOperation = 0
+	FheOperation_FHE_SUB            FheOperation = 1
+	FheOperation_FHE_MUL            FheOperation = 2
+	FheOperation_FHE_DIV            FheOperation = 3
+	FheOperation_FHE_REM            FheOperation = 4
+	FheOperation_FHE_BIT_AND        FheOperation = 5
+	FheOperation_FHE_BIT_OR         FheOperation = 6
+	FheOperation_FHE_BIT_XOR        FheOperation = 7
+	FheOperation_FHE_SHL            FheOperation = 8
+	FheOperation_FHE_SHR            FheOperation = 9
+	FheOperation_FHE_ROTL           FheOperation = 10
+	FheOperation_FHE_ROTR           FheOperation = 11
+	FheOperation_FHE_EQ             FheOperation = 12
+	FheOperation_FHE_NE             FheOperation = 13
+	FheOperation_FHE_GE             FheOperation = 14
+	FheOperation_FHE_GT             FheOperation = 15
+	FheOperation_FHE_LE             FheOperation = 16
+	FheOperation_FHE_LT             FheOperation = 17
+	FheOperation_FHE_MIN            FheOperation = 18
+	FheOperation_FHE_MAX            FheOperation = 19
+	FheOperation_FHE_NEG            FheOperation = 20
+	FheOperation_FHE_NOT            FheOperation = 21
+	FheOperation_FHE_CAST           FheOperation = 23
+	FheOperation_FHE_IF_THEN_ELSE   FheOperation = 25
+	FheOperation_FHE_RAND           FheOperation = 26
+	FheOperation_FHE_RAND_BOUNDED   FheOperation = 27
+	FheOperation_FHE_GET_CIPHERTEXT FheOperation = 32
 )
 
 // Enum value maps for FheOperation.
@@ -80,34 +81,36 @@ var (
 		25: "FHE_IF_THEN_ELSE",
 		26: "FHE_RAND",
 		27: "FHE_RAND_BOUNDED",
+		32: "FHE_GET_CIPHERTEXT",
 	}
 	FheOperation_value = map[string]int32{
-		"FHE_ADD":          0,
-		"FHE_SUB":          1,
-		"FHE_MUL":          2,
-		"FHE_DIV":          3,
-		"FHE_REM":          4,
-		"FHE_BIT_AND":      5,
-		"FHE_BIT_OR":       6,
-		"FHE_BIT_XOR":      7,
-		"FHE_SHL":          8,
-		"FHE_SHR":          9,
-		"FHE_ROTL":         10,
-		"FHE_ROTR":         11,
-		"FHE_EQ":           12,
-		"FHE_NE":           13,
-		"FHE_GE":           14,
-		"FHE_GT":           15,
-		"FHE_LE":           16,
-		"FHE_LT":           17,
-		"FHE_MIN":          18,
-		"FHE_MAX":          19,
-		"FHE_NEG":          20,
-		"FHE_NOT":          21,
-		"FHE_CAST":         23,
-		"FHE_IF_THEN_ELSE": 25,
-		"FHE_RAND":         26,
-		"FHE_RAND_BOUNDED": 27,
+		"FHE_ADD":            0,
+		"FHE_SUB":            1,
+		"FHE_MUL":            2,
+		"FHE_DIV":            3,
+		"FHE_REM":            4,
+		"FHE_BIT_AND":        5,
+		"FHE_BIT_OR":         6,
+		"FHE_BIT_XOR":        7,
+		"FHE_SHL":            8,
+		"FHE_SHR":            9,
+		"FHE_ROTL":           10,
+		"FHE_ROTR":           11,
+		"FHE_EQ":             12,
+		"FHE_NE":             13,
+		"FHE_GE":             14,
+		"FHE_GT":             15,
+		"FHE_LE":             16,
+		"FHE_LT":             17,
+		"FHE_MIN":            18,
+		"FHE_MAX":            19,
+		"FHE_NEG":            20,
+		"FHE_NOT":            21,
+		"FHE_CAST":           23,
+		"FHE_IF_THEN_ELSE":   25,
+		"FHE_RAND":           26,
+		"FHE_RAND_BOUNDED":   27,
+		"FHE_GET_CIPHERTEXT": 32,
 	}
 )
 
@@ -142,7 +145,7 @@ var File_common_proto protoreflect.FileDescriptor
 
 var file_common_proto_rawDesc = []byte{
 	0x0a, 0x0c, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x12, 0x0c,
-	0x66, 0x68, 0x65, 0x76, 0x6d, 0x2e, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2a, 0xfb, 0x02, 0x0a,
+	0x66, 0x68, 0x65, 0x76, 0x6d, 0x2e, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2a, 0x93, 0x03, 0x0a,
 	0x0c, 0x46, 0x68, 0x65, 0x4f, 0x70, 0x65, 0x72, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x12, 0x0b, 0x0a,
 	0x07, 0x46, 0x48, 0x45, 0x5f, 0x41, 0x44, 0x44, 0x10, 0x00, 0x12, 0x0b, 0x0a, 0x07, 0x46, 0x48,
 	0x45, 0x5f, 0x53, 0x55, 0x42, 0x10, 0x01, 0x12, 0x0b, 0x0a, 0x07, 0x46, 0x48, 0x45, 0x5f, 0x4d,
@@ -166,11 +169,12 @@ var file_common_proto_rawDesc = []byte{
 	0x12, 0x14, 0x0a, 0x10, 0x46, 0x48, 0x45, 0x5f, 0x49, 0x46, 0x5f, 0x54, 0x48, 0x45, 0x4e, 0x5f,
 	0x45, 0x4c, 0x53, 0x45, 0x10, 0x19, 0x12, 0x0c, 0x0a, 0x08, 0x46, 0x48, 0x45, 0x5f, 0x52, 0x41,
 	0x4e, 0x44, 0x10, 0x1a, 0x12, 0x14, 0x0a, 0x10, 0x46, 0x48, 0x45, 0x5f, 0x52, 0x41, 0x4e, 0x44,
-	0x5f, 0x42, 0x4f, 0x55, 0x4e, 0x44, 0x45, 0x44, 0x10, 0x1b, 0x42, 0x2d, 0x0a, 0x13, 0x69, 0x6f,
-	0x2e, 0x67, 0x72, 0x70, 0x63, 0x2e, 0x66, 0x68, 0x65, 0x76, 0x6d, 0x63, 0x6f, 0x6d, 0x6d, 0x6f,
-	0x6e, 0x42, 0x0b, 0x46, 0x68, 0x65, 0x76, 0x6d, 0x43, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x50, 0x01,
-	0x5a, 0x07, 0x2e, 0x2f, 0x66, 0x68, 0x65, 0x76, 0x6d, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f,
-	0x33,
+	0x5f, 0x42, 0x4f, 0x55, 0x4e, 0x44, 0x45, 0x44, 0x10, 0x1b, 0x12, 0x16, 0x0a, 0x12, 0x46, 0x48,
+	0x45, 0x5f, 0x47, 0x45, 0x54, 0x5f, 0x43, 0x49, 0x50, 0x48, 0x45, 0x52, 0x54, 0x45, 0x58, 0x54,
+	0x10, 0x20, 0x42, 0x2d, 0x0a, 0x13, 0x69, 0x6f, 0x2e, 0x67, 0x72, 0x70, 0x63, 0x2e, 0x66, 0x68,
+	0x65, 0x76, 0x6d, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x42, 0x0b, 0x46, 0x68, 0x65, 0x76, 0x6d,
+	0x43, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x50, 0x01, 0x5a, 0x07, 0x2e, 0x2f, 0x66, 0x68, 0x65, 0x76,
+	0x6d, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (

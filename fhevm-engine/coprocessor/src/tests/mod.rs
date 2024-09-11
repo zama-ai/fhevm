@@ -1,23 +1,28 @@
 use std::str::FromStr;
 
+use crate::server::common::FheOperation;
 use crate::server::coprocessor::async_computation_input::Input;
 use crate::server::coprocessor::fhevm_coprocessor_client::FhevmCoprocessorClient;
 use crate::server::coprocessor::{
-    AsyncComputation, AsyncComputationInput, AsyncComputeRequest, DebugDecryptRequest,
-    DebugEncryptRequest, DebugEncryptRequestSingle,
+    AsyncComputation, AsyncComputationInput, AsyncComputeRequest, TrivialEncryptBatch,
+    TrivialEncryptRequestSingle,
 };
-use crate::server::common::FheOperation;
 use tonic::metadata::MetadataValue;
-use utils::{default_api_key, wait_until_all_ciphertexts_computed};
+use utils::{decrypt_ciphertexts, default_api_key, wait_until_all_ciphertexts_computed};
 
-mod operators;
-mod utils;
-mod inputs;
 mod errors;
+mod inputs;
+mod operators;
+mod random;
+mod utils;
 
 #[tokio::test]
 async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
     let app = utils::setup_test_app().await?;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(app.db_url())
+        .await?;
 
     let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
 
@@ -26,14 +31,14 @@ async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
 
     // encrypt two ciphertexts
     {
-        let mut encrypt_request = tonic::Request::new(DebugEncryptRequest {
+        let mut encrypt_request = tonic::Request::new(TrivialEncryptBatch {
             values: vec![
-                DebugEncryptRequestSingle {
+                TrivialEncryptRequestSingle {
                     handle: vec![0x0a, 0xbc],
                     be_value: vec![123],
                     output_type: ct_type,
                 },
-                DebugEncryptRequestSingle {
+                TrivialEncryptRequestSingle {
                     handle: vec![0x0a, 0xbd],
                     be_value: vec![124],
                     output_type: ct_type,
@@ -44,7 +49,7 @@ async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
             "authorization",
             MetadataValue::from_str(&api_key_header).unwrap(),
         );
-        let resp = client.debug_encrypt_ciphertext(encrypt_request).await?;
+        let resp = client.trivial_encrypt_ciphertexts(encrypt_request).await?;
         println!("encryption request: {:?}", resp);
     }
 
@@ -91,23 +96,44 @@ async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
 
     // decrypt values
     {
-        let mut decrypt_request = tonic::Request::new(DebugDecryptRequest {
-            handles: vec![vec![0x0a, 0xbe], vec![0x0a, 0xbf]],
-        });
-        decrypt_request.metadata_mut().append(
-            "authorization",
-            MetadataValue::from_str(&api_key_header).unwrap(),
-        );
-        let resp = client.debug_decrypt_ciphertext(decrypt_request).await?;
+        let decrypt_request = vec![vec![0x0a, 0xbe], vec![0x0a, 0xbf]];
+        let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
         println!("decrypt request: {:?}", resp);
-        assert_eq!(resp.get_ref().values.len(), 2);
+        assert_eq!(resp.len(), 2);
         // first value
-        assert_eq!(resp.get_ref().values[0].value, "247");
-        assert_eq!(resp.get_ref().values[0].output_type, ct_type);
+        assert_eq!(resp[0].value, "247");
+        assert_eq!(resp[0].output_type, ct_type as i16);
         // second value
-        assert_eq!(resp.get_ref().values[1].value, "263");
-        assert_eq!(resp.get_ref().values[1].output_type, ct_type);
+        assert_eq!(resp[1].value, "263");
+        assert_eq!(resp[1].output_type, ct_type as i16);
     }
+
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore]
+// custom test to run against local instance for decrypting custom ciphertexts
+async fn test_custom_function() -> Result<(), Box<dyn std::error::Error>> {
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect("postgresql://postgres:postgres@127.0.0.1:5432/coprocessor")
+        .await?;
+
+    let res = utils::decrypt_ciphertexts(&pool, 1, vec![
+        hex::decode("de2c33227b24ca797f7ad88495648446c70612c17f416d27513c77f2d0810200").unwrap(),
+        hex::decode("51d1d882d1e5ce54f15523558edd2746766c14cd5177faeb659418c57cec0200").unwrap(),
+        hex::decode("e3935354c48514fdfb0cbd965ad506d8865a2c88efffffca94dc9e0cecec0300").unwrap(),
+        hex::decode("3eed1ad1d1aa030b3bb3d3587ece4661a56945affcdee6bbdc02e28779380200").unwrap(),
+        hex::decode("55fe0c4283fbad83dc6fab91c3f85c098ada7a70ca8089e3076043efc9c60200").unwrap(),
+        hex::decode("3b42e61e197b88c083b4a2ab4b0ec542775e2282bebcc574e45d09f9779a0200").unwrap(),
+        hex::decode("9718b490a41e20fecaa90a7ab75e74de0c4105213ac3e5d8b5368ab813160200").unwrap(),
+        hex::decode("164c6d678ddf95f12bfa6b0fee7fd8b12e6221bd0c587640ae61dfc624f20200").unwrap(),
+        hex::decode("52a01af58c3d2b8ed1d04cd846706c1d214b72e079bd0930827628cb69180200").unwrap(),
+        hex::decode("d8d493764d46b62187b6a42917d58e297922d9ebab0dee306324e8c78a130200").unwrap(),
+    ]).await.unwrap();
+
+    println!("{:#?}", res);
 
     Ok(())
 }

@@ -11,36 +11,19 @@ import "common.proto";
 
 service FhevmCoprocessor {
   rpc AsyncCompute (AsyncComputeRequest) returns (GenericResponse) {}
-  rpc UploadCiphertexts (CiphertextUploadBatch) returns (GenericResponse) {}
   rpc WaitComputations (AsyncComputeRequest) returns (FhevmResponses) {}
   rpc UploadInputs (InputUploadBatch) returns (InputUploadResponse) {}
-  // for debugging, should be removed in prod
-  rpc DebugDecryptCiphertext (DebugDecryptRequest) returns (DebugDecryptResponse) {}
-  // for debugging, should be removed in prod
-  rpc DebugEncryptCiphertext (DebugEncryptRequest) returns (GenericResponse) {}
+  rpc TrivialEncryptCiphertexts (TrivialEncryptBatch) returns (GenericResponse) {}
 }
 
-message DebugEncryptRequest {
-  repeated DebugEncryptRequestSingle values = 1;
+message TrivialEncryptBatch {
+  repeated TrivialEncryptRequestSingle values = 1;
 }
 
-message DebugEncryptRequestSingle {
+message TrivialEncryptRequestSingle {
   bytes handle = 1;
   bytes be_value = 2;
   int32 output_type = 3;
-}
-
-message DebugDecryptRequest {
-  repeated bytes handles = 1;
-}
-
-message DebugDecryptResponse {
-  repeated DebugDecryptResponseSingle values = 1;
-}
-
-message DebugDecryptResponseSingle {
-  int32 output_type = 1;
-  string value = 2;
 }
 
 message AsyncComputation {
@@ -54,12 +37,6 @@ message AsyncComputationInput {
     bytes input_handle = 1;
     bytes scalar = 2;
   }
-}
-
-message CiphertextToUpload {
-  int32 ciphertext_type = 1;
-  bytes ciphertext_handle = 2;
-  bytes ciphertext_bytes = 3;
 }
 
 message InputToUpload {
@@ -89,10 +66,6 @@ message InputUploadResponse {
 // The request message containing the user's name.
 message AsyncComputeRequest {
   repeated AsyncComputation computations = 1;
-}
-
-message CiphertextUploadBatch {
-  repeated CiphertextToUpload input_ciphertexts = 1;
 }
 
 message InputUploadBatch {

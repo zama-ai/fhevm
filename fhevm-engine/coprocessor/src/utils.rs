@@ -1,6 +1,6 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-use fhevm_engine_common::types::FhevmError;
+use fhevm_engine_common::types::{FhevmError, SupportedFheOperations};
 
 #[cfg(test)]
 use crate::server::coprocessor::AsyncComputationInput;
@@ -46,6 +46,10 @@ pub fn sort_computations_by_dependencies<'a>(
     for (idx, comp) in input.iter().enumerate() {
         let mut this_deps = Vec::with_capacity(comp.inputs.len());
         let mut this_scalar_operands = Vec::with_capacity(comp.inputs.len());
+        let fhe_op: SupportedFheOperations = comp
+            .operation
+            .try_into()
+            .map_err(|e| CoprocessorError::FhevmError(e))?;
         for (dep_idx, ih) in comp.inputs.iter().enumerate() {
             let mut is_scalar_operand = false;
             if let Some(ih_input) = &ih.input {
@@ -70,13 +74,13 @@ pub fn sort_computations_by_dependencies<'a>(
                     }
                     Input::Scalar(sc_bytes) => {
                         check_valid_ciphertext_handle(&sc_bytes)?;
-                        if dep_idx != 1 {
+                        if dep_idx != 1 && !fhe_op.is_random() {
                             // TODO: remove wrapping after refactor
                             return Err(CoprocessorError::FhevmError(
                                 FhevmError::FheOperationOnlySecondOperandCanBeScalar {
                                     scalar_input_index: dep_idx,
                                     only_allowed_scalar_input_index: 1,
-                                }
+                                },
                             ));
                         }
                         is_scalar_operand = true;
@@ -145,7 +149,10 @@ pub fn sort_computations_by_dependencies<'a>(
                         "0x{}",
                         hex::encode(&first_uncomputable_handle)
                     ),
-                    uncomputable_handle_dependency: format!("0x{}", hex::encode(first_uncomputable_handle_dependency)),
+                    uncomputable_handle_dependency: format!(
+                        "0x{}",
+                        hex::encode(first_uncomputable_handle_dependency)
+                    ),
                 },
             );
         }
