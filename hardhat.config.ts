@@ -1,4 +1,5 @@
 import '@nomicfoundation/hardhat-toolbox';
+import '@openzeppelin/hardhat-upgrades';
 import dotenv from 'dotenv';
 import 'hardhat-deploy';
 import 'hardhat-ignore-warnings';

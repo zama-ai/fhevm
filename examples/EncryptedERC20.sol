@@ -23,6 +23,7 @@ contract EncryptedERC20 is Ownable2Step {
     mapping(address => mapping(address => euint64)) internal allowances;
 
     constructor(string memory name_, string memory symbol_) payable Ownable(msg.sender) {
+        TFHE.setFHEVM(FHEVMConfig.defaultConfig());
         Payment.depositForThis(msg.value);
         _name = name_;
         _symbol = symbol_;

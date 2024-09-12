@@ -14,6 +14,7 @@ contract TFHEManualTestSuite {
     eaddress public resAdd;
 
     constructor() payable {
+        TFHE.setFHEVM(FHEVMConfig.defaultConfig());
         Payment.depositForThis(msg.value);
     }
 

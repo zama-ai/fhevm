@@ -9,7 +9,7 @@ import { waitNBlocks } from './utils';
 const networkName = network.name;
 
 const parsedEnvACL = dotenv.parse(fs.readFileSync('lib/.env.acl'));
-const aclAdd = parsedEnvACL.ACL_CONTRACT_ADDRESS.replace(/^0x/, '').replace(/^0+/, '').toLowerCase();
+const aclAdd = parsedEnvACL.ACL_CONTRACT_ADDRESS;
 
 const CiphertextType = {
   0: 'bool',
@@ -123,8 +123,8 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
 
         // first check tat all handles are allowed for decryption
         const aclFactory = await ethers.getContractFactory('ACL');
-        const acl = aclFactory.attach(`0x${aclAdd}`);
-        const isAllowedForDec = await Promise.all(handles.map(async (handle) => acl.allowedForDecryption(handle)));
+        const acl = aclFactory.attach(aclAdd);
+        const isAllowedForDec = await Promise.all(handles.map(async (handle) => acl.isAllowedForDecryption(handle)));
         if (!allTrue(isAllowedForDec)) {
           throw new Error('Some handle is not authorized for decryption');
         }

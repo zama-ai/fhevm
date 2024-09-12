@@ -3,11 +3,13 @@
 pragma solidity ^0.8.24;
 
 import "../lib/TFHE.sol";
-import "@openzeppelin/contracts/access/Ownable2Step.sol";
+import "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
-import "../lib/KMSVerifier.sol";
+import "../lib/KMSVerifierAddress.sol";
+import "./IKMSVerifier.sol";
 
-contract GatewayContract is Ownable2Step {
+contract GatewayContract is UUPSUpgradeable, Ownable2StepUpgradeable {
     /// @notice Name of the contract
     string private constant CONTRACT_NAME = "GatewayContract";
 
@@ -16,9 +18,9 @@ contract GatewayContract is Ownable2Step {
     uint256 private constant MINOR_VERSION = 1;
     uint256 private constant PATCH_VERSION = 0;
 
-    KMSVerifier immutable kmsVerifier;
+    IKMSVerifier private constant kmsVerifier = IKMSVerifier(kmsVerifierAdd);
 
-    uint256 public constant MAX_DELAY = 1 days;
+    uint256 private constant MAX_DELAY = 1 days;
 
     struct DecryptionRequest {
         uint256[] cts;
@@ -28,12 +30,6 @@ contract GatewayContract is Ownable2Step {
         uint256 maxTimestamp;
         bool passSignaturesToCaller;
     }
-
-    uint256 public counter; // tracks the number of decryption requests
-
-    mapping(address => bool) public isRelayer;
-    mapping(uint256 => DecryptionRequest) internal decryptionRequests;
-    mapping(uint256 => bool) internal isFulfilled;
 
     event EventDecryption(
         uint256 indexed requestID,
@@ -51,32 +47,80 @@ contract GatewayContract is Ownable2Step {
 
     event ResultCallback(uint256 indexed requestID, bool success, bytes result);
 
-    constructor(address _gatewayOwner, address _kmsVerifier) Ownable(_gatewayOwner) {
-        kmsVerifier = KMSVerifier(_kmsVerifier);
+    function getMAX_DELAY() external virtual returns (uint256) {
+        return MAX_DELAY;
+    }
+
+    function getKmsVerifierAddress() external virtual returns (address) {
+        return kmsVerifierAdd;
+    }
+
+    function getCounter() external virtual returns (uint256) {
+        GatewayContractStorage storage $ = _getGatewayContractStorage();
+        return $.counter;
+    }
+
+    function isRelayer(address account) external virtual returns (bool) {
+        GatewayContractStorage storage $ = _getGatewayContractStorage();
+        return $.isRelayer[account];
+    }
+
+    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
+
+    /// @custom:storage-location erc7201:fhevm.storage.GatewayContract
+    struct GatewayContractStorage {
+        uint256 counter; // tracks the number of decryption requests
+        mapping(address => bool) isRelayer;
+        mapping(uint256 => DecryptionRequest) decryptionRequests;
+        mapping(uint256 => bool) isFulfilled;
+    }
+
+    // keccak256(abi.encode(uint256(keccak256("fhevm.storage.GatewayContract")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant GatewayContractStorageLocation =
+        0x2f81b8bba57448689ab73c47570e3de1ee7f779a62f121c9631b35b3eda2aa00;
+
+    function _getGatewayContractStorage() internal pure returns (GatewayContractStorage storage $) {
+        assembly {
+            $.slot := GatewayContractStorageLocation
+        }
+    }
+
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(address _gatewayOwner) external initializer {
+        __Ownable_init(_gatewayOwner);
     }
 
     modifier onlyRelayer() {
-        require(isRelayer[msg.sender], "Not relayer");
+        GatewayContractStorage storage $ = _getGatewayContractStorage();
+        require($.isRelayer[msg.sender], "Not relayer");
         _;
     }
 
-    function addRelayer(address relayerAddress) external onlyOwner {
-        require(!isRelayer[relayerAddress], "Address is already relayer");
-        isRelayer[relayerAddress] = true;
+    function addRelayer(address relayerAddress) external virtual onlyOwner {
+        GatewayContractStorage storage $ = _getGatewayContractStorage();
+        require(!$.isRelayer[relayerAddress], "Address is already relayer");
+        $.isRelayer[relayerAddress] = true;
         emit AddedRelayer(relayerAddress);
     }
 
-    function removeRelayer(address relayerAddress) external onlyOwner {
-        require(isRelayer[relayerAddress], "Address is not a relayer");
-        isRelayer[relayerAddress] = false;
+    function removeRelayer(address relayerAddress) external virtual onlyOwner {
+        GatewayContractStorage storage $ = _getGatewayContractStorage();
+        require($.isRelayer[relayerAddress], "Address is not a relayer");
+        $.isRelayer[relayerAddress] = false;
         emit RemovedRelayer(relayerAddress);
     }
 
-    function isExpiredOrFulfilled(uint256 requestID) external view returns (bool) {
+    function isExpiredOrFulfilled(uint256 requestID) external view virtual returns (bool) {
+        GatewayContractStorage storage $ = _getGatewayContractStorage();
         uint256 timeNow = block.timestamp;
         return
-            isFulfilled[requestID] ||
-            (timeNow > decryptionRequests[requestID].maxTimestamp && decryptionRequests[requestID].maxTimestamp != 0);
+            $.isFulfilled[requestID] ||
+            (timeNow > $.decryptionRequests[requestID].maxTimestamp &&
+                $.decryptionRequests[requestID].maxTimestamp != 0);
     }
 
     /// @notice Requests the decryption of n ciphertexts `ctsHandles` with the result returned in a callback.
@@ -94,11 +138,12 @@ contract GatewayContract is Ownable2Step {
         uint256 msgValue,
         uint256 maxTimestamp,
         bool passSignaturesToCaller
-    ) external returns (uint256 initialCounter) {
+    ) external virtual returns (uint256 initialCounter) {
         require(maxTimestamp > block.timestamp, "maxTimestamp must be a future date");
         require(maxTimestamp <= block.timestamp + MAX_DELAY, "maxTimestamp exceeded MAX_DELAY");
-        initialCounter = counter;
-        DecryptionRequest storage decryptionReq = decryptionRequests[initialCounter];
+        GatewayContractStorage storage $ = _getGatewayContractStorage();
+        initialCounter = $.counter;
+        DecryptionRequest storage decryptionReq = $.decryptionRequests[initialCounter];
 
         uint256 len = ctsHandles.length;
         for (uint256 i = 0; i < len; i++) {
@@ -119,7 +164,7 @@ contract GatewayContract is Ownable2Step {
             maxTimestamp,
             passSignaturesToCaller
         );
-        counter++;
+        $.counter++;
     }
 
     // Called by the relayer to pass the decryption results from the KMS to the callback function
@@ -128,14 +173,15 @@ contract GatewayContract is Ownable2Step {
         uint256 requestID,
         bytes memory decryptedCts,
         bytes[] memory signatures
-    ) external payable onlyRelayer {
+    ) external payable virtual onlyRelayer {
         // TODO: this should be un-commented once KMS will have the signatures implemented
         //require(
         //    kmsVerifier.verifySignatures(decryptionRequests[requestID].cts, decryptedCts, signatures),
         //    "KMS signature verification failed"
         //);
-        require(!isFulfilled[requestID], "Request is already fulfilled");
-        DecryptionRequest memory decryptionReq = decryptionRequests[requestID];
+        GatewayContractStorage storage $ = _getGatewayContractStorage();
+        require(!$.isFulfilled[requestID], "Request is already fulfilled");
+        DecryptionRequest memory decryptionReq = $.decryptionRequests[requestID];
         require(block.timestamp <= decryptionReq.maxTimestamp, "Too late");
         bytes memory callbackCalldata = abi.encodeWithSelector(decryptionReq.callbackSelector, requestID);
         bool passSignatures = decryptionReq.passSignaturesToCaller;
@@ -147,12 +193,12 @@ contract GatewayContract is Ownable2Step {
             callbackCalldata
         );
         emit ResultCallback(requestID, success, result);
-        isFulfilled[requestID] = true;
+        $.isFulfilled[requestID] = true;
     }
 
     /// @notice Getter for the name and version of the contract
     /// @return string representing the name and the version of the contract
-    function getVersion() external pure returns (string memory) {
+    function getVersion() external pure virtual returns (string memory) {
         return
             string(
                 abi.encodePacked(

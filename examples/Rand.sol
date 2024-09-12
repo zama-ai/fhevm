@@ -13,6 +13,7 @@ contract Rand {
     euint64 public value64Bounded;
 
     constructor() payable {
+        TFHE.setFHEVM(FHEVMConfig.defaultConfig());
         Payment.depositForThis(msg.value);
     }
 

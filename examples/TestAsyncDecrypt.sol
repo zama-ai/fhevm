@@ -33,6 +33,8 @@ contract TestAsyncDecrypt is GatewayCaller {
     uint256 public latestRequestID;
 
     constructor() payable {
+        TFHE.setFHEVM(FHEVMConfig.defaultConfig());
+        Gateway.setGateway(Gateway.defaultGatewayAddress());
         Payment.depositForThis(msg.value);
         xBool = TFHE.asEbool(true);
         TFHE.allow(xBool, address(this));

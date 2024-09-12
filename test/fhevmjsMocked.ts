@@ -12,7 +12,7 @@ import { awaitCoprocessor, getClearText } from './coprocessorUtils';
 const hre = require('hardhat');
 
 const parsedEnvACL = dotenv.parse(fs.readFileSync('lib/.env.acl'));
-const aclAdd = parsedEnvACL.ACL_CONTRACT_ADDRESS.replace(/^0x/, '').replace(/^0+/, '').toLowerCase();
+const aclAdd = parsedEnvACL.ACL_CONTRACT_ADDRESS;
 
 enum Types {
   ebool = 0,
@@ -122,7 +122,7 @@ export const reencryptRequestMocked = async (
 
   // ACL checking
   const aclFactory = await hre.ethers.getContractFactory('ACL');
-  const acl = aclFactory.attach(`0x${aclAdd}`);
+  const acl = aclFactory.attach(aclAdd);
   const userAllowed = await acl.persistAllowed(handle, userAddress);
   const contractAllowed = await acl.persistAllowed(handle, contractAddress);
   const isAllowed = userAllowed && contractAllowed;
