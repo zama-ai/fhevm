@@ -1522,7 +1522,7 @@ dependencies = [
  "lazy_static",
  "lru",
  "prost",
- "random",
+ "rand",
  "regex",
  "serde_json",
  "sha3",
@@ -3572,12 +3572,6 @@ checksum = "d25bf25ec5ae4a3f1b92f929810509a2f53d7dca2f50b794ff57e3face536c8f"
 dependencies = [
  "rand_core",
 ]
-
-[[package]]
-name = "random"
-version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61c7093a82705b48f10d4b165c6482dbe9f58cd63a870d85537e857b2badbd88"
 
 [[package]]
 name = "rayon"

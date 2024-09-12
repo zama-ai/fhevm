@@ -1,20 +1,22 @@
+use crate::server::common::FheOperation;
 use crate::server::coprocessor::fhevm_coprocessor_client::FhevmCoprocessorClient;
 use crate::server::coprocessor::{
     AsyncComputation, AsyncComputeRequest, DebugDecryptRequest, DebugEncryptRequest,
     DebugEncryptRequestSingle,
 };
-use crate::server::common::FheOperation;
 use crate::tests::utils::wait_until_all_ciphertexts_computed;
 use crate::{
     server::coprocessor::{async_computation_input::Input, AsyncComputationInput},
     tests::utils::{default_api_key, setup_test_app},
 };
 use bigdecimal::num_bigint::BigInt;
-use fhevm_engine_common::tfhe_ops::{does_fhe_operation_support_both_encrypted_operands, does_fhe_operation_support_scalar};
+use fhevm_engine_common::tfhe_ops::{
+    does_fhe_operation_support_both_encrypted_operands, does_fhe_operation_support_scalar,
+};
 use fhevm_engine_common::types::{FheOperationType, SupportedFheOperations};
-use random::Source;
-use strum::IntoEnumIterator;
+use rand::Rng;
 use std::{ops::Not, str::FromStr};
+use strum::IntoEnumIterator;
 use tonic::metadata::MetadataValue;
 
 struct BinaryOperatorTestCase {
@@ -37,32 +39,21 @@ struct UnaryOperatorTestCase {
 }
 
 fn supported_bits() -> &'static [i32] {
-    &[
-        8,
-        16,
-        32,
-        64,
-        128,
-        160,
-        256,
-        512,
-        1024,
-        2048,
-    ]
+    &[8, 16, 32, 64, 128, 160, 256, 512, 1024, 2048]
 }
 
 fn supported_types() -> &'static [i32] {
     &[
         0, // bool
         // 1, TODO: add 4 bit support
-        2, // 8 bit
-        3, // 16 bit
-        4, // 32 bit
-        5, // 64 bit
-        6, // 128 bit
-        7, // 160 bit
-        8, // 256 bit
-        9, // ebytes 64
+        2,  // 8 bit
+        3,  // 16 bit
+        4,  // 32 bit
+        5,  // 64 bit
+        6,  // 128 bit
+        7,  // 160 bit
+        8,  // 256 bit
+        9,  // ebytes 64
         10, // ebytes 128
         11, // ebytes 256
     ]
@@ -85,10 +76,7 @@ fn supported_bits_to_bit_type_in_db(inp: i32) -> i32 {
 }
 
 fn random_handle_start() -> u64 {
-    let time = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
-        .unwrap().as_nanos();
-    let mut random_gen = random::default(time as u64);
-    random_gen.read_u64()
+    rand::thread_rng().gen()
 }
 
 #[tokio::test]
@@ -524,12 +512,7 @@ async fn test_fhe_if_then_else() -> Result<(), Box<dyn std::error::Error>> {
         let left_handle = next_handle();
         let right_handle = next_handle();
         let is_input_bool = *input_types == fhe_bool_type;
-        let (left_input, right_input) =
-            if is_input_bool {
-                (0, 1)
-            } else {
-                (7, 12)
-            };
+        let (left_input, right_input) = if is_input_bool { (0, 1) } else { (7, 12) };
         enc_request_payload.push(DebugEncryptRequestSingle {
             handle: left_handle.clone(),
             be_value: BigInt::from(left_input).to_bytes_be().1,
@@ -545,7 +528,9 @@ async fn test_fhe_if_then_else() -> Result<(), Box<dyn std::error::Error>> {
             let output_handle = next_handle();
             let (expected_result, input_handle) = if test_value {
                 (left_input, &true_handle)
-            } else { (right_input, &false_handle) };
+            } else {
+                (right_input, &false_handle)
+            };
             if_then_else_outputs.push(IfThenElseOutput {
                 input_type: *input_types,
                 input_bool: test_value,
@@ -743,7 +728,7 @@ fn compute_expected_unary_output(inp: &BigInt, op: SupportedFheOperations) -> Bi
             }
             let num = BigInt::from_bytes_be(bigdecimal::num_bigint::Sign::Plus, &bytes);
             num + 1
-        },
+        }
         other => panic!("unsupported unary operation: {:?}", other),
     }
 }
