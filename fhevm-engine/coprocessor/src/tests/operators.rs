@@ -4,7 +4,7 @@ use crate::server::coprocessor::{
     AsyncComputation, AsyncComputeRequest, DebugDecryptRequest, DebugEncryptRequest,
     DebugEncryptRequestSingle,
 };
-use crate::tests::utils::wait_until_all_ciphertexts_computed;
+use crate::tests::utils::{random_handle, wait_until_all_ciphertexts_computed};
 use crate::{
     server::coprocessor::{async_computation_input::Input, AsyncComputationInput},
     tests::utils::{default_api_key, setup_test_app},
@@ -14,7 +14,6 @@ use fhevm_engine_common::tfhe_ops::{
     does_fhe_operation_support_both_encrypted_operands, does_fhe_operation_support_scalar,
 };
 use fhevm_engine_common::types::{FheOperationType, SupportedFheOperations};
-use rand::Rng;
 use std::{ops::Not, str::FromStr};
 use strum::IntoEnumIterator;
 use tonic::metadata::MetadataValue;
@@ -75,17 +74,13 @@ fn supported_bits_to_bit_type_in_db(inp: i32) -> i32 {
     }
 }
 
-fn random_handle_start() -> u64 {
-    rand::thread_rng().gen()
-}
-
 #[tokio::test]
 async fn test_fhe_binary_operands() -> Result<(), Box<dyn std::error::Error>> {
     let ops = generate_binary_test_cases();
     let app = setup_test_app().await?;
     let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
 
-    let mut handle_counter: u64 = random_handle_start();
+    let mut handle_counter: u64 = random_handle();
     let mut next_handle = || {
         let out: u64 = handle_counter;
         handle_counter += 1;
@@ -223,7 +218,7 @@ async fn test_fhe_unary_operands() -> Result<(), Box<dyn std::error::Error>> {
     let app = setup_test_app().await?;
     let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
 
-    let mut handle_counter: u64 = random_handle_start();
+    let mut handle_counter: u64 = random_handle();
     let mut next_handle = || {
         let out: u64 = handle_counter;
         handle_counter += 1;
@@ -336,7 +331,7 @@ async fn test_fhe_casts() -> Result<(), Box<dyn std::error::Error>> {
     let app = setup_test_app().await?;
     let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
 
-    let mut handle_counter = random_handle_start();
+    let mut handle_counter = random_handle();
     let mut next_handle = || {
         let out: u64 = handle_counter;
         handle_counter += 1;
@@ -471,7 +466,7 @@ async fn test_fhe_if_then_else() -> Result<(), Box<dyn std::error::Error>> {
     let app = setup_test_app().await?;
     let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
 
-    let mut handle_counter = random_handle_start();
+    let mut handle_counter = random_handle();
     let mut next_handle = || {
         let out: u64 = handle_counter;
         handle_counter += 1;

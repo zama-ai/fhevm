@@ -1,4 +1,5 @@
 use crate::cli::Args;
+use rand::Rng;
 use std::sync::atomic::{AtomicU16, Ordering};
 use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage, ImageExt};
 use tokio::sync::watch::Receiver;
@@ -39,6 +40,10 @@ pub fn default_tenant_id() -> i32 {
     1
 }
 
+pub fn random_handle() -> u64 {
+    rand::thread_rng().gen()
+}
+
 pub async fn setup_test_app() -> Result<TestInstance, Box<dyn std::error::Error>> {
     if std::env::var("COPROCESSOR_TEST_LOCALHOST").is_ok() {
         setup_test_app_existing_localhost().await
@@ -60,7 +65,7 @@ async fn setup_test_app_existing_localhost() -> Result<TestInstance, Box<dyn std
     })
 }
 
-pub async fn setup_test_app_existing_db() -> Result<TestInstance, Box<dyn std::error::Error>> {
+async fn setup_test_app_existing_db() -> Result<TestInstance, Box<dyn std::error::Error>> {
     let app_port = get_app_port();
     let (app_close_channel, rx) = tokio::sync::watch::channel(false);
     start_coprocessor(rx, app_port, &LOCAL_DB_URL).await;
