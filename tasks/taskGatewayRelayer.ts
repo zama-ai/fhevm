@@ -21,10 +21,10 @@ task('task:computePredeployAddress')
     const deployerAddress = new ethers.Wallet(taskArguments.privateKey).address;
     const gatewayContractAddressPrecomputed = ethers.getCreateAddress({
       from: deployerAddress,
-      nonce: 0, // deployer is supposed to have nonce 0 when deploying GatewayContract
+      nonce: 1, // deployer is supposed to have nonce 0 when deploying GatewayContract (0 nonce for implementation, +1 for UUPS)
     });
     const envFilePath = path.join(__dirname, '../gateway/.env.gateway');
-    const content = `GATEWAY_CONTRACT_PREDEPLOY_ADDRESS=${gatewayContractAddressPrecomputed}\n`;
+    const content = `GATEWAY_CONTRACT_PREDEPLOY_ADDRESS=${gatewayContractAddressPrecomputed}`;
     try {
       fs.writeFileSync(envFilePath, content, { flag: 'w' });
       console.log('gatewayContractAddress written to gateway/.env.gateway successfully!');
@@ -37,7 +37,7 @@ task('task:computePredeployAddress')
 pragma solidity ^0.8.24;
 
 address constant GATEWAY_CONTRACT_PREDEPLOY_ADDRESS = ${gatewayContractAddressPrecomputed};
-        `;
+`;
 
     try {
       fs.writeFileSync('./gateway/lib/GatewayContractAddress.sol', solidityTemplate, { encoding: 'utf8', flag: 'w' });

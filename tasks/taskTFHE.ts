@@ -7,7 +7,7 @@ task('task:computeACLAddress').setAction(async function (taskArguments: TaskArgu
   const deployer = (await ethers.getSigners())[9].address;
   const aclAddress = ethers.getCreateAddress({
     from: deployer,
-    nonce: 0, // using nonce of 0 for the ACL contract
+    nonce: 1, // using nonce of 1 for the ACL contract (0 for original implementation, +1 for proxy)
   });
   const envFilePath = path.join(__dirname, '../lib/.env.acl');
   const content = `ACL_CONTRACT_ADDRESS=${aclAddress}\n`;
@@ -36,7 +36,7 @@ task('task:computeTFHEExecutorAddress').setAction(async function (taskArguments:
   const deployer = (await ethers.getSigners())[9].address;
   const execAddress = ethers.getCreateAddress({
     from: deployer,
-    nonce: 1, // using nonce of 1 for the TFHEExecutor contract
+    nonce: 3, // using nonce of 3 for the TFHEExecutor contract (2 for original implementation, +1 for proxy)
   });
   const envFilePath = path.join(__dirname, '../lib/.env.exec');
   const content = `TFHE_EXECUTOR_CONTRACT_ADDRESS=${execAddress}\n`;
@@ -65,7 +65,7 @@ task('task:computeKMSVerifierAddress').setAction(async function (taskArguments: 
   const deployer = (await ethers.getSigners())[9].address;
   const kmsVerfierAddress = ethers.getCreateAddress({
     from: deployer,
-    nonce: 2, // using nonce of 2 for the Kms Verifier contract
+    nonce: 5, // using nonce of 5 for the KMSVerifier contract (4 for original implementation, +1 for proxy)
   });
   const envFilePath = path.join(__dirname, '../lib/.env.kmsverifier');
   const content = `KMS_VERIFIER_CONTRACT_ADDRESS=${kmsVerfierAddress}\n`;
@@ -94,7 +94,7 @@ task('task:computeFHEPaymentAddress').setAction(async function (taskArguments: T
   const deployer = (await ethers.getSigners())[9].address;
   const fhePaymentAddress = ethers.getCreateAddress({
     from: deployer,
-    nonce: 3, // using nonce of 3 for the FHEPayment contract
+    nonce: 7, // using nonce of 7 for the FHEPayment contract (6 for original implementation, +1 for proxy)
   });
   const envFilePath = path.join(__dirname, '../lib/.env.fhepayment');
   const content = `FHE_PAYMENT_CONTRACT_ADDRESS=${fhePaymentAddress}\n`;

@@ -3,6 +3,7 @@
 pragma solidity ^0.8.24;
 
 import "./GatewayContractAddress.sol";
+import "../IKMSVerifier.sol";
 import "../../lib/Impl.sol";
 
 interface IGatewayContract {
@@ -13,14 +14,6 @@ interface IGatewayContract {
         uint256 maxTimestamp,
         bool passSignaturesToCaller
     ) external returns (uint256);
-}
-
-interface IKMSVerifier {
-    function verifySignatures(
-        uint256[] memory handlesList,
-        bytes memory decryptedResult,
-        bytes[] memory signatures
-    ) external returns (bool);
 }
 
 library Gateway {
