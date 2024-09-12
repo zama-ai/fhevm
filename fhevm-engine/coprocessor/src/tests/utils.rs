@@ -1,6 +1,7 @@
 use crate::cli::Args;
 use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, deserialize_fhe_ciphertext};
 use rand::RngCore;
+use rand::Rng;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU16, Ordering};
 use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage, ImageExt};
@@ -42,6 +43,10 @@ pub fn default_tenant_id() -> i32 {
     1
 }
 
+pub fn random_handle() -> u64 {
+    rand::thread_rng().gen()
+}
+
 pub async fn setup_test_app() -> Result<TestInstance, Box<dyn std::error::Error>> {
     if std::env::var("COPROCESSOR_TEST_LOCALHOST").is_ok() {
         setup_test_app_existing_localhost().await
@@ -63,7 +68,7 @@ pub async fn setup_test_app_existing_localhost() -> Result<TestInstance, Box<dyn
     })
 }
 
-pub async fn setup_test_app_existing_db() -> Result<TestInstance, Box<dyn std::error::Error>> {
+async fn setup_test_app_existing_db() -> Result<TestInstance, Box<dyn std::error::Error>> {
     let app_port = get_app_port();
     let (app_close_channel, rx) = tokio::sync::watch::channel(false);
     start_coprocessor(rx, app_port, &LOCAL_DB_URL).await;

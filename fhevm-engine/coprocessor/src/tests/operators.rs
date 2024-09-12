@@ -4,7 +4,7 @@ use crate::server::coprocessor::{
     AsyncComputation, AsyncComputeRequest, TrivialEncryptBatch, TrivialEncryptRequestSingle,
 };
 use crate::tests::utils::{
-    decrypt_ciphertexts, random_handle_start, wait_until_all_ciphertexts_computed,
+    decrypt_ciphertexts, random_handle, random_handle_start, wait_until_all_ciphertexts_computed,
 };
 use crate::{
     server::coprocessor::{async_computation_input::Input, AsyncComputationInput},
@@ -85,7 +85,7 @@ async fn test_fhe_binary_operands() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
     let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
 
-    let mut handle_counter: u64 = random_handle_start();
+    let mut handle_counter: u64 = random_handle();
     let mut next_handle = || {
         let out: u64 = handle_counter;
         handle_counter += 1;
@@ -221,7 +221,7 @@ async fn test_fhe_unary_operands() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
     let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
 
-    let mut handle_counter: u64 = random_handle_start();
+    let mut handle_counter: u64 = random_handle();
     let mut next_handle = || {
         let out: u64 = handle_counter;
         handle_counter += 1;
@@ -332,7 +332,7 @@ async fn test_fhe_casts() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
     let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
 
-    let mut handle_counter = random_handle_start();
+    let mut handle_counter = random_handle();
     let mut next_handle = || {
         let out: u64 = handle_counter;
         handle_counter += 1;
@@ -465,7 +465,7 @@ async fn test_fhe_if_then_else() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
     let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
 
-    let mut handle_counter = random_handle_start();
+    let mut handle_counter = random_handle();
     let mut next_handle = || {
         let out: u64 = handle_counter;
         handle_counter += 1;

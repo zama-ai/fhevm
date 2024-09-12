@@ -8,12 +8,11 @@ use crate::server::coprocessor::{
     TrivialEncryptRequestSingle,
 };
 use tonic::metadata::MetadataValue;
-use utils::{decrypt_ciphertexts, default_api_key, wait_until_all_ciphertexts_computed};
+use utils::{decrypt_ciphertexts, random_handle, default_api_key, wait_until_all_ciphertexts_computed};
 
 mod errors;
 mod inputs;
 mod operators;
-mod random;
 mod utils;
 
 #[tokio::test]
@@ -29,17 +28,22 @@ async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
     let api_key_header = format!("bearer {}", default_api_key());
     let ct_type = 4; // i32
 
+    let h1 = random_handle().to_be_bytes();
+    let h2 = random_handle().to_be_bytes();
+    let h3 = random_handle().to_be_bytes();
+    let h4 = random_handle().to_be_bytes();
+
     // encrypt two ciphertexts
     {
         let mut encrypt_request = tonic::Request::new(TrivialEncryptBatch {
             values: vec![
                 TrivialEncryptRequestSingle {
-                    handle: vec![0x0a, 0xbc],
+                    handle: h1.to_vec(),
                     be_value: vec![123],
                     output_type: ct_type,
                 },
                 TrivialEncryptRequestSingle {
-                    handle: vec![0x0a, 0xbd],
+                    handle: h2.to_vec(),
                     be_value: vec![124],
                     output_type: ct_type,
                 },
@@ -59,10 +63,10 @@ async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
             computations: vec![
                 AsyncComputation {
                     operation: FheOperation::FheAdd.into(),
-                    output_handle: vec![0x0a, 0xbf],
+                    output_handle: h3.to_vec(),
                     inputs: vec![
                         AsyncComputationInput {
-                            input: Some(Input::InputHandle(vec![0x0a, 0xbe])),
+                            input: Some(Input::InputHandle(h4.to_vec())),
                         },
                         AsyncComputationInput {
                             input: Some(Input::Scalar(vec![0x00, 0x10])),
@@ -71,13 +75,13 @@ async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
                 },
                 AsyncComputation {
                     operation: FheOperation::FheAdd.into(),
-                    output_handle: vec![0x0a, 0xbe],
+                    output_handle: h4.to_vec(),
                     inputs: vec![
                         AsyncComputationInput {
-                            input: Some(Input::InputHandle(vec![0x0a, 0xbc])),
+                            input: Some(Input::InputHandle(h1.to_vec())),
                         },
                         AsyncComputationInput {
-                            input: Some(Input::InputHandle(vec![0x0a, 0xbd])),
+                            input: Some(Input::InputHandle(h2.to_vec())),
                         },
                     ],
                 },
@@ -96,8 +100,14 @@ async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
 
     // decrypt values
     {
-        let decrypt_request = vec![vec![0x0a, 0xbe], vec![0x0a, 0xbf]];
-        let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
+        let mut decrypt_request = tonic::Request::new(DebugDecryptRequest {
+            handles: vec![h4.to_vec(), h3.to_vec()],
+        });
+        decrypt_request.metadata_mut().append(
+            "authorization",
+            MetadataValue::from_str(&api_key_header).unwrap(),
+        );
+        let resp = client.debug_decrypt_ciphertext(decrypt_request).await?;
         println!("decrypt request: {:?}", resp);
         assert_eq!(resp.len(), 2);
         // first value
