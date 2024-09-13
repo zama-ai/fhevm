@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroUsize;
 use std::str::FromStr;
 
@@ -17,7 +17,7 @@ use coprocessor::{
 };
 use fhevm_engine_common::tfhe_ops::{
     check_fhe_operand_types, current_ciphertext_version, trivial_encrypt_be_bytes,
-    try_expand_ciphertext_list,
+    try_expand_ciphertext_list, validate_fhe_type,
 };
 use fhevm_engine_common::types::{FhevmError, SupportedFheCiphertexts, SupportedFheOperations};
 use sha3::{Digest, Keccak256};
@@ -493,7 +493,6 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
         return Err(tonic::Status::unimplemented("not implemented"));
     }
 
-    // debug functions below, should be removed in production
     async fn trivial_encrypt_ciphertexts(
         &self,
         request: tonic::Request<coprocessor::TrivialEncryptBatch>,
@@ -501,7 +500,13 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
         let tenant_id = check_if_api_key_is_valid(&request, &self.pool).await?;
         let req = request.get_ref();
 
-        // TODO: add check against duplicate input handles in the batch
+        let mut unique_handles: BTreeSet<&[u8]> = BTreeSet::new();
+        for val in &req.values {
+            validate_fhe_type(val.output_type).map_err(|e| CoprocessorError::FhevmError(e))?;
+            if !unique_handles.insert(&val.handle) {
+                return Err(CoprocessorError::DuplicateOutputHandleInBatch(format!("0x{}", hex::encode(&val.handle))).into());
+            }
+        }
 
         let mut public_key = sqlx::query!(
             "
