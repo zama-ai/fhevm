@@ -176,7 +176,7 @@ async fn tfhe_worker_cycle(
                     }
 
                     // set thread tenant key
-                    let tenant_entropy = {
+                    {
                         let mut rk = tenant_key_cache.blocking_write();
                         let keys = rk
                             .get(&w.tenant_id)
@@ -185,8 +185,7 @@ async fn tfhe_worker_cycle(
                             tfhe::set_server_key(keys.sks.clone());
                             TFHE_TENANT_ID.set(w.tenant_id);
                         }
-                        keys.tenant_entropy()
-                    };
+                    }
 
                     let mut deserialized_cts: Vec<SupportedFheCiphertexts> =
                         Vec::with_capacity(work_ciphertexts.len());
@@ -221,7 +220,7 @@ async fn tfhe_worker_cycle(
                     }
 
                     let res =
-                        perform_fhe_operation(w.fhe_operation, &deserialized_cts, &tenant_entropy)
+                        perform_fhe_operation(w.fhe_operation, &deserialized_cts)
                             .map_err(|e| {
                                 let err: Box<dyn std::error::Error + Send + Sync> = Box::new(e);
                                 (err, w.tenant_id, w.output_handle.clone())

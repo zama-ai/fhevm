@@ -257,7 +257,7 @@ impl FhevmExecutorService {
 
         // Do the computation on the inputs.
         match inputs {
-            Ok(inputs) => match perform_fhe_operation(comp.operation as i16, &inputs, &[0; 32]) {
+            Ok(inputs) => match perform_fhe_operation(comp.operation as i16, &inputs) {
                 Ok(result) => {
                     let compressed = result.clone().compress();
                     state.ciphertexts.insert(

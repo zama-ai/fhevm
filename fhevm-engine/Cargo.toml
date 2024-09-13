@@ -13,3 +13,9 @@ anyhow = "1.0.86"
 
 [profile.dev.package.tfhe]
 overflow-checks = false
+
+# for testing in release mode due to too big
+# binary inside mac
+[profile.release]
+opt-level = "z"
+lto = true

@@ -1,7 +1,4 @@
-use std::str::FromStr;
-
 use fhevm_engine_common::types::FhevmError;
-use sha3::{Digest, Keccak256};
 
 #[derive(Debug)]
 pub enum CoprocessorError {
@@ -174,18 +171,4 @@ pub struct TfheTenantKeys {
     // maybe we'll need this
     #[allow(dead_code)]
     pub pks: tfhe::CompactPublicKey,
-}
-
-impl TfheTenantKeys {
-    /// Should be always deterministic random 32 bytes per tenant
-    pub fn tenant_entropy(&self) -> [u8; 32] {
-        let chain_id: u64 = self.chain_id as u64;
-        let mut parsed_address =
-            alloy::primitives::Address::from_str(&self.verifying_contract_address)
-                .expect("we should have checked earlier that address parses")
-                .to_vec();
-        let chain_id_bytes = chain_id.to_be_bytes();
-        parsed_address.extend_from_slice(&chain_id_bytes);
-        Keccak256::digest(&parsed_address).into()
-    }
 }
