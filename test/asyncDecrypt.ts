@@ -166,9 +166,8 @@ async function computeDecryptSignatures(
 ): Promise<string[]> {
   const signatures: string[] = [];
 
-  const envConfig = dotenv.parse(fs.readFileSync('.env'));
   for (let idx = 0; idx < numSigners; idx++) {
-    const privKeySigner = envConfig[`PRIVATE_KEY_KMS_SIGNER_${idx}`];
+    const privKeySigner = process.env[`PRIVATE_KEY_KMS_SIGNER_${idx}`];
     if (privKeySigner) {
       const kmsSigner = new ethers.Wallet(privKeySigner).connect(ethers.provider);
       const signature = await kmsSign(handlesList, decryptedResult, kmsSigner);

@@ -119,7 +119,7 @@ task('task:addSigners').setAction(async function (taskArguments: TaskArguments, 
   const kmsVerifier = await factory.attach(kmsAdd);
 
   for (let idx = 0; idx < taskArguments.numSigners; idx++) {
-    const privKeySigner = dotenv.parse(fs.readFileSync('.env'))[`PRIVATE_KEY_KMS_SIGNER_${idx}`];
+    const privKeySigner = process.env[`PRIVATE_KEY_KMS_SIGNER_${idx}`];
     const kmsSigner = new ethers.Wallet(privKeySigner).connect(ethers.provider);
     const tx = await kmsVerifier.addSigner(kmsSigner.address);
     await tx.wait();
