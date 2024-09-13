@@ -111,3 +111,18 @@ task('task:deployFHEPayment').setAction(async function (taskArguments: TaskArgum
   }
   console.log('FHEPayment was deployed at address:', address);
 });
+
+task('task:addSigners').setAction(async function (taskArguments: TaskArguments, { ethers }) {
+  const deployer = (await ethers.getSigners())[9];
+  const factory = await ethers.getContractFactory('KMSVerifier', deployer);
+  const kmsAdd = dotenv.parse(fs.readFileSync('lib/.env.kmsverifier')).KMS_VERIFIER_CONTRACT_ADDRESS;
+  const kmsVerifier = await factory.attach(kmsAdd);
+
+  for (let idx = 0; idx < taskArguments.numSigners; idx++) {
+    const privKeySigner = dotenv.parse(fs.readFileSync('.env'))[`PRIVATE_KEY_KMS_SIGNER_${idx}`];
+    const kmsSigner = new ethers.Wallet(privKeySigner).connect(ethers.provider);
+    const tx = await kmsVerifier.addSigner(kmsSigner.address);
+    await tx.wait();
+    console.log(`KMS signer no${idx} was added to KMSVerifier contract`);
+  }
+});

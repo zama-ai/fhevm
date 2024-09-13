@@ -106,6 +106,7 @@ task('test', async (taskArgs, hre, runSuper) => {
     await hre.run('task:deployTFHEExecutor');
     await hre.run('task:deployKMSVerifier');
     await hre.run('task:deployFHEPayment');
+    await hre.run('task:addSigners', { numSigners: +process.env.NUM_KMS_SIGNERS! });
     await hre.run('task:launchFhevm', { skipGetCoin: false });
   }
   await hre.run('compile:specific', { contract: 'examples' });

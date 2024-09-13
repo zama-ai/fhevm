@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import { Wallet } from 'ethers';
 import fs from 'fs';
 import { ethers, network } from 'hardhat';
 
@@ -142,7 +143,12 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
         const encodedData = abiCoder.encode(['uint256', ...types], [31, ...valuesFormatted2]); // 31 is just a dummy uint256 requestID to get correct abi encoding for the remaining arguments (i.e everything except the requestID)
         const calldata = '0x' + encodedData.slice(66); // we just pop the dummy requestID to get the correct value to pass for `decryptedCts`
 
-        const tx = await gateway.connect(relayer).fulfillRequest(requestID, calldata, [], { value: msgValue });
+        const numSigners = +process.env.NUM_KMS_SIGNERS!;
+        const decryptResultsEIP712signatures = await computeDecryptSignatures(handles, calldata, numSigners);
+
+        const tx = await gateway
+          .connect(relayer)
+          .fulfillRequest(requestID, calldata, decryptResultsEIP712signatures, { value: msgValue });
         await tx.wait();
       } else {
         // in fhEVM mode we must wait until the gateway service relayer submits the decryption fulfillment tx
@@ -152,3 +158,63 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
     }
   }
 };
+
+async function computeDecryptSignatures(
+  handlesList: bigint[],
+  decryptedResult: string,
+  numSigners: number,
+): Promise<string[]> {
+  const signatures: string[] = [];
+
+  const envConfig = dotenv.parse(fs.readFileSync('.env'));
+  for (let idx = 0; idx < numSigners; idx++) {
+    const privKeySigner = envConfig[`PRIVATE_KEY_KMS_SIGNER_${idx}`];
+    if (privKeySigner) {
+      const kmsSigner = new ethers.Wallet(privKeySigner).connect(ethers.provider);
+      const signature = await kmsSign(handlesList, decryptedResult, kmsSigner);
+      signatures.push(signature);
+    } else {
+      throw new Error(`Private key for signer ${idx} not found in environment variables`);
+    }
+  }
+  return signatures;
+}
+
+async function kmsSign(handlesList: bigint[], decryptedResult: string, kmsSigner: Wallet) {
+  const kmsAdd = dotenv.parse(fs.readFileSync('lib/.env.kmsverifier')).KMS_VERIFIER_CONTRACT_ADDRESS;
+  const chainId = (await ethers.provider.getNetwork()).chainId;
+
+  const domain = {
+    name: 'KMSVerifier',
+    version: '1',
+    chainId: chainId,
+    verifyingContract: kmsAdd,
+  };
+
+  const types = {
+    DecryptionResult: [
+      {
+        name: 'handlesList',
+        type: 'uint256[]',
+      },
+      {
+        name: 'decryptedResult',
+        type: 'bytes',
+      },
+    ],
+  };
+
+  const message = {
+    handlesList: handlesList,
+    decryptedResult: decryptedResult,
+  };
+
+  const signature = await kmsSigner.signTypedData(domain, types, message);
+  const sigRSV = ethers.Signature.from(signature);
+  const v = 27 + sigRSV.yParity;
+  const r = sigRSV.r;
+  const s = sigRSV.s;
+
+  const result = r + s.substring(2) + v.toString(16);
+  return result;
+}

@@ -8,10 +8,10 @@ import "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable
 import "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 
-/// @title KMS Verifier for signature verification and verifier management
+/// @title KMS Verifier for signature verification and signers management
 /// @author The developer
-/// @notice This contract allows for the management of verifiers and provides methods to verify signatures
-/// @dev The contract uses OpenZeppelin's SignatureChecker for cryptographic operations
+/// @notice This contract allows for the management of signers and provides methods to verify signatures
+/// @dev The contract uses OpenZeppelin's EIP712Upgradeable for cryptographic operations
 contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradeable {
     struct DecryptionResult {
         uint256[] handlesList;
@@ -31,9 +31,9 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
 
     /// @custom:storage-location erc7201:fhevm.storage.KMSVerifier
     struct KMSVerifierStorage {
-        mapping(address => bool) isVerifier; /// @notice Mapping to keep track of addresses that are verifiers
-        address[] verifiers; /// @notice Array to keep track of all verifiers
-        uint256 threshold; /// @notice The threshold for the number of verifiers required for a signature to be valid
+        mapping(address => bool) isSigner; /// @notice Mapping to keep track of addresses that are signers
+        address[] signers; /// @notice Array to keep track of all signers
+        uint256 threshold; /// @notice The threshold for the number of signers required for a signature to be valid
     }
 
     // keccak256(abi.encode(uint256(keccak256("fhevm.storage.KMSVerifier")) - 1)) & ~bytes32(uint256(0xff))
@@ -48,14 +48,14 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
 
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
 
-    function isVerifier(address account) public virtual returns (bool) {
+    function isSigner(address account) public virtual returns (bool) {
         KMSVerifierStorage storage $ = _getKMSVerifierStorage();
-        return $.isVerifier[account];
+        return $.isSigner[account];
     }
 
-    function getVerifiers() public view virtual returns (address[] memory) {
+    function getSigners() public view virtual returns (address[] memory) {
         KMSVerifierStorage storage $ = _getKMSVerifierStorage();
-        return $.verifiers;
+        return $.signers;
     }
 
     function getThreshold() public view virtual returns (uint256) {
@@ -67,13 +67,13 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
         return DECRYPTIONRESULT_TYPE;
     }
 
-    /// @notice Emitted when a verifier is added
-    /// @param verifier The address of the verifier that was added
-    event VerifierAdded(address indexed verifier);
+    /// @notice Emitted when a signer is added
+    /// @param signer The address of the signer that was added
+    event SignerAdded(address indexed signer);
 
-    /// @notice Emitted when a verifier is removed
-    /// @param verifier The address of the verifier that was removed
-    event VerifierRemoved(address indexed verifier);
+    /// @notice Emitted when a signer is removed
+    /// @param signer The address of the signer that was removed
+    event SignerRemoved(address indexed signer);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -86,23 +86,23 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
         __EIP712_init(CONTRACT_NAME, "1");
     }
 
-    /// @notice Sets the threshold for the number of verifiers required for a signature to be valid
+    /// @notice Sets the threshold for the number of signers required for a signature to be valid
     function applyThreshold() internal virtual {
         KMSVerifierStorage storage $ = _getKMSVerifierStorage();
-        $.threshold = ($.verifiers.length - 1) / 3 + 1;
+        $.threshold = ($.signers.length - 1) / 3 + 1;
     }
 
-    /// @notice Adds a new verifier
-    /// @dev Only the owner can add a verifier
-    /// @param verifier The address to be added as a verifier
-    function addVerifier(address verifier) public virtual onlyOwner {
-        require(verifier != address(0), "KMSVerifier: Address is null");
+    /// @notice Adds a new signer
+    /// @dev Only the owner can add a signer
+    /// @param signer The address to be added as a signer
+    function addSigner(address signer) public virtual onlyOwner {
+        require(signer != address(0), "KMSVerifier: Address is null");
         KMSVerifierStorage storage $ = _getKMSVerifierStorage();
-        require($.isVerifier[verifier], "KMSVerifier: Address is already a verifier");
-        $.isVerifier[verifier] = true;
-        $.verifiers.push(verifier);
+        require(!$.isSigner[signer], "KMSVerifier: Address is already a signer");
+        $.isSigner[signer] = true;
+        $.signers.push(signer);
         applyThreshold();
-        emit VerifierAdded(verifier);
+        emit SignerAdded(signer);
     }
 
     function hashDecryptionResult(DecryptionResult memory decRes) internal view virtual returns (bytes32) {
@@ -118,29 +118,29 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
             );
     }
 
-    /// @notice Removes an existing verifier
-    /// @dev Only the owner can remove a verifier
-    /// @param verifier The address to be removed from verifiers
-    function removeVerifier(address verifier) public virtual onlyOwner {
+    /// @notice Removes an existing signer
+    /// @dev Only the owner can remove a signer
+    /// @param signer The address to be removed from signers
+    function removeSigner(address signer) public virtual onlyOwner {
         KMSVerifierStorage storage $ = _getKMSVerifierStorage();
-        require($.isVerifier[verifier], "KMSVerifier: Address is not a verifier");
+        require($.isSigner[signer], "KMSVerifier: Address is not a signer");
 
-        // Remove verifier from the mapping
-        $.isVerifier[verifier] = false;
+        // Remove signer from the mapping
+        $.isSigner[signer] = false;
 
-        // Find the index of the verifier and remove it from the array
-        for (uint i = 0; i < $.verifiers.length; i++) {
-            if ($.verifiers[i] == verifier) {
-                $.verifiers[i] = $.verifiers[$.verifiers.length - 1]; // Move the last element into the place to delete
-                $.verifiers.pop(); // Remove the last element
+        // Find the index of the signer and remove it from the array
+        for (uint i = 0; i < $.signers.length; i++) {
+            if ($.signers[i] == signer) {
+                $.signers[i] = $.signers[$.signers.length - 1]; // Move the last element into the place to delete
+                $.signers.pop(); // Remove the last element
                 applyThreshold();
-                emit VerifierRemoved(verifier);
+                emit SignerRemoved(signer);
                 return;
             }
         }
     }
 
-    /// @notice recovers the verifier's address from a `signature` and a `message` digest
+    /// @notice recovers the signer's address from a `signature` and a `message` digest
     /// @dev Utilizes ECDSA for actual address recovery
     /// @param message The hash of the message that was signed
     /// @param signature The signature to verify
@@ -178,13 +178,13 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
         require(numSignatures > 0, "KmsVerifier: no signatures provided");
         KMSVerifierStorage storage $ = _getKMSVerifierStorage();
         require(numSignatures >= $.threshold, "KmsVerifier: at least threshold number of signatures required");
-        address[] memory recoveredVerifiers = new address[](numSignatures);
+        address[] memory recoveredSigners = new address[](numSignatures);
         uint256 uniqueValidCount;
         for (uint256 i = 0; i < numSignatures; i++) {
             address signerRecovered = recoverSigner(message, signatures[i]);
-            if ($.isVerifier[signerRecovered]) {
+            if ($.isSigner[signerRecovered]) {
                 if (!tload(signerRecovered)) {
-                    recoveredVerifiers[uniqueValidCount] = signerRecovered;
+                    recoveredSigners[uniqueValidCount] = signerRecovered;
                     uniqueValidCount++;
                     tstore(signerRecovered, 1);
                 }
@@ -192,7 +192,7 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
             if (uniqueValidCount >= $.threshold) {
                 for (uint256 j = 0; i < uniqueValidCount; i++) {
                     /// @note : clearing transient storage for composability
-                    tstore(recoveredVerifiers[j], 0);
+                    tstore(recoveredSigners[j], 0);
                 }
                 return true;
             }
