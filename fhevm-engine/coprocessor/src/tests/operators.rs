@@ -4,7 +4,7 @@ use crate::server::coprocessor::{
     AsyncComputation, AsyncComputeRequest, TrivialEncryptBatch, TrivialEncryptRequestSingle,
 };
 use crate::tests::utils::{
-    decrypt_ciphertexts, random_handle, random_handle_start, wait_until_all_ciphertexts_computed,
+    decrypt_ciphertexts, random_handle, wait_until_all_ciphertexts_computed,
 };
 use crate::{
     server::coprocessor::{async_computation_input::Input, AsyncComputationInput},

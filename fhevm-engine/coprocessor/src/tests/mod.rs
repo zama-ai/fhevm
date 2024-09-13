@@ -100,14 +100,8 @@ async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
 
     // decrypt values
     {
-        let mut decrypt_request = tonic::Request::new(DebugDecryptRequest {
-            handles: vec![h4.to_vec(), h3.to_vec()],
-        });
-        decrypt_request.metadata_mut().append(
-            "authorization",
-            MetadataValue::from_str(&api_key_header).unwrap(),
-        );
-        let resp = client.debug_decrypt_ciphertext(decrypt_request).await?;
+        let decrypt_request = vec![h4.to_vec(), h3.to_vec()];
+        let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
         println!("decrypt request: {:?}", resp);
         assert_eq!(resp.len(), 2);
         // first value

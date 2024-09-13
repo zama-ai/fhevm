@@ -1,7 +1,6 @@
 use crate::cli::Args;
 use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, deserialize_fhe_ciphertext};
-use rand::RngCore;
-use rand::Rng;
+use rand::{Rng, RngCore};
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU16, Ordering};
 use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage, ImageExt};
