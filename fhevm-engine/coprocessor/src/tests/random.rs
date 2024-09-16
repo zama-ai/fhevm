@@ -117,6 +117,7 @@ async fn test_fhe_random_basic() -> Result<(), Box<dyn std::error::Error>> {
     let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
     let expected: Vec<DecryptionResult> = vec![
         DecryptionResult { value: "true".to_string(), output_type: 0 },
+        DecryptionResult { value: "15".to_string(), output_type: 1 },
         DecryptionResult { value: "191".to_string(), output_type: 2 },
         DecryptionResult { value: "31935".to_string(), output_type: 3 },
         DecryptionResult { value: "50166975".to_string(), output_type: 4 },
@@ -174,7 +175,8 @@ async fn test_fhe_random_bounded() -> Result<(), Box<dyn std::error::Error>> {
 
     let deterministic_seed = 123u8;
     let bounds = [
-        "8",
+        "2",
+        "4",
         "128",
         "16384",
         "1073741824",
@@ -185,6 +187,7 @@ async fn test_fhe_random_bounded() -> Result<(), Box<dyn std::error::Error>> {
     ];
     let results = [
         "true",
+        "3",
         "127",
         "15551",
         "50166975",
