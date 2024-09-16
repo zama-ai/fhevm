@@ -13,7 +13,21 @@ service FhevmCoprocessor {
   rpc AsyncCompute (AsyncComputeRequest) returns (GenericResponse) {}
   rpc WaitComputations (AsyncComputeRequest) returns (FhevmResponses) {}
   rpc UploadInputs (InputUploadBatch) returns (InputUploadResponse) {}
+  rpc GetCiphertexts (GetCiphertextBatch) returns (GetCiphertextResponse) {}
   rpc TrivialEncryptCiphertexts (TrivialEncryptBatch) returns (GenericResponse) {}
+}
+
+message GetCiphertextBatch {
+  repeated bytes handles = 1;
+}
+
+message GetCiphertextResponse {
+  repeated GetCiphertextSingleResponse responses = 1;
+}
+
+message GetCiphertextSingleResponse {
+  bytes handle = 1;
+  optional bytes ciphertext = 2;
 }
 
 message TrivialEncryptBatch {
