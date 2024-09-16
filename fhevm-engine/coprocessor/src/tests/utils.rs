@@ -149,7 +149,8 @@ async fn setup_test_app_custom_docker() -> Result<TestInstance, Box<dyn std::err
 
     println!("Running migrations...");
     sqlx::migrate!("./migrations").run(&pool).await?;
-
+    println!("Creating test user");
+    setup_test_user(&pool).await?;
     println!("DB prepared");
 
     let (app_close_channel, rx) = tokio::sync::watch::channel(false);
@@ -191,6 +192,35 @@ pub async fn wait_until_all_ciphertexts_computed(
 pub struct DecryptionResult {
     pub value: String,
     pub output_type: i16,
+}
+
+pub async fn setup_test_user(
+    pool: &sqlx::PgPool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let sks = tokio::fs::read("../fhevm-keys/sks").await.expect("can't read sks key");
+    let pks = tokio::fs::read("../fhevm-keys/pks").await.expect("can't read pks key");
+    let cks = tokio::fs::read("../fhevm-keys/cks").await.expect("can't read cks key");
+    sqlx::query!(
+        "
+            INSERT INTO tenants(tenant_api_key, tenant_id, chain_id, verifying_contract_address, pks_key, sks_key, cks_key)
+            VALUES (
+                'a1503fb6-d79b-4e9e-826d-44cf262f3e05',
+                1,
+                12345,
+                '0x6819e3aDc437fAf9D533490eD3a7552493fCE3B1',
+                $1,
+                $2,
+                $3
+            )
+        ",
+        &pks,
+        &sks,
+        &cks,
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(())
 }
 
 pub async fn decrypt_ciphertexts(
