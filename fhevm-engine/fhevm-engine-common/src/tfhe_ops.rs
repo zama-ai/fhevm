@@ -2,7 +2,7 @@ use crate::types::{is_ebytes_type, FheOperationType, FhevmError, SupportedFheCip
 use tfhe::{
     integer::{bigint::StaticUnsignedBigInt, U256}, prelude::{
         CastInto, FheEq, FheMax, FheMin, FheOrd, FheTryTrivialEncrypt, IfThenElse, RotateLeft, RotateRight
-    }, FheBool, FheUint1024, FheUint128, FheUint16, FheUint160, FheUint2048, FheUint256, FheUint32, FheUint512, FheUint64, FheUint8, Seed
+    }, FheBool, FheUint1024, FheUint128, FheUint16, FheUint160, FheUint2048, FheUint256, FheUint32, FheUint4, FheUint512, FheUint64, FheUint8, Seed
 };
 
 pub fn deserialize_fhe_ciphertext(
@@ -14,6 +14,11 @@ pub fn deserialize_fhe_ciphertext(
             let v: tfhe::FheBool = bincode::deserialize(input_bytes)
                 .map_err(|e| FhevmError::DeserializationError(e))?;
             Ok(SupportedFheCiphertexts::FheBool(v))
+        }
+        1 => {
+            let v: tfhe::FheUint4 = bincode::deserialize(input_bytes)
+                .map_err(|e| FhevmError::DeserializationError(e))?;
+            Ok(SupportedFheCiphertexts::FheUint4(v))
         }
         2 => {
             let v: tfhe::FheUint8 = bincode::deserialize(input_bytes)
@@ -79,6 +84,9 @@ pub fn trivial_encrypt_be_bytes(
     match output_type {
         0 => SupportedFheCiphertexts::FheBool(
             FheBool::try_encrypt_trivial(input_bytes[0] > 0).unwrap(),
+        ),
+        1 => SupportedFheCiphertexts::FheUint4(
+            FheUint4::try_encrypt_trivial(input_bytes[0]).unwrap(),
         ),
         2 => SupportedFheCiphertexts::FheUint8(
             FheUint8::try_encrypt_trivial(input_bytes[0]).unwrap(),
@@ -260,6 +268,14 @@ pub fn try_expand_ciphertext_list(
                     .expect("Must succeed, we just checked this is the type");
 
                 res.push(SupportedFheCiphertexts::FheBool(ct));
+            }
+            tfhe::FheTypes::Uint4 => {
+                let ct: tfhe::FheUint4 = expanded
+                    .get(idx)
+                    .expect("Index must exist")
+                    .expect("Must succeed, we just checked this is the type");
+
+                res.push(SupportedFheCiphertexts::FheUint4(ct));
             }
             tfhe::FheTypes::Uint8 => {
                 let ct: tfhe::FheUint8 = expanded
@@ -702,7 +718,7 @@ pub fn validate_fhe_type(input_type: i32) -> Result<(), FhevmError> {
         .try_into()
         .or(Err(FhevmError::UnknownFheType(input_type)))?;
     match i16_type {
-        0 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 => Ok(()),
+        0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 => Ok(()),
         _ => Err(FhevmError::UnknownFheType(input_type)),
     }
 }
@@ -753,6 +769,9 @@ pub fn perform_fhe_operation(
 
             // fhe add
             match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    Ok(SupportedFheCiphertexts::FheUint4(a + b))
+                }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
                     Ok(SupportedFheCiphertexts::FheUint8(a + b))
                 }
@@ -782,6 +801,10 @@ pub fn perform_fhe_operation(
                 }
                 (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::FheBytes256(b)) => {
                     Ok(SupportedFheCiphertexts::FheBytes256(a + b))
+                }
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    let (l, _) = b.to_low_high_u128();
+                    Ok(SupportedFheCiphertexts::FheUint4(a + (l as u8)))
                 }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
                     let (l, _) = b.to_low_high_u128();
@@ -819,6 +842,9 @@ pub fn perform_fhe_operation(
             assert_eq!(input_operands.len(), 2);
 
             match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    Ok(SupportedFheCiphertexts::FheUint4(a - b))
+                }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
                     Ok(SupportedFheCiphertexts::FheUint8(a - b))
                 }
@@ -848,6 +874,10 @@ pub fn perform_fhe_operation(
                 }
                 (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::FheBytes256(b)) => {
                     Ok(SupportedFheCiphertexts::FheBytes256(a - b))
+                }
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    let (l, _) = b.to_low_high_u128();
+                    Ok(SupportedFheCiphertexts::FheUint4(a - (l as u8)))
                 }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
                     let (l, _) = b.to_low_high_u128();
@@ -885,6 +915,9 @@ pub fn perform_fhe_operation(
             assert_eq!(input_operands.len(), 2);
 
             match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    Ok(SupportedFheCiphertexts::FheUint4(a * b))
+                }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
                     Ok(SupportedFheCiphertexts::FheUint8(a * b))
                 }
@@ -914,6 +947,10 @@ pub fn perform_fhe_operation(
                 }
                 (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::FheBytes256(b)) => {
                     Ok(SupportedFheCiphertexts::FheBytes256(a * b))
+                }
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    let (l, _) = b.to_low_high_u128();
+                    Ok(SupportedFheCiphertexts::FheUint4(a * (l as u8)))
                 }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
                     let (l, _) = b.to_low_high_u128();
@@ -951,6 +988,9 @@ pub fn perform_fhe_operation(
             assert_eq!(input_operands.len(), 2);
 
             match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    Ok(SupportedFheCiphertexts::FheUint4(a / b))
+                }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
                     Ok(SupportedFheCiphertexts::FheUint8(a / b))
                 }
@@ -980,6 +1020,10 @@ pub fn perform_fhe_operation(
                 }
                 (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::FheBytes256(b)) => {
                     Ok(SupportedFheCiphertexts::FheBytes256(a / b))
+                }
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    let (l, _) = b.to_low_high_u128();
+                    Ok(SupportedFheCiphertexts::FheUint4(a / (l as u8)))
                 }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
                     let (l, _) = b.to_low_high_u128();
@@ -1017,6 +1061,9 @@ pub fn perform_fhe_operation(
             assert_eq!(input_operands.len(), 2);
 
             match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    Ok(SupportedFheCiphertexts::FheUint4(a % b))
+                }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
                     Ok(SupportedFheCiphertexts::FheUint8(a % b))
                 }
@@ -1046,6 +1093,10 @@ pub fn perform_fhe_operation(
                 }
                 (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::FheBytes256(b)) => {
                     Ok(SupportedFheCiphertexts::FheBytes256(a % b))
+                }
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    let (l, _) = b.to_low_high_u128();
+                    Ok(SupportedFheCiphertexts::FheUint4(a % (l as u8)))
                 }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
                     let (l, _) = b.to_low_high_u128();
@@ -1083,6 +1134,9 @@ pub fn perform_fhe_operation(
             assert_eq!(input_operands.len(), 2);
 
             match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    Ok(SupportedFheCiphertexts::FheUint4(a & b))
+                }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
                     Ok(SupportedFheCiphertexts::FheUint8(a & b))
                 }
@@ -1112,6 +1166,10 @@ pub fn perform_fhe_operation(
                 }
                 (SupportedFheCiphertexts::FheBytes64(a), SupportedFheCiphertexts::FheBytes64(b)) => {
                     Ok(SupportedFheCiphertexts::FheBytes64(a & b))
+                }
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    let (l, _) = b.to_low_high_u128();
+                    Ok(SupportedFheCiphertexts::FheUint4(a & (l as u8)))
                 }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
                     let (l, _) = b.to_low_high_u128();
@@ -1149,6 +1207,9 @@ pub fn perform_fhe_operation(
             assert_eq!(input_operands.len(), 2);
 
             match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    Ok(SupportedFheCiphertexts::FheUint4(a | b))
+                }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
                     Ok(SupportedFheCiphertexts::FheUint8(a | b))
                 }
@@ -1178,6 +1239,10 @@ pub fn perform_fhe_operation(
                 }
                 (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::FheBytes256(b)) => {
                     Ok(SupportedFheCiphertexts::FheBytes256(a | b))
+                }
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    let (l, _) = b.to_low_high_u128();
+                    Ok(SupportedFheCiphertexts::FheUint4(a | (l as u8)))
                 }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
                     let (l, _) = b.to_low_high_u128();
@@ -1215,6 +1280,9 @@ pub fn perform_fhe_operation(
             assert_eq!(input_operands.len(), 2);
 
             match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    Ok(SupportedFheCiphertexts::FheUint4(a ^ b))
+                }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
                     Ok(SupportedFheCiphertexts::FheUint8(a ^ b))
                 }
@@ -1244,6 +1312,10 @@ pub fn perform_fhe_operation(
                 }
                 (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::FheBytes256(b)) => {
                     Ok(SupportedFheCiphertexts::FheBytes256(a ^ b))
+                }
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    let (l, _) = b.to_low_high_u128();
+                    Ok(SupportedFheCiphertexts::FheUint4(a ^ (l as u8)))
                 }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
                     let (l, _) = b.to_low_high_u128();
@@ -1281,6 +1353,9 @@ pub fn perform_fhe_operation(
             assert_eq!(input_operands.len(), 2);
 
             match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    Ok(SupportedFheCiphertexts::FheUint4(a << b))
+                }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
                     Ok(SupportedFheCiphertexts::FheUint8(a << b))
                 }
@@ -1310,6 +1385,10 @@ pub fn perform_fhe_operation(
                 }
                 (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::FheBytes256(b)) => {
                     Ok(SupportedFheCiphertexts::FheBytes256(a << b))
+                }
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    let (l, _) = b.to_low_high_u128();
+                    Ok(SupportedFheCiphertexts::FheUint4(a << (l as u8)))
                 }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
                     let (l, _) = b.to_low_high_u128();
@@ -1347,6 +1426,9 @@ pub fn perform_fhe_operation(
             assert_eq!(input_operands.len(), 2);
 
             match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    Ok(SupportedFheCiphertexts::FheUint4(a >> b))
+                }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
                     Ok(SupportedFheCiphertexts::FheUint8(a >> b))
                 }
@@ -1376,6 +1458,10 @@ pub fn perform_fhe_operation(
                 }
                 (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::FheBytes256(b)) => {
                     Ok(SupportedFheCiphertexts::FheBytes256(a >> b))
+                }
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    let (l, _) = b.to_low_high_u128();
+                    Ok(SupportedFheCiphertexts::FheUint4(a >> (l as u8)))
                 }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
                     let (l, _) = b.to_low_high_u128();
@@ -1413,6 +1499,9 @@ pub fn perform_fhe_operation(
             assert_eq!(input_operands.len(), 2);
 
             match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    Ok(SupportedFheCiphertexts::FheUint4(a.rotate_left(b)))
+                }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
                     Ok(SupportedFheCiphertexts::FheUint8(a.rotate_left(b)))
                 }
@@ -1442,6 +1531,10 @@ pub fn perform_fhe_operation(
                 }
                 (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::FheBytes256(b)) => {
                     Ok(SupportedFheCiphertexts::FheBytes256(a.rotate_left(b)))
+                }
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    let (l, _) = b.to_low_high_u128();
+                    Ok(SupportedFheCiphertexts::FheUint4(a.rotate_left(l as u8)))
                 }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
                     let (l, _) = b.to_low_high_u128();
@@ -1479,6 +1572,9 @@ pub fn perform_fhe_operation(
             assert_eq!(input_operands.len(), 2);
 
             match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    Ok(SupportedFheCiphertexts::FheUint4(a.rotate_right(b)))
+                }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
                     Ok(SupportedFheCiphertexts::FheUint8(a.rotate_right(b)))
                 }
@@ -1508,6 +1604,10 @@ pub fn perform_fhe_operation(
                 }
                 (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::FheBytes256(b)) => {
                     Ok(SupportedFheCiphertexts::FheBytes256(a.rotate_right(b)))
+                }
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    let (l, _) = b.to_low_high_u128();
+                    Ok(SupportedFheCiphertexts::FheUint4(a.rotate_right(l as u8)))
                 }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
                     let (l, _) = b.to_low_high_u128();
@@ -1545,6 +1645,9 @@ pub fn perform_fhe_operation(
             assert_eq!(input_operands.len(), 2);
 
             match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    Ok(SupportedFheCiphertexts::FheUint4(a.min(b)))
+                }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
                     Ok(SupportedFheCiphertexts::FheUint8(a.min(b)))
                 }
@@ -1574,6 +1677,10 @@ pub fn perform_fhe_operation(
                 }
                 (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::FheBytes256(b)) => {
                     Ok(SupportedFheCiphertexts::FheBytes256(a.min(b)))
+                }
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    let (l, _) = b.to_low_high_u128();
+                    Ok(SupportedFheCiphertexts::FheUint4(a.min(l as u8)))
                 }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
                     let (l, _) = b.to_low_high_u128();
@@ -1611,6 +1718,9 @@ pub fn perform_fhe_operation(
             assert_eq!(input_operands.len(), 2);
 
             match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    Ok(SupportedFheCiphertexts::FheUint4(a.max(b)))
+                }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
                     Ok(SupportedFheCiphertexts::FheUint8(a.max(b)))
                 }
@@ -1640,6 +1750,10 @@ pub fn perform_fhe_operation(
                 }
                 (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::FheBytes256(b)) => {
                     Ok(SupportedFheCiphertexts::FheBytes256(a.max(b)))
+                }
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    let (l, _) = b.to_low_high_u128();
+                    Ok(SupportedFheCiphertexts::FheUint4(a.max(l as u8)))
                 }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
                     let (l, _) = b.to_low_high_u128();
@@ -1680,6 +1794,9 @@ pub fn perform_fhe_operation(
                 (SupportedFheCiphertexts::FheBool(a), SupportedFheCiphertexts::FheBool(b)) => {
                     Ok(SupportedFheCiphertexts::FheBool(a.eq(b)))
                 }
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    Ok(SupportedFheCiphertexts::FheBool(a.eq(b)))
+                }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
                     Ok(SupportedFheCiphertexts::FheBool(a.eq(b)))
                 }
@@ -1714,6 +1831,10 @@ pub fn perform_fhe_operation(
                     let (l, h) = b.to_low_high_u128();
                     let non_zero = l > 0 || h > 0;
                     Ok(SupportedFheCiphertexts::FheBool(a.eq(non_zero)))
+                }
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    let (l, _) = b.to_low_high_u128();
+                    Ok(SupportedFheCiphertexts::FheBool(a.eq(l as u8)))
                 }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
                     let (l, _) = b.to_low_high_u128();
@@ -1754,6 +1875,9 @@ pub fn perform_fhe_operation(
                 (SupportedFheCiphertexts::FheBool(a), SupportedFheCiphertexts::FheBool(b)) => {
                     Ok(SupportedFheCiphertexts::FheBool(a.ne(b)))
                 }
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    Ok(SupportedFheCiphertexts::FheBool(a.ne(b)))
+                }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
                     Ok(SupportedFheCiphertexts::FheBool(a.ne(b)))
                 }
@@ -1788,6 +1912,10 @@ pub fn perform_fhe_operation(
                     let (l, h) = b.to_low_high_u128();
                     let non_zero = l > 0 || h > 0;
                     Ok(SupportedFheCiphertexts::FheBool(a.ne(non_zero)))
+                }
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    let (l, _) = b.to_low_high_u128();
+                    Ok(SupportedFheCiphertexts::FheBool(a.ne(l as u8)))
                 }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
                     let (l, _) = b.to_low_high_u128();
@@ -1825,6 +1953,9 @@ pub fn perform_fhe_operation(
             assert_eq!(input_operands.len(), 2);
 
             match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    Ok(SupportedFheCiphertexts::FheBool(a.ge(b)))
+                }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
                     Ok(SupportedFheCiphertexts::FheBool(a.ge(b)))
                 }
@@ -1854,6 +1985,10 @@ pub fn perform_fhe_operation(
                 }
                 (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::FheBytes256(b)) => {
                     Ok(SupportedFheCiphertexts::FheBool(a.ge(b)))
+                }
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    let (l, _) = b.to_low_high_u128();
+                    Ok(SupportedFheCiphertexts::FheBool(a.ge(l as u8)))
                 }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
                     let (l, _) = b.to_low_high_u128();
@@ -1891,6 +2026,9 @@ pub fn perform_fhe_operation(
             assert_eq!(input_operands.len(), 2);
 
             match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    Ok(SupportedFheCiphertexts::FheBool(a.gt(b)))
+                }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
                     Ok(SupportedFheCiphertexts::FheBool(a.gt(b)))
                 }
@@ -1920,6 +2058,10 @@ pub fn perform_fhe_operation(
                 }
                 (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::FheBytes256(b)) => {
                     Ok(SupportedFheCiphertexts::FheBool(a.gt(b)))
+                }
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    let (l, _) = b.to_low_high_u128();
+                    Ok(SupportedFheCiphertexts::FheBool(a.gt(l as u8)))
                 }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
                     let (l, _) = b.to_low_high_u128();
@@ -1957,6 +2099,9 @@ pub fn perform_fhe_operation(
             assert_eq!(input_operands.len(), 2);
 
             match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    Ok(SupportedFheCiphertexts::FheBool(a.le(b)))
+                }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
                     Ok(SupportedFheCiphertexts::FheBool(a.le(b)))
                 }
@@ -1986,6 +2131,10 @@ pub fn perform_fhe_operation(
                 }
                 (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::FheBytes256(b)) => {
                     Ok(SupportedFheCiphertexts::FheBool(a.le(b)))
+                }
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    let (l, _) = b.to_low_high_u128();
+                    Ok(SupportedFheCiphertexts::FheBool(a.le(l as u8)))
                 }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
                     let (l, _) = b.to_low_high_u128();
@@ -2023,6 +2172,9 @@ pub fn perform_fhe_operation(
             assert_eq!(input_operands.len(), 2);
 
             match (&input_operands[0], &input_operands[1]) {
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    Ok(SupportedFheCiphertexts::FheBool(a.lt(b)))
+                }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
                     Ok(SupportedFheCiphertexts::FheBool(a.lt(b)))
                 }
@@ -2052,6 +2204,10 @@ pub fn perform_fhe_operation(
                 }
                 (SupportedFheCiphertexts::FheBytes256(a), SupportedFheCiphertexts::FheBytes256(b)) => {
                     Ok(SupportedFheCiphertexts::FheBool(a.lt(b)))
+                }
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
+                    let (l, _) = b.to_low_high_u128();
+                    Ok(SupportedFheCiphertexts::FheBool(a.lt(l as u8)))
                 }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => {
                     let (l, _) = b.to_low_high_u128();
@@ -2090,6 +2246,7 @@ pub fn perform_fhe_operation(
 
             match &input_operands[0] {
                 SupportedFheCiphertexts::FheBool(a) => Ok(SupportedFheCiphertexts::FheBool(!a)),
+                SupportedFheCiphertexts::FheUint4(a) => Ok(SupportedFheCiphertexts::FheUint4(!a)),
                 SupportedFheCiphertexts::FheUint8(a) => Ok(SupportedFheCiphertexts::FheUint8(!a)),
                 SupportedFheCiphertexts::FheUint16(a) => Ok(SupportedFheCiphertexts::FheUint16(!a)),
                 SupportedFheCiphertexts::FheUint32(a) => Ok(SupportedFheCiphertexts::FheUint32(!a)),
@@ -2109,6 +2266,7 @@ pub fn perform_fhe_operation(
             assert_eq!(input_operands.len(), 1);
 
             match &input_operands[0] {
+                SupportedFheCiphertexts::FheUint4(a) => Ok(SupportedFheCiphertexts::FheUint4(-a)),
                 SupportedFheCiphertexts::FheUint8(a) => Ok(SupportedFheCiphertexts::FheUint8(-a)),
                 SupportedFheCiphertexts::FheUint16(a) => Ok(SupportedFheCiphertexts::FheUint16(-a)),
                 SupportedFheCiphertexts::FheUint32(a) => Ok(SupportedFheCiphertexts::FheUint32(-a)),
@@ -2135,6 +2293,10 @@ pub fn perform_fhe_operation(
                 (SupportedFheCiphertexts::FheBool(a), SupportedFheCiphertexts::FheBool(b)) => {
                     let res = flag.select(a, b);
                     Ok(SupportedFheCiphertexts::FheBool(res))
+                }
+                (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::FheUint4(b)) => {
+                    let res = flag.select(a, b);
+                    Ok(SupportedFheCiphertexts::FheUint4(res))
                 }
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::FheUint8(b)) => {
                     let res = flag.select(a, b);
@@ -2190,6 +2352,66 @@ pub fn perform_fhe_operation(
                     return Ok(SupportedFheCiphertexts::FheBool(inp.clone()));
                 } else {
                     match l {
+                        1 => {
+                            let out: tfhe::FheUint4 = inp.clone().cast_into();
+                            Ok(SupportedFheCiphertexts::FheUint4(out))
+                        }
+                        2 => {
+                            let out: tfhe::FheUint8 = inp.clone().cast_into();
+                            Ok(SupportedFheCiphertexts::FheUint8(out))
+                        }
+                        3 => {
+                            let out: tfhe::FheUint16 = inp.clone().cast_into();
+                            Ok(SupportedFheCiphertexts::FheUint16(out))
+                        }
+                        4 => {
+                            let out: tfhe::FheUint32 = inp.clone().cast_into();
+                            Ok(SupportedFheCiphertexts::FheUint32(out))
+                        }
+                        5 => {
+                            let out: tfhe::FheUint64 = inp.clone().cast_into();
+                            Ok(SupportedFheCiphertexts::FheUint64(out))
+                        }
+                        6 => {
+                            let out: tfhe::FheUint128 = inp.clone().cast_into();
+                            Ok(SupportedFheCiphertexts::FheUint128(out))
+                        }
+                        7 => {
+                            let out: tfhe::FheUint160 = inp.clone().cast_into();
+                            Ok(SupportedFheCiphertexts::FheUint160(out))
+                        }
+                        8 => {
+                            let out: tfhe::FheUint256 = inp.clone().cast_into();
+                            Ok(SupportedFheCiphertexts::FheUint256(out))
+                        }
+                        9 => {
+                            let out: tfhe::FheUint512 = inp.clone().cast_into();
+                            Ok(SupportedFheCiphertexts::FheBytes64(out))
+                        }
+                        10 => {
+                            let out: tfhe::FheUint1024 = inp.clone().cast_into();
+                            Ok(SupportedFheCiphertexts::FheBytes128(out))
+                        }
+                        11 => {
+                            let out: tfhe::FheUint2048 = inp.clone().cast_into();
+                            Ok(SupportedFheCiphertexts::FheBytes256(out))
+                        }
+                        other => panic!("unexpected type: {other}"),
+                    }
+                }
+            }
+            (SupportedFheCiphertexts::FheUint4(inp), SupportedFheCiphertexts::Scalar(op)) => {
+                let (l, _) = op.to_low_high_u128();
+                let l = l as i16;
+                let type_id = input_operands[0].type_num();
+                if l == type_id {
+                    return Ok(SupportedFheCiphertexts::FheUint4(inp.clone()));
+                } else {
+                    match l {
+                        0 => {
+                            let out: tfhe::FheBool = inp.gt(0);
+                            Ok(SupportedFheCiphertexts::FheBool(out))
+                        }
                         2 => {
                             let out: tfhe::FheUint8 = inp.clone().cast_into();
                             Ok(SupportedFheCiphertexts::FheUint8(out))
@@ -2246,6 +2468,10 @@ pub fn perform_fhe_operation(
                             let out: tfhe::FheBool = inp.gt(0);
                             Ok(SupportedFheCiphertexts::FheBool(out))
                         }
+                        1 => {
+                            let out: tfhe::FheUint4 = inp.clone().cast_into();
+                            Ok(SupportedFheCiphertexts::FheUint4(out))
+                        }
                         3 => {
                             let out: tfhe::FheUint16 = inp.clone().cast_into();
                             Ok(SupportedFheCiphertexts::FheUint16(out))
@@ -2297,6 +2523,10 @@ pub fn perform_fhe_operation(
                         0 => {
                             let out: tfhe::FheBool = inp.gt(0);
                             Ok(SupportedFheCiphertexts::FheBool(out))
+                        }
+                        1 => {
+                            let out: tfhe::FheUint4 = inp.clone().cast_into();
+                            Ok(SupportedFheCiphertexts::FheUint4(out))
                         }
                         2 => {
                             let out: tfhe::FheUint8 = inp.clone().cast_into();
@@ -2350,6 +2580,10 @@ pub fn perform_fhe_operation(
                             let out: tfhe::FheBool = inp.gt(0);
                             Ok(SupportedFheCiphertexts::FheBool(out))
                         }
+                        1 => {
+                            let out: tfhe::FheUint4 = inp.clone().cast_into();
+                            Ok(SupportedFheCiphertexts::FheUint4(out))
+                        }
                         2 => {
                             let out: tfhe::FheUint8 = inp.clone().cast_into();
                             Ok(SupportedFheCiphertexts::FheUint8(out))
@@ -2401,6 +2635,10 @@ pub fn perform_fhe_operation(
                         0 => {
                             let out: tfhe::FheBool = inp.gt(0);
                             Ok(SupportedFheCiphertexts::FheBool(out))
+                        }
+                        1 => {
+                            let out: tfhe::FheUint4 = inp.clone().cast_into();
+                            Ok(SupportedFheCiphertexts::FheUint4(out))
                         }
                         2 => {
                             let out: tfhe::FheUint8 = inp.clone().cast_into();
@@ -2454,6 +2692,10 @@ pub fn perform_fhe_operation(
                             let out: tfhe::FheBool = inp.gt(0);
                             Ok(SupportedFheCiphertexts::FheBool(out))
                         }
+                        1 => {
+                            let out: tfhe::FheUint4 = inp.clone().cast_into();
+                            Ok(SupportedFheCiphertexts::FheUint4(out))
+                        }
                         2 => {
                             let out: tfhe::FheUint8 = inp.clone().cast_into();
                             Ok(SupportedFheCiphertexts::FheUint8(out))
@@ -2505,6 +2747,10 @@ pub fn perform_fhe_operation(
                         0 => {
                             let out: tfhe::FheBool = inp.gt(0);
                             Ok(SupportedFheCiphertexts::FheBool(out))
+                        }
+                        1 => {
+                            let out: tfhe::FheUint4 = inp.clone().cast_into();
+                            Ok(SupportedFheCiphertexts::FheUint4(out))
                         }
                         2 => {
                             let out: tfhe::FheUint8 = inp.clone().cast_into();
@@ -2558,6 +2804,10 @@ pub fn perform_fhe_operation(
                             let out: tfhe::FheBool = inp.gt(0);
                             Ok(SupportedFheCiphertexts::FheBool(out))
                         }
+                        1 => {
+                            let out: tfhe::FheUint4 = inp.clone().cast_into();
+                            Ok(SupportedFheCiphertexts::FheUint4(out))
+                        }
                         2 => {
                             let out: tfhe::FheUint8 = inp.clone().cast_into();
                             Ok(SupportedFheCiphertexts::FheUint8(out))
@@ -2609,6 +2859,10 @@ pub fn perform_fhe_operation(
                         0 => {
                             let out: tfhe::FheBool = inp.gt(0);
                             Ok(SupportedFheCiphertexts::FheBool(out))
+                        }
+                        1 => {
+                            let out: tfhe::FheUint4 = inp.clone().cast_into();
+                            Ok(SupportedFheCiphertexts::FheUint4(out))
                         }
                         2 => {
                             let out: tfhe::FheUint8 = inp.clone().cast_into();
@@ -2662,6 +2916,10 @@ pub fn perform_fhe_operation(
                             let out: tfhe::FheBool = inp.gt(0);
                             Ok(SupportedFheCiphertexts::FheBool(out))
                         }
+                        1 => {
+                            let out: tfhe::FheUint4 = inp.clone().cast_into();
+                            Ok(SupportedFheCiphertexts::FheUint4(out))
+                        }
                         2 => {
                             let out: tfhe::FheUint8 = inp.clone().cast_into();
                             Ok(SupportedFheCiphertexts::FheUint8(out))
@@ -2713,6 +2971,10 @@ pub fn perform_fhe_operation(
                         0 => {
                             let out: tfhe::FheBool = inp.gt(0);
                             Ok(SupportedFheCiphertexts::FheBool(out))
+                        }
+                        1 => {
+                            let out: tfhe::FheUint4 = inp.clone().cast_into();
+                            Ok(SupportedFheCiphertexts::FheUint4(out))
                         }
                         2 => {
                             let out: tfhe::FheUint8 = inp.clone().cast_into();
@@ -2793,6 +3055,12 @@ pub fn generate_random_number(the_type: i16, seed: u128, upper_bound: Option<U25
         0 => {
             let num = FheUint8::generate_oblivious_pseudo_random(Seed(seed), 1);
             SupportedFheCiphertexts::FheBool(num.gt(0))
+        },
+        1 => {
+            let bit_count = 4;
+            let random_bits = upper_bound.map(|i| subtract_from - i.leading_zeros())
+                .unwrap_or(bit_count).min(bit_count) as u64;
+            SupportedFheCiphertexts::FheUint4(FheUint4::generate_oblivious_pseudo_random(Seed(seed), random_bits))
         },
         2 => {
             let bit_count = 8;
