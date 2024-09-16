@@ -4,8 +4,7 @@ use crate::server::common::FheOperation;
 use crate::server::coprocessor::async_computation_input::Input;
 use crate::server::coprocessor::fhevm_coprocessor_client::FhevmCoprocessorClient;
 use crate::server::coprocessor::{
-    AsyncComputation, AsyncComputationInput, AsyncComputeRequest, TrivialEncryptBatch,
-    TrivialEncryptRequestSingle,
+    AsyncComputation, AsyncComputationInput, AsyncComputeRequest, GetCiphertextBatch, TrivialEncryptBatch, TrivialEncryptRequestSingle
 };
 use tonic::metadata::MetadataValue;
 use utils::{default_api_key, decrypt_ciphertexts, random_handle, wait_until_all_ciphertexts_computed};
@@ -33,6 +32,8 @@ async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
     let h2 = random_handle().to_be_bytes();
     let h3 = random_handle().to_be_bytes();
     let h4 = random_handle().to_be_bytes();
+    // unused, non existing
+    let h5 = random_handle().to_be_bytes();
 
     // encrypt two ciphertexts
     {
@@ -111,6 +112,38 @@ async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
         // second value
         assert_eq!(resp[1].value, "263");
         assert_eq!(resp[1].output_type, ct_type as i16);
+    }
+
+    // compute
+    {
+        let mut get_cts_req = tonic::Request::new(GetCiphertextBatch {
+            handles: vec![
+                h1.to_vec(),
+                h2.to_vec(),
+                h3.to_vec(),
+                h4.to_vec(),
+                h5.to_vec(),
+            ],
+        });
+        get_cts_req.metadata_mut().append(
+            "authorization",
+            MetadataValue::from_str(&api_key_header).unwrap(),
+        );
+        let resp = client.get_ciphertexts(get_cts_req).await?;
+        let output = resp.get_ref();
+        assert_eq!(output.responses.len(), 5);
+
+        assert_eq!(output.responses[0].handle, h1);
+        assert_eq!(output.responses[1].handle, h2);
+        assert_eq!(output.responses[2].handle, h3);
+        assert_eq!(output.responses[3].handle, h4);
+        assert_eq!(output.responses[4].handle, h5);
+
+        assert!(output.responses[0].ciphertext.is_some());
+        assert!(output.responses[1].ciphertext.is_some());
+        assert!(output.responses[2].ciphertext.is_some());
+        assert!(output.responses[3].ciphertext.is_some());
+        assert!(output.responses[4].ciphertext.is_none());
     }
 
     Ok(())

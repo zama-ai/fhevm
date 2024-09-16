@@ -27,7 +27,13 @@ message GetCiphertextResponse {
 
 message GetCiphertextSingleResponse {
   bytes handle = 1;
-  optional bytes ciphertext = 2;
+  optional FetchedCiphertext ciphertext = 2;
+}
+
+message FetchedCiphertext {
+  bytes ciphertext_bytes = 1;
+  int32 ciphertext_version = 2;
+  int32 ciphertext_type = 3;
 }
 
 message TrivialEncryptBatch {

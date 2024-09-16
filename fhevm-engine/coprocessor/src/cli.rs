@@ -19,6 +19,10 @@ pub struct Args {
     #[arg(long, default_value_t = 5000)]
     pub server_maximum_ciphertexts_to_schedule: usize,
 
+    /// Server maximum ciphertexts to serve on get_cihpertexts endpoint
+    #[arg(long, default_value_t = 5000)]
+    pub server_maximum_ciphertexts_to_get: usize,
+
     /// Work items batch size
     #[arg(long, default_value_t = 10)]
     pub work_items_batch_size: i32,
