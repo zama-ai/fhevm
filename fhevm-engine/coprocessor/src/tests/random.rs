@@ -12,7 +12,7 @@ use crate::{
         },
     },
     tests::utils::{
-        decrypt_ciphertexts, default_api_key, random_handle_start, setup_test_app,
+        decrypt_ciphertexts, default_api_key, random_handle, setup_test_app,
         wait_until_all_ciphertexts_computed, DecryptionResult,
     },
 };
@@ -28,7 +28,7 @@ async fn test_fhe_random_basic() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
     let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
 
-    let mut handle_counter = random_handle_start();
+    let mut handle_counter = random_handle();
     let mut next_handle = || {
         let out: u64 = handle_counter;
         handle_counter += 1;
@@ -160,7 +160,7 @@ async fn test_fhe_random_bounded() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
     let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
 
-    let mut handle_counter = random_handle_start();
+    let mut handle_counter = random_handle();
     let mut next_handle = || {
         let out: u64 = handle_counter;
         handle_counter += 1;
