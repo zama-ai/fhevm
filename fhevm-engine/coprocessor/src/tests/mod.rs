@@ -14,6 +14,7 @@ mod errors;
 mod inputs;
 mod operators;
 mod utils;
+mod random;
 
 #[tokio::test]
 async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {

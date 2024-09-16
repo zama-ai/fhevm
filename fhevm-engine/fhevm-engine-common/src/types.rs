@@ -258,6 +258,7 @@ impl std::fmt::Display for FhevmError {
 #[derive(Clone)]
 pub enum SupportedFheCiphertexts {
     FheBool(tfhe::FheBool),
+    FheUint4(tfhe::FheUint4),
     FheUint8(tfhe::FheUint8),
     FheUint16(tfhe::FheUint16),
     FheUint32(tfhe::FheUint32),
@@ -315,6 +316,7 @@ impl SupportedFheCiphertexts {
         let type_num = self.type_num();
         match self {
             SupportedFheCiphertexts::FheBool(v) => (type_num, bincode::serialize(v).unwrap()),
+            SupportedFheCiphertexts::FheUint4(v) => (type_num, bincode::serialize(v).unwrap()),
             SupportedFheCiphertexts::FheUint8(v) => (type_num, bincode::serialize(v).unwrap()),
             SupportedFheCiphertexts::FheUint16(v) => (type_num, bincode::serialize(v).unwrap()),
             SupportedFheCiphertexts::FheUint32(v) => (type_num, bincode::serialize(v).unwrap()),
@@ -335,7 +337,7 @@ impl SupportedFheCiphertexts {
         match self {
             // values taken to match with solidity library
             SupportedFheCiphertexts::FheBool(_) => 0,
-            // TODO: add FheUint4 support
+            SupportedFheCiphertexts::FheUint4(_) => 1,
             SupportedFheCiphertexts::FheUint8(_) => 2,
             SupportedFheCiphertexts::FheUint16(_) => 3,
             SupportedFheCiphertexts::FheUint32(_) => 4,
@@ -355,6 +357,9 @@ impl SupportedFheCiphertexts {
     pub fn decrypt(&self, client_key: &tfhe::ClientKey) -> String {
         match self {
             SupportedFheCiphertexts::FheBool(v) => v.decrypt(client_key).to_string(),
+            SupportedFheCiphertexts::FheUint4(v) => {
+                FheDecrypt::<u8>::decrypt(v, client_key).to_string()
+            }
             SupportedFheCiphertexts::FheUint8(v) => {
                 FheDecrypt::<u8>::decrypt(v, client_key).to_string()
             }
@@ -412,6 +417,7 @@ impl SupportedFheCiphertexts {
         let mut builder = CompressedCiphertextListBuilder::new();
         match self {
             SupportedFheCiphertexts::FheBool(c) => builder.push(c),
+            SupportedFheCiphertexts::FheUint4(c) => builder.push(c),
             SupportedFheCiphertexts::FheUint8(c) => builder.push(c),
             SupportedFheCiphertexts::FheUint16(c) => builder.push(c),
             SupportedFheCiphertexts::FheUint32(c) => builder.push(c),
@@ -434,7 +440,10 @@ impl SupportedFheCiphertexts {
     pub fn decompress(ct_type: i16, list: &[u8]) -> Result<Self> {
         let list: CompressedCiphertextList = bincode::deserialize(list)?;
         match ct_type {
-            1 => Ok(SupportedFheCiphertexts::FheBool(
+            0 => Ok(SupportedFheCiphertexts::FheBool(
+                list.get(0)?.ok_or(FhevmError::MissingTfheRsData)?,
+            )),
+            1 => Ok(SupportedFheCiphertexts::FheUint4(
                 list.get(0)?.ok_or(FhevmError::MissingTfheRsData)?,
             )),
             2 => Ok(SupportedFheCiphertexts::FheUint8(
@@ -477,6 +486,7 @@ impl SupportedFheCiphertexts {
             | SupportedFheCiphertexts::FheBytes128(_)
             | SupportedFheCiphertexts::FheBytes256(_) => true,
             SupportedFheCiphertexts::FheBool(_)
+            | SupportedFheCiphertexts::FheUint4(_)
             | SupportedFheCiphertexts::FheUint8(_)
             | SupportedFheCiphertexts::FheUint16(_)
             | SupportedFheCiphertexts::FheUint32(_)

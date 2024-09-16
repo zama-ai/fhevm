@@ -39,13 +39,13 @@ struct UnaryOperatorTestCase {
 }
 
 fn supported_bits() -> &'static [i32] {
-    &[8, 16, 32, 64, 128, 160, 256, 512, 1024, 2048]
+    &[4, 8, 16, 32, 64, 128, 160, 256, 512, 1024, 2048]
 }
 
 pub fn supported_types() -> &'static [i32] {
     &[
-        0, // bool
-        // 1, TODO: add 4 bit support
+        0,  // bool
+        1,  // 4 bit
         2,  // 8 bit
         3,  // 16 bit
         4,  // 32 bit
@@ -61,6 +61,7 @@ pub fn supported_types() -> &'static [i32] {
 
 fn supported_bits_to_bit_type_in_db(inp: i32) -> i32 {
     match inp {
+        4 => 1,
         8 => 2,
         16 => 3,
         32 => 4,
@@ -620,12 +621,12 @@ fn generate_binary_test_cases() -> Vec<BinaryOperatorTestCase> {
         SupportedFheOperations::FheRotr,
     ];
     let mut push_case = |bits: i32, is_scalar: bool, shift_by: i32, op: SupportedFheOperations| {
-        let mut lhs = BigInt::from(12);
-        let mut rhs = BigInt::from(7);
+        let mut lhs = BigInt::from(6);
+        let mut rhs = BigInt::from(2);
         lhs <<= shift_by;
         // don't shift by much for bit shift opts not to make result 0
         if bit_shift_ops.contains(&op) {
-            rhs = BigInt::from(2);
+            rhs = BigInt::from(1);
         } else {
             rhs <<= shift_by;
         }
@@ -651,7 +652,8 @@ fn generate_binary_test_cases() -> Vec<BinaryOperatorTestCase> {
 
     for bits in supported_bits() {
         let bits = *bits;
-        let mut shift_by = bits - 8;
+        let mut shift_by =
+            if bits > 4 { bits - 8 } else { 0 };
         for op in SupportedFheOperations::iter() {
             if bits <= 256 || op.supports_ebytes_inputs() {
                 if op == SupportedFheOperations::FheMul {
@@ -679,12 +681,13 @@ fn generate_unary_test_cases() -> Vec<UnaryOperatorTestCase> {
 
     for bits in supported_bits() {
         let bits = *bits;
-        let shift_by = bits - 8;
+        let shift_by = bits - 3;
+        let max_bits_value = (BigInt::from(1) << bits) - 1;
         for op in SupportedFheOperations::iter() {
             if op.op_type() == FheOperationType::Unary {
-                let mut inp = BigInt::from(7);
+                let mut inp = BigInt::from(3);
                 inp <<= shift_by;
-                let expected_output = compute_expected_unary_output(&inp, op);
+                let expected_output = compute_expected_unary_output(&inp, op) & &max_bits_value;
                 let operand = op as i32;
                 cases.push(UnaryOperatorTestCase {
                     bits,
