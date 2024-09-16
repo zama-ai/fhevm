@@ -14,3 +14,9 @@ daggy = "0.8.0"
 
 [profile.dev.package.tfhe]
 overflow-checks = false
+
+# for testing in release mode due to too big
+# binary inside mac
+[profile.release]
+opt-level = "z"
+lto = true

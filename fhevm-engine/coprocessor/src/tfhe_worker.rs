@@ -1,8 +1,9 @@
-use fhevm_engine_common::tfhe_ops::{
-    current_ciphertext_version, deserialize_fhe_ciphertext, perform_fhe_operation,
-};
 use crate::{db_queries::populate_cache_with_tenant_keys, types::TfheTenantKeys};
 use fhevm_engine_common::types::SupportedFheCiphertexts;
+use fhevm_engine_common::{
+    tfhe_ops::{current_ciphertext_version, deserialize_fhe_ciphertext, perform_fhe_operation},
+    types::SupportedFheOperations,
+};
 use sqlx::{postgres::PgListener, query, Acquire};
 use std::{
     cell::Cell,
@@ -71,7 +72,12 @@ async fn tfhe_worker_cycle(
                 FROM unnest(c.dependencies) WITH ORDINALITY AS elems(v, dep_index)
                 WHERE (c.tenant_id, elems.v) NOT IN ( SELECT tenant_id, handle FROM ciphertexts )
                 -- don't select scalar operands
-                AND ( NOT c.is_scalar OR c.is_scalar AND NOT elems.dep_index = 2 )
+                AND (
+                    NOT c.is_scalar
+                    OR c.is_scalar AND NOT elems.dep_index = 2
+                )
+                -- ignore fhe random operations, all inputs are scalars
+                AND NOT c.fhe_operation = ANY(ARRAY[26, 27])
             )
             LIMIT $1
             FOR UPDATE SKIP LOCKED
@@ -142,17 +148,21 @@ async fn tfhe_worker_cycle(
         // process every tenant by tenant id because we must switch keys for each tenant
         for w in the_work {
             let tenant_key_cache = tenant_key_cache.clone();
+            let fhe_op: SupportedFheOperations = w
+                .fhe_operation
+                .try_into()
+                .expect("only valid fhe ops must have been put in db");
 
             let mut work_ciphertexts: Vec<(i16, Vec<u8>)> =
                 Vec::with_capacity(w.dependencies.len());
             for (idx, dh) in w.dependencies.iter().enumerate() {
-                let is_operand_scalar = w.is_scalar && idx == 1;
+                let is_operand_scalar = w.is_scalar && idx == 1 || fhe_op.is_random();
                 if is_operand_scalar {
                     work_ciphertexts.push((-1, dh.clone()));
                 } else {
-                    let ct_map_val = ciphertext_map
-                        .get(&(w.tenant_id, &dh))
-                        .expect("Me must get ciphertext here");
+                    let ct_map_val = ciphertext_map.get(&(w.tenant_id, &dh)).expect(
+                        "must get ciphertext here, we should have selected all dependencies",
+                    );
                     work_ciphertexts
                         .push((ct_map_val.ciphertext_type, ct_map_val.ciphertext.clone()));
                 }
@@ -166,19 +176,21 @@ async fn tfhe_worker_cycle(
                     }
 
                     // set thread tenant key
-                    if w.tenant_id != TFHE_TENANT_ID.get() {
+                    {
                         let mut rk = tenant_key_cache.blocking_write();
                         let keys = rk
                             .get(&w.tenant_id)
                             .expect("Can't get tenant key from cache");
-                        tfhe::set_server_key(keys.sks.clone());
-                        TFHE_TENANT_ID.set(w.tenant_id);
+                        if w.tenant_id != TFHE_TENANT_ID.get() {
+                            tfhe::set_server_key(keys.sks.clone());
+                            TFHE_TENANT_ID.set(w.tenant_id);
+                        }
                     }
 
                     let mut deserialized_cts: Vec<SupportedFheCiphertexts> =
                         Vec::with_capacity(work_ciphertexts.len());
                     for (idx, (ct_type, ct_bytes)) in work_ciphertexts.iter().enumerate() {
-                        let is_operand_scalar = w.is_scalar && idx == 1;
+                        let is_operand_scalar = w.is_scalar && idx == 1 || fhe_op.is_random();
                         if is_operand_scalar {
                             let mut the_int = tfhe::integer::U256::default();
                             assert!(
@@ -196,20 +208,23 @@ async fn tfhe_worker_cycle(
                             deserialized_cts.push(SupportedFheCiphertexts::Scalar(the_int));
                         } else {
                             deserialized_cts.push(
-                                deserialize_fhe_ciphertext(*ct_type, ct_bytes.as_slice())
-                                    .map_err(|e| {
-                                        let err: Box<dyn std::error::Error + Send + Sync> = Box::new(e);
+                                deserialize_fhe_ciphertext(*ct_type, ct_bytes.as_slice()).map_err(
+                                    |e| {
+                                        let err: Box<dyn std::error::Error + Send + Sync> =
+                                            Box::new(e);
                                         (err, w.tenant_id, w.output_handle.clone())
-                                    })?,
+                                    },
+                                )?,
                             );
                         }
                     }
 
-                    let res = perform_fhe_operation(w.fhe_operation, &deserialized_cts)
-                        .map_err(|e| {
-                            let err: Box<dyn std::error::Error + Send + Sync> = Box::new(e);
-                            (err, w.tenant_id, w.output_handle.clone())
-                        })?;
+                    let res =
+                        perform_fhe_operation(w.fhe_operation, &deserialized_cts)
+                            .map_err(|e| {
+                                let err: Box<dyn std::error::Error + Send + Sync> = Box::new(e);
+                                (err, w.tenant_id, w.output_handle.clone())
+                            })?;
                     let (db_type, db_bytes) = res.serialize();
 
                     Ok((w, db_type, db_bytes))

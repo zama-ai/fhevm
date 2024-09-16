@@ -1,7 +1,21 @@
 use std::str::FromStr;
 
+use crate::{
+    db_queries::query_tenant_keys,
+    server::{
+        common::FheOperation,
+        coprocessor::{
+            async_computation_input::Input, fhevm_coprocessor_client::FhevmCoprocessorClient,
+            AsyncComputation, AsyncComputationInput, AsyncComputeRequest, InputToUpload,
+            InputUploadBatch,
+        },
+    },
+    tests::{
+        inputs::{test_random_caller_address, test_random_contract_address},
+        utils::{default_api_key, default_tenant_id, setup_test_app},
+    },
+};
 use tonic::metadata::MetadataValue;
-use crate::{db_queries::query_tenant_keys, server::{common::FheOperation, coprocessor::{async_computation_input::Input, fhevm_coprocessor_client::FhevmCoprocessorClient, AsyncComputation, AsyncComputationInput, AsyncComputeRequest, InputToUpload, InputUploadBatch}}, tests::{inputs::{test_random_caller_address, test_random_contract_address}, utils::{default_api_key, default_tenant_id, setup_test_app}}};
 
 #[tokio::test]
 async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error>> {
@@ -13,13 +27,16 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
         .connect(app.db_url())
         .await?;
 
-    let keys = query_tenant_keys(vec![default_tenant_id()], &pool).await.map_err(|e| {
-        let e: Box<dyn std::error::Error> = e;
-        e
-    })?;
+    let keys = query_tenant_keys(vec![default_tenant_id()], &pool)
+        .await
+        .map_err(|e| {
+            let e: Box<dyn std::error::Error> = e;
+            e
+        })?;
     let keys = &keys[0];
 
-    { // too many uploads at once
+    {
+        // too many uploads at once
         let mut builder = tfhe::CompactCiphertextListBuilder::new(&keys.pks);
         let the_list = builder
             .push(false)
@@ -42,9 +59,7 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
         }
 
         println!("Encrypting inputs...");
-        let mut input_request = tonic::Request::new(InputUploadBatch {
-            input_ciphertexts,
-        });
+        let mut input_request = tonic::Request::new(InputUploadBatch { input_ciphertexts });
         input_request.metadata_mut().append(
             "authorization",
             MetadataValue::from_str(&api_key_header).unwrap(),
@@ -52,7 +67,9 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
         let resp = client.upload_inputs(input_request).await;
         match resp {
             Err(e) => {
-                assert!(e.to_string().contains("More than maximum input blobs uploaded, maximum allowed: 10, uploaded: 12"));
+                assert!(e.to_string().contains(
+                    "More than maximum input blobs uploaded, maximum allowed: 10, uploaded: 12"
+                ));
             }
             Ok(_) => {
                 panic!("Should not have succeeded")
@@ -60,7 +77,8 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
         }
     }
 
-    { // garbage ciphertext
+    {
+        // garbage ciphertext
         let mut builder = tfhe::CompactCiphertextListBuilder::new(&keys.pks);
         let the_list = builder
             .push(false)
@@ -81,9 +99,7 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
         });
 
         println!("Encrypting inputs...");
-        let mut input_request = tonic::Request::new(InputUploadBatch {
-            input_ciphertexts,
-        });
+        let mut input_request = tonic::Request::new(InputUploadBatch { input_ciphertexts });
         input_request.metadata_mut().append(
             "authorization",
             MetadataValue::from_str(&api_key_header).unwrap(),
@@ -99,7 +115,8 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
         }
     }
 
-    { // more ciphertexts than limit
+    {
+        // more ciphertexts than limit
         let mut builder = tfhe::CompactCiphertextListBuilder::new(&keys.pks);
         for _ in 0..300 {
             let _ = builder.push(false);
@@ -117,9 +134,7 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
         });
 
         println!("Encrypting inputs...");
-        let mut input_request = tonic::Request::new(InputUploadBatch {
-            input_ciphertexts,
-        });
+        let mut input_request = tonic::Request::new(InputUploadBatch { input_ciphertexts });
         input_request.metadata_mut().append(
             "authorization",
             MetadataValue::from_str(&api_key_header).unwrap(),
@@ -128,7 +143,9 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
         match resp {
             Err(e) => {
                 eprintln!("error: {e}");
-                assert!(e.to_string().contains("Input blob contains too many ciphertexts"));
+                assert!(e
+                    .to_string()
+                    .contains("Input blob contains too many ciphertexts"));
             }
             Ok(_) => {
                 panic!("Should not have succeeded")
@@ -136,13 +153,12 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
         }
     }
 
-    { // empty payload ok
+    {
+        // empty payload ok
         let input_ciphertexts = Vec::new();
 
         println!("Encrypting inputs...");
-        let mut input_request = tonic::Request::new(InputUploadBatch {
-            input_ciphertexts,
-        });
+        let mut input_request = tonic::Request::new(InputUploadBatch { input_ciphertexts });
         input_request.metadata_mut().append(
             "authorization",
             MetadataValue::from_str(&api_key_header).unwrap(),
@@ -164,7 +180,8 @@ async fn test_coprocessor_api_key_errors() -> Result<(), Box<dyn std::error::Err
     let app = setup_test_app().await?;
     let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
 
-    { // not provided api key
+    {
+        // not provided api key
         println!("Encrypting inputs...");
         let input_request = tonic::Request::new(InputUploadBatch {
             input_ciphertexts: Vec::new(),
@@ -172,7 +189,9 @@ async fn test_coprocessor_api_key_errors() -> Result<(), Box<dyn std::error::Err
         let resp = client.upload_inputs(input_request).await;
         match resp {
             Err(e) => {
-                assert!(e.to_string().contains("API key unknown/invalid/not provided"));
+                assert!(e
+                    .to_string()
+                    .contains("API key unknown/invalid/not provided"));
             }
             Ok(_) => {
                 panic!("Should not have succeeded")
@@ -180,7 +199,8 @@ async fn test_coprocessor_api_key_errors() -> Result<(), Box<dyn std::error::Err
         }
     }
 
-    { // invalid api key
+    {
+        // invalid api key
         println!("Encrypting inputs...");
         let mut input_request = tonic::Request::new(InputUploadBatch {
             input_ciphertexts: Vec::new(),
@@ -193,7 +213,9 @@ async fn test_coprocessor_api_key_errors() -> Result<(), Box<dyn std::error::Err
         let resp = client.upload_inputs(input_request).await;
         match resp {
             Err(e) => {
-                assert!(e.to_string().contains("API key unknown/invalid/not provided"));
+                assert!(e
+                    .to_string()
+                    .contains("API key unknown/invalid/not provided"));
             }
             Ok(_) => {
                 panic!("Should not have succeeded")
@@ -201,7 +223,8 @@ async fn test_coprocessor_api_key_errors() -> Result<(), Box<dyn std::error::Err
         }
     }
 
-    { // non existing
+    {
+        // non existing
         println!("Encrypting inputs...");
         let mut input_request = tonic::Request::new(InputUploadBatch {
             input_ciphertexts: Vec::new(),
@@ -215,7 +238,9 @@ async fn test_coprocessor_api_key_errors() -> Result<(), Box<dyn std::error::Err
         let resp = client.upload_inputs(input_request).await;
         match resp {
             Err(e) => {
-                assert!(e.to_string().contains("API key unknown/invalid/not provided"));
+                assert!(e
+                    .to_string()
+                    .contains("API key unknown/invalid/not provided"));
             }
             Ok(_) => {
                 panic!("Should not have succeeded")
@@ -236,10 +261,12 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
         .connect(app.db_url())
         .await?;
 
-    let keys = query_tenant_keys(vec![default_tenant_id()], &pool).await.map_err(|e| {
-        let e: Box<dyn std::error::Error> = e;
-        e
-    })?;
+    let keys = query_tenant_keys(vec![default_tenant_id()], &pool)
+        .await
+        .map_err(|e| {
+            let e: Box<dyn std::error::Error> = e;
+            e
+        })?;
     let keys = &keys[0];
 
     let mut handle_counter = 0;
@@ -249,7 +276,8 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
         out.to_be_bytes().to_vec()
     };
 
-    let initial_inputs_resp = { // not provided api key
+    let initial_inputs_resp = {
+        // not provided api key
         let mut builder = tfhe::CompactCiphertextListBuilder::new(&keys.pks);
         let the_list = builder
             .push(false)
@@ -270,9 +298,7 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
         });
 
         println!("Encrypting inputs...");
-        let mut input_request = tonic::Request::new(InputUploadBatch {
-            input_ciphertexts,
-        });
+        let mut input_request = tonic::Request::new(InputUploadBatch { input_ciphertexts });
         input_request.metadata_mut().append(
             "authorization",
             MetadataValue::from_str(&api_key_header).unwrap(),
@@ -290,7 +316,8 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
     let test_u32 = &handles[3];
     let test_u64 = &handles[4];
 
-    { // test circular dependencies
+    {
+        // test circular dependencies
         let output_handle_a = next_handle();
         let output_handle_b = next_handle();
         let output_handle_c = next_handle();
@@ -349,27 +376,28 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
             }
             Err(e) => {
                 eprintln!("error: {}", e);
-                assert!(e.to_string().contains("has circular dependency and is uncomputable"));
+                assert!(e
+                    .to_string()
+                    .contains("has circular dependency and is uncomputable"));
             }
         }
     }
 
-    { // test invalid binary op between uncast types
+    {
+        // test invalid binary op between uncast types
         let output_handle_a = next_handle();
-        let async_computations = vec![
-            AsyncComputation {
-                operation: FheOperation::FheAdd.into(),
-                output_handle: output_handle_a.clone(),
-                inputs: vec![
-                    AsyncComputationInput {
-                        input: Some(Input::InputHandle(test_u8.handle.clone())),
-                    },
-                    AsyncComputationInput {
-                        input: Some(Input::InputHandle(test_u16.handle.clone())),
-                    },
-                ],
-            },
-        ];
+        let async_computations = vec![AsyncComputation {
+            operation: FheOperation::FheAdd.into(),
+            output_handle: output_handle_a.clone(),
+            inputs: vec![
+                AsyncComputationInput {
+                    input: Some(Input::InputHandle(test_u8.handle.clone())),
+                },
+                AsyncComputationInput {
+                    input: Some(Input::InputHandle(test_u16.handle.clone())),
+                },
+            ],
+        }];
         let mut input_request = tonic::Request::new(AsyncComputeRequest {
             computations: async_computations,
         });
@@ -383,27 +411,28 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
             }
             Err(e) => {
                 eprintln!("error: {}", e);
-                assert!(e.to_string().contains("fhevm error: FheOperationDoesntHaveUniformTypesAsInput"));
+                assert!(e
+                    .to_string()
+                    .contains("fhevm error: FheOperationDoesntHaveUniformTypesAsInput"));
             }
         }
     }
 
-    { // empty ciphertext handle
+    {
+        // empty ciphertext handle
         let output_handle_a = next_handle();
-        let async_computations = vec![
-            AsyncComputation {
-                operation: FheOperation::FheAdd.into(),
-                output_handle: output_handle_a.clone(),
-                inputs: vec![
-                    AsyncComputationInput {
-                        input: Some(Input::InputHandle(test_u32.handle.clone())),
-                    },
-                    AsyncComputationInput {
-                        input: Some(Input::InputHandle(vec![])),
-                    },
-                ],
-            },
-        ];
+        let async_computations = vec![AsyncComputation {
+            operation: FheOperation::FheAdd.into(),
+            output_handle: output_handle_a.clone(),
+            inputs: vec![
+                AsyncComputationInput {
+                    input: Some(Input::InputHandle(test_u32.handle.clone())),
+                },
+                AsyncComputationInput {
+                    input: Some(Input::InputHandle(vec![])),
+                },
+            ],
+        }];
         let mut input_request = tonic::Request::new(AsyncComputeRequest {
             computations: async_computations,
         });
@@ -422,22 +451,21 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
         }
     }
 
-    { // ciphertext handle too long
+    {
+        // ciphertext handle too long
         let output_handle_a = next_handle();
-        let async_computations = vec![
-            AsyncComputation {
-                operation: FheOperation::FheAdd.into(),
-                output_handle: output_handle_a.clone(),
-                inputs: vec![
-                    AsyncComputationInput {
-                        input: Some(Input::InputHandle(test_u32.handle.clone())),
-                    },
-                    AsyncComputationInput {
-                        input: Some(Input::InputHandle(vec![0; 65])),
-                    },
-                ],
-            },
-        ];
+        let async_computations = vec![AsyncComputation {
+            operation: FheOperation::FheAdd.into(),
+            output_handle: output_handle_a.clone(),
+            inputs: vec![
+                AsyncComputationInput {
+                    input: Some(Input::InputHandle(test_u32.handle.clone())),
+                },
+                AsyncComputationInput {
+                    input: Some(Input::InputHandle(vec![0; 65])),
+                },
+            ],
+        }];
         let mut input_request = tonic::Request::new(AsyncComputeRequest {
             computations: async_computations,
         });
@@ -451,30 +479,31 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
             }
             Err(e) => {
                 eprintln!("error: {}", e);
-                assert!(e.to_string().contains("Found ciphertext handle longer than 64 bytes"));
+                assert!(e
+                    .to_string()
+                    .contains("Found ciphertext handle longer than 64 bytes"));
             }
         }
     }
 
-    { // computation too many inputs
+    {
+        // computation too many inputs
         let output_handle_a = next_handle();
-        let async_computations = vec![
-            AsyncComputation {
-                operation: FheOperation::FheAdd.into(),
-                output_handle: output_handle_a.clone(),
-                inputs: vec![
-                    AsyncComputationInput {
-                        input: Some(Input::InputHandle(test_u64.handle.clone())),
-                    },
-                    AsyncComputationInput {
-                        input: Some(Input::InputHandle(test_u64.handle.clone())),
-                    },
-                    AsyncComputationInput {
-                        input: Some(Input::InputHandle(test_u64.handle.clone())),
-                    },
-                ],
-            },
-        ];
+        let async_computations = vec![AsyncComputation {
+            operation: FheOperation::FheAdd.into(),
+            output_handle: output_handle_a.clone(),
+            inputs: vec![
+                AsyncComputationInput {
+                    input: Some(Input::InputHandle(test_u64.handle.clone())),
+                },
+                AsyncComputationInput {
+                    input: Some(Input::InputHandle(test_u64.handle.clone())),
+                },
+                AsyncComputationInput {
+                    input: Some(Input::InputHandle(test_u64.handle.clone())),
+                },
+            ],
+        }];
         let mut input_request = tonic::Request::new(AsyncComputeRequest {
             computations: async_computations,
         });
@@ -488,27 +517,28 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
             }
             Err(e) => {
                 eprintln!("error: {}", e);
-                assert!(e.to_string().contains("fhevm error: UnexpectedOperandCountForFheOperation"));
+                assert!(e
+                    .to_string()
+                    .contains("fhevm error: UnexpectedOperandCountForFheOperation"));
             }
         }
     }
 
-    { // scalar operand on the left
+    {
+        // scalar operand on the left
         let output_handle_a = next_handle();
-        let async_computations = vec![
-            AsyncComputation {
-                operation: FheOperation::FheAdd.into(),
-                output_handle: output_handle_a.clone(),
-                inputs: vec![
-                    AsyncComputationInput {
-                        input: Some(Input::Scalar(vec![123])),
-                    },
-                    AsyncComputationInput {
-                        input: Some(Input::InputHandle(test_u64.handle.clone())),
-                    },
-                ],
-            },
-        ];
+        let async_computations = vec![AsyncComputation {
+            operation: FheOperation::FheAdd.into(),
+            output_handle: output_handle_a.clone(),
+            inputs: vec![
+                AsyncComputationInput {
+                    input: Some(Input::Scalar(vec![123])),
+                },
+                AsyncComputationInput {
+                    input: Some(Input::InputHandle(test_u64.handle.clone())),
+                },
+            ],
+        }];
         let mut input_request = tonic::Request::new(AsyncComputeRequest {
             computations: async_computations,
         });
@@ -522,27 +552,28 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
             }
             Err(e) => {
                 eprintln!("error: {}", e);
-                assert!(e.to_string().contains("fhevm error: FheOperationOnlySecondOperandCanBeScalar"));
+                assert!(e
+                    .to_string()
+                    .contains("fhevm error: FheOperationOnlySecondOperandCanBeScalar"));
             }
         }
     }
 
-    { // scalar division by zero
+    {
+        // scalar division by zero
         let output_handle_a = next_handle();
-        let async_computations = vec![
-            AsyncComputation {
-                operation: FheOperation::FheDiv.into(),
-                output_handle: output_handle_a.clone(),
-                inputs: vec![
-                    AsyncComputationInput {
-                        input: Some(Input::InputHandle(test_u64.handle.clone())),
-                    },
-                    AsyncComputationInput {
-                        input: Some(Input::Scalar(vec![0])),
-                    },
-                ],
-            },
-        ];
+        let async_computations = vec![AsyncComputation {
+            operation: FheOperation::FheDiv.into(),
+            output_handle: output_handle_a.clone(),
+            inputs: vec![
+                AsyncComputationInput {
+                    input: Some(Input::InputHandle(test_u64.handle.clone())),
+                },
+                AsyncComputationInput {
+                    input: Some(Input::Scalar(vec![0])),
+                },
+            ],
+        }];
         let mut input_request = tonic::Request::new(AsyncComputeRequest {
             computations: async_computations,
         });
@@ -556,27 +587,28 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
             }
             Err(e) => {
                 eprintln!("error: {}", e);
-                assert!(e.to_string().contains("fhevm error: FheOperationScalarDivisionByZero"));
+                assert!(e
+                    .to_string()
+                    .contains("fhevm error: FheOperationScalarDivisionByZero"));
             }
         }
     }
 
-    { // binary boolean inputs
+    {
+        // binary boolean inputs
         let output_handle_a = next_handle();
-        let async_computations = vec![
-            AsyncComputation {
-                operation: FheOperation::FheAdd.into(),
-                output_handle: output_handle_a.clone(),
-                inputs: vec![
-                    AsyncComputationInput {
-                        input: Some(Input::InputHandle(test_bool.handle.clone())),
-                    },
-                    AsyncComputationInput {
-                        input: Some(Input::InputHandle(test_bool.handle.clone())),
-                    },
-                ],
-            },
-        ];
+        let async_computations = vec![AsyncComputation {
+            operation: FheOperation::FheAdd.into(),
+            output_handle: output_handle_a.clone(),
+            inputs: vec![
+                AsyncComputationInput {
+                    input: Some(Input::InputHandle(test_bool.handle.clone())),
+                },
+                AsyncComputationInput {
+                    input: Some(Input::InputHandle(test_bool.handle.clone())),
+                },
+            ],
+        }];
         let mut input_request = tonic::Request::new(AsyncComputeRequest {
             computations: async_computations,
         });
@@ -590,24 +622,23 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
             }
             Err(e) => {
                 eprintln!("error: {}", e);
-                assert!(e.to_string().contains("fhevm error: OperationDoesntSupportBooleanInputs"));
+                assert!(e
+                    .to_string()
+                    .contains("fhevm error: OperationDoesntSupportBooleanInputs"));
             }
         }
     }
 
-    { // unary boolean inputs
+    {
+        // unary boolean inputs
         let output_handle_a = next_handle();
-        let async_computations = vec![
-            AsyncComputation {
-                operation: FheOperation::FheNeg.into(),
-                output_handle: output_handle_a.clone(),
-                inputs: vec![
-                    AsyncComputationInput {
-                        input: Some(Input::InputHandle(test_bool.handle.clone())),
-                    },
-                ],
-            },
-        ];
+        let async_computations = vec![AsyncComputation {
+            operation: FheOperation::FheNeg.into(),
+            output_handle: output_handle_a.clone(),
+            inputs: vec![AsyncComputationInput {
+                input: Some(Input::InputHandle(test_bool.handle.clone())),
+            }],
+        }];
         let mut input_request = tonic::Request::new(AsyncComputeRequest {
             computations: async_computations,
         });
@@ -621,7 +652,9 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
             }
             Err(e) => {
                 eprintln!("error: {}", e);
-                assert!(e.to_string().contains("fhevm error: OperationDoesntSupportBooleanInputs"));
+                assert!(e
+                    .to_string()
+                    .contains("fhevm error: OperationDoesntSupportBooleanInputs"));
             }
         }
     }

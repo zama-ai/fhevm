@@ -1,20 +1,26 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroUsize;
 use std::str::FromStr;
 
-use crate::db_queries::{check_if_api_key_is_valid, check_if_ciphertexts_exist_in_db, fetch_tenant_server_key};
+use crate::db_queries::{
+    check_if_api_key_is_valid, check_if_ciphertexts_exist_in_db, fetch_tenant_server_key,
+};
 use crate::server::coprocessor::GenericResponse;
+use crate::types::{CoprocessorError, TfheTenantKeys};
+use crate::utils::sort_computations_by_dependencies;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::SignerSync;
 use alloy::sol_types::SolStruct;
-use bigdecimal::num_bigint::BigUint;
-use fhevm_engine_common::tfhe_ops::{check_fhe_operand_types, current_ciphertext_version, debug_trivial_encrypt_be_bytes, deserialize_fhe_ciphertext, try_expand_ciphertext_list};
-use fhevm_engine_common::types::{FhevmError, SupportedFheCiphertexts};
-use sha3::{Digest, Keccak256};
-use crate::types::{CoprocessorError, TfheTenantKeys};
-use crate::utils::sort_computations_by_dependencies;
 use coprocessor::async_computation_input::Input;
-use coprocessor::{DebugDecryptResponse, DebugDecryptResponseSingle, InputCiphertextResponse, InputCiphertextResponseHandle, InputUploadBatch, InputUploadResponse};
+use coprocessor::{
+    InputCiphertextResponse, InputCiphertextResponseHandle, InputUploadBatch, InputUploadResponse,
+};
+use fhevm_engine_common::tfhe_ops::{
+    check_fhe_operand_types, current_ciphertext_version, trivial_encrypt_be_bytes,
+    try_expand_ciphertext_list, validate_fhe_type,
+};
+use fhevm_engine_common::types::{FhevmError, SupportedFheCiphertexts, SupportedFheOperations};
+use sha3::{Digest, Keccak256};
 use sqlx::{query, Acquire};
 use tonic::transport::Server;
 
@@ -42,9 +48,7 @@ pub async fn run_server(
         .expect("Can't parse server address");
     let db_url = crate::utils::db_url(&args);
 
-    let coprocessor_key_file =
-        tokio::fs::read_to_string(&args.coprocessor_private_key)
-            .await?;
+    let coprocessor_key_file = tokio::fs::read_to_string(&args.coprocessor_private_key).await?;
 
     let signer = PrivateKeySigner::from_str(coprocessor_key_file.trim())?;
     println!("Coprocessor signer address: {}", signer.address());
@@ -60,7 +64,12 @@ pub async fn run_server(
             NonZeroUsize::new(args.tenant_key_cache_size as usize).unwrap(),
         )));
 
-    let service = CoprocessorService { pool, args, tenant_key_cache, signer };
+    let service = CoprocessorService {
+        pool,
+        args,
+        tenant_key_cache,
+        signer,
+    };
 
     Server::builder()
         .add_service(
@@ -126,7 +135,7 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
         }
 
         let mut response = InputUploadResponse {
-            upload_responses: Vec::with_capacity(req.input_ciphertexts.len())
+            upload_responses: Vec::with_capacity(req.input_ciphertexts.len()),
         };
         if req.input_ciphertexts.is_empty() {
             return Ok(tonic::Response::new(response));
@@ -135,19 +144,19 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
         let fetch_key_response = {
             fetch_tenant_server_key(tenant_id, &self.pool, &self.tenant_key_cache)
                 .await
-                .map_err(|e| {
-                    tonic::Status::from_error(e)
-                })?
+                .map_err(|e| tonic::Status::from_error(e))?
         };
         let chain_id = fetch_key_response.chain_id;
         let server_key = fetch_key_response.server_key;
         let verifying_contract_address = fetch_key_response.verifying_contract_address;
-        let verifying_contract_address = alloy::primitives::Address::from_str(&verifying_contract_address)
-            .map_err(|e| {
-                tonic::Status::from_error(Box::new(CoprocessorError::CannotParseTenantEthereumAddress {
-                    bad_address: verifying_contract_address.clone(),
-                    parsing_error: e.to_string(),
-                }))
+        let verifying_contract_address =
+            alloy::primitives::Address::from_str(&verifying_contract_address).map_err(|e| {
+                tonic::Status::from_error(Box::new(
+                    CoprocessorError::CannotParseTenantEthereumAddress {
+                        bad_address: verifying_contract_address.clone(),
+                        parsing_error: e.to_string(),
+                    },
+                ))
             })?;
 
         let eip_712_domain = alloy::sol_types::eip712_domain! {
@@ -165,20 +174,22 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
         let mut caller_addresses = Vec::with_capacity(req.input_ciphertexts.len());
         for ci in &req.input_ciphertexts {
             // parse addresses
-            contract_addresses.push(alloy::primitives::Address::from_str(&ci.contract_address)
-                .map_err(|e| {
+            contract_addresses.push(
+                alloy::primitives::Address::from_str(&ci.contract_address).map_err(|e| {
                     CoprocessorError::CannotParseEthereumAddress {
                         bad_address: ci.contract_address.clone(),
                         parsing_error: e.to_string(),
                     }
-                })?);
-            caller_addresses.push(alloy::primitives::Address::from_str(&ci.caller_address)
-                .map_err(|e| {
+                })?,
+            );
+            caller_addresses.push(
+                alloy::primitives::Address::from_str(&ci.caller_address).map_err(|e| {
                     CoprocessorError::CannotParseEthereumAddress {
                         bad_address: ci.contract_address.clone(),
                         parsing_error: e.to_string(),
                     }
-                })?);
+                })?,
+            );
         }
 
         for (idx, ci) in req.input_ciphertexts.iter().enumerate() {
@@ -200,44 +211,66 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
 
         let mut results: BTreeMap<usize, Vec<SupportedFheCiphertexts>> = BTreeMap::new();
         while let Some(output) = tfhe_work_set.join_next().await {
-            let (cts, idx) = output.map_err(|e| {
-                let err: Box<(dyn std::error::Error + Sync + Send)> = Box::new(e);
-                tonic::Status::from_error(err)
-            })?.map_err(|e| {
-                tonic::Status::from_error(e.0)
-            })?;
+            let (cts, idx) = output
+                .map_err(|e| {
+                    let err: Box<(dyn std::error::Error + Sync + Send)> = Box::new(e);
+                    tonic::Status::from_error(err)
+                })?
+                .map_err(|e| tonic::Status::from_error(e.0))?;
 
             if cts.len() > self.args.maximum_handles_per_input as usize {
-                return Err(tonic::Status::from_error(
-                    Box::new(CoprocessorError::CompactInputCiphertextHasMoreCiphertextThanLimitAllows {
+                return Err(tonic::Status::from_error(Box::new(
+                    CoprocessorError::CompactInputCiphertextHasMoreCiphertextThanLimitAllows {
                         input_blob_index: idx,
                         input_ciphertexts_in_blob: cts.len(),
-                        input_maximum_ciphertexts_allowed: self.args.maximum_handles_per_input as usize,
-                    })
-                ));
+                        input_maximum_ciphertexts_allowed: self.args.maximum_handles_per_input
+                            as usize,
+                    },
+                )));
             }
 
-            assert!(results.insert(idx, cts).is_none(), "fresh map, we passed vector ordered by indexes before");
+            assert!(
+                results.insert(idx, cts).is_none(),
+                "fresh map, we passed vector ordered by indexes before"
+            );
         }
 
-        assert_eq!(results.len(), req.input_ciphertexts.len(), "We should have all the ciphertexts now");
+        assert_eq!(
+            results.len(),
+            req.input_ciphertexts.len(),
+            "We should have all the ciphertexts now"
+        );
 
-        let mut trx = self.pool.begin().await.map_err(Into::<CoprocessorError>::into)?;
+        let mut trx = self
+            .pool
+            .begin()
+            .await
+            .map_err(Into::<CoprocessorError>::into)?;
         for (idx, input_blob) in req.input_ciphertexts.iter().enumerate() {
             let mut state = Keccak256::new();
             state.update(&input_blob.input_payload);
             let blob_hash = state.finalize().to_vec();
             assert_eq!(blob_hash.len(), 32, "should be 32 bytes");
 
-            let corresponding_unpacked = results.get(&idx).expect("we should have all results computed now");
+            let corresponding_unpacked = results
+                .get(&idx)
+                .expect("we should have all results computed now");
 
             // save blob for audits and historical reference
-            let _ = sqlx::query!("
+            let _ = sqlx::query!(
+                "
               INSERT INTO input_blobs(tenant_id, blob_hash, blob_data, blob_ciphertext_count)
               VALUES($1, $2, $3, $4)
               ON CONFLICT (tenant_id, blob_hash) DO NOTHING
-            ", tenant_id, &blob_hash, &input_blob.input_payload, corresponding_unpacked.len() as i32)
-            .execute(trx.as_mut()).await.map_err(Into::<CoprocessorError>::into)?;
+            ",
+                tenant_id,
+                &blob_hash,
+                &input_blob.input_payload,
+                corresponding_unpacked.len() as i32
+            )
+            .execute(trx.as_mut())
+            .await
+            .map_err(Into::<CoprocessorError>::into)?;
 
             let mut ct_verification = CiphertextVerification {
                 contractAddress: contract_addresses[idx],
@@ -267,7 +300,8 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
                 handle[30] = serialized_type as u8;
                 handle[31] = ciphertext_version as u8;
 
-                let _ = sqlx::query!("
+                let _ = sqlx::query!(
+                    "
                     INSERT INTO ciphertexts(
                         tenant_id,
                         handle,
@@ -279,10 +313,22 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
                     )
                     VALUES($1, $2, $3, $4, $5, $6, $7)
                     ON CONFLICT (tenant_id, handle, ciphertext_version) DO NOTHING
-                ", tenant_id, &handle, &serialized_ct, ciphertext_version, serialized_type, &blob_hash, ct_idx as i32)
-                .execute(trx.as_mut()).await.map_err(Into::<CoprocessorError>::into)?;
+                ",
+                    tenant_id,
+                    &handle,
+                    &serialized_ct,
+                    ciphertext_version,
+                    serialized_type,
+                    &blob_hash,
+                    ct_idx as i32
+                )
+                .execute(trx.as_mut())
+                .await
+                .map_err(Into::<CoprocessorError>::into)?;
 
-                ct_verification.handlesList.push(alloy::primitives::U256::from_be_slice(&handle));
+                ct_verification
+                    .handlesList
+                    .push(alloy::primitives::U256::from_be_slice(&handle));
                 ct_resp.input_handles.push(InputCiphertextResponseHandle {
                     handle: handle.to_vec(),
                     ciphertext_type: serialized_type as i32,
@@ -290,10 +336,11 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
             }
 
             let signing_hash = ct_verification.eip712_signing_hash(&eip_712_domain);
-            let eip_712_signature = self.signer.sign_hash_sync(&signing_hash)
-                .map_err(|e| {
-                    CoprocessorError::Eip712SigningFailure { error: e.to_string() }
-                })?;
+            let eip_712_signature = self.signer.sign_hash_sync(&signing_hash).map_err(|e| {
+                CoprocessorError::Eip712SigningFailure {
+                    error: e.to_string(),
+                }
+            })?;
 
             ct_resp.eip712_signature = eip_712_signature.as_bytes().to_vec();
 
@@ -344,6 +391,10 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
             let mut this_comp_inputs: Vec<Vec<u8>> = Vec::with_capacity(comp.inputs.len());
             let mut is_scalar_op_vec: Vec<bool> = Vec::with_capacity(comp.inputs.len());
             for (idx, ih) in comp.inputs.iter().enumerate() {
+                let fhe_op: SupportedFheOperations = comp
+                    .operation
+                    .try_into()
+                    .map_err(|e| CoprocessorError::FhevmError(e))?;
                 if let Some(input) = &ih.input {
                     match input {
                         Input::InputHandle(ih) => {
@@ -359,7 +410,7 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
                             handle_types.push(-1);
                             this_comp_inputs.push(sc.clone());
                             is_scalar_op_vec.push(true);
-                            assert!(idx == 1, "we should have checked earlier that only second operand can be scalar");
+                            assert!(idx == 1 || fhe_op.is_random(), "we should have checked earlier that only second operand can be scalar");
                         }
                     }
                 }
@@ -372,7 +423,8 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
                 &handle_types,
                 &this_comp_inputs,
                 &is_scalar_op_vec,
-            ).map_err(|e| CoprocessorError::FhevmError(e))?;
+            )
+            .map_err(|e| CoprocessorError::FhevmError(e))?;
 
             computations_inputs.push(this_comp_inputs);
             are_comps_scalar.push(is_computation_scalar);
@@ -393,10 +445,9 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
             let output_type = ct_types
                 .get(&comp.output_handle)
                 .expect("we should have collected all output result types by now with check_fhe_operand_types");
-            let fhe_operation: i16 = comp
-                .operation
-                .try_into()
-                .map_err(|_| CoprocessorError::FhevmError(FhevmError::UnknownFheOperation(comp.operation)))?;
+            let fhe_operation: i16 = comp.operation.try_into().map_err(|_| {
+                CoprocessorError::FhevmError(FhevmError::UnknownFheOperation(comp.operation))
+            })?;
             let res = query!(
                 "
                     INSERT INTO computations(
@@ -417,7 +468,10 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
                 fhe_operation,
                 are_comps_scalar[idx],
                 output_type
-            ).execute(trx.as_mut()).await.map_err(Into::<CoprocessorError>::into)?;
+            )
+            .execute(trx.as_mut())
+            .await
+            .map_err(Into::<CoprocessorError>::into)?;
             if res.rows_affected() > 0 {
                 new_work_available = true;
             }
@@ -439,17 +493,24 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
         return Err(tonic::Status::unimplemented("not implemented"));
     }
 
-    // debug functions below, should be removed in production
-    async fn debug_encrypt_ciphertext(
+    async fn trivial_encrypt_ciphertexts(
         &self,
-        request: tonic::Request<coprocessor::DebugEncryptRequest>,
+        request: tonic::Request<coprocessor::TrivialEncryptBatch>,
     ) -> std::result::Result<tonic::Response<coprocessor::GenericResponse>, tonic::Status> {
         let tenant_id = check_if_api_key_is_valid(&request, &self.pool).await?;
         let req = request.get_ref();
 
+        let mut unique_handles: BTreeSet<&[u8]> = BTreeSet::new();
+        for val in &req.values {
+            validate_fhe_type(val.output_type).map_err(|e| CoprocessorError::FhevmError(e))?;
+            if !unique_handles.insert(&val.handle) {
+                return Err(CoprocessorError::DuplicateOutputHandleInBatch(format!("0x{}", hex::encode(&val.handle))).into());
+            }
+        }
+
         let mut public_key = sqlx::query!(
             "
-                SELECT sks_key, cks_key
+                SELECT sks_key
                 FROM tenants
                 WHERE tenant_id = $1
             ",
@@ -462,25 +523,15 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
         assert_eq!(public_key.len(), 1);
 
         let public_key = public_key.pop().unwrap();
-
-        // for checking if decryption equals to trivial encryption value
-        let client_key: tfhe::ClientKey = bincode::deserialize(&public_key.cks_key.unwrap()).unwrap();
-
         let cloned = req.values.clone();
         let out_cts = tokio::task::spawn_blocking(move || {
             let server_key: tfhe::ServerKey = bincode::deserialize(&public_key.sks_key).unwrap();
             tfhe::set_server_key(server_key);
 
-            // single threaded implementation as this is debug function and it is simple to implement
+            // single threaded implementation, we can optimize later
             let mut res: Vec<(Vec<u8>, i16, Vec<u8>)> = Vec::with_capacity(cloned.len());
             for v in cloned {
-                let the_num = BigUint::from_bytes_be(&v.be_value).to_string();
-                let ct = debug_trivial_encrypt_be_bytes(v.output_type as i16, &v.be_value);
-                let decr = ct.decrypt(&client_key);
-                let fhe_bool_type = 0;
-                if v.output_type != fhe_bool_type {
-                    assert_eq!(the_num, decr, "Trivial encryption must preserve the original value");
-                }
+                let ct = trivial_encrypt_be_bytes(v.output_type as i16, &v.be_value);
                 let (ct_type, ct_bytes) = ct.serialize();
                 res.push((v.handle, ct_type, ct_bytes));
             }
@@ -501,6 +552,7 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
             sqlx::query!("
                     INSERT INTO ciphertexts(tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type)
                     VALUES ($1, $2, $3, $4, $5)
+                    ON CONFLICT (tenant_id, handle, ciphertext_version) DO NOTHING
                 ",
                 tenant_id, handle, db_bytes, current_ciphertext_version(), db_type as i16
             )
@@ -511,122 +563,4 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
 
         return Ok(tonic::Response::new(GenericResponse { response_code: 0 }));
     }
-
-    async fn debug_decrypt_ciphertext(
-        &self,
-        request: tonic::Request<coprocessor::DebugDecryptRequest>,
-    ) -> std::result::Result<tonic::Response<coprocessor::DebugDecryptResponse>, tonic::Status>
-    {
-        let tenant_id = check_if_api_key_is_valid(&request, &self.pool).await?;
-        let req = request.get_ref();
-
-        let mut priv_key = sqlx::query!(
-            "
-                SELECT cks_key
-                FROM tenants
-                WHERE tenant_id = $1
-            ",
-            tenant_id
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(Into::<CoprocessorError>::into)?;
-
-        if priv_key.is_empty() || priv_key[0].cks_key.is_none() {
-            return Err(tonic::Status::not_found("tenant private key not found"));
-        }
-
-        let mut ct_indexes: BTreeMap<&[u8], usize> = BTreeMap::new();
-        for (idx, h) in req.handles.iter().enumerate() {
-            ct_indexes.insert(h.as_slice(), idx);
-        }
-
-        assert_eq!(priv_key.len(), 1);
-
-        let cts = sqlx::query!(
-            "
-                SELECT ciphertext, ciphertext_type, handle
-                FROM ciphertexts
-                WHERE tenant_id = $1
-                AND handle = ANY($2::BYTEA[])
-                AND ciphertext_version = $3
-            ",
-            tenant_id,
-            &req.handles,
-            current_ciphertext_version()
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(Into::<CoprocessorError>::into)?;
-
-        if cts.is_empty() {
-            return Err(tonic::Status::not_found("ciphertext not found"));
-        }
-
-        let priv_key = priv_key.pop().unwrap().cks_key.unwrap();
-
-        let mut values = tokio::task::spawn_blocking(move || {
-            let client_key: tfhe::ClientKey = bincode::deserialize(&priv_key).unwrap();
-
-            let mut decrypted: Vec<(Vec<u8>, DebugDecryptResponseSingle)> = Vec::with_capacity(cts.len());
-            for ct in cts {
-                let deserialized =
-                    deserialize_fhe_ciphertext(ct.ciphertext_type, &ct.ciphertext)
-                        .unwrap();
-                decrypted.push((ct.handle, DebugDecryptResponseSingle {
-                    output_type: ct.ciphertext_type as i32,
-                    value: deserialized.decrypt(&client_key),
-                }));
-            }
-
-            decrypted
-        })
-        .await
-        .unwrap();
-
-        values.sort_by_key(|(h, _)| {
-            ct_indexes.get(h.as_slice()).unwrap()
-        });
-
-        let values = values.into_iter().map(|i| i.1).collect::<Vec<_>>();
-
-        return Ok(tonic::Response::new(DebugDecryptResponse { values }));
-    }
-
-    async fn upload_ciphertexts(
-        &self,
-        request: tonic::Request<coprocessor::CiphertextUploadBatch>,
-    ) -> std::result::Result<tonic::Response<coprocessor::GenericResponse>, tonic::Status> {
-        let tenant_id = check_if_api_key_is_valid(&request, &self.pool).await?;
-
-        let req = request.get_ref();
-
-        // TODO: check if ciphertext deserializes into type correctly
-        // TODO: check for duplicate handles in the input
-        // TODO: check if ciphertext doesn't exist already
-        // TODO: if ciphertexts exists check that it is equal to the one being uploaded
-
-        let mut trx = self
-            .pool
-            .begin()
-            .await
-            .map_err(Into::<CoprocessorError>::into)?;
-        for i_ct in &req.input_ciphertexts {
-            let ciphertext_type: i16 = i_ct
-                .ciphertext_type
-                .try_into()
-                .map_err(|_e| CoprocessorError::FhevmError(FhevmError::UnknownFheType(i_ct.ciphertext_type)))?;
-            let _ = sqlx::query!("
-              INSERT INTO ciphertexts(tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type)
-              VALUES($1, $2, $3, $4, $5)
-              ON CONFLICT (tenant_id, handle, ciphertext_version) DO NOTHING
-            ", tenant_id, i_ct.ciphertext_handle, i_ct.ciphertext_bytes, current_ciphertext_version(), ciphertext_type)
-            .execute(trx.as_mut()).await.map_err(Into::<CoprocessorError>::into)?;
-        }
-
-        trx.commit().await.map_err(Into::<CoprocessorError>::into)?;
-
-        return Ok(tonic::Response::new(GenericResponse { response_code: 0 }));
-    }
-
 }

@@ -1,5 +1,7 @@
 use crate::cli::Args;
-use rand::Rng;
+use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, deserialize_fhe_ciphertext};
+use rand::{Rng, RngCore};
+use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU16, Ordering};
 use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage, ImageExt};
 use tokio::sync::watch::Receiver;
@@ -56,7 +58,7 @@ pub async fn setup_test_app() -> Result<TestInstance, Box<dyn std::error::Error>
 
 const LOCAL_DB_URL: &str = "postgresql://postgres:postgres@127.0.0.1:5432/coprocessor";
 
-async fn setup_test_app_existing_localhost() -> Result<TestInstance, Box<dyn std::error::Error>> {
+pub async fn setup_test_app_existing_localhost() -> Result<TestInstance, Box<dyn std::error::Error>> {
     Ok(TestInstance {
         _container: None,
         app_close_channel: None,
@@ -147,7 +149,8 @@ async fn setup_test_app_custom_docker() -> Result<TestInstance, Box<dyn std::err
 
     println!("Running migrations...");
     sqlx::migrate!("./migrations").run(&pool).await?;
-
+    println!("Creating test user");
+    setup_test_user(&pool).await?;
     println!("DB prepared");
 
     let (app_close_channel, rx) = tokio::sync::watch::channel(false);
@@ -183,4 +186,114 @@ pub async fn wait_until_all_ciphertexts_computed(
     }
 
     Ok(())
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct DecryptionResult {
+    pub value: String,
+    pub output_type: i16,
+}
+
+pub async fn setup_test_user(
+    pool: &sqlx::PgPool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let sks = tokio::fs::read("../fhevm-keys/sks").await.expect("can't read sks key");
+    let pks = tokio::fs::read("../fhevm-keys/pks").await.expect("can't read pks key");
+    let cks = tokio::fs::read("../fhevm-keys/cks").await.expect("can't read cks key");
+    sqlx::query!(
+        "
+            INSERT INTO tenants(tenant_api_key, tenant_id, chain_id, verifying_contract_address, pks_key, sks_key, cks_key)
+            VALUES (
+                'a1503fb6-d79b-4e9e-826d-44cf262f3e05',
+                1,
+                12345,
+                '0x6819e3aDc437fAf9D533490eD3a7552493fCE3B1',
+                $1,
+                $2,
+                $3
+            )
+        ",
+        &pks,
+        &sks,
+        &cks,
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn decrypt_ciphertexts(
+    pool: &sqlx::PgPool,
+    tenant_id: i32,
+    input: Vec<Vec<u8>>,
+) -> Result<Vec<DecryptionResult>, Box<dyn std::error::Error>> {
+    let mut priv_key = sqlx::query!(
+        "
+            SELECT cks_key
+            FROM tenants
+            WHERE tenant_id = $1
+        ",
+        tenant_id
+    )
+    .fetch_all(pool)
+    .await?;
+
+    if priv_key.is_empty() || priv_key[0].cks_key.is_none() {
+        panic!("tenant private key not found");
+    }
+
+    let mut ct_indexes: BTreeMap<&[u8], usize> = BTreeMap::new();
+    for (idx, h) in input.iter().enumerate() {
+        ct_indexes.insert(h.as_slice(), idx);
+    }
+
+    assert_eq!(priv_key.len(), 1);
+
+    let cts = sqlx::query!(
+        "
+            SELECT ciphertext, ciphertext_type, handle
+            FROM ciphertexts
+            WHERE tenant_id = $1
+            AND handle = ANY($2::BYTEA[])
+            AND ciphertext_version = $3
+        ",
+        tenant_id,
+        &input,
+        current_ciphertext_version()
+    )
+    .fetch_all(pool)
+    .await?;
+
+    if cts.is_empty() {
+        panic!("ciphertext not found");
+    }
+
+    let priv_key = priv_key.pop().unwrap().cks_key.unwrap();
+
+    let mut values = tokio::task::spawn_blocking(move || {
+        let client_key: tfhe::ClientKey = bincode::deserialize(&priv_key).unwrap();
+
+        let mut decrypted: Vec<(Vec<u8>, DecryptionResult)> = Vec::with_capacity(cts.len());
+        for ct in cts {
+            let deserialized =
+                deserialize_fhe_ciphertext(ct.ciphertext_type, &ct.ciphertext).unwrap();
+            decrypted.push((
+                ct.handle,
+                DecryptionResult {
+                    output_type: ct.ciphertext_type,
+                    value: deserialized.decrypt(&client_key),
+                },
+            ));
+        }
+
+        decrypted
+    })
+    .await
+    .unwrap();
+
+    values.sort_by_key(|(h, _)| ct_indexes.get(h.as_slice()).unwrap());
+
+    let values = values.into_iter().map(|i| i.1).collect::<Vec<_>>();
+    Ok(values)
 }
