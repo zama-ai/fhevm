@@ -8,7 +8,7 @@ use crate::server::coprocessor::{
     TrivialEncryptRequestSingle,
 };
 use tonic::metadata::MetadataValue;
-use utils::{decrypt_ciphertexts, random_handle, default_api_key, wait_until_all_ciphertexts_computed};
+use utils::{default_api_key, decrypt_ciphertexts, random_handle, wait_until_all_ciphertexts_computed};
 
 mod errors;
 mod inputs;

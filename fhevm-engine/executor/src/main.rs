@@ -1,6 +1,7 @@
 use anyhow::Result;
 
 mod cli;
+mod dfg;
 mod server;
 
 fn main() -> Result<()> {

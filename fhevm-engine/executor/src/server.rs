@@ -1,13 +1,14 @@
 use std::{cell::Cell, collections::HashMap, sync::Arc};
 
 use anyhow::Result;
-use common::FheOperation;
+pub use common::FheOperation;
 use executor::{
     fhevm_executor_server::{FhevmExecutor, FhevmExecutorServer},
     sync_compute_response::Resp,
-    sync_input::Input,
-    CompressedCiphertext, ResultCiphertexts, SyncComputation, SyncComputeError, SyncComputeRequest,
-    SyncComputeResponse, SyncInput,
+    ResultCiphertexts, SyncComputeResponse, SyncInput,
+};
+pub use executor::{
+    sync_input::Input, CompressedCiphertext, SyncComputation, SyncComputeError, SyncComputeRequest,
 };
 use fhevm_engine_common::{
     keys::{FhevmKeys, SerializedFhevmKeys},
@@ -19,6 +20,8 @@ use tfhe::{integer::U256, set_server_key};
 use tokio::task::spawn_blocking;
 use tonic::{transport::Server, Code, Request, Response, Status};
 
+use crate::dfg::{scheduler::Scheduler, DFGraph};
+
 pub mod common {
     tonic::include_proto!("fhevm.common");
 }
@@ -28,13 +31,23 @@ pub mod executor {
 }
 
 pub fn start(args: &crate::cli::Args) -> Result<()> {
+    let keys: Arc<FhevmKeys> = Arc::new(SerializedFhevmKeys::load_from_disk().into());
+    let executor = FhevmExecutorService::new(keys.clone());
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(args.tokio_threads)
         .max_blocking_threads(args.fhe_compute_threads)
+        .on_thread_start(move || {
+            thread_local! {
+                static SERVER_KEY_IS_SET: Cell<bool> = const {Cell::new(false)};
+            }
+            if !SERVER_KEY_IS_SET.get() {
+                set_server_key(keys.server_key.clone());
+                SERVER_KEY_IS_SET.set(true);
+            }
+        })
         .enable_all()
         .build()?;
 
-    let executor = FhevmExecutorService::new();
     let addr = args.server_addr.parse().expect("server address");
 
     runtime.block_on(async {
@@ -47,14 +60,14 @@ pub fn start(args: &crate::cli::Args) -> Result<()> {
     Ok(())
 }
 
-struct InMemoryCiphertext {
-    expanded: SupportedFheCiphertexts,
-    compressed: Vec<u8>,
+pub struct InMemoryCiphertext {
+    pub expanded: SupportedFheCiphertexts,
+    pub compressed: Vec<u8>,
 }
 
 #[derive(Default)]
-struct ComputationState {
-    ciphertexts: HashMap<Handle, InMemoryCiphertext>,
+pub struct ComputationState {
+    pub ciphertexts: HashMap<Handle, InMemoryCiphertext>,
 }
 
 struct FhevmExecutorService {
@@ -69,15 +82,6 @@ impl FhevmExecutor for FhevmExecutorService {
     ) -> Result<Response<SyncComputeResponse>, Status> {
         let keys = self.keys.clone();
         let resp = spawn_blocking(move || {
-            // Make sure we only clone the server key if needed.
-            thread_local! {
-                static SERVER_KEY_IS_SET: Cell<bool> = Cell::new(false);
-            }
-            if !SERVER_KEY_IS_SET.get() {
-                set_server_key(keys.server_key.clone());
-                SERVER_KEY_IS_SET.set(true);
-            }
-
             let req = req.get_ref();
             let mut state = ComputationState::default();
 
@@ -98,25 +102,29 @@ impl FhevmExecutor for FhevmExecutorService {
                 };
             }
 
-            // Execute all computations.
-            let mut result_cts = Vec::new();
-            for computation in &req.computations {
-                let outcome = Self::process_computation(computation, &mut state);
-                // Either all succeed or we return on the first failure.
-                match outcome {
-                    Ok(cts) => result_cts.extend(cts),
-                    Err(e) => {
-                        return SyncComputeResponse {
-                            resp: Some(Resp::Error(e.into())),
-                        };
-                    }
+            // Run the request's computations in an async block
+            let handle = tokio::runtime::Handle::current();
+            let _ = handle.enter();
+            let resp = handle.block_on(async {
+                // Build the dataflow graph for this request
+                let mut graph = DFGraph::default();
+                if let Err(e) = graph.build_from_request(req, &state) {
+                    return Some(Resp::Error((e as SyncComputeError).into()));
                 }
-            }
-            SyncComputeResponse {
-                resp: Some(Resp::ResultCiphertexts(ResultCiphertexts {
-                    ciphertexts: result_cts,
-                })),
-            }
+                // Schedule computations in parallel as dependences allow
+                let mut sched = Scheduler::new(&mut graph.graph);
+                if sched.schedule().await.is_err() {
+                    return Some(Resp::Error(SyncComputeError::ComputationFailed.into()));
+                }
+                // Extract the results from the graph
+                match graph.get_results() {
+                    Ok(result_cts) => Some(Resp::ResultCiphertexts(ResultCiphertexts {
+                        ciphertexts: result_cts,
+                    })),
+                    Err(e) => Some(Resp::Error(e.into())),
+                }
+            });
+            SyncComputeResponse { resp }
         })
         .await;
         match resp {
@@ -130,10 +138,8 @@ impl FhevmExecutor for FhevmExecutorService {
 }
 
 impl FhevmExecutorService {
-    fn new() -> Self {
-        FhevmExecutorService {
-            keys: Arc::new(SerializedFhevmKeys::load_from_disk().into()),
-        }
+    fn new(keys: Arc<FhevmKeys>) -> Self {
+        FhevmExecutorService { keys }
     }
 
     fn process_computation(
@@ -276,5 +282,40 @@ impl FhevmExecutorService {
             },
             Err(_) => Err(SyncComputeError::BadInputs),
         }
+    }
+}
+
+pub fn run_computation(
+    operation: i32,
+    inputs: Result<Vec<SupportedFheCiphertexts>, SyncComputeError>,
+    graph_node_index: usize,
+) -> Result<(usize, InMemoryCiphertext), SyncComputeError> {
+    let op = FheOperation::try_from(operation);
+    match inputs {
+        Ok(inputs) => match op {
+            Ok(FheOperation::FheGetCiphertext) => {
+                let res = InMemoryCiphertext {
+                    expanded: inputs[0].clone(),
+                    compressed: inputs[0].clone().compress(),
+                };
+                Ok((graph_node_index, res))
+            }
+            Ok(_) => match perform_fhe_operation(operation as i16, &inputs) {
+                Ok(result) => {
+                    let res = InMemoryCiphertext {
+                        expanded: result.clone(),
+                        compressed: result.compress(),
+                    };
+                    Ok((graph_node_index, res))
+                }
+                Err(_) => Err::<(usize, InMemoryCiphertext), SyncComputeError>(
+                    SyncComputeError::ComputationFailed,
+                ),
+            },
+            _ => Err::<(usize, InMemoryCiphertext), SyncComputeError>(
+                SyncComputeError::InvalidOperation,
+            ),
+        },
+        Err(_) => Err(SyncComputeError::ComputationFailed),
     }
 }
