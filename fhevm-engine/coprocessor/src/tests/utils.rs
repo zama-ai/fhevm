@@ -297,7 +297,3 @@ pub async fn decrypt_ciphertexts(
     let values = values.into_iter().map(|i| i.1).collect::<Vec<_>>();
     Ok(values)
 }
-
-pub fn random_handle_start() -> u64 {
-    rand::thread_rng().next_u64()
-}
