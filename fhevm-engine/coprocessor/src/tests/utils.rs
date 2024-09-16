@@ -85,6 +85,7 @@ async fn start_coprocessor(rx: Receiver<bool>, app_port: u16, db_url: &str) {
         run_server: true,
         generate_fhe_keys: false,
         server_maximum_ciphertexts_to_schedule: 5000,
+        server_maximum_ciphertexts_to_get: 5000,
         work_items_batch_size: 40,
         tenant_key_cache_size: 4,
         coprocessor_fhe_threads: 4,

@@ -13,7 +13,7 @@ use alloy::signers::SignerSync;
 use alloy::sol_types::SolStruct;
 use coprocessor::async_computation_input::Input;
 use coprocessor::{
-    InputCiphertextResponse, InputCiphertextResponseHandle, InputUploadBatch, InputUploadResponse,
+    FetchedCiphertext, GetCiphertextSingleResponse, InputCiphertextResponse, InputCiphertextResponseHandle, InputUploadBatch, InputUploadResponse
 };
 use fhevm_engine_common::tfhe_ops::{
     check_fhe_operand_types, current_ciphertext_version, trivial_encrypt_be_bytes,
@@ -562,5 +562,66 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
         trx.commit().await.map_err(Into::<CoprocessorError>::into)?;
 
         return Ok(tonic::Response::new(GenericResponse { response_code: 0 }));
+    }
+
+    async fn get_ciphertexts(
+        &self,
+        request: tonic::Request<coprocessor::GetCiphertextBatch>,
+    ) -> std::result::Result<tonic::Response<coprocessor::GetCiphertextResponse>, tonic::Status> {
+        let tenant_id = check_if_api_key_is_valid(&request, &self.pool).await?;
+        let req = request.get_ref();
+
+        if req.handles.len() > self.args.server_maximum_ciphertexts_to_get {
+            return Err(tonic::Status::from_error(Box::new(
+                CoprocessorError::MoreThanMaximumCiphertextsAttemptedToDownload {
+                    input_count: req.handles.len(),
+                    maximum_allowed: self.args.server_maximum_ciphertexts_to_get,
+                },
+            )));
+        }
+
+        let mut result = coprocessor::GetCiphertextResponse { responses: Vec::new() };
+        let mut set = BTreeSet::new();
+
+        for h in &req.handles {
+            let _ = set.insert(h.clone());
+        }
+
+        let cts: Vec<Vec<u8>> = set.into_iter().collect();
+
+        let db_cts = query!(
+            "
+                SELECT handle, ciphertext_type, ciphertext_version, ciphertext
+                FROM ciphertexts
+                WHERE tenant_id = $1
+                AND handle = ANY($2::BYTEA[])
+            ",
+            tenant_id, &cts
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(Into::<CoprocessorError>::into)?;
+
+        let mut the_map: BTreeMap<Vec<u8>, _> = BTreeMap::new();
+        for ct in db_cts {
+            let _ = the_map.insert(ct.handle.clone(), ct);
+        }
+
+        for h in &req.handles {
+            result.responses.push(
+                GetCiphertextSingleResponse {
+                    handle: h.clone(),
+                    ciphertext: the_map.get(h).map(|res| {
+                        FetchedCiphertext {
+                            ciphertext_bytes: res.ciphertext.clone(),
+                            ciphertext_type: res.ciphertext_type as i32,
+                            ciphertext_version: res.ciphertext_version as i32
+                        }
+                    })
+                }
+            );
+        }
+
+        return Ok(tonic::Response::new(result));
     }
 }

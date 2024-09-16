@@ -29,6 +29,10 @@ pub enum CoprocessorError {
         input_count: usize,
         maximum_allowed: usize,
     },
+    MoreThanMaximumCiphertextsAttemptedToDownload {
+        input_count: usize,
+        maximum_allowed: usize,
+    },
     CompactInputCiphertextHasMoreCiphertextThanLimitAllows {
         input_blob_index: usize,
         input_ciphertexts_in_blob: usize,
@@ -71,6 +75,12 @@ impl std::fmt::Display for CoprocessorError {
                 maximum_allowed,
             } => {
                 write!(f, "More than maximum input blobs uploaded, maximum allowed: {maximum_allowed}, uploaded: {input_count}")
+            }
+            Self::MoreThanMaximumCiphertextsAttemptedToDownload {
+                input_count,
+                maximum_allowed,
+            } => {
+                write!(f, "Requested more than maximum ciphertexts allowed to download, maximum allowed: {maximum_allowed}, requested: {input_count}")
             }
             Self::CompactInputCiphertextHasMoreCiphertextThanLimitAllows {
                 input_blob_index,
