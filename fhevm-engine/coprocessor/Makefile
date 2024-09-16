@@ -22,7 +22,7 @@ recreate_db:
 .PHONY: docker_compose_setup
 docker_compose_setup:
 	$(MAKE) init_db
-	cargo test setup_test_user -- --nocapture --ignored
+	DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/coprocessor cargo test setup_test_user -- --nocapture --ignored
 
 .PHONY: clean_run
 clean_run:
