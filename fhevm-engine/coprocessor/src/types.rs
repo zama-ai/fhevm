@@ -178,7 +178,10 @@ pub struct TfheTenantKeys {
     pub chain_id: i32,
     pub verifying_contract_address: String,
     pub sks: tfhe::ServerKey,
-    // maybe we'll need this
+
+    // only used in tests, that's why we put dead_code
     #[allow(dead_code)]
     pub pks: tfhe::CompactPublicKey,
+    #[allow(dead_code)]
+    pub public_params: tfhe::zk::CompactPkePublicParams,
 }

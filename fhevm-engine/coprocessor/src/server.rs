@@ -13,7 +13,8 @@ use alloy::signers::SignerSync;
 use alloy::sol_types::SolStruct;
 use coprocessor::async_computation_input::Input;
 use coprocessor::{
-    FetchedCiphertext, GetCiphertextSingleResponse, InputCiphertextResponse, InputCiphertextResponseHandle, InputUploadBatch, InputUploadResponse
+    FetchedCiphertext, GetCiphertextSingleResponse, InputCiphertextResponse,
+    InputCiphertextResponseHandle, InputUploadBatch, InputUploadResponse,
 };
 use fhevm_engine_common::tfhe_ops::{
     check_fhe_operand_types, current_ciphertext_version, trivial_encrypt_be_bytes,
@@ -516,11 +517,15 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
         for val in &req.values {
             validate_fhe_type(val.output_type).map_err(|e| CoprocessorError::FhevmError(e))?;
             if !unique_handles.insert(&val.handle) {
-                return Err(CoprocessorError::DuplicateOutputHandleInBatch(format!("0x{}", hex::encode(&val.handle))).into());
+                return Err(CoprocessorError::DuplicateOutputHandleInBatch(format!(
+                    "0x{}",
+                    hex::encode(&val.handle)
+                ))
+                .into());
             }
         }
 
-        let mut public_key = sqlx::query!(
+        let mut sks = sqlx::query!(
             "
                 SELECT sks_key
                 FROM tenants
@@ -532,12 +537,12 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
         .await
         .map_err(Into::<CoprocessorError>::into)?;
 
-        assert_eq!(public_key.len(), 1);
+        assert_eq!(sks.len(), 1);
 
-        let public_key = public_key.pop().unwrap();
+        let sks = sks.pop().unwrap();
         let cloned = req.values.clone();
         let out_cts = tokio::task::spawn_blocking(move || {
-            let server_key: tfhe::ServerKey = bincode::deserialize(&public_key.sks_key).unwrap();
+            let server_key: tfhe::ServerKey = bincode::deserialize(&sks.sks_key).unwrap();
             tfhe::set_server_key(server_key);
 
             // single threaded implementation, we can optimize later
@@ -579,7 +584,8 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
     async fn get_ciphertexts(
         &self,
         request: tonic::Request<coprocessor::GetCiphertextBatch>,
-    ) -> std::result::Result<tonic::Response<coprocessor::GetCiphertextResponse>, tonic::Status> {
+    ) -> std::result::Result<tonic::Response<coprocessor::GetCiphertextResponse>, tonic::Status>
+    {
         let tenant_id = check_if_api_key_is_valid(&request, &self.pool).await?;
         let req = request.get_ref();
 
@@ -592,7 +598,9 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
             )));
         }
 
-        let mut result = coprocessor::GetCiphertextResponse { responses: Vec::new() };
+        let mut result = coprocessor::GetCiphertextResponse {
+            responses: Vec::new(),
+        };
         let mut set = BTreeSet::new();
 
         for h in &req.handles {
@@ -608,7 +616,8 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
                 WHERE tenant_id = $1
                 AND handle = ANY($2::BYTEA[])
             ",
-            tenant_id, &cts
+            tenant_id,
+            &cts
         )
         .fetch_all(&self.pool)
         .await
@@ -620,18 +629,14 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
         }
 
         for h in &req.handles {
-            result.responses.push(
-                GetCiphertextSingleResponse {
-                    handle: h.clone(),
-                    ciphertext: the_map.get(h).map(|res| {
-                        FetchedCiphertext {
-                            ciphertext_bytes: res.ciphertext.clone(),
-                            ciphertext_type: res.ciphertext_type as i32,
-                            ciphertext_version: res.ciphertext_version as i32
-                        }
-                    })
-                }
-            );
+            result.responses.push(GetCiphertextSingleResponse {
+                handle: h.clone(),
+                ciphertext: the_map.get(h).map(|res| FetchedCiphertext {
+                    ciphertext_bytes: res.ciphertext.clone(),
+                    ciphertext_type: res.ciphertext_type as i32,
+                    ciphertext_version: res.ciphertext_version as i32,
+                }),
+            });
         }
 
         return Ok(tonic::Response::new(result));

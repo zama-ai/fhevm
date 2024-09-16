@@ -19,4 +19,4 @@ overflow-checks = false
 # binary inside mac
 [profile.release]
 opt-level = "z"
-lto = true
+lto = "fat"

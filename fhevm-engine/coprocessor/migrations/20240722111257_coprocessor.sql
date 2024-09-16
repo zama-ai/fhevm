@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS tenants (
     verifying_contract_address TEXT NOT NULL,
     pks_key BYTEA NOT NULL,
     sks_key BYTEA NOT NULL,
+    public_params BYTEA NOT NULL,
     -- for debugging, can be null
     cks_key BYTEA,
     -- admin api key is allowed to create more tenants with their keys

@@ -7,7 +7,8 @@ use executor::server::executor::{
 use executor::server::executor::{sync_input::Input, SyncInput};
 use executor::server::SyncComputeError;
 use fhevm_engine_common::types::{SupportedFheCiphertexts, HANDLE_LEN};
-use tfhe::CompactCiphertextListBuilder;
+use tfhe::zk::ZkComputeLoad;
+use tfhe::ProvenCompactCiphertextList;
 use utils::get_test;
 
 mod utils;
@@ -15,11 +16,18 @@ mod utils;
 #[tokio::test]
 async fn get_input_ciphertext() {
     let test = get_test().await;
+    test.keys.set_server_key_for_current_thread();
     let mut client = FhevmExecutorClient::connect(test.server_addr.clone())
         .await
         .unwrap();
-    let mut builder = CompactCiphertextListBuilder::new(&test.keys.compact_public_key);
-    let list = bincode::serialize(&builder.push(10_u8).build()).unwrap();
+    let mut builder = ProvenCompactCiphertextList::builder(&test.keys.compact_public_key);
+    let list = bincode::serialize(
+        &builder
+            .push(10_u8)
+            .build_with_proof_packed(&test.keys.public_params, &[], ZkComputeLoad::Proof)
+            .unwrap(),
+    )
+    .unwrap();
     // TODO: tests for all types and avoiding passing in 2 as an identifier for FheUint8.
     let input_handle = test.input_handle(&list, 0, 2);
     let sync_input = SyncInput {
@@ -54,12 +62,17 @@ async fn get_input_ciphertext() {
 #[tokio::test]
 async fn compute_on_two_serialized_ciphertexts() {
     let test = get_test().await;
+    test.keys.set_server_key_for_current_thread();
     let mut client = FhevmExecutorClient::connect(test.server_addr.clone())
         .await
         .unwrap();
-    let mut builder = CompactCiphertextListBuilder::new(&test.keys.compact_public_key);
-    let list = builder.push(10_u16).push(11_u16).build();
-    let expander = list.expand_with_key(&test.keys.server_key).unwrap();
+    let mut builder = ProvenCompactCiphertextList::builder(&test.keys.compact_public_key);
+    let list = &builder
+        .push(10_u16)
+        .push(11_u16)
+        .build_with_proof_packed(&test.keys.public_params, &[], ZkComputeLoad::Proof)
+        .unwrap();
+    let expander = list.expand_without_verification().unwrap();
     let ct1 = SupportedFheCiphertexts::FheUint16(expander.get(0).unwrap().unwrap());
     let ct1 = test.compress(ct1);
     let ct2 = SupportedFheCiphertexts::FheUint16(expander.get(1).unwrap().unwrap());
@@ -118,14 +131,24 @@ async fn compute_on_two_serialized_ciphertexts() {
 #[tokio::test]
 async fn compute_on_compact_and_serialized_ciphertexts() {
     let test = get_test().await;
+    test.keys.set_server_key_for_current_thread();
     let mut client = FhevmExecutorClient::connect(test.server_addr.clone())
         .await
         .unwrap();
-    let mut builder_input = CompactCiphertextListBuilder::new(&test.keys.compact_public_key);
-    let compact_list = bincode::serialize(&builder_input.push(10_u16).build()).unwrap();
-    let mut builder_cts = CompactCiphertextListBuilder::new(&test.keys.compact_public_key);
-    let list = builder_cts.push(11_u16).build();
-    let expander = list.expand_with_key(&test.keys.server_key).unwrap();
+    let mut builder_input = ProvenCompactCiphertextList::builder(&test.keys.compact_public_key);
+    let compact_list = bincode::serialize(
+        &builder_input
+            .push(10_u16)
+            .build_with_proof_packed(&test.keys.public_params, &[], ZkComputeLoad::Proof)
+            .unwrap(),
+    )
+    .unwrap();
+    let mut builder_cts = ProvenCompactCiphertextList::builder(&test.keys.compact_public_key);
+    let list = builder_cts
+        .push(11_u16)
+        .build_with_proof_packed(&test.keys.public_params, &[], ZkComputeLoad::Proof)
+        .unwrap();
+    let expander = list.expand_without_verification().unwrap();
     let ct1 = SupportedFheCiphertexts::FheUint16(expander.get(0).unwrap().unwrap());
     let ct1 = test.compress(ct1);
     let handle1 = test.ciphertext_handle(&ct1, 3);
@@ -176,12 +199,17 @@ async fn compute_on_compact_and_serialized_ciphertexts() {
 #[tokio::test]
 async fn compute_on_result_ciphertext() {
     let test = get_test().await;
+    test.keys.set_server_key_for_current_thread();
     let mut client = FhevmExecutorClient::connect(test.server_addr.clone())
         .await
         .unwrap();
-    let mut builder = CompactCiphertextListBuilder::new(&test.keys.compact_public_key);
-    let list = builder.push(10_u16).push(11_u16).build();
-    let expander = list.expand_with_key(&test.keys.server_key).unwrap();
+    let mut builder = ProvenCompactCiphertextList::builder(&test.keys.compact_public_key);
+    let list = builder
+        .push(10_u16)
+        .push(11_u16)
+        .build_with_proof_packed(&test.keys.public_params, &[], ZkComputeLoad::Proof)
+        .unwrap();
+    let expander = list.expand_without_verification().unwrap();
     let ct1 = SupportedFheCiphertexts::FheUint16(expander.get(0).unwrap().unwrap());
     let ct1 = test.compress(ct1);
     let ct2 = SupportedFheCiphertexts::FheUint16(expander.get(1).unwrap().unwrap());
@@ -249,18 +277,20 @@ async fn compute_on_result_ciphertext() {
 #[tokio::test]
 async fn schedule_dependent_computations() {
     let test = get_test().await;
+    test.keys.set_server_key_for_current_thread();
     let mut client = FhevmExecutorClient::connect(test.server_addr.clone())
         .await
         .unwrap();
-    let mut builder = CompactCiphertextListBuilder::new(&test.keys.compact_public_key);
+    let mut builder = ProvenCompactCiphertextList::builder(&test.keys.compact_public_key);
     let list = builder
         .push(3_u16)
         .push(5_u16)
         .push(7_u16)
         .push(11_u16)
         .push(13_u16)
-        .build();
-    let expander = list.expand_with_key(&test.keys.server_key).unwrap();
+        .build_with_proof_packed(&test.keys.public_params, &[], ZkComputeLoad::Proof)
+        .unwrap();
+    let expander = list.expand_without_verification().unwrap();
     let ct1 = SupportedFheCiphertexts::FheUint16(expander.get(0).unwrap().unwrap());
     let ct1 = test.compress(ct1);
     let ct2 = SupportedFheCiphertexts::FheUint16(expander.get(1).unwrap().unwrap());
@@ -436,6 +466,7 @@ async fn schedule_dependent_computations() {
 #[tokio::test]
 async fn schedule_circular_dependence() {
     let test = get_test().await;
+    test.keys.set_server_key_for_current_thread();
     let mut client = FhevmExecutorClient::connect(test.server_addr.clone())
         .await
         .unwrap();
@@ -489,18 +520,20 @@ async fn schedule_circular_dependence() {
 #[tokio::test]
 async fn schedule_diamond_reduction_dependence_pattern() {
     let test = get_test().await;
+    test.keys.set_server_key_for_current_thread();
     let mut client = FhevmExecutorClient::connect(test.server_addr.clone())
         .await
         .unwrap();
-    let mut builder = CompactCiphertextListBuilder::new(&test.keys.compact_public_key);
+    let mut builder = ProvenCompactCiphertextList::builder(&test.keys.compact_public_key);
     let list = builder
         .push(1_u16)
         .push(2_u16)
         .push(3_u16)
         .push(4_u16)
         .push(5_u16)
-        .build();
-    let expander = list.expand_with_key(&test.keys.server_key).unwrap();
+        .build_with_proof_packed(&test.keys.public_params, &[], ZkComputeLoad::Proof)
+        .unwrap();
+    let expander = list.expand_without_verification().unwrap();
     let ct1 = SupportedFheCiphertexts::FheUint16(expander.get(0).unwrap().unwrap());
     let ct1 = test.compress(ct1);
     let ct2 = SupportedFheCiphertexts::FheUint16(expander.get(1).unwrap().unwrap());

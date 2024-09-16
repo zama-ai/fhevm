@@ -39,7 +39,7 @@ async fn test_fhe_inputs() -> Result<(), Box<dyn std::error::Error>> {
         })?;
     let keys = &keys[0];
 
-    let mut builder = tfhe::CompactCiphertextListBuilder::new(&keys.pks);
+    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
     let the_list = builder
         .push(false)
         .push(1u8)
@@ -52,7 +52,8 @@ async fn test_fhe_inputs() -> Result<(), Box<dyn std::error::Error>> {
         .push(StaticUnsignedBigInt::<8>::from(8u32))
         .push(StaticUnsignedBigInt::<16>::from(9u32))
         .push(StaticUnsignedBigInt::<32>::from(10u32))
-        .build();
+        .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+        .unwrap();
 
     let serialized = bincode::serialize(&the_list).unwrap();
 
@@ -132,7 +133,7 @@ async fn custom_insert_inputs() -> Result<(), Box<dyn std::error::Error>> {
         })?;
     let keys = &keys[0];
 
-    let mut builder = tfhe::CompactCiphertextListBuilder::new(&keys.pks);
+    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
     let the_list = builder
         .push(false)
         .push(1u8)
@@ -140,7 +141,8 @@ async fn custom_insert_inputs() -> Result<(), Box<dyn std::error::Error>> {
         .push(3u32)
         .push(4u64)
         .push(5u64)
-        .build();
+        .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+        .unwrap();
 
     let serialized = bincode::serialize(&the_list).unwrap();
 

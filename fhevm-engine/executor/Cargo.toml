@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
-tfhe = { version = "0.8.0-alpha.4", features = ["boolean", "shortint", "integer", "x86_64-unix", "zk-pok", "experimental-force_fft_algo_dif4"] }
+tfhe = { version = "0.8.0-alpha.6", features = ["boolean", "shortint", "integer", "x86_64-unix", "zk-pok", "experimental-force_fft_algo_dif4"] }
 [target.'cfg(target_arch = "aarch64")'.dependencies]
-tfhe = { version = "0.8.0-alpha.4", features = ["boolean", "shortint", "integer", "aarch64-unix", "zk-pok", "experimental-force_fft_algo_dif4"] }
+tfhe = { version = "0.8.0-alpha.6", features = ["boolean", "shortint", "integer", "aarch64-unix", "zk-pok", "experimental-force_fft_algo_dif4"] }
 
 [dependencies]
 clap.workspace = true

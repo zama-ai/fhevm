@@ -37,14 +37,15 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
 
     {
         // too many uploads at once
-        let mut builder = tfhe::CompactCiphertextListBuilder::new(&keys.pks);
+        let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
         let the_list = builder
             .push(false)
             .push(1u8)
             .push(2u16)
             .push(3u32)
             .push(4u64)
-            .build();
+            .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+            .unwrap();
 
         let serialized = bincode::serialize(&the_list).unwrap();
 
@@ -79,14 +80,15 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
 
     {
         // garbage ciphertext
-        let mut builder = tfhe::CompactCiphertextListBuilder::new(&keys.pks);
+        let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
         let the_list = builder
             .push(false)
             .push(1u8)
             .push(2u16)
             .push(3u32)
             .push(4u64)
-            .build();
+            .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+            .unwrap();
 
         let serialized = bincode::serialize(&the_list).unwrap();
 
@@ -117,12 +119,14 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
 
     {
         // more ciphertexts than limit
-        let mut builder = tfhe::CompactCiphertextListBuilder::new(&keys.pks);
+        let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
         for _ in 0..300 {
             let _ = builder.push(false);
         }
 
-        let the_list = builder.build();
+        let the_list = builder
+            .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+            .unwrap();
         let serialized = bincode::serialize(&the_list).unwrap();
 
         let mut input_ciphertexts = Vec::new();
@@ -278,14 +282,15 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
 
     let initial_inputs_resp = {
         // not provided api key
-        let mut builder = tfhe::CompactCiphertextListBuilder::new(&keys.pks);
+        let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
         let the_list = builder
             .push(false)
             .push(1u8)
             .push(2u16)
             .push(3u32)
             .push(4u64)
-            .build();
+            .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+            .unwrap();
 
         let serialized = bincode::serialize(&the_list).unwrap();
 

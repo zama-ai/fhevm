@@ -58,7 +58,8 @@ pub async fn setup_test_app() -> Result<TestInstance, Box<dyn std::error::Error>
 
 const LOCAL_DB_URL: &str = "postgresql://postgres:postgres@127.0.0.1:5432/coprocessor";
 
-pub async fn setup_test_app_existing_localhost() -> Result<TestInstance, Box<dyn std::error::Error>> {
+pub async fn setup_test_app_existing_localhost() -> Result<TestInstance, Box<dyn std::error::Error>>
+{
     Ok(TestInstance {
         _container: None,
         app_close_channel: None,
@@ -195,15 +196,22 @@ pub struct DecryptionResult {
     pub output_type: i16,
 }
 
-pub async fn setup_test_user(
-    pool: &sqlx::PgPool,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let sks = tokio::fs::read("../fhevm-keys/sks").await.expect("can't read sks key");
-    let pks = tokio::fs::read("../fhevm-keys/pks").await.expect("can't read pks key");
-    let cks = tokio::fs::read("../fhevm-keys/cks").await.expect("can't read cks key");
+pub async fn setup_test_user(pool: &sqlx::PgPool) -> Result<(), Box<dyn std::error::Error>> {
+    let sks = tokio::fs::read("../fhevm-keys/sks")
+        .await
+        .expect("can't read sks key");
+    let pks = tokio::fs::read("../fhevm-keys/pks")
+        .await
+        .expect("can't read pks key");
+    let cks = tokio::fs::read("../fhevm-keys/cks")
+        .await
+        .expect("can't read cks key");
+    let public_params = tokio::fs::read("../fhevm-keys/pp")
+        .await
+        .expect("can't read public params");
     sqlx::query!(
         "
-            INSERT INTO tenants(tenant_api_key, tenant_id, chain_id, verifying_contract_address, pks_key, sks_key, cks_key)
+            INSERT INTO tenants(tenant_api_key, tenant_id, chain_id, verifying_contract_address, pks_key, sks_key, public_params, cks_key)
             VALUES (
                 'a1503fb6-d79b-4e9e-826d-44cf262f3e05',
                 1,
@@ -211,11 +219,13 @@ pub async fn setup_test_user(
                 '0x6819e3aDc437fAf9D533490eD3a7552493fCE3B1',
                 $1,
                 $2,
-                $3
+                $3,
+                $4
             )
         ",
         &pks,
         &sks,
+        &public_params,
         &cks,
     )
     .execute(pool)

@@ -136,7 +136,7 @@ where
     let mut res = Vec::with_capacity(tenants_to_query.len());
     let keys = query!(
         "
-            SELECT tenant_id, chain_id, verifying_contract_address, pks_key, sks_key
+            SELECT tenant_id, chain_id, verifying_contract_address, pks_key, sks_key, public_params
             FROM tenants
             WHERE tenant_id = ANY($1::INT[])
         ",
@@ -150,10 +150,17 @@ where
             .expect("We can't deserialize our own validated sks key");
         let pks: tfhe::CompactPublicKey = bincode::deserialize(&key.pks_key)
             .expect("We can't deserialize our own validated pks key");
+        let public_params = <tfhe::zk::CompactPkePublicParams as tfhe::zk::CanonicalDeserialize>::deserialize_with_mode(
+            &*key.public_params,
+            tfhe::zk::Compress::No,
+            tfhe::zk::Validate::No,
+        )
+        .expect("We can't deserialize our own validated public params");
         res.push(TfheTenantKeys {
             tenant_id: key.tenant_id,
             sks,
             pks,
+            public_params,
             chain_id: key.chain_id,
             verifying_contract_address: key.verifying_contract_address,
         });

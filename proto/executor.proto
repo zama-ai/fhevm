@@ -17,7 +17,7 @@ message SyncComputeRequest {
     // Ordered list of computations.
     repeated SyncComputation computations = 1;
 
-    // Multiple serialized `tfhe::CompactCiphertextList`s. A list can contain multiple ciphertexts.
+    // Multiple serialized `tfhe::ProvenCompactCiphertextList`s. A list can contain multiple ciphertexts.
     // Note: used for inputs by fhEVM-native.
     repeated bytes compact_ciphertext_lists = 2;
 
