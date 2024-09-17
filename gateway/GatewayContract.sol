@@ -7,6 +7,7 @@ import "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 import "../lib/KMSVerifierAddress.sol";
+import "../lib/ACLAddress.sol";
 import "./IKMSVerifier.sol";
 
 contract GatewayContract is UUPSUpgradeable, Ownable2StepUpgradeable {
@@ -19,6 +20,7 @@ contract GatewayContract is UUPSUpgradeable, Ownable2StepUpgradeable {
     uint256 private constant PATCH_VERSION = 0;
 
     IKMSVerifier private constant kmsVerifier = IKMSVerifier(kmsVerifierAdd);
+    address private constant aclAddress = aclAdd;
 
     uint256 private constant MAX_DELAY = 1 days;
 
@@ -176,7 +178,7 @@ contract GatewayContract is UUPSUpgradeable, Ownable2StepUpgradeable {
     ) external payable virtual onlyRelayer {
         GatewayContractStorage storage $ = _getGatewayContractStorage();
         require(
-            kmsVerifier.verifySignatures($.decryptionRequests[requestID].cts, decryptedCts, signatures),
+            kmsVerifier.verifySignatures(aclAddress, $.decryptionRequests[requestID].cts, decryptedCts, signatures),
             "KMS signature verification failed"
         );
         require(!$.isFulfilled[requestID], "Request is already fulfilled");
