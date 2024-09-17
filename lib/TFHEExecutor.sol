@@ -111,7 +111,7 @@ contract TFHEExecutor is UUPSUpgradeable, Ownable2StepUpgradeable {
 
     function unaryOp(Operators op, uint256 ct) internal virtual returns (uint256 result) {
         require(acl.isAllowed(ct, msg.sender), "Sender doesn't own ct on op");
-        result = uint256(keccak256(abi.encodePacked(op, ct)));
+        result = uint256(keccak256(abi.encodePacked(op, ct, acl, block.chainid)));
         uint8 typeCt = typeOf(ct);
         result = appendType(result, typeCt);
         acl.allowTransient(result, msg.sender);
@@ -131,7 +131,7 @@ contract TFHEExecutor is UUPSUpgradeable, Ownable2StepUpgradeable {
             uint8 typeLhs = typeOf(lhs);
             require(typeLhs == typeRhs, "Incompatible types for lhs and rhs");
         }
-        result = uint256(keccak256(abi.encodePacked(op, lhs, rhs, scalar)));
+        result = uint256(keccak256(abi.encodePacked(op, lhs, rhs, scalar, acl, block.chainid)));
         result = appendType(result, resultType);
         acl.allowTransient(result, msg.sender);
     }
@@ -150,7 +150,7 @@ contract TFHEExecutor is UUPSUpgradeable, Ownable2StepUpgradeable {
         uint8 typeRhs = typeOf(rhs);
         require(typeLhs == 0, "Unsupported type for lhs"); // lhs must be ebool
         require(typeMiddle == typeRhs, "Incompatible types for middle and rhs");
-        result = uint256(keccak256(abi.encodePacked(op, lhs, middle, rhs)));
+        result = uint256(keccak256(abi.encodePacked(op, lhs, middle, rhs, acl, block.chainid)));
         result = appendType(result, typeMiddle);
         acl.allowTransient(result, msg.sender);
     }
@@ -381,7 +381,7 @@ contract TFHEExecutor is UUPSUpgradeable, Ownable2StepUpgradeable {
         uint8 typeCt = typeOf(ct);
         require(bytes1(typeCt) != toType, "Cannot cast to same type");
         fhePayment.payForCast(msg.sender, typeCt);
-        result = uint256(keccak256(abi.encodePacked(Operators.cast, ct, toType)));
+        result = uint256(keccak256(abi.encodePacked(Operators.cast, ct, toType, acl, block.chainid)));
         result = appendType(result, uint8(toType));
         acl.allowTransient(result, msg.sender);
     }
@@ -391,7 +391,7 @@ contract TFHEExecutor is UUPSUpgradeable, Ownable2StepUpgradeable {
         uint8 toT = uint8(toType);
         require((1 << toT) & supportedTypes > 0, "Unsupported type");
         fhePayment.payForTrivialEncrypt(msg.sender, toT);
-        result = uint256(keccak256(abi.encodePacked(Operators.trivialEncrypt, pt, toType)));
+        result = uint256(keccak256(abi.encodePacked(Operators.trivialEncrypt, pt, toType, acl, block.chainid)));
         result = appendType(result, toT);
         acl.allowTransient(result, msg.sender);
     }
@@ -410,7 +410,10 @@ contract TFHEExecutor is UUPSUpgradeable, Ownable2StepUpgradeable {
         uint8 randT = uint8(randType);
         require((1 << randT) & supportedTypes > 0, "Unsupported erandom type");
         fhePayment.payForFheRand(msg.sender, randT);
-        result = uint256(keccak256(abi.encodePacked(Operators.fheRand, randType, $.counterRand)));
+        bytes16 seed = bytes16(
+            keccak256(abi.encodePacked($.counterRand, acl, block.chainid, blockhash(block.number - 1), block.timestamp))
+        );
+        result = uint256(keccak256(abi.encodePacked(Operators.fheRand, randType, seed)));
         result = appendType(result, randT);
         acl.allowTransient(result, msg.sender);
         $.counterRand++;
@@ -423,7 +426,10 @@ contract TFHEExecutor is UUPSUpgradeable, Ownable2StepUpgradeable {
         require((1 << randT) & supportedTypes > 0, "Unsupported erandom type");
         require(isPowerOfTwo(upperBound), "UpperBound must be a power of 2");
         fhePayment.payForFheRandBounded(msg.sender, randT);
-        result = uint256(keccak256(abi.encodePacked(Operators.fheRandBounded, upperBound, randType, $.counterRand)));
+        bytes16 seed = bytes16(
+            keccak256(abi.encodePacked($.counterRand, acl, block.chainid, blockhash(block.number - 1), block.timestamp))
+        );
+        result = uint256(keccak256(abi.encodePacked(Operators.fheRandBounded, upperBound, randType, seed)));
         result = appendType(result, randT);
         acl.allowTransient(result, msg.sender);
         $.counterRand++;
