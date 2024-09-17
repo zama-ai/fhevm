@@ -28,6 +28,7 @@ services:
     environment:
       - FHEVM_COPROCESSOR_API_KEY=a1503fb6-d79b-4e9e-826d-44cf262f3e05
       - FHEVM_COPROCESSOR_URL=coproc:50051
+      - COPROCESSOR_CONTRACT_ADDRESS=0x6819e3aDc437fAf9D533490eD3a7552493fCE3B1
     ports:
       - '8745:8545'
 volumes:
