@@ -186,13 +186,25 @@ contract GatewayContract is UUPSUpgradeable, Ownable2StepUpgradeable {
         bool passSignatures = decryptionReq.passSignaturesToCaller;
         callbackCalldata = abi.encodePacked(callbackCalldata, decryptedCts); // decryptedCts MUST be correctly abi-encoded by the relayer, according to the requested types of `ctsHandles`
         if (passSignatures) {
-            callbackCalldata = abi.encodePacked(callbackCalldata, abi.encode(signatures));
+            bytes memory packedSignatures = abi.encode(signatures);
+            bytes memory packedSignaturesNoOffset = removeOffset(packedSignatures); // remove the offset (the first 32 bytes) before concatenating with the first part of calldata
+            callbackCalldata = abi.encodePacked(callbackCalldata, packedSignaturesNoOffset);
         }
+
         (bool success, bytes memory result) = (decryptionReq.contractCaller).call{value: decryptionReq.msgValue}(
             callbackCalldata
         );
         emit ResultCallback(requestID, success, result);
         $.isFulfilled[requestID] = true;
+    }
+
+    function removeOffset(bytes memory input) public pure virtual returns (bytes memory) {
+        uint256 newLength = input.length - 32;
+        bytes memory result = new bytes(newLength);
+        for (uint256 i = 0; i < newLength; i++) {
+            result[i] = input[i + 32];
+        }
+        return result;
     }
 
     /// @notice Getter for the name and version of the contract

@@ -4,12 +4,15 @@ import fs from 'fs';
 import { ethers } from 'hardhat';
 
 import { asyncDecrypt, awaitAllDecryptionResults } from '../asyncDecrypt';
+import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
+import { bigIntToBytes } from '../utils';
 
 describe('KMSVerifier', function () {
   before(async function () {
     await initSigners(2);
     this.signers = await getSigners();
+    this.instances = await createInstances(this.signers);
     this.kmsFactory = await ethers.getContractFactory('KMSVerifier');
     await asyncDecrypt();
   });
@@ -75,6 +78,31 @@ describe('KMSVerifier', function () {
       await awaitAllDecryptionResults();
       const y4 = await contract.yUint8();
       expect(y4).to.equal(42); // even with more than 2 signatures decryption should still succeed
+
+      const contract2 = await contractFactory.connect(this.signers.alice).deploy({
+        value: ethers.parseEther('0.001'),
+      });
+      const inputAlice = this.instances.alice.createEncryptedInput(
+        await contract2.getAddress(),
+        this.signers.alice.address,
+      );
+      inputAlice.addBytes256(bigIntToBytes(18446744073709550032n));
+      const encryptedAmount = inputAlice.encrypt();
+      const tx6bis = await await contract2.requestMixedBytes256Trustless(
+        encryptedAmount.handles[0],
+        encryptedAmount.inputProof,
+        {
+          gasLimit: 5_000_000,
+        },
+      );
+      await tx6bis.wait();
+      await awaitAllDecryptionResults();
+      const ybis = await contract2.yBytes256();
+      expect(ybis).to.equal(ethers.toBeHex(18446744073709550032n, 256));
+      const yb = await contract2.yBool();
+      expect(yb).to.equal(true);
+      const yAdd = await contract2.yAddress();
+      expect(yAdd).to.equal('0x8ba1f109551bD432803012645Ac136ddd64DBA72'); // testing trustless mixed with ebytes256, in case of several signatures
 
       process.env.NUM_KMS_SIGNERS = '2';
       process.env.PRIVATE_KEY_KMS_SIGNER_1 = process.env.PRIVATE_KEY_KMS_SIGNER_0;

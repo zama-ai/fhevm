@@ -100,13 +100,36 @@ library Gateway {
     /// @notice this could be used only when signatures are made available to the callback, i.e when `passSignaturesToCaller` is set to true during request
     function verifySignatures(uint256[] memory handlesList, bytes[] memory signatures) internal returns (bool) {
         uint256 start = 4 + 32; // start position after skipping the selector (4 bytes) and the first argument (index, 32 bytes)
-        uint256 numArgs = handlesList.length; // Number of arguments before signatures
-        uint256 length = numArgs * 32; // TODO: fix the way we compute length in case the type of the handle is an ebytes256 (loop over all handles and add correct length corresponding to each type)
+        uint256 length = getSignedDataLength(handlesList);
         bytes memory decryptedResult = new bytes(length);
         assembly {
             calldatacopy(add(decryptedResult, 0x20), start, length) // Copy the relevant part of calldata to decryptedResult memory
         }
         FHEVMConfig.FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
         return IKMSVerifier($.KMSVerifierAddress).verifySignatures(handlesList, decryptedResult, signatures);
+    }
+
+    function getSignedDataLength(uint256[] memory handlesList) private pure returns (uint256) {
+        uint256 handlesListlen = handlesList.length;
+        uint256 signedDataLength;
+        for (uint256 i = 0; i < handlesListlen; i++) {
+            uint8 typeCt = uint8(handlesList[i] >> 8);
+            if (typeCt < 9) {
+                signedDataLength += 32;
+            } else if (typeCt == 9) {
+                //ebytes64
+                signedDataLength += 128;
+            } else if (typeCt == 10) {
+                //ebytes128
+                signedDataLength += 192;
+            } else if (typeCt == 11) {
+                //ebytes256
+                signedDataLength += 320;
+            } else {
+                revert("Unsupported handle type");
+            }
+        }
+        signedDataLength += 32; // for the signatures offset
+        return signedDataLength;
     }
 }

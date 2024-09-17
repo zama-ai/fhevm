@@ -345,4 +345,66 @@ contract TestAsyncDecrypt is GatewayCaller {
         yAddress = decAddress;
         yBytes256 = bytesRes;
     }
+
+    function requestEbytes256NonTrivialTrustless(einput inputHandle, bytes calldata inputProof) public {
+        ebytes256 inputNonTrivial = TFHE.asEbytes256(inputHandle, inputProof);
+        uint256[] memory cts = new uint256[](1);
+        cts[0] = Gateway.toUint256(inputNonTrivial);
+        uint256 requestID = Gateway.requestDecryption(
+            cts,
+            this.callbackBytes256Trustless.selector,
+            0,
+            block.timestamp + 100,
+            true
+        );
+        latestRequestID = requestID;
+        saveRequestedHandles(requestID, cts);
+    }
+
+    function callbackBytes256Trustless(
+        uint256 requestID,
+        bytes calldata decryptedInput,
+        bytes[] memory signatures
+    ) public onlyGateway returns (bytes memory) {
+        require(latestRequestID == requestID, "wrong requestID passed by Gateway");
+        uint256[] memory requestedHandles = loadRequestedHandles(latestRequestID);
+        bool isKMSVerified = Gateway.verifySignatures(requestedHandles, signatures);
+        require(isKMSVerified, "KMS did not verify this decryption result");
+        yBytes256 = decryptedInput;
+        return decryptedInput;
+    }
+
+    function requestMixedBytes256Trustless(einput inputHandle, bytes calldata inputProof) public {
+        ebytes256 xBytes256 = TFHE.asEbytes256(inputHandle, inputProof);
+        uint256[] memory cts = new uint256[](3);
+        cts[0] = Gateway.toUint256(xBool);
+        cts[1] = Gateway.toUint256(xBytes256);
+        cts[2] = Gateway.toUint256(xAddress);
+        Gateway.requestDecryption(cts, this.callbackMixedBytes256Trustless.selector, 0, block.timestamp + 100, true);
+        uint256 requestID = Gateway.requestDecryption(
+            cts,
+            this.callbackMixedBytes256Trustless.selector,
+            0,
+            block.timestamp + 100,
+            true
+        );
+        latestRequestID = requestID;
+        saveRequestedHandles(requestID, cts);
+    }
+
+    function callbackMixedBytes256Trustless(
+        uint256 requestID,
+        bool decBool,
+        bytes memory bytesRes,
+        address decAddress,
+        bytes[] memory signatures
+    ) public onlyGateway {
+        require(latestRequestID == requestID, "wrong requestID passed by Gateway");
+        uint256[] memory requestedHandles = loadRequestedHandles(latestRequestID);
+        bool isKMSVerified = Gateway.verifySignatures(requestedHandles, signatures);
+        require(isKMSVerified, "KMS did not verify this decryption result");
+        yBool = decBool;
+        yAddress = decAddress;
+        yBytes256 = bytesRes;
+    }
 }
