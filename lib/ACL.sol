@@ -39,7 +39,6 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
     }
 
     event NewDelegation(address indexed sender, address indexed delegatee, address indexed contractAddress);
-    event RevokedDelegation(address indexed sender, address indexed delegatee, address indexed contractAddress);
     event AllowedForDecryption(uint256[] handlesList);
 
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
@@ -123,13 +122,6 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
         require(!$.delegates[msg.sender][delegatee][contractAddress], "already delegated");
         $.delegates[msg.sender][delegatee][contractAddress] = true;
         emit NewDelegation(msg.sender, delegatee, contractAddress);
-    }
-
-    function removeDelegationForContract(address delegatee, address contractAddress) external virtual {
-        ACLStorage storage $ = _getACLStorage();
-        require($.delegates[msg.sender][delegatee][contractAddress], "not delegated yet");
-        $.delegates[msg.sender][delegatee][contractAddress] = false;
-        emit RevokedDelegation(msg.sender, delegatee, contractAddress);
     }
 
     function allowedOnBehalf(
