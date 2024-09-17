@@ -10,6 +10,10 @@ const coprocAdd = parsedEnvCoprocessor.TFHE_EXECUTOR_CONTRACT_ADDRESS.replace(/^
   .replace(/^0+/, '')
   .toLowerCase();
 
+const parsedEnvACL = dotenv.parse(fs.readFileSync('lib/.env.acl'));
+const aclAddress = parsedEnvACL.ACL_CONTRACT_ADDRESS;
+let chainId: number;
+
 let firstBlockListening = 0;
 let lastBlockSnapshot = 0;
 let lastCounterRand = 0;
@@ -181,7 +185,14 @@ function getRandomBigInt(numBits: number): bigint {
   return randomBigInt;
 }
 
-async function insertHandle(obj2: EvmState, validIdxes: [number]) {
+async function insertHandle(
+  obj2: EvmState,
+  validIdxes: [number],
+  blockStatus: {
+    blockhash: string;
+    timestamp: number;
+  },
+) {
   const obj = obj2.value;
   if (isCoprocAdd(obj!.stack.at(-2))) {
     const argsOffset = Number(`0x${obj!.stack.at(-4)}`);
@@ -204,8 +215,8 @@ async function insertHandle(obj2: EvmState, validIdxes: [number]) {
         clearText = decodedData[0];
         handle = ethers.keccak256(
           ethers.solidityPacked(
-            ['uint8', 'uint256', 'bytes1'],
-            [Operators.trivialEncrypt, decodedData[0], decodedData[1]],
+            ['uint8', 'uint256', 'bytes1', 'address', 'uint256'],
+            [Operators.trivialEncrypt, decodedData[0], decodedData[1], aclAddress, chainId],
           ),
         );
         handle = appendType(handle, resultType);
@@ -215,8 +226,8 @@ async function insertHandle(obj2: EvmState, validIdxes: [number]) {
       case 'fheAdd(uint256,uint256,bytes1)':
         handle = ethers.keccak256(
           ethers.solidityPacked(
-            ['uint8', 'uint256', 'uint256', 'bytes1'],
-            [Operators.fheAdd, decodedData[0], decodedData[1], decodedData[2]],
+            ['uint8', 'uint256', 'uint256', 'bytes1', 'address', 'uint256'],
+            [Operators.fheAdd, decodedData[0], decodedData[1], decodedData[2], aclAddress, chainId],
           ),
         );
         lhsType = parseInt(decodedData[0].toString(16).slice(-4, -2), 16);
@@ -237,8 +248,8 @@ async function insertHandle(obj2: EvmState, validIdxes: [number]) {
       case 'fheSub(uint256,uint256,bytes1)':
         handle = ethers.keccak256(
           ethers.solidityPacked(
-            ['uint8', 'uint256', 'uint256', 'bytes1'],
-            [Operators.fheSub, decodedData[0], decodedData[1], decodedData[2]],
+            ['uint8', 'uint256', 'uint256', 'bytes1', 'address', 'uint256'],
+            [Operators.fheSub, decodedData[0], decodedData[1], decodedData[2], aclAddress, chainId],
           ),
         );
         lhsType = parseInt(decodedData[0].toString(16).slice(-4, -2), 16);
@@ -261,8 +272,8 @@ async function insertHandle(obj2: EvmState, validIdxes: [number]) {
       case 'fheMul(uint256,uint256,bytes1)':
         handle = ethers.keccak256(
           ethers.solidityPacked(
-            ['uint8', 'uint256', 'uint256', 'bytes1'],
-            [Operators.fheMul, decodedData[0], decodedData[1], decodedData[2]],
+            ['uint8', 'uint256', 'uint256', 'bytes1', 'address', 'uint256'],
+            [Operators.fheMul, decodedData[0], decodedData[1], decodedData[2], aclAddress, chainId],
           ),
         );
         lhsType = parseInt(decodedData[0].toString(16).slice(-4, -2), 16);
@@ -283,8 +294,8 @@ async function insertHandle(obj2: EvmState, validIdxes: [number]) {
       case 'fheDiv(uint256,uint256,bytes1)':
         handle = ethers.keccak256(
           ethers.solidityPacked(
-            ['uint8', 'uint256', 'uint256', 'bytes1'],
-            [Operators.fheDiv, decodedData[0], decodedData[1], decodedData[2]],
+            ['uint8', 'uint256', 'uint256', 'bytes1', 'address', 'uint256'],
+            [Operators.fheDiv, decodedData[0], decodedData[1], decodedData[2], aclAddress, chainId],
           ),
         );
         lhsType = parseInt(decodedData[0].toString(16).slice(-4, -2), 16);
@@ -302,8 +313,8 @@ async function insertHandle(obj2: EvmState, validIdxes: [number]) {
       case 'fheRem(uint256,uint256,bytes1)':
         handle = ethers.keccak256(
           ethers.solidityPacked(
-            ['uint8', 'uint256', 'uint256', 'bytes1'],
-            [Operators.fheRem, decodedData[0], decodedData[1], decodedData[2]],
+            ['uint8', 'uint256', 'uint256', 'bytes1', 'address', 'uint256'],
+            [Operators.fheRem, decodedData[0], decodedData[1], decodedData[2], aclAddress, chainId],
           ),
         );
         lhsType = parseInt(decodedData[0].toString(16).slice(-4, -2), 16);
@@ -321,8 +332,8 @@ async function insertHandle(obj2: EvmState, validIdxes: [number]) {
       case 'fheBitAnd(uint256,uint256,bytes1)':
         handle = ethers.keccak256(
           ethers.solidityPacked(
-            ['uint8', 'uint256', 'uint256', 'bytes1'],
-            [Operators.fheBitAnd, decodedData[0], decodedData[1], decodedData[2]],
+            ['uint8', 'uint256', 'uint256', 'bytes1', 'address', 'uint256'],
+            [Operators.fheBitAnd, decodedData[0], decodedData[1], decodedData[2], aclAddress, chainId],
           ),
         );
         lhsType = parseInt(decodedData[0].toString(16).slice(-4, -2), 16);
@@ -343,8 +354,8 @@ async function insertHandle(obj2: EvmState, validIdxes: [number]) {
       case 'fheBitOr(uint256,uint256,bytes1)':
         handle = ethers.keccak256(
           ethers.solidityPacked(
-            ['uint8', 'uint256', 'uint256', 'bytes1'],
-            [Operators.fheBitOr, decodedData[0], decodedData[1], decodedData[2]],
+            ['uint8', 'uint256', 'uint256', 'bytes1', 'address', 'uint256'],
+            [Operators.fheBitOr, decodedData[0], decodedData[1], decodedData[2], aclAddress, chainId],
           ),
         );
         lhsType = parseInt(decodedData[0].toString(16).slice(-4, -2), 16);
@@ -365,8 +376,8 @@ async function insertHandle(obj2: EvmState, validIdxes: [number]) {
       case 'fheBitXor(uint256,uint256,bytes1)':
         handle = ethers.keccak256(
           ethers.solidityPacked(
-            ['uint8', 'uint256', 'uint256', 'bytes1'],
-            [Operators.fheBitXor, decodedData[0], decodedData[1], decodedData[2]],
+            ['uint8', 'uint256', 'uint256', 'bytes1', 'address', 'uint256'],
+            [Operators.fheBitXor, decodedData[0], decodedData[1], decodedData[2], aclAddress, chainId],
           ),
         );
         lhsType = parseInt(decodedData[0].toString(16).slice(-4, -2), 16);
@@ -387,8 +398,8 @@ async function insertHandle(obj2: EvmState, validIdxes: [number]) {
       case 'fheShl(uint256,uint256,bytes1)':
         handle = ethers.keccak256(
           ethers.solidityPacked(
-            ['uint8', 'uint256', 'uint256', 'bytes1'],
-            [Operators.fheShl, decodedData[0], decodedData[1], decodedData[2]],
+            ['uint8', 'uint256', 'uint256', 'bytes1', 'address', 'uint256'],
+            [Operators.fheShl, decodedData[0], decodedData[1], decodedData[2], aclAddress, chainId],
           ),
         );
         lhsType = parseInt(decodedData[0].toString(16).slice(-4, -2), 16);
@@ -409,8 +420,8 @@ async function insertHandle(obj2: EvmState, validIdxes: [number]) {
       case 'fheShr(uint256,uint256,bytes1)':
         handle = ethers.keccak256(
           ethers.solidityPacked(
-            ['uint8', 'uint256', 'uint256', 'bytes1'],
-            [Operators.fheShr, decodedData[0], decodedData[1], decodedData[2]],
+            ['uint8', 'uint256', 'uint256', 'bytes1', 'address', 'uint256'],
+            [Operators.fheShr, decodedData[0], decodedData[1], decodedData[2], aclAddress, chainId],
           ),
         );
         lhsType = parseInt(decodedData[0].toString(16).slice(-4, -2), 16);
@@ -431,8 +442,8 @@ async function insertHandle(obj2: EvmState, validIdxes: [number]) {
       case 'fheRotl(uint256,uint256,bytes1)':
         handle = ethers.keccak256(
           ethers.solidityPacked(
-            ['uint8', 'uint256', 'uint256', 'bytes1'],
-            [Operators.fheRotl, decodedData[0], decodedData[1], decodedData[2]],
+            ['uint8', 'uint256', 'uint256', 'bytes1', 'address', 'uint256'],
+            [Operators.fheRotl, decodedData[0], decodedData[1], decodedData[2], aclAddress, chainId],
           ),
         );
         lhsType = parseInt(decodedData[0].toString(16).slice(-4, -2), 16);
@@ -456,8 +467,8 @@ async function insertHandle(obj2: EvmState, validIdxes: [number]) {
       case 'fheRotr(uint256,uint256,bytes1)':
         handle = ethers.keccak256(
           ethers.solidityPacked(
-            ['uint8', 'uint256', 'uint256', 'bytes1'],
-            [Operators.fheRotr, decodedData[0], decodedData[1], decodedData[2]],
+            ['uint8', 'uint256', 'uint256', 'bytes1', 'address', 'uint256'],
+            [Operators.fheRotr, decodedData[0], decodedData[1], decodedData[2], aclAddress, chainId],
           ),
         );
         lhsType = parseInt(decodedData[0].toString(16).slice(-4, -2), 16);
@@ -481,8 +492,8 @@ async function insertHandle(obj2: EvmState, validIdxes: [number]) {
       case 'fheEq(uint256,uint256,bytes1)':
         handle = ethers.keccak256(
           ethers.solidityPacked(
-            ['uint8', 'uint256', 'uint256', 'bytes1'],
-            [Operators.fheEq, decodedData[0], decodedData[1], decodedData[2]],
+            ['uint8', 'uint256', 'uint256', 'bytes1', 'address', 'uint256'],
+            [Operators.fheEq, decodedData[0], decodedData[1], decodedData[2], aclAddress, chainId],
           ),
         );
         handle = appendType(handle, 0);
@@ -499,8 +510,8 @@ async function insertHandle(obj2: EvmState, validIdxes: [number]) {
       case 'fheNe(uint256,uint256,bytes1)':
         handle = ethers.keccak256(
           ethers.solidityPacked(
-            ['uint8', 'uint256', 'uint256', 'bytes1'],
-            [Operators.fheNe, decodedData[0], decodedData[1], decodedData[2]],
+            ['uint8', 'uint256', 'uint256', 'bytes1', 'address', 'uint256'],
+            [Operators.fheNe, decodedData[0], decodedData[1], decodedData[2], aclAddress, chainId],
           ),
         );
         handle = appendType(handle, 0);
@@ -517,8 +528,8 @@ async function insertHandle(obj2: EvmState, validIdxes: [number]) {
       case 'fheGe(uint256,uint256,bytes1)':
         handle = ethers.keccak256(
           ethers.solidityPacked(
-            ['uint8', 'uint256', 'uint256', 'bytes1'],
-            [Operators.fheGe, decodedData[0], decodedData[1], decodedData[2]],
+            ['uint8', 'uint256', 'uint256', 'bytes1', 'address', 'uint256'],
+            [Operators.fheGe, decodedData[0], decodedData[1], decodedData[2], aclAddress, chainId],
           ),
         );
         handle = appendType(handle, 0);
@@ -535,8 +546,8 @@ async function insertHandle(obj2: EvmState, validIdxes: [number]) {
       case 'fheGt(uint256,uint256,bytes1)':
         handle = ethers.keccak256(
           ethers.solidityPacked(
-            ['uint8', 'uint256', 'uint256', 'bytes1'],
-            [Operators.fheGt, decodedData[0], decodedData[1], decodedData[2]],
+            ['uint8', 'uint256', 'uint256', 'bytes1', 'address', 'uint256'],
+            [Operators.fheGt, decodedData[0], decodedData[1], decodedData[2], aclAddress, chainId],
           ),
         );
         handle = appendType(handle, 0);
@@ -553,8 +564,8 @@ async function insertHandle(obj2: EvmState, validIdxes: [number]) {
       case 'fheLe(uint256,uint256,bytes1)':
         handle = ethers.keccak256(
           ethers.solidityPacked(
-            ['uint8', 'uint256', 'uint256', 'bytes1'],
-            [Operators.fheLe, decodedData[0], decodedData[1], decodedData[2]],
+            ['uint8', 'uint256', 'uint256', 'bytes1', 'address', 'uint256'],
+            [Operators.fheLe, decodedData[0], decodedData[1], decodedData[2], aclAddress, chainId],
           ),
         );
         handle = appendType(handle, 0);
@@ -571,8 +582,8 @@ async function insertHandle(obj2: EvmState, validIdxes: [number]) {
       case 'fheLt(uint256,uint256,bytes1)':
         handle = ethers.keccak256(
           ethers.solidityPacked(
-            ['uint8', 'uint256', 'uint256', 'bytes1'],
-            [Operators.fheLt, decodedData[0], decodedData[1], decodedData[2]],
+            ['uint8', 'uint256', 'uint256', 'bytes1', 'address', 'uint256'],
+            [Operators.fheLt, decodedData[0], decodedData[1], decodedData[2], aclAddress, chainId],
           ),
         );
         handle = appendType(handle, 0);
@@ -591,8 +602,8 @@ async function insertHandle(obj2: EvmState, validIdxes: [number]) {
         resultType = lhsType;
         handle = ethers.keccak256(
           ethers.solidityPacked(
-            ['uint8', 'uint256', 'uint256', 'bytes1'],
-            [Operators.fheMax, decodedData[0], decodedData[1], decodedData[2]],
+            ['uint8', 'uint256', 'uint256', 'bytes1', 'address', 'uint256'],
+            [Operators.fheMax, decodedData[0], decodedData[1], decodedData[2], aclAddress, chainId],
           ),
         );
         handle = appendType(handle, resultType);
@@ -611,8 +622,8 @@ async function insertHandle(obj2: EvmState, validIdxes: [number]) {
         resultType = lhsType;
         handle = ethers.keccak256(
           ethers.solidityPacked(
-            ['uint8', 'uint256', 'uint256', 'bytes1'],
-            [Operators.fheMin, decodedData[0], decodedData[1], decodedData[2]],
+            ['uint8', 'uint256', 'uint256', 'bytes1', 'address', 'uint256'],
+            [Operators.fheMin, decodedData[0], decodedData[1], decodedData[2], aclAddress, chainId],
           ),
         );
         handle = appendType(handle, resultType);
@@ -629,7 +640,10 @@ async function insertHandle(obj2: EvmState, validIdxes: [number]) {
       case 'cast(uint256,bytes1)':
         resultType = parseInt(decodedData[1]);
         handle = ethers.keccak256(
-          ethers.solidityPacked(['uint8', 'uint256', 'bytes1'], [Operators.cast, decodedData[0], decodedData[1]]),
+          ethers.solidityPacked(
+            ['uint8', 'uint256', 'bytes1', 'address', 'uint256'],
+            [Operators.cast, decodedData[0], decodedData[1], aclAddress, chainId],
+          ),
         );
         clearText = BigInt(await getClearText(decodedData[0])) % 2n ** NumBits[resultType];
         handle = appendType(handle, resultType);
@@ -638,7 +652,12 @@ async function insertHandle(obj2: EvmState, validIdxes: [number]) {
 
       case 'fheNot(uint256)':
         resultType = parseInt(decodedData[0].toString(16).slice(-4, -2), 16);
-        handle = ethers.keccak256(ethers.solidityPacked(['uint8', 'uint256'], [Operators.fheNot, decodedData[0]]));
+        handle = ethers.keccak256(
+          ethers.solidityPacked(
+            ['uint8', 'uint256', 'address', 'uint256'],
+            [Operators.fheNot, decodedData[0], aclAddress, chainId],
+          ),
+        );
         handle = appendType(handle, resultType);
         clearText = BigInt(await getClearText(decodedData[0]));
         clearText = bitwiseNotUintBits(clearText, Number(NumBits[resultType]));
@@ -647,7 +666,12 @@ async function insertHandle(obj2: EvmState, validIdxes: [number]) {
 
       case 'fheNeg(uint256)':
         resultType = parseInt(decodedData[0].toString(16).slice(-4, -2), 16);
-        handle = ethers.keccak256(ethers.solidityPacked(['uint8', 'uint256'], [Operators.fheNeg, decodedData[0]]));
+        handle = ethers.keccak256(
+          ethers.solidityPacked(
+            ['uint8', 'uint256', 'address', 'uint256'],
+            [Operators.fheNeg, decodedData[0], aclAddress, chainId],
+          ),
+        );
         handle = appendType(handle, resultType);
         clearText = BigInt(await getClearText(decodedData[0]));
         clearText = bitwiseNotUintBits(clearText, Number(NumBits[resultType]));
@@ -676,8 +700,8 @@ async function insertHandle(obj2: EvmState, validIdxes: [number]) {
         resultType = parseInt(decodedData[1].toString(16).slice(-4, -2), 16);
         handle = ethers.keccak256(
           ethers.solidityPacked(
-            ['uint8', 'uint256', 'uint256', 'uint256'],
-            [Operators.fheIfThenElse, decodedData[0], decodedData[1], decodedData[2]],
+            ['uint8', 'uint256', 'uint256', 'uint256', 'address', 'uint256'],
+            [Operators.fheIfThenElse, decodedData[0], decodedData[1], decodedData[2], aclAddress, chainId],
           ),
         );
         handle = appendType(handle, resultType);
@@ -695,8 +719,15 @@ async function insertHandle(obj2: EvmState, validIdxes: [number]) {
       case 'fheRand(bytes1)':
         if (validIdxes.includes(obj2.index)) {
           resultType = parseInt(decodedData[0], 16);
+          const preseed = ethers.keccak256(
+            ethers.solidityPacked(
+              ['uint256', 'address', 'uint256', 'uint256', 'uint256'],
+              [counterRand, aclAddress, chainId, blockStatus.blockhash, blockStatus.timestamp],
+            ),
+          );
+          const seed = preseed.slice(0, 34);
           handle = ethers.keccak256(
-            ethers.solidityPacked(['uint8', 'bytes1', 'uint256'], [Operators.fheRand, decodedData[0], counterRand]),
+            ethers.solidityPacked(['uint8', 'bytes1', 'bytes16'], [Operators.fheRand, decodedData[0], seed]),
           );
           handle = appendType(handle, resultType);
           clearText = getRandomBigInt(Number(NumBits[resultType]));
@@ -708,10 +739,17 @@ async function insertHandle(obj2: EvmState, validIdxes: [number]) {
       case 'fheRandBounded(uint256,bytes1)':
         if (validIdxes.includes(obj2.index)) {
           resultType = parseInt(decodedData[1], 16);
+          const preseed = ethers.keccak256(
+            ethers.solidityPacked(
+              ['uint256', 'address', 'uint256', 'uint256', 'uint256'],
+              [counterRand, aclAddress, chainId, blockStatus.blockhash, blockStatus.timestamp],
+            ),
+          );
+          const seed = preseed.slice(0, 34);
           handle = ethers.keccak256(
             ethers.solidityPacked(
-              ['uint8', 'uint256', 'bytes1', 'uint256'],
-              [Operators.fheRandBounded, decodedData[0], decodedData[1], counterRand],
+              ['uint8', 'uint256', 'bytes1', 'bytes16'],
+              [Operators.fheRandBounded, decodedData[0], decodedData[1], seed],
             ),
           );
           handle = appendType(handle, resultType);
@@ -744,15 +782,16 @@ function isCoprocAdd(longString: string): boolean {
   return normalizedLongString === coprocAdd;
 }
 
-async function processLogs(trace, validSubcallsIndexes) {
+async function processLogs(trace, validSubcallsIndexes, blockStatus) {
   for (const obj of trace.structLogs
     .map((value, index) => ({ value, index }))
     .filter((obj) => obj.value.op === 'CALL')) {
-    await insertHandle(obj, validSubcallsIndexes);
+    await insertHandle(obj, validSubcallsIndexes, blockStatus);
   }
 }
 
 export const awaitCoprocessor = async (): Promise<void> => {
+  chainId = (await ethers.provider.getNetwork()).chainId;
   const pastTxHashes = await getAllPastTransactionHashes();
   for (const txHash of pastTxHashes) {
     const trace = await ethers.provider.send('debug_traceTransaction', [txHash[0]]);
@@ -760,7 +799,10 @@ export const awaitCoprocessor = async (): Promise<void> => {
     if (!trace.failed) {
       const callTree = await buildCallTree(trace, txHash[1]);
       const validSubcallsIndexes = getValidSubcallsIds(callTree)[1];
-      await processLogs(trace, validSubcallsIndexes);
+      await processLogs(trace, validSubcallsIndexes, {
+        timestamp: txHash[1].timestamp,
+        blockhash: txHash[1].blockhash,
+      });
     }
   }
 };
@@ -784,7 +826,10 @@ async function getAllPastTransactionHashes() {
     const block = await provider.getBlock(i, true);
     block!.transactions.forEach((tx, index) => {
       const rcpt = block?.prefetchedTransactions[index];
-      txHashes.push([tx, { to: rcpt.to, status: rcpt.status }]);
+      txHashes.push([
+        tx,
+        { to: rcpt.to, status: rcpt.status, blockhash: block?.parentHash, timestamp: block?.timestamp },
+      ]);
     });
   }
   firstBlockListening = latestBlockNumber + 1;
