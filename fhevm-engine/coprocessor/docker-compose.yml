@@ -11,7 +11,7 @@ services:
     volumes: 
       - db:/var/lib/postgresql/data
   coproc:
-    image: coproc:v1
+    image: ghcr.io/zama-ai/fhevm-coprocessor:v2
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/coprocessor
     ports:
@@ -22,14 +22,14 @@ services:
       - --run-bg-worker
       - --run-server
       - --server-addr=0.0.0.0:50051
-      - --coprocessor-key=/usr/share/coprocessor.key
+      - --coprocessor-private-key=/usr/share/coprocessor.key
   geth:
     image: custom-devnet:v1
     environment:
       - FHEVM_COPROCESSOR_API_KEY=a1503fb6-d79b-4e9e-826d-44cf262f3e05
       - FHEVM_COPROCESSOR_URL=coproc:50051
     ports:
-      - '8545:8545'
+      - '8745:8545'
 volumes:
   db:
     driver: local
