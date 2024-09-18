@@ -11,8 +11,8 @@ cleanup:
 init_db:
 	docker compose up -d
 	sleep 3
-	sqlx db create
-	sqlx migrate run
+	DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/coprocessor sqlx db create
+	DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/coprocessor sqlx migrate run
 	DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/coprocessor cargo test setup_test_user -- --nocapture --ignored
 
 .PHONY: recreate_db
