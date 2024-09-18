@@ -297,8 +297,8 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
                 // idx cast to u8 must succeed because we don't allow
                 // more handles than u8 size
                 handle[29] = ct_idx as u8;
-                handle[30] = serialized_type as u8;
-                handle[31] = ciphertext_version as u8;
+                handle[30] = ciphertext_version as u8;
+                handle[31] = serialized_type as u8;
 
                 let _ = sqlx::query!(
                     "
