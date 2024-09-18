@@ -75,7 +75,9 @@ async fn async_main(
     }
 
     while let Some(res) = set.join_next().await {
-        let _ = res?;
+        if let Err(e) = res {
+            panic!("Error background initializing worker: {:?}", e);
+        }
     }
 
     Ok(())
