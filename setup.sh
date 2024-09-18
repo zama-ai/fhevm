@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 CHAINID="ethermint_9000-1"
 MONIKER="localtestnet"

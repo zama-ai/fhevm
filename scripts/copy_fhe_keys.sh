@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # This bash script creates global fhe keys
 # and copy them to the right folder in volumes directory.
