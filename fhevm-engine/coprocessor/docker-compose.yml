@@ -11,7 +11,7 @@ services:
     volumes: 
       - db:/var/lib/postgresql/data
   coproc:
-    image: ghcr.io/zama-ai/fhevm-coprocessor:v2
+    image: ghcr.io/zama-ai/fhevm-coprocessor:v3
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/coprocessor
     ports:
