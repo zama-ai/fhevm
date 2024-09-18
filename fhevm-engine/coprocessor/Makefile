@@ -13,16 +13,12 @@ init_db:
 	sleep 3
 	sqlx db create
 	sqlx migrate run
+	DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/coprocessor cargo test setup_test_user -- --nocapture --ignored
 
 .PHONY: recreate_db
 recreate_db:
 	$(MAKE) cleanup
 	$(MAKE) init_db
-
-.PHONY: docker_compose_setup
-docker_compose_setup:
-	$(MAKE) init_db
-	DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/coprocessor cargo test setup_test_user -- --nocapture --ignored
 
 .PHONY: clean_run
 clean_run:

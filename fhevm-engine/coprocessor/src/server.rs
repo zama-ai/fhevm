@@ -42,6 +42,18 @@ pub struct CoprocessorService {
 pub async fn run_server(
     args: crate::cli::Args,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    loop {
+        if let Err(e) = run_server_iteration(args.clone()).await {
+            println!("Error running server, retrying shortly: {:?}", e);
+        }
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(5000)).await;
+    }
+}
+
+pub async fn run_server_iteration(
+    args: crate::cli::Args,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let addr = args
         .server_addr
         .parse()
