@@ -14,11 +14,13 @@ import "@openzeppelin/contracts/utils/Strings.sol";
 /// @dev The contract uses OpenZeppelin's EIP712Upgradeable for cryptographic operations
 contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradeable {
     struct DecryptionResult {
+        address aclAddress;
         uint256[] handlesList;
         bytes decryptedResult;
     }
 
-    string private constant DECRYPTIONRESULT_TYPE = "DecryptionResult(uint256[] handlesList,bytes decryptedResult)";
+    string private constant DECRYPTIONRESULT_TYPE =
+        "DecryptionResult(address aclAddress,uint256[] handlesList,bytes decryptedResult)";
     bytes32 private constant DECRYPTIONRESULT_TYPE_HASH = keccak256(bytes(DECRYPTIONRESULT_TYPE));
 
     /// @notice Name of the contract
@@ -111,6 +113,7 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
                 keccak256(
                     abi.encode(
                         DECRYPTIONRESULT_TYPE_HASH,
+                        decRes.aclAddress,
                         keccak256(abi.encodePacked(decRes.handlesList)),
                         keccak256(decRes.decryptedResult)
                     )
@@ -157,11 +160,13 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
     /// @param signatures An array of signatures to verify
     /// @return true if enough provided signatures are valid, false otherwise
     function verifySignatures(
+        address aclAddress,
         uint256[] memory handlesList,
         bytes memory decryptedResult,
         bytes[] memory signatures
     ) public virtual returns (bool) {
         DecryptionResult memory decRes;
+        decRes.aclAddress = aclAddress;
         decRes.handlesList = handlesList;
         decRes.decryptedResult = decryptedResult;
         bytes32 message = hashDecryptionResult(decRes);

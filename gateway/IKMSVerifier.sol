@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 
 interface IKMSVerifier {
     function verifySignatures(
+        address aclAddress,
         uint256[] memory handlesList,
         bytes memory decryptedResult,
         bytes[] memory signatures

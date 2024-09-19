@@ -200,6 +200,10 @@ async function kmsSign(handlesList: bigint[], decryptedResult: string, kmsSigner
   const types = {
     DecryptionResult: [
       {
+        name: 'aclAddress',
+        type: 'address',
+      },
+      {
         name: 'handlesList',
         type: 'uint256[]',
       },
@@ -209,8 +213,8 @@ async function kmsSign(handlesList: bigint[], decryptedResult: string, kmsSigner
       },
     ],
   };
-
   const message = {
+    aclAddress: aclAdd,
     handlesList: handlesList,
     decryptedResult: decryptedResult,
   };
