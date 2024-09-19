@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Check if a file name is provided as an argument
 if [ $# -eq 0 ]; then

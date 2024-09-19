@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 make run-full
 # Deploy ACL, Gateway ..., please wait until the end before testing!!!
