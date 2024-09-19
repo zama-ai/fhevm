@@ -22,7 +22,7 @@ describe('Reencryption', function () {
     inputAlice.addBytes256(
       bigIntToBytes(184467440737095500228978978978978970980978908978978907890778907089780970897890n),
     );
-    const encryptedAmount = inputAlice.encrypt();
+    const encryptedAmount = await inputAlice.encrypt();
     const tx = await this.contract.setEBytes256(encryptedAmount.handles[0], encryptedAmount.inputProof, {
       gasLimit: 5_000_000,
     });

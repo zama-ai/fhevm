@@ -2,11 +2,12 @@ import { toBigIntLE } from 'bigint-buffer';
 import { toBufferBE } from 'bigint-buffer';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
-import { ethers } from 'ethers';
+import { Wallet, ethers } from 'ethers';
 import * as fs from 'fs';
 import { Keccak } from 'sha3';
 import { isAddress } from 'web3-validator';
 
+import { insertSQL } from './coprocessorUtils';
 import { awaitCoprocessor, getClearText } from './coprocessorUtils';
 
 const hre = require('hardhat');
@@ -133,12 +134,12 @@ export const reencryptRequestMocked = async (
   return BigInt(await getClearText(handle));
 };
 
-export const createEncryptedInputMocked = (contractAddress: string, callerAddress: string) => {
+export const createEncryptedInputMocked = (contractAddress: string, userAddress: string) => {
   if (!isAddress(contractAddress)) {
     throw new Error('Contract address is not a valid address.');
   }
 
-  if (!isAddress(callerAddress)) {
+  if (!isAddress(userAddress)) {
     throw new Error('User address is not a valid address.');
   }
 
@@ -217,7 +218,7 @@ export const createEncryptedInputMocked = (contractAddress: string, callerAddres
       bits.length = 0;
       return this;
     },
-    encrypt() {
+    async encrypt() {
       const listType = getListType(bits);
 
       let encrypted = Buffer.alloc(0);
@@ -235,8 +236,8 @@ export const createEncryptedInputMocked = (contractAddress: string, callerAddres
         }
       }
 
-      const inputProof = new Uint8Array(encrypted);
-      const hash = new Keccak(256).update(Buffer.from(inputProof)).digest();
+      const encryptedArray = new Uint8Array(encrypted);
+      const hash = new Keccak(256).update(Buffer.from(encryptedArray)).digest();
 
       const handles = bits.map((v, i) => {
         const dataWithIndex = new Uint8Array(hash.length + 1);
@@ -248,6 +249,24 @@ export const createEncryptedInputMocked = (contractAddress: string, callerAddres
         dataInput.set([i, ENCRYPTION_TYPES[v], 0], 29);
         return dataInput;
       });
+      let inputProof = '0x' + numberToHex(handles.length); // numSignersKMS + hashCT + list_handles + signatureCopro + signatureKMSSigners (1+1+32+NUM_HANDLES*32+65+65*numSignersKMS)
+      const numSigners = +process.env.NUM_KMS_SIGNERS!;
+      inputProof += numberToHex(numSigners);
+      inputProof += hash.toString('hex');
+      const listHandlesStr = handles.map((i) => uint8ArrayToHexString(i));
+      listHandlesStr.map((handle) => (inputProof += handle));
+      const listHandles = listHandlesStr.map((i) => BigInt('0x' + i));
+      const sigCoproc = await computeInputSignatureCopro(
+        '0x' + hash.toString('hex'),
+        listHandles,
+        userAddress,
+        contractAddress,
+      );
+      inputProof += sigCoproc.slice(2);
+
+      const signaturesKMS = await computeInputSignaturesKMS('0x' + hash.toString('hex'), userAddress, contractAddress);
+      signaturesKMS.map((sigKMS) => (inputProof += sigKMS.slice(2)));
+      listHandlesStr.map((handle, i) => insertSQL('0x' + handle, values[i]));
       return {
         handles,
         inputProof,
@@ -255,6 +274,17 @@ export const createEncryptedInputMocked = (contractAddress: string, callerAddres
     },
   };
 };
+
+function uint8ArrayToHexString(uint8Array: Uint8Array) {
+  return Array.from(uint8Array)
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+function numberToHex(num: number) {
+  let hex = num.toString(16);
+  return hex.length % 2 ? '0' + hex : hex;
+}
 
 const checkEncryptedValue = (value: number | bigint, bits: number) => {
   if (value == null) throw new Error('Missing value');
@@ -301,3 +331,154 @@ const getListType = (bits: (keyof typeof ENCRYPTION_TYPES)[]) => {
     return 160;
   }
 };
+
+async function computeInputSignatureCopro(
+  hash: string,
+  handlesList: bigint[],
+  userAddress: string,
+  contractAddress: string,
+): Promise<string> {
+  let signature: string;
+  const privKeySigner = process.env['PRIVATE_KEY_COPROCESSOR_ACCOUNT'];
+  if (privKeySigner) {
+    const coprocSigner = new Wallet(privKeySigner).connect(ethers.provider);
+    signature = await coprocSign(hash, handlesList, userAddress, contractAddress, coprocSigner);
+  } else {
+    throw new Error(`Private key for coprocessor not found in environment variables`);
+  }
+  return signature;
+}
+
+async function computeInputSignaturesKMS(
+  hash: string,
+  userAddress: string,
+  contractAddress: string,
+): Promise<string[]> {
+  const signatures: string[] = [];
+  const numSigners = +process.env.NUM_KMS_SIGNERS!;
+  for (let idx = 0; idx < numSigners; idx++) {
+    const privKeySigner = process.env[`PRIVATE_KEY_KMS_SIGNER_${idx}`];
+    if (privKeySigner) {
+      const kmsSigner = new ethers.Wallet(privKeySigner).connect(ethers.provider);
+      const signature = await kmsSign(hash, userAddress, contractAddress, kmsSigner);
+      signatures.push(signature);
+    } else {
+      throw new Error(`Private key for signer ${idx} not found in environment variables`);
+    }
+  }
+  return signatures;
+}
+
+async function coprocSign(
+  hashOfCiphertext: string,
+  handlesList: bigint[],
+  userAddress: string,
+  contractAddress: string,
+  signer: Wallet,
+): Promise<string> {
+  const inputAdd = dotenv.parse(fs.readFileSync('lib/.env.inputverifier')).INPUT_VERIFIER_CONTRACT_ADDRESS;
+  const chainId = hre.__SOLIDITY_COVERAGE_RUNNING ? 31337 : network.config.chainId;
+  const aclAdd = dotenv.parse(fs.readFileSync('lib/.env.acl')).ACL_CONTRACT_ADDRESS;
+
+  const domain = {
+    name: 'InputVerifier',
+    version: '1',
+    chainId: chainId,
+    verifyingContract: inputAdd,
+  };
+
+  const types = {
+    CiphertextVerificationForCopro: [
+      {
+        name: 'aclAddress',
+        type: 'address',
+      },
+      {
+        name: 'hashOfCiphertext',
+        type: 'bytes32',
+      },
+      {
+        name: 'handlesList',
+        type: 'uint256[]',
+      },
+      {
+        name: 'userAddress',
+        type: 'address',
+      },
+      {
+        name: 'contractAddress',
+        type: 'address',
+      },
+    ],
+  };
+  const message = {
+    aclAddress: aclAdd,
+    hashOfCiphertext: hashOfCiphertext,
+    handlesList: handlesList,
+    userAddress: userAddress,
+    contractAddress: contractAddress,
+  };
+
+  const signature = await signer.signTypedData(domain, types, message);
+  const sigRSV = ethers.Signature.from(signature);
+  const v = 27 + sigRSV.yParity;
+  const r = sigRSV.r;
+  const s = sigRSV.s;
+
+  const result = r + s.substring(2) + v.toString(16);
+  return result;
+}
+
+async function kmsSign(
+  hashOfCiphertext: string,
+  userAddress: string,
+  contractAddress: string,
+  signer: Wallet,
+): Promise<string> {
+  const inputAdd = dotenv.parse(fs.readFileSync('lib/.env.inputverifier')).INPUT_VERIFIER_CONTRACT_ADDRESS;
+  const chainId = hre.__SOLIDITY_COVERAGE_RUNNING ? 31337 : network.config.chainId;
+  const aclAdd = dotenv.parse(fs.readFileSync('lib/.env.acl')).ACL_CONTRACT_ADDRESS;
+
+  const domain = {
+    name: 'InputVerifier',
+    version: '1',
+    chainId: chainId,
+    verifyingContract: inputAdd,
+  };
+
+  const types = {
+    CiphertextVerificationForKMS: [
+      {
+        name: 'aclAddress',
+        type: 'address',
+      },
+      {
+        name: 'hashOfCiphertext',
+        type: 'bytes32',
+      },
+      {
+        name: 'userAddress',
+        type: 'address',
+      },
+      {
+        name: 'contractAddress',
+        type: 'address',
+      },
+    ],
+  };
+  const message = {
+    aclAddress: aclAdd,
+    hashOfCiphertext: hashOfCiphertext,
+    userAddress: userAddress,
+    contractAddress: contractAddress,
+  };
+
+  const signature = await signer.signTypedData(domain, types, message);
+  const sigRSV = ethers.Signature.from(signature);
+  const v = 27 + sigRSV.yParity;
+  const r = sigRSV.r;
+  const s = sigRSV.s;
+
+  const result = r + s.substring(2) + v.toString(16);
+  return result;
+}

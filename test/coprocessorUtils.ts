@@ -34,7 +34,7 @@ const selectors = functions.reduce((acc, func) => {
 //const db = new Database('./sql.db'); // on-disk db for debugging
 const db = new Database(':memory:');
 
-function insertSQL(handle: string, clearText: BigInt, replace: boolean = false) {
+export function insertSQL(handle: string, clearText: BigInt, replace: boolean = false) {
   if (replace) {
     // this is useful if using snapshots while sampling different random numbers on each revert
     db.run('INSERT OR REPLACE INTO ciphertexts (handle, clearText) VALUES (?, ?)', [handle, clearText.toString()]);
@@ -680,19 +680,10 @@ async function insertHandle(
         break;
 
       case 'verifyCiphertext(bytes32,address,bytes,bytes1)':
-        handle = decodedData[0];
-        const type = parseInt(handle.slice(-4, -2), 16);
-        if (type !== 11) {
-          //not an ebytes256
-          const typeSize = TypesBytesSize[type];
-          const idx = parseInt(handle.slice(-6, -4), 16);
-          const inputProof = decodedData[2].replace(/^0x/, '');
-          clearText = BigInt('0x' + inputProof.slice(2 + 2 * 53 * idx, 2 + 2 * typeSize + 2 * 53 * idx));
-          insertSQL(handle, clearText);
-        } else {
-          const inputProof = decodedData[2].replace(/^0x/, '');
-          clearText = BigInt('0x' + inputProof.slice(2, 2 + 2 * 256));
-          insertSQL(handle, clearText);
+        try {
+          await getClearText(BigInt(decodedData[0]));
+        } catch {
+          throw Error('User input was not found in DB');
         }
         break;
 

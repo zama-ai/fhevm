@@ -316,7 +316,7 @@ describe('TestAsyncDecrypt', function () {
   it('test async decrypt uint64 non-trivial', async function () {
     const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     inputAlice.add64(18446744073709550042n);
-    const encryptedAmount = inputAlice.encrypt();
+    const encryptedAmount = await inputAlice.encrypt();
     const tx = await this.contract.requestUint64NonTrivial(encryptedAmount.handles[0], encryptedAmount.inputProof, {
       gasLimit: 5_000_000,
     });
@@ -329,12 +329,10 @@ describe('TestAsyncDecrypt', function () {
   it('test async decrypt ebytes256 non-trivial', async function () {
     const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     inputAlice.addBytes256(bigIntToBytes(18446744073709550022n));
-    const encryptedAmount = inputAlice.encrypt();
-    const tx = await await this.contract.requestEbytes256NonTrivial(
-      encryptedAmount.handles[0],
-      encryptedAmount.inputProof,
-      { gasLimit: 5_000_000 },
-    );
+    const encryptedAmount = await inputAlice.encrypt();
+    const tx = await this.contract.requestEbytes256NonTrivial(encryptedAmount.handles[0], encryptedAmount.inputProof, {
+      gasLimit: 5_000_000,
+    });
     await tx.wait();
     await awaitAllDecryptionResults();
     const y = await this.contract.yBytes256();
@@ -346,8 +344,8 @@ describe('TestAsyncDecrypt', function () {
       this.snapshotId = await ethers.provider.send('evm_snapshot');
       const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
       inputAlice.addBytes256(bigIntToBytes(18446744073709550022n));
-      const encryptedAmount = inputAlice.encrypt();
-      const tx = await await this.contract.requestEbytes256NonTrivial(
+      const encryptedAmount = await inputAlice.encrypt();
+      const tx = await this.contract.requestEbytes256NonTrivial(
         encryptedAmount.handles[0],
         encryptedAmount.inputProof,
         { gasLimit: 5_000_000 },
@@ -360,8 +358,8 @@ describe('TestAsyncDecrypt', function () {
       await ethers.provider.send('evm_revert', [this.snapshotId]);
       const inputAlice2 = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
       inputAlice2.addBytes256(bigIntToBytes(424242n));
-      const encryptedAmount2 = inputAlice2.encrypt();
-      const tx2 = await await this.contract.requestEbytes256NonTrivial(
+      const encryptedAmount2 = await inputAlice2.encrypt();
+      const tx2 = await this.contract.requestEbytes256NonTrivial(
         encryptedAmount2.handles[0],
         encryptedAmount2.inputProof,
         { gasLimit: 5_000_000 },
@@ -376,8 +374,8 @@ describe('TestAsyncDecrypt', function () {
   it('test async decrypt mixed with ebytes256', async function () {
     const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     inputAlice.addBytes256(bigIntToBytes(18446744073709550032n));
-    const encryptedAmount = inputAlice.encrypt();
-    const tx = await await this.contract.requestMixedBytes256(encryptedAmount.handles[0], encryptedAmount.inputProof, {
+    const encryptedAmount = await inputAlice.encrypt();
+    const tx = await this.contract.requestMixedBytes256(encryptedAmount.handles[0], encryptedAmount.inputProof, {
       gasLimit: 5_000_000,
     });
     await tx.wait();
@@ -400,7 +398,7 @@ describe('TestAsyncDecrypt', function () {
       this.signers.alice.address,
     );
     inputAlice.addBytes256(bigIntToBytes(18446744073709550022n));
-    const encryptedAmount = inputAlice.encrypt();
+    const encryptedAmount = await inputAlice.encrypt();
     const tx = await contract2.requestEbytes256NonTrivialTrustless(
       encryptedAmount.handles[0],
       encryptedAmount.inputProof,
@@ -422,14 +420,10 @@ describe('TestAsyncDecrypt', function () {
       this.signers.alice.address,
     );
     inputAlice.addBytes256(bigIntToBytes(18446744073709550032n));
-    const encryptedAmount = inputAlice.encrypt();
-    const tx = await await contract2.requestMixedBytes256Trustless(
-      encryptedAmount.handles[0],
-      encryptedAmount.inputProof,
-      {
-        gasLimit: 5_000_000,
-      },
-    );
+    const encryptedAmount = await inputAlice.encrypt();
+    const tx = await contract2.requestMixedBytes256Trustless(encryptedAmount.handles[0], encryptedAmount.inputProof, {
+      gasLimit: 5_000_000,
+    });
     await tx.wait();
     await awaitAllDecryptionResults();
     const y = await contract2.yBytes256();
