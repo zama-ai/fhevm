@@ -37,25 +37,25 @@ contract TestAsyncDecrypt is GatewayCaller {
         Gateway.setGateway(Gateway.defaultGatewayAddress());
         Payment.depositForThis(msg.value);
         xBool = TFHE.asEbool(true);
-        TFHE.allow(xBool, address(this));
+        TFHE.allowThis(xBool);
         xUint4 = TFHE.asEuint4(4);
-        TFHE.allow(xUint4, address(this));
+        TFHE.allowThis(xUint4);
         xUint8 = TFHE.asEuint8(42);
-        TFHE.allow(xUint8, address(this));
+        TFHE.allowThis(xUint8);
         xUint16 = TFHE.asEuint16(16);
-        TFHE.allow(xUint16, address(this));
+        TFHE.allowThis(xUint16);
         xUint32 = TFHE.asEuint32(32);
-        TFHE.allow(xUint32, address(this));
+        TFHE.allowThis(xUint32);
         xUint64 = TFHE.asEuint64(18446744073709551600);
-        TFHE.allow(xUint64, address(this));
+        TFHE.allowThis(xUint64);
         xUint64_2 = TFHE.asEuint64(76575465786);
-        TFHE.allow(xUint64_2, address(this));
+        TFHE.allowThis(xUint64_2);
         xUint64_3 = TFHE.asEuint64(6400);
-        TFHE.allow(xUint64_3, address(this));
+        TFHE.allowThis(xUint64_3);
         xAddress = TFHE.asEaddress(0x8ba1f109551bD432803012645Ac136ddd64DBA72);
-        TFHE.allow(xAddress, address(this));
+        TFHE.allowThis(xAddress);
         xAddress2 = TFHE.asEaddress(0xf48b8840387ba3809DAE990c930F3b4766A86ca3);
-        TFHE.allow(xAddress2, address(this));
+        TFHE.allowThis(xAddress2);
     }
 
     function requestBoolInfinite() public {

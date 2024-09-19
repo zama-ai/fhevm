@@ -51,7 +51,7 @@ describe('EncryptedERC20', function () {
 
     const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     input.add64(1337);
-    const encryptedTransferAmount = input.encrypt();
+    const encryptedTransferAmount = await input.encrypt();
     const tx = await this.erc20['transfer(address,bytes32,bytes)'](
       this.signers.bob.address,
       encryptedTransferAmount.handles[0],
@@ -108,7 +108,7 @@ describe('EncryptedERC20', function () {
 
     const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     input.add64(1337);
-    const encryptedTransferAmount = input.encrypt();
+    const encryptedTransferAmount = await input.encrypt();
     const tx = await this.erc20['transfer(address,bytes32,bytes)'](
       this.signers.bob.address,
       encryptedTransferAmount.handles[0],
@@ -163,7 +163,7 @@ describe('EncryptedERC20', function () {
 
     const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     inputAlice.add64(1337);
-    const encryptedAllowanceAmount = inputAlice.encrypt();
+    const encryptedAllowanceAmount = await inputAlice.encrypt();
     const tx = await this.erc20['approve(address,bytes32,bytes)'](
       this.signers.bob.address,
       encryptedAllowanceAmount.handles[0],
@@ -174,7 +174,7 @@ describe('EncryptedERC20', function () {
     const bobErc20 = this.erc20.connect(this.signers.bob);
     const inputBob1 = this.instances.bob.createEncryptedInput(this.contractAddress, this.signers.bob.address);
     inputBob1.add64(1338); // above allowance so next tx should actually not send any token
-    const encryptedTransferAmount = inputBob1.encrypt();
+    const encryptedTransferAmount = await inputBob1.encrypt();
     const tx2 = await bobErc20['transferFrom(address,address,bytes32,bytes)'](
       this.signers.alice.address,
       this.signers.bob.address,
@@ -223,7 +223,7 @@ describe('EncryptedERC20', function () {
 
     const inputBob2 = this.instances.bob.createEncryptedInput(this.contractAddress, this.signers.bob.address);
     inputBob2.add64(1337); // below allowance so next tx should send token
-    const encryptedTransferAmount2 = inputBob2.encrypt();
+    const encryptedTransferAmount2 = await inputBob2.encrypt();
     const tx3 = await bobErc20['transferFrom(address,address,bytes32,bytes)'](
       this.signers.alice.address,
       this.signers.bob.address,

@@ -90,11 +90,64 @@ address constant kmsVerifierAdd = ${kmsVerfierAddress};\n`;
   }
 });
 
+task('task:computeInputVerifierAddress').setAction(async function (taskArguments: TaskArguments, { ethers }) {
+  // this script also compute the coprocessor address from its private key
+  const deployer = (await ethers.getSigners())[9].address;
+  const inputVerfierAddress = ethers.getCreateAddress({
+    from: deployer,
+    nonce: 7, // using nonce of 7 for the InputVerifier contract (6 for original implementation, +1 for proxy)
+  });
+  const envFilePath = path.join(__dirname, '../lib/.env.inputverifier');
+  const content = `INPUT_VERIFIER_CONTRACT_ADDRESS=${inputVerfierAddress}\n`;
+  try {
+    fs.writeFileSync(envFilePath, content, { flag: 'w' });
+    console.log(`InputVerifier address ${inputVerfierAddress} written successfully!`);
+  } catch (err) {
+    console.error('Failed to write InputVerifier address:', err);
+  }
+
+  const solidityTemplate = `// SPDX-License-Identifier: BSD-3-Clause-Clear
+
+pragma solidity ^0.8.24;
+
+address constant inputVerifierAdd = ${inputVerfierAddress};\n`;
+
+  try {
+    fs.writeFileSync('./lib/InputVerifierAddress.sol', solidityTemplate, { encoding: 'utf8', flag: 'w' });
+    console.log('./lib/InputVerifierAddress.sol file generated successfully!');
+  } catch (error) {
+    console.error('Failed to write ./lib/InputVerifierAddress.sol', error);
+  }
+
+  const coprocAddress = new ethers.Wallet(process.env.PRIVATE_KEY_COPROCESSOR_ACCOUNT!).address;
+  const envFilePath2 = path.join(__dirname, '../lib/.env.coprocessor');
+  const content2 = `COPROCESSOR_ADDRESS=${coprocAddress}\n`;
+  try {
+    fs.writeFileSync(envFilePath2, content2, { flag: 'w' });
+    console.log(`Coprocessor address ${coprocAddress} written successfully!`);
+  } catch (err) {
+    console.error('Failed to write InputVerifier address:', err);
+  }
+
+  const solidityTemplate2 = `// SPDX-License-Identifier: BSD-3-Clause-Clear
+
+pragma solidity ^0.8.24;
+
+address constant coprocessorAdd = ${coprocAddress};\n`;
+
+  try {
+    fs.writeFileSync('./lib/CoprocessorAddress.sol', solidityTemplate2, { encoding: 'utf8', flag: 'w' });
+    console.log('./lib/CoprocessorAddress.sol file generated successfully!');
+  } catch (error) {
+    console.error('Failed to write ./lib/CoprocessorAddress.sol', error);
+  }
+});
+
 task('task:computeFHEPaymentAddress').setAction(async function (taskArguments: TaskArguments, { ethers }) {
   const deployer = (await ethers.getSigners())[9].address;
   const fhePaymentAddress = ethers.getCreateAddress({
     from: deployer,
-    nonce: 7, // using nonce of 7 for the FHEPayment contract (6 for original implementation, +1 for proxy)
+    nonce: 9, // using nonce of 9 for the FHEPayment contract (8 for original implementation, +1 for proxy)
   });
   const envFilePath = path.join(__dirname, '../lib/.env.fhepayment');
   const content = `FHE_PAYMENT_CONTRACT_ADDRESS=${fhePaymentAddress}\n`;

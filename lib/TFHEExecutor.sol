@@ -4,14 +4,13 @@ pragma solidity ^0.8.24;
 
 import "./ACL.sol";
 import "./FHEPayment.sol";
-import "./FhevmLib.sol";
+import "./InputVerifier.sol";
 import "./ACLAddress.sol";
 import "./FHEPaymentAddress.sol";
+import "./InputVerifierAddress.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 import "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
-
-address constant EXT_TFHE_LIBRARY = address(0x000000000000000000000000000000000000005d);
 
 contract TFHEExecutor is UUPSUpgradeable, Ownable2StepUpgradeable {
     /// @notice Handle version
@@ -27,6 +26,7 @@ contract TFHEExecutor is UUPSUpgradeable, Ownable2StepUpgradeable {
 
     ACL private constant acl = ACL(aclAdd);
     FHEPayment private constant fhePayment = FHEPayment(fhePaymentAdd);
+    InputVerifier private constant inputVerifier = InputVerifier(inputVerifierAdd);
 
     /// @custom:storage-location erc7201:fhevm.storage.TFHEExecutor
     struct TFHEExecutorStorage {
@@ -358,13 +358,14 @@ contract TFHEExecutor is UUPSUpgradeable, Ownable2StepUpgradeable {
 
     function verifyCiphertext(
         bytes32 inputHandle,
-        address callerAddress,
+        address userAddress,
         bytes memory inputProof,
         bytes1 inputType
     ) external virtual returns (uint256 result) {
-        result = FhevmLib(address(EXT_TFHE_LIBRARY)).verifyCiphertext(
+        result = inputVerifier.verifyCiphertext(
+            address(acl),
             inputHandle,
-            callerAddress,
+            userAddress,
             msg.sender,
             inputProof,
             inputType

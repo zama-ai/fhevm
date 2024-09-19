@@ -99,6 +99,19 @@ task('task:deployKMSVerifier').setAction(async function (taskArguments: TaskArgu
   console.log('KMSVerifier was deployed at address:', address);
 });
 
+task('task:deployInputVerifier').setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
+  const deployer = (await ethers.getSigners())[9];
+  const factory = await ethers.getContractFactory('InputVerifier', deployer);
+  const kms = await upgrades.deployProxy(factory, [deployer.address], { initializer: 'initialize', kind: 'uups' });
+  await kms.waitForDeployment();
+  const address = await kms.getAddress();
+  const envConfig = dotenv.parse(fs.readFileSync('lib/.env.inputverifier'));
+  if (address !== envConfig.INPUT_VERIFIER_CONTRACT_ADDRESS) {
+    throw new Error(`The nonce of the deployer account is not correct. Please relaunch a clean instance of the fhEVM`);
+  }
+  console.log('InputVerifier was deployed at address:', address);
+});
+
 task('task:deployFHEPayment').setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
   const deployer = (await ethers.getSigners())[9];
   const factory = await ethers.getContractFactory('FHEPayment', deployer);
@@ -123,6 +136,6 @@ task('task:addSigners').setAction(async function (taskArguments: TaskArguments, 
     const kmsSigner = new ethers.Wallet(privKeySigner).connect(ethers.provider);
     const tx = await kmsVerifier.addSigner(kmsSigner.address);
     await tx.wait();
-    console.log(`KMS signer no${idx} was added to KMSVerifier contract`);
+    console.log(`KMS signer no${idx} (${kmsSigner.address}) was added to KMSVerifier contract`);
   }
 });

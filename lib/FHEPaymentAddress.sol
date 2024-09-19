@@ -2,4 +2,4 @@
 
 pragma solidity ^0.8.24;
 
-address constant fhePaymentAdd = 0x52054F36036811ca418be59e41Fc6DD1b9e4F4c8;
+address constant fhePaymentAdd = 0x222ea0147FF597Ff1935B2a55afeDC404425203d;

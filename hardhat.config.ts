@@ -87,24 +87,18 @@ task('test', async (taskArgs, hre, runSuper) => {
   if (hre.network.name === 'hardhat') {
     // in fhevm mode all this block is done when launching the node via `pnmp fhevm:start`
     await hre.run('compile:specific', { contract: 'lib' });
-
-    const targetAddress = '0x000000000000000000000000000000000000005d';
-    const NeverRevert = await hre.artifacts.readArtifact('MockedPrecompile');
-    const bytecode = NeverRevert.deployedBytecode;
-    await hre.network.provider.send('hardhat_setCode', [targetAddress, bytecode]);
-    console.log(`Code of Mocked Pre-compile set at address: ${targetAddress}`);
-
     await hre.run('compile:specific', { contract: 'gateway' });
-
     const privKeyDeployer = process.env.PRIVATE_KEY_GATEWAY_DEPLOYER;
     await hre.run('task:computePredeployAddress', { privateKey: privKeyDeployer });
     await hre.run('task:computeACLAddress');
     await hre.run('task:computeTFHEExecutorAddress');
     await hre.run('task:computeKMSVerifierAddress');
+    await hre.run('task:computeInputVerifierAddress');
     await hre.run('task:computeFHEPaymentAddress');
     await hre.run('task:deployACL');
     await hre.run('task:deployTFHEExecutor');
     await hre.run('task:deployKMSVerifier');
+    await hre.run('task:deployInputVerifier');
     await hre.run('task:deployFHEPayment');
     await hre.run('task:addSigners', { numSigners: +process.env.NUM_KMS_SIGNERS! });
     await hre.run('task:launchFhevm', { skipGetCoin: false });
@@ -162,6 +156,7 @@ const config: HardhatUserConfig = {
         runs: 800,
       },
       evmVersion: 'cancun',
+      viaIR: true,
     },
   },
   warnings: {
