@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "./KMSVerifier.sol";
+import "./TFHEExecutor.sol";
 import "./KMSVerifierAddress.sol";
 import "./CoprocessorAddress.sol";
 
@@ -102,22 +103,22 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
     }
 
     function verifyCiphertext(
-        address aclAddress,
+        TFHEExecutor.ContextUserInputs memory context,
         bytes32 inputHandle,
-        address userAddress,
-        address contractAddress,
-        bytes memory inputProof,
-        bytes1 inputType
+        bytes memory inputProof
     ) external virtual returns (uint256) {
-        (bool isProofCached, bytes32 cacheKey) = checkProofCache(inputProof, userAddress, contractAddress, aclAddress);
+        (bool isProofCached, bytes32 cacheKey) = checkProofCache(
+            inputProof,
+            context.userAddress,
+            context.contractAddress,
+            context.aclAddress
+        );
         uint256 result = uint256(inputHandle);
         uint256 indexHandle = (result & 0x0000000000000000000000000000000000000000000000000000000000ff0000) >> 16;
 
         if (!isProofCached) {
             // inputHandle is keccak256(bundleCiphertext)[0:29]+index+type+version
             // and inputProof is len(list_handles) + numSignersKMS + hashCT + list_handles + signatureCopro + signatureKMSSigners (1+1+32+NUM_HANDLES*32+65+65*numSignersKMS)
-            uint8 typeCt = typeOf(result);
-            require(uint8(inputType) == typeCt, "Wrong type");
 
             uint256 inputProofLen = inputProof.length;
             require(inputProofLen > 0, "Empty inputProof");
@@ -136,41 +137,42 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
             uint256[] memory listHandles = new uint256[](numHandles);
             for (uint256 i = 0; i < numHandles; i++) {
                 uint256 element;
-                for (uint256 j = 0; j < 32; j++) {
-                    element |= uint256(uint8(inputProof[34 + i * 32 + j])) << (8 * (31 - j));
+                assembly {
+                    element := mload(add(inputProof, add(66, mul(i, 32))))
                 }
                 // check all handles are from correct version
                 require(uint8(element) == HANDLE_VERSION, "Wrong handle version");
                 listHandles[i] = element;
             }
 
-            bytes memory signatureCoproc = new bytes(65);
-            for (uint256 i = 0; i < 65; i++) {
-                signatureCoproc[i] = inputProof[34 + 32 * numHandles + i];
-            }
-
-            CiphertextVerificationForCopro memory cvCopro;
-            cvCopro.aclAddress = aclAddress;
-            cvCopro.hashOfCiphertext = hashCT;
-            cvCopro.handlesList = listHandles;
-            cvCopro.userAddress = userAddress;
-            cvCopro.contractAddress = contractAddress;
-            verifyEIP712Copro(cvCopro, signatureCoproc);
-
-            bytes[] memory signaturesKMS = new bytes[](numSignersKMS);
-            for (uint256 j = 0; j < numSignersKMS; j++) {
-                signaturesKMS[j] = new bytes(65);
+            {
+                bytes memory signatureCoproc = new bytes(65);
                 for (uint256 i = 0; i < 65; i++) {
-                    signaturesKMS[j][i] = inputProof[99 + 32 * numHandles + 65 * j + i];
+                    signatureCoproc[i] = inputProof[34 + 32 * numHandles + i];
                 }
+                CiphertextVerificationForCopro memory cvCopro;
+                cvCopro.aclAddress = context.aclAddress;
+                cvCopro.hashOfCiphertext = hashCT;
+                cvCopro.handlesList = listHandles;
+                cvCopro.userAddress = context.userAddress;
+                cvCopro.contractAddress = context.contractAddress;
+                verifyEIP712Copro(cvCopro, signatureCoproc);
             }
-            CiphertextVerificationForKMS memory cvKMS;
-            cvKMS.aclAddress = aclAddress;
-            cvKMS.hashOfCiphertext = hashCT;
-            cvKMS.userAddress = userAddress;
-            cvKMS.contractAddress = contractAddress;
-            verifyEIP712KMS(cvKMS, signaturesKMS);
-
+            {
+                bytes[] memory signaturesKMS = new bytes[](numSignersKMS);
+                for (uint256 j = 0; j < numSignersKMS; j++) {
+                    signaturesKMS[j] = new bytes(65);
+                    for (uint256 i = 0; i < 65; i++) {
+                        signaturesKMS[j][i] = inputProof[99 + 32 * numHandles + 65 * j + i];
+                    }
+                }
+                CiphertextVerificationForKMS memory cvKMS;
+                cvKMS.aclAddress = context.aclAddress;
+                cvKMS.hashOfCiphertext = hashCT;
+                cvKMS.userAddress = context.userAddress;
+                cvKMS.contractAddress = context.contractAddress;
+                verifyEIP712KMS(cvKMS, signaturesKMS);
+            }
             cacheProof(cacheKey);
             require(result == listHandles[indexHandle], "Wrong inputHandle");
         } else {

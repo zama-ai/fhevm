@@ -33,6 +33,12 @@ contract TFHEExecutor is UUPSUpgradeable, Ownable2StepUpgradeable {
         uint256 counterRand; /// @notice counter used for computing handles of randomness operators
     }
 
+    struct ContextUserInputs {
+        address aclAddress;
+        address userAddress;
+        address contractAddress;
+    }
+
     // keccak256(abi.encode(uint256(keccak256("fhevm.storage.TFHEExecutor")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant TFHEExecutorStorageLocation =
         0xa436a06f0efce5ea38c956a21e24202a59b3b746d48a23fb52b4a5bc33fe3e00;
@@ -362,14 +368,14 @@ contract TFHEExecutor is UUPSUpgradeable, Ownable2StepUpgradeable {
         bytes memory inputProof,
         bytes1 inputType
     ) external virtual returns (uint256 result) {
-        result = inputVerifier.verifyCiphertext(
-            address(acl),
-            inputHandle,
-            userAddress,
-            msg.sender,
-            inputProof,
-            inputType
-        );
+        ContextUserInputs memory contextUserInputs = ContextUserInputs({
+            aclAddress: address(acl),
+            userAddress: userAddress,
+            contractAddress: msg.sender
+        });
+        uint8 typeCt = typeOf(uint256(inputHandle));
+        require(uint8(inputType) == typeCt, "Wrong type");
+        result = inputVerifier.verifyCiphertext(contextUserInputs, inputHandle, inputProof);
         acl.allowTransient(result, msg.sender);
     }
 
