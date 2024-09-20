@@ -5,6 +5,8 @@ use tfhe::integer::U256;
 use tfhe::prelude::FheDecrypt;
 use tfhe::{CompressedCiphertextList, CompressedCiphertextListBuilder};
 
+use crate::utils::{safe_deserialize, safe_serialize};
+
 #[derive(Debug)]
 pub enum FhevmError {
     UnknownFheOperation(i32),
@@ -233,7 +235,7 @@ impl std::fmt::Display for FhevmError {
                 upper_bound_value,
             } => {
                 write!(f, "rand bounded operation cannot receive zero as upper bound {fhe_operation} ({fhe_operation_name}) received: {}", upper_bound_value)
-            },
+            }
             Self::RandOperationInputsMustAllBeScalar {
                 fhe_operation,
                 fhe_operation_name,
@@ -315,18 +317,18 @@ impl SupportedFheCiphertexts {
     pub fn serialize(&self) -> (i16, Vec<u8>) {
         let type_num = self.type_num();
         match self {
-            SupportedFheCiphertexts::FheBool(v) => (type_num, bincode::serialize(v).unwrap()),
-            SupportedFheCiphertexts::FheUint4(v) => (type_num, bincode::serialize(v).unwrap()),
-            SupportedFheCiphertexts::FheUint8(v) => (type_num, bincode::serialize(v).unwrap()),
-            SupportedFheCiphertexts::FheUint16(v) => (type_num, bincode::serialize(v).unwrap()),
-            SupportedFheCiphertexts::FheUint32(v) => (type_num, bincode::serialize(v).unwrap()),
-            SupportedFheCiphertexts::FheUint64(v) => (type_num, bincode::serialize(v).unwrap()),
-            SupportedFheCiphertexts::FheUint128(v) => (type_num, bincode::serialize(v).unwrap()),
-            SupportedFheCiphertexts::FheUint160(v) => (type_num, bincode::serialize(v).unwrap()),
-            SupportedFheCiphertexts::FheUint256(v) => (type_num, bincode::serialize(v).unwrap()),
-            SupportedFheCiphertexts::FheBytes64(v) => (type_num, bincode::serialize(v).unwrap()),
-            SupportedFheCiphertexts::FheBytes128(v) => (type_num, bincode::serialize(v).unwrap()),
-            SupportedFheCiphertexts::FheBytes256(v) => (type_num, bincode::serialize(v).unwrap()),
+            SupportedFheCiphertexts::FheBool(v) => (type_num, safe_serialize(v)),
+            SupportedFheCiphertexts::FheUint4(v) => (type_num, safe_serialize(v)),
+            SupportedFheCiphertexts::FheUint8(v) => (type_num, safe_serialize(v)),
+            SupportedFheCiphertexts::FheUint16(v) => (type_num, safe_serialize(v)),
+            SupportedFheCiphertexts::FheUint32(v) => (type_num, safe_serialize(v)),
+            SupportedFheCiphertexts::FheUint64(v) => (type_num, safe_serialize(v)),
+            SupportedFheCiphertexts::FheUint128(v) => (type_num, safe_serialize(v)),
+            SupportedFheCiphertexts::FheUint160(v) => (type_num, safe_serialize(v)),
+            SupportedFheCiphertexts::FheUint256(v) => (type_num, safe_serialize(v)),
+            SupportedFheCiphertexts::FheBytes64(v) => (type_num, safe_serialize(v)),
+            SupportedFheCiphertexts::FheBytes128(v) => (type_num, safe_serialize(v)),
+            SupportedFheCiphertexts::FheBytes256(v) => (type_num, safe_serialize(v)),
             SupportedFheCiphertexts::Scalar(_) => {
                 panic!("we should never need to serialize scalar")
             }
@@ -374,38 +376,38 @@ impl SupportedFheCiphertexts {
             }
             SupportedFheCiphertexts::FheUint128(v) => {
                 FheDecrypt::<u128>::decrypt(v, client_key).to_string()
-            },
+            }
             SupportedFheCiphertexts::FheUint160(v) => {
                 let dec = FheDecrypt::<U256>::decrypt(v, client_key);
                 let mut slice: [u8; 32] = [0; 32];
                 dec.copy_to_be_byte_slice(&mut slice);
-                let final_slice = &slice[slice.len()-20..];
+                let final_slice = &slice[slice.len() - 20..];
                 BigInt::from_bytes_be(bigdecimal::num_bigint::Sign::Plus, &final_slice).to_string()
-            },
+            }
             SupportedFheCiphertexts::FheUint256(v) => {
                 let dec = FheDecrypt::<U256>::decrypt(v, client_key);
                 let mut slice: [u8; 32] = [0; 32];
                 dec.copy_to_be_byte_slice(&mut slice);
                 BigInt::from_bytes_be(bigdecimal::num_bigint::Sign::Plus, &slice).to_string()
-            },
+            }
             SupportedFheCiphertexts::FheBytes64(v) => {
                 let dec = FheDecrypt::<StaticUnsignedBigInt<8>>::decrypt(v, client_key);
                 let mut slice: [u8; 64] = [0; 64];
                 dec.copy_to_be_byte_slice(&mut slice);
                 BigInt::from_bytes_be(bigdecimal::num_bigint::Sign::Plus, &slice).to_string()
-            },
+            }
             SupportedFheCiphertexts::FheBytes128(v) => {
                 let dec = FheDecrypt::<StaticUnsignedBigInt<16>>::decrypt(v, client_key);
                 let mut slice: [u8; 128] = [0; 128];
                 dec.copy_to_be_byte_slice(&mut slice);
                 BigInt::from_bytes_be(bigdecimal::num_bigint::Sign::Plus, &slice).to_string()
-            },
+            }
             SupportedFheCiphertexts::FheBytes256(v) => {
                 let dec = FheDecrypt::<StaticUnsignedBigInt<32>>::decrypt(v, client_key);
                 let mut slice: [u8; 256] = [0; 256];
                 dec.copy_to_be_byte_slice(&mut slice);
                 BigInt::from_bytes_be(bigdecimal::num_bigint::Sign::Plus, &slice).to_string()
-            },
+            }
             SupportedFheCiphertexts::Scalar(v) => {
                 let (l, h) = v.to_low_high_u128();
                 format!("{l}{h}")
@@ -434,11 +436,11 @@ impl SupportedFheCiphertexts {
             }
         };
         let list = builder.build().expect("ciphertext compression");
-        bincode::serialize(&list).expect("compressed list serialization")
+        safe_serialize(&list)
     }
 
     pub fn decompress(ct_type: i16, list: &[u8]) -> Result<Self> {
-        let list: CompressedCiphertextList = bincode::deserialize(list)?;
+        let list: CompressedCiphertextList = safe_deserialize(list)?;
         match ct_type {
             0 => Ok(SupportedFheCiphertexts::FheBool(
                 list.get(0)?.ok_or(FhevmError::MissingTfheRsData)?,
@@ -528,9 +530,7 @@ impl SupportedFheOperations {
             SupportedFheOperations::FheIfThenElse
             | SupportedFheOperations::FheCast
             | SupportedFheOperations::FheRand
-            | SupportedFheOperations::FheRandBounded => {
-                FheOperationType::Other
-            }
+            | SupportedFheOperations::FheRandBounded => FheOperationType::Other,
             SupportedFheOperations::FheGetInputCiphertext => FheOperationType::Other,
         }
     }
@@ -549,8 +549,7 @@ impl SupportedFheOperations {
 
     pub fn is_random(&self) -> bool {
         match self {
-            SupportedFheOperations::FheRand
-            | SupportedFheOperations::FheRandBounded => true,
+            SupportedFheOperations::FheRand | SupportedFheOperations::FheRandBounded => true,
             _ => false,
         }
     }
@@ -584,9 +583,7 @@ impl SupportedFheOperations {
             | SupportedFheOperations::FheNot
             | SupportedFheOperations::FheNeg
             | SupportedFheOperations::FheIfThenElse
-            | SupportedFheOperations::FheCast => {
-                true
-            },
+            | SupportedFheOperations::FheCast => true,
             SupportedFheOperations::FheAdd
             | SupportedFheOperations::FheSub
             | SupportedFheOperations::FheMul
@@ -594,9 +591,7 @@ impl SupportedFheOperations {
             | SupportedFheOperations::FheRem
             | SupportedFheOperations::FheRand
             | SupportedFheOperations::FheRandBounded
-            | SupportedFheOperations::FheGetInputCiphertext => {
-                false
-            },
+            | SupportedFheOperations::FheGetInputCiphertext => false,
         }
     }
 }

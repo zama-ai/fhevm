@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use fhevm_engine_common::utils::safe_serialize;
 use tfhe::integer::{bigint::StaticUnsignedBigInt, U256};
 use tonic::metadata::MetadataValue;
 
@@ -55,7 +56,7 @@ async fn test_fhe_inputs() -> Result<(), Box<dyn std::error::Error>> {
         .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
         .unwrap();
 
-    let serialized = bincode::serialize(&the_list).unwrap();
+    let serialized = safe_serialize(&the_list);
 
     println!("Encrypting inputs...");
     let mut input_request = tonic::Request::new(InputUploadBatch {
@@ -144,7 +145,7 @@ async fn custom_insert_inputs() -> Result<(), Box<dyn std::error::Error>> {
         .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
         .unwrap();
 
-    let serialized = bincode::serialize(&the_list).unwrap();
+    let serialized = safe_serialize(&the_list);
 
     println!("Encrypting inputs...");
     let mut input_request = tonic::Request::new(InputUploadBatch {

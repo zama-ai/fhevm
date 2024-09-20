@@ -1,5 +1,9 @@
-use crate::types::{
-    is_ebytes_type, FheOperationType, FhevmError, SupportedFheCiphertexts, SupportedFheOperations,
+use crate::{
+    types::{
+        is_ebytes_type, FheOperationType, FhevmError, SupportedFheCiphertexts,
+        SupportedFheOperations,
+    },
+    utils::safe_deserialize,
 };
 use tfhe::{
     integer::{bigint::StaticUnsignedBigInt, U256},
@@ -7,8 +11,8 @@ use tfhe::{
         CastInto, FheEq, FheMax, FheMin, FheOrd, FheTryTrivialEncrypt, IfThenElse, RotateLeft,
         RotateRight,
     },
-    FheBool, FheUint1024, FheUint128, FheUint16, FheUint160, FheUint2048, FheUint256, FheUint32,
-    FheUint4, FheUint512, FheUint64, FheUint8, Seed,
+    FheBool, FheUint1024, FheUint128, FheUint16, FheUint160, FheUint2, FheUint2048, FheUint256,
+    FheUint32, FheUint4, FheUint512, FheUint64, FheUint8, Seed,
 };
 
 pub fn deserialize_fhe_ciphertext(
@@ -17,63 +21,51 @@ pub fn deserialize_fhe_ciphertext(
 ) -> Result<SupportedFheCiphertexts, FhevmError> {
     match input_type {
         0 => {
-            let v: tfhe::FheBool = bincode::deserialize(input_bytes)
-                .map_err(|e| FhevmError::DeserializationError(e))?;
+            let v: tfhe::FheBool = safe_deserialize(input_bytes)?;
             Ok(SupportedFheCiphertexts::FheBool(v))
         }
         1 => {
-            let v: tfhe::FheUint4 = bincode::deserialize(input_bytes)
-                .map_err(|e| FhevmError::DeserializationError(e))?;
+            let v: tfhe::FheUint4 = safe_deserialize(input_bytes)?;
             Ok(SupportedFheCiphertexts::FheUint4(v))
         }
         2 => {
-            let v: tfhe::FheUint8 = bincode::deserialize(input_bytes)
-                .map_err(|e| FhevmError::DeserializationError(e))?;
+            let v: tfhe::FheUint8 = safe_deserialize(input_bytes)?;
             Ok(SupportedFheCiphertexts::FheUint8(v))
         }
         3 => {
-            let v: tfhe::FheUint16 = bincode::deserialize(input_bytes)
-                .map_err(|e| FhevmError::DeserializationError(e))?;
+            let v: tfhe::FheUint16 = safe_deserialize(input_bytes)?;
             Ok(SupportedFheCiphertexts::FheUint16(v))
         }
         4 => {
-            let v: tfhe::FheUint32 = bincode::deserialize(input_bytes)
-                .map_err(|e| FhevmError::DeserializationError(e))?;
+            let v: tfhe::FheUint32 = safe_deserialize(input_bytes)?;
             Ok(SupportedFheCiphertexts::FheUint32(v))
         }
         5 => {
-            let v: tfhe::FheUint64 = bincode::deserialize(input_bytes)
-                .map_err(|e| FhevmError::DeserializationError(e))?;
+            let v: tfhe::FheUint64 = safe_deserialize(input_bytes)?;
             Ok(SupportedFheCiphertexts::FheUint64(v))
         }
         6 => {
-            let v: tfhe::FheUint128 = bincode::deserialize(input_bytes)
-                .map_err(|e| FhevmError::DeserializationError(e))?;
+            let v: tfhe::FheUint128 = safe_deserialize(input_bytes)?;
             Ok(SupportedFheCiphertexts::FheUint128(v))
         }
         7 => {
-            let v: tfhe::FheUint160 = bincode::deserialize(input_bytes)
-                .map_err(|e| FhevmError::DeserializationError(e))?;
+            let v: tfhe::FheUint160 = safe_deserialize(input_bytes)?;
             Ok(SupportedFheCiphertexts::FheUint160(v))
         }
         8 => {
-            let v: tfhe::FheUint256 = bincode::deserialize(input_bytes)
-                .map_err(|e| FhevmError::DeserializationError(e))?;
+            let v: tfhe::FheUint256 = safe_deserialize(input_bytes)?;
             Ok(SupportedFheCiphertexts::FheUint256(v))
         }
         9 => {
-            let v: tfhe::FheUint512 = bincode::deserialize(input_bytes)
-                .map_err(|e| FhevmError::DeserializationError(e))?;
+            let v: tfhe::FheUint512 = safe_deserialize(input_bytes)?;
             Ok(SupportedFheCiphertexts::FheBytes64(v))
         }
         10 => {
-            let v: tfhe::FheUint1024 = bincode::deserialize(input_bytes)
-                .map_err(|e| FhevmError::DeserializationError(e))?;
+            let v: tfhe::FheUint1024 = safe_deserialize(input_bytes)?;
             Ok(SupportedFheCiphertexts::FheBytes128(v))
         }
         11 => {
-            let v: tfhe::FheUint2048 = bincode::deserialize(input_bytes)
-                .map_err(|e| FhevmError::DeserializationError(e))?;
+            let v: tfhe::FheUint2048 = safe_deserialize(input_bytes)?;
             Ok(SupportedFheCiphertexts::FheBytes256(v))
         }
         _ => {
@@ -239,11 +231,7 @@ pub fn try_expand_ciphertext_list(
 ) -> Result<Vec<SupportedFheCiphertexts>, FhevmError> {
     let mut res = Vec::new();
 
-    let the_list: tfhe::ProvenCompactCiphertextList = bincode::deserialize(input_ciphertext)
-        .map_err(|e| {
-            let err: Box<(dyn std::error::Error + Send + Sync)> = e;
-            FhevmError::DeserializationError(err)
-        })?;
+    let the_list: tfhe::ProvenCompactCiphertextList = safe_deserialize(input_ciphertext)?;
 
     // TODO: we can do better and avoid cloning
     tfhe::set_server_key(server_key.clone());
@@ -3209,7 +3197,7 @@ pub fn generate_random_number(
     let subtract_from = 255;
     match the_type {
         0 => {
-            let num = FheUint8::generate_oblivious_pseudo_random_bounded(Seed(seed), 1);
+            let num = FheUint2::generate_oblivious_pseudo_random_bounded(Seed(seed), 1);
             SupportedFheCiphertexts::FheBool(num.gt(0))
         }
         1 => {

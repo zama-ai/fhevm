@@ -15,6 +15,7 @@ use crate::{
         utils::{default_api_key, default_tenant_id, setup_test_app},
     },
 };
+use fhevm_engine_common::utils::safe_serialize;
 use tonic::metadata::MetadataValue;
 
 #[tokio::test]
@@ -47,7 +48,7 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
             .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
             .unwrap();
 
-        let serialized = bincode::serialize(&the_list).unwrap();
+        let serialized = safe_serialize(&the_list);
 
         let mut input_ciphertexts = Vec::new();
         for _ in 0..12 {
@@ -90,7 +91,7 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
             .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
             .unwrap();
 
-        let serialized = bincode::serialize(&the_list).unwrap();
+        let serialized = safe_serialize(&the_list);
 
         let mut input_ciphertexts = Vec::new();
         input_ciphertexts.push(InputToUpload {
@@ -127,7 +128,7 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
         let the_list = builder
             .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
             .unwrap();
-        let serialized = bincode::serialize(&the_list).unwrap();
+        let serialized = safe_serialize(&the_list);
 
         let mut input_ciphertexts = Vec::new();
         input_ciphertexts.push(InputToUpload {
@@ -292,7 +293,7 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
             .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
             .unwrap();
 
-        let serialized = bincode::serialize(&the_list).unwrap();
+        let serialized = safe_serialize(&the_list);
 
         let mut input_ciphertexts = Vec::new();
         input_ciphertexts.push(InputToUpload {

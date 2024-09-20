@@ -7,6 +7,7 @@ use executor::server::executor::{
 use executor::server::executor::{sync_input::Input, SyncInput};
 use executor::server::SyncComputeError;
 use fhevm_engine_common::types::{SupportedFheCiphertexts, HANDLE_LEN};
+use fhevm_engine_common::utils::safe_serialize;
 use tfhe::zk::ZkComputeLoad;
 use tfhe::ProvenCompactCiphertextList;
 use utils::get_test;
@@ -21,13 +22,12 @@ async fn get_input_ciphertext() {
         .await
         .unwrap();
     let mut builder = ProvenCompactCiphertextList::builder(&test.keys.compact_public_key);
-    let list = bincode::serialize(
+    let list = safe_serialize(
         &builder
             .push(10_u8)
             .build_with_proof_packed(&test.keys.public_params, &[], ZkComputeLoad::Proof)
             .unwrap(),
-    )
-    .unwrap();
+    );
     // TODO: tests for all types and avoiding passing in 2 as an identifier for FheUint8.
     let input_handle = test.input_handle(&list, 0, 2);
     let sync_input = SyncInput {
@@ -136,13 +136,12 @@ async fn compute_on_compact_and_serialized_ciphertexts() {
         .await
         .unwrap();
     let mut builder_input = ProvenCompactCiphertextList::builder(&test.keys.compact_public_key);
-    let compact_list = bincode::serialize(
+    let compact_list = safe_serialize(
         &builder_input
             .push(10_u16)
             .build_with_proof_packed(&test.keys.public_params, &[], ZkComputeLoad::Proof)
             .unwrap(),
-    )
-    .unwrap();
+    );
     let mut builder_cts = ProvenCompactCiphertextList::builder(&test.keys.compact_public_key);
     let list = builder_cts
         .push(11_u16)
