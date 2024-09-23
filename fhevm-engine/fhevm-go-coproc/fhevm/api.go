@@ -558,7 +558,7 @@ func doMigrations(dbConn *sql.DB, ctx context.Context) error {
 			is_sent INT DEFAULT 0
 		);
 
-		CREATE INDEX computations_sent ON computations(is_sent);
+		CREATE INDEX IF NOT EXISTS computations_sent ON computations(is_sent);
 	`)
 	if err != nil {
 		return err
