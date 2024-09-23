@@ -392,6 +392,7 @@ func InitCoprocessor() (CoprocessorApi, error) {
 			return nil, errors.New("FHEVM_CIPHERTEXTS_DB is set but FHEVM_CONTRACT_ADDRESS is not set")
 		}
 		fhevmContractAddress := common.HexToAddress(contractAddr)
+		fmt.Printf("Coprocessor contract address: %s\n", fhevmContractAddress)
 
 		coprocUrl, hasUrl := os.LookupEnv("FHEVM_COPROCESSOR_URL")
 		if !hasUrl {
