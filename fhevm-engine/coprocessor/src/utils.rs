@@ -74,7 +74,7 @@ pub fn sort_computations_by_dependencies<'a>(
                     }
                     Input::Scalar(sc_bytes) => {
                         check_valid_ciphertext_handle(&sc_bytes)?;
-                        if dep_idx != 1 && !fhe_op.is_random() {
+                        if dep_idx != 1 && !fhe_op.does_have_more_than_one_scalar() {
                             // TODO: remove wrapping after refactor
                             return Err(CoprocessorError::FhevmError(
                                 FhevmError::FheOperationOnlySecondOperandCanBeScalar {

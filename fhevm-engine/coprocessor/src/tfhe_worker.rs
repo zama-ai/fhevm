@@ -76,8 +76,8 @@ async fn tfhe_worker_cycle(
                     NOT c.is_scalar
                     OR c.is_scalar AND NOT elems.dep_index = 2
                 )
-                -- ignore fhe random operations, all inputs are scalars
-                AND NOT c.fhe_operation = ANY(ARRAY[26, 27])
+                -- ignore fhe random, trivial encrypt operations, all inputs are scalars
+                AND NOT c.fhe_operation = ANY(ARRAY[24, 26, 27])
             )
             LIMIT $1
             FOR UPDATE SKIP LOCKED
@@ -156,7 +156,7 @@ async fn tfhe_worker_cycle(
             let mut work_ciphertexts: Vec<(i16, Vec<u8>)> =
                 Vec::with_capacity(w.dependencies.len());
             for (idx, dh) in w.dependencies.iter().enumerate() {
-                let is_operand_scalar = w.is_scalar && idx == 1 || fhe_op.is_random();
+                let is_operand_scalar = w.is_scalar && idx == 1 || fhe_op.does_have_more_than_one_scalar();
                 if is_operand_scalar {
                     work_ciphertexts.push((-1, dh.clone()));
                 } else {
@@ -190,7 +190,7 @@ async fn tfhe_worker_cycle(
                     let mut deserialized_cts: Vec<SupportedFheCiphertexts> =
                         Vec::with_capacity(work_ciphertexts.len());
                     for (idx, (ct_type, ct_bytes)) in work_ciphertexts.iter().enumerate() {
-                        let is_operand_scalar = w.is_scalar && idx == 1 || fhe_op.is_random();
+                        let is_operand_scalar = w.is_scalar && idx == 1 || fhe_op.does_have_more_than_one_scalar();
                         if is_operand_scalar {
                             let mut the_int = tfhe::integer::U256::default();
                             assert!(

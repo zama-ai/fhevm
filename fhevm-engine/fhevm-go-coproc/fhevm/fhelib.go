@@ -166,6 +166,11 @@ func FheLibMethods() []*FheLibMethod {
 			ArgTypes:    "(uint256,bytes1)",
 			runFunction: fheRandBoundedRun,
 		},
+		{
+			Name:        "trivialEncrypt",
+			ArgTypes:    "(uint256,bytes1)",
+			runFunction: trivialEncryptRun,
+		},
 	}
 }
 

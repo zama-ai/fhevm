@@ -83,6 +83,16 @@ pub enum FhevmError {
         expected_scalar_operand_bytes: usize,
         got_bytes: usize,
     },
+    AllInputsForTrivialEncryptionMustBeScalar {
+        fhe_operation: i32,
+        fhe_operation_name: String,
+    },
+    UnexpectedTrivialEncryptionOperandSizeForScalarOperand {
+        fhe_operation: i32,
+        fhe_operation_name: String,
+        expected_scalar_operand_bytes: usize,
+        got_bytes: usize,
+    },
     UnexpectedRandOperandSizeForOutputType {
         fhe_operation: i32,
         fhe_operation_name: String,
@@ -196,6 +206,20 @@ impl std::fmt::Display for FhevmError {
             } => {
                 write!(f, "unexpected operand size for cast, fhe operation: {fhe_operation}, fhe operation name: {fhe_operation_name}, expected bytes: {}, got bytes: {}", expected_scalar_operand_bytes, got_bytes)
             }
+            Self::AllInputsForTrivialEncryptionMustBeScalar {
+                fhe_operation,
+                fhe_operation_name,
+            } => {
+                write!(f, "all inputs for trivial encryption must be scalar, fhe operation: {fhe_operation}, fhe operation name: {fhe_operation_name}")
+            }
+            Self::UnexpectedTrivialEncryptionOperandSizeForScalarOperand {
+                fhe_operation,
+                fhe_operation_name,
+                expected_scalar_operand_bytes,
+                got_bytes,
+            } => {
+                write!(f, "unexpected operand size for trivial encryption, fhe operation: {fhe_operation}, fhe operation name: {fhe_operation_name}, expected bytes: {}, got bytes: {}", expected_scalar_operand_bytes, got_bytes)
+            }
             Self::FheIfThenElseUnexpectedOperandTypes {
                 fhe_operation,
                 fhe_operation_name,
@@ -300,6 +324,7 @@ pub enum SupportedFheOperations {
     FheNeg = 20,
     FheNot = 21,
     FheCast = 23,
+    FheTrivialEncrypt = 24,
     FheIfThenElse = 25,
     FheRand = 26,
     FheRandBounded = 27,
@@ -529,6 +554,7 @@ impl SupportedFheOperations {
             }
             SupportedFheOperations::FheIfThenElse
             | SupportedFheOperations::FheCast
+            | SupportedFheOperations::FheTrivialEncrypt
             | SupportedFheOperations::FheRand
             | SupportedFheOperations::FheRandBounded => FheOperationType::Other,
             SupportedFheOperations::FheGetInputCiphertext => FheOperationType::Other,
@@ -547,9 +573,9 @@ impl SupportedFheOperations {
         }
     }
 
-    pub fn is_random(&self) -> bool {
+    pub fn does_have_more_than_one_scalar(&self) -> bool {
         match self {
-            SupportedFheOperations::FheRand | SupportedFheOperations::FheRandBounded => true,
+            SupportedFheOperations::FheRand | SupportedFheOperations::FheRandBounded | SupportedFheOperations::FheTrivialEncrypt => true,
             _ => false,
         }
     }
@@ -583,6 +609,7 @@ impl SupportedFheOperations {
             | SupportedFheOperations::FheNot
             | SupportedFheOperations::FheNeg
             | SupportedFheOperations::FheIfThenElse
+            | SupportedFheOperations::FheTrivialEncrypt
             | SupportedFheOperations::FheCast => true,
             SupportedFheOperations::FheAdd
             | SupportedFheOperations::FheSub
@@ -624,6 +651,7 @@ impl TryFrom<i16> for SupportedFheOperations {
             20 => Ok(SupportedFheOperations::FheNeg),
             21 => Ok(SupportedFheOperations::FheNot),
             23 => Ok(SupportedFheOperations::FheCast),
+            24 => Ok(SupportedFheOperations::FheTrivialEncrypt),
             25 => Ok(SupportedFheOperations::FheIfThenElse),
             26 => Ok(SupportedFheOperations::FheRand),
             27 => Ok(SupportedFheOperations::FheRandBounded),

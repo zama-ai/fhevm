@@ -439,7 +439,7 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
                             handle_types.push(-1);
                             this_comp_inputs.push(sc.clone());
                             is_scalar_op_vec.push(true);
-                            assert!(idx == 1 || fhe_op.is_random(), "we should have checked earlier that only second operand can be scalar");
+                            assert!(idx == 1 || fhe_op.does_have_more_than_one_scalar(), "we should have checked earlier that only second operand can be scalar");
                         }
                     }
                 }

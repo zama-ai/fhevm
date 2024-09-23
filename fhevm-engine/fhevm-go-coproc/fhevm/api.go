@@ -30,6 +30,9 @@ const (
 	FheUint128   FheUintType = 6
 	FheUint160   FheUintType = 7
 	FheUint256   FheUintType = 8
+	FheEbytes64  FheUintType = 9
+	FheEbytes128 FheUintType = 10
+	FheEbytes256 FheUintType = 11
 	FheUserBytes FheUintType = 255
 )
 
@@ -62,7 +65,7 @@ const (
 	// VerifyCiphertext FheOp = 22
 	FheCast FheOp = 23
 	// unused
-	// TrivialEncrypt FheOp = 24
+	TrivialEncrypt FheOp = 24
 	FheIfThenElse  FheOp = 25
 	FheRand        FheOp = 26
 	FheRandBounded FheOp = 27
@@ -86,6 +89,14 @@ func (t FheUintType) String() string {
 		return "fheUint128"
 	case FheUint160:
 		return "fheUint160"
+	case FheUint256:
+		return "fheUint256"
+	case FheEbytes64:
+		return "fheEbytes64"
+	case FheEbytes128:
+		return "fheEbytes128"
+	case FheEbytes256:
+		return "fheEbytes256"
 	default:
 		return "unknownFheUintType"
 	}

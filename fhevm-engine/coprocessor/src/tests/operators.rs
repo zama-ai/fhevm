@@ -458,6 +458,117 @@ async fn test_fhe_casts() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[tokio::test]
+async fn test_op_trivial_encrypt() -> Result<(), Box<dyn std::error::Error>> {
+    let app = setup_test_app().await?;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(app.db_url())
+        .await?;
+    let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
+
+    let mut handle_counter = random_handle();
+    let mut next_handle = || {
+        let out: u64 = handle_counter;
+        handle_counter += 1;
+        out.to_be_bytes().to_vec()
+    };
+
+    let api_key_header = format!("bearer {}", default_api_key());
+
+    struct TrivialEncryptionTestCase {
+        inp_type: i32,
+        inp: BigInt,
+    }
+
+    let mut test_cases: Vec<TrivialEncryptionTestCase> = Vec::new();
+    test_cases.push(TrivialEncryptionTestCase {
+        inp_type: 0,
+        inp: BigInt::from(1),
+    });
+
+    let max_num: BigInt = BigInt::from(1) << 256 - 1;
+    for bits in supported_bits() {
+        let bits = *bits;
+        let inp_type = supported_bits_to_bit_type_in_db(bits);
+        let shift_by = bits - 1;
+        let mut inp = BigInt::from(1);
+        inp <<= shift_by;
+        let inp = inp.min(max_num.clone());
+        test_cases.push(TrivialEncryptionTestCase { inp_type, inp });
+    }
+
+    let mut async_computations = Vec::new();
+    let mut output_handles = Vec::new();
+    for case in &test_cases {
+        let output_handle = next_handle();
+        let (_, be_bytes) = case.inp.to_bytes_be();
+        output_handles.push(output_handle.clone());
+        async_computations.push(AsyncComputation {
+            operation: FheOperation::FheTrivialEncrypt.into(),
+            output_handle,
+            inputs: vec![
+                AsyncComputationInput {
+                    input: Some(Input::Scalar(be_bytes)),
+                },
+                AsyncComputationInput {
+                    input: Some(Input::Scalar(vec![case.inp_type as u8])),
+                },
+            ],
+        });
+    }
+
+    println!("Scheduling computations...");
+    let mut compute_request = tonic::Request::new(AsyncComputeRequest {
+        computations: async_computations,
+    });
+    compute_request.metadata_mut().append(
+        "authorization",
+        MetadataValue::from_str(&api_key_header).unwrap(),
+    );
+    let _resp = client.async_compute(compute_request).await?;
+
+    println!("Computations scheduled, waiting upon completion...");
+
+    wait_until_all_ciphertexts_computed(&app).await?;
+
+    let decrypt_request = output_handles.clone();
+    let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
+
+    assert_eq!(
+        resp.len(),
+        output_handles.len(),
+        "Outputs length doesn't match"
+    );
+    for (idx, co) in test_cases.iter().enumerate() {
+        let decr_response = &resp[idx];
+        let value_to_compare = match decr_response.value.as_str() {
+            // for FheBool outputs
+            "true" => "1",
+            "false" => "0",
+            other => other,
+        };
+        println!(
+            "Checking trivial encryption input:{} type:{}",
+            co.inp, co.inp_type
+        );
+        println!(
+            "Response output type: {}, response result: {}",
+            decr_response.output_type, decr_response.value
+        );
+        assert_eq!(
+            decr_response.output_type, co.inp_type as i16,
+            "operand types not equal"
+        );
+        assert_eq!(
+            value_to_compare, co.inp.to_string(),
+            "operand output values not equal"
+        );
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_fhe_if_then_else() -> Result<(), Box<dyn std::error::Error>> {
     let app = setup_test_app().await?;
     let pool = sqlx::postgres::PgPoolOptions::new()

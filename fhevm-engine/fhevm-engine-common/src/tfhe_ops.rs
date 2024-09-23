@@ -76,142 +76,162 @@ pub fn deserialize_fhe_ciphertext(
 
 /// Function assumes encryption key already set
 pub fn trivial_encrypt_be_bytes(output_type: i16, input_bytes: &[u8]) -> SupportedFheCiphertexts {
+    let last_byte = if input_bytes.len() > 0 {
+        input_bytes[input_bytes.len() - 1]
+    } else { 0 };
     match output_type {
         0 => SupportedFheCiphertexts::FheBool(
-            FheBool::try_encrypt_trivial(input_bytes[0] > 0).unwrap(),
+            FheBool::try_encrypt_trivial(last_byte > 0).unwrap(),
         ),
         1 => SupportedFheCiphertexts::FheUint4(
-            FheUint4::try_encrypt_trivial(input_bytes[0]).unwrap(),
+            FheUint4::try_encrypt_trivial(last_byte).unwrap()
         ),
         2 => SupportedFheCiphertexts::FheUint8(
-            FheUint8::try_encrypt_trivial(input_bytes[0]).unwrap(),
+            FheUint8::try_encrypt_trivial(last_byte).unwrap(),
         ),
         3 => {
             let mut padded: [u8; 2] = [0; 2];
-            let padded_len = padded.len();
-            let copy_from = if padded_len >= input_bytes.len() {
-                padded_len - input_bytes.len()
-            } else {
-                0
-            };
-            let len = padded.len().min(input_bytes.len());
-            padded[copy_from..padded_len].copy_from_slice(&input_bytes[0..len]);
+            if input_bytes.len() > 0 {
+                let padded_len = padded.len();
+                let copy_from = if padded_len >= input_bytes.len() {
+                    padded_len - input_bytes.len()
+                } else {
+                    0
+                };
+                let len = padded.len().min(input_bytes.len());
+                padded[copy_from..padded_len].copy_from_slice(&input_bytes[input_bytes.len()-len..]);
+            }
             let res = u16::from_be_bytes(padded);
             SupportedFheCiphertexts::FheUint16(FheUint16::try_encrypt_trivial(res).unwrap())
         }
         4 => {
             let mut padded: [u8; 4] = [0; 4];
-            let padded_len = padded.len();
-            let copy_from = if padded_len >= input_bytes.len() {
-                padded_len - input_bytes.len()
-            } else {
-                0
-            };
-            let len = padded.len().min(input_bytes.len());
-            padded[copy_from..padded_len].copy_from_slice(&input_bytes[0..len]);
+            if input_bytes.len() > 0 {
+                let padded_len = padded.len();
+                let copy_from = if padded_len >= input_bytes.len() {
+                    padded_len - input_bytes.len()
+                } else {
+                    0
+                };
+                let len = padded.len().min(input_bytes.len());
+                padded[copy_from..padded_len].copy_from_slice(&input_bytes[input_bytes.len()-len..]);
+            }
             let res: u32 = u32::from_be_bytes(padded);
             SupportedFheCiphertexts::FheUint32(FheUint32::try_encrypt_trivial(res).unwrap())
         }
         5 => {
             let mut padded: [u8; 8] = [0; 8];
-            let padded_len = padded.len();
-            let copy_from = if padded_len >= input_bytes.len() {
-                padded_len - input_bytes.len()
-            } else {
-                0
-            };
-            let len = padded.len().min(input_bytes.len());
-            padded[copy_from..padded_len].copy_from_slice(&input_bytes[0..len]);
+            if input_bytes.len() > 0 {
+                let padded_len = padded.len();
+                let copy_from = if padded_len >= input_bytes.len() {
+                    padded_len - input_bytes.len()
+                } else {
+                    0
+                };
+                let len = padded.len().min(input_bytes.len());
+                padded[copy_from..padded_len].copy_from_slice(&input_bytes[input_bytes.len()-len..]);
+            }
             let res: u64 = u64::from_be_bytes(padded);
             SupportedFheCiphertexts::FheUint64(FheUint64::try_encrypt_trivial(res).unwrap())
         }
         6 => {
             let mut padded: [u8; 16] = [0; 16];
-            let padded_len = padded.len();
-            let copy_from = if padded_len >= input_bytes.len() {
-                padded_len - input_bytes.len()
-            } else {
-                0
-            };
-            let len = padded.len().min(input_bytes.len());
-            padded[copy_from..padded_len].copy_from_slice(&input_bytes[0..len]);
+            if input_bytes.len() > 0 {
+                let padded_len = padded.len();
+                let copy_from = if padded_len >= input_bytes.len() {
+                    padded_len - input_bytes.len()
+                } else {
+                    0
+                };
+                let len = padded.len().min(input_bytes.len());
+                padded[copy_from..padded_len].copy_from_slice(&input_bytes[input_bytes.len()-len..]);
+            }
             let res: u128 = u128::from_be_bytes(padded);
             let output = FheUint128::try_encrypt_trivial(res).unwrap();
             SupportedFheCiphertexts::FheUint128(output)
         }
         7 => {
             let mut padded: [u8; 32] = [0; 32];
-            let padded_len = padded.len();
-            let copy_from = if padded_len >= input_bytes.len() {
-                padded_len - input_bytes.len()
-            } else {
-                0
-            };
-            let len = padded.len().min(input_bytes.len());
-            padded[copy_from..padded_len].copy_from_slice(&input_bytes[0..len]);
             let mut be: U256 = U256::ZERO;
-            be.copy_from_be_byte_slice(&padded);
-            // this is debugging, just cast into right type
+            if input_bytes.len() > 0 {
+                let padded_len = padded.len();
+                let copy_from = if padded_len >= input_bytes.len() {
+                    padded_len - input_bytes.len()
+                } else {
+                    0
+                };
+                let len = padded.len().min(input_bytes.len());
+                padded[copy_from..padded_len].copy_from_slice(&input_bytes[input_bytes.len()-len..]);
+                be.copy_from_be_byte_slice(&padded);
+            }
             let output: FheUint160 = FheUint256::try_encrypt_trivial(be).unwrap().cast_into();
             SupportedFheCiphertexts::FheUint160(output)
         }
         8 => {
             let mut padded: [u8; 32] = [0; 32];
-            let padded_len = padded.len();
-            let copy_from = if padded_len >= input_bytes.len() {
-                padded_len - input_bytes.len()
-            } else {
-                0
-            };
-            let len = padded.len().min(input_bytes.len());
-            padded[copy_from..padded_len].copy_from_slice(&input_bytes[0..len]);
             let mut be: U256 = U256::ZERO;
-            be.copy_from_be_byte_slice(&padded);
+            if input_bytes.len() > 0 {
+                let padded_len = padded.len();
+                let copy_from = if padded_len >= input_bytes.len() {
+                    padded_len - input_bytes.len()
+                } else {
+                    0
+                };
+                let len = padded.len().min(input_bytes.len());
+                padded[copy_from..padded_len].copy_from_slice(&input_bytes[input_bytes.len()-len..]);
+                be.copy_from_be_byte_slice(&padded);
+            }
             let output = FheUint256::try_encrypt_trivial(be).unwrap();
             SupportedFheCiphertexts::FheUint256(output)
         }
         9 => {
             let mut padded: [u8; 64] = [0; 64];
-            let padded_len = padded.len();
-            let copy_from = if padded_len >= input_bytes.len() {
-                padded_len - input_bytes.len()
-            } else {
-                0
-            };
-            let len = padded.len().min(input_bytes.len());
-            padded[copy_from..padded_len].copy_from_slice(&input_bytes[0..len]);
             let mut be: StaticUnsignedBigInt<8> = StaticUnsignedBigInt::<8>::ZERO;
-            be.copy_from_be_byte_slice(&padded);
+            if input_bytes.len() > 0 {
+                let padded_len = padded.len();
+                let copy_from = if padded_len >= input_bytes.len() {
+                    padded_len - input_bytes.len()
+                } else {
+                    0
+                };
+                let len = padded.len().min(input_bytes.len());
+                padded[copy_from..padded_len].copy_from_slice(&input_bytes[input_bytes.len()-len..]);
+                be.copy_from_be_byte_slice(&padded);
+            }
             let output = FheUint512::try_encrypt_trivial(be).unwrap();
             SupportedFheCiphertexts::FheBytes64(output)
         }
         10 => {
             let mut padded: [u8; 128] = [0; 128];
-            let padded_len = padded.len();
-            let copy_from = if padded_len >= input_bytes.len() {
-                padded_len - input_bytes.len()
-            } else {
-                0
-            };
-            let len = padded.len().min(input_bytes.len());
-            padded[copy_from..padded_len].copy_from_slice(&input_bytes[0..len]);
             let mut be: StaticUnsignedBigInt<16> = StaticUnsignedBigInt::<16>::ZERO;
-            be.copy_from_be_byte_slice(&padded);
+            if input_bytes.len() > 0 {
+                let padded_len = padded.len();
+                let copy_from = if padded_len >= input_bytes.len() {
+                    padded_len - input_bytes.len()
+                } else {
+                    0
+                };
+                let len = padded.len().min(input_bytes.len());
+                padded[copy_from..padded_len].copy_from_slice(&input_bytes[input_bytes.len()-len..]);
+                be.copy_from_be_byte_slice(&padded);
+            }
             let output = FheUint1024::try_encrypt_trivial(be).unwrap();
             SupportedFheCiphertexts::FheBytes128(output)
         }
         11 => {
             let mut padded: [u8; 256] = [0; 256];
-            let padded_len = padded.len();
-            let copy_from = if padded_len >= input_bytes.len() {
-                padded_len - input_bytes.len()
-            } else {
-                0
-            };
-            let len = padded.len().min(input_bytes.len());
-            padded[copy_from..padded_len].copy_from_slice(&input_bytes[0..len]);
             let mut be: StaticUnsignedBigInt<32> = StaticUnsignedBigInt::<32>::ZERO;
-            be.copy_from_be_byte_slice(&padded);
+            if input_bytes.len() > 0 {
+                let padded_len = padded.len();
+                let copy_from = if padded_len >= input_bytes.len() {
+                    padded_len - input_bytes.len()
+                } else {
+                    0
+                };
+                let len = padded.len().min(input_bytes.len());
+                padded[copy_from..padded_len].copy_from_slice(&input_bytes[input_bytes.len()-len..]);
+                be.copy_from_be_byte_slice(&padded);
+            }
             let output = FheUint2048::try_encrypt_trivial(be).unwrap();
             SupportedFheCiphertexts::FheBytes256(output)
         }
@@ -375,7 +395,7 @@ pub fn check_fhe_operand_types(
 
     // do this check for only random ops because
     // all random ops inputs are scalar
-    if !fhe_op.is_random() {
+    if !fhe_op.does_have_more_than_one_scalar() {
         if scalar_operands.len() > 1 {
             return Err(FhevmError::FheOperationOnlyOneOperandCanBeScalar {
                 fhe_operation,
@@ -597,6 +617,40 @@ pub fn check_fhe_operand_types(
                             });
                         }
                     }
+                }
+                SupportedFheOperations::FheTrivialEncrypt => {
+                    let expected_operands = 2;
+                    if input_types.len() != expected_operands {
+                        return Err(FhevmError::UnexpectedOperandCountForFheOperation {
+                            fhe_operation,
+                            fhe_operation_name: format!("{:?}", fhe_op),
+                            expected_operands,
+                            got_operands: input_types.len(),
+                        });
+                    }
+
+                    if !is_input_handle_scalar[0] || !is_input_handle_scalar[1] {
+                        return Err(FhevmError::AllInputsForTrivialEncryptionMustBeScalar {
+                            fhe_operation,
+                            fhe_operation_name: format!("{:?}", fhe_op),
+                        });
+                    }
+
+                    let op = &input_handles[1];
+                    if op.len() != 1 {
+                        return Err(
+                            FhevmError::UnexpectedTrivialEncryptionOperandSizeForScalarOperand {
+                                fhe_operation,
+                                fhe_operation_name: format!("{:?}", fhe_op),
+                                expected_scalar_operand_bytes: 1,
+                                got_bytes: op.len(),
+                            },
+                        );
+                    }
+
+                    let output_type = op[0] as i32;
+                    validate_fhe_type(output_type)?;
+                    Ok(output_type as i16)
                 }
                 SupportedFheOperations::FheRand => {
                     // counter and output type
@@ -3154,6 +3208,18 @@ pub fn perform_fhe_operation(
             }
             _ => {
                 panic!("unknown cast pair")
+            }
+        },
+        SupportedFheOperations::FheTrivialEncrypt => match (&input_operands[0], &input_operands[1]) {
+            (SupportedFheCiphertexts::Scalar(inp), SupportedFheCiphertexts::Scalar(op)) => {
+                let (l, _) = op.to_low_high_u128();
+                let l = l as i16;
+                let mut bytes: [u8; 32] = [0; 32];
+                inp.copy_to_be_byte_slice(&mut bytes);
+                Ok(trivial_encrypt_be_bytes(l, &bytes))
+            }
+            _ => {
+                panic!("unknown trivial encrypt operation")
             }
         },
         SupportedFheOperations::FheRand => {

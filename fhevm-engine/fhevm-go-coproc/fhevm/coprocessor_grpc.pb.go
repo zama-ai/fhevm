@@ -22,6 +22,7 @@ const (
 	FhevmCoprocessor_AsyncCompute_FullMethodName              = "/fhevm.coprocessor.FhevmCoprocessor/AsyncCompute"
 	FhevmCoprocessor_WaitComputations_FullMethodName          = "/fhevm.coprocessor.FhevmCoprocessor/WaitComputations"
 	FhevmCoprocessor_UploadInputs_FullMethodName              = "/fhevm.coprocessor.FhevmCoprocessor/UploadInputs"
+	FhevmCoprocessor_GetCiphertexts_FullMethodName            = "/fhevm.coprocessor.FhevmCoprocessor/GetCiphertexts"
 	FhevmCoprocessor_TrivialEncryptCiphertexts_FullMethodName = "/fhevm.coprocessor.FhevmCoprocessor/TrivialEncryptCiphertexts"
 )
 
@@ -32,6 +33,7 @@ type FhevmCoprocessorClient interface {
 	AsyncCompute(ctx context.Context, in *AsyncComputeRequest, opts ...grpc.CallOption) (*GenericResponse, error)
 	WaitComputations(ctx context.Context, in *AsyncComputeRequest, opts ...grpc.CallOption) (*FhevmResponses, error)
 	UploadInputs(ctx context.Context, in *InputUploadBatch, opts ...grpc.CallOption) (*InputUploadResponse, error)
+	GetCiphertexts(ctx context.Context, in *GetCiphertextBatch, opts ...grpc.CallOption) (*GetCiphertextResponse, error)
 	TrivialEncryptCiphertexts(ctx context.Context, in *TrivialEncryptBatch, opts ...grpc.CallOption) (*GenericResponse, error)
 }
 
@@ -73,6 +75,16 @@ func (c *fhevmCoprocessorClient) UploadInputs(ctx context.Context, in *InputUplo
 	return out, nil
 }
 
+func (c *fhevmCoprocessorClient) GetCiphertexts(ctx context.Context, in *GetCiphertextBatch, opts ...grpc.CallOption) (*GetCiphertextResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetCiphertextResponse)
+	err := c.cc.Invoke(ctx, FhevmCoprocessor_GetCiphertexts_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *fhevmCoprocessorClient) TrivialEncryptCiphertexts(ctx context.Context, in *TrivialEncryptBatch, opts ...grpc.CallOption) (*GenericResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GenericResponse)
@@ -90,6 +102,7 @@ type FhevmCoprocessorServer interface {
 	AsyncCompute(context.Context, *AsyncComputeRequest) (*GenericResponse, error)
 	WaitComputations(context.Context, *AsyncComputeRequest) (*FhevmResponses, error)
 	UploadInputs(context.Context, *InputUploadBatch) (*InputUploadResponse, error)
+	GetCiphertexts(context.Context, *GetCiphertextBatch) (*GetCiphertextResponse, error)
 	TrivialEncryptCiphertexts(context.Context, *TrivialEncryptBatch) (*GenericResponse, error)
 	mustEmbedUnimplementedFhevmCoprocessorServer()
 }
@@ -109,6 +122,9 @@ func (UnimplementedFhevmCoprocessorServer) WaitComputations(context.Context, *As
 }
 func (UnimplementedFhevmCoprocessorServer) UploadInputs(context.Context, *InputUploadBatch) (*InputUploadResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UploadInputs not implemented")
+}
+func (UnimplementedFhevmCoprocessorServer) GetCiphertexts(context.Context, *GetCiphertextBatch) (*GetCiphertextResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetCiphertexts not implemented")
 }
 func (UnimplementedFhevmCoprocessorServer) TrivialEncryptCiphertexts(context.Context, *TrivialEncryptBatch) (*GenericResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method TrivialEncryptCiphertexts not implemented")
@@ -188,6 +204,24 @@ func _FhevmCoprocessor_UploadInputs_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _FhevmCoprocessor_GetCiphertexts_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetCiphertextBatch)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FhevmCoprocessorServer).GetCiphertexts(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FhevmCoprocessor_GetCiphertexts_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FhevmCoprocessorServer).GetCiphertexts(ctx, req.(*GetCiphertextBatch))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _FhevmCoprocessor_TrivialEncryptCiphertexts_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(TrivialEncryptBatch)
 	if err := dec(in); err != nil {
@@ -224,6 +258,10 @@ var FhevmCoprocessor_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UploadInputs",
 			Handler:    _FhevmCoprocessor_UploadInputs_Handler,
+		},
+		{
+			MethodName: "GetCiphertexts",
+			Handler:    _FhevmCoprocessor_GetCiphertexts_Handler,
 		},
 		{
 			MethodName: "TrivialEncryptCiphertexts",

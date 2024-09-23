@@ -1456,6 +1456,42 @@ func fheRandBoundedRun(sess CoprocessorSession, unslicedInput []byte, ed ExtraDa
 	return nil
 }
 
+func trivialEncryptRun(sess CoprocessorSession, unslicedInput []byte, ed ExtraData, outputHandle []byte) error {
+	if len(unslicedInput) < 33 {
+		return fmt.Errorf("expected at least 1 bytes as input, got %d", len(unslicedInput))
+	}
+
+	resultTypeByte := unslicedInput[32]
+	if !IsValidFheType(resultTypeByte) {
+		return fmt.Errorf("invalid fhe type byte: %d", resultTypeByte)
+	}
+
+	upperBound := big.NewInt(0)
+	upperBound.SetBytes(unslicedInput[0:32])
+
+	err := sess.GetStore().InsertComputation(ComputationToInsert{
+		Operation:    TrivialEncrypt,
+		OutputHandle: outputHandle,
+		Operands: []ComputationOperand{
+			{
+				Handle:      unslicedInput[0:32],
+				FheUintType: FheUint256,
+				IsScalar:    true,
+			},
+			{
+				Handle:      []byte{resultTypeByte},
+				FheUintType: FheUint8,
+				IsScalar:    true,
+			},
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func isScalarOp(input []byte) (bool, error) {
 	if len(input) != 65 {
 		return false, errors.New("input needs to contain two 256-bit sized values and 1 8-bit value")

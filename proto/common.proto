@@ -31,6 +31,7 @@ enum FheOperation {
   FHE_NEG = 20;
   FHE_NOT = 21;
   FHE_CAST = 23;
+  FHE_TRIVIAL_ENCRYPT = 24;
   FHE_IF_THEN_ELSE = 25;
   FHE_RAND = 26;
   FHE_RAND_BOUNDED = 27;
