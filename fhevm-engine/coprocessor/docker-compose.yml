@@ -24,7 +24,7 @@ services:
       - --server-addr=0.0.0.0:50051
       - --coprocessor-private-key=/usr/share/coprocessor.key
   geth:
-    image: ghcr.io/zama-ai/geth-coprocessor-devnode:v2
+    image: ghcr.io/zama-ai/geth-coprocessor-devnode:v3
     environment:
       - FHEVM_COPROCESSOR_API_KEY=a1503fb6-d79b-4e9e-826d-44cf262f3e05
       - FHEVM_COPROCESSOR_URL=coproc:50051
