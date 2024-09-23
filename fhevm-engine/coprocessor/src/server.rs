@@ -99,6 +99,8 @@ pub async fn run_server_iteration(
 // for EIP712 signature
 alloy::sol! {
     struct CiphertextVerification {
+        address aclAddress;
+        bytes32 hashOfCiphertext;
         uint256[] handlesList;
         address contractAddress;
         address callerAddress;
@@ -167,6 +169,15 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
                 tonic::Status::from_error(Box::new(
                     CoprocessorError::CannotParseTenantEthereumAddress {
                         bad_address: verifying_contract_address.clone(),
+                        parsing_error: e.to_string(),
+                    },
+                ))
+            })?;
+        let acl_contract_address =
+            alloy::primitives::Address::from_str(&fetch_key_response.acl_contract_address).map_err(|e| {
+                tonic::Status::from_error(Box::new(
+                    CoprocessorError::CannotParseTenantEthereumAddress {
+                        bad_address: fetch_key_response.acl_contract_address.clone(),
                         parsing_error: e.to_string(),
                     },
                 ))
@@ -285,7 +296,12 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
             .await
             .map_err(Into::<CoprocessorError>::into)?;
 
+            let mut hash_of_ciphertext: [u8; 32] = [0; 32];
+            hash_of_ciphertext.copy_from_slice(&blob_hash);
+
             let mut ct_verification = CiphertextVerification {
+                hashOfCiphertext: alloy::primitives::FixedBytes(hash_of_ciphertext),
+                aclAddress: acl_contract_address,
                 contractAddress: contract_addresses[idx],
                 callerAddress: caller_addresses[idx],
                 handlesList: Vec::with_capacity(corresponding_unpacked.len()),

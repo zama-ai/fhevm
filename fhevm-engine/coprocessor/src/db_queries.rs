@@ -97,6 +97,7 @@ pub async fn check_if_ciphertexts_exist_in_db(
 pub struct FetchTenantKeyResult {
     pub chain_id: i32,
     pub verifying_contract_address: String,
+    pub acl_contract_address: String,
     pub server_key: tfhe::ServerKey,
 }
 
@@ -117,6 +118,7 @@ where
                 return Ok(FetchTenantKeyResult {
                     chain_id: key.chain_id,
                     verifying_contract_address: key.verifying_contract_address.clone(),
+                    acl_contract_address: key.acl_contract_address.clone(),
                     server_key: key.sks.clone(),
                 });
             }
@@ -136,7 +138,7 @@ where
     let mut res = Vec::with_capacity(tenants_to_query.len());
     let keys = query!(
         "
-            SELECT tenant_id, chain_id, verifying_contract_address, pks_key, sks_key, public_params
+            SELECT tenant_id, chain_id, acl_contract_address, verifying_contract_address, pks_key, sks_key, public_params
             FROM tenants
             WHERE tenant_id = ANY($1::INT[])
         ",
@@ -162,6 +164,7 @@ where
             pks,
             public_params,
             chain_id: key.chain_id,
+            acl_contract_address: key.acl_contract_address,
             verifying_contract_address: key.verifying_contract_address,
         });
     }

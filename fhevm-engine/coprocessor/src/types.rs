@@ -177,6 +177,7 @@ pub struct TfheTenantKeys {
     pub tenant_id: i32,
     pub chain_id: i32,
     pub verifying_contract_address: String,
+    pub acl_contract_address: String,
     pub sks: tfhe::ServerKey,
 
     // only used in tests, that's why we put dead_code

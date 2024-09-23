@@ -211,11 +211,12 @@ pub async fn setup_test_user(pool: &sqlx::PgPool) -> Result<(), Box<dyn std::err
         .expect("can't read public params");
     sqlx::query!(
         "
-            INSERT INTO tenants(tenant_api_key, tenant_id, chain_id, verifying_contract_address, pks_key, sks_key, public_params, cks_key)
+            INSERT INTO tenants(tenant_api_key, tenant_id, chain_id, acl_contract_address, verifying_contract_address, pks_key, sks_key, public_params, cks_key)
             VALUES (
                 'a1503fb6-d79b-4e9e-826d-44cf262f3e05',
                 1,
                 12345,
+                '0x168813841d158Ea8508f91f71aF338e4cB4d396e',
                 '0x6819e3aDc437fAf9D533490eD3a7552493fCE3B1',
                 $1,
                 $2,
