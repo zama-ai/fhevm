@@ -162,6 +162,7 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
                 .map_err(|e| tonic::Status::from_error(e))?
         };
         let chain_id = fetch_key_response.chain_id;
+        let chain_id_be = (chain_id as u64).to_be_bytes();
         let server_key = fetch_key_response.server_key;
         let verifying_contract_address = fetch_key_response.verifying_contract_address;
         let verifying_contract_address =
@@ -323,6 +324,8 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
                 let mut handle_hash = Keccak256::new();
                 handle_hash.update(&blob_hash);
                 handle_hash.update(&[ct_idx as u8]);
+                handle_hash.update(acl_contract_address.as_slice());
+                handle_hash.update(&chain_id_be);
                 let mut handle = handle_hash.finalize().to_vec();
                 assert_eq!(handle.len(), 32);
                 // idx cast to u8 must succeed because we don't allow
