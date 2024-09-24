@@ -72,11 +72,13 @@ message InputCiphertextResponseHandle {
 }
 
 message InputCiphertextResponse {
-  repeated InputCiphertextResponseHandle input_handles = 1;
-  string eip712ContractAddress = 2;
-  string eip712CallerAddress = 3;
-  string eip712SignerAddress = 4;
-  bytes eip712Signature = 5;
+  string aclAddress = 1;
+  bytes hashOfCiphertext = 2;
+  repeated InputCiphertextResponseHandle input_handles = 3;
+  string eip712ContractAddress = 5;
+  string eip712CallerAddress = 6;
+  string eip712SignerAddress = 7;
+  bytes eip712Signature = 8;
 }
 
 message InputUploadResponse {

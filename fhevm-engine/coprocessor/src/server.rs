@@ -308,6 +308,8 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
             };
 
             let mut ct_resp = InputCiphertextResponse {
+                acl_address: fetch_key_response.acl_contract_address.clone(),
+                hash_of_ciphertext: hash_of_ciphertext.to_vec(),
                 input_handles: Vec::with_capacity(corresponding_unpacked.len()),
                 eip712_signature: Vec::new(),
                 eip712_contract_address: contract_addresses[idx].to_string(),
