@@ -1,5 +1,6 @@
 use crate::cli::Args;
-use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, deserialize_fhe_ciphertext};
+use fhevm_engine_common::tfhe_ops::current_ciphertext_version;
+use fhevm_engine_common::types::SupportedFheCiphertexts;
 use rand::Rng;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU16, Ordering};
@@ -240,9 +241,9 @@ pub async fn decrypt_ciphertexts(
     tenant_id: i32,
     input: Vec<Vec<u8>>,
 ) -> Result<Vec<DecryptionResult>, Box<dyn std::error::Error>> {
-    let mut priv_key = sqlx::query!(
+    let mut keys = sqlx::query!(
         "
-            SELECT cks_key
+            SELECT cks_key, sks_key
             FROM tenants
             WHERE tenant_id = $1
         ",
@@ -251,8 +252,8 @@ pub async fn decrypt_ciphertexts(
     .fetch_all(pool)
     .await?;
 
-    if priv_key.is_empty() || priv_key[0].cks_key.is_none() {
-        panic!("tenant private key not found");
+    if keys.is_empty() || keys[0].cks_key.is_none() {
+        panic!("tenant keys not found");
     }
 
     let mut ct_indexes: BTreeMap<&[u8], usize> = BTreeMap::new();
@@ -260,7 +261,7 @@ pub async fn decrypt_ciphertexts(
         ct_indexes.insert(h.as_slice(), idx);
     }
 
-    assert_eq!(priv_key.len(), 1);
+    assert_eq!(keys.len(), 1);
 
     let cts = sqlx::query!(
         "
@@ -281,15 +282,18 @@ pub async fn decrypt_ciphertexts(
         panic!("ciphertext not found");
     }
 
-    let priv_key = priv_key.pop().unwrap().cks_key.unwrap();
+    let keys = keys.pop().unwrap();
 
     let mut values = tokio::task::spawn_blocking(move || {
-        let client_key: tfhe::ClientKey = bincode::deserialize(&priv_key).unwrap();
+        let client_key: tfhe::ClientKey =
+            bincode::deserialize(&keys.cks_key.clone().unwrap()).unwrap();
+        let sks: tfhe::ServerKey = bincode::deserialize(&keys.sks_key).unwrap();
+        tfhe::set_server_key(sks);
 
         let mut decrypted: Vec<(Vec<u8>, DecryptionResult)> = Vec::with_capacity(cts.len());
         for ct in cts {
             let deserialized =
-                deserialize_fhe_ciphertext(ct.ciphertext_type, &ct.ciphertext).unwrap();
+                SupportedFheCiphertexts::decompress(ct.ciphertext_type, &ct.ciphertext).unwrap();
             decrypted.push((
                 ct.handle,
                 DecryptionResult {

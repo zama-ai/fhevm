@@ -7,7 +7,7 @@ use crate::db_queries::{
 };
 use crate::server::coprocessor::GenericResponse;
 use crate::types::{CoprocessorError, TfheTenantKeys};
-use crate::utils::sort_computations_by_dependencies;
+use crate::utils::{set_server_key_if_not_set, sort_computations_by_dependencies};
 use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::SignerSync;
 use alloy::sol_types::SolStruct;
@@ -23,6 +23,7 @@ use fhevm_engine_common::tfhe_ops::{
 use fhevm_engine_common::types::{FhevmError, SupportedFheCiphertexts, SupportedFheOperations};
 use sha3::{Digest, Keccak256};
 use sqlx::{query, Acquire};
+use tokio::task::spawn_blocking;
 use tonic::transport::Server;
 
 pub mod common {
@@ -177,14 +178,15 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
                 ))
             })?;
         let acl_contract_address =
-            alloy::primitives::Address::from_str(&fetch_key_response.acl_contract_address).map_err(|e| {
-                tonic::Status::from_error(Box::new(
-                    CoprocessorError::CannotParseTenantEthereumAddress {
-                        bad_address: fetch_key_response.acl_contract_address.clone(),
-                        parsing_error: e.to_string(),
-                    },
-                ))
-            })?;
+            alloy::primitives::Address::from_str(&fetch_key_response.acl_contract_address)
+                .map_err(|e| {
+                    tonic::Status::from_error(Box::new(
+                        CoprocessorError::CannotParseTenantEthereumAddress {
+                            bad_address: fetch_key_response.acl_contract_address.clone(),
+                            parsing_error: e.to_string(),
+                        },
+                    ))
+                })?;
 
         let eip_712_domain = alloy::sol_types::eip712_domain! {
             name: "InputVerifier",
@@ -224,12 +226,12 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
             let server_key = server_key.clone();
             tfhe_work_set.spawn_blocking(
                 move || -> Result<_, (Box<(dyn std::error::Error + Send + Sync)>, usize)> {
-                    let expanded =
-                        try_expand_ciphertext_list(&cloned_input.input_payload, &server_key)
-                            .map_err(|e| {
-                                let err: Box<(dyn std::error::Error + Send + Sync)> = Box::new(e);
-                                (err, idx)
-                            })?;
+                    set_server_key_if_not_set(tenant_id, &server_key);
+                    let expanded = try_expand_ciphertext_list(&cloned_input.input_payload)
+                        .map_err(|e| {
+                            let err: Box<(dyn std::error::Error + Send + Sync)> = Box::new(e);
+                            (err, idx)
+                        })?;
 
                     Ok((expanded, idx))
                 },
@@ -280,7 +282,7 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
             assert_eq!(blob_hash.len(), 32, "should be 32 bytes");
 
             let corresponding_unpacked = results
-                .get(&idx)
+                .remove(&idx)
                 .expect("we should have all results computed now");
 
             // save blob for audits and historical reference
@@ -320,21 +322,31 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
                 signer_address: self.signer.address().to_string(),
             };
 
-            for (ct_idx, the_ct) in corresponding_unpacked.iter().enumerate() {
-                let (serialized_type, serialized_ct) = the_ct.serialize();
-                let ciphertext_version = current_ciphertext_version();
-                let mut handle_hash = Keccak256::new();
-                handle_hash.update(&blob_hash);
-                handle_hash.update(&[ct_idx as u8]);
-                handle_hash.update(acl_contract_address.as_slice());
-                handle_hash.update(&chain_id_be);
-                let mut handle = handle_hash.finalize().to_vec();
-                assert_eq!(handle.len(), 32);
-                // idx cast to u8 must succeed because we don't allow
-                // more handles than u8 size
-                handle[29] = ct_idx as u8;
-                handle[30] = serialized_type as u8;
-                handle[31] = ciphertext_version as u8;
+            let ciphertext_version = current_ciphertext_version();
+            for (ct_idx, the_ct) in corresponding_unpacked.into_iter().enumerate() {
+                // TODO: simplify compress and hash computation async handling
+                let blob_hash_clone = blob_hash.clone();
+                let server_key_clone = server_key.clone();
+                let (handle, serialized_ct, serialized_type) = spawn_blocking(move || {
+                    set_server_key_if_not_set(tenant_id, &server_key_clone);
+                    let (serialized_type, serialized_ct) = the_ct.compress();
+                    let mut handle_hash = Keccak256::new();
+                    handle_hash.update(&blob_hash_clone);
+                    handle_hash.update(&[ct_idx as u8]);
+                    handle_hash.update(acl_contract_address.as_slice());
+                    handle_hash.update(&chain_id_be);
+                    let mut handle = handle_hash.finalize().to_vec();
+                    assert_eq!(handle.len(), 32);
+                    // idx cast to u8 must succeed because we don't allow
+                    // more handles than u8 size
+                    handle[29] = ct_idx as u8;
+                    handle[30] = serialized_type as u8;
+                    handle[31] = ciphertext_version as u8;
+
+                    (handle, serialized_ct, serialized_type)
+                })
+                .await
+                .map_err(|e| tonic::Status::from_error(Box::new(e)))?;
 
                 let _ = sqlx::query!(
                     "
@@ -572,7 +584,7 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
             let mut res: Vec<(Vec<u8>, i16, Vec<u8>)> = Vec::with_capacity(cloned.len());
             for v in cloned {
                 let ct = trivial_encrypt_be_bytes(v.output_type as i16, &v.be_value);
-                let (ct_type, ct_bytes) = ct.serialize();
+                let (ct_type, ct_bytes) = ct.compress();
                 res.push((v.handle, ct_type, ct_bytes));
             }
 

@@ -1,12 +1,12 @@
+use crate::utils::set_server_key_if_not_set;
 use crate::{db_queries::populate_cache_with_tenant_keys, types::TfheTenantKeys};
 use fhevm_engine_common::types::SupportedFheCiphertexts;
 use fhevm_engine_common::{
-    tfhe_ops::{current_ciphertext_version, deserialize_fhe_ciphertext, perform_fhe_operation},
+    tfhe_ops::{current_ciphertext_version, perform_fhe_operation},
     types::SupportedFheOperations,
 };
 use sqlx::{postgres::PgListener, query, Acquire};
 use std::{
-    cell::Cell,
     collections::{BTreeSet, HashMap},
     num::NonZeroUsize,
 };
@@ -156,7 +156,8 @@ async fn tfhe_worker_cycle(
             let mut work_ciphertexts: Vec<(i16, Vec<u8>)> =
                 Vec::with_capacity(w.dependencies.len());
             for (idx, dh) in w.dependencies.iter().enumerate() {
-                let is_operand_scalar = w.is_scalar && idx == 1 || fhe_op.does_have_more_than_one_scalar();
+                let is_operand_scalar =
+                    w.is_scalar && idx == 1 || fhe_op.does_have_more_than_one_scalar();
                 if is_operand_scalar {
                     work_ciphertexts.push((-1, dh.clone()));
                 } else {
@@ -171,26 +172,20 @@ async fn tfhe_worker_cycle(
             // copy for setting error in database
             tfhe_work_set.spawn_blocking(
                 move || -> Result<_, (Box<(dyn std::error::Error + Send + Sync)>, i32, Vec<u8>)> {
-                    thread_local! {
-                        static TFHE_TENANT_ID: Cell<i32> = Cell::new(-1);
-                    }
-
-                    // set thread tenant key
+                    // set the server key if not set
                     {
                         let mut rk = tenant_key_cache.blocking_write();
                         let keys = rk
                             .get(&w.tenant_id)
                             .expect("Can't get tenant key from cache");
-                        if w.tenant_id != TFHE_TENANT_ID.get() {
-                            tfhe::set_server_key(keys.sks.clone());
-                            TFHE_TENANT_ID.set(w.tenant_id);
-                        }
+                        set_server_key_if_not_set(w.tenant_id, &keys.sks);
                     }
 
                     let mut deserialized_cts: Vec<SupportedFheCiphertexts> =
                         Vec::with_capacity(work_ciphertexts.len());
                     for (idx, (ct_type, ct_bytes)) in work_ciphertexts.iter().enumerate() {
-                        let is_operand_scalar = w.is_scalar && idx == 1 || fhe_op.does_have_more_than_one_scalar();
+                        let is_operand_scalar =
+                            w.is_scalar && idx == 1 || fhe_op.does_have_more_than_one_scalar();
                         if is_operand_scalar {
                             let mut the_int = tfhe::integer::U256::default();
                             assert!(
@@ -208,24 +203,22 @@ async fn tfhe_worker_cycle(
                             deserialized_cts.push(SupportedFheCiphertexts::Scalar(the_int));
                         } else {
                             deserialized_cts.push(
-                                deserialize_fhe_ciphertext(*ct_type, ct_bytes.as_slice()).map_err(
-                                    |e| {
+                                SupportedFheCiphertexts::decompress(*ct_type, ct_bytes.as_slice())
+                                    .map_err(|e| {
                                         let err: Box<dyn std::error::Error + Send + Sync> =
-                                            Box::new(e);
+                                            e.into();
                                         (err, w.tenant_id, w.output_handle.clone())
-                                    },
-                                )?,
+                                    })?,
                             );
                         }
                     }
 
                     let res =
-                        perform_fhe_operation(w.fhe_operation, &deserialized_cts)
-                            .map_err(|e| {
-                                let err: Box<dyn std::error::Error + Send + Sync> = Box::new(e);
-                                (err, w.tenant_id, w.output_handle.clone())
-                            })?;
-                    let (db_type, db_bytes) = res.serialize();
+                        perform_fhe_operation(w.fhe_operation, &deserialized_cts).map_err(|e| {
+                            let err: Box<dyn std::error::Error + Send + Sync> = Box::new(e);
+                            (err, w.tenant_id, w.output_handle.clone())
+                        })?;
+                    let (db_type, db_bytes) = res.compress();
 
                     Ok((w, db_type, db_bytes))
                 },

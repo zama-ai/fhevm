@@ -440,28 +440,29 @@ impl SupportedFheCiphertexts {
         }
     }
 
-    pub fn compress(self) -> Vec<u8> {
+    pub fn compress(&self) -> (i16, Vec<u8>) {
+        let type_num = self.type_num();
         let mut builder = CompressedCiphertextListBuilder::new();
         match self {
-            SupportedFheCiphertexts::FheBool(c) => builder.push(c),
-            SupportedFheCiphertexts::FheUint4(c) => builder.push(c),
-            SupportedFheCiphertexts::FheUint8(c) => builder.push(c),
-            SupportedFheCiphertexts::FheUint16(c) => builder.push(c),
-            SupportedFheCiphertexts::FheUint32(c) => builder.push(c),
-            SupportedFheCiphertexts::FheUint64(c) => builder.push(c),
-            SupportedFheCiphertexts::FheUint128(c) => builder.push(c),
-            SupportedFheCiphertexts::FheUint160(c) => builder.push(c),
-            SupportedFheCiphertexts::FheUint256(c) => builder.push(c),
-            SupportedFheCiphertexts::FheBytes64(c) => builder.push(c),
-            SupportedFheCiphertexts::FheBytes128(c) => builder.push(c),
-            SupportedFheCiphertexts::FheBytes256(c) => builder.push(c),
+            SupportedFheCiphertexts::FheBool(c) => builder.push(c.clone()),
+            SupportedFheCiphertexts::FheUint4(c) => builder.push(c.clone()),
+            SupportedFheCiphertexts::FheUint8(c) => builder.push(c.clone()),
+            SupportedFheCiphertexts::FheUint16(c) => builder.push(c.clone()),
+            SupportedFheCiphertexts::FheUint32(c) => builder.push(c.clone()),
+            SupportedFheCiphertexts::FheUint64(c) => builder.push(c.clone()),
+            SupportedFheCiphertexts::FheUint128(c) => builder.push(c.clone()),
+            SupportedFheCiphertexts::FheUint160(c) => builder.push(c.clone()),
+            SupportedFheCiphertexts::FheUint256(c) => builder.push(c.clone()),
+            SupportedFheCiphertexts::FheBytes64(c) => builder.push(c.clone()),
+            SupportedFheCiphertexts::FheBytes128(c) => builder.push(c.clone()),
+            SupportedFheCiphertexts::FheBytes256(c) => builder.push(c.clone()),
             SupportedFheCiphertexts::Scalar(_) => {
                 // TODO: Need to fix that, scalars are not ciphertexts.
                 panic!("cannot compress a scalar");
             }
         };
         let list = builder.build().expect("ciphertext compression");
-        safe_serialize(&list)
+        (type_num, safe_serialize(&list))
     }
 
     pub fn decompress(ct_type: i16, list: &[u8]) -> Result<Self> {
@@ -500,7 +501,7 @@ impl SupportedFheCiphertexts {
             10 => Ok(SupportedFheCiphertexts::FheBytes128(
                 list.get(0)?.ok_or(FhevmError::MissingTfheRsData)?,
             )),
-            11 => Ok(SupportedFheCiphertexts::FheBytes128(
+            11 => Ok(SupportedFheCiphertexts::FheBytes256(
                 list.get(0)?.ok_or(FhevmError::MissingTfheRsData)?,
             )),
             _ => Err(FhevmError::UnknownFheType(ct_type as i32).into()),
@@ -575,7 +576,9 @@ impl SupportedFheOperations {
 
     pub fn does_have_more_than_one_scalar(&self) -> bool {
         match self {
-            SupportedFheOperations::FheRand | SupportedFheOperations::FheRandBounded | SupportedFheOperations::FheTrivialEncrypt => true,
+            SupportedFheOperations::FheRand
+            | SupportedFheOperations::FheRandBounded
+            | SupportedFheOperations::FheTrivialEncrypt => true,
             _ => false,
         }
     }

@@ -32,7 +32,7 @@ pub mod executor {
 
 pub fn start(args: &crate::cli::Args) -> Result<()> {
     let keys: Arc<FhevmKeys> = Arc::new(SerializedFhevmKeys::load_from_disk().into());
-    let executor = FhevmExecutorService::new(keys.clone());
+    let executor = FhevmExecutorService::new();
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(args.tokio_threads)
         .max_blocking_threads(args.fhe_compute_threads)
@@ -70,9 +70,7 @@ pub struct ComputationState {
     pub ciphertexts: HashMap<Handle, InMemoryCiphertext>,
 }
 
-struct FhevmExecutorService {
-    keys: Arc<FhevmKeys>,
-}
+struct FhevmExecutorService {}
 
 #[tonic::async_trait]
 impl FhevmExecutor for FhevmExecutorService {
@@ -80,14 +78,12 @@ impl FhevmExecutor for FhevmExecutorService {
         &self,
         req: Request<SyncComputeRequest>,
     ) -> Result<Response<SyncComputeResponse>, Status> {
-        let keys = self.keys.clone();
         let resp = spawn_blocking(move || {
             let req = req.get_ref();
             let mut state = ComputationState::default();
 
             // Exapnd compact ciphertext lists for the whole request.
-            if Self::expand_compact_lists(&req.compact_ciphertext_lists, &keys, &mut state).is_err()
-            {
+            if Self::expand_compact_lists(&req.compact_ciphertext_lists, &mut state).is_err() {
                 return SyncComputeResponse {
                     resp: Some(Resp::Error(SyncComputeError::BadInputList.into())),
                 };
@@ -138,8 +134,8 @@ impl FhevmExecutor for FhevmExecutorService {
 }
 
 impl FhevmExecutorService {
-    fn new(keys: Arc<FhevmKeys>) -> Self {
-        FhevmExecutorService { keys }
+    fn new() -> Self {
+        FhevmExecutorService {}
     }
 
     #[allow(dead_code)]
@@ -166,11 +162,10 @@ impl FhevmExecutorService {
 
     fn expand_compact_lists(
         lists: &Vec<Vec<u8>>,
-        keys: &FhevmKeys,
         state: &mut ComputationState,
     ) -> Result<(), FhevmError> {
         for list in lists {
-            let cts = try_expand_ciphertext_list(&list, &keys.server_key)?;
+            let cts = try_expand_ciphertext_list(&list)?;
             let list_hash: Handle = Keccak256::digest(list).to_vec();
             for (i, ct) in cts.iter().enumerate() {
                 let mut handle = list_hash.clone();
@@ -181,7 +176,7 @@ impl FhevmExecutorService {
                     handle,
                     InMemoryCiphertext {
                         expanded: ct.clone(),
-                        compressed: ct.clone().compress(),
+                        compressed: ct.clone().compress().1,
                     },
                 );
             }
@@ -268,7 +263,7 @@ impl FhevmExecutorService {
         match inputs {
             Ok(inputs) => match perform_fhe_operation(comp.operation as i16, &inputs) {
                 Ok(result) => {
-                    let compressed = result.clone().compress();
+                    let (_, compressed) = result.clone().compress();
                     state.ciphertexts.insert(
                         result_handle.clone(),
                         InMemoryCiphertext {
@@ -299,7 +294,7 @@ pub fn run_computation(
             Ok(FheOperation::FheGetCiphertext) => {
                 let res = InMemoryCiphertext {
                     expanded: inputs[0].clone(),
-                    compressed: inputs[0].clone().compress(),
+                    compressed: inputs[0].clone().compress().1,
                 };
                 Ok((graph_node_index, res))
             }
@@ -307,7 +302,7 @@ pub fn run_computation(
                 Ok(result) => {
                     let res = InMemoryCiphertext {
                         expanded: result.clone(),
-                        compressed: result.compress(),
+                        compressed: result.compress().1,
                     };
                     Ok((graph_node_index, res))
                 }

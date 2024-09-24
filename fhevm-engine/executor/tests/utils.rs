@@ -51,7 +51,7 @@ impl TestInstance {
 
     pub fn compress(&self, ct: SupportedFheCiphertexts) -> Vec<u8> {
         set_server_key(self.keys.server_key.clone());
-        ct.compress()
+        ct.compress().1
     }
 }
 

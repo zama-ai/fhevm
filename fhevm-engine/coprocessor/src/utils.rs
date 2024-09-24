@@ -1,4 +1,7 @@
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::{
+    cell::Cell,
+    collections::{BTreeSet, HashMap, HashSet},
+};
 
 use fhevm_engine_common::types::{FhevmError, SupportedFheOperations};
 
@@ -319,5 +322,16 @@ fn test_multi_level_circular_dependency_detection() {
         other => {
             panic!("Unexpected result: {:?}", other);
         }
+    }
+}
+
+pub fn set_server_key_if_not_set(tenant_id: i32, sks: &tfhe::ServerKey) {
+    thread_local! {
+        static TFHE_TENANT_ID: Cell<i32> = Cell::new(-1);
+    }
+
+    if tenant_id != TFHE_TENANT_ID.get() {
+        tfhe::set_server_key(sks.clone());
+        TFHE_TENANT_ID.set(tenant_id);
     }
 }
