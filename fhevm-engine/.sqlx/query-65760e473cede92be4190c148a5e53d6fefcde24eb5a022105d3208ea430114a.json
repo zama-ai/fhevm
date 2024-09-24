@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT tenant_id, chain_id, verifying_contract_address, pks_key, sks_key\n            FROM tenants\n            WHERE tenant_id = ANY($1::INT[])\n        ",
+  "query": "\n            SELECT tenant_id, chain_id, acl_contract_address, verifying_contract_address, pks_key, sks_key, public_params\n            FROM tenants\n            WHERE tenant_id = ANY($1::INT[])\n        ",
   "describe": {
     "columns": [
       {
@@ -15,17 +15,27 @@
       },
       {
         "ordinal": 2,
-        "name": "verifying_contract_address",
+        "name": "acl_contract_address",
         "type_info": "Text"
       },
       {
         "ordinal": 3,
+        "name": "verifying_contract_address",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
         "name": "pks_key",
         "type_info": "Bytea"
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "sks_key",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 6,
+        "name": "public_params",
         "type_info": "Bytea"
       }
     ],
@@ -39,8 +49,10 @@
       false,
       false,
       false,
+      false,
+      false,
       false
     ]
   },
-  "hash": "b3c087db688b8b51227d7ed02f53e5361d4454a700260d10b3c7eed6f5cd6653"
+  "hash": "65760e473cede92be4190c148a5e53d6fefcde24eb5a022105d3208ea430114a"
 }
