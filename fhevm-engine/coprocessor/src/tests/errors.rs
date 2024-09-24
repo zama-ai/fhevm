@@ -11,7 +11,7 @@ use crate::{
         },
     },
     tests::{
-        inputs::{test_random_caller_address, test_random_contract_address},
+        inputs::{test_random_user_address, test_random_contract_address},
         utils::{default_api_key, default_tenant_id, setup_test_app},
     },
 };
@@ -55,7 +55,7 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
             input_ciphertexts.push(InputToUpload {
                 input_payload: serialized.clone(),
                 signature: Vec::new(),
-                caller_address: test_random_caller_address(),
+                user_address: test_random_user_address(),
                 contract_address: test_random_contract_address(),
             });
         }
@@ -97,7 +97,7 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
         input_ciphertexts.push(InputToUpload {
             input_payload: serialized[0..32].to_vec(),
             signature: Vec::new(),
-            caller_address: test_random_caller_address(),
+            user_address: test_random_user_address(),
             contract_address: test_random_contract_address(),
         });
 
@@ -134,7 +134,7 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
         input_ciphertexts.push(InputToUpload {
             input_payload: serialized,
             signature: Vec::new(),
-            caller_address: test_random_caller_address(),
+            user_address: test_random_user_address(),
             contract_address: test_random_contract_address(),
         });
 
@@ -299,7 +299,7 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
         input_ciphertexts.push(InputToUpload {
             input_payload: serialized,
             signature: Vec::new(),
-            caller_address: test_random_caller_address(),
+            user_address: test_random_user_address(),
             contract_address: test_random_contract_address(),
         });
 

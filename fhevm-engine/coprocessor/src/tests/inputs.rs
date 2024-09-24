@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use alloy::primitives::keccak256;
 use fhevm_engine_common::utils::safe_serialize;
 use tfhe::integer::{bigint::StaticUnsignedBigInt, U256};
 use tonic::metadata::MetadataValue;
@@ -12,7 +13,7 @@ use crate::{
     tests::utils::{decrypt_ciphertexts, default_api_key, default_tenant_id, setup_test_app},
 };
 
-pub fn test_random_caller_address() -> String {
+pub fn test_random_user_address() -> String {
     let _private_key = "bd2400c676871534a682ca1c5e4cd647ec9c3e122f188c6e3f54e6900d586c7b";
     let public_key = "0x1BdA2a485c339C95a9AbfDe52E80ca38e34C199E";
     public_key.to_string()
@@ -40,6 +41,7 @@ async fn test_fhe_inputs() -> Result<(), Box<dyn std::error::Error>> {
         })?;
     let keys = &keys[0];
 
+    println!("Building list");
     let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
     let the_list = builder
         .push(false)
@@ -57,13 +59,15 @@ async fn test_fhe_inputs() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap();
 
     let serialized = safe_serialize(&the_list);
+    let input_bytes = keccak256(&serialized);
+    println!("input hash: 0x{}", hex::encode(input_bytes));
 
     println!("Encrypting inputs...");
     let mut input_request = tonic::Request::new(InputUploadBatch {
         input_ciphertexts: vec![InputToUpload {
             input_payload: serialized,
             signature: Vec::new(),
-            caller_address: test_random_caller_address(),
+            user_address: test_random_user_address(),
             contract_address: test_random_contract_address(),
         }],
     });
@@ -74,6 +78,25 @@ async fn test_fhe_inputs() -> Result<(), Box<dyn std::error::Error>> {
     let resp = client.upload_inputs(input_request).await?;
     let resp = resp.get_ref();
     assert_eq!(resp.upload_responses.len(), 1);
+    for resp in &resp.upload_responses {
+        println!(r#"response
+        acl address:      {}
+        contract address: {}
+        hash:             0x{}
+        caller:           {}
+        signer:           {}
+        signature:        0x{}
+        handles:          {:#?}
+        "#,
+            resp.acl_address,
+            resp.contract_address,
+            hex::encode(&resp.hash_of_ciphertext),
+            resp.user_address,
+            resp.signer_address,
+            hex::encode(&resp.eip712_signature),
+            resp.input_handles.iter().map(|i| hex::encode(&i.handle)).collect::<Vec<_>>()
+        );
+    }
 
     let first_resp = &resp.upload_responses[0];
 
@@ -134,6 +157,7 @@ async fn custom_insert_inputs() -> Result<(), Box<dyn std::error::Error>> {
         })?;
     let keys = &keys[0];
 
+    println!("Building list");
     let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
     let the_list = builder
         .push(false)
@@ -146,13 +170,15 @@ async fn custom_insert_inputs() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap();
 
     let serialized = safe_serialize(&the_list);
+    let input_bytes = keccak256(&serialized);
+    println!("input hash: 0x{}", hex::encode(input_bytes));
 
     println!("Encrypting inputs...");
     let mut input_request = tonic::Request::new(InputUploadBatch {
         input_ciphertexts: vec![InputToUpload {
             input_payload: serialized,
             signature: Vec::new(),
-            caller_address: test_random_caller_address(),
+            user_address: test_random_user_address(),
             contract_address: test_random_contract_address(),
         }],
     });
@@ -168,6 +194,7 @@ async fn custom_insert_inputs() -> Result<(), Box<dyn std::error::Error>> {
         println!("request {idx}");
         for (idx, h) in ur.input_handles.iter().enumerate() {
             println!(" ct {idx} 0x{}", hex::encode(&h.handle));
+            println!(" response {:?}", ur);
         }
     }
 

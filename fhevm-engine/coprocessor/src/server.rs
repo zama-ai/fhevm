@@ -98,38 +98,40 @@ pub async fn run_server_iteration(
 
 // for EIP712 signature
 alloy::sol! {
-    struct CiphertextVerification {
+    struct CiphertextVerificationForCopro {
         address aclAddress;
         bytes32 hashOfCiphertext;
         uint256[] handlesList;
+        address userAddress;
         address contractAddress;
-        address callerAddress;
     }
 }
 
-// copied from go coprocessor
-// theData := signerApi.TypedData{
-//     Types: signerApi.Types{
-//         "EIP712Domain": domainType,
-//         "CiphertextVerification": []signerApi.Type{
-//             {Name: "handlesList", Type: "uint256[]"},
-//             {Name: "contractAddress", Type: "address"},
-//             {Name: "callerAddress", Type: "address"},
-//         },
-//     },
-//     Domain: signerApi.TypedDataDomain{
-//         Name:              "FHEVMCoprocessor",
-//         Version:           "1",
-//         ChainId:           chainId,
-//         VerifyingContract: verifyingContract.Hex(),
-//     },
-//     PrimaryType: "CiphertextVerification",
-//     Message: signerApi.TypedDataMessage{
-//         "handlesList":     hexInputs,
-//         "contractAddress": contractAddress.Hex(),
-//         "callerAddress":   callerAddress.Hex(),
-//     },
-// }
+// copied from fhevm-go coprocessor
+//   const types = {
+//     CiphertextVerificationForCopro: [
+//       {
+//         name: 'aclAddress',
+//         type: 'address',
+//       },
+//       {
+//         name: 'hashOfCiphertext',
+//         type: 'bytes32',
+//       },
+//       {
+//         name: 'handlesList',
+//         type: 'uint256[]',
+//       },
+//       {
+//         name: 'userAddress',
+//         type: 'address',
+//       },
+//       {
+//         name: 'contractAddress',
+//         type: 'address',
+//       },
+//     ],
+//   };
 
 #[tonic::async_trait]
 impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorService {
@@ -185,7 +187,7 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
             })?;
 
         let eip_712_domain = alloy::sol_types::eip712_domain! {
-            name: "FHEVMCoprocessor",
+            name: "InputVerifier",
             version: "1",
             chain_id: chain_id as u64,
             verifying_contract: verifying_contract_address,
@@ -196,7 +198,7 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
         // server key is biiig, clone the pointer
         let server_key = std::sync::Arc::new(server_key);
         let mut contract_addresses = Vec::with_capacity(req.input_ciphertexts.len());
-        let mut caller_addresses = Vec::with_capacity(req.input_ciphertexts.len());
+        let mut user_addresses = Vec::with_capacity(req.input_ciphertexts.len());
         for ci in &req.input_ciphertexts {
             // parse addresses
             contract_addresses.push(
@@ -207,8 +209,8 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
                     }
                 })?,
             );
-            caller_addresses.push(
-                alloy::primitives::Address::from_str(&ci.caller_address).map_err(|e| {
+            user_addresses.push(
+                alloy::primitives::Address::from_str(&ci.user_address).map_err(|e| {
                     CoprocessorError::CannotParseEthereumAddress {
                         bad_address: ci.contract_address.clone(),
                         parsing_error: e.to_string(),
@@ -300,11 +302,11 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
             let mut hash_of_ciphertext: [u8; 32] = [0; 32];
             hash_of_ciphertext.copy_from_slice(&blob_hash);
 
-            let mut ct_verification = CiphertextVerification {
+            let mut ct_verification = CiphertextVerificationForCopro {
                 hashOfCiphertext: alloy::primitives::FixedBytes(hash_of_ciphertext),
                 aclAddress: acl_contract_address,
                 contractAddress: contract_addresses[idx],
-                callerAddress: caller_addresses[idx],
+                userAddress: user_addresses[idx],
                 handlesList: Vec::with_capacity(corresponding_unpacked.len()),
             };
 
@@ -313,9 +315,9 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
                 hash_of_ciphertext: hash_of_ciphertext.to_vec(),
                 input_handles: Vec::with_capacity(corresponding_unpacked.len()),
                 eip712_signature: Vec::new(),
-                eip712_contract_address: contract_addresses[idx].to_string(),
-                eip712_caller_address: caller_addresses[idx].to_string(),
-                eip712_signer_address: self.signer.address().to_string(),
+                contract_address: contract_addresses[idx].to_string(),
+                user_address: user_addresses[idx].to_string(),
+                signer_address: self.signer.address().to_string(),
             };
 
             for (ct_idx, the_ct) in corresponding_unpacked.iter().enumerate() {
