@@ -86,8 +86,6 @@ task('test', async (taskArgs, hre, runSuper) => {
   // Run modified test task
   if (hre.network.name === 'hardhat') {
     // in fhevm mode all this block is done when launching the node via `pnmp fhevm:start`
-    await hre.run('compile:specific', { contract: 'lib' });
-    await hre.run('compile:specific', { contract: 'gateway' });
     const privKeyDeployer = process.env.PRIVATE_KEY_GATEWAY_DEPLOYER;
     await hre.run('task:computePredeployAddress', { privateKey: privKeyDeployer });
     await hre.run('task:computeACLAddress');
@@ -95,6 +93,9 @@ task('test', async (taskArgs, hre, runSuper) => {
     await hre.run('task:computeKMSVerifierAddress');
     await hre.run('task:computeInputVerifierAddress');
     await hre.run('task:computeFHEPaymentAddress');
+    await hre.run('compile:specific', { contract: 'lib' });
+    await hre.run('compile:specific', { contract: 'gateway' });
+    await hre.run('compile:specific', { contract: 'payment' });
     await hre.run('task:deployACL');
     await hre.run('task:deployTFHEExecutor');
     await hre.run('task:deployKMSVerifier');
