@@ -9,6 +9,7 @@ mod tests;
 mod tfhe_worker;
 mod types;
 mod utils;
+mod metrics;
 
 fn main() {
     let args = crate::cli::parse_args();
@@ -68,6 +69,11 @@ async fn async_main(
     if args.run_bg_worker {
         println!("Initializing background worker");
         set.spawn(crate::tfhe_worker::run_tfhe_worker(args.clone()));
+    }
+
+    if !args.metrics_addr.is_empty() {
+        println!("Initializing metrics server");
+        set.spawn(crate::metrics::run_metrics_server(args.clone()));
     }
 
     if set.is_empty() {

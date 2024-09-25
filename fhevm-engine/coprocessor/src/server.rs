@@ -21,10 +21,12 @@ use fhevm_engine_common::tfhe_ops::{
     try_expand_ciphertext_list, validate_fhe_type,
 };
 use fhevm_engine_common::types::{FhevmError, SupportedFheCiphertexts, SupportedFheOperations};
+use prometheus::{register_int_counter, IntCounter};
 use sha3::{Digest, Keccak256};
 use sqlx::{query, Acquire};
 use tokio::task::spawn_blocking;
 use tonic::transport::Server;
+use lazy_static::lazy_static;
 
 pub mod common {
     tonic::include_proto!("fhevm.common");
@@ -32,6 +34,25 @@ pub mod common {
 
 pub mod coprocessor {
     tonic::include_proto!("fhevm.coprocessor");
+}
+
+lazy_static! {
+    static ref UPLOAD_INPUTS_COUNTER: IntCounter =
+        register_int_counter!("coprocessor_upload_inputs_count", "grpc calls for inputs upload endpoint").unwrap();
+    static ref UPLOAD_INPUTS_ERRORS: IntCounter =
+        register_int_counter!("coprocessor_upload_inputs_errors", "grpc errors while calling upload inputs").unwrap();
+    static ref ASYNC_COMPUTE_COUNTER: IntCounter =
+        register_int_counter!("coprocessor_async_compute_count", "grpc calls for async compute endpoint").unwrap();
+    static ref ASYNC_COMPUTE_ERRORS: IntCounter =
+        register_int_counter!("coprocessor_async_compute_errors", "grpc errors while calling async compute").unwrap();
+    static ref TRIVIAL_ENCRYPT_COUNTER: IntCounter =
+        register_int_counter!("coprocessor_trivial_encrypt_count", "grpc calls for trivial encrypt endpoint").unwrap();
+    static ref TRIVIAL_ENCRYPT_ERRORS: IntCounter =
+        register_int_counter!("coprocessor_trivial_encrypt_errors", "grpc errors while calling trivial encrypt").unwrap();
+    static ref GET_CIPHERTEXTS_COUNTER: IntCounter =
+        register_int_counter!("coprocessor_get_ciphertexts_count", "grpc calls for get ciphertexts endpoint").unwrap();
+    static ref GET_CIPHERTEXTS_ERRORS: IntCounter =
+        register_int_counter!("coprocessor_get_ciphertexts_errors", "grpc errors while calling get ciphertexts").unwrap();
 }
 
 pub struct CoprocessorService {
@@ -140,6 +161,58 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
         &self,
         request: tonic::Request<InputUploadBatch>,
     ) -> std::result::Result<tonic::Response<InputUploadResponse>, tonic::Status> {
+        UPLOAD_INPUTS_COUNTER.inc();
+        self.upload_inputs_impl(request).await.inspect_err(|_| {
+            UPLOAD_INPUTS_ERRORS.inc();
+        })
+    }
+
+    async fn async_compute(
+        &self,
+        request: tonic::Request<coprocessor::AsyncComputeRequest>,
+    ) -> std::result::Result<tonic::Response<coprocessor::GenericResponse>, tonic::Status> {
+        ASYNC_COMPUTE_COUNTER.inc();
+        self.async_compute_impl(request).await.inspect_err(|_| {
+            ASYNC_COMPUTE_ERRORS.inc();
+        })
+    }
+
+    async fn wait_computations(
+        &self,
+        _request: tonic::Request<coprocessor::AsyncComputeRequest>,
+    ) -> std::result::Result<tonic::Response<coprocessor::FhevmResponses>, tonic::Status> {
+        return Err(tonic::Status::unimplemented("not implemented"));
+    }
+
+    async fn trivial_encrypt_ciphertexts(
+        &self,
+        request: tonic::Request<coprocessor::TrivialEncryptBatch>,
+    ) -> std::result::Result<tonic::Response<coprocessor::GenericResponse>, tonic::Status> {
+        TRIVIAL_ENCRYPT_COUNTER.inc();
+        self.trivial_encrypt_ciphertexts_impl(request).await.inspect_err(|_| {
+            TRIVIAL_ENCRYPT_ERRORS.inc()
+        })
+    }
+
+    async fn get_ciphertexts(
+        &self,
+        request: tonic::Request<coprocessor::GetCiphertextBatch>,
+    ) -> std::result::Result<tonic::Response<coprocessor::GetCiphertextResponse>, tonic::Status>
+    {
+        GET_CIPHERTEXTS_COUNTER.inc();
+        self.get_ciphertexts_impl(request).await.inspect_err(|_| {
+            GET_CIPHERTEXTS_ERRORS.inc();
+        })
+    }
+}
+
+impl CoprocessorService {
+    async fn upload_inputs_impl(
+        &self,
+        request: tonic::Request<InputUploadBatch>,
+    ) -> std::result::Result<tonic::Response<InputUploadResponse>, tonic::Status> {
+        UPLOAD_INPUTS_COUNTER.inc();
+
         let tenant_id = check_if_api_key_is_valid(&request, &self.pool).await?;
 
         let req = request.get_ref();
@@ -400,7 +473,7 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
         Ok(tonic::Response::new(response))
     }
 
-    async fn async_compute(
+    async fn async_compute_impl(
         &self,
         request: tonic::Request<coprocessor::AsyncComputeRequest>,
     ) -> std::result::Result<tonic::Response<coprocessor::GenericResponse>, tonic::Status> {
@@ -534,14 +607,7 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
         return Ok(tonic::Response::new(GenericResponse { response_code: 0 }));
     }
 
-    async fn wait_computations(
-        &self,
-        _request: tonic::Request<coprocessor::AsyncComputeRequest>,
-    ) -> std::result::Result<tonic::Response<coprocessor::FhevmResponses>, tonic::Status> {
-        return Err(tonic::Status::unimplemented("not implemented"));
-    }
-
-    async fn trivial_encrypt_ciphertexts(
+    async fn trivial_encrypt_ciphertexts_impl(
         &self,
         request: tonic::Request<coprocessor::TrivialEncryptBatch>,
     ) -> std::result::Result<tonic::Response<coprocessor::GenericResponse>, tonic::Status> {
@@ -616,7 +682,7 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
         return Ok(tonic::Response::new(GenericResponse { response_code: 0 }));
     }
 
-    async fn get_ciphertexts(
+    async fn get_ciphertexts_impl(
         &self,
         request: tonic::Request<coprocessor::GetCiphertextBatch>,
     ) -> std::result::Result<tonic::Response<coprocessor::GetCiphertextResponse>, tonic::Status>

@@ -5,11 +5,28 @@ use fhevm_engine_common::{
     tfhe_ops::{current_ciphertext_version, perform_fhe_operation},
     types::SupportedFheOperations,
 };
+use prometheus::{register_int_counter, IntCounter};
 use sqlx::{postgres::PgListener, query, Acquire};
 use std::{
     collections::{BTreeSet, HashMap},
     num::NonZeroUsize,
 };
+use lazy_static::lazy_static;
+
+lazy_static! {
+    static ref WORKER_ERRORS_COUNTER: IntCounter =
+        register_int_counter!("coprocessor_worker_errors", "worker errors encountered").unwrap();
+    static ref WORK_ITEMS_POLL_COUNTER: IntCounter =
+        register_int_counter!("coprocessor_work_items_polls", "times work items are polled from database").unwrap();
+    static ref WORK_ITEMS_NOTIFICATIONS_COUNTER: IntCounter =
+        register_int_counter!("coprocessor_work_items_notifications", "times instant notifications for work items received from the database").unwrap();
+    static ref WORK_ITEMS_FOUND_COUNTER: IntCounter =
+        register_int_counter!("coprocessor_work_items_found", "work items queried from database").unwrap();
+    static ref WORK_ITEMS_ERRORS_COUNTER: IntCounter =
+        register_int_counter!("coprocessor_work_items_errors", "work items errored out during computation").unwrap();
+    static ref WORK_ITEMS_PROCESSED_COUNTER: IntCounter =
+        register_int_counter!("coprocessor_work_items_processed", "work items successfully processed and stored in the database").unwrap();
+}
 
 pub async fn run_tfhe_worker(
     args: crate::cli::Args,
@@ -17,6 +34,7 @@ pub async fn run_tfhe_worker(
     loop {
         // here we log the errors and make sure we retry
         if let Err(cycle_error) = tfhe_worker_cycle(&args).await {
+            WORKER_ERRORS_COUNTER.inc();
             eprintln!(
                 "Error in background worker, retrying shortly: {:?}",
                 cycle_error
@@ -49,9 +67,11 @@ async fn tfhe_worker_cycle(
         if !immedially_poll_more_work {
             tokio::select! {
                 _ = listener.try_recv() => {
+                    WORK_ITEMS_NOTIFICATIONS_COUNTER.inc();
                     println!("Received work_available notification from postgres");
                 },
                 _ = tokio::time::sleep(tokio::time::Duration::from_millis(5000)) => {
+                    WORK_ITEMS_POLL_COUNTER.inc();
                     println!("Polling the database for more work on timer");
                 },
             };
@@ -93,6 +113,7 @@ async fn tfhe_worker_cycle(
             continue;
         }
 
+        WORK_ITEMS_FOUND_COUNTER.inc_by(the_work.len() as u64);
         println!("Processing {} work items", the_work.len());
 
         // make sure we process each tenant sequentially not to
@@ -248,8 +269,10 @@ async fn tfhe_worker_cycle(
                     )
                     .execute(trx.as_mut())
                     .await?;
+                    WORK_ITEMS_PROCESSED_COUNTER.inc();
                 }
                 Err((err, tenant_id, output_handle)) => {
+                    WORKER_ERRORS_COUNTER.inc();
                     let _ = query!(
                         "
                             UPDATE computations

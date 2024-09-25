@@ -32,7 +32,7 @@ pub struct Args {
     pub tenant_key_cache_size: i32,
 
     /// Maximum compact inputs to upload
-    #[arg(long, default_value_t = 8)]
+    #[arg(long, default_value_t = 10)]
     pub maximimum_compact_inputs_upload: usize,
 
     /// Maximum compact inputs to upload
@@ -54,6 +54,10 @@ pub struct Args {
     /// Server socket address
     #[arg(long, default_value = "127.0.0.1:50051")]
     pub server_addr: String,
+
+    /// Prometheus metrics server address
+    #[arg(long, default_value = "0.0.0.0:9100")]
+    pub metrics_addr: String,
 
     /// Postgres database url. If unspecified DATABASE_URL environment variable is used
     #[arg(long)]
