@@ -59,7 +59,7 @@
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "@nomicfoundation/hardhat-verify": "^2.0.10",
     "@openzeppelin/contracts-upgradeable": "^5.0.2",
-    "@openzeppelin/hardhat-upgrades": "^3.2.1",
+    "@openzeppelin/hardhat-upgrades": "^3.3.0",
     "@trivago/prettier-plugin-sort-imports": "^4.0.0",
     "@typechain/ethers-v6": "^0.5.0",
     "@typechain/hardhat": "^9.1.0",
