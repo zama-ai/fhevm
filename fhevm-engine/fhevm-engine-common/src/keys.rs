@@ -13,6 +13,8 @@ use tfhe::{
     ClientKey, CompactPublicKey, ConfigBuilder, ServerKey,
 };
 
+use crate::utils::{safe_deserialize_versioned, safe_deserialize_versioned_sks, safe_serialize_versioned, safe_serialize_versioned_sks};
+
 pub const MAX_BITS_TO_PROVE: usize = 2048;
 
 pub struct FhevmKeys {
@@ -100,12 +102,9 @@ impl From<FhevmKeys> for SerializedFhevmKeys {
             .serialize_with_mode(&mut public_params, Compress::No)
             .expect("serialize public params");
         SerializedFhevmKeys {
-            server_key: bincode::serialize(&f.server_key).expect("serialize server key"),
-            client_key: f
-                .client_key
-                .map(|c| bincode::serialize(&c).expect("serialize client key")),
-            compact_public_key: bincode::serialize(&f.compact_public_key)
-                .expect("serialize compact public key"),
+            server_key: safe_serialize_versioned_sks(&f.server_key),
+            client_key: f.client_key.map(|c| safe_serialize_versioned(&c)),
+            compact_public_key: safe_serialize_versioned(&f.compact_public_key),
             public_params,
         }
     }
@@ -120,11 +119,11 @@ impl From<SerializedFhevmKeys> for FhevmKeys {
         )
         .expect("deserialize public params");
         FhevmKeys {
-            server_key: bincode::deserialize(&f.server_key).expect("deserialize server key"),
+            server_key: safe_deserialize_versioned_sks(&f.server_key).expect("deserialize server key"),
             client_key: f
                 .client_key
-                .map(|c| bincode::deserialize(&c).expect("deserialize client key")),
-            compact_public_key: bincode::deserialize(&f.compact_public_key)
+                .map(|c| safe_deserialize_versioned(&c).expect("deserialize client key")),
+            compact_public_key: safe_deserialize_versioned(&f.compact_public_key)
                 .expect("deserialize compact public key"),
             public_params,
         }

@@ -1,4 +1,4 @@
-use std::{cell::Cell, collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
 use anyhow::Result;
 pub use common::FheOperation;
@@ -31,19 +31,13 @@ pub mod executor {
 }
 
 pub fn start(args: &crate::cli::Args) -> Result<()> {
-    let keys: Arc<FhevmKeys> = Arc::new(SerializedFhevmKeys::load_from_disk().into());
+    let keys: FhevmKeys = SerializedFhevmKeys::load_from_disk().into();
     let executor = FhevmExecutorService::new();
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(args.tokio_threads)
         .max_blocking_threads(args.fhe_compute_threads)
         .on_thread_start(move || {
-            thread_local! {
-                static SERVER_KEY_IS_SET: Cell<bool> = const {Cell::new(false)};
-            }
-            if !SERVER_KEY_IS_SET.get() {
-                set_server_key(keys.server_key.clone());
-                SERVER_KEY_IS_SET.set(true);
-            }
+            set_server_key(keys.server_key.clone());
         })
         .enable_all()
         .build()?;

@@ -5018,9 +5018,9 @@ dependencies = [
 
 [[package]]
 name = "tfhe"
-version = "0.8.0-alpha.8"
+version = "0.8.0-alpha.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b3a04027e69f5723727b8092c7d30e36701f97b298d180adc3dd04b92bfea1cb"
+checksum = "a7d3ed32cb8e626183bc311a889eb3c496ab099c85e9097021719c7af6eee020"
 dependencies = [
  "aligned-vec",
  "bincode",
@@ -5109,9 +5109,9 @@ dependencies = [
 
 [[package]]
 name = "tfhe-versionable"
-version = "0.2.1"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c7f9c9ef59d138c8ee539da0e15daf73345f0969a718f48bfd78706e4948e92"
+checksum = "d09ede610a0eac494ab832533415d4cb4f103b716901a11da84ccfeb287d08bf"
 dependencies = [
  "aligned-vec",
  "num-complex",
@@ -5121,9 +5121,9 @@ dependencies = [
 
 [[package]]
 name = "tfhe-versionable-derive"
-version = "0.2.1"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4709d2c6e0a39b45ed752f4b1151e261cc43c9681cacad00be4ecfc5df655e5c"
+checksum = "5d92c0fe0b3e42c45ac7ef98092e60c09db69aeaeb821429a1754aef28ea575c"
 dependencies = [
  "proc-macro2",
  "quote",

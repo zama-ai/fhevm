@@ -1,6 +1,7 @@
 use crate::cli::Args;
 use fhevm_engine_common::tfhe_ops::current_ciphertext_version;
 use fhevm_engine_common::types::SupportedFheCiphertexts;
+use fhevm_engine_common::utils::{safe_deserialize_versioned, safe_deserialize_versioned_sks};
 use rand::Rng;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU16, Ordering};
@@ -287,8 +288,8 @@ pub async fn decrypt_ciphertexts(
 
     let mut values = tokio::task::spawn_blocking(move || {
         let client_key: tfhe::ClientKey =
-            bincode::deserialize(&keys.cks_key.clone().unwrap()).unwrap();
-        let sks: tfhe::ServerKey = bincode::deserialize(&keys.sks_key).unwrap();
+            safe_deserialize_versioned(&keys.cks_key.clone().unwrap()).unwrap();
+        let sks: tfhe::ServerKey = safe_deserialize_versioned_sks(&keys.sks_key).unwrap();
         tfhe::set_server_key(sks);
 
         let mut decrypted: Vec<(Vec<u8>, DecryptionResult)> = Vec::with_capacity(cts.len());

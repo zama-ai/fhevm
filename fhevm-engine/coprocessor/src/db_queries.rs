@@ -2,6 +2,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::str::FromStr;
 
 use crate::types::{CoprocessorError, TfheTenantKeys};
+use fhevm_engine_common::utils::{safe_deserialize_versioned, safe_deserialize_versioned_sks};
 use sqlx::{query, Postgres};
 
 /// Returns tenant id upon valid authorization request
@@ -148,9 +149,9 @@ where
     .await?;
 
     for key in keys {
-        let sks: tfhe::ServerKey = bincode::deserialize(&key.sks_key)
+        let sks: tfhe::ServerKey = safe_deserialize_versioned_sks(&key.sks_key)
             .expect("We can't deserialize our own validated sks key");
-        let pks: tfhe::CompactPublicKey = bincode::deserialize(&key.pks_key)
+        let pks: tfhe::CompactPublicKey = safe_deserialize_versioned(&key.pks_key)
             .expect("We can't deserialize our own validated pks key");
         let public_params = <tfhe::zk::CompactPkePublicParams as tfhe::zk::CanonicalDeserialize>::deserialize_with_mode(
             &*key.public_params,

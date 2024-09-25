@@ -5,7 +5,7 @@ use tfhe::integer::U256;
 use tfhe::prelude::FheDecrypt;
 use tfhe::{CompressedCiphertextList, CompressedCiphertextListBuilder};
 
-use crate::utils::{safe_deserialize, safe_serialize};
+use crate::utils::{safe_deserialize_versioned, safe_serialize_versioned};
 
 #[derive(Debug)]
 pub enum FhevmError {
@@ -342,18 +342,18 @@ impl SupportedFheCiphertexts {
     pub fn serialize(&self) -> (i16, Vec<u8>) {
         let type_num = self.type_num();
         match self {
-            SupportedFheCiphertexts::FheBool(v) => (type_num, safe_serialize(v)),
-            SupportedFheCiphertexts::FheUint4(v) => (type_num, safe_serialize(v)),
-            SupportedFheCiphertexts::FheUint8(v) => (type_num, safe_serialize(v)),
-            SupportedFheCiphertexts::FheUint16(v) => (type_num, safe_serialize(v)),
-            SupportedFheCiphertexts::FheUint32(v) => (type_num, safe_serialize(v)),
-            SupportedFheCiphertexts::FheUint64(v) => (type_num, safe_serialize(v)),
-            SupportedFheCiphertexts::FheUint128(v) => (type_num, safe_serialize(v)),
-            SupportedFheCiphertexts::FheUint160(v) => (type_num, safe_serialize(v)),
-            SupportedFheCiphertexts::FheUint256(v) => (type_num, safe_serialize(v)),
-            SupportedFheCiphertexts::FheBytes64(v) => (type_num, safe_serialize(v)),
-            SupportedFheCiphertexts::FheBytes128(v) => (type_num, safe_serialize(v)),
-            SupportedFheCiphertexts::FheBytes256(v) => (type_num, safe_serialize(v)),
+            SupportedFheCiphertexts::FheBool(v) => (type_num, safe_serialize_versioned(v)),
+            SupportedFheCiphertexts::FheUint4(v) => (type_num, safe_serialize_versioned(v)),
+            SupportedFheCiphertexts::FheUint8(v) => (type_num, safe_serialize_versioned(v)),
+            SupportedFheCiphertexts::FheUint16(v) => (type_num, safe_serialize_versioned(v)),
+            SupportedFheCiphertexts::FheUint32(v) => (type_num, safe_serialize_versioned(v)),
+            SupportedFheCiphertexts::FheUint64(v) => (type_num, safe_serialize_versioned(v)),
+            SupportedFheCiphertexts::FheUint128(v) => (type_num, safe_serialize_versioned(v)),
+            SupportedFheCiphertexts::FheUint160(v) => (type_num, safe_serialize_versioned(v)),
+            SupportedFheCiphertexts::FheUint256(v) => (type_num, safe_serialize_versioned(v)),
+            SupportedFheCiphertexts::FheBytes64(v) => (type_num, safe_serialize_versioned(v)),
+            SupportedFheCiphertexts::FheBytes128(v) => (type_num, safe_serialize_versioned(v)),
+            SupportedFheCiphertexts::FheBytes256(v) => (type_num, safe_serialize_versioned(v)),
             SupportedFheCiphertexts::Scalar(_) => {
                 panic!("we should never need to serialize scalar")
             }
@@ -462,11 +462,11 @@ impl SupportedFheCiphertexts {
             }
         };
         let list = builder.build().expect("ciphertext compression");
-        (type_num, safe_serialize(&list))
+        (type_num, safe_serialize_versioned(&list))
     }
 
     pub fn decompress(ct_type: i16, list: &[u8]) -> Result<Self> {
-        let list: CompressedCiphertextList = safe_deserialize(list)?;
+        let list: CompressedCiphertextList = safe_deserialize_versioned(list)?;
         match ct_type {
             0 => Ok(SupportedFheCiphertexts::FheBool(
                 list.get(0)?.ok_or(FhevmError::MissingTfheRsData)?,

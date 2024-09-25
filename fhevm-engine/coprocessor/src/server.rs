@@ -7,7 +7,7 @@ use crate::db_queries::{
 };
 use crate::server::coprocessor::GenericResponse;
 use crate::types::{CoprocessorError, TfheTenantKeys};
-use crate::utils::{set_server_key_if_not_set, sort_computations_by_dependencies};
+use crate::utils::sort_computations_by_dependencies;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::SignerSync;
 use alloy::sol_types::SolStruct;
@@ -21,12 +21,13 @@ use fhevm_engine_common::tfhe_ops::{
     try_expand_ciphertext_list, validate_fhe_type,
 };
 use fhevm_engine_common::types::{FhevmError, SupportedFheCiphertexts, SupportedFheOperations};
+use fhevm_engine_common::utils::safe_deserialize_versioned_sks;
+use lazy_static::lazy_static;
 use prometheus::{register_int_counter, IntCounter};
 use sha3::{Digest, Keccak256};
 use sqlx::{query, Acquire};
 use tokio::task::spawn_blocking;
 use tonic::transport::Server;
-use lazy_static::lazy_static;
 
 pub mod common {
     tonic::include_proto!("fhevm.common");
@@ -37,22 +38,46 @@ pub mod coprocessor {
 }
 
 lazy_static! {
-    static ref UPLOAD_INPUTS_COUNTER: IntCounter =
-        register_int_counter!("coprocessor_upload_inputs_count", "grpc calls for inputs upload endpoint").unwrap();
-    static ref UPLOAD_INPUTS_ERRORS: IntCounter =
-        register_int_counter!("coprocessor_upload_inputs_errors", "grpc errors while calling upload inputs").unwrap();
-    static ref ASYNC_COMPUTE_COUNTER: IntCounter =
-        register_int_counter!("coprocessor_async_compute_count", "grpc calls for async compute endpoint").unwrap();
-    static ref ASYNC_COMPUTE_ERRORS: IntCounter =
-        register_int_counter!("coprocessor_async_compute_errors", "grpc errors while calling async compute").unwrap();
-    static ref TRIVIAL_ENCRYPT_COUNTER: IntCounter =
-        register_int_counter!("coprocessor_trivial_encrypt_count", "grpc calls for trivial encrypt endpoint").unwrap();
-    static ref TRIVIAL_ENCRYPT_ERRORS: IntCounter =
-        register_int_counter!("coprocessor_trivial_encrypt_errors", "grpc errors while calling trivial encrypt").unwrap();
-    static ref GET_CIPHERTEXTS_COUNTER: IntCounter =
-        register_int_counter!("coprocessor_get_ciphertexts_count", "grpc calls for get ciphertexts endpoint").unwrap();
-    static ref GET_CIPHERTEXTS_ERRORS: IntCounter =
-        register_int_counter!("coprocessor_get_ciphertexts_errors", "grpc errors while calling get ciphertexts").unwrap();
+    static ref UPLOAD_INPUTS_COUNTER: IntCounter = register_int_counter!(
+        "coprocessor_upload_inputs_count",
+        "grpc calls for inputs upload endpoint"
+    )
+    .unwrap();
+    static ref UPLOAD_INPUTS_ERRORS: IntCounter = register_int_counter!(
+        "coprocessor_upload_inputs_errors",
+        "grpc errors while calling upload inputs"
+    )
+    .unwrap();
+    static ref ASYNC_COMPUTE_COUNTER: IntCounter = register_int_counter!(
+        "coprocessor_async_compute_count",
+        "grpc calls for async compute endpoint"
+    )
+    .unwrap();
+    static ref ASYNC_COMPUTE_ERRORS: IntCounter = register_int_counter!(
+        "coprocessor_async_compute_errors",
+        "grpc errors while calling async compute"
+    )
+    .unwrap();
+    static ref TRIVIAL_ENCRYPT_COUNTER: IntCounter = register_int_counter!(
+        "coprocessor_trivial_encrypt_count",
+        "grpc calls for trivial encrypt endpoint"
+    )
+    .unwrap();
+    static ref TRIVIAL_ENCRYPT_ERRORS: IntCounter = register_int_counter!(
+        "coprocessor_trivial_encrypt_errors",
+        "grpc errors while calling trivial encrypt"
+    )
+    .unwrap();
+    static ref GET_CIPHERTEXTS_COUNTER: IntCounter = register_int_counter!(
+        "coprocessor_get_ciphertexts_count",
+        "grpc calls for get ciphertexts endpoint"
+    )
+    .unwrap();
+    static ref GET_CIPHERTEXTS_ERRORS: IntCounter = register_int_counter!(
+        "coprocessor_get_ciphertexts_errors",
+        "grpc errors while calling get ciphertexts"
+    )
+    .unwrap();
 }
 
 pub struct CoprocessorService {
@@ -189,9 +214,9 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
         request: tonic::Request<coprocessor::TrivialEncryptBatch>,
     ) -> std::result::Result<tonic::Response<coprocessor::GenericResponse>, tonic::Status> {
         TRIVIAL_ENCRYPT_COUNTER.inc();
-        self.trivial_encrypt_ciphertexts_impl(request).await.inspect_err(|_| {
-            TRIVIAL_ENCRYPT_ERRORS.inc()
-        })
+        self.trivial_encrypt_ciphertexts_impl(request)
+            .await
+            .inspect_err(|_| TRIVIAL_ENCRYPT_ERRORS.inc())
     }
 
     async fn get_ciphertexts(
@@ -270,8 +295,6 @@ impl CoprocessorService {
 
         let mut tfhe_work_set = tokio::task::JoinSet::new();
 
-        // server key is biiig, clone the pointer
-        let server_key = std::sync::Arc::new(server_key);
         let mut contract_addresses = Vec::with_capacity(req.input_ciphertexts.len());
         let mut user_addresses = Vec::with_capacity(req.input_ciphertexts.len());
         for ci in &req.input_ciphertexts {
@@ -299,7 +322,7 @@ impl CoprocessorService {
             let server_key = server_key.clone();
             tfhe_work_set.spawn_blocking(
                 move || -> Result<_, (Box<(dyn std::error::Error + Send + Sync)>, usize)> {
-                    set_server_key_if_not_set(tenant_id, &server_key);
+                    tfhe::set_server_key(server_key.clone());
                     let expanded = try_expand_ciphertext_list(&cloned_input.input_payload)
                         .map_err(|e| {
                             let err: Box<(dyn std::error::Error + Send + Sync)> = Box::new(e);
@@ -401,7 +424,7 @@ impl CoprocessorService {
                 let blob_hash_clone = blob_hash.clone();
                 let server_key_clone = server_key.clone();
                 let (handle, serialized_ct, serialized_type) = spawn_blocking(move || {
-                    set_server_key_if_not_set(tenant_id, &server_key_clone);
+                    tfhe::set_server_key(server_key_clone);
                     let (serialized_type, serialized_ct) = the_ct.compress();
                     let mut handle_hash = Keccak256::new();
                     handle_hash.update(&blob_hash_clone);
@@ -643,7 +666,7 @@ impl CoprocessorService {
         let sks = sks.pop().unwrap();
         let cloned = req.values.clone();
         let out_cts = tokio::task::spawn_blocking(move || {
-            let server_key: tfhe::ServerKey = bincode::deserialize(&sks.sks_key).unwrap();
+            let server_key: tfhe::ServerKey = safe_deserialize_versioned_sks(&sks.sks_key).unwrap();
             tfhe::set_server_key(server_key);
 
             // single threaded implementation, we can optimize later

@@ -11,7 +11,7 @@ use crate::{
         },
     },
     tests::{
-        inputs::{test_random_user_address, test_random_contract_address},
+        inputs::{test_random_contract_address, test_random_user_address},
         utils::{default_api_key, default_tenant_id, setup_test_app},
     },
 };

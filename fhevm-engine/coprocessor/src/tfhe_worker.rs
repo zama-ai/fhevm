@@ -1,31 +1,45 @@
-use crate::utils::set_server_key_if_not_set;
 use crate::{db_queries::populate_cache_with_tenant_keys, types::TfheTenantKeys};
 use fhevm_engine_common::types::SupportedFheCiphertexts;
 use fhevm_engine_common::{
     tfhe_ops::{current_ciphertext_version, perform_fhe_operation},
     types::SupportedFheOperations,
 };
+use lazy_static::lazy_static;
 use prometheus::{register_int_counter, IntCounter};
 use sqlx::{postgres::PgListener, query, Acquire};
 use std::{
     collections::{BTreeSet, HashMap},
     num::NonZeroUsize,
 };
-use lazy_static::lazy_static;
 
 lazy_static! {
     static ref WORKER_ERRORS_COUNTER: IntCounter =
         register_int_counter!("coprocessor_worker_errors", "worker errors encountered").unwrap();
-    static ref WORK_ITEMS_POLL_COUNTER: IntCounter =
-        register_int_counter!("coprocessor_work_items_polls", "times work items are polled from database").unwrap();
-    static ref WORK_ITEMS_NOTIFICATIONS_COUNTER: IntCounter =
-        register_int_counter!("coprocessor_work_items_notifications", "times instant notifications for work items received from the database").unwrap();
-    static ref WORK_ITEMS_FOUND_COUNTER: IntCounter =
-        register_int_counter!("coprocessor_work_items_found", "work items queried from database").unwrap();
-    static ref WORK_ITEMS_ERRORS_COUNTER: IntCounter =
-        register_int_counter!("coprocessor_work_items_errors", "work items errored out during computation").unwrap();
-    static ref WORK_ITEMS_PROCESSED_COUNTER: IntCounter =
-        register_int_counter!("coprocessor_work_items_processed", "work items successfully processed and stored in the database").unwrap();
+    static ref WORK_ITEMS_POLL_COUNTER: IntCounter = register_int_counter!(
+        "coprocessor_work_items_polls",
+        "times work items are polled from database"
+    )
+    .unwrap();
+    static ref WORK_ITEMS_NOTIFICATIONS_COUNTER: IntCounter = register_int_counter!(
+        "coprocessor_work_items_notifications",
+        "times instant notifications for work items received from the database"
+    )
+    .unwrap();
+    static ref WORK_ITEMS_FOUND_COUNTER: IntCounter = register_int_counter!(
+        "coprocessor_work_items_found",
+        "work items queried from database"
+    )
+    .unwrap();
+    static ref WORK_ITEMS_ERRORS_COUNTER: IntCounter = register_int_counter!(
+        "coprocessor_work_items_errors",
+        "work items errored out during computation"
+    )
+    .unwrap();
+    static ref WORK_ITEMS_PROCESSED_COUNTER: IntCounter = register_int_counter!(
+        "coprocessor_work_items_processed",
+        "work items successfully processed and stored in the database"
+    )
+    .unwrap();
 }
 
 pub async fn run_tfhe_worker(
@@ -199,7 +213,7 @@ async fn tfhe_worker_cycle(
                         let keys = rk
                             .get(&w.tenant_id)
                             .expect("Can't get tenant key from cache");
-                        set_server_key_if_not_set(w.tenant_id, &keys.sks);
+                        tfhe::set_server_key(keys.sks.clone());
                     }
 
                     let mut deserialized_cts: Vec<SupportedFheCiphertexts> =

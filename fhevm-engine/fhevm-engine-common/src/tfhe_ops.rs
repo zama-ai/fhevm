@@ -3,7 +3,7 @@ use crate::{
         is_ebytes_type, FheOperationType, FhevmError, SupportedFheCiphertexts,
         SupportedFheOperations,
     },
-    utils::safe_deserialize,
+    utils::{safe_deserialize, safe_deserialize_versioned},
 };
 use tfhe::{
     integer::{bigint::StaticUnsignedBigInt, U256},
@@ -21,51 +21,51 @@ pub fn deserialize_fhe_ciphertext(
 ) -> Result<SupportedFheCiphertexts, FhevmError> {
     match input_type {
         0 => {
-            let v: tfhe::FheBool = safe_deserialize(input_bytes)?;
+            let v: tfhe::FheBool = safe_deserialize_versioned(input_bytes)?;
             Ok(SupportedFheCiphertexts::FheBool(v))
         }
         1 => {
-            let v: tfhe::FheUint4 = safe_deserialize(input_bytes)?;
+            let v: tfhe::FheUint4 = safe_deserialize_versioned(input_bytes)?;
             Ok(SupportedFheCiphertexts::FheUint4(v))
         }
         2 => {
-            let v: tfhe::FheUint8 = safe_deserialize(input_bytes)?;
+            let v: tfhe::FheUint8 = safe_deserialize_versioned(input_bytes)?;
             Ok(SupportedFheCiphertexts::FheUint8(v))
         }
         3 => {
-            let v: tfhe::FheUint16 = safe_deserialize(input_bytes)?;
+            let v: tfhe::FheUint16 = safe_deserialize_versioned(input_bytes)?;
             Ok(SupportedFheCiphertexts::FheUint16(v))
         }
         4 => {
-            let v: tfhe::FheUint32 = safe_deserialize(input_bytes)?;
+            let v: tfhe::FheUint32 = safe_deserialize_versioned(input_bytes)?;
             Ok(SupportedFheCiphertexts::FheUint32(v))
         }
         5 => {
-            let v: tfhe::FheUint64 = safe_deserialize(input_bytes)?;
+            let v: tfhe::FheUint64 = safe_deserialize_versioned(input_bytes)?;
             Ok(SupportedFheCiphertexts::FheUint64(v))
         }
         6 => {
-            let v: tfhe::FheUint128 = safe_deserialize(input_bytes)?;
+            let v: tfhe::FheUint128 = safe_deserialize_versioned(input_bytes)?;
             Ok(SupportedFheCiphertexts::FheUint128(v))
         }
         7 => {
-            let v: tfhe::FheUint160 = safe_deserialize(input_bytes)?;
+            let v: tfhe::FheUint160 = safe_deserialize_versioned(input_bytes)?;
             Ok(SupportedFheCiphertexts::FheUint160(v))
         }
         8 => {
-            let v: tfhe::FheUint256 = safe_deserialize(input_bytes)?;
+            let v: tfhe::FheUint256 = safe_deserialize_versioned(input_bytes)?;
             Ok(SupportedFheCiphertexts::FheUint256(v))
         }
         9 => {
-            let v: tfhe::FheUint512 = safe_deserialize(input_bytes)?;
+            let v: tfhe::FheUint512 = safe_deserialize_versioned(input_bytes)?;
             Ok(SupportedFheCiphertexts::FheBytes64(v))
         }
         10 => {
-            let v: tfhe::FheUint1024 = safe_deserialize(input_bytes)?;
+            let v: tfhe::FheUint1024 = safe_deserialize_versioned(input_bytes)?;
             Ok(SupportedFheCiphertexts::FheBytes128(v))
         }
         11 => {
-            let v: tfhe::FheUint2048 = safe_deserialize(input_bytes)?;
+            let v: tfhe::FheUint2048 = safe_deserialize_versioned(input_bytes)?;
             Ok(SupportedFheCiphertexts::FheBytes256(v))
         }
         _ => {
