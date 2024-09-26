@@ -42,16 +42,16 @@ pub fn start_runtime(
                 tokio::select! {
                     main = async_main(args) => {
                         if let Err(e) = main {
-                            eprintln!("Runtime error: {:?}", e);
+                            log::error!(target: "main_wchannel", error = e.to_string(); "Runtime error");
                         }
                     }
                     _ = close_recv.changed() => {
-                        eprintln!("Service stopped voluntarily");
+                        log::info!(target: "main_wchannel", "Service stopped voluntarily");
                     }
                 }
             } else {
                 if let Err(e) = async_main(args).await {
-                    eprintln!("Runtime error: {:?}", e);
+                    log::error!(target: "main", error = e.to_string(); "Runtime error");
                 }
             }
         })
@@ -60,19 +60,23 @@ pub fn start_runtime(
 async fn async_main(
     args: crate::cli::Args,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    structured_logger::Builder::new()
+        .with_default_writer(structured_logger::async_json::new_writer(tokio::io::stdout()))
+        .init();
+
     let mut set = JoinSet::new();
     if args.run_server {
-        println!("Initializing api server");
+        log::info!(target: "async_main", "Initializing api server");
         set.spawn(crate::server::run_server(args.clone()));
     }
 
     if args.run_bg_worker {
-        println!("Initializing background worker");
+        log::info!(target: "async_main", "Initializing background worker");
         set.spawn(crate::tfhe_worker::run_tfhe_worker(args.clone()));
     }
 
     if !args.metrics_addr.is_empty() {
-        println!("Initializing metrics server");
+        log::info!(target: "async_main", "Initializing metrics server");
         set.spawn(crate::metrics::run_metrics_server(args.clone()));
     }
 

@@ -32,6 +32,8 @@ strum = { version = "0.26", features = ["derive"] }
 bincode.workspace = true
 sha3.workspace = true
 prometheus.workspace = true
+log.workspace = true
+structured-logger = "1.0.3"
 actix-web = "4.9.0"
 
 [dev-dependencies]

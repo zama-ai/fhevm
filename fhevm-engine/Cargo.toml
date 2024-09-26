@@ -13,6 +13,7 @@ anyhow = "1.0.86"
 daggy = "0.8.0"
 serde = "1.0.210"
 prometheus = "0.13.4"
+log = { version = "0.4.22", features = ["kv"] }
 
 [profile.dev.package.tfhe]
 overflow-checks = false
