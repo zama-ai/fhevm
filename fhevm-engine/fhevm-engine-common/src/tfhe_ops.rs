@@ -884,7 +884,10 @@ pub fn perform_fhe_operation(
                     Ok(SupportedFheCiphertexts::FheUint256(a + *b))
                 }
                 _ => {
-                    panic!("Unsupported fhe types");
+                    Err(FhevmError::UnsupportedFheTypes {
+                        fhe_operation: format!("{:?}", fhe_operation),
+                        input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                    })
                 }
             }
         }
@@ -963,7 +966,10 @@ pub fn perform_fhe_operation(
                     Ok(SupportedFheCiphertexts::FheUint256(a - *b))
                 }
                 _ => {
-                    panic!("Unsupported fhe types");
+                    Err(FhevmError::UnsupportedFheTypes {
+                        fhe_operation: format!("{:?}", fhe_operation),
+                        input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                    })
                 }
             }
         }
@@ -1042,7 +1048,10 @@ pub fn perform_fhe_operation(
                     Ok(SupportedFheCiphertexts::FheUint256(a * *b))
                 }
                 _ => {
-                    panic!("Unsupported fhe types");
+                    Err(FhevmError::UnsupportedFheTypes {
+                        fhe_operation: format!("{:?}", fhe_operation),
+                        input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                    })
                 }
             }
         }
@@ -1121,7 +1130,10 @@ pub fn perform_fhe_operation(
                     Ok(SupportedFheCiphertexts::FheUint256(a / *b))
                 }
                 _ => {
-                    panic!("Unsupported fhe types");
+                    Err(FhevmError::UnsupportedFheTypes {
+                        fhe_operation: format!("{:?}", fhe_operation),
+                        input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                    })
                 }
             }
         }
@@ -1200,7 +1212,10 @@ pub fn perform_fhe_operation(
                     Ok(SupportedFheCiphertexts::FheUint256(a % *b))
                 }
                 _ => {
-                    panic!("Unsupported fhe types");
+                    Err(FhevmError::UnsupportedFheTypes {
+                        fhe_operation: format!("{:?}", fhe_operation),
+                        input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                    })
                 }
             }
         }
@@ -1279,7 +1294,10 @@ pub fn perform_fhe_operation(
                     Ok(SupportedFheCiphertexts::FheUint256(a & *b))
                 }
                 _ => {
-                    panic!("Unsupported fhe types");
+                    Err(FhevmError::UnsupportedFheTypes {
+                        fhe_operation: format!("{:?}", fhe_operation),
+                        input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                    })
                 }
             }
         }
@@ -1358,7 +1376,10 @@ pub fn perform_fhe_operation(
                     Ok(SupportedFheCiphertexts::FheUint256(a | *b))
                 }
                 _ => {
-                    panic!("Unsupported fhe types");
+                    Err(FhevmError::UnsupportedFheTypes {
+                        fhe_operation: format!("{:?}", fhe_operation),
+                        input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                    })
                 }
             }
         }
@@ -1437,7 +1458,10 @@ pub fn perform_fhe_operation(
                     Ok(SupportedFheCiphertexts::FheUint256(a ^ *b))
                 }
                 _ => {
-                    panic!("Unsupported fhe types");
+                    Err(FhevmError::UnsupportedFheTypes {
+                        fhe_operation: format!("{:?}", fhe_operation),
+                        input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                    })
                 }
             }
         }
@@ -1516,7 +1540,10 @@ pub fn perform_fhe_operation(
                     Ok(SupportedFheCiphertexts::FheUint256(a << *b))
                 }
                 _ => {
-                    panic!("Unsupported fhe types");
+                    Err(FhevmError::UnsupportedFheTypes {
+                        fhe_operation: format!("{:?}", fhe_operation),
+                        input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                    })
                 }
             }
         }
@@ -1595,7 +1622,10 @@ pub fn perform_fhe_operation(
                     Ok(SupportedFheCiphertexts::FheUint256(a >> *b))
                 }
                 _ => {
-                    panic!("Unsupported fhe types");
+                    Err(FhevmError::UnsupportedFheTypes {
+                        fhe_operation: format!("{:?}", fhe_operation),
+                        input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                    })
                 }
             }
         }
@@ -1674,7 +1704,10 @@ pub fn perform_fhe_operation(
                     Ok(SupportedFheCiphertexts::FheUint256(a.rotate_left(*b)))
                 }
                 _ => {
-                    panic!("Unsupported fhe types");
+                    Err(FhevmError::UnsupportedFheTypes {
+                        fhe_operation: format!("{:?}", fhe_operation),
+                        input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                    })
                 }
             }
         }
@@ -1753,7 +1786,10 @@ pub fn perform_fhe_operation(
                     Ok(SupportedFheCiphertexts::FheUint256(a.rotate_right(*b)))
                 }
                 _ => {
-                    panic!("Unsupported fhe types");
+                    Err(FhevmError::UnsupportedFheTypes {
+                        fhe_operation: format!("{:?}", fhe_operation),
+                        input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                    })
                 }
             }
         }
@@ -1832,7 +1868,10 @@ pub fn perform_fhe_operation(
                     Ok(SupportedFheCiphertexts::FheUint256(a.min(*b)))
                 }
                 _ => {
-                    panic!("Unsupported fhe types");
+                    Err(FhevmError::UnsupportedFheTypes {
+                        fhe_operation: format!("{:?}", fhe_operation),
+                        input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                    })
                 }
             }
         }
@@ -1911,7 +1950,10 @@ pub fn perform_fhe_operation(
                     Ok(SupportedFheCiphertexts::FheUint256(a.max(*b)))
                 }
                 _ => {
-                    panic!("Unsupported fhe types");
+                    Err(FhevmError::UnsupportedFheTypes {
+                        fhe_operation: format!("{:?}", fhe_operation),
+                        input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                    })
                 }
             }
         }
@@ -1998,7 +2040,10 @@ pub fn perform_fhe_operation(
                     Ok(SupportedFheCiphertexts::FheBool(a.eq(*b)))
                 }
                 _ => {
-                    panic!("Unsupported fhe types");
+                    Err(FhevmError::UnsupportedFheTypes {
+                        fhe_operation: format!("{:?}", fhe_operation),
+                        input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                    })
                 }
             }
         }
@@ -2085,7 +2130,10 @@ pub fn perform_fhe_operation(
                     Ok(SupportedFheCiphertexts::FheBool(a.ne(*b)))
                 }
                 _ => {
-                    panic!("Unsupported fhe types");
+                    Err(FhevmError::UnsupportedFheTypes {
+                        fhe_operation: format!("{:?}", fhe_operation),
+                        input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                    })
                 }
             }
         }
@@ -2164,7 +2212,10 @@ pub fn perform_fhe_operation(
                     Ok(SupportedFheCiphertexts::FheBool(a.ge(*b)))
                 }
                 _ => {
-                    panic!("Unsupported fhe types");
+                    Err(FhevmError::UnsupportedFheTypes {
+                        fhe_operation: format!("{:?}", fhe_operation),
+                        input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                    })
                 }
             }
         }
@@ -2243,7 +2294,10 @@ pub fn perform_fhe_operation(
                     Ok(SupportedFheCiphertexts::FheBool(a.gt(*b)))
                 }
                 _ => {
-                    panic!("Unsupported fhe types");
+                    Err(FhevmError::UnsupportedFheTypes {
+                        fhe_operation: format!("{:?}", fhe_operation),
+                        input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                    })
                 }
             }
         }
@@ -2322,7 +2376,10 @@ pub fn perform_fhe_operation(
                     Ok(SupportedFheCiphertexts::FheBool(a.le(*b)))
                 }
                 _ => {
-                    panic!("Unsupported fhe types");
+                    Err(FhevmError::UnsupportedFheTypes {
+                        fhe_operation: format!("{:?}", fhe_operation),
+                        input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                    })
                 }
             }
         }
@@ -2401,7 +2458,10 @@ pub fn perform_fhe_operation(
                     Ok(SupportedFheCiphertexts::FheBool(a.lt(*b)))
                 }
                 _ => {
-                    panic!("Unsupported fhe types");
+                    Err(FhevmError::UnsupportedFheTypes {
+                        fhe_operation: format!("{:?}", fhe_operation),
+                        input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                    })
                 }
             }
         }
@@ -2434,7 +2494,10 @@ pub fn perform_fhe_operation(
                     Ok(SupportedFheCiphertexts::FheBytes256(!a))
                 }
                 _ => {
-                    panic!("Unsupported fhe types");
+                    Err(FhevmError::UnsupportedFheTypes {
+                        fhe_operation: format!("{:?}", fhe_operation),
+                        input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                    })
                 }
             }
         }
@@ -2466,7 +2529,10 @@ pub fn perform_fhe_operation(
                     Ok(SupportedFheCiphertexts::FheBytes256(-a))
                 }
                 _ => {
-                    panic!("Unsupported fhe types");
+                    Err(FhevmError::UnsupportedFheTypes {
+                        fhe_operation: format!("{:?}", fhe_operation),
+                        input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                    })
                 }
             }
         }
@@ -2474,7 +2540,10 @@ pub fn perform_fhe_operation(
             assert_eq!(input_operands.len(), 3);
 
             let SupportedFheCiphertexts::FheBool(flag) = &input_operands[0] else {
-                panic!("flag for if-then-else must be boolean")
+                return Err(FhevmError::UnsupportedFheTypes {
+                    fhe_operation: format!("{:?}", fhe_operation),
+                    input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                })
             };
 
             match (&input_operands[1], &input_operands[2]) {
@@ -2545,7 +2614,10 @@ pub fn perform_fhe_operation(
                     Ok(SupportedFheCiphertexts::FheBytes256(res))
                 }
                 _ => {
-                    panic!("Mismatch between cmux operand types")
+                    Err(FhevmError::UnsupportedFheTypes {
+                        fhe_operation: format!("{:?}", fhe_operation),
+                        input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                    })
                 }
             }
         }
@@ -2602,7 +2674,12 @@ pub fn perform_fhe_operation(
                             let out: tfhe::FheUint2048 = inp.clone().cast_into();
                             Ok(SupportedFheCiphertexts::FheBytes256(out))
                         }
-                        other => panic!("unexpected type: {other}"),
+                        other => {
+                            Err(FhevmError::UnknownCastType {
+                                fhe_operation: format!("{:?}", fhe_operation),
+                                type_to_cast_to: other,
+                            })
+                        },
                     }
                 }
             }
@@ -2658,7 +2735,12 @@ pub fn perform_fhe_operation(
                             let out: tfhe::FheUint2048 = inp.clone().cast_into();
                             Ok(SupportedFheCiphertexts::FheBytes256(out))
                         }
-                        other => panic!("unexpected type: {other}"),
+                        other => {
+                            Err(FhevmError::UnknownCastType {
+                                fhe_operation: format!("{:?}", fhe_operation),
+                                type_to_cast_to: other,
+                            })
+                        },
                     }
                 }
             }
@@ -2714,7 +2796,12 @@ pub fn perform_fhe_operation(
                             let out: tfhe::FheUint2048 = inp.clone().cast_into();
                             Ok(SupportedFheCiphertexts::FheBytes256(out))
                         }
-                        other => panic!("unexpected type: {other}"),
+                        other => {
+                            Err(FhevmError::UnknownCastType {
+                                fhe_operation: format!("{:?}", fhe_operation),
+                                type_to_cast_to: other,
+                            })
+                        },
                     }
                 }
             }
@@ -2770,7 +2857,12 @@ pub fn perform_fhe_operation(
                             let out: tfhe::FheUint2048 = inp.clone().cast_into();
                             Ok(SupportedFheCiphertexts::FheBytes256(out))
                         }
-                        other => panic!("unexpected type: {other}"),
+                        other => {
+                            Err(FhevmError::UnknownCastType {
+                                fhe_operation: format!("{:?}", fhe_operation),
+                                type_to_cast_to: other,
+                            })
+                        },
                     }
                 }
             }
@@ -2826,7 +2918,12 @@ pub fn perform_fhe_operation(
                             let out: tfhe::FheUint2048 = inp.clone().cast_into();
                             Ok(SupportedFheCiphertexts::FheBytes256(out))
                         }
-                        other => panic!("unexpected type: {other}"),
+                        other => {
+                            Err(FhevmError::UnknownCastType {
+                                fhe_operation: format!("{:?}", fhe_operation),
+                                type_to_cast_to: other,
+                            })
+                        },
                     }
                 }
             }
@@ -2882,7 +2979,12 @@ pub fn perform_fhe_operation(
                             let out: tfhe::FheUint2048 = inp.clone().cast_into();
                             Ok(SupportedFheCiphertexts::FheBytes256(out))
                         }
-                        other => panic!("unexpected type: {other}"),
+                        other => {
+                            Err(FhevmError::UnknownCastType {
+                                fhe_operation: format!("{:?}", fhe_operation),
+                                type_to_cast_to: other,
+                            })
+                        },
                     }
                 }
             }
@@ -2938,7 +3040,12 @@ pub fn perform_fhe_operation(
                             let out: tfhe::FheUint2048 = inp.clone().cast_into();
                             Ok(SupportedFheCiphertexts::FheBytes256(out))
                         }
-                        other => panic!("unexpected type: {other}"),
+                        other => {
+                            Err(FhevmError::UnknownCastType {
+                                fhe_operation: format!("{:?}", fhe_operation),
+                                type_to_cast_to: other,
+                            })
+                        },
                     }
                 }
             }
@@ -2994,7 +3101,12 @@ pub fn perform_fhe_operation(
                             let out: tfhe::FheUint2048 = inp.clone().cast_into();
                             Ok(SupportedFheCiphertexts::FheBytes256(out))
                         }
-                        other => panic!("unexpected type: {other}"),
+                        other => {
+                            Err(FhevmError::UnknownCastType {
+                                fhe_operation: format!("{:?}", fhe_operation),
+                                type_to_cast_to: other,
+                            })
+                        },
                     }
                 }
             }
@@ -3050,7 +3162,12 @@ pub fn perform_fhe_operation(
                             let out: tfhe::FheUint2048 = inp.clone().cast_into();
                             Ok(SupportedFheCiphertexts::FheBytes256(out))
                         }
-                        other => panic!("unexpected type: {other}"),
+                        other => {
+                            Err(FhevmError::UnknownCastType {
+                                fhe_operation: format!("{:?}", fhe_operation),
+                                type_to_cast_to: other,
+                            })
+                        },
                     }
                 }
             }
@@ -3106,7 +3223,12 @@ pub fn perform_fhe_operation(
                             let out: tfhe::FheUint2048 = inp.clone().cast_into();
                             Ok(SupportedFheCiphertexts::FheBytes256(out))
                         }
-                        other => panic!("unexpected type: {other}"),
+                        other => {
+                            Err(FhevmError::UnknownCastType {
+                                fhe_operation: format!("{:?}", fhe_operation),
+                                type_to_cast_to: other,
+                            })
+                        },
                     }
                 }
             }
@@ -3162,7 +3284,12 @@ pub fn perform_fhe_operation(
                             let out: tfhe::FheUint2048 = inp.clone().cast_into();
                             Ok(SupportedFheCiphertexts::FheBytes256(out))
                         }
-                        other => panic!("unexpected type: {other}"),
+                        other => {
+                            Err(FhevmError::UnknownCastType {
+                                fhe_operation: format!("{:?}", fhe_operation),
+                                type_to_cast_to: other,
+                            })
+                        },
                     }
                 }
             }
@@ -3223,7 +3350,10 @@ pub fn perform_fhe_operation(
                 }
             }
             _ => {
-                panic!("unknown cast pair")
+                Err(FhevmError::UnsupportedFheTypes {
+                    fhe_operation: format!("{:?}", fhe_operation),
+                    input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                })
             }
         },
         SupportedFheOperations::FheTrivialEncrypt => match (&input_operands[0], &input_operands[1])
@@ -3236,15 +3366,24 @@ pub fn perform_fhe_operation(
                 Ok(trivial_encrypt_be_bytes(l, &bytes))
             }
             _ => {
-                panic!("unknown trivial encrypt operation")
+                Err(FhevmError::UnsupportedFheTypes {
+                    fhe_operation: format!("{:?}", fhe_operation),
+                    input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                })
             }
         },
         SupportedFheOperations::FheRand => {
             let SupportedFheCiphertexts::Scalar(rand_counter) = &input_operands[0] else {
-                panic!("we should have checked we have only scalar operands here")
+                return Err(FhevmError::UnsupportedFheTypes {
+                    fhe_operation: format!("{:?}", fhe_operation),
+                    input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                })
             };
             let SupportedFheCiphertexts::Scalar(to_type) = &input_operands[1] else {
-                panic!("we should have checked we have only scalar operands here")
+                return Err(FhevmError::UnsupportedFheTypes {
+                    fhe_operation: format!("{:?}", fhe_operation),
+                    input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                })
             };
             let (rand_counter, _) = rand_counter.to_low_high_u128();
             let (to_type, _) = to_type.to_low_high_u128();
@@ -3252,13 +3391,22 @@ pub fn perform_fhe_operation(
         }
         SupportedFheOperations::FheRandBounded => {
             let SupportedFheCiphertexts::Scalar(rand_counter) = &input_operands[0] else {
-                panic!("we should have checked we have only scalar operands here")
+                return Err(FhevmError::UnsupportedFheTypes {
+                    fhe_operation: format!("{:?}", fhe_operation),
+                    input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                })
             };
             let SupportedFheCiphertexts::Scalar(upper_bound) = &input_operands[1] else {
-                panic!("we should have checked we have only scalar operands here")
+                return Err(FhevmError::UnsupportedFheTypes {
+                    fhe_operation: format!("{:?}", fhe_operation),
+                    input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                })
             };
             let SupportedFheCiphertexts::Scalar(to_type) = &input_operands[2] else {
-                panic!("we should have checked we have only scalar operands here")
+                return Err(FhevmError::UnsupportedFheTypes {
+                    fhe_operation: format!("{:?}", fhe_operation),
+                    input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                })
             };
             let (rand_counter, _) = rand_counter.to_low_high_u128();
             let (to_type, _) = to_type.to_low_high_u128();

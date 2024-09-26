@@ -113,6 +113,14 @@ pub enum FhevmError {
     BadInputs,
     MissingTfheRsData,
     InvalidHandle,
+    UnsupportedFheTypes {
+        fhe_operation: String,
+        input_types: Vec<&'static str>,
+    },
+    UnknownCastType {
+        fhe_operation: String,
+        type_to_cast_to: i16,
+    },
 }
 
 impl std::error::Error for FhevmError {}
@@ -277,6 +285,12 @@ impl std::fmt::Display for FhevmError {
             Self::InvalidHandle => {
                 write!(f, "Invalid ciphertext handle")
             }
+            Self::UnsupportedFheTypes { fhe_operation, input_types } => {
+                write!(f, "Unsupported type combination for fhe operation {fhe_operation}: {:?}", input_types)
+            }
+            Self::UnknownCastType { fhe_operation, type_to_cast_to } => {
+                write!(f, "Unknown type to cast to for fhe operation {fhe_operation}: {}", type_to_cast_to)
+            }
         }
     }
 }
@@ -378,6 +392,24 @@ impl SupportedFheCiphertexts {
             SupportedFheCiphertexts::Scalar(_) => {
                 panic!("we should never need to serialize scalar")
             }
+        }
+    }
+
+    pub fn type_name(&self) -> &'static str {
+        match self {
+            SupportedFheCiphertexts::FheBool(..) => "FheBool",
+            SupportedFheCiphertexts::FheUint4(..) => "FheUint4",
+            SupportedFheCiphertexts::FheUint8(..) => "FheUint8",
+            SupportedFheCiphertexts::FheUint16(..) => "FheUint16",
+            SupportedFheCiphertexts::FheUint32(..) => "FheUint32",
+            SupportedFheCiphertexts::FheUint64(..) => "FheUint64",
+            SupportedFheCiphertexts::FheUint128(..) => "FheUint128",
+            SupportedFheCiphertexts::FheUint160(..) => "FheUint160",
+            SupportedFheCiphertexts::FheUint256(..) => "FheUint256",
+            SupportedFheCiphertexts::FheBytes64(..) => "FheBytes64",
+            SupportedFheCiphertexts::FheBytes128(..) => "FheBytes128",
+            SupportedFheCiphertexts::FheBytes256(..) => "FheBytes256",
+            SupportedFheCiphertexts::Scalar(..) => "Scalar",
         }
     }
 

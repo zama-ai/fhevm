@@ -49,10 +49,7 @@ pub async fn run_tfhe_worker(
         // here we log the errors and make sure we retry
         if let Err(cycle_error) = tfhe_worker_cycle(&args).await {
             WORKER_ERRORS_COUNTER.inc();
-            eprintln!(
-                "Error in background worker, retrying shortly: {:?}",
-                cycle_error
-            );
+            log::error!(target: "tfhe_worker", error = cycle_error.to_string(); "Error in background worker, retrying shortly");
         }
         tokio::time::sleep(tokio::time::Duration::from_millis(5000)).await;
     }
@@ -82,11 +79,11 @@ async fn tfhe_worker_cycle(
             tokio::select! {
                 _ = listener.try_recv() => {
                     WORK_ITEMS_NOTIFICATIONS_COUNTER.inc();
-                    println!("Received work_available notification from postgres");
+                    log::info!(target: "tfhe_worker", "Received work_available notification from postgres");
                 },
                 _ = tokio::time::sleep(tokio::time::Duration::from_millis(5000)) => {
                     WORK_ITEMS_POLL_COUNTER.inc();
-                    println!("Polling the database for more work on timer");
+                    log::info!(target: "tfhe_worker", "Polling the database for more work on timer");
                 },
             };
         }
@@ -128,7 +125,7 @@ async fn tfhe_worker_cycle(
         }
 
         WORK_ITEMS_FOUND_COUNTER.inc_by(the_work.len() as u64);
-        println!("Processing {} work items", the_work.len());
+        log::info!(target: "tfhe_worker", count = the_work.len(); "Processing work items");
 
         // make sure we process each tenant sequentially not to
         // load different keys in cache by different tenants
@@ -287,6 +284,12 @@ async fn tfhe_worker_cycle(
                 }
                 Err((err, tenant_id, output_handle)) => {
                     WORKER_ERRORS_COUNTER.inc();
+                    log::error!(target: "tfhe_worker",
+                        tenant_id,
+                        output_handle = format!("0x{}", hex::encode(&output_handle)),
+                        error = err.to_string();
+                        "error while processing work item"
+                    );
                     let _ = query!(
                         "
                             UPDATE computations

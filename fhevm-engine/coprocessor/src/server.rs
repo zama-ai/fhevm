@@ -92,7 +92,7 @@ pub async fn run_server(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     loop {
         if let Err(e) = run_server_iteration(args.clone()).await {
-            println!("Error running server, retrying shortly: {:?}", e);
+            log::error!(target: "grpc_server", error = e.to_string(); "Error running server, retrying shortly");
         }
 
         tokio::time::sleep(tokio::time::Duration::from_millis(5000)).await;
@@ -111,9 +111,9 @@ pub async fn run_server_iteration(
     let coprocessor_key_file = tokio::fs::read_to_string(&args.coprocessor_private_key).await?;
 
     let signer = PrivateKeySigner::from_str(coprocessor_key_file.trim())?;
-    println!("Coprocessor signer address: {}", signer.address());
+    log::info!(target: "grpc_server", address = signer.address().to_string(); "Coprocessor signer initiated");
 
-    println!("Coprocessor listening on {}", addr);
+    log::info!("Coprocessor listening on {}", addr);
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(args.pg_pool_max_connections)
         .connect(&db_url)
