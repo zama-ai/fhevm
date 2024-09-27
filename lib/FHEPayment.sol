@@ -29,7 +29,7 @@ contract FHEPayment is UUPSUpgradeable, Ownable2StepUpgradeable {
     uint256 private constant PATCH_VERSION = 0;
     address public constant tfheExecutorAddress = tfheExecutorAdd;
 
-    uint256 private constant FHE_GAS_BLOCKLIMIT = 10_000_000; //
+    uint256 private constant FHE_GAS_BLOCKLIMIT = 10_000_000;
     uint256 private constant MIN_FHE_GASPRICE = 0; // eg: 10_000_000 means a minimum of 0.01 Gwei
     uint256 private constant FHE_GASPRICE_NATIVE_RATIO = 0; // eg: 1000 means fhe gas price is set to 0.1% of native gas price (if above minimum)
 
