@@ -390,7 +390,8 @@ impl SupportedFheCiphertexts {
             SupportedFheCiphertexts::FheBytes128(_) => 10,
             SupportedFheCiphertexts::FheBytes256(_) => 11,
             SupportedFheCiphertexts::Scalar(_) => {
-                panic!("we should never need to serialize scalar")
+                // need this for tracing as we join types of computation for a trace
+                200
             }
         }
     }

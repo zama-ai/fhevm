@@ -5,6 +5,8 @@ use fhevm_engine_common::{
     types::SupportedFheOperations,
 };
 use lazy_static::lazy_static;
+use opentelemetry::KeyValue;
+use opentelemetry::trace::{Span, TraceContextExt, Tracer};
 use prometheus::{register_int_counter, IntCounter};
 use sqlx::{postgres::PgListener, query, Acquire};
 use std::{
@@ -58,6 +60,8 @@ pub async fn run_tfhe_worker(
 async fn tfhe_worker_cycle(
     args: &crate::cli::Args,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let tracer = opentelemetry::global::tracer("tfhe_worker");
+
     let tenant_key_cache: std::sync::Arc<tokio::sync::RwLock<lru::LruCache<i32, TfheTenantKeys>>> =
         std::sync::Arc::new(tokio::sync::RwLock::new(lru::LruCache::new(
             NonZeroUsize::new(args.tenant_key_cache_size as usize).unwrap(),
@@ -88,10 +92,17 @@ async fn tfhe_worker_cycle(
             };
         }
 
+        let loop_span = tracer.start("worker_iteration");
+        let loop_ctx = opentelemetry::Context::current_with_span(loop_span);
+        let mut s = tracer.start_with_context("acquire_connection", &loop_ctx);
         let mut conn = pool.acquire().await?;
+        s.end();
+        let mut s = tracer.start_with_context("begin_transaction", &loop_ctx);
         let mut trx = conn.begin().await?;
+        s.end();
 
         // this query locks our work items so other worker doesn't select them
+        let mut s = tracer.start_with_context("query_work_items", &loop_ctx);
         let mut the_work = query!(
             "
             SELECT tenant_id, output_handle, dependencies, fhe_operation, is_scalar
@@ -117,6 +128,8 @@ async fn tfhe_worker_cycle(
         )
         .fetch_all(trx.as_mut())
         .await?;
+        s.set_attribute(KeyValue::new("count", the_work.len() as i64));
+        s.end();
 
         immedially_poll_more_work = !the_work.is_empty();
 
@@ -127,9 +140,12 @@ async fn tfhe_worker_cycle(
         WORK_ITEMS_FOUND_COUNTER.inc_by(the_work.len() as u64);
         log::info!(target: "tfhe_worker", count = the_work.len(); "Processing work items");
 
+
         // make sure we process each tenant sequentially not to
         // load different keys in cache by different tenants
         the_work.sort_by_key(|k| k.tenant_id);
+
+        let mut s = tracer.start_with_context("populate_key_cache", &loop_ctx);
 
         let mut cts_to_query: BTreeSet<&[u8]> = BTreeSet::new();
         let mut tenants_to_query: BTreeSet<i32> = BTreeSet::new();
@@ -153,8 +169,14 @@ async fn tfhe_worker_cycle(
         let tenants_to_query = tenants_to_query.into_iter().collect::<Vec<_>>();
         let keys_to_query = keys_to_query.into_iter().collect::<Vec<_>>();
 
-        populate_cache_with_tenant_keys(keys_to_query, trx.as_mut(), &tenant_key_cache).await?;
+        s.set_attribute(KeyValue::new("keys_to_query", keys_to_query.len() as i64));
+        s.set_attribute(KeyValue::new("tenants_to_query", tenants_to_query.len() as i64));
 
+        populate_cache_with_tenant_keys(keys_to_query, trx.as_mut(), &tenant_key_cache).await?;
+        s.end();
+
+        let mut s = tracer.start_with_context("query_ciphertext_batch", &loop_ctx);
+        s.set_attribute(KeyValue::new("cts_to_query", cts_to_query.len() as i64));
         // TODO: select all the ciphertexts where they're contained in the tuples
         let ciphertexts_rows = query!(
             "
@@ -169,6 +191,8 @@ async fn tfhe_worker_cycle(
         .fetch_all(trx.as_mut())
         .await?;
 
+        s.end();
+
         // index ciphertexts in hashmap
         let mut ciphertext_map: HashMap<(i32, &[u8]), _> =
             HashMap::with_capacity(ciphertexts_rows.len());
@@ -176,9 +200,13 @@ async fn tfhe_worker_cycle(
             let _ = ciphertext_map.insert((row.tenant_id, &row.handle), row);
         }
 
+        let mut s = tracer.start_with_context("schedule_fhe_work", &loop_ctx);
+        s.set_attribute(KeyValue::new("work_items", the_work.len() as i64));
+
         let mut tfhe_work_set = tokio::task::JoinSet::new();
         // process every tenant by tenant id because we must switch keys for each tenant
         for w in the_work {
+
             let tenant_key_cache = tenant_key_cache.clone();
             let fhe_op: SupportedFheOperations = w
                 .fhe_operation
@@ -202,6 +230,7 @@ async fn tfhe_worker_cycle(
             }
 
             // copy for setting error in database
+            let mut s = tracer.start_with_context("tfhe_computation", &loop_ctx);
             tfhe_work_set.spawn_blocking(
                 move || -> Result<_, (Box<(dyn std::error::Error + Send + Sync)>, i32, Vec<u8>)> {
                     // set the server key if not set
@@ -252,15 +281,27 @@ async fn tfhe_worker_cycle(
                         })?;
                     let (db_type, db_bytes) = res.compress();
 
+                    s.set_attribute(KeyValue::new("fhe_operation", w.fhe_operation as i64));
+                    s.set_attribute(KeyValue::new("handle", format!("0x{}", hex::encode(&w.output_handle))));
+                    s.set_attribute(KeyValue::new("output_type", db_type as i64));
+                    let input_types = deserialized_cts.iter().map(|i| i.type_num().to_string()).collect::<Vec<_>>().join(",");
+                    s.set_attribute(KeyValue::new("input_types", input_types));
+                    s.end();
                     Ok((w, db_type, db_bytes))
                 },
             );
         }
+        s.end();
 
+        let mut s_outer = tracer.start_with_context("wait_and_update_fhe_work", &loop_ctx);
         while let Some(output) = tfhe_work_set.join_next().await {
             let finished_work_unit = output?;
             match finished_work_unit {
                 Ok((w, db_type, db_bytes)) => {
+                    let mut s = tracer.start_with_context("insert_ct_into_db", &loop_ctx);
+                    s.set_attribute(KeyValue::new("tenant_id", w.tenant_id as i64));
+                    s.set_attribute(KeyValue::new("handle", format!("0x{}", hex::encode(&w.output_handle))));
+                    s.set_attribute(KeyValue::new("ciphertext_type", db_type as i64));
                     let _ = query!("
                         INSERT INTO ciphertexts(tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type)
                         VALUES($1, $2, $3, $4, $5)
@@ -268,6 +309,11 @@ async fn tfhe_worker_cycle(
                     ", w.tenant_id, w.output_handle, &db_bytes, current_ciphertext_version(), db_type)
                     .execute(trx.as_mut())
                     .await?;
+                    s.end();
+                    let mut s = tracer.start_with_context("update_computation", &loop_ctx);
+                    s.set_attribute(KeyValue::new("tenant_id", w.tenant_id as i64));
+                    s.set_attribute(KeyValue::new("handle", format!("0x{}", hex::encode(&w.output_handle))));
+                    s.set_attribute(KeyValue::new("ciphertext_type", db_type as i64));
                     let _ = query!(
                         "
                             UPDATE computations
@@ -280,6 +326,7 @@ async fn tfhe_worker_cycle(
                     )
                     .execute(trx.as_mut())
                     .await?;
+                    s.end();
                     WORK_ITEMS_PROCESSED_COUNTER.inc();
                 }
                 Err((err, tenant_id, output_handle)) => {
@@ -290,6 +337,11 @@ async fn tfhe_worker_cycle(
                         error = err.to_string();
                         "error while processing work item"
                     );
+                    let mut s = tracer.start_with_context("set_computation_error_in_db", &loop_ctx);
+                    s.set_attribute(KeyValue::new("tenant_id", tenant_id as i64));
+                    s.set_attribute(KeyValue::new("handle", format!("0x{}", hex::encode(&output_handle))));
+                    let err_string = err.to_string();
+                    s.set_status(opentelemetry::trace::Status::Error { description: err_string.clone().into() });
                     let _ = query!(
                         "
                             UPDATE computations
@@ -297,16 +349,20 @@ async fn tfhe_worker_cycle(
                             WHERE tenant_id = $2
                             AND output_handle = $3
                         ",
-                        err.to_string(),
+                        err_string,
                         tenant_id,
                         output_handle
                     )
                     .execute(trx.as_mut())
                     .await?;
+                    s.end();
                 }
             }
         }
+        s_outer.end();
 
         trx.commit().await?;
+
+        let _guard = loop_ctx.attach();
     }
 }
