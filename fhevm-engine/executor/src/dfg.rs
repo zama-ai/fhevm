@@ -15,19 +15,29 @@ use tfhe::integer::U256;
 use daggy::{Dag, NodeIndex};
 use std::collections::HashMap;
 
-//TODO#[derive(Debug)]
-pub struct Node<'a> {
-    computation: &'a SyncComputation,
+pub struct OpNode {
+    opcode: i32,
     result: DFGTaskResult,
     result_handle: Handle,
     inputs: Vec<DFGTaskInput>,
 }
-pub type Edge = u8;
+pub type OpEdge = u8;
 
-//TODO#[derive(Debug)]
-#[derive(Default)]
+impl std::fmt::Debug for OpNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OpNode")
+            .field("OP", &self.opcode)
+            .field(
+                "Result",
+                &format_args!("{0:?} (0x{0:X})", &self.result_handle[0]),
+            )
+            .finish()
+    }
+}
+
+#[derive(Default, Debug)]
 pub struct DFGraph<'a> {
-    pub graph: Dag<Node<'a>, Edge>,
+    pub graph: Dag<OpNode, OpEdge>,
     produced_handles: HashMap<&'a Handle, NodeIndex>,
 }
 
@@ -42,8 +52,8 @@ impl<'a> DFGraph<'a> {
             .first()
             .filter(|h| h.len() == HANDLE_LEN)
             .ok_or(SyncComputeError::BadResultHandles)?;
-        Ok(self.graph.add_node(Node {
-            computation,
+        Ok(self.graph.add_node(OpNode {
+            opcode: computation.operation,
             result: None,
             result_handle: rh.clone(),
             inputs,
@@ -54,7 +64,7 @@ impl<'a> DFGraph<'a> {
         &mut self,
         source: NodeIndex,
         destination: NodeIndex,
-        consumer_input: Edge,
+        consumer_input: OpEdge,
     ) -> Result<(), SyncComputeError> {
         let _edge = self
             .graph
@@ -78,7 +88,7 @@ impl<'a> DFGraph<'a> {
                             if let Some(ct) = state.ciphertexts.get(h) {
                                 Ok(DFGTaskInput::Val(ct.expanded.clone()))
                             } else {
-                                Ok(DFGTaskInput::Handle(h.clone()))
+                                Ok(DFGTaskInput::Dep(None))
                             }
                         }
                         Input::Scalar(s) if s.len() == SCALAR_LEN => {
@@ -103,31 +113,23 @@ impl<'a> DFGraph<'a> {
                 );
             }
         }
-        // Traverse nodes and add dependences/edges as required
-        for index in 0..self.graph.node_count() {
-            let take_inputs = std::mem::take(
-                &mut self
-                    .graph
-                    .node_weight_mut(NodeIndex::new(index))
-                    .unwrap()
-                    .inputs,
-            );
-            for (idx, input) in take_inputs.iter().enumerate() {
-                match input {
-                    DFGTaskInput::Handle(input) => {
+        // Traverse computations and add dependences/edges as required
+        for (index, computation) in req.computations.iter().enumerate() {
+            for (input_idx, input) in computation.inputs.iter().enumerate() {
+                if let Some(Input::Handle(input)) = &input.input {
+                    if !state.ciphertexts.contains_key(input) {
                         if let Some(producer_index) = self.produced_handles.get(input) {
-                            self.add_dependence(*producer_index, NodeIndex::new(index), idx as u8)?;
+                            let consumer_index = NodeIndex::new(index);
+                            self.graph[consumer_index].inputs[input_idx] =
+                                DFGTaskInput::Dep(Some((*producer_index).index()));
+                            self.add_dependence(*producer_index, consumer_index, input_idx as u8)?;
+                        } else {
+                            return Err(SyncComputeError::UnsatisfiedDependence);
                         }
                     }
-                    DFGTaskInput::Val(_) => {}
-                };
+                }
             }
-            self.graph
-                .node_weight_mut(NodeIndex::new(index))
-                .unwrap()
-                .inputs = take_inputs;
         }
-
         Ok(())
     }
 
