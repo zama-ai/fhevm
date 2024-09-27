@@ -9,5 +9,5 @@ export async function initializeFHEPayment() {
   return fhePayment;
 }
 
-export const FHE_GASPRICE_NATIVE_RATIO = 1000n;
-export const MIN_FHE_GASPRICE = 10_000_000n;
+export const FHE_GASPRICE_NATIVE_RATIO = 0n; // 1000n;
+export const MIN_FHE_GASPRICE = 0n; // 10_000_000n;

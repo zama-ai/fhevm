@@ -16,7 +16,6 @@ function generateAllFiles() {
   const ovShards = testgen.splitOverloadsToShards(overloads);
   writeFileSync('lib/Impl.sol', t.implSol(context, operators));
   writeFileSync('lib/TFHE.sol', tfheSolSource);
-  writeFileSync('lib/FhevmLib.sol', t.fhevmLibSol(operators));
   writeFileSync('lib/FHEPayment.sol', generateFHEPayment(operatorsPrices));
   writeFileSync('payment/Payment.sol', t.paymentSol());
   mkdirSync('examples/tests', { recursive: true });

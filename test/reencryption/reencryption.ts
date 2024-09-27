@@ -12,9 +12,7 @@ describe('Reencryption', function () {
     this.instances = await createInstances(this.signers);
     const contractFactory = await ethers.getContractFactory('Reencrypt');
 
-    this.contract = await contractFactory.connect(this.signers.alice).deploy({
-      value: ethers.parseEther('0.001'),
-    });
+    this.contract = await contractFactory.connect(this.signers.alice).deploy();
     this.contractAddress = await this.contract.getAddress();
     this.instances = await createInstances(this.signers);
 
