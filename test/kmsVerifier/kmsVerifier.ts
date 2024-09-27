@@ -34,9 +34,7 @@ describe('KMSVerifier', function () {
       expect((await kmsVerifier.getSigners()).length).to.equal(2); // one signer has been added
 
       const contractFactory = await ethers.getContractFactory('TestAsyncDecrypt');
-      const contract = await contractFactory.connect(this.signers.alice).deploy({
-        value: ethers.parseEther('0.001'),
-      });
+      const contract = await contractFactory.connect(this.signers.alice).deploy();
       const tx2 = await contract.requestBool({ gasLimit: 5_000_000 });
       await tx2.wait();
       await awaitAllDecryptionResults();
@@ -79,9 +77,7 @@ describe('KMSVerifier', function () {
       const y4 = await contract.yUint8();
       expect(y4).to.equal(42); // even with more than 2 signatures decryption should still succeed
 
-      const contract2 = await contractFactory.connect(this.signers.alice).deploy({
-        value: ethers.parseEther('0.001'),
-      });
+      const contract2 = await contractFactory.connect(this.signers.alice).deploy();
       const inputAlice = this.instances.alice.createEncryptedInput(
         await contract2.getAddress(),
         this.signers.alice.address,

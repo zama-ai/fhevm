@@ -6,7 +6,6 @@ import "../lib/TFHE.sol";
 import "./EncryptedERC20.sol";
 import "@openzeppelin/contracts/access/Ownable2Step.sol";
 import "../gateway/GatewayCaller.sol";
-import "../payment/Payment.sol";
 
 contract BlindAuction is Ownable2Step, GatewayCaller {
     uint256 public endTime;
@@ -56,10 +55,9 @@ contract BlindAuction is Ownable2Step, GatewayCaller {
         EncryptedERC20 _tokenContract,
         uint256 biddingTime,
         bool isStoppable
-    ) payable Ownable(msg.sender) {
+    ) Ownable(msg.sender) {
         TFHE.setFHEVM(FHEVMConfig.defaultConfig());
         Gateway.setGateway(Gateway.defaultGatewayAddress());
-        Payment.depositForThis(msg.value);
         beneficiary = _beneficiary;
         tokenContract = _tokenContract;
         endTime = block.timestamp + biddingTime;

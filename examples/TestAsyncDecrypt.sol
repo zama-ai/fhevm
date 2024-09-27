@@ -4,7 +4,6 @@ pragma solidity ^0.8.24;
 
 import "../lib/TFHE.sol";
 import "../gateway/GatewayCaller.sol";
-import "../payment/Payment.sol";
 
 contract TestAsyncDecrypt is GatewayCaller {
     ebool xBool;
@@ -32,10 +31,9 @@ contract TestAsyncDecrypt is GatewayCaller {
 
     uint256 public latestRequestID;
 
-    constructor() payable {
+    constructor() {
         TFHE.setFHEVM(FHEVMConfig.defaultConfig());
         Gateway.setGateway(Gateway.defaultGatewayAddress());
-        Payment.depositForThis(msg.value);
         xBool = TFHE.asEbool(true);
         TFHE.allowThis(xBool);
         xUint4 = TFHE.asEuint4(4);

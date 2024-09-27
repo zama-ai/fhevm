@@ -15,9 +15,7 @@ describe('TestAsyncDecrypt', function () {
     // very first request of decryption always fail at the moment due to a gateway bug
     // TODO: remove following 8 lines when the gateway bug will be fixed
     const contractFactory = await ethers.getContractFactory('TestAsyncDecrypt');
-    this.contract = await contractFactory.connect(this.signers.alice).deploy({
-      value: ethers.parseEther('0.001'),
-    });
+    this.contract = await contractFactory.connect(this.signers.alice).deploy();
     await this.contract.waitForDeployment();
     this.contractAddress = await this.contract.getAddress();
     this.instances = await createInstances(this.signers);
@@ -30,7 +28,7 @@ describe('TestAsyncDecrypt', function () {
 
   beforeEach(async function () {
     const contractFactory = await ethers.getContractFactory('TestAsyncDecrypt');
-    this.contract = await contractFactory.connect(this.signers.alice).deploy({ value: ethers.parseEther('0.001') });
+    this.contract = await contractFactory.connect(this.signers.alice).deploy();
     this.contractAddress = await this.contract.getAddress();
     this.instances = await createInstances(this.signers);
   });
@@ -89,9 +87,7 @@ describe('TestAsyncDecrypt', function () {
 
   it('test async decrypt bool trustless', async function () {
     const contractFactory = await ethers.getContractFactory('TestAsyncDecrypt');
-    const contract2 = await contractFactory.connect(this.signers.alice).deploy({
-      value: ethers.parseEther('0.001'),
-    });
+    const contract2 = await contractFactory.connect(this.signers.alice).deploy();
     const tx2 = await contract2.requestBoolTrustless({ gasLimit: 5_000_000 });
     await tx2.wait();
     await awaitAllDecryptionResults();
@@ -390,9 +386,7 @@ describe('TestAsyncDecrypt', function () {
 
   it('test async decrypt ebytes256 non-trivial trustless', async function () {
     const contractFactory = await ethers.getContractFactory('TestAsyncDecrypt');
-    const contract2 = await contractFactory.connect(this.signers.alice).deploy({
-      value: ethers.parseEther('0.001'),
-    });
+    const contract2 = await contractFactory.connect(this.signers.alice).deploy();
     const inputAlice = this.instances.alice.createEncryptedInput(
       await contract2.getAddress(),
       this.signers.alice.address,
@@ -412,9 +406,7 @@ describe('TestAsyncDecrypt', function () {
 
   it('test async decrypt mixed with ebytes256 trustless', async function () {
     const contractFactory = await ethers.getContractFactory('TestAsyncDecrypt');
-    const contract2 = await contractFactory.connect(this.signers.alice).deploy({
-      value: ethers.parseEther('0.001'),
-    });
+    const contract2 = await contractFactory.connect(this.signers.alice).deploy();
     const inputAlice = this.instances.alice.createEncryptedInput(
       await contract2.getAddress(),
       this.signers.alice.address,
