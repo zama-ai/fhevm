@@ -10,6 +10,7 @@ mod tfhe_worker;
 mod types;
 mod utils;
 mod metrics;
+mod tracing;
 
 fn main() {
     let args = crate::cli::parse_args();
@@ -63,6 +64,10 @@ async fn async_main(
     structured_logger::Builder::new()
         .with_default_writer(structured_logger::async_json::new_writer(tokio::io::stdout()))
         .init();
+
+    if let Err(err) = tracing::setup_tracing() {
+        panic!("Error while initializing tracing: {:?}", err);
+    }
 
     let mut set = JoinSet::new();
     if args.run_server {

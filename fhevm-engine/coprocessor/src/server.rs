@@ -132,6 +132,7 @@ pub async fn run_server_iteration(
     };
 
     Server::builder()
+        .layer(tonic_tracing_opentelemetry::middleware::server::OtelGrpcLayer::default())
         .add_service(
             crate::server::coprocessor::fhevm_coprocessor_server::FhevmCoprocessorServer::new(
                 service,
