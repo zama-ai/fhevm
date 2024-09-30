@@ -442,7 +442,7 @@ func scheduleCoprocessorFlushes(impl *ApiImpl) {
 			itemsComputed, err := flushWorkItemsToCoprocessor(impl.store)
 			if err != nil {
 				fmt.Printf("error flushing work items to coprocessor: %s\n", err)
-			} else {
+			} else if itemsComputed > 0 {
 				fmt.Printf("successfully sent %d work items to the coprocessor\n", itemsComputed)
 			}
 		}
