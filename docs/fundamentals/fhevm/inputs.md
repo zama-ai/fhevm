@@ -16,7 +16,7 @@ Therefore, we employ zero-knowledge proofs of knowledge (ZKPoK) of input FHE cip
 * the user knows the plaintext value
 * the input ciphertext can only be used in a particular smart contract
 
-The ZKPoK is verified by validator nodes when the input byte array is passed to an `TFHE.asEuintXX()` function to convert from a ciphertext to a handle that can be used in smart contracts for FHE operations.
+The ZKPoK is verified by the KMS which delivers a signature (KMS_S) to the user. When the input byte array is passed to an `TFHE.asEuintXX()` function to convert from a ciphertext to a handle that can be used in smart contracts for FHE operations, the KMS_S is verified. 
 
 ## Compact Input Lists
 
@@ -44,3 +44,72 @@ contract Adder {
 ```
 
 Note that `inputProof` also contains the ZKPoK.
+
+
+## Overview of input mechanism
+
+Handling inputs requires a few steps. The first one is to retrieve public key material from the Gateway. The second point is to encrypt them and computing the associated proof. Last step is to use them as "usual" inputs in the smart contract. 
+
+### Public key material and CRS retrieval
+
+The very first step to prepare input is to have the blockchain related public key material. The Gateway is the component reached by the user to get those material. 
+
+The Gateway is exposing a `/keys` endpoint that returns the public key and CRS alongside the signature. Users are able to verify them using KMSVerifier smart contract. 
+
+
+
+### Initialization phase
+
+In this first part we need to encrypt the input with the blockchain public key to get the `ciphertext` `C`, and compute the `ZkPok`. `C` 
+is bounded to be used with a `contractAddress` and by a `callerAddress`. The goal is to make it signed by the KMS to enable the usage of the input
+within smart contract further. 
+
+C == ciphertext - Encrypted with the blockchain public key
+
+ZkPok == Zero-knowledge proof - Computed on client side as proof of knowledge of input
+
+eInput == types + index
+
+S ==  Signature 
+
+    struct CVerificationStructForKMS {
+        address contractAddress;
+        bytes32 hashOfCiphertext;
+        address callerAddress;
+    }
+
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Gateway
+    participant KMS_BC as KMS BC
+    participant KMS_Core as KMS Core
+
+    User->>Gateway: 1. (C, contractAddr, callerAddr, ZKPoK)
+    Gateway->>KMS_BC: 2. VerifyInput(C, contractAddr, callerAddr, ZKPoK)
+    KMS_BC->>KMS_Core: 3. VerifyInput(C, contractAddr, callerAddr, ZKPoK)
+    Note over KMS_Core: 4. Verify ZkPoK
+    Note over KMS_Core: 5. KMS_S = Sign(CVerificationStructForKMS)
+    KMS_Core->>KMS_BC: 6. KMS_S
+    KMS_BC->>Gateway: 7. KMS_S
+    Gateway->>User: 8. KMS_S
+
+```
+
+### Usage
+
+The user has received the KMS signature, this means that the proof has been verified and the input could be legitimately used within fhEVM. 
+This is quite useful because in fhEVM, only the KMS signature will be verified which is faster than verifying a ZkPoK proof. 
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant fhEVM
+
+    User->>fhEVM: (eInput, C, KMS_S)
+     Note over fhEVM: Reconstruct CVerificationStructFromKMS
+    Note over fhEVM: Verify KMS_S
+
+
+```
