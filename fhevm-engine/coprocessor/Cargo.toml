@@ -38,7 +38,6 @@ actix-web = "4.9.0"
 opentelemetry = "0.25"
 opentelemetry-otlp = "0.25"
 opentelemetry_sdk = { version = "0.25", features = ["rt-tokio"] }
-tonic-tracing-opentelemetry = "0.21"
 
 [dev-dependencies]
 testcontainers = "0.21"

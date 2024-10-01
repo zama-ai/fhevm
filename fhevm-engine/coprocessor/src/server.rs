@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::error::Error;
 use std::num::NonZeroUsize;
 use std::str::FromStr;
 
@@ -23,6 +24,9 @@ use fhevm_engine_common::tfhe_ops::{
 use fhevm_engine_common::types::{FhevmError, SupportedFheCiphertexts, SupportedFheOperations};
 use fhevm_engine_common::utils::safe_deserialize_versioned_sks;
 use lazy_static::lazy_static;
+use opentelemetry::global::{BoxedSpan, BoxedTracer};
+use opentelemetry::trace::{Span, TraceContextExt, Tracer};
+use opentelemetry::KeyValue;
 use prometheus::{register_int_counter, IntCounter};
 use sha3::{Digest, Keccak256};
 use sqlx::{query, Acquire};
@@ -132,7 +136,6 @@ pub async fn run_server_iteration(
     };
 
     Server::builder()
-        .layer(tonic_tracing_opentelemetry::middleware::server::OtelGrpcLayer::default())
         .add_service(
             crate::server::coprocessor::fhevm_coprocessor_server::FhevmCoprocessorServer::new(
                 service,
@@ -181,6 +184,36 @@ alloy::sol! {
 //     ],
 //   };
 
+pub struct GrpcTracer {
+    ctx: opentelemetry::Context,
+    name: &'static str,
+    tracer: BoxedTracer,
+}
+
+impl GrpcTracer {
+    pub fn child_span(&self, name: &'static str) -> BoxedSpan {
+        self.tracer.start_with_context(name, &self.ctx)
+    }
+
+    pub fn set_error(&mut self, e: impl Error) {
+        self.ctx.span().set_status(opentelemetry::trace::Status::Error { description: e.to_string().into() });
+    }
+}
+
+impl Clone for GrpcTracer {
+    fn clone(&self) -> Self {
+        GrpcTracer { ctx: self.ctx.clone(), name: self.name, tracer: opentelemetry::global::tracer(self.name) }
+    }
+}
+
+fn grpc_tracer(function_name: &'static str) -> GrpcTracer {
+    let name = "grpc_service";
+    let tracer = opentelemetry::global::tracer(name);
+    let span = tracer.start(function_name);
+    let ctx = opentelemetry::Context::current_with_span(span);
+    GrpcTracer { ctx, tracer, name }
+}
+
 #[tonic::async_trait]
 impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorService {
     async fn upload_inputs(
@@ -188,7 +221,9 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
         request: tonic::Request<InputUploadBatch>,
     ) -> std::result::Result<tonic::Response<InputUploadResponse>, tonic::Status> {
         UPLOAD_INPUTS_COUNTER.inc();
-        self.upload_inputs_impl(request).await.inspect_err(|_| {
+        let mut tracer = grpc_tracer("upload_inputs");
+        self.upload_inputs_impl(request, &tracer).await.inspect_err(|e| {
+            tracer.set_error(e);
             UPLOAD_INPUTS_ERRORS.inc();
         })
     }
@@ -198,16 +233,11 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
         request: tonic::Request<coprocessor::AsyncComputeRequest>,
     ) -> std::result::Result<tonic::Response<coprocessor::GenericResponse>, tonic::Status> {
         ASYNC_COMPUTE_COUNTER.inc();
-        self.async_compute_impl(request).await.inspect_err(|_| {
+        let mut tracer = grpc_tracer("async_compute");
+        self.async_compute_impl(request, &tracer).await.inspect_err(|e| {
+            tracer.set_error(e);
             ASYNC_COMPUTE_ERRORS.inc();
         })
-    }
-
-    async fn wait_computations(
-        &self,
-        _request: tonic::Request<coprocessor::AsyncComputeRequest>,
-    ) -> std::result::Result<tonic::Response<coprocessor::FhevmResponses>, tonic::Status> {
-        return Err(tonic::Status::unimplemented("not implemented"));
     }
 
     async fn trivial_encrypt_ciphertexts(
@@ -215,9 +245,13 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
         request: tonic::Request<coprocessor::TrivialEncryptBatch>,
     ) -> std::result::Result<tonic::Response<coprocessor::GenericResponse>, tonic::Status> {
         TRIVIAL_ENCRYPT_COUNTER.inc();
-        self.trivial_encrypt_ciphertexts_impl(request)
+        let mut tracer = grpc_tracer("trivial_encrypt_ciphertexts");
+        self.trivial_encrypt_ciphertexts_impl(request, &tracer)
             .await
-            .inspect_err(|_| TRIVIAL_ENCRYPT_ERRORS.inc())
+            .inspect_err(|e| {
+                tracer.set_error(e);
+                TRIVIAL_ENCRYPT_ERRORS.inc();
+            })
     }
 
     async fn get_ciphertexts(
@@ -226,7 +260,9 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
     ) -> std::result::Result<tonic::Response<coprocessor::GetCiphertextResponse>, tonic::Status>
     {
         GET_CIPHERTEXTS_COUNTER.inc();
-        self.get_ciphertexts_impl(request).await.inspect_err(|_| {
+        let mut tracer = grpc_tracer("get_ciphertexts");
+        self.get_ciphertexts_impl(request, &tracer).await.inspect_err(|e| {
+            tracer.set_error(e);
             GET_CIPHERTEXTS_ERRORS.inc();
         })
     }
@@ -236,10 +272,11 @@ impl CoprocessorService {
     async fn upload_inputs_impl(
         &self,
         request: tonic::Request<InputUploadBatch>,
+        tracer: &GrpcTracer,
     ) -> std::result::Result<tonic::Response<InputUploadResponse>, tonic::Status> {
         UPLOAD_INPUTS_COUNTER.inc();
 
-        let tenant_id = check_if_api_key_is_valid(&request, &self.pool).await?;
+        let tenant_id = check_if_api_key_is_valid(&request, &self.pool, &tracer).await?;
 
         let req = request.get_ref();
         if req.input_ciphertexts.len() > self.args.maximimum_compact_inputs_upload {
@@ -321,23 +358,51 @@ impl CoprocessorService {
         for (idx, ci) in req.input_ciphertexts.iter().enumerate() {
             let cloned_input = ci.clone();
             let server_key = server_key.clone();
+            let tracer = tracer.clone();
+
+            let mut blocking_span = tracer.child_span("blocking_ciphertext_list_expand");
+            blocking_span.set_attributes(vec![
+                KeyValue::new("idx", idx as i64),
+            ]);
             tfhe_work_set.spawn_blocking(
                 move || -> Result<_, (Box<(dyn std::error::Error + Send + Sync)>, usize)> {
+
+                    let mut span = tracer.child_span("set_server_key");
                     tfhe::set_server_key(server_key.clone());
+                    span.end();
+
+                    let mut span = tracer.child_span("keccak_256_hash");
+                    let mut state = Keccak256::new();
+                    state.update(&cloned_input.input_payload);
+                    let blob_hash = state.finalize().to_vec();
+                    assert_eq!(blob_hash.len(), 32, "should be 32 bytes");
+                    span.end();
+
+                    let mut span = tracer.child_span("expand_ciphertext_list");
                     let expanded = try_expand_ciphertext_list(&cloned_input.input_payload)
                         .map_err(|e| {
                             let err: Box<(dyn std::error::Error + Send + Sync)> = Box::new(e);
                             (err, idx)
                         })?;
 
-                    Ok((expanded, idx))
+                    span.set_attributes(vec![
+                        KeyValue::new("idx", idx as i64),
+                        KeyValue::new("count", expanded.len() as i64),
+                        KeyValue::new("input_hash", format!("0x{}", hex::encode(&blob_hash))),
+                    ]);
+                    span.end();
+
+                    blocking_span.end();
+
+                    Ok((expanded, idx, blob_hash))
                 },
             );
         }
 
-        let mut results: BTreeMap<usize, Vec<SupportedFheCiphertexts>> = BTreeMap::new();
+        let mut span = tracer.child_span("ciphertext_list_expand_wait");
+        let mut results: BTreeMap<usize, (Vec<SupportedFheCiphertexts>, Vec<u8>)> = BTreeMap::new();
         while let Some(output) = tfhe_work_set.join_next().await {
-            let (cts, idx) = output
+            let (cts, idx, hash) = output
                 .map_err(|e| {
                     let err: Box<(dyn std::error::Error + Sync + Send)> = Box::new(e);
                     tonic::Status::from_error(err)
@@ -356,10 +421,11 @@ impl CoprocessorService {
             }
 
             assert!(
-                results.insert(idx, cts).is_none(),
+                results.insert(idx, (cts, hash)).is_none(),
                 "fresh map, we passed vector ordered by indexes before"
             );
         }
+        span.end();
 
         assert_eq!(
             results.len(),
@@ -367,21 +433,21 @@ impl CoprocessorService {
             "We should have all the ciphertexts now"
         );
 
+        let mut span = tracer.child_span("db_input_ciphertexts_insert");
         let mut trx = self
             .pool
             .begin()
             .await
             .map_err(Into::<CoprocessorError>::into)?;
         for (idx, input_blob) in req.input_ciphertexts.iter().enumerate() {
-            let mut state = Keccak256::new();
-            state.update(&input_blob.input_payload);
-            let blob_hash = state.finalize().to_vec();
-            assert_eq!(blob_hash.len(), 32, "should be 32 bytes");
-
-            let corresponding_unpacked = results
+            let (corresponding_unpacked, blob_hash) = results
                 .remove(&idx)
                 .expect("we should have all results computed now");
 
+            let mut span = tracer.child_span("db_insert_input_blob");
+            span.set_attributes(vec![
+                KeyValue::new("idx", idx as i64),
+            ]);
             // save blob for audits and historical reference
             let _ = sqlx::query!(
                 "
@@ -397,6 +463,7 @@ impl CoprocessorService {
             .execute(trx.as_mut())
             .await
             .map_err(Into::<CoprocessorError>::into)?;
+            span.end();
 
             let mut hash_of_ciphertext: [u8; 32] = [0; 32];
             hash_of_ciphertext.copy_from_slice(&blob_hash);
@@ -445,6 +512,12 @@ impl CoprocessorService {
                 .await
                 .map_err(|e| tonic::Status::from_error(Box::new(e)))?;
 
+                let mut span = tracer.child_span("db_insert_ciphertext");
+                span.set_attributes(vec![
+                    KeyValue::new("blob_idx", idx as i64),
+                    KeyValue::new("ct_idx", ct_idx as i64),
+                    KeyValue::new("handle", format!("0x{}", hex::encode(&handle))),
+                ]);
                 let _ = sqlx::query!(
                     "
                     INSERT INTO ciphertexts(
@@ -480,12 +553,17 @@ impl CoprocessorService {
                 });
             }
 
+            let mut span = tracer.child_span("eip_712_signature");
+            span.set_attributes(vec![
+                KeyValue::new("blob_idx", idx as i64),
+            ]);
             let signing_hash = ct_verification.eip712_signing_hash(&eip_712_domain);
             let eip_712_signature = self.signer.sign_hash_sync(&signing_hash).map_err(|e| {
                 CoprocessorError::Eip712SigningFailure {
                     error: e.to_string(),
                 }
             })?;
+            span.end();
 
             ct_resp.eip712_signature = eip_712_signature.as_bytes().to_vec();
 
@@ -493,6 +571,7 @@ impl CoprocessorService {
         }
 
         trx.commit().await.map_err(Into::<CoprocessorError>::into)?;
+        span.end();
 
         Ok(tonic::Response::new(response))
     }
@@ -500,6 +579,7 @@ impl CoprocessorService {
     async fn async_compute_impl(
         &self,
         request: tonic::Request<coprocessor::AsyncComputeRequest>,
+        tracer: &GrpcTracer,
     ) -> std::result::Result<tonic::Response<coprocessor::GenericResponse>, tonic::Status> {
         let req = request.get_ref();
         if req.computations.len() > self.args.server_maximum_ciphertexts_to_schedule {
@@ -511,20 +591,25 @@ impl CoprocessorService {
             )));
         }
 
-        let tenant_id = check_if_api_key_is_valid(&request, &self.pool).await?;
+        let tenant_id = check_if_api_key_is_valid(&request, &self.pool, &tracer).await?;
 
         if req.computations.is_empty() {
             return Ok(tonic::Response::new(GenericResponse { response_code: 0 }));
         }
 
+
+        let mut span = tracer.child_span("sort_computations_by_dependencies");
         // computations are now sorted based on dependencies or error should have
         // been returned if there's circular dependency
         let (sorted_computations, handles_to_check_in_db) =
             sort_computations_by_dependencies(&req.computations)?;
+        span.end();
 
         // to insert to db
+        let mut span = tracer.child_span("check_if_ciphertexts_exist_in_db");
         let mut ct_types =
             check_if_ciphertexts_exist_in_db(handles_to_check_in_db, tenant_id, &self.pool).await?;
+        span.end();
         let mut computations_inputs: Vec<Vec<Vec<u8>>> =
             Vec::with_capacity(sorted_computations.len());
         let mut computations_outputs: Vec<Vec<u8>> = Vec::with_capacity(sorted_computations.len());
@@ -579,6 +664,7 @@ impl CoprocessorService {
                 .is_none());
         }
 
+        let mut tx_span = tracer.child_span("db_transaction");
         let mut trx = self
             .pool
             .begin()
@@ -593,6 +679,10 @@ impl CoprocessorService {
             let fhe_operation: i16 = comp.operation.try_into().map_err(|_| {
                 CoprocessorError::FhevmError(FhevmError::UnknownFheOperation(comp.operation))
             })?;
+            let mut span = tracer.child_span("insert_computation");
+            span.set_attributes(vec![
+                KeyValue::new("handle", format!("0x{}", hex::encode(&comp.output_handle)))
+            ]);
             let res = query!(
                 "
                     INSERT INTO computations(
@@ -617,25 +707,30 @@ impl CoprocessorService {
             .execute(trx.as_mut())
             .await
             .map_err(Into::<CoprocessorError>::into)?;
+            span.end();
             if res.rows_affected() > 0 {
                 new_work_available = true;
             }
         }
         if new_work_available {
+            let mut span = tracer.child_span("db_new_work_notification");
             query!("NOTIFY work_available")
                 .execute(trx.as_mut())
                 .await
                 .map_err(Into::<CoprocessorError>::into)?;
+            span.end();
         }
         trx.commit().await.map_err(Into::<CoprocessorError>::into)?;
+        tx_span.end();
         return Ok(tonic::Response::new(GenericResponse { response_code: 0 }));
     }
 
     async fn trivial_encrypt_ciphertexts_impl(
         &self,
         request: tonic::Request<coprocessor::TrivialEncryptBatch>,
+        tracer: &GrpcTracer,
     ) -> std::result::Result<tonic::Response<coprocessor::GenericResponse>, tonic::Status> {
-        let tenant_id = check_if_api_key_is_valid(&request, &self.pool).await?;
+        let tenant_id = check_if_api_key_is_valid(&request, &self.pool, &tracer).await?;
         let req = request.get_ref();
 
         let mut unique_handles: BTreeSet<&[u8]> = BTreeSet::new();
@@ -650,6 +745,7 @@ impl CoprocessorService {
             }
         }
 
+        let mut span = tracer.child_span("db_query_server_key");
         let mut sks = sqlx::query!(
             "
                 SELECT sks_key
@@ -661,20 +757,29 @@ impl CoprocessorService {
         .fetch_all(&self.pool)
         .await
         .map_err(Into::<CoprocessorError>::into)?;
+        span.end();
 
         assert_eq!(sks.len(), 1);
 
         let sks = sks.pop().unwrap();
         let cloned = req.values.clone();
+        let inner_tracer = tracer.clone();
+        let mut outer_span = tracer.child_span("blocking_trivial_encrypt");
         let out_cts = tokio::task::spawn_blocking(move || {
+            let mut span = inner_tracer.child_span("deserialize_and_set_sks");
             let server_key: tfhe::ServerKey = safe_deserialize_versioned_sks(&sks.sks_key).unwrap();
             tfhe::set_server_key(server_key);
+            span.end();
 
             // single threaded implementation, we can optimize later
             let mut res: Vec<(Vec<u8>, i16, Vec<u8>)> = Vec::with_capacity(cloned.len());
             for v in cloned {
+                let mut span = inner_tracer.child_span("trivial_encrypt");
                 let ct = trivial_encrypt_be_bytes(v.output_type as i16, &v.be_value);
+                span.end();
+                let mut span = inner_tracer.child_span("compress_ciphertext");
                 let (ct_type, ct_bytes) = ct.compress();
+                span.end();
                 res.push((v.handle, ct_type, ct_bytes));
             }
 
@@ -682,7 +787,9 @@ impl CoprocessorService {
         })
         .await
         .unwrap();
+        outer_span.end();
 
+        let mut tx_span = tracer.child_span("db_transaction_insert_ciphertexts");
         let mut conn = self
             .pool
             .acquire()
@@ -691,6 +798,11 @@ impl CoprocessorService {
         let mut trx = conn.begin().await.map_err(Into::<CoprocessorError>::into)?;
 
         for (handle, db_type, db_bytes) in out_cts {
+            let mut span = tracer.child_span("db_insert_ciphertext");
+            span.set_attributes(vec![
+                KeyValue::new("handle", format!("0x{}", hex::encode(&handle))),
+                KeyValue::new("ciphertext_type", db_type as i64),
+            ]);
             sqlx::query!("
                     INSERT INTO ciphertexts(tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type)
                     VALUES ($1, $2, $3, $4, $5)
@@ -699,9 +811,11 @@ impl CoprocessorService {
                 tenant_id, handle, db_bytes, current_ciphertext_version(), db_type as i16
             )
             .execute(trx.as_mut()).await.map_err(Into::<CoprocessorError>::into)?;
+            span.end();
         }
 
         trx.commit().await.map_err(Into::<CoprocessorError>::into)?;
+        tx_span.end();
 
         return Ok(tonic::Response::new(GenericResponse { response_code: 0 }));
     }
@@ -709,9 +823,10 @@ impl CoprocessorService {
     async fn get_ciphertexts_impl(
         &self,
         request: tonic::Request<coprocessor::GetCiphertextBatch>,
+        tracer: &GrpcTracer,
     ) -> std::result::Result<tonic::Response<coprocessor::GetCiphertextResponse>, tonic::Status>
     {
-        let tenant_id = check_if_api_key_is_valid(&request, &self.pool).await?;
+        let tenant_id = check_if_api_key_is_valid(&request, &self.pool, &tracer).await?;
         let req = request.get_ref();
 
         if req.handles.len() > self.args.server_maximum_ciphertexts_to_get {
@@ -734,6 +849,8 @@ impl CoprocessorService {
 
         let cts: Vec<Vec<u8>> = set.into_iter().collect();
 
+        let mut span = tracer.child_span("query_ciphertexts");
+        span.set_attribute(KeyValue::new("count", cts.len() as i64));
         let db_cts = query!(
             "
                 SELECT handle, ciphertext_type, ciphertext_version, ciphertext
@@ -747,6 +864,7 @@ impl CoprocessorService {
         .fetch_all(&self.pool)
         .await
         .map_err(Into::<CoprocessorError>::into)?;
+        span.end();
 
         let mut the_map: BTreeMap<Vec<u8>, _> = BTreeMap::new();
         for ct in db_cts {
