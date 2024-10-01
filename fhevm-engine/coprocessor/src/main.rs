@@ -1,16 +1,19 @@
+use std::sync::Once;
+
+use ::tracing::{error, info};
 use fhevm_engine_common::keys::{FhevmKeys, SerializedFhevmKeys};
 use tokio::task::JoinSet;
 
 mod cli;
 mod db_queries;
+mod metrics;
 mod server;
 #[cfg(test)]
 mod tests;
 mod tfhe_worker;
+mod tracing;
 mod types;
 mod utils;
-mod metrics;
-mod tracing;
 
 fn main() {
     let args = crate::cli::parse_args();
@@ -43,27 +46,30 @@ pub fn start_runtime(
                 tokio::select! {
                     main = async_main(args) => {
                         if let Err(e) = main {
-                            log::error!(target: "main_wchannel", error = e.to_string(); "Runtime error");
+                            error!(target: "main_wchannel", { error = e }, "Runtime error");
                         }
                     }
                     _ = close_recv.changed() => {
-                        log::info!(target: "main_wchannel", "Service stopped voluntarily");
+                        info!(target: "main_wchannel", "Service stopped voluntarily");
                     }
                 }
             } else {
                 if let Err(e) = async_main(args).await {
-                    log::error!(target: "main", error = e.to_string(); "Runtime error");
+                    error!(target: "main", { error = e }, "Runtime error");
                 }
             }
         })
 }
 
+// Used for testing as we would call `async_main()` multiple times.
+static TRACING_INIT: Once = Once::new();
+
 async fn async_main(
     args: crate::cli::Args,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    structured_logger::Builder::new()
-        .with_default_writer(structured_logger::async_json::new_writer(tokio::io::stdout()))
-        .init();
+    TRACING_INIT.call_once(|| {
+        tracing_subscriber::fmt().json().with_level(true).init();
+    });
 
     if let Err(err) = tracing::setup_tracing() {
         panic!("Error while initializing tracing: {:?}", err);
@@ -71,17 +77,17 @@ async fn async_main(
 
     let mut set = JoinSet::new();
     if args.run_server {
-        log::info!(target: "async_main", "Initializing api server");
+        info!(target: "async_main", "Initializing api server");
         set.spawn(crate::server::run_server(args.clone()));
     }
 
     if args.run_bg_worker {
-        log::info!(target: "async_main", "Initializing background worker");
+        info!(target: "async_main", "Initializing background worker");
         set.spawn(crate::tfhe_worker::run_tfhe_worker(args.clone()));
     }
 
     if !args.metrics_addr.is_empty() {
-        log::info!(target: "async_main", "Initializing metrics server");
+        info!(target: "async_main", "Initializing metrics server");
         set.spawn(crate::metrics::run_metrics_server(args.clone()));
     }
 

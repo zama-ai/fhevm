@@ -32,6 +32,7 @@ use sha3::{Digest, Keccak256};
 use sqlx::{query, Acquire};
 use tokio::task::spawn_blocking;
 use tonic::transport::Server;
+use tracing::{error, info};
 
 pub mod common {
     tonic::include_proto!("fhevm.common");
@@ -96,7 +97,7 @@ pub async fn run_server(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     loop {
         if let Err(e) = run_server_iteration(args.clone()).await {
-            log::error!(target: "grpc_server", error = e.to_string(); "Error running server, retrying shortly");
+            error!(target: "grpc_server", { error = e }, "Error running server, retrying shortly");
         }
 
         tokio::time::sleep(tokio::time::Duration::from_millis(5000)).await;
@@ -115,9 +116,9 @@ pub async fn run_server_iteration(
     let coprocessor_key_file = tokio::fs::read_to_string(&args.coprocessor_private_key).await?;
 
     let signer = PrivateKeySigner::from_str(coprocessor_key_file.trim())?;
-    log::info!(target: "grpc_server", address = signer.address().to_string(); "Coprocessor signer initiated");
+    info!(target: "grpc_server", { address = signer.address().to_string() }, "Coprocessor signer initiated");
 
-    log::info!("Coprocessor listening on {}", addr);
+    info!("Coprocessor listening on {}", addr);
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(args.pg_pool_max_connections)
         .connect(&db_url)
@@ -196,13 +197,21 @@ impl GrpcTracer {
     }
 
     pub fn set_error(&mut self, e: impl Error) {
-        self.ctx.span().set_status(opentelemetry::trace::Status::Error { description: e.to_string().into() });
+        self.ctx
+            .span()
+            .set_status(opentelemetry::trace::Status::Error {
+                description: e.to_string().into(),
+            });
     }
 }
 
 impl Clone for GrpcTracer {
     fn clone(&self) -> Self {
-        GrpcTracer { ctx: self.ctx.clone(), name: self.name, tracer: opentelemetry::global::tracer(self.name) }
+        GrpcTracer {
+            ctx: self.ctx.clone(),
+            name: self.name,
+            tracer: opentelemetry::global::tracer(self.name),
+        }
     }
 }
 
@@ -222,10 +231,12 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
     ) -> std::result::Result<tonic::Response<InputUploadResponse>, tonic::Status> {
         UPLOAD_INPUTS_COUNTER.inc();
         let mut tracer = grpc_tracer("upload_inputs");
-        self.upload_inputs_impl(request, &tracer).await.inspect_err(|e| {
-            tracer.set_error(e);
-            UPLOAD_INPUTS_ERRORS.inc();
-        })
+        self.upload_inputs_impl(request, &tracer)
+            .await
+            .inspect_err(|e| {
+                tracer.set_error(e);
+                UPLOAD_INPUTS_ERRORS.inc();
+            })
     }
 
     async fn async_compute(
@@ -234,10 +245,12 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
     ) -> std::result::Result<tonic::Response<coprocessor::GenericResponse>, tonic::Status> {
         ASYNC_COMPUTE_COUNTER.inc();
         let mut tracer = grpc_tracer("async_compute");
-        self.async_compute_impl(request, &tracer).await.inspect_err(|e| {
-            tracer.set_error(e);
-            ASYNC_COMPUTE_ERRORS.inc();
-        })
+        self.async_compute_impl(request, &tracer)
+            .await
+            .inspect_err(|e| {
+                tracer.set_error(e);
+                ASYNC_COMPUTE_ERRORS.inc();
+            })
     }
 
     async fn trivial_encrypt_ciphertexts(
@@ -261,10 +274,12 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
     {
         GET_CIPHERTEXTS_COUNTER.inc();
         let mut tracer = grpc_tracer("get_ciphertexts");
-        self.get_ciphertexts_impl(request, &tracer).await.inspect_err(|e| {
-            tracer.set_error(e);
-            GET_CIPHERTEXTS_ERRORS.inc();
-        })
+        self.get_ciphertexts_impl(request, &tracer)
+            .await
+            .inspect_err(|e| {
+                tracer.set_error(e);
+                GET_CIPHERTEXTS_ERRORS.inc();
+            })
     }
 }
 
@@ -361,12 +376,9 @@ impl CoprocessorService {
             let tracer = tracer.clone();
 
             let mut blocking_span = tracer.child_span("blocking_ciphertext_list_expand");
-            blocking_span.set_attributes(vec![
-                KeyValue::new("idx", idx as i64),
-            ]);
+            blocking_span.set_attributes(vec![KeyValue::new("idx", idx as i64)]);
             tfhe_work_set.spawn_blocking(
                 move || -> Result<_, (Box<(dyn std::error::Error + Send + Sync)>, usize)> {
-
                     let mut span = tracer.child_span("set_server_key");
                     tfhe::set_server_key(server_key.clone());
                     span.end();
@@ -445,9 +457,7 @@ impl CoprocessorService {
                 .expect("we should have all results computed now");
 
             let mut span = tracer.child_span("db_insert_input_blob");
-            span.set_attributes(vec![
-                KeyValue::new("idx", idx as i64),
-            ]);
+            span.set_attributes(vec![KeyValue::new("idx", idx as i64)]);
             // save blob for audits and historical reference
             let _ = sqlx::query!(
                 "
@@ -554,9 +564,7 @@ impl CoprocessorService {
             }
 
             let mut span = tracer.child_span("eip_712_signature");
-            span.set_attributes(vec![
-                KeyValue::new("blob_idx", idx as i64),
-            ]);
+            span.set_attributes(vec![KeyValue::new("blob_idx", idx as i64)]);
             let signing_hash = ct_verification.eip712_signing_hash(&eip_712_domain);
             let eip_712_signature = self.signer.sign_hash_sync(&signing_hash).map_err(|e| {
                 CoprocessorError::Eip712SigningFailure {
@@ -596,7 +604,6 @@ impl CoprocessorService {
         if req.computations.is_empty() {
             return Ok(tonic::Response::new(GenericResponse { response_code: 0 }));
         }
-
 
         let mut span = tracer.child_span("sort_computations_by_dependencies");
         // computations are now sorted based on dependencies or error should have
@@ -680,9 +687,10 @@ impl CoprocessorService {
                 CoprocessorError::FhevmError(FhevmError::UnknownFheOperation(comp.operation))
             })?;
             let mut span = tracer.child_span("insert_computation");
-            span.set_attributes(vec![
-                KeyValue::new("handle", format!("0x{}", hex::encode(&comp.output_handle)))
-            ]);
+            span.set_attributes(vec![KeyValue::new(
+                "handle",
+                format!("0x{}", hex::encode(&comp.output_handle)),
+            )]);
             let res = query!(
                 "
                     INSERT INTO computations(

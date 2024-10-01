@@ -5,14 +5,15 @@ use fhevm_engine_common::{
     types::SupportedFheOperations,
 };
 use lazy_static::lazy_static;
-use opentelemetry::KeyValue;
 use opentelemetry::trace::{Span, TraceContextExt, Tracer};
+use opentelemetry::KeyValue;
 use prometheus::{register_int_counter, IntCounter};
 use sqlx::{postgres::PgListener, query, Acquire};
 use std::{
     collections::{BTreeSet, HashMap},
     num::NonZeroUsize,
 };
+use tracing::{error, info};
 
 lazy_static! {
     static ref WORKER_ERRORS_COUNTER: IntCounter =
@@ -51,7 +52,7 @@ pub async fn run_tfhe_worker(
         // here we log the errors and make sure we retry
         if let Err(cycle_error) = tfhe_worker_cycle(&args).await {
             WORKER_ERRORS_COUNTER.inc();
-            log::error!(target: "tfhe_worker", error = cycle_error.to_string(); "Error in background worker, retrying shortly");
+            error!(target: "tfhe_worker", { error = cycle_error }, "Error in background worker, retrying shortly");
         }
         tokio::time::sleep(tokio::time::Duration::from_millis(5000)).await;
     }
@@ -83,11 +84,11 @@ async fn tfhe_worker_cycle(
             tokio::select! {
                 _ = listener.try_recv() => {
                     WORK_ITEMS_NOTIFICATIONS_COUNTER.inc();
-                    log::info!(target: "tfhe_worker", "Received work_available notification from postgres");
+                    info!(target: "tfhe_worker", "Received work_available notification from postgres");
                 },
                 _ = tokio::time::sleep(tokio::time::Duration::from_millis(5000)) => {
                     WORK_ITEMS_POLL_COUNTER.inc();
-                    log::info!(target: "tfhe_worker", "Polling the database for more work on timer");
+                    info!(target: "tfhe_worker", "Polling the database for more work on timer");
                 },
             };
         }
@@ -138,8 +139,7 @@ async fn tfhe_worker_cycle(
         }
 
         WORK_ITEMS_FOUND_COUNTER.inc_by(the_work.len() as u64);
-        log::info!(target: "tfhe_worker", count = the_work.len(); "Processing work items");
-
+        info!(target: "tfhe_worker", { count = the_work.len() }, "Processing work items");
 
         // make sure we process each tenant sequentially not to
         // load different keys in cache by different tenants
@@ -170,7 +170,10 @@ async fn tfhe_worker_cycle(
         let keys_to_query = keys_to_query.into_iter().collect::<Vec<_>>();
 
         s.set_attribute(KeyValue::new("keys_to_query", keys_to_query.len() as i64));
-        s.set_attribute(KeyValue::new("tenants_to_query", tenants_to_query.len() as i64));
+        s.set_attribute(KeyValue::new(
+            "tenants_to_query",
+            tenants_to_query.len() as i64,
+        ));
 
         populate_cache_with_tenant_keys(keys_to_query, trx.as_mut(), &tenant_key_cache).await?;
         s.end();
@@ -206,7 +209,6 @@ async fn tfhe_worker_cycle(
         let mut tfhe_work_set = tokio::task::JoinSet::new();
         // process every tenant by tenant id because we must switch keys for each tenant
         for w in the_work {
-
             let tenant_key_cache = tenant_key_cache.clone();
             let fhe_op: SupportedFheOperations = w
                 .fhe_operation
@@ -282,9 +284,16 @@ async fn tfhe_worker_cycle(
                     let (db_type, db_bytes) = res.compress();
 
                     s.set_attribute(KeyValue::new("fhe_operation", w.fhe_operation as i64));
-                    s.set_attribute(KeyValue::new("handle", format!("0x{}", hex::encode(&w.output_handle))));
+                    s.set_attribute(KeyValue::new(
+                        "handle",
+                        format!("0x{}", hex::encode(&w.output_handle)),
+                    ));
                     s.set_attribute(KeyValue::new("output_type", db_type as i64));
-                    let input_types = deserialized_cts.iter().map(|i| i.type_num().to_string()).collect::<Vec<_>>().join(",");
+                    let input_types = deserialized_cts
+                        .iter()
+                        .map(|i| i.type_num().to_string())
+                        .collect::<Vec<_>>()
+                        .join(",");
                     s.set_attribute(KeyValue::new("input_types", input_types));
                     s.end();
                     Ok((w, db_type, db_bytes))
@@ -300,7 +309,10 @@ async fn tfhe_worker_cycle(
                 Ok((w, db_type, db_bytes)) => {
                     let mut s = tracer.start_with_context("insert_ct_into_db", &loop_ctx);
                     s.set_attribute(KeyValue::new("tenant_id", w.tenant_id as i64));
-                    s.set_attribute(KeyValue::new("handle", format!("0x{}", hex::encode(&w.output_handle))));
+                    s.set_attribute(KeyValue::new(
+                        "handle",
+                        format!("0x{}", hex::encode(&w.output_handle)),
+                    ));
                     s.set_attribute(KeyValue::new("ciphertext_type", db_type as i64));
                     let _ = query!("
                         INSERT INTO ciphertexts(tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type)
@@ -312,7 +324,10 @@ async fn tfhe_worker_cycle(
                     s.end();
                     let mut s = tracer.start_with_context("update_computation", &loop_ctx);
                     s.set_attribute(KeyValue::new("tenant_id", w.tenant_id as i64));
-                    s.set_attribute(KeyValue::new("handle", format!("0x{}", hex::encode(&w.output_handle))));
+                    s.set_attribute(KeyValue::new(
+                        "handle",
+                        format!("0x{}", hex::encode(&w.output_handle)),
+                    ));
                     s.set_attribute(KeyValue::new("ciphertext_type", db_type as i64));
                     let _ = query!(
                         "
@@ -331,17 +346,20 @@ async fn tfhe_worker_cycle(
                 }
                 Err((err, tenant_id, output_handle)) => {
                     WORKER_ERRORS_COUNTER.inc();
-                    log::error!(target: "tfhe_worker",
-                        tenant_id,
-                        output_handle = format!("0x{}", hex::encode(&output_handle)),
-                        error = err.to_string();
+                    error!(target: "tfhe_worker",
+                        { tenant_id = tenant_id, error = err, output_handle = format!("0x{}", hex::encode(&output_handle)) },
                         "error while processing work item"
                     );
                     let mut s = tracer.start_with_context("set_computation_error_in_db", &loop_ctx);
                     s.set_attribute(KeyValue::new("tenant_id", tenant_id as i64));
-                    s.set_attribute(KeyValue::new("handle", format!("0x{}", hex::encode(&output_handle))));
+                    s.set_attribute(KeyValue::new(
+                        "handle",
+                        format!("0x{}", hex::encode(&output_handle)),
+                    ));
                     let err_string = err.to_string();
-                    s.set_status(opentelemetry::trace::Status::Error { description: err_string.clone().into() });
+                    s.set_status(opentelemetry::trace::Status::Error {
+                        description: err_string.clone().into(),
+                    });
                     let _ = query!(
                         "
                             UPDATE computations
