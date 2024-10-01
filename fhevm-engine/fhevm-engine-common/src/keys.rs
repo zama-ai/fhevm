@@ -6,14 +6,11 @@ use tfhe::{
         list_compression::COMP_PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M64,
         PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M64,
     },
-    zk::{
-        CanonicalDeserialize, CanonicalSerialize, CompactPkeCrs, CompactPkePublicParams, Compress,
-        Validate,
-    },
+    zk::{CompactPkeCrs, CompactPkePublicParams},
     ClientKey, CompactPublicKey, ConfigBuilder, ServerKey,
 };
 
-use crate::utils::{safe_deserialize_versioned, safe_deserialize_versioned_sks, safe_serialize_versioned, safe_serialize_versioned_sks};
+use crate::utils::{safe_deserialize_key, safe_serialize_key};
 
 pub const MAX_BITS_TO_PROVE: usize = 2048;
 
@@ -97,35 +94,26 @@ impl SerializedFhevmKeys {
 
 impl From<FhevmKeys> for SerializedFhevmKeys {
     fn from(f: FhevmKeys) -> Self {
-        let mut public_params = vec![];
-        f.public_params
-            .serialize_with_mode(&mut public_params, Compress::No)
-            .expect("serialize public params");
         SerializedFhevmKeys {
-            server_key: safe_serialize_versioned_sks(&f.server_key),
-            client_key: f.client_key.map(|c| safe_serialize_versioned(&c)),
-            compact_public_key: safe_serialize_versioned(&f.compact_public_key),
-            public_params,
+            server_key: safe_serialize_key(&f.server_key),
+            client_key: f.client_key.map(|c| safe_serialize_key(&c)),
+            compact_public_key: safe_serialize_key(&f.compact_public_key),
+            public_params: safe_serialize_key(&f.public_params),
         }
     }
 }
 
 impl From<SerializedFhevmKeys> for FhevmKeys {
     fn from(f: SerializedFhevmKeys) -> Self {
-        let public_params = CompactPkePublicParams::deserialize_with_mode(
-            &*f.public_params,
-            Compress::No,
-            Validate::No,
-        )
-        .expect("deserialize public params");
         FhevmKeys {
-            server_key: safe_deserialize_versioned_sks(&f.server_key).expect("deserialize server key"),
+            server_key: safe_deserialize_key(&f.server_key).expect("deserialize server key"),
             client_key: f
                 .client_key
-                .map(|c| safe_deserialize_versioned(&c).expect("deserialize client key")),
-            compact_public_key: safe_deserialize_versioned(&f.compact_public_key)
+                .map(|c| safe_deserialize_key(&c).expect("deserialize client key")),
+            compact_public_key: safe_deserialize_key(&f.compact_public_key)
                 .expect("deserialize compact public key"),
-            public_params,
+            public_params: safe_deserialize_key(&f.public_params)
+                .expect("deserialize public params"),
         }
     }
 }

@@ -5124,9 +5124,9 @@ dependencies = [
 
 [[package]]
 name = "tfhe"
-version = "0.8.0-alpha.9"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7d3ed32cb8e626183bc311a889eb3c496ab099c85e9097021719c7af6eee020"
+checksum = "81923c2433f461e35f3d0b933696335e4f03b874438c844c576eab99e302fe00"
 dependencies = [
  "aligned-vec",
  "bincode",
@@ -5238,11 +5238,10 @@ dependencies = [
 
 [[package]]
 name = "tfhe-zk-pok"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "310f21a983622761a867c7ef14fd7ee8612fd722eafa3708a2e6321d7a252c18"
+checksum = "9978204def8b8549b8ed160b983071781726884f2bd9401eeebe951b997cb185"
 dependencies = [
- "ark-serialize 0.4.2",
  "num-bigint",
  "rand",
  "rayon",
@@ -5252,6 +5251,7 @@ dependencies = [
  "tfhe-ark-ec",
  "tfhe-ark-ff",
  "tfhe-ark-poly",
+ "tfhe-versionable",
  "zeroize",
 ]
 

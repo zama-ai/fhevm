@@ -22,7 +22,7 @@ use fhevm_engine_common::tfhe_ops::{
     try_expand_ciphertext_list, validate_fhe_type,
 };
 use fhevm_engine_common::types::{FhevmError, SupportedFheCiphertexts, SupportedFheOperations};
-use fhevm_engine_common::utils::safe_deserialize_versioned_sks;
+use fhevm_engine_common::utils::safe_deserialize_key;
 use lazy_static::lazy_static;
 use opentelemetry::global::{BoxedSpan, BoxedTracer};
 use opentelemetry::trace::{Span, TraceContextExt, Tracer};
@@ -775,7 +775,7 @@ impl CoprocessorService {
         let mut outer_span = tracer.child_span("blocking_trivial_encrypt");
         let out_cts = tokio::task::spawn_blocking(move || {
             let mut span = inner_tracer.child_span("deserialize_and_set_sks");
-            let server_key: tfhe::ServerKey = safe_deserialize_versioned_sks(&sks.sks_key).unwrap();
+            let server_key: tfhe::ServerKey = safe_deserialize_key(&sks.sks_key).unwrap();
             tfhe::set_server_key(server_key);
             span.end();
 

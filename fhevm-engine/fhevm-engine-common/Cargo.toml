@@ -4,20 +4,20 @@ version = "0.1.0"
 edition = "2021"
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
-tfhe = { version = "0.8.0-alpha.9", features = ["boolean", "shortint", "integer", "x86_64-unix", "zk-pok", "experimental-force_fft_algo_dif4"] }
+tfhe = { version = "0.8.0", features = ["boolean", "shortint", "integer", "x86_64-unix", "zk-pok", "experimental-force_fft_algo_dif4"] }
 [target.'cfg(target_arch = "aarch64")'.dependencies]
-tfhe = { version = "0.8.0-alpha.9", features = ["boolean", "shortint", "integer", "aarch64-unix", "zk-pok", "experimental-force_fft_algo_dif4"] }
+tfhe = { version = "0.8.0", features = ["boolean", "shortint", "integer", "aarch64-unix", "zk-pok", "experimental-force_fft_algo_dif4"] }
 
 [dependencies]
 sha3.workspace = true
 anyhow.workspace = true
+bincode.workspace = true
+serde.workspace = true
 strum = { version = "0.26", features = ["derive"] }
-bincode = "1.3.3"
 hex = "0.4"
 bigdecimal = "0.4.5"
 rand_chacha = "0.3.1"
 rand = "0.8.5"
-serde.workspace = true
 
 [[bin]]
 name = "generate-keys"

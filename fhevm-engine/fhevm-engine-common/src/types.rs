@@ -2,10 +2,10 @@ use anyhow::Result;
 use bigdecimal::num_bigint::BigInt;
 use tfhe::integer::bigint::StaticUnsignedBigInt;
 use tfhe::integer::U256;
-use tfhe::prelude::FheDecrypt;
+use tfhe::prelude::{CiphertextList, FheDecrypt};
 use tfhe::{CompressedCiphertextList, CompressedCiphertextListBuilder};
 
-use crate::utils::{safe_deserialize_versioned, safe_serialize_versioned};
+use crate::utils::{safe_deserialize, safe_serialize};
 
 #[derive(Debug)]
 pub enum FhevmError {
@@ -285,11 +285,25 @@ impl std::fmt::Display for FhevmError {
             Self::InvalidHandle => {
                 write!(f, "Invalid ciphertext handle")
             }
-            Self::UnsupportedFheTypes { fhe_operation, input_types } => {
-                write!(f, "Unsupported type combination for fhe operation {fhe_operation}: {:?}", input_types)
+            Self::UnsupportedFheTypes {
+                fhe_operation,
+                input_types,
+            } => {
+                write!(
+                    f,
+                    "Unsupported type combination for fhe operation {fhe_operation}: {:?}",
+                    input_types
+                )
             }
-            Self::UnknownCastType { fhe_operation, type_to_cast_to } => {
-                write!(f, "Unknown type to cast to for fhe operation {fhe_operation}: {}", type_to_cast_to)
+            Self::UnknownCastType {
+                fhe_operation,
+                type_to_cast_to,
+            } => {
+                write!(
+                    f,
+                    "Unknown type to cast to for fhe operation {fhe_operation}: {}",
+                    type_to_cast_to
+                )
             }
         }
     }
@@ -356,18 +370,18 @@ impl SupportedFheCiphertexts {
     pub fn serialize(&self) -> (i16, Vec<u8>) {
         let type_num = self.type_num();
         match self {
-            SupportedFheCiphertexts::FheBool(v) => (type_num, safe_serialize_versioned(v)),
-            SupportedFheCiphertexts::FheUint4(v) => (type_num, safe_serialize_versioned(v)),
-            SupportedFheCiphertexts::FheUint8(v) => (type_num, safe_serialize_versioned(v)),
-            SupportedFheCiphertexts::FheUint16(v) => (type_num, safe_serialize_versioned(v)),
-            SupportedFheCiphertexts::FheUint32(v) => (type_num, safe_serialize_versioned(v)),
-            SupportedFheCiphertexts::FheUint64(v) => (type_num, safe_serialize_versioned(v)),
-            SupportedFheCiphertexts::FheUint128(v) => (type_num, safe_serialize_versioned(v)),
-            SupportedFheCiphertexts::FheUint160(v) => (type_num, safe_serialize_versioned(v)),
-            SupportedFheCiphertexts::FheUint256(v) => (type_num, safe_serialize_versioned(v)),
-            SupportedFheCiphertexts::FheBytes64(v) => (type_num, safe_serialize_versioned(v)),
-            SupportedFheCiphertexts::FheBytes128(v) => (type_num, safe_serialize_versioned(v)),
-            SupportedFheCiphertexts::FheBytes256(v) => (type_num, safe_serialize_versioned(v)),
+            SupportedFheCiphertexts::FheBool(v) => (type_num, safe_serialize(v)),
+            SupportedFheCiphertexts::FheUint4(v) => (type_num, safe_serialize(v)),
+            SupportedFheCiphertexts::FheUint8(v) => (type_num, safe_serialize(v)),
+            SupportedFheCiphertexts::FheUint16(v) => (type_num, safe_serialize(v)),
+            SupportedFheCiphertexts::FheUint32(v) => (type_num, safe_serialize(v)),
+            SupportedFheCiphertexts::FheUint64(v) => (type_num, safe_serialize(v)),
+            SupportedFheCiphertexts::FheUint128(v) => (type_num, safe_serialize(v)),
+            SupportedFheCiphertexts::FheUint160(v) => (type_num, safe_serialize(v)),
+            SupportedFheCiphertexts::FheUint256(v) => (type_num, safe_serialize(v)),
+            SupportedFheCiphertexts::FheBytes64(v) => (type_num, safe_serialize(v)),
+            SupportedFheCiphertexts::FheBytes128(v) => (type_num, safe_serialize(v)),
+            SupportedFheCiphertexts::FheBytes256(v) => (type_num, safe_serialize(v)),
             SupportedFheCiphertexts::Scalar(_) => {
                 panic!("we should never need to serialize scalar")
             }
@@ -495,11 +509,11 @@ impl SupportedFheCiphertexts {
             }
         };
         let list = builder.build().expect("ciphertext compression");
-        (type_num, safe_serialize_versioned(&list))
+        (type_num, safe_serialize(&list))
     }
 
     pub fn decompress(ct_type: i16, list: &[u8]) -> Result<Self> {
-        let list: CompressedCiphertextList = safe_deserialize_versioned(list)?;
+        let list: CompressedCiphertextList = safe_deserialize(list)?;
         match ct_type {
             0 => Ok(SupportedFheCiphertexts::FheBool(
                 list.get(0)?.ok_or(FhevmError::MissingTfheRsData)?,
