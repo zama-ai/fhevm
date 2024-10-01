@@ -178,7 +178,12 @@ contract GatewayContract is UUPSUpgradeable, Ownable2StepUpgradeable {
     ) external payable virtual onlyRelayer {
         GatewayContractStorage storage $ = _getGatewayContractStorage();
         require(
-            kmsVerifier.verifySignatures(aclAddress, $.decryptionRequests[requestID].cts, decryptedCts, signatures),
+            kmsVerifier.verifyDecryptionEIP712KMSSignatures(
+                aclAddress,
+                $.decryptionRequests[requestID].cts,
+                decryptedCts,
+                signatures
+            ),
             "KMS signature verification failed"
         );
         require(!$.isFulfilled[requestID], "Request is already fulfilled");

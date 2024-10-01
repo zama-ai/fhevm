@@ -435,15 +435,15 @@ async function kmsSign(
   contractAddress: string,
   signer: Wallet,
 ): Promise<string> {
-  const inputAdd = dotenv.parse(fs.readFileSync('lib/.env.inputverifier')).INPUT_VERIFIER_CONTRACT_ADDRESS;
+  const kmsVerifierAdd = dotenv.parse(fs.readFileSync('lib/.env.kmsverifier')).KMS_VERIFIER_CONTRACT_ADDRESS;
   const chainId = hre.__SOLIDITY_COVERAGE_RUNNING ? 31337 : network.config.chainId;
   const aclAdd = dotenv.parse(fs.readFileSync('lib/.env.acl')).ACL_CONTRACT_ADDRESS;
 
   const domain = {
-    name: 'InputVerifier',
+    name: 'KMSVerifier',
     version: '1',
     chainId: chainId,
-    verifyingContract: inputAdd,
+    verifyingContract: kmsVerifierAdd,
   };
 
   const types = {
