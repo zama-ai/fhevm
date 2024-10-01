@@ -1,15 +1,20 @@
 use std::collections::{BTreeSet, HashMap};
 use std::str::FromStr;
 
+use crate::server::GrpcTracer;
 use crate::types::{CoprocessorError, TfheTenantKeys};
 use fhevm_engine_common::utils::{safe_deserialize_versioned, safe_deserialize_versioned_sks};
+use opentelemetry::trace::Span;
+use opentelemetry::KeyValue;
 use sqlx::{query, Postgres};
 
 /// Returns tenant id upon valid authorization request
 pub async fn check_if_api_key_is_valid<T>(
     req: &tonic::Request<T>,
     pool: &sqlx::Pool<Postgres>,
+    ctx: &GrpcTracer,
 ) -> Result<i32, CoprocessorError> {
+    let mut outer_span = ctx.child_span("check_api_key_validity");
     match req.metadata().get("authorization") {
         Some(auth) => {
             let auth_header = String::from_utf8(auth.as_bytes().to_owned())
@@ -28,6 +33,7 @@ pub async fn check_if_api_key_is_valid<T>(
                 Err(_) => return Err(CoprocessorError::Unauthorized),
             };
 
+            let span = ctx.child_span("db_query_api_key");
             let tenant = query!(
                 "SELECT tenant_id FROM tenants WHERE tenant_api_key = $1",
                 api_key
@@ -35,12 +41,15 @@ pub async fn check_if_api_key_is_valid<T>(
             .fetch_all(pool)
             .await
             .map_err(Into::<CoprocessorError>::into)?;
+            drop(span);
 
             if tenant.is_empty() {
                 return Err(CoprocessorError::Unauthorized);
             }
 
-            return Ok(tenant[0].tenant_id);
+            let tenant_id = tenant[0].tenant_id;
+            outer_span.set_attribute(KeyValue::new("tenant_id", tenant_id as i64));
+            return Ok(tenant_id);
         }
         None => {
             return Err(CoprocessorError::Unauthorized);

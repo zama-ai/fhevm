@@ -11,7 +11,6 @@ import "common.proto";
 
 service FhevmCoprocessor {
   rpc AsyncCompute (AsyncComputeRequest) returns (GenericResponse) {}
-  rpc WaitComputations (AsyncComputeRequest) returns (FhevmResponses) {}
   rpc UploadInputs (InputUploadBatch) returns (InputUploadResponse) {}
   rpc GetCiphertexts (GetCiphertextBatch) returns (GetCiphertextResponse) {}
   rpc TrivialEncryptCiphertexts (TrivialEncryptBatch) returns (GenericResponse) {}
