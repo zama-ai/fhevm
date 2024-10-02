@@ -15,7 +15,7 @@ on:
         type: string
 
 env:
-  DOCKER_IMAGE: ghcr.io/zama-ai/coprocessor
+  DOCKER_IMAGE: ghcr.io/zama-ai/fhevm-coprocessor
 
 jobs:
   push_to_registry:
