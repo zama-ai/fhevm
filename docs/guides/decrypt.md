@@ -95,7 +95,7 @@ function addParamsEUint32(uint256 requestID, euint32 _euint32) internal;
 
 function addParamsEUint64(uint256 requestID, euint64 _euint64) internal;
 
-function addParamsEAddress(uint256 requestID, address _eaddress) internal;
+function addParamsEAddress(uint256 requestID, eaddress _eaddress) internal;
 
 function addParamsAddress(uint256 requestID, address _address) internal;
 
