@@ -33,7 +33,7 @@ pub async fn check_if_api_key_is_valid<T>(
                 Err(_) => return Err(CoprocessorError::Unauthorized),
             };
 
-            let span = ctx.child_span("db_query_api_key");
+            let mut span = ctx.child_span("db_query_api_key");
             let tenant = query!(
                 "SELECT tenant_id FROM tenants WHERE tenant_api_key = $1",
                 api_key
@@ -41,7 +41,7 @@ pub async fn check_if_api_key_is_valid<T>(
             .fetch_all(pool)
             .await
             .map_err(Into::<CoprocessorError>::into)?;
-            drop(span);
+            span.end();
 
             if tenant.is_empty() {
                 return Err(CoprocessorError::Unauthorized);
