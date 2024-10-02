@@ -107,7 +107,13 @@ library Gateway {
             calldatacopy(add(decryptedResult, 0x20), start, length) // Copy the relevant part of calldata to decryptedResult memory
         }
         FHEVMConfig.FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
-        return IKMSVerifier($.KMSVerifierAddress).verifySignatures(aclAdd, handlesList, decryptedResult, signatures);
+        return
+            IKMSVerifier($.KMSVerifierAddress).verifyDecryptionEIP712KMSSignatures(
+                aclAdd,
+                handlesList,
+                decryptedResult,
+                signatures
+            );
     }
 
     function getSignedDataLength(uint256[] memory handlesList) private pure returns (uint256) {

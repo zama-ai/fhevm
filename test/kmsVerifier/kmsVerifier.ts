@@ -90,7 +90,7 @@ describe('KMSVerifier', function () {
         contract2.requestMixedBytes256Trustless(encryptedAmount2.handles[0], encryptedAmount2.inputProof, {
           gasLimit: 5_000_000,
         }),
-      ).to.revertedWith('At least threshold number of KMS signatures required'); // this should fail because in this case the InputVerifier received only one KMS signature (instead of at least 2);
+      ).to.revertedWith('KmsVerifier: at least threshold number of signatures required'); // this should fail because in this case the InputVerifier received only one KMS signature (instead of at least 2);
 
       const cheatInputProof = encryptedAmount2.inputProof + encryptedAmount2.inputProof.slice(-130); // trying to cheat by repeating the first kms signer signature
       const cheat = cheatInputProof.slice(0, 5) + '2' + cheatInputProof.slice(6);

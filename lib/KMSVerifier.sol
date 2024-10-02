@@ -19,9 +19,20 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
         bytes decryptedResult;
     }
 
+    struct CiphertextVerificationForKMS {
+        address aclAddress;
+        bytes32 hashOfCiphertext;
+        address userAddress;
+        address contractAddress;
+    }
+
     string private constant DECRYPTIONRESULT_TYPE =
         "DecryptionResult(address aclAddress,uint256[] handlesList,bytes decryptedResult)";
     bytes32 private constant DECRYPTIONRESULT_TYPE_HASH = keccak256(bytes(DECRYPTIONRESULT_TYPE));
+
+    string public constant CIPHERTEXTVERIFICATION_KMS_TYPE =
+        "CiphertextVerificationForKMS(address aclAddress,bytes32 hashOfCiphertext,address userAddress,address contractAddress)";
+    bytes32 private constant CIPHERTEXTVERIFICATION_KMS_TYPE_HASH = keccak256(bytes(CIPHERTEXTVERIFICATION_KMS_TYPE));
 
     /// @notice Name of the contract
     string private constant CONTRACT_NAME = "KMSVerifier";
@@ -67,6 +78,10 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
 
     function get_DECRYPTIONRESULT_TYPE() public view virtual returns (string memory) {
         return DECRYPTIONRESULT_TYPE;
+    }
+
+    function get_CIPHERTEXTVERIFICATION_KMS_TYPE() public view virtual returns (string memory) {
+        return CIPHERTEXTVERIFICATION_KMS_TYPE;
     }
 
     /// @notice Emitted when a signer is added
@@ -121,6 +136,23 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
             );
     }
 
+    function hashCiphertextVerificationForKMS(
+        CiphertextVerificationForKMS memory CVkms
+    ) internal view virtual returns (bytes32) {
+        return
+            _hashTypedDataV4(
+                keccak256(
+                    abi.encode(
+                        CIPHERTEXTVERIFICATION_KMS_TYPE_HASH,
+                        CVkms.aclAddress,
+                        CVkms.hashOfCiphertext,
+                        CVkms.userAddress,
+                        CVkms.contractAddress
+                    )
+                )
+            );
+    }
+
     /// @notice Removes an existing signer
     /// @dev Only the owner can remove a signer
     /// @param signer The address to be removed from signers
@@ -159,7 +191,7 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
     /// @param decryptedResult A bytes array representing the abi-encoding of all requested decrypted values
     /// @param signatures An array of signatures to verify
     /// @return true if enough provided signatures are valid, false otherwise
-    function verifySignatures(
+    function verifyDecryptionEIP712KMSSignatures(
         address aclAddress,
         uint256[] memory handlesList,
         bytes memory decryptedResult,
@@ -169,39 +201,50 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
         decRes.aclAddress = aclAddress;
         decRes.handlesList = handlesList;
         decRes.decryptedResult = decryptedResult;
-        bytes32 message = hashDecryptionResult(decRes);
-        return verifySignaturesDigest(message, signatures);
+        bytes32 digest = hashDecryptionResult(decRes);
+        return verifySignaturesDigest(digest, signatures);
+    }
+
+    /// @notice Verifies multiple signatures for a given CiphertextVerificationForKMS (user inputs)
+    /// @dev Calls verifySignaturesDigest internally;
+    /// @param cv The CiphertextVerificationForKMS struct for encrypted user inputs
+    /// @param signatures An array of signatures to verify
+    /// @return true if enough provided signatures are valid, false otherwise
+    function verifyInputEIP712KMSSignatures(
+        CiphertextVerificationForKMS memory cv,
+        bytes[] memory signatures
+    ) public virtual returns (bool) {
+        bytes32 digest = hashCiphertextVerificationForKMS(cv);
+        return verifySignaturesDigest(digest, signatures);
     }
 
     /// @notice Verifies multiple signatures for a given message at a certain threshold
     /// @dev Calls verifySignature internally;
-    /// @param message The hash of the message that was signed by all signers
+    /// @param digest The hash of the message that was signed by all signers
     /// @param signatures An array of signatures to verify
     /// @return true if enough provided signatures are valid, false otherwise
-    function verifySignaturesDigest(bytes32 message, bytes[] memory signatures) internal virtual returns (bool) {
+    function verifySignaturesDigest(bytes32 digest, bytes[] memory signatures) internal virtual returns (bool) {
         uint256 numSignatures = signatures.length;
         require(numSignatures > 0, "KmsVerifier: no signatures provided");
-        KMSVerifierStorage storage $ = _getKMSVerifierStorage();
-        require(numSignatures >= $.threshold, "KmsVerifier: at least threshold number of signatures required");
+        uint256 threshold = getThreshold();
+        require(numSignatures >= threshold, "KmsVerifier: at least threshold number of signatures required");
         address[] memory recoveredSigners = new address[](numSignatures);
         uint256 uniqueValidCount;
         for (uint256 i = 0; i < numSignatures; i++) {
-            address signerRecovered = recoverSigner(message, signatures[i]);
-            if ($.isSigner[signerRecovered]) {
+            address signerRecovered = recoverSigner(digest, signatures[i]);
+            if (isSigner(signerRecovered)) {
                 if (!tload(signerRecovered)) {
                     recoveredSigners[uniqueValidCount] = signerRecovered;
                     uniqueValidCount++;
                     tstore(signerRecovered, 1);
                 }
             }
-            if (uniqueValidCount >= $.threshold) {
-                for (uint256 j = 0; i < uniqueValidCount; i++) {
-                    /// @note : clearing transient storage for composability
-                    tstore(recoveredSigners[j], 0);
-                }
+            if (uniqueValidCount >= threshold) {
+                cleanTransientStorage(recoveredSigners, uniqueValidCount);
                 return true;
             }
         }
+        cleanTransientStorage(recoveredSigners, uniqueValidCount);
         return false;
     }
 
@@ -222,6 +265,17 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
     function tload(address location) internal view virtual returns (bool value) {
         assembly {
             value := tload(location)
+        }
+    }
+
+    /// @notice Cleans transient storage
+    /// @dev Important to keep composability in the context of account abstraction
+    /// @param keys An array of keys to cleanup from transient storage
+    /// @param maxIndex The biggest index to take into account from the array - assumed to be less or equal to keys.length
+    function cleanTransientStorage(address[] memory keys, uint256 maxIndex) internal virtual {
+        for (uint256 j = 0; j < maxIndex; j++) {
+            /// @note : clearing transient storage for composability
+            tstore(keys[j], 0);
         }
     }
 

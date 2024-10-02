@@ -26,13 +26,6 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
         address contractAddress;
     }
 
-    struct CiphertextVerificationForKMS {
-        address aclAddress;
-        bytes32 hashOfCiphertext;
-        address userAddress;
-        address contractAddress;
-    }
-
     /// @notice Handle version
     uint8 public constant HANDLE_VERSION = 0;
 
@@ -43,10 +36,6 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
         "CiphertextVerificationForCopro(address aclAddress,bytes32 hashOfCiphertext,uint256[] handlesList,address userAddress,address contractAddress)";
     bytes32 private constant CIPHERTEXTVERIFICATION_COPRO_TYPE_HASH =
         keccak256(bytes(CIPHERTEXTVERIFICATION_COPRO_TYPE));
-
-    string public constant CIPHERTEXTVERIFICATION_KMS_TYPE =
-        "CiphertextVerificationForKMS(address aclAddress,bytes32 hashOfCiphertext,address userAddress,address contractAddress)";
-    bytes32 private constant CIPHERTEXTVERIFICATION_KMS_TYPE_HASH = keccak256(bytes(CIPHERTEXTVERIFICATION_KMS_TYPE));
 
     /// @notice Name of the contract
     string private constant CONTRACT_NAME = "InputVerifier";
@@ -60,10 +49,6 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
 
     function get_CIPHERTEXTVERIFICATION_COPRO_TYPE() public view virtual returns (string memory) {
         return CIPHERTEXTVERIFICATION_COPRO_TYPE;
-    }
-
-    function get_CIPHERTEXTVERIFICATION_KMS_TYPE() public view virtual returns (string memory) {
-        return CIPHERTEXTVERIFICATION_KMS_TYPE;
     }
 
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -166,12 +151,13 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
                         signaturesKMS[j][i] = inputProof[99 + 32 * numHandles + 65 * j + i];
                     }
                 }
-                CiphertextVerificationForKMS memory cvKMS;
+                KMSVerifier.CiphertextVerificationForKMS memory cvKMS;
                 cvKMS.aclAddress = context.aclAddress;
                 cvKMS.hashOfCiphertext = hashCT;
                 cvKMS.userAddress = context.userAddress;
                 cvKMS.contractAddress = context.contractAddress;
-                verifyEIP712KMS(cvKMS, signaturesKMS);
+                bool kmsCheck = kmsVerifier.verifyInputEIP712KMSSignatures(cvKMS, signaturesKMS);
+                require(kmsCheck, "Not enough unique KMS input signatures");
             }
             cacheProof(cacheKey);
             require(result == listHandles[indexHandle], "Wrong inputHandle");
@@ -191,33 +177,6 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
         bytes32 digest = hashCiphertextVerificationForCopro(cv);
         address signer = ECDSA.recover(digest, signature);
         require(signer == coprocessorAddress, "Coprocessor address mismatch");
-    }
-
-    function verifyEIP712KMS(CiphertextVerificationForKMS memory cv, bytes[] memory signatures) internal virtual {
-        uint256 numSignatures = signatures.length;
-        require(numSignatures > 0, "No KMS signature provided");
-        bytes32 digest = hashCiphertextVerificationForKMS(cv);
-        uint256 threshold = kmsVerifier.getThreshold();
-        require(numSignatures >= threshold, "At least threshold number of KMS signatures required");
-        address[] memory recoveredSigners = new address[](numSignatures);
-        uint256 uniqueValidCount;
-        for (uint256 i; i < numSignatures; i++) {
-            address signerRecovered = ECDSA.recover(digest, signatures[i]);
-            require(kmsVerifier.isSigner(signerRecovered), "Recovered address is not one of KMS signers");
-            if (!tload(signerRecovered)) {
-                recoveredSigners[uniqueValidCount] = signerRecovered;
-                uniqueValidCount++;
-                tstore(signerRecovered, 1);
-            }
-            if (uniqueValidCount >= threshold) {
-                for (uint256 j = 0; i < uniqueValidCount; i++) {
-                    /// @note : clearing transient storage for composability
-                    tstore(recoveredSigners[j], 0);
-                }
-                return;
-            }
-        }
-        require(false, "Not enough unique KMS input signatures"); // if this line is reached, it means inputProof did not contain enough unique KMS signers signatures, so we revert
     }
 
     function tstore(address location, uint256 value) internal virtual {
@@ -245,23 +204,6 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
                         keccak256(abi.encodePacked(CVcopro.handlesList)),
                         CVcopro.userAddress,
                         CVcopro.contractAddress
-                    )
-                )
-            );
-    }
-
-    function hashCiphertextVerificationForKMS(
-        CiphertextVerificationForKMS memory CVkms
-    ) internal view virtual returns (bytes32) {
-        return
-            _hashTypedDataV4(
-                keccak256(
-                    abi.encode(
-                        CIPHERTEXTVERIFICATION_KMS_TYPE_HASH,
-                        CVkms.aclAddress,
-                        CVkms.hashOfCiphertext,
-                        CVkms.userAddress,
-                        CVkms.contractAddress
                     )
                 )
             );
