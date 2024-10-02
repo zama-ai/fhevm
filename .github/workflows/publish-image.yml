@@ -23,6 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       packages: write
+      contents: read
     steps:
       # space wasn't enough at some point
       - name: Free Disk Space (Ubuntu)
