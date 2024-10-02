@@ -20,7 +20,6 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	FhevmCoprocessor_AsyncCompute_FullMethodName              = "/fhevm.coprocessor.FhevmCoprocessor/AsyncCompute"
-	FhevmCoprocessor_WaitComputations_FullMethodName          = "/fhevm.coprocessor.FhevmCoprocessor/WaitComputations"
 	FhevmCoprocessor_UploadInputs_FullMethodName              = "/fhevm.coprocessor.FhevmCoprocessor/UploadInputs"
 	FhevmCoprocessor_GetCiphertexts_FullMethodName            = "/fhevm.coprocessor.FhevmCoprocessor/GetCiphertexts"
 	FhevmCoprocessor_TrivialEncryptCiphertexts_FullMethodName = "/fhevm.coprocessor.FhevmCoprocessor/TrivialEncryptCiphertexts"
@@ -31,7 +30,6 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type FhevmCoprocessorClient interface {
 	AsyncCompute(ctx context.Context, in *AsyncComputeRequest, opts ...grpc.CallOption) (*GenericResponse, error)
-	WaitComputations(ctx context.Context, in *AsyncComputeRequest, opts ...grpc.CallOption) (*FhevmResponses, error)
 	UploadInputs(ctx context.Context, in *InputUploadBatch, opts ...grpc.CallOption) (*InputUploadResponse, error)
 	GetCiphertexts(ctx context.Context, in *GetCiphertextBatch, opts ...grpc.CallOption) (*GetCiphertextResponse, error)
 	TrivialEncryptCiphertexts(ctx context.Context, in *TrivialEncryptBatch, opts ...grpc.CallOption) (*GenericResponse, error)
@@ -49,16 +47,6 @@ func (c *fhevmCoprocessorClient) AsyncCompute(ctx context.Context, in *AsyncComp
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GenericResponse)
 	err := c.cc.Invoke(ctx, FhevmCoprocessor_AsyncCompute_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *fhevmCoprocessorClient) WaitComputations(ctx context.Context, in *AsyncComputeRequest, opts ...grpc.CallOption) (*FhevmResponses, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(FhevmResponses)
-	err := c.cc.Invoke(ctx, FhevmCoprocessor_WaitComputations_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -100,7 +88,6 @@ func (c *fhevmCoprocessorClient) TrivialEncryptCiphertexts(ctx context.Context, 
 // for forward compatibility.
 type FhevmCoprocessorServer interface {
 	AsyncCompute(context.Context, *AsyncComputeRequest) (*GenericResponse, error)
-	WaitComputations(context.Context, *AsyncComputeRequest) (*FhevmResponses, error)
 	UploadInputs(context.Context, *InputUploadBatch) (*InputUploadResponse, error)
 	GetCiphertexts(context.Context, *GetCiphertextBatch) (*GetCiphertextResponse, error)
 	TrivialEncryptCiphertexts(context.Context, *TrivialEncryptBatch) (*GenericResponse, error)
@@ -116,9 +103,6 @@ type UnimplementedFhevmCoprocessorServer struct{}
 
 func (UnimplementedFhevmCoprocessorServer) AsyncCompute(context.Context, *AsyncComputeRequest) (*GenericResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AsyncCompute not implemented")
-}
-func (UnimplementedFhevmCoprocessorServer) WaitComputations(context.Context, *AsyncComputeRequest) (*FhevmResponses, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method WaitComputations not implemented")
 }
 func (UnimplementedFhevmCoprocessorServer) UploadInputs(context.Context, *InputUploadBatch) (*InputUploadResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UploadInputs not implemented")
@@ -164,24 +148,6 @@ func _FhevmCoprocessor_AsyncCompute_Handler(srv interface{}, ctx context.Context
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(FhevmCoprocessorServer).AsyncCompute(ctx, req.(*AsyncComputeRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _FhevmCoprocessor_WaitComputations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(AsyncComputeRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(FhevmCoprocessorServer).WaitComputations(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: FhevmCoprocessor_WaitComputations_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(FhevmCoprocessorServer).WaitComputations(ctx, req.(*AsyncComputeRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -250,10 +216,6 @@ var FhevmCoprocessor_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AsyncCompute",
 			Handler:    _FhevmCoprocessor_AsyncCompute_Handler,
-		},
-		{
-			MethodName: "WaitComputations",
-			Handler:    _FhevmCoprocessor_WaitComputations_Handler,
 		},
 		{
 			MethodName: "UploadInputs",
