@@ -1,4 +1,4 @@
-import { toBufferLE } from 'bigint-buffer';
+import { toBufferBE } from 'bigint-buffer';
 import { ContractMethodArgs, Typed } from 'ethers';
 import { ethers, network } from 'hardhat';
 
@@ -98,7 +98,14 @@ export const mineNBlocks = async (n: number) => {
   }
 };
 
-export const bigIntToBytes = (value: bigint) => {
-  const byteArrayLength = Math.ceil(value.toString(2).length / 8);
-  return new Uint8Array(toBufferLE(value, byteArrayLength));
+export const bigIntToBytes64 = (value: bigint) => {
+  return new Uint8Array(toBufferBE(value, 64));
+};
+
+export const bigIntToBytes128 = (value: bigint) => {
+  return new Uint8Array(toBufferBE(value, 128));
+};
+
+export const bigIntToBytes256 = (value: bigint) => {
+  return new Uint8Array(toBufferBE(value, 256));
 };

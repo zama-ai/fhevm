@@ -1,4 +1,4 @@
-import { toBigIntLE } from 'bigint-buffer';
+import { toBigIntBE } from 'bigint-buffer';
 import { toBufferBE } from 'bigint-buffer';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
@@ -30,12 +30,14 @@ enum Types {
   ebytes256,
 }
 
+const sum = (arr: number[]) => arr.reduce((acc, val) => acc + val, 0);
+
 function bytesToBigInt(byteArray: Uint8Array): bigint {
   if (!byteArray || byteArray?.length === 0) {
     return BigInt(0);
   }
   const buffer = Buffer.from(byteArray);
-  const result = toBigIntLE(buffer);
+  const result = toBigIntBE(buffer);
   return result;
 }
 
@@ -50,35 +52,50 @@ function createUintToUint8ArrayFunction(numBits: number) {
 
     let byteBuffer;
     let totalBuffer;
-    const padBuffer = numBytes <= 20 ? Buffer.alloc(20 - numBytes) : Buffer.alloc(0); // to fit it in an E160List
 
     switch (numBits) {
-      case 1:
+      case 2: // ebool takes 2 bits
         byteBuffer = Buffer.from([Types.ebool]);
-        totalBuffer = Buffer.concat([byteBuffer, combinedBuffer, padBuffer]);
+        totalBuffer = Buffer.concat([byteBuffer, combinedBuffer]);
         break;
       case 4:
         byteBuffer = Buffer.from([Types.euint4]);
-        totalBuffer = Buffer.concat([byteBuffer, combinedBuffer, padBuffer]);
+        totalBuffer = Buffer.concat([byteBuffer, combinedBuffer]);
         break;
       case 8:
         byteBuffer = Buffer.from([Types.euint8]);
-        totalBuffer = Buffer.concat([byteBuffer, combinedBuffer, padBuffer]);
+        totalBuffer = Buffer.concat([byteBuffer, combinedBuffer]);
         break;
       case 16:
         byteBuffer = Buffer.from([Types.euint16]);
-        totalBuffer = Buffer.concat([byteBuffer, combinedBuffer, padBuffer]);
+        totalBuffer = Buffer.concat([byteBuffer, combinedBuffer]);
         break;
       case 32:
         byteBuffer = Buffer.from([Types.euint32]);
-        totalBuffer = Buffer.concat([byteBuffer, combinedBuffer, padBuffer]);
+        totalBuffer = Buffer.concat([byteBuffer, combinedBuffer]);
         break;
       case 64:
         byteBuffer = Buffer.from([Types.euint64]);
-        totalBuffer = Buffer.concat([byteBuffer, combinedBuffer, padBuffer]);
+        totalBuffer = Buffer.concat([byteBuffer, combinedBuffer]);
+        break;
+      case 128:
+        byteBuffer = Buffer.from([Types.euint128]);
+        totalBuffer = Buffer.concat([byteBuffer, combinedBuffer]);
         break;
       case 160:
         byteBuffer = Buffer.from([Types.eaddress]);
+        totalBuffer = Buffer.concat([byteBuffer, combinedBuffer]);
+        break;
+      case 256:
+        byteBuffer = Buffer.from([Types.euint256]);
+        totalBuffer = Buffer.concat([byteBuffer, combinedBuffer]);
+        break;
+      case 512:
+        byteBuffer = Buffer.from([Types.ebytes64]);
+        totalBuffer = Buffer.concat([byteBuffer, combinedBuffer]);
+        break;
+      case 1024:
+        byteBuffer = Buffer.from([Types.ebytes128]);
         totalBuffer = Buffer.concat([byteBuffer, combinedBuffer]);
         break;
       case 2048:
@@ -153,43 +170,57 @@ export const createEncryptedInputMocked = (contractAddress: string, userAddress:
       if ((typeof value !== 'bigint' || typeof value !== 'number') && Number(value) > 1)
         throw new Error('The value must be 1 or 0.');
       values.push(BigInt(value));
-      bits.push(1);
+      bits.push(2); // ebool takes 2 bits instead of one: only exception in TFHE-rs
+      if (sum(bits) > 2048) throw Error('Packing more than 2048 bits in a single input ciphertext is unsupported');
+      if (bits.length > 256) throw Error('Packing more than 256 variables in a single input ciphertext is unsupported');
       return this;
     },
     add4(value: number | bigint) {
       checkEncryptedValue(value, 4);
       values.push(BigInt(value));
       bits.push(4);
+      if (sum(bits) > 2048) throw Error('Packing more than 2048 bits in a single input ciphertext is unsupported');
+      if (bits.length > 256) throw Error('Packing more than 256 variables in a single input ciphertext is unsupported');
       return this;
     },
     add8(value: number | bigint) {
       checkEncryptedValue(value, 8);
       values.push(BigInt(value));
       bits.push(8);
+      if (sum(bits) > 2048) throw Error('Packing more than 2048 bits in a single input ciphertext is unsupported');
+      if (bits.length > 256) throw Error('Packing more than 256 variables in a single input ciphertext is unsupported');
       return this;
     },
     add16(value: number | bigint) {
       checkEncryptedValue(value, 16);
       values.push(BigInt(value));
       bits.push(16);
+      if (sum(bits) > 2048) throw Error('Packing more than 2048 bits in a single input ciphertext is unsupported');
+      if (bits.length > 256) throw Error('Packing more than 256 variables in a single input ciphertext is unsupported');
       return this;
     },
     add32(value: number | bigint) {
       checkEncryptedValue(value, 32);
       values.push(BigInt(value));
       bits.push(32);
+      if (sum(bits) > 2048) throw Error('Packing more than 2048 bits in a single input ciphertext is unsupported');
+      if (bits.length > 256) throw Error('Packing more than 256 variables in a single input ciphertext is unsupported');
       return this;
     },
     add64(value: number | bigint) {
       checkEncryptedValue(value, 64);
       values.push(BigInt(value));
       bits.push(64);
+      if (sum(bits) > 2048) throw Error('Packing more than 2048 bits in a single input ciphertext is unsupported');
+      if (bits.length > 256) throw Error('Packing more than 256 variables in a single input ciphertext is unsupported');
       return this;
     },
     add128(value: number | bigint) {
       checkEncryptedValue(value, 128);
       values.push(BigInt(value));
       bits.push(128);
+      if (sum(bits) > 2048) throw Error('Packing more than 2048 bits in a single input ciphertext is unsupported');
+      if (bits.length > 256) throw Error('Packing more than 256 variables in a single input ciphertext is unsupported');
       return this;
     },
     addAddress(value: string) {
@@ -198,13 +229,46 @@ export const createEncryptedInputMocked = (contractAddress: string, userAddress:
       }
       values.push(BigInt(value));
       bits.push(160);
+      if (sum(bits) > 2048) throw Error('Packing more than 2048 bits in a single input ciphertext is unsupported');
+      if (bits.length > 256) throw Error('Packing more than 256 variables in a single input ciphertext is unsupported');
+      return this;
+    },
+    add256(value: number | bigint) {
+      checkEncryptedValue(value, 256);
+      values.push(BigInt(value));
+      bits.push(256);
+      if (sum(bits) > 2048) throw Error('Packing more than 2048 bits in a single input ciphertext is unsupported');
+      if (bits.length > 256) throw Error('Packing more than 256 variables in a single input ciphertext is unsupported');
+      return this;
+    },
+    addBytes64(value: Uint8Array) {
+      if (value.length !== 64) throw Error('Uncorrect length of input Uint8Array, should be 64 for an ebytes64');
+      const bigIntValue = bytesToBigInt(value);
+      checkEncryptedValue(bigIntValue, 512);
+      values.push(bigIntValue);
+      bits.push(512);
+      if (sum(bits) > 2048) throw Error('Packing more than 2048 bits in a single input ciphertext is unsupported');
+      if (bits.length > 256) throw Error('Packing more than 256 variables in a single input ciphertext is unsupported');
+      return this;
+    },
+    addBytes128(value: Uint8Array) {
+      if (value.length !== 128) throw Error('Uncorrect length of input Uint8Array, should be 128 for an ebytes128');
+      const bigIntValue = bytesToBigInt(value);
+      checkEncryptedValue(bigIntValue, 1024);
+      values.push(bigIntValue);
+      bits.push(1024);
+      if (sum(bits) > 2048) throw Error('Packing more than 2048 bits in a single input ciphertext is unsupported');
+      if (bits.length > 256) throw Error('Packing more than 256 variables in a single input ciphertext is unsupported');
       return this;
     },
     addBytes256(value: Uint8Array) {
+      if (value.length !== 256) throw Error('Uncorrect length of input Uint8Array, should be 256 for an ebytes256');
       const bigIntValue = bytesToBigInt(value);
       checkEncryptedValue(bigIntValue, 2048);
       values.push(bigIntValue);
       bits.push(2048);
+      if (sum(bits) > 2048) throw Error('Packing more than 2048 bits in a single input ciphertext is unsupported');
+      if (bits.length > 256) throw Error('Packing more than 256 variables in a single input ciphertext is unsupported');
       return this;
     },
     getValues() {
@@ -219,22 +283,11 @@ export const createEncryptedInputMocked = (contractAddress: string, userAddress:
       return this;
     },
     async encrypt() {
-      const listType = getListType(bits);
-
       let encrypted = Buffer.alloc(0);
 
-      switch (listType) {
-        case 160: {
-          bits.map((v, i) => {
-            encrypted = Buffer.concat([encrypted, createUintToUint8ArrayFunction(v)(values[i])]);
-          });
-          break;
-        }
-        case 2048: {
-          encrypted = createUintToUint8ArrayFunction(2048)(values[0]);
-          break;
-        }
-      }
+      bits.map((v, i) => {
+        encrypted = Buffer.concat([encrypted, createUintToUint8ArrayFunction(v)(values[i])]);
+      });
 
       const encryptedArray = new Uint8Array(encrypted);
       const hash = new Keccak(256).update(Buffer.from(encryptedArray)).digest();
@@ -301,7 +354,7 @@ const checkEncryptedValue = (value: number | bigint, bits: number) => {
 };
 
 export const ENCRYPTION_TYPES = {
-  1: 0,
+  2: 0, // ebool takes 2 bits
   4: 1,
   8: 2,
   16: 3,
@@ -313,23 +366,6 @@ export const ENCRYPTION_TYPES = {
   512: 9,
   1024: 10,
   2048: 11,
-};
-
-const getListType = (bits: (keyof typeof ENCRYPTION_TYPES)[]) => {
-  // We limit to 12 items because for now we are using FheUint160List
-  if (bits.length > 12) {
-    throw new Error("You can't pack more than 12 values.");
-  }
-
-  if (bits.reduce((total, v) => total + v, 0) > 2048) {
-    throw new Error('Too many bits in provided values. Maximum is 2048.');
-  }
-
-  if (bits.some((v) => v === 2048)) {
-    return 2048;
-  } else {
-    return 160;
-  }
 };
 
 async function computeInputSignatureCopro(
