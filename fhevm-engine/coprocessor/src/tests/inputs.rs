@@ -66,7 +66,7 @@ async fn test_fhe_inputs() -> Result<(), Box<dyn std::error::Error>> {
     let mut input_request = tonic::Request::new(InputUploadBatch {
         input_ciphertexts: vec![InputToUpload {
             input_payload: serialized,
-            signature: Vec::new(),
+            signatures: Vec::new(),
             user_address: test_random_user_address(),
             contract_address: test_random_contract_address(),
         }],
@@ -177,7 +177,7 @@ async fn custom_insert_inputs() -> Result<(), Box<dyn std::error::Error>> {
     let mut input_request = tonic::Request::new(InputUploadBatch {
         input_ciphertexts: vec![InputToUpload {
             input_payload: serialized,
-            signature: Vec::new(),
+            signatures: Vec::new(),
             user_address: test_random_user_address(),
             contract_address: test_random_contract_address(),
         }],
