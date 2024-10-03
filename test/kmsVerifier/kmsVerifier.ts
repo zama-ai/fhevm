@@ -92,14 +92,16 @@ describe('KMSVerifier', function () {
         }),
       ).to.revertedWith('KmsVerifier: at least threshold number of signatures required'); // this should fail because in this case the InputVerifier received only one KMS signature (instead of at least 2);
 
-      const cheatInputProof = encryptedAmount2.inputProof + encryptedAmount2.inputProof.slice(-130); // trying to cheat by repeating the first kms signer signature
-      const cheat = cheatInputProof.slice(0, 5) + '2' + cheatInputProof.slice(6);
-      await expect(
-        contract2.requestMixedBytes256Trustless(encryptedAmount2.handles[0], cheat, {
-          gasLimit: 5_000_000,
-        }),
-      ).to.revertedWith('Not enough unique KMS input signatures'); // this should fail because in this case the InputVerifier received only one KMS signature (instead of at least 2)
-
+      if (process.env.IS_COPROCESSOR === 'true') {
+        // different format of inputProof for native
+        const cheatInputProof = encryptedAmount2.inputProof + encryptedAmount2.inputProof.slice(-130); // trying to cheat by repeating the first kms signer signature
+        const cheat = cheatInputProof.slice(0, 5) + '2' + cheatInputProof.slice(6);
+        await expect(
+          contract2.requestMixedBytes256Trustless(encryptedAmount2.handles[0], cheat, {
+            gasLimit: 5_000_000,
+          }),
+        ).to.revertedWith('Not enough unique KMS input signatures'); // this should fail because in this case the InputVerifier received only one KMS signature (instead of at least 2)
+      }
       process.env.NUM_KMS_SIGNERS = '4';
       const encryptedAmount = await inputAlice.encrypt();
       const tx6bis = await contract2.requestMixedBytes256Trustless(

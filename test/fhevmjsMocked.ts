@@ -302,24 +302,47 @@ export const createEncryptedInputMocked = (contractAddress: string, userAddress:
         dataInput.set([i, ENCRYPTION_TYPES[v], 0], 29);
         return dataInput;
       });
-      let inputProof = '0x' + numberToHex(handles.length); // numSignersKMS + hashCT + list_handles + signatureCopro + signatureKMSSigners (1+1+32+NUM_HANDLES*32+65+65*numSignersKMS)
+      let inputProof = '0x' + numberToHex(handles.length); // for coprocessor : numHandles + numSignersKMS + hashCT + list_handles + signatureCopro + signatureKMSSigners (total len : 1+1+32+NUM_HANDLES*32+65+65*numSignersKMS)
+      // for native : numHandles + numSignersKMS + list_handles + signatureKMSSigners + bundleCiphertext (total len : 1+1+NUM_HANDLES*32+65*numSignersKMS+bundleCiphertext.length)
       const numSigners = +process.env.NUM_KMS_SIGNERS!;
       inputProof += numberToHex(numSigners);
-      inputProof += hash.toString('hex');
-      const listHandlesStr = handles.map((i) => uint8ArrayToHexString(i));
-      listHandlesStr.map((handle) => (inputProof += handle));
-      const listHandles = listHandlesStr.map((i) => BigInt('0x' + i));
-      const sigCoproc = await computeInputSignatureCopro(
-        '0x' + hash.toString('hex'),
-        listHandles,
-        userAddress,
-        contractAddress,
-      );
-      inputProof += sigCoproc.slice(2);
+      if (process.env.IS_COPROCESSOR === 'true') {
+        // coprocessor
+        inputProof += hash.toString('hex');
 
-      const signaturesKMS = await computeInputSignaturesKMS('0x' + hash.toString('hex'), userAddress, contractAddress);
-      signaturesKMS.map((sigKMS) => (inputProof += sigKMS.slice(2)));
-      listHandlesStr.map((handle, i) => insertSQL('0x' + handle, values[i]));
+        const listHandlesStr = handles.map((i) => uint8ArrayToHexString(i));
+        listHandlesStr.map((handle) => (inputProof += handle));
+        const listHandles = listHandlesStr.map((i) => BigInt('0x' + i));
+        const sigCoproc = await computeInputSignatureCopro(
+          '0x' + hash.toString('hex'),
+          listHandles,
+          userAddress,
+          contractAddress,
+        );
+        inputProof += sigCoproc.slice(2);
+
+        const signaturesKMS = await computeInputSignaturesKMS(
+          '0x' + hash.toString('hex'),
+          userAddress,
+          contractAddress,
+        );
+        signaturesKMS.map((sigKMS) => (inputProof += sigKMS.slice(2)));
+        listHandlesStr.map((handle, i) => insertSQL('0x' + handle, values[i]));
+      } else {
+        // native
+        const listHandlesStr = handles.map((i) => uint8ArrayToHexString(i));
+        listHandlesStr.map((handle) => (inputProof += handle));
+        const signaturesKMS = await computeInputSignaturesKMS(
+          '0x' + hash.toString('hex'),
+          userAddress,
+          contractAddress,
+        );
+        signaturesKMS.map((sigKMS) => (inputProof += sigKMS.slice(2)));
+        listHandlesStr.map((handle, i) => insertSQL('0x' + handle, values[i]));
+
+        inputProof += encrypted.toString('hex');
+      }
+
       return {
         handles,
         inputProof,
