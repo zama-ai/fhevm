@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # This script exports an Ethereum private key from an evmos node and uses it to run a Python script.
 # The script takes two arguments:

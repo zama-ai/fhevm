@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 set -Eeuo pipefail
 
@@ -14,7 +14,7 @@ KEYS_FULL_PATH=$1
 mkdir -p $NETWORK_KEYS_PUBLIC_PATH
 
 MANDATORY_KEYS_LIST=('pks')
- 
+
 echo "check folder $KEYS_FULL_PATH"
 for key in "${MANDATORY_KEYS_LIST[@]}"
     do

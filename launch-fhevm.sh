@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 PRIVATE_KEY_GATEWAY_DEPLOYER=$(grep PRIVATE_KEY_GATEWAY_DEPLOYER .env | cut -d '"' -f 2)
 
@@ -15,7 +15,7 @@ docker run -d -i -p 8545:8545 --rm --name fhevm \
   -e ORACLE_CONTRACT_PREDEPLOY_ADDRESS="$ORACLE_CONTRACT_PREDEPLOY_ADDRESS" \
   -e TFHE_EXECUTOR_CONTRACT_ADDRESS="$TFHE_EXECUTOR_CONTRACT_ADDRESS" \
   ghcr.io/zama-ai/ethermint-dev-node:v0.5.0-1
-  
+
 sleep 10
 
 npx hardhat task:computeACLAddress

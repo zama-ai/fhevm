@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Assumes the following:
 # 1. A local and **fresh** fhEVM node is already running.

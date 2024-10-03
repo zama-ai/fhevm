@@ -1,6 +1,6 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# This script execute a python script within a ready-to-use docker image with all the required python modules. 
+# This script execute a python script within a ready-to-use docker image with all the required python modules.
 # The script takes two arguments:
 #   1. The private key of the main account which has already funds.
 #   2. (Optional) The node address (default: http://host.docker.internal:8545)
