@@ -3,20 +3,23 @@ name: zama-dev
 services:
 
   gateway-store:
-    image: ghcr.io/zama-ai/kms-blockchain-gateway-dev:v0.8.1-rc4
+    image: ghcr.io/zama-ai/kms-blockchain-gateway-dev:v0.9.0-rc10-inclusion-proof-test
     command:
       - "kv_store"
     ports:
       - "8088:8088"
 
   kms-validator:
-    image: ghcr.io/zama-ai/kms-blockchain-asc-dev:v0.8.1-rc4
+    image: ghcr.io/zama-ai/kms-blockchain-asc-dev:v0.9.0-rc10-inclusion-proof-test
     ports:
       - "36656:26656"
       - "36657:26657"
       - "1317:1317"
       - "9090:9090"
     entrypoint: [ "/app/bootstrap.sh" ]
+    volumes:
+      - ../asc/ethereum_ipsc.wasm:/app/ethereum_ipsc.wasm
+      - ../asc/bootstrap_asc.sh:/app/bootstrap.sh
     healthcheck:
       test: "wget -Sq --spider http://localhost:26657/status"
       interval: 1s
@@ -25,7 +28,7 @@ services:
       start_period: 10s
 
   connector:
-    image: ghcr.io/zama-ai/kms-blockchain-connector-dev:v0.8.1-rc4
+    image: ghcr.io/zama-ai/kms-blockchain-connector-dev:v0.9.0-rc10-inclusion-proof-test
     command:
       - "kms-blockchain-connector"
     environment:
@@ -43,7 +46,7 @@ services:
         condition: service_healthy
 
   kms-core:
-    image: ghcr.io/zama-ai/kms-service-dev:v0.8.1-rc4
+    image: ghcr.io/zama-ai/kms-service-dev:v0.9.0-rc10-inclusion-proof-test
     volumes:
       - $PWD/res/keys:/app/kms/core/service/keys:Z
     ports:
@@ -54,48 +57,47 @@ services:
       timeout: 1s
       retries: 5
       start_period: 10s
+  # gateway:
+  #   image: ghcr.io/zama-ai/kms-blockchain-gateway-dev:v0.9.0-rc10-inclusion-proof-test
+  #   ports:
+  #     - "7077:7077"
+  #   command:
+  #     - "gateway"
+  #   volumes:
+  #     - ../default.toml:/app/gateway/config/default.toml:Z
+  #   environment:
+  #     - GATEWAY__ETHEREUM__LISTENER_TYPE=FHEVM_V1_1
+  #     - GATEWAY__ETHEREUM__WSS_URL=ws://fhevm-validator:8546
+  #     - GATEWAY__ETHEREUM__HTTP_URL=http://fhevm-validator:8545
+  #     - GATEWAY__ETHEREUM__FHE_LIB_ADDRESS=000000000000000000000000000000000000005d
+  #     - GATEWAY__ETHEREUM__ORACLE_PREDEPLOY_ADDRESS=c8c9303Cd7F337fab769686B593B87DC3403E0ce
+  #     - GATEWAY__KMS__ADDRESS=http://kms-validator:9090
+  #     - GATEWAY__KMS__KEY_ID=408d8cbaa51dece7f782fe04ba0b1c1d017b1088
+  #     - GATEWAY__STORAGE__URL=http://gateway-store:8088
+  #     - ASC_CONN__BLOCKCHAIN__ADDRESSES=http://kms-validator:9090
+  #     - GATEWAY__ETHEREUM__RELAYER_KEY=7ec931411ad75a7c201469a385d6f18a325d4923f9f213bd882bbea87e160b67
+  #     - RUST_BACKTRACE=1
+  #   depends_on:
+  #     fhevm-validator:
+  #       condition: service_healthy
+  #     kms-validator:
+  #       condition: service_healthy
 
-  gateway:
-    image: ghcr.io/zama-ai/kms-blockchain-gateway-dev:v0.8.1-rc4
-    ports:
-      - "7077:7077"
-    command:
-      - "gateway"
-    volumes:
-      - ../default.toml:/app/gateway/config/default.toml:Z
-    environment:
-      - GATEWAY__ETHEREUM__LISTENER_TYPE=FHEVM_V1_1
-      - GATEWAY__ETHEREUM__WSS_URL=ws://fhevm-validator:8546
-      - GATEWAY__ETHEREUM__HTTP_URL=http://fhevm-validator:8545
-      - GATEWAY__ETHEREUM__FHE_LIB_ADDRESS=000000000000000000000000000000000000005d
-      - GATEWAY__ETHEREUM__ORACLE_PREDEPLOY_ADDRESS=c8c9303Cd7F337fab769686B593B87DC3403E0ce
-      - GATEWAY__KMS__ADDRESS=http://kms-validator:9090
-      - GATEWAY__KMS__KEY_ID=408d8cbaa51dece7f782fe04ba0b1c1d017b1088
-      - GATEWAY__STORAGE__URL=http://gateway-store:8088
-      - ASC_CONN__BLOCKCHAIN__ADDRESSES=http://kms-validator:9090
-      - GATEWAY__ETHEREUM__RELAYER_KEY=7ec931411ad75a7c201469a385d6f18a325d4923f9f213bd882bbea87e160b67
-      - RUST_BACKTRACE=1
-    depends_on:
-      fhevm-validator:
-        condition: service_healthy
-      kms-validator:
-        condition: service_healthy
-
-  fhevm-validator:
-    environment:
-      - TFHE_EXECUTOR_CONTRACT_ADDRESS=0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c
-    image: ghcr.io/zama-ai/ethermint-dev-node:v0.5.1
-    ports:
-      - "26656-26657:26656-26657"
-      - "8545-8546:8545-8546"
-    volumes:
-      - $PWD/network-fhe-keys:/network-fhe-keys:Z
-      - ../setup.sh:/config/setup.sh:Z
-    security_opt:
-      - no-new-privileges:true
-    healthcheck:
-      test: "curl -s -H \"Connection: Upgrade\" -H \"Upgrade: websocket\"  http://localhost:8546"
-      interval: 5s
-      timeout: 3s
-      retries: 5
-      start_period: 20s
+  # fhevm-validator:
+  #   environment:
+  #     - TFHE_EXECUTOR_CONTRACT_ADDRESS=0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c
+  #   image: ghcr.io/zama-ai/ethermint-dev-node:v0.5.1
+  #   ports:
+  #     - "26656-26657:26656-26657"
+  #     - "8545-8546:8545-8546"
+  #   volumes:
+  #     - $PWD/network-fhe-keys:/network-fhe-keys:Z
+  #     - ../setup.sh:/config/setup.sh:Z
+  #   security_opt:
+  #     - no-new-privileges:true
+  #   healthcheck:
+  #     test: "curl -s -H \"Connection: Upgrade\" -H \"Upgrade: websocket\"  http://localhost:8546"
+  #     interval: 5s
+  #     timeout: 3s
+  #     retries: 5
+  #     start_period: 20s
