@@ -1,16 +1,18 @@
 ---
 name: Unclear Documentation Report
 about: Use this template to report sections of our documentation that are unclear, confusing, or require further explanation.
-title: ''
+title: ""
 labels: documentation
-assignees: ''
+assignees: ""
 ---
 
-### **Page Link**  
-Provide a link to the documentation page where the unclear content is located:  
-**URL**: '[https://docs.zama.ai/fhevm/___](https://docs.zama.ai/fhevm/___)'  
+### **Page Link**
 
-### **Description of the Issue**  
+Provide a link to the documentation page where the unclear content is located:  
+**URL**: '[https://docs.zama.ai/fhevm/\_\_\_](https://docs.zama.ai/fhevm/___)'
+
+### **Description of the Issue**
+
 Describe in detail what part of the documentation is unclear.
 
 <details><summary>For example:</summary>
@@ -21,8 +23,9 @@ Describe in detail what part of the documentation is unclear.
 </p>
 </details>
 
-### **What Would You Like Clarified?**  
-Provide details on what you expected to understand better or where more explanation is needed. 
+### **What Would You Like Clarified?**
+
+Provide details on what you expected to understand better or where more explanation is needed.
 
 <details><summary>Include questions such as:</summary>
 <p>
@@ -32,7 +35,8 @@ Provide details on what you expected to understand better or where more explanat
 </p>
 </details>
 
-### **Suggestions for Improvement**  
+### **Suggestions for Improvement**
+
 (Optional) If you have suggestions for how the documentation can be made clearer, provide them here. For example:
 
 <details><summary>Include questions such as:</summary>
@@ -43,5 +47,6 @@ Provide details on what you expected to understand better or where more explanat
 </p>
 </details>
 
-### **Screenshots / Logs**  
+### **Screenshots / Logs**
+
 If applicable, provide screenshots or logs to help us understand what part of the documentation caused confusion.

@@ -1,9 +1,9 @@
 ---
 name: General feature request for FHEVM
 about: Suggest an idea for this project
-title: ''
+title: ""
 labels: enhancement
-assignees: ''
+assignees: ""
 ---
 
 **Is your feature request related to a problem? Please describe.**
