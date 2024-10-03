@@ -6,7 +6,7 @@ import { ethers } from 'hardhat';
 import { asyncDecrypt, awaitAllDecryptionResults } from '../asyncDecrypt';
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
-import { bigIntToBytes } from '../utils';
+import { bigIntToBytes256 } from '../utils';
 
 describe('KMSVerifier', function () {
   before(async function () {
@@ -82,7 +82,7 @@ describe('KMSVerifier', function () {
         await contract2.getAddress(),
         this.signers.alice.address,
       );
-      inputAlice.addBytes256(bigIntToBytes(18446744073709550032n));
+      inputAlice.addBytes256(bigIntToBytes256(18446744073709550032n));
 
       process.env.NUM_KMS_SIGNERS = '1';
       const encryptedAmount2 = await inputAlice.encrypt();
