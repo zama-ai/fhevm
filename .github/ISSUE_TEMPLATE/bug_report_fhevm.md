@@ -7,16 +7,7 @@ assignees: ''
 ---
 
 ### **Description**  
-Provide a clear and detailed description of the bug. Specify which part of the contract (e.g., encryption, decryption, state updates, branching logic) is malfunctioning and any observed anomalies in the contract’s behavior.
-
-### **Steps to Reproduce**  
-Please include a step-by-step guide to replicate the issue:
-
-1. **Smart Contract Version**: Specify the version or branch being tested (e.g., v0.0.0, latest Devnet branch).
-2. **Setup**: Outline the environment configuration (e.g., Docker node, Devnet connection, Mocked mode).
-3. **Contract Deployment**: Provide details of the deployed contract, including key initial state values and encryption parameters.
-4. **Action Sequence**: Describe the specific transactions or function calls leading to the error.
-5. **Observed Behavior**: Highlight any transaction failures, unexpected decryption results, or anomalous state changes.
+Provide a clear and detailed description of the bug.
 
 ### **Expected Behavior**  
 Describe what you expected to happen (e.g., successful decryption of the input, valid output from the encrypted function, no gas estimation errors).
@@ -24,8 +15,12 @@ Describe what you expected to happen (e.g., successful decryption of the input, 
 ### **Screenshots / Logs**  
 Include screenshots, relevant logs, or traces if available, particularly for encrypted computations or gateway interactions.
 
-### **Smart Contract Code Snippet (Optional)**  
+### **Smart Contract Code Snippet**  
 If applicable, provide a minimal reproducible example of the smart contract code highlighting the part where the issue occurs:
+
+
+<details><summary>Example</summary>
+<p>
 
 ```solidity
 // Example
@@ -40,6 +35,9 @@ contract Counter {
     }
 }
 ```
+</p>
+</details>
+
 
 ### **Environment Information**  
 Fill in the relevant environment details where the issue was observed:
