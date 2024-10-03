@@ -1,8 +1,8 @@
 ---
 name: Documentation Bug Report
 about: Use this template to report issues, inconsistencies, or inaccuracies in our documentation.
-title: '[DOCS-BUG]'
-labels: bug documentation
+title: ''
+labels: bug, documentation
 assignees: ''
 ---
 

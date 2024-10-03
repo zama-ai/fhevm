@@ -1,7 +1,7 @@
 ---
 name: Smart Contracts Bug Report  
 about: Use this template to report issues encountered with confidential smart contracts on the FHEVM.  
-title: '[BUG] - [Brief Description of Issue]'  
+title: ''  
 labels: bug  
 assignees: ''
 ---

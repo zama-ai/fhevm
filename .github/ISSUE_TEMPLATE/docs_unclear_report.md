@@ -1,7 +1,7 @@
 ---
 name: Unclear Documentation Report
 about: Use this template to report sections of our documentation that are unclear, confusing, or require further explanation.
-title: '[DOCS-UNCLEAR]'
+title: ''
 labels: documentation
 assignees: ''
 ---

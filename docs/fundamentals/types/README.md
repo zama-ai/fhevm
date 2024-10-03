@@ -50,9 +50,9 @@ ebool valueBool = TFHE.asEbool(value32);
 ```
 
 ## Contracting state variables
-When using encrypted types for state variables, you cannot use the `immutable` or `constant` keywords. This is because the compiler attempts to resolve the value of `TFHE.asEuintXX(yy)` during compilation, which is not feasible because `asEuintXX()` calls a precompiled contract. 
+When using encrypted types for state variables, you cannot use the `immutable` or `constant` keywords. This is because the compiler attempts to resolve the value of T`FHE.asEuintXX(yy)` during compilation, which is not feasible because `asEuintXX()` calls a precompiled contract. 
 
-To handle this, do not declare your encrypted state variables as `immutable` or `constant`. Instead, use the following methods to set your variables:
+To handle this, do not declare your encrypted state variables as `immutabl`e or `constant`. Instead, use the following methods to set your variables:
 
 
 ```solidity
