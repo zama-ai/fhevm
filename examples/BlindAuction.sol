@@ -2,14 +2,18 @@
 
 pragma solidity ^0.8.24;
 
+// Import necessary contracts and libraries
 import "../lib/TFHE.sol";
 import "./EncryptedERC20.sol";
 import "@openzeppelin/contracts/access/Ownable2Step.sol";
 import "../gateway/GatewayCaller.sol";
 
+// Main contract for the blind auction
 contract BlindAuction is Ownable2Step, GatewayCaller {
+    // Auction end time
     uint256 public endTime;
 
+    // Address of the beneficiary
     address public beneficiary;
 
     // Current highest bid.
@@ -26,7 +30,7 @@ contract BlindAuction is Ownable2Step, GatewayCaller {
     // Mapping from bidder to their bid value.
     mapping(address account => euint64 bidAmount) private bids;
 
-    // Number of bid
+    // Number of bids
     uint256 public bidCounter;
 
     // The token contract used for encrypted bids.
@@ -36,11 +40,13 @@ contract BlindAuction is Ownable2Step, GatewayCaller {
     // WARNING : if there is a draw, only first highest bidder will get the prize (an improved implementation could handle this case differently)
     ebool private objectClaimed;
 
-    // If the token has been transferred to the beneficiary
+    // Flag to check if the token has been transferred to the beneficiary
     bool public tokenTransferred;
 
+    // Flag to determine if the auction can be stopped manually
     bool public stoppable;
 
+    // Flag to check if the auction has been manually stopped
     bool public manuallyStopped = false;
 
     // The function has been called too early.
@@ -50,6 +56,7 @@ contract BlindAuction is Ownable2Step, GatewayCaller {
     // It cannot be called after `time`.
     error TooLate(uint256 time);
 
+    // Constructor to initialize the auction
     constructor(
         address _beneficiary,
         EncryptedERC20 _tokenContract,
@@ -127,6 +134,7 @@ contract BlindAuction is Ownable2Step, GatewayCaller {
         return bids[account];
     }
 
+    // Function to manually stop the auction
     function stop() external onlyOwner {
         require(stoppable);
         manuallyStopped = true;
@@ -138,12 +146,14 @@ contract BlindAuction is Ownable2Step, GatewayCaller {
         return userTickets[account];
     }
 
+    // Function to initiate the decryption of the winning ticket
     function decryptWinningTicket() public onlyAfterEnd {
         uint256[] memory cts = new uint256[](1);
         cts[0] = Gateway.toUint256(winningTicket);
         Gateway.requestDecryption(cts, this.setDecryptedWinningTicket.selector, 0, block.timestamp + 100, false);
     }
 
+    // Callback function to set the decrypted winning ticket
     function setDecryptedWinningTicket(uint256, uint64 resultDecryption) public onlyGateway {
         decryptedWinningTicket = resultDecryption;
     }
@@ -186,11 +196,13 @@ contract BlindAuction is Ownable2Step, GatewayCaller {
         TFHE.allow(newBid, msg.sender);
     }
 
+    // Modifier to ensure function is called before auction ends
     modifier onlyBeforeEnd() {
         if (block.timestamp >= endTime || manuallyStopped == true) revert TooLate(endTime);
         _;
     }
 
+    // Modifier to ensure function is called after auction ends
     modifier onlyAfterEnd() {
         if (block.timestamp < endTime && manuallyStopped == false) revert TooEarly(endTime);
         _;

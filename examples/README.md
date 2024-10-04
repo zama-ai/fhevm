@@ -85,15 +85,14 @@ graph TD
 
 
 
-```
 
 
-# Counter.sol
-The `Counter` smart contract is a simple contract implemented in Solidity, designed to demonstrate basic state manipulation. Its main purpose is to maintain a counter (value) and provide functions to increment and view the current counter value.
+ 3. `Counter.sol`:
+    The `Counter` smart contract is a simple contract implemented in Solidity, designed to demonstrate basic state manipulation. Its main purpose is to maintain a counter (value) and provide functions to increment and view the current counter value.
 
-## EncryptedERC20.sol
-This contract implements an encrypted ERC20-like token with confidential balances using Zama's FHE (Fully Homomorphic Encryption) library.
-It supports typical ERC20 functionality such as transferring tokens, minting, and setting allowances, but uses encrypted data types.
+ 1. `EncryptedERC20.sol`:
+   This contract implements an encrypted ERC20-like token with confidential balances using Zama's FHE (Fully Homomorphic Encryption) library.
+   It supports typical ERC20 functionality such as transferring tokens, minting, and setting allowances, but uses encrypted data types.
 
 ### Approval and Transfer Operations
 
@@ -115,4 +114,41 @@ graph TD
     Y1 --> Y2
     Y1 --> Y3
 ```
+
+1. `TestAsyncDecrypt.sol`:
+   A contract for testing asynchronous decryption using the Gateway. It handles various encrypted data types and demonstrates different decryption scenarios, including trustless decryption.
+
+2. `FHEPaymentUpgradedExample.sol`:
+   An upgraded version of the FHEPayment contract, adding version information.
+
+4. `BlindAuction.sol`:
+   Implements a blind auction using encrypted bids. It manages bidding, claiming, and withdrawing processes using homomorphic encryption.
+
+5. `ACLUpgradedExample.sol`:
+   An upgraded version of the ACL (Access Control List) contract, adding version information.
+
+6. `KMSVerifierUpgradedExample.sol`:
+   An upgraded version of the KMSVerifier contract, adding version information.
+
+7. `ACLUpgradedExample2.sol`:
+   Another upgraded version of the ACL contract, with a different version number.
+
+8. `TFHEExecutorUpgradedExample.sol`:
+   An upgraded version of the TFHEExecutor contract, adding version information.
+
+9. `GatewayContractUpgradedExample.sol`:
+   An upgraded version of the GatewayContract, adding version information.
+
+
+2. `PaymentLimit.sol`:
+   A contract designed to test FHE gas limits. It includes functions that perform different numbers of FHE operations to test various scenarios: well under the block FHE gas limit, close to the limit, and exceeding the limit.
+
+3. `KMSVerifierUpgradedExample.sol`:
+   An upgraded version of the KMSVerifier contract, adding version information. This contract is likely part of a key management system for the FHE operations.
+
+4. `TracingSubCalls.sol`:
+   A set of contracts designed to test various subcall scenarios in a blockchain environment. It includes:
+   - A main contract that initiates different types of subcalls
+   - Contracts that test creation with encrypted inputs
+   - A contract with various functions to test success, failure, out-of-gas, and self-destruct scenarios
 
