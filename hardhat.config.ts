@@ -16,7 +16,6 @@ import './tasks/getEthereumAddress';
 import './tasks/mint';
 import './tasks/taskDeploy';
 import './tasks/taskGatewayRelayer';
-import './tasks/taskIdentity';
 import './tasks/taskTFHE';
 
 extendProvider(async (provider, config, network) => {
@@ -87,13 +86,14 @@ task('test', async (taskArgs, hre, runSuper) => {
   // Run modified test task
   if (hre.network.name === 'hardhat') {
     // in fhevm mode all this block is done when launching the node via `pnmp fhevm:start`
-    const privKeyDeployer = process.env.PRIVATE_KEY_GATEWAY_DEPLOYER;
-    await hre.run('task:computePredeployAddress', { privateKey: privKeyDeployer });
-    await hre.run('task:computeACLAddress');
-    await hre.run('task:computeTFHEExecutorAddress');
-    await hre.run('task:computeKMSVerifierAddress');
-    await hre.run('task:computeInputVerifierAddress');
-    await hre.run('task:computeFHEPaymentAddress');
+    const privKeyGatewayDeployer = process.env.PRIVATE_KEY_GATEWAY_DEPLOYER;
+    const privKeyFhevmDeployer = process.env.PRIVATE_KEY_FHEVM_DEPLOYER;
+    await hre.run('task:computeGatewayAddress', { privateKey: privKeyGatewayDeployer });
+    await hre.run('task:computeACLAddress', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:computeTFHEExecutorAddress', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:computeKMSVerifierAddress', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:computeInputVerifierAddress', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:computeFHEPaymentAddress', { privateKey: privKeyFhevmDeployer });
     if (process.env.IS_COPROCESSOR === 'true') {
       await fs.copyFile('lib/InputVerifier.sol.coprocessor', 'lib/InputVerifier.sol');
     } else {
@@ -102,12 +102,17 @@ task('test', async (taskArgs, hre, runSuper) => {
     await hre.run('compile:specific', { contract: 'lib' });
     await hre.run('compile:specific', { contract: 'gateway' });
     await hre.run('compile:specific', { contract: 'payment' });
-    await hre.run('task:deployACL');
-    await hre.run('task:deployTFHEExecutor');
-    await hre.run('task:deployKMSVerifier');
-    await hre.run('task:deployInputVerifier');
-    await hre.run('task:deployFHEPayment');
-    await hre.run('task:addSigners', { numSigners: +process.env.NUM_KMS_SIGNERS! });
+    await hre.run('task:faucetToPrivate', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:deployACL', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:deployTFHEExecutor', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:deployKMSVerifier', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:deployInputVerifier', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:deployFHEPayment', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:addSigners', {
+      numSigners: +process.env.NUM_KMS_SIGNERS!,
+      privateKey: privKeyFhevmDeployer,
+      useAddress: false,
+    });
     await hre.run('task:launchFhevm', { skipGetCoin: false });
   }
   await hre.run('compile:specific', { contract: 'examples' });
