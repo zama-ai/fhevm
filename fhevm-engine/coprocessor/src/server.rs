@@ -289,8 +289,6 @@ impl CoprocessorService {
         request: tonic::Request<InputUploadBatch>,
         tracer: &GrpcTracer,
     ) -> std::result::Result<tonic::Response<InputUploadResponse>, tonic::Status> {
-        UPLOAD_INPUTS_COUNTER.inc();
-
         let tenant_id = check_if_api_key_is_valid(&request, &self.pool, &tracer).await?;
 
         let req = request.get_ref();
