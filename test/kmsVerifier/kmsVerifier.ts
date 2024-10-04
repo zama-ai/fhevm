@@ -22,7 +22,7 @@ describe('KMSVerifier', function () {
       // to avoid messing up other tests if used on the real node, in parallel testing
 
       const origKMSAdd = dotenv.parse(fs.readFileSync('lib/.env.kmsverifier')).KMS_VERIFIER_CONTRACT_ADDRESS;
-      const deployer = (await ethers.getSigners())[9];
+      const deployer = new ethers.Wallet(process.env.PRIVATE_KEY_FHEVM_DEPLOYER!).connect(ethers.provider);
       const kmsVerifier = await this.kmsFactory.attach(origKMSAdd);
       expect(await kmsVerifier.getVersion()).to.equal('KMSVerifier v0.1.0');
 

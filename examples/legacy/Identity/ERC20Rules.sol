@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.24;
 
-import "../../lib/TFHE.sol";
+import "../../../lib/TFHE.sol";
 import "./IdentityRegistry.sol";
 
 interface ICompliantERC20 {
