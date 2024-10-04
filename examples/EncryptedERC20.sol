@@ -5,24 +5,29 @@ pragma solidity ^0.8.24;
 import "../lib/TFHE.sol";
 import "@openzeppelin/contracts/access/Ownable2Step.sol";
 
+// This contract implements an encrypted ERC20-like token with confidential balances using Zama's FHE (Fully Homomorphic Encryption) library.
+// It supports typical ERC20 functionality such as transferring tokens, minting, and setting allowances, but uses encrypted data types.
 contract EncryptedERC20 is Ownable2Step {
-    event Transfer(address indexed from, address indexed to);
-    event Approval(address indexed owner, address indexed spender);
-    event Mint(address indexed to, uint64 amount);
+    // Events to log important actions in the contract
+    event Transfer(address indexed from, address indexed to); // Emitted when tokens are transferred
+    event Approval(address indexed owner, address indexed spender); // Emitted when a spender is approved to spend tokens on behalf of an owner
+    event Mint(address indexed to, uint64 amount); // Emitted when new tokens are minted
+    
+    // Private state variables for basic token information and supply
+    uint64 private _totalSupply; // Stores the total supply of the token
+    string private _name;        // Name of the token (e.g., "Confidential Token")
+    string private _symbol;      // Symbol of the token (e.g., "CTK")
+    uint8 public constant decimals = 6; // Number of decimal places for the token
 
-    uint64 private _totalSupply;
-    string private _name;
-    string private _symbol;
-    uint8 public constant decimals = 6;
-
-    // A mapping from address to an encrypted balance.
+    // A mapping from address to an encrypted balance - tracks encrypted balances of each address
     mapping(address => euint64) internal balances;
 
-    // A mapping of the form mapping(owner => mapping(spender => allowance)).
+    // Mapping to manage encrypted allowance - of the form mapping(owner => mapping(spender => allowance)).
     mapping(address => mapping(address => euint64)) internal allowances;
 
+    // Constructor to initialize the token's name and symbol, and set up the owner
     constructor(string memory name_, string memory symbol_) Ownable(msg.sender) {
-        TFHE.setFHEVM(FHEVMConfig.defaultConfig());
+        TFHE.setFHEVM(FHEVMConfig.defaultConfig()); // Set up the FHEVM configuration for this contract
         _name = name_;
         _symbol = symbol_;
     }
@@ -42,7 +47,8 @@ contract EncryptedERC20 is Ownable2Step {
         return _totalSupply;
     }
 
-    // Sets the balance of the owner to the given encrypted balance.
+    // Mints new tokens and assigns them to the owner, increasing the total supply.
+    // Only the contract owner can call this function.
     function mint(uint64 mintedAmount) public virtual onlyOwner {
         balances[owner()] = TFHE.add(balances[owner()], mintedAmount); // overflow impossible because of next line
         TFHE.allowThis(balances[owner()]);
@@ -57,7 +63,7 @@ contract EncryptedERC20 is Ownable2Step {
         return true;
     }
 
-    // Transfers an amount from the message sender address to the `to` address.
+    // Transfers an encrypted amount from the message sender address to the `to` address.
     function transfer(address to, euint64 amount) public virtual returns (bool) {
         require(TFHE.isSenderAllowed(amount));
         // makes sure the owner has enough tokens
@@ -66,18 +72,18 @@ contract EncryptedERC20 is Ownable2Step {
         return true;
     }
 
-    // Returns the balance handle of the caller.
+    // Returns the balance handle (encrypted) of a specific address.
     function balanceOf(address wallet) public view virtual returns (euint64) {
         return balances[wallet];
     }
 
-    // Sets the `encryptedAmount` as the allowance of `spender` over the caller's tokens.
+    // Sets the allowance of `spender` to use a specific encrypted amount of the caller's tokens.
     function approve(address spender, einput encryptedAmount, bytes calldata inputProof) public virtual returns (bool) {
         approve(spender, TFHE.asEuint64(encryptedAmount, inputProof));
         return true;
     }
 
-    // Sets the `amount` as the allowance of `spender` over the caller's tokens.
+    // Sets the allowance of `spender` to use a specific amount of the caller's tokens.
     function approve(address spender, euint64 amount) public virtual returns (bool) {
         require(TFHE.isSenderAllowed(amount));
         address owner = msg.sender;
@@ -112,6 +118,7 @@ contract EncryptedERC20 is Ownable2Step {
         return true;
     }
 
+    // Internal function to approve a spender to use a specific amount.
     function _approve(address owner, address spender, euint64 amount) internal virtual {
         allowances[owner][spender] = amount;
         TFHE.allowThis(amount);
@@ -119,10 +126,12 @@ contract EncryptedERC20 is Ownable2Step {
         TFHE.allow(amount, spender);
     }
 
+    // Returns the internal allowance of a spender for a specific owner.
     function _allowance(address owner, address spender) internal view virtual returns (euint64) {
         return allowances[owner][spender];
     }
 
+    // Updates the allowance after a transfer and returns whether it is valid.
     function _updateAllowance(address owner, address spender, euint64 amount) internal virtual returns (ebool) {
         euint64 currentAllowance = _allowance(owner, spender);
         // makes sure the allowance suffices
@@ -134,7 +143,7 @@ contract EncryptedERC20 is Ownable2Step {
         return isTransferable;
     }
 
-    // Transfers an encrypted amount.
+    // Internal function to handle the transfer of tokens between addresses.
     function _transfer(address from, address to, euint64 amount, ebool isTransferable) internal virtual {
         // Add to the balance of `to` and subract from the balance of `from`.
         euint64 transferValue = TFHE.select(isTransferable, amount, TFHE.asEuint64(0));
