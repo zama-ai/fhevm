@@ -1,9 +1,7 @@
 module.exports = {
     extends: ['@commitlint/config-conventional'],
     rules: {
-      'header-max-length': [2, 'always', 100], // Enforce max length of commit message header
-      'type-empty': [2, 'never'],              // Type must not be empty
-      'subject-empty': [2, 'never'],           // Subject must not be empty
+      'type-enum': [2, 'always', ['ci', 'chore', 'docs', 'ticket', 'feat', 'fix', 'perf', 'refactor', 'revert', 'style']],
     },
   };
   
