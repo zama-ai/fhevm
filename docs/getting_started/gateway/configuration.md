@@ -41,7 +41,7 @@ services:
 ```
 
 **Zama Gateway** requires several specific configurations as shown in the provided `docker-compose-gateway.yml` file.
-
+<!-- markdown-link-check-disable -->
 | Variable | Description | Default Value |
 | --- | --- | --- |
 | GATEWAY__ETHEREUM__CHAIN_ID | Chain ID for fhEVM | 9000 |
@@ -54,7 +54,8 @@ services:
 | GATEWAY__STORAGE__URL | URL for storage gateway | http://localhost:8088 |
 | ASC_CONN__BLOCKCHAIN__ADDRESSES | Blockchain addresses for ASC connection. Same as `GATEWAY__KMS__ADDRESS` | http://localhost:9090 |
 | GATEWAY__ETHEREUM__RELAYER_KEY | Private key of the relayer | 7ec931411ad75a7c201469a385d6f18a325d4923f9f213bd882bbea87e160b67 |
-
+<!-- markdown-link-check-enable-->
+  
 ## Steps for Running
 
 1. Run the **Zama Gateway** Docker Compose:
