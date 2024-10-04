@@ -232,12 +232,11 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
         uint256 uniqueValidCount;
         for (uint256 i = 0; i < numSignatures; i++) {
             address signerRecovered = recoverSigner(digest, signatures[i]);
-            if (isSigner(signerRecovered)) {
-                if (!tload(signerRecovered)) {
-                    recoveredSigners[uniqueValidCount] = signerRecovered;
-                    uniqueValidCount++;
-                    tstore(signerRecovered, 1);
-                }
+            require(isSigner(signerRecovered), "KmsVerifier: Invalid KMS signer");
+            if (!tload(signerRecovered)) {
+                recoveredSigners[uniqueValidCount] = signerRecovered;
+                uniqueValidCount++;
+                tstore(signerRecovered, 1);
             }
             if (uniqueValidCount >= threshold) {
                 cleanTransientStorage(recoveredSigners, uniqueValidCount);
