@@ -156,9 +156,7 @@ _More examples are available [here](https://github.com/zama-ai/fhevm/tree/main/e
 
 #### Others
 
-- [Governor DAO](https://github.com/zama-ai/fhevm/tree/main/examples/Governor): A DAO smart contract that facilitates governance decisions through encrypted voting.
 - [Blind auction](https://github.com/zama-ai/fhevm/blob/main/examples/BlindAuction.sol): A smart contract for conducting blind auctions where bids are encrypted and the winning bid remains private.
-- [Decentralized ID](https://github.com/zama-ai/fhevm/tree/main/examples/Identity): A blockchain-based identity management system using smart contracts to store and manage encrypted personal data.
 
 _If you have built awesome projects using fhEVM, please let us know and we will be happy to showcase them here!_
 <br></br>
