@@ -2,7 +2,7 @@
 This document guides you to start with fhEVM by using our [Hardhat template](https://github.com/zama-ai/fhevm-hardhat-template).
 
 ## Using Hardhat with fhEVM
-To start writing smart contracts with fhEVM, we recommend use our [Hardhat template](https://github.com/zama-ai/fhevm-hardhat-template). This template allows you to launch an fhEVM Docker image and run your smart contract on it. For more information, refer to the [README](https://github.com/zama-ai/fhevm-hardhat-template/blob/main/README.md).
+To start writing smart contracts with fhEVM, we recommend using our [Hardhat template](https://github.com/zama-ai/fhevm-hardhat-template). This template allows you to launch an fhEVM Docker image and run your smart contract on it. For more information, refer to the [README](https://github.com/zama-ai/fhevm-hardhat-template/blob/main/README.md).
 
 When developing confidential contracts, we recommend using the mocked version of fhEVM first for faster testing. You can achieve this by running `pnpm test:mock` for tests and `pnpm coverage:mock` for coverage computation. This approach provides a better developer experience. However, keep in mind that the mocked fhEVM has limitations and discrepancies compared to the real fhEVM node, as detailed in the [limitations](#limitations) section below.
 
@@ -10,7 +10,7 @@ It's essential to test the final contract version with the real fhEVM before dep
 
 ## Mocked mode
 
-For faster testing iterations, you can use the mocked version of the fhEVM instead of launching all tests on a local fhEVM node with `pnpm test` or `npx hardhat test`, which can take several minutes. 
+For faster iteration testing, you can use the mocked version of the fhEVM instead of launching all tests on a local fhEVM node with `pnpm test` or `npx hardhat test`, which can take several minutes. 
 
 The same tests should generally pass without modification—no changes to the JavaScript or Solidity files are required when switching between the mocked and real versions.
 
