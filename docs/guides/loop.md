@@ -1,5 +1,9 @@
 # How can I break a loop ?
 
+This document explains how to handle loops when working with Fully Homomorphic Encryption (FHE), specifically when a loop break is based on an encrypted condition.
+
+## Breaking a loop
+
 ❌ In FHE, it is not possible to break a loop based on an encrypted condition. For example, this would not work:
 
 ```solidity
@@ -12,6 +16,8 @@ while(TFHE.lt(x, maxValue)){
 ```
 
 If your code logic requires looping on an encrypted boolean condition, we highly suggest to try to replace it by a finite loop with an appropriate constant maximum number of steps and use `TFHE.select` inside the loop.
+
+## Suggested approach
 
 ✅ For example, the previous code could maybe be replaced by the following snippet:
 
