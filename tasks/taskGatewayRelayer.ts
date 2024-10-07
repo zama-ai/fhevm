@@ -89,37 +89,37 @@ task('task:removeRelayer')
 
 task('task:launchFhevm')
   .addOptionalParam('skipGetCoin', 'Skip calling getCoin()', false, types.boolean)
+  .addOptionalParam('useAddress', 'Use address instead of privte key for the Gateway Relayer', false, types.boolean)
   .setAction(async function (taskArgs, hre) {
     const privKeyDeployer = process.env.PRIVATE_KEY_GATEWAY_DEPLOYER;
-    const privKeyOwner = process.env.PRIVATE_KEY_GATEWAY_OWNER;
-    const privKeyRelayer = process.env.PRIVATE_KEY_GATEWAY_RELAYER;
     const deployerAddress = new hre.ethers.Wallet(privKeyDeployer!).address;
-    const ownerAddress = new hre.ethers.Wallet(privKeyOwner!).address;
-    const relayerAddress = new hre.ethers.Wallet(privKeyRelayer!).address;
+    let relayerAddress;
+    if (!taskArgs.useAddress) {
+      const privKeyRelayer = process.env.PRIVATE_KEY_GATEWAY_RELAYER;
+      relayerAddress = new hre.ethers.Wallet(privKeyRelayer!).address;
+    } else {
+      relayerAddress = process.env.ADDRESS_GATEWAY_RELAYER;
+    }
     if (!taskArgs.skipGetCoin) {
       if (hre.network.name === 'hardhat') {
         const bal = '0x1000000000000000000000000000000000000000';
         const p1 = hre.network.provider.send('hardhat_setBalance', [deployerAddress, bal]);
-        const p2 = hre.network.provider.send('hardhat_setBalance', [ownerAddress, bal]);
-        const p3 = hre.network.provider.send('hardhat_setBalance', [relayerAddress, bal]);
-        await Promise.all([p1, p2, p3]);
+        const p2 = hre.network.provider.send('hardhat_setBalance', [relayerAddress, bal]);
+        await Promise.all([p1, p2]);
       } else {
         const p1 = getCoin(deployerAddress);
-        const p2 = getCoin(ownerAddress);
-        const p3 = getCoin(relayerAddress);
-        await Promise.all([p1, p2, p3]);
+        const p2 = getCoin(relayerAddress);
+        await Promise.all([p1, p2]);
         await new Promise((res) => setTimeout(res, 5000)); // wait 5 seconds
       }
     }
-    console.log(`privateKey ${privKeyDeployer}`);
-    console.log(`ownerAddress ${ownerAddress}`);
-    await hre.run('task:deployGateway', { privateKey: privKeyDeployer, ownerAddress: ownerAddress });
+    await hre.run('task:deployGateway', { privateKey: privKeyDeployer, ownerAddress: deployerAddress });
 
     const parsedEnv = dotenv.parse(fs.readFileSync('gateway/.env.gateway'));
     const gatewayContractAddress = parsedEnv.GATEWAY_CONTRACT_PREDEPLOY_ADDRESS;
 
     await hre.run('task:addRelayer', {
-      privateKey: privKeyOwner,
+      privateKey: privKeyDeployer,
       gatewayAddress: gatewayContractAddress,
       relayerAddress: relayerAddress,
     });
@@ -127,13 +127,10 @@ task('task:launchFhevm')
 
 task('task:getBalances').setAction(async function (taskArgs, hre) {
   const privKeyDeployer = process.env.PRIVATE_KEY_GATEWAY_DEPLOYER;
-  const privKeyOwner = process.env.PRIVATE_KEY_GATEWAY_OWNER;
   const privKeyRelayer = process.env.PRIVATE_KEY_GATEWAY_RELAYER;
   const deployerAddress = new hre.ethers.Wallet(privKeyDeployer!).address;
-  const ownerAddress = new hre.ethers.Wallet(privKeyOwner!).address;
   const relayerAddress = new hre.ethers.Wallet(privKeyRelayer!).address;
   console.log(await hre.ethers.provider.getBalance(deployerAddress));
-  console.log(await hre.ethers.provider.getBalance(ownerAddress));
   console.log(await hre.ethers.provider.getBalance(relayerAddress));
 });
 

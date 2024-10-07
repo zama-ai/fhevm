@@ -1,6 +1,6 @@
 import dotenv from 'dotenv';
 import fs from 'fs';
-import { task } from 'hardhat/config';
+import { task, types } from 'hardhat/config';
 import type { TaskArguments } from 'hardhat/types';
 
 task('task:deployGateway')
@@ -119,6 +119,7 @@ task('task:deployFHEPayment')
 
 task('task:addSigners')
   .addParam('privateKey', 'The deployer private key')
+  .addParam('numSigners', 'Number of KMS signers to add')
   .addOptionalParam(
     'useAddress',
     'Use addresses instead of private keys env variables for kms signers',
@@ -130,7 +131,6 @@ task('task:addSigners')
     const factory = await ethers.getContractFactory('KMSVerifier', deployer);
     const kmsAdd = dotenv.parse(fs.readFileSync('lib/.env.kmsverifier')).KMS_VERIFIER_CONTRACT_ADDRESS;
     const kmsVerifier = await factory.attach(kmsAdd);
-
     for (let idx = 0; idx < taskArguments.numSigners; idx++) {
       if (!taskArguments.useAddress) {
         const privKeySigner = process.env[`PRIVATE_KEY_KMS_SIGNER_${idx}`];

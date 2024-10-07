@@ -35,9 +35,9 @@ const dotenvConfigPath: string = process.env.DOTENV_CONFIG_PATH || './.env';
 dotenv.config({ path: resolve(__dirname, dotenvConfigPath) });
 
 // Ensure that we have all the environment variables we need.
-const mnemonic: string | undefined = process.env.MNEMONIC;
+let mnemonic: string | undefined = process.env.MNEMONIC;
 if (!mnemonic) {
-  throw new Error('Please set your MNEMONIC in a .env file');
+  mnemonic = 'adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer'; // default mnemonic in case it is undefined (needed to avoid panicking when deploying on real network)
 }
 
 const chainIds = {
@@ -91,7 +91,7 @@ task('test', async (taskArgs, hre, runSuper) => {
     await hre.run('task:computeACLAddress', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:computeTFHEExecutorAddress', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:computeKMSVerifierAddress', { privateKey: privKeyFhevmDeployer });
-    await hre.run('task:computeInputVerifierAddress', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:computeInputVerifierAddress', { privateKey: privKeyFhevmDeployer, useAddress: false });
     await hre.run('task:computeFHEPaymentAddress', { privateKey: privKeyFhevmDeployer });
     await hre.run('compile:specific', { contract: 'lib' });
     await hre.run('compile:specific', { contract: 'gateway' });
@@ -103,11 +103,11 @@ task('test', async (taskArgs, hre, runSuper) => {
     await hre.run('task:deployInputVerifier', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:deployFHEPayment', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:addSigners', {
-      numSigners: +process.env.NUM_KMS_SIGNERS!,
+      numSigners: process.env.NUM_KMS_SIGNERS!,
       privateKey: privKeyFhevmDeployer,
       useAddress: false,
     });
-    await hre.run('task:launchFhevm', { skipGetCoin: false });
+    await hre.run('task:launchFhevm', { skipGetCoin: false, useAddress: false });
   }
   await hre.run('compile:specific', { contract: 'examples' });
   await runSuper();
