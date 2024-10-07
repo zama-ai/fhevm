@@ -1,5 +1,6 @@
 # Access Control List
-This document explains the Access Control List (ACL) system in fhEVM, which defines which addresses have the right to manipulate a ciphertext. By using ACLs, you can prevent unauthorized addresses from accessing ciphertext contents. 
+This document explains how to prevent unauthorized addresses from accessing the contents of unauthorized ciphertexts.
+This is enabled by the Access Control List (ACL) system in fhEVM, which defines which addresses have the right to manipulate the ciphertext.
 
 ## How it works?
 
