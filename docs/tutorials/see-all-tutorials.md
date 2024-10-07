@@ -11,6 +11,11 @@
 - [ERC-20](https://github.com/zama-ai/fhevm/blob/main/examples/EncryptedERC20.sol): A variation of the standard ERC20 smart contract that incorporates encrypted balances, providing additional privacy for token holders. -
 - [Blind Auction](https://github.com/zama-ai/fhevm/blob/main/examples/BlindAuction.sol): A smart contract for conducting blind auctions where bids are encrypted and the winning bid remains private.
 
+#### Legacy
+
+- [Governor DAO](https://github.com/zama-ai/fhevm/tree/main/examples/legacy/Governor): A DAO smart contract that facilitates governance decisions through encrypted voting
+- [Decentralized ID](https://github.com/zama-ai/fhevm/tree/main/examples/legacy/Identity): A blockchain-based identity management system using smart contracts to store and manage encrypted personal data.
+
 ### Blog tutorials:
 
 - [Build an Encrypted Wordle Game Onchain using FHE and Zama's fhEVM](https://www.zama.ai/post/build-an-encrypted-wordle-game-onchain-using-fhe-and-zama-fhevm) - February 2024
