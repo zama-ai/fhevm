@@ -1,7 +1,6 @@
 import '@nomicfoundation/hardhat-toolbox';
 import '@openzeppelin/hardhat-upgrades';
 import dotenv from 'dotenv';
-import { promises as fs } from 'fs';
 import 'hardhat-deploy';
 import 'hardhat-ignore-warnings';
 import type { HardhatUserConfig, extendProvider } from 'hardhat/config';
@@ -94,11 +93,6 @@ task('test', async (taskArgs, hre, runSuper) => {
     await hre.run('task:computeKMSVerifierAddress', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:computeInputVerifierAddress', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:computeFHEPaymentAddress', { privateKey: privKeyFhevmDeployer });
-    if (process.env.IS_COPROCESSOR === 'true') {
-      await fs.copyFile('lib/InputVerifier.sol.coprocessor', 'lib/InputVerifier.sol');
-    } else {
-      await fs.copyFile('lib/InputVerifier.sol.native', 'lib/InputVerifier.sol');
-    }
     await hre.run('compile:specific', { contract: 'lib' });
     await hre.run('compile:specific', { contract: 'gateway' });
     await hre.run('compile:specific', { contract: 'payment' });

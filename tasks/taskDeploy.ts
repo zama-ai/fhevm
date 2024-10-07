@@ -79,7 +79,12 @@ task('task:deployInputVerifier')
   .addParam('privateKey', 'The deployer private key')
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
     const deployer = new ethers.Wallet(taskArguments.privateKey).connect(ethers.provider);
-    const factory = await ethers.getContractFactory('InputVerifier', deployer);
+    let factory;
+    if (process.env.IS_COPROCESSOR === 'true') {
+      factory = await ethers.getContractFactory('lib/InputVerifier.coprocessor.sol:InputVerifier', deployer);
+    } else {
+      factory = await ethers.getContractFactory('lib/InputVerifier.native.sol:InputVerifier', deployer);
+    }
     const kms = await upgrades.deployProxy(factory, [deployer.address], { initializer: 'initialize', kind: 'uups' });
     await kms.waitForDeployment();
     const address = await kms.getAddress();

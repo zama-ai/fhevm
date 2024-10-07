@@ -15,11 +15,6 @@ npx hardhat task:computeFHEPaymentAddress --private-key "$PRIVATE_KEY_FHEVM_DEPL
 
 # [ADD DOCKER-COMPOSE COMMAND HERE] // Geth node, Gateway service, KMS service etc should be launched here, using previously precomputed addresses
 
-if [ "$IS_COPROCESSOR" = "true" ]; then
-    cp lib/InputVerifier.sol.coprocessor lib/InputVerifier.sol
-else
-    cp lib/InputVerifier.sol.native lib/InputVerifier.sol
-fi
 npx hardhat compile:specific --contract lib
 npx hardhat compile:specific --contract gateway
 
