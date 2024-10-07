@@ -18,12 +18,16 @@ npx hardhat task:computeFHEPaymentAddress --private-key "$PRIVATE_KEY_FHEVM_DEPL
 npx hardhat compile:specific --contract lib
 npx hardhat compile:specific --contract gateway
 
-npx hardhat task:deployACL --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
-npx hardhat task:deployTFHEExecutor --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
-npx hardhat task:deployKMSVerifier --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
-npx hardhat task:deployInputVerifier --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
-npx hardhat task:deployFHEPayment --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
+npx hardhat task:deployACL --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --network sepolia
+npx hardhat task:deployTFHEExecutor --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --network sepolia
+npx hardhat task:deployKMSVerifier --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --network sepolia
+npx hardhat task:deployInputVerifier --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --network sepolia
+npx hardhat task:deployFHEPayment --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --network sepolia
 
 npx hardhat task:addSigners --num-signers $NUM_KMS_SIGNERS --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --use-address true
 
-npx hardhat task:launchFhevm --skip-get-coin true --use-address true
+npx hardhat task:launchFhevm --skip-get-coin true --use-address true --network sepolia
+
+echo "Waiting 2 minutes before contract verification... Please wait..."
+sleep 120 # makes sure that contracts bytescode propagates on Etherscan, otherwise contracts verification might fail in next step
+npx hardhat task:verifyContracts --network sepolia
