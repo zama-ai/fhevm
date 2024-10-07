@@ -253,23 +253,6 @@ npm run fhevm:start
 npm run fhevm:stop
 ```
 
-##### Faucet
-
-For development purposes, we provide a ready to use wallet. In order to use
-it, prepare the .env file that contains the mnemonic.
-
-```bash
-cp .env.example .env
-```
-
-This allows the developer to use a few accounts, each account can get coins:
-
-```bash
-npm run fhevm:faucet:alice
-npm run fhevm:faucet:bob
-npm run fhevm:faucet:carol
-```
-
 ##### Run test
 
 ```bash

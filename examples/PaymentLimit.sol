@@ -8,6 +8,7 @@ import "../payment/Payment.sol";
 
 contract PaymentLimit {
     constructor() payable {
+        TFHE.setFHEVM(FHEVMConfig.defaultConfig());
         Payment.depositForThis(msg.value);
     }
 

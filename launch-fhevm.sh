@@ -1,33 +1,34 @@
 #!/bin/bash
+npx hardhat clean
 
 PRIVATE_KEY_GATEWAY_DEPLOYER=$(grep PRIVATE_KEY_GATEWAY_DEPLOYER .env | cut -d '"' -f 2)
+PRIVATE_KEY_FHEVM_DEPLOYER=$(grep PRIVATE_KEY_FHEVM_DEPLOYER .env | cut -d '"' -f 2)
+NUM_KMS_SIGNERS=$(grep NUM_KMS_SIGNERS .env | cut -d '"' -f 2)
+IS_COPROCESSOR=$(grep IS_COPROCESSOR .env | cut -d '"' -f 2)
 
-npx hardhat task:computePredeployAddress --private-key "$PRIVATE_KEY_GATEWAY_DEPLOYER"
+npx hardhat task:computeGatewayAddress --private-key "$PRIVATE_KEY_GATEWAY_DEPLOYER"
+npx hardhat task:computeACLAddress --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
+npx hardhat task:computeTFHEExecutorAddress --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
+npx hardhat task:computeKMSVerifierAddress --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
+npx hardhat task:computeInputVerifierAddress --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
+npx hardhat task:computeFHEPaymentAddress --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
 
-PRIVATE_KEY_GATEWAY_RELAYER=$(grep PRIVATE_KEY_GATEWAY_RELAYER .env | cut -d '"' -f 2)
+# [ADD DOCKER-COMPOSE COMMAND HERE] // Geth node, Gateway service, KMS service etc should be launched here, using previously precomputed addresses
 
-GATEWAY_CONTRACT_PREDEPLOY_ADDRESS=$(grep GATEWAY_CONTRACT_PREDEPLOY_ADDRESS gateway/.env.gateway | cut -d '=' -f2)
-
-TFHE_EXECUTOR_CONTRACT_ADDRESS=$(grep TFHE_EXECUTOR_CONTRACT_ADDRESS lib/.env.exec | cut -d '=' -f2)
-
-docker run -d -i -p 8545:8545 --rm --name fhevm \
-  -e PRIVATE_KEY_ORACLE_RELAYER="$PRIVATE_KEY_ORACLE_RELAYER" \
-  -e ORACLE_CONTRACT_PREDEPLOY_ADDRESS="$ORACLE_CONTRACT_PREDEPLOY_ADDRESS" \
-  -e TFHE_EXECUTOR_CONTRACT_ADDRESS="$TFHE_EXECUTOR_CONTRACT_ADDRESS" \
-  ghcr.io/zama-ai/ethermint-dev-node:v0.5.0-1
-  
-sleep 10
-
-npx hardhat task:computeACLAddress
-npx hardhat task:computeTFHEExecutorAddress
-npx hardhat task:computeKMSVerifierAddress
-npx hardhat task:deployACL
-npx hardhat task:deployTFHEExecutor
-npx hardhat task:deployKMSVerifier
-
+if [ "$IS_COPROCESSOR" = "true" ]; then
+    cp lib/InputVerifier.sol.coprocessor lib/InputVerifier.sol
+else
+    cp lib/InputVerifier.sol.native lib/InputVerifier.sol
+fi
 npx hardhat compile:specific --contract lib
 npx hardhat compile:specific --contract gateway
 
-npx hardhat task:launchFhevm
+npx hardhat task:deployACL --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
+npx hardhat task:deployTFHEExecutor --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
+npx hardhat task:deployKMSVerifier --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
+npx hardhat task:deployInputVerifier --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
+npx hardhat task:deployFHEPayment --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
 
-docker attach fhevm
+npx hardhat task:addSigners --num-signers $NUM_KMS_SIGNERS --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --useAddress true
+
+npx hardhat task:launchFhevm --skip-get-coin true

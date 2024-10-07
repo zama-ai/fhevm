@@ -3,7 +3,7 @@ import { ethers, network } from 'hardhat';
 
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
-import { bigIntToBytes } from '../utils';
+import { bigIntToBytes256 } from '../utils';
 
 describe('Reencryption', function () {
   before(async function () {
@@ -12,17 +12,15 @@ describe('Reencryption', function () {
     this.instances = await createInstances(this.signers);
     const contractFactory = await ethers.getContractFactory('Reencrypt');
 
-    this.contract = await contractFactory.connect(this.signers.alice).deploy({
-      value: ethers.parseEther('0.001'),
-    });
+    this.contract = await contractFactory.connect(this.signers.alice).deploy();
     this.contractAddress = await this.contract.getAddress();
     this.instances = await createInstances(this.signers);
 
     const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     inputAlice.addBytes256(
-      bigIntToBytes(184467440737095500228978978978978970980978908978978907890778907089780970897890n),
+      bigIntToBytes256(184467440737095500228978978978978970980978908978978907890778907089780970897890n),
     );
-    const encryptedAmount = inputAlice.encrypt();
+    const encryptedAmount = await inputAlice.encrypt();
     const tx = await this.contract.setEBytes256(encryptedAmount.handles[0], encryptedAmount.inputProof, {
       gasLimit: 5_000_000,
     });

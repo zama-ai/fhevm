@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 pragma solidity ^0.8.24;
 
-import "../../lib/TFHE.sol";
+import "../../../lib/TFHE.sol";
 
 contract Comp {
     /// @notice EIP-20 token name for this token

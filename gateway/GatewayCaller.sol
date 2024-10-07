@@ -7,7 +7,7 @@ import "./lib/Gateway.sol";
 
 abstract contract GatewayCaller {
     modifier onlyGateway() {
-        require(msg.sender == Gateway.GatewayContractAddress());
+        require(msg.sender == Gateway.gatewayContractAddress());
         _;
     }
     mapping(uint256 => ebool[]) private paramsEBool;

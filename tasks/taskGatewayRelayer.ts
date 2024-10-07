@@ -15,16 +15,16 @@ const getCoin = async (address: string) => {
   if (res.raw_log.match('account sequence mismatch')) await getCoin(address);
 };
 
-task('task:computePredeployAddress')
+task('task:computeGatewayAddress')
   .addParam('privateKey', 'The deployer private key')
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
     const deployerAddress = new ethers.Wallet(taskArguments.privateKey).address;
     const gatewayContractAddressPrecomputed = ethers.getCreateAddress({
       from: deployerAddress,
-      nonce: 0, // deployer is supposed to have nonce 0 when deploying GatewayContract
+      nonce: 1, // deployer is supposed to have nonce 0 when deploying GatewayContract (0 nonce for implementation, +1 for UUPS)
     });
     const envFilePath = path.join(__dirname, '../gateway/.env.gateway');
-    const content = `GATEWAY_CONTRACT_PREDEPLOY_ADDRESS=${gatewayContractAddressPrecomputed}\n`;
+    const content = `GATEWAY_CONTRACT_PREDEPLOY_ADDRESS=${gatewayContractAddressPrecomputed}`;
     try {
       fs.writeFileSync(envFilePath, content, { flag: 'w' });
       console.log('gatewayContractAddress written to gateway/.env.gateway successfully!');
@@ -37,13 +37,13 @@ task('task:computePredeployAddress')
 pragma solidity ^0.8.24;
 
 address constant GATEWAY_CONTRACT_PREDEPLOY_ADDRESS = ${gatewayContractAddressPrecomputed};
-        `;
+`;
 
     try {
-      fs.writeFileSync('./gateway/lib/PredeployAddress.sol', solidityTemplate, { encoding: 'utf8', flag: 'w' });
-      console.log('gateway/lib/PredeployAddress.sol file has been generated successfully.');
+      fs.writeFileSync('./gateway/lib/GatewayContractAddress.sol', solidityTemplate, { encoding: 'utf8', flag: 'w' });
+      console.log('gateway/lib/GatewayContractAddress.sol file has been generated successfully.');
     } catch (error) {
-      console.error('Failed to write gateway/lib/PredeployAddress.sol', error);
+      console.error('Failed to write gateway/lib/GatewayContractAddress.sol', error);
     }
   });
 
@@ -136,3 +136,31 @@ task('task:getBalances').setAction(async function (taskArgs, hre) {
   console.log(await hre.ethers.provider.getBalance(ownerAddress));
   console.log(await hre.ethers.provider.getBalance(relayerAddress));
 });
+
+task('task:faucetToPrivate')
+  .addParam('privateKey', 'The receiver private key')
+  .setAction(async function (taskArgs, hre) {
+    const receiverAddress = new hre.ethers.Wallet(taskArgs.privateKey).address;
+
+    if (hre.network.name === 'hardhat') {
+      const bal = '0x1000000000000000000000000000000000000000';
+      await hre.network.provider.send('hardhat_setBalance', [receiverAddress, bal]);
+    } else {
+      await getCoin(receiverAddress);
+      await new Promise((res) => setTimeout(res, 5000)); // wait 5 seconds
+    }
+  });
+
+task('task:faucetToAddress')
+  .addParam('address', 'The receiver address')
+  .setAction(async function (taskArgs, hre) {
+    const receiverAddress = taskArgs.address;
+
+    if (hre.network.name === 'hardhat') {
+      const bal = '0x1000000000000000000000000000000000000000';
+      await hre.network.provider.send('hardhat_setBalance', [receiverAddress, bal]);
+    } else {
+      await getCoin(receiverAddress);
+      await new Promise((res) => setTimeout(res, 5000)); // wait 5 seconds
+    }
+  });

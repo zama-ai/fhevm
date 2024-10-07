@@ -13,16 +13,14 @@ import {
   decryptBool,
 } from '../instance';
 import { getSigners, initSigners } from '../signers';
-import { bigIntToBytes } from '../utils';
+import { bigIntToBytes256 } from '../utils';
 
 async function deployTfheManualTestFixture(): Promise<TFHEManualTestSuite> {
   const signers = await getSigners();
   const admin = signers.alice;
 
   const contractFactory = await ethers.getContractFactory('TFHEManualTestSuite');
-  const contract = await contractFactory.connect(admin).deploy({
-    value: ethers.parseEther('0.001'),
-  });
+  const contract = await contractFactory.connect(admin).deploy();
   await contract.waitForDeployment();
 
   return contract;
@@ -408,14 +406,14 @@ describe('TFHE manual operations', function () {
 
   it('eq ebytes256,ebytes256 true', async function () {
     const inputAliceA = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
-    inputAliceA.addBytes256(bigIntToBytes(18446744073709550022n));
-    const encryptedAmountA = inputAliceA.encrypt();
+    inputAliceA.addBytes256(bigIntToBytes256(18446744073709550022n));
+    const encryptedAmountA = await inputAliceA.encrypt();
 
     const inputAliceB = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
-    inputAliceB.addBytes256(bigIntToBytes(18446744073709550022n));
-    const encryptedAmountB = inputAliceB.encrypt();
+    inputAliceB.addBytes256(bigIntToBytes256(18446744073709550022n));
+    const encryptedAmountB = await inputAliceB.encrypt();
 
-    const tx = await await this.contract.eqEbytes256(
+    const tx = await this.contract.eqEbytes256(
       encryptedAmountA.handles[0],
       encryptedAmountA.inputProof,
       encryptedAmountB.handles[0],
@@ -430,14 +428,14 @@ describe('TFHE manual operations', function () {
 
   it('eq ebytes256,ebytes256 false', async function () {
     const inputAliceA = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
-    inputAliceA.addBytes256(bigIntToBytes(18446744073709550022n));
-    const encryptedAmountA = inputAliceA.encrypt();
+    inputAliceA.addBytes256(bigIntToBytes256(18446744073709550022n));
+    const encryptedAmountA = await inputAliceA.encrypt();
 
     const inputAliceB = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
-    inputAliceB.addBytes256(bigIntToBytes(18446744073709550021n));
-    const encryptedAmountB = inputAliceB.encrypt();
+    inputAliceB.addBytes256(bigIntToBytes256(18446744073709550021n));
+    const encryptedAmountB = await inputAliceB.encrypt();
 
-    const tx = await await this.contract.eqEbytes256(
+    const tx = await this.contract.eqEbytes256(
       encryptedAmountA.handles[0],
       encryptedAmountA.inputProof,
       encryptedAmountB.handles[0],
@@ -452,14 +450,14 @@ describe('TFHE manual operations', function () {
 
   it('ne ebytes256,ebytes256 true', async function () {
     const inputAliceA = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
-    inputAliceA.addBytes256(bigIntToBytes(18446744073709550022n));
-    const encryptedAmountA = inputAliceA.encrypt();
+    inputAliceA.addBytes256(bigIntToBytes256(18446744073709550022n));
+    const encryptedAmountA = await inputAliceA.encrypt();
 
     const inputAliceB = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
-    inputAliceB.addBytes256(bigIntToBytes(18446744073709550021n));
-    const encryptedAmountB = inputAliceB.encrypt();
+    inputAliceB.addBytes256(bigIntToBytes256(18446744073709550021n));
+    const encryptedAmountB = await inputAliceB.encrypt();
 
-    const tx = await await this.contract.neEbytes256(
+    const tx = await this.contract.neEbytes256(
       encryptedAmountA.handles[0],
       encryptedAmountA.inputProof,
       encryptedAmountB.handles[0],
@@ -474,14 +472,14 @@ describe('TFHE manual operations', function () {
 
   it('ne ebytes256,ebytes256 false', async function () {
     const inputAliceA = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
-    inputAliceA.addBytes256(bigIntToBytes(184467440184467440184467440184467440n));
-    const encryptedAmountA = inputAliceA.encrypt();
+    inputAliceA.addBytes256(bigIntToBytes256(184467440184467440184467440184467440n));
+    const encryptedAmountA = await inputAliceA.encrypt();
 
     const inputAliceB = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
-    inputAliceB.addBytes256(bigIntToBytes(184467440184467440184467440184467440n));
-    const encryptedAmountB = inputAliceB.encrypt();
+    inputAliceB.addBytes256(bigIntToBytes256(184467440184467440184467440184467440n));
+    const encryptedAmountB = await inputAliceB.encrypt();
 
-    const tx = await await this.contract.neEbytes256(
+    const tx = await this.contract.neEbytes256(
       encryptedAmountA.handles[0],
       encryptedAmountA.inputProof,
       encryptedAmountB.handles[0],

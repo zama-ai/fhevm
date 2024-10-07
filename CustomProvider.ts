@@ -28,13 +28,9 @@ class CustomProvider extends ProviderWrapper {
       this.lastBlockSnapshotForDecrypt = parseInt(blockNumberHex);
       const parsedEnvCoprocessor = dotenv.parse(fs.readFileSync('lib/.env.exec'));
       const coprocAdd = parsedEnvCoprocessor.TFHE_EXECUTOR_CONTRACT_ADDRESS;
-      const callData = {
-        to: coprocAdd,
-        data: '0x1f20d85c',
-      };
       this.lastCounterRand = await this._wrappedProvider.request({
-        method: 'eth_call',
-        params: [callData, 'latest'],
+        method: 'eth_getStorageAt',
+        params: [coprocAdd, '0xa436a06f0efce5ea38c956a21e24202a59b3b746d48a23fb52b4a5bc33fe3e00', 'latest'],
       });
       return result;
     }

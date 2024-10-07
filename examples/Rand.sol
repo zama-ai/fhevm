@@ -3,7 +3,6 @@
 pragma solidity ^0.8.24;
 
 import "../lib/TFHE.sol";
-import "../payment/Payment.sol";
 
 contract Rand {
     euint8 public value8;
@@ -12,8 +11,8 @@ contract Rand {
     euint64 public value64;
     euint64 public value64Bounded;
 
-    constructor() payable {
-        Payment.depositForThis(msg.value);
+    constructor() {
+        TFHE.setFHEVM(FHEVMConfig.defaultConfig());
     }
 
     function generate8() public {
