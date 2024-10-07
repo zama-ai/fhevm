@@ -1,5 +1,5 @@
 # Decrypt and reencrypt
-This document explains how to decrypt and reencrypt data on the blockchain using a Key Management Service (KMS) and the Gateway service. The process ensures secure handling of sensitive data without exposing the blockchain's private key.
+This document explains how the decryption and re-encryption process work using the Key Management Service (KMS) and the Gateway.
 
 ## How it's working
 
