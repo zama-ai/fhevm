@@ -64,7 +64,7 @@ echo "###########################################################"
 echo "$NETWORK_KEYS_PUBLIC_PATH"
 echo "$NETWORK_KEYS_PRIVATE_PATH"
 
-MANDATORY_KEYS_LIST=('PUB/ServerKey/408d8cbaa51dece7f782fe04ba0b1c1d017b1088' 'PRIV/FhePrivateKey/408d8cbaa51dece7f782fe04ba0b1c1d017b1088' 'PUB/PublicKey/408d8cbaa51dece7f782fe04ba0b1c1d017b1088')
+MANDATORY_KEYS_LIST=('PUB/ServerKey/408d8cbaa51dece7f782fe04ba0b1c1d017b1088' 'PRIV/FhePrivateKey/408d8cbaa51dece7f782fe04ba0b1c1d017b1088' 'PUB/PublicKey/408d8cbaa51dece7f782fe04ba0b1c1d017b1088' 'PUB/CRS/d8d94eb3a23d22d3eb6b5e7b694e8afcd571d906')
 
 for key in "${MANDATORY_KEYS_LIST[@]}"; do
     if [ ! -f "$KEYS_FULL_PATH/$key" ]; then
@@ -90,6 +90,12 @@ cp $KEYS_FULL_PATH/$key $NETWORK_KEYS_PUBLIC_PATH/sks
 key="PUB/PublicKey/408d8cbaa51dece7f782fe04ba0b1c1d017b1088"
 echo "Copying $key to $NETWORK_KEYS_PUBLIC_PATH, please wait ..."
 cp $KEYS_FULL_PATH/$key $NETWORK_KEYS_PUBLIC_PATH/pks
+
+
+key="PUB/CRS/d8d94eb3a23d22d3eb6b5e7b694e8afcd571d906"
+echo "Copying $key to $NETWORK_KEYS_PUBLIC_PATH, please wait ..."
+cp $KEYS_FULL_PATH/$key $NETWORK_KEYS_PUBLIC_PATH/pp
+
 
 
 key="PRIV/FhePrivateKey/408d8cbaa51dece7f782fe04ba0b1c1d017b1088"

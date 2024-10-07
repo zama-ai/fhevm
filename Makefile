@@ -33,12 +33,16 @@ check_os:
 
 # This version must the same as in docker-compose-full.yml
 # TODO add check
-KMS_DEV_VERSION ?= v0.9.0-rc11-test-signature
+KMS_DEV_VERSION ?= v0.9.0-rc12-inclusion-proof-test
 
 FHEVM_SOLIDITY_REPO ?= fhevm
 FHEVM_SOLIDITY_PATH ?= $(WORKDIR)/$(FHEVM_SOLIDITY_REPO)
 FHEVM_SOLIDITY_PATH_EXISTS := $(shell test -d $(FHEVM_SOLIDITY_PATH)/.git && echo "true" || echo "false")
 FHEVM_SOLIDITY_VERSION ?= v0.5.4-0
+COPROCESSOR_REPO ?= fhevm-backend
+COPROCESSOR_PATH ?= $(WORKDIR)/$(COPROCESSOR_REPO)
+COPROCESSOR_PATH_EXISTS := $(shell test -d $(COPROCESSOR_PATH)/.git && echo "true" || echo "false")
+COPROCESSOR_VERSION ?= ld/test-copro
 
 export GO111MODULE = on
 
@@ -76,10 +80,37 @@ ifeq ($(FHEVM_SOLIDITY_PATH_EXISTS), true)
         echo 'fhevm-solidity is already available in $(WORKDIR)'; \
     fi
 else
-	@echo "fhevm-solidity does not exist"
+	@echo "fhevm does not exist"
 	echo "We clone it for you!"
 	echo "If you want your own version please update FHEVM_SOLIDITY_PATH pointing to your fhevm-solidity folder!"
 	$(MAKE) clone-fhevm-solidity
+endif
+
+clone-coprocessor: $(WORKDIR)/ 
+	$(info Cloning coprocessor version $(COPROCESSOR_VERSION))
+	cd $(WORKDIR) && git clone https://github.com/zama-ai/fhevm-backend.git
+	cd $(COPROCESSOR_PATH) && git checkout $(COPROCESSOR_VERSION)
+
+run-coprocessor: $(WORKDIR)/ check-coprocessor generate-fhe-keys-registry-dev-image
+	cp -v network-fhe-keys/* $(COPROCESSOR_PATH)/fhevm-engine/fhevm-keys
+	cd $(COPROCESSOR_PATH)/fhevm-engine/coprocessor && make cleanup
+	cd $(COPROCESSOR_PATH)/fhevm-engine/coprocessor && make init_db
+
+check-coprocessor: $(WORKDIR)/
+	$(info check-coprocessor)
+ifeq ($(COPROCESSOR_PATH_EXISTS), true)
+	@echo "coprocessor exists in $(COPROCESSOR_PATH)"
+	@if [ ! -d $(WORKDIR)/fhevm ]; then \
+        echo 'coprocessor is not available in $(WORKDIR)'; \
+        echo "COPROCESSOR_PATH is set to a custom value"; \
+    else \
+        echo 'coprocessor is already available in $(WORKDIR)'; \
+    fi
+else
+	@echo "coprocessor does not exist"
+	echo "We clone it for you!"
+	echo "If you want your own version please update COPROCESSOR_PATH pointing to your coprocessor folder!"
+	$(MAKE) clone-coprocessor
 endif
 
 
@@ -128,6 +159,7 @@ install-packages:
 	@if [ "$(IS_LINUX)" = "true" ]; then \
 	    cd $(FHEVM_SOLIDITY_PATH) && npm i solidity-comments-linux-x64-gnu; \
 	fi
+
 
 
 prepare-e2e-test: check-all-test-repo

@@ -84,6 +84,18 @@ _Optionally_ you may update `KEY_GEN` value in `.env`. Default is `false`
 | false   | FHE keys are copied from the `kms-service-dev` image in `res/keys` |
 
 
+### Intermediate step
+
+The repo is being updated:
+
+For now, one can run:
+
+```bash
+make run-coprocessor
+make run-full
+# Gateway is not started yet.
+```
+
 ### Fast run and test
 
 Execute the following commands:

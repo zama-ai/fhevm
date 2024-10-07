@@ -3,14 +3,14 @@ name: zama-dev
 services:
 
   gateway-store:
-    image: ghcr.io/zama-ai/kms-blockchain-gateway-dev:v0.9.0-rc11-test-signature
+    image: ghcr.io/zama-ai/kms-blockchain-gateway-dev:v0.9.0-rc12-inclusion-proof-test
     command:
       - "kv_store"
     ports:
       - "8088:8088"
 
   kms-validator:
-    image: ghcr.io/zama-ai/kms-blockchain-asc-dev:v0.9.0-rc11-test-signature
+    image: ghcr.io/zama-ai/kms-blockchain-asc-dev:v0.9.0-rc12-inclusion-proof-test
     ports:
       - "36656:26656"
       - "36657:26657"
@@ -28,7 +28,7 @@ services:
       start_period: 10s
 
   connector:
-    image: ghcr.io/zama-ai/kms-blockchain-connector-dev:v0.9.0-rc11-test-signature
+    image: ghcr.io/zama-ai/kms-blockchain-connector-dev:v0.9.0-rc12-inclusion-proof-test
     command:
       - "kms-blockchain-connector"
     environment:
@@ -47,7 +47,7 @@ services:
         condition: service_healthy
 
   kms-core:
-    image: ghcr.io/zama-ai/kms-service-dev:v0.9.0-rc11-test-signature
+    image: ghcr.io/zama-ai/kms-service-dev:v0.9.0-rc12-inclusion-proof-test
     volumes:
       - $PWD/res/keys:/app/kms/core/service/keys:Z
     ports:
@@ -59,7 +59,7 @@ services:
       retries: 5
       start_period: 10s
   # gateway:
-  #   image: ghcr.io/zama-ai/kms-blockchain-gateway-dev:v0.9.0-rc11-test-signature
+  #   image: ghcr.io/zama-ai/kms-blockchain-gateway-dev:v0.9.0-rc12-inclusion-proof-test
   #   ports:
   #     - "7077:7077"
   #   command:
