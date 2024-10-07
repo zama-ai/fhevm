@@ -1,7 +1,6 @@
 import '@nomicfoundation/hardhat-toolbox';
 import '@openzeppelin/hardhat-upgrades';
 import dotenv from 'dotenv';
-import { promises as fs } from 'fs';
 import 'hardhat-deploy';
 import 'hardhat-ignore-warnings';
 import type { HardhatUserConfig, extendProvider } from 'hardhat/config';
@@ -36,9 +35,9 @@ const dotenvConfigPath: string = process.env.DOTENV_CONFIG_PATH || './.env';
 dotenv.config({ path: resolve(__dirname, dotenvConfigPath) });
 
 // Ensure that we have all the environment variables we need.
-const mnemonic: string | undefined = process.env.MNEMONIC;
+let mnemonic: string | undefined = process.env.MNEMONIC;
 if (!mnemonic) {
-  throw new Error('Please set your MNEMONIC in a .env file');
+  mnemonic = 'adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer'; // default mnemonic in case it is undefined (needed to avoid panicking when deploying on real network)
 }
 
 const chainIds = {
@@ -92,13 +91,8 @@ task('test', async (taskArgs, hre, runSuper) => {
     await hre.run('task:computeACLAddress', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:computeTFHEExecutorAddress', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:computeKMSVerifierAddress', { privateKey: privKeyFhevmDeployer });
-    await hre.run('task:computeInputVerifierAddress', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:computeInputVerifierAddress', { privateKey: privKeyFhevmDeployer, useAddress: false });
     await hre.run('task:computeFHEPaymentAddress', { privateKey: privKeyFhevmDeployer });
-    if (process.env.IS_COPROCESSOR === 'true') {
-      await fs.copyFile('lib/InputVerifier.sol.coprocessor', 'lib/InputVerifier.sol');
-    } else {
-      await fs.copyFile('lib/InputVerifier.sol.native', 'lib/InputVerifier.sol');
-    }
     await hre.run('compile:specific', { contract: 'lib' });
     await hre.run('compile:specific', { contract: 'gateway' });
     await hre.run('compile:specific', { contract: 'payment' });
@@ -109,11 +103,11 @@ task('test', async (taskArgs, hre, runSuper) => {
     await hre.run('task:deployInputVerifier', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:deployFHEPayment', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:addSigners', {
-      numSigners: +process.env.NUM_KMS_SIGNERS!,
+      numSigners: process.env.NUM_KMS_SIGNERS!,
       privateKey: privKeyFhevmDeployer,
       useAddress: false,
     });
-    await hre.run('task:launchFhevm', { skipGetCoin: false });
+    await hre.run('task:launchFhevm', { skipGetCoin: false, useAddress: false });
   }
   await hre.run('compile:specific', { contract: 'examples' });
   await runSuper();

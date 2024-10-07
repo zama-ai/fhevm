@@ -1,5 +1,5 @@
 import fs from 'fs';
-import { task } from 'hardhat/config';
+import { task, types } from 'hardhat/config';
 import type { TaskArguments } from 'hardhat/types';
 import path from 'path';
 
@@ -98,6 +98,12 @@ address constant kmsVerifierAdd = ${kmsVerfierAddress};\n`;
 
 task('task:computeInputVerifierAddress')
   .addParam('privateKey', 'The deployer private key')
+  .addOptionalParam(
+    'useAddress',
+    'Use addresses instead of private key env variable for coprocessor',
+    false,
+    types.boolean,
+  )
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
     // this script also compute the coprocessor address from its private key
     const deployer = new ethers.Wallet(taskArguments.privateKey).address;
@@ -126,8 +132,12 @@ address constant inputVerifierAdd = ${inputVerfierAddress};\n`;
     } catch (error) {
       console.error('Failed to write ./lib/InputVerifierAddress.sol', error);
     }
-
-    const coprocAddress = new ethers.Wallet(process.env.PRIVATE_KEY_COPROCESSOR_ACCOUNT!).address;
+    let coprocAddress;
+    if (!taskArguments.useAddress) {
+      coprocAddress = new ethers.Wallet(process.env.PRIVATE_KEY_COPROCESSOR_ACCOUNT!).address;
+    } else {
+      coprocAddress = process.env.ADDRESS_COPROCESSOR;
+    }
     const envFilePath2 = path.join(__dirname, '../lib/.env.coprocessor');
     const content2 = `COPROCESSOR_ADDRESS=${coprocAddress}\n`;
     try {

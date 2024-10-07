@@ -1,6 +1,6 @@
 import dotenv from 'dotenv';
 import fs from 'fs';
-import { task } from 'hardhat/config';
+import { task, types } from 'hardhat/config';
 import type { TaskArguments } from 'hardhat/types';
 
 task('task:deployGateway')
@@ -79,7 +79,12 @@ task('task:deployInputVerifier')
   .addParam('privateKey', 'The deployer private key')
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
     const deployer = new ethers.Wallet(taskArguments.privateKey).connect(ethers.provider);
-    const factory = await ethers.getContractFactory('InputVerifier', deployer);
+    let factory;
+    if (process.env.IS_COPROCESSOR === 'true') {
+      factory = await ethers.getContractFactory('lib/InputVerifier.coprocessor.sol:InputVerifier', deployer);
+    } else {
+      factory = await ethers.getContractFactory('lib/InputVerifier.native.sol:InputVerifier', deployer);
+    }
     const kms = await upgrades.deployProxy(factory, [deployer.address], { initializer: 'initialize', kind: 'uups' });
     await kms.waitForDeployment();
     const address = await kms.getAddress();
@@ -114,6 +119,7 @@ task('task:deployFHEPayment')
 
 task('task:addSigners')
   .addParam('privateKey', 'The deployer private key')
+  .addParam('numSigners', 'Number of KMS signers to add')
   .addOptionalParam(
     'useAddress',
     'Use addresses instead of private keys env variables for kms signers',
@@ -125,7 +131,6 @@ task('task:addSigners')
     const factory = await ethers.getContractFactory('KMSVerifier', deployer);
     const kmsAdd = dotenv.parse(fs.readFileSync('lib/.env.kmsverifier')).KMS_VERIFIER_CONTRACT_ADDRESS;
     const kmsVerifier = await factory.attach(kmsAdd);
-
     for (let idx = 0; idx < taskArguments.numSigners; idx++) {
       if (!taskArguments.useAddress) {
         const privKeySigner = process.env[`PRIVATE_KEY_KMS_SIGNER_${idx}`];

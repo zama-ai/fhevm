@@ -4,13 +4,20 @@ pragma solidity ^0.8.24;
 
 import "./ACL.sol";
 import "./FHEPayment.sol";
-import "./InputVerifier.sol";
 import "./ACLAddress.sol";
 import "./FHEPaymentAddress.sol";
 import "./InputVerifierAddress.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 import "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+
+interface IInputVerifier {
+    function verifyCiphertext(
+        TFHEExecutor.ContextUserInputs memory context,
+        bytes32 inputHandle,
+        bytes memory inputProof
+    ) external returns (uint256);
+}
 
 contract TFHEExecutor is UUPSUpgradeable, Ownable2StepUpgradeable {
     /// @notice Handle version
@@ -26,7 +33,7 @@ contract TFHEExecutor is UUPSUpgradeable, Ownable2StepUpgradeable {
 
     ACL private constant acl = ACL(aclAdd);
     FHEPayment private constant fhePayment = FHEPayment(fhePaymentAdd);
-    InputVerifier private constant inputVerifier = InputVerifier(inputVerifierAdd);
+    IInputVerifier private constant inputVerifier = IInputVerifier(inputVerifierAdd);
 
     /// @custom:storage-location erc7201:fhevm.storage.TFHEExecutor
     struct TFHEExecutorStorage {

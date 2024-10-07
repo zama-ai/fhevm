@@ -10,16 +10,11 @@ npx hardhat task:computeGatewayAddress --private-key "$PRIVATE_KEY_GATEWAY_DEPLO
 npx hardhat task:computeACLAddress --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
 npx hardhat task:computeTFHEExecutorAddress --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
 npx hardhat task:computeKMSVerifierAddress --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
-npx hardhat task:computeInputVerifierAddress --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
+npx hardhat task:computeInputVerifierAddress --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --use-address true
 npx hardhat task:computeFHEPaymentAddress --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
 
 # [ADD DOCKER-COMPOSE COMMAND HERE] // Geth node, Gateway service, KMS service etc should be launched here, using previously precomputed addresses
 
-if [ "$IS_COPROCESSOR" = "true" ]; then
-    cp lib/InputVerifier.sol.coprocessor lib/InputVerifier.sol
-else
-    cp lib/InputVerifier.sol.native lib/InputVerifier.sol
-fi
 npx hardhat compile:specific --contract lib
 npx hardhat compile:specific --contract gateway
 
@@ -29,6 +24,6 @@ npx hardhat task:deployKMSVerifier --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
 npx hardhat task:deployInputVerifier --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
 npx hardhat task:deployFHEPayment --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
 
-npx hardhat task:addSigners --num-signers $NUM_KMS_SIGNERS --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --useAddress true
+npx hardhat task:addSigners --num-signers $NUM_KMS_SIGNERS --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --use-address true
 
-npx hardhat task:launchFhevm --skip-get-coin true
+npx hardhat task:launchFhevm --skip-get-coin true --use-address true
