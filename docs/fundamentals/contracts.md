@@ -1,5 +1,5 @@
 # Contracts standard library
-This document provides guidance on how to use the standard contracts.
+This document provides guidance on how to use the contracts standard library.
 
 ## Installation
 
