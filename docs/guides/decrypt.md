@@ -1,8 +1,8 @@
-# Decrypt
-This document provides a guide on performing asynchronous decryption using the `GatewayCaller` contract in Solidity, covering the necessary setup, usage, and detailed function explanations.
+# Decryption
+This document provides a guide on performing decryption on smart contracts in Solidity.
 
 ## Overview
-The decryption operation is asynchronous. To use it, your contract must extend the `GatewayCaller` contract. This will import automatically the `Gateway` solidity library as well. See the following example:
+The decryption operation is asynchronous. To use it, your contract must extend the `GatewayCaller` contract. This action will import automatically the `Gateway` solidity library as well. See the following example:
 
 ```solidity
 pragma solidity ^0.8.24;
@@ -32,9 +32,10 @@ contract TestAsyncDecrypt is GatewayCaller {
 ```
 ## `GatewayContract` set up
 
-A [`GatewayContract`](../../gateway/GatewayContract.sol) is predeployed on the fhEVM testnet. It uses a default relayer account specified by the `PRIVATE_KEY_GATEWAY_RELAYER` environment variable in the `.env` file. 
+The [`GatewayContract`](../../gateway/GatewayContract.sol) is pre-deployed on the fhEVM testnet. It uses a default relayer account specified in the `PRIVATE_KEY_GATEWAY_RELAYER` environment variable in the `.env` file.
 
-Relayers are the only accounts authorized to fulfill decryption requests. However, the `GatewayContract` verifies the KMS signature during fulfillment, ensuring that even if we trust the relayer only to forward the request on time, a malicious relayer could not cheat by sending fake decryption results.
+Relayers are the only accounts authorized to fulfill decryption requests. The role of the `GatewayContract`, however, is to independently verify the KMS signature during execution. This ensures that the relayers cannot manipulate or send fraudulent decryption results, even if compromised.
+However, the relayers are still trusted to forward decryption requests on time.
 
 ## `Gateway.requestDecryption` function
 The interface of the `Gateway.requestDecryption` function from previous snippet is the following:

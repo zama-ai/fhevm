@@ -1,9 +1,11 @@
 # How to get a re-encryption
 
-This document explains how to perform a re-encryption. The process involves implementing a contract function to retrieve the ciphertext and then using client-side code to re-encrypt the ciphertext.
+This document explains how to perform re-encryption. Re-encryption is required when you want a user to access their private data without it being exposed to the blockchain.
+
+To preform the process you will first need to retrieve the ciphertext from the blockchain and then use the client-side code to preform the re-encryption.
 
 
-Re-encryption is the process of converting ciphertext encrypted with an FHE blockchain key into ciphertext encrypted with a NaCl public key. 
+Re-encryption allows you to securely convert the encrypted ciphertext from one form - encrypted with a FHE blockchain key - to another - encrypted with a Client-side public key (NaCl public key) without revealing the underlying plaintext in between.
 
 ## Retrieve the ciphertext
 To retrieve the ciphertext that needs to be re-encrypted, you must implement a view function in your contract. Here's is an example:
