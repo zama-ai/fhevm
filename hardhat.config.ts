@@ -11,6 +11,7 @@ import { resolve } from 'path';
 import CustomProvider from './CustomProvider';
 // Adjust the import path as needed
 import './tasks/accounts';
+import './tasks/etherscanVerify';
 import './tasks/getEthereumAddress';
 import './tasks/mint';
 import './tasks/taskDeploy';
@@ -45,6 +46,7 @@ const chainIds = {
   local: 9000,
   localNetwork1: 9000,
   multipleValidatorTestnet: 8009,
+  sepolia: 11155111,
 };
 
 function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
@@ -62,6 +64,8 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
     case 'zama':
       jsonRpcUrl = 'https://devnet.zama.ai';
       break;
+    case 'sepolia':
+      jsonRpcUrl = process.env.SEPOLIA_RPC_RUL!;
   }
   return {
     accounts: {
@@ -135,6 +139,7 @@ const config: HardhatUserConfig = {
         path: "m/44'/60'/0'/0",
       },
     },
+    sepolia: getChainConfig('sepolia'),
     zama: getChainConfig('zama'),
     localDev: getChainConfig('local'),
     local: getChainConfig('local'),
@@ -163,6 +168,9 @@ const config: HardhatUserConfig = {
       },
       evmVersion: 'cancun',
     },
+  },
+  etherscan: {
+    apiKey: process.env.ETHERSCAN_API_KEY!,
   },
   warnings: {
     '*': {

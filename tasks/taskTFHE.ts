@@ -136,7 +136,7 @@ address constant inputVerifierAdd = ${inputVerfierAddress};\n`;
     if (!taskArguments.useAddress) {
       coprocAddress = new ethers.Wallet(process.env.PRIVATE_KEY_COPROCESSOR_ACCOUNT!).address;
     } else {
-      coprocAddress = process.env.ADDRESS_COPROCESSOR;
+      coprocAddress = process.env.ADDRESS_COPROCESSOR_ACCOUNT;
     }
     const envFilePath2 = path.join(__dirname, '../lib/.env.coprocessor');
     const content2 = `COPROCESSOR_ADDRESS=${coprocAddress}\n`;
