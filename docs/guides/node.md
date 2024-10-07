@@ -1,7 +1,9 @@
 # Build with Node
+
 This document provides instructions on how to build with `Node.js` using the `fhevmjs` library.
 
 ## Install the library
+
 First, you need to install the library:
 
 ```bash
@@ -27,8 +29,6 @@ An instance receives an object containing:
 - `publicKey` (optional): if the public key has been fetched separately (cache), you can provide it
 - `gatewayUrl` (optional): the URL of the gateway to retrieve a reencryption
 - `coprocessorUrl` (optional): the URL of the coprocessor
-
-
 
 ```javascript
 const { createInstance } = require("fhevmjs");

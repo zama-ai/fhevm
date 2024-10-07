@@ -1,5 +1,6 @@
 # Common pitfalls and best practises
-This document provides guidance on common pitfalls to avoid and best practices to follow when working with fhEVM. 
+
+This document provides guidance on common pitfalls to avoid and best practices to follow when working with fhEVM.
 
 ## Common pitfalls to avoid
 

@@ -1,7 +1,9 @@
 # Decryption
+
 This document provides a guide on performing decryption on smart contracts in Solidity.
 
 ## Overview
+
 The decryption operation is asynchronous. To use it, your contract must extend the `GatewayCaller` contract. This action will import automatically the `Gateway` solidity library as well. See the following example:
 
 ```solidity
@@ -30,6 +32,7 @@ contract TestAsyncDecrypt is GatewayCaller {
     return yBool;
   }
 ```
+
 ## `GatewayContract` set up
 
 The [`GatewayContract`](../../gateway/GatewayContract.sol) is pre-deployed on the fhEVM testnet. It uses a default relayer account specified in the `PRIVATE_KEY_GATEWAY_RELAYER` environment variable in the `.env` file.
@@ -38,6 +41,7 @@ Relayers are the only accounts authorized to fulfill decryption requests. The ro
 However, the relayers are still trusted to forward decryption requests on time.
 
 ## `Gateway.requestDecryption` function
+
 The interface of the `Gateway.requestDecryption` function from previous snippet is the following:
 
 ```solidity
@@ -49,6 +53,7 @@ function requestDecryption(
     bool passSignaturesToCaller
 ) returns(uint256 requestID)
 ```
+
 ### Parameters
 
 The first argument, `ct`, should be an array of ciphertexts handles which could be of different types, i.e `uint256` values coming from unwrapping handles of type either `ebool`, `euint4`, `euint8`, `euint16`, `euint32`, `euint64` or `eaddress`. `ct` is the list of ciphertexts that are requested to be decrypted. Calling `requestDecryption` will emit an `EventDecryption` on the `GatewayContract` contract which will be detected by a relayer. Then, the relayer will send the corresponding ciphertexts to the KMS for decryption before fulfilling the request.
