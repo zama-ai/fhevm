@@ -1,5 +1,7 @@
 # Other development environment
 
+This document provides guidance on using the fhEVM in other development environments.
+
 ## Foundry
 
 The fhEVM does not work with Foundry as Foundry employs its own EVM, preventing us from incorporating a mock for our precompiled contract. An [ongoing discussion](https://github.com/foundry-rs/foundry/issues/5576) is exploring the possibility of incorporating a plugin system for precompiles, which could potentially pave the way for the utilization of Foundry at a later stage.
