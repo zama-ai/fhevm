@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import { Wallet } from 'ethers';
 import fs from 'fs';
 import { ethers, network } from 'hardhat';
 
@@ -9,7 +10,7 @@ import { waitNBlocks } from './utils';
 const networkName = network.name;
 
 const parsedEnvACL = dotenv.parse(fs.readFileSync('lib/.env.acl'));
-const aclAdd = parsedEnvACL.ACL_CONTRACT_ADDRESS.replace(/^0x/, '').replace(/^0+/, '').toLowerCase();
+const aclAdd = parsedEnvACL.ACL_CONTRACT_ADDRESS;
 
 const CiphertextType = {
   0: 'bool',
@@ -115,6 +116,7 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
     const handles = event.args[1];
     const typesList = handles.map((handle) => parseInt(handle.toString(16).slice(-4, -2), 16));
     const msgValue = event.args[4];
+    const passSignaturesToCaller = event.args[6];
     if (!results.includes(requestID)) {
       // if request is not already fulfilled
       if (mocked) {
@@ -123,8 +125,8 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
 
         // first check tat all handles are allowed for decryption
         const aclFactory = await ethers.getContractFactory('ACL');
-        const acl = aclFactory.attach(`0x${aclAdd}`);
-        const isAllowedForDec = await Promise.all(handles.map(async (handle) => acl.allowedForDecryption(handle)));
+        const acl = aclFactory.attach(aclAdd);
+        const isAllowedForDec = await Promise.all(handles.map(async (handle) => acl.isAllowedForDecryption(handle)));
         if (!allTrue(isAllowedForDec)) {
           throw new Error('Some handle is not authorized for decryption');
         }
@@ -139,10 +141,21 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
         );
 
         const abiCoder = new ethers.AbiCoder();
-        const encodedData = abiCoder.encode(['uint256', ...types], [31, ...valuesFormatted2]); // 31 is just a dummy uint256 requestID to get correct abi encoding for the remaining arguments (i.e everything except the requestID)
-        const calldata = '0x' + encodedData.slice(66); // we just pop the dummy requestID to get the correct value to pass for `decryptedCts`
+        let encodedData;
+        let calldata;
+        if (!passSignaturesToCaller) {
+          encodedData = abiCoder.encode(['uint256', ...types], [31, ...valuesFormatted2]); // 31 is just a dummy uint256 requestID to get correct abi encoding for the remaining arguments (i.e everything except the requestID)
+          calldata = '0x' + encodedData.slice(66); // we just pop the dummy requestID to get the correct value to pass for `decryptedCts`
+        } else {
+          encodedData = abiCoder.encode(['uint256', ...types, 'bytes[]'], [31, ...valuesFormatted2, []]); // adding also a dummy empty array of bytes for correct abi-encoding when used with signatures
+          calldata = '0x' + encodedData.slice(66).slice(0, -64); // we also pop the last 32 bytes (empty bytes[])
+        }
 
-        const tx = await gateway.connect(relayer).fulfillRequest(requestID, calldata, [], { value: msgValue });
+        const numSigners = +process.env.NUM_KMS_SIGNERS!;
+        const decryptResultsEIP712signatures = await computeDecryptSignatures(handles, calldata, numSigners);
+        const tx = await gateway
+          .connect(relayer)
+          .fulfillRequest(requestID, calldata, decryptResultsEIP712signatures, { value: msgValue });
         await tx.wait();
       } else {
         // in fhEVM mode we must wait until the gateway service relayer submits the decryption fulfillment tx
@@ -152,3 +165,66 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
     }
   }
 };
+
+async function computeDecryptSignatures(
+  handlesList: bigint[],
+  decryptedResult: string,
+  numSigners: number,
+): Promise<string[]> {
+  const signatures: string[] = [];
+
+  for (let idx = 0; idx < numSigners; idx++) {
+    const privKeySigner = process.env[`PRIVATE_KEY_KMS_SIGNER_${idx}`];
+    if (privKeySigner) {
+      const kmsSigner = new ethers.Wallet(privKeySigner).connect(ethers.provider);
+      const signature = await kmsSign(handlesList, decryptedResult, kmsSigner);
+      signatures.push(signature);
+    } else {
+      throw new Error(`Private key for signer ${idx} not found in environment variables`);
+    }
+  }
+  return signatures;
+}
+
+async function kmsSign(handlesList: bigint[], decryptedResult: string, kmsSigner: Wallet) {
+  const kmsAdd = dotenv.parse(fs.readFileSync('lib/.env.kmsverifier')).KMS_VERIFIER_CONTRACT_ADDRESS;
+  const chainId = (await ethers.provider.getNetwork()).chainId;
+
+  const domain = {
+    name: 'KMSVerifier',
+    version: '1',
+    chainId: chainId,
+    verifyingContract: kmsAdd,
+  };
+
+  const types = {
+    DecryptionResult: [
+      {
+        name: 'aclAddress',
+        type: 'address',
+      },
+      {
+        name: 'handlesList',
+        type: 'uint256[]',
+      },
+      {
+        name: 'decryptedResult',
+        type: 'bytes',
+      },
+    ],
+  };
+  const message = {
+    aclAddress: aclAdd,
+    handlesList: handlesList,
+    decryptedResult: decryptedResult,
+  };
+
+  const signature = await kmsSigner.signTypedData(domain, types, message);
+  const sigRSV = ethers.Signature.from(signature);
+  const v = 27 + sigRSV.yParity;
+  const r = sigRSV.r;
+  const s = sigRSV.s;
+
+  const result = r + s.substring(2) + v.toString(16);
+  return result;
+}

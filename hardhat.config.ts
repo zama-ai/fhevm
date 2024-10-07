@@ -1,4 +1,5 @@
 import '@nomicfoundation/hardhat-toolbox';
+import '@openzeppelin/hardhat-upgrades';
 import dotenv from 'dotenv';
 import 'hardhat-deploy';
 import 'hardhat-ignore-warnings';
@@ -14,7 +15,6 @@ import './tasks/getEthereumAddress';
 import './tasks/mint';
 import './tasks/taskDeploy';
 import './tasks/taskGatewayRelayer';
-import './tasks/taskIdentity';
 import './tasks/taskTFHE';
 
 extendProvider(async (provider, config, network) => {
@@ -35,9 +35,9 @@ const dotenvConfigPath: string = process.env.DOTENV_CONFIG_PATH || './.env';
 dotenv.config({ path: resolve(__dirname, dotenvConfigPath) });
 
 // Ensure that we have all the environment variables we need.
-const mnemonic: string | undefined = process.env.MNEMONIC;
+let mnemonic: string | undefined = process.env.MNEMONIC;
 if (!mnemonic) {
-  throw new Error('Please set your MNEMONIC in a .env file');
+  mnemonic = 'adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer'; // default mnemonic in case it is undefined (needed to avoid panicking when deploying on real network)
 }
 
 const chainIds = {
@@ -85,27 +85,29 @@ task('test', async (taskArgs, hre, runSuper) => {
   // Run modified test task
   if (hre.network.name === 'hardhat') {
     // in fhevm mode all this block is done when launching the node via `pnmp fhevm:start`
+    const privKeyGatewayDeployer = process.env.PRIVATE_KEY_GATEWAY_DEPLOYER;
+    const privKeyFhevmDeployer = process.env.PRIVATE_KEY_FHEVM_DEPLOYER;
+    await hre.run('task:computeGatewayAddress', { privateKey: privKeyGatewayDeployer });
+    await hre.run('task:computeACLAddress', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:computeTFHEExecutorAddress', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:computeKMSVerifierAddress', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:computeInputVerifierAddress', { privateKey: privKeyFhevmDeployer, useAddress: false });
+    await hre.run('task:computeFHEPaymentAddress', { privateKey: privKeyFhevmDeployer });
     await hre.run('compile:specific', { contract: 'lib' });
-
-    const targetAddress = '0x000000000000000000000000000000000000005d';
-    const NeverRevert = await hre.artifacts.readArtifact('MockedPrecompile');
-    const bytecode = NeverRevert.deployedBytecode;
-    await hre.network.provider.send('hardhat_setCode', [targetAddress, bytecode]);
-    console.log(`Code of Mocked Pre-compile set at address: ${targetAddress}`);
-
     await hre.run('compile:specific', { contract: 'gateway' });
-
-    const privKeyDeployer = process.env.PRIVATE_KEY_GATEWAY_DEPLOYER;
-    await hre.run('task:computePredeployAddress', { privateKey: privKeyDeployer });
-    await hre.run('task:computeACLAddress');
-    await hre.run('task:computeTFHEExecutorAddress');
-    await hre.run('task:computeKMSVerifierAddress');
-    await hre.run('task:computeFHEPaymentAddress');
-    await hre.run('task:deployACL');
-    await hre.run('task:deployTFHEExecutor');
-    await hre.run('task:deployKMSVerifier');
-    await hre.run('task:deployFHEPayment');
-    await hre.run('task:launchFhevm', { skipGetCoin: false });
+    await hre.run('compile:specific', { contract: 'payment' });
+    await hre.run('task:faucetToPrivate', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:deployACL', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:deployTFHEExecutor', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:deployKMSVerifier', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:deployInputVerifier', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:deployFHEPayment', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:addSigners', {
+      numSigners: process.env.NUM_KMS_SIGNERS!,
+      privateKey: privKeyFhevmDeployer,
+      useAddress: false,
+    });
+    await hre.run('task:launchFhevm', { skipGetCoin: false, useAddress: false });
   }
   await hre.run('compile:specific', { contract: 'examples' });
   await runSuper();

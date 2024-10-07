@@ -35,7 +35,7 @@ contract TestAsyncDecrypt is GatewayCaller {
 
 ## `GatewayContract` set up
 
-The [`GatewayContract`](../../gateway/GatewayContract.sol) is pre-deployed on the fhEVM testnet. It uses a default relayer account specified in the `PRIVATE_KEY_GATEWAY_RELAYER` environment variable in the `.env` file.
+The [`GatewayContract`](../../gateway/GatewayContract.sol) is pre-deployed on the fhEVM testnet. It uses a default relayer account specified in the `PRIVATE_KEY_GATEWAY_RELAYER` or `ADDRESS_GATEWAY_RELAYER` environment variable in the `.env` file.
 
 Relayers are the only accounts authorized to fulfill decryption requests. The role of the `GatewayContract`, however, is to independently verify the KMS signature during execution. This ensures that the relayers cannot manipulate or send fraudulent decryption results, even if compromised.
 However, the relayers are still trusted to forward decryption requests on time.
@@ -108,7 +108,7 @@ function addParamsEUint32(uint256 requestID, euint32 _euint32) internal;
 
 function addParamsEUint64(uint256 requestID, euint64 _euint64) internal;
 
-function addParamsEAddress(uint256 requestID, address _eaddress) internal;
+function addParamsEAddress(uint256 requestID, eaddress _eaddress) internal;
 
 function addParamsAddress(uint256 requestID, address _address) internal;
 

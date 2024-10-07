@@ -15,9 +15,7 @@ async function deployTfheTestFixture1(): Promise<TFHETestSuite1> {
   const admin = signers.alice;
 
   const contractFactory = await ethers.getContractFactory('TFHETestSuite1');
-  const contract = await contractFactory.connect(admin).deploy({
-    value: ethers.parseEther('0.001'),
-  });
+  const contract = await contractFactory.connect(admin).deploy();
   await contract.waitForDeployment();
 
   return contract;
@@ -28,9 +26,7 @@ async function deployTfheTestFixture2(): Promise<TFHETestSuite2> {
   const admin = signers.alice;
 
   const contractFactory = await ethers.getContractFactory('TFHETestSuite2');
-  const contract = await contractFactory.connect(admin).deploy({
-    value: ethers.parseEther('0.001'),
-  });
+  const contract = await contractFactory.connect(admin).deploy();
   await contract.waitForDeployment();
 
   return contract;
@@ -41,9 +37,7 @@ async function deployTfheTestFixture3(): Promise<TFHETestSuite3> {
   const admin = signers.alice;
 
   const contractFactory = await ethers.getContractFactory('TFHETestSuite3');
-  const contract = await contractFactory.connect(admin).deploy({
-    value: ethers.parseEther('0.001'),
-  });
+  const contract = await contractFactory.connect(admin).deploy();
   await contract.waitForDeployment();
 
   return contract;
@@ -54,9 +48,7 @@ async function deployTfheTestFixture4(): Promise<TFHETestSuite4> {
   const admin = signers.alice;
 
   const contractFactory = await ethers.getContractFactory('TFHETestSuite4');
-  const contract = await contractFactory.connect(admin).deploy({
-    value: ethers.parseEther('0.001'),
-  });
+  const contract = await contractFactory.connect(admin).deploy();
   await contract.waitForDeployment();
 
   return contract;
@@ -67,9 +59,7 @@ async function deployTfheTestFixture5(): Promise<TFHETestSuite5> {
   const admin = signers.alice;
 
   const contractFactory = await ethers.getContractFactory('TFHETestSuite5');
-  const contract = await contractFactory.connect(admin).deploy({
-    value: ethers.parseEther('0.001'),
-  });
+  const contract = await contractFactory.connect(admin).deploy();
   await contract.waitForDeployment();
 
   return contract;
@@ -80,9 +70,7 @@ async function deployTfheTestFixture6(): Promise<TFHETestSuite6> {
   const admin = signers.alice;
 
   const contractFactory = await ethers.getContractFactory('TFHETestSuite6');
-  const contract = await contractFactory.connect(admin).deploy({
-    value: ethers.parseEther('0.001'),
-  });
+  const contract = await contractFactory.connect(admin).deploy();
   await contract.waitForDeployment();
 
   return contract;

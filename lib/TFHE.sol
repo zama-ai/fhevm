@@ -2,6 +2,9 @@
 
 pragma solidity ^0.8.24;
 
+import "./Impl.sol";
+import "./FHEVMConfig.sol";
+
 type ebool is uint256;
 type euint4 is uint256;
 type euint8 is uint256;
@@ -28,14 +31,10 @@ library Common {
     uint8 internal constant ebytes256_t = 11;
 }
 
-import "./Impl.sol";
-
 library TFHE {
-    euint4 constant NIL4 = euint4.wrap(0);
-    euint8 constant NIL8 = euint8.wrap(0);
-    euint16 constant NIL16 = euint16.wrap(0);
-    euint32 constant NIL32 = euint32.wrap(0);
-    euint64 constant NIL64 = euint64.wrap(0);
+    function setFHEVM(FHEVMConfig.FHEVMConfigStruct memory fhevmConfig) internal {
+        Impl.setFHEVM(fhevmConfig);
+    }
 
     // Return true if the enrypted bool is initialized and false otherwise.
     function isInitialized(ebool v) internal pure returns (bool) {

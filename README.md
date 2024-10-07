@@ -156,9 +156,7 @@ _More examples are available [here](https://github.com/zama-ai/fhevm/tree/main/e
 
 #### Others
 
-- [Governor DAO](https://github.com/zama-ai/fhevm/tree/main/examples/Governor): A DAO smart contract that facilitates governance decisions through encrypted voting.
 - [Blind auction](https://github.com/zama-ai/fhevm/blob/main/examples/BlindAuction.sol): A smart contract for conducting blind auctions where bids are encrypted and the winning bid remains private.
-- [Decentralized ID](https://github.com/zama-ai/fhevm/tree/main/examples/Identity): A blockchain-based identity management system using smart contracts to store and manage encrypted personal data.
 
 _If you have built awesome projects using fhEVM, please let us know and we will be happy to showcase them here!_
 <br></br>
@@ -251,23 +249,6 @@ We provide a docker image to spin up a fhEVM node for local development.
 npm run fhevm:start
 # stop
 npm run fhevm:stop
-```
-
-##### Faucet
-
-For development purposes, we provide a ready to use wallet. In order to use
-it, prepare the .env file that contains the mnemonic.
-
-```bash
-cp .env.example .env
-```
-
-This allows the developer to use a few accounts, each account can get coins:
-
-```bash
-npm run fhevm:faucet:alice
-npm run fhevm:faucet:bob
-npm run fhevm:faucet:carol
 ```
 
 ##### Run test
