@@ -1,4 +1,5 @@
 # Access Control List
+
 This document explains how to prevent unauthorized addresses from accessing the contents of unauthorized ciphertexts.
 This is enabled by the Access Control List (ACL) system in fhEVM, which defines which addresses have the right to manipulate the ciphertext.
 
@@ -78,13 +79,13 @@ function randomize() {
 
 When a function receives a ciphertext (such as `ebool`, `euint8`, `eaddress`, ...), it needs to verify that the sender also has access to this ciphertext. This verification is crucial for security.
 
-Without this check, a contract could send any ciphertext authorized for the contract and potentially exploit the function to retrieve the value. For example, an attacker could transfer someone's balance as an encrypted amount. 
+Without this check, a contract could send any ciphertext authorized for the contract and potentially exploit the function to retrieve the value. For example, an attacker could transfer someone's balance as an encrypted amount.
 
 If the function does not include `require(TFHE.isSenderAllowed(encryptedAmount))`, an attacker who doesn't have access to this balance could determine the value by transferring the balance between two well-funded accounts.
 
 ## ACL for reencryption
 
-If a ciphertext must be reencrypted by a user, then explicit access must be granted to them. If this authorization is not given, the user will be unable to request a reencryption of this ciphertext. 
+If a ciphertext must be reencrypted by a user, then explicit access must be granted to them. If this authorization is not given, the user will be unable to request a reencryption of this ciphertext.
 
 Due to the reencryption mechanism, a user signs a public key associated with a specific contract; therefore, the ciphertext also needs to be allowed for the contract.
 

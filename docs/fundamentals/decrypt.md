@@ -1,4 +1,5 @@
 # Decrypt and reencrypt
+
 This document explains how the decryption and re-encryption process work using the Key Management Service (KMS) and the Gateway.
 
 ## How it's working

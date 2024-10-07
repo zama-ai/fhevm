@@ -1,13 +1,15 @@
 # Encrypted inputs
+
 This document introduces the concept of encrypted inputs in the fhEVM, explaining how they are used, structured, and validated within smart contracts.
 
-Inputs are a cornerstone of fhEVM: they allow users to push encrypted data onto the blockchain. 
+Inputs are a cornerstone of fhEVM: they allow users to push encrypted data onto the blockchain.
 
 To prevent any attacks, a user must provide proof of knowledge of the plaintext value underlying the ciphertext. This proof ensures that a ciphertext cannot be reused once stored on the blockchain.
 
 All inputs are packed into a single ciphertext in a user-defined order, thereby minimizing the size and time required to create a zero-knowledge proof.
 
-When a function is called, there are two types of parameters: 
+When a function is called, there are two types of parameters:
+
 - `einput`: Represents the index of the encrypted parameter.
 - `bytes`: Contains the actual ciphertext and the associated zero-knowledge proof.
 
