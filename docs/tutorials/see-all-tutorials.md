@@ -8,7 +8,7 @@
 
 ### Code examples in GitHub
 
-- [ERC-20](https://github.com/zama-ai/fhevm/blob/main/examples/EncryptedERC20.sol): A variation of the standard ERC20 smart contract that incorporates encrypted balances, providing additional privacy for token holders. -
+- [ERC-20](https://github.com/zama-ai/fhevm/blob/main/examples/EncryptedERC20.sol): A variation of the standard ERC20 smart contract that incorporates encrypted balances, providing additional privacy for token holders.
 - [Blind Auction](https://github.com/zama-ai/fhevm/blob/main/examples/BlindAuction.sol): A smart contract for conducting blind auctions where bids are encrypted and the winning bid remains private.
 
 #### Legacy
