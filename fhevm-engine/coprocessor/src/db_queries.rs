@@ -1,5 +1,6 @@
 use std::collections::{BTreeSet, HashMap};
 use std::str::FromStr;
+use std::sync::Arc;
 
 use crate::server::GrpcTracer;
 use crate::types::{CoprocessorError, TfheTenantKeys};
@@ -109,6 +110,7 @@ pub struct FetchTenantKeyResult {
     pub verifying_contract_address: String,
     pub acl_contract_address: String,
     pub server_key: tfhe::ServerKey,
+    pub public_params: Arc<tfhe::zk::CompactPkePublicParams>,
 }
 
 /// Returns chain id and verifying contract address for EIP712 signature and tfhe server key
@@ -130,6 +132,7 @@ where
                     verifying_contract_address: key.verifying_contract_address.clone(),
                     acl_contract_address: key.acl_contract_address.clone(),
                     server_key: key.sks.clone(),
+                    public_params: key.public_params.clone(),
                 });
             }
         }
@@ -169,7 +172,7 @@ where
             tenant_id: key.tenant_id,
             sks,
             pks,
-            public_params,
+            public_params: Arc::new(public_params),
             chain_id: key.chain_id,
             acl_contract_address: key.acl_contract_address,
             verifying_contract_address: key.verifying_contract_address,

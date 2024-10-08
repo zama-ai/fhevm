@@ -1,10 +1,13 @@
-use std::fs::read;
+use std::{fs::read, sync::Arc};
 
 use tfhe::{
     generate_keys, set_server_key,
-    shortint::parameters::{
-        list_compression::COMP_PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M64,
-        PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M64,
+    shortint::{
+        parameters::{
+            list_compression::COMP_PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M64,
+            CompressionParameters, PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M64,
+        },
+        ClassicPBSParameters,
     },
     zk::{CompactPkeCrs, CompactPkePublicParams},
     ClientKey, CompactPublicKey, ConfigBuilder, ServerKey,
@@ -12,13 +15,17 @@ use tfhe::{
 
 use crate::utils::{safe_deserialize_key, safe_serialize_key};
 
+pub const TFHE_PARAMS: ClassicPBSParameters = PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M64;
+pub const TFHE_COMPRESSION_PARAMS: CompressionParameters =
+    COMP_PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M64;
+
 pub const MAX_BITS_TO_PROVE: usize = 2048;
 
 pub struct FhevmKeys {
     pub server_key: ServerKey,
     pub client_key: Option<ClientKey>,
     pub compact_public_key: CompactPublicKey,
-    pub public_params: CompactPkePublicParams,
+    pub public_params: Arc<CompactPkePublicParams>,
 }
 
 pub struct SerializedFhevmKeys {
@@ -31,10 +38,9 @@ pub struct SerializedFhevmKeys {
 impl FhevmKeys {
     pub fn new() -> Self {
         println!("Generating keys...");
-        let config =
-            ConfigBuilder::with_custom_parameters(PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M64)
-                .enable_compression(COMP_PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M64)
-                .build();
+        let config = ConfigBuilder::with_custom_parameters(TFHE_PARAMS)
+            .enable_compression(TFHE_COMPRESSION_PARAMS)
+            .build();
         let (client_key, server_key) = generate_keys(config);
         let compact_public_key = CompactPublicKey::new(&client_key);
         let crs = CompactPkeCrs::from_config(config, MAX_BITS_TO_PROVE).expect("CRS creation");
@@ -42,7 +48,7 @@ impl FhevmKeys {
             server_key,
             client_key: Some(client_key),
             compact_public_key,
-            public_params: crs.public_params().clone(),
+            public_params: Arc::new(crs.public_params().clone()),
         }
     }
 
@@ -98,7 +104,7 @@ impl From<FhevmKeys> for SerializedFhevmKeys {
             server_key: safe_serialize_key(&f.server_key),
             client_key: f.client_key.map(|c| safe_serialize_key(&c)),
             compact_public_key: safe_serialize_key(&f.compact_public_key),
-            public_params: safe_serialize_key(&f.public_params),
+            public_params: safe_serialize_key(f.public_params.as_ref()),
         }
     }
 }
@@ -112,8 +118,9 @@ impl From<SerializedFhevmKeys> for FhevmKeys {
                 .map(|c| safe_deserialize_key(&c).expect("deserialize client key")),
             compact_public_key: safe_deserialize_key(&f.compact_public_key)
                 .expect("deserialize compact public key"),
-            public_params: safe_deserialize_key(&f.public_params)
-                .expect("deserialize public params"),
+            public_params: Arc::new(
+                safe_deserialize_key(&f.public_params).expect("deserialize public params"),
+            ),
         }
     }
 }

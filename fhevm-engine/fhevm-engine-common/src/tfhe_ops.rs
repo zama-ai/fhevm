@@ -1,16 +1,22 @@
 use crate::{
+    keys::TFHE_PARAMS,
     types::{
         is_ebytes_type, FheOperationType, FhevmError, SupportedFheCiphertexts,
         SupportedFheOperations,
     },
-    utils::safe_deserialize,
+    utils::{safe_deserialize, safe_deserialize_conformant},
 };
 use tfhe::{
-    integer::{bigint::StaticUnsignedBigInt, U256},
+    integer::{
+        bigint::StaticUnsignedBigInt,
+        ciphertext::IntegerProvenCompactCiphertextListConformanceParams, U256,
+    },
     prelude::{
         CastInto, CiphertextList, FheEq, FheMax, FheMin, FheOrd, FheTryTrivialEncrypt, IfThenElse,
         RotateLeft, RotateRight,
     },
+    shortint::parameters::CompactPublicKeyEncryptionParameters,
+    zk::CompactPkePublicParams,
     FheBool, FheUint1024, FheUint128, FheUint16, FheUint160, FheUint2, FheUint2048, FheUint256,
     FheUint32, FheUint4, FheUint512, FheUint64, FheUint8, Seed,
 };
@@ -266,10 +272,19 @@ pub fn current_ciphertext_version() -> i16 {
 
 pub fn try_expand_ciphertext_list(
     input_ciphertext: &[u8],
+    public_params: &CompactPkePublicParams,
 ) -> Result<Vec<SupportedFheCiphertexts>, FhevmError> {
     let mut res = Vec::new();
 
-    let the_list: tfhe::ProvenCompactCiphertextList = safe_deserialize(input_ciphertext)?;
+    let pk_params = CompactPublicKeyEncryptionParameters::try_from(TFHE_PARAMS)
+        .map_err(|_| FhevmError::MissingTfheRsData)?;
+
+    let the_list: tfhe::ProvenCompactCiphertextList = safe_deserialize_conformant(
+        input_ciphertext,
+        &IntegerProvenCompactCiphertextListConformanceParams::from_public_key_encryption_parameters_and_crs_parameters(
+            pk_params, public_params,
+        ),
+    )?;
 
     let expanded = the_list
         .expand_without_verification()
@@ -284,96 +299,120 @@ pub fn try_expand_ciphertext_list(
             tfhe::FheTypes::Bool => {
                 let ct: tfhe::FheBool = expanded
                     .get(idx)
-                    .expect("Index must exist")
-                    .expect("Must succeed, we just checked this is the type");
+                    .map_err(|e| FhevmError::DeserializationError(e.into()))?
+                    .ok_or(FhevmError::DeserializationError(
+                        "failed to get expected data type".into(),
+                    ))?;
 
                 res.push(SupportedFheCiphertexts::FheBool(ct));
             }
             tfhe::FheTypes::Uint4 => {
                 let ct: tfhe::FheUint4 = expanded
                     .get(idx)
-                    .expect("Index must exist")
-                    .expect("Must succeed, we just checked this is the type");
+                    .map_err(|e| FhevmError::DeserializationError(e.into()))?
+                    .ok_or(FhevmError::DeserializationError(
+                        "failed to get expected data type".into(),
+                    ))?;
 
                 res.push(SupportedFheCiphertexts::FheUint4(ct));
             }
             tfhe::FheTypes::Uint8 => {
                 let ct: tfhe::FheUint8 = expanded
                     .get(idx)
-                    .expect("Index must exist")
-                    .expect("Must succeed, we just checked this is the type");
+                    .map_err(|e| FhevmError::DeserializationError(e.into()))?
+                    .ok_or(FhevmError::DeserializationError(
+                        "failed to get expected data type".into(),
+                    ))?;
 
                 res.push(SupportedFheCiphertexts::FheUint8(ct));
             }
             tfhe::FheTypes::Uint16 => {
                 let ct: tfhe::FheUint16 = expanded
                     .get(idx)
-                    .expect("Index must exist")
-                    .expect("Must succeed, we just checked this is the type");
+                    .map_err(|e| FhevmError::DeserializationError(e.into()))?
+                    .ok_or(FhevmError::DeserializationError(
+                        "failed to get expected data type".into(),
+                    ))?;
 
                 res.push(SupportedFheCiphertexts::FheUint16(ct));
             }
             tfhe::FheTypes::Uint32 => {
                 let ct: tfhe::FheUint32 = expanded
                     .get(idx)
-                    .expect("Index must exist")
-                    .expect("Must succeed, we just checked this is the type");
+                    .map_err(|e| FhevmError::DeserializationError(e.into()))?
+                    .ok_or(FhevmError::DeserializationError(
+                        "failed to get expected data type".into(),
+                    ))?;
 
                 res.push(SupportedFheCiphertexts::FheUint32(ct));
             }
             tfhe::FheTypes::Uint64 => {
                 let ct: tfhe::FheUint64 = expanded
                     .get(idx)
-                    .expect("Index must exist")
-                    .expect("Must succeed, we just checked this is the type");
+                    .map_err(|e| FhevmError::DeserializationError(e.into()))?
+                    .ok_or(FhevmError::DeserializationError(
+                        "failed to get expected data type".into(),
+                    ))?;
 
                 res.push(SupportedFheCiphertexts::FheUint64(ct));
             }
             tfhe::FheTypes::Uint128 => {
                 let ct: tfhe::FheUint128 = expanded
                     .get(idx)
-                    .expect("Index must exist")
-                    .expect("Must succeed, we just checked this is the type");
+                    .map_err(|e| FhevmError::DeserializationError(e.into()))?
+                    .ok_or(FhevmError::DeserializationError(
+                        "failed to get expected data type".into(),
+                    ))?;
 
                 res.push(SupportedFheCiphertexts::FheUint128(ct));
             }
             tfhe::FheTypes::Uint160 => {
                 let ct: tfhe::FheUint160 = expanded
                     .get(idx)
-                    .expect("Index must exist")
-                    .expect("Must succeed, we just checked this is the type");
+                    .map_err(|e| FhevmError::DeserializationError(e.into()))?
+                    .ok_or(FhevmError::DeserializationError(
+                        "failed to get expected data type".into(),
+                    ))?;
 
                 res.push(SupportedFheCiphertexts::FheUint160(ct));
             }
             tfhe::FheTypes::Uint256 => {
                 let ct: tfhe::FheUint256 = expanded
                     .get(idx)
-                    .expect("Index must exist")
-                    .expect("Must succeed, we just checked this is the type");
+                    .map_err(|e| FhevmError::DeserializationError(e.into()))?
+                    .ok_or(FhevmError::DeserializationError(
+                        "failed to get expected data type".into(),
+                    ))?;
 
                 res.push(SupportedFheCiphertexts::FheUint256(ct));
             }
             tfhe::FheTypes::Uint512 => {
                 let ct: tfhe::FheUint512 = expanded
                     .get(idx)
-                    .expect("Index must exist")
-                    .expect("Must succeed, we just checked this is the type");
+                    .map_err(|e| FhevmError::DeserializationError(e.into()))?
+                    .ok_or(FhevmError::DeserializationError(
+                        "failed to get expected data type".into(),
+                    ))?;
 
                 res.push(SupportedFheCiphertexts::FheBytes64(ct));
             }
             tfhe::FheTypes::Uint1024 => {
                 let ct: tfhe::FheUint1024 = expanded
                     .get(idx)
-                    .expect("Index must exist")
-                    .expect("Must succeed, we just checked this is the type");
+                    .map_err(|e| FhevmError::DeserializationError(e.into()))?
+                    .ok_or(FhevmError::DeserializationError(
+                        "failed to get expected data type".into(),
+                    ))?;
 
                 res.push(SupportedFheCiphertexts::FheBytes128(ct));
             }
             tfhe::FheTypes::Uint2048 => {
                 let ct: tfhe::FheUint2048 = expanded
                     .get(idx)
-                    .expect("Index must exist")
-                    .expect("Must succeed, we just checked this is the type");
+                    .map_err(|e| FhevmError::DeserializationError(e.into()))?
+                    .ok_or(FhevmError::DeserializationError(
+                        "failed to get expected data type".into(),
+                    ))?;
 
                 res.push(SupportedFheCiphertexts::FheBytes256(ct));
             }

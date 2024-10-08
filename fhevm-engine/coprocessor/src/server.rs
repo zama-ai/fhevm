@@ -372,6 +372,7 @@ impl CoprocessorService {
             let cloned_input = ci.clone();
             let server_key = server_key.clone();
             let tracer = tracer.clone();
+            let public_params = fetch_key_response.public_params.clone();
 
             let mut blocking_span = tracer.child_span("blocking_ciphertext_list_expand");
             blocking_span.set_attributes(vec![KeyValue::new("idx", idx as i64)]);
@@ -389,11 +390,12 @@ impl CoprocessorService {
                     span.end();
 
                     let mut span = tracer.child_span("expand_ciphertext_list");
-                    let expanded = try_expand_ciphertext_list(&cloned_input.input_payload)
-                        .map_err(|e| {
-                            let err: Box<(dyn std::error::Error + Send + Sync)> = Box::new(e);
-                            (err, idx)
-                        })?;
+                    let expanded =
+                        try_expand_ciphertext_list(&cloned_input.input_payload, &public_params)
+                            .map_err(|e| {
+                                let err: Box<(dyn std::error::Error + Send + Sync)> = Box::new(e);
+                                (err, idx)
+                            })?;
 
                     span.set_attributes(vec![
                         KeyValue::new("idx", idx as i64),

@@ -1,5 +1,5 @@
 use serde::{de::DeserializeOwned, Serialize};
-use tfhe::{named::Named, Unversionize, Versionize};
+use tfhe::{named::Named, prelude::ParameterSetConformant, Unversionize, Versionize};
 
 use crate::types::FhevmError;
 
@@ -18,6 +18,20 @@ pub fn safe_deserialize<T: DeserializeOwned + Named + Unversionize>(
 ) -> Result<T, FhevmError> {
     tfhe::safe_serialization::safe_deserialize(input, SAFE_SER_DESER_LIMIT)
         .map_err(|e| FhevmError::DeserializationError(e.into()))
+}
+
+pub fn safe_deserialize_conformant<
+    T: DeserializeOwned + Named + Unversionize + ParameterSetConformant,
+>(
+    input: &[u8],
+    parameter_set: &T::ParameterSet,
+) -> Result<T, FhevmError> {
+    tfhe::safe_serialization::safe_deserialize_conformant(
+        input,
+        SAFE_SER_DESER_LIMIT,
+        parameter_set,
+    )
+    .map_err(|e| FhevmError::DeserializationError(e.into()))
 }
 
 pub fn safe_serialize_key<T: Serialize + Named + Versionize>(object: &T) -> Vec<u8> {

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use fhevm_engine_common::types::FhevmError;
 
 #[derive(Debug)]
@@ -184,5 +186,5 @@ pub struct TfheTenantKeys {
     #[allow(dead_code)]
     pub pks: tfhe::CompactPublicKey,
     #[allow(dead_code)]
-    pub public_params: tfhe::zk::CompactPkePublicParams,
+    pub public_params: Arc<tfhe::zk::CompactPkePublicParams>,
 }

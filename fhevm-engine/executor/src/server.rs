@@ -16,7 +16,7 @@ use fhevm_engine_common::{
     types::{get_ct_type, FhevmError, Handle, SupportedFheCiphertexts, HANDLE_LEN, SCALAR_LEN},
 };
 use sha3::{Digest, Keccak256};
-use tfhe::{integer::U256, set_server_key};
+use tfhe::{integer::U256, set_server_key, zk::CompactPkePublicParams};
 use tokio::task::spawn_blocking;
 use tonic::{transport::Server, Code, Request, Response, Status};
 
@@ -64,7 +64,9 @@ pub struct ComputationState {
     pub ciphertexts: HashMap<Handle, InMemoryCiphertext>,
 }
 
-struct FhevmExecutorService {}
+struct FhevmExecutorService {
+    keys: FhevmKeys,
+}
 
 #[tonic::async_trait]
 impl FhevmExecutor for FhevmExecutorService {
@@ -72,12 +74,15 @@ impl FhevmExecutor for FhevmExecutorService {
         &self,
         req: Request<SyncComputeRequest>,
     ) -> Result<Response<SyncComputeResponse>, Status> {
+        let public_params = self.keys.public_params.clone();
         let resp = spawn_blocking(move || {
             let req = req.get_ref();
             let mut state = ComputationState::default();
 
             // Exapnd compact ciphertext lists for the whole request.
-            if Self::expand_compact_lists(&req.compact_ciphertext_lists, &mut state).is_err() {
+            if Self::expand_compact_lists(&req.compact_ciphertext_lists, &mut state, &public_params)
+                .is_err()
+            {
                 return SyncComputeResponse {
                     resp: Some(Resp::Error(SyncComputeError::BadInputList.into())),
                 };
@@ -129,7 +134,9 @@ impl FhevmExecutor for FhevmExecutorService {
 
 impl FhevmExecutorService {
     fn new() -> Self {
-        FhevmExecutorService {}
+        FhevmExecutorService {
+            keys: SerializedFhevmKeys::load_from_disk().into(),
+        }
     }
 
     #[allow(dead_code)]
@@ -157,9 +164,10 @@ impl FhevmExecutorService {
     fn expand_compact_lists(
         lists: &Vec<Vec<u8>>,
         state: &mut ComputationState,
+        public_params: &CompactPkePublicParams,
     ) -> Result<(), FhevmError> {
         for list in lists {
-            let cts = try_expand_ciphertext_list(&list)?;
+            let cts = try_expand_ciphertext_list(&list, &public_params)?;
             let list_hash: Handle = Keccak256::digest(list).to_vec();
             for (i, ct) in cts.iter().enumerate() {
                 let mut handle = list_hash.clone();
