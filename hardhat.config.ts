@@ -17,6 +17,7 @@ import './tasks/mint';
 import './tasks/taskDeploy';
 import './tasks/taskGatewayRelayer';
 import './tasks/taskTFHE';
+import './tasks/upgradeProxy';
 
 extendProvider(async (provider, config, network) => {
   const newProvider = new CustomProvider(provider);
