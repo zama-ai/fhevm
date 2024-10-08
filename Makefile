@@ -94,7 +94,12 @@ clone-coprocessor: $(WORKDIR)/
 run-coprocessor: $(WORKDIR)/ check-coprocessor generate-fhe-keys-registry-dev-image
 	cp -v network-fhe-keys/* $(COPROCESSOR_PATH)/fhevm-engine/fhevm-keys
 	cd $(COPROCESSOR_PATH)/fhevm-engine/coprocessor && make cleanup
+	cd $(COPROCESSOR_PATH)/fhevm-engine/coprocessor && cargo install sqlx-cli
 	cd $(COPROCESSOR_PATH)/fhevm-engine/coprocessor && make init_db
+
+stop-coprocessor: $(WORKDIR)/ 
+	cd $(COPROCESSOR_PATH)/fhevm-engine/coprocessor && make cleanup
+
 
 check-coprocessor: $(WORKDIR)/
 	$(info check-coprocessor)
@@ -186,6 +191,7 @@ e2e-test:
 
 clean:
 	$(MAKE) stop-full
+	$(MAKE) stop-coprocessor
 	rm -rf $(BUILDDIR)/
 	rm -rf $(WORKDIR)/
 	rm -rf network-fhe-keys

@@ -2,11 +2,11 @@ tick_interval_secs = 1
 storage_path = "./temp/events.toml"
 
 [oracle]
-addresses = ["http://fhevm-validator:26657"]
+addresses = ["http://localhost:26657"]
 
 [blockchain]
-addresses = ["http://kms-validator:9090"]
-contract = "wasm14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9s0phg4d"
+addresses = ["http://localhost:9090"]
+contract = "wasm1nc5tatafv6eyq7llkr2gv50ff9e22mnf70qgjlv737ktmt4eswrqr5j2ht"
 
 [blockchain.signkey]
 # It should be either mnemonic or bip32
@@ -39,18 +39,23 @@ retry_interval = 15000
 max_poll_count = 1150
 
 [core.timeout_config.decryption]
-initial_wait_time = 1
-retry_interval = 1
-max_poll_count = 24
+initial_wait_time = 0
+retry_interval = 0
+max_poll_count = 1
 
 [core.timeout_config.reencryption]
-initial_wait_time = 1
-retry_interval = 1
-max_poll_count = 24
+initial_wait_time = 0
+retry_interval = 0
+max_poll_count = 1
+
+[core.timeout_config.zkp]
+initial_wait_time = 0
+retry_interval = 0
+max_poll_count = 1
 
 [tracing]
 service_name = "kms-asc-connector"
 endpoint = "http://localhost:4317"
 
 [store]
-url = "http://store:8088"
+url = "http://localhost:8088"
