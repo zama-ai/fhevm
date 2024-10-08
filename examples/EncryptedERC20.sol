@@ -5,50 +5,58 @@ pragma solidity ^0.8.24;
 import "../lib/TFHE.sol";
 import "@openzeppelin/contracts/access/Ownable2Step.sol";
 
-// This contract implements an encrypted ERC20-like token with confidential balances using Zama's FHE (Fully Homomorphic Encryption) library.
-// It supports typical ERC20 functionality such as transferring tokens, minting, and setting allowances, but uses encrypted data types.
+/// @notice This contract implements an encrypted ERC20-like token with confidential balances using Zama's FHE (Fully Homomorphic Encryption) library.
+/// @dev It supports typical ERC20 functionality such as transferring tokens, minting, and setting allowances, but uses encrypted data types.
 contract EncryptedERC20 is Ownable2Step {
-    // Events to log important actions in the contract
-    event Transfer(address indexed from, address indexed to); // Emitted when tokens are transferred
-    event Approval(address indexed owner, address indexed spender); // Emitted when a spender is approved to spend tokens on behalf of an owner
-    event Mint(address indexed to, uint64 amount); // Emitted when new tokens are minted
-    
-    // Private state variables for basic token information and supply
-    uint64 private _totalSupply; // Stores the total supply of the token
-    string private _name;        // Name of the token (e.g., "Confidential Token")
-    string private _symbol;      // Symbol of the token (e.g., "CTK")
-    uint8 public constant decimals = 6; // Number of decimal places for the token
+    /// @notice Emitted when tokens are transferred
+    event Transfer(address indexed from, address indexed to);
+    /// @notice Emitted when a spender is approved to spend tokens on behalf of an owner
+    event Approval(address indexed owner, address indexed spender);
+    /// @notice Emitted when new tokens are minted
+    event Mint(address indexed to, uint64 amount);
 
-    // A mapping from address to an encrypted balance - tracks encrypted balances of each address
+    /// @dev Stores the total supply of the token
+    uint64 private _totalSupply;
+    /// @dev Name of the token (e.g., "Confidential Token")
+    string private _name;
+    /// @dev Symbol of the token (e.g., "CTK")
+    string private _symbol;
+    /// @notice Number of decimal places for the token
+    uint8 public constant decimals = 6;
+
+    /// @dev A mapping from address to an encrypted balance - tracks encrypted balances of each address
     mapping(address => euint64) internal balances;
 
-    // Mapping to manage encrypted allowance - of the form mapping(owner => mapping(spender => allowance)).
+    /// @dev Mapping to manage encrypted allowance - of the form mapping(owner => mapping(spender => allowance)).
     mapping(address => mapping(address => euint64)) internal allowances;
 
-    // Constructor to initialize the token's name and symbol, and set up the owner
+    /// @notice Constructor to initialize the token's name and symbol, and set up the owner
+    /// @param name_ The name of the token
+    /// @param symbol_ The symbol of the token
     constructor(string memory name_, string memory symbol_) Ownable(msg.sender) {
         TFHE.setFHEVM(FHEVMConfig.defaultConfig()); // Set up the FHEVM configuration for this contract
         _name = name_;
         _symbol = symbol_;
     }
 
-    // Returns the name of the token.
+    /// @notice Returns the name of the token.
     function name() public view virtual returns (string memory) {
         return _name;
     }
 
-    // Returns the symbol of the token, usually a shorter version of the name.
+    /// @notice Returns the symbol of the token, usually a shorter version of the name.
     function symbol() public view virtual returns (string memory) {
         return _symbol;
     }
 
-    // Returns the total supply of the token
+    /// @notice Returns the total supply of the token
     function totalSupply() public view virtual returns (uint64) {
         return _totalSupply;
     }
 
-    // Mints new tokens and assigns them to the owner, increasing the total supply.
-    // Only the contract owner can call this function.
+    /// @notice Mints new tokens and assigns them to the owner, increasing the total supply.
+    /// @dev Only the contract owner can call this function.
+    /// @param mintedAmount The amount of tokens to mint
     function mint(uint64 mintedAmount) public virtual onlyOwner {
         balances[owner()] = TFHE.add(balances[owner()], mintedAmount); // overflow impossible because of next line
         TFHE.allowThis(balances[owner()]);
@@ -57,33 +65,49 @@ contract EncryptedERC20 is Ownable2Step {
         emit Mint(owner(), mintedAmount);
     }
 
-    // Transfers an encrypted amount from the message sender address to the `to` address.
+    /// @notice Transfers an encrypted amount from the message sender address to the `to` address.
+    /// @param to The recipient address
+    /// @param encryptedAmount The encrypted amount to transfer
+    /// @param inputProof The proof for the encrypted input
+    /// @return bool indicating success of the transfer
     function transfer(address to, einput encryptedAmount, bytes calldata inputProof) public virtual returns (bool) {
         transfer(to, TFHE.asEuint64(encryptedAmount, inputProof));
         return true;
     }
 
-    // Transfers an encrypted amount from the message sender address to the `to` address.
+    /// @notice Transfers an encrypted amount from the message sender address to the `to` address.
+    /// @param to The recipient address
+    /// @param amount The encrypted amount to transfer
+    /// @return bool indicating success of the transfer
     function transfer(address to, euint64 amount) public virtual returns (bool) {
         require(TFHE.isSenderAllowed(amount));
-        // makes sure the owner has enough tokens
+        /// @dev Makes sure the owner has enough tokens
         ebool canTransfer = TFHE.le(amount, balances[msg.sender]);
         _transfer(msg.sender, to, amount, canTransfer);
         return true;
     }
 
-    // Returns the balance handle (encrypted) of a specific address.
+    /// @notice Returns the balance handle (encrypted) of a specific address.
+    /// @param wallet The address to check the balance of
+    /// @return euint64 The encrypted balance of the address
     function balanceOf(address wallet) public view virtual returns (euint64) {
         return balances[wallet];
     }
 
-    // Sets the allowance of `spender` to use a specific encrypted amount of the caller's tokens.
+    /// @notice Sets the allowance of `spender` to use a specific encrypted amount of the caller's tokens.
+    /// @param spender The address authorized to spend
+    /// @param encryptedAmount The encrypted amount to approve
+    /// @param inputProof The proof for the encrypted input
+    /// @return bool indicating success of the approval
     function approve(address spender, einput encryptedAmount, bytes calldata inputProof) public virtual returns (bool) {
         approve(spender, TFHE.asEuint64(encryptedAmount, inputProof));
         return true;
     }
 
-    // Sets the allowance of `spender` to use a specific amount of the caller's tokens.
+    /// @notice Sets the allowance of `spender` to use a specific amount of the caller's tokens.
+    /// @param spender The address authorized to spend
+    /// @param amount The amount to approve
+    /// @return bool indicating success of the approval
     function approve(address spender, euint64 amount) public virtual returns (bool) {
         require(TFHE.isSenderAllowed(amount));
         address owner = msg.sender;
@@ -92,13 +116,20 @@ contract EncryptedERC20 is Ownable2Step {
         return true;
     }
 
-    // Returns the remaining number of tokens that `spender` is allowed to spend
-    // on behalf of the caller.
+    /// @notice Returns the remaining number of tokens that `spender` is allowed to spend on behalf of the caller.
+    /// @param owner The address that owns the tokens
+    /// @param spender The address authorized to spend
+    /// @return euint64 The remaining allowance
     function allowance(address owner, address spender) public view virtual returns (euint64) {
         return _allowance(owner, spender);
     }
 
-    // Transfers `encryptedAmount` tokens using the caller's allowance.
+    /// @notice Transfers `encryptedAmount` tokens using the caller's allowance.
+    /// @param from The address to transfer from
+    /// @param to The address to transfer to
+    /// @param encryptedAmount The encrypted amount to transfer
+    /// @param inputProof The proof for the encrypted input
+    /// @return bool indicating success of the transfer
     function transferFrom(
         address from,
         address to,
@@ -109,7 +140,11 @@ contract EncryptedERC20 is Ownable2Step {
         return true;
     }
 
-    // Transfers `amount` tokens using the caller's allowance.
+    /// @notice Transfers `amount` tokens using the caller's allowance.
+    /// @param from The address to transfer from
+    /// @param to The address to transfer to
+    /// @param amount The amount to transfer
+    /// @return bool indicating success of the transfer
     function transferFrom(address from, address to, euint64 amount) public virtual returns (bool) {
         require(TFHE.isSenderAllowed(amount));
         address spender = msg.sender;
@@ -118,7 +153,11 @@ contract EncryptedERC20 is Ownable2Step {
         return true;
     }
 
-    // Internal function to approve a spender to use a specific amount.
+    /// @notice Internal function to approve a spender to use a specific amount.
+    /// @dev Updates the allowance mapping and sets appropriate permissions
+    /// @param owner The address that owns the tokens
+    /// @param spender The address authorized to spend
+    /// @param amount The amount to approve
     function _approve(address owner, address spender, euint64 amount) internal virtual {
         allowances[owner][spender] = amount;
         TFHE.allowThis(amount);
@@ -126,26 +165,39 @@ contract EncryptedERC20 is Ownable2Step {
         TFHE.allow(amount, spender);
     }
 
-    // Returns the internal allowance of a spender for a specific owner.
+    /// @notice Returns the internal allowance of a spender for a specific owner.
+    /// @param owner The address that owns the tokens
+    /// @param spender The address authorized to spend
+    /// @return euint64 The current allowance
     function _allowance(address owner, address spender) internal view virtual returns (euint64) {
         return allowances[owner][spender];
     }
 
-    // Updates the allowance after a transfer and returns whether it is valid.
+    /// @notice Updates the allowance after a transfer and returns whether it is valid.
+    /// @dev Checks if the transfer is allowed based on current allowance and balance
+    /// @param owner The address that owns the tokens
+    /// @param spender The address authorized to spend
+    /// @param amount The amount of the proposed transfer
+    /// @return ebool indicating whether the transfer is allowed
     function _updateAllowance(address owner, address spender, euint64 amount) internal virtual returns (ebool) {
         euint64 currentAllowance = _allowance(owner, spender);
-        // makes sure the allowance suffices
+        /// @dev Makes sure the allowance suffices
         ebool allowedTransfer = TFHE.le(amount, currentAllowance);
-        // makes sure the owner has enough tokens
+        /// @dev Makes sure the owner has enough tokens
         ebool canTransfer = TFHE.le(amount, balances[owner]);
         ebool isTransferable = TFHE.and(canTransfer, allowedTransfer);
         _approve(owner, spender, TFHE.select(isTransferable, TFHE.sub(currentAllowance, amount), currentAllowance));
         return isTransferable;
     }
 
-    // Internal function to handle the transfer of tokens between addresses.
+    /// @notice Internal function to handle the transfer of tokens between addresses.
+    /// @dev Updates balances and sets appropriate permissions
+    /// @param from The address to transfer from
+    /// @param to The address to transfer to
+    /// @param amount The amount to transfer
+    /// @param isTransferable Boolean indicating if the transfer is allowed
     function _transfer(address from, address to, euint64 amount, ebool isTransferable) internal virtual {
-        // Add to the balance of `to` and subract from the balance of `from`.
+        /// @dev Add to the balance of `to` and subract from the balance of `from`.
         euint64 transferValue = TFHE.select(isTransferable, amount, TFHE.asEuint64(0));
         euint64 newBalanceTo = TFHE.add(balances[to], transferValue);
         balances[to] = newBalanceTo;

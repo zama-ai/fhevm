@@ -1,102 +1,32 @@
-> Here will go all information about specific contracts, how are they designed and what are the considerations
+# FhEVM smart contract examples
 
-### Overview of Encrypted and Decrypted Data Flow
+This directory contains example contracts that demonstrate the usage of the fhEVM (Fully Homomorphic Encryption Virtual Machine) smart contract library. These contracts showcase various features and functionalities of encrypted computations on the blockchain, enabling privacy-preserving operations and opening up new possibilities for confidential blockchain applications.
 
-```mermaid
-graph TD
-    A[User's Plaintext Input] -->|Encryption| B(Encrypted Input)
-    B -->|Stored in Contract| C{Encrypted State Variables}
+## Quick overview
 
-    %% Using encrypted data in the contract %%
-    C -->|Operations on Encrypted Data| D[Contract Logic and Functions]
-    D -->|Maintain Confidentiality| C
+| Contract Name        | Description                              |
+| -------------------- | ---------------------------------------- |
+| EncryptedERC20.sol   | ERC20-like token with encrypted balances |
+| TestAsyncDecrypt.sol | Asynchronous decryption testing          |
+| BlindAuction.sol     | Blind auction using encrypted bids       |
 
-    %% Encryption and Decryption operations %%
-    D -->|Decrypt when Necessary| E[Decrypted Values for Computations]
-    E -->|Logic/Verification| D
-```
+## Usage
 
-[needs work]
-```mermaid
-graph TD
-    %% User Interaction %%
-    subgraph User Actions
-        U[User] -->|1. Encrypted Input| A[User's Plaintext Input]
-        U -->|2. Request Re-encryption| F[Direct Re-encryption Request]
-        U -->|3. Trigger Decryption| K[Decryption Request]
-    end
+These contracts serve as examples and can be used as references when building your own fhEVM-compatible smart contracts. Make sure to have the necessary fhEVM library and dependencies set up in your development environment.
 
-    %% Encryption Flow %%
-    A -->|Sends Input to Contract| B(Encrypted Input)
-    B -->|Stored in Contract| C{Encrypted State Variables}
+For more information, refer to the [fhEVM documentation](https://docs.zama.ai/fhevm).
 
-    %% Using encrypted data in the contract %%
-    C -->|Operations on Encrypted Data| D[Contract Logic and Functions]
-    D -->|Maintain Confidentiality| C
+## Contract summaries
 
-    %% Decryption operations %%
-    D -->|Decrypt when Necessary| E[Decrypted Values for Computations]
-    E -->|Logic/Verification| D
-    K -->|Decrypt Request to Contract| C
-    C -->|Forwards Request to| G[Gateway Service]
-    G -->|Return Decrypted Value| E
-    G <--> N{KMS Service}
+### 1. **EncryptedERC20.sol**
 
-    %% Re-encryption Flow %%
-    F -->|User Calls Gateway Directly| G
-    G -->|Re-encrypt with dApp's Public Key| J[Re-encrypted Data]
-    J -->|Return to User| M{User's Encrypted Data}
-    M -->|User Sends to Contract| C
+An implementation of an ERC20-like token with encrypted balances and transfers. This contract demonstrates:
 
-```
+- Encrypted token balances
+- Private transfer operations
+- Allowance management with encryption
 
-```mermaid
-graph TD
-    %% User Interaction %%
-    subgraph User Actions
-        U[User] -->|1. Encrypted Input| A[User's Plaintext Input]
-        U -->|2. Request Re-encryption| F[Direct Re-encryption Request]
-        U -->|3. Trigger Decryption| K[Decryption Request]
-    end
-
-    %% Smart Contract Operations %%
-    subgraph Smart Contract Operations
-        C{Encrypted State Variables} -->|Operations on Encrypted Data| D[Contract Logic and Functions]
-        D -->|Maintain Confidentiality| C
-        A -->|Sends Input to Contract| B(Encrypted Input)
-        B -->|Stored in Contract| C
-        K -->|Decrypt Request to Contract| C
-        C -->|Forwards Decrypt Request to| GC[Gateway Call from Contract]
-        J -->|Return to User| M{User's Encrypted Data}
-        %% Contract Decryption Flow %%
-        GC -->|Return Decrypted Data to Contract| E[Decrypted Values for Computations]
-        E -->|Logic/Verification| D
-
-    end
-
-        GC -->|Forward Request to| G[Gateway Service]
-        G -->|Return Decrypted Value| GC
-        G <--> N{KMS Service}
-        F -->|User Calls Gateway Directly| G
-        G -->|Re-encrypt with dApp's Public Key| J[Re-encrypted Data]
-
-    %% Re-encrypted Data Flow %%
-    M -->|User Sends to Contract| C
-
-
-
-
-
- 3. `Counter.sol`:
-    The `Counter` smart contract is a simple contract implemented in Solidity, designed to demonstrate basic state manipulation. Its main purpose is to maintain a counter (value) and provide functions to increment and view the current counter value.
-
- 1. `EncryptedERC20.sol`:
-   This contract implements an encrypted ERC20-like token with confidential balances using Zama's FHE (Fully Homomorphic Encryption) library.
-   It supports typical ERC20 functionality such as transferring tokens, minting, and setting allowances, but uses encrypted data types.
-
-### Approval and Transfer Operations
-
-Here's a high-level overview of what is encrypted and decrypted in the `EncryptedERC20` smart contract:
+It showcases how traditional token systems can be made confidential using FHE techniques, allowing for private balance management on a public blockchain.
 
 ```mermaid
 graph TD
@@ -115,40 +45,40 @@ graph TD
     Y1 --> Y3
 ```
 
-1. `TestAsyncDecrypt.sol`:
-   A contract for testing asynchronous decryption using the Gateway. It handles various encrypted data types and demonstrates different decryption scenarios, including trustless decryption.
+### 2. **TestAsyncDecrypt.sol**
 
-2. `FHEPaymentUpgradedExample.sol`:
-   An upgraded version of the FHEPayment contract, adding version information.
+Tests asynchronous decryption of various encrypted data types using the Gateway. This contract is essential for understanding how to safely decrypt data when needed, without compromising the overall security of the encrypted system.
 
-4. `BlindAuction.sol`:
-   Implements a blind auction using encrypted bids. It manages bidding, claiming, and withdrawing processes using homomorphic encryption.
+### 3. **BlindAuction.sol**
 
-5. `ACLUpgradedExample.sol`:
-   An upgraded version of the ACL (Access Control List) contract, adding version information.
+Implements a blind auction system using encrypted bids. Key features include:
 
-6. `KMSVerifierUpgradedExample.sol`:
-   An upgraded version of the KMSVerifier contract, adding version information.
+- Encrypted bid submission
+- Timed auction periods
+- Winner determination without revealing losing bids
+- Claim and withdrawal mechanisms
 
-7. `ACLUpgradedExample2.sol`:
-   Another upgraded version of the ACL contract, with a different version number.
+This contract showcases how FHE can be used to create fair and private auction systems on the blockchain, ensuring bid confidentiality until the auction ends.
 
-8. `TFHEExecutorUpgradedExample.sol`:
-   An upgraded version of the TFHEExecutor contract, adding version information.
+```mermaid
+graph TD
+    subgraph Bidding Phase
+        A[User Submits Encrypted Bid]
+        B[Contract Stores Encrypted Bid]
+        C[Update Highest Bid & Winning Ticket]
+    end
+    subgraph Auction End
+        D[Decrypt Winning Ticket]
+        E[Winner Claims Prize]
+        F[Non-Winners Withdraw Bids]
+        G[Transfer Highest Bid to Beneficiary]
+    end
+    A --> B
+    B --> C
+    C --> |Auction Ends| D
+    D --> E
+    D --> F
+    D --> G
+```
 
-9. `GatewayContractUpgradedExample.sol`:
-   An upgraded version of the GatewayContract, adding version information.
-
-
-2. `PaymentLimit.sol`:
-   A contract designed to test FHE gas limits. It includes functions that perform different numbers of FHE operations to test various scenarios: well under the block FHE gas limit, close to the limit, and exceeding the limit.
-
-3. `KMSVerifierUpgradedExample.sol`:
-   An upgraded version of the KMSVerifier contract, adding version information. This contract is likely part of a key management system for the FHE operations.
-
-4. `TracingSubCalls.sol`:
-   A set of contracts designed to test various subcall scenarios in a blockchain environment. It includes:
-   - A main contract that initiates different types of subcalls
-   - Contracts that test creation with encrypted inputs
-   - A contract with various functions to test success, failure, out-of-gas, and self-destruct scenarios
-
+This diagram illustrates the main processes in the BlindAuction contract, from bid submission to the final distribution of funds and prizes.

@@ -4,17 +4,20 @@ pragma solidity ^0.8.24;
 
 import "../lib/TFHEExecutor.sol";
 
-// Contract that extends TFHEExecutor with version information
+/// @title TFHEExecutorUpgradedExample
+/// @dev Contract that extends TFHEExecutor with version information
 contract TFHEExecutorUpgradedExample is TFHEExecutor {
-    // Name of the contract
+    /// @dev Name of the contract
     string private constant CONTRACT_NAME = "TFHEExecutor";
 
-    // Version numbers
+    /// @dev Version numbers
     uint256 private constant MAJOR_VERSION = 0;
     uint256 private constant MINOR_VERSION = 2;
     uint256 private constant PATCH_VERSION = 0;
 
-    // Function to get the full version string of the contract
+    /// @notice Returns the full version string of the contract
+    /// @dev Concatenates the contract name and version numbers
+    /// @return A string representing the full version of the contract
     function getVersion() external pure virtual override returns (string memory) {
         return
             string(
