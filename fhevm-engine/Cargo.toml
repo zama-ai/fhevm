@@ -20,8 +20,10 @@ rayon = "1.10.0"
 [profile.dev.package.tfhe]
 overflow-checks = false
 
-# for testing in release mode due to too big
-# binary inside mac
 [profile.release]
-opt-level = "z"
+# for testing in release mode due to too big binary inside mac:
+#  set opt-level = "z"
+# however, this leads to 2-4x slower execution due to loss of loop
+# vectorization
+opt-level = 3
 lto = "fat"
