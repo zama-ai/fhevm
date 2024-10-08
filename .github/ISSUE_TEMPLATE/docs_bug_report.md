@@ -1,6 +1,6 @@
 ---
-name: Documentation Bug Report
-about: Use this template to report issues, inconsistencies, or inaccuracies in our documentation.
+name: Documentation Bug Report / Unclear Documentation
+about: Use this template to report issues, inconsistencies, or inaccuracies in our documentation. Or to report sections of our documentation that are unclear, confusing, or require further explanation.
 title: ""
 labels: bug, documentation
 assignees: ""
@@ -13,19 +13,41 @@ Please provide a link to the page where the issue is located:
 
 ### **Description**
 
-Provide a clear and detailed description of the bug. Include any inconsistencies, typos, broken links, or missing information.
+Describe in detail what part of the documentation is unclear or provide a clear and detailed description of the bug. Include any inconsistencies, typos, broken links, or missing information.
 
 <details><summary>For example:</summary>
 <p>
  <li>Inaccurate technical explanations or missing prerequisites.</li>
  <li>Deprecated code snippets or outdated references.</li>
  <li>Formatting issues or broken links.</li>
+ <li>Is there a lack of explanation for certain technical terms or concepts?</li>
+ <li>Are there missing examples for a complex function or feature?</li>
+ <li>Does the documentation assume prior knowledge that hasn't been introduced?</li>
 </p>
 </details>
 
-### **Suggested Fix / Expected Behavior**
+### **Suggested Fix / Expected Behavior / What Would You Like Clarified?**
 
-Describe what you expected the documentation to include or suggest the correct information. For example, provide a corrected code snippet, explanation, or a link to the correct resource.
+Please provide your suggestions for improvement or clarification:
+
+- Describe expected content or suggest corrections for bugs/inaccuracies.
+- Explain what needs clarification for unclear documentation.
+
+<details><summary>Examples of helpful suggestions:</summary>
+<p>
+ <li>Corrected code snippet</li>
+ <li>Improved explanation.</li>
+ <li>Link to a more accurate or up-to-date resource</li>
+</p>
+</details>
+
+<details><summary>Examples of clarification requests:</summary>
+<p>
+ <li>“Can you provide an example of this function in use?”</li>
+ <li>"What are the expected inputs and outputs for this operation?”</li>
+ <li>“Could you add a section explaining how this feature integrates with other components?”</li>
+</p>
+</details>
 
 ### **Screenshots / Logs**
 
