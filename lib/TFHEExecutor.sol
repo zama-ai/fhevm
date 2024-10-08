@@ -58,6 +58,21 @@ contract TFHEExecutor is UUPSUpgradeable, Ownable2StepUpgradeable {
 
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
 
+    /// @notice Getter function for the ACL contract address
+    function getACLAddress() public view virtual returns (address) {
+        return address(acl);
+    }
+
+    /// @notice Getter function for the FHEPayment contract address
+    function getFHEPaymentAddress() public view virtual returns (address) {
+        return address(fhePayment);
+    }
+
+    /// @notice Getter function for the InputVerifier contract address
+    function getInputVerifierAddress() public view virtual returns (address) {
+        return address(inputVerifier);
+    }
+
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();

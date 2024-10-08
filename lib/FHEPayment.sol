@@ -27,7 +27,7 @@ contract FHEPayment is UUPSUpgradeable, Ownable2StepUpgradeable {
     uint256 private constant MAJOR_VERSION = 0;
     uint256 private constant MINOR_VERSION = 1;
     uint256 private constant PATCH_VERSION = 0;
-    address public constant tfheExecutorAddress = tfheExecutorAdd;
+    address private constant tfheExecutorAddress = tfheExecutorAdd;
 
     uint256 private constant FHE_GAS_BLOCKLIMIT = 10_000_000;
     uint256 private constant MIN_FHE_GASPRICE = 0; // eg: 10_000_000 means a minimum of 0.01 Gwei
@@ -53,6 +53,7 @@ contract FHEPayment is UUPSUpgradeable, Ownable2StepUpgradeable {
         }
     }
 
+    /// @notice Getter function for the TFHEExecutor contract address
     function getTFHEExecutorAddress() public view virtual returns (address) {
         return tfheExecutorAddress;
     }
