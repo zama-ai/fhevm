@@ -173,6 +173,7 @@ prepare-e2e-test: check-all-test-repo
 	@echo "fund test addresses"
 	@cd $(FHEVM_SOLIDITY_PATH) && ./scripts/fund_test_address_docker.sh
 	@cd $(FHEVM_SOLIDITY_PATH) && cp .env.example .env
+	@cd $(FHEVM_SOLIDITY_PATH) && rm -rf ./.openzeppelin
 	@cd $(FHEVM_SOLIDITY_PATH) && ./launch-fhevm.sh
 
 run-async-test:

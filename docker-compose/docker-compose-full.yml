@@ -18,6 +18,7 @@ services:
       - "9090:9090"
     entrypoint: [ "/app/bootstrap.sh" ]
     volumes:
+      - ../asc/asc.wasm:/app/asc.wasm
       - ../asc/ethereum_ipsc.wasm:/app/ethereum_ipsc.wasm
       - ../asc/bootstrap_asc.sh:/app/bootstrap.sh
     healthcheck:
