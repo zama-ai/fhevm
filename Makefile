@@ -170,9 +170,10 @@ install-packages:
 prepare-e2e-test: check-all-test-repo
 	$(MAKE) install-packages
 	@sleep 5
-	@./scripts/fund_test_addresses_docker.sh
+	@echo "fund test addresses"
+	@cd $(FHEVM_SOLIDITY_PATH) && ./scripts/fund_test_address_docker.sh
 	@cd $(FHEVM_SOLIDITY_PATH) && cp .env.example .env
-	@cd $(FHEVM_SOLIDITY_PATH) && ./setup-local-fhevm.sh
+	@cd $(FHEVM_SOLIDITY_PATH) && ./launch-fhevm.sh
 
 run-async-test:
 	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test --grep 'test async decrypt uint8'
