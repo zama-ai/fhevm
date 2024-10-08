@@ -1,12 +1,14 @@
 # Common pitfalls and best practises
 
+This document provides guidance on common pitfalls to avoid and best practices to follow when working with fhEVM.
+
 ## Common pitfalls to avoid
 
 ### No constant nor immutable encrypted state variables
 
 Never use encrypted types for constant or immutable state variables, even if they should actually stay constants, or else any transaction involving those will fail. This is because ciphertexts should always be stored in the privileged storage of the contract (see paragraph 4.4 of [whitepaper](../../fhevm-whitepaper.pdf)) while constant and immutable variables are just appended to the bytecode of the deployed contract at construction time.
 
-❌ So, even if `a` and `b` should never change after construction, this code :
+❌ So, even if `a` and `b` should never change after construction, the following example :
 
 ```solidity
 contract C {

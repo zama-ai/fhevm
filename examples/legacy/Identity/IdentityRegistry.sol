@@ -6,7 +6,7 @@ import "@openzeppelin/contracts/access/Ownable2Step.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 
-import "../../lib/TFHE.sol";
+import "../../../lib/TFHE.sol";
 
 contract IdentityRegistry is Ownable2Step {
     uint constant MAX_IDENTIFIERS_LENGTH = 20;

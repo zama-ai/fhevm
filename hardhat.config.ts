@@ -1,7 +1,6 @@
 import '@nomicfoundation/hardhat-toolbox';
 import '@openzeppelin/hardhat-upgrades';
 import dotenv from 'dotenv';
-import { promises as fs } from 'fs';
 import 'hardhat-deploy';
 import 'hardhat-ignore-warnings';
 import type { HardhatUserConfig, extendProvider } from 'hardhat/config';
@@ -12,11 +11,11 @@ import { resolve } from 'path';
 import CustomProvider from './CustomProvider';
 // Adjust the import path as needed
 import './tasks/accounts';
+import './tasks/etherscanVerify';
 import './tasks/getEthereumAddress';
 import './tasks/mint';
 import './tasks/taskDeploy';
 import './tasks/taskGatewayRelayer';
-import './tasks/taskIdentity';
 import './tasks/taskTFHE';
 
 extendProvider(async (provider, config, network) => {
@@ -37,9 +36,9 @@ const dotenvConfigPath: string = process.env.DOTENV_CONFIG_PATH || './.env';
 dotenv.config({ path: resolve(__dirname, dotenvConfigPath) });
 
 // Ensure that we have all the environment variables we need.
-const mnemonic: string | undefined = process.env.MNEMONIC;
+let mnemonic: string | undefined = process.env.MNEMONIC;
 if (!mnemonic) {
-  throw new Error('Please set your MNEMONIC in a .env file');
+  mnemonic = 'adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer'; // default mnemonic in case it is undefined (needed to avoid panicking when deploying on real network)
 }
 
 const chainIds = {
@@ -47,6 +46,7 @@ const chainIds = {
   local: 9000,
   localNetwork1: 9000,
   multipleValidatorTestnet: 8009,
+  sepolia: 11155111,
 };
 
 function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
@@ -64,6 +64,8 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
     case 'zama':
       jsonRpcUrl = 'https://devnet.zama.ai';
       break;
+    case 'sepolia':
+      jsonRpcUrl = process.env.SEPOLIA_RPC_RUL!;
   }
   return {
     accounts: {
@@ -87,28 +89,29 @@ task('test', async (taskArgs, hre, runSuper) => {
   // Run modified test task
   if (hre.network.name === 'hardhat') {
     // in fhevm mode all this block is done when launching the node via `pnmp fhevm:start`
-    const privKeyDeployer = process.env.PRIVATE_KEY_GATEWAY_DEPLOYER;
-    await hre.run('task:computePredeployAddress', { privateKey: privKeyDeployer });
-    await hre.run('task:computeACLAddress');
-    await hre.run('task:computeTFHEExecutorAddress');
-    await hre.run('task:computeKMSVerifierAddress');
-    await hre.run('task:computeInputVerifierAddress');
-    await hre.run('task:computeFHEPaymentAddress');
-    if (process.env.IS_COPROCESSOR === 'true') {
-      await fs.copyFile('lib/InputVerifier.sol.coprocessor', 'lib/InputVerifier.sol');
-    } else {
-      await fs.copyFile('lib/InputVerifier.sol.native', 'lib/InputVerifier.sol');
-    }
+    const privKeyGatewayDeployer = process.env.PRIVATE_KEY_GATEWAY_DEPLOYER;
+    const privKeyFhevmDeployer = process.env.PRIVATE_KEY_FHEVM_DEPLOYER;
+    await hre.run('task:computeGatewayAddress', { privateKey: privKeyGatewayDeployer });
+    await hre.run('task:computeACLAddress', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:computeTFHEExecutorAddress', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:computeKMSVerifierAddress', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:computeInputVerifierAddress', { privateKey: privKeyFhevmDeployer, useAddress: false });
+    await hre.run('task:computeFHEPaymentAddress', { privateKey: privKeyFhevmDeployer });
     await hre.run('compile:specific', { contract: 'lib' });
     await hre.run('compile:specific', { contract: 'gateway' });
     await hre.run('compile:specific', { contract: 'payment' });
-    await hre.run('task:deployACL');
-    await hre.run('task:deployTFHEExecutor');
-    await hre.run('task:deployKMSVerifier');
-    await hre.run('task:deployInputVerifier');
-    await hre.run('task:deployFHEPayment');
-    await hre.run('task:addSigners', { numSigners: +process.env.NUM_KMS_SIGNERS! });
-    await hre.run('task:launchFhevm', { skipGetCoin: false });
+    await hre.run('task:faucetToPrivate', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:deployACL', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:deployTFHEExecutor', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:deployKMSVerifier', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:deployInputVerifier', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:deployFHEPayment', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:addSigners', {
+      numSigners: process.env.NUM_KMS_SIGNERS!,
+      privateKey: privKeyFhevmDeployer,
+      useAddress: false,
+    });
+    await hre.run('task:launchFhevm', { skipGetCoin: false, useAddress: false });
   }
   await hre.run('compile:specific', { contract: 'examples' });
   await runSuper();
@@ -136,6 +139,7 @@ const config: HardhatUserConfig = {
         path: "m/44'/60'/0'/0",
       },
     },
+    sepolia: getChainConfig('sepolia'),
     zama: getChainConfig('zama'),
     localDev: getChainConfig('local'),
     local: getChainConfig('local'),
@@ -164,6 +168,9 @@ const config: HardhatUserConfig = {
       },
       evmVersion: 'cancun',
     },
+  },
+  etherscan: {
+    apiKey: process.env.ETHERSCAN_API_KEY!,
   },
   warnings: {
     '*': {

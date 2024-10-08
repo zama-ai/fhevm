@@ -1,6 +1,10 @@
-# Decrypt
+# Decryption
 
-The decryption operation is asynchronous. To use it, your contract must extend the `GatewayCaller` contract. This will import automatically the `Gateway` solidity library as well. See the following example:
+This document provides a guide on performing decryption on smart contracts in Solidity.
+
+## Overview
+
+The decryption operation is asynchronous. To use it, your contract must extend the `GatewayCaller` contract. This action will import automatically the `Gateway` solidity library as well. See the following example:
 
 ```solidity
 pragma solidity ^0.8.24;
@@ -29,7 +33,14 @@ contract TestAsyncDecrypt is GatewayCaller {
   }
 ```
 
-Note that a [`GatewayContract`](../../gateway/GatewayContract.sol) contract is already predeployed on the fhEVM testnet, and a default relayer account is added through the specification of the environment variable `PRIVATE_KEY_GATEWAY_RELAYER` in the `.env` file. Relayers are the only accounts authorized to fulfil the decryption requests. However `GatewayContract` would still check the KMS signature during the fulfilment, so we trust the relayer only to forward the request on time, a rogue relayer could not cheat by sending fake decryption results.
+## `GatewayContract` set up
+
+The [`GatewayContract`](../../gateway/GatewayContract.sol) is pre-deployed on the fhEVM testnet. It uses a default relayer account specified in the `PRIVATE_KEY_GATEWAY_RELAYER` or `ADDRESS_GATEWAY_RELAYER` environment variable in the `.env` file.
+
+Relayers are the only accounts authorized to fulfill decryption requests. The role of the `GatewayContract`, however, is to independently verify the KMS signature during execution. This ensures that the relayers cannot manipulate or send fraudulent decryption results, even if compromised.
+However, the relayers are still trusted to forward decryption requests on time.
+
+## `Gateway.requestDecryption` function
 
 The interface of the `Gateway.requestDecryption` function from previous snippet is the following:
 
@@ -42,6 +53,8 @@ function requestDecryption(
     bool passSignaturesToCaller
 ) returns(uint256 requestID)
 ```
+
+### Parameters
 
 The first argument, `ct`, should be an array of ciphertexts handles which could be of different types, i.e `uint256` values coming from unwrapping handles of type either `ebool`, `euint4`, `euint8`, `euint16`, `euint32`, `euint64` or `eaddress`. `ct` is the list of ciphertexts that are requested to be decrypted. Calling `requestDecryption` will emit an `EventDecryption` on the `GatewayContract` contract which will be detected by a relayer. Then, the relayer will send the corresponding ciphertexts to the KMS for decryption before fulfilling the request.
 
