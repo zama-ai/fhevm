@@ -3,14 +3,14 @@ name: zama-dev
 services:
 
   gateway-store:
-    image: ghcr.io/zama-ai/kms-blockchain-gateway-dev:v0.9.0-rc12-inclusion-proof-test
+    image: ghcr.io/zama-ai/kms-blockchain-gateway-dev:v0.9.0-rc13
     command:
       - "kv_store"
     ports:
       - "8088:8088"
 
   kms-validator:
-    image: ghcr.io/zama-ai/kms-blockchain-asc-dev:v0.9.0-rc12-inclusion-proof-test
+    image: ghcr.io/zama-ai/kms-blockchain-asc-dev:v0.9.0-rc13
     ports:
       - "36656:26656"
       - "36657:26657"
@@ -28,7 +28,7 @@ services:
       start_period: 10s
 
   connector:
-    image: ghcr.io/zama-ai/kms-blockchain-connector-dev:v0.9.0-rc12-inclusion-proof-test
+    image: ghcr.io/zama-ai/kms-blockchain-connector-dev:v0.9.0-rc13
     command:
       - "kms-blockchain-connector"
     environment:
@@ -47,7 +47,7 @@ services:
         condition: service_healthy
 
   kms-core:
-    image: ghcr.io/zama-ai/kms-service-dev:v0.9.0-rc12-inclusion-proof-test
+    image: ghcr.io/zama-ai/kms-service-dev:v0.9.0-rc13
     volumes:
       - $PWD/res/keys:/app/kms/core/service/keys:Z
     ports:
@@ -58,35 +58,32 @@ services:
       timeout: 1s
       retries: 5
       start_period: 10s
-  # gateway:
-  #   image: ghcr.io/zama-ai/kms-blockchain-gateway-dev:v0.9.0-rc12-inclusion-proof-test
-  #   ports:
-  #     - "7077:7077"
-  #   command:
-  #     - "gateway"
-  #   volumes:
-  #     - ../default.toml:/app/gateway/config/default.toml:Z
-  #   environment:
-  #     - GATEWAY__ETHEREUM__LISTENER_TYPE=COPROCESSOR
-  #     - GATEWAY__ETHEREUM__CHAIN_ID=12345
-  #     - GATEWAY__ETHEREUM__WSS_URL=ws://localhost:8746
-  #     - GATEWAY__ETHEREUM__HTTP_URL=http://localhost:8545
-  #     - GATEWAY__ETHEREUM__FHE_LIB_ADDRESS=000000000000000000000000000000000000005d
-  #     - GATEWAY__ETHEREUM__ORACLE_PREDEPLOY_ADDRESS=096b4679d45fB675d4e2c1E4565009Cec99A12B1
-  #     - GATEWAY__ETHEREUM__ACL_ADDRESS=05fD9B5EFE0a996095f42Ed7e77c390810CF660c
-  #     - GATEWAY__ETHEREUM__COPROCESSOR_API_KEY=api-key
-  #     - GATEWAY__ETHEREUM__COPROCESSOR_URL=http://127.0.0.1:50055
-  #     - GATEWAY__ETHEREUM__CONTRACT_ADDRESS=wasm1nc5tatafv6eyq7llkr2gv50ff9e22mnf70qgjlv737ktmt4eswrqr5j2ht
-  #     - GATEWAY__ETHEREUM__KMSVERIFIER_VC_ADDRESS=857Ca72A957920Fa0FB138602995839866Bd4005
-  #     - GATEWAY__KMS__KEY_ID=408d8cbaa51dece7f782fe04ba0b1c1d017b1088
-  #     - GATEWAY__ETHEREUM__RELAYER_KEY=7ec931411ad75a7c201469a385d6f18a325d4923f9f213bd882bbea87e160b67
-  #     - RUST_BACKTRACE=1
-  #   depends_on:
-  #     fhevm-validator:
-  #       condition: service_healthy
-  #     kms-validator:
-  #       condition: service_healthy
-
+  #  gateway:
+  #    image: ghcr.io/zama-ai/kms-blockchain-gateway-dev:v0.9.0-rc13
+  #    ports:
+  #      - "7077:7077"
+  #    command:
+  #      - "gateway"
+  #    volumes:
+  #      - ../default.toml:/app/gateway/config/default.toml:Z
+  #    environment:
+  #      - GATEWAY__ETHEREUM__LISTENER_TYPE=COPROCESSOR
+  #      - GATEWAY__ETHEREUM__CHAIN_ID=12345
+  #      - GATEWAY__ETHEREUM__WSS_URL=ws://localhost:8746
+  #      - GATEWAY__ETHEREUM__HTTP_URL=http://localhost:8545
+  #      - GATEWAY__ETHEREUM__FHE_LIB_ADDRESS=000000000000000000000000000000000000005d
+  #      - GATEWAY__ETHEREUM__ORACLE_PREDEPLOY_ADDRESS=096b4679d45fB675d4e2c1E4565009Cec99A12B1
+  #      - GATEWAY__ETHEREUM__ACL_ADDRESS=05fD9B5EFE0a996095f42Ed7e77c390810CF660c
+  #      - GATEWAY__ETHEREUM__COPROCESSOR_API_KEY=api-key
+  #      - GATEWAY__ETHEREUM__COPROCESSOR_URL=http://127.0.0.1:50055
+  #      - GATEWAY__ETHEREUM__CONTRACT_ADDRESS=wasm1nc5tatafv6eyq7llkr2gv50ff9e22mnf70qgjlv737ktmt4eswrqr5j2ht
+  #      - GATEWAY__ETHEREUM__KMSVERIFIER_VC_ADDRESS=857Ca72A957920Fa0FB138602995839866Bd4005
+  #      - GATEWAY__KMS__KEY_ID=408d8cbaa51dece7f782fe04ba0b1c1d017b1088
+  #      - GATEWAY__ETHEREUM__RELAYER_KEY=7ec931411ad75a7c201469a385d6f18a325d4923f9f213bd882bbea87e160b67
+  #      - RUST_BACKTRACE=1
+  #    depends_on:
+  #      kms-validator:
+  #        condition: service_healthy
   # fhevm-validator:
   #   environment:
   #     - TFHE_EXECUTOR_CONTRACT_ADDRESS=0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c
