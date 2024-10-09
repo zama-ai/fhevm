@@ -16,16 +16,16 @@ export ADDRESS_KMS_SIGNER_2="0xfe0fB0BCceb872ee7a6ef6c455e6E127Aef55DD7"
 export ADDRESS_KMS_SIGNER_3="0x2dac5193bE0AB0eD8871399E6Ae61EAe6cc8cAE1"
 export ADDRESS_COPROCESSOR="0xc9990FEfE0c27D31D0C2aa36196b085c0c4d456c"
 export IS_COPROCESSOR="true"
-export SEPOLIA_RPC_RUL="https://sepolia.infura.io/v3/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+export SEPOLIA_RPC_URL="https://sepolia.infura.io/v3/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 export ETHERSCAN_API_KEY="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
 ```
 
-For the `SEPOLIA_RPC_RUL` env variable, you can either get one from a service provider for free like Infura, or use your own RPC URL if you are running a node yourself. For `ETHERSCAN_API_KEY` it is needed to verify source code of smart contracts on Sepolia/mainnet Etherscan (if you deploy coprocessor on Sepolia or mainnet for instance) and you can get a free Etherscan API key from: [https://docs.etherscan.io/getting-started/viewing-api-usage-statistics](https://docs.etherscan.io/getting-started/viewing-api-usage-statistics).
+For the `SEPOLIA_RPC_URL` env variable, you can either get one from a service provider for free like Infura, or use your own RPC URL if you are running a node yourself. For `ETHERSCAN_API_KEY` it is needed to verify source code of smart contracts on Sepolia/mainnet Etherscan (if you deploy coprocessor on Sepolia or mainnet for instance) and you can get a free Etherscan API key from: [https://docs.etherscan.io/getting-started/viewing-api-usage-statistics](https://docs.etherscan.io/getting-started/viewing-api-usage-statistics).
 
 **Important** : the `PRIVATE_KEY_FHEVM_DEPLOYER` and `PRIVATE_KEY_GATEWAY_DEPLOYER` are expected to have a nonce of `0` initially (i.e never sent any tx before with those) for the deployment scripts to succeed later. If you have [foundry](https://book.getfoundry.sh/getting-started/installation) installed, you can generate fresh Ethereum private key / address pairs locally with this command:
 `cast wallet new`.
 
-2/ Then run the precompute addresses tasks -> this will write on disk the correct addresses needed to launch the modified Geth node (`TFHEExecutor` address) and the Gateway service (`GatewayContract` one) and - I think - the `ACL` and `KMSVerifier` addresses which would be needed to setup some values inside the ASC contract on KMS chain, in files such as: `lib/.env.acl`, `lib/.env.kmsverifier`, `gateway/env.gateway` etc. This script typically consists of the first part of [`./launch-fhevm.sh`](https://github.com/zama-ai/fhevm/blob/main/launch-fhevm.sh) :
+2/ Then run the precompute addresses tasks -> this will write on disk the correct addresses needed to launch the modified Geth node (`TFHEExecutor` address) and the Gateway service (`GatewayContract` one) and - I think - the `ACL` and `KMSVerifier` addresses which would be needed to setup some values inside the ASC contract on KMS chain, in files such as: `lib/.env.acl`, `lib/.env.kmsverifier`, `gateway/env.gateway` etc. This script typically consists of the first part of [`./launch-fhevm.sh` file](https://github.com/zama-ai/fhevm/blob/main/launch-fhevm.sh) :
 
 ```
 #!/bin/bash
@@ -57,7 +57,7 @@ npx hardhat task:computeFHEPaymentAddress --private-key "$PRIVATE_KEY_FHEVM_DEPL
 The funding of `GATEWAY_RELAYER` account is the only part which is not strictly needed during deployment, and this account could be funded later, after all deployment steps will be completed.
 
 5/ Run the deployment script (part after the commented line).
-Typically this script contains the second part of `./launch-fhevm.sh` :
+Typically this script contains the second part of [`./launch-fhevm.sh` file](https://github.com/zama-ai/fhevm/blob/main/launch-fhevm.sh) :
 
 ```
 #!/bin/bash
@@ -88,7 +88,7 @@ npx hardhat task:verifyContracts --network sepolia
 
 Note that in previous example, we supposed deployment would happen on Sepolia, this is why we used the `--network sepolia` flag. Note also the last line which is responsible to verify all contracts which have just been deployed on Sepolia, using the Etherscan API key, after waiting 2 minutes to make sure that the contracts bytecode were correctly propagated. This last command only makes sense if you plan to deploy on a network with Etherscan support, such as Sepolia or Ethereum mainnet.
 
-**Important:** at this stage the `openzeppelin-upgrades` plugin will write on disk an `.openzeppelin/` folder with some files in it (for eg typically a `sepolia.json` file if you deploy on Sepolia). It will be critical to keep this folder saved, to be able to do safe upgrades of smart contracts if needed some day. Similarly, you must also keep all the `.evn.XXX` files written inside both of `lib/` and `gateway/` directories saved, because those contains the proxy addresses which might also be needed during the upgrade process.
+**Important:** at this stage the `openzeppelin-upgrades` plugin will write on disk an `.openzeppelin/` folder with some files in it (for eg typically a `sepolia.json` file if you deploy on Sepolia). It will be critical to keep this folder saved, to be able to do safe upgrades of smart contracts if needed some day. Similarly, you must also keep all the `.env.XXX` files written inside both of `lib/` and `gateway/` directories saved, because those contains the proxy addresses which might also be needed during the upgrade process.
 
 # After deployment - Optional
 
@@ -108,7 +108,7 @@ export ADDRESS_KMS_SIGNER_2="0xfe0fB0BCceb872ee7a6ef6c455e6E127Aef55DD7"
 export ADDRESS_KMS_SIGNER_3="0x2dac5193bE0AB0eD8871399E6Ae61EAe6cc8cAE1"
 export ADDRESS_COPROCESSOR="0xc9990FEfE0c27D31D0C2aa36196b085c0c4d456c"
 export IS_COPROCESSOR="true"
-export SEPOLIA_RPC_RUL="https://sepolia.infura.io/v3/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+export SEPOLIA_RPC_URL="https://sepolia.infura.io/v3/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 export ETHERSCAN_API_KEY="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
 ```
 
