@@ -1,100 +1,54 @@
-> Here will go all information about specific contracts, how are they designed and what are the considerations
+# fhEVM Smart Contract Examples
 
-### Overview of Encrypted and Decrypted Data Flow
+This directory contains example contracts that demonstrate the usage of the fhEVM (Fully Homomorphic Encryption Virtual Machine) smart contract library. These contracts showcase various features and functionalities of encrypted computations on the blockchain.
 
-```mermaid
-graph TD
-    A[User's Plaintext Input] -->|Encryption| B(Encrypted Input)
-    B -->|Stored in Contract| C{Encrypted State Variables}
+## Overview
 
-    %% Using encrypted data in the contract %%
-    C -->|Operations on Encrypted Data| D[Contract Logic and Functions]
-    D -->|Maintain Confidentiality| C
+The fhEVM library allows developers to perform computations on encrypted data within smart contracts. This enables privacy-preserving operations and opens up new possibilities for confidential blockchain applications.
 
-    %% Encryption and Decryption operations %%
-    D -->|Decrypt when Necessary| E[Decrypted Values for Computations]
-    E -->|Logic/Verification| D
-```
+## Quick Overview
 
-[needs work]
-```mermaid
-graph TD
-    %% User Interaction %%
-    subgraph User Actions
-        U[User] -->|1. Encrypted Input| A[User's Plaintext Input]
-        U -->|2. Request Re-encryption| F[Direct Re-encryption Request]
-        U -->|3. Trigger Decryption| K[Decryption Request]
-    end
+| Contract Name | Description |
+|---------------|-------------|
+| Counter.sol | Simple incrementable counter |
+| EncryptedERC20.sol | ERC20-like token with encrypted balances |
+| TestAsyncDecrypt.sol | Asynchronous decryption testing |
+| BlindAuction.sol | Blind auction using encrypted bids |
+| Rand.sol | Generation of random encrypted numbers |
+| ACLUpgradedExample.sol | Upgraded Access Control List with version info |
+| Reencrypt.sol | Reencryption of various FHE data types |
+| Regression1.sol | Service and metadata management for testing |
+| SmartAccount.sol | Smart account with batch transaction execution |
+| TFHEExecutorUpgradedExample.sol | Upgraded TFHEExecutor with version info |
+| TracingSubCalls.sol | Subcall tracing and scenario testing |
 
-    %% Encryption Flow %%
-    A -->|Sends Input to Contract| B(Encrypted Input)
-    B -->|Stored in Contract| C{Encrypted State Variables}
+## Contract Summaries
 
-    %% Using encrypted data in the contract %%
-    C -->|Operations on Encrypted Data| D[Contract Logic and Functions]
-    D -->|Maintain Confidentiality| C
+### ACLUpgradedExample.sol
+An upgraded version of the Access Control List (ACL) contract that includes version information. This contract likely manages permissions and access control within a system, with the added benefit of tracking its own version for easier upgrades and compatibility checks.
 
-    %% Decryption operations %%
-    D -->|Decrypt when Necessary| E[Decrypted Values for Computations]
-    E -->|Logic/Verification| D
-    K -->|Decrypt Request to Contract| C
-    C -->|Forwards Request to| G[Gateway Service]
-    G -->|Return Decrypted Value| E
-    G <--> N{KMS Service}
+### BlindAuction.sol
+Implements a blind auction system using encrypted bids. Key features include:
+- Encrypted bid submission
+- Timed auction periods
+- Winner determination without revealing losing bids
+- Claim and withdrawal mechanisms
 
-    %% Re-encryption Flow %%
-    F -->|User Calls Gateway Directly| G
-    G -->|Re-encrypt with dApp's Public Key| J[Re-encrypted Data]
-    J -->|Return to User| M{User's Encrypted Data}
-    M -->|User Sends to Contract| C
+This contract showcases how FHE can be used to create fair and private auction systems on the blockchain.
 
-```
+### Counter.sol
+A simple contract demonstrating basic state management with an incrementable counter. While straightforward, this contract serves as a good starting point for understanding how to manage encrypted state variables in fhEVM.
 
-```mermaid
-graph TD
-    %% User Interaction %%
-    subgraph User Actions
-        U[User] -->|1. Encrypted Input| A[User's Plaintext Input]
-        U -->|2. Request Re-encryption| F[Direct Re-encryption Request]
-        U -->|3. Trigger Decryption| K[Decryption Request]
-    end
+### EncryptedERC20.sol
+An implementation of an ERC20-like token with encrypted balances and transfers. This contract demonstrates:
+- Encrypted token balances
+- Private transfer operations
+- Allowance management with encryption
 
-    %% Smart Contract Operations %%
-    subgraph Smart Contract Operations
-        C{Encrypted State Variables} -->|Operations on Encrypted Data| D[Contract Logic and Functions]
-        D -->|Maintain Confidentiality| C
-        A -->|Sends Input to Contract| B(Encrypted Input)
-        B -->|Stored in Contract| C
-        K -->|Decrypt Request to Contract| C
-        C -->|Forwards Decrypt Request to| GC[Gateway Call from Contract]
-        J -->|Return to User| M{User's Encrypted Data}
-        %% Contract Decryption Flow %%
-        GC -->|Return Decrypted Data to Contract| E[Decrypted Values for Computations]
-        E -->|Logic/Verification| D
-
-    end
-
-        GC -->|Forward Request to| G[Gateway Service]
-        G -->|Return Decrypted Value| GC
-        G <--> N{KMS Service}
-        F -->|User Calls Gateway Directly| G
-        G -->|Re-encrypt with dApp's Public Key| J[Re-encrypted Data]
-
-    %% Re-encrypted Data Flow %%
-    M -->|User Sends to Contract| C
+It showcases how traditional token systems can be made confidential using FHE techniques.
 
 
-
-
-
- 3. `Counter.sol`:
-    The `Counter` smart contract is a simple contract implemented in Solidity, designed to demonstrate basic state manipulation. Its main purpose is to maintain a counter (value) and provide functions to increment and view the current counter value.
-
- 1. `EncryptedERC20.sol`:
-   This contract implements an encrypted ERC20-like token with confidential balances using Zama's FHE (Fully Homomorphic Encryption) library.
-   It supports typical ERC20 functionality such as transferring tokens, minting, and setting allowances, but uses encrypted data types.
-
-### Approval and Transfer Operations
+#### Approval and Transfer Operations
 
 Here's a high-level overview of what is encrypted and decrypted in the `EncryptedERC20` smart contract:
 
@@ -114,6 +68,28 @@ graph TD
     Y1 --> Y2
     Y1 --> Y3
 ```
+
+### Rand.sol
+This contract showcases the generation of random encrypted numbers of various bit sizes (8, 16, 32, 64 bits). It's useful for applications requiring secure, on-chain randomness that remains encrypted until needed.
+
+### Reencrypt.sol
+Demonstrates the reencryption of various FHE data types, including booleans, integers of different sizes, addresses, and bytes. This contract is crucial for understanding how to manage and transform encrypted data within smart contracts.
+
+### Regression1.sol
+A contract for managing services and metadata, useful for testing and regression purposes. It likely includes various operations and state changes to ensure the fhEVM system behaves correctly under different scenarios.
+
+### SmartAccount.sol
+Implements a smart account with batch transaction execution capabilities. This contract showcases how complex, multi-step operations can be performed securely and efficiently using encrypted data.
+
+### TestAsyncDecrypt.sol
+Tests asynchronous decryption of various encrypted data types using the Gateway. This contract is essential for understanding how to safely decrypt data when needed, without compromising the overall security of the encrypted system.
+
+### TFHEExecutorUpgradedExample.sol
+An upgraded version of the TFHEExecutor contract with added version information. This contract likely handles core execution logic for FHE operations within the system.
+
+### TracingSubCalls.sol
+Demonstrates tracing of subcalls and various success/failure scenarios in contract interactions. This is crucial for testing and understanding how encrypted operations behave in complex, multi-contract scenarios.
+
 
 1. `TestAsyncDecrypt.sol`:
    A contract for testing asynchronous decryption using the Gateway. It handles various encrypted data types and demonstrates different decryption scenarios, including trustless decryption.
@@ -152,3 +128,30 @@ graph TD
    - Contracts that test creation with encrypted inputs
    - A contract with various functions to test success, failure, out-of-gas, and self-destruct scenarios
 
+ 3. `Counter.sol`:
+    The `Counter` smart contract is a simple contract implemented in Solidity, designed to demonstrate basic state manipulation. Its main purpose is to maintain a counter (value) and provide functions to increment and view the current counter value.
+
+ 1. `EncryptedERC20.sol`:
+   This contract implements an encrypted ERC20-like token with confidential balances using Zama's FHE (Fully Homomorphic Encryption) library.
+   It supports typical ERC20 functionality such as transferring tokens, minting, and setting allowances, but uses encrypted data types.
+
+## Usage
+
+These contracts serve as examples and can be used as references when building your own fhEVM-compatible smart contracts. Make sure to have the necessary fhEVM library and dependencies set up in your development environment.
+
+
+### Overview of Encrypted and Decrypted Data Flow
+
+```mermaid
+graph TD
+    A[User's Plaintext Input] -->|Encryption| B(Encrypted Input)
+    B -->|Stored in Contract| C{Encrypted State Variables}
+
+    %% Using encrypted data in the contract %%
+    C -->|Operations on Encrypted Data| D[Contract Logic and Functions]
+    D -->|Maintain Confidentiality| C
+
+    %% Encryption and Decryption operations %%
+    D -->|Decrypt when Necessary| E[Decrypted Values for Computations]
+    E -->|Logic/Verification| D
+```
