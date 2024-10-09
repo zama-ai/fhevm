@@ -1,5 +1,5 @@
 ---
-name: fhevmjs Bug report
+name: 🐛 fhevmjs Bug report
 about: Use this template to report issues encountered while using the fhevmjs library for interacting with fhEVM smart contracts.
 title: ""
 labels: bug, fhevmjs

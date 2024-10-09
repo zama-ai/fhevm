@@ -1,5 +1,5 @@
 ---
-name: Smart Contracts Bug Report
+name: 🐞 Smart Contracts Bug Report
 about: Use this template to report issues encountered with confidential smart contracts on the fhEVM.
 title: ""
 labels: bug
