@@ -1,6 +1,6 @@
 ---
 name: Smart Contracts Bug Report
-about: Use this template to report issues encountered with confidential smart contracts on the FHEVM.
+about: Use this template to report issues encountered with confidential smart contracts on the fhEVM.
 title: ""
 labels: bug
 assignees: ""
@@ -48,8 +48,8 @@ Fill in the relevant environment details where the issue was observed:
 
 - **Operating System**: [e.g., Ubuntu 20.04, Windows 10]
 - **Browser**: [e.g., Chrome v90, Safari v14]
-- **FHEVM Version**: [e.g., v1.0.0]
-- **Tooling**: [Hardhat, Remix, FHEVM CLI]
+- **fhEVM Version**: [e.g., v1.0.0]
+- **Tooling**: [Hardhat, Remix, fhEVM CLI]
 - **Devnet / Local Node Configuration**:
   - Chain ID: [e.g., 9000]
   - RPC URL: [e.g., `https://devnet.zama.ai`]

@@ -1,5 +1,5 @@
 ---
-name: General feature request for FHEVM
+name: General feature request for fhEVM
 about: Suggest an idea for this project
 title: ""
 labels: enhancement
