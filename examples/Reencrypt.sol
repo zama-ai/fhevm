@@ -4,26 +4,26 @@ pragma solidity ^0.8.24;
 
 import "../lib/TFHE.sol";
 
-// Contract for demonstrating reencryption of various FHE data types
+/// @notice Contract for demonstrating reencryption of various FHE data types
 contract Reencrypt {
-    // Encrypted boolean
+    /// @dev Encrypted boolean
     ebool public xBool;
-    // Encrypted 4-bit unsigned integer
+    /// @dev Encrypted 4-bit unsigned integer
     euint4 public xUint4;
-    // Encrypted 8-bit unsigned integer
+    /// @dev Encrypted 8-bit unsigned integer
     euint8 public xUint8;
-    // Encrypted 16-bit unsigned integer
+    /// @dev Encrypted 16-bit unsigned integer
     euint16 public xUint16;
-    // Encrypted 32-bit unsigned integer
+    /// @dev Encrypted 32-bit unsigned integer
     euint32 public xUint32;
-    // Encrypted 64-bit unsigned integer
+    /// @dev Encrypted 64-bit unsigned integer
     euint64 public xUint64;
-    // Encrypted Ethereum address
+    /// @dev Encrypted Ethereum address
     eaddress public xAddress;
-    // Encrypted 256-bit bytes
+    /// @dev Encrypted 256-bit bytes
     ebytes256 public yBytes256;
 
-    // Constructor to initialize encrypted values and set permissions
+    /// @notice Constructor to initialize encrypted values and set permissions
     constructor() {
         // Set default FHE configuration
         TFHE.setFHEVM(FHEVMConfig.defaultConfig());
@@ -64,7 +64,9 @@ contract Reencrypt {
         TFHE.allow(xAddress, msg.sender);
     }
 
-    // Function to set and allow access to encrypted 256-bit bytes
+    /// @notice Function to set and allow access to encrypted 256-bit bytes
+    /// @param inputHandleEBytes256 The input handle for the encrypted bytes256
+    /// @param inputProofEBytes256 The input proof for the encrypted bytes256
     function setEBytes256(einput inputHandleEBytes256, bytes memory inputProofEBytes256) external {
         yBytes256 = TFHE.asEbytes256(inputHandleEBytes256, inputProofEBytes256);
         TFHE.allowThis(yBytes256);
