@@ -1,15 +1,19 @@
+use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicUsize;
 
 use crate::dfg::types::*;
 use crate::dfg::{OpEdge, OpNode};
-use crate::server::{run_computation, InMemoryCiphertext, SyncComputeError};
+use crate::server::{self, run_computation, InMemoryCiphertext, SyncComputeError};
 use anyhow::Result;
 use daggy::petgraph::csr::IndexType;
 use daggy::petgraph::graph::node_index;
 use daggy::petgraph::visit::{IntoEdgeReferences, IntoNeighbors, VisitMap, Visitable};
 use daggy::petgraph::Direction::Incoming;
 use fhevm_engine_common::types::SupportedFheCiphertexts;
+
+use rayon::prelude::*;
+use std::sync::mpsc::channel;
 
 use daggy::{
     petgraph::{
@@ -80,11 +84,11 @@ impl<'a> Scheduler<'a> {
                 self.schedule_coarse_grain(PartitionStrategy::MaxLocality)
                     .await
             }
-            Ok(val) if val == "LOOP" => panic!("Unimplemented LOOP scheduling strategy"),
+            Ok(val) if val == "LOOP" => self.schedule_component_loop().await,
             Ok(val) if val == "FINE_GRAIN" => self.schedule_fine_grain().await,
             Ok(unhandled) => panic!("Scheduling strategy {:?} does not exist", unhandled),
 
-            _ => self.schedule_fine_grain().await,
+            _ => self.schedule_component_loop().await,
         }
     }
 
@@ -168,7 +172,7 @@ impl<'a> Scheduler<'a> {
                     let opcode = n.opcode;
                     args.push((opcode, std::mem::take(&mut n.inputs), *nidx));
                 }
-                set.spawn_blocking(move || execute_partition(args, index));
+                set.spawn_blocking(move || execute_partition(args, index, false));
             }
         }
         // Get results from computations and update dependences of remaining computations
@@ -204,8 +208,47 @@ impl<'a> Scheduler<'a> {
                         let opcode = n.opcode;
                         args.push((opcode, std::mem::take(&mut n.inputs), *nidx));
                     }
-                    set.spawn_blocking(move || execute_partition(args, dependent_task_index));
+                    set.spawn_blocking(move || {
+                        execute_partition(args, dependent_task_index, false)
+                    });
                 }
+            }
+        }
+        Ok(())
+    }
+
+    async fn schedule_component_loop(&mut self) -> Result<(), SyncComputeError> {
+        let mut execution_graph: Dag<ExecNode, ()> = Dag::default();
+        let _ = partition_components(self.graph, &mut execution_graph);
+        let mut comps = vec![];
+
+        // Prime the scheduler with all nodes without dependences
+        for idx in 0..execution_graph.node_count() {
+            let index = NodeIndex::new(idx);
+            let node = execution_graph.node_weight_mut(index).unwrap();
+            if self.is_ready_task(node) {
+                let mut args = Vec::with_capacity(node.df_nodes.len());
+                for nidx in node.df_nodes.iter() {
+                    let n = self.graph.node_weight_mut(*nidx).unwrap();
+                    let opcode = n.opcode;
+                    args.push((opcode, std::mem::take(&mut n.inputs), *nidx));
+                }
+                comps.push((std::mem::take(&mut args), index));
+            }
+        }
+
+        let (src, dest) = channel();
+        comps.par_iter().for_each_with(src, |src, (args, index)| {
+            src.send(execute_partition(args.to_vec(), *index, true))
+                .unwrap();
+        });
+        let results: Vec<_> = dest.iter().collect();
+        for result in results {
+            let mut output = result.map_err(|_| SyncComputeError::ComputationFailed)?;
+            while let Some(o) = output.0.pop() {
+                let index = o.0;
+                let node_index = NodeIndex::new(index);
+                self.graph[node_index].result = Some(o.1);
             }
         }
         Ok(())
@@ -335,6 +378,7 @@ fn partition_components(
 pub fn execute_partition(
     computations: Vec<(i32, Vec<DFGTaskInput>, NodeIndex)>,
     task_id: NodeIndex,
+    use_global_threadpool: bool,
 ) -> Result<(Vec<(usize, InMemoryCiphertext)>, NodeIndex), SyncComputeError> {
     let mut res: HashMap<usize, InMemoryCiphertext> = HashMap::with_capacity(computations.len());
     for (opcode, inputs, nidx) in computations {
@@ -355,8 +399,21 @@ pub fn execute_partition(
                 }
             }
         }
-        let (node_index, result) = run_computation(opcode, Ok(cts), nidx.index())?;
-        res.insert(node_index, result);
+        if use_global_threadpool {
+            let (node_index, result) = run_computation(opcode, Ok(cts), nidx.index())?;
+            res.insert(node_index, result);
+        } else {
+            let thread_pool = server::THREAD_POOL
+                .borrow()
+                .take()
+                .ok_or(SyncComputeError::ComputationFailed)?;
+            thread_pool.install(|| -> Result<(), SyncComputeError> {
+                let (node_index, result) = run_computation(opcode, Ok(cts), nidx.index())?;
+                res.insert(node_index, result);
+                Ok(())
+            })?;
+            server::THREAD_POOL.set(Some(thread_pool));
+        }
     }
     Ok((Vec::from_iter(res), task_id))
 }

@@ -2198,6 +2198,7 @@ dependencies = [
  "daggy",
  "fhevm-engine-common",
  "prost",
+ "rayon",
  "sha3",
  "tfhe",
  "tokio",

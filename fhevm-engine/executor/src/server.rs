@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use anyhow::Result;
 pub use common::FheOperation;
 use executor::{
@@ -16,7 +14,8 @@ use fhevm_engine_common::{
     types::{get_ct_type, FhevmError, Handle, SupportedFheCiphertexts, HANDLE_LEN, SCALAR_LEN},
 };
 use sha3::{Digest, Keccak256};
-use tfhe::{integer::U256, set_server_key, zk::CompactPkePublicParams};
+use std::{cell::RefCell, collections::HashMap};
+use tfhe::{integer::U256, set_server_key, zk::CompactPkePublicParams, ServerKey};
 use tokio::task::spawn_blocking;
 use tonic::{transport::Server, Code, Request, Response, Status};
 
@@ -30,14 +29,29 @@ pub mod executor {
     tonic::include_proto!("fhevm.executor");
 }
 
+thread_local! {
+    pub static THREAD_POOL: RefCell<Option<rayon::ThreadPool>> = const {RefCell::new(None)};
+}
+
 pub fn start(args: &crate::cli::Args) -> Result<()> {
     let keys: FhevmKeys = SerializedFhevmKeys::load_from_disk().into();
     let executor = FhevmExecutorService::new();
+    rayon::broadcast(|_| {
+        set_server_key(keys.server_key.clone());
+    });
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(args.tokio_threads)
         .max_blocking_threads(args.fhe_compute_threads)
         .on_thread_start(move || {
             set_server_key(keys.server_key.clone());
+            let rayon_pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(8)
+                .build()
+                .unwrap();
+            rayon_pool.broadcast(|_| {
+                set_server_key(keys.server_key.clone());
+            });
+            THREAD_POOL.set(Some(rayon_pool));
         })
         .enable_all()
         .build()?;
@@ -108,9 +122,15 @@ impl FhevmExecutor for FhevmExecutorService {
                 }
                 // Schedule computations in parallel as dependences allow
                 let mut sched = Scheduler::new(&mut graph.graph);
+
+                let now = std::time::SystemTime::now();
                 if sched.schedule().await.is_err() {
                     return Some(Resp::Error(SyncComputeError::ComputationFailed.into()));
                 }
+                println!(
+                    "Execution time (sched): {}",
+                    now.elapsed().unwrap().as_millis()
+                );
                 // Extract the results from the graph
                 match graph.get_results() {
                     Ok(result_cts) => Some(Resp::ResultCiphertexts(ResultCiphertexts {

@@ -15,6 +15,7 @@ serde = "1.0.210"
 prometheus = "0.13.4"
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["fmt", "json"] }
+rayon = "1.10.0"
 
 [profile.dev.package.tfhe]
 overflow-checks = false

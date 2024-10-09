@@ -17,6 +17,7 @@ bincode.workspace = true
 sha3.workspace = true
 anyhow.workspace = true
 daggy.workspace = true
+rayon.workspace = true
 fhevm-engine-common = { path = "../fhevm-engine-common" }
 
 [build-dependencies]
