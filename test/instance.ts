@@ -1,5 +1,13 @@
-import { clientKeyDecryptor, createInstance as createFhevmInstance, getCiphertextCallParams } from 'fhevmjs';
+import dotenv from 'dotenv';
+import {
+  clientKeyDecryptor,
+  createEIP712,
+  createInstance as createFhevmInstance,
+  generateKeypair,
+  getCiphertextCallParams,
+} from 'fhevmjs';
 import { readFileSync } from 'fs';
+import * as fs from 'fs';
 import { ethers, ethers as hethers, network } from 'hardhat';
 import { homedir } from 'os';
 import path from 'path';
@@ -13,13 +21,17 @@ const FHE_CLIENT_KEY_PATH = process.env.FHE_CLIENT_KEY_PATH;
 
 let clientKey: Uint8Array | undefined;
 
+const kmsAdd = dotenv.parse(fs.readFileSync('lib/.env.kmsverifier')).KMS_VERIFIER_CONTRACT_ADDRESS;
+const aclAdd = dotenv.parse(fs.readFileSync('lib/.env.acl')).ACL_CONTRACT_ADDRESS;
+
 const createInstanceMocked = async () => {
-  const instance = await createFhevmInstance({
-    chainId: network.config.chainId,
-  });
-  instance.reencrypt = reencryptRequestMocked;
-  instance.createEncryptedInput = createEncryptedInputMocked;
-  instance.getPublicKey = () => '0xFFAA44433';
+  const instance = {
+    reencrypt: reencryptRequestMocked,
+    createEncryptedInput: createEncryptedInputMocked,
+    getPublicKey: () => '0xFFAA44433',
+    generateKeypair: generateKeypair,
+    createEIP712: createEIP712(network.config.chainId),
+  };
   return instance;
 };
 
@@ -43,7 +55,10 @@ export const createInstances = async (accounts: Signers): Promise<FhevmInstances
 };
 
 export const createInstance = async () => {
+  console.log('net url:', network.config.url);
   const instance = await createFhevmInstance({
+    kmsContractAddress: kmsAdd,
+    aclContractAddress: aclAdd,
     networkUrl: network.config.url,
     gatewayUrl: 'http://localhost:7077',
   });
