@@ -1,5 +1,5 @@
 ---
-name: Documentation Bug Report / Unclear Documentation
+name: 📚 Documentation Bug Report / Unclear Documentation
 about: Use this template to report issues, inconsistencies, or inaccuracies in our documentation. Or to report sections of our documentation that are unclear, confusing, or require further explanation.
 title: ""
 labels: bug, documentation
