@@ -45,6 +45,7 @@ if (!mnemonic) {
 const chainIds = {
   zama: 8009,
   local: 9000,
+  localCoprocessor: 12345,
   localNetwork1: 9000,
   multipleValidatorTestnet: 8009,
   sepolia: 11155111,
@@ -55,6 +56,9 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
   switch (chain) {
     case 'local':
       jsonRpcUrl = 'http://localhost:8545';
+      break;
+    case 'localCoprocessor':
+      jsonRpcUrl = 'http://localhost:8745';
       break;
     case 'localNetwork1':
       jsonRpcUrl = 'http://127.0.0.1:9650/ext/bc/fhevm/rpc';
@@ -144,6 +148,7 @@ const config: HardhatUserConfig = {
     zama: getChainConfig('zama'),
     localDev: getChainConfig('local'),
     local: getChainConfig('local'),
+    localCoprocessor: getChainConfig('localCoprocessor'),
     localNetwork1: getChainConfig('localNetwork1'),
     multipleValidatorTestnet: getChainConfig('multipleValidatorTestnet'),
   },
