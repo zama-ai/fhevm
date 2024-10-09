@@ -2,61 +2,71 @@
 
 pragma solidity ^0.8.24;
 
-// Import necessary contracts and libraries
 import "../lib/TFHE.sol";
 import "./EncryptedERC20.sol";
 import "@openzeppelin/contracts/access/Ownable2Step.sol";
 import "../gateway/GatewayCaller.sol";
 
-// Main contract for the blind auction
+/// @notice Main contract for the blind auction
 contract BlindAuction is Ownable2Step, GatewayCaller {
-    // Auction end time
+    /// @notice Auction end time
     uint256 public endTime;
 
-    // Address of the beneficiary
+    /// @notice Address of the beneficiary
     address public beneficiary;
 
-    // Current highest bid.
+    /// @notice Current highest bid
     euint64 private highestBid;
 
-    // ticket corresponding to the highest bid, used during reencryption to know if a user has won the bid
+    /// @notice Ticket corresponding to the highest bid
+    /// @dev Used during reencryption to know if a user has won the bid
     euint64 private winningTicket;
-    uint64 private decryptedWinningTicket; // decryption of winningTicket, can be requested by anyone after auction ends
 
-    // ticket randomly sampled for each user
-    // WARNING : we assume probability of duplicated tickets is null (an improved implementation could simply sample 4 random euint64 tickets per user for negligible collision probability)
+    /// @notice Decryption of winningTicket
+    /// @dev Can be requested by anyone after auction ends
+    uint64 private decryptedWinningTicket;
+
+    /// @notice Ticket randomly sampled for each user
+    /// @dev WARNING: We assume probability of duplicated tickets is null
+    /// @dev An improved implementation could sample 4 random euint64 tickets per user for negligible collision probability
     mapping(address account => euint64 ticket) private userTickets;
 
-    // Mapping from bidder to their bid value.
+    /// @notice Mapping from bidder to their bid value
     mapping(address account => euint64 bidAmount) private bids;
 
-    // Number of bids
+    /// @notice Number of bids
     uint256 public bidCounter;
 
-    // The token contract used for encrypted bids.
+    /// @notice The token contract used for encrypted bids
     EncryptedERC20 public tokenContract;
 
-    // Whether the auction object has been claimed.
-    // WARNING : if there is a draw, only first highest bidder will get the prize (an improved implementation could handle this case differently)
+    /// @notice Flag indicating whether the auction object has been claimed
+    /// @dev WARNING : If there is a draw, only the first highest bidder will get the prize
+    ///      An improved implementation could handle this case differently
     ebool private objectClaimed;
 
-    // Flag to check if the token has been transferred to the beneficiary
+    /// @notice Flag to check if the token has been transferred to the beneficiary
     bool public tokenTransferred;
 
-    // Flag to determine if the auction can be stopped manually
+    /// @notice Flag to determine if the auction can be stopped manually
     bool public stoppable;
 
-    // Flag to check if the auction has been manually stopped
+    /// @notice Flag to check if the auction has been manually stopped
     bool public manuallyStopped = false;
 
-    // The function has been called too early.
-    // Try again at `time`.
+    /// @notice Error thrown when a function is called too early
+    /// @dev Includes the time when the function can be called
     error TooEarly(uint256 time);
-    // The function has been called too late.
-    // It cannot be called after `time`.
+
+    /// @notice Error thrown when a function is called too late
+    /// @dev Includes the time after which the function cannot be called
     error TooLate(uint256 time);
 
-    // Constructor to initialize the auction
+    /// @notice Constructor to initialize the auction
+    /// @param _beneficiary Address of the beneficiary who will receive the highest bid
+    /// @param _tokenContract Address of the EncryptedERC20 token contract used for bidding
+    /// @param biddingTime Duration of the auction in seconds
+    /// @param isStoppable Flag to determine if the auction can be stopped manually
     constructor(
         address _beneficiary,
         EncryptedERC20 _tokenContract,
@@ -75,7 +85,10 @@ contract BlindAuction is Ownable2Step, GatewayCaller {
         stoppable = isStoppable;
     }
 
-    // Bid an `encryptedValue`.
+    /// @notice Submit a bid with an encrypted value
+    /// @dev Transfers tokens from the bidder to the contract
+    /// @param encryptedValue The encrypted bid amount
+    /// @param inputProof Proof for the encrypted input
     function bid(einput encryptedValue, bytes calldata inputProof) external onlyBeforeEnd {
         euint64 value = TFHE.asEuint64(encryptedValue, inputProof);
         euint64 existingBid = bids[msg.sender];
@@ -129,42 +142,54 @@ contract BlindAuction is Ownable2Step, GatewayCaller {
         TFHE.allow(userTicket, msg.sender);
     }
 
-    // Returns the `account`'s encrypted bid, can be used in a reencryption request
+    /// @notice Get the encrypted bid of a specific account
+    /// @dev Can be used in a reencryption request
+    /// @param account The address of the bidder
+    /// @return The encrypted bid amount
     function getBid(address account) external view returns (euint64) {
         return bids[account];
     }
 
-    // Function to manually stop the auction
+    /// @notice Manually stop the auction
+    /// @dev Can only be called by the owner and if the auction is stoppable
     function stop() external onlyOwner {
         require(stoppable);
         manuallyStopped = true;
     }
 
-    // Returns the `account`'s encrypted ticket, can be used in a reencryption request, then compared to
-    // `decryptedWinningTicket` when auction ends, so the user could learn if he won the auction
+    /// @notice Get the encrypted ticket of a specific account
+    /// @dev Can be used in a reencryption request
+    /// @param account The address of the bidder
+    /// @return The encrypted ticket
     function ticketUser(address account) external view returns (euint64) {
         return userTickets[account];
     }
 
-    // Function to initiate the decryption of the winning ticket
+    /// @notice Initiate the decryption of the winning ticket
+    /// @dev Can only be called after the auction ends
     function decryptWinningTicket() public onlyAfterEnd {
         uint256[] memory cts = new uint256[](1);
         cts[0] = Gateway.toUint256(winningTicket);
         Gateway.requestDecryption(cts, this.setDecryptedWinningTicket.selector, 0, block.timestamp + 100, false);
     }
 
-    // Callback function to set the decrypted winning ticket
+    /// @notice Callback function to set the decrypted winning ticket
+    /// @dev Can only be called by the Gateway
+    /// @param resultDecryption The decrypted winning ticket
     function setDecryptedWinningTicket(uint256, uint64 resultDecryption) public onlyGateway {
         decryptedWinningTicket = resultDecryption;
     }
 
-    // if `userTickets[account]` is an encryption of decryptedWinningTicket, then `account` won and can call `claim` succesfully
+    /// @notice Get the decrypted winning ticket
+    /// @dev Can only be called after the winning ticket has been decrypted - if `userTickets[account]` is an encryption of decryptedWinningTicket, then `account` won and can call `claim` succesfully
+    /// @return The decrypted winning ticket
     function getDecryptedWinningTicket() external view returns (uint64) {
         require(decryptedWinningTicket != 0, "Winning ticket has not been decrypted yet");
         return decryptedWinningTicket;
     }
 
-    // Claim the object. Succeeds only if the caller was the first to get the highest bid.
+    /// @notice Claim the auction object
+    /// @dev Succeeds only if the caller was the first to get the highest bid
     function claim() public onlyAfterEnd {
         ebool canClaim = TFHE.and(TFHE.eq(winningTicket, userTickets[msg.sender]), TFHE.not(objectClaimed));
         objectClaimed = TFHE.or(canClaim, objectClaimed);
@@ -175,7 +200,8 @@ contract BlindAuction is Ownable2Step, GatewayCaller {
         TFHE.allow(bids[msg.sender], msg.sender);
     }
 
-    // Transfer token to beneficiary
+    /// @notice Transfer the highest bid to the beneficiary
+    /// @dev Can only be called once after the auction ends
     function auctionEnd() public onlyAfterEnd {
         require(!tokenTransferred);
         tokenTransferred = true;
@@ -183,7 +209,8 @@ contract BlindAuction is Ownable2Step, GatewayCaller {
         tokenContract.transfer(beneficiary, highestBid);
     }
 
-    // Withdraw a bid from the auction to the caller once the auction has stopped.
+    /// @notice Withdraw a bid from the auction
+    /// @dev Can only be called after the auction ends and by non-winning bidders
     function withdraw() public onlyAfterEnd {
         euint64 bidValue = bids[msg.sender];
         ebool canWithdraw = TFHE.ne(winningTicket, userTickets[msg.sender]);
@@ -196,13 +223,15 @@ contract BlindAuction is Ownable2Step, GatewayCaller {
         TFHE.allow(newBid, msg.sender);
     }
 
-    // Modifier to ensure function is called before auction ends
+    /// @notice Modifier to ensure function is called before auction ends
+    /// @dev Reverts if called after the auction end time or if manually stopped
     modifier onlyBeforeEnd() {
         if (block.timestamp >= endTime || manuallyStopped == true) revert TooLate(endTime);
         _;
     }
 
-    // Modifier to ensure function is called after auction ends
+    /// @notice Modifier to ensure function is called after auction ends
+    /// @dev Reverts if called before the auction end time and not manually stopped
     modifier onlyAfterEnd() {
         if (block.timestamp < endTime && manuallyStopped == false) revert TooEarly(endTime);
         _;
