@@ -66,7 +66,7 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
       jsonRpcUrl = 'https://devnet.zama.ai';
       break;
     case 'sepolia':
-      jsonRpcUrl = process.env.SEPOLIA_RPC_RUL!;
+      jsonRpcUrl = process.env.SEPOLIA_RPC_URL!;
   }
   return {
     accounts: {
