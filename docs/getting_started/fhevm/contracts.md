@@ -1,9 +1,9 @@
 # Deploy initial contracts
 
-0/ Prerequisites: First, git clone `fhevm` repo main branch, install dependencies with `npm i`(node.js version should be at least `20`), then create a`.env` file in root of the repo.
+0/ Prerequisites: First, git clone `fhevm` repo main branch, install dependencies with `npm i` (node.js version should be at least `20`), then create a`.env` file in root of the repo.
 
 1/ Fill correct values in the `.env` file by first copying the [`.env.example.deployment` file](https://github.com/zama-ai/fhevm/blob/main/.env.example.deployment).
-For instance, your `.env` file should have the following format, while replacing the 2 private keys values `PRIVATE_KEY_FHEVM_DEPLOYER` and `PRIVATE_KEY_GATEWAY_DEPLOYER` with your own keys, and taking the KMS addresses to be aligned with what is used by KMS, as well as the `ADDRESS_GATEWAY_RELAYER` relayer address to be aligned with the Gateway service, and the `ADDRESS_COPROCESSOR` coprocessor account address to be aligned with the coprocessor service:
+Your `.env` file should have the following format, while replacing the 2 private keys values `PRIVATE_KEY_FHEVM_DEPLOYER` and `PRIVATE_KEY_GATEWAY_DEPLOYER` with your own keys, and taking the KMS addresses to be aligned with what is used by KMS, as well as the `ADDRESS_GATEWAY_RELAYER` relayer address to be aligned with the Gateway service, and the `ADDRESS_COPROCESSOR` coprocessor account address to be aligned with the coprocessor service:
 
 ```
 export PRIVATE_KEY_FHEVM_DEPLOYER="0c66d8cde71d2faa29d0cb6e3a567d31279b6eace67b0a9d9ba869c119843a5e"
@@ -25,7 +25,7 @@ For the `SEPOLIA_RPC_URL` env variable, you can either get one from a service pr
 **Important** : the `PRIVATE_KEY_FHEVM_DEPLOYER` and `PRIVATE_KEY_GATEWAY_DEPLOYER` are expected to have a nonce of `0` initially (i.e never sent any tx before with those) for the deployment scripts to succeed later. If you have [foundry](https://book.getfoundry.sh/getting-started/installation) installed, you can generate fresh Ethereum private key / address pairs locally with this command:
 `cast wallet new`.
 
-2/ Then run the precompute addresses tasks -> this will write on disk the correct addresses needed to launch the modified Geth node (`TFHEExecutor` address) and the Gateway service (`GatewayContract` one) and - I think - the `ACL` and `KMSVerifier` addresses which would be needed to setup some values inside the ASC contract on KMS chain, in files such as: `lib/.env.acl`, `lib/.env.kmsverifier`, `gateway/env.gateway` etc. This script typically consists of the first part of [`./launch-fhevm.sh` file](https://github.com/zama-ai/fhevm/blob/main/launch-fhevm.sh) :
+2/ Then run the precomputing contract addresses script [`./precompute-addresses.sh`](https://github.com/zama-ai/fhevm/blob/main/precompute-addresses.sh) -> this will write on disk the correct contract addresses needed to launch the modified Geth node (`TFHEExecutor` address) and the Gateway service (`GatewayContract` one) and - I think - the `ACL` and `KMSVerifier` addresses which would be needed to setup some values inside the ASC contract on KMS chain, in files such as: `lib/.env.acl`, `lib/.env.kmsverifier`, `gateway/env.gateway` etc. This script is found exactly inside the [`./precompute-addresses.sh` file](https://github.com/zama-ai/fhevm/blob/main/precompute-addresses.sh) :
 
 ```
 #!/bin/bash
@@ -38,7 +38,7 @@ npx hardhat task:computeGatewayAddress --private-key "$PRIVATE_KEY_GATEWAY_DEPLO
 npx hardhat task:computeACLAddress --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
 npx hardhat task:computeTFHEExecutorAddress --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
 npx hardhat task:computeKMSVerifierAddress --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
-npx hardhat task:computeInputVerifierAddress --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
+npx hardhat task:computeInputVerifierAddress --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --use-address true
 npx hardhat task:computeFHEPaymentAddress --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
 ```
 
@@ -56,17 +56,16 @@ npx hardhat task:computeFHEPaymentAddress --private-key "$PRIVATE_KEY_FHEVM_DEPL
 
 The funding of `GATEWAY_RELAYER` account is the only part which is not strictly needed during deployment, and this account could be funded later, after all deployment steps will be completed.
 
-5/ Run the deployment script (part after the commented line).
-Typically this script contains the second part of [`./launch-fhevm.sh` file](https://github.com/zama-ai/fhevm/blob/main/launch-fhevm.sh) :
+5/ Finally, run the deployment script [`./launch-fhevm-sepolia.sh`](https://github.com/zama-ai/fhevm/blob/main/launch-fhevm-sepolia.sh).
+This script is found exactly inside the [`./launch-fhevm-sepolia.sh` file](https://github.com/zama-ai/fhevm/blob/main/launch-fhevm-sepolia.sh) :
 
 ```
 #!/bin/bash
+# This script should be launched after precomputing the addresses via `precompute-addresses.sh`, and preferably after setting up the different services - KMS, Geth node, Gateway
 npx hardhat clean
 
-PRIVATE_KEY_GATEWAY_DEPLOYER=$(grep PRIVATE_KEY_GATEWAY_DEPLOYER .env | cut -d '"' -f 2)
 PRIVATE_KEY_FHEVM_DEPLOYER=$(grep PRIVATE_KEY_FHEVM_DEPLOYER .env | cut -d '"' -f 2)
 NUM_KMS_SIGNERS=$(grep NUM_KMS_SIGNERS .env | cut -d '"' -f 2)
-IS_COPROCESSOR=$(grep IS_COPROCESSOR .env | cut -d '"' -f 2)
 
 npx hardhat compile:specific --contract lib
 npx hardhat compile:specific --contract gateway
@@ -77,7 +76,7 @@ npx hardhat task:deployKMSVerifier --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" -
 npx hardhat task:deployInputVerifier --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --network sepolia
 npx hardhat task:deployFHEPayment --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --network sepolia
 
-npx hardhat task:addSigners --num-signers $NUM_KMS_SIGNERS --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --use-address true --network sepolia
+npx hardhat task:addSigners --num-signers "$NUM_KMS_SIGNERS" --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --use-address true --network sepolia
 
 npx hardhat task:launchFhevm --skip-get-coin true --use-address true --network sepolia
 
