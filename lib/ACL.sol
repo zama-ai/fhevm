@@ -34,6 +34,7 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
         }
     }
 
+    /// @notice Getter function for the TFHEExecutor contract address
     function getTFHEExecutorAddress() public view virtual returns (address) {
         return tfheExecutorAddress;
     }
