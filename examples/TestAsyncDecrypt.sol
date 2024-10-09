@@ -39,7 +39,7 @@ contract TestAsyncDecrypt is GatewayCaller {
     constructor() {
         TFHE.setFHEVM(FHEVMConfig.defaultConfig());
         Gateway.setGateway(Gateway.defaultGatewayAddress());
-        
+
         /// @dev Initialize encrypted variables with sample values
         xBool = TFHE.asEbool(true);
         TFHE.allowThis(xBool);
@@ -144,7 +144,7 @@ contract TestAsyncDecrypt is GatewayCaller {
         yBool = decryptedInput;
         return yBool;
     }
-    
+
     /// @notice Request decryption of a 4-bit unsigned integer
     function requestUint4() public {
         uint256[] memory cts = new uint256[](1);

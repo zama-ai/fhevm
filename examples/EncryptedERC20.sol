@@ -14,7 +14,7 @@ contract EncryptedERC20 is Ownable2Step {
     event Approval(address indexed owner, address indexed spender);
     /// @notice Emitted when new tokens are minted
     event Mint(address indexed to, uint64 amount);
-    
+
     /// @dev Stores the total supply of the token
     uint64 private _totalSupply;
     /// @dev Name of the token (e.g., "Confidential Token")
