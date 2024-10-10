@@ -18,6 +18,7 @@ describe('TestAsyncDecrypt', function () {
     this.contract = await contractFactory.connect(this.signers.alice).deploy();
     await this.contract.waitForDeployment();
     this.contractAddress = await this.contract.getAddress();
+    console.log(this.contractAddress);
     // this.instances = await createInstances(this.signers);
     const tx = await this.contract.connect(this.signers.carol).requestUint8({ gasLimit: 5_000_000 });
     await tx.wait(); // this first request is here just to silence the current gateway bug at the moment

@@ -31,6 +31,10 @@ contract TestAsyncDecrypt is GatewayCaller {
 
     uint256 public latestRequestID;
 
+    event DebugLogUint256(string message, uint256 n);
+    event DebugLogUint64(string message, uint64 n);
+    event DebugLogUint16(string message, uint16 n);
+
     constructor() {
         TFHE.setFHEVM(FHEVMConfig.defaultConfig());
         Gateway.setGateway(Gateway.defaultGatewayAddress());
@@ -159,6 +163,7 @@ contract TestAsyncDecrypt is GatewayCaller {
     function requestUint16() public {
         uint256[] memory cts = new uint256[](1);
         cts[0] = Gateway.toUint256(xUint16);
+        emit DebugLogUint256("cts", cts[0]);
         Gateway.requestDecryption(cts, this.callbackUint16.selector, 0, block.timestamp + 100, false);
     }
 
@@ -170,6 +175,7 @@ contract TestAsyncDecrypt is GatewayCaller {
 
     function callbackUint16(uint256, uint16 decryptedInput) public onlyGateway returns (uint16) {
         yUint16 = decryptedInput;
+        emit DebugLogUint16("y", yUint16);
         return decryptedInput;
     }
 
@@ -205,6 +211,7 @@ contract TestAsyncDecrypt is GatewayCaller {
     function requestUint64() public {
         uint256[] memory cts = new uint256[](1);
         cts[0] = Gateway.toUint256(xUint64);
+        emit DebugLogUint256("cts", cts[0]);
         Gateway.requestDecryption(cts, this.callbackUint64.selector, 0, block.timestamp + 100, false);
     }
 
@@ -223,6 +230,7 @@ contract TestAsyncDecrypt is GatewayCaller {
 
     function callbackUint64(uint256, uint64 decryptedInput) public onlyGateway returns (uint64) {
         yUint64 = decryptedInput;
+        emit DebugLogUint64("y", yUint64);
         return decryptedInput;
     }
 
