@@ -30,7 +30,8 @@ const currentTime = (): string => {
 };
 
 const parsedEnv = dotenv.parse(fs.readFileSync('gateway/.env.gateway'));
-const privKeyRelayer = process.env.PRIVATE_KEY_GATEWAY_RELAYER;
+const privKeyRelayer = parsedEnv.PRIVATE_KEY_GATEWAY_RELAYER;
+console.log('private key gateway deployer: ', privKeyRelayer);
 const relayer = new ethers.Wallet(privKeyRelayer!, ethers.provider);
 
 const argEvents =
