@@ -36,7 +36,7 @@ const faucet = async (address: string) => {
 export const initSigners = async (quantity: number): Promise<void> => {
   const q = process.env.HARDHAT_PARALLEL ? Math.min(quantity, 5) : 5;
   if (!signers) {
-    if (process.env.HARDHAT_PARALLEL && config.defaultNetwork === 'local') {
+    if (process.env.HARDHAT_PARALLEL && config.defaultNetwork === 'localCoproccesor') {
       signers = {
         alice: ethers.Wallet.createRandom().connect(ethers.provider),
         bob: ethers.Wallet.createRandom().connect(ethers.provider),
@@ -54,10 +54,10 @@ export const initSigners = async (quantity: number): Promise<void> => {
         eve: eSigners[4],
       };
     } else {
-      throw new Error("Can't run parallel mode if network is not 'local'");
+      throw new Error("Can't run parallel mode if network is not 'localCoproccesor'");
     }
 
-    if (config.defaultNetwork === 'local') {
+    if (config.defaultNetwork === 'localCoproccesor') {
       const faucetP: Promise<void>[] = [];
       for (let i = 0; i < q; i += 1) {
         const account = signers[keys[i]];

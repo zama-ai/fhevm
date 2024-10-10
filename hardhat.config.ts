@@ -123,7 +123,7 @@ task('test', async (taskArgs, hre, runSuper) => {
 });
 
 const config: HardhatUserConfig = {
-  defaultNetwork: 'local',
+  defaultNetwork: 'localCoprocessor',
   namedAccounts: {
     deployer: 0,
   },
