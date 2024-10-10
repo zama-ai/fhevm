@@ -197,6 +197,42 @@ export const decrypt64 = async (handle: bigint): Promise<bigint> => {
  * In production, decryption is only possible via an asyncronous on-chain call to the Gateway.
  *
  * @param {bigint} a handle to decrypt
+ * @returns {bigint}
+ */
+export const decrypt128 = async (handle: bigint): Promise<bigint> => {
+  if (network.name === 'hardhat') {
+    await awaitCoprocessor();
+    return BigInt(await getClearText(handle));
+  } else {
+    return getDecryptor().decrypt128(await getCiphertext(handle, ethers));
+  }
+};
+
+/**
+ * @debug
+ * This function is intended for debugging purposes only.
+ * It cannot be used in production code, since it requires the FHE private key for decryption.
+ * In production, decryption is only possible via an asyncronous on-chain call to the Gateway.
+ *
+ * @param {bigint} a handle to decrypt
+ * @returns {bigint}
+ */
+export const decrypt256 = async (handle: bigint): Promise<bigint> => {
+  if (network.name === 'hardhat') {
+    await awaitCoprocessor();
+    return BigInt(await getClearText(handle));
+  } else {
+    return getDecryptor().decrypt256(await getCiphertext(handle, ethers));
+  }
+};
+
+/**
+ * @debug
+ * This function is intended for debugging purposes only.
+ * It cannot be used in production code, since it requires the FHE private key for decryption.
+ * In production, decryption is only possible via an asyncronous on-chain call to the Gateway.
+ *
+ * @param {bigint} a handle to decrypt
  * @returns {string}
  */
 export const decryptAddress = async (handle: bigint): Promise<string> => {
@@ -207,5 +243,59 @@ export const decryptAddress = async (handle: bigint): Promise<string> => {
     return handleStr;
   } else {
     return getDecryptor().decryptAddress(await getCiphertext(handle, ethers));
+  }
+};
+
+/**
+ * @debug
+ * This function is intended for debugging purposes only.
+ * It cannot be used in production code, since it requires the FHE private key for decryption.
+ * In production, decryption is only possible via an asyncronous on-chain call to the Gateway.
+ *
+ * @param {bigint} a handle to decrypt
+ * @returns {bigint}
+ */
+export const decryptEbytes64 = async (handle: bigint): Promise<bigint> => {
+  if (network.name === 'hardhat') {
+    await awaitCoprocessor();
+    return BigInt(await getClearText(handle));
+  } else {
+    return getDecryptor().decryptEbytes64(await getCiphertext(handle, ethers));
+  }
+};
+
+/**
+ * @debug
+ * This function is intended for debugging purposes only.
+ * It cannot be used in production code, since it requires the FHE private key for decryption.
+ * In production, decryption is only possible via an asyncronous on-chain call to the Gateway.
+ *
+ * @param {bigint} a handle to decrypt
+ * @returns {bigint}
+ */
+export const decryptEbytes128 = async (handle: bigint): Promise<bigint> => {
+  if (network.name === 'hardhat') {
+    await awaitCoprocessor();
+    return BigInt(await getClearText(handle));
+  } else {
+    return getDecryptor().decryptEbytes128(await getCiphertext(handle, ethers));
+  }
+};
+
+/**
+ * @debug
+ * This function is intended for debugging purposes only.
+ * It cannot be used in production code, since it requires the FHE private key for decryption.
+ * In production, decryption is only possible via an asyncronous on-chain call to the Gateway.
+ *
+ * @param {bigint} a handle to decrypt
+ * @returns {bigint}
+ */
+export const decryptEbytes256 = async (handle: bigint): Promise<bigint> => {
+  if (network.name === 'hardhat') {
+    await awaitCoprocessor();
+    return BigInt(await getClearText(handle));
+  } else {
+    return getDecryptor().decryptEbytes256(await getCiphertext(handle, ethers));
   }
 };

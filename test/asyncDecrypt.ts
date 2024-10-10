@@ -21,6 +21,9 @@ const CiphertextType = {
   5: 'uint64',
   6: 'uint128',
   7: 'address',
+  8: 'uint256',
+  9: 'bytes',
+  10: 'bytes',
   11: 'bytes',
 };
 
@@ -44,7 +47,7 @@ let gateway: GatewayContract;
 let firstBlockListening: number;
 let lastBlockSnapshotForDecrypt: number;
 
-export const asyncDecrypt = async (): Promise<void> => {
+export const initGateway = async (): Promise<void> => {
   firstBlockListening = await ethers.provider.getBlockNumber();
   if (networkName === 'hardhat' && hre.__SOLIDITY_COVERAGE_RUNNING !== true) {
     // evm_snapshot is not supported in coverage mode
@@ -130,24 +133,29 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
         if (!allTrue(isAllowedForDec)) {
           throw new Error('Some handle is not authorized for decryption');
         }
-
         const types = typesList.map((num) => CiphertextType[num]);
         const values = await Promise.all(handles.map(async (handle) => BigInt(await getClearText(handle))));
         const valuesFormatted = values.map((value, index) =>
           types[index] === 'address' ? '0x' + value.toString(16).padStart(40, '0') : value,
         );
         const valuesFormatted2 = valuesFormatted.map((value, index) =>
-          types[index] === 'bytes' ? '0x' + value.toString(16).padStart(512, '0') : value,
+          typesList[index] === 9 ? '0x' + value.toString(16).padStart(128, '0') : value,
+        );
+        const valuesFormatted3 = valuesFormatted2.map((value, index) =>
+          typesList[index] === 10 ? '0x' + value.toString(16).padStart(256, '0') : value,
+        );
+        const valuesFormatted4 = valuesFormatted3.map((value, index) =>
+          typesList[index] === 11 ? '0x' + value.toString(16).padStart(512, '0') : value,
         );
 
         const abiCoder = new ethers.AbiCoder();
         let encodedData;
         let calldata;
         if (!passSignaturesToCaller) {
-          encodedData = abiCoder.encode(['uint256', ...types], [31, ...valuesFormatted2]); // 31 is just a dummy uint256 requestID to get correct abi encoding for the remaining arguments (i.e everything except the requestID)
+          encodedData = abiCoder.encode(['uint256', ...types], [31, ...valuesFormatted4]); // 31 is just a dummy uint256 requestID to get correct abi encoding for the remaining arguments (i.e everything except the requestID)
           calldata = '0x' + encodedData.slice(66); // we just pop the dummy requestID to get the correct value to pass for `decryptedCts`
         } else {
-          encodedData = abiCoder.encode(['uint256', ...types, 'bytes[]'], [31, ...valuesFormatted2, []]); // adding also a dummy empty array of bytes for correct abi-encoding when used with signatures
+          encodedData = abiCoder.encode(['uint256', ...types, 'bytes[]'], [31, ...valuesFormatted4, []]); // adding also a dummy empty array of bytes for correct abi-encoding when used with signatures
           calldata = '0x' + encodedData.slice(66).slice(0, -64); // we also pop the last 32 bytes (empty bytes[])
         }
 
