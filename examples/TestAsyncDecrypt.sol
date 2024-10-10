@@ -34,10 +34,14 @@ contract TestAsyncDecrypt is GatewayCaller {
     event DebugLogUint256(string message, uint256 n);
     event DebugLogUint64(string message, uint64 n);
     event DebugLogUint16(string message, uint16 n);
+    event DebugLogAddress(string message, address addr);
+    event DebugLog(string message);
 
     constructor() {
+        emit DebugLog("TestAsyncDecrypt constructor started");
         TFHE.setFHEVM(FHEVMConfig.defaultConfig());
         Gateway.setGateway(Gateway.defaultGatewayAddress());
+        emit DebugLogAddress("Gateway address", Gateway.defaultGatewayAddress());
         xBool = TFHE.asEbool(true);
         TFHE.allowThis(xBool);
         xUint4 = TFHE.asEuint4(4);
@@ -58,6 +62,7 @@ contract TestAsyncDecrypt is GatewayCaller {
         TFHE.allowThis(xAddress);
         xAddress2 = TFHE.asEaddress(0xf48b8840387ba3809DAE990c930F3b4766A86ca3);
         TFHE.allowThis(xAddress2);
+        emit DebugLog("TestAsyncDecrypt constructor ended");
     }
 
     function requestBoolInfinite() public {
@@ -161,6 +166,7 @@ contract TestAsyncDecrypt is GatewayCaller {
     }
 
     function requestUint16() public {
+        emit DebugLog("requestUint16 invoked");
         uint256[] memory cts = new uint256[](1);
         cts[0] = Gateway.toUint256(xUint16);
         emit DebugLogUint256("cts", cts[0]);
@@ -174,6 +180,7 @@ contract TestAsyncDecrypt is GatewayCaller {
     }
 
     function callbackUint16(uint256, uint16 decryptedInput) public onlyGateway returns (uint16) {
+        emit DebugLog("callbackUint16 invoked");
         yUint16 = decryptedInput;
         emit DebugLogUint16("y", yUint16);
         return decryptedInput;
@@ -281,6 +288,7 @@ contract TestAsyncDecrypt is GatewayCaller {
     }
 
     function requestMixed(uint32 input1, uint32 input2) public {
+        emit DebugLog("requestMixed invoked");
         uint256[] memory cts = new uint256[](10);
         cts[0] = Gateway.toUint256(xBool);
         cts[1] = Gateway.toUint256(xBool);
