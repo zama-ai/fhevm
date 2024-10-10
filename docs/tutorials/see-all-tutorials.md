@@ -8,10 +8,20 @@
 
 ### Code examples in GitHub
 
-- [ERC-20](https://github.com/zama-ai/fhevm/blob/main/examples/EncryptedERC20.sol): A variation of the standard ERC20 smart contract that incorporates encrypted balances, providing additional privacy for token holders. -
+- [ERC-20](https://github.com/zama-ai/fhevm/blob/main/examples/EncryptedERC20.sol): A variation of the standard ERC20 smart contract that incorporates encrypted balances, providing additional privacy for token holders.
 - [Blind Auction](https://github.com/zama-ai/fhevm/blob/main/examples/BlindAuction.sol): A smart contract for conducting blind auctions where bids are encrypted and the winning bid remains private.
+- [Counter](https://github.com/zama-ai/fhevm/blob/main/examples/Counter.sol): A simple contract demonstrating basic state management with an incrementable counter.
+- [Rand](https://github.com/zama-ai/fhevm/blob/main/examples/Rand.sol): A contract for generating random encrypted numbers.
+- [Reencrypt](https://github.com/zama-ai/fhevm/blob/main/examples/Reencrypt.sol): A contract for reencrypting various FHE data types.
+- [Regression1](https://github.com/zama-ai/fhevm/blob/main/examples/Regression1.sol): A contract for service and metadata management for testing.
+- [SmartAccount](https://github.com/zama-ai/fhevm/blob/main/examples/SmartAccount.sol): A smart account with batch transaction execution.
+- [TFHEExecutorUpgradedExample](https://github.com/zama-ai/fhevm/blob/main/examples/TFHEExecutorUpgradedExample.sol): An upgraded version of the TFHEExecutor contract with version information.
+- [TracingSubCalls](https://github.com/zama-ai/fhevm/blob/main/examples/TracingSubCalls.sol): A contract for subcall tracing and scenario testing.
+- [ACLUpgradedExample](https://github.com/zama-ai/fhevm/blob/main/examples/ACLUpgradedExample.sol): An upgraded version of the Access Control List (ACL) contract with version information.
 
-#### Legacy
+For more information on individual contracts, see the [README](https://github.com/zama-ai/fhevm/blob/main/examples/README.md) in the examples folder.
+
+#### Legacy - Not compatible with latest fhEVM
 
 - [Governor DAO](https://github.com/zama-ai/fhevm/tree/main/examples/legacy/Governor): A DAO smart contract that facilitates governance decisions through encrypted voting
 - [Decentralized ID](https://github.com/zama-ai/fhevm/tree/main/examples/legacy/Identity): A blockchain-based identity management system using smart contracts to store and manage encrypted personal data.
