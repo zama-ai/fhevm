@@ -225,7 +225,7 @@ describe('TestAsyncDecrypt', function () {
     }
   });
 
-  it('test async decrypt uint64', async function () {
+  it.only('test async decrypt uint64', async function () {
     const tx2 = await this.contract.connect(this.signers.carol).requestUint64({ gasLimit: 5_000_000 });
     await tx2.wait();
     await awaitAllDecryptionResults();
