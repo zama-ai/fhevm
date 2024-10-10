@@ -168,13 +168,14 @@ install-packages:
 
 
 prepare-e2e-test: check-all-test-repo
-	$(MAKE) install-packages
-	@sleep 5
+	# $(MAKE) install-packages
+	# @sleep 5
 	@echo "fund test addresses"
-	@cd $(FHEVM_SOLIDITY_PATH) && ./scripts/fund_test_address_docker.sh
-	@cd $(FHEVM_SOLIDITY_PATH) && cp .env.example .env
+	@cd $(FHEVM_SOLIDITY_PATH) && cp .env.example.deployment .env
 	@cd $(FHEVM_SOLIDITY_PATH) && rm -rf ./.openzeppelin
-	@cd $(FHEVM_SOLIDITY_PATH) && ./launch-fhevm.sh
+	@cd $(FHEVM_SOLIDITY_PATH) && ./fund_tests_addresses_docker.sh
+	@cd $(FHEVM_SOLIDITY_PATH) && ./precompute-addresses.sh
+	@cd $(FHEVM_SOLIDITY_PATH) && ./launch-fhevm-coprocessor.sh
 
 run-async-test:
 	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test --grep 'test async decrypt uint8'
