@@ -14,7 +14,8 @@ import { initFhevm, createInstance } from "fhevmjs";
 
 initFhevm().then(() => {
   const instance = await createInstance({
-    chainId: 8009,
+    kmsContractAddress: '0x208De73316E44722e16f6dDFF40881A3e4F86104',
+    aclContractAddress: '0xc9990FEfE0c27D31D0C2aa36196b085c0c4d456c',
     networkUrl: "https://devnet.zama.ai/",
     gatewayUrl: "https://gateway.zama.ai/",
   });
@@ -25,17 +26,20 @@ initFhevm().then(() => {
 
 This function returns an instance of fhevmjs, which accepts an object containing:
 
+- `kmsContractAddress`: the address of the KMSVerifier contract;
+- `aclContractAddress`: the address of the ACL contract;
+- `networkUrl` or `network`: the URL or Eip1193 object provided by `window.ethereum` - used to fetch chainId and KMS nodes' public key
+- `gatewayUrl`: the URL of the gateway - used to retrieve the public key, ZKPoK public parameters and send inputs and get reencryption
 - `chainId` (optional): the chainId of the network
-- `network` (optional): the Eip1193 object provided by `window.ethereum` (used to fetch the public key and/or chain id)
-- `networkUrl` (optional): the URL of the network (used to fetch the public key and/or chain id)
-- `publicKey` (optional): if the public key has been fetched separately (cache), you can provide it
-- `gatewayUrl` (optional): the URL of the gateway to retrieve a reencryption
-- `coprocessorUrl` (optional): the URL of the coprocessor
+- `publicKey` (optional): if the public key has been fetched separately or stored in cache, you can provide it
+- `publicParams` (optional): if the public params has been fetched separately or stored in cache, you can provide it
 
 ```javascript
 import { createInstance } from "fhevmjs";
 
 const instance = await createInstance({
+  kmsContractAddress: "0x208De73316E44722e16f6dDFF40881A3e4F86104",
+  aclContractAddress: "0xc9990FEfE0c27D31D0C2aa36196b085c0c4d456c",
   networkUrl: "https://devnet.zama.ai/",
   gatewayUrl: "https://gateway.zama.ai/",
 });
@@ -47,6 +51,8 @@ Using `window.ethereum` object:
 import { createInstance } from "fhevmjs";
 
 const instance = await createInstance({
+  kmsContractAddress: "0x208De73316E44722e16f6dDFF40881A3e4F86104",
+  aclContractAddress: "0xc9990FEfE0c27D31D0C2aa36196b085c0c4d456c",
   network: window.ethereum,
   gatewayUrl: "https://gateway.zama.ai/",
 });
@@ -74,6 +80,11 @@ Input object has different method to add values:
 - `add16`
 - `add32`
 - `add64`
+- `add128`
+- `add256`
+- `addBytes64`
+- `addBytes128`
+- `addBytes256`
 - `addAddress`
 
 ```javascript
@@ -93,7 +104,7 @@ These methods process values and return the necessary data for use on the blockc
 input.addBool(true);
 input.addBool(true);
 input.add8(4);
-const inputs = input.encrypt(); // or input.send() if using a coprocessor
+const inputs = await input.encrypt(); // or input.send() if using a coprocessor
 
 contract.myExample(
   "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80",

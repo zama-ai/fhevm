@@ -48,8 +48,15 @@ If you have an issue with bundling the library (for example with some SSR framew
 ```javascript
 const start = async () => {
   await window.fhevm.initFhevm(); // load wasm needed
-  const instance = window.fhevm.createInstance({ chainId, publicKey }).then((instance) => {
-    console.log(instance);
-  });
+  const instance = window.fhevm
+    .createInstance({
+      kmsContractAddress: "0x208De73316E44722e16f6dDFF40881A3e4F86104",
+      aclContractAddress: "0xc9990FEfE0c27D31D0C2aa36196b085c0c4d456c",
+      network: window.ethereum,
+      gatewayUrl: "https://gateway.zama.ai/",
+    })
+    .then((instance) => {
+      console.log(instance);
+    });
 };
 ```
