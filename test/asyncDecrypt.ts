@@ -30,8 +30,11 @@ const currentTime = (): string => {
 };
 
 const parsedEnv = dotenv.parse(fs.readFileSync('gateway/.env.gateway'));
-const privKeyRelayer = process.env.PRIVATE_KEY_GATEWAY_RELAYER;
-const relayer = new ethers.Wallet(privKeyRelayer!, ethers.provider);
+let relayer: Wallet;
+if (networkName === 'hardhat') {
+  const privKeyRelayer = parsedEnv.PRIVATE_KEY_GATEWAY_RELAYER;
+  const relayer = new ethers.Wallet(privKeyRelayer!, ethers.provider);
+}
 
 const argEvents =
   '(uint256 indexed requestID, uint256[] cts, address contractCaller, bytes4 callbackSelector, uint256 msgValue, uint256 maxTimestamp, bool passSignaturesToCaller)';
