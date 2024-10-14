@@ -6,14 +6,19 @@ import "../lib/TFHE.sol";
 import "@openzeppelin/contracts/access/Ownable2Step.sol";
 import "../payment/Payment.sol";
 
+/// @title PaymentLimit
+/// @notice A contract to demonstrate FHE gas limits in different scenarios
 contract PaymentLimit {
+    /// @notice Constructor that sets up FHE configuration and deposits initial value
+    /// @dev Payable to allow initial deposit
     constructor() payable {
         TFHE.setFHEVM(FHEVMConfig.defaultConfig());
         Payment.depositForThis(msg.value);
     }
 
+    /// @notice Performs a small number of FHE operations
+    /// @dev Should pass if it's the only transaction in a block
     function wayunderBlockFHEGasLimit() external {
-        // should pass if only tx in block
         euint64 x = TFHE.asEuint64(2);
         euint64 result;
         for (uint256 i; i < 3; i++) {
@@ -21,8 +26,9 @@ contract PaymentLimit {
         }
     }
 
+    /// @notice Performs a moderate number of FHE operations
+    /// @dev Should pass if it's the only transaction in a block
     function underBlockFHEGasLimit() external {
-        // should pass if only tx in block
         euint64 x = TFHE.asEuint64(2);
         euint64 result;
         for (uint256 i; i < 15; i++) {
@@ -30,8 +36,9 @@ contract PaymentLimit {
         }
     }
 
+    /// @notice Performs a large number of FHE operations
+    /// @dev Should revert due to exceeding the block FHE gas limit
     function aboveBlockFHEGasLimit() external {
-        // should revert due to exceeding block fheGas limit
         euint64 x = TFHE.asEuint64(2);
         euint64 result;
         for (uint256 i; i < 16; i++) {
