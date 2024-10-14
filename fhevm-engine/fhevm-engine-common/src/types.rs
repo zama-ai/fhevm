@@ -634,7 +634,10 @@ impl SupportedFheOperations {
         match self {
             SupportedFheOperations::FheEq
             | SupportedFheOperations::FheNe
-            | SupportedFheOperations::FheNot => true,
+            | SupportedFheOperations::FheNot
+            | SupportedFheOperations::FheBitAnd
+            | SupportedFheOperations::FheBitOr
+            | SupportedFheOperations::FheBitXor => true,
             _ => false,
         }
     }

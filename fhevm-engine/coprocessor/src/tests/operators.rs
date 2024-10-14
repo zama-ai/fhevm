@@ -39,7 +39,7 @@ struct UnaryOperatorTestCase {
 }
 
 fn supported_bits() -> &'static [i32] {
-    &[4, 8, 16, 32, 64, 128, 160, 256, 512, 1024, 2048]
+    &[1, 4, 8, 16, 32, 64, 128, 160, 256, 512, 1024, 2048]
 }
 
 pub fn supported_types() -> &'static [i32] {
@@ -61,6 +61,7 @@ pub fn supported_types() -> &'static [i32] {
 
 fn supported_bits_to_bit_type_in_db(inp: i32) -> i32 {
     match inp {
+        1 => 0, // 1 bit - boolean
         4 => 1,
         8 => 2,
         16 => 3,
@@ -314,9 +315,12 @@ async fn test_fhe_unary_operands() -> Result<(), Box<dyn std::error::Error>> {
             decr_response.output_type, op.operand_types as i16,
             "operand types not equal"
         );
+        let expected_value = if op.bits == 1 {
+            op.expected_output.gt(&BigInt::from(0)).to_string()
+        } else { op.expected_output.to_string() };
         assert_eq!(
             decr_response.value,
-            op.expected_output.to_string(),
+            expected_value,
             "operand output values not equal"
         );
     }
@@ -731,6 +735,7 @@ fn generate_binary_test_cases() -> Vec<BinaryOperatorTestCase> {
         SupportedFheOperations::FheRotl,
         SupportedFheOperations::FheRotr,
     ];
+    let fhe_bool_type = 0;
     let mut push_case = |bits: i32, is_scalar: bool, shift_by: i32, op: SupportedFheOperations| {
         let mut lhs = BigInt::from(6);
         let mut rhs = BigInt::from(2);
@@ -743,7 +748,6 @@ fn generate_binary_test_cases() -> Vec<BinaryOperatorTestCase> {
         }
         let expected_output = compute_expected_binary_output(&lhs, &rhs, op);
         let operand = op as i32;
-        let fhe_bool_type = 0;
         let expected_output_type = if op.is_comparison() {
             fhe_bool_type
         } else {
@@ -761,12 +765,55 @@ fn generate_binary_test_cases() -> Vec<BinaryOperatorTestCase> {
         });
     };
 
+    let mut bool_cases = Vec::new();
+
     for bits in supported_bits() {
         let bits = *bits;
         let mut shift_by =
             if bits > 4 { bits - 8 } else { 0 };
         for op in SupportedFheOperations::iter() {
-            if bits <= 256 || op.supports_ebytes_inputs() {
+            if op.op_type() != FheOperationType::Binary {
+                continue;
+            }
+
+            if bits > 256 && !op.supports_ebytes_inputs() {
+                continue;
+            }
+
+            if bits == 1 {
+                if !op.supports_bool_inputs() {
+                    continue;
+                }
+
+                let lhs = BigInt::from(0);
+                let rhs = BigInt::from(1);
+                let expected_output = compute_expected_binary_output(&lhs, &rhs, op);
+                if does_fhe_operation_support_both_encrypted_operands(&op) {
+                    bool_cases.push(BinaryOperatorTestCase {
+                        bits,
+                        operand: op as i32,
+                        expected_output_type: fhe_bool_type,
+                        input_types: supported_bits_to_bit_type_in_db(bits),
+                        lhs: lhs.clone(),
+                        rhs: rhs.clone(),
+                        expected_output: expected_output.clone(),
+                        is_scalar: false,
+                    });
+                }
+
+                if does_fhe_operation_support_scalar(&op) {
+                    bool_cases.push(BinaryOperatorTestCase {
+                        bits,
+                        operand: op as i32,
+                        expected_output_type: fhe_bool_type,
+                        input_types: supported_bits_to_bit_type_in_db(bits),
+                        lhs,
+                        rhs,
+                        expected_output,
+                        is_scalar: true,
+                    });
+                }
+            } else {
                 if op == SupportedFheOperations::FheMul {
                     // don't go out of bit bounds when multiplying two numbers, so we shift by less
                     shift_by /= 2;
@@ -784,6 +831,8 @@ fn generate_binary_test_cases() -> Vec<BinaryOperatorTestCase> {
         }
     }
 
+    cases.extend(bool_cases);
+
     cases
 }
 
@@ -795,9 +844,19 @@ fn generate_unary_test_cases() -> Vec<UnaryOperatorTestCase> {
         let shift_by = bits - 3;
         let max_bits_value = (BigInt::from(1) << bits) - 1;
         for op in SupportedFheOperations::iter() {
+            if bits == 1 && !op.supports_bool_inputs() {
+                continue;
+            }
+
             if op.op_type() == FheOperationType::Unary {
-                let mut inp = BigInt::from(3);
-                inp <<= shift_by;
+                let inp =
+                    if bits == 1 {
+                        BigInt::from(1)
+                    } else {
+                        let mut res = BigInt::from(3);
+                        res <<= shift_by;
+                        res
+                    };
                 let expected_output = compute_expected_unary_output(&inp, op) & &max_bits_value;
                 let operand = op as i32;
                 cases.push(UnaryOperatorTestCase {
