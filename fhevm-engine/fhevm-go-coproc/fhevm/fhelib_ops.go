@@ -1397,7 +1397,7 @@ func fheRandRun(sess CoprocessorSession, unslicedInput []byte, ed ExtraData, out
 		OutputHandle: outputHandle,
 		Operands: []ComputationOperand{
 			{
-				Handle:      ed.RandomCounter[:],
+				Handle:      ed.FheRandSeed[:],
 				FheUintType: FheUint256,
 				IsScalar:    true,
 			},
@@ -1433,7 +1433,7 @@ func fheRandBoundedRun(sess CoprocessorSession, unslicedInput []byte, ed ExtraDa
 		OutputHandle: outputHandle,
 		Operands: []ComputationOperand{
 			{
-				Handle:      ed.RandomCounter[:],
+				Handle:      ed.FheRandSeed[:],
 				FheUintType: FheUint256,
 				IsScalar:    true,
 			},

@@ -3370,9 +3370,9 @@ pub fn perform_fhe_operation(
                     input_types: input_operands.iter().map(|i| i.type_name()).collect(),
                 });
             };
-            let (rand_counter, _) = rand_counter.to_low_high_u128();
+            let (rand_seed, _) = rand_counter.to_low_high_u128();
             let (to_type, _) = to_type.to_low_high_u128();
-            Ok(generate_random_number(to_type as i16, rand_counter, None))
+            Ok(generate_random_number(to_type as i16, rand_seed, None))
         }
         SupportedFheOperations::FheRandBounded => {
             let SupportedFheCiphertexts::Scalar(rand_counter) = &input_operands[0] else {
@@ -3393,11 +3393,11 @@ pub fn perform_fhe_operation(
                     input_types: input_operands.iter().map(|i| i.type_name()).collect(),
                 });
             };
-            let (rand_counter, _) = rand_counter.to_low_high_u128();
+            let (rand_seed, _) = rand_counter.to_low_high_u128();
             let (to_type, _) = to_type.to_low_high_u128();
             Ok(generate_random_number(
                 to_type as i16,
-                rand_counter,
+                rand_seed,
                 Some(*upper_bound),
             ))
         }
