@@ -14,8 +14,11 @@ use utils::get_test;
 mod utils;
 
 fn get_handle(h: u32) -> Vec<u8> {
-    let tmp = [h; HANDLE_LEN / 4];
-    let res: [u8; HANDLE_LEN] = unsafe { std::mem::transmute(tmp) };
+    let mut res: Vec<u8> = Vec::with_capacity(HANDLE_LEN);
+    let slice: [u8; 4] = h.to_be_bytes();
+    for _i in 0..HANDLE_LEN / 4 {
+        res.extend_from_slice(&slice);
+    }
     res.to_vec()
 }
 

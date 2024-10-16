@@ -76,18 +76,19 @@ impl<'a> Scheduler<'a> {
     pub async fn schedule(&mut self) -> Result<(), SyncComputeError> {
         let schedule_type = std::env::var("FHEVM_DF_SCHEDULE");
         match schedule_type {
-            Ok(val) if val == "MAX_PARALLELISM" => {
-                self.schedule_coarse_grain(PartitionStrategy::MaxParallelism)
-                    .await
-            }
-            Ok(val) if val == "MAX_LOCALITY" => {
-                self.schedule_coarse_grain(PartitionStrategy::MaxLocality)
-                    .await
-            }
-            Ok(val) if val == "LOOP" => self.schedule_component_loop().await,
-            Ok(val) if val == "FINE_GRAIN" => self.schedule_fine_grain().await,
-            Ok(unhandled) => panic!("Scheduling strategy {:?} does not exist", unhandled),
-
+            Ok(val) => match val.as_str() {
+                "MAX_PARALLELISM" => {
+                    self.schedule_coarse_grain(PartitionStrategy::MaxParallelism)
+                        .await
+                }
+                "MAX_LOCALITY" => {
+                    self.schedule_coarse_grain(PartitionStrategy::MaxLocality)
+                        .await
+                }
+                "LOOP" => self.schedule_component_loop().await,
+                "FINE_GRAIN" => self.schedule_fine_grain().await,
+                unhandled => panic!("Scheduling strategy {:?} does not exist", unhandled),
+            },
             _ => self.schedule_component_loop().await,
         }
     }
@@ -151,14 +152,14 @@ impl<'a> Scheduler<'a> {
             Result<(Vec<(usize, InMemoryCiphertext)>, NodeIndex), SyncComputeError>,
         > = JoinSet::new();
         let mut execution_graph: Dag<ExecNode, ()> = Dag::default();
-        match strategy {
+        let _ = match strategy {
             PartitionStrategy::MaxLocality => {
-                let _ = partition_components(self.graph, &mut execution_graph);
+                partition_components(self.graph, &mut execution_graph)
             }
             PartitionStrategy::MaxParallelism => {
-                let _ = partition_preserving_parallelism(self.graph, &mut execution_graph);
+                partition_preserving_parallelism(self.graph, &mut execution_graph)
             }
-        }
+        };
         let task_dependences = execution_graph.map(|_, _| (), |_, edge| *edge);
 
         // Prime the scheduler with all nodes without dependences

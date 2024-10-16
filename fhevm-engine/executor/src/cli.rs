@@ -9,6 +9,9 @@ pub struct Args {
     #[arg(long, default_value_t = 8)]
     pub fhe_compute_threads: usize,
 
+    #[arg(long, default_value_t = 8)]
+    pub fhe_operation_threads: usize,
+
     #[arg(long, default_value = "127.0.0.1:50051")]
     pub server_addr: String,
 }
