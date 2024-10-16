@@ -174,6 +174,7 @@ prepare-e2e-test: check-all-test-repo
 	@cd $(FHEVM_SOLIDITY_PATH) && cp .env.example.deployment .env
 	@cd $(FHEVM_SOLIDITY_PATH) && rm -rf ./.openzeppelin
 	@cd $(FHEVM_SOLIDITY_PATH) && ./fund_tests_addresses_docker.sh
+	@cd $(FHEVM_SOLIDITY_PATH) && npm i
 	@cd $(FHEVM_SOLIDITY_PATH) && ./precompute-addresses.sh
 	@cd $(FHEVM_SOLIDITY_PATH) && ./launch-fhevm-coprocessor.sh
 
