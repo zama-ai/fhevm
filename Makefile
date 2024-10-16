@@ -38,11 +38,11 @@ KMS_DEV_VERSION ?= v0.9.0-rc13
 FHEVM_SOLIDITY_REPO ?= fhevm
 FHEVM_SOLIDITY_PATH ?= $(WORKDIR)/$(FHEVM_SOLIDITY_REPO)
 FHEVM_SOLIDITY_PATH_EXISTS := $(shell test -d $(FHEVM_SOLIDITY_PATH)/.git && echo "true" || echo "false")
-FHEVM_SOLIDITY_VERSION ?= levent/test-copro
+FHEVM_SOLIDITY_VERSION ?= mano/update-to-latest-fhevm
 COPROCESSOR_REPO ?= fhevm-backend
 COPROCESSOR_PATH ?= $(WORKDIR)/$(COPROCESSOR_REPO)
 COPROCESSOR_PATH_EXISTS := $(shell test -d $(COPROCESSOR_PATH)/.git && echo "true" || echo "false")
-COPROCESSOR_VERSION ?= ld/test-copro
+COPROCESSOR_VERSION ?= mano/update-to-latest-fhevm
 
 export GO111MODULE = on
 
