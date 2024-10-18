@@ -33,8 +33,11 @@ const currentTime = (): string => {
 };
 
 const parsedEnv = dotenv.parse(fs.readFileSync('gateway/.env.gateway'));
-const privKeyRelayer = process.env.PRIVATE_KEY_GATEWAY_RELAYER;
-const relayer = new ethers.Wallet(privKeyRelayer!, ethers.provider);
+let relayer: Wallet;
+if (networkName === 'hardhat') {
+  const privKeyRelayer = process.env.PRIVATE_KEY_GATEWAY_RELAYER;
+  const relayer = new ethers.Wallet(privKeyRelayer!, ethers.provider);
+}
 
 const argEvents =
   '(uint256 indexed requestID, uint256[] cts, address contractCaller, bytes4 callbackSelector, uint256 msgValue, uint256 maxTimestamp, bool passSignaturesToCaller)';
@@ -90,7 +93,7 @@ const getAlreadyFulfilledDecryptions = async (): Promise<[bigint]> => {
   let results = [];
   const eventDecryptionResult = await gateway.filters.ResultCallback().getTopicFilter();
   const filterDecryptionResult = {
-    address: process.env.GATEWAY_CONTRACT_PREDEPLOY_ADDRESS,
+    address: parsedEnv.GATEWAY_CONTRACT_PREDEPLOY_ADDRESS,
     fromBlock: firstBlockListening,
     toBlock: 'latest',
     topics: eventDecryptionResult,
@@ -107,7 +110,7 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
   const eventDecryption = await gateway.filters.EventDecryption().getTopicFilter();
   const results = await getAlreadyFulfilledDecryptions();
   const filterDecryption = {
-    address: process.env.GATEWAY_CONTRACT_PREDEPLOY_ADDRESS,
+    address: parsedEnv.GATEWAY_CONTRACT_PREDEPLOY_ADDRESS,
     fromBlock: firstBlockListening,
     toBlock: 'latest',
     topics: eventDecryption,
