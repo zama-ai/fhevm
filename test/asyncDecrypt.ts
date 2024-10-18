@@ -36,7 +36,7 @@ const parsedEnv = dotenv.parse(fs.readFileSync('gateway/.env.gateway'));
 let relayer: Wallet;
 if (networkName === 'hardhat') {
   const privKeyRelayer = process.env.PRIVATE_KEY_GATEWAY_RELAYER;
-  const relayer = new ethers.Wallet(privKeyRelayer!, ethers.provider);
+  relayer = new ethers.Wallet(privKeyRelayer!, ethers.provider);
 }
 
 const argEvents =
