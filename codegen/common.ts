@@ -39,7 +39,7 @@ export enum ReturnType {
   Ebool,
 }
 
-export const SUPPORTED_BITS: number[] = [4, 8, 16, 32, 64];
+export const SUPPORTED_BITS: number[] = [4, 8, 16, 32, 64, 128, 256];
 
 export const ALL_OPERATORS: Operator[] = [
   {
@@ -91,7 +91,7 @@ export const ALL_OPERATORS: Operator[] = [
   {
     name: 'and',
     precompileName: 'BitwiseAnd',
-    hasScalar: false,
+    hasScalar: true,
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
     returnType: ReturnType.Uint,
@@ -101,7 +101,7 @@ export const ALL_OPERATORS: Operator[] = [
   {
     name: 'or',
     precompileName: 'BitwiseOr',
-    hasScalar: false,
+    hasScalar: true,
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
     returnType: ReturnType.Uint,
@@ -111,7 +111,7 @@ export const ALL_OPERATORS: Operator[] = [
   {
     name: 'xor',
     precompileName: 'BitwiseXor',
-    hasScalar: false,
+    hasScalar: true,
     hasEncrypted: true,
     arguments: OperatorArguments.Binary,
     returnType: ReturnType.Uint,
@@ -259,17 +259,4 @@ export function checks(operators: Operator[]): Operator[] {
   });
 
   return operators;
-}
-
-export function networkCodegenContext(network: Network): CodegenContext {
-  switch (network) {
-    case Network.Evmos:
-      return {
-        libFheAddress: '0x000000000000000000000000000000000000005d',
-      };
-    case Network.Network1:
-      return {
-        libFheAddress: '0x010000000000000000000000000000000000005D',
-      };
-  }
 }

@@ -33,7 +33,7 @@ type SupportedFunction = SupportedFunctionParams &
 };
 
 const SUPPORTED_UINT = [8, 16, 32, 64, 128, 256];
-const SUPPORTED_BITS = [4, 8, 16, 32, 64];
+const SUPPORTED_BITS = [4, 8, 16, 32, 64, 128, 256];
 
 const bigIntMin = (...args: bigint[]) => {
   return args.reduce((min, e) => (e < min ? e : min), args[0]);
@@ -183,17 +183,14 @@ export const SUPPORTED_FUNCTIONS: SupportedFunctions = {
   },
   or: {
     supportedBits: SUPPORTED_BITS,
-    noScalar: true,
     evalTest: (lhsNumber, rhsNumber) => lhsNumber | rhsNumber,
   },
   and: {
     supportedBits: SUPPORTED_BITS,
-    noScalar: true,
     evalTest: (lhsNumber, rhsNumber) => lhsNumber & rhsNumber,
   },
   xor: {
     supportedBits: SUPPORTED_BITS,
-    noScalar: true,
     evalTest: (lhsNumber, rhsNumber) => lhsNumber ^ rhsNumber,
   },
   not: {

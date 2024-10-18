@@ -36,6 +36,9 @@ interface ITFHEExecutor {
     ) external returns (uint256 result);
     function cast(uint256 ct, bytes1 toType) external returns (uint256 result);
     function trivialEncrypt(uint256 ct, bytes1 toType) external returns (uint256 result);
+    function trivialEncrypt(bytes memory ct, bytes1 toType) external returns (uint256 result);
+    function fheEq(uint256 lhs, bytes memory rhs, bytes1 scalarByte) external returns (uint256 result);
+    function fheNe(uint256 lhs, bytes memory rhs, bytes1 scalarByte) external returns (uint256 result);
     function fheIfThenElse(uint256 control, uint256 ifTrue, uint256 ifFalse) external returns (uint256 result);
     function fheRand(bytes1 randType) external returns (uint256 result);
     function fheRandBounded(uint256 upperBound, bytes1 randType) external returns (uint256 result);
@@ -112,20 +115,35 @@ library Impl {
         result = ITFHEExecutor($.TFHEExecutorAddress).fheRem(lhs, rhs, scalarByte);
     }
 
-    function and(uint256 lhs, uint256 rhs) internal returns (uint256 result) {
-        bytes1 scalarByte = 0x00;
+    function and(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
         FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).fheBitAnd(lhs, rhs, scalarByte);
     }
 
-    function or(uint256 lhs, uint256 rhs) internal returns (uint256 result) {
-        bytes1 scalarByte = 0x00;
+    function or(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
         FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).fheBitOr(lhs, rhs, scalarByte);
     }
 
-    function xor(uint256 lhs, uint256 rhs) internal returns (uint256 result) {
-        bytes1 scalarByte = 0x00;
+    function xor(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
         FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).fheBitXor(lhs, rhs, scalarByte);
     }
@@ -298,6 +316,33 @@ library Impl {
     function trivialEncrypt(uint256 value, uint8 toType) internal returns (uint256 result) {
         FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).trivialEncrypt(value, bytes1(toType));
+    }
+
+    function trivialEncrypt(bytes memory value, uint8 toType) internal returns (uint256 result) {
+        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = ITFHEExecutor($.TFHEExecutorAddress).trivialEncrypt(value, bytes1(toType));
+    }
+
+    function eq(uint256 lhs, bytes memory rhs, bool scalar) internal returns (uint256 result) {
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = ITFHEExecutor($.TFHEExecutorAddress).fheEq(lhs, rhs, scalarByte);
+    }
+
+    function ne(uint256 lhs, bytes memory rhs, bool scalar) internal returns (uint256 result) {
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        result = ITFHEExecutor($.TFHEExecutorAddress).fheNe(lhs, rhs, scalarByte);
     }
 
     function rand(uint8 randType) internal returns (uint256 result) {

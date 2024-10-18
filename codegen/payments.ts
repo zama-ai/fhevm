@@ -18,9 +18,9 @@ export function generateFHEPayment(priceData: PriceData): string {
   import "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
   
   error FHEGasBlockLimitExceeded();
+  error UnsupportedOperation();
   error CallerMustBeTFHEExecutorContract();
   error OnlyScalarOperationsAreSupported();
-  error OnlyNonScalarOperationsAreSupported();
   error RecoveryFailed();
   error WithdrawalFailed();
   error AccountNotEnoughFunded();
@@ -62,7 +62,8 @@ export function generateFHEPayment(priceData: PriceData): string {
               $.slot := FHEPaymentStorageLocation
           }
       }
-  
+      
+      /// @notice Getter function for the TFHEExecutor contract address
       function getTFHEExecutorAddress() public view virtual returns (address) {
           return tfheExecutorAddress;
       }
@@ -194,7 +195,7 @@ export function generateFHEPayment(priceData: PriceData): string {
       function checkIfNewBlock() internal virtual {
           FHEPaymentStorage storage $ = _getFHEPaymentStorage();
           uint256 lastBlock_ = block.number;
-          if (block.number > $.lastBlock) {
+          if (lastBlock_ > $.lastBlock) {
               $.lastBlock = lastBlock_;
               $.currentBlockConsumption = 0;
           }
@@ -215,6 +216,7 @@ export function generateFHEPayment(priceData: PriceData): string {
     } else {
       output += `        function ${functionName}(address payer, uint8 resultType) external virtual {
         if(msg.sender != tfheExecutorAddress) revert CallerMustBeTFHEExecutorContract();
+        checkIfNewBlock();
 `;
     }
 
@@ -261,11 +263,13 @@ ${generatePriceChecks(data.nonScalar)}
 }
 
 function generatePriceChecks(prices: { [key: string]: number }): string {
-  return Object.entries(prices)
-    .map(
-      ([resultType, price]) => `        if (resultType == ${resultType}) {
+  return (
+    Object.entries(prices)
+      .map(
+        ([resultType, price]) => `        if (resultType == ${resultType}) {
         updateFunding(payer, ${price});
         }`,
-    )
-    .join(' else ');
+      )
+      .join(' else ') + 'else { revert UnsupportedOperation();}'
+  );
 }
