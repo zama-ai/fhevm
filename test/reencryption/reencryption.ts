@@ -15,16 +15,6 @@ describe('Reencryption', function () {
     this.contract = await contractFactory.connect(this.signers.alice).deploy();
     this.contractAddress = await this.contract.getAddress();
     this.instances = await createInstances(this.signers);
-
-    const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
-    inputAlice.addBytes256(
-      bigIntToBytes256(184467440737095500228978978978978970980978908978978907890778907089780970897890n),
-    );
-    const encryptedAmount = await inputAlice.encrypt();
-    const tx = await this.contract.setEBytes256(encryptedAmount.handles[0], encryptedAmount.inputProof, {
-      gasLimit: 5_000_000,
-    });
-    await tx.wait();
   });
 
   it('test reencrypt ebool', async function () {
@@ -147,6 +137,26 @@ describe('Reencryption', function () {
     expect(decryptedValue).to.equal(18446744073709551600n);
   });
 
+  it('test reencrypt euint128', async function () {
+    const handle = await this.contract.xUint128();
+    const { publicKey, privateKey } = this.instances.alice.generateKeypair();
+    const eip712 = this.instances.alice.createEIP712(publicKey, this.contractAddress);
+    const signature = await this.signers.alice.signTypedData(
+      eip712.domain,
+      { Reencrypt: eip712.types.Reencrypt },
+      eip712.message,
+    );
+    const decryptedValue = await this.instances.alice.reencrypt(
+      handle,
+      privateKey,
+      publicKey,
+      signature.replace('0x', ''),
+      this.contractAddress,
+      this.signers.alice.address,
+    );
+    expect(decryptedValue).to.equal(145275933516363203950142179850024740765n);
+  });
+
   it('test reencrypt eaddress', async function () {
     const handle = await this.contract.xAddress();
     const { publicKey, privateKey } = this.instances.alice.generateKeypair();
@@ -167,6 +177,74 @@ describe('Reencryption', function () {
     expect(decryptedValue).to.equal(BigInt('0x8ba1f109551bD432803012645Ac136ddd64DBA72'));
   });
 
+  it('test reencrypt euint256', async function () {
+    const handle = await this.contract.xUint256();
+    const { publicKey, privateKey } = this.instances.alice.generateKeypair();
+    const eip712 = this.instances.alice.createEIP712(publicKey, this.contractAddress);
+    const signature = await this.signers.alice.signTypedData(
+      eip712.domain,
+      { Reencrypt: eip712.types.Reencrypt },
+      eip712.message,
+    );
+    const decryptedValue = await this.instances.alice.reencrypt(
+      handle,
+      privateKey,
+      publicKey,
+      signature.replace('0x', ''),
+      this.contractAddress,
+      this.signers.alice.address,
+    );
+    expect(decryptedValue).to.equal(74285495974541385002137713624115238327312291047062397922780925695323480915729n);
+  });
+
+  it('test reencrypt ebytes64', async function () {
+    const handle = await this.contract.yBytes64();
+    const { publicKey, privateKey } = this.instances.alice.generateKeypair();
+    const eip712 = this.instances.alice.createEIP712(publicKey, this.contractAddress);
+    const signature = await this.signers.alice.signTypedData(
+      eip712.domain,
+      { Reencrypt: eip712.types.Reencrypt },
+      eip712.message,
+    );
+    const decryptedValue = await this.instances.alice.reencrypt(
+      handle,
+      privateKey,
+      publicKey,
+      signature.replace('0x', ''),
+      this.contractAddress,
+      this.signers.alice.address,
+    );
+    expect(decryptedValue).to.equal(
+      BigInt(
+        '0x19d179e0cc7e816dc944582ed4f5652f5951900098fc2e0a15a7ea4dc8cfa4e3b6c54beea5ee95e56b728762f659347ce1d4aa1b05fcc5',
+      ),
+    );
+  });
+
+  it('test reencrypt ebytes128', async function () {
+    const handle = await this.contract.yBytes128();
+    const { publicKey, privateKey } = this.instances.alice.generateKeypair();
+    const eip712 = this.instances.alice.createEIP712(publicKey, this.contractAddress);
+    const signature = await this.signers.alice.signTypedData(
+      eip712.domain,
+      { Reencrypt: eip712.types.Reencrypt },
+      eip712.message,
+    );
+    const decryptedValue = await this.instances.alice.reencrypt(
+      handle,
+      privateKey,
+      publicKey,
+      signature.replace('0x', ''),
+      this.contractAddress,
+      this.signers.alice.address,
+    );
+    expect(decryptedValue).to.equal(
+      BigInt(
+        '0x13e7819123de6e2870c7e83bb764508e22d7c3ab8a5aee6bdfb26355ef0d3f1977d651b83bf5f78634fa360aa14debdc3daa6a587b5c2fb1710ab4d6677e62a8577f2d9fecc190ad8b11c9f0a5ec3138b27da1f055437af8c90a9495dad230',
+      ),
+    );
+  });
+
   it('test reencrypt ebytes256', async function () {
     const handle = await this.contract.yBytes256();
     const { publicKey, privateKey } = this.instances.alice.generateKeypair();
@@ -184,6 +262,10 @@ describe('Reencryption', function () {
       this.contractAddress,
       this.signers.alice.address,
     );
-    expect(decryptedValue).to.equal(184467440737095500228978978978978970980978908978978907890778907089780970897890n);
+    expect(decryptedValue).to.equal(
+      BigInt(
+        '0xd179e0cc7e816dc944582ed4f5652f5951900098fc2e0a15a7ea4dc8cfa4e3b6c54beea5ee95e56b728762f659347ce1d4aa1b05fcc513e7819123de6e2870c7e83bb764508e22d7c3ab8a5aee6bdfb26355ef0d3f1977d651b83bf5f78634fa360aa14debdc3daa6a587b5c2fb1710ab4d6677e62a8577f2d9fecc190ad8b11c9f0a5ec3138b27da1f055437af8c90a9495dad230',
+      ),
+    );
   });
 });

@@ -223,6 +223,19 @@ async function insertHandle(
         insertSQL(handle, clearText);
         break;
 
+      case 'trivialEncrypt(bytes,bytes1)':
+        resultType = Number(decodedData[1]);
+        clearText = decodedData[0];
+        handle = ethers.keccak256(
+          ethers.solidityPacked(
+            ['uint8', 'bytes', 'bytes1', 'address', 'uint256'],
+            [Operators.trivialEncrypt, decodedData[0], decodedData[1], aclAddress, chainId],
+          ),
+        );
+        handle = appendType(handle, resultType);
+        insertSQL(handle, clearText);
+        break;
+
       case 'fheAdd(uint256,uint256,bytes1)':
         handle = ethers.keccak256(
           ethers.solidityPacked(
@@ -507,6 +520,24 @@ async function insertHandle(
         insertSQL(handle, clearText);
         break;
 
+      case 'fheEq(uint256,bytes,bytes1)':
+        handle = ethers.keccak256(
+          ethers.solidityPacked(
+            ['uint8', 'uint256', 'bytes', 'bytes1', 'address', 'uint256'],
+            [Operators.fheEq, decodedData[0], decodedData[1], decodedData[2], aclAddress, chainId],
+          ),
+        );
+        handle = appendType(handle, 0);
+        clearLHS = await getClearText(decodedData[0]);
+        if (decodedData[2] === '0x01') {
+          clearText = BigInt(clearLHS) === BigInt(decodedData[1]) ? 1n : 0n;
+        } else {
+          clearRHS = await getClearText(decodedData[1]);
+          clearText = BigInt(clearLHS) === BigInt(clearRHS) ? 1n : 0n;
+        }
+        insertSQL(handle, clearText);
+        break;
+
       case 'fheNe(uint256,uint256,bytes1)':
         handle = ethers.keccak256(
           ethers.solidityPacked(
@@ -518,6 +549,24 @@ async function insertHandle(
         clearLHS = await getClearText(decodedData[0]);
         if (decodedData[2] === '0x01') {
           clearText = BigInt(clearLHS) !== decodedData[1] ? 1n : 0n;
+        } else {
+          clearRHS = await getClearText(decodedData[1]);
+          clearText = BigInt(clearLHS) !== BigInt(clearRHS) ? 1n : 0n;
+        }
+        insertSQL(handle, clearText);
+        break;
+
+      case 'fheNe(uint256,bytes,bytes1)':
+        handle = ethers.keccak256(
+          ethers.solidityPacked(
+            ['uint8', 'uint256', 'bytes', 'bytes1', 'address', 'uint256'],
+            [Operators.fheNe, decodedData[0], decodedData[1], decodedData[2], aclAddress, chainId],
+          ),
+        );
+        handle = appendType(handle, 0);
+        clearLHS = await getClearText(decodedData[0]);
+        if (decodedData[2] === '0x01') {
+          clearText = BigInt(clearLHS) !== BigInt(decodedData[1]) ? 1n : 0n;
         } else {
           clearRHS = await getClearText(decodedData[1]);
           clearText = BigInt(clearLHS) !== BigInt(clearRHS) ? 1n : 0n;
