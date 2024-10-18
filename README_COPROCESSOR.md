@@ -19,6 +19,15 @@ across all the components for this test setup.
 
 - User is expected to run gateway from source.
 
+## Prerequisites
+
+- If there is an authentication error coming from docker.
+  It maybe be that you're pulling a private image without a token.
+  Go to github "Settings/Developer Settings" > "Personal Access Tokens" > "Tokens (classic)" > "Generate new token (classic)".
+  The token should have the "read:packages" permission.
+  Afterwards, do `docker login ghcr.io` and use your github ID and the token to login.
+  Note that this token is saved by docker locally in the clear,
+  so it's best to only give it the permissions you need and set the expiration time to 7 days.
 
 ## Steps to run the setup
 
@@ -66,7 +75,7 @@ Wait for the gateway to start listening for blocks and print block numbers.
 5. From the fhevm repo, run one of the test for trivial decryption.
 
 ```bash
-cd work_dir/fhevm & npx hardhat test --grep 'test async decrypt uint32$'
+cd work_dir/fhevm && npx hardhat test --grep 'test async decrypt uint32$'
 ```
 
 6. To tear down the setup, stop the docker containers:
