@@ -26,7 +26,7 @@ across all the components for this test setup.
    KMS blockchain).
 
 ```bash
-make run-full
+make run-kms
 ```
 
 2. Run the fhevm coprocessor network (including a geth node).
@@ -47,7 +47,7 @@ If prompted to install npm dependencies, enter `y`.
 
 ```bash
 cd $path-to-kms-core
-git checkout mano/update-to-latest-fhevm
+git checkout mano/update-release-v0.9.0-for-copro
 cd blockchain/gateway
 cargo run --bin gateway
 ```
@@ -66,7 +66,7 @@ Wait for the gateway to start listening for blocks and print block numbers.
 5. From the fhevm repo, run one of the test for trivial decryption.
 
 ```bash
-cd work_dir/fhevm && npx hardhat test --grep 'test async decrypt uint32$'
+cd work_dir/fhevm & npx hardhat test --grep 'test async decrypt uint32$'
 ```
 
 6. To tear down the setup, stop the docker containers:

@@ -33,7 +33,7 @@ check_os:
 
 # This version must the same as in docker-compose-full.yml
 # TODO add check
-KMS_DEV_VERSION ?= v0.9.0-rc13
+KMS_DEV_VERSION ?= v0.9.0-rc18-e2e-testing
 
 FHEVM_SOLIDITY_REPO ?= fhevm
 FHEVM_SOLIDITY_PATH ?= $(WORKDIR)/$(FHEVM_SOLIDITY_REPO)
@@ -135,6 +135,19 @@ endif
 
 
 run-full:
+	@echo "Running co-processor"
+	$(MAKE) run-coprocessor
+	@echo "Running kms"
+	$(MAKE) run-kms
+	@echo "Predeployment of SCs"
+	$(MAKE) prepare-e2e-test
+
+
+stop-full:
+	$(MAKE) stop-kms
+	$(MAKE) stop-coprocessor
+
+run-kms:
 	$(MAKE) generate-fhe-keys-registry-dev-image
 ifeq ($(KEY_GEN),false)
 	@echo "KEY_GEN is false, executing corresponding commands..."
@@ -149,7 +162,7 @@ endif
 	@echo 'sleep a little to let the docker start up'
 	sleep 5
 
-stop-full:
+stop-kms:
 	@docker compose  -f docker-compose/docker-compose-full.yml down
 
 TEST_FILE := run_tests.sh
