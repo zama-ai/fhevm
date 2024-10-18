@@ -29,6 +29,7 @@ describe('TestAsyncDecrypt', function () {
   beforeEach(async function () {
     const contractFactory = await ethers.getContractFactory('TestAsyncDecrypt');
     this.contract = await contractFactory.connect(this.signers.alice).deploy();
+    await this.contract.waitForDeployment();
     this.contractAddress = await this.contract.getAddress();
     this.instances = await createInstances(this.signers);
   });
@@ -88,6 +89,7 @@ describe('TestAsyncDecrypt', function () {
   it('test async decrypt bool trustless', async function () {
     const contractFactory = await ethers.getContractFactory('TestAsyncDecrypt');
     const contract2 = await contractFactory.connect(this.signers.alice).deploy();
+    await contract2.waitForDeployment();
     const tx2 = await contract2.requestBoolTrustless({ gasLimit: 5_000_000 });
     await tx2.wait();
     await awaitAllDecryptionResults();
@@ -503,6 +505,7 @@ describe('TestAsyncDecrypt', function () {
   it('test async decrypt ebytes256 non-trivial trustless', async function () {
     const contractFactory = await ethers.getContractFactory('TestAsyncDecrypt');
     const contract2 = await contractFactory.connect(this.signers.alice).deploy();
+    await contract2.waitForDeployment();
     const inputAlice = this.instances.alice.createEncryptedInput(
       await contract2.getAddress(),
       this.signers.alice.address,
@@ -523,6 +526,7 @@ describe('TestAsyncDecrypt', function () {
   it('test async decrypt mixed with ebytes256 trustless', async function () {
     const contractFactory = await ethers.getContractFactory('TestAsyncDecrypt');
     const contract2 = await contractFactory.connect(this.signers.alice).deploy();
+    await contract2.waitForDeployment();
     const inputAlice = this.instances.alice.createEncryptedInput(
       await contract2.getAddress(),
       this.signers.alice.address,
