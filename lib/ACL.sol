@@ -149,7 +149,7 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
         emit AllowedForDecryption(handlesList);
     }
 
-    function isAllowedForDecryption(uint256 handle) public virtual returns (bool) {
+    function isAllowedForDecryption(uint256 handle) public view virtual returns (bool) {
         ACLStorage storage $ = _getACLStorage();
         return $.allowedForDecryption[handle];
     }
