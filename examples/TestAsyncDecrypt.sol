@@ -295,9 +295,6 @@ contract TestAsyncDecrypt is GatewayCaller {
         return decryptedInput;
     }
 
-    /// @notice Request decryption of a non-trivial 256-bit encrypted bytes
-    /// @param inputHandle The input handle for the encrypted value
-    /// @param inputProof The input proof for the encrypted value
     function requestUint128() public {
         uint256[] memory cts = new uint256[](1);
         cts[0] = Gateway.toUint256(xUint128);

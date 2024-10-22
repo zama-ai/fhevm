@@ -85,9 +85,7 @@ contract Rand {
         TFHE.allowThis(value64);
     }
 
-    /// @notice Generate random 64-bit encrypted unsigned integer with upper bound
-    /// @param upperBound The maximum value (exclusive) for the generated number
-    function generate64UpperBound(uint32 upperBound) public {
+    function generate64UpperBound(uint64 upperBound) public {
         value64 = TFHE.randEuint64(upperBound);
         TFHE.allowThis(value64);
     }
