@@ -71,7 +71,7 @@
     "eslint": "^8.28.0",
     "eslint-config-prettier": "^8.5.0",
     "ethers": "^6.8.0",
-    "fhevmjs": "^0.6.0-3",
+    "fhevmjs": "^0.6.0-4",
     "hardhat": "^2.22.10",
     "hardhat-deploy": "^0.11.29",
     "hardhat-gas-reporter": "^1.0.2",
