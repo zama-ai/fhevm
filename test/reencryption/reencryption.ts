@@ -1,9 +1,8 @@
 import { expect } from 'chai';
-import { ethers, network } from 'hardhat';
+import { ethers } from 'hardhat';
 
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
-import { bigIntToBytes256 } from '../utils';
 
 describe('Reencryption', function () {
   before(async function () {

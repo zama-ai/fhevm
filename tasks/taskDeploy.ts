@@ -2,6 +2,8 @@ import dotenv from 'dotenv';
 import fs from 'fs';
 import { task, types } from 'hardhat/config';
 import type { TaskArguments } from 'hardhat/types';
+import { KMSVerifier__factory } from '../types';
+import { mustGetEnv } from './environment';
 
 task('task:deployGateway')
   .addParam('privateKey', 'The deployer private key')
@@ -128,18 +130,17 @@ task('task:addSigners')
   )
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
     const deployer = new ethers.Wallet(taskArguments.privateKey).connect(ethers.provider);
-    const factory = await ethers.getContractFactory('KMSVerifier', deployer);
     const kmsAdd = dotenv.parse(fs.readFileSync('lib/.env.kmsverifier')).KMS_VERIFIER_CONTRACT_ADDRESS;
-    const kmsVerifier = await factory.attach(kmsAdd);
+    const kmsVerifier = KMSVerifier__factory.connect(kmsAdd, deployer);
     for (let idx = 0; idx < taskArguments.numSigners; idx++) {
       if (!taskArguments.useAddress) {
-        const privKeySigner = process.env[`PRIVATE_KEY_KMS_SIGNER_${idx}`];
+        const privKeySigner = mustGetEnv(`PRIVATE_KEY_KMS_SIGNER_${idx}`);
         const kmsSigner = new ethers.Wallet(privKeySigner).connect(ethers.provider);
         const tx = await kmsVerifier.addSigner(kmsSigner.address);
         await tx.wait();
         console.log(`KMS signer no${idx} (${kmsSigner.address}) was added to KMSVerifier contract`);
       } else {
-        const kmsSignerAddress = process.env[`ADDRESS_KMS_SIGNER_${idx}`];
+        const kmsSignerAddress = mustGetEnv(`ADDRESS_KMS_SIGNER_${idx}`);
         const tx = await kmsVerifier.addSigner(kmsSignerAddress);
         await tx.wait();
         console.log(`KMS signer no${idx} (${kmsSignerAddress}) was added to KMSVerifier contract`);

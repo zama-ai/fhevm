@@ -4,7 +4,7 @@ import { ethers, network } from 'hardhat';
 import { awaitAllDecryptionResults, initGateway } from '../asyncDecrypt';
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
-import { bigIntToBytes64, bigIntToBytes128, bigIntToBytes256, waitNBlocks } from '../utils';
+import { bigIntToBytes128, bigIntToBytes256, bigIntToBytes64, waitNBlocks } from '../utils';
 
 describe('TestAsyncDecrypt', function () {
   before(async function () {

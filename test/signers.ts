@@ -1,18 +1,19 @@
-import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
 import { exec as oldExec } from 'child_process';
+import { Signer } from 'ethers';
 import { config, ethers } from 'hardhat';
 import { promisify } from 'util';
-
 import { waitForBalance } from './utils';
 
 const exec = promisify(oldExec);
 
+export type SignerWithAddress = Signer & { address: string };
+
 export interface Signers {
-  alice: HardhatEthersSigner;
-  bob: HardhatEthersSigner;
-  carol: HardhatEthersSigner;
-  dave: HardhatEthersSigner;
-  eve: HardhatEthersSigner;
+  alice: SignerWithAddress;
+  bob: SignerWithAddress;
+  carol: SignerWithAddress;
+  dave: SignerWithAddress;
+  eve: SignerWithAddress;
 }
 
 let signers: Signers;
@@ -61,7 +62,8 @@ export const initSigners = async (quantity: number): Promise<void> => {
       const faucetP: Promise<void>[] = [];
       for (let i = 0; i < q; i += 1) {
         const account = signers[keys[i]];
-        faucetP.push(faucet(account.address));
+        const address = await account.getAddress();
+        faucetP.push(faucet(address));
       }
       await Promise.all(faucetP);
     }

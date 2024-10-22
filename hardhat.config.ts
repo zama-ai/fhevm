@@ -3,13 +3,11 @@ import '@openzeppelin/hardhat-upgrades';
 import dotenv from 'dotenv';
 import 'hardhat-deploy';
 import 'hardhat-ignore-warnings';
-import type { HardhatUserConfig, extendProvider } from 'hardhat/config';
-import { task } from 'hardhat/config';
+import { extendProvider, HardhatUserConfig, task } from 'hardhat/config';
 import type { NetworkUserConfig } from 'hardhat/types';
 import { resolve } from 'path';
-
 import CustomProvider from './CustomProvider';
-// Adjust the import path as needed
+import './hardhat.config.types';
 import './tasks/accounts';
 import './tasks/etherscanVerify';
 import './tasks/getEthereumAddress';
@@ -19,7 +17,7 @@ import './tasks/taskGatewayRelayer';
 import './tasks/taskTFHE';
 import './tasks/upgradeProxy';
 
-extendProvider(async (provider, config, network) => {
+extendProvider(async (provider) => {
   const newProvider = new CustomProvider(provider);
   return newProvider;
 });
@@ -53,6 +51,7 @@ const chainIds = {
 
 function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
   let jsonRpcUrl: string;
+  let gatewayUrl: string = 'http://localhost:7077';
   switch (chain) {
     case 'local':
       jsonRpcUrl = 'http://localhost:8545';
@@ -68,6 +67,7 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
       break;
     case 'zama':
       jsonRpcUrl = 'https://devnet.zama.ai';
+      gatewayUrl = 'https://gateway.devnet.zama.ai';
       break;
     case 'sepolia':
       jsonRpcUrl = process.env.SEPOLIA_RPC_URL!;
@@ -80,6 +80,7 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
     },
     chainId: chainIds[chain],
     url: jsonRpcUrl,
+    gatewayUrl,
   };
 }
 

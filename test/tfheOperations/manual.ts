@@ -1,21 +1,21 @@
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
-import type { TFHEManualTestSuite } from '../../types/contracts/tests/TFHEManualTestSuite';
+import type { TFHEManualTestSuite } from '../../types';
 import {
   createInstances,
-  decrypt4,
-  decrypt8,
-  decrypt16,
-  decrypt32,
-  decrypt64,
   decrypt128,
+  decrypt16,
   decrypt256,
+  decrypt32,
+  decrypt4,
+  decrypt64,
+  decrypt8,
   decryptAddress,
   decryptBool,
-  decryptEbytes64,
   decryptEbytes128,
   decryptEbytes256,
+  decryptEbytes64,
 } from '../instance';
 import { getSigners, initSigners } from '../signers';
 import { bigIntToBytes256 } from '../utils';

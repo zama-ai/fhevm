@@ -1,16 +1,14 @@
-import { toBigIntBE } from 'bigint-buffer';
-import { toBufferBE } from 'bigint-buffer';
+import { toBigIntBE, toBufferBE } from 'bigint-buffer';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
 import { Wallet, ethers } from 'ethers';
 import * as fs from 'fs';
+import hre from 'hardhat';
 import { Keccak } from 'sha3';
 import { isAddress } from 'web3-validator';
 
-import { insertSQL } from './coprocessorUtils';
-import { awaitCoprocessor, getClearText } from './coprocessorUtils';
-
-const hre = require('hardhat');
+import { ACL__factory } from '../types';
+import { awaitCoprocessor, getClearText, insertSQL } from './coprocessorUtils';
 
 const parsedEnvACL = dotenv.parse(fs.readFileSync('lib/.env.acl'));
 const aclAdd = parsedEnvACL.ACL_CONTRACT_ADDRESS;
@@ -139,8 +137,7 @@ export const reencryptRequestMocked = async (
   }
 
   // ACL checking
-  const aclFactory = await hre.ethers.getContractFactory('ACL');
-  const acl = aclFactory.attach(aclAdd);
+  const acl = ACL__factory.connect(aclAdd);
   const userAllowed = await acl.persistAllowed(handle, userAddress);
   const contractAllowed = await acl.persistAllowed(handle, contractAddress);
   const isAllowed = userAllowed && contractAllowed;
@@ -285,7 +282,7 @@ export const createEncryptedInputMocked = (contractAddress: string, userAddress:
       bits.length = 0;
       return this;
     },
-    async encrypt() {
+    async encrypt(): Promise<{ handles: Uint8Array[]; inputProof: Uint8Array }> {
       let encrypted = Buffer.alloc(0);
 
       bits.map((v, i) => {
@@ -348,7 +345,7 @@ export const createEncryptedInputMocked = (contractAddress: string, userAddress:
 
       return {
         handles,
-        inputProof,
+        inputProof: Buffer.from(inputProof, 'hex'),
       };
     },
   };
@@ -361,7 +358,7 @@ function uint8ArrayToHexString(uint8Array: Uint8Array) {
 }
 
 function numberToHex(num: number) {
-  let hex = num.toString(16);
+  const hex = num.toString(16);
   return hex.length % 2 ? '0' + hex : hex;
 }
 
@@ -373,7 +370,6 @@ const checkEncryptedValue = (value: number | bigint, bits: number) => {
   } else {
     limit = BigInt(2 ** bits - 1);
   }
-  if (typeof value !== 'number' && typeof value !== 'bigint') throw new Error('Value must be a number or a bigint.');
   if (value > limit) {
     throw new Error(`The value exceeds the limit for ${bits}bits integer (${limit.toString()}).`);
   }
@@ -403,7 +399,7 @@ async function computeInputSignatureCopro(
   let signature: string;
   const privKeySigner = process.env['PRIVATE_KEY_COPROCESSOR_ACCOUNT'];
   if (privKeySigner) {
-    const coprocSigner = new Wallet(privKeySigner).connect(ethers.provider);
+    const coprocSigner = new Wallet(privKeySigner).connect(hre.ethers.provider);
     signature = await coprocSign(hash, handlesList, userAddress, contractAddress, coprocSigner);
   } else {
     throw new Error(`Private key for coprocessor not found in environment variables`);
@@ -421,7 +417,7 @@ async function computeInputSignaturesKMS(
   for (let idx = 0; idx < numSigners; idx++) {
     const privKeySigner = process.env[`PRIVATE_KEY_KMS_SIGNER_${idx}`];
     if (privKeySigner) {
-      const kmsSigner = new ethers.Wallet(privKeySigner).connect(ethers.provider);
+      const kmsSigner = new ethers.Wallet(privKeySigner).connect(hre.ethers.provider);
       const signature = await kmsSign(hash, userAddress, contractAddress, kmsSigner);
       signatures.push(signature);
     } else {
@@ -439,7 +435,7 @@ async function coprocSign(
   signer: Wallet,
 ): Promise<string> {
   const inputAdd = dotenv.parse(fs.readFileSync('lib/.env.inputverifier')).INPUT_VERIFIER_CONTRACT_ADDRESS;
-  const chainId = hre.__SOLIDITY_COVERAGE_RUNNING ? 31337 : network.config.chainId;
+  const chainId = hre.__SOLIDITY_COVERAGE_RUNNING ? 31337 : hre.network.config.chainId;
   const aclAdd = dotenv.parse(fs.readFileSync('lib/.env.acl')).ACL_CONTRACT_ADDRESS;
 
   const domain = {
@@ -498,7 +494,7 @@ async function kmsSign(
   signer: Wallet,
 ): Promise<string> {
   const kmsVerifierAdd = dotenv.parse(fs.readFileSync('lib/.env.kmsverifier')).KMS_VERIFIER_CONTRACT_ADDRESS;
-  const chainId = hre.__SOLIDITY_COVERAGE_RUNNING ? 31337 : network.config.chainId;
+  const chainId = hre.__SOLIDITY_COVERAGE_RUNNING ? 31337 : hre.network.config.chainId;
   const aclAdd = dotenv.parse(fs.readFileSync('lib/.env.acl')).ACL_CONTRACT_ADDRESS;
 
   const domain = {

@@ -1,7 +1,7 @@
 import { ethers } from 'hardhat';
 
-import { Comp } from '../../types';
 import type { GovernorZama, Timelock } from '../../types';
+import { Comp } from '../../types';
 import { getSigners } from '../signers';
 
 export async function deployTimelockFixture(): Promise<Timelock> {

@@ -1,9 +1,8 @@
 import dotenv from 'dotenv';
-import { Wallet } from 'ethers';
+import { LogDescription, Wallet } from 'ethers';
 import fs from 'fs';
-import { ethers, network } from 'hardhat';
-
-import { GatewayContract } from '../types';
+import hre, { ethers, network } from 'hardhat';
+import { ACL__factory, GatewayContract__factory } from '../types';
 import { awaitCoprocessor, getClearText } from './coprocessorUtils';
 import { waitNBlocks } from './utils';
 
@@ -27,6 +26,17 @@ const CiphertextType = {
   11: 'bytes',
 };
 
+function isCipherTextType(type: number): type is keyof typeof CiphertextType {
+  return type in CiphertextType;
+}
+
+function mustGetCiphertextType(type: number): (typeof CiphertextType)[keyof typeof CiphertextType] {
+  if (!isCipherTextType(type)) {
+    throw new Error(`Invalid ciphertext type: ${type}`);
+  }
+  return CiphertextType[type];
+}
+
 const currentTime = (): string => {
   const now = new Date();
   return now.toLocaleTimeString('en-US', { hour12: true, hour: 'numeric', minute: 'numeric', second: 'numeric' });
@@ -46,35 +56,33 @@ const ifaceEventDecryption = new ethers.Interface(['event EventDecryption' + arg
 const argEvents2 = '(uint256 indexed requestID, bool success, bytes result)';
 const ifaceResultCallback = new ethers.Interface(['event ResultCallback' + argEvents2]);
 
-let gateway: GatewayContract;
+const gateway = GatewayContract__factory.connect(parsedEnv.GATEWAY_CONTRACT_PREDEPLOY_ADDRESS);
 let firstBlockListening: number;
 let lastBlockSnapshotForDecrypt: number;
 
 export const initGateway = async (): Promise<void> => {
   firstBlockListening = await ethers.provider.getBlockNumber();
-  if (networkName === 'hardhat' && hre.__SOLIDITY_COVERAGE_RUNNING !== true) {
+  if (networkName === 'hardhat' && !hre.__SOLIDITY_COVERAGE_RUNNING) {
     // evm_snapshot is not supported in coverage mode
     await ethers.provider.send('set_lastBlockSnapshotForDecrypt', [firstBlockListening]);
   }
   // this function will emit logs for every request and fulfilment of a decryption
-  gateway = await ethers.getContractAt('GatewayContract', parsedEnv.GATEWAY_CONTRACT_PREDEPLOY_ADDRESS);
-  gateway.on(
-    'EventDecryption',
-    async (requestID, cts, contractCaller, callbackSelector, msgValue, maxTimestamp, eventData) => {
-      const blockNumber = eventData.log.blockNumber;
+  await gateway.on(
+    gateway.getEvent('EventDecryption'),
+    async (requestID, cts, contractCaller, callbackSelector, msgValue, maxTimestamp, passSignaturesToCaller, log) => {
+      const blockNumber = log.blockNumber;
       console.log(`${await currentTime()} - Requested decrypt on block ${blockNumber} (requestID ${requestID})`);
     },
   );
-  gateway.on('ResultCallback', async (requestID, success, result, eventData) => {
-    const blockNumber = eventData.log.blockNumber;
+  await gateway.on(gateway.getEvent('ResultCallback'), async (requestID, success, result, log) => {
+    const blockNumber = log.blockNumber;
     console.log(`${await currentTime()} - Fulfilled decrypt on block ${blockNumber} (requestID ${requestID})`);
   });
 };
 
 export const awaitAllDecryptionResults = async (): Promise<void> => {
-  gateway = await ethers.getContractAt('GatewayContract', parsedEnv.GATEWAY_CONTRACT_PREDEPLOY_ADDRESS);
   const provider = ethers.provider;
-  if (networkName === 'hardhat' && hre.__SOLIDITY_COVERAGE_RUNNING !== true) {
+  if (networkName === 'hardhat' && !hre.__SOLIDITY_COVERAGE_RUNNING) {
     // evm_snapshot is not supported in coverage mode
     lastBlockSnapshotForDecrypt = await provider.send('get_lastBlockSnapshotForDecrypt');
     if (lastBlockSnapshotForDecrypt < firstBlockListening) {
@@ -83,14 +91,14 @@ export const awaitAllDecryptionResults = async (): Promise<void> => {
   }
   await fulfillAllPastRequestsIds(networkName === 'hardhat');
   firstBlockListening = (await ethers.provider.getBlockNumber()) + 1;
-  if (networkName === 'hardhat' && hre.__SOLIDITY_COVERAGE_RUNNING !== true) {
+  if (networkName === 'hardhat' && !hre.__SOLIDITY_COVERAGE_RUNNING) {
     // evm_snapshot is not supported in coverage mode
     await provider.send('set_lastBlockSnapshotForDecrypt', [firstBlockListening]);
   }
 };
 
-const getAlreadyFulfilledDecryptions = async (): Promise<[bigint]> => {
-  let results = [];
+const getAlreadyFulfilledDecryptions = async (): Promise<bigint[]> => {
+  let results: (null | LogDescription)[] = [];
   const eventDecryptionResult = await gateway.filters.ResultCallback().getTopicFilter();
   const filterDecryptionResult = {
     address: parsedEnv.GATEWAY_CONTRACT_PREDEPLOY_ADDRESS,
@@ -99,9 +107,9 @@ const getAlreadyFulfilledDecryptions = async (): Promise<[bigint]> => {
     topics: eventDecryptionResult,
   };
   const pastResults = await ethers.provider.getLogs(filterDecryptionResult);
-  results = results.concat(pastResults.map((result) => ifaceResultCallback.parseLog(result).args[0]));
+  results = results.concat(pastResults.map((result) => ifaceResultCallback.parseLog(result)));
 
-  return results;
+  return results.filter((r): r is LogDescription => !!r).map((r) => BigInt(r?.args[0]));
 };
 
 const allTrue = (arr: boolean[], fn = Boolean) => arr.every(fn);
@@ -118,8 +126,12 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
   const pastRequests = await ethers.provider.getLogs(filterDecryption);
   for (const request of pastRequests) {
     const event = ifaceEventDecryption.parseLog(request);
+    if (!event) {
+      throw new Error(`Could not parse event: ${request}`);
+    }
+    // TODO: get strongly typed event, this should be possible from typechain
     const requestID = event.args[0];
-    const handles = event.args[1];
+    const handles = (event.args[1] as (number | bigint | string)[]).map(BigInt);
     const typesList = handles.map((handle) => parseInt(handle.toString(16).slice(-4, -2), 16));
     const msgValue = event.args[4];
     const passSignaturesToCaller = event.args[6];
@@ -130,13 +142,12 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
         await awaitCoprocessor();
 
         // first check tat all handles are allowed for decryption
-        const aclFactory = await ethers.getContractFactory('ACL');
-        const acl = aclFactory.attach(aclAdd);
-        const isAllowedForDec = await Promise.all(handles.map(async (handle) => acl.isAllowedForDecryption(handle)));
+        const acl = ACL__factory.connect(aclAdd);
+        const isAllowedForDec = await Promise.all(handles.map((handle) => acl.isAllowedForDecryption(handle)));
         if (!allTrue(isAllowedForDec)) {
           throw new Error('Some handle is not authorized for decryption');
         }
-        const types = typesList.map((num) => CiphertextType[num]);
+        const types = typesList.map((num) => mustGetCiphertextType(num));
         const values = await Promise.all(handles.map(async (handle) => BigInt(await getClearText(handle))));
         const valuesFormatted = values.map((value, index) =>
           types[index] === 'address' ? '0x' + value.toString(16).padStart(40, '0') : value,

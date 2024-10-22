@@ -5,6 +5,7 @@ import { task, types } from 'hardhat/config';
 import type { TaskArguments } from 'hardhat/types';
 import path from 'path';
 import { promisify } from 'util';
+import { mustGetEnv } from './environment';
 
 const exec = promisify(oldExec);
 
@@ -93,13 +94,10 @@ task('task:launchFhevm')
   .setAction(async function (taskArgs, hre) {
     const privKeyDeployer = process.env.PRIVATE_KEY_GATEWAY_DEPLOYER;
     const deployerAddress = new hre.ethers.Wallet(privKeyDeployer!).address;
-    let relayerAddress;
-    if (!taskArgs.useAddress) {
-      const privKeyRelayer = process.env.PRIVATE_KEY_GATEWAY_RELAYER;
-      relayerAddress = new hre.ethers.Wallet(privKeyRelayer!).address;
-    } else {
-      relayerAddress = process.env.ADDRESS_GATEWAY_RELAYER;
-    }
+    const relayerAddress = !taskArgs.useAddress
+      ? new hre.ethers.Wallet(mustGetEnv('PRIVATE_KEY_GATEWAY_RELAYER')).address
+      : mustGetEnv('process.env.ADDRESS_GATEWAY_RELAYER');
+
     if (!taskArgs.skipGetCoin) {
       if (hre.network.name === 'hardhat') {
         const bal = '0x1000000000000000000000000000000000000000';

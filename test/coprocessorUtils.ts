@@ -1,8 +1,8 @@
 import dotenv from 'dotenv';
+import { FunctionFragment } from 'ethers';
 import { log2 } from 'extra-bigint';
 import * as fs from 'fs';
-import { ethers } from 'hardhat';
-import hre from 'hardhat';
+import hre, { ethers } from 'hardhat';
 import { Database } from 'sqlite3';
 
 const parsedEnvCoprocessor = dotenv.parse(fs.readFileSync('lib/.env.exec'));
@@ -23,18 +23,21 @@ const contractABI = JSON.parse(fs.readFileSync('artifacts/lib/TFHEExecutor.sol/T
 
 const iface = new ethers.Interface(contractABI);
 
-const functions = iface.fragments.filter((fragment) => fragment.type === 'function');
+const functions = iface.fragments.filter((fragment): fragment is FunctionFragment => fragment.type === 'function');
 
-const selectors = functions.reduce((acc, func) => {
-  const signature = `${func.name}(${func.inputs.map((input) => input.type).join(',')})`;
-  acc[func.selector] = signature;
-  return acc;
-}, {});
+const selectors = functions.reduce(
+  (acc, func) => {
+    const signature = `${func.name}(${func.inputs.map((input) => input.type).join(',')})`;
+    acc[func.selector] = signature;
+    return acc;
+  },
+  {} as Record<string, string>,
+);
 
 //const db = new Database('./sql.db'); // on-disk db for debugging
 const db = new Database(':memory:');
 
-export function insertSQL(handle: string, clearText: BigInt, replace: boolean = false) {
+export function insertSQL(handle: string, clearText: bigint, replace: boolean = false) {
   if (replace) {
     // this is useful if using snapshots while sampling different random numbers on each revert
     db.run('INSERT OR REPLACE INTO ciphertexts (handle, clearText) VALUES (?, ?)', [handle, clearText.toString()]);
@@ -43,9 +46,13 @@ export function insertSQL(handle: string, clearText: BigInt, replace: boolean = 
   }
 }
 
+type Row = {
+  clearText: string;
+};
+
 // Decrypt any handle, bypassing ACL
 // WARNING : only for testing or internal use
-export const getClearText = async (handle: BigInt): Promise<string> => {
+export const getClearText = async (handle: bigint | number): Promise<string> => {
   const handleStr = '0x' + handle.toString(16).padStart(64, '0');
 
   return new Promise((resolve, reject) => {
@@ -57,7 +64,8 @@ export const getClearText = async (handle: BigInt): Promise<string> => {
         if (err) {
           reject(new Error(`Error querying database: ${err.message}`));
         } else if (row) {
-          resolve(row.clearText);
+          // FIXME: parse rather than assert row type
+          resolve((row as Row).clearText);
         } else if (attempts < maxRetries) {
           attempts++;
           executeQuery();
@@ -122,21 +130,6 @@ function extractCalldata(memory: string[], offset: number, size: number): string
   return calldata.slice(calldataStart, calldataEnd);
 }
 
-const TypesBytesSize = {
-  0: 1, //ebool
-  1: 1, //euint4
-  2: 1, //euint8
-  3: 2, //euint16
-  4: 4, //euint32
-  5: 8, //euint64
-  6: 16, //euint128
-  7: 20, //eaddress
-  8: 32, //euint256
-  9: 64, //ebytes64
-  10: 128, //ebytes128
-  11: 256, //ebytes256
-};
-
 const NumBits = {
   0: 1n, //ebool
   1: 4n, //euint4
@@ -152,10 +145,21 @@ const NumBits = {
   11: 2048n, //ebytes256
 };
 
+function isNumBitsIdx(idx: number): idx is keyof typeof NumBits {
+  return idx in NumBits;
+}
+
+function getNumBits(idx: number): (typeof NumBits)[keyof typeof NumBits] {
+  if (!isNumBitsIdx(idx)) {
+    throw new Error(`Invalid NumBits index: ${idx}`);
+  }
+  return NumBits[idx];
+}
+
 const HANDLE_VERSION = 0;
 
 export function numberToEvenHexString(num: number) {
-  if (typeof num !== 'number' || num < 0) {
+  if (num < 0) {
     throw new Error('Input should be a non-negative number.');
   }
   let hexString = num.toString(16);
@@ -186,7 +190,7 @@ function getRandomBigInt(numBits: number): bigint {
 }
 
 async function insertHandle(
-  obj2: EvmState,
+  obj2: { value: EvmState; index: number },
   validIdxes: [number],
   blockStatus: {
     blockhash: string;
@@ -194,7 +198,7 @@ async function insertHandle(
   },
 ) {
   const obj = obj2.value;
-  if (isCoprocAdd(obj!.stack.at(-2))) {
+  if (isCoprocAdd(obj?.stack?.at(-2))) {
     const argsOffset = Number(`0x${obj!.stack.at(-4)}`);
     const argsSize = Number(`0x${obj!.stack.at(-5)}`);
     const calldata = extractCalldata(obj.memory, argsOffset, argsSize);
@@ -249,11 +253,11 @@ async function insertHandle(
         clearLHS = await getClearText(decodedData[0]);
         if (decodedData[2] === '0x01') {
           clearText = BigInt(clearLHS) + decodedData[1];
-          clearText = clearText % 2n ** NumBits[resultType];
+          clearText = clearText % 2n ** getNumBits(resultType);
         } else {
           clearRHS = await getClearText(decodedData[1]);
           clearText = BigInt(clearLHS) + BigInt(clearRHS);
-          clearText = clearText % 2n ** NumBits[resultType];
+          clearText = clearText % 2n ** getNumBits(resultType);
         }
         insertSQL(handle, clearText);
         break;
@@ -271,13 +275,13 @@ async function insertHandle(
         clearLHS = await getClearText(decodedData[0]);
         if (decodedData[2] === '0x01') {
           clearText = BigInt(clearLHS) - decodedData[1];
-          if (clearText < 0n) clearText = clearText + 2n ** NumBits[resultType];
-          clearText = clearText % 2n ** NumBits[resultType];
+          if (clearText < 0n) clearText = clearText + 2n ** getNumBits(resultType);
+          clearText = clearText % 2n ** getNumBits(resultType);
         } else {
           clearRHS = await getClearText(decodedData[1]);
           clearText = BigInt(clearLHS) - BigInt(clearRHS);
-          if (clearText < 0n) clearText = clearText + 2n ** NumBits[resultType];
-          clearText = clearText % 2n ** NumBits[resultType];
+          if (clearText < 0n) clearText = clearText + 2n ** getNumBits(resultType);
+          clearText = clearText % 2n ** getNumBits(resultType);
         }
         insertSQL(handle, clearText);
         break;
@@ -295,11 +299,11 @@ async function insertHandle(
         clearLHS = await getClearText(decodedData[0]);
         if (decodedData[2] === '0x01') {
           clearText = BigInt(clearLHS) * decodedData[1];
-          clearText = clearText % 2n ** NumBits[resultType];
+          clearText = clearText % 2n ** getNumBits(resultType);
         } else {
           clearRHS = await getClearText(decodedData[1]);
           clearText = BigInt(clearLHS) * BigInt(clearRHS);
-          clearText = clearText % 2n ** NumBits[resultType];
+          clearText = clearText % 2n ** getNumBits(resultType);
         }
         insertSQL(handle, clearText);
         break;
@@ -355,11 +359,11 @@ async function insertHandle(
         clearLHS = await getClearText(decodedData[0]);
         if (decodedData[2] === '0x01') {
           clearText = BigInt(clearLHS) & decodedData[1];
-          clearText = clearText % 2n ** NumBits[resultType];
+          clearText = clearText % 2n ** getNumBits(resultType);
         } else {
           clearRHS = await getClearText(decodedData[1]);
           clearText = BigInt(clearLHS) & BigInt(clearRHS);
-          clearText = clearText % 2n ** NumBits[resultType];
+          clearText = clearText % 2n ** getNumBits(resultType);
         }
         insertSQL(handle, clearText);
         break;
@@ -377,11 +381,11 @@ async function insertHandle(
         clearLHS = await getClearText(decodedData[0]);
         if (decodedData[2] === '0x01') {
           clearText = BigInt(clearLHS) | decodedData[1];
-          clearText = clearText % 2n ** NumBits[resultType];
+          clearText = clearText % 2n ** getNumBits(resultType);
         } else {
           clearRHS = await getClearText(decodedData[1]);
           clearText = BigInt(clearLHS) | BigInt(clearRHS);
-          clearText = clearText % 2n ** NumBits[resultType];
+          clearText = clearText % 2n ** getNumBits(resultType);
         }
         insertSQL(handle, clearText);
         break;
@@ -399,11 +403,11 @@ async function insertHandle(
         clearLHS = await getClearText(decodedData[0]);
         if (decodedData[2] === '0x01') {
           clearText = BigInt(clearLHS) ^ decodedData[1];
-          clearText = clearText % 2n ** NumBits[resultType];
+          clearText = clearText % 2n ** getNumBits(resultType);
         } else {
           clearRHS = await getClearText(decodedData[1]);
           clearText = BigInt(clearLHS) ^ BigInt(clearRHS);
-          clearText = clearText % 2n ** NumBits[resultType];
+          clearText = clearText % 2n ** getNumBits(resultType);
         }
         insertSQL(handle, clearText);
         break;
@@ -420,12 +424,12 @@ async function insertHandle(
         handle = appendType(handle, resultType);
         clearLHS = await getClearText(decodedData[0]);
         if (decodedData[2] === '0x01') {
-          clearText = BigInt(clearLHS) << decodedData[1] % NumBits[resultType];
-          clearText = clearText % 2n ** NumBits[resultType];
+          clearText = BigInt(clearLHS) << decodedData[1] % getNumBits(resultType);
+          clearText = clearText % 2n ** getNumBits(resultType);
         } else {
           clearRHS = await getClearText(decodedData[1]);
-          clearText = BigInt(clearLHS) << BigInt(clearRHS) % NumBits[resultType];
-          clearText = clearText % 2n ** NumBits[resultType];
+          clearText = BigInt(clearLHS) << BigInt(clearRHS) % getNumBits(resultType);
+          clearText = clearText % 2n ** getNumBits(resultType);
         }
         insertSQL(handle, clearText);
         break;
@@ -442,12 +446,12 @@ async function insertHandle(
         handle = appendType(handle, resultType);
         clearLHS = await getClearText(decodedData[0]);
         if (decodedData[2] === '0x01') {
-          clearText = BigInt(clearLHS) >> decodedData[1] % NumBits[resultType];
-          clearText = clearText % 2n ** NumBits[resultType];
+          clearText = BigInt(clearLHS) >> decodedData[1] % getNumBits(resultType);
+          clearText = clearText % 2n ** getNumBits(resultType);
         } else {
           clearRHS = await getClearText(decodedData[1]);
-          clearText = BigInt(clearLHS) >> BigInt(clearRHS) % NumBits[resultType];
-          clearText = clearText % 2n ** NumBits[resultType];
+          clearText = BigInt(clearLHS) >> BigInt(clearRHS) % getNumBits(resultType);
+          clearText = clearText % 2n ** getNumBits(resultType);
         }
         insertSQL(handle, clearText);
         break;
@@ -465,14 +469,14 @@ async function insertHandle(
         clearLHS = await getClearText(decodedData[0]);
 
         if (decodedData[2] === '0x01') {
-          shift = decodedData[1] % NumBits[resultType];
-          clearText = (BigInt(clearLHS) << shift) | (BigInt(clearLHS) >> (NumBits[resultType] - shift));
-          clearText = clearText % 2n ** NumBits[resultType];
+          shift = decodedData[1] % getNumBits(resultType);
+          clearText = (BigInt(clearLHS) << shift) | (BigInt(clearLHS) >> (getNumBits(resultType) - shift));
+          clearText = clearText % 2n ** getNumBits(resultType);
         } else {
           clearRHS = await getClearText(decodedData[1]);
-          shift = BigInt(clearRHS) % NumBits[resultType];
-          clearText = (BigInt(clearLHS) << shift) | (BigInt(clearLHS) >> (NumBits[resultType] - shift));
-          clearText = clearText % 2n ** NumBits[resultType];
+          shift = BigInt(clearRHS) % getNumBits(resultType);
+          clearText = (BigInt(clearLHS) << shift) | (BigInt(clearLHS) >> (getNumBits(resultType) - shift));
+          clearText = clearText % 2n ** getNumBits(resultType);
         }
         insertSQL(handle, clearText);
         break;
@@ -490,14 +494,14 @@ async function insertHandle(
         clearLHS = await getClearText(decodedData[0]);
 
         if (decodedData[2] === '0x01') {
-          shift = decodedData[1] % NumBits[resultType];
-          clearText = (BigInt(clearLHS) >> shift) | (BigInt(clearLHS) << (NumBits[resultType] - shift));
-          clearText = clearText % 2n ** NumBits[resultType];
+          shift = decodedData[1] % getNumBits(resultType);
+          clearText = (BigInt(clearLHS) >> shift) | (BigInt(clearLHS) << (getNumBits(resultType) - shift));
+          clearText = clearText % 2n ** getNumBits(resultType);
         } else {
           clearRHS = await getClearText(decodedData[1]);
-          shift = BigInt(clearRHS) % NumBits[resultType];
-          clearText = (BigInt(clearLHS) >> shift) | (BigInt(clearLHS) << (NumBits[resultType] - shift));
-          clearText = clearText % 2n ** NumBits[resultType];
+          shift = BigInt(clearRHS) % getNumBits(resultType);
+          clearText = (BigInt(clearLHS) >> shift) | (BigInt(clearLHS) << (getNumBits(resultType) - shift));
+          clearText = clearText % 2n ** getNumBits(resultType);
         }
         insertSQL(handle, clearText);
         break;
@@ -694,7 +698,7 @@ async function insertHandle(
             [Operators.cast, decodedData[0], decodedData[1], aclAddress, chainId],
           ),
         );
-        clearText = BigInt(await getClearText(decodedData[0])) % 2n ** NumBits[resultType];
+        clearText = BigInt(await getClearText(decodedData[0])) % 2n ** getNumBits(resultType);
         handle = appendType(handle, resultType);
         insertSQL(handle, clearText);
         break;
@@ -709,7 +713,7 @@ async function insertHandle(
         );
         handle = appendType(handle, resultType);
         clearText = BigInt(await getClearText(decodedData[0]));
-        clearText = bitwiseNotUintBits(clearText, Number(NumBits[resultType]));
+        clearText = bitwiseNotUintBits(clearText, Number(getNumBits(resultType)));
         insertSQL(handle, clearText);
         break;
 
@@ -723,8 +727,8 @@ async function insertHandle(
         );
         handle = appendType(handle, resultType);
         clearText = BigInt(await getClearText(decodedData[0]));
-        clearText = bitwiseNotUintBits(clearText, Number(NumBits[resultType]));
-        clearText = (clearText + 1n) % 2n ** NumBits[resultType];
+        clearText = bitwiseNotUintBits(clearText, Number(getNumBits(resultType)));
+        clearText = (clearText + 1n) % 2n ** getNumBits(resultType);
         insertSQL(handle, clearText);
         break;
 
@@ -736,7 +740,7 @@ async function insertHandle(
         }
         break;
 
-      case 'fheIfThenElse(uint256,uint256,uint256)':
+      case 'fheIfThenElse(uint256,uint256,uint256)': {
         resultType = parseInt(decodedData[1].toString(16).slice(-4, -2), 16);
         handle = ethers.keccak256(
           ethers.solidityPacked(
@@ -755,6 +759,7 @@ async function insertHandle(
         }
         insertSQL(handle, clearText);
         break;
+      }
 
       case 'fheRand(bytes1)':
         if (validIdxes.includes(obj2.index)) {
@@ -770,7 +775,7 @@ async function insertHandle(
             ethers.solidityPacked(['uint8', 'bytes1', 'bytes16'], [Operators.fheRand, decodedData[0], seed]),
           );
           handle = appendType(handle, resultType);
-          clearText = getRandomBigInt(Number(NumBits[resultType]));
+          clearText = getRandomBigInt(Number(getNumBits(resultType)));
           insertSQL(handle, clearText, true);
           counterRand++;
         }
@@ -802,25 +807,23 @@ async function insertHandle(
   }
 }
 
-function bitwiseNotUintBits(value: BigInt, numBits: number) {
-  if (typeof value !== 'bigint') {
-    throw new TypeError('The input value must be a BigInt.');
-  }
-  if (typeof numBits !== 'number' || numBits <= 0) {
-    throw new TypeError('The numBits parameter must be a positive integer.');
-  }
-
+function bitwiseNotUintBits(value: bigint, numBits: number) {
   // Create the mask with numBits bits set to 1
   const BIT_MASK = (BigInt(1) << BigInt(numBits)) - BigInt(1);
 
   return ~value & BIT_MASK;
 }
 
-function isCoprocAdd(longString: string): boolean {
+function isCoprocAdd(longString: string | undefined): boolean {
+  if (!longString) {
+    return false;
+  }
   const strippedLongString = longString.replace(/^0+/, '');
   const normalizedLongString = strippedLongString.toLowerCase();
   return normalizedLongString === coprocAdd;
 }
+
+// TODO: provide proper typings (I've seen a StructLog type somewhere - ethers? viem?)
 
 async function processLogs(trace, validSubcallsIndexes, blockStatus) {
   for (const obj of trace.structLogs
@@ -831,7 +834,7 @@ async function processLogs(trace, validSubcallsIndexes, blockStatus) {
 }
 
 export const awaitCoprocessor = async (): Promise<void> => {
-  chainId = (await ethers.provider.getNetwork()).chainId;
+  chainId = Number((await ethers.provider.getNetwork()).chainId);
   const pastTxHashes = await getAllPastTransactionHashes();
   for (const txHash of pastTxHashes) {
     const trace = await ethers.provider.send('debug_traceTransaction', [txHash[0]]);
@@ -852,7 +855,7 @@ async function getAllPastTransactionHashes() {
   const latestBlockNumber = await provider.getBlockNumber();
   let txHashes = [];
 
-  if (hre.__SOLIDITY_COVERAGE_RUNNING !== true) {
+  if (!hre.__SOLIDITY_COVERAGE_RUNNING) {
     // evm_snapshot is not supported in coverage mode
     [lastBlockSnapshot, lastCounterRand] = await provider.send('get_lastBlockSnapshot');
     if (lastBlockSnapshot < firstBlockListening) {
@@ -873,7 +876,7 @@ async function getAllPastTransactionHashes() {
     });
   }
   firstBlockListening = latestBlockNumber + 1;
-  if (hre.__SOLIDITY_COVERAGE_RUNNING !== true) {
+  if (!hre.__SOLIDITY_COVERAGE_RUNNING) {
     // evm_snapshot is not supported in coverage mode
     await provider.send('set_lastBlockSnapshot', [firstBlockListening]);
   }

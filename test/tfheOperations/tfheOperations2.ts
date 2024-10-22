@@ -1,28 +1,20 @@
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
-import type { TFHETestSuite1 } from '../../types/contracts/tests/TFHETestSuite1';
-import type { TFHETestSuite2 } from '../../types/contracts/tests/TFHETestSuite2';
-import type { TFHETestSuite3 } from '../../types/contracts/tests/TFHETestSuite3';
-import type { TFHETestSuite4 } from '../../types/contracts/tests/TFHETestSuite4';
-import type { TFHETestSuite5 } from '../../types/contracts/tests/TFHETestSuite5';
-import type { TFHETestSuite6 } from '../../types/contracts/tests/TFHETestSuite6';
-import type { TFHETestSuite7 } from '../../types/contracts/tests/TFHETestSuite7';
-import type { TFHETestSuite8 } from '../../types/contracts/tests/TFHETestSuite8';
-import type { TFHETestSuite9 } from '../../types/contracts/tests/TFHETestSuite9';
-import type { TFHETestSuite10 } from '../../types/contracts/tests/TFHETestSuite10';
-import type { TFHETestSuite11 } from '../../types/contracts/tests/TFHETestSuite11';
-import {
-  createInstances,
-  decrypt4,
-  decrypt8,
-  decrypt16,
-  decrypt32,
-  decrypt64,
-  decrypt128,
-  decrypt256,
-  decryptBool,
-} from '../instance';
+import type {
+  TFHETestSuite1,
+  TFHETestSuite10,
+  TFHETestSuite11,
+  TFHETestSuite2,
+  TFHETestSuite3,
+  TFHETestSuite4,
+  TFHETestSuite5,
+  TFHETestSuite6,
+  TFHETestSuite7,
+  TFHETestSuite8,
+  TFHETestSuite9,
+} from '../../types';
+import { createInstances, decrypt128, decrypt16, decrypt256, decrypt4, decrypt8, decryptBool } from '../instance';
 import { getSigners, initSigners } from '../signers';
 
 async function deployTfheTestFixture1(): Promise<TFHETestSuite1> {

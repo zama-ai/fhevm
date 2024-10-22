@@ -70,7 +70,7 @@ function generateIntroTestCode(shards: OverloadShard[], idxSplit: number): strin
   `);
   shards.forEach((os) => {
     intro.push(`
-  import type { TFHETestSuite${os.shardNumber} } from '../../types/contracts/tests/TFHETestSuite${os.shardNumber}';
+  import type { TFHETestSuite${os.shardNumber} } from '../../types';
   `);
   });
 

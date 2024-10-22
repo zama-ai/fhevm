@@ -1,6 +1,6 @@
 import type { FhevmInstance } from 'fhevmjs';
 
-import { BlindAuction, Comp, EncryptedERC20, GovernorZama, IdentifiedERC20, IdentityRegistry, Rand } from '../types';
+import { BlindAuction, Comp, EncryptedERC20, GovernorZama, IdentityRegistry, Rand } from '../types';
 import type { Signers } from './signers';
 
 declare module 'mocha' {
@@ -12,7 +12,6 @@ declare module 'mocha' {
     blindAuction: BlindAuction;
     rand: Rand;
     identityRegistry: IdentityRegistry;
-    identifiedErc20: IdentifiedERC20;
     comp: Comp;
     governor: GovernorZama;
   }

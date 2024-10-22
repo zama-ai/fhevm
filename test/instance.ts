@@ -6,9 +6,10 @@ import {
   generateKeypair,
   getCiphertextCallParams,
 } from 'fhevmjs';
-import { readFileSync } from 'fs';
 import * as fs from 'fs';
-import { ethers, ethers as hethers, network } from 'hardhat';
+import { readFileSync } from 'fs';
+import hre, { ethers, ethers as hethers, network } from 'hardhat';
+import { HttpNetworkConfig, NetworkConfig } from 'hardhat/types';
 import { homedir } from 'os';
 import path from 'path';
 
@@ -25,12 +26,15 @@ const kmsAdd = dotenv.parse(fs.readFileSync('lib/.env.kmsverifier')).KMS_VERIFIE
 const aclAdd = dotenv.parse(fs.readFileSync('lib/.env.acl')).ACL_CONTRACT_ADDRESS;
 
 const createInstanceMocked = async () => {
+  const { chainId } = await hre.ethers.provider.getNetwork();
   const instance = {
     reencrypt: reencryptRequestMocked,
     createEncryptedInput: createEncryptedInputMocked,
     getPublicKey: () => '0xFFAA44433',
     generateKeypair: generateKeypair,
-    createEIP712: createEIP712(network.config.chainId),
+    createEIP712: createEIP712(Number(chainId)),
+    // FIXME: provide?
+    getPublicParams: () => ({}),
   };
   return instance;
 };
@@ -54,15 +58,21 @@ export const createInstances = async (accounts: Signers): Promise<FhevmInstances
   return instances;
 };
 
+function isHttpNetworkConfig(config: NetworkConfig): config is HttpNetworkConfig {
+  return 'url' in config;
+}
+
 export const createInstance = async () => {
-  console.log('net url:', network.config.url);
-  const instance = await createFhevmInstance({
+  const config = network.config;
+  if (!isHttpNetworkConfig(config)) {
+    throw new Error('Only HTTP network config is supported for FhevmInstance');
+  }
+  return await createFhevmInstance({
     kmsContractAddress: kmsAdd,
     aclContractAddress: aclAdd,
-    networkUrl: network.config.url,
-    gatewayUrl: 'http://localhost:7077',
+    networkUrl: config.url,
+    gatewayUrl: config.gatewayUrl ?? 'http://localhost:7077',
   });
-  return instance;
 };
 
 const getCiphertext = async (handle: bigint, ethers: typeof hethers): Promise<string> => {
@@ -114,7 +124,7 @@ export const decrypt4 = async (handle: bigint): Promise<bigint> => {
     await awaitCoprocessor();
     return BigInt(await getClearText(handle));
   } else {
-    return getDecryptor().decrypt4(await getCiphertext(handle, ethers));
+    return BigInt(getDecryptor().decrypt4(await getCiphertext(handle, ethers)));
   }
 };
 
@@ -132,7 +142,7 @@ export const decrypt8 = async (handle: bigint): Promise<bigint> => {
     await awaitCoprocessor();
     return BigInt(await getClearText(handle));
   } else {
-    return getDecryptor().decrypt8(await getCiphertext(handle, ethers));
+    return BigInt(getDecryptor().decrypt8(await getCiphertext(handle, ethers)));
   }
 };
 
@@ -150,7 +160,7 @@ export const decrypt16 = async (handle: bigint): Promise<bigint> => {
     await awaitCoprocessor();
     return BigInt(await getClearText(handle));
   } else {
-    return getDecryptor().decrypt16(await getCiphertext(handle, ethers));
+    return BigInt(getDecryptor().decrypt16(await getCiphertext(handle, ethers)));
   }
 };
 
@@ -168,7 +178,7 @@ export const decrypt32 = async (handle: bigint): Promise<bigint> => {
     await awaitCoprocessor();
     return BigInt(await getClearText(handle));
   } else {
-    return getDecryptor().decrypt32(await getCiphertext(handle, ethers));
+    return BigInt(getDecryptor().decrypt32(await getCiphertext(handle, ethers)));
   }
 };
 

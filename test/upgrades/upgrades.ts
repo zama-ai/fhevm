@@ -3,13 +3,13 @@ import dotenv from 'dotenv';
 import fs from 'fs';
 import { ethers, upgrades } from 'hardhat';
 
+import { ACL__factory } from '../../types';
 import { getSigners, initSigners } from '../signers';
 
 describe('Upgrades', function () {
   before(async function () {
     await initSigners(2);
     this.signers = await getSigners();
-    this.aclFactory = await ethers.getContractFactory('ACL');
     this.aclFactoryUpgraded = await ethers.getContractFactory('ACLUpgradedExample');
     this.kmsFactory = await ethers.getContractFactory('KMSVerifier');
     this.kmsFactoryUpgraded = await ethers.getContractFactory('KMSVerifierUpgradedExample');
@@ -96,7 +96,7 @@ describe('Upgrades', function () {
     const acl = await this.aclFactory.attach(origACLAdd, deployer);
     expect(await acl.getVersion()).to.equal('ACL v0.1.0');
     const newaclFactoryUpgraded = await ethers.getContractFactory('ACLUpgradedExample', deployer);
-    const acl2 = await upgrades.upgradeProxy(acl, newaclFactoryUpgraded);
+    const acl2 = ACL__factory.connect(await (await upgrades.upgradeProxy(acl, newaclFactoryUpgraded)).getAddress());
     await acl2.waitForDeployment();
     expect(await acl2.getVersion()).to.equal('ACL v0.2.0');
     expect(await acl2.getAddress()).to.equal(origACLAdd);
