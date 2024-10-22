@@ -100,6 +100,44 @@ describe('EncryptedERC20', function () {
     );
 
     expect(balanceBob).to.equal(1337);
+
+    // on the other hand, Bob should be unable to read Alice's balance
+    try {
+      await this.instances.bob.reencrypt(
+        balanceHandleAlice,
+        privateKeyBob,
+        publicKeyBob,
+        signatureBob.replace('0x', ''),
+        this.contractAddress,
+        this.signers.bob.address,
+      );
+      expect.fail('Expected an error to be thrown - Bob should not be able to reencrypt Alice balance');
+    } catch (error) {
+      expect(error.message).to.equal('User is not authorized to reencrypt this handle!');
+    }
+
+    // and should be impossible to call reencrypt if contractAddress === userAddress
+    try {
+      const eip712b = this.instances.alice.createEIP712(publicKeyAlice, this.signers.alice.address);
+      const signatureAliceb = await this.signers.alice.signTypedData(
+        eip712b.domain,
+        { Reencrypt: eip712b.types.Reencrypt },
+        eip712b.message,
+      );
+      await this.instances.alice.reencrypt(
+        balanceHandleAlice,
+        privateKeyAlice,
+        publicKeyAlice,
+        signatureAliceb.replace('0x', ''),
+        this.signers.alice.address,
+        this.signers.alice.address,
+      );
+      expect.fail('Expected an error to be thrown - userAddress and contractAddress cannot be equal');
+    } catch (error) {
+      expect(error.message).to.equal(
+        'userAddress should not be equal to contractAddress when requesting reencryption!',
+      );
+    }
   });
 
   it('should not transfer tokens between two users', async function () {
