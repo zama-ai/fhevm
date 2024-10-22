@@ -1781,7 +1781,7 @@ dependencies = [
  "sqlx",
  "strum",
  "testcontainers",
- "tfhe",
+ "tfhe 0.9.0",
  "tokio",
  "tokio-util",
  "tonic",
@@ -2199,8 +2199,9 @@ dependencies = [
  "fhevm-engine-common",
  "prost",
  "rayon",
+ "scheduler",
  "sha3",
- "tfhe",
+ "tfhe 0.9.0",
  "tokio",
  "tonic",
  "tonic-build",
@@ -2242,12 +2243,15 @@ dependencies = [
  "bincode",
  "hex",
  "paste",
+ "prost",
  "rand",
  "rand_chacha",
  "serde",
  "sha3",
  "strum",
- "tfhe",
+ "tfhe 0.9.0",
+ "tonic",
+ "tonic-build",
 ]
 
 [[package]]
@@ -4428,6 +4432,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "scheduler"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "daggy",
+ "fhevm-engine-common",
+ "rayon",
+ "tfhe 0.8.6",
+ "tokio",
+]
+
+[[package]]
 name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5113,6 +5129,30 @@ dependencies = [
  "tokio-stream",
  "tokio-util",
  "url",
+]
+
+[[package]]
+name = "tfhe"
+version = "0.8.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e2648b0df14216576ea543bb9021beed019d7eb43fedacdbc24a0c095d33d2a"
+dependencies = [
+ "aligned-vec",
+ "bincode",
+ "bytemuck",
+ "concrete-csprng",
+ "concrete-fft",
+ "concrete-ntt",
+ "dyn-stack",
+ "itertools 0.11.0",
+ "paste",
+ "pulp",
+ "rand_core",
+ "rayon",
+ "serde",
+ "sha3",
+ "tfhe-versionable",
+ "tfhe-zk-pok",
 ]
 
 [[package]]

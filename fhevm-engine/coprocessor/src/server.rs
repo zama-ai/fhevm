@@ -17,6 +17,7 @@ use coprocessor::{
     FetchedCiphertext, GetCiphertextSingleResponse, InputCiphertextResponse,
     InputCiphertextResponseHandle, InputUploadBatch, InputUploadResponse,
 };
+pub use fhevm_engine_common::common;
 use fhevm_engine_common::tfhe_ops::{
     check_fhe_operand_types, current_ciphertext_version, trivial_encrypt_be_bytes,
     try_expand_ciphertext_list, validate_fhe_type,
@@ -33,11 +34,6 @@ use sqlx::{query, Acquire};
 use tokio::task::spawn_blocking;
 use tonic::transport::Server;
 use tracing::{error, info};
-
-pub mod common {
-    tonic::include_proto!("fhevm.common");
-}
-
 pub mod coprocessor {
     tonic::include_proto!("fhevm.coprocessor");
 }

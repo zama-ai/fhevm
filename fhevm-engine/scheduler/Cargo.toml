@@ -1,0 +1,16 @@
+[package]
+name = "scheduler"
+version = "0.1.0"
+edition = "2021"
+
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+tfhe = { version = "0.8.3", features = ["boolean", "shortint", "integer", "x86_64-unix", "zk-pok", "experimental-force_fft_algo_dif4", "nightly-avx512"] }
+[target.'cfg(target_arch = "aarch64")'.dependencies]
+tfhe = { version = "0.8.3", features = ["boolean", "shortint", "integer", "aarch64-unix", "zk-pok", "experimental-force_fft_algo_dif4", "nightly-avx512"] }
+
+[dependencies]
+anyhow.workspace = true
+daggy.workspace = true
+rayon.workspace = true
+tokio.workspace = true
+fhevm-engine-common = { path = "../fhevm-engine-common" }

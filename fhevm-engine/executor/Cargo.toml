@@ -19,6 +19,7 @@ tonic = { workspace = true }
 
 # local dependencies
 fhevm-engine-common = { path = "../fhevm-engine-common" }
+scheduler = { path = "../scheduler" }
 
 # arch-specific dependencies
 [target.'cfg(target_arch = "x86_64")'.dependencies]

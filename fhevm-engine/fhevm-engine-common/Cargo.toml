@@ -12,6 +12,8 @@ bincode = { workspace = true }
 serde = { workspace = true }
 sha3 = { workspace = true }
 tfhe = { workspace = true }
+prost = { workspace = true }
+tonic  = { workspace = true }
 
 # crates.io dependencies
 bigdecimal = "0.4.5"
@@ -29,6 +31,9 @@ tfhe = { workspace = true, features = ["aarch64-unix"] }
 
 [features]
 nightly-avx512 = ["tfhe/nightly-avx512"]
+
+[build-dependencies]
+tonic-build = "0.12"
 
 [[bin]]
 name = "generate-keys"
