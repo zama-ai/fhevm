@@ -227,10 +227,16 @@ func (sessionApi *SessionImpl) Commit() error {
 	return nil
 }
 
-func (sessionApi *SessionImpl) Execute(data []byte, ed ExtraData, output []byte) error {
-	if len(data) < 4 {
-		return fmt.Errorf("input data must be at least 4 bytes for signature, got %d", len(data))
+func (sessionApi *SessionImpl) Execute(dataOrig []byte, ed ExtraData, outputOrig []byte) error {
+	if len(dataOrig) < 4 {
+		return fmt.Errorf("input data must be at least 4 bytes for signature, got %d", len(dataOrig))
 	}
+
+	// make copies so we could assume array is immutable later
+	data := make([]byte, len(dataOrig))
+	output := make([]byte, len(outputOrig))
+	copy(data, dataOrig)
+	copy(output, outputOrig)
 
 	signature := binary.BigEndian.Uint32(data[0:4])
 	callData := data[4:]
