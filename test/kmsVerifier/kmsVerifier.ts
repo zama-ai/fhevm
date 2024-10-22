@@ -3,7 +3,7 @@ import dotenv from 'dotenv';
 import fs from 'fs';
 import { ethers } from 'hardhat';
 
-import { asyncDecrypt, awaitAllDecryptionResults } from '../asyncDecrypt';
+import { awaitAllDecryptionResults, initGateway } from '../asyncDecrypt';
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
 import { bigIntToBytes256 } from '../utils';
@@ -14,7 +14,7 @@ describe('KMSVerifier', function () {
     this.signers = await getSigners();
     this.instances = await createInstances(this.signers);
     this.kmsFactory = await ethers.getContractFactory('KMSVerifier');
-    await asyncDecrypt();
+    await initGateway();
   });
 
   it('original owner adds one signer, then adds two more signers, then removes one signer', async function () {

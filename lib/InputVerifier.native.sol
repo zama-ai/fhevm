@@ -32,6 +32,11 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable {
 
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
 
+    /// @notice Getter function for the KMSVerifier contract address
+    function getKMSVerifierAddress() public view virtual returns (address) {
+        return address(kmsVerifier);
+    }
+
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();

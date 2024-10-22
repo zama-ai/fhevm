@@ -147,6 +147,9 @@ export const reencryptRequestMocked = async (
   if (!isAllowed) {
     throw new Error('User is not authorized to reencrypt this handle!');
   }
+  if (userAddress === contractAddress) {
+    throw new Error('userAddress should not be equal to contractAddress when requesting reencryption!');
+  }
   await awaitCoprocessor();
   return BigInt(await getClearText(handle));
 };

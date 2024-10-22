@@ -29,7 +29,7 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
     /// @notice Handle version
     uint8 public constant HANDLE_VERSION = 0;
 
-    address constant coprocessorAddress = coprocessorAdd;
+    address private constant coprocessorAddress = coprocessorAdd;
 
     KMSVerifier public constant kmsVerifier = KMSVerifier(kmsVerifierAdd);
     string public constant CIPHERTEXTVERIFICATION_COPRO_TYPE =
@@ -49,6 +49,16 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
 
     function get_CIPHERTEXTVERIFICATION_COPRO_TYPE() public view virtual returns (string memory) {
         return CIPHERTEXTVERIFICATION_COPRO_TYPE;
+    }
+
+    /// @notice Getter function for the Coprocessor account address
+    function getCoprocessorAddress() public view virtual returns (address) {
+        return coprocessorAddress;
+    }
+
+    /// @notice Getter function for the KMSVerifier contract address
+    function getKMSVerifierAddress() public view virtual returns (address) {
+        return address(kmsVerifier);
     }
 
     /// @custom:oz-upgrades-unsafe-allow constructor

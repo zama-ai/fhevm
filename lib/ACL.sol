@@ -34,6 +34,7 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
         }
     }
 
+    /// @notice Getter function for the TFHEExecutor contract address
     function getTFHEExecutorAddress() public view virtual returns (address) {
         return tfheExecutorAddress;
     }
@@ -148,7 +149,7 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
         emit AllowedForDecryption(handlesList);
     }
 
-    function isAllowedForDecryption(uint256 handle) public virtual returns (bool) {
+    function isAllowedForDecryption(uint256 handle) public view virtual returns (bool) {
         ACLStorage storage $ = _getACLStorage();
         return $.allowedForDecryption[handle];
     }

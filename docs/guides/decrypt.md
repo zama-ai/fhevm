@@ -180,17 +180,17 @@ event ResultCallback(uint256 indexed requestID, bool success, bytes result);
 
 The first argument is the `requestID` of the corresponding decryption request, `success` is a boolean assessing if the call to the callback succeeded, and `result` is the bytes array corresponding the to return data from the callback.
 
-In your hardhat tests, if you sent some transactions which are requesting one or several decryptions and you wish to await the fulfilment of those decryptions, you should import the two helper methods `asyncDecrypt` and `awaitAllDecryptionResults` from the `asyncDecrypt.ts` utility file. This would work both when testing on an fhEVM node or in mocked mode. Here is a simple hardhat test for the previous `TestAsyncDecrypt` contract (more examples can be seen [here](../../test/gatewayDecrypt/testAsyncDecrypt.ts)):
+In your hardhat tests, if you sent some transactions which are requesting one or several decryptions and you wish to await the fulfilment of those decryptions, you should import the two helper methods `initGateway` and `awaitAllDecryptionResults` from the `asyncDecrypt.ts` utility file. This would work both when testing on an fhEVM node or in mocked mode. Here is a simple hardhat test for the previous `TestAsyncDecrypt` contract (more examples can be seen [here](../../test/gatewayDecrypt/testAsyncDecrypt.ts)):
 
 ```js
-import { asyncDecrypt, awaitAllDecryptionResults } from "../asyncDecrypt";
+import { initGateway, awaitAllDecryptionResults } from "../asyncDecrypt";
 import { getSigners, initSigners } from "../signers";
 import { expect } from "chai";
 import { ethers } from "hardhat";
 
 describe("TestAsyncDecrypt", function () {
   before(async function () {
-    await asyncDecrypt();
+    await initGateway();
     await initSigners(3);
     this.signers = await getSigners();
   });
@@ -210,5 +210,5 @@ describe("TestAsyncDecrypt", function () {
 });
 ```
 
-You should setup the gateway handler by calling `asyncDecrypt` at the top of the `before` block.
-Notice that when testing on the fhEVM, a decryption is fulfilled usually 2 blocks after the request, while in mocked mode the fulfilment will always happen as soon as you call the `awaitAllDecryptionResults` helper function. A good way to standardize hardhat tests is hence to always call`awaitAllDecryptionResults` which will ensure that all pending decryptions are fulfilled in both modes.
+You should initialize the gateway by calling `initGateway` at the top of the `before` block - more specifically, before doing any transaction which could involve a decryption request.
+Notice that when testing on the fhEVM, a decryption is fulfilled usually 2 blocks after the request, while in mocked mode the fulfilment will always happen as soon as you call the `awaitAllDecryptionResults` helper function. A good way to standardize hardhat tests is hence to always call the `awaitAllDecryptionResults` function which will ensure that all pending decryptions are fulfilled in both modes.

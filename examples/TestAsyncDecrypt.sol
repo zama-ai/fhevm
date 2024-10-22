@@ -16,8 +16,10 @@ contract TestAsyncDecrypt is GatewayCaller {
     euint64 xUint64;
     euint64 xUint64_2;
     euint64 xUint64_3;
+    euint128 xUint128;
     eaddress xAddress;
     eaddress xAddress2;
+    euint256 xUint256;
 
     /// @dev Decrypted state variables
     bool public yBool;
@@ -28,8 +30,12 @@ contract TestAsyncDecrypt is GatewayCaller {
     uint64 public yUint64;
     uint64 public yUint64_2;
     uint64 public yUint64_3;
+    uint128 public yUint128;
     address public yAddress;
     address public yAddress2;
+    uint256 public yUint256;
+    bytes public yBytes64;
+    bytes public yBytes128;
     bytes public yBytes256;
 
     /// @dev Tracks the latest decryption request ID
@@ -57,6 +63,10 @@ contract TestAsyncDecrypt is GatewayCaller {
         TFHE.allowThis(xUint64_2);
         xUint64_3 = TFHE.asEuint64(6400);
         TFHE.allowThis(xUint64_3);
+        xUint128 = TFHE.asEuint128(1267650600228229401496703205443);
+        TFHE.allowThis(xUint128);
+        xUint256 = TFHE.asEuint256(27606985387162255149739023449108101809804435888681546220650096895197251);
+        TFHE.allowThis(xUint256);
         xAddress = TFHE.asEaddress(0x8ba1f109551bD432803012645Ac136ddd64DBA72);
         TFHE.allowThis(xAddress);
         xAddress2 = TFHE.asEaddress(0xf48b8840387ba3809DAE990c930F3b4766A86ca3);
@@ -288,6 +298,87 @@ contract TestAsyncDecrypt is GatewayCaller {
     /// @notice Request decryption of a non-trivial 256-bit encrypted bytes
     /// @param inputHandle The input handle for the encrypted value
     /// @param inputProof The input proof for the encrypted value
+    function requestUint128() public {
+        uint256[] memory cts = new uint256[](1);
+        cts[0] = Gateway.toUint256(xUint128);
+        Gateway.requestDecryption(cts, this.callbackUint128.selector, 0, block.timestamp + 100, false);
+    }
+
+    function requestUint128NonTrivial(einput inputHandle, bytes calldata inputProof) public {
+        euint128 inputNonTrivial = TFHE.asEuint128(inputHandle, inputProof);
+        uint256[] memory cts = new uint256[](1);
+        cts[0] = Gateway.toUint256(inputNonTrivial);
+        Gateway.requestDecryption(cts, this.callbackUint128.selector, 0, block.timestamp + 100, false);
+    }
+
+    function callbackUint128(uint256, uint128 decryptedInput) public onlyGateway returns (uint128) {
+        yUint128 = decryptedInput;
+        return decryptedInput;
+    }
+
+    function requestUint256() public {
+        uint256[] memory cts = new uint256[](1);
+        cts[0] = Gateway.toUint256(xUint256);
+        Gateway.requestDecryption(cts, this.callbackUint256.selector, 0, block.timestamp + 100, false);
+    }
+
+    function requestUint256NonTrivial(einput inputHandle, bytes calldata inputProof) public {
+        euint256 inputNonTrivial = TFHE.asEuint256(inputHandle, inputProof);
+        uint256[] memory cts = new uint256[](1);
+        cts[0] = Gateway.toUint256(inputNonTrivial);
+        Gateway.requestDecryption(cts, this.callbackUint256.selector, 0, block.timestamp + 100, false);
+    }
+
+    function callbackUint256(uint256, uint256 decryptedInput) public onlyGateway returns (uint256) {
+        yUint256 = decryptedInput;
+        return decryptedInput;
+    }
+
+    function requestEbytes64NonTrivial(einput inputHandle, bytes calldata inputProof) public {
+        ebytes64 inputNonTrivial = TFHE.asEbytes64(inputHandle, inputProof);
+        uint256[] memory cts = new uint256[](1);
+        cts[0] = Gateway.toUint256(inputNonTrivial);
+        Gateway.requestDecryption(cts, this.callbackBytes64.selector, 0, block.timestamp + 100, false);
+    }
+
+    function requestEbytes64Trivial(bytes calldata value) public {
+        ebytes64 inputTrivial = TFHE.asEbytes64(TFHE.padToBytes64(value));
+        uint256[] memory cts = new uint256[](1);
+        cts[0] = Gateway.toUint256(inputTrivial);
+        Gateway.requestDecryption(cts, this.callbackBytes64.selector, 0, block.timestamp + 100, false);
+    }
+
+    function callbackBytes64(uint256, bytes calldata decryptedInput) public onlyGateway returns (bytes memory) {
+        yBytes64 = decryptedInput;
+        return decryptedInput;
+    }
+
+    function requestEbytes128NonTrivial(einput inputHandle, bytes calldata inputProof) public {
+        ebytes128 inputNonTrivial = TFHE.asEbytes128(inputHandle, inputProof);
+        uint256[] memory cts = new uint256[](1);
+        cts[0] = Gateway.toUint256(inputNonTrivial);
+        Gateway.requestDecryption(cts, this.callbackBytes128.selector, 0, block.timestamp + 100, false);
+    }
+
+    function requestEbytes128Trivial(bytes calldata value) public {
+        ebytes128 inputTrivial = TFHE.asEbytes128(TFHE.padToBytes128(value));
+        uint256[] memory cts = new uint256[](1);
+        cts[0] = Gateway.toUint256(inputTrivial);
+        Gateway.requestDecryption(cts, this.callbackBytes128.selector, 0, block.timestamp + 100, false);
+    }
+
+    function callbackBytes128(uint256, bytes calldata decryptedInput) public onlyGateway returns (bytes memory) {
+        yBytes128 = decryptedInput;
+        return decryptedInput;
+    }
+
+    function requestEbytes256Trivial(bytes calldata value) public {
+        ebytes256 inputTrivial = TFHE.asEbytes256(TFHE.padToBytes256(value));
+        uint256[] memory cts = new uint256[](1);
+        cts[0] = Gateway.toUint256(inputTrivial);
+        Gateway.requestDecryption(cts, this.callbackBytes256.selector, 0, block.timestamp + 100, false);
+    }
+
     function requestEbytes256NonTrivial(einput inputHandle, bytes calldata inputProof) public {
         ebytes256 inputNonTrivial = TFHE.asEbytes256(inputHandle, inputProof);
         uint256[] memory cts = new uint256[](1);
@@ -424,10 +515,12 @@ contract TestAsyncDecrypt is GatewayCaller {
     /// @param inputProof The proof for the encrypted bytes256
     function requestMixedBytes256(einput inputHandle, bytes calldata inputProof) public {
         ebytes256 xBytes256 = TFHE.asEbytes256(inputHandle, inputProof);
-        uint256[] memory cts = new uint256[](3);
+        uint256[] memory cts = new uint256[](4);
         cts[0] = Gateway.toUint256(xBool);
         cts[1] = Gateway.toUint256(xAddress);
         cts[2] = Gateway.toUint256(xBytes256);
+        ebytes64 input64Bytes = TFHE.asEbytes64(TFHE.padToBytes64(hex"aaff42"));
+        cts[3] = Gateway.toUint256(input64Bytes);
         Gateway.requestDecryption(cts, this.callbackMixedBytes256.selector, 0, block.timestamp + 100, false);
     }
 
@@ -440,11 +533,13 @@ contract TestAsyncDecrypt is GatewayCaller {
         uint256,
         bool decBool,
         address decAddress,
-        bytes memory bytesRes
+        bytes memory bytesRes,
+        bytes memory bytesRes2
     ) public onlyGateway {
         yBool = decBool;
         yAddress = decAddress;
         yBytes256 = bytesRes;
+        yBytes64 = bytesRes2;
     }
 
     /// @notice Request trustless decryption of non-trivial 256-bit encrypted bytes

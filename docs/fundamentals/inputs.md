@@ -32,7 +32,12 @@ function myExample(
 On client side, you can interact with the the previous function using [fhevmjs](https://github.com/zama-ai/fhevmjs). Here's an example:
 
 ```javascript
-const instance = await createInstance({ networkUrl: "http://localhost:8545" });
+const instance = await createInstance({
+  kmsContractAddress: "0x208De73316E44722e16f6dDFF40881A3e4F86104",
+  aclContractAddress: "0xc9990FEfE0c27D31D0C2aa36196b085c0c4d456c",
+  networkUrl: "https://devnet.zama.ai/",
+  gatewayUrl: "https://gateway.zama.ai/",
+});
 
 const input = instance.createEncryptedInput(contractAddress, userAddress);
 const inputs = input.add64(64).addBool(true).add8(4).encrypt(); // Encrypt the three parameters
