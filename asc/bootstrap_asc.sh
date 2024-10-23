@@ -133,7 +133,13 @@ if [ -z "$ETHEREUM_IPSC_CONTRACT_ADDRESS" ]; then
 fi
 
 
-INIT_MSG=$(printf '{"debug_proof": false, "verify_proof_contract_addr": "%s", "kms_core_conf": { "centralized": "default" }}' "$ETHEREUM_IPSC_CONTRACT_ADDRESS")
+# old-version
+# INIT_MSG=$(printf '{"debug_proof": false, "verify_proof_contract_addr": "%s", "kms_core_conf": { "centralized": "default" }}' "$ETHEREUM_IPSC_CONTRACT_ADDRESS")
+
+# new version
+INIT_MSG=$(printf '{"debug_proof": true, "verify_proof_contract_addr": "%s", "kms_core_conf": { "centralized": {"param_choice": "default"} }, "allow_list_conf":{"allow_list": ["'"${CONN_ADD}"'"]} }' "$ETHEREUM_IPSC_CONTRACT_ADDRESS")
+
+# INIT_MSG2=$(printf '{"debug_proof": false, "verify_proof_contract_addr": "%s",  "kms_core_conf": { "threshold": {"parties":[{"party_id": "01", "address": ""}, {"party_id": "02", "address": ""}, {"party_id": "03", "address": ""}, {"party_id": "04", "address": ""}], "response_count_for_majority_vote": 3, "response_count_for_reconstruction": 3, "degree_for_reconstruction": 1, "param_choice": "default"}}, "allow_list_conf":{"allow_list": ["%s"]} }' "$ETHEREUM_IPSC_CONTRACT_ADDRESS" "$CONN_ADD")
 
 echo $INIT_MSG
 sleep 5
