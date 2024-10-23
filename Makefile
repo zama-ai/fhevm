@@ -66,7 +66,7 @@ $(WORKDIR)/:
 
 clone-fhevm-solidity: $(WORKDIR)/
 	$(info Cloning fhevm-solidity version $(FHEVM_SOLIDITY_VERSION))
-	cd $(WORKDIR) && git clone https://github.com/zama-ai/fhevm.git
+	cd $(WORKDIR) && git clone git@github.com:zama-ai/fhevm.git
 	cd $(FHEVM_SOLIDITY_PATH) && git checkout $(FHEVM_SOLIDITY_VERSION)
 
 check-fhevm-solidity: $(WORKDIR)/
@@ -88,7 +88,7 @@ endif
 
 clone-coprocessor: $(WORKDIR)/ 
 	$(info Cloning coprocessor version $(COPROCESSOR_VERSION))
-	cd $(WORKDIR) && git clone https://github.com/zama-ai/fhevm-backend.git
+	cd $(WORKDIR) && git clone git@github.com:zama-ai/fhevm-backend.git
 	cd $(COPROCESSOR_PATH) && git checkout $(COPROCESSOR_VERSION)
 
 run-coprocessor: $(WORKDIR)/ check-coprocessor generate-fhe-keys-registry-dev-image
