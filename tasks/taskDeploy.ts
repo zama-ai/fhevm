@@ -45,7 +45,12 @@ task('task:deployTFHEExecutor')
   .addParam('privateKey', 'The deployer private key')
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
     const deployer = new ethers.Wallet(taskArguments.privateKey).connect(ethers.provider);
-    const factory = await ethers.getContractFactory('TFHEExecutor', deployer);
+    let factory;
+    if (process.env.HARDHAT_TFHEEXECUTOR_EVENTS !== '1') {
+      factory = await ethers.getContractFactory('lib/TFHEExecutor.sol:TFHEExecutor', deployer);
+    } else {
+      factory = await ethers.getContractFactory('lib/TFHEExecutor.events.sol:TFHEExecutor', deployer);
+    }
     const exec = await upgrades.deployProxy(factory, [deployer.address], { initializer: 'initialize', kind: 'uups' });
     await exec.waitForDeployment();
     const address = await exec.getAddress();
