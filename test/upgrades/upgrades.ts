@@ -13,7 +13,7 @@ describe('Upgrades', function () {
     this.aclFactoryUpgraded = await ethers.getContractFactory('ACLUpgradedExample');
     this.kmsFactory = await ethers.getContractFactory('KMSVerifier');
     this.kmsFactoryUpgraded = await ethers.getContractFactory('KMSVerifierUpgradedExample');
-    this.executorFactory = await ethers.getContractFactory('TFHEExecutor');
+    this.executorFactory = await ethers.getContractFactory('lib/TFHEExecutor.sol:TFHEExecutor');
     this.executorFactoryUpgraded = await ethers.getContractFactory('TFHEExecutorUpgradedExample');
     this.paymentFactory = await ethers.getContractFactory('FHEPayment');
     this.paymentFactoryUpgraded = await ethers.getContractFactory('FHEPaymentUpgradedExample');

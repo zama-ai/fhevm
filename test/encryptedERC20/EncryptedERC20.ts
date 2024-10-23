@@ -292,6 +292,6 @@ describe('EncryptedERC20', function () {
       this.contractAddress,
       this.signers.bob.address,
     );
-    expect(balanceBob2).to.equal(1337); // check that transfer did happen this time*/
+    expect(balanceBob2).to.equal(1337); // check that transfer did happen this time
   });
 });
