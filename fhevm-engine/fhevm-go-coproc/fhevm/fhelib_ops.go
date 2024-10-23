@@ -1466,9 +1466,6 @@ func trivialEncryptRun(sess CoprocessorSession, unslicedInput []byte, ed ExtraDa
 		return fmt.Errorf("invalid fhe type byte: %d", resultTypeByte)
 	}
 
-	upperBound := big.NewInt(0)
-	upperBound.SetBytes(unslicedInput[0:32])
-
 	err := sess.GetStore().InsertComputation(ComputationToInsert{
 		Operation:    TrivialEncrypt,
 		OutputHandle: outputHandle,
