@@ -103,7 +103,7 @@ func (t FheUintType) String() string {
 }
 
 func IsValidFheType(t byte) bool {
-	if uint8(t) < uint8(FheBool) || uint8(t) > uint8(FheUint160) {
+	if uint8(t) < uint8(FheBool) || uint8(t) > uint8(FheEbytes256) {
 		return false
 	}
 	return true
