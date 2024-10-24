@@ -17,6 +17,7 @@ mod errors;
 mod inputs;
 mod operators;
 mod random;
+mod scheduling_bench;
 mod utils;
 
 #[tokio::test]
