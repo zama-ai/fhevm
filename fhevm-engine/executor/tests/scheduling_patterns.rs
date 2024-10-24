@@ -293,7 +293,7 @@ async fn schedule_y_patterns() {
         input: Some(Input::Handle(handle3.clone())),
     };
     let handle4 = test.ciphertext_handle(&ct4, 3);
-    let sync_input4 = SyncInput {
+    let _sync_input4 = SyncInput {
         input: Some(Input::Handle(handle4.clone())),
     };
     let handle5 = test.ciphertext_handle(&ct5, 3);
@@ -309,7 +309,7 @@ async fn schedule_y_patterns() {
     let sync_input_cc = SyncInput {
         input: Some(Input::Handle(vec![0xcc; HANDLE_LEN])),
     };
-    let sync_input_dd = SyncInput {
+    let _sync_input_dd = SyncInput {
         input: Some(Input::Handle(vec![0xdd; HANDLE_LEN])),
     };
     let sync_input_ee = SyncInput {
@@ -318,7 +318,7 @@ async fn schedule_y_patterns() {
     let sync_input_ff = SyncInput {
         input: Some(Input::Handle(vec![0xff; HANDLE_LEN])),
     };
-    let sync_input_99 = SyncInput {
+    let _sync_input_99 = SyncInput {
         input: Some(Input::Handle(vec![0x99; HANDLE_LEN])),
     };
     // Pattern Y

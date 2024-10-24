@@ -15,7 +15,7 @@ use fhevm_engine_common::{
 };
 use sha3::{Digest, Keccak256};
 use std::{cell::RefCell, collections::HashMap};
-use tfhe::{integer::U256, set_server_key, zk::CompactPkePublicParams, ServerKey};
+use tfhe::{integer::U256, set_server_key, zk::CompactPkePublicParams};
 use tokio::task::spawn_blocking;
 use tonic::{transport::Server, Code, Request, Response, Status};
 

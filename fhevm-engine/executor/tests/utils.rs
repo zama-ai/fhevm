@@ -34,6 +34,7 @@ impl TestInstance {
         instance
     }
 
+    #[allow(dead_code)]
     pub fn input_handle(&self, list: &[u8], index: u8, ct_type: u8) -> Handle {
         let mut handle: Handle = Keccak256::digest(list).to_vec();
         handle[29] = index;
