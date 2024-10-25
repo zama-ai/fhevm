@@ -5,6 +5,8 @@ import { ethers } from 'hardhat';
 import hre from 'hardhat';
 import { Database } from 'sqlite3';
 
+import operatorsPrices from '../codegen/operatorsPrices.json';
+
 const parsedEnvCoprocessor = dotenv.parse(fs.readFileSync('lib/.env.exec'));
 const coprocAddress = parsedEnvCoprocessor.TFHE_EXECUTOR_CONTRACT_ADDRESS;
 const coprocAdd = parsedEnvCoprocessor.TFHE_EXECUTOR_CONTRACT_ADDRESS.replace(/^0x/, '')
@@ -1425,7 +1427,7 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
       }
       break;
 
-    case 'FheIfThenElse': // FheIfThenElse(uint256 control, uint256 ifTrue, uint256 ifFalse, uint256 result);
+    case 'FheIfThenElse':
       handle = ethers.toBeHex(event.args[3], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
       handle = ethers.toBeHex(event.args[3], 32);
@@ -1456,4 +1458,308 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
       counterRand++;
       break;
   }
+}
+
+export function getFHEGasFromTxReceipt(receipt: ethers.TransactionReceipt): number {
+  if (process.env.HARDHAT_TFHEEXECUTOR_EVENTS !== '1') {
+    throw Error('FHEGas tracking is currently implemented only with TFHEExecutor.events.sol variant');
+  }
+  if (receipt.status === 0) {
+    throw new Error('Transaction reverted');
+  }
+  const contract = new ethers.Contract(coprocAddress, abi, ethers.provider);
+  const relevantLogs = receipt.logs.filter((log: ethers.Log) => {
+    if (log.address.toLowerCase() !== coprocAddress.toLowerCase()) {
+      return false;
+    }
+    try {
+      const parsedLog = contract.interface.parseLog({
+        topics: log.topics,
+        data: log.data,
+      });
+      return abi.some((item) => item.startsWith(`event ${parsedLog.name}`) && parsedLog.name !== 'VerifyCiphertext');
+    } catch {
+      return false;
+    }
+  });
+  const FHELogs = relevantLogs.map((log: ethers.Log) => {
+    const parsedLog = contract.interface.parseLog({
+      topics: log.topics,
+      data: log.data,
+    });
+    return {
+      name: parsedLog.name,
+      args: parsedLog.args,
+    };
+  });
+  let FHEGasConsumed = 0;
+  for (const event of FHELogs) {
+    let type;
+    let handle;
+    switch (event.name) {
+      case 'TrivialEncrypt':
+        type = parseInt(event.args[1], 16);
+        FHEGasConsumed += operatorsPrices['trivialEncrypt'].types[type];
+        break;
+
+      case 'TrivialEncryptBytes':
+        type = parseInt(event.args[1], 16);
+        FHEGasConsumed += operatorsPrices['trivialEncrypt'].types[type];
+        break;
+
+      case 'FheAdd':
+        handle = ethers.toBeHex(event.args[0], 32);
+        type = parseInt(handle.slice(-4, -2), 16);
+        if (event.args[2] === '0x01') {
+          FHEGasConsumed += operatorsPrices['fheAdd'].scalar[type];
+        } else {
+          FHEGasConsumed += operatorsPrices['fheAdd'].nonScalar[type];
+        }
+        break;
+
+      case 'FheSub':
+        handle = ethers.toBeHex(event.args[0], 32);
+        type = parseInt(handle.slice(-4, -2), 16);
+        if (event.args[2] === '0x01') {
+          FHEGasConsumed += operatorsPrices['fheSub'].scalar[type];
+        } else {
+          FHEGasConsumed += operatorsPrices['fheSub'].nonScalar[type];
+        }
+        break;
+
+      case 'FheMul':
+        handle = ethers.toBeHex(event.args[0], 32);
+        type = parseInt(handle.slice(-4, -2), 16);
+        if (event.args[2] === '0x01') {
+          FHEGasConsumed += operatorsPrices['fheMul'].scalar[type];
+        } else {
+          FHEGasConsumed += operatorsPrices['fheMul'].nonScalar[type];
+        }
+        break;
+
+      case 'FheDiv':
+        handle = ethers.toBeHex(event.args[0], 32);
+        type = parseInt(handle.slice(-4, -2), 16);
+        if (event.args[2] === '0x01') {
+          FHEGasConsumed += operatorsPrices['fheDiv'].scalar[type];
+        } else {
+          throw new Error('Non-scalar div not implemented yet');
+        }
+        break;
+
+      case 'FheRem':
+        handle = ethers.toBeHex(event.args[0], 32);
+        type = parseInt(handle.slice(-4, -2), 16);
+        if (event.args[2] === '0x01') {
+          FHEGasConsumed += operatorsPrices['fheRem'].scalar[type];
+        } else {
+          throw new Error('Non-scalar rem not implemented yet');
+        }
+        break;
+
+      case 'FheBitAnd':
+        handle = ethers.toBeHex(event.args[0], 32);
+        type = parseInt(handle.slice(-4, -2), 16);
+        if (event.args[2] === '0x01') {
+          FHEGasConsumed += operatorsPrices['fheBitAnd'].scalar[type];
+        } else {
+          FHEGasConsumed += operatorsPrices['fheBitAnd'].nonScalar[type];
+        }
+        break;
+
+      case 'FheBitOr':
+        handle = ethers.toBeHex(event.args[0], 32);
+        type = parseInt(handle.slice(-4, -2), 16);
+        if (event.args[2] === '0x01') {
+          FHEGasConsumed += operatorsPrices['fheBitOr'].scalar[type];
+        } else {
+          FHEGasConsumed += operatorsPrices['fheBitOr'].nonScalar[type];
+        }
+        break;
+
+      case 'FheBitXor':
+        handle = ethers.toBeHex(event.args[0], 32);
+        type = parseInt(handle.slice(-4, -2), 16);
+        if (event.args[2] === '0x01') {
+          FHEGasConsumed += operatorsPrices['fheBitXor'].scalar[type];
+        } else {
+          FHEGasConsumed += operatorsPrices['fheBitXor'].nonScalar[type];
+        }
+        break;
+
+      case 'FheShl':
+        handle = ethers.toBeHex(event.args[0], 32);
+        type = parseInt(handle.slice(-4, -2), 16);
+        if (event.args[2] === '0x01') {
+          FHEGasConsumed += operatorsPrices['fheBitShl'].scalar[type];
+        } else {
+          FHEGasConsumed += operatorsPrices['fheBitShl'].nonScalar[type];
+        }
+        break;
+
+      case 'FheShr':
+        handle = ethers.toBeHex(event.args[0], 32);
+        type = parseInt(handle.slice(-4, -2), 16);
+        if (event.args[2] === '0x01') {
+          FHEGasConsumed += operatorsPrices['fheBitShr'].scalar[type];
+        } else {
+          FHEGasConsumed += operatorsPrices['fheBitShr'].nonScalar[type];
+        }
+        break;
+
+      case 'FheRotl':
+        handle = ethers.toBeHex(event.args[0], 32);
+        type = parseInt(handle.slice(-4, -2), 16);
+        if (event.args[2] === '0x01') {
+          FHEGasConsumed += operatorsPrices['fheRotl'].scalar[type];
+        } else {
+          FHEGasConsumed += operatorsPrices['fheRotl'].nonScalar[type];
+        }
+        break;
+
+      case 'FheRotr':
+        handle = ethers.toBeHex(event.args[0], 32);
+        type = parseInt(handle.slice(-4, -2), 16);
+        if (event.args[2] === '0x01') {
+          FHEGasConsumed += operatorsPrices['fheRotr'].scalar[type];
+        } else {
+          FHEGasConsumed += operatorsPrices['fheRotr'].nonScalar[type];
+        }
+        break;
+
+      case 'FheEq':
+        handle = ethers.toBeHex(event.args[0], 32);
+        type = parseInt(handle.slice(-4, -2), 16);
+        if (event.args[2] === '0x01') {
+          FHEGasConsumed += operatorsPrices['fheEq'].scalar[type];
+        } else {
+          FHEGasConsumed += operatorsPrices['fheEq'].nonScalar[type];
+        }
+        break;
+
+      case 'FheEqBytes':
+        handle = ethers.toBeHex(event.args[0], 32);
+        type = parseInt(handle.slice(-4, -2), 16);
+        if (event.args[2] === '0x01') {
+          FHEGasConsumed += operatorsPrices['fheEq'].scalar[type];
+        } else {
+          FHEGasConsumed += operatorsPrices['fheEq'].nonScalar[type];
+        }
+
+      case 'FheNe':
+        handle = ethers.toBeHex(event.args[0], 32);
+        type = parseInt(handle.slice(-4, -2), 16);
+        if (event.args[2] === '0x01') {
+          FHEGasConsumed += operatorsPrices['fheNe'].scalar[type];
+        } else {
+          FHEGasConsumed += operatorsPrices['fheNe'].nonScalar[type];
+        }
+        break;
+
+      case 'FheNeBytes':
+        handle = ethers.toBeHex(event.args[0], 32);
+        type = parseInt(handle.slice(-4, -2), 16);
+        if (event.args[2] === '0x01') {
+          FHEGasConsumed += operatorsPrices['fheNe'].scalar[type];
+        } else {
+          FHEGasConsumed += operatorsPrices['fheNe'].nonScalar[type];
+        }
+        break;
+
+      case 'FheGe':
+        handle = ethers.toBeHex(event.args[0], 32);
+        type = parseInt(handle.slice(-4, -2), 16);
+        if (event.args[2] === '0x01') {
+          FHEGasConsumed += operatorsPrices['fheGe'].scalar[type];
+        } else {
+          FHEGasConsumed += operatorsPrices['fheGe'].nonScalar[type];
+        }
+        break;
+
+      case 'FheGt':
+        handle = ethers.toBeHex(event.args[0], 32);
+        type = parseInt(handle.slice(-4, -2), 16);
+        if (event.args[2] === '0x01') {
+          FHEGasConsumed += operatorsPrices['fheGt'].scalar[type];
+        } else {
+          FHEGasConsumed += operatorsPrices['fheGt'].nonScalar[type];
+        }
+        break;
+
+      case 'FheLe':
+        handle = ethers.toBeHex(event.args[0], 32);
+        type = parseInt(handle.slice(-4, -2), 16);
+        if (event.args[2] === '0x01') {
+          FHEGasConsumed += operatorsPrices['fheLe'].scalar[type];
+        } else {
+          FHEGasConsumed += operatorsPrices['fheLe'].nonScalar[type];
+        }
+        break;
+
+      case 'FheLt':
+        handle = ethers.toBeHex(event.args[0], 32);
+        type = parseInt(handle.slice(-4, -2), 16);
+        if (event.args[2] === '0x01') {
+          FHEGasConsumed += operatorsPrices['fheLt'].scalar[type];
+        } else {
+          FHEGasConsumed += operatorsPrices['fheLt'].nonScalar[type];
+        }
+        break;
+
+      case 'FheMax':
+        handle = ethers.toBeHex(event.args[0], 32);
+        type = parseInt(handle.slice(-4, -2), 16);
+        if (event.args[2] === '0x01') {
+          FHEGasConsumed += operatorsPrices['fheMax'].scalar[type];
+        } else {
+          FHEGasConsumed += operatorsPrices['fheMax'].nonScalar[type];
+        }
+        break;
+
+      case 'FheMin':
+        handle = ethers.toBeHex(event.args[0], 32);
+        type = parseInt(handle.slice(-4, -2), 16);
+        if (event.args[2] === '0x01') {
+          FHEGasConsumed += operatorsPrices['fheMin'].scalar[type];
+        } else {
+          FHEGasConsumed += operatorsPrices['fheMin'].nonScalar[type];
+        }
+        break;
+
+      case 'Cast':
+        handle = ethers.toBeHex(event.args[0], 32);
+        type = parseInt(handle.slice(-4, -2), 16);
+        FHEGasConsumed += operatorsPrices['cast'].types[type];
+        break;
+
+      case 'FheNot':
+        handle = ethers.toBeHex(event.args[0], 32);
+        type = parseInt(handle.slice(-4, -2), 16);
+        FHEGasConsumed += operatorsPrices['fheNot'].types[type];
+        break;
+
+      case 'FheNeg':
+        handle = ethers.toBeHex(event.args[0], 32);
+        type = parseInt(handle.slice(-4, -2), 16);
+        FHEGasConsumed += operatorsPrices['fheNeg'].types[type];
+        break;
+
+      case 'FheIfThenElse':
+        handle = ethers.toBeHex(event.args[3], 32);
+        type = parseInt(handle.slice(-4, -2), 16);
+        FHEGasConsumed += operatorsPrices['ifThenElse'].types[type];
+        break;
+
+      case 'FheRand':
+        type = parseInt(event.args[0], 16);
+        FHEGasConsumed += operatorsPrices['fheRand'].types[type];
+        break;
+
+      case 'FheRandBounded':
+        type = parseInt(event.args[1], 16);
+        FHEGasConsumed += operatorsPrices['fheRandBounded'].types[type];
+        break;
+    }
+  }
+  return FHEGasConsumed;
 }
