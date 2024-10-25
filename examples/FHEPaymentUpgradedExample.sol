@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.24;
 
-import "../lib/FHEPayment.sol";
+import "fhevm-core-contracts/contracts/FHEPayment.sol";
 
 contract FHEPaymentUpgradedExample is FHEPayment {
     /// @notice Name of the contract

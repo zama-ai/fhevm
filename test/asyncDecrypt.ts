@@ -9,7 +9,7 @@ import { waitNBlocks } from './utils';
 
 const networkName = network.name;
 
-const parsedEnvACL = dotenv.parse(fs.readFileSync('lib/.env.acl'));
+const parsedEnvACL = dotenv.parse(fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.acl'));
 const aclAdd = parsedEnvACL.ACL_CONTRACT_ADDRESS;
 
 const CiphertextType = {
@@ -130,7 +130,7 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
         await awaitCoprocessor();
 
         // first check tat all handles are allowed for decryption
-        const aclFactory = await ethers.getContractFactory('ACL');
+        const aclFactory = await ethers.getContractFactory('fhevmTemp/contracts/ACL.sol:ACL');
         const acl = aclFactory.attach(aclAdd);
         const isAllowedForDec = await Promise.all(handles.map(async (handle) => acl.isAllowedForDecryption(handle)));
         if (!allTrue(isAllowedForDec)) {
@@ -198,7 +198,9 @@ async function computeDecryptSignatures(
 }
 
 async function kmsSign(handlesList: bigint[], decryptedResult: string, kmsSigner: Wallet) {
-  const kmsAdd = dotenv.parse(fs.readFileSync('lib/.env.kmsverifier')).KMS_VERIFIER_CONTRACT_ADDRESS;
+  const kmsAdd = dotenv.parse(
+    fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.kmsverifier'),
+  ).KMS_VERIFIER_CONTRACT_ADDRESS;
   const chainId = (await ethers.provider.getNetwork()).chainId;
 
   const domain = {

@@ -26,7 +26,9 @@ class CustomProvider extends ProviderWrapper {
       const blockNumberHex = await this._wrappedProvider.request({ method: 'eth_blockNumber' });
       this.lastBlockSnapshot = parseInt(blockNumberHex);
       this.lastBlockSnapshotForDecrypt = parseInt(blockNumberHex);
-      const parsedEnvCoprocessor = dotenv.parse(fs.readFileSync('lib/.env.exec'));
+      const parsedEnvCoprocessor = dotenv.parse(
+        fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.exec'),
+      );
       const coprocAdd = parsedEnvCoprocessor.TFHE_EXECUTOR_CONTRACT_ADDRESS;
       this.lastCounterRand = await this._wrappedProvider.request({
         method: 'eth_getStorageAt',

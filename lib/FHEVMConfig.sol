@@ -2,10 +2,10 @@
 
 pragma solidity ^0.8.24;
 
-import "./ACLAddress.sol";
-import "./FHEPaymentAddress.sol";
-import "./KMSVerifierAddress.sol";
-import "./TFHEExecutorAddress.sol";
+import "fhevm-core-contracts/addresses/ACLAddress.sol";
+import "fhevm-core-contracts/addresses/FHEPaymentAddress.sol";
+import "fhevm-core-contracts/addresses/KMSVerifierAddress.sol";
+import "fhevm-core-contracts/addresses/TFHEExecutorAddress.sol";
 
 library FHEVMConfig {
     struct FHEVMConfigStruct {

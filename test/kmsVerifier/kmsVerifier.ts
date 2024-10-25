@@ -13,7 +13,7 @@ describe('KMSVerifier', function () {
     await initSigners(2);
     this.signers = await getSigners();
     this.instances = await createInstances(this.signers);
-    this.kmsFactory = await ethers.getContractFactory('KMSVerifier');
+    this.kmsFactory = await ethers.getContractFactory('fhevmTemp/contracts/KMSVerifier.sol:KMSVerifier');
     await initGateway();
   });
 
@@ -21,7 +21,9 @@ describe('KMSVerifier', function () {
     if (process.env.HARDHAT_PARALLEL !== '1') {
       // to avoid messing up other tests if used on the real node, in parallel testing
 
-      const origKMSAdd = dotenv.parse(fs.readFileSync('lib/.env.kmsverifier')).KMS_VERIFIER_CONTRACT_ADDRESS;
+      const origKMSAdd = dotenv.parse(
+        fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.kmsverifier'),
+      ).KMS_VERIFIER_CONTRACT_ADDRESS;
       const deployer = new ethers.Wallet(process.env.PRIVATE_KEY_FHEVM_DEPLOYER!).connect(ethers.provider);
       const kmsVerifier = await this.kmsFactory.attach(origKMSAdd);
       expect(await kmsVerifier.getVersion()).to.equal('KMSVerifier v0.1.0');

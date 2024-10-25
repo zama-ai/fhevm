@@ -5,6 +5,9 @@ npx hardhat clean
 PRIVATE_KEY_FHEVM_DEPLOYER=$(grep PRIVATE_KEY_FHEVM_DEPLOYER .env | cut -d '"' -f 2)
 NUM_KMS_SIGNERS=$(grep NUM_KMS_SIGNERS .env | cut -d '"' -f 2)
 
+mkdir -p fhevmTemp
+cp -L -r node_modules/fhevm-core-contracts fhevmTemp/
+npx hardhat compile:specific --contract fhevmTemp
 npx hardhat compile:specific --contract lib
 npx hardhat compile:specific --contract gateway
 

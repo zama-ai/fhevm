@@ -6,8 +6,8 @@ import "../lib/TFHE.sol";
 import "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
-import "../lib/KMSVerifierAddress.sol";
-import "../lib/ACLAddress.sol";
+import "fhevm-core-contracts/addresses/KMSVerifierAddress.sol";
+import "fhevm-core-contracts/addresses/ACLAddress.sol";
 import "./IKMSVerifier.sol";
 
 contract GatewayContract is UUPSUpgradeable, Ownable2StepUpgradeable {

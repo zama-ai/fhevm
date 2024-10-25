@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.24;
 
-import "../lib/ACL.sol";
+import "fhevm-core-contracts/contracts/ACL.sol";
 
 contract ACLUpgradedExample2 is ACL {
     /// @notice Name of the contract

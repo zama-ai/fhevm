@@ -3,8 +3,8 @@ import fs from 'fs';
 import { ethers } from 'hardhat';
 
 export async function initializeFHEPayment() {
-  const fhePaymentFactory = await ethers.getContractFactory('FHEPayment');
-  const parsedFHEPayment = dotenv.parse(fs.readFileSync('lib/.env.fhepayment'));
+  const fhePaymentFactory = await ethers.getContractFactory('fhevmTemp/contracts/FHEPayment.sol:FHEPayment');
+  const parsedFHEPayment = dotenv.parse(fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.fhepayment'));
   const fhePayment = fhePaymentFactory.attach(parsedFHEPayment.FHE_PAYMENT_CONTRACT_ADDRESS);
   return fhePayment;
 }

@@ -7,13 +7,13 @@ import { Database } from 'sqlite3';
 
 import operatorsPrices from '../codegen/operatorsPrices.json';
 
-const parsedEnvCoprocessor = dotenv.parse(fs.readFileSync('lib/.env.exec'));
+const parsedEnvCoprocessor = dotenv.parse(fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.exec'));
 const coprocAddress = parsedEnvCoprocessor.TFHE_EXECUTOR_CONTRACT_ADDRESS;
 const coprocAdd = parsedEnvCoprocessor.TFHE_EXECUTOR_CONTRACT_ADDRESS.replace(/^0x/, '')
   .replace(/^0+/, '')
   .toLowerCase();
 
-const parsedEnvACL = dotenv.parse(fs.readFileSync('lib/.env.acl'));
+const parsedEnvACL = dotenv.parse(fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.acl'));
 const aclAddress = parsedEnvACL.ACL_CONTRACT_ADDRESS;
 let chainId: number;
 
@@ -22,7 +22,9 @@ let lastBlockSnapshot = 0;
 let lastCounterRand = 0;
 let counterRand = 0;
 
-const contractABI = JSON.parse(fs.readFileSync('artifacts/lib/TFHEExecutor.sol/TFHEExecutor.json').toString()).abi;
+const contractABI = JSON.parse(
+  fs.readFileSync('artifacts/fhevmTemp/contracts/TFHEExecutor.sol/TFHEExecutor.json').toString(),
+).abi;
 
 const iface = new ethers.Interface(contractABI);
 

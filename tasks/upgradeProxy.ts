@@ -58,7 +58,7 @@ task('task:upgradeACL')
     types.boolean,
   )
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades, run }) {
-    const parsedEnv = dotenv.parse(fs.readFileSync('lib/.env.acl'));
+    const parsedEnv = dotenv.parse(fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.acl'));
     const proxyAddress = parsedEnv.ACL_CONTRACT_ADDRESS;
     await upgradeCurrentToNew(
       taskArguments.privateKey,
@@ -89,7 +89,7 @@ task('task:upgradeTFHEExecutor')
     types.boolean,
   )
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades, run }) {
-    const parsedEnv = dotenv.parse(fs.readFileSync('lib/.env.exec'));
+    const parsedEnv = dotenv.parse(fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.exec'));
     const proxyAddress = parsedEnv.TFHE_EXECUTOR_CONTRACT_ADDRESS;
     await upgradeCurrentToNew(
       taskArguments.privateKey,
@@ -120,7 +120,7 @@ task('task:upgradeKMSVerifier')
     types.boolean,
   )
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades, run }) {
-    const parsedEnv = dotenv.parse(fs.readFileSync('lib/.env.kmsverifier'));
+    const parsedEnv = dotenv.parse(fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.kmsverifier'));
     const proxyAddress = parsedEnv.KMS_VERIFIER_CONTRACT_ADDRESS;
     await upgradeCurrentToNew(
       taskArguments.privateKey,
@@ -151,7 +151,7 @@ task('task:upgradeInputVerifier')
     types.boolean,
   )
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades, run }) {
-    const parsedEnv = dotenv.parse(fs.readFileSync('lib/.env.inputverifier'));
+    const parsedEnv = dotenv.parse(fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.inputverifier'));
     const proxyAddress = parsedEnv.INPUT_VERIFIER_CONTRACT_ADDRESS;
     await upgradeCurrentToNew(
       taskArguments.privateKey,
@@ -182,7 +182,7 @@ task('task:upgradeFHEPayment')
     types.boolean,
   )
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades, run }) {
-    const parsedEnv = dotenv.parse(fs.readFileSync('lib/.env.fhepayment'));
+    const parsedEnv = dotenv.parse(fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.fhepayment'));
     const proxyAddress = parsedEnv.FHE_PAYMENT_CONTRACT_ADDRESS;
     await upgradeCurrentToNew(
       taskArguments.privateKey,

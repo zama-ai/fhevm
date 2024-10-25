@@ -12,7 +12,7 @@ import { awaitCoprocessor, getClearText } from './coprocessorUtils';
 
 const hre = require('hardhat');
 
-const parsedEnvACL = dotenv.parse(fs.readFileSync('lib/.env.acl'));
+const parsedEnvACL = dotenv.parse(fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.acl'));
 const aclAdd = parsedEnvACL.ACL_CONTRACT_ADDRESS;
 
 enum Types {
@@ -139,7 +139,7 @@ export const reencryptRequestMocked = async (
   }
 
   // ACL checking
-  const aclFactory = await hre.ethers.getContractFactory('ACL');
+  const aclFactory = await hre.ethers.getContractFactory('fhevmTemp/contracts/ACL.sol:ACL');
   const acl = aclFactory.attach(aclAdd);
   const userAllowed = await acl.persistAllowed(handle, userAddress);
   const contractAllowed = await acl.persistAllowed(handle, contractAddress);
@@ -438,9 +438,13 @@ async function coprocSign(
   contractAddress: string,
   signer: Wallet,
 ): Promise<string> {
-  const inputAdd = dotenv.parse(fs.readFileSync('lib/.env.inputverifier')).INPUT_VERIFIER_CONTRACT_ADDRESS;
+  const inputAdd = dotenv.parse(
+    fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.inputverifier'),
+  ).INPUT_VERIFIER_CONTRACT_ADDRESS;
   const chainId = hre.__SOLIDITY_COVERAGE_RUNNING ? 31337 : network.config.chainId;
-  const aclAdd = dotenv.parse(fs.readFileSync('lib/.env.acl')).ACL_CONTRACT_ADDRESS;
+  const aclAdd = dotenv.parse(
+    fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.acl'),
+  ).ACL_CONTRACT_ADDRESS;
 
   const domain = {
     name: 'InputVerifier',
@@ -497,9 +501,13 @@ async function kmsSign(
   contractAddress: string,
   signer: Wallet,
 ): Promise<string> {
-  const kmsVerifierAdd = dotenv.parse(fs.readFileSync('lib/.env.kmsverifier')).KMS_VERIFIER_CONTRACT_ADDRESS;
+  const kmsVerifierAdd = dotenv.parse(
+    fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.kmsverifier'),
+  ).KMS_VERIFIER_CONTRACT_ADDRESS;
   const chainId = hre.__SOLIDITY_COVERAGE_RUNNING ? 31337 : network.config.chainId;
-  const aclAdd = dotenv.parse(fs.readFileSync('lib/.env.acl')).ACL_CONTRACT_ADDRESS;
+  const aclAdd = dotenv.parse(
+    fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.acl'),
+  ).ACL_CONTRACT_ADDRESS;
 
   const domain = {
     name: 'KMSVerifier',
