@@ -15,7 +15,6 @@ import "@openzeppelin/contracts/utils/Strings.sol";
 /// @title InputVerifier for signature verification of users encrypted inputs
 /// @notice This version is only for the Native version of fhEVM
 /// @notice This contract is called by the TFHEExecutor inside verifyCiphertext function, and calls the KMSVerifier to fetch KMS signers addresses
-/// @dev The contract uses OpenZeppelin's EIP712Upgradeable for cryptographic operations
 contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable {
     /// @notice Handle version
     uint8 public constant HANDLE_VERSION = 0;
