@@ -1,25 +1,26 @@
 import { mkdirSync, writeFileSync } from 'fs';
 
-import { ALL_OPERATORS, Network, SUPPORTED_BITS, checks, networkCodegenContext } from './common';
+import { ALL_OPERATORS, SUPPORTED_BITS, checks } from './common';
+import { generateInputVerifiers } from './inputVerifier';
 import operatorsPrices from './operatorsPrices.json';
 import { generateFHEPayment } from './payments';
 import * as t from './templates';
 import * as testgen from './testgen';
+import { addTFHEExecutorEvents } from './tfheexecutor';
 
 function generateAllFiles() {
   const numSplits = 12;
   const operators = checks(ALL_OPERATORS);
-
-  const network = Network[(process.env.TARGET_NETWORK as keyof typeof Network) || 'Evmos'];
-  const context = networkCodegenContext(network);
-  const [tfheSolSource, overloads] = t.tfheSol(context, operators, SUPPORTED_BITS, false);
+  const [tfheSolSource, overloads] = t.tfheSol(operators, SUPPORTED_BITS, false);
   const ovShards = testgen.splitOverloadsToShards(overloads);
-  writeFileSync('lib/Impl.sol', t.implSol(context, operators));
+  writeFileSync('lib/Impl.sol', t.implSol(operators));
   writeFileSync('lib/TFHE.sol', tfheSolSource);
-  writeFileSync('lib/FhevmLib.sol', t.fhevmLibSol(operators));
-  writeFileSync('lib/FHEPayment.sol', generateFHEPayment(operatorsPrices));
+  writeFileSync('contracts/FHEPayment.sol', generateFHEPayment(operatorsPrices));
+  writeFileSync('contracts/InputVerifier.native.sol', generateInputVerifiers(false));
+  writeFileSync('contracts/InputVerifier.coprocessor.sol', generateInputVerifiers(true));
+  writeFileSync('contracts/TFHEExecutor.events.sol', addTFHEExecutorEvents('contracts/TFHEExecutor.sol'));
   writeFileSync('payment/Payment.sol', t.paymentSol());
-  mkdirSync('examples/tests', { recursive: true });
+  mkdirSync('contracts/tests', { recursive: true });
   ovShards.forEach((os) => {
     writeFileSync(`examples/tests/TFHETestSuite${os.shardNumber}.sol`, testgen.generateSmartContract(os));
   });
