@@ -1,12 +1,14 @@
 import '@nomicfoundation/hardhat-toolbox';
 import '@openzeppelin/hardhat-upgrades';
 import dotenv from 'dotenv';
+import * as fs from 'fs-extra';
 import 'hardhat-deploy';
 import 'hardhat-ignore-warnings';
 import type { HardhatUserConfig, extendProvider } from 'hardhat/config';
 import { task } from 'hardhat/config';
 import type { NetworkUserConfig } from 'hardhat/types';
 import { resolve } from 'path';
+import * as path from 'path';
 
 import CustomProvider from './CustomProvider';
 // Adjust the import path as needed
@@ -102,6 +104,10 @@ task('test', async (taskArgs, hre, runSuper) => {
     await hre.run('task:computeKMSVerifierAddress', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:computeInputVerifierAddress', { privateKey: privKeyFhevmDeployer, useAddress: false });
     await hre.run('task:computeFHEPaymentAddress', { privateKey: privKeyFhevmDeployer });
+    const sourceDir = path.resolve(__dirname, 'node_modules/fhevm-core-contracts/');
+    const destinationDir = path.resolve(__dirname, 'fhevmTemp/');
+    fs.copySync(sourceDir, destinationDir, { dereference: true });
+    await hre.run('compile:specific', { contract: 'fhevmTemp' });
     await hre.run('compile:specific', { contract: 'lib' });
     await hre.run('compile:specific', { contract: 'gateway' });
     await hre.run('compile:specific', { contract: 'payment' });

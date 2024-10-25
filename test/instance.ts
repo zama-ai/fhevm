@@ -21,8 +21,12 @@ const FHE_CLIENT_KEY_PATH = process.env.FHE_CLIENT_KEY_PATH;
 
 let clientKey: Uint8Array | undefined;
 
-const kmsAdd = dotenv.parse(fs.readFileSync('lib/.env.kmsverifier')).KMS_VERIFIER_CONTRACT_ADDRESS;
-const aclAdd = dotenv.parse(fs.readFileSync('lib/.env.acl')).ACL_CONTRACT_ADDRESS;
+const kmsAdd = dotenv.parse(
+  fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.kmsverifier'),
+).KMS_VERIFIER_CONTRACT_ADDRESS;
+const aclAdd = dotenv.parse(
+  fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.acl'),
+).ACL_CONTRACT_ADDRESS;
 
 const createInstanceMocked = async () => {
   const instance = {

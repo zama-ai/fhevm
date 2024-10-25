@@ -5,7 +5,7 @@ pragma solidity ^0.8.24;
 import "./GatewayContractAddress.sol";
 import "../IKMSVerifier.sol";
 import "../../lib/Impl.sol";
-import "../../lib/ACLAddress.sol";
+import "fhevm-core-contracts/addresses/ACLAddress.sol";
 
 interface IGatewayContract {
     function requestDecryption(

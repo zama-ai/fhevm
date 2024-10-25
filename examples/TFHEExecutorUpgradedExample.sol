@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.24;
 
-import "../lib/TFHEExecutor.sol";
+import "fhevm-core-contracts/contracts/TFHEExecutor.sol";
 
 /// @title TFHEExecutorUpgradedExample
 /// @dev Contract that extends TFHEExecutor with version information

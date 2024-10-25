@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.24;
 
-import "../lib/KMSVerifier.sol";
+import "fhevm-core-contracts/contracts/KMSVerifier.sol";
 
 contract KMSVerifierUpgradedExample is KMSVerifier {
     /// @notice Name of the contract

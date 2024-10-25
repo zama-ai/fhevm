@@ -9,13 +9,13 @@ describe('Upgrades', function () {
   before(async function () {
     await initSigners(2);
     this.signers = await getSigners();
-    this.aclFactory = await ethers.getContractFactory('ACL');
+    this.aclFactory = await ethers.getContractFactory('fhevmTemp/contracts/ACL.sol:ACL');
     this.aclFactoryUpgraded = await ethers.getContractFactory('ACLUpgradedExample');
-    this.kmsFactory = await ethers.getContractFactory('KMSVerifier');
+    this.kmsFactory = await ethers.getContractFactory('fhevmTemp/contracts/KMSVerifier.sol:KMSVerifier');
     this.kmsFactoryUpgraded = await ethers.getContractFactory('KMSVerifierUpgradedExample');
-    this.executorFactory = await ethers.getContractFactory('lib/TFHEExecutor.sol:TFHEExecutor');
+    this.executorFactory = await ethers.getContractFactory('fhevmTemp/contracts/TFHEExecutor.sol:TFHEExecutor');
     this.executorFactoryUpgraded = await ethers.getContractFactory('TFHEExecutorUpgradedExample');
-    this.paymentFactory = await ethers.getContractFactory('FHEPayment');
+    this.paymentFactory = await ethers.getContractFactory('fhevmTemp/contracts/FHEPayment.sol:FHEPayment');
     this.paymentFactoryUpgraded = await ethers.getContractFactory('FHEPaymentUpgradedExample');
     this.gatewayFactory = await ethers.getContractFactory('GatewayContract');
     this.gatewayFactoryUpgraded = await ethers.getContractFactory('GatewayContractUpgradedExample');
@@ -91,7 +91,9 @@ describe('Upgrades', function () {
   });
 
   it('original owner upgrades the original ACL and transfer ownership', async function () {
-    const origACLAdd = dotenv.parse(fs.readFileSync('lib/.env.acl')).ACL_CONTRACT_ADDRESS;
+    const origACLAdd = dotenv.parse(
+      fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.acl'),
+    ).ACL_CONTRACT_ADDRESS;
     const deployer = new ethers.Wallet(process.env.PRIVATE_KEY_FHEVM_DEPLOYER!).connect(ethers.provider);
     const acl = await this.aclFactory.attach(origACLAdd, deployer);
     expect(await acl.getVersion()).to.equal('ACL v0.1.0');
