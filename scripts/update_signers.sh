@@ -34,7 +34,7 @@ cp "$ENV_FILE" "${ENV_FILE}.bak"
 echo "Backup of .env file created at ${ENV_FILE}.bak"
 
 # Update the number of signers in the .env file
-sed -i 's/^export NUM_KMS_SIGNERS=.*/export NUM_KMS_SIGNERS="4"/' "$ENV_FILE"
+sed -i '' 's/^export NUM_KMS_SIGNERS=.*/export NUM_KMS_SIGNERS="4"/' "$ENV_FILE"
 
 # Loop through each signer file and update the corresponding address in the .env file
 for i in "${!signer_files[@]}"; do
@@ -56,7 +56,7 @@ for i in "${!signer_files[@]}"; do
     fi
 
     # Update the corresponding address in the .env file
-    sed -i "s/^export ADDRESS_KMS_SIGNER_$i=.*/export ADDRESS_KMS_SIGNER_$i=\"$signer_address\"/" "$ENV_FILE"
+    sed -i '' "s/^export ADDRESS_KMS_SIGNER_$i=.*/export ADDRESS_KMS_SIGNER_$i=\"$signer_address\"/" "$ENV_FILE"
     echo "Updated ADDRESS_KMS_SIGNER_$i in $ENV_FILE"
 done
 
