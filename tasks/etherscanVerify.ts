@@ -2,7 +2,7 @@ import dotenv from 'dotenv';
 import fs from 'fs';
 import { task } from 'hardhat/config';
 
-task('task:verifyContracts').setAction(async function (taskArguments, { upgrades, run }) {
+task('task:verifyACL').setAction(async function (taskArguments, { upgrades, run }) {
   const parsedEnvACL = dotenv.parse(fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.acl'));
   const proxyACLAddress = parsedEnvACL.ACL_CONTRACT_ADDRESS;
   const implementationACLAddress = await upgrades.erc1967.getImplementationAddress(proxyACLAddress);
@@ -14,7 +14,9 @@ task('task:verifyContracts').setAction(async function (taskArguments, { upgrades
     address: proxyACLAddress,
     constructorArguments: [],
   });
+});
 
+task('task:verifyTFHEExecutor').setAction(async function (taskArguments, { upgrades, run }) {
   const parsedEnvTFHEExecutor = dotenv.parse(fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.exec'));
   const proxyTFHEExecutorAddress = parsedEnvTFHEExecutor.TFHE_EXECUTOR_CONTRACT_ADDRESS;
   const implementationTFHEExecutorAddress = await upgrades.erc1967.getImplementationAddress(proxyTFHEExecutorAddress);
@@ -26,7 +28,9 @@ task('task:verifyContracts').setAction(async function (taskArguments, { upgrades
     address: proxyTFHEExecutorAddress,
     constructorArguments: [],
   });
+});
 
+task('task:verifyKMSVerifier').setAction(async function (taskArguments, { upgrades, run }) {
   const parsedEnvKMSVerifier = dotenv.parse(
     fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.kmsverifier'),
   );
@@ -40,7 +44,9 @@ task('task:verifyContracts').setAction(async function (taskArguments, { upgrades
     address: proxyKMSVerifier,
     constructorArguments: [],
   });
+});
 
+task('task:verifyInputVerifier').setAction(async function (taskArguments, { upgrades, run }) {
   const parsedEnvInputVerifier = dotenv.parse(
     fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.inputverifier'),
   );
@@ -54,7 +60,9 @@ task('task:verifyContracts').setAction(async function (taskArguments, { upgrades
     address: proxyInputVerifier,
     constructorArguments: [],
   });
+});
 
+task('task:verifyFHEPayment').setAction(async function (taskArguments, { upgrades, run }) {
   const parsedEnvFHEPayment = dotenv.parse(
     fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.fhepayment'),
   );
@@ -68,7 +76,9 @@ task('task:verifyContracts').setAction(async function (taskArguments, { upgrades
     address: proxyFHEPayment,
     constructorArguments: [],
   });
+});
 
+task('task:verifyGatewayContract').setAction(async function (taskArguments, { upgrades, run }) {
   const parsedEnvGateway = dotenv.parse(fs.readFileSync('gateway/.env.gateway'));
   const proxyGateway = parsedEnvGateway.GATEWAY_CONTRACT_PREDEPLOY_ADDRESS;
   const implementationGatewayAddress = await upgrades.erc1967.getImplementationAddress(proxyGateway);
