@@ -254,11 +254,15 @@ e2e-test:
 	$(MAKE) stop-full
 
 
+clean-keys:
+	$(MAKE) stop-full
+	rm -rf network-fhe-keys
+	rm -rf kms-fhe-keys
+	rm -rf res
+
 
 clean:
 	$(MAKE) stop-full
-	$(MAKE) stop-coprocessor
-	rm -rf $(BUILDDIR)/
 	rm -rf $(WORKDIR)/
 	rm -rf network-fhe-keys
 	rm -rf kms-fhe-keys
