@@ -1003,8 +1003,6 @@ const abi = [
   'event FheLt(uint256 lhs, uint256 rhs, bytes1 scalarByte, uint256 result)',
   'event FheMin(uint256 lhs, uint256 rhs, bytes1 scalarByte, uint256 result)',
   'event FheMax(uint256 lhs, uint256 rhs, bytes1 scalarByte, uint256 result)',
-  'event TrivialEncrypt(uint256 pt, bytes1 toType, uint256 result)',
-  'event TrivialEncrypt(bytes pt, bytes1 toType, uint256 result)',
   'event FheNeg(uint256 ct, uint256 result)',
   'event FheNot(uint256 ct, uint256 result)',
   'event VerifyCiphertext(bytes32 inputHandle,address userAddress,bytes inputProof,bytes1 inputType,uint256 result)',

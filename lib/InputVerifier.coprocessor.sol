@@ -9,9 +9,9 @@ import "./CoprocessorAddress.sol";
 // Importing OpenZeppelin contracts for cryptographic signature verification and access control.
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
+import "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 
 /// @title InputVerifier for signature verification of users encrypted inputs
 /// @notice This version is only for the Coprocessor version of fhEVM
@@ -29,13 +29,7 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
     /// @notice Handle version
     uint8 public constant HANDLE_VERSION = 0;
 
-    address private constant coprocessorAddress = coprocessorAdd;
-
     KMSVerifier public constant kmsVerifier = KMSVerifier(kmsVerifierAdd);
-    string public constant CIPHERTEXTVERIFICATION_COPRO_TYPE =
-        "CiphertextVerificationForCopro(address aclAddress,bytes32 hashOfCiphertext,uint256[] handlesList,address userAddress,address contractAddress)";
-    bytes32 private constant CIPHERTEXTVERIFICATION_COPRO_TYPE_HASH =
-        keccak256(bytes(CIPHERTEXTVERIFICATION_COPRO_TYPE));
 
     /// @notice Name of the contract
     string private constant CONTRACT_NAME = "InputVerifier";
@@ -47,6 +41,17 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
 
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
 
+    /// @notice Getter function for the KMSVerifier contract address
+    function getKMSVerifierAddress() public view virtual returns (address) {
+        return address(kmsVerifier);
+    }
+
+    address private constant coprocessorAddress = coprocessorAdd;
+    string public constant CIPHERTEXTVERIFICATION_COPRO_TYPE =
+        "CiphertextVerificationForCopro(address aclAddress,bytes32 hashOfCiphertext,uint256[] handlesList,address userAddress,address contractAddress)";
+    bytes32 private constant CIPHERTEXTVERIFICATION_COPRO_TYPE_HASH =
+        keccak256(bytes(CIPHERTEXTVERIFICATION_COPRO_TYPE));
+
     function get_CIPHERTEXTVERIFICATION_COPRO_TYPE() public view virtual returns (string memory) {
         return CIPHERTEXTVERIFICATION_COPRO_TYPE;
     }
@@ -54,11 +59,6 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
     /// @notice Getter function for the Coprocessor account address
     function getCoprocessorAddress() public view virtual returns (address) {
         return coprocessorAddress;
-    }
-
-    /// @notice Getter function for the KMSVerifier contract address
-    function getKMSVerifierAddress() public view virtual returns (address) {
-        return address(kmsVerifier);
     }
 
     /// @custom:oz-upgrades-unsafe-allow constructor
