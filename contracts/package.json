@@ -1,6 +1,6 @@
 {
   "name": "fhevm-core-contracts",
-  "version": "0.0.1",
+  "version": "0.1.0-0",
   "description": "fhEVM contracts",
   "main": "index.js",
   "scripts": {
