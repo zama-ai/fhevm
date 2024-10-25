@@ -6,6 +6,7 @@ import operatorsPrices from './operatorsPrices.json';
 import { generateFHEPayment } from './payments';
 import * as t from './templates';
 import * as testgen from './testgen';
+import { addTFHEExecutorEvents } from './tfheexecutor';
 
 function generateAllFiles() {
   const numSplits = 12;
@@ -17,6 +18,7 @@ function generateAllFiles() {
   writeFileSync('lib/FHEPayment.sol', generateFHEPayment(operatorsPrices));
   writeFileSync('lib/InputVerifier.native.sol', generateInputVerifiers(false));
   writeFileSync('lib/InputVerifier.coprocessor.sol', generateInputVerifiers(true));
+  writeFileSync('lib/TFHEExecutor.events.sol', addTFHEExecutorEvents('lib/TFHEExecutor.sol'));
   writeFileSync('payment/Payment.sol', t.paymentSol());
   mkdirSync('examples/tests', { recursive: true });
   ovShards.forEach((os) => {

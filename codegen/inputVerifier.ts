@@ -1,3 +1,8 @@
+/**
+ * @description This function is generating the different variants of InputVerifier solidity contracts.
+ * @param {boolean} set to true if you want to generate the coprocessor variant, otherwise it will generate the native version
+ * @returns {string} the solidity source code
+ */
 export function generateInputVerifiers(isCoprocessor: boolean): string {
   let output = `// SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
