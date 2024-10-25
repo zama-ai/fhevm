@@ -1,0 +1,244 @@
+name: zama-kms-threshold
+# TODO: proper networking between nodes
+# add keygen, tls and pushing keys to s3 mock
+
+services:
+  # KMS-Blockchain validator node
+  dev-kms-blockchain-validator:
+    ports:
+      - "36656:26656"
+      - "36657:26657"
+      - "1317:1317"
+      - "9090:9090"
+    environment:
+      - MODE=threshold
+    entrypoint: [ "/app/bootstrap.sh" ]
+    healthcheck:
+      test: "wget -Sq --spider http://localhost:26657/status"
+      interval: 1s
+      timeout: 1s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      dev-kms-core-status:
+        condition: service_completed_successfully
+
+  dev-kms-core-status:
+    image: ghcr.io/zama-ai/kms-service-dev:latest
+    depends_on:
+      dev-kms-core-1:
+        condition: service_healthy
+      dev-kms-core-2:
+        condition: service_healthy
+      dev-kms-core-3:
+        condition: service_healthy
+      dev-kms-core-4:
+        condition: service_healthy
+    environment:
+      - RUST_LOG=debug
+    entrypoint: >
+      /bin/sh -c " sleep 1 && echo \"Starting init procedure\" && sleep 1 && kms-init -a http://dev-kms-core-1:50100 http://dev-kms-core-2:50200 http://dev-kms-core-3:50300 http://dev-kms-core-4:50400 && echo \"Core services initialization done\" && exit 0 "
+
+  dev-kms-core-setup:
+    image: ghcr.io/zama-ai/kms-service-dev:latest
+    build:
+      context: .
+      dockerfile: core/service/operations/docker/dev.dockerfile
+    depends_on:
+      kms-core-base-build:
+        condition: service_started
+      dev-s3-mock-setup:
+        condition: service_completed_successfully
+    environment:
+      - RUST_LOG=debug
+      - RUST_BACKTRACE=1
+    entrypoint: >
+      /bin/sh -c " sleep 2 && echo \"Threshold core setup\" && kms-gen-keys threshold  && chmod +x /app/scripts/pub_key_to_minio.sh && /app/scripts/pub_key_to_minio.sh && kms-gen-tls-certs --ca-names dev-kms-core-1 dev-kms-core-2 dev-kms-core-3 dev-kms-core-4  && pwd && ls && ls certs "
+    volumes:
+      - minio_secrets:/minio_secrets
+      - keys:/app/kms/core/service/keys
+      - certs:/app/kms/core/service/certs
+
+  dev-kms-core-1:
+    image: ghcr.io/zama-ai/kms-service-dev:latest
+    ports:
+      - "50051:50051"
+      - "50100:50100"
+    healthcheck:
+      test: "grpc-health-probe --addr=localhost:50100"
+      interval: 1s
+      timeout: 1s
+      retries: 5
+      start_period: 1s
+    volumes:
+      - keys:/app/kms/core/service/keys
+      - certs:/app/kms/core/service/certs
+    depends_on:
+      dev-s3-mock-setup:
+        condition: service_completed_successfully
+      dev-kms-core-setup:
+        condition: service_completed_successfully
+    environment:
+      - RUST_LOG=info
+    entrypoint: >
+      /bin/sh -c " echo 'current dir ls' && ls && echo 'certs ls' && ls certs/ && echo 'keys ls' && ls keys/ && kms-server threshold --config-file config/compose_1.toml "
+
+  dev-kms-connector-1:
+    build:
+      context: .
+      dockerfile: blockchain/connector/operations/docker/dev.dockerfile
+    image: ghcr.io/zama-ai/kms-blockchain-connector-dev:latest
+    command:
+      - "kms-blockchain-connector"
+    environment:
+      - ASC_CONN__BLOCKCHAIN__CONTRACT=wasm1nc5tatafv6eyq7llkr2gv50ff9e22mnf70qgjlv737ktmt4eswrqr5j2ht
+      - RUST_LOG=info
+      - ASC_CONN__BLOCKCHAIN__ADDRESSES=http://dev-kms-blockchain-validator:9090
+      - ASC_CONN__CORE__ADDRESSES=http://dev-kms-core-1:50100
+      - ASC_CONN__STORE__URL=http://dev-kv-store:8088
+      - ASC_CONN__CORE__TIMEOUT_CONFIG__DECRYPTION__INITIAL_WAIT_TIME=1
+      - ASC_CONN__CORE__TIMEOUT_CONFIG__DECRYPTION__RETRY_INTERVAL=1
+      - ASC_CONN__CORE__TIMEOUT_CONFIG__REENCRYPTION__INITIAL_WAIT_TIME=1
+      - ASC_CONN__CORE__TIMEOUT_CONFIG__REENCRYPTION__RETRY_INTERVAL=1
+    depends_on:
+      dev-kms-blockchain-validator:
+        condition: service_healthy
+      dev-kms-core-1:
+        condition: service_healthy
+
+  dev-kms-core-2:
+    image: ghcr.io/zama-ai/kms-service-dev:latest
+    ports:
+      - "50052:50052"
+      - "50200:50200"
+    healthcheck:
+      test: "grpc-health-probe --addr=localhost:50200"
+      interval: 1s
+      timeout: 1s
+      retries: 5
+      start_period: 1s
+    volumes:
+      - keys:/app/kms/core/service/keys
+      - certs:/app/kms/core/service/certs
+    depends_on:
+      dev-s3-mock-setup:
+        condition: service_completed_successfully
+      dev-kms-core-setup:
+        condition: service_completed_successfully
+    environment:
+      - RUST_LOG=info
+    entrypoint: >
+      /bin/sh -c " kms-server threshold --config-file config/compose_2.toml "
+
+  dev-kms-connector-2:
+    image: ghcr.io/zama-ai/kms-blockchain-connector-dev:latest
+    command:
+      - "kms-blockchain-connector"
+    environment:
+      - ASC_CONN__BLOCKCHAIN__CONTRACT=wasm1nc5tatafv6eyq7llkr2gv50ff9e22mnf70qgjlv737ktmt4eswrqr5j2ht
+      - RUST_LOG=info
+      - ASC_CONN__BLOCKCHAIN__ADDRESSES=http://dev-kms-blockchain-validator:9090
+      - ASC_CONN__CORE__ADDRESSES=http://dev-kms-core-2:50200
+      - ASC_CONN__STORE__URL=http://dev-kv-store:8088
+      - ASC_CONN__CORE__TIMEOUT_CONFIG__DECRYPTION__INITIAL_WAIT_TIME=1
+      - ASC_CONN__CORE__TIMEOUT_CONFIG__DECRYPTION__RETRY_INTERVAL=1
+      - ASC_CONN__CORE__TIMEOUT_CONFIG__REENCRYPTION__INITIAL_WAIT_TIME=1
+      - ASC_CONN__CORE__TIMEOUT_CONFIG__REENCRYPTION__RETRY_INTERVAL=1
+    depends_on:
+      dev-kms-blockchain-validator:
+        condition: service_healthy
+      dev-kms-core-2:
+        condition: service_healthy
+
+  dev-kms-core-3:
+    image: ghcr.io/zama-ai/kms-service-dev:latest
+    ports:
+      - "50053:50053"
+      - "50300:50300"
+    healthcheck:
+      test: "grpc-health-probe --addr=localhost:50300"
+      interval: 1s
+      timeout: 1s
+      retries: 5
+      start_period: 1s
+    volumes:
+      - keys:/app/kms/core/service/keys
+      - certs:/app/kms/core/service/certs
+    depends_on:
+      dev-s3-mock-setup:
+        condition: service_completed_successfully
+      dev-kms-core-setup:
+        condition: service_completed_successfully
+    environment:
+      - RUST_LOG=info
+    entrypoint: >
+      /bin/sh -c " kms-server threshold --config-file config/compose_3.toml "
+
+  dev-kms-connector-3:
+    image: ghcr.io/zama-ai/kms-blockchain-connector-dev:latest
+    command:
+      - "kms-blockchain-connector"
+    environment:
+      - ASC_CONN__BLOCKCHAIN__CONTRACT=wasm1nc5tatafv6eyq7llkr2gv50ff9e22mnf70qgjlv737ktmt4eswrqr5j2ht
+      - RUST_LOG=info
+      - ASC_CONN__BLOCKCHAIN__ADDRESSES=http://dev-kms-blockchain-validator:9090
+      - ASC_CONN__CORE__ADDRESSES=http://dev-kms-core-3:50300
+      - ASC_CONN__STORE__URL=http://dev-kv-store:8088
+      - ASC_CONN__CORE__TIMEOUT_CONFIG__DECRYPTION__INITIAL_WAIT_TIME=1
+      - ASC_CONN__CORE__TIMEOUT_CONFIG__DECRYPTION__RETRY_INTERVAL=1
+      - ASC_CONN__CORE__TIMEOUT_CONFIG__REENCRYPTION__INITIAL_WAIT_TIME=1
+      - ASC_CONN__CORE__TIMEOUT_CONFIG__REENCRYPTION__RETRY_INTERVAL=1
+    depends_on:
+      dev-kms-blockchain-validator:
+        condition: service_healthy
+      dev-kms-core-3:
+        condition: service_healthy
+
+  dev-kms-core-4:
+    image: ghcr.io/zama-ai/kms-service-dev:latest
+    ports:
+      - "50054:50054"
+      - "50400:50400"
+    healthcheck:
+      test: "grpc-health-probe --addr=localhost:50400"
+      interval: 1s
+      timeout: 1s
+      retries: 5
+      start_period: 1s
+    volumes:
+      - keys:/app/kms/core/service/keys
+      - certs:/app/kms/core/service/certs
+    depends_on:
+      dev-s3-mock-setup:
+        condition: service_completed_successfully
+      dev-kms-core-setup:
+        condition: service_completed_successfully
+    environment:
+      - RUST_LOG=info
+    entrypoint: >
+      /bin/sh -c " kms-server threshold --config-file config/compose_4.toml "
+
+  dev-kms-connector-4:
+    image: ghcr.io/zama-ai/kms-blockchain-connector-dev:latest
+    command:
+      - "kms-blockchain-connector"
+    environment:
+      - ASC_CONN__BLOCKCHAIN__CONTRACT=wasm1nc5tatafv6eyq7llkr2gv50ff9e22mnf70qgjlv737ktmt4eswrqr5j2ht
+      - RUST_LOG=info
+      - ASC_CONN__BLOCKCHAIN__ADDRESSES=http://dev-kms-blockchain-validator:9090
+      - ASC_CONN__CORE__ADDRESSES=http://dev-kms-core-4:50400
+      - ASC_CONN__STORE__URL=http://dev-kv-store:8088
+      - ASC_CONN__CORE__TIMEOUT_CONFIG__DECRYPTION__INITIAL_WAIT_TIME=1
+      - ASC_CONN__CORE__TIMEOUT_CONFIG__DECRYPTION__RETRY_INTERVAL=1
+      - ASC_CONN__CORE__TIMEOUT_CONFIG__REENCRYPTION__INITIAL_WAIT_TIME=1
+      - ASC_CONN__CORE__TIMEOUT_CONFIG__REENCRYPTION__RETRY_INTERVAL=1
+    depends_on:
+      dev-kms-blockchain-validator:
+        condition: service_healthy
+      dev-kms-core-4:
+        condition: service_healthy
+
+volumes:
+  certs:
+  keys:
+  minio_secrets:

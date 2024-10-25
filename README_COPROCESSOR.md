@@ -31,6 +31,15 @@ across all the components for this test setup.
 
 ## Steps to run the setup
 
+0. Verify the configuration in .env file, most important variable is CENTRALIZED_KMS, set it to  false for threshold KMS
+
+_Optionally_ you may update `KEY_GEN` value in `.env`. Default is `false`
+
+| CENTRALIZED_KMS | Purpose |
+| --- | --- |
+| true    | KMS is running in centralized mode, keys are retrieved from the dev image (default) |
+| false   | KMS is running in threshold mode with 4 MPC nodes, keys are freshly generated and signers are automatically updated |
+
 1. Run the KMS in centralized mode (including the deployment of contracts on
    KMS blockchain).
 
@@ -50,13 +59,13 @@ across all the components for this test setup.
     make check-all-test-repo
     ```
 
-3. Verify if the kms signer address is correctly configured.
+4. Verify if the kms signer address is correctly configured.
 
    Value in `network-fhe-keys/eth_address_signer` should match
    `ADDRESS_KMS_SIGNER_0` in `work_dir/fhevm/.env.example.deployment`. If not
    update ENV file. 
 
-4. Fund test accounts and deploy the fhevm solidity contracts.
+5. Fund test accounts and deploy the fhevm solidity contracts.
 
     ```bash
     make prepare-e2e-test
@@ -64,14 +73,23 @@ across all the components for this test setup.
 
     If prompted to install npm dependencies, enter `y`.
 
-4. In a separate terminal, checkout relevant branch and run the gateway.
+6. In a separate terminal, checkout relevant branch and run the gateway.
+
 
     ```bash
     cd $path-to-kms-core
     git checkout mano/update-config-for-rc20
     cd blockchain/gateway
+    ```
+  🚨 For **threshold mode** update the gateway config file (__config/gateway.toml__) with the following parameters:
+  - mode = "threshold" (default is centralized)
+  - key_id = "d4d17a412a6533599b010c8ffc3d6ebdc6b1cfad" (default is "408d8cbaa51dece7f782fe04ba0b1c1d017b1088")
+
+
+    ```bash
     cargo run --bin gateway
     ```
+
 
     Wait for the gateway to start listening for blocks and print block numbers.
 
@@ -84,13 +102,13 @@ across all the components for this test setup.
     ...
     ```
 
-5. From the fhevm repo, run one of the test for trivial decryption.
+7. From the fhevm repo, run one of the test for trivial decryption.
 
     ```bash
     cd work_dir/fhevm && npx hardhat test --grep 'test async decrypt uint32$'
     ```
 
-6. To tear down the setup, stop the docker containers:
+8. To tear down the setup, stop the docker containers:
 
     ```
     make stop-coprocessor

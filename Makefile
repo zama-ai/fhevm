@@ -91,7 +91,17 @@ clone-coprocessor: $(WORKDIR)/
 	cd $(WORKDIR) && git clone git@github.com:zama-ai/fhevm-backend.git
 	cd $(COPROCESSOR_PATH) && git checkout $(COPROCESSOR_VERSION)
 
-run-coprocessor: $(WORKDIR)/ check-coprocessor generate-fhe-keys-registry-dev-image
+run-coprocessor: $(WORKDIR)/ check-coprocessor check-all-test-repo
+ifeq ($(CENTRALIZED_KMS),false)
+	@echo "CENTRALIZED_KMS is false, we are extracting keys from kms-core-1"
+	$(MAKE) copy-keys-threshold
+	
+else ifeq ($(CENTRALIZED_KMS),true)
+	@echo "CENTRALIZED_KMS is true, copying fhe keys from dev image"
+	$(MAKE) generate-fhe-keys-registry-dev-image
+else
+	@echo "CENTRALIZED_KMS is set to an unrecognized value: $(CENTRALIZED_KMS)"
+endif
 	cp -v network-fhe-keys/* $(COPROCESSOR_PATH)/fhevm-engine/fhevm-keys
 	cd $(COPROCESSOR_PATH)/fhevm-engine/coprocessor && make cleanup
 	cd $(COPROCESSOR_PATH)/fhevm-engine/coprocessor && cargo install sqlx-cli
@@ -133,12 +143,17 @@ else
 	@echo "KEY_GEN is set to an unrecognized value: $(KEY_GEN)"
 endif
 
+copy-keys-threshold:
+	@bash ./scripts/copy_fhe_keys_threshold.sh zama-kms-threshold-dev-kms-core-1-1 $(PWD)/network-fhe-keys
+	@bash ./scripts/update_signers.sh $(PWD)/work_dir/fhevm/.env.example.deployment $(PWD)/network-fhe-keys 
 
 run-full:
-	@echo "Running co-processor"
-	$(MAKE) run-coprocessor
 	@echo "Running kms"
 	$(MAKE) run-kms
+	
+	@echo "Running co-processor"
+	$(MAKE) run-coprocessor
+	
 	@echo "Predeployment of SCs"
 	$(MAKE) prepare-e2e-test
 
@@ -147,8 +162,16 @@ stop-full:
 	$(MAKE) stop-kms
 	$(MAKE) stop-coprocessor
 
-run-kms:
-	$(MAKE) generate-fhe-keys-registry-dev-image
+
+
+run-kms-threshold:
+	docker compose -vvv -f docker-compose/docker-compose-kms-base.yml -f docker-compose/docker-compose-kms-threshold.yml -f docker-compose/docker-compose-kms-threshold-ghcr.yml up -d --wait
+
+stop-kms-threshold:
+	docker compose -vvv -f docker-compose/docker-compose-kms-base.yml -f docker-compose/docker-compose-kms-threshold.yml down --volumes --remove-orphans
+
+
+run-kms-centralized:
 ifeq ($(KEY_GEN),false)
 	@echo "KEY_GEN is false, executing corresponding commands..."
 	@docker compose  -f docker-compose/docker-compose-full.yml  up --detach
@@ -162,8 +185,33 @@ endif
 	@echo 'sleep a little to let the docker start up'
 	sleep 5
 
+run-kms:
+ifeq ($(CENTRALIZED_KMS),true)
+	@echo "CENTRALIZED_KMS is true, running centralized KMS...."
+	sleep 2
+	$(MAKE) run-kms-centralized
+	
+else ifeq ($(CENTRALIZED_KMS),false)
+	@echo "CENTRALIZED_KMS is false, running threshold KMS...."
+	sleep 2
+	$(MAKE) run-kms-threshold
+else
+	@echo "CENTRALIZED_KMS is set to an unrecognized value: $(CENTRALIZED_KMS)"
+endif
+
+
+
 stop-kms:
+ifeq ($(CENTRALIZED_KMS),true)
+	@echo "CENTRALIZED_KMS is true, Stopping centralized KMS...."
 	@docker compose  -f docker-compose/docker-compose-full.yml down
+	
+else ifeq ($(CENTRALIZED_KMS),false)
+	@echo "CENTRALIZED_KMS is false, Stopping threshold KMS...."
+	$(MAKE) stop-kms-threshold
+else
+	@echo "CENTRALIZED_KMS is set to an unrecognized value: $(CENTRALIZED_KMS)"
+endif
 
 TEST_FILE := run_tests.sh
 TEST_IF_FROM_REGISTRY :=

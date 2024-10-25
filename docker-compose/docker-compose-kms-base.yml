@@ -1,0 +1,90 @@
+name: zama-kms-base
+
+# A docker compose file to be able to debug the kms
+# The images take a bit of time to build
+
+# TODO: handle networking stuff
+# TODO: figure out if we need the gateway here, if so, do we have a way to mimic the FHEVM?
+# TODO: create a overload version of this docker compose to use only ghcr main images
+# TODO: create a overload version of this docker compose to use only ghcr released images
+# TODO: add a faucet
+# TODO: add minio to simulate s3 + some config file for the endpoint
+
+services:
+  # KV-Store
+  # TODO: add healthcheck
+  dev-kms-blockchain-validator:
+    image: ghcr.io/zama-ai/kms-blockchain-asc-dev:${DOCKER_IMAGES_TAG}
+    volumes:
+      - ../asc/asc.wasm:/app/asc.wasm
+      - ../asc/ethereum_ipsc.wasm:/app/ethereum_ipsc.wasm
+      - ../asc/bootstrap_asc_threshold.sh:/app/bootstrap.sh
+
+    build:
+      context: .
+      dockerfile: blockchain/contracts/operations/docker/dev.dockerfile
+
+  dev-kv-store:
+    image: ghcr.io/zama-ai/kms-blockchain-gateway-dev:latest
+    build:
+      context: .
+      dockerfile: blockchain/gateway/operations/docker/dev.dockerfile
+    ports:
+      - "8088:8088"
+    command:
+      - "kv_store"
+    healthcheck:
+      test: "wget -Sq --spider http://localhost:8088/status"
+      interval: 2s
+      timeout: 2s
+      retries: 10
+      start_period: 5s
+
+  # S3 mock
+  dev-s3-mock:
+    image: quay.io/minio/minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    entrypoint: >
+      minio server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    healthcheck:
+      test: [ "CMD", "mc", "ready", "local" ]
+      interval: 1s
+      timeout: 10s
+      retries: 10
+
+  # Minio client to create access keys
+  dev-s3-mock-setup:
+    image: quay.io/minio/mc
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_ENDPOINT: "http://dev-s3-mock:9000"
+    entrypoint: >
+      /bin/sh -c " sleep 1 && /usr/bin/mc alias set myminio $$MINIO_ENDPOINT ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD} && ACCESS_KEY=$$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 20 | head -n 1) && SECRET_KEY=$$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 40 | head -n 1) && /usr/bin/mc admin user add myminio $$ACCESS_KEY $$SECRET_KEY && /usr/bin/mc admin policy attach myminio readwrite --user $$ACCESS_KEY && echo '$ACCESS_KEY' && echo '$SECRET_KEY' && echo $$ACCESS_KEY > /minio_secrets/access_key && echo $$SECRET_KEY > /minio_secrets/secret_key && cat /minio_secrets/access_key && cat /minio_secrets/secret_key && mc mb --with-lock --ignore-existing myminio/kms && mc anonymous set public myminio/kms "
+    volumes:
+      - minio_secrets:/minio_secrets
+    depends_on:
+      dev-s3-mock:
+        condition: service_healthy
+
+  # kms-core base image from the kms-core dev image is derived
+  kms-core-base-build:
+    image: ghcr.io/zama-ai/kms-service:latest
+    build:
+      context: .
+      dockerfile: core/service/operations/docker/ci.dockerfile
+    deploy:
+      replicas: 0 # it's a build dependency, not a real service
+
+volumes:
+  minio_secrets:
+
+
+secrets:
+  BLOCKCHAIN_ACTIONS_TOKEN:
+    environment: "BLOCKCHAIN_ACTIONS_TOKEN"

@@ -1,0 +1,38 @@
+name: zama-kms-threshold
+# TODO: proper networking between nodes
+# add keygen, tls and pushing keys to s3 mock
+
+services:
+  dev-kms-core-status:
+    image: ghcr.io/zama-ai/kms-service-dev:${DOCKER_IMAGES_TAG}
+
+  dev-kms-core-setup:
+    image: ghcr.io/zama-ai/kms-service-dev:${DOCKER_IMAGES_TAG}
+
+  # 1
+  dev-kms-core-1:
+    image: ghcr.io/zama-ai/kms-service-dev:${DOCKER_IMAGES_TAG}
+
+  dev-kms-connector-1:
+    image: ghcr.io/zama-ai/kms-blockchain-connector-dev:${DOCKER_IMAGES_TAG}
+
+  # 2
+  dev-kms-core-2:
+    image: ghcr.io/zama-ai/kms-service-dev:${DOCKER_IMAGES_TAG}
+
+  dev-kms-connector-2:
+    image: ghcr.io/zama-ai/kms-blockchain-connector-dev:${DOCKER_IMAGES_TAG}
+
+  # 3
+  dev-kms-core-3:
+    image: ghcr.io/zama-ai/kms-service-dev:${DOCKER_IMAGES_TAG}
+
+  dev-kms-connector-3:
+    image: ghcr.io/zama-ai/kms-blockchain-connector-dev:${DOCKER_IMAGES_TAG}
+
+  # 4
+  dev-kms-core-4:
+    image: ghcr.io/zama-ai/kms-service-dev:${DOCKER_IMAGES_TAG}
+
+  dev-kms-connector-4:
+    image: ghcr.io/zama-ai/kms-blockchain-connector-dev:${DOCKER_IMAGES_TAG}
