@@ -172,6 +172,7 @@ stop-kms-threshold:
 
 
 run-kms-centralized:
+	$(MAKE) generate-fhe-keys-registry-dev-image
 ifeq ($(KEY_GEN),false)
 	@echo "KEY_GEN is false, executing corresponding commands..."
 	@docker compose  -f docker-compose/docker-compose-full.yml  up --detach
