@@ -17,6 +17,13 @@ SIGNER_FOLDER="${2:-$DEFAULT_SIGNER_FOLDER}"
 # Array of signer files
 signer_files=("signer1" "signer2" "signer3" "signer4")
 
+# Detect the operating system for compatibility with sed
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    SED_INPLACE="sed -i ''"  # macOS
+else
+    SED_INPLACE="sed -i"     # Linux
+fi
+
 # Ensure the ENV file exists
 if [ ! -f "$ENV_FILE" ]; then
     echo "Error: .env file '$ENV_FILE' not found."
@@ -34,7 +41,7 @@ cp "$ENV_FILE" "${ENV_FILE}.bak"
 echo "Backup of .env file created at ${ENV_FILE}.bak"
 
 # Update the number of signers in the .env file
-sed -i '' 's/^export NUM_KMS_SIGNERS=.*/export NUM_KMS_SIGNERS="4"/' "$ENV_FILE"
+$SED_INPLACE 's/^export NUM_KMS_SIGNERS=.*/export NUM_KMS_SIGNERS="4"/' "$ENV_FILE"
 
 # Loop through each signer file and update the corresponding address in the .env file
 for i in "${!signer_files[@]}"; do
@@ -56,7 +63,7 @@ for i in "${!signer_files[@]}"; do
     fi
 
     # Update the corresponding address in the .env file
-    sed -i '' "s/^export ADDRESS_KMS_SIGNER_$i=.*/export ADDRESS_KMS_SIGNER_$i=\"$signer_address\"/" "$ENV_FILE"
+    $SED_INPLACE "s/^export ADDRESS_KMS_SIGNER_$i=.*/export ADDRESS_KMS_SIGNER_$i=\"$signer_address\"/" "$ENV_FILE"
     echo "Updated ADDRESS_KMS_SIGNER_$i in $ENV_FILE"
 done
 
