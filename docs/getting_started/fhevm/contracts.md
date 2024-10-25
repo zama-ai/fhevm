@@ -1,8 +1,8 @@
 # Deploy initial contracts
 
-0/ Prerequisites: First, git clone `fhevm` repo main branch, install dependencies with `npm i` (node.js version should be at least `20`), then create a`.env` file in root of the repo.
+0/ Prerequisites: First, git clone `fhevm` repo and checkout the [`0.6.0-0` prerelease branch](https://github.com/zama-ai/fhevm/tree/v0.6.0-0), install dependencies with `npm i` (node.js version should be at least `20`), then create a`.env` file in root of the repo.
 
-1/ Fill correct values in the `.env` file by first copying the [`.env.example.deployment` file](https://github.com/zama-ai/fhevm/blob/main/.env.example.deployment).
+1/ Fill correct values in the `.env` file by first copying the [`.env.example.deployment` file](https://github.com/zama-ai/fhevm/blob/v0.6.0-0/.env.example.deployment).
 Your `.env` file should have the following format, while replacing the 2 private keys values `PRIVATE_KEY_FHEVM_DEPLOYER` and `PRIVATE_KEY_GATEWAY_DEPLOYER` with your own keys, and taking the KMS addresses to be aligned with what is used by KMS, as well as the `ADDRESS_GATEWAY_RELAYER` relayer address to be aligned with the Gateway service, and the `ADDRESS_COPROCESSOR` coprocessor account address to be aligned with the coprocessor service:
 
 ```
@@ -25,7 +25,16 @@ For the `SEPOLIA_RPC_URL` env variable, you can either get one from a service pr
 **Important** : the `PRIVATE_KEY_FHEVM_DEPLOYER` and `PRIVATE_KEY_GATEWAY_DEPLOYER` are expected to have a nonce of `0` initially (i.e never sent any tx before with those) for the deployment scripts to succeed later. If you have [foundry](https://book.getfoundry.sh/getting-started/installation) installed, you can generate fresh Ethereum private key / address pairs locally with this command:
 `cast wallet new`.
 
-2/ Then run the precomputing contract addresses script [`./precompute-addresses.sh`](https://github.com/zama-ai/fhevm/blob/main/precompute-addresses.sh) -> this will write on disk the correct contract addresses needed to launch the modified Geth node (`TFHEExecutor` address) and the Gateway service (`GatewayContract` one) and - I think - the `ACL` and `KMSVerifier` addresses which would be needed to setup some values inside the ASC contract on KMS chain, in files such as: `lib/.env.acl`, `lib/.env.kmsverifier`, `gateway/env.gateway` etc. This script is found exactly inside the [`./precompute-addresses.sh` file](https://github.com/zama-ai/fhevm/blob/main/precompute-addresses.sh) :
+2/ Then run the precomputing contract addresses script [`./precompute-addresses.sh`](https://github.com/zama-ai/fhevm/blob/v0.6.0-0/precompute-addresses.sh) -> this will write on disk the correct contract addresses needed to launch the modified Geth node (`TFHEExecutor` address) and the Gateway service (`GatewayContract` one) and the `ACL` and `KMSVerifier` addresses which would be needed to setup some values inside the ASC contract on KMS chain. The precomputed addresses for the core contracts are located inside:
+
+- `node_modules/fhevm-core-contracts/addresses/.env.acl` for ACL address
+- `node_modules/fhevm-core-contracts/addresses/.env.exec` for TFHEExecutor address
+- `node_modules/fhevm-core-contracts/addresses/.env.kmsverifier` for KMSVerifier address
+- `node_modules/fhevm-core-contracts/addresses/.env.inputverifier` for InputVerifier address
+- `node_modules/fhevm-core-contracts/addresses/.env.fhepayment` for FHEPayment address
+- `gateway/.env.gateway` for GatewayContract address.
+
+This script is found exactly inside the [`./precompute-addresses.sh` file](https://github.com/zama-ai/fhevm/blob/main/precompute-addresses.sh) :
 
 ```
 #!/bin/bash
@@ -56,8 +65,8 @@ npx hardhat task:computeFHEPaymentAddress --private-key "$PRIVATE_KEY_FHEVM_DEPL
 
 The funding of `GATEWAY_RELAYER` account is the only part which is not strictly needed during deployment, and this account could be funded later, after all deployment steps will be completed.
 
-5/ Finally, run the deployment script [`./launch-fhevm-sepolia.sh`](https://github.com/zama-ai/fhevm/blob/main/launch-fhevm-sepolia.sh).
-This script is found exactly inside the [`./launch-fhevm-sepolia.sh` file](https://github.com/zama-ai/fhevm/blob/main/launch-fhevm-sepolia.sh) :
+5/ Finally, run the deployment script [`./launch-fhevm-sepolia.sh`](https://github.com/zama-ai/fhevm/blob/v0.6.0-0/launch-fhevm-sepolia.sh).
+This script is found exactly inside the [`./launch-fhevm-sepolia.sh` file](https://github.com/zama-ai/fhevm/blob/v0.6.0-0/launch-fhevm-sepolia.sh) :
 
 ```
 #!/bin/bash
@@ -67,6 +76,10 @@ npx hardhat clean
 PRIVATE_KEY_FHEVM_DEPLOYER=$(grep PRIVATE_KEY_FHEVM_DEPLOYER .env | cut -d '"' -f 2)
 NUM_KMS_SIGNERS=$(grep NUM_KMS_SIGNERS .env | cut -d '"' -f 2)
 
+rm -rf fhevmTemp/
+mkdir -p fhevmTemp
+cp -L -r node_modules/fhevm-core-contracts/ fhevmTemp/
+npx hardhat compile:specific --contract fhevmTemp
 npx hardhat compile:specific --contract lib
 npx hardhat compile:specific --contract gateway
 
@@ -82,12 +95,17 @@ npx hardhat task:launchFhevm --skip-get-coin true --use-address true --network s
 
 echo "Waiting 2 minutes before contract verification... Please wait..."
 sleep 120 # makes sure that contracts bytescode propagates on Etherscan, otherwise contracts verification might fail in next step
-npx hardhat task:verifyContracts --network sepolia
+npx hardhat task:verifyACL --network sepolia
+npx hardhat task:verifyTFHEExecutor --network sepolia
+npx hardhat task:verifyKMSVerifier --network sepolia
+npx hardhat task:verifyInputVerifier --network sepolia
+npx hardhat task:verifyFHEPayment --network sepolia
+npx hardhat task:verifyGatewayContract --network sepolia
 ```
 
-Note that in previous example, we supposed deployment would happen on Sepolia, this is why we used the `--network sepolia` flag. Note also the last line which is responsible to verify all contracts which have just been deployed on Sepolia, using the Etherscan API key, after waiting 2 minutes to make sure that the contracts bytecode were correctly propagated. This last command only makes sense if you plan to deploy on a network with Etherscan support, such as Sepolia or Ethereum mainnet.
+Note that in previous example, we supposed deployment would happen on Sepolia, this is why we used the `--network sepolia` flag. Note also the last 6 lines which are responsible to verify all contracts which have just been deployed on Sepolia, using the Etherscan API key, after waiting 2 minutes to make sure that the contracts bytecode were correctly propagated. This last command only makes sense if you plan to deploy on a network with Etherscan support, such as Sepolia or Ethereum mainnet.
 
-**Important:** at this stage the `openzeppelin-upgrades` plugin will write on disk an `.openzeppelin/` folder with some files in it (for eg typically a `sepolia.json` file if you deploy on Sepolia). It will be critical to keep this folder saved, to be able to do safe upgrades of smart contracts if needed some day. Similarly, you must also keep all the `.env.XXX` files written inside both of `lib/` and `gateway/` directories saved, because those contains the proxy addresses which might also be needed during the upgrade process.
+**Important:** at this stage the `openzeppelin-upgrades` plugin will write on disk an `.openzeppelin/` folder with some files in it (for eg typically a `sepolia.json` file if you deploy on Sepolia). It will be critical to keep this folder saved, to be able to do safe upgrades of smart contracts if needed some day. Similarly, you must also keep all the `.env.XXX` files written inside both of `node_modules/fhevm-core-contracts/addresses` and `gateway/` directories saved, because those contains the proxy addresses which might also be needed during the upgrade process.
 
 # After deployment - Optional
 
@@ -123,7 +141,7 @@ As another example, you could run the asynchronous decryption tests via: `npx ha
 1/ For upgrading the ACL contract, save the new implementation in a solidity file somewhere in your local `fhevm` repo, then simply run this command:
 
 ```
-npx hardhat task:upgradeACL --current-implementation lib/ACL.sol:ACL --new-implementation examples/ACLUpgradedExample.sol:ACLUpgradedExample --private-key [PRIVATE_KEY_FHEVM_DEPLOYER] --verify-contract true --network sepolia
+npx hardhat task:upgradeACL --current-implementation fhevmTemp/contracts/ACL.sol:ACL --new-implementation examples/ACLUpgradedExample.sol:ACLUpgradedExample --private-key [PRIVATE_KEY_FHEVM_DEPLOYER] --verify-contract true --network sepolia
 ```
 
 In previous command, you should modify `PRIVATE_KEY_FHEVM_DEPLOYER` with your own value, and replace `examples/ACLUpgradedExample.sol:ACLUpgradedExample` with the path and the name of the new ACL implementation contract that you wish to use. The `--verify-contract` is an optional flag, whish will add an Etherscan verification step after deployment of the new implementation, pausing 2 minutes between deployment and Etherscan verification.
