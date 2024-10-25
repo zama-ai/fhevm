@@ -17,7 +17,7 @@ services:
       test: "wget -Sq --spider http://localhost:26657/status"
       interval: 1s
       timeout: 1s
-      retries: 5
+      retries: 20
       start_period: 10s
     depends_on:
       dev-kms-core-status:
@@ -68,7 +68,7 @@ services:
       test: "grpc-health-probe --addr=localhost:50100"
       interval: 1s
       timeout: 1s
-      retries: 5
+      retries: 20
       start_period: 1s
     volumes:
       - keys:/app/kms/core/service/keys
@@ -115,7 +115,7 @@ services:
       test: "grpc-health-probe --addr=localhost:50200"
       interval: 1s
       timeout: 1s
-      retries: 5
+      retries: 20
       start_period: 1s
     volumes:
       - keys:/app/kms/core/service/keys
@@ -159,7 +159,7 @@ services:
       test: "grpc-health-probe --addr=localhost:50300"
       interval: 1s
       timeout: 1s
-      retries: 5
+      retries: 20
       start_period: 1s
     volumes:
       - keys:/app/kms/core/service/keys
@@ -203,7 +203,7 @@ services:
       test: "grpc-health-probe --addr=localhost:50400"
       interval: 1s
       timeout: 1s
-      retries: 5
+      retries: 20
       start_period: 1s
     volumes:
       - keys:/app/kms/core/service/keys
