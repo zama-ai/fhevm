@@ -1767,6 +1767,7 @@ dependencies = [
  "clap",
  "fhevm-engine-common",
  "hex",
+ "itertools 0.13.0",
  "lazy_static",
  "lru",
  "opentelemetry",
@@ -1775,13 +1776,15 @@ dependencies = [
  "prometheus",
  "prost",
  "rand",
+ "rayon",
  "regex",
+ "scheduler",
  "serde_json",
  "sha3",
  "sqlx",
  "strum",
  "testcontainers",
- "tfhe 0.9.0",
+ "tfhe",
  "tokio",
  "tokio-util",
  "tonic",
@@ -2201,7 +2204,7 @@ dependencies = [
  "rayon",
  "scheduler",
  "sha3",
- "tfhe 0.9.0",
+ "tfhe",
  "tokio",
  "tonic",
  "tonic-build",
@@ -2249,7 +2252,7 @@ dependencies = [
  "serde",
  "sha3",
  "strum",
- "tfhe 0.9.0",
+ "tfhe",
  "tonic",
  "tonic-build",
 ]
@@ -4439,7 +4442,7 @@ dependencies = [
  "daggy",
  "fhevm-engine-common",
  "rayon",
- "tfhe 0.8.6",
+ "tfhe",
  "tokio",
 ]
 
@@ -5129,30 +5132,6 @@ dependencies = [
  "tokio-stream",
  "tokio-util",
  "url",
-]
-
-[[package]]
-name = "tfhe"
-version = "0.8.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e2648b0df14216576ea543bb9021beed019d7eb43fedacdbc24a0c095d33d2a"
-dependencies = [
- "aligned-vec",
- "bincode",
- "bytemuck",
- "concrete-csprng",
- "concrete-fft",
- "concrete-ntt",
- "dyn-stack",
- "itertools 0.11.0",
- "paste",
- "pulp",
- "rand_core",
- "rayon",
- "serde",
- "sha3",
- "tfhe-versionable",
- "tfhe-zk-pok",
 ]
 
 [[package]]

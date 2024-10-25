@@ -12,6 +12,7 @@ bincode = { workspace = true }
 clap = { workspace = true }
 prometheus = { workspace = true }
 prost = { workspace = true }
+rayon = { workspace = true }
 sha3 = { workspace = true }
 tokio = { workspace = true }
 tonic = { workspace = true }
@@ -23,6 +24,7 @@ actix-web = "4.9.0"
 alloy = { version = "0.3.2", features = ["eip712", "sol-types", "signer-local"] }
 bigdecimal = "0.4"
 hex = "0.4"
+itertools = "0.13.0"
 lazy_static = "1.5.0"
 lru = "0.12.3"
 opentelemetry = "0.25.0"
@@ -40,6 +42,7 @@ rand = "0.8.5"
 
 # local dependencies
 fhevm-engine-common = { path = "../fhevm-engine-common" }
+scheduler = { path = "../scheduler" }
 
 # arch-specific dependencies
 [target.'cfg(target_arch = "x86_64")'.dependencies]

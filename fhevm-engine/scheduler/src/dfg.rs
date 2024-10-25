@@ -47,14 +47,14 @@ pub struct DFGraph<'a> {
 impl<'a> DFGraph<'a> {
     pub fn add_node(
         &mut self,
-        rh: &'a Handle,
+        rh: Handle,
         opcode: i32,
         inputs: Vec<DFGTaskInput>,
     ) -> Result<NodeIndex, SchedulerError> {
         Ok(self.graph.add_node(OpNode {
             opcode,
             result: None,
-            result_handle: rh.clone(),
+            result_handle: rh,
             inputs,
         }))
     }
@@ -65,7 +65,7 @@ impl<'a> DFGraph<'a> {
         consumer_input: usize,
     ) -> Result<(), SchedulerError> {
         let consumer_index = node_index(destination);
-        self.graph[consumer_index].inputs[consumer_input] = DFGTaskInput::Dep(Some(source));
+        self.graph[consumer_index].inputs[consumer_input] = DFGTaskInput::Dependence(Some(source));
         let _edge = self
             .graph
             .add_edge(
@@ -79,7 +79,7 @@ impl<'a> DFGraph<'a> {
 
     pub fn get_results(
         &mut self,
-    ) -> Result<Vec<(Handle, SupportedFheCiphertexts)>, SchedulerError> {
+    ) -> Result<Vec<(Handle, (SupportedFheCiphertexts, i16, Vec<u8>))>, SchedulerError> {
         let mut res = Vec::with_capacity(self.graph.node_count());
         for index in 0..self.graph.node_count() {
             let node = self.graph.node_weight_mut(NodeIndex::new(index)).unwrap();

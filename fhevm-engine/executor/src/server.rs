@@ -14,7 +14,7 @@ use fhevm_engine_common::{
     types::{get_ct_type, FhevmError, Handle, SupportedFheCiphertexts, HANDLE_LEN, SCALAR_LEN},
 };
 use sha3::{Digest, Keccak256};
-use std::{cell::RefCell, collections::HashMap};
+use std::{borrow::Borrow, cell::Cell, collections::HashMap};
 use tfhe::{set_server_key, zk::CompactPkePublicParams};
 use tokio::task::spawn_blocking;
 use tonic::{transport::Server, Code, Request, Response, Status};
@@ -26,26 +26,21 @@ pub mod executor {
     tonic::include_proto!("fhevm.executor");
 }
 
+thread_local! {
+    pub static SERVER_KEY: Cell<Option<tfhe::ServerKey>> = const {Cell::new(None)};
+    pub static LOCAL_RAYON_THREADS: Cell<usize> = const {Cell::new(8)};
+}
+
 pub fn start(args: &crate::cli::Args) -> Result<()> {
     let keys: FhevmKeys = SerializedFhevmKeys::load_from_disk().into();
+    SERVER_KEY.set(Some(keys.server_key.clone()));
+    LOCAL_RAYON_THREADS.set(args.policy_fhe_compute_threads);
     let executor = FhevmExecutorService::new();
-    let rayon_threads = args.policy_fhe_compute_threads;
-    rayon::broadcast(|_| {
-        set_server_key(keys.server_key.clone());
-    });
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(args.tokio_threads)
         .max_blocking_threads(args.fhe_compute_threads)
         .on_thread_start(move || {
             set_server_key(keys.server_key.clone());
-            let rayon_pool = rayon::ThreadPoolBuilder::new()
-                .num_threads(rayon_threads)
-                .build()
-                .unwrap();
-            rayon_pool.broadcast(|_| {
-                set_server_key(keys.server_key.clone());
-            });
-            scheduler::dfg::THREAD_POOL.set(Some(rayon_pool));
         })
         .enable_all()
         .build()?;
@@ -115,10 +110,12 @@ impl FhevmExecutor for FhevmExecutorService {
                     return Some(Resp::Error((e as SyncComputeError).into()));
                 }
                 // Schedule computations in parallel as dependences allow
-                let mut sched = Scheduler::new(&mut graph.graph);
+                let mut sched = Scheduler::new(&mut graph.graph, LOCAL_RAYON_THREADS.get());
 
                 let now = std::time::SystemTime::now();
-                if sched.schedule().await.is_err() {
+                let sks: tfhe::ServerKey = SERVER_KEY.borrow().take().expect("Server key missing");
+                SERVER_KEY.set(Some(sks.clone()));
+                if sched.schedule(sks).await.is_err() {
                     return Some(Resp::Error(SyncComputeError::ComputationFailed.into()));
                 }
                 println!(
@@ -127,12 +124,12 @@ impl FhevmExecutor for FhevmExecutorService {
                 );
                 // Extract the results from the graph
                 match graph.get_results() {
-                    Ok(result_cts) => Some(Resp::ResultCiphertexts(ResultCiphertexts {
+                    Ok(mut result_cts) => Some(Resp::ResultCiphertexts(ResultCiphertexts {
                         ciphertexts: result_cts
-                            .iter()
+                            .iter_mut()
                             .map(|(h, ct)| CompressedCiphertext {
                                 handle: h.clone(),
-                                serialization: ct.compress().1,
+                                serialization: std::mem::take(&mut ct.2),
                             })
                             .collect(),
                     })),
@@ -353,12 +350,12 @@ pub fn build_taskgraph_from_request<'a, 'b>(
                 Some(input) => match input {
                     Input::Handle(h) => {
                         if let Some(ct) = state.ciphertexts.get(h) {
-                            Ok(DFGTaskInput::Val(ct.expanded.clone()))
+                            Ok(DFGTaskInput::Value(ct.expanded.clone()))
                         } else {
-                            Ok(DFGTaskInput::Dep(None))
+                            Ok(DFGTaskInput::Dependence(None))
                         }
                     }
-                    Input::Scalar(s) if s.len() == SCALAR_LEN => Ok(DFGTaskInput::Val(
+                    Input::Scalar(s) if s.len() == SCALAR_LEN => Ok(DFGTaskInput::Value(
                         SupportedFheCiphertexts::Scalar(s.clone()),
                     )),
                     _ => Err(FhevmError::BadInputs.into()),
@@ -374,7 +371,7 @@ pub fn build_taskgraph_from_request<'a, 'b>(
                 .ok_or(SyncComputeError::BadResultHandles)?;
             let n = dfg
                 .add_node(
-                    res_handle,
+                    res_handle.clone(),
                     computation.operation,
                     std::mem::take(&mut inputs),
                 )
