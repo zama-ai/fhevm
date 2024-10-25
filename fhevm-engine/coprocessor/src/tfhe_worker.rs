@@ -250,20 +250,7 @@ async fn tfhe_worker_cycle(
                         let is_operand_scalar =
                             w.is_scalar && idx == 1 || fhe_op.does_have_more_than_one_scalar();
                         if is_operand_scalar {
-                            let mut the_int = tfhe::integer::U256::default();
-                            assert!(
-                                ct_bytes.len() <= 32,
-                                "we don't support larger numbers than 32 bytes"
-                            );
-                            let mut padded: Vec<u8> = Vec::with_capacity(32);
-                            for byte in ct_bytes.iter().rev() {
-                                padded.push(*byte);
-                            }
-                            while padded.len() < 32 {
-                                padded.push(0x00);
-                            }
-                            the_int.copy_from_le_byte_slice(&padded);
-                            deserialized_cts.push(SupportedFheCiphertexts::Scalar(the_int));
+                            deserialized_cts.push(SupportedFheCiphertexts::Scalar(ct_bytes.clone()));
                         } else {
                             deserialized_cts.push(
                                 SupportedFheCiphertexts::decompress(*ct_type, ct_bytes.as_slice())

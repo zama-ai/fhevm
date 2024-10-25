@@ -2241,6 +2241,7 @@ dependencies = [
  "bigdecimal",
  "bincode",
  "hex",
+ "paste",
  "rand",
  "rand_chacha",
  "serde",

@@ -323,7 +323,8 @@ pub enum SupportedFheCiphertexts {
     FheBytes64(tfhe::FheUint512),
     FheBytes128(tfhe::FheUint1024),
     FheBytes256(tfhe::FheUint2048),
-    Scalar(U256),
+    // big endian unsigned integer bytes
+    Scalar(Vec<u8>),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, strum::EnumIter)]
@@ -481,8 +482,7 @@ impl SupportedFheCiphertexts {
                 BigInt::from_bytes_be(bigdecimal::num_bigint::Sign::Plus, &slice).to_string()
             }
             SupportedFheCiphertexts::Scalar(v) => {
-                let (l, h) = v.to_low_high_u128();
-                format!("{l}{h}")
+                BigInt::from_bytes_be(bigdecimal::num_bigint::Sign::Plus, v).to_string()
             }
         }
     }

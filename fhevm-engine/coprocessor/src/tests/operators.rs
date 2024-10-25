@@ -823,7 +823,7 @@ fn generate_binary_test_cases() -> Vec<BinaryOperatorTestCase> {
                         push_case(bits, false, shift_by, op);
                     }
 
-                    if does_fhe_operation_support_scalar(&op) && bits <= 256 {
+                    if does_fhe_operation_support_scalar(&op) {
                         push_case(bits, true, shift_by, op);
                     }
                 }
