@@ -29,6 +29,17 @@ across all the components for this test setup.
   Note that this token is saved by docker locally in the clear,
   so it's best to only give it the permissions you need and set the expiration time to 7 days.
 
+### Install Binaries
+
+Make sure you have these binaries installed in your environment:
+
+* [docker](https://docs.docker.com/engine/install)
+* [rust](https://www.rust-lang.org/tools/install)
+* [protobuf](https://grpc.io/docs/protoc-installation)
+* [nodejs](https://nodejs.org/en/download/package-manager)
+
+> **NB:** We will wrap all components in docker images to remove these prerequisites in the near future.
+
 ## Steps to run the setup
 
 0. Verify the configuration in .env file, most important variable is CENTRALIZED_KMS, set it to  false for threshold KMS
