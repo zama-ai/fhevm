@@ -2,7 +2,7 @@ name: "fhEVM smart contracts Docker image"
 
 on:
   push:
-    branches: ["sc-workflows"]
+    branches: ["main"]
 
 jobs:
   docker-smart-contracts:
