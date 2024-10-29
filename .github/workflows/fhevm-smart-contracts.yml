@@ -1,8 +1,8 @@
-name: "Docker: fhEVM smart contracts (ci)"
+name: "fhEVM smart contracts Docker image"
 
 on:
-  release:
-    types: [published]
+  push:
+    branches: ["sc-workflows"]
 
 jobs:
   docker-smart-contracts:
@@ -15,7 +15,11 @@ jobs:
       working-directory: "."
       push_image: true
       image-name: "fhevm-smart-contracts"
+      image-dev-name: "fhevm-smart-contracts-dev"
+      generate-dev-image: true
       docker-file: "ci.dockerfile"
+      docker-file-dev: "dev.dockerfile"
+      image-dev-description: "fhEVM smart contracts dev Image"
       arm-build: true
 
     secrets:
