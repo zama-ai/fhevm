@@ -120,6 +120,7 @@ jobs:
         uses: docker/build-push-action@5cd11c3a4ced054e52742c5fd54dca954e0edd85 # v6.7.0
         with:
           context: ${{ inputs.docker-context }}
+          platforms: linux/amd64,linux/arm64
           build-args: |
             BLOCKCHAIN_ACTIONS_TOKEN=${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
           file: ${{ inputs.working-directory }}/operations/docker/${{ inputs.docker-file }}
