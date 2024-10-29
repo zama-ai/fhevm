@@ -3,45 +3,52 @@ name = "coprocessor"
 version = "0.1.0"
 edition = "2021"
 
-[target.'cfg(target_arch = "x86_64")'.dependencies]
-tfhe = { version = "0.8.3", features = ["boolean", "shortint", "integer", "x86_64-unix", "zk-pok", "experimental-force_fft_algo_dif4"] }
-[target.'cfg(target_arch = "aarch64")'.dependencies]
-tfhe = { version = "0.8.3", features = ["boolean", "shortint", "integer", "aarch64-unix", "zk-pok", "experimental-force_fft_algo_dif4"] }
-
 [dependencies]
-# Common dependencies
-tokio.workspace = true
-prost.workspace = true
-tonic.workspace = true
-# Optional dependencies
-tonic-web = "0.12"
-tonic-health = "0.12"
-tonic-types = "0.12"
-tokio-util = "0.7"
-sqlx = { version = "0.7", features = ["runtime-tokio", "tls-rustls", "postgres", "uuid"] }
-alloy = { version = "0.3.2", features = ["eip712", "sol-types", "signer-local"] }
-serde_json = "1.0"
-regex = "1.10.5"
-lazy_static = "1.5.0"
-clap.workspace = true
-lru = "0.12.3"
-hex = "0.4"
-bigdecimal = "0.4"
-fhevm-engine-common = { path = "../fhevm-engine-common" }
-strum = { version = "0.26", features = ["derive"] }
-bincode.workspace = true
-sha3.workspace = true
-prometheus.workspace = true
-tracing.workspace = true
-tracing-subscriber.workspace = true
+# workspace dependencies
+bincode = { workspace = true }
+clap = { workspace = true }
+prometheus = { workspace = true }
+prost = { workspace = true }
+sha3 = { workspace = true }
+tokio = { workspace = true }
+tonic = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# crates.io dependencies
 actix-web = "4.9.0"
+alloy = { version = "0.3.2", features = ["eip712", "sol-types", "signer-local"] }
+bigdecimal = "0.4"
+hex = "0.4"
+lazy_static = "1.5.0"
+lru = "0.12.3"
 opentelemetry = "0.25.0"
 opentelemetry-otlp = "0.25.0"
 opentelemetry_sdk = { version = "0.25.0", features = ["rt-tokio"] }
+regex = "1.10.5"
+serde_json = "1.0"
+strum = { version = "0.26", features = ["derive"] }
+sqlx = { version = "0.7", features = ["runtime-tokio", "tls-rustls", "postgres", "uuid"] }
+tonic-health = "0.12"
+tonic-types = "0.12"
+tokio-util = "0.7"
+tonic-web = "0.12"
+
+# local dependencies
+fhevm-engine-common = { path = "../fhevm-engine-common" }
+
+# arch-specific dependencies
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+tfhe = { workspace = true, features = ["x86_64-unix"] }
+[target.'cfg(target_arch = "aarch64")'.dependencies]
+tfhe = { workspace = true, features = ["aarch64-unix"] }
+
+[features]
+nightly-avx512 = ["tfhe/nightly-avx512"]
 
 [dev-dependencies]
-testcontainers = "0.21"
 rand = "0.8.5"
+testcontainers = "0.21"
 
 [build-dependencies]
 tonic-build = "0.12"

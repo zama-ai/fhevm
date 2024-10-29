@@ -3,27 +3,24 @@ resolver = "2"
 members = ["coprocessor", "executor", "fhevm-engine-common"]
 
 [workspace.dependencies]
-clap = { version = "4.5", features = ["derive"] }
-tokio = { version = "1.38.0", features = ["full"] }
-prost = "0.13"
-tonic = { version = "0.12", features = ["server"] }
-bincode = "1.3.3"
-sha3 = "0.10.8"
 anyhow = "1.0.86"
+bincode = "1.3.3"
+clap = { version = "4.5", features = ["derive"] }
 daggy = "0.8.0"
-serde = "1.0.210"
 prometheus = "0.13.4"
+prost = "0.13"
+rayon = "1.10.0"
+serde = "1.0.210"
+sha3 = "0.10.8"
+tfhe = { version = "0.9.0", features = ["boolean", "shortint", "integer", "zk-pok", "experimental-force_fft_algo_dif4"] }
+tokio = { version = "1.38.0", features = ["full"] }
+tonic = { version = "0.12", features = ["server"] }
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["fmt", "json"] }
-rayon = "1.10.0"
 
 [profile.dev.package.tfhe]
 overflow-checks = false
 
 [profile.release]
-# for testing in release mode due to too big binary inside mac:
-#  set opt-level = "z"
-# however, this leads to 2-4x slower execution due to loss of loop
-# vectorization
 opt-level = 3
 lto = "fat"
