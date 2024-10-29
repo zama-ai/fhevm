@@ -1,0 +1,35 @@
+name: "Docker: fhEVM smart contracts"
+
+on:
+  push:
+    branches: ["sc-workflows"]
+
+jobs:
+  docker-smart-contracts:
+    uses: ./.github/workflows/common-docker.yml
+    permissions:
+      contents: "read"
+      id-token: "write"
+      packages: "write"
+    with:
+      working-directory: "."
+      push_image: true
+      image-name: "fhevm-smart-contracts"
+      image-dev-name: "fhevm-smart-contracts-dev"
+      generate-dev-image: true
+      docker-file-dev: "dev.dockerfile"
+      image-dev-description: "fhEVM smart contracts dev Image"
+      arm-build: true
+
+    secrets:
+      BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+      GRAVITON_BUILDER_SSH_PRIVATE_KEY: ${{ secrets.GRAVITON_BUILDER_SSH_PRIVATE_KEY }}
+
+  done:
+    runs-on: ubuntu-latest
+    name: Pipeline Done
+    steps:
+      - name: Success
+        run: echo Pipeline Done
+    needs:
+      - docker-smart-contracts
