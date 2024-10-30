@@ -36,7 +36,7 @@ Make sure you have these binaries installed in your environment:
 * [docker](https://docs.docker.com/engine/install)
 * [rust](https://www.rust-lang.org/tools/install)
 * [protobuf](https://grpc.io/docs/protoc-installation)
-* [nodejs](https://nodejs.org/en/download/package-manager)
+* [nodejs v20](https://nodejs.org/en/download/package-manager)
 
 > **NB:** We will wrap all components in docker images to remove these prerequisites in the near future.
 
