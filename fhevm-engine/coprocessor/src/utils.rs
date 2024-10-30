@@ -11,8 +11,8 @@ use crate::{
 };
 
 pub fn check_valid_ciphertext_handle(inp: &[u8]) -> Result<(), CoprocessorError> {
-    if inp.len() > 64 {
-        return Err(CoprocessorError::CiphertextHandleLongerThan64Bytes);
+    if inp.len() > 256 {
+        return Err(CoprocessorError::CiphertextHandleLongerThan256Bytes);
     }
 
     if inp.len() < 1 {
@@ -204,7 +204,7 @@ fn test_invalid_handle_too_short() {
 fn test_invalid_handle_too_long() {
     let comp = vec![AsyncComputation {
         operation: 1,
-        output_handle: vec![0u8; 65],
+        output_handle: vec![0u8; 257],
         inputs: vec![
             AsyncComputationInput {
                 input: Some(Input::InputHandle(vec![1])),
@@ -216,7 +216,7 @@ fn test_invalid_handle_too_long() {
     }];
 
     match sort_computations_by_dependencies(&comp) {
-        Err(CoprocessorError::CiphertextHandleLongerThan64Bytes) => {}
+        Err(CoprocessorError::CiphertextHandleLongerThan256Bytes) => {}
         other => {
             panic!("Unexpected result: {:?}", other);
         }

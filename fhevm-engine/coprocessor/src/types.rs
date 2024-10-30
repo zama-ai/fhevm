@@ -8,7 +8,7 @@ pub enum CoprocessorError {
     Unauthorized,
     FhevmError(FhevmError),
     DuplicateOutputHandleInBatch(String),
-    CiphertextHandleLongerThan64Bytes,
+    CiphertextHandleLongerThan256Bytes,
     CiphertextHandleMustBeAtLeast1Byte(String),
     UnexistingInputCiphertextsFound(Vec<String>),
     AlreadyExistingResultHandlesFound(Vec<String>),
@@ -91,8 +91,8 @@ impl std::fmt::Display for CoprocessorError {
             } => {
                 write!(f, "Input blob contains too many ciphertexts, input blob index: {input_blob_index}, ciphertexts in blob: {input_ciphertexts_in_blob}, maximum ciphertexts in blob allowed: {input_maximum_ciphertexts_allowed}")
             }
-            Self::CiphertextHandleLongerThan64Bytes => {
-                write!(f, "Found ciphertext handle longer than 64 bytes")
+            Self::CiphertextHandleLongerThan256Bytes => {
+                write!(f, "Found ciphertext handle longer than 256 bytes")
             }
             Self::CiphertextHandleMustBeAtLeast1Byte(handle) => {
                 write!(f, "Found ciphertext handle is empty: {handle}")
