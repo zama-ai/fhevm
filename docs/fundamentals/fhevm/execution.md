@@ -37,7 +37,7 @@ sequenceDiagram
 
 As mentioned, symbolic execution doesn't do any FHE computations. Instead, it only operates on input handles, checking constraints on them and deterministically producing result handles based on the input ones.
 
-For more information on what symbolic execution does, please look at the [TFHEExecutor](https://github.com/zama-ai/fhevm/blob/main/lib/TFHEExecutor.sol) contract.
+For more information on what symbolic execution does, please look at the [TFHEExecutor](../../../contracts/contracts/TFHEExecutor.sol) contract.
 
 ## Interaction with the TFHEExecutor Contract
 

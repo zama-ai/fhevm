@@ -12,7 +12,7 @@ _Note_: All those contracts are initially deployed behind UUPS proxies, so could
 
 ## TFHEExecutor Contract
 
-Symbolic execution on the blockchain is implemented via the [TFHEExecutor](https://github.com/zama-ai/fhevm/blob/main/lib/TFHEExecutor.sol) contract. One of the main responsibilites of the TFHEExecutor contract is to deterministically generate ciphertext handles. For this, we hash the FHE operation requested and the inputs to produce the result handle H:
+Symbolic execution on the blockchain is implemented via the [TFHEExecutor](../../../contracts/contracts/TFHEExecutor.sol) contract. One of the main responsibilites of the TFHEExecutor contract is to deterministically generate ciphertext handles. For this, we hash the FHE operation requested and the inputs to produce the result handle H:
 
 ```
 H = keccak256(fheOperation, input1, input2, ..., inputN)
@@ -22,7 +22,7 @@ Inputs can either be other handles or plaintext values.
 
 ## ACL Contract
 
-The [ACL](https://github.com/zama-ai/fhevm/blob/main/lib/ACL.sol) contract enforces access control for ciphertexts. The model we adopt is very simple - a ciphertext is either allowed for an address or not. An address can be any address - either an EOA address or a contract address. Essentially, it is a mapping from handle to a set of addresses that are allowed to use the handle.
+The [ACL](../../../contracts/contracts/ACL.sol) contract enforces access control for ciphertexts. The model we adopt is very simple - a ciphertext is either allowed for an address or not. An address can be any address - either an EOA address or a contract address. Essentially, it is a mapping from handle to a set of addresses that are allowed to use the handle.
 
 Access control applies to transfering ciphertexts from one contract to another, for FHE computation on ciphertexts, for decryption and for reencryption of a ciphertext to a user-provided key.
 
@@ -32,7 +32,7 @@ Data in the ACL contract grows indefinitely as new ciphertexts are produced. We 
 
 ## KMSVerifier Contract
 
-The [KMSVerifier](https://github.com/zama-ai/fhevm/blob/main/lib/KMSVerifier.sol) contract allows any dApp to verify a received decryption. This contract exposes a function `verifyDecryptionEIP712KMSSignatures` which receives the decryption result and signatures coming from the TKMS.
+The [KMSVerifier](../../../contracts/contracts/KMSVerifier.sol) contract allows any dApp to verify a received decryption. This contract exposes a function `verifyDecryptionEIP712KMSSignatures` which receives the decryption result and signatures coming from the TKMS.
 
 KMS signers addresses are stored and updated in the contract.
 
@@ -40,7 +40,7 @@ The KMSVerifier contract is also responsible for checking the signatures of KMS 
 
 ## InputVerifier Contract
 
-This is the only contract which implementation differs between coprocessor and native. For coprocessor, we use [InputVerifier.coprocessor.sol](https://github.com/zama-ai/fhevm/blob/main/lib/InputVerifier.coprocessor.sol), while for native we use [InputVerifier.native.sol](https://github.com/zama-ai/fhevm/blob/main/lib/InputVerifier.native.sol).
+This is the only contract which implementation differs between coprocessor and native. For coprocessor, we use [InputVerifier.coprocessor.sol](../../../contracts/contracts/InputVerifier.coprocessor.sol), while for native we use [InputVerifier.native.sol](../../../contracts/contracts/InputVerifier.native.sol).
 
 The native InputVerifier contract just forwards the user input handles with the kms signers' signatures from TFHEExecutor (when the verifyCiphertext function is called, to insert user inputs) to the KMSVerifier contract, by calling its `verifyInputEIP712KMSSignatures` function.
 
@@ -50,12 +50,12 @@ In native case, the handles are computed onchain, on the other hand for coproces
 
 ## FHEPayment Contract
 
-This contract could be used in theory to handle payments of users for FHE operations, but in current version we decided to set the FHE gas price to `0`, to make developer's experience simpler on Sepolia. We could simply change those two constants to positive values at a later stage, if we want to introduce real payments: [FHE gas price constants](https://github.com/zama-ai/fhevm/blob/main/lib/FHEPayment.sol#L33-L34).
+This contract could be used in theory to handle payments of users for FHE operations, but in current version we decided to set the FHE gas price to `0`, to make developer's experience simpler on Sepolia. We could simply change those two constants to positive values at a later stage, if we want to introduce real payments: [FHE gas price constants](../../../contracts/contracts/FHEPayment.sol#L33-L34).
 
 However, even with null FHE gas price, we still need to deploy this contract for security, especially for coprocessor (where we could not tweak native gas to be used with FHE operations differently, contrarily to native), for security reason to avoid DOS attacks by malicious devs. Indeed, this contract also tracks the FHE gas consumed in each block, and reverts the transactions inside a block if the FHE gas block limit is exceeded.
 
 ## Gateway Contract
 
-The [Gateway](https://github.com/zama-ai/fhevm/blob/main/gateway/GatewayContract.sol) contract is an onchain contract designed to interact with an offchain Gateway component that handles decryption requests. When a dApp calls the `requestDecryption` function, the Gateway contract emits an event that is caught by the Gateway service.
+The [Gateway](../../../contracts/gateway/GatewayContract.sol) contract is an onchain contract designed to interact with an offchain Gateway component that handles decryption requests. When a dApp calls the `requestDecryption` function, the Gateway contract emits an event that is caught by the Gateway service.
 
 _Note_: It is possible to have multiple Gateways, so multiple Gateway contracts can also be deployed. This is the only contract from this documentation page that is not strictly part of "core fhEVM" contracts, and as such, it should not be considered as a "trusted" contract. We only trust the KMS and the core fhEVM contracts. The Gateway is only bridging trust from host chain to KMS chain via storage proofs, and from KMS chain to the host chain via the signatures from KMS signers.
