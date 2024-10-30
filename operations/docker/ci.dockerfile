@@ -14,4 +14,3 @@ COPY gateway ./gateway/
 COPY *.sh ./
 COPY *.ts ./
 COPY tsconfig.json ./
-COPY *.sh ./
