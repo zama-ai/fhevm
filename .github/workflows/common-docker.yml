@@ -138,8 +138,8 @@ jobs:
           annotations: |
             org.opencontainers.image.description="${{ inputs.image-dev-description }}"
           labels: |
-            zama.kms.version=${{ env.DOCKER_TAG_IMAGE }}
-            zama.kms.description="${{ inputs.image-dev-description }}"
+            zama.fhevm.version=${{ env.DOCKER_TAG_IMAGE }}
+            zama.fhevm.description="${{ inputs.image-dev-description }}"
           images: ghcr.io/zama-ai/${{ inputs.image-dev-name }}:${{ env.DOCKER_TAG_IMAGE }}
         env:
           DOCKER_METADATA_ANNOTATIONS_LEVELS: index
