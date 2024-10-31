@@ -211,10 +211,10 @@ None.
 
 The request is successful, and the response will include a JSON object with a `status` and a `response` which  consists of the following:
 
-- `listener_type`: An enum expressing whether the result is for an fhEVM native (`FHEVM_NATIVE`) or co-processor respectively (`COPROCESSOR`).
-- `kms_signatures`: A list of signatures (one for each of the TKMS servers that respond to the query). Each signature is a hex (lower-case) encoded EIP712 signature on the `safe_serialization` of `ProvenCompactCiphertextList`.
-- `proof_of_storage`: An optional signature from the co-processor. More specifically if fhEVM native is used it will be an empty string, otherwise it will be a hex (lower-case) encoded EIP712 signature on the request. 
 - `handles`: A vector of handles to each of the ciphertexts which have been proven knowledge of. A handle is a 32 byte (lower-case) hex encoded handle/ID identifying the ciphertext.
+- `kms_signatures`: A list of signatures (one for each of the TKMS servers that respond to the query). Each signature is a hex (lower-case) encoded EIP712 signature on the `safe_serialization` of `ProvenCompactCiphertextList`.
+- `listener_type`: An enum expressing whether the result is for an fhEVM native (`FHEVM_NATIVE`) or co-processor respectively (`COPROCESSOR`).
+- `proof_of_storage`: An optional signature from the co-processor. More specifically if fhEVM native is used it will be an empty string, otherwise it will be a hex (lower-case) encoded EIP712 signature on the request. 
 
 For example the following:
 ```json
@@ -276,8 +276,8 @@ For example the following:
 #### Description
 
 This end-point returns a JSON object containing a signcryption of the plaintext value of an FHE ciphertext that has been (obliviously) decrypted by the TKMS. 
-More specifically the TKMS servers carry out a partial decryption resulting in each of them knowing a secret share of the plaintext. They each then signcrypt their share of the plaintext. The response consists of each of these signcryptions along with meta information about the threshold setup and which server provides each signcrypted share of the result. 
-Since the signcryption is based on secret sharing it means that only a subset, specifically >1/3 of the total signature, is required to recover the result (assuming all returned signcryptions are correct). 
+More specifically the TKMS servers carry out a partial decryption resulting in each of them knowing a secret share of the plaintext (meaning that multiple servers need to maliciously collude in order to learn the decrypted plaintext). They each then signcrypt their share of the plaintext. The response consists of each of these signcryptions along with meta information about the threshold setup and which server provides each signcrypted share of the result. 
+Since the signcryption is based on secret sharing it means that only a subset, specifically >1/3 of the total responses, is required to recover the result (assuming all returned signcryptions are correct). 
 
 #### Query Parameters
 
@@ -285,7 +285,7 @@ Multiple parameters must be supplied in JSON format:
 - `signature`: A hex (lower-case) encoded EIP712 signature on the parameters of the request by a key owner permitted to do reencrypt of the ciphertext in question. 
 - `client_address`: An EIP-55 encoded address (that is, including the `0x` prefix) of the end-user who is supposed to learn the reencrypted response.
 - `enc_key`: The hex (lower-case) encoded public encryption key (libsodium) which the reencryption should be signcrypted under.
-- `ciphertext_handle`: The 32 byte (lower-case) hex encoded handle/ID identifying the ciphertext.
+- `ciphertext_handle`: The 32 byte (lower-case) hex encoded handle/ID identifying the ciphertext and hence allowing the gateway to fetch it.
 - `eip712_verifying_contract`: An EIP-55 encoded address (that is, including the `0x` prefix) of the contract responsible for the validation.
 ```json
 {
