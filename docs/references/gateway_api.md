@@ -31,20 +31,20 @@ The request is successful, and the response will include a JSON object with a `s
 - `crs`: A map of containing information on the different CRS'. The key of the map is the max amount of bits the CRS can support proofs for. The value is an object of the following elements for the given CRS:
     * `data_id`: The 20 byte (lower-case) hex encoded handle/ID identifying the CRS.
     * `param_choice`: An integer representing the choice of parameters for the public key to be used with the CRS. 
-    * `signatures`: A list of signatures (one from each TKMS). Each signature is a hex (lower-case) encoded EIP712 signature on the `safe_serialization` of `PublicParam<Bls12_446>`.
+    * `signatures`: A list of signatures (one from each MPC party constituting the TKMS backend). Each signature is a hex (lower-case) encoded EIP712 signature on the `safe_serialization` of `PublicParam<Bls12_446>`.
     * `urls`: A list of URLs where the data can be fetched. The data at the end-point is a `safe_serialization` of `PublicParam<Bls12_446>`.
 - `fhe_key_info`: A list of objects, each representing information on a key-set in the system. More specifically each element consists of the following:
     * `fhe_public_key`: An element which contains information about the public encryption key of a FHE key set. More specifically it consists of the following elements:
         * `data_id`: The 20 byte (lower-case) hex encoded handle/ID identifying the key.
         * `param_choice`: An integer representing the choice of parameters used to generate the key. 
-        * `signatures`: A list of signatures (one from each TKMS). Each signature is a hex (lower-case) encoded EIP712 signature on the `safe_serialization` of `CompactPublicKey`.
+        * `signatures`: A list of signatures (one from each MPC party constituting the TKMS backend). Each signature is a hex (lower-case) encoded EIP712 signature on the `safe_serialization` of `CompactPublicKey`.
         * `urls`: A list of URLs where the data can be fetched. The data at the end-point is a `safe_serialization` of `CompactPublicKey`.
     * `fhe_server_key`: An element which contains information about the server key (the key used to perform FHE operations on ciphertexts) of a FHE key set. More specifically it consists of the following elements:
         * `data_id`: The 20 byte (lower-case) hex encoded handle/ID identifying the key.
         * `param_choice`: An integer representing the choice of parameters used to generate the key. 
-        * `signatures`: A list of signatures (one from each TKMS). Each signature is a hex (lower-case) encoded EIP712 signature on the `safe_serialization` of `CompactPublicKey`.
+        * `signatures`: A list of signatures (one from each MPC party constituting the TKMS backend). Each signature is a hex (lower-case) encoded EIP712 signature on the `safe_serialization` of `CompactPublicKey`.
         * `urls`: A list of URLs where the data can be fetched. The data at the end-point is a `safe_serialization` of `ServerKey`.
-- `verf_public_key`: **Deprecated and will be removed in the future** A list containing of elements, where each element is the information about a TKMS MPC server's signing key. That is, the key which a server uses to sign requests. More specifically each element of the vector consists of the following:
+- `verf_public_key`: **Deprecated and will be removed in the future. Should instead be fetched directly from the config contract on the TKMS blockchain** A list containing of elements, where each element is the information about a TKMS MPC server's signing key. That is, the key which a server uses to sign requests. More specifically each element of the vector consists of the following:
         * `key_id`: The 20 byte (lower-case) hex encoded handle/ID identifying the key. Currently this value is static for signing keys. That is, it will always be `408d8cbaa51dece7f782fe04ba0b1c1d017b1088`.
         * `server_id`: The integer ID of the server whose key is being described in the current element. This is an integer in the range [1; n], where n is the amount of MPC servers.
         * `verf_public_key_url`: The URL end-point of the given server where a serialization of the signing key can be found. The signing key is a `safe_serialization` of `PublicSigKey`.
@@ -184,7 +184,7 @@ The signatures from the TKMS should be considered as a multi-sig. This means tha
 
 #### Query Parameters
 
-Multiple parameters must be supplied as a JSON file:
+Multiple parameters must be supplied in JSON format:
 - `contract_address`: An EIP-55 encoded address (that is, including the `0x` prefix) of the contract where the proven ciphertext is to be submitted.
 - `caller_address`: An EIP-55 encoded address (that is, including the `0x` prefix) of the user who is providing the encrypted input.
 - `crs_id`: The 20 byte (lower-case) hex encoded handle/ID identifying the CRS used to construct the proof.
@@ -281,7 +281,7 @@ Since the signcryption is based on secret sharing it means that only a subset, s
 
 #### Query Parameters
 
-Multiple parameters must be supplied as a JSON file:
+Multiple parameters must be supplied in JSON format:
 - `signature`: A hex (lower-case) encoded EIP712 signature on the parameters of the request by a key owner permitted to do reencrypt of the ciphertext in question. 
 - `client_address`: An EIP-55 encoded address (that is, including the `0x` prefix) of the end-user who is supposed to learn the reencrypted response.
 - `enc_key`: The hex (lower-case) encoded public encryption key (libsodium) which the reencryption should be signcrypted under.
