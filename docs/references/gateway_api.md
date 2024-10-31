@@ -189,7 +189,7 @@ Multiple parameters must be supplied as a JSON file:
 - `caller_address`: An EIP-55 encoded address (that is, including the `0x` prefix) of the user who is providing the encrypted input.
 - `crs_id`: The 20 byte (lower-case) hex encoded handle/ID identifying the CRS used to construct the proof.
 - `key_id`: The 20 byte (lower-case) hex encoded handle/ID identifying the public key used to encrypt the ciphertext with.
-- "ct_proof": A hex encoding of the serialization of the proven ciphertext. More specifically the TFHE-RS object `ProvenCompactCiphertextList` serialized using `safe_serialization`.
+- `ct_proof`: A hex encoding of the serialization of the proven ciphertext. More specifically the TFHE-RS object `ProvenCompactCiphertextList` serialized using `safe_serialization`.
 
 ```json
 {
@@ -212,26 +212,26 @@ None.
 The request is successful, and the response will include a JSON object with a `status` and a `response` which  consists of the following:
 
 - `listener_type`: An enum expressing whether the result is for an fhEVM native (`FHEVM_NATIVE`) or co-processor respectively (`COPROCESSOR`).
-- `kms_signatures`: A list of signatures (one for each of the TKMS servers that responses to the query). Each signature is again a list of bytes (each byte represented as a non-negative integer) representing an EIP712 signature.
-- `proof_of_storage`: An optional signature from the co-processor. More specifically if fhEVM native is used it will be an empty list of bytes, otherwise it will be a list of bytes (each byte represented as a non-negative integer) representing an EIP712 signature.
-- `handles`: A vector of handles to each of the ciphertexts which have been proven knowledge of. A handle is again a vector of 32 bytes (each byte represented as a non-negative integer).
+- `kms_signatures`: A list of signatures (one for each of the TKMS servers that respond to the query). Each signature is a hex (lower-case) encoded EIP712 signature on the `safe_serialization` of `ProvenCompactCiphertextList`.
+- `proof_of_storage`: An optional signature from the co-processor. More specifically if fhEVM native is used it will be an empty string, otherwise it will be a hex (lower-case) encoded EIP712 signature on the request. 
+- `handles`: A vector of handles to each of the ciphertexts which have been proven knowledge of. A handle is a 32 byte (lower-case) hex encoded handle/ID identifying the ciphertext.
 
 For example the following:
 ```json
 {
     "response": {
         "handles": [
-            [0,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31],
-            [0,1,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31]
+            "0748b542afe2353c86cb707e3d21044b0be1fd18efc7cbaa6a415af055bfb358",
+            "054ab4515b1541878723431005054f154e15e45e15800adb67879679df670456"
         ],
         "kms_signatures":[
-            [1,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31], 
-            [1,1,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31], 
-            [1,2,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31], 
-            [1,3,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31], 
+            "15a4f9a8eb61459cfba7d103d8f911fb04ce91ecf841b34c49c0d56a70b896d20cbc31986188f91efc3842b7df215cee8acb40178daedb8b63d0ba5d199bce121c", 
+            "118165165165423465234414c4c468a4d9684d8e18186d6f786161b4b436c58787cc68418186d6f786161b4b98461166a6a6668e8e118542c154867aab238abd79", 
+            "1c849848940128065242121b2b12121ed876986da251561650c654564d684654e51610879a9a9798b78b78e7f8787d87c8c8894a454547809586616161464cc8a8", 
+            "10c864ac145423466798808098c098b09a8908d6432da4544f5e54566b76740454654a54c65454565d65d657e44651241561342441234128888063304854897893", 
         ],
         "listener_type": "COPROCESSOR",
-        "proof_of_storage":[1,4,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31]
+        "proof_of_storage": "17acd15648740c00849f489498489e4600a60a06068d484b084894988333000cff798751651498d68768753567a4356787c45787e79i8f64d128218927897c8789"
     },
     "status": "success"
 }
@@ -285,7 +285,7 @@ Multiple parameters must be supplied as a JSON file:
 - `signature`: A hex (lower-case) encoded EIP712 signature on the parameters of the request by a key owner permitted to do reencrypt of the ciphertext in question. 
 - `client_address`: An EIP-55 encoded address (that is, including the `0x` prefix) of the end-user who is supposed to learn the reencrypted response.
 - `enc_key`: The hex (lower-case) encoded public encryption key (libsodium) which the reencryption should be signcrypted under.
-- `ciphertext_handle`: The 32 byte (lower-case) hex encoded handle/ID identifying the public key used to encrypt the ciphertext with.
+- `ciphertext_handle`: The 32 byte (lower-case) hex encoded handle/ID identifying the ciphertext.
 - `eip712_verifying_contract`: An EIP-55 encoded address (that is, including the `0x` prefix) of the contract responsible for the validation.
 ```json
 {
@@ -319,7 +319,7 @@ For example the following:
         },
         {
             "payload": "44546...",
-            "signature": "118165165165423465234414c4c468a4d9684d8e18186d6f786161b4b436c58787cc684/98461166a6a6668e8e118542c154867aab2"
+            "signature": "118165165165423465234414c4c468a4d9684d8e18186d6f786161b4b436c58787cc68418186d6f786161b4b98461166a6a6668e8e118542c154867aab238abd79"
         },
         {
             "payload": "54cd5...",
