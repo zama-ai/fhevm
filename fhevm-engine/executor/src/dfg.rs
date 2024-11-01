@@ -10,7 +10,6 @@ use anyhow::Result;
 use fhevm_engine_common::types::{
     FhevmError, Handle, SupportedFheCiphertexts, HANDLE_LEN, SCALAR_LEN,
 };
-use tfhe::integer::U256;
 
 use daggy::{Dag, NodeIndex};
 use std::collections::HashMap;
@@ -91,11 +90,9 @@ impl<'a> DFGraph<'a> {
                                 Ok(DFGTaskInput::Dep(None))
                             }
                         }
-                        Input::Scalar(s) if s.len() == SCALAR_LEN => {
-                            let mut scalar = U256::default();
-                            scalar.copy_from_be_byte_slice(s);
-                            Ok(DFGTaskInput::Val(SupportedFheCiphertexts::Scalar(scalar)))
-                        }
+                        Input::Scalar(s) if s.len() == SCALAR_LEN => Ok(DFGTaskInput::Val(
+                            SupportedFheCiphertexts::Scalar(s.clone()),
+                        )),
                         _ => Err(FhevmError::BadInputs.into()),
                     },
                     None => Err(FhevmError::BadInputs.into()),
