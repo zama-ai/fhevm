@@ -14,7 +14,6 @@ For each file (with the exception of the verification key and address), a list o
 No query parameters are required, as the gateway is already preconfigured for a specific blockchain.
 
 
-
 #### Query Parameters
 
 No parameters.
@@ -282,11 +281,11 @@ Since the signcryption is based on secret sharing it means that only a subset, s
 #### Query Parameters
 
 Multiple parameters must be supplied in JSON format:
-- `signature`: A hex (lower-case) encoded EIP712 signature on the parameters of the request by a key owner permitted to do reencrypt of the ciphertext in question. 
+- `signature`: A hex (lower-case) encoded EIP712 signature on the public encryption key, `enc_key`, under which the of the ciphertext in question will be reencrypted. 
 - `client_address`: An EIP-55 encoded address (that is, including the `0x` prefix) of the end-user who is supposed to learn the reencrypted response.
 - `enc_key`: The hex (lower-case) encoded public encryption key (libsodium) which the reencryption should be signcrypted under.
 - `ciphertext_handle`: The 32 byte (lower-case) hex encoded handle/ID identifying the ciphertext and hence allowing the gateway to fetch it.
-- `eip712_verifying_contract`: An EIP-55 encoded address (that is, including the `0x` prefix) of the contract responsible for the validation.
+- `eip712_verifying_contract`: An EIP-55 encoded address (that is, including the `0x` prefix) of the contract holding the ciphertext to reencrypt.
 ```json
 {
      "signature": "15a4f9a8eb61459cfba7d103d8f911fb04ce91ecf841b34c49c0d56a70b896d20cbc31986188f91efc3842b7df215cee8acb40178daedb8b63d0ba5d199bce121c",
