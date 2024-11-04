@@ -1,5 +1,7 @@
 # Deploy initial contracts
 
+Following is an example of how to deploy initial contracts on the Ethereum Sepolia testnet. Deploying on Ethereum mainnet should be almost identical and should be possible by just changing the SEPOLIA_RPC_URL to ETHEREUM_MAINNET_RPC_URL and poiting to a correct RPC node.
+
 0/ Prerequisites: First, git clone `fhevm` repo and checkout the [`0.6.0-0` prerelease branch](https://github.com/zama-ai/fhevm/tree/v0.6.0-0), install dependencies with `npm i` (node.js version should be at least `20`), then create a`.env` file in root of the repo.
 
 1/ Fill correct values in the `.env` file by first copying the [`.env.example.deployment` file](https://github.com/zama-ai/fhevm/blob/v0.6.0-0/.env.example.deployment).
@@ -34,7 +36,7 @@ For the `SEPOLIA_RPC_URL` env variable, you can either get one from a service pr
 - `node_modules/fhevm-core-contracts/addresses/.env.fhepayment` for FHEPayment address
 - `gateway/.env.gateway` for GatewayContract address.
 
-This script is found exactly inside the [`./precompute-addresses.sh` file](https://github.com/zama-ai/fhevm/blob/main/precompute-addresses.sh) :
+This script is found exactly inside the [`./precompute-addresses.sh` file](https://github.com/zama-ai/fhevm/blob/main/precompute-addresses.sh):
 
 ```
 #!/bin/bash

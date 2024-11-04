@@ -36,7 +36,7 @@ thread_local! {
 pub fn start(args: &crate::cli::Args) -> Result<()> {
     let keys: FhevmKeys = SerializedFhevmKeys::load_from_disk().into();
     let executor = FhevmExecutorService::new();
-    let rayon_threads = args.fhe_operation_threads;
+    let rayon_threads = args.policy_fhe_compute_threads;
     rayon::broadcast(|_| {
         set_server_key(keys.server_key.clone());
     });

@@ -6,10 +6,15 @@
 
 - [Quick start](getting_started/quick_start.md)
 - fhEVM
-  - [geth integration](getting_started/fhevm/geth.md)
-  - [Run Native](getting_started/fhevm/native.md)
-  - [Deploy initial contracts](getting_started/fhevm/contracts.md)
-  - [Configuration](getting_started/fhevm/configuration.md)
+  - fhEVM-native
+    - [geth integration](getting_started/fhevm/native/geth.md)
+    - [Executor](getting_started/fhevm/native/executor.md)
+    - [Configuration](getting_started/fhevm/native/configuration.md)
+  - fhEVM-coprocessor
+    - [Deploy initial contracts](getting_started/fhevm/coprocessor/contracts.md)
+    - [geth integration](getting_started/fhevm/coprocessor/geth.md)
+    - [Coprocessor Backend](getting_started/fhevm/coprocessor/coprocessor_backend.md)
+    - [Configuration](getting_started/fhevm/coprocessor/configuration.md)
 - Gateway
   - [Configuration](getting_started/gateway/configuration.md)
 - TKMS
@@ -22,12 +27,17 @@
 
 - [Overview](fundamentals/overview.md)
 - fhEVM
-  - [Architecture](fundamentals/fhevm/architecture.md)
   - [Contracts](fundamentals/fhevm/contracts.md)
-  - [Execution](fundamentals/fhevm/execution.md)
-  - [Storage](fundamentals/fhevm/storage.md)
   - [Inputs](fundamentals/fhevm/inputs.md)
-  - [Genesis](fundamentals/fhevm/genesis.md)
+  - [Symbolic Execution](fundamentals/fhevm/symbolic_execution.md)
+  - fhEVM-native
+    - [Architecture](fundamentals/fhevm/native/architecture.md)
+    - [FHE Computation](fundamentals/fhevm/native/fhe_computation.md)
+    - [Storage](fundamentals/fhevm/native/storage.md)
+    - [Genesis](fundamentals/fhevm/native/genesis.md)
+  - fhEVM-coprocessor
+    - [Architecture](fundamentals/fhevm/coprocessor/architecture.md)
+    - [FHE Computation](fundamentals/fhevm/coprocessor/fhe_computation.md)
 - Gateway
   - [Decryption](fundamentals/gateway/decryption.md)
   - [Reencryption](fundamentals/gateway/reencryption.md)

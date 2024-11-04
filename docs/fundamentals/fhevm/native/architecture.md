@@ -54,4 +54,4 @@ A dApp uses the **fhevmjs** library to interact with the fhEVM. Some examples ar
  * send transactions via a full node
  * get the FHE public key from a full node
 
-The TKMS is used to manage secret FHE key material and securely execute decryptions, reencryptions, key generation, etc. The TKMS is itself a blockchain. See [TKMS](../tkms/architecture.md).
+The TKMS is used to manage secret FHE key material and securely execute decryptions, reencryptions, key generation, etc. The TKMS is itself a blockchain. See [TKMS](../../tkms/architecture.md).

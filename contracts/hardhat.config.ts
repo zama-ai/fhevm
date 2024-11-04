@@ -46,6 +46,7 @@ const chainIds = {
   localNetwork1: 9000,
   multipleValidatorTestnet: 8009,
   sepolia: 11155111,
+  mainnet: 1,
 };
 
 function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
@@ -68,6 +69,8 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
       break;
     case 'sepolia':
       jsonRpcUrl = process.env.SEPOLIA_RPC_URL!;
+    case 'mainnet':
+      jsonRpcUrl = process.env.MAINNET_RPC_URL!;
   }
   return {
     accounts: {
@@ -143,6 +146,7 @@ const config: HardhatUserConfig = {
       },
     },
     sepolia: getChainConfig('sepolia'),
+    mainnet: getChainConfig('mainnet'),
     zama: getChainConfig('zama'),
     localDev: getChainConfig('local'),
     local: getChainConfig('local'),
