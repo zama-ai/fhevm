@@ -2,7 +2,7 @@ name: "fhEVM smart contracts Docker Image"
 
 on:
   push:
-    branches: ["amina/fhevm-sc-workflows"]
+    branches: ["main"]
     paths:
       - .github/workflows/fhevm-smart-contracts.yml
       - contracts/**
