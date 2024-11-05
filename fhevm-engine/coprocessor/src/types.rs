@@ -1,10 +1,12 @@
 use std::sync::Arc;
 
 use fhevm_engine_common::types::FhevmError;
+use scheduler::dfg::types::SchedulerError;
 
 #[derive(Debug)]
 pub enum CoprocessorError {
     DbError(sqlx::Error),
+    SchedulerError(SchedulerError),
     Unauthorized,
     FhevmError(FhevmError),
     DuplicateOutputHandleInBatch(String),
@@ -59,6 +61,9 @@ impl std::fmt::Display for CoprocessorError {
         match self {
             Self::DbError(dbe) => {
                 write!(f, "Coprocessor db error: {:?}", dbe)
+            }
+            Self::SchedulerError(se) => {
+                write!(f, "Coprocessor scheduler error: {:?}", se)
             }
             Self::Unauthorized => {
                 write!(f, "API key unknown/invalid/not provided")
@@ -166,6 +171,12 @@ impl std::error::Error for CoprocessorError {}
 impl From<sqlx::Error> for CoprocessorError {
     fn from(err: sqlx::Error) -> Self {
         CoprocessorError::DbError(err)
+    }
+}
+
+impl From<SchedulerError> for CoprocessorError {
+    fn from(err: SchedulerError) -> Self {
+        CoprocessorError::SchedulerError(err)
     }
 }
 

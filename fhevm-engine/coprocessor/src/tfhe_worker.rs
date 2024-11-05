@@ -1,9 +1,6 @@
 use crate::{db_queries::populate_cache_with_tenant_keys, types::TfheTenantKeys};
 use fhevm_engine_common::types::{FhevmError, Handle, SupportedFheCiphertexts};
-use fhevm_engine_common::{
-    tfhe_ops::{current_ciphertext_version, perform_fhe_operation},
-    types::SupportedFheOperations,
-};
+use fhevm_engine_common::{tfhe_ops::current_ciphertext_version, types::SupportedFheOperations};
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use opentelemetry::trace::{Span, TraceContextExt, Tracer};
@@ -102,10 +99,9 @@ async fn tfhe_worker_cycle(
         let mut s = tracer.start_with_context("begin_transaction", &loop_ctx);
         let mut trx = conn.begin().await?;
         s.end();
-
         // This query locks our work items so other worker doesn't select them.
         let mut s = tracer.start_with_context("query_work_items", &loop_ctx);
-        let mut the_work = query!(
+        let the_work = query!(
             "
             WITH RECURSIVE dependent_computations(tenant_id, output_handle, dependencies, fhe_operation, is_scalar, produced_handles) AS (
                 SELECT c.tenant_id, c.output_handle, c.dependencies, c.fhe_operation, c.is_scalar, ARRAY[ROW(c.tenant_id, c.output_handle)]
@@ -169,7 +165,6 @@ async fn tfhe_worker_cycle(
         if the_work.is_empty() {
             continue;
         }
-
         WORK_ITEMS_FOUND_COUNTER.inc_by(the_work.len() as u64);
         info!(target: "tfhe_worker", { count = the_work.len() }, "Processing work items");
         // Make sure we process each tenant independently to avoid
@@ -184,12 +179,12 @@ async fn tfhe_worker_cycle(
         let key_cache = tenant_key_cache.read().await;
         for (tenant_id, work) in work_by_tenant.iter() {
             let _ = tenants_to_query.insert(*tenant_id);
-            if !key_cache.contains(&tenant_id) {
+            if !key_cache.contains(tenant_id) {
                 let _ = keys_to_query.insert(*tenant_id);
             }
             for w in work.iter() {
                 for dh in &w.dependencies {
-                    let _ = cts_to_query.insert(&dh);
+                    let _ = cts_to_query.insert(dh);
                 }
             }
         }
@@ -207,7 +202,6 @@ async fn tfhe_worker_cycle(
         ));
         populate_cache_with_tenant_keys(keys_to_query, trx.as_mut(), &tenant_key_cache).await?;
         s.end();
-
         let mut s = tracer.start_with_context("query_ciphertext_batch", &loop_ctx);
         s.set_attribute(KeyValue::new("cts_to_query", cts_to_query.len() as i64));
         // TODO: select all the ciphertexts where they're contained in the tuples
@@ -224,7 +218,6 @@ async fn tfhe_worker_cycle(
         .fetch_all(trx.as_mut())
         .await?;
         s.end();
-
         // index ciphertexts in hashmap
         let mut ciphertext_map: HashMap<(i32, &[u8]), _> =
             HashMap::with_capacity(ciphertexts_rows.len());
@@ -232,13 +225,11 @@ async fn tfhe_worker_cycle(
             let _ = ciphertext_map.insert((row.tenant_id, &row.handle), row);
         }
 
-        // TODO-ap
-        let mut s = tracer.start_with_context("schedule_fhe_work", &loop_ctx);
-        s.set_attribute(KeyValue::new("work_items", work_by_tenant.len() as i64));
-
-        let mut s_outer = tracer.start_with_context("wait_and_update_fhe_work", &loop_ctx);
         // Process tenants in sequence to avoid switching keys during execution
         for (tenant_id, work) in work_by_tenant.iter() {
+            let mut s_schedule = tracer.start_with_context("schedule_fhe_work", &loop_ctx);
+            s_schedule.set_attribute(KeyValue::new("work_items", work.len() as i64));
+            s_schedule.set_attribute(KeyValue::new("tenant_id", *tenant_id as i64));
             // We need to ensure that no handles are missing from
             // either DB inputs or values produced within this batch
             // before this batch is scheduled.
@@ -282,6 +273,7 @@ async fn tfhe_worker_cycle(
             let mut producer_indexes: HashMap<&Handle, usize> = HashMap::new();
             let mut consumer_indexes: HashMap<usize, usize> = HashMap::new();
             'work_items: for (widx, w) in work.iter().enumerate() {
+                let mut s = tracer.start_with_context("tfhe_computation", &loop_ctx);
                 let fhe_op: SupportedFheOperations = w
                     .fhe_operation
                     .try_into()
@@ -305,16 +297,11 @@ async fn tfhe_worker_cycle(
                     } else {
                         // If this cannot be computed, we need to
                         // exclude it from the DF graph.
-                        println!("Uncomputable found");
                         uncomputable.insert(widx, ());
                         continue 'work_items;
                     }
                 }
 
-                // copy for setting error in database
-                let mut s = tracer.start_with_context("tfhe_computation", &loop_ctx);
-
-                // TODO-ap
                 let n = graph.add_node(
                     w.output_handle.clone(),
                     w.fhe_operation.into(),
@@ -328,7 +315,6 @@ async fn tfhe_worker_cycle(
                     "handle",
                     format!("0x{}", hex::encode(&w.output_handle)),
                 ));
-                //s.set_attribute(KeyValue::new("output_type", db_type as i64));
                 let input_types = input_ciphertexts
                     .iter()
                     .map(|i| match i {
@@ -362,34 +348,23 @@ async fn tfhe_worker_cycle(
                     }
                 }
             }
+            s_schedule.end();
 
             // Execute the DFG with the current tenant's keys
+            let mut s_outer = tracer.start_with_context("wait_and_update_fhe_work", &loop_ctx);
             {
                 let mut rk = tenant_key_cache.write().await;
                 let keys = rk.get(tenant_id).expect("Can't get tenant key from cache");
 
-                // TODO-ap
                 // Schedule computations in parallel as dependences allow
                 let mut sched = Scheduler::new(&mut graph.graph, args.coprocessor_fhe_threads);
-                let now = std::time::SystemTime::now();
-                sched.schedule(keys.sks.clone()).await.map_err(|_| {
-                    let err: Box<dyn std::error::Error + Send + Sync> =
-                        Box::new(FhevmError::BadInputs);
-                    error!(target: "tfhe_worker",
-                        { error = err },
-                        "error while processing work item"
-                    )
-                });
-                println!(
-                    "GRAPH Execution time (sched): {}",
-                    now.elapsed().unwrap().as_millis()
-                );
+                sched.schedule(keys.sks.clone()).await?;
             }
             // Extract the results from the graph
             let res = graph.get_results().unwrap();
 
-            // TODO-ap filter out computations that could not complete
             for (idx, w) in work.iter().enumerate() {
+                // Filter out computations that could not complete
                 if uncomputable.contains_key(&idx) {
                     continue;
                 }
@@ -478,9 +453,9 @@ async fn tfhe_worker_cycle(
                     }
                 }
             }
+            s_outer.end();
         }
         s.end();
-        s_outer.end();
 
         trx.commit().await?;
 

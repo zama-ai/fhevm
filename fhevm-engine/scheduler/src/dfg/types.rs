@@ -11,19 +11,40 @@ pub enum DFGTaskInput {
 
 #[derive(Debug)]
 pub enum SchedulerError {
+    UnsatisfiedDependence,
+    CyclicDependence,
+    DataflowGraphError,
+    UnknownOperation(i32),
+    InvalidInputs,
     SchedulerError,
 }
 
-impl std::error::Error for SchedulerError {
-    fn description(&self) -> &str {
-        match self {
-            SchedulerError::SchedulerError => "Generic scheduler error",
-        }
-    }
-}
+impl std::error::Error for SchedulerError {}
 
 impl std::fmt::Display for SchedulerError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "SchedulerError")
+        match self {
+            Self::UnsatisfiedDependence => {
+                write!(
+                    f,
+                    "Unsatisfied depence in dataflow graph at scheduling time"
+                )
+            }
+            Self::CyclicDependence => {
+                write!(f, "Depence cycle in dataflow graph")
+            }
+            Self::DataflowGraphError => {
+                write!(f, "Inconsistent dataflow graph error")
+            }
+            Self::UnknownOperation(op) => {
+                write!(f, "Unknown operation with code: {op}")
+            }
+            Self::InvalidInputs => {
+                write!(f, "Invalid inputs to FHE operation")
+            }
+            Self::SchedulerError => {
+                write!(f, "Generic scheduler error")
+            }
+        }
     }
 }

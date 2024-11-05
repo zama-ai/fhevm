@@ -3,16 +3,9 @@ pub mod types;
 
 use crate::dfg::types::*;
 use anyhow::Result;
-use std::{cell::RefCell, collections::HashMap};
-// use executor::server::{
-//     CompressedCiphertext, ComputationState, Input, SyncComputation, SyncComputeError,
-//     SyncComputeRequest,
-// };
 use daggy::{petgraph::graph::node_index, Dag, NodeIndex};
-use fhevm_engine_common::types::{
-    FhevmError, Handle, SupportedFheCiphertexts, HANDLE_LEN, SCALAR_LEN,
-};
-use tfhe::integer::U256;
+use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts};
+use std::cell::RefCell;
 
 thread_local! {
     pub static THREAD_POOL: RefCell<Option<rayon::ThreadPool>> = const {RefCell::new(None)};
@@ -31,26 +24,25 @@ impl std::fmt::Debug for OpNode {
         f.debug_struct("OpNode")
             .field("OP", &self.opcode)
             .field(
-                "Result",
-                &format_args!("{0:?} (0x{0:X})", &self.result_handle[0]),
+                "Result handle",
+                &format_args!("{:02X?}", &self.result_handle),
             )
             .finish()
     }
 }
 
 #[derive(Default, Debug)]
-pub struct DFGraph<'a> {
+pub struct DFGraph {
     pub graph: Dag<OpNode, OpEdge>,
-    produced_handles: HashMap<&'a Handle, NodeIndex>,
 }
 
-impl<'a> DFGraph<'a> {
+impl DFGraph {
     pub fn add_node(
         &mut self,
         rh: Handle,
         opcode: i32,
         inputs: Vec<DFGTaskInput>,
-    ) -> Result<NodeIndex, SchedulerError> {
+    ) -> Result<NodeIndex> {
         Ok(self.graph.add_node(OpNode {
             opcode,
             result: None,
@@ -63,7 +55,7 @@ impl<'a> DFGraph<'a> {
         source: usize,
         destination: usize,
         consumer_input: usize,
-    ) -> Result<(), SchedulerError> {
+    ) -> Result<()> {
         let consumer_index = node_index(destination);
         self.graph[consumer_index].inputs[consumer_input] = DFGTaskInput::Dependence(Some(source));
         let _edge = self
@@ -73,20 +65,20 @@ impl<'a> DFGraph<'a> {
                 node_index(destination),
                 consumer_input as u8,
             )
-            .map_err(|_| SchedulerError::SchedulerError)?;
+            .map_err(|_| SchedulerError::CyclicDependence)?;
         Ok(())
     }
 
     pub fn get_results(
         &mut self,
-    ) -> Result<Vec<(Handle, (SupportedFheCiphertexts, i16, Vec<u8>))>, SchedulerError> {
+    ) -> Result<Vec<(Handle, (SupportedFheCiphertexts, i16, Vec<u8>))>> {
         let mut res = Vec::with_capacity(self.graph.node_count());
         for index in 0..self.graph.node_count() {
             let node = self.graph.node_weight_mut(NodeIndex::new(index)).unwrap();
             if let Some(ct) = &node.result {
                 res.push((node.result_handle.clone(), ct.clone()));
             } else {
-                return Err(SchedulerError::SchedulerError);
+                return Err(SchedulerError::DataflowGraphError.into());
             }
         }
         Ok(res)

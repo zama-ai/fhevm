@@ -335,9 +335,9 @@ pub fn run_computation(
     }
 }
 
-pub fn build_taskgraph_from_request<'a, 'b>(
-    dfg: &'a mut DFGraph<'b>,
-    req: &'b SyncComputeRequest,
+pub fn build_taskgraph_from_request(
+    dfg: &mut DFGraph,
+    req: &SyncComputeRequest,
     state: &ComputationState,
 ) -> Result<(), SyncComputeError> {
     let mut produced_handles: HashMap<&Handle, usize> = HashMap::new();
