@@ -33,6 +33,7 @@ message FetchedCiphertext {
   bytes ciphertext_bytes = 1;
   int32 ciphertext_version = 2;
   int32 ciphertext_type = 3;
+  bytes signature = 4;
 }
 
 message TrivialEncryptBatch {

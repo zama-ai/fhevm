@@ -4,16 +4,20 @@ use crate::server::common::FheOperation;
 use crate::server::coprocessor::async_computation_input::Input;
 use crate::server::coprocessor::fhevm_coprocessor_client::FhevmCoprocessorClient;
 use crate::server::coprocessor::{
-    AsyncComputation, AsyncComputationInput, AsyncComputeRequest, GetCiphertextBatch, TrivialEncryptBatch, TrivialEncryptRequestSingle
+    AsyncComputation, AsyncComputationInput, AsyncComputeRequest, GetCiphertextBatch,
+    TrivialEncryptBatch, TrivialEncryptRequestSingle,
 };
+use fhevm_engine_common::tfhe_ops::current_ciphertext_version;
 use tonic::metadata::MetadataValue;
-use utils::{default_api_key, decrypt_ciphertexts, random_handle, wait_until_all_ciphertexts_computed};
+use utils::{
+    decrypt_ciphertexts, default_api_key, random_handle, wait_until_all_ciphertexts_computed,
+};
 
 mod errors;
 mod inputs;
 mod operators;
-mod utils;
 mod random;
+mod utils;
 
 #[tokio::test]
 async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
@@ -144,6 +148,26 @@ async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
         assert!(output.responses[2].ciphertext.is_some());
         assert!(output.responses[3].ciphertext.is_some());
         assert!(output.responses[4].ciphertext.is_none());
+
+        let ct1 = output.responses[0].ciphertext.clone().unwrap();
+        let ct2 = output.responses[1].ciphertext.clone().unwrap();
+        let ct3 = output.responses[2].ciphertext.clone().unwrap();
+        let ct4 = output.responses[3].ciphertext.clone().unwrap();
+
+        assert_eq!(ct1.ciphertext_type, ct_type);
+        assert_eq!(ct2.ciphertext_type, ct_type);
+        assert_eq!(ct3.ciphertext_type, ct_type);
+        assert_eq!(ct4.ciphertext_type, ct_type);
+
+        assert_eq!(ct1.ciphertext_version, current_ciphertext_version() as i32);
+        assert_eq!(ct2.ciphertext_version, current_ciphertext_version() as i32);
+        assert_eq!(ct3.ciphertext_version, current_ciphertext_version() as i32);
+        assert_eq!(ct4.ciphertext_version, current_ciphertext_version() as i32);
+
+        assert_eq!(ct1.signature.len(), 65);
+        assert_eq!(ct2.signature.len(), 65);
+        assert_eq!(ct3.signature.len(), 65);
+        assert_eq!(ct4.signature.len(), 65);
     }
 
     Ok(())
@@ -158,18 +182,34 @@ async fn test_custom_function() -> Result<(), Box<dyn std::error::Error>> {
         .connect("postgresql://postgres:postgres@127.0.0.1:5432/coprocessor")
         .await?;
 
-    let res = utils::decrypt_ciphertexts(&pool, 1, vec![
-        hex::decode("de2c33227b24ca797f7ad88495648446c70612c17f416d27513c77f2d0810200").unwrap(),
-        hex::decode("51d1d882d1e5ce54f15523558edd2746766c14cd5177faeb659418c57cec0200").unwrap(),
-        hex::decode("e3935354c48514fdfb0cbd965ad506d8865a2c88efffffca94dc9e0cecec0300").unwrap(),
-        hex::decode("3eed1ad1d1aa030b3bb3d3587ece4661a56945affcdee6bbdc02e28779380200").unwrap(),
-        hex::decode("55fe0c4283fbad83dc6fab91c3f85c098ada7a70ca8089e3076043efc9c60200").unwrap(),
-        hex::decode("3b42e61e197b88c083b4a2ab4b0ec542775e2282bebcc574e45d09f9779a0200").unwrap(),
-        hex::decode("9718b490a41e20fecaa90a7ab75e74de0c4105213ac3e5d8b5368ab813160200").unwrap(),
-        hex::decode("164c6d678ddf95f12bfa6b0fee7fd8b12e6221bd0c587640ae61dfc624f20200").unwrap(),
-        hex::decode("52a01af58c3d2b8ed1d04cd846706c1d214b72e079bd0930827628cb69180200").unwrap(),
-        hex::decode("d8d493764d46b62187b6a42917d58e297922d9ebab0dee306324e8c78a130200").unwrap(),
-    ]).await.unwrap();
+    let res = utils::decrypt_ciphertexts(
+        &pool,
+        1,
+        vec![
+            hex::decode("de2c33227b24ca797f7ad88495648446c70612c17f416d27513c77f2d0810200")
+                .unwrap(),
+            hex::decode("51d1d882d1e5ce54f15523558edd2746766c14cd5177faeb659418c57cec0200")
+                .unwrap(),
+            hex::decode("e3935354c48514fdfb0cbd965ad506d8865a2c88efffffca94dc9e0cecec0300")
+                .unwrap(),
+            hex::decode("3eed1ad1d1aa030b3bb3d3587ece4661a56945affcdee6bbdc02e28779380200")
+                .unwrap(),
+            hex::decode("55fe0c4283fbad83dc6fab91c3f85c098ada7a70ca8089e3076043efc9c60200")
+                .unwrap(),
+            hex::decode("3b42e61e197b88c083b4a2ab4b0ec542775e2282bebcc574e45d09f9779a0200")
+                .unwrap(),
+            hex::decode("9718b490a41e20fecaa90a7ab75e74de0c4105213ac3e5d8b5368ab813160200")
+                .unwrap(),
+            hex::decode("164c6d678ddf95f12bfa6b0fee7fd8b12e6221bd0c587640ae61dfc624f20200")
+                .unwrap(),
+            hex::decode("52a01af58c3d2b8ed1d04cd846706c1d214b72e079bd0930827628cb69180200")
+                .unwrap(),
+            hex::decode("d8d493764d46b62187b6a42917d58e297922d9ebab0dee306324e8c78a130200")
+                .unwrap(),
+        ],
+    )
+    .await
+    .unwrap();
 
     println!("{:#?}", res);
 

@@ -11,7 +11,7 @@ use crate::types::{CoprocessorError, TfheTenantKeys};
 use crate::utils::sort_computations_by_dependencies;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::SignerSync;
-use alloy::sol_types::SolStruct;
+use alloy::sol_types::{Eip712Domain, SolStruct};
 use coprocessor::async_computation_input::Input;
 use coprocessor::{
     FetchedCiphertext, GetCiphertextSingleResponse, InputCiphertextResponse,
@@ -85,11 +85,12 @@ lazy_static! {
     .unwrap();
 }
 
-pub struct CoprocessorService {
+struct CoprocessorService {
     pool: sqlx::Pool<sqlx::Postgres>,
     args: crate::cli::Args,
     tenant_key_cache: std::sync::Arc<tokio::sync::RwLock<lru::LruCache<i32, TfheTenantKeys>>>,
     signer: PrivateKeySigner,
+    get_ciphertext_eip712_domain: Eip712Domain,
 }
 
 pub async fn run_server(
@@ -129,12 +130,7 @@ pub async fn run_server_iteration(
             NonZeroUsize::new(args.tenant_key_cache_size as usize).unwrap(),
         )));
 
-    let service = CoprocessorService {
-        pool,
-        args,
-        tenant_key_cache,
-        signer,
-    };
+    let service = CoprocessorService::new(pool, args, tenant_key_cache, signer);
 
     Server::builder()
         .add_service(
@@ -148,7 +144,7 @@ pub async fn run_server_iteration(
     Ok(())
 }
 
-// for EIP712 signature
+// for EIP712 input signature
 alloy::sol! {
     struct CiphertextVerificationForCopro {
         address aclAddress;
@@ -184,6 +180,13 @@ alloy::sol! {
 //       },
 //     ],
 //   };
+
+alloy::sol! {
+    struct GetCiphertextResponseSignatureData {
+        uint256 handle;
+        bytes ciphertext_digest;
+    }
+}
 
 pub struct GrpcTracer {
     ctx: opentelemetry::Context,
@@ -284,6 +287,25 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
 }
 
 impl CoprocessorService {
+    fn new(
+        pool: sqlx::Pool<sqlx::Postgres>,
+        args: crate::cli::Args,
+        tenant_key_cache: std::sync::Arc<tokio::sync::RwLock<lru::LruCache<i32, TfheTenantKeys>>>,
+        signer: PrivateKeySigner,
+    ) -> Self {
+        let get_ciphertext_eip712_domain = alloy::sol_types::eip712_domain! {
+            name: "GetCiphertextResponse",
+            version: "1",
+        };
+        CoprocessorService {
+            pool,
+            args,
+            tenant_key_cache,
+            signer,
+            get_ciphertext_eip712_domain,
+        }
+    }
+
     async fn upload_inputs_impl(
         &self,
         request: tonic::Request<InputUploadBatch>,
@@ -880,13 +902,33 @@ impl CoprocessorService {
         }
 
         for h in &req.handles {
+            let ciphertext: Result<Option<FetchedCiphertext>, tonic::Status> = the_map
+                .get(h)
+                .map(|res| {
+                    let signature_data = GetCiphertextResponseSignatureData {
+                        handle: alloy::primitives::U256::from_be_slice(&h),
+                        ciphertext_digest: Keccak256::digest(&the_map.get(h).unwrap().ciphertext)
+                            .to_vec()
+                            .into(),
+                    };
+                    let signing_hash =
+                        signature_data.eip712_signing_hash(&self.get_ciphertext_eip712_domain);
+                    let signature = self.signer.sign_hash_sync(&signing_hash).map_err(|e| {
+                        CoprocessorError::Eip712SigningFailure {
+                            error: e.to_string(),
+                        }
+                    })?;
+                    Ok(FetchedCiphertext {
+                        ciphertext_bytes: res.ciphertext.clone(),
+                        ciphertext_type: res.ciphertext_type as i32,
+                        ciphertext_version: res.ciphertext_version as i32,
+                        signature: signature.into(),
+                    })
+                })
+                .transpose();
             result.responses.push(GetCiphertextSingleResponse {
                 handle: h.clone(),
-                ciphertext: the_map.get(h).map(|res| FetchedCiphertext {
-                    ciphertext_bytes: res.ciphertext.clone(),
-                    ciphertext_type: res.ciphertext_type as i32,
-                    ciphertext_version: res.ciphertext_version as i32,
-                }),
+                ciphertext: ciphertext?,
             });
         }
 
