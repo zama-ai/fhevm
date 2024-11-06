@@ -4,9 +4,12 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math/big"
 	"os"
+	"sort"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -145,8 +148,9 @@ type ComputationStore interface {
 }
 
 type ApiImpl struct {
-	address            common.Address
-	aclContractAddress common.Address
+	address                common.Address
+	aclContractAddress     common.Address
+	contractStorageAddress common.Address
 }
 
 type SessionImpl struct {
@@ -182,7 +186,9 @@ type SessionComputationStore struct {
 }
 
 type EvmStorageComputationStore struct {
-	evmStorage ChainStorageApi
+	evmStorage             ChainStorageApi
+	currentBlockNumber     int64
+	contractStorageAddress common.Address
 }
 
 type handleOffset struct {
@@ -195,25 +201,25 @@ type ciphertextSegment struct {
 	invalidated bool
 }
 
-func (coprocApi *ApiImpl) CreateSession(blockNumber int64, api ChainStorageApi) ExecutorSession {
+func (executorApi *ApiImpl) CreateSession(blockNumber int64, api ChainStorageApi) ExecutorSession {
 	return &SessionImpl{
-		address:            coprocApi.address,
-		aclContractAddress: coprocApi.aclContractAddress,
+		address:            executorApi.address,
+		aclContractAddress: executorApi.aclContractAddress,
 		isCommitted:        false,
 		sessionStore: &SessionComputationStore{
-			isCommitted:               false,
-			inserts:                   make([]ComputationToInsert, 0),
-			insertedHandles:           make(map[string]int),
-			invalidatedSegments:       make(map[SegmentId]bool),
-			segmentCount:              0,
-			blockNumber:               blockNumber,
-			underlyingCiphertextStore: &EvmStorageComputationStore{evmStorage: api},
+			isCommitted:         false,
+			inserts:             make([]ComputationToInsert, 0),
+			insertedHandles:     make(map[string]int),
+			invalidatedSegments: make(map[SegmentId]bool),
+			segmentCount:        0,
+			blockNumber:         blockNumber,
+			underlyingCiphertextStore: &EvmStorageComputationStore{
+				evmStorage:             api,
+				contractStorageAddress: executorApi.contractStorageAddress,
+				currentBlockNumber:     blockNumber,
+			},
 		},
 	}
-}
-
-func (coprocApi *ApiImpl) FlushFheResultsToState(blockNumber int64, api ChainStorageApi) ExecutorSession {
-	panic("TODO: implement flushing to the blockchain state")
 }
 
 func (sessionApi *SessionImpl) Commit() error {
@@ -331,16 +337,97 @@ func (dbApi *SessionComputationStore) Commit() error {
 	return nil
 }
 
+func blockNumberToQueueItemCountAddress(blockNumber int64) common.Hash {
+	return common.BigToHash(big.NewInt(blockNumber))
+}
+
+func blockQueueStorageAddress(blockNumber int64, ctNumber *big.Int) common.Hash {
+	toHash := common.BigToHash(big.NewInt(blockNumber))
+	initialOffsetHash := crypto.Keccak256(toHash[:])
+	res := big.NewInt(0)
+	res.SetBytes(initialOffsetHash)
+	return common.BytesToHash(res.Add(res, ctNumber).Bytes())
+}
+
 func (dbApi *EvmStorageComputationStore) InsertComputationBatch(computations []ComputationToInsert) error {
+	// storage layout for the late commit queue:
+	//
+	// blockNumber address - stores the amount of ciphertexts in the queue in the block,
+	// block number is directly converted to storage address which has count for the queue
+	// blockNumber represents when ciphertexts are to be commited to the storage
+	// and queue should be cleaned up after the block passes
+	//
+	// queue address - hash block number converted to 32 big endian bytes
+	// this address contains all the handles to be computed in this block
+	// example:
+	// keccak256(blockNumber) + 0 - 1st ciphertext handle in the block
+	// keccak256(blockNumber) + 1 - 2nd ciphertext handle in the block
+	// keccak256(blockNumber) + 2 - 3rd ciphertext handle in the block
+
+	// prepare for dynamic evaluation. Say, users want to evaluate ciphertext
+	// in 5 or 10 blocks from current block, depending on how much they pay.
+	// We create buckets, how many blocks in the future user wants
+	// his ciphertexts to be evaluated
+	buckets := make(map[int64][]*ComputationToInsert)
+	// index the buckets
 	for _, comp := range computations {
-		dbApi.InsertComputation(comp)
+		if buckets[comp.CommitBlockId] == nil {
+			buckets[comp.CommitBlockId] = make([]*ComputationToInsert, 0)
+		}
+		buckets[comp.CommitBlockId] = append(buckets[comp.CommitBlockId], &comp)
+	}
+	// collect all their keys and sort because golang doesn't traverse map
+	// in deterministic order
+	allKeys := make([]int, 0)
+	for k, _ := range buckets {
+		allKeys = append(allKeys, int(k))
+	}
+	sort.Ints(allKeys)
+
+	// iterate all buckets and put items to their appropriate block queues
+	for _, key := range allKeys {
+		queueBlockNumber := int64(key)
+		bucket := buckets[queueBlockNumber]
+
+		countAddress := blockNumberToQueueItemCountAddress(queueBlockNumber)
+		ciphertextsInBlock := dbApi.evmStorage.GetState(dbApi.contractStorageAddress, countAddress).Big()
+		one := big.NewInt(1)
+
+		for _, comp := range bucket {
+			handleOutputAddress := blockQueueStorageAddress(queueBlockNumber, ciphertextsInBlock)
+			ciphertextsInBlock = ciphertextsInBlock.Add(ciphertextsInBlock, one)
+			dbApi.evmStorage.SetState(dbApi.contractStorageAddress, handleOutputAddress, common.Hash(comp.OutputHandle))
+		}
+
+		// set updated count back
+		dbApi.evmStorage.SetState(dbApi.contractStorageAddress, countAddress, common.BigToHash(ciphertextsInBlock))
 	}
 
 	return nil
 }
 
+func (executorApi *ApiImpl) FlushFheResultsToState(blockNumber int64, api ChainStorageApi) ExecutorSession {
+	// cleanup the queue for the block number
+	countAddress := blockNumberToQueueItemCountAddress(blockNumber)
+	ciphertextsInBlock := api.GetState(executorApi.contractStorageAddress, countAddress).Big()
+	ctCount := ciphertextsInBlock.Int64()
+	zero := common.BigToHash(big.NewInt(0))
+
+	// zero out queue ciphertexts
+	for i := 0; i < int(ctCount); i++ {
+		ctNumber := big.NewInt(int64(i))
+		ctAddr := blockQueueStorageAddress(blockNumber, ctNumber)
+		api.SetState(executorApi.contractStorageAddress, ctAddr, zero)
+	}
+
+	// set 0 as count
+	api.SetState(executorApi.contractStorageAddress, countAddress, zero)
+
+	panic("TODO: implement flushing of ciphertext data to the blockchain state")
+}
+
 func (dbApi *EvmStorageComputationStore) InsertComputation(computation ComputationToInsert) error {
-	panic("TODO: implement insert computation to EVM")
+	return dbApi.InsertComputationBatch([]ComputationToInsert{computation})
 }
 
 func (dbApi *EvmStorageComputationStore) Commit() error {
@@ -362,9 +449,12 @@ func InitExecutor() (ExecutorApi, error) {
 	}
 	aclContractAddress := common.HexToAddress(aclContractAddressHex)
 
+	// pick hardcoded value in the beginning, we can change later
+	storageAddress := common.HexToAddress("0x0000000000000000000000000000000000000070")
 	apiImpl := ApiImpl{
-		address:            fhevmContractAddress,
-		aclContractAddress: aclContractAddress,
+		address:                fhevmContractAddress,
+		aclContractAddress:     aclContractAddress,
+		contractStorageAddress: storageAddress,
 	}
 
 	return &apiImpl, nil
