@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - amina/fhevm-coprocessor-workflows
     paths:
       - .github/workflows/fhevm-smart-contracts.yml
       - .github/workflows/common-docker.yml
@@ -14,8 +13,8 @@ on:
       - published
 
 concurrency:
-  group: fhevm-smart-contracts
-  cancel-in-progress: true
+  group: fhevm-smart-contracts-${{ github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
   docker-smart-contracts:

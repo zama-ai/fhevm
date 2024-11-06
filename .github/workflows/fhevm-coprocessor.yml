@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - amina/fhevm-coprocessor-workflows
     paths:
       - .github/workflows/fhevm-coprocessor.yml
       - .github/workflows/common-docker.yml
@@ -14,8 +13,8 @@ on:
       - published
 
 concurrency:
-  group: fhevm-coprocessor
-  cancel-in-progress: true
+  group: fhevm-coprocessor-${{ github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
   docker-coprocessor:
