@@ -1,4 +1,4 @@
-name: "fhEVM smart contracts Docker Image"
+name: "fhEVM Coprocessor Docker Image"
 
 on:
   push:
@@ -6,19 +6,19 @@ on:
       - main
       - amina/fhevm-coprocessor-workflows
     paths:
-      - .github/workflows/fhevm-smart-contracts.yml
+      - .github/workflows/fhevm-coprocessor.yml
       - .github/workflows/common-docker.yml
-      - contracts/**
+      - fhevm-engine/coprocessor/**
   release:
     types:
       - published
 
 concurrency:
-  group: fhevm-smart-contracts
+  group: fhevm-coprocessor
   cancel-in-progress: true
 
 jobs:
-  docker-smart-contracts:
+  docker-coprocessor:
     uses: ./.github/workflows/common-docker.yml
     permissions:
       contents: "read"
@@ -26,13 +26,10 @@ jobs:
       packages: "write"
     with:
       working-directory: "."
-      push_image: true
-      image-name: "fhevm-smart-contracts"
-      image-dev-name: "fhevm-smart-contracts-dev"
-      generate-dev-image: true
-      docker-file: "contracts/operations/docker/ci.dockerfile"
-      docker-file-dev: "contracts/operations/docker/dev.dockerfile"
-      image-dev-description: "fhevm smart contracts dev image"
+      push_image: ${{ github.event_name == 'release' || github.ref_name == 'main' }}
+      image-name: "fhevm-coprocessor"
+      generate-dev-image: false
+      docker-file: "fhevm-engine/coprocessor/Dockerfile"
       arm-build: true
 
     secrets:
@@ -46,4 +43,4 @@ jobs:
       - name: Success
         run: echo Pipeline Done
     needs:
-      - docker-smart-contracts
+      - docker-coprocessor

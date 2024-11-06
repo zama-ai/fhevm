@@ -82,13 +82,13 @@ jobs:
 
       - uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf # v3.1.0
         with:
-          dockerfile: ${{ inputs.working-directory }}/contracts/operations/docker/${{ inputs.docker-file }}
+          dockerfile: ${{ inputs.working-directory }}/${{ inputs.docker-file }}
           failure-threshold: none
 
       - uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf # v3.1.0
         if: ${{ inputs.generate-dev-image }}
         with:
-          dockerfile: ${{ inputs.working-directory }}/contracts/operations/docker/${{ inputs.docker-file-dev }}
+          dockerfile: ${{ inputs.working-directory }}/${{ inputs.docker-file-dev }}
           failure-threshold: none
 
       - name: Set up SSH
@@ -134,7 +134,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           build-args: |
             BLOCKCHAIN_ACTIONS_TOKEN=${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
-          file: ${{ inputs.working-directory }}/contracts/operations/docker/${{ inputs.docker-file }}
+          file: ${{ inputs.working-directory }}/${{ inputs.docker-file }}
           push: ${{ inputs.push_image }}
           pull: false
           tags: ghcr.io/zama-ai/${{ inputs.image-name }}:${{env.DOCKER_TAG_IMAGE }},ghcr.io/zama-ai/${{ inputs.image-name }}:latest
@@ -164,7 +164,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           build-args: |
             BLOCKCHAIN_ACTIONS_TOKEN=${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
-          file: ${{ inputs.working-directory }}/contracts/operations/docker/${{ inputs.docker-file-dev }}
+          file: ${{ inputs.working-directory }}/${{ inputs.docker-file-dev }}
           push: ${{ inputs.push_image }}
           pull: false
           tags: ghcr.io/zama-ai/${{ inputs.image-dev-name }}:${{env.DOCKER_TAG_IMAGE}},ghcr.io/zama-ai/${{ inputs.image-dev-name }}:latest
