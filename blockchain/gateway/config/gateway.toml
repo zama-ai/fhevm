@@ -1,0 +1,124 @@
+# Set to true to start an emulated KMS backend.
+# This option enables a debug mode where a mocked KMS backend is used instead of a real one.
+# Useful for testing and development purposes without needing actual KMS services.
+debug = false
+
+# configure to match the KMS mode: centralized or threshold
+mode = "centralized"
+
+# api url binding
+api_url = "0.0.0.0:7077"
+
+# Ethereum Settings
+# Configuration settings related to the Ethereum network and smart contract event interactions.
+[ethereum]
+
+# chain id
+chain_id = 12345
+
+# EIP712 salt, optional
+# A static salt value used for EIP712 signing in order to distingush different dApps
+# Computed as the sha 256 digest of the string "Zama TKMS ASC"
+# Outcommented for now since it needs to be supported in fhevmjs see https://github.com/zama-ai/fhevmjs/issues/116
+# eip712_salt = "e4edb9fdce7fd5cfd13ebe4ff9931f986b5df5b30ed798e2d72d1ce400b615d9"
+
+# Listener type, one of FHEVM_NATIVE or COPROCESSOR.
+# Specifies the type of listener to be used for processing Ethereum events.
+# - FHEVM_NATIVE: Use the FHEVM native listener.
+# - COPROCESSOR: Use the Coprocessor listener.
+listener_type = "COPROCESSOR"
+
+# URL of the Ethereum WebSocket server.
+# Used for establishing a WebSocket connection to an Ethereum node.
+wss_url = "ws://localhost:8746"
+
+# Used for establishing an http connection to an Ethereum node.
+http_url = "http://localhost:8745"
+
+# Address of the FHE library smart ontract on the Ethereum blockchain.
+# Used for interactions with the FHE library contract.
+fhe_lib_address = "000000000000000000000000000000000000005d"
+
+# Api key used to retrieve the ciphertext using gRPC call for Coprocessor architecture
+coprocessor_api_key = "a1503fb6-d79b-4e9e-826d-44cf262f3e05"
+
+# Address of the OraclePredeploy or GatewayPredeploy contract on the
+# Ethereum blockchain. Used for pre-deployment operations related to the oracle.
+oracle_predeploy_address = "096b4679d45fB675d4e2c1E4565009Cec99A12B1"
+
+# Test Address used for testing asynchronous decryption on the Ethereum blockchain.
+test_async_decrypt_address = "99F460504563579922352932A42172B3c04a1420"
+
+# Verifying contract address for KMSVerifier EIP712
+kmsverifier_vc_address = "208De73316E44722e16f6dDFF40881A3e4F86104"
+
+# Version for KMSVerifier EIP712
+kmsverifier_version = "1"
+
+# Name for KMSVerifier EIP712
+kmsverifier_name = "KMSVerifier"
+
+# Reencryption EIP712 domain info from https://github.com/zama-ai/fhevmjs/blob/19fd3b8d63b587f45a3cf1e53c443999d8865de6/src/sdk/keypair.ts#L53-L62
+# Version for Reencryption EIP712
+reenc_domain_version = "1"
+
+# Name for Reencryption EIP712
+reenc_domain_name = "Authorization token"
+
+# address of the ACL contract
+acl_address = "339EcE85B9E11a3A3AA557582784a15d7F82AAf2"
+
+# Address of the coprocessor to query for ciphertexts (gRPC)
+coprocessor_url = "http://127.0.0.1:50055"
+
+# optionally explicitly set the gas price
+# gas_price = 1_000_000_000
+
+# optionally explicitly set transaction gas limit
+gas_limit = 5_000_000
+
+# base gas price, one of current_gas_price or eip1559_max_priority_fee_per_gas
+base_gas = "eip1559_max_priority_fee_per_gas"
+
+# gas escalator increase in % of base_gas
+gas_escalator_increase = 20
+
+# relayer private key
+relayer_key = "7ec931411ad75a7c201469a385d6f18a325d4923f9f213bd882bbea87e160b67"
+
+# KMS Settings
+# Configuration settings related to the Key Management System (KMS).
+[kms]
+# Address of the KMS smart contract on the blockchain.
+# Used for interactions with the KMS contract.
+contract_address = "wasm1yyca08xqdgvjz0psg56z67ejh9xms6l436u8y58m82npdqqhmmtqas0cl7"
+
+# Mnemonic phrase for accessing the KMS.
+# This is a human-readable string of words used to derive cryptographic keys.
+# It should be kept secure and private.
+mnemonic = "bachelor similar spirit copper rely carbon web hobby conduct wrap conduct wire shine parrot erosion divert crucial balance lock reason price ignore educate open"
+
+# Base URL of the KMS service.
+# Used for making HTTP requests to the KMS service.
+address = "http://localhost:9090"
+
+# TODO stop-gap these will eventually be fetched from the ASC. This line can be removed if the key get setup with the simulator
+# Should be removed as part of https://github.com/zama-ai/fhevm/issues/548
+# Key ID used within the KMS.
+# Identifies the specific key to be used for cryptographic operations within the KMS.
+key_id = "408d8cbaa51dece7f782fe04ba0b1c1d017b1088"
+
+# List of prefixed of URL endpoints for the public storage of the KMS.
+# The key in the map is the MPC ID of the party. I.e. [1; amount of parties]
+[kms.public_storage]
+1 = "http://localhost:8088/public-storage/"
+2 = "http://localhost:8088/public-storage/"
+3 = "http://localhost:8088/public-storage/"
+4 = "http://localhost:8088/public-storage/"
+
+[storage]
+url = "http://localhost:8088"
+
+[tracing]
+service_name = "gateway"
+endpoint = "http://localhost:4317"

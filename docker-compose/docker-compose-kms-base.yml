@@ -11,26 +11,52 @@ name: zama-kms-base
 # TODO: add minio to simulate s3 + some config file for the endpoint
 
 services:
-  # KV-Store
-  # TODO: add healthcheck
+  # KMS Blockchain
   dev-kms-blockchain-validator:
-    image: ghcr.io/zama-ai/kms-blockchain-asc-dev:${DOCKER_IMAGES_TAG}
+    image: ghcr.io/zama-ai/kms-blockchain-asc:${DOCKER_IMAGES_TAG}
+    healthcheck:
+      test: "wget -Sq --spider http://localhost:26657/status"
+      interval: 1s
+      timeout: 1s
+      retries: 5
+      start_period: 10s
+    ports:
+      - "36656:26656"
+      - "36657:26657"
+      - "1317:1317"
+      - "9090:9090"
     volumes:
-      - ../asc/asc.wasm:/app/asc.wasm
-      - ../asc/ethereum_ipsc.wasm:/app/ethereum_ipsc.wasm
-      - ../asc/bootstrap_asc_threshold.sh:/app/bootstrap.sh
+      - ../blockchain/scripts:/app/scripts
+      - validator_secrets:/app/secrets
+    entrypoint: [ "/app/scripts/bootstrap_validator.sh" ]
 
+  # Smart contract deployment
+  dev-kms-blockchain-asc-deploy:
+    image: ghcr.io/zama-ai/kms-blockchain-asc:${DOCKER_IMAGES_TAG}
+    depends_on:
+      dev-kms-blockchain-validator:
+        condition: service_healthy
+    environment:
+      VALIDATOR_NODE_ENDPOINT: http://dev-kms-blockchain-validator:26657
     build:
       context: .
-      dockerfile: blockchain/contracts/operations/docker/dev.dockerfile
+      dockerfile: blockchain/contracts/operations/docker/ci.dockerfile
+    volumes:
+      - ../blockchain/scripts:/app/scripts
+      - validator_secrets:/app/secrets
+    entrypoint: >
+      /bin/sh -c " sleep 10 && chmod +x /app/scripts/setup_wallets.sh && sleep 10 && chmod +x /app/scripts/deploy_contracts.sh && /app/scripts/setup_wallets.sh && /app/scripts/deploy_contracts.sh "
 
+  # KV-Store
   dev-kv-store:
-    image: ghcr.io/zama-ai/kms-blockchain-gateway-dev:latest
+    image: ghcr.io/zama-ai/kms-blockchain-gateway-dev:${DOCKER_IMAGES_TAG}
     build:
       context: .
       dockerfile: blockchain/gateway/operations/docker/dev.dockerfile
     ports:
       - "8088:8088"
+    volumes:
+      - ../blockchain/gateway/config/:/app/gateway/config
     command:
       - "kv_store"
     healthcheck:
@@ -74,7 +100,7 @@ services:
 
   # kms-core base image from the kms-core dev image is derived
   kms-core-base-build:
-    image: ghcr.io/zama-ai/kms-service:latest
+    image: ghcr.io/zama-ai/kms-service:${DOCKER_IMAGES_TAG}
     build:
       context: .
       dockerfile: core/service/operations/docker/ci.dockerfile
@@ -83,6 +109,7 @@ services:
 
 volumes:
   minio_secrets:
+  validator_secrets:
 
 
 secrets:

@@ -94,7 +94,7 @@ clone-coprocessor: $(WORKDIR)/
 run-coprocessor: $(WORKDIR)/ check-coprocessor check-all-test-repo
 ifeq ($(CENTRALIZED_KMS),false)
 	@echo "CENTRALIZED_KMS is false, we are extracting keys from kms-core-1"
-	$(MAKE) copy-keys-threshold
+	$(MAKE) copy-keys-threshold-key-gen
 	
 else ifeq ($(CENTRALIZED_KMS),true)
 	@echo "CENTRALIZED_KMS is true, copying fhe keys from dev image"
@@ -145,6 +145,10 @@ endif
 
 copy-keys-threshold:
 	@bash ./scripts/copy_fhe_keys_threshold.sh zama-kms-threshold-dev-kms-core-1-1 $(PWD)/network-fhe-keys
+	@bash ./scripts/update_signers.sh $(PWD)/work_dir/fhevm/.env.example.deployment $(PWD)/network-fhe-keys
+
+copy-keys-threshold-key-gen:
+	@bash ./scripts/copy_fhe_keys_threshold_key_gen.sh zama-kms-threshold_keys $(PWD)/network-fhe-keys
 	@bash ./scripts/update_signers.sh $(PWD)/work_dir/fhevm/.env.example.deployment $(PWD)/network-fhe-keys 
 
 run-full:
