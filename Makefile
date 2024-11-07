@@ -91,21 +91,29 @@ clone-coprocessor: $(WORKDIR)/
 	cd $(WORKDIR) && git clone git@github.com:zama-ai/fhevm-backend.git
 	cd $(COPROCESSOR_PATH) && git checkout $(COPROCESSOR_VERSION)
 
+
+init-db:
+	$(MAKE) copy-keys-threshold-key-gen
+	cp -v network-fhe-keys/* $(COPROCESSOR_PATH)/fhevm-engine/fhevm-keys
+	cd $(COPROCESSOR_PATH)/fhevm-engine/coprocessor && make init_db
+
+
+
 run-coprocessor: $(WORKDIR)/ check-coprocessor check-all-test-repo
 ifeq ($(CENTRALIZED_KMS),false)
 	@echo "CENTRALIZED_KMS is false, we are extracting keys from kms-core-1"
-	$(MAKE) copy-keys-threshold-key-gen
+	
 	
 else ifeq ($(CENTRALIZED_KMS),true)
 	@echo "CENTRALIZED_KMS is true, copying fhe keys from dev image"
 	$(MAKE) generate-fhe-keys-registry-dev-image
 else
 	@echo "CENTRALIZED_KMS is set to an unrecognized value: $(CENTRALIZED_KMS)"
-endif
 	cp -v network-fhe-keys/* $(COPROCESSOR_PATH)/fhevm-engine/fhevm-keys
+endif
 	cd $(COPROCESSOR_PATH)/fhevm-engine/coprocessor && make cleanup
 	cd $(COPROCESSOR_PATH)/fhevm-engine/coprocessor && cargo install sqlx-cli
-	cd $(COPROCESSOR_PATH)/fhevm-engine/coprocessor && make init_db
+	cd $(COPROCESSOR_PATH)/fhevm-engine/coprocessor && make run
 
 stop-coprocessor: $(WORKDIR)/ 
 	cd $(COPROCESSOR_PATH)/fhevm-engine/coprocessor && make cleanup

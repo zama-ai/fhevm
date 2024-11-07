@@ -35,16 +35,55 @@ fi
 
 mkdir -p "$NETWORK_KEYS_PUBLIC_PATH"
 
-# File paths in MinIO
+# Get all the keys' info from the gateway
+if ! KEYS_URLS_JSON=$(curl -f http://localhost:7077/keyurl); then
+    echo "Error: Failed to get keys from gateway at http://localhost:7077/keyurl. Is gateway running ?"
+    exit 1
+fi
+
+# Get the keys' urls and extract the ID at the end
+PKS_URL=$(jq -r '.response.fhe_key_info[0].fhe_public_key.urls[0]' <<< "$KEYS_URLS_JSON")
+SKS_URL=$(jq -r '.response.fhe_key_info[0].fhe_server_key.urls[0]' <<< "$KEYS_URLS_JSON")
+CRS_URL=$(jq -r '.response.crs."2048".urls[0]' <<< "$KEYS_URLS_JSON")
+SIGNER1_URL=$(jq -r '.response.verf_public_key[0].verf_public_key_address' <<< "$KEYS_URLS_JSON")
+SIGNER2_URL=$(jq -r '.response.verf_public_key[1].verf_public_key_address' <<< "$KEYS_URLS_JSON")
+SIGNER3_URL=$(jq -r '.response.verf_public_key[2].verf_public_key_address' <<< "$KEYS_URLS_JSON")
+SIGNER4_URL=$(jq -r '.response.verf_public_key[3].verf_public_key_address' <<< "$KEYS_URLS_JSON")
+
+# Extract only the ID part from each URL
+PKS_ID=$(basename "$PKS_URL")
+SKS_ID=$(basename "$SKS_URL")
+CRS_ID=$(basename "$CRS_URL")
+SIGNER1_ID=$(basename "$SIGNER1_URL")
+SIGNER2_ID=$(basename "$SIGNER2_URL")
+SIGNER3_ID=$(basename "$SIGNER3_URL")
+SIGNER4_ID=$(basename "$SIGNER4_URL")
+
+# Print the IDs
+echo $PKS_ID
+echo $SKS_ID
+echo $CRS_ID
+echo $SIGNER1_ID
+echo $SIGNER2_ID
+echo $SIGNER3_ID
+echo $SIGNER4_ID
+
+# Update the array for file download paths
 FILES_TO_DOWNLOAD=(
-  "PUB-p1/PublicKey/d4d17a412a6533599b010c8ffc3d6ebdc6b1cfad"
-  "PUB-p1/ServerKey/d4d17a412a6533599b010c8ffc3d6ebdc6b1cfad"
-  "PUB-p1/CRS/d8d94eb3a23d22d3eb6b5e7b694e8afcd571d906"
-  "PUB-p1/VerfAddress/e164d9de0bec6656928726433cc56bef6ee8417a"
-  "PUB-p2/VerfAddress/e164d9de0bec6656928726433cc56bef6ee8417a"
-  "PUB-p3/VerfAddress/e164d9de0bec6656928726433cc56bef6ee8417a"
-  "PUB-p4/VerfAddress/e164d9de0bec6656928726433cc56bef6ee8417a"
+  "PUB-p1/PublicKey/$PKS_ID"
+  "PUB-p1/ServerKey/$SKS_ID"
+  "PUB-p1/CRS/$CRS_ID"
+  "PUB-p1/VerfAddress/$SIGNER1_ID"
+  "PUB-p2/VerfAddress/$SIGNER2_ID"
+  "PUB-p3/VerfAddress/$SIGNER3_ID"
+  "PUB-p4/VerfAddress/$SIGNER4_ID"
 )
+
+# Print the file paths for confirmation
+echo "Files to download:"
+for path in "${FILES_TO_DOWNLOAD[@]}"; do
+    echo "$path"
+  done
 
 echo "###########################################################"
 echo "All the required keys have been downloaded to $KEYS_FULL_PATH"
