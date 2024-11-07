@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Script to create keys by downloading from MinIO and copying them to the appropriate folder
-# Usage: ./caller_script.sh [LOCAL_BUILD_PUBLIC_KEY_PATH]
+# Usage: ./copy_fhe_keys_threshold_key_gen.sh [LOCAL_BUILD_PUBLIC_KEY_PATH]
 
 set -Eeuo pipefail
 

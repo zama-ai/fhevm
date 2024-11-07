@@ -58,13 +58,76 @@ _Optionally_ you may update `KEY_GEN` value in `.env`. Default is `false`
     make run-kms
     ```
 
-2. Run the fhevm coprocessor network (including a geth node).
+2. Go to `kms-core`, checkout `levent/candidate-release-rc25` and run the key-gen:
+  
+    ```
+    git checkout levent/candidate-release-rc25
+    cd blockchain/simulator
+    cargo run --bin simulator -- -f config/local_threshold.toml insecure-key-gen
+    ```
+    You should see the public key material here: [http://localhost:9001/browser/kms](http://localhost:9001/browser/kms)
+    Now, run the CRS generation:
+    ```
+    cargo run --bin simulator -- -f config/local_threshold.toml crs-gen --max-num-bits 2048
+    ```
+
+    Tips: 
+    One can check the status by checking the connector log:
+
+    <details>
+    <summary> 💡 Check CRS generation status as it may take ~ 20 mn </summary>
+  
+    ```bash
+    docker logs zama-kms-threshold-dev-kms-connector-1-1 > log_connector.txt 2>&1  &&  grep crsgen log_connector.txt -i
+    ```
+    ```bash
+    2024-11-07T14:13:09.775076Z  INFO kms_blockchain_connector::application::kms_core_sync: Running KMS operation with value: CrsGen(CrsGenValues { max_num_bits: 2048, eip712_name: "eip712_name", eip712_version: "1.0.4", eip712_chain_id: HexVector([42, 0, 0... 0, 0, 0, 0, 0, 0, 0, 0]), eip712_verifying_contract: "0x00dA6BF26964af9D7EED9e03E53415d37aa960EE", eip712_salt: Some(HexVector([0, 1, 2, 3, , 31])) })
+        2024-11-07T14:41:09.871344Z  INFO kms_blockchain_connector::application::kms_core_sync: Sending response to the blockchain: CrsGenResponse
+        2024-11-07T14:41:09.871382Z  INFO send_result{tx_id=7087d7a61cbbd4dc0bbd1702107502bb9b88d00b}: kms_blockchain_connector::infrastructure::blockchain: Sending result to contract: ExecuteContractRequest { message: KmsMessage { txn_id: Some(TransactionId(HexVector([112, 135, 215, 166, 28, 187, 212, 220, 11, 189, 23, 2, 16, 117, 2, 187, 155, 136, 208, 11]))), value: CrsGenResponse(CrsGenResponseValues { request_id: "7087d7a61cbbd4dc0bbd1702107502bb9b88d00b", digest: "370d1b033f45014a3a546d111383d5f7b8ee5ec5", signature: HexVector([64, 0, 0, 0, ...44, 252]), max_num_bits: 2048, param: Default }) }, gas_limit: 3000000, funds: None }
+    ```
+    </details> 
+   
+
+3. Run the fhevm coprocessor network (including a geth node).
 
     ```bash
     make run-coprocessor
     ```
 
-3. Clone the dependant repositories, if not already present.
+   📝 At this step keys are not loaded in coprocessor DB. 
+
+4. In a separate terminal, return to the same branch `levent/candidate-release-rc25` where the keys and crs have been generated. 
+
+
+    ```bash
+    cd $path-to-kms-core
+    cd blockchain/gateway
+    ```
+    🚨 For **threshold mode** update the gateway config file (__config/gateway.toml__) with the following parameters:
+    - mode = "threshold" (default is centralized)
+
+    ```bash
+    cargo run --bin gateway
+    ```
+
+    Wait for the gateway to start listening for blocks and print block numbers.
+
+    ```bash
+    ...
+    2024-10-16T15:35:22.876765Z  INFO gateway::events::manager: 🧱 block number: 10
+    2024-10-16T15:35:27.787809Z  INFO gateway::events::manager: 🧱 block number: 11
+    ...
+    ```
+
+4. Retrieve the fhe keys and load them in coprocessor DB
+
+    ```bash
+    make init-db
+    ```
+    This command will make a call to `/keyurl` endpoint of gateway and retrieve the corresponding keys from the minio server.
+    Then, keys will be copied into right folder in coprocessor and inserted in the DB
+
+4. Clone the dependant repositories, if not already present.
 
     ```bash
     make check-all-test-repo
@@ -72,8 +135,8 @@ _Optionally_ you may update `KEY_GEN` value in `.env`. Default is `false`
 
 4. Verify if the kms signer address is correctly configured.
 
-   Value in `network-fhe-keys/eth_address_signer` should match
-   `ADDRESS_KMS_SIGNER_0` in `work_dir/fhevm/.env.example.deployment`. If not
+   Value in `network-fhe-keys/signerN` should match
+   `ADDRESS_KMS_SIGNER_N` in `work_dir/fhevm/.env.example.deployment`. If not
    update ENV file. 
 
 5. Fund test accounts and deploy the fhevm solidity contracts.
@@ -84,34 +147,7 @@ _Optionally_ you may update `KEY_GEN` value in `.env`. Default is `false`
 
     If prompted to install npm dependencies, enter `y`.
 
-6. In a separate terminal, checkout relevant branch and run the gateway.
 
-
-    ```bash
-    cd $path-to-kms-core
-    git checkout mano/update-config-for-rc20
-    cd blockchain/gateway
-    ```
-  🚨 For **threshold mode** update the gateway config file (__config/gateway.toml__) with the following parameters:
-  - mode = "threshold" (default is centralized)
-  - key_id = "d4d17a412a6533599b010c8ffc3d6ebdc6b1cfad" (default is "408d8cbaa51dece7f782fe04ba0b1c1d017b1088")
-
-
-    ```bash
-    cargo run --bin gateway
-    ```
-
-
-    Wait for the gateway to start listening for blocks and print block numbers.
-
-    ```bash
-    ...
-    2024-10-16T15:35:22.876765Z  INFO gateway::events::manager: 🧱 block number: 10
-    2024-10-16T15:35:27.787809Z  INFO gateway::events::manager: 🧱 block number: 11
-    2024-10-16T15:35:27.787809Z  INFO gateway::events::manager: 🧱 block number: 12
-    2024-10-16T15:35:27.787809Z  INFO gateway::events::manager: 🧱 block number: 13
-    ...
-    ```
 
 7. From the fhevm repo, run one of the test for trivial decryption.
 
@@ -123,7 +159,7 @@ _Optionally_ you may update `KEY_GEN` value in `.env`. Default is `false`
 
     ```
     make stop-coprocessor
-    make stop-full
+    make stop-kms
     ```
 
     The gateway will automatically exit as the connection will be closed from blockchain side.
