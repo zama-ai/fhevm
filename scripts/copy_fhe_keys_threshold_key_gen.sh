@@ -93,8 +93,8 @@ echo "###########################################################"
 echo "Copying keys to $NETWORK_KEYS_PUBLIC_PATH..."
 
 
-./scripts/download_from_minio.sh "localhost:9000" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" "kms" "${FILES_TO_DOWNLOAD[0]}" "$NETWORK_KEYS_PUBLIC_PATH/sks"
-./scripts/download_from_minio.sh "localhost:9000" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" "kms" "${FILES_TO_DOWNLOAD[1]}" "$NETWORK_KEYS_PUBLIC_PATH/pks"
+./scripts/download_from_minio.sh "localhost:9000" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" "kms" "${FILES_TO_DOWNLOAD[0]}" "$NETWORK_KEYS_PUBLIC_PATH/pks"
+./scripts/download_from_minio.sh "localhost:9000" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" "kms" "${FILES_TO_DOWNLOAD[1]}" "$NETWORK_KEYS_PUBLIC_PATH/sks"
 ./scripts/download_from_minio.sh "localhost:9000" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" "kms" "${FILES_TO_DOWNLOAD[2]}" "$NETWORK_KEYS_PUBLIC_PATH/pp"
 ./scripts/download_from_minio.sh "localhost:9000" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" "kms" "${FILES_TO_DOWNLOAD[3]}" "$NETWORK_KEYS_PUBLIC_PATH/signer1"
 ./scripts/download_from_minio.sh "localhost:9000" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" "kms" "${FILES_TO_DOWNLOAD[4]}" "$NETWORK_KEYS_PUBLIC_PATH/signer2"
