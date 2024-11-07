@@ -148,7 +148,7 @@ copy-keys-threshold:
 	@bash ./scripts/update_signers.sh $(PWD)/work_dir/fhevm/.env.example.deployment $(PWD)/network-fhe-keys
 
 copy-keys-threshold-key-gen:
-	@bash ./scripts/copy_fhe_keys_threshold_key_gen.sh zama-kms-threshold_keys $(PWD)/network-fhe-keys
+	@bash ./scripts/copy_fhe_keys_threshold_key_gen.sh $(PWD)/network-fhe-keys
 	@bash ./scripts/update_signers.sh $(PWD)/work_dir/fhevm/.env.example.deployment $(PWD)/network-fhe-keys 
 
 run-full:
@@ -167,6 +167,11 @@ stop-full:
 	$(MAKE) stop-coprocessor
 
 
+trigger-key-gen-threshold:
+	cargo run --bin simulator -- -f config/local_threshold.toml insecure-key-gen
+
+trigger-crs-gen-threshold:
+	cargo run --bin simulator -- -f config/local_threshold.toml crs-gen --max-num-bits 256
 
 run-kms-threshold:
 	docker compose -vvv -f docker-compose/docker-compose-kms-base.yml -f docker-compose/docker-compose-kms-threshold.yml -f docker-compose/docker-compose-kms-threshold-ghcr.yml up -d --wait
