@@ -22,9 +22,12 @@ FROM debian:bullseye-slim
 RUN useradd -m zama
 
 COPY --from=build /app/fhevm-engine/target/release/coprocessor /usr/local/bin/
+COPY --from=build /app/fhevm-engine/target/release/cli /usr/local/bin/coprocessor-cli
 
 RUN chown zama:zama /usr/local/bin/coprocessor && \
     chmod 500 /usr/local/bin/coprocessor
+RUN chown zama:zama /usr/local/bin/coprocessor-cli && \
+    chmod 500 /usr/local/bin/coprocessor-cli
 
 USER zama
 

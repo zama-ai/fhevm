@@ -4,7 +4,7 @@ use ::tracing::{error, info};
 use fhevm_engine_common::keys::{FhevmKeys, SerializedFhevmKeys};
 use tokio::task::JoinSet;
 
-mod cli;
+mod daemon_cli;
 mod db_queries;
 mod metrics;
 mod server;
@@ -16,7 +16,7 @@ mod types;
 mod utils;
 
 fn main() {
-    let args = crate::cli::parse_args();
+    let args = crate::daemon_cli::parse_args();
     assert!(
         args.work_items_batch_size < args.tenant_key_cache_size,
         "Work items batch size must be less than tenant key cache size"
@@ -31,7 +31,7 @@ fn main() {
 
 // separate function for testing
 pub fn start_runtime(
-    args: crate::cli::Args,
+    args: crate::daemon_cli::Args,
     close_recv: Option<tokio::sync::watch::Receiver<bool>>,
 ) {
     tokio::runtime::Builder::new_multi_thread()
@@ -65,7 +65,7 @@ pub fn start_runtime(
 static TRACING_INIT: Once = Once::new();
 
 async fn async_main(
-    args: crate::cli::Args,
+    args: crate::daemon_cli::Args,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     TRACING_INIT.call_once(|| {
         tracing_subscriber::fmt().json().with_level(true).init();

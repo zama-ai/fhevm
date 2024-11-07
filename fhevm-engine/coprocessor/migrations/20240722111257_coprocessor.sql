@@ -59,4 +59,4 @@ CREATE TABLE IF NOT EXISTS tenants (
 CREATE INDEX IF NOT EXISTS computations_dependencies_index ON computations USING GIN (dependencies);
 CREATE INDEX IF NOT EXISTS computations_completed_index ON computations (is_completed);
 CREATE INDEX IF NOT EXISTS computations_errors_index ON computations (is_error);
-CREATE INDEX IF NOT EXISTS tenants_by_api_key ON tenants (tenant_api_key);
+CREATE UNIQUE INDEX IF NOT EXISTS tenants_by_api_key ON tenants (tenant_api_key);
