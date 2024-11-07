@@ -95,7 +95,7 @@ clone-coprocessor: $(WORKDIR)/
 init-db:
 	$(MAKE) copy-keys-threshold-key-gen
 	cp -v network-fhe-keys/* $(COPROCESSOR_PATH)/fhevm-engine/fhevm-keys
-	cd $(COPROCESSOR_PATH)/fhevm-engine/coprocessor && make init_db
+	cd $(COPROCESSOR_PATH)/fhevm-engine/coprocessor && make init
 
 
 
