@@ -289,7 +289,7 @@ impl coprocessor::fhevm_coprocessor_server::FhevmCoprocessor for CoprocessorServ
 impl CoprocessorService {
     fn new(
         pool: sqlx::Pool<sqlx::Postgres>,
-        args: crate::cli::Args,
+        args: crate::daemon_cli::Args,
         tenant_key_cache: std::sync::Arc<tokio::sync::RwLock<lru::LruCache<i32, TfheTenantKeys>>>,
         signer: PrivateKeySigner,
     ) -> Self {

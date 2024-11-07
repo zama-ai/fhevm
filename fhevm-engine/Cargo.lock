@@ -1758,7 +1758,7 @@ dependencies = [
 
 [[package]]
 name = "coprocessor"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "actix-web",
  "alloy",
@@ -2190,7 +2190,7 @@ checksum = "0206175f82b8d6bf6652ff7d71a1e27fd2e4efde587fd368662814d6ec1d9ce0"
 
 [[package]]
 name = "executor"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "bincode",
@@ -2235,7 +2235,7 @@ dependencies = [
 
 [[package]]
 name = "fhevm-engine-common"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "bigdecimal",
