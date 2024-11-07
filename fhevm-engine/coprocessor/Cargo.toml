@@ -56,8 +56,8 @@ tonic-build = "0.12"
 
 [[bin]]
 name = "coprocessor"
-path = "src/main.rs"
+path = "src/bin/coprocessor.rs"
 
 [[bin]]
 name = "cli"
-path = "src/tenant_cli.rs"
+path = "src/bin/cli.rs"

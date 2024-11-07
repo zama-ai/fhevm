@@ -1,37 +1,22 @@
 use std::sync::Once;
-
-use ::tracing::{error, info};
 use fhevm_engine_common::keys::{FhevmKeys, SerializedFhevmKeys};
 use tokio::task::JoinSet;
+use ::tracing::{error, info};
 
-mod daemon_cli;
+pub mod daemon_cli;
 mod db_queries;
-mod metrics;
-mod server;
+pub mod metrics;
+pub mod server;
 #[cfg(test)]
 mod tests;
-mod tfhe_worker;
-mod tracing;
+pub mod tfhe_worker;
+pub mod tracing;
 mod types;
 mod utils;
 
-fn main() {
-    let args = crate::daemon_cli::parse_args();
-    assert!(
-        args.work_items_batch_size < args.tenant_key_cache_size,
-        "Work items batch size must be less than tenant key cache size"
-    );
-
-    if args.generate_fhe_keys {
-        generate_dump_fhe_keys();
-    } else {
-        start_runtime(args, None);
-    }
-}
-
 // separate function for testing
 pub fn start_runtime(
-    args: crate::daemon_cli::Args,
+    args: daemon_cli::Args,
     close_recv: Option<tokio::sync::watch::Receiver<bool>>,
 ) {
     tokio::runtime::Builder::new_multi_thread()
@@ -64,8 +49,8 @@ pub fn start_runtime(
 // Used for testing as we would call `async_main()` multiple times.
 static TRACING_INIT: Once = Once::new();
 
-async fn async_main(
-    args: crate::daemon_cli::Args,
+pub async fn async_main(
+    args: daemon_cli::Args,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     TRACING_INIT.call_once(|| {
         tracing_subscriber::fmt().json().with_level(true).init();
@@ -78,17 +63,17 @@ async fn async_main(
     let mut set = JoinSet::new();
     if args.run_server {
         info!(target: "async_main", "Initializing api server");
-        set.spawn(crate::server::run_server(args.clone()));
+        set.spawn(server::run_server(args.clone()));
     }
 
     if args.run_bg_worker {
         info!(target: "async_main", "Initializing background worker");
-        set.spawn(crate::tfhe_worker::run_tfhe_worker(args.clone()));
+        set.spawn(tfhe_worker::run_tfhe_worker(args.clone()));
     }
 
     if !args.metrics_addr.is_empty() {
         info!(target: "async_main", "Initializing metrics server");
-        set.spawn(crate::metrics::run_metrics_server(args.clone()));
+        set.spawn(metrics::run_metrics_server(args.clone()));
     }
 
     if set.is_empty() {
@@ -104,7 +89,7 @@ async fn async_main(
     Ok(())
 }
 
-fn generate_dump_fhe_keys() {
+pub fn generate_dump_fhe_keys() {
     let keys = FhevmKeys::new();
     let ser_keys: SerializedFhevmKeys = keys.into();
     ser_keys.save_to_disk();
