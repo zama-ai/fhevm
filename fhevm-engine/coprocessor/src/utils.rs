@@ -168,7 +168,7 @@ pub fn sort_computations_by_dependencies<'a>(
     Ok((res, handles_to_check_in_db))
 }
 
-pub fn db_url(args: &crate::cli::Args) -> String {
+pub fn db_url(args: &crate::daemon_cli::Args) -> String {
     if let Some(db_url) = &args.database_url {
         return db_url.clone();
     }

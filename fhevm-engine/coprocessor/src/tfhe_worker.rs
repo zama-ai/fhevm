@@ -46,7 +46,7 @@ lazy_static! {
 }
 
 pub async fn run_tfhe_worker(
-    args: crate::cli::Args,
+    args: crate::daemon_cli::Args,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     loop {
         // here we log the errors and make sure we retry
@@ -59,7 +59,7 @@ pub async fn run_tfhe_worker(
 }
 
 async fn tfhe_worker_cycle(
-    args: &crate::cli::Args,
+    args: &crate::daemon_cli::Args,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let tracer = opentelemetry::global::tracer("tfhe_worker");
 

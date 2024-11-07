@@ -1,4 +1,4 @@
-use crate::cli::Args;
+use crate::daemon_cli::Args;
 use fhevm_engine_common::tfhe_ops::current_ciphertext_version;
 use fhevm_engine_common::types::SupportedFheCiphertexts;
 use fhevm_engine_common::utils::{safe_deserialize, safe_deserialize_key};
@@ -214,10 +214,9 @@ pub async fn setup_test_user(pool: &sqlx::PgPool) -> Result<(), Box<dyn std::err
         .expect("can't read public params");
     sqlx::query!(
         "
-            INSERT INTO tenants(tenant_api_key, tenant_id, chain_id, acl_contract_address, verifying_contract_address, pks_key, sks_key, public_params, cks_key)
+            INSERT INTO tenants(tenant_api_key, chain_id, acl_contract_address, verifying_contract_address, pks_key, sks_key, public_params, cks_key)
             VALUES (
                 'a1503fb6-d79b-4e9e-826d-44cf262f3e05',
-                1,
                 12345,
                 '0x339EcE85B9E11a3A3AA557582784a15d7F82AAf2',
                 '0x69dE3158643e738a0724418b21a35FAA20CBb1c5',

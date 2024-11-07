@@ -87,14 +87,14 @@ lazy_static! {
 
 struct CoprocessorService {
     pool: sqlx::Pool<sqlx::Postgres>,
-    args: crate::cli::Args,
+    args: crate::daemon_cli::Args,
     tenant_key_cache: std::sync::Arc<tokio::sync::RwLock<lru::LruCache<i32, TfheTenantKeys>>>,
     signer: PrivateKeySigner,
     get_ciphertext_eip712_domain: Eip712Domain,
 }
 
 pub async fn run_server(
-    args: crate::cli::Args,
+    args: crate::daemon_cli::Args,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     loop {
         if let Err(e) = run_server_iteration(args.clone()).await {
@@ -106,7 +106,7 @@ pub async fn run_server(
 }
 
 pub async fn run_server_iteration(
-    args: crate::cli::Args,
+    args: crate::daemon_cli::Args,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let addr = args
         .server_addr
