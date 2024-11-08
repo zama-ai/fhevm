@@ -85,13 +85,13 @@ _Optionally_ you may update `KEY_GEN` value in `.env`. Default is `false`
     ```
     git checkout levent/candidate-release-rc25
     cd blockchain/simulator
-    cargo run --bin simulator -- -f config/local_threshold.toml insecure-key-gen
+    cargo run --bin simulator -- --max-iter 50 -f config/local_threshold.toml insecure-key-gen
     ```
     You should see the public key material here: [http://localhost:9001/browser/kms](http://localhost:9001/browser/kms)
 
     Now, run the CRS generation:
     ```
-    cargo run --bin simulator -- -f config/local_threshold.toml crs-gen --max-num-bits 2048
+    cargo run --bin simulator -- --max-iter 200 -f config/local_threshold.toml crs-gen --max-num-bits 2048
     ```
 
     <details>
