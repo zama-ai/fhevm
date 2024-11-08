@@ -58,7 +58,29 @@ _Optionally_ you may update `KEY_GEN` value in `.env`. Default is `false`
     make run-kms
     ```
 
-2. Go to `kms-core`, checkout `levent/candidate-release-rc25` and run the key-gen:
+    <details>
+    <summary> 💡 Follow KMS blockchain smart contracts deployment ~ 2 mn </summary>
+  
+    ```bash
+    docker logs zama-kms-threshold-dev-kms-blockchain-asc-deploy-1 -f  
+    ```
+    ```bash
+          Summary of all the addresses:
+      IPSC_ETHERMINT_ADDRESS : wasm1wug8sewp6cedgkmrmvhl3lf3tulagm9hnvy8p0rppz9yjw0g4wtqhs9hr8
+      IPSC_ETHEREUM_ADDRESS : wasm1qg5ega6dykkxc307y25pecuufrjkxkaggkkxh7nad0vhyhtuhw3sq29c3m
+      ASC_DEBUG_ADDRESS : wasm1yyca08xqdgvjz0psg56z67ejh9xms6l436u8y58m82npdqqhmmtqas0cl7
+      ASC_ETHERMINT_ADDRESS : wasm1yw4xvtc43me9scqfr2jr2gzvcxd3a9y4eq7gaukreugw2yd2f8tsu3v7ad
+      ASC_ETHEREUM_ADDRESS : wasm1cnuw3f076wgdyahssdkd0g3nr96ckq8cwa2mh029fn5mgf2fmcms9ax00l
+
+      +++++++++++++++++++++++++++
+      Contracts setups successful
+      +++++++++++++++++++++++++++
+
+    </details> 
+    
+ 
+
+2. Go to `kms-core`, checkout `levent/candidate-release-rc25` and run the `key-gen` and `crs-gen`:
   
     ```
     git checkout levent/candidate-release-rc25
@@ -66,13 +88,11 @@ _Optionally_ you may update `KEY_GEN` value in `.env`. Default is `false`
     cargo run --bin simulator -- -f config/local_threshold.toml insecure-key-gen
     ```
     You should see the public key material here: [http://localhost:9001/browser/kms](http://localhost:9001/browser/kms)
+
     Now, run the CRS generation:
     ```
     cargo run --bin simulator -- -f config/local_threshold.toml crs-gen --max-num-bits 2048
     ```
-
-    Tips: 
-    One can check the status by checking the connector log:
 
     <details>
     <summary> 💡 Check CRS generation status as it may take ~ 20 mn </summary>
@@ -94,7 +114,16 @@ _Optionally_ you may update `KEY_GEN` value in `.env`. Default is `false`
     make run-coprocessor
     ```
 
-   📝 At this step keys are not loaded in coprocessor DB. 
+   📝 At this step keys are not loaded in coprocessor DB.
+   <details>
+    <summary> 💡 Why are we starting the coprocessor if keys are not available ? </summary>
+  
+    We have to do it to satisfy the gateway, gateway needs to conenct to the host BC node (geth here) in order to listen events.
+
+    We need the gateway (1) to be able to call `\keyurl` endpoint in order to retrieve the identifiers associated to each keys (publicKey, serverKey, CRS ...).
+
+    Then (2) we  download keys (with identifiers) from minio (S3 bucket like storage)
+    </details>  
 
 4. In a separate terminal, return to the same branch `levent/candidate-release-rc25` where the keys and crs have been generated. 
 
@@ -119,6 +148,14 @@ _Optionally_ you may update `KEY_GEN` value in `.env`. Default is `false`
     ...
     ```
 
+    <details>
+    <summary> 💡 Check the keys are ready by calling `\keyurl` endpoint </summary>
+  
+    ```bash
+    curl  http://localhost:7077/keyurl
+    ```
+    </details> 
+
 4. Retrieve the fhe keys and load them in coprocessor DB
 
     ```bash
@@ -133,7 +170,7 @@ _Optionally_ you may update `KEY_GEN` value in `.env`. Default is `false`
     make check-all-test-repo
     ```
 
-4. Verify if the kms signer address is correctly configured.
+4. [Optional] Verify if the kms signer addresses is correctly configured.
 
    Value in `network-fhe-keys/signerN` should match
    `ADDRESS_KMS_SIGNER_N` in `work_dir/fhevm/.env.example.deployment`. If not
@@ -176,4 +213,9 @@ _Optionally_ you may update `KEY_GEN` value in `.env`. Default is `false`
     npx hardhat test --network localCoprocessor --grep 'test async decrypt uint32$'
     npx hardhat test --network localCoprocessor --grep 'test async decrypt uint64$'
     npx hardhat test --network localCoprocessor --grep 'test async decrypt address$'
+    ```
+2. PASSING TEST - Non trivial decrypt with input mechanism
+
+    ```bash
+    npx hardhat test --network localCoprocessor --grep 'test async decrypt bool$'
     ```

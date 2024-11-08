@@ -45,7 +45,7 @@ services:
       - ../blockchain/scripts:/app/scripts
       - validator_secrets:/app/secrets
     entrypoint: >
-      /bin/sh -c " sleep 10 && chmod +x /app/scripts/setup_wallets.sh && sleep 10 && chmod +x /app/scripts/deploy_contracts.sh && /app/scripts/setup_wallets.sh && /app/scripts/deploy_contracts.sh "
+      /bin/sh -c "  chmod +x /app/scripts/setup_wallets.sh && chmod +x /app/scripts/deploy_contracts.sh && sleep 5 && /app/scripts/setup_wallets.sh && /app/scripts/deploy_contracts.sh "
 
   # KV-Store
   dev-kv-store:

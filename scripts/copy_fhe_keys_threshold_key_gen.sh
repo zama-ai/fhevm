@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/sh
 
 # Script to create keys by downloading from MinIO and copying them to the appropriate folder
 # Usage: ./copy_fhe_keys_threshold_key_gen.sh [LOCAL_BUILD_PUBLIC_KEY_PATH]
@@ -92,14 +92,13 @@ echo "###########################################################"
 # Copy the required files to the specified public path
 echo "Copying keys to $NETWORK_KEYS_PUBLIC_PATH..."
 
-
-./scripts/download_from_minio.sh "localhost:9000" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" "kms" "${FILES_TO_DOWNLOAD[0]}" "$NETWORK_KEYS_PUBLIC_PATH/pks"
-./scripts/download_from_minio.sh "localhost:9000" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" "kms" "${FILES_TO_DOWNLOAD[1]}" "$NETWORK_KEYS_PUBLIC_PATH/sks"
-./scripts/download_from_minio.sh "localhost:9000" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" "kms" "${FILES_TO_DOWNLOAD[2]}" "$NETWORK_KEYS_PUBLIC_PATH/pp"
-./scripts/download_from_minio.sh "localhost:9000" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" "kms" "${FILES_TO_DOWNLOAD[3]}" "$NETWORK_KEYS_PUBLIC_PATH/signer1"
-./scripts/download_from_minio.sh "localhost:9000" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" "kms" "${FILES_TO_DOWNLOAD[4]}" "$NETWORK_KEYS_PUBLIC_PATH/signer2"
-./scripts/download_from_minio.sh "localhost:9000" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" "kms" "${FILES_TO_DOWNLOAD[5]}" "$NETWORK_KEYS_PUBLIC_PATH/signer3"
-./scripts/download_from_minio.sh "localhost:9000" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" "kms" "${FILES_TO_DOWNLOAD[6]}" "$NETWORK_KEYS_PUBLIC_PATH/signer4"
+curl  "http://localhost:9000/kms/${FILES_TO_DOWNLOAD[0]}" -o "$NETWORK_KEYS_PUBLIC_PATH/pks"
+curl  "http://localhost:9000/kms/${FILES_TO_DOWNLOAD[1]}" -o "$NETWORK_KEYS_PUBLIC_PATH/sks"
+curl  "http://localhost:9000/kms/${FILES_TO_DOWNLOAD[2]}" -o "$NETWORK_KEYS_PUBLIC_PATH/pp"
+curl  "http://localhost:9000/kms/${FILES_TO_DOWNLOAD[3]}" -o "$NETWORK_KEYS_PUBLIC_PATH/signer1"
+curl  "http://localhost:9000/kms/${FILES_TO_DOWNLOAD[4]}" -o "$NETWORK_KEYS_PUBLIC_PATH/signer2"
+curl  "http://localhost:9000/kms/${FILES_TO_DOWNLOAD[5]}" -o "$NETWORK_KEYS_PUBLIC_PATH/signer3"
+curl  "http://localhost:9000/kms/${FILES_TO_DOWNLOAD[6]}" -o "$NETWORK_KEYS_PUBLIC_PATH/signer4"
 
 echo "###########################################################"
 echo "All keys have been copied to $NETWORK_KEYS_PUBLIC_PATH"
