@@ -206,16 +206,16 @@ _Optionally_ you may update `KEY_GEN` value in `.env`. Default is `false`
 1. PASSING TESTS - All tests for trivial decrypt should now pass.
 
     ```bash
-    npx hardhat test --network localCoprocessor --grep 'test async decrypt bool$'
-    npx hardhat test --network localCoprocessor --grep 'test async decrypt uint4$'
-    npx hardhat test --network localCoprocessor --grep 'test async decrypt uint8$'
-    npx hardhat test --network localCoprocessor --grep 'test async decrypt uint16$'
-    npx hardhat test --network localCoprocessor --grep 'test async decrypt uint32$'
-    npx hardhat test --network localCoprocessor --grep 'test async decrypt uint64$'
-    npx hardhat test --network localCoprocessor --grep 'test async decrypt address$'
+    npx hardhat test --grep 'test async decrypt bool$'
+    npx hardhat test --grep 'test async decrypt uint4$'
+    npx hardhat test --grep 'test async decrypt uint8$'
+    npx hardhat test --grep 'test async decrypt uint16$'
+    npx hardhat test --grep 'test async decrypt uint32$'
+    npx hardhat test --grep 'test async decrypt uint64$'
+    npx hardhat test --grep 'test async decrypt address$'
     ```
 2. PASSING TEST - Non trivial decrypt with input mechanism
 
     ```bash
-    npx hardhat test --network localCoprocessor --grep 'test async decrypt bool$'
+    npx hardhat test --grep 'test async decrypt uint64 non-trivial'
     ```
