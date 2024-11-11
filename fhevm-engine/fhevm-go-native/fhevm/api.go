@@ -341,12 +341,91 @@ func blockNumberToQueueItemCountAddress(blockNumber int64) common.Hash {
 	return common.BigToHash(big.NewInt(blockNumber))
 }
 
-func blockQueueStorageAddress(blockNumber int64, ctNumber *big.Int) common.Hash {
+func blockQueueStorageLayout(blockNumber int64, ctNumber int64) NativeQueueAddressLayout {
 	toHash := common.BigToHash(big.NewInt(blockNumber))
+	// main storage prefix
+	// number is on the right bitwise, should never overwrite storage prefix
+	// because block numbers are much less than 256 bit numbers
+	copy(toHash[:], "main")
 	initialOffsetHash := crypto.Keccak256(toHash[:])
-	res := big.NewInt(0)
+	copy(toHash[:], "bigscalar")
+	bigScalarOffsetHash := crypto.Keccak256(toHash[:])
+	bigScalarNum := new(big.Int)
+	bigScalarNum.SetBytes(bigScalarOffsetHash)
+	// 2048 bit is maximum supported number
+	// one 2048 bit contains 8 256 bit words
+	bigScalarNum.Add(bigScalarNum, big.NewInt(ctNumber*8))
+
+	one := big.NewInt(1)
+	res := new(big.Int)
 	res.SetBytes(initialOffsetHash)
-	return common.BytesToHash(res.Add(res, ctNumber).Bytes())
+	// four 256 bit words, calculate offset
+	// according to ciphertext number
+	res.Add(res, big.NewInt(ctNumber*4))
+	metadata := common.BytesToHash(res.Bytes())
+	res.Add(res, one)
+	outputHandle := common.BytesToHash(res.Bytes())
+	res.Add(res, one)
+	firstOperand := common.BytesToHash(res.Bytes())
+	res.Add(res, one)
+	secondOperand := common.BytesToHash(res.Bytes())
+	res.Add(res, one)
+	return NativeQueueAddressLayout{
+		metadata:         metadata,
+		outputHandle:     outputHandle,
+		firstOperand:     firstOperand,
+		secondOperand:    secondOperand,
+		bigScalarOperand: common.Hash(bigScalarOffsetHash),
+	}
+}
+
+func computationMetadata(comp ComputationToInsert) common.Hash {
+	var res common.Hash
+
+	// operation type
+	res[0] = byte(comp.Operation)
+	for _, op := range comp.Operands {
+		if op.IsScalar {
+			// set scalar byte
+			res[1] = 1
+			if op.FheUintType > FheUint256 {
+				// set big scalar byte, we'll need big scalar register
+				// for this computation
+				res[2] = 1
+			}
+		}
+	}
+
+	return res
+}
+
+func bytesToMetadata(input common.Hash) ComputationMetadata {
+	return ComputationMetadata{
+		Operation:   FheOp(input[0]),
+		IsScalar:    input[1] > 0,
+		IsBigScalar: input[2] > 0,
+	}
+}
+
+type ComputationMetadata struct {
+	Operation   FheOp
+	IsScalar    bool
+	IsBigScalar bool
+}
+
+type NativeQueueAddressLayout struct {
+	// metadata about the computation
+	// like operation type, is scalar etc
+	metadata common.Hash
+	// output handle of the computation
+	outputHandle common.Hash
+	// first operand to the computation
+	firstOperand common.Hash
+	// second operand to the computation
+	secondOperand common.Hash
+	// if operand size is more than 256 bits
+	// it is stored in special place here
+	bigScalarOperand common.Hash
 }
 
 func (dbApi *EvmStorageComputationStore) InsertComputationBatch(computations []ComputationToInsert) error {
@@ -357,12 +436,16 @@ func (dbApi *EvmStorageComputationStore) InsertComputationBatch(computations []C
 	// blockNumber represents when ciphertexts are to be commited to the storage
 	// and queue should be cleaned up after the block passes
 	//
-	// queue address - hash block number converted to 32 big endian bytes
+	// queue address - hash 'main' prefix and block number converted to 32 big endian bytes
 	// this address contains all the handles to be computed in this block
 	// example:
-	// keccak256(blockNumber) + 0 - 1st ciphertext handle in the block
-	// keccak256(blockNumber) + 1 - 2nd ciphertext handle in the block
-	// keccak256(blockNumber) + 2 - 3rd ciphertext handle in the block
+	// keccak256('main' .. blockNumber) + 0 - operation metadata, is extended scalar operand needed
+	// keccak256('main' .. blockNumber) + 1 - output ciphertext handle
+	// keccak256('main' .. blockNumber) + 2 - first ciphertext argument
+	// keccak256('main' .. blockNumber) + 3 - second ciphertext argument
+	//
+	// if scalar operand is bigger than 256 bit number, we use special
+	// bigscalar address
 
 	// prepare for dynamic evaluation. Say, users want to evaluate ciphertext
 	// in 5 or 10 blocks from current block, depending on how much they pay.
@@ -393,10 +476,18 @@ func (dbApi *EvmStorageComputationStore) InsertComputationBatch(computations []C
 		ciphertextsInBlock := dbApi.evmStorage.GetState(dbApi.contractStorageAddress, countAddress).Big()
 		one := big.NewInt(1)
 
-		for _, comp := range bucket {
-			handleOutputAddress := blockQueueStorageAddress(queueBlockNumber, ciphertextsInBlock)
+		for idx, comp := range bucket {
+			layout := blockQueueStorageLayout(queueBlockNumber, idx)
 			ciphertextsInBlock = ciphertextsInBlock.Add(ciphertextsInBlock, one)
-			dbApi.evmStorage.SetState(dbApi.contractStorageAddress, handleOutputAddress, common.Hash(comp.OutputHandle))
+			metadata := computationMetadata(*comp)
+			dbApi.evmStorage.SetState(dbApi.contractStorageAddress, layout.metadata, metadata)
+			dbApi.evmStorage.SetState(dbApi.contractStorageAddress, layout.outputHandle, common.Hash(comp.OutputHandle))
+			if len(comp.Operands) > 0 {
+				dbApi.evmStorage.SetState(dbApi.contractStorageAddress, layout.firstOperand, common.Hash(comp.Operands[0].Handle))
+			}
+			if len(comp.Operands) > 1 {
+				dbApi.evmStorage.SetState(dbApi.contractStorageAddress, layout.secondOperand, common.Hash(comp.Operands[1].Handle))
+			}
 		}
 
 		// set updated count back
@@ -412,12 +503,26 @@ func (executorApi *ApiImpl) FlushFheResultsToState(blockNumber int64, api ChainS
 	ciphertextsInBlock := api.GetState(executorApi.contractStorageAddress, countAddress).Big()
 	ctCount := ciphertextsInBlock.Int64()
 	zero := common.BigToHash(big.NewInt(0))
+	one := big.NewInt(1)
 
 	// zero out queue ciphertexts
 	for i := 0; i < int(ctCount); i++ {
 		ctNumber := big.NewInt(int64(i))
-		ctAddr := blockQueueStorageAddress(blockNumber, ctNumber)
-		api.SetState(executorApi.contractStorageAddress, ctAddr, zero)
+		ctAddr := blockQueueStorageLayout(blockNumber, ctNumber)
+		metadata := bytesToMetadata(api.GetState(executorApi.contractStorageAddress, ctAddr.metadata))
+		api.SetState(executorApi.contractStorageAddress, ctAddr.metadata, zero)
+		api.SetState(executorApi.contractStorageAddress, ctAddr.outputHandle, zero)
+		api.SetState(executorApi.contractStorageAddress, ctAddr.firstOperand, zero)
+		api.SetState(executorApi.contractStorageAddress, ctAddr.secondOperand, zero)
+		if metadata.IsBigScalar {
+			counter := new(big.Int)
+			counter.SetBytes(ctAddr.bigScalarOperand[:])
+			// max supporter number 2048 is 2048
+			for i := 0; i < 2048/256; i++ {
+				api.SetState(executorApi.contractStorageAddress, common.BigToHash(counter), zero)
+				counter.Add(counter, one)
+			}
+		}
 	}
 
 	// set 0 as count
