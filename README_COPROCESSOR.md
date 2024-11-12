@@ -80,10 +80,10 @@ _Optionally_ you may update `KEY_GEN` value in `.env`. Default is `false`
     
  
 
-2. Go to `kms-core`, checkout `levent/candidate-release-rc25` and run the `key-gen` and `crs-gen`:
+2. Go to `kms-core`, checkout `v0.9.0-rc25` and run the `key-gen` and `crs-gen`:
   
     ```
-    git checkout levent/candidate-release-rc25
+    git checkout v0.9.0-rc25
     cd blockchain/simulator
     cargo run --bin simulator -- --max-iter 50 -f config/local_threshold.toml insecure-key-gen
     ```
@@ -125,7 +125,7 @@ _Optionally_ you may update `KEY_GEN` value in `.env`. Default is `false`
     Then (2) we  download keys (with identifiers) from minio (S3 bucket like storage)
     </details>  
 
-4. In a separate terminal, return to the same branch `levent/candidate-release-rc25` where the keys and crs have been generated. 
+4. In a separate terminal, return to the same branch `v0.9.0-rc25` where the keys and crs have been generated. 
 
 
     ```bash
