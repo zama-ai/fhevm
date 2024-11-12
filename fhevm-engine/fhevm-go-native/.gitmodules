@@ -1,0 +1,3 @@
+[submodule "tfhe-rs"]
+	path = tfhe-rs
+	url = https://github.com/zama-ai/tfhe-rs.git
