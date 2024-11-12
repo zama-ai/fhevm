@@ -477,7 +477,7 @@ func (dbApi *EvmStorageComputationStore) InsertComputationBatch(computations []C
 		one := big.NewInt(1)
 
 		for idx, comp := range bucket {
-			layout := blockQueueStorageLayout(queueBlockNumber, idx)
+			layout := blockQueueStorageLayout(queueBlockNumber, int64(idx))
 			ciphertextsInBlock = ciphertextsInBlock.Add(ciphertextsInBlock, one)
 			metadata := computationMetadata(*comp)
 			dbApi.evmStorage.SetState(dbApi.contractStorageAddress, layout.metadata, metadata)
@@ -507,8 +507,7 @@ func (executorApi *ApiImpl) FlushFheResultsToState(blockNumber int64, api ChainS
 
 	// zero out queue ciphertexts
 	for i := 0; i < int(ctCount); i++ {
-		ctNumber := big.NewInt(int64(i))
-		ctAddr := blockQueueStorageLayout(blockNumber, ctNumber)
+		ctAddr := blockQueueStorageLayout(blockNumber, int64(i))
 		metadata := bytesToMetadata(api.GetState(executorApi.contractStorageAddress, ctAddr.metadata))
 		api.SetState(executorApi.contractStorageAddress, ctAddr.metadata, zero)
 		api.SetState(executorApi.contractStorageAddress, ctAddr.outputHandle, zero)
