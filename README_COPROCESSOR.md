@@ -212,7 +212,10 @@ _Optionally_ you may update `KEY_GEN` value in `.env`. Default is `false`
     npx hardhat test --grep 'test async decrypt uint16$'
     npx hardhat test --grep 'test async decrypt uint32$'
     npx hardhat test --grep 'test async decrypt uint64$'
+    npx hardhat test --grep 'test async decrypt uint128$'
+    npx hardhat test --grep 'test async decrypt uint256$'
     npx hardhat test --grep 'test async decrypt address$'
+    npx hardhat test --grep 'test async decrypt mixed$'
     ```
 2. PASSING TEST - Non trivial decrypt with input mechanism
 
