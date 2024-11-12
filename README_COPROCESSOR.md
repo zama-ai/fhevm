@@ -219,3 +219,34 @@ _Optionally_ you may update `KEY_GEN` value in `.env`. Default is `false`
     ```bash
     npx hardhat test --grep 'test async decrypt uint64 non-trivial'
     ```
+
+
+
+## Some issues you can encounter
+
+  <details>
+  <summary> 💡 Unable to delete a docker network, example at `make clean` step  </summary>
+    ```bash
+    failed to remove network zama-kms-threshold_default: Error response from daemon: error while removing network: network zama-kms-threshold_default id 7f9cb8a4b1107a6c53663c4f5e513f6008bc227122ff64693576c8a686aaeae8 has active endpoints
+    ```
+
+    First try to docker prune the networks
+
+    ```bash
+    docker network prune
+
+    # Check networks
+    docker network ls | grep zama                                                                             
+    4f43b8c0143b   zama-kms-threshold_default   bridge    local
+    ```
+
+    If the network is still here, just restart the docker deamon:
+
+    ```bash
+    # Linux-based OS
+    sudo service docker restart
+    docker network prune
+    ```
+  </details> 
+
+
