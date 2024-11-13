@@ -10,8 +10,6 @@ on:
       - fhevm-engine/coprocessor/**
       - fhevm-engine/.sqlx
       - proto/**
-    paths-ignore:
-      - '**/*.md'
   release:
     types:
       - published
