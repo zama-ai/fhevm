@@ -184,6 +184,9 @@ trigger-crs-gen-threshold:
 run-kms-threshold:
 	docker compose -vvv -f docker-compose/docker-compose-kms-base.yml -f docker-compose/docker-compose-kms-threshold.yml up -d --wait
 
+run-kms-threshold-with-gateway:
+	docker compose -vvv -f docker-compose/docker-compose-kms-base.yml -f docker-compose/docker-compose-kms-threshold.yml -f docker-compose/docker-compose-kms-gateway-threshold.yml up -d --wait
+
 stop-kms-threshold:
 	docker compose -vvv -f docker-compose/docker-compose-kms-base.yml -f docker-compose/docker-compose-kms-threshold.yml down --volumes --remove-orphans
 

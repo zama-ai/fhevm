@@ -10,7 +10,12 @@ services:
     environment:
       - RUST_LOG=debug
     entrypoint: >
-      /bin/sh -c " echo \"Starting tls certificates generation\" && kms-gen-tls-certs --ca-names dev-kms-core-1 dev-kms-core-2 dev-kms-core-3 dev-kms-core-4  && echo \"TLS certificates generated\" && exit 0 "
+      /bin/sh -c "
+      echo \"Starting tls certificates generation\" &&
+      kms-gen-tls-certs --ca-names dev-kms-core-1 dev-kms-core-2 dev-kms-core-3 dev-kms-core-4  &&
+      echo \"TLS certificates generated\" &&
+      exit 0
+      "
     volumes:
       - certs:/app/kms/core/service/certs
 
@@ -30,7 +35,12 @@ services:
       - RUST_LOG=info
       - RUN_MODE=dev
     entrypoint: >
-      /bin/sh -c " echo \"Starting initialization procedure\" && kms-init -a http://dev-kms-core-1:50100 http://dev-kms-core-2:50200 http://dev-kms-core-3:50300 http://dev-kms-core-4:50400 && echo \"Core services initialization done\" && exit 0 "
+      /bin/sh -c "
+      echo \"Starting initialization procedure\" &&
+      kms-init -a http://dev-kms-core-1:50100 http://dev-kms-core-2:50200 http://dev-kms-core-3:50300 http://dev-kms-core-4:50400 &&
+      echo \"Core services initialization done\" &&
+      exit 0
+      "
   # 4. Deploy smart contracts
   dev-kms-blockchain-asc-deploy:
     environment:
@@ -49,6 +59,7 @@ services:
       retries: 5
       start_period: 1s
     volumes:
+      - ../core/service/config/:/app/kms/core/service/config
       - certs:/app/kms/core/service/certs
       - minio_secrets:/minio_secrets
     depends_on:
@@ -57,25 +68,42 @@ services:
       dev-kms-core-certs:
         condition: service_completed_successfully
     environment:
-      - RUST_LOG=debug
+      - RUST_LOG=info
     # We do a key-gen first because otherwise the service won't start
     # NOTE: currently debugging the upload to s3
     # Credentials are set with both credentials file and env-var
     entrypoint: >
-      /bin/sh -c " export AWS_ACCESS_KEY_ID=$$(cat /minio_secrets/access_key) && export AWS_SECRET_ACCESS_KEY=$$(cat /minio_secrets/secret_key) && mkdir -p ~/.aws/ && echo '[default]' > ~/.aws/credentials && echo 'aws_access_key_id = ${AWS_ACCESS_KEY_ID}' >> ~/.aws/credentials && echo 'aws_secret_access_key = ${AWS_SECRET_ACCESS_KEY}' >> ~/.aws/credentials && cat ~/.aws/credentials && echo '[default]' > ~/.aws/config && echo 'output=json' >> ~/.aws/config && echo 'region=us-east-1' >> ~/.aws/config && cat ~/.aws/config && echo 'Generating signing keys' && kms-gen-keys threshold --pub-url s3://kms --aws-s3-endpoint http://dev-s3-mock:9000 --aws-region us-east-1 --priv-url file://./keys --cmd signing-keys  --signing-key-party-id 1 && echo 'Starting kms service' && kms-server threshold --config-file config/compose_1.toml "
+      /bin/sh -c "
+      export AWS_ACCESS_KEY_ID=$$(cat /minio_secrets/access_key) &&
+      export AWS_SECRET_ACCESS_KEY=$$(cat /minio_secrets/secret_key) &&
+      mkdir -p ~/.aws/ &&
+      echo '[default]' > ~/.aws/credentials &&
+      echo 'aws_access_key_id = ${AWS_ACCESS_KEY_ID}' >> ~/.aws/credentials &&
+      echo 'aws_secret_access_key = ${AWS_SECRET_ACCESS_KEY}' >> ~/.aws/credentials &&
+      cat ~/.aws/credentials &&
+      echo '[default]' > ~/.aws/config &&
+      echo 'output=json' >> ~/.aws/config &&
+      echo 'region=us-east-1' >> ~/.aws/config &&
+      cat ~/.aws/config &&
+      echo 'Generating signing keys' &&
+      kms-gen-keys threshold --pub-url s3://kms --aws-s3-endpoint http://dev-s3-mock:9000 --aws-region us-east-1 --priv-url file://./keys --cmd signing-keys  --signing-key-party-id 1 &&
+      echo 'Starting kms service' &&
+      kms-server threshold --config-file config/compose_1.toml
+      "
 
   dev-kms-connector-1:
     build:
       context: .
       dockerfile: blockchain/connector/operations/docker/dev.dockerfile
     image: ghcr.io/zama-ai/kms-blockchain-connector-dev:${DOCKER_IMAGES_TAG}
+    volumes:
+      - ../blockchain/connector/config/:/app/kms-connector/config
     command:
       - "kms-blockchain-connector"
       - "--conf-file"
       - "config/compose_1.toml"
     environment:
       - RUST_LOG=info
-      - ASC_CONN__BLOCKCHAIN__CONTRACT=wasm1cnuw3f076wgdyahssdkd0g3nr96ckq8cwa2mh029fn5mgf2fmcms9ax00l
       - ASC_CONN__BLOCKCHAIN__ADDRESSES=http://dev-kms-blockchain-validator:9090
       - ASC_CONN__CORE__ADDRESSES=http://dev-kms-core-1:50100
       - ASC_CONN__STORE__URL=http://dev-kv-store:8088
@@ -101,6 +129,7 @@ services:
       retries: 5
       start_period: 1s
     volumes:
+      - ../core/service/config/:/app/kms/core/service/config
       - certs:/app/kms/core/service/certs
       - minio_secrets:/minio_secrets
     depends_on:
@@ -111,17 +140,25 @@ services:
     environment:
       - RUST_LOG=info
     entrypoint: >
-      /bin/sh -c " export AWS_ACCESS_KEY_ID=$$(cat /minio_secrets/access_key) && export AWS_SECRET_ACCESS_KEY=$$(cat /minio_secrets/secret_key) && echo 'Generating signing keys' && kms-gen-keys threshold --pub-url s3://kms --aws-s3-endpoint http://dev-s3-mock:9000 --aws-region us-east-1 --priv-url file://./keys --cmd signing-keys  --signing-key-party-id 2 && echo 'Starting kms service' && kms-server threshold --config-file config/compose_2.toml "
+      /bin/sh -c "
+      export AWS_ACCESS_KEY_ID=$$(cat /minio_secrets/access_key) &&
+      export AWS_SECRET_ACCESS_KEY=$$(cat /minio_secrets/secret_key) &&
+      echo 'Generating signing keys' &&
+      kms-gen-keys threshold --pub-url s3://kms --aws-s3-endpoint http://dev-s3-mock:9000 --aws-region us-east-1 --priv-url file://./keys --cmd signing-keys  --signing-key-party-id 2 &&
+      echo 'Starting kms service' &&
+      kms-server threshold --config-file config/compose_2.toml
+      "
 
   dev-kms-connector-2:
     image: ghcr.io/zama-ai/kms-blockchain-connector-dev:${DOCKER_IMAGES_TAG}
+    volumes:
+      - ../blockchain/connector/config/:/app/kms-connector/config
     command:
       - "kms-blockchain-connector"
       - "--conf-file"
       - "config/compose_2.toml"
     environment:
       - RUST_LOG=info
-      - ASC_CONN__BLOCKCHAIN__CONTRACT=wasm1cnuw3f076wgdyahssdkd0g3nr96ckq8cwa2mh029fn5mgf2fmcms9ax00l
       - ASC_CONN__BLOCKCHAIN__ADDRESSES=http://dev-kms-blockchain-validator:9090
       - ASC_CONN__CORE__ADDRESSES=http://dev-kms-core-2:50200
       - ASC_CONN__STORE__URL=http://dev-kv-store:8088
@@ -149,6 +186,7 @@ services:
     volumes:
       - certs:/app/kms/core/service/certs
       - minio_secrets:/minio_secrets
+      - ../core/service/config/:/app/kms/core/service/config
     depends_on:
       dev-s3-mock-setup:
         condition: service_completed_successfully
@@ -157,17 +195,25 @@ services:
     environment:
       - RUST_LOG=info
     entrypoint: >
-      /bin/sh -c " export AWS_ACCESS_KEY_ID=$$(cat /minio_secrets/access_key) && export AWS_SECRET_ACCESS_KEY=$$(cat /minio_secrets/secret_key) && echo 'Generating signing keys' && kms-gen-keys threshold --pub-url s3://kms --aws-s3-endpoint http://dev-s3-mock:9000 --aws-region us-east-1 --priv-url file://./keys --cmd signing-keys  --signing-key-party-id 3 && echo 'Starting kms service' && kms-server threshold --config-file config/compose_3.toml "
+      /bin/sh -c "
+      export AWS_ACCESS_KEY_ID=$$(cat /minio_secrets/access_key) &&
+      export AWS_SECRET_ACCESS_KEY=$$(cat /minio_secrets/secret_key) &&
+      echo 'Generating signing keys' &&
+      kms-gen-keys threshold --pub-url s3://kms --aws-s3-endpoint http://dev-s3-mock:9000 --aws-region us-east-1 --priv-url file://./keys --cmd signing-keys  --signing-key-party-id 3 &&
+      echo 'Starting kms service' &&
+      kms-server threshold --config-file config/compose_3.toml
+      "
 
   dev-kms-connector-3:
     image: ghcr.io/zama-ai/kms-blockchain-connector-dev:${DOCKER_IMAGES_TAG}
+    volumes:
+      - ../blockchain/connector/config/:/app/kms-connector/config
     command:
       - "kms-blockchain-connector"
       - "--conf-file"
       - "config/compose_3.toml"
     environment:
       - RUST_LOG=info
-      - ASC_CONN__BLOCKCHAIN__CONTRACT=wasm1cnuw3f076wgdyahssdkd0g3nr96ckq8cwa2mh029fn5mgf2fmcms9ax00l
       - ASC_CONN__BLOCKCHAIN__ADDRESSES=http://dev-kms-blockchain-validator:9090
       - ASC_CONN__CORE__ADDRESSES=http://dev-kms-core-3:50300
       - ASC_CONN__STORE__URL=http://dev-kv-store:8088
@@ -193,6 +239,7 @@ services:
       retries: 5
       start_period: 1s
     volumes:
+      - ../core/service/config/:/app/kms/core/service/config
       - certs:/app/kms/core/service/certs
       - minio_secrets:/minio_secrets
     depends_on:
@@ -203,17 +250,25 @@ services:
     environment:
       - RUST_LOG=info
     entrypoint: >
-      /bin/sh -c " export AWS_ACCESS_KEY_ID=$$(cat /minio_secrets/access_key) && export AWS_SECRET_ACCESS_KEY=$$(cat /minio_secrets/secret_key) && echo 'Generating signing keys' && kms-gen-keys threshold --pub-url s3://kms --aws-s3-endpoint http://dev-s3-mock:9000 --aws-region us-east-1 --priv-url file://./keys --cmd signing-keys  --signing-key-party-id 4 && echo 'Starting kms service' && kms-server threshold --config-file config/compose_4.toml "
+      /bin/sh -c "
+      export AWS_ACCESS_KEY_ID=$$(cat /minio_secrets/access_key) &&
+      export AWS_SECRET_ACCESS_KEY=$$(cat /minio_secrets/secret_key) &&
+      echo 'Generating signing keys' &&
+      kms-gen-keys threshold --pub-url s3://kms --aws-s3-endpoint http://dev-s3-mock:9000 --aws-region us-east-1 --priv-url file://./keys --cmd signing-keys  --signing-key-party-id 4 &&
+      echo 'Starting kms service' &&
+      kms-server threshold --config-file config/compose_4.toml
+      "
 
   dev-kms-connector-4:
     image: ghcr.io/zama-ai/kms-blockchain-connector-dev:${DOCKER_IMAGES_TAG}
+    volumes:
+      - ../blockchain/connector/config/:/app/kms-connector/config
     command:
       - "kms-blockchain-connector"
       - "--conf-file"
       - "config/compose_4.toml"
     environment:
       - RUST_LOG=info
-      - ASC_CONN__BLOCKCHAIN__CONTRACT=wasm1cnuw3f076wgdyahssdkd0g3nr96ckq8cwa2mh029fn5mgf2fmcms9ax00l
       - ASC_CONN__BLOCKCHAIN__ADDRESSES=http://dev-kms-blockchain-validator:9090
       - ASC_CONN__CORE__ADDRESSES=http://dev-kms-core-4:50400
       - ASC_CONN__STORE__URL=http://dev-kv-store:8088
