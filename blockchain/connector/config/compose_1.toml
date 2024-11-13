@@ -53,7 +53,7 @@ initial_wait_time = 2
 retry_interval = 1
 max_poll_count = 36
 
-[core.timeout_config.zkp]
+[core.timeout_config.verify_proven_ct]
 initial_wait_time = 1
 retry_interval = 1
 max_poll_count = 24
