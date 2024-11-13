@@ -36,6 +36,7 @@ tonic-health = "0.12"
 tonic-types = "0.12"
 tokio-util = "0.7"
 tonic-web = "0.12"
+rand = "0.8.5"
 
 # local dependencies
 fhevm-engine-common = { path = "../fhevm-engine-common" }
@@ -50,7 +51,6 @@ tfhe = { workspace = true, features = ["aarch64-unix"] }
 nightly-avx512 = ["tfhe/nightly-avx512"]
 
 [dev-dependencies]
-rand = "0.8.5"
 testcontainers = "0.21"
 
 [build-dependencies]
