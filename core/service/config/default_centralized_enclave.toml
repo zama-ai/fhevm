@@ -1,0 +1,14 @@
+url = "http://127.0.0.1:50051"
+
+# The two settings below are optional. Two URL schemas are supported: file://
+# and s3://. The paths can be the same for the different storage types and for
+# different parties.
+public_storage_url = "s3://zama_kms_public_blobs"
+private_storage_url = "s3://zama_kms_private_blobs"
+
+# The four settings below must be set if the s3:// URL schema is used for any
+# storage.
+root_key_id = "zama_kms_root_key"
+aws_region = "eu-west-3"
+aws_s3_proxy = "https://localhost:7000"
+aws_kms_proxy = "https://localhost:8000"

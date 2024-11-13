@@ -1,0 +1,10 @@
+s3_endpoint = "http://dev-s3-mock:9000/kms"
+object_folder = ["PUB"]
+
+validator_addresses = ["http://dev-kms-blockchain-validator:9090"]
+http_validator_endpoints = ["http://dev-kms-blockchain-validator:26657"]
+kv_store_address = "http://dev-kv-store:8088"
+faucet_address = "http://localhost:8000"
+
+contract = "wasm1yyca08xqdgvjz0psg56z67ejh9xms6l436u8y58m82npdqqhmmtqas0cl7" # DEBUG ASC
+mnemonic = "whisper stereo great helmet during hollow nominee skate frown daughter donor pool ozone few find risk cigar practice essay sketch rhythm novel dumb host"

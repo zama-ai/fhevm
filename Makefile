@@ -182,26 +182,16 @@ trigger-crs-gen-threshold:
 	cargo run --bin simulator -- -f config/local_threshold.toml crs-gen --max-num-bits 256
 
 run-kms-threshold:
-	docker compose -vvv -f docker-compose/docker-compose-kms-base.yml -f docker-compose/docker-compose-kms-threshold.yml -f docker-compose/docker-compose-kms-threshold-ghcr.yml up -d --wait
+	docker compose -vvv -f docker-compose/docker-compose-kms-base.yml -f docker-compose/docker-compose-kms-threshold.yml up -d --wait
 
 stop-kms-threshold:
 	docker compose -vvv -f docker-compose/docker-compose-kms-base.yml -f docker-compose/docker-compose-kms-threshold.yml down --volumes --remove-orphans
 
-
 run-kms-centralized:
-	$(MAKE) generate-fhe-keys-registry-dev-image
-ifeq ($(KEY_GEN),false)
-	@echo "KEY_GEN is false, executing corresponding commands..."
-	@docker compose  -f docker-compose/docker-compose-full.yml  up --detach
-else ifeq ($(KEY_GEN),true)
-	@echo "KEY_GEN is true, mounting fhe keys into kms-core..."
-	@docker compose  -f docker-compose/docker-compose-full.yml -f docker-compose/docker-compose-full.override.yml up --detach
-else
-	@echo "KEY_GEN is set to an unrecognized value: $(KEY_GEN)"
-endif
+	docker compose -vvv -f docker-compose/docker-compose-kms-base.yml -f docker-compose/docker-compose-kms-centralized.yml up -d --wait
 
-	@echo 'sleep a little to let the docker start up'
-	sleep 5
+run-kms-centralized-with-gateway:
+	docker compose -vvv -f docker-compose/docker-compose-kms-base.yml -f docker-compose/docker-compose-kms-centralized.yml -f docker-compose/docker-compose-kms-gateway-centralized.yml up -d --wait
 
 run-kms:
 ifeq ($(CENTRALIZED_KMS),true)

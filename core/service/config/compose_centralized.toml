@@ -1,0 +1,16 @@
+url = "http://0.0.0.0:50051"
+
+# The two settings below are optional. Two URL schemas are supported: file://
+# and s3://. The paths can be the same for the different storage types and for
+# different parties.
+public_storage_url = "s3://kms"
+private_storage_url = "file://./keys"
+aws_s3_proxy = "http://dev-s3-mock:9000"
+aws_region = "us-east-1"
+
+# maximum grpc message size in bytes
+grpc_max_message_size = 20971520 # 20 MiB
+
+[tracing]
+service_name = "kms-centralized"
+endpoint = "http://localhost:4317"

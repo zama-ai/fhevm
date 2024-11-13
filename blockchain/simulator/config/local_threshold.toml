@@ -1,0 +1,14 @@
+s3_endpoint = "http://localhost:9000/kms"
+object_folder = ["PUB-p1","PUB-p2","PUB-p3","PUB-p4"]
+
+validator_addresses = ["http://localhost:9090"]
+http_validator_endpoints = ["http://localhost:36657"]
+kv_store_address = "http://localhost:8088"
+faucet_address = "http://localhost:8000"
+
+# TODO: update latest option to take latest asc contract and not just latest contract
+# contract = "latest"
+contract = "wasm1yyca08xqdgvjz0psg56z67ejh9xms6l436u8y58m82npdqqhmmtqas0cl7" # DEBUG ASC
+# contract = "wasm1cnuw3f076wgdyahssdkd0g3nr96ckq8cwa2mh029fn5mgf2fmcms9ax00l" # ETHEREUM ASC
+
+mnemonic = "whisper stereo great helmet during hollow nominee skate frown daughter donor pool ozone few find risk cigar practice essay sketch rhythm novel dumb host"
