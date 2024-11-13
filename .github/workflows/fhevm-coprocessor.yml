@@ -8,6 +8,10 @@ on:
       - .github/workflows/fhevm-coprocessor.yml
       - .github/workflows/common-docker.yml
       - fhevm-engine/coprocessor/**
+      - fhevm-engine/.sqlx
+      - proto/**
+    paths-ignore:
+      - '**/*.md'
   release:
     types:
       - published
