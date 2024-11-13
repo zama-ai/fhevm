@@ -17,9 +17,9 @@ services:
       /bin/sh -c "
       sleep 2 &&
       echo \"Launching insecure key-gen\" &&
-      simulator -f /app/config/local_threshold_from_compose.toml insecure-key-gen &&
+      simulator -f /app/config/local_threshold_from_compose.toml --max-iter 3600 insecure-key-gen &&
       echo \"Launching crs-gen\" &&
-      simulator -f /app/config/local_threshold_from_compose.toml crs-gen --max-num-bits 256 &&
+      simulator -f /app/config/local_threshold_from_compose.toml --max-iter 3600 crs-gen --max-num-bits 256 &&
       echo \"Success\"
       "
     volumes:
