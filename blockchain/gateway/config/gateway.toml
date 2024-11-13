@@ -91,7 +91,7 @@ relayer_key = "7ec931411ad75a7c201469a385d6f18a325d4923f9f213bd882bbea87e160b67"
 [kms]
 # Address of the KMS smart contract on the blockchain.
 # Used for interactions with the KMS contract.
-contract_address = "wasm1yyca08xqdgvjz0psg56z67ejh9xms6l436u8y58m82npdqqhmmtqas0cl7"
+contract_address = "wasm1cnuw3f076wgdyahssdkd0g3nr96ckq8cwa2mh029fn5mgf2fmcms9ax00l"
 
 # Mnemonic phrase for accessing the KMS.
 # This is a human-readable string of words used to derive cryptographic keys.

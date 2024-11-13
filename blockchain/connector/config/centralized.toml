@@ -6,7 +6,7 @@ addresses = ["http://localhost:26657"]
 
 [blockchain]
 addresses = ["http://localhost:9090"]
-contract = "wasm1yyca08xqdgvjz0psg56z67ejh9xms6l436u8y58m82npdqqhmmtqas0cl7"
+contract = "wasm1cnuw3f076wgdyahssdkd0g3nr96ckq8cwa2mh029fn5mgf2fmcms9ax00l"
 
 [blockchain.signkey]
 # It should be either mnemonic or bip32

@@ -14,33 +14,23 @@ services:
     environment:
       - RUST_LOG=info
     entrypoint: >
-      /bin/sh -c "
-      sleep 2 &&
-      echo \"Launching insecure key-gen\" &&
-      simulator -f /app/config/local_centralized_from_compose.toml insecure-key-gen &&
-      echo \"Launching crs-gen\" &&
-      simulator -f /app/config/local_centralized_from_compose.toml crs-gen --max-num-bits 256 &&
-      echo \"Success\"
-      "
+      /bin/sh -c " sleep 2 && echo \"Launching insecure key-gen\" && simulator -f /app/config/local_centralized_from_compose.toml insecure-key-gen && echo \"Launching crs-gen\" && simulator -f /app/config/local_centralized_from_compose.toml crs-gen --max-num-bits 2048 && echo \"Success\" "
     volumes:
       - ../blockchain/simulator/config:/app/config
-
-  # 6. Start gateway with key-id from key-gen
-  # TODO: 
-  dev-kms-gateway:
-    depends_on:
-      dev-kms-simulator-keygen:
-        condition: service_completed_successfully
-    image: ghcr.io/zama-ai/kms-blockchain-gateway-dev:${DOCKER_IMAGES_TAG}
-    build:
-      context: .
-      dockerfile: blockchain/gateway/operations/docker/dev.dockerfile
-    ports:
-      - "7077:7077"
-    entrypoint: >
-      /bin/sh -c "
-      gateway --config-file config/compose_centralized.toml
-      "
+    # 6. Start gateway with key-id from key-gen
+    # TODO: 
+    # dev-kms-gateway:
+    #   depends_on:
+    #     dev-kms-simulator-keygen:
+    #       condition: service_completed_successfully
+    #   image: ghcr.io/zama-ai/kms-blockchain-gateway-dev:${DOCKER_IMAGES_TAG}
+    #   build:
+    #     context: .
+    #     dockerfile: blockchain/gateway/operations/docker/dev.dockerfile
+    #   ports:
+    #     - "7077:7077"
+    #   entrypoint: >
+    #     /bin/sh -c " gateway --config-file config/gateway_centralized.toml "
     # TODO: Validate that we have a status endpoint on the gateway
     # healthcheck:
     #   test: "wget -Sq --spider http://localhost:7077/status"
@@ -48,3 +38,4 @@ services:
     #   timeout: 2s
     #   retries: 10
     #   start_period: 5s
+

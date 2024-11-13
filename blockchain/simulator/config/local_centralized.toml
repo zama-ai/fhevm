@@ -7,5 +7,5 @@ kv_store_address = "http://localhost:8088"
 faucet_address = "http://localhost:8000"
 
 # contract = "wasm1cnuw3f076wgdyahssdkd0g3nr96ckq8cwa2mh029fn5mgf2fmcms9ax00l" # ETHEREUM ASC
-contract = "wasm1yyca08xqdgvjz0psg56z67ejh9xms6l436u8y58m82npdqqhmmtqas0cl7" # DEBUG ASC
+contract = "wasm1cnuw3f076wgdyahssdkd0g3nr96ckq8cwa2mh029fn5mgf2fmcms9ax00l" # DEBUG ASC
 mnemonic = "whisper stereo great helmet during hollow nominee skate frown daughter donor pool ozone few find risk cigar practice essay sketch rhythm novel dumb host"
