@@ -15,7 +15,7 @@ bip32 = "xprv9s21ZrQH143K3FQVQn1Z6"
 
 [blockchain.fee]
 denom = "ucosm"
-amount = 3000000
+amount = 6000000
 
 [core]
 addresses = ["http://localhost:50051"]
