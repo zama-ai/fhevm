@@ -201,8 +201,13 @@ stop-kms-centralized:
 run-kms-centralized-with-gateway:
 	docker compose -vvv -f docker-compose/docker-compose-kms-base.yml -f docker-compose/docker-compose-kms-centralized.yml -f docker-compose/docker-compose-kms-gateway-centralized.yml up -d --wait
 
+
 stop-kms-centralized-with-gateway:
 	docker compose -vvv -f docker-compose/docker-compose-kms-base.yml -f docker-compose/docker-compose-kms-centralized.yml -f docker-compose/docker-compose-kms-gateway-centralized.yml down
+
+
+stop-kms-threshold-with-gateway:
+	docker compose -vvv -f docker-compose/docker-compose-kms-base.yml -f docker-compose/docker-compose-kms-threshold.yml -f docker-compose/docker-compose-kms-gateway-threshold.yml down
 
 
 run-kms:
@@ -228,7 +233,7 @@ ifeq ($(CENTRALIZED_KMS),true)
 	
 else ifeq ($(CENTRALIZED_KMS),false)
 	@echo "CENTRALIZED_KMS is false, Stopping threshold KMS...."
-	$(MAKE) stop-kms-threshold
+	$(MAKE) stop-kms-threshold-with-gateway
 else
 	@echo "CENTRALIZED_KMS is set to an unrecognized value: $(CENTRALIZED_KMS)"
 endif
