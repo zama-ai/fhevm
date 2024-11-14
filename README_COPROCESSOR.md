@@ -318,7 +318,7 @@ _Optionally_ you may update `KEY_GEN` value in `.env`. Default is `false`
 5. From the fhevm repo, run one of the test for trivial decryption.
 
     ```bash
-    cd work_dir/fhevm && npx hardhat test --grep 'test async decrypt uint32$'
+    cd work_dir/fhevm && npx hardhat test --grep 'test aasync decryptsync decrypt uint32$'
     ```
 
 6. To tear down the setup, stop the docker containers:
@@ -331,6 +331,9 @@ _Optionally_ you may update `KEY_GEN` value in `.env`. Default is `false`
     The gateway will automatically exit as the connection will be closed from blockchain side.
 
 ## Note on test results (for trivial decrypt)
+
+Note: If one of the non-trivial or re-encrypt tests fails, it should succeed
+after a retry..
 
 1. PASSING TESTS - All tests for trivial decrypt should now pass.
 
@@ -346,14 +349,31 @@ _Optionally_ you may update `KEY_GEN` value in `.env`. Default is `false`
     npx hardhat test --grep 'test async decrypt address$'
     npx hardhat test --grep 'test async decrypt mixed$'
     ```
-2. PASSING TEST - Non trivial decrypt with input mechanism
+
+2. PASSING TESTS - All tests for trivial reencrypt should now pass.
+
+    ```bash
+    npx hardhat test --grep 'test reencrypt bool$'
+    npx hardhat test --grep 'test reencrypt uint4$'
+    npx hardhat test --grep 'test reencrypt uint8$'
+    npx hardhat test --grep 'test reencrypt uint16$'
+    npx hardhat test --grep 'test reencrypt uint32$'
+    npx hardhat test --grep 'test reencrypt uint64$'
+    npx hardhat test --grep 'test reencrypt uint128$'
+    npx hardhat test --grep 'test reencrypt uint256$'
+    npx hardhat test --grep 'test reencrypt address$'
+
+3. PASSING TEST - Non trivial decrypt with input mechanism
 
     ```bash
     npx hardhat test --grep 'test async decrypt uint64 non-trivial'
     ```
 
+4. PASSING TEST - Non trivial reencrypt with input mechanism and fhe computation.
 
-
+    ```bash
+    npx hardhat test --grep 'test async decrypt addition uint64 non-trivial bigger value'
+    ```
 ## Some issues you can encounter
 
   <details>
