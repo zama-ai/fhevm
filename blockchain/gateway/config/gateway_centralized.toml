@@ -30,10 +30,10 @@ listener_type = "COPROCESSOR"
 
 # URL of the Ethereum WebSocket server.
 # Used for establishing a WebSocket connection to an Ethereum node.
-wss_url = "ws://localhost:8746"
+wss_url = "ws://geth:8546"
 
 # Used for establishing an http connection to an Ethereum node.
-http_url = "http://localhost:8745"
+http_url = "http://geth:8745"
 
 # Address of the FHE library smart ontract on the Ethereum blockchain.
 # Used for interactions with the FHE library contract.
@@ -69,7 +69,7 @@ reenc_domain_name = "Authorization token"
 acl_address = "339EcE85B9E11a3A3AA557582784a15d7F82AAf2"
 
 # Address of the coprocessor to query for ciphertexts (gRPC)
-coprocessor_url = "http://127.0.0.1:50055"
+coprocessor_url = "http://coproc:50052"
 
 # optionally explicitly set the gas price
 # gas_price = 1_000_000_000
@@ -100,7 +100,7 @@ mnemonic = "bachelor similar spirit copper rely carbon web hobby conduct wrap co
 
 # Base URL of the KMS service.
 # Used for making HTTP requests to the KMS service.
-address = "http://localhost:9090"
+address = "http://dev-kms-blockchain-validator:9090"
 
 # TODO stop-gap these will eventually be fetched from the ASC. This line can be removed if the key get setup with the simulator
 # Should be removed as part of https://github.com/zama-ai/fhevm/issues/548
