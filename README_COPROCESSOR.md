@@ -40,7 +40,9 @@ Make sure you have these binaries installed in your environment:
 
 > **NB:** We will wrap all components in docker images to remove these prerequisites in the near future.
 
-## Steps to run the setup
+## Steps setting up the environment (Part 1/2)
+
+### Threshold KMS
 
 0. Verify the configuration in .env file, most important variable is CENTRALIZED_KMS, set it to  false for threshold KMS
 
@@ -51,7 +53,7 @@ _Optionally_ you may update `KEY_GEN` value in `.env`. Default is `false`
 | true    | KMS is running in centralized mode, keys are retrieved from the dev image (default) |
 | false   | KMS is running in threshold mode with 4 MPC nodes, keys are freshly generated and signers are automatically updated |
 
-1. Run the KMS in centralized mode (including the deployment of contracts on
+1. Run the KMS in threshold mode (including the deployment of contracts on
    KMS blockchain).
 
     ```bash
@@ -125,7 +127,7 @@ _Optionally_ you may update `KEY_GEN` value in `.env`. Default is `false`
     Then (2) we  download keys (with identifiers) from minio (S3 bucket like storage)
     </details>  
 
-4. In a separate terminal, return to the same branch `v0.9.0-rc25` where the keys and crs have been generated. 
+4. In a separate terminal, return to the same branch `v0.9.0-rc28` where the keys and crs have been generated. 
 
 
     ```bash
@@ -156,7 +158,134 @@ _Optionally_ you may update `KEY_GEN` value in `.env`. Default is `false`
     ```
     </details> 
 
-4. Retrieve the fhe keys and load them in coprocessor DB
+
+### Centralized KMS
+
+0. Verify the configuration in .env file, most important variable is CENTRALIZED_KMS, set it to true for threshold KMS
+
+_Optionally_ you may update `KEY_GEN` value in `.env`. Default is `false`
+
+| CENTRALIZED_KMS | Purpose |
+| --- | --- |
+| true    | KMS is running in centralized mode, keys are retrieved from the dev image (default) |
+| false   | KMS is running in threshold mode with 4 MPC nodes, keys are freshly generated and signers are automatically updated |
+
+1. Run the KMS in centralized mode (including the deployment of contracts on
+   KMS blockchain).
+
+    ```bash
+    make run-kms
+    ```
+
+    <details>
+    <summary> 💡 Follow KMS blockchain smart contracts deployment ~ 2 mn </summary>
+  
+    ```bash
+    docker logs zama-kms-threshold-dev-kms-blockchain-asc-deploy-1 -f  
+    ```
+    ```bash
+          Summary of all the addresses:
+      IPSC_ETHERMINT_ADDRESS : wasm1wug8sewp6cedgkmrmvhl3lf3tulagm9hnvy8p0rppz9yjw0g4wtqhs9hr8
+      IPSC_ETHEREUM_ADDRESS : wasm1qg5ega6dykkxc307y25pecuufrjkxkaggkkxh7nad0vhyhtuhw3sq29c3m
+      ASC_DEBUG_ADDRESS : wasm1yyca08xqdgvjz0psg56z67ejh9xms6l436u8y58m82npdqqhmmtqas0cl7
+      ASC_ETHERMINT_ADDRESS : wasm1yw4xvtc43me9scqfr2jr2gzvcxd3a9y4eq7gaukreugw2yd2f8tsu3v7ad
+      ASC_ETHEREUM_ADDRESS : wasm1cnuw3f076wgdyahssdkd0g3nr96ckq8cwa2mh029fn5mgf2fmcms9ax00l
+
+      +++++++++++++++++++++++++++
+      Contracts setups successful
+      +++++++++++++++++++++++++++
+
+    </details> 
+
+2. Wait for key-gen and crs-gen to complete by following the logs.
+
+    <details>
+    <summary> 💡 Follow key-gen and crs-gen logs </summary>
+    ```bash
+    docker logs zama-kms-gateway-dev-kms-simulator-keygen-1 -f
+    ```
+    ```bash
+    Launching insecure key-gen
+    [
+      {
+        "keygen_response": {
+          "request_id": "b4ad0f97c2f361ba88fa16db3b492668b72e0c26",
+          "public_key_digest": "92a5bf0a7b5196bafced38e89551f3069cf72ec5",
+          "public_key_signature": "4000000000000000acff3f84b16ea5bbf7a05475b15c60bbb29cdc3446390f9d80e388639c4b6f8d147a888b890c9b9e22bceb8fd8a8bbab0ad1f72f04ab9a56a1f8fba6639b9fae",
+          "server_key_digest": "1e965aec45abce284e1918eced0d4310360bdcc5",
+          "server_key_signature": "4000000000000000afc45b19fa53b766dee8a801f975ec86d256cde26d30a38decf707a6438d1c6579d6d5b398c74806fdede4f6acf026a62bbde956df0e5160f621bea5837860b9",
+          "param": "default"
+        }
+      }
+    ]
+    Launching crs-gen
+    [
+      {
+        "crs_gen_response": {
+          "request_id": "e2cf35682ae6eddafc939d50c8a901a2ef7f59d1",
+          "digest": "2370672b6fee466a9073d3dcacd7553ab7e2cfd4",
+          "signature": "40000000000000007203542c3ace4ae1d6cc2c02c3af5c2468316ee879c693b0a9819807ed4fb1fb0eb32a4bd8a2399df574f73fa8cbd561a58a81652972b4a7a549884bac8a3ae8",
+          "max_num_bits": 2048,
+          "param": "default"
+        }
+      }
+    ]
+    Success
+
+    </details>
+
+3. Run the fhevm coprocessor network (including a geth node).
+
+    ```bash
+    make run-coprocessor
+    ```
+
+   📝 At this step keys are not loaded in coprocessor DB.
+   <details>
+    <summary> 💡 Why are we starting the coprocessor if keys are not available ? </summary>
+  
+    We have to do it to satisfy the gateway, gateway needs to conenct to the host BC node (geth here) in order to listen events.
+
+    We need the gateway (1) to be able to call `\keyurl` endpoint in order to retrieve the identifiers associated to each keys (publicKey, serverKey, CRS ...).
+
+    Then (2) we  download keys (with identifiers) from minio (S3 bucket like storage)
+    </details>  
+
+4. In a separate terminal, return to the same branch `v0.9.0-rc28` where the
+   keys and crs have been generated. 
+
+    
+    Here, first update the config file. Set `mode` to `centralized`. Then in
+    `kms.public_storage`, set the first url to `http://localhost:9000/kms/PUB`
+    and comment out the next 3 urls by prefixing with a `#`.
+
+
+    ```bash
+    cd $path-to-kms-core
+    cd blockchain/gateway
+    cargo run --bin gateway
+    ```
+
+    Wait for the gateway to start listening for blocks and print block numbers.
+
+    ```bash
+    ...
+    2024-10-16T15:35:22.876765Z  INFO gateway::events::manager: 🧱 block number: 10
+    2024-10-16T15:35:27.787809Z  INFO gateway::events::manager: 🧱 block number: 11
+    ...
+    ```
+
+    <details>
+    <summary> 💡 Check the keys are ready by calling `\keyurl` endpoint </summary>
+  
+    ```bash
+    curl  http://localhost:7077/keyurl
+    ```
+    </details> 
+
+## Steps setting up the environment (Part 2/2)
+
+1. Retrieve the fhe keys and load them in coprocessor DB
 
     ```bash
     make init-db
@@ -164,19 +293,19 @@ _Optionally_ you may update `KEY_GEN` value in `.env`. Default is `false`
     This command will make a call to `/keyurl` endpoint of gateway and retrieve the corresponding keys from the minio server.
     Then, keys will be copied into right folder in coprocessor and inserted in the DB
 
-4. Clone the dependant repositories, if not already present.
+2. Clone the dependant repositories, if not already present.
 
     ```bash
     make check-all-test-repo
     ```
 
-4. [Optional] Verify if the kms signer addresses is correctly configured.
+2. [Optional] Verify if the kms signer addresses is correctly configured.
 
    Value in `network-fhe-keys/signerN` should match
    `ADDRESS_KMS_SIGNER_N` in `work_dir/fhevm/.env.example.deployment`. If not
    update ENV file. 
 
-5. Fund test accounts and deploy the fhevm solidity contracts.
+4. Fund test accounts and deploy the fhevm solidity contracts.
 
     ```bash
     make prepare-e2e-test
@@ -186,13 +315,13 @@ _Optionally_ you may update `KEY_GEN` value in `.env`. Default is `false`
 
 
 
-7. From the fhevm repo, run one of the test for trivial decryption.
+5. From the fhevm repo, run one of the test for trivial decryption.
 
     ```bash
     cd work_dir/fhevm && npx hardhat test --grep 'test async decrypt uint32$'
     ```
 
-8. To tear down the setup, stop the docker containers:
+6. To tear down the setup, stop the docker containers:
 
     ```
     make stop-coprocessor
