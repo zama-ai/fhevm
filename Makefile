@@ -214,7 +214,7 @@ ifeq ($(CENTRALIZED_KMS),true)
 else ifeq ($(CENTRALIZED_KMS),false)
 	@echo "CENTRALIZED_KMS is false, running threshold KMS...."
 	sleep 2
-	$(MAKE) run-kms-threshold
+	$(MAKE) run-kms-threshold-with-gateway
 else
 	@echo "CENTRALIZED_KMS is set to an unrecognized value: $(CENTRALIZED_KMS)"
 endif
