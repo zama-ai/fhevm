@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    INSERT INTO tenants(\n                        tenant_api_key,\n                        chain_id,\n                        acl_contract_address,\n                        verifying_contract_address,\n                        pks_key,\n                        sks_key,\n                        public_params\n                    )\n                    VALUES (\n                        $1,\n                        $2,\n                        $3,\n                        $4,\n                        $5,\n                        $6,\n                        $7\n                    )\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4",
+        "Text",
+        "Text",
+        "Bytea",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b659b963113ba7d1f85912b00c0a3a5e9d3500c23adfabf5e0e1e4eddb52540a"
+}
