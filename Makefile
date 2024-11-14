@@ -203,11 +203,11 @@ run-kms-centralized-with-gateway:
 
 
 stop-kms-centralized-with-gateway:
-	docker compose -vvv -f docker-compose/docker-compose-kms-base.yml -f docker-compose/docker-compose-kms-centralized.yml -f docker-compose/docker-compose-kms-gateway-centralized.yml -f docker-compose/docker-compose-coprocesor.yml down
+	docker compose -vvv -f docker-compose/docker-compose-kms-base.yml -f docker-compose/docker-compose-kms-centralized.yml -f docker-compose/docker-compose-kms-gateway-centralized.yml -f docker-compose/docker-compose-coprocesor.yml down -v
 
 
 stop-kms-threshold-with-gateway:
-	docker compose -vvv -f docker-compose/docker-compose-kms-base.yml -f docker-compose/docker-compose-kms-threshold.yml -f docker-compose/docker-compose-kms-gateway-threshold.yml down
+	docker compose -vvv -f docker-compose/docker-compose-kms-base.yml -f docker-compose/docker-compose-kms-threshold.yml -f docker-compose/docker-compose-kms-gateway-threshold.yml down -v
 
 
 run-kms:

@@ -38,7 +38,7 @@ services:
       - ../blockchain/gateway/config/gateway_centralized.toml:/app/gateway/config/gateway.toml
     environment:
       - GATEWAY__ETHEREUM__LISTENER_TYPE=COPROCESSOR
-      - GATEWAY__ETHEREUM__MODE=threshold
+      - GATEWAY__ETHEREUM__MODE=centralized
       - GATEWAY__ETHEREUM__CHAIN_ID=12345
       - GATEWAY__ETHEREUM__WSS_URL=ws://geth:8546
       - GATEWAY__ETHEREUM__HTTP_URL=http://geth:8545

@@ -33,7 +33,7 @@ listener_type = "COPROCESSOR"
 wss_url = "ws://geth:8546"
 
 # Used for establishing an http connection to an Ethereum node.
-http_url = "http://geth:8745"
+http_url = "http://geth:8545"
 
 # Address of the FHE library smart ontract on the Ethereum blockchain.
 # Used for interactions with the FHE library contract.
