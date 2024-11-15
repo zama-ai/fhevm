@@ -6,6 +6,12 @@ using docker compose.
 The pre-computed contracts and account addresses/private keys are configured
 across all the components for this test setup.
 
+> ⚠️ **Warning**  
+> This repository is intended for demonstration purposes only.  
+> **Do not use any secrets** included here, such as those for the coprocessor API or wallets, in any production or serious deployment.  
+> Secrets in this repository are hard-coded solely to simplify the setup process for demonstration.  
+> In any real-world deployment, secrets must be managed securely—**never hard-coded in configuration files!**
+
 ## How the repository is organized ?
 
 - The docker compose folder contains all the files for KMS and coprocessor.
