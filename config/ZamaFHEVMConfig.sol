@@ -22,7 +22,13 @@ library ZamaFHEVMConfig {
     }
 
     function getSepoliaConfig() internal pure returns (FHEVMConfig.FHEVMConfigStruct memory) {
-        /// TODO
+        return
+            FHEVMConfig.FHEVMConfigStruct({
+                ACLAddress: 0x339EcE85B9E11a3A3AA557582784a15d7F82AAf2,
+                TFHEExecutorAddress: 0x596E6682c72946AF006B27C131793F2b62527A4b,
+                FHEPaymentAddress: 0x6d5A11aC509C707c00bc3A0a113ACcC26c532547,
+                KMSVerifierAddress: 0x208De73316E44722e16f6dDFF40881A3e4F86104
+            });
     }
 
     function getEthereumConfig() internal pure returns (FHEVMConfig.FHEVMConfigStruct memory) {
