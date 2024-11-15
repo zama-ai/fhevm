@@ -1,7 +1,9 @@
 # Use encrypted types
+
 This document explains how to implement and manage encrypted integer types in smart contracts using `TFHE` library.
 
 ## Introduction
+
 The `TFHE` library provides encrypted integer types and a type system that is checked both at compile time and at run time.
 
 Encrypted integers function similarly to Solidity's integer types. However, features like "revert on overflow" are not supported, as this would expose certain information about the encrypted value. Therefore, arithmetic on `e(u)int`` types is [unchecked](https://docs.soliditylang.org/en/latest/control-structures.html#checked-or-unchecked-arithmetic), which means overflow will wrap around.
@@ -50,6 +52,7 @@ ebool valueBool = TFHE.asEbool(value32);
 ```
 
 ## Contracting state variables
+
 When using encrypted types for state variables, you cannot use the `immutable` or `constant` keywords. This is because the compiler attempts to resolve the value of T`FHE.asEuintXX(yy)` during compilation, which is not feasible because `asEuintXX()` calls a precompiled contract. 
 
 To handle this, do not declare your encrypted state variables as `immutabl`e or `constant`. Instead, use the following methods to set your variables:
