@@ -1,4 +1,5 @@
 # Branching in FHE
+
 This document explains how to perform branching with encrypted booleans in fhEVM, including methods for condition handling and error management.
 
 When you perform [comparison operations](../../references/functions.md#comparison-operation-eq-ne-ge-gt-le-lt) in fhEVM, the result is an encrypted boolean `ebool`, which does not support typical boolean operations.
