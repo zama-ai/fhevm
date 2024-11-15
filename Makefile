@@ -186,7 +186,7 @@ run-kms-threshold:
 	docker compose -vvv -f docker-compose/docker-compose-kms-base.yml -f docker-compose/docker-compose-kms-threshold.yml up -d --wait
 
 run-kms-threshold-with-gateway:
-	docker compose -vvv -f docker-compose/docker-compose-kms-base.yml -f docker-compose/docker-compose-kms-threshold.yml -f docker-compose/docker-compose-kms-gateway-threshold.yml up -d --wait
+	docker compose -vvv -f docker-compose/docker-compose-kms-base.yml -f docker-compose/docker-compose-kms-threshold.yml -f docker-compose/docker-compose-kms-gateway-threshold.yml -f docker-compose/docker-compose-coprocesor.yml up -d --wait
 
 stop-kms-threshold:
 	docker compose -vvv -f docker-compose/docker-compose-kms-base.yml -f docker-compose/docker-compose-kms-threshold.yml down --volumes --remove-orphans
@@ -207,7 +207,7 @@ stop-kms-centralized-with-gateway:
 
 
 stop-kms-threshold-with-gateway:
-	docker compose -vvv -f docker-compose/docker-compose-kms-base.yml -f docker-compose/docker-compose-kms-threshold.yml -f docker-compose/docker-compose-kms-gateway-threshold.yml down -v
+	docker compose -vvv -f docker-compose/docker-compose-kms-base.yml -f docker-compose/docker-compose-kms-threshold.yml -f docker-compose/docker-compose-kms-gateway-threshold.yml -f docker-compose/docker-compose-coprocesor.yml down -v
 
 
 run-kms:
