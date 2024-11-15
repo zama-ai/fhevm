@@ -17,24 +17,41 @@ yarn add fhevm-contracts
 pnpm add fhevm-contracts
 ```
 
-## A Simple Example
+## Example
+
+> To write Solidity contracts that use `TFHE` and/or `Gateway`, it is required to set different contract addresses. This repo (`fhevm`) exports config files that can be inherited to simplify the process.
+
+### Using the mock network (for testing)
 
 ```solidity
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import "fhevm/lib/TFHE.sol";
-import "fhevm-contracts/contracts/token/ERC20/EncryptedERC20.sol";
+import { MockZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
+import { EncryptedERC20 } from "fhevm-contracts/contracts/token/ERC20/EncryptedERC20.sol";
 
-contract MyERC20 is EncryptedERC20 {
+contract MyERC20 is MockZamaFHEVMConfig, EncryptedERC20 {
   constructor() EncryptedERC20("MyToken", "MYTOKEN") {
-    TFHE.setFHEVM(FHEVMConfig.defaultConfig());
-    _mint(1000000, msg.sender);
+    _unsafeMint(1000000, msg.sender);
   }
 }
 ```
 
-To use any of the templates that require TFHE or Gateway, it is required to use these two functions: `TFHE.setFHEVM()` (for the FHEVM) and `Gateway.setGateway()` (for the Gateway).
+### Using Sepolia
+
+```solidity
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+pragma solidity ^0.8.24;
+
+import { SepoliaZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
+import { EncryptedERC20 } from "fhevm-contracts/contracts/token/ERC20/EncryptedERC20.sol";
+
+contract MyERC20 is SepoliaZamaFHEVMConfig, EncryptedERC20 {
+  constructor() EncryptedERC20("MyToken", "MYTOKEN") {
+    _unsafeMint(1000000, msg.sender);
+  }
+}
+```
 
 ## Available contracts
 
