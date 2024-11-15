@@ -8,16 +8,15 @@ across all the components for this test setup.
 
 ## How the repository is organized ?
 
-- The docker compose file for KMS is defined
-  [locally](./docker-compose/docker-compose-full.yml).
+- The docker compose folder contains all the files for KMS and coprocessor.
 
 - Co-processor repository is cloned to work_dir and the Makefile is used for
-  bringing up co-processor network.
+  bringing up co-processor network (will not be needed soon)
 
 - Solidity repository is cloned to work_dir and used from source to funding
-  test accounts, deploy contracts and run tests.
+  test accounts, deploy contracts and run tests
 
-- User is expected to run gateway from source.
+- All the components are dockerized, a tutorial explains also how to run it from source (if necessary)
 
 ## Prerequisites
 
@@ -437,3 +436,9 @@ Stop everything and retry
   ```
 
 </details>
+
+## TODO
+
+- Fill the coprocessor DB from script and not cargo test (`make init-db` step)
+- Use fhevm-smart contract docker image to deploy ACL.sol, GatewayContract.sol
+- Merge this branch into main (decide how to handle the current main (create main-native temporarly?))
