@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-
 pragma solidity ^0.8.24;
 
 import "./TFHE.sol";
 import "./FHEVMConfig.sol";
 
+/**
+ * @title   ITFHEExecutor
+ * @notice  This interface contains all functions to conduct FHE operations.
+ */
 interface ITFHEExecutor {
     function fheAdd(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
     function fheSub(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
@@ -44,6 +47,11 @@ interface ITFHEExecutor {
     function fheRandBounded(uint256 upperBound, bytes1 randType) external returns (uint256 result);
 }
 
+/**
+ * @title   IACL
+ * @notice  This interface contains all functions that are used to conduct operations
+ *          with the ACL contract.
+ */
 interface IACL {
     function allowTransient(uint256 ciphertext, address account) external;
     function allow(uint256 handle, address account) external;
@@ -52,8 +60,12 @@ interface IACL {
     function allowForDecryption(uint256[] memory handlesList) external;
 }
 
+/**
+ * @title   Impl
+ * @notice  This library is the core implementation for computing FHE operations (e.g. add, sub, xor).
+ */
 library Impl {
-    // keccak256(abi.encode(uint256(keccak256("fhevm.storage.FHEVMConfig")) - 1)) & ~bytes32(uint256(0xff))
+    /// @dev keccak256(abi.encode(uint256(keccak256("fhevm.storage.FHEVMConfig")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant FHEVMConfigLocation = 0xed8d60e34876f751cc8b014c560745351147d9de11b9347c854e881b128ea600;
 
     function getFHEVMConfig() internal pure returns (FHEVMConfig.FHEVMConfigStruct storage $) {
