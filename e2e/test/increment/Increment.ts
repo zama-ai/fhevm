@@ -1,6 +1,6 @@
 import { expect } from "chai";
 
-import { createInstances } from "../instance";
+import { createInstance } from "../instance";
 import { getSigners, initSigners } from "../signers";
 import { deployIncrementFixture } from "./Increment.fixture";
 
@@ -14,7 +14,7 @@ describe("Increment", function () {
     const contract = await deployIncrementFixture();
     this.contractAddress = await contract.getAddress();
     this.increment = contract;
-    this.instances = await createInstances(this.signers);
+    this.fhevm = await createInstance();
   });
 
   it("should increment", async function () {
@@ -25,14 +25,14 @@ describe("Increment", function () {
 
     const counterHandle = await this.increment.counter();
     console.log(counterHandle);
-    const { publicKey: publicKeyAlice, privateKey: privateKeyAlice } = this.instances.alice.generateKeypair();
-    const eip712 = this.instances.alice.createEIP712(publicKeyAlice, this.contractAddress);
+    const { publicKey: publicKeyAlice, privateKey: privateKeyAlice } = this.fhevm.generateKeypair();
+    const eip712 = this.fhevm.createEIP712(publicKeyAlice, this.contractAddress);
     const signatureAlice = await this.signers.alice.signTypedData(
       eip712.domain,
       { Reencrypt: eip712.types.Reencrypt },
       eip712.message,
     );
-    const counter = await this.instances.alice.reencrypt(
+    const counter = await this.fhevm.reencrypt(
       counterHandle,
       privateKeyAlice,
       publicKeyAlice,

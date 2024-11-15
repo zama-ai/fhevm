@@ -85,8 +85,11 @@ importers:
         specifier: ^6.8.0
         version: 6.13.4
       fhevm:
-        specifier: ^0.5.9
-        version: 0.5.9
+        specifier: 0.6.0-0
+        version: 0.6.0-0
+      fhevm-core-contracts:
+        specifier: 0.1.0-2
+        version: 0.1.0-2
       fhevmjs:
         specifier: 0.6.0-8
         version: 0.6.0-8
@@ -1508,8 +1511,11 @@ packages:
       node-fetch:
         optional: true
 
-  fhevm@0.5.9:
-    resolution: {integrity: sha512-9cSfmAa4AJUuROd4kESvtNYJpnea1PUvjU7yaNnrJsaHqPkVGQvpnIDEnO4KTsJ36Etup1ksPs8PvyGNYwkatQ==}
+  fhevm-core-contracts@0.1.0-2:
+    resolution: {integrity: sha512-lTUodggGV4+pZVFRKRb22t3rWyfR8iFZLgNxRBozgAEUSsIDe16PI9vn8PkfJzJJdOlPk9XsTY6/s1pACDbwfA==}
+
+  fhevm@0.6.0-0:
+    resolution: {integrity: sha512-Gvd7a5T7JTU3OFHy2eRrvRTTmXWwSalSSsBdE0X0C0nTnTow5sYsQYkQqIZcYZNpZq1dCcoCgp/gYbeNDHUDNw==}
     engines: {node: '>=20.0.0'}
 
   fhevmjs@0.6.0-8:
@@ -4939,9 +4945,16 @@ snapshots:
       is-subset: 0.1.1
       regexparam: 3.0.0
 
-  fhevm@0.5.9:
+  fhevm-core-contracts@0.1.0-2: {}
+
+  fhevm@0.6.0-0:
     dependencies:
       '@openzeppelin/contracts': 5.1.0
+      extra-bigint: 1.2.0
+      sqlite3: 5.1.7
+    transitivePeerDependencies:
+      - bluebird
+      - supports-color
 
   fhevmjs@0.6.0-8:
     dependencies:

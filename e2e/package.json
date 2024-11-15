@@ -33,7 +33,8 @@
     "eslint": "^9.9.0",
     "eslint-config-prettier": "^8.5.0",
     "ethers": "^6.8.0",
-    "fhevm": "^0.5.9",
+    "fhevm": "0.6.0-0",
+    "fhevm-core-contracts": "0.1.0-2",
     "fhevmjs": "0.6.0-8",
     "fs-extra": "^10.1.0",
     "globals": "^15.9.0",
@@ -85,9 +86,10 @@
     "prettier:check": "prettier --check \"**/*.{js,json,md,sol,ts,yml}\"",
     "prettier:write": "prettier --write \"**/*.{js,json,md,sol,ts,yml}\"",
     "typechain": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat typechain",
-    "test": "hardhat test --network sepolia",
+    "test": "hardhat test",
     "task:getEthereumAddress": "hardhat task:getEthereumAddress",
-    "task:accounts": "hardhat task:accounts"
+    "task:accounts": "hardhat task:accounts",
+    "task:deployERC20": "hardhat task:deployERC20"
   },
   "dependencies": {
     "extra-bigint": "^1.1.18",

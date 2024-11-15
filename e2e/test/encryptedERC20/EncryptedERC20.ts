@@ -1,6 +1,6 @@
 import { expect } from "chai";
 
-import { createInstances } from "../instance";
+import { createInstance } from "../instance";
 import { getSigners, initSigners } from "../signers";
 import { deployEncryptedERC20Fixture } from "./EncryptedERC20.fixture";
 
@@ -14,7 +14,7 @@ describe("EncryptedERC20", function () {
     const contract = await deployEncryptedERC20Fixture();
     this.contractAddress = await contract.getAddress();
     this.erc20 = contract;
-    this.instances = await createInstances(this.signers);
+    this.fhevm = await createInstance();
   });
 
   it("should mint the contract", async function () {
@@ -23,14 +23,14 @@ describe("EncryptedERC20", function () {
 
     // Reencrypt Alice's balance
     const balanceHandleAlice = await this.erc20.balanceOf(this.signers.alice);
-    const { publicKey: publicKeyAlice, privateKey: privateKeyAlice } = this.instances.alice.generateKeypair();
-    const eip712 = this.instances.alice.createEIP712(publicKeyAlice, this.contractAddress);
+    const { publicKey: publicKeyAlice, privateKey: privateKeyAlice } = this.fhevm.generateKeypair();
+    const eip712 = this.fhevm.createEIP712(publicKeyAlice, this.contractAddress);
     const signatureAlice = await this.signers.alice.signTypedData(
       eip712.domain,
       { Reencrypt: eip712.types.Reencrypt },
       eip712.message,
     );
-    const balanceAlice = await this.instances.alice.reencrypt(
+    const balanceAlice = await this.fhevm.reencrypt(
       balanceHandleAlice,
       privateKeyAlice,
       publicKeyAlice,
@@ -48,7 +48,7 @@ describe("EncryptedERC20", function () {
     const t1 = await transaction.wait();
     expect(t1?.status).to.eq(1);
 
-    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    const input = this.fhevm.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     input.add64(1337);
     const encryptedTransferAmount = input.encrypt();
     const tx = await this.erc20["transfer(address,bytes32,bytes)"](
@@ -61,14 +61,14 @@ describe("EncryptedERC20", function () {
 
     // Reencrypt Alice's balance
     const balanceHandleAlice = await this.erc20.balanceOf(this.signers.alice);
-    const { publicKey: publicKeyAlice, privateKey: privateKeyAlice } = this.instances.alice.generateKeypair();
-    const eip712 = this.instances.alice.createEIP712(publicKeyAlice, this.contractAddress);
+    const { publicKey: publicKeyAlice, privateKey: privateKeyAlice } = this.fhevm.generateKeypair();
+    const eip712 = this.fhevm.createEIP712(publicKeyAlice, this.contractAddress);
     const signatureAlice = await this.signers.alice.signTypedData(
       eip712.domain,
       { Reencrypt: eip712.types.Reencrypt },
       eip712.message,
     );
-    const balanceAlice = await this.instances.alice.reencrypt(
+    const balanceAlice = await this.fhevm.reencrypt(
       balanceHandleAlice,
       privateKeyAlice,
       publicKeyAlice,
@@ -82,14 +82,14 @@ describe("EncryptedERC20", function () {
     // Reencrypt Bob's balance
     const balanceHandleBob = await this.erc20.balanceOf(this.signers.bob);
 
-    const { publicKey: publicKeyBob, privateKey: privateKeyBob } = this.instances.bob.generateKeypair();
-    const eip712Bob = this.instances.bob.createEIP712(publicKeyBob, this.contractAddress);
+    const { publicKey: publicKeyBob, privateKey: privateKeyBob } = this.fhevm.generateKeypair();
+    const eip712Bob = this.fhevm.createEIP712(publicKeyBob, this.contractAddress);
     const signatureBob = await this.signers.bob.signTypedData(
       eip712Bob.domain,
       { Reencrypt: eip712Bob.types.Reencrypt },
       eip712Bob.message,
     );
-    const balanceBob = await this.instances.bob.reencrypt(
+    const balanceBob = await this.fhevm.reencrypt(
       balanceHandleBob,
       privateKeyBob,
       publicKeyBob,
@@ -102,7 +102,7 @@ describe("EncryptedERC20", function () {
 
     // on the other hand, Bob should be unable to read Alice's balance
     try {
-      await this.instances.bob.reencrypt(
+      await this.fhevm.reencrypt(
         balanceHandleAlice,
         privateKeyBob,
         publicKeyBob,
@@ -112,7 +112,7 @@ describe("EncryptedERC20", function () {
       );
       expect.fail("Expected an error to be thrown - Bob should not be able to reencrypt Alice balance");
     } catch (error) {
-      expect(error.message).to.equal("User is not authorized to reencrypt this handle!");
+      expect((error as Error).message).to.equal("User is not authorized to reencrypt this handle!");
     }
   });
 
@@ -120,7 +120,7 @@ describe("EncryptedERC20", function () {
     const transaction = await this.erc20.mint(1000);
     await transaction.wait();
 
-    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    const input = this.fhevm.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     input.add64(1337);
     const encryptedTransferAmount = input.encrypt();
     const tx = await this.erc20["transfer(address,bytes32,bytes)"](
@@ -131,14 +131,14 @@ describe("EncryptedERC20", function () {
     await tx.wait();
 
     const balanceHandleAlice = await this.erc20.balanceOf(this.signers.alice);
-    const { publicKey: publicKeyAlice, privateKey: privateKeyAlice } = this.instances.alice.generateKeypair();
-    const eip712 = this.instances.alice.createEIP712(publicKeyAlice, this.contractAddress);
+    const { publicKey: publicKeyAlice, privateKey: privateKeyAlice } = this.fhevm.generateKeypair();
+    const eip712 = this.fhevm.createEIP712(publicKeyAlice, this.contractAddress);
     const signatureAlice = await this.signers.alice.signTypedData(
       eip712.domain,
       { Reencrypt: eip712.types.Reencrypt },
       eip712.message,
     );
-    const balanceAlice = await this.instances.alice.reencrypt(
+    const balanceAlice = await this.fhevm.reencrypt(
       balanceHandleAlice,
       privateKeyAlice,
       publicKeyAlice,
@@ -152,14 +152,14 @@ describe("EncryptedERC20", function () {
     // Reencrypt Bob's balance
     const balanceHandleBob = await this.erc20.balanceOf(this.signers.bob);
 
-    const { publicKey: publicKeyBob, privateKey: privateKeyBob } = this.instances.bob.generateKeypair();
-    const eip712Bob = this.instances.bob.createEIP712(publicKeyBob, this.contractAddress);
+    const { publicKey: publicKeyBob, privateKey: privateKeyBob } = this.fhevm.generateKeypair();
+    const eip712Bob = this.fhevm.createEIP712(publicKeyBob, this.contractAddress);
     const signatureBob = await this.signers.bob.signTypedData(
       eip712Bob.domain,
       { Reencrypt: eip712Bob.types.Reencrypt },
       eip712Bob.message,
     );
-    const balanceBob = await this.instances.bob.reencrypt(
+    const balanceBob = await this.fhevm.reencrypt(
       balanceHandleBob,
       privateKeyBob,
       publicKeyBob,
@@ -175,7 +175,7 @@ describe("EncryptedERC20", function () {
     const transaction = await this.erc20.mint(10000);
     await transaction.wait();
 
-    const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    const inputAlice = this.fhevm.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     inputAlice.add64(1337);
     const encryptedAllowanceAmount = inputAlice.encrypt();
     const tx = await this.erc20["approve(address,bytes32,bytes)"](
@@ -186,7 +186,7 @@ describe("EncryptedERC20", function () {
     await tx.wait();
 
     const bobErc20 = this.erc20.connect(this.signers.bob);
-    const inputBob1 = this.instances.bob.createEncryptedInput(this.contractAddress, this.signers.bob.address);
+    const inputBob1 = this.fhevm.createEncryptedInput(this.contractAddress, this.signers.bob.address);
     inputBob1.add64(1338); // above allowance so next tx should actually not send any token
     const encryptedTransferAmount = inputBob1.encrypt();
     const tx2 = await bobErc20["transferFrom(address,address,bytes32,bytes)"](
@@ -199,14 +199,14 @@ describe("EncryptedERC20", function () {
 
     // Decrypt Alice's balance
     const balanceHandleAlice = await this.erc20.balanceOf(this.signers.alice);
-    const { publicKey: publicKeyAlice, privateKey: privateKeyAlice } = this.instances.alice.generateKeypair();
-    const eip712 = this.instances.alice.createEIP712(publicKeyAlice, this.contractAddress);
+    const { publicKey: publicKeyAlice, privateKey: privateKeyAlice } = this.fhevm.generateKeypair();
+    const eip712 = this.fhevm.createEIP712(publicKeyAlice, this.contractAddress);
     const signatureAlice = await this.signers.alice.signTypedData(
       eip712.domain,
       { Reencrypt: eip712.types.Reencrypt },
       eip712.message,
     );
-    const balanceAlice = await this.instances.alice.reencrypt(
+    const balanceAlice = await this.fhevm.reencrypt(
       balanceHandleAlice,
       privateKeyAlice,
       publicKeyAlice,
@@ -218,14 +218,14 @@ describe("EncryptedERC20", function () {
 
     // Decrypt Bob's balance
     const balanceHandleBob = await this.erc20.balanceOf(this.signers.bob);
-    const { publicKey: publicKeyBob, privateKey: privateKeyBob } = this.instances.bob.generateKeypair();
-    const eip712Bob = this.instances.bob.createEIP712(publicKeyBob, this.contractAddress);
+    const { publicKey: publicKeyBob, privateKey: privateKeyBob } = this.fhevm.generateKeypair();
+    const eip712Bob = this.fhevm.createEIP712(publicKeyBob, this.contractAddress);
     const signatureBob = await this.signers.bob.signTypedData(
       eip712Bob.domain,
       { Reencrypt: eip712Bob.types.Reencrypt },
       eip712Bob.message,
     );
-    const balanceBob = await this.instances.bob.reencrypt(
+    const balanceBob = await this.fhevm.reencrypt(
       balanceHandleBob,
       privateKeyBob,
       publicKeyBob,
@@ -235,7 +235,7 @@ describe("EncryptedERC20", function () {
     );
     expect(balanceBob).to.equal(0); // check that transfer did not happen, as expected
 
-    const inputBob2 = this.instances.bob.createEncryptedInput(this.contractAddress, this.signers.bob.address);
+    const inputBob2 = this.fhevm.createEncryptedInput(this.contractAddress, this.signers.bob.address);
     inputBob2.add64(1337); // below allowance so next tx should send token
     const encryptedTransferAmount2 = inputBob2.encrypt();
     const tx3 = await bobErc20["transferFrom(address,address,bytes32,bytes)"](
@@ -248,7 +248,7 @@ describe("EncryptedERC20", function () {
 
     // Decrypt Alice's balance
     const balanceHandleAlice2 = await this.erc20.balanceOf(this.signers.alice);
-    const balanceAlice2 = await this.instances.alice.reencrypt(
+    const balanceAlice2 = await this.fhevm.reencrypt(
       balanceHandleAlice2,
       privateKeyAlice,
       publicKeyAlice,
@@ -260,7 +260,7 @@ describe("EncryptedERC20", function () {
 
     // Decrypt Bob's balance
     const balanceHandleBob2 = await this.erc20.balanceOf(this.signers.bob);
-    const balanceBob2 = await this.instances.bob.reencrypt(
+    const balanceBob2 = await this.fhevm.reencrypt(
       balanceHandleBob2,
       privateKeyBob,
       publicKeyBob,

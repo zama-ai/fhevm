@@ -9,6 +9,7 @@ import { resolve } from "path";
 
 // Adjust the import path as needed
 import "./tasks/accounts";
+import "./tasks/deployERC20";
 import "./tasks/getEthereumAddress";
 
 const dotenvConfigPath: string = process.env.DOTENV_CONFIG_PATH || "./.env";
@@ -61,7 +62,7 @@ task("coverage").setAction(async (taskArgs, hre, runSuper) => {
 });
 
 const config: HardhatUserConfig = {
-  defaultNetwork: "local",
+  defaultNetwork: "sepolia",
   namedAccounts: {
     deployer: 0,
   },

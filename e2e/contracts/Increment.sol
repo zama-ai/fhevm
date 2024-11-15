@@ -2,12 +2,14 @@
 
 pragma solidity ^0.8.24;
 
+import { E2EFHEVMConfig } from "./E2EFHEVMConfig.sol";
 import "fhevm/lib/TFHE.sol";
 
-contract Increment {
+contract Increment is E2EFHEVMConfig {
     euint8 public counter;
 
     constructor() {
+
         counter = TFHE.asEuint8(0);
         TFHE.allow(counter, address(this));
         TFHE.allow(counter, msg.sender);
