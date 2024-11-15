@@ -2,7 +2,7 @@ tick_interval_secs = 1
 storage_path = "./temp/events.toml"
 
 [oracle]
-addresses = ["http://localhost:26657"]
+addresses = ["http://geth:26657"]
 
 [blockchain]
 addresses = ["http://dev-kms-blockchain-validator:9090"]
@@ -63,4 +63,4 @@ service_name = "kms-asc-connector"
 endpoint = "http://localhost:4317"
 
 [store]
-url = "http://localhost:8088"
+url = "http://dev-kv-store:8088"

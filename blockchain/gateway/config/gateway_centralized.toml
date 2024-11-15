@@ -115,7 +115,7 @@ key_id = "408d8cbaa51dece7f782fe04ba0b1c1d017b1088"
 
 
 [storage]
-url = "http://localhost:8088"
+url = "http://dev-kv-store:8088"
 
 [tracing]
 service_name = "gateway"
