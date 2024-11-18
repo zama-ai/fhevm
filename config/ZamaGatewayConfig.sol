@@ -15,7 +15,7 @@ library ZamaGatewayConfig {
     }
 
     function getSepoliaConfig() internal pure returns (address) {
-        /// TODO
+        return 0x096b4679d45fB675d4e2c1E4565009Cec99A12B1;
     }
 
     function getEthereumConfig() internal pure returns (address) {
