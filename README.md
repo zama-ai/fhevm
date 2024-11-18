@@ -72,7 +72,7 @@ The light client package handles the logic of sequentially verifying block heade
 
 ### Presentations
 
-- [EthCC 2024 TKMS presentation](EthCC24-tkms.pdf)
+- [EthCC 2024 TKMS presentation](assets/EthCC24-tkms.pdf)
 
 ### Theory
 

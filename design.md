@@ -2,7 +2,7 @@
 
 At the highest level, the system consists of two subsystems: an *fhEVM blockchain* and a *KMS*. The KMS in turn consists of a *KMS blockchain* and a *KMS core*. These are in turn composed of multiple components, which we illustrate in the following picture, where we use conjoined boxes to mean that components are part of the same Docker image.
 
-![Centralized KMS system](central.png "Centralized KMS system")
+![Centralized KMS system](assets/central.png "Centralized KMS system")
 
 We now briefly outline each of these components along with their constituents:
 
