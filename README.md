@@ -25,6 +25,9 @@
   - [What is the Zama KMS for fhEVM](#what-is-the-zama-kms-for-fhevm)
   - [Design](#design)
   - [Implementation](#implementation)
+- **[Running the demo](#running-the-demo)**
+  - [fhEVM Native](#fhevm-native)
+  - [fhEVM Coprocessor](#fhevm-coprocessor)
 - **[Resources](#resources)**
   - [Presentations](#presentations)
   - [Theory](#theory)
@@ -67,6 +70,21 @@ For the light client, we currently use CometBFT's [light](https://pkg.go.dev/git
 The light client package handles the logic of sequentially verifying block headers.
 
 <br></br>
+
+## Running the demo
+
+There are two versions of fhEVM:
+
+- fhEVM native
+- fhEVM coprocessor
+
+### fhEVM Native
+
+To run the demo for fhEVM native, switch [native directory](native).
+
+### fhEVM Coprocessor
+
+To run the demo for fhEVM native, switch [coprocessor directory](coprocessor).
 
 ## Resources
 
