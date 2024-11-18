@@ -1,0 +1,56 @@
+tick_interval_secs = 1
+storage_path = "./temp/events.toml"
+
+[oracle]
+addresses = ["http://fhevm-validator:26657"]
+
+[blockchain]
+addresses = ["http://kms-validator:9090"]
+contract = "wasm14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9s0phg4d"
+
+[blockchain.signkey]
+# It should be either mnemonic or bip32
+mnemonic = "bachelor similar spirit copper rely carbon web hobby conduct wrap conduct wire shine parrot erosion divert crucial balance lock reason price ignore educate open"
+bip32 = "xprv9s21ZrQH143K3FQVQn1Z6"
+
+[blockchain.fee]
+denom = "ucosm"
+amount = 3000000
+
+[core]
+addresses = ["http://localhost:50051"]
+
+[core.timeout_config]
+channel_timeout = 60
+
+[core.timeout_config.crs]
+initial_wait_time = 60
+retry_interval = 60
+max_poll_count = 120
+
+[core.timeout_config.keygen]
+initial_wait_time = 18000
+retry_interval = 15000
+max_poll_count = 1150
+
+[core.timeout_config.preproc]
+initial_wait_time = 18000
+retry_interval = 15000
+max_poll_count = 1150
+
+[core.timeout_config.decryption]
+initial_wait_time = 1
+retry_interval = 1
+max_poll_count = 24
+
+[core.timeout_config.reencryption]
+initial_wait_time = 1
+retry_interval = 1
+max_poll_count = 24
+
+[tracing]
+service_name = "kms-asc-connector"
+endpoint = "http://localhost:4317"
+
+[store]
+url = "http://store:8088"
