@@ -1,8 +1,8 @@
 <p align="center">
 <!-- product name logo -->
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/d7c9d88b-fc49-46f4-802b-65d1c944e2d9">
-  <source media="(prefers-color-scheme: light)" srcset="https://github.com/user-attachments/assets/b50f98a7-4190-492c-969b-7762f522dcf7">
+  <source media="(prefers-color-scheme: dark)" srcset="./assets/Zama-KMS-fhEVM-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="./assets/Zama-KMS-fhEVM-light.png">
   <img width=600 alt="Zama fhEVM & KMS">
 </picture>
 </p>
