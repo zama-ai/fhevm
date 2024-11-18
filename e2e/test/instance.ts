@@ -13,6 +13,7 @@ export const createInstance = async () => {
     gatewayUrl: parsedEnv.GATEWAY_URL,
     aclContractAddress: parsedEnv.ACL_CONTRACT_ADDRESS,
     kmsContractAddress: parsedEnv.KMS_VERIFIER_CONTRACT_ADDRESS,
+    publicKeyId: "beb70cb9fdbabf785242de498d6ec0ed282921d7",
   });
   return instance;
 };

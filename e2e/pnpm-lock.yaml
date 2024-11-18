@@ -91,8 +91,8 @@ importers:
         specifier: 0.1.0-2
         version: 0.1.0-2
       fhevmjs:
-        specifier: 0.6.0-8
-        version: 0.6.0-8
+        specifier: 0.6.0-9
+        version: 0.6.0-9
       fs-extra:
         specifier: ^10.1.0
         version: 10.1.0
@@ -1518,8 +1518,8 @@ packages:
     resolution: {integrity: sha512-Gvd7a5T7JTU3OFHy2eRrvRTTmXWwSalSSsBdE0X0C0nTnTow5sYsQYkQqIZcYZNpZq1dCcoCgp/gYbeNDHUDNw==}
     engines: {node: '>=20.0.0'}
 
-  fhevmjs@0.6.0-8:
-    resolution: {integrity: sha512-B8djVV67W6iyGld0U/t+yfeYmvSX9KtkuzTYBZ6CQVQCcmQ+K8Ye6jWO5WsqjmHj5JU9g7DdioBqzx7NV11FQg==}
+  fhevmjs@0.6.0-9:
+    resolution: {integrity: sha512-DUGeX0xk/pQC9gG1byljxwEinLADRaWV4tsp0Crk8sbbCTEGTJ1rr3NSxvMPNggGFIwoaOeKT99KueKGaPn2gg==}
     engines: {node: '>=20'}
     hasBin: true
 
@@ -4956,7 +4956,7 @@ snapshots:
       - bluebird
       - supports-color
 
-  fhevmjs@0.6.0-8:
+  fhevmjs@0.6.0-9:
     dependencies:
       '@types/keccak': 3.0.5
       bigint-buffer: 1.1.5
