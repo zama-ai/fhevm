@@ -4,7 +4,6 @@ pragma solidity ^0.8.24;
 
 import { E2EFHEVMConfig } from "./E2EFHEVMConfig.sol";
 import "fhevm/lib/TFHE.sol";
-
 contract Increment is E2EFHEVMConfig {
     euint8 public counter;
 

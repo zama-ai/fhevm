@@ -24,7 +24,6 @@ describe("Increment", function () {
     await transaction2.wait();
 
     const counterHandle = await this.increment.counter();
-    console.log(counterHandle);
     const { publicKey: publicKeyAlice, privateKey: privateKeyAlice } = this.fhevm.generateKeypair();
     const eip712 = this.fhevm.createEIP712(publicKeyAlice, this.contractAddress);
     const signatureAlice = await this.signers.alice.signTypedData(
