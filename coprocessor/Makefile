@@ -265,10 +265,33 @@ prepare-e2e-test: check-all-test-repo
 	@cd $(FHEVM_SOLIDITY_PATH) && ./launch-fhevm-coprocessor.sh
 
 run-async-test:
-	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test --grep 'test async decrypt uint8'
+	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test --grep 'test async decrypt uint64'
 
 run-true-input-async-test:
 	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test --grep 'test async decrypt uint64 non-trivial'
+
+run-all-tests:
+	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test --grep 'test async decrypt bool$'
+	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test --grep 'test async decrypt uint4$'
+	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test --grep 'test async decrypt uint8$'
+	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test --grep 'test async decrypt uint16$'
+	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test --grep 'test async decrypt uint32$'
+	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test --grep 'test async decrypt uint64$'
+	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test --grep 'test async decrypt uint128$'
+	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test --grep 'test async decrypt uint256$'
+	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test --grep 'test async decrypt address$'
+	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test --grep 'test async decrypt mixed$'
+	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test --grep 'test reencrypt bool$'
+	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test --grep 'test reencrypt uint4$'
+	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test --grep 'test reencrypt uint8$'
+	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test --grep 'test reencrypt uint16$'
+	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test --grep 'test reencrypt uint32$'
+	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test --grep 'test reencrypt uint64$'
+	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test --grep 'test reencrypt uint128$'
+	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test --grep 'test reencrypt uint256$'
+	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test --grep 'test reencrypt address$'
+	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test --grep 'test async decrypt uint64 non-trivial'
+
 
 e2e-test:
 	@$(MAKE) check-all-test-repo
