@@ -28,6 +28,7 @@ pub const TFHE_KS_PARAMS: ShortintKeySwitchingParameters =
 
 pub const MAX_BITS_TO_PROVE: usize = 2048;
 
+#[derive(Clone)]
 pub struct FhevmKeys {
     pub server_key: ServerKey,
     pub client_key: Option<ClientKey>,
@@ -79,6 +80,7 @@ impl SerializedFhevmKeys {
     const PKS: &'static str = "../fhevm-keys/pks";
     const PUBLIC_PARAMS: &'static str = "../fhevm-keys/pp";
 
+    // generating keys is only for testing, so it is okay these are hardcoded
     pub fn save_to_disk(self) {
         println!("Creating directory {}", Self::DIRECTORY);
         std::fs::create_dir_all(Self::DIRECTORY).expect("create keys directory");
@@ -99,14 +101,15 @@ impl SerializedFhevmKeys {
             .expect("write public params");
     }
 
-    pub fn load_from_disk() -> Self {
-        let server_key = read(Self::SKS).expect("read server key");
-        let client_key = read(Self::CKS);
-        let compact_public_key = read(Self::PKS).expect("read compact public key");
-        let public_params = read(Self::PUBLIC_PARAMS).expect("read public params");
+    pub fn load_from_disk(keys_directory: &str) -> Self {
+        let keys_dir = std::path::Path::new(&keys_directory);
+        let server_key = read(keys_dir.join("sks")).expect("read server key");
+        let client_key = read(keys_dir.join("cks")).ok();
+        let compact_public_key = read(keys_dir.join("pks")).expect("read compact public key");
+        let public_params = read(keys_dir.join("pp")).expect("read public params");
         SerializedFhevmKeys {
             server_key,
-            client_key: client_key.ok(),
+            client_key,
             compact_public_key,
             public_params,
         }

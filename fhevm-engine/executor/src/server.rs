@@ -32,10 +32,10 @@ thread_local! {
 }
 
 pub fn start(args: &crate::cli::Args) -> Result<()> {
-    let keys: FhevmKeys = SerializedFhevmKeys::load_from_disk().into();
+    let keys: FhevmKeys = SerializedFhevmKeys::load_from_disk(&args.fhe_keys_directory).into();
     SERVER_KEY.set(Some(keys.server_key.clone()));
     LOCAL_RAYON_THREADS.set(args.policy_fhe_compute_threads);
-    let executor = FhevmExecutorService::new();
+    let executor = FhevmExecutorService::new(keys.clone());
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(args.tokio_threads)
         .max_blocking_threads(args.fhe_compute_threads)
@@ -150,9 +150,9 @@ impl FhevmExecutor for FhevmExecutorService {
 }
 
 impl FhevmExecutorService {
-    fn new() -> Self {
+    fn new(keys: FhevmKeys) -> Self {
         FhevmExecutorService {
-            keys: SerializedFhevmKeys::load_from_disk().into(),
+            keys,
         }
     }
 
@@ -297,41 +297,6 @@ impl FhevmExecutorService {
             },
             Err(_) => Err(SyncComputeError::BadInputs),
         }
-    }
-}
-
-pub fn run_computation(
-    operation: i32,
-    inputs: Result<Vec<SupportedFheCiphertexts>, SyncComputeError>,
-    graph_node_index: usize,
-) -> Result<(usize, InMemoryCiphertext), SyncComputeError> {
-    let op = FheOperation::try_from(operation);
-    match inputs {
-        Ok(inputs) => match op {
-            Ok(FheOperation::FheGetCiphertext) => {
-                let res = InMemoryCiphertext {
-                    expanded: inputs[0].clone(),
-                    compressed: inputs[0].clone().compress().1,
-                };
-                Ok((graph_node_index, res))
-            }
-            Ok(_) => match perform_fhe_operation(operation as i16, &inputs) {
-                Ok(result) => {
-                    let res = InMemoryCiphertext {
-                        expanded: result.clone(),
-                        compressed: result.compress().1,
-                    };
-                    Ok((graph_node_index, res))
-                }
-                Err(_) => Err::<(usize, InMemoryCiphertext), SyncComputeError>(
-                    SyncComputeError::ComputationFailed,
-                ),
-            },
-            _ => Err::<(usize, InMemoryCiphertext), SyncComputeError>(
-                SyncComputeError::InvalidOperation,
-            ),
-        },
-        Err(_) => Err(SyncComputeError::ComputationFailed),
     }
 }
 
