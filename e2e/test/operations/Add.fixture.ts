@@ -1,12 +1,12 @@
 import { ethers } from "hardhat";
 
-import type { Increment } from "../../types";
+import type { Add } from "../../types";
 import { getSigners } from "../signers";
 
-export async function deployIncrementFixture(): Promise<Increment> {
+export async function deployAddFixture(): Promise<Add> {
   const signers = await getSigners();
 
-  const contractFactory = await ethers.getContractFactory("Increment");
+  const contractFactory = await ethers.getContractFactory("Add");
   const contract = await contractFactory.connect(signers.alice).deploy();
   await contract.waitForDeployment();
 

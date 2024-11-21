@@ -1,4 +1,3 @@
-import { toBufferLE } from "bigint-buffer";
 import { ContractMethodArgs, Typed } from "ethers";
 import { ethers, network } from "hardhat";
 
@@ -89,9 +88,4 @@ export const mineNBlocks = async (n: number) => {
   for (let index = 0; index < n; index++) {
     await ethers.provider.send("evm_mine");
   }
-};
-
-export const bigIntToBytes = (value: bigint) => {
-  const byteArrayLength = Math.ceil(value.toString(2).length / 8);
-  return new Uint8Array(toBufferLE(value, byteArrayLength));
 };

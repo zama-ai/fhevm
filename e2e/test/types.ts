@@ -1,4 +1,5 @@
-import type { FhevmInstance } from "fhevmjs";
+import type { BaseContract } from "ethers";
+import type { FhevmInstance } from "fhevmjs/node";
 
 import type { Signers } from "./signers";
 
@@ -6,7 +7,8 @@ declare module "mocha" {
   export interface Context {
     signers: Signers;
     contractAddress: string;
-    instances: FhevmInstances;
+    fhevm: FhevmInstance;
+    contract: any;
   }
 }
 

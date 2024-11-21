@@ -8,7 +8,7 @@ cache
 coverage
 dist
 node_modules
-types
+/types
 deployments
 kms-fhe-keys/
 network-fhe-keys/

@@ -13,27 +13,29 @@ export const createInstance = async () => {
     gatewayUrl: parsedEnv.GATEWAY_URL,
     aclContractAddress: parsedEnv.ACL_CONTRACT_ADDRESS,
     kmsContractAddress: parsedEnv.KMS_VERIFIER_CONTRACT_ADDRESS,
-    publicKeyId: "beb70cb9fdbabf785242de498d6ec0ed282921d7",
+    publicKeyId: "55729ddea48547ea837137d122e1c90043e94c41",
   });
   return instance;
 };
 
-export const createDecrypt =
-  (instance: FhevmInstance, signer: HardhatEthersSigner, contractAddress: string) => async (handle: bigint) => {
-    const { publicKey: publicKeyAlice, privateKey: privateKeyAlice } = instance.generateKeypair();
-    const eip712 = instance.createEIP712(publicKeyAlice, contractAddress);
-    const signatureAlice = await signer.signTypedData(
-      eip712.domain,
-      { Reencrypt: eip712.types.Reencrypt },
-      eip712.message,
-    );
+export type Decrypt = (handle: bigint) => Promise<bigint>;
+export type CreateDecrypt = (instance: FhevmInstance, signer: HardhatEthersSigner, contractAddress: string) => Decrypt;
 
-    return instance.reencrypt(
-      handle,
-      privateKeyAlice,
-      publicKeyAlice,
-      signatureAlice.replace("0x", ""),
-      contractAddress,
-      signer.address,
-    );
-  };
+export const createDecrypt: CreateDecrypt = (instance, signer, contractAddress) => async (handle) => {
+  const { publicKey: publicKeyAlice, privateKey: privateKeyAlice } = instance.generateKeypair();
+  const eip712 = instance.createEIP712(publicKeyAlice, contractAddress);
+  const signatureAlice = await signer.signTypedData(
+    eip712.domain,
+    { Reencrypt: eip712.types.Reencrypt },
+    eip712.message,
+  );
+
+  return instance.reencrypt(
+    handle,
+    privateKeyAlice,
+    publicKeyAlice,
+    signatureAlice.replace("0x", ""),
+    contractAddress,
+    signer.address,
+  );
+};
