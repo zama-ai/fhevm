@@ -1,6 +1,7 @@
 *
 !lib/**
 !gateway/**
+!config/**
 !package.json
 !README.md
 !LICENSE
