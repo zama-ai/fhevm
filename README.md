@@ -23,14 +23,10 @@
 - **[About](#about)**
   - [Purpose](#purpose)
   - [What is the Zama KMS for fhEVM](#what-is-the-zama-kms-for-fhevm)
-  - [Design](#design)
   - [Implementation](#implementation)
 - **[Running the demo](#running-the-demo)**
   - [fhEVM Native](#fhevm-native)
   - [fhEVM Coprocessor](#fhevm-coprocessor)
-- **[Resources](#resources)**
-  - [Presentations](#presentations)
-  - [Theory](#theory)
 - **[Working with KMS](#working-with-kms)**
   - [Disclaimers](#disclaimers)
   - [Citations](#citations)
@@ -57,10 +53,6 @@ The system facilitates this through a the use of a blockchain which provides a m
 
 Interaction with the same KMS will happen either through an external Ethereum blockchain (fhEVM), providing an API via a smart contract, or through a gateway service.
 
-### Design
-
-Please consult the [design specification](design.md) for details on the design and the individual components.
-
 ### Implementation
 
 The KMS is implemented as a gRPC service using the [tonic](https://github.com/hyperium/tonic) crate.
@@ -86,17 +78,8 @@ To run the demo for fhEVM native, switch [native directory](native).
 
 To run the demo for fhEVM native, switch [coprocessor directory](coprocessor).
 
-## Resources
 
-### Presentations
 
-- [EthCC 2024 TKMS presentation](assets/EthCC24-tkms.pdf)
-
-### Theory
-
-- [Noah's Ark: Efficient Threshold-FHE Using Noise Flooding](https://eprint.iacr.org/2023/815)
-
-  <br></br>
 
 ## Working with KMS
 
