@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-
 pragma solidity ^0.8.24;
 
 import "./Impl.sol";
@@ -19,8 +18,11 @@ type ebytes128 is uint256;
 type ebytes256 is uint256;
 type einput is bytes32;
 
+/**
+ * @title   Common
+ * @notice  This library contains all the values used to communicate types to the run time.
+ */
 library Common {
-    // Values used to communicate types to the runtime.
     uint8 internal constant ebool_t = 0;
     uint8 internal constant euint4_t = 1;
     uint8 internal constant euint8_t = 2;
@@ -35,6 +37,11 @@ library Common {
     uint8 internal constant ebytes256_t = 11;
 }
 
+/**
+ * @title   TFHE
+ * @notice  This library is the interaction point for all smart contract developers
+ *          that interact with TFHE.
+ */
 library TFHE {
     function setFHEVM(FHEVMConfig.FHEVMConfigStruct memory fhevmConfig) internal {
         Impl.setFHEVM(fhevmConfig);
