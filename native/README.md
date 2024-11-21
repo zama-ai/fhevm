@@ -18,6 +18,9 @@
   <a href="https://github.com/zama-ai/bounty-program"><img src="https://img.shields.io/badge/Contribute-Zama%20Bounty%20Program-%23ffd208?style=flat-square"></a>
 </p>
 
+> [!Note]
+> To try out the Q2 release of our fhEVM-native demo, use the [release/0.5.x branch](https://github.com/zama-ai/fhevm-devops/tree/release/0.5.x). Main branch is being actively updated for next release.
+
 ## Table of Contents
 
 - **[Getting Started](#getting-started)**
