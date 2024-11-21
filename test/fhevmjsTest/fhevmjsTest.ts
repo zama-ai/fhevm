@@ -2,7 +2,7 @@ import { expect } from 'chai';
 
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
-import { bigIntToBytes64, bigIntToBytes128, bigIntToBytes256 } from '../utils';
+import { bigIntToBytes64, bigIntToBytes128 } from '../utils';
 
 describe('Testing fhevmjs/fhevmjsMocked', function () {
   before(async function () {

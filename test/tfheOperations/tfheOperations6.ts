@@ -14,9 +14,6 @@ import type { TFHETestSuite10 } from '../../types/contracts/tests/TFHETestSuite1
 import type { TFHETestSuite11 } from '../../types/contracts/tests/TFHETestSuite11';
 import {
   createInstances,
-  decrypt4,
-  decrypt8,
-  decrypt16,
   decrypt32,
   decrypt64,
   decrypt128,

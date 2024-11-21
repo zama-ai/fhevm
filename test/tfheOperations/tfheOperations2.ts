@@ -17,8 +17,6 @@ import {
   decrypt4,
   decrypt8,
   decrypt16,
-  decrypt32,
-  decrypt64,
   decrypt128,
   decrypt256,
   decryptBool,

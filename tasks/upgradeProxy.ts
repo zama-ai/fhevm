@@ -1,4 +1,3 @@
-import { HardhatEthersHelpers } from '@nomicfoundation/hardhat-ethers/types';
 import { HardhatUpgrades } from '@openzeppelin/hardhat-upgrades';
 import dotenv from 'dotenv';
 import fs from 'fs';
@@ -13,6 +12,7 @@ function stripContractName(input: string): string {
   return input;
 }
 
+// @dev ethers is defined as any since Hardhat can't be initialized while its config is being defined.
 async function upgradeCurrentToNew(
   privateKey: string,
   proxyAddress: string,
