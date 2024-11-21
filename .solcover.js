@@ -1,11 +1,9 @@
-module.exports = {
-  istanbulReporter: ["html", "lcov"],
-  providerOptions: {
-    mnemonic: process.env.MNEMONIC,
-  },
-  skipFiles: ["test"],
-  mocha: {
-    fgrep: "[skip-on-coverage]",
-    invert: true,
-  },
+export const istanbulReporter = ["html", "lcov"];
+export const providerOptions = {
+  mnemonic: process.env.MNEMONIC,
+};
+export const skipFiles = ["test"];
+export const mocha = {
+  fgrep: "[skip-on-coverage]",
+  invert: true,
 };
