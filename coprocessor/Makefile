@@ -102,10 +102,7 @@ else ifeq ($(CENTRALIZED_KMS),true)
 else
 	@echo "CENTRALIZED_KMS is set to an unrecognized value: $(CENTRALIZED_KMS)"
 endif
-	cp -v network-fhe-keys/* $(COPROCESSOR_PATH)/fhevm-engine/fhevm-keys
-	cd $(COPROCESSOR_PATH)/fhevm-engine/coprocessor && make init
-
-
+	COMPOSE_PROJECT_NAME=zama-kms-gateway docker compose -vvv -f docker-compose/docker-compose-db-migration.yml up -d --wait
 
 run-coprocessor: $(WORKDIR)/ check-coprocessor check-all-test-repo
 	cd $(COPROCESSOR_PATH)/fhevm-engine/coprocessor && make cleanup

@@ -1,0 +1,14 @@
+services:
+  migration:
+    container_name: migration
+    image: ghcr.io/zama-ai/fhevm-db-migration:v1
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@zama-kms-gateway-db-1:5432/coprocessor
+    volumes:
+      - ../network-fhe-keys/:/fhevm-keys/
+    networks: 
+      - zama-kms-gateway_default
+
+networks:
+  zama-kms-gateway_default:
+    external: true
