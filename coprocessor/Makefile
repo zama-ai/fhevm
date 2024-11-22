@@ -102,7 +102,13 @@ else ifeq ($(CENTRALIZED_KMS),true)
 else
 	@echo "CENTRALIZED_KMS is set to an unrecognized value: $(CENTRALIZED_KMS)"
 endif
-	COMPOSE_PROJECT_NAME=zama-kms-gateway docker compose -vvv -f docker-compose/docker-compose-db-migration.yml up -d --wait
+	@COMPOSE_PROJECT_NAME=zama-kms-gateway docker compose -vvv -f docker-compose/docker-compose-db-migration.yml up -d --wait || true
+	@if [ "$$(docker inspect -f '{{.State.ExitCode}}' migration)" -eq 0 ]; then \
+		echo "Container exited with code 0, proceeding..."; \
+	else \
+		echo "Container did not exit successfully, failing..."; \
+		exit 1; \
+	fi
 
 run-coprocessor: $(WORKDIR)/ check-coprocessor check-all-test-repo
 	cd $(COPROCESSOR_PATH)/fhevm-engine/coprocessor && make cleanup
