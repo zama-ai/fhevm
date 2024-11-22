@@ -14,7 +14,7 @@ services:
     environment:
       - RUST_LOG=info
     entrypoint: >
-      /bin/sh -c " sleep 2 && echo \"Launching insecure key-gen\" && simulator -f /app/config/local_threshold_from_compose.toml --max-iter 3600 insecure-key-gen && echo \"Launching crs-gen\" && simulator -f /app/config/local_threshold_from_compose.toml --max-iter 3600 crs-gen --max-num-bits 2048 && echo \"Success\" "
+      /bin/sh -c " sleep 2 && echo \"Launching insecure key-gen\" && simulator -f /app/config/local_threshold_from_compose.toml --max-iter 3600 insecure-key-gen && echo \"Launching crs-gen\" && simulator -f /app/config/local_threshold_from_compose.toml --max-iter 3600 insecure-crs-gen --max-num-bits 2048 && echo \"Success\" "
     volumes:
       - ../blockchain/simulator/config:/app/config
 

@@ -23,6 +23,12 @@ addresses = ["http://localhost:50051"]
 [core.timeout_config]
 channel_timeout = 60
 
+
+[core.timeout_config.insecure_crs]
+initial_wait_time = 1
+retry_interval = 3
+max_poll_count = 24
+
 [core.timeout_config.crs]
 initial_wait_time = 10
 retry_interval = 10
