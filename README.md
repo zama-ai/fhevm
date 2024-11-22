@@ -235,7 +235,9 @@ npm run fhevm:start
 # in another terminal
 npm i
 cp .env.example .env
-./scripts/faucet.sh
+npm run fhevm:faucet:alice
+npm run fhevm:faucet:bob
+npm run fhevm:faucet:carol
 npm test
 ```
 
