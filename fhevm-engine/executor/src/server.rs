@@ -14,7 +14,7 @@ use fhevm_engine_common::{
     types::{get_ct_type, FhevmError, Handle, SupportedFheCiphertexts, HANDLE_LEN, SCALAR_LEN},
 };
 use sha3::{Digest, Keccak256};
-use std::{borrow::Borrow, cell::Cell, collections::HashMap};
+use std::{cell::Cell, collections::HashMap};
 use tfhe::{set_server_key, zk::CompactPkePublicParams};
 use tokio::task::spawn_blocking;
 use tonic::{transport::Server, Code, Request, Response, Status};
@@ -27,13 +27,11 @@ pub mod executor {
 }
 
 thread_local! {
-    pub static SERVER_KEY: Cell<Option<tfhe::ServerKey>> = const {Cell::new(None)};
     pub static LOCAL_RAYON_THREADS: Cell<usize> = const {Cell::new(8)};
 }
 
 pub fn start(args: &crate::cli::Args) -> Result<()> {
     let keys: FhevmKeys = SerializedFhevmKeys::load_from_disk(&args.fhe_keys_directory).into();
-    SERVER_KEY.set(Some(keys.server_key.clone()));
     LOCAL_RAYON_THREADS.set(args.policy_fhe_compute_threads);
     let executor = FhevmExecutorService::new(keys.clone());
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -78,6 +76,7 @@ impl FhevmExecutor for FhevmExecutorService {
         req: Request<SyncComputeRequest>,
     ) -> Result<Response<SyncComputeResponse>, Status> {
         let public_params = self.keys.public_params.clone();
+        let sks = self.keys.server_key.clone();
         let resp = spawn_blocking(move || {
             let req = req.get_ref();
             let mut state = ComputationState::default();
@@ -113,8 +112,6 @@ impl FhevmExecutor for FhevmExecutorService {
                 let mut sched = Scheduler::new(&mut graph.graph, LOCAL_RAYON_THREADS.get());
 
                 let now = std::time::SystemTime::now();
-                let sks: tfhe::ServerKey = SERVER_KEY.borrow().take().expect("Server key missing");
-                SERVER_KEY.set(Some(sks.clone()));
                 if sched.schedule(sks).await.is_err() {
                     return Some(Resp::Error(SyncComputeError::ComputationFailed.into()));
                 }
