@@ -34,7 +34,7 @@ services:
     entrypoint: >
       /bin/sh -c "gateway"
     volumes:
-      - ../blockchain/gateway/config/default.toml:/app/gateway/config/default.toml
+      - ../blockchain/gateway/config/connector.toml:/app/gateway/config/connector.toml
       - ../blockchain/gateway/config/compose_threshold.toml:/app/gateway/config/gateway.toml
     environment:
       # - GATEWAY__ETHEREUM__LISTENER_TYPE=COPROCESSOR
