@@ -2,6 +2,9 @@
 pragma solidity ^0.8.24;
 
 import {FHEVMConfig, TFHE} from "fhevm/lib/TFHE.sol";
+import { Gateway } from "fhevm/gateway/GatewayCaller.sol";
+
+address constant gatewayAddress = 0x7455c89669cdE1f7Cb6D026DFB87263422D821ca;
 
 /**
  * @title   ZamaFHEVMConfig.
@@ -32,5 +35,6 @@ library DefaultFHEVMConfig {
 contract E2EFHEVMConfig {
     constructor() {
         TFHE.setFHEVM(DefaultFHEVMConfig.getConfig());
+        Gateway.setGateway(gatewayAddress);
     }
 }

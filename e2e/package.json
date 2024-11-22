@@ -27,6 +27,7 @@
     "@types/node": "^18.11.9",
     "@typescript-eslint/eslint-plugin": "^8.0.1",
     "@typescript-eslint/parser": "^8.0.1",
+    "bigint-buffer": "^1.1.5",
     "chai": "^4.3.7",
     "cross-env": "^7.0.3",
     "dotenv": "^16.0.3",
