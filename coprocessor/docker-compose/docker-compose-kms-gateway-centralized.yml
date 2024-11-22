@@ -14,7 +14,7 @@ services:
     environment:
       - RUST_LOG=info
     entrypoint: >
-      /bin/sh -c " sleep 2 && echo \"Launching insecure key-gen\" && simulator -f /app/config/local_centralized_from_compose.toml insecure-key-gen && echo \"Launching crs-gen\" && simulator -f /app/config/local_centralized_from_compose.toml crs-gen --max-num-bits 2048 && echo \"Success\" "
+      /bin/sh -c " sleep 2 && echo \"Launching insecure key-gen\" && simulator -f /app/config/local_centralized_from_compose.toml insecure-key-gen && echo \"Launching crs-gen\" && simulator -f /app/config/local_centralized_from_compose.toml insecure-crs-gen --max-num-bits 2048 && echo \"Success\" "
     volumes:
       - ../blockchain/simulator/config:/app/config
 

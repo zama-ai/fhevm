@@ -180,7 +180,7 @@ trigger-key-gen-threshold:
 	cargo run --bin simulator -- -f config/local_threshold.toml insecure-key-gen
 
 trigger-crs-gen-threshold:
-	cargo run --bin simulator -- -f config/local_threshold.toml crs-gen --max-num-bits 256
+	cargo run --bin simulator -- -f config/local_threshold.toml insecure-crs-gen --max-num-bits 256
 
 run-kms-threshold:
 	docker compose -vvv -f docker-compose/docker-compose-kms-base.yml -f docker-compose/docker-compose-kms-threshold.yml up -d --wait
