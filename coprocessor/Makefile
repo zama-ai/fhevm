@@ -39,10 +39,6 @@ FHEVM_SOLIDITY_REPO ?= fhevm
 FHEVM_SOLIDITY_PATH ?= $(WORKDIR)/$(FHEVM_SOLIDITY_REPO)
 FHEVM_SOLIDITY_PATH_EXISTS := $(shell test -d $(FHEVM_SOLIDITY_PATH)/.git && echo "true" || echo "false")
 FHEVM_SOLIDITY_VERSION ?= feat/non-trivial-multiple
-COPROCESSOR_REPO ?= fhevm-backend
-COPROCESSOR_PATH ?= $(WORKDIR)/$(COPROCESSOR_REPO)
-COPROCESSOR_PATH_EXISTS := $(shell test -d $(COPROCESSOR_PATH)/.git && echo "true" || echo "false")
-COPROCESSOR_VERSION ?= mano/update-to-latest-fhevm
 
 export GO111MODULE = on
 
@@ -86,13 +82,8 @@ else
 	$(MAKE) clone-fhevm-solidity
 endif
 
-clone-coprocessor: $(WORKDIR)/ 
-	$(info Cloning coprocessor version $(COPROCESSOR_VERSION))
-	cd $(WORKDIR) && git clone git@github.com:zama-ai/fhevm-backend.git
-	cd $(COPROCESSOR_PATH) && git checkout $(COPROCESSOR_VERSION)
 
-
-init-db: check-all-test-repo  check-coprocessor 
+init-db: check-all-test-repo  
 ifeq ($(CENTRALIZED_KMS),false)
 	@echo "CENTRALIZED_KMS is false, we are extracting keys from kms-core-1"
 	$(MAKE) copy-keys-threshold-key-gen
@@ -110,32 +101,15 @@ endif
 		exit 1; \
 	fi
 
-run-coprocessor: $(WORKDIR)/ check-coprocessor check-all-test-repo
-	cd $(COPROCESSOR_PATH)/fhevm-engine/coprocessor && make cleanup
-	cd $(COPROCESSOR_PATH)/fhevm-engine/coprocessor && cargo install sqlx-cli
-	cd $(COPROCESSOR_PATH)/fhevm-engine/coprocessor && make run
 
-stop-coprocessor: $(WORKDIR)/ 
-	cd $(COPROCESSOR_PATH)/fhevm-engine/coprocessor && make cleanup
-
-
-check-coprocessor: $(WORKDIR)/
-	$(info check-coprocessor)
-ifeq ($(COPROCESSOR_PATH_EXISTS), true)
-	@echo "coprocessor exists in $(COPROCESSOR_PATH)"
-	@if [ ! -d $(WORKDIR)/fhevm ]; then \
-        echo 'coprocessor is not available in $(WORKDIR)'; \
-        echo "COPROCESSOR_PATH is set to a custom value"; \
-    else \
-        echo 'coprocessor is already available in $(WORKDIR)'; \
-    fi
-else
-	@echo "coprocessor does not exist"
-	echo "We clone it for you!"
-	echo "If you want your own version please update COPROCESSOR_PATH pointing to your coprocessor folder!"
-	$(MAKE) clone-coprocessor
-endif
-
+deploy-fhevm: 
+	@COMPOSE_PROJECT_NAME=zama-kms-gateway docker compose -vvv -f docker-compose/docker-compose-fhevm-deploy.yml up -d --wait || true
+	@if [ "$$(docker inspect -f '{{.State.ExitCode}}' fhevm-deploy)" -eq 0 ]; then \
+		echo "Container exited with code 0, proceeding..."; \
+	else \
+		echo "Container did not exit successfully, failing..."; \
+		exit 1; \
+	fi
 
 check-all-test-repo: check-fhevm-solidity
 
@@ -162,21 +136,6 @@ copy-keys-threshold-key-gen:
 copy-keys-centralized-key-gen:
 	@bash ./scripts/copy_fhe_keys_centralized_key_gen.sh $(PWD)/network-fhe-keys
 	@bash ./scripts/update_signers.sh $(PWD)/work_dir/fhevm/.env.example.deployment $(PWD)/network-fhe-keys 1
-
-run-full:
-	@echo "Running kms"
-	$(MAKE) run-kms
-	
-	@echo "Running co-processor"
-	$(MAKE) run-coprocessor
-	
-	@echo "Predeployment of SCs"
-	$(MAKE) prepare-e2e-test
-
-
-stop-full:
-	$(MAKE) stop-kms
-	$(MAKE) stop-coprocessor
 
 
 trigger-key-gen-threshold:
@@ -305,14 +264,14 @@ e2e-test:
 
 
 clean-keys:
-	$(MAKE) stop-full
+	$(MAKE) stop-kms
 	rm -rf network-fhe-keys
 	rm -rf kms-fhe-keys
 	rm -rf res
 
 
 clean:
-	$(MAKE) stop-full
+	$(MAKE) stop-kms
 	rm -rf $(WORKDIR)/
 	rm -rf network-fhe-keys
 	rm -rf kms-fhe-keys
