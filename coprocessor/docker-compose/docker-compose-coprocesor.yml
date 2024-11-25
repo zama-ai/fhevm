@@ -11,7 +11,7 @@ services:
       - db:/var/lib/postgresql/data
 
   coproc:
-    image: ghcr.io/zama-ai/fhevm-coprocessor:v0.1.0-3
+    image: ghcr.io/zama-ai/fhevm-coprocessor:v0.1.1-1
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/coprocessor
     ports:
