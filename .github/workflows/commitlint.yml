@@ -19,4 +19,4 @@ jobs:
         run: |
           npm install -g @commitlint/cli@^18
       - name: Validate all commits from PR
-        run: npx commitlint --config .github/config/commitlint.config.js --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }} --verbose
+        run: npx commitlint --config .github/config/commitlint.config.ts --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }} --verbose

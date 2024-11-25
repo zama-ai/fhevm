@@ -15,13 +15,11 @@ import CustomProvider from './CustomProvider';
 import './tasks/accounts';
 import './tasks/etherscanVerify';
 import './tasks/getEthereumAddress';
-import './tasks/mint';
 import './tasks/taskDeploy';
 import './tasks/taskGatewayRelayer';
 import './tasks/taskTFHE';
-import './tasks/upgradeProxy';
 
-extendProvider(async (provider, config, network) => {
+extendProvider(async (provider, _config, _network) => {
   const newProvider = new CustomProvider(provider);
   return newProvider;
 });
@@ -92,7 +90,7 @@ task('coverage').setAction(async (taskArgs, hre, runSuper) => {
   await runSuper(taskArgs);
 });
 
-task('test', async (taskArgs, hre, runSuper) => {
+task('test', async (_taskArgs, hre, runSuper) => {
   // Run modified test task
   if (hre.network.name === 'hardhat') {
     // in fhevm mode all this block is done when launching the node via `pnmp fhevm:start`

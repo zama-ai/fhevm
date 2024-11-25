@@ -4,13 +4,12 @@ import crypto from 'crypto';
 import dotenv from 'dotenv';
 import { Wallet, ethers } from 'ethers';
 import * as fs from 'fs';
+import hre from 'hardhat';
 import { Keccak } from 'sha3';
 import { isAddress } from 'web3-validator';
 
 import { insertSQL } from './coprocessorUtils';
 import { awaitCoprocessor, getClearText } from './coprocessorUtils';
-
-const hre = require('hardhat');
 
 const parsedEnvACL = dotenv.parse(fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.acl'));
 const aclAdd = parsedEnvACL.ACL_CONTRACT_ADDRESS;
@@ -361,7 +360,7 @@ function uint8ArrayToHexString(uint8Array: Uint8Array) {
 }
 
 function numberToHex(num: number) {
-  let hex = num.toString(16);
+  const hex = num.toString(16);
   return hex.length % 2 ? '0' + hex : hex;
 }
 

@@ -12,17 +12,7 @@ import type { TFHETestSuite8 } from '../../types/contracts/tests/TFHETestSuite8'
 import type { TFHETestSuite9 } from '../../types/contracts/tests/TFHETestSuite9';
 import type { TFHETestSuite10 } from '../../types/contracts/tests/TFHETestSuite10';
 import type { TFHETestSuite11 } from '../../types/contracts/tests/TFHETestSuite11';
-import {
-  createInstances,
-  decrypt4,
-  decrypt8,
-  decrypt16,
-  decrypt32,
-  decrypt64,
-  decrypt128,
-  decrypt256,
-  decryptBool,
-} from '../instance';
+import { createInstances, decrypt32, decrypt64, decrypt128, decrypt256, decryptBool } from '../instance';
 import { getSigners, initSigners } from '../signers';
 
 async function deployTfheTestFixture1(): Promise<TFHETestSuite1> {

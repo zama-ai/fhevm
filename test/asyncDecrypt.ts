@@ -58,16 +58,16 @@ export const initGateway = async (): Promise<void> => {
   }
   // this function will emit logs for every request and fulfilment of a decryption
   gateway = await ethers.getContractAt('GatewayContract', parsedEnv.GATEWAY_CONTRACT_PREDEPLOY_ADDRESS);
-  gateway.on(
+  await gateway.on(
     'EventDecryption',
-    async (requestID, cts, contractCaller, callbackSelector, msgValue, maxTimestamp, eventData) => {
+    async (requestID, _cts, _contractCaller, _callbackSelector, _msgValue, _maxTimestamp, eventData) => {
       const blockNumber = eventData.log.blockNumber;
-      console.log(`${await currentTime()} - Requested decrypt on block ${blockNumber} (requestID ${requestID})`);
+      console.log(`${currentTime()} - Requested decrypt on block ${blockNumber} (requestID ${requestID})`);
     },
   );
-  gateway.on('ResultCallback', async (requestID, success, result, eventData) => {
+  await gateway.on('ResultCallback', async (requestID, _success, _result, eventData) => {
     const blockNumber = eventData.log.blockNumber;
-    console.log(`${await currentTime()} - Fulfilled decrypt on block ${blockNumber} (requestID ${requestID})`);
+    console.log(`${currentTime()} - Fulfilled decrypt on block ${blockNumber} (requestID ${requestID})`);
   });
 };
 
