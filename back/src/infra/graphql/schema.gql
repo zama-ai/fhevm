@@ -1,0 +1,40 @@
+# ------------------------------------------------------
+# THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
+# ------------------------------------------------------
+
+type Team {
+  id: ID!
+  name: String!
+}
+
+type User {
+  id: ID!
+  email: String!
+
+  """User teams"""
+  teams: [Team!]!
+}
+
+type auth {
+  user: User!
+  token: String!
+}
+
+type Query {
+  me: User!
+}
+
+type Mutation {
+  login(input: LoginInput!): auth!
+  signup(input: SignupInput!): auth!
+}
+
+input LoginInput {
+  email: String!
+  password: String!
+}
+
+input SignupInput {
+  email: String!
+  password: String!
+}
