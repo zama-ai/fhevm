@@ -13,13 +13,21 @@ import {
 } from '@chakra-ui/react'
 import { Field } from '@/components/ui/field'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Logo } from '@/components/logo/logo'
 import { PasswordInput } from '@/components/ui/password-input'
 
 export function SigninPage() {
   return (
     <Flex minHeight="100vh" width="100%">
-      <Box flex="1" display="flex" alignItems="center" justifyContent="center">
+      <Box
+        flex="1"
+        display="flex"
+        alignItems="center"
+        justifyContent="center"
+        bg="brand"
+      >
         <Stack>
+          <Logo />
           <Heading>Welcome back!</Heading>
         </Stack>
       </Box>
@@ -37,9 +45,6 @@ export function SigninPage() {
             <Fieldset.Legend>
               <Heading>Log in to your account</Heading>
             </Fieldset.Legend>
-            <Fieldset.HelperText>
-              Don't have an account? <NavLink to="/register">Register</NavLink>
-            </Fieldset.HelperText>
           </Stack>
 
           <Fieldset.Content>
