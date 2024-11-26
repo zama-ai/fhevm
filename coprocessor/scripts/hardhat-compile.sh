@@ -6,7 +6,7 @@ npx hardhat clean
 
 rm -rf fhevmTemp/
 mkdir -p fhevmTemp
-cp -L -r node_modules/fhevm-core-contracts/ fhevmTemp/
+cp -L -r node_modules/fhevm-core-contracts/. fhevmTemp/
 npx hardhat compile:specific --contract fhevmTemp
 npx hardhat compile:specific --contract lib
 npx hardhat compile:specific --contract gateway
