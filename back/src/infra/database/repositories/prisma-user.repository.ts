@@ -1,9 +1,9 @@
-import { UserProps, User } from 'src/users/domain/entities/user'
-import { UserRepository } from 'src/users/domain/repositories/user.repository'
+import { UserProps, User } from '@/users/domain/entities/user'
+import { UserRepository } from '@/users/domain/repositories/user.repository'
 import { PrismaService } from '../prisma.service'
 import { Injectable } from '@nestjs/common'
-import { Task } from 'src/utils/task'
-import { AppError, notFound, unknown } from 'src/utils/app-error'
+import { Task } from '@/utils/task'
+import { AppError, notFound, unknown } from '@/utils/app-error'
 
 @Injectable()
 export class PrismaUserRepository extends UserRepository {

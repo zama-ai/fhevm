@@ -1,6 +1,6 @@
 import { User, UserProps } from '../entities/user'
-import { AppError } from 'src/utils/app-error'
-import { Task } from 'src/utils/task'
+import { AppError } from '@/utils/app-error'
+import { Task } from '@/utils/task'
 
 export abstract class UserRepository {
   abstract create(props: UserProps): Task<User, AppError>

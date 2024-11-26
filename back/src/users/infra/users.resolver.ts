@@ -1,11 +1,11 @@
 import { Query, Resolver, ResolveField, Parent } from '@nestjs/graphql'
-import { UserType } from './dto/types/user.type'
 import { UseGuards } from '@nestjs/common'
 import { JwtAuthGuard } from '../../auth/infra/guards/jwt-auth-guard'
 import { CurrentUser } from '../../auth/infra/decorators/current-user'
-import { JwtPayload } from 'src/auth/interfaces/jwt-payload'
-import { GetUserById } from 'src/users/use-cases/get-user-by-id.use-case'
-import { GetTeamsByUserId } from 'src/users/use-cases/get-teams-by-user-id.use-case'
+import { JwtPayload } from '@/auth/interfaces/jwt-payload'
+import { GetUserById } from '@/users/use-cases/get-user-by-id.use-case'
+import { GetTeamsByUserId } from '@/users/use-cases/get-teams-by-user-id.use-case'
+import { UserType } from './types/user.type'
 
 @Resolver(() => UserType)
 export class UsersResolver {

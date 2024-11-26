@@ -1,8 +1,8 @@
 import { compare, hashSync, genSaltSync } from 'bcryptjs'
-import { AppError, unauthorized, validation } from 'src/utils/app-error'
-import { Entity } from 'src/utils/entity'
-import { ok, fail, Result } from 'src/utils/result'
-import { Task } from 'src/utils/task'
+import { AppError, unauthorized, validation } from '@/utils/app-error'
+import { Entity } from '@/utils/entity'
+import { ok, fail, Result } from '@/utils/result'
+import { Task } from '@/utils/task'
 import { z } from 'zod'
 
 const schema = z.object({

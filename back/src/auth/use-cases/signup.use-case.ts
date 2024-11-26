@@ -1,13 +1,13 @@
 import { JwtService } from '@nestjs/jwt'
 import { randomUUID } from 'crypto'
-import { User } from 'src/users/domain/entities/user'
-import { UserRepository } from 'src/users/domain/repositories/user.repository'
-import { UseCase } from 'src/utils/use-case'
+import { User } from '@/users/domain/entities/user'
+import { UserRepository } from '@/users/domain/repositories/user.repository'
+import { UseCase } from '@/utils/use-case'
 import { JwtPayload } from '../interfaces/jwt-payload'
 import { Injectable } from '@nestjs/common'
-import { Task } from 'src/utils/task'
-import { AppError } from 'src/utils/app-error'
-import { ok } from 'src/utils/result'
+import { Task } from '@/utils/task'
+import { AppError } from '@/utils/app-error'
+import { ok } from '@/utils/result'
 
 @Injectable()
 export class SignUp

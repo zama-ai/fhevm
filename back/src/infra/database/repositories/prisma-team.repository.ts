@@ -1,9 +1,9 @@
-import { TeamProps, Team } from 'src/users/domain/entities/team'
-import { TeamRepository } from 'src/users/domain/repositories/team.repository'
+import { TeamProps, Team } from '@/users/domain/entities/team'
+import { TeamRepository } from '@/users/domain/repositories/team.repository'
 import { PrismaService } from '../prisma.service'
 import { Injectable } from '@nestjs/common'
-import { Task } from 'src/utils/task'
-import { AppError, notFound, unknown } from 'src/utils/app-error'
+import { Task } from '@/utils/task'
+import { AppError, notFound, unknown } from '@/utils/app-error'
 
 @Injectable()
 export class PrismaTeamRepository extends TeamRepository {
