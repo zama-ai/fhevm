@@ -6,37 +6,36 @@ The Api-gateway provide data to to the frontend, auth users, stores users & apps
 
 ```bash
 # development
-$ npm run start
+$ pnpm start
 
 # watch mode
-$ npm run start:dev
+$ pnpm start:dev
 
 # production mode
-$ npm run start:prod
+$ pnpm start:prod
 ```
 
 ## Manage the database
+
 ```bash
 # apply prisma migrations
-$ npx prisma migrate dev
+$ pnpx prisma migrate dev
 
 # edit the database in prisma studio
-$ npx prisma studio
-
+$ pnpx prisma studio
 ```
-
 
 ## Run tests
 
 ```bash
 # unit tests
-$ npm run test
+$ pnpm test
 
 # e2e tests
-$ npm run test:e2e
+$ pnpm test:e2e
 
 # test coverage
-$ npm run test:cov
+$ pnpm test:cov
 ```
 
 ## Resources

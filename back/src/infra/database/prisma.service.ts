@@ -7,7 +7,8 @@ export class PrismaService implements OnModuleInit {
     log: [
       {
         emit: 'stdout',
-        level: process.env.NODE_ENV === 'production' ? 'error' : 'query',
+        // TODO: create a config service to solve the configuration
+        level: process.env.PRISMA_LOGLEVEL === 'debug' ? 'query' : 'error',
       },
     ],
   })
