@@ -3,6 +3,12 @@ pragma solidity ^0.8.24;
 
 import {TFHEExecutor} from "./TFHEExecutor.sol";
 
+/**
+ * @title    TFHEExecutorWithEvents
+ * @notice   This contract inherits TFHEExecutor and overrides its functions to emit
+ *           events for all TFHE operations.
+ * @dev      This contract is deployed using an UUPS proxy.
+ */
 contract TFHEExecutorWithEvents is TFHEExecutor {
     event FheAdd(uint256 lhs, uint256 rhs, bytes1 scalarByte, uint256 result);
     event FheSub(uint256 lhs, uint256 rhs, bytes1 scalarByte, uint256 result);

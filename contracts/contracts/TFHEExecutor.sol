@@ -19,6 +19,12 @@ interface IInputVerifier {
     ) external returns (uint256);
 }
 
+/**
+ * @title    TFHEExecutor
+ * @notice   This contract implements symbolic execution on the blockchain and one of its
+ *           main responsibilities is to deterministically generate ciphertext handles.
+ * @dev      This contract is deployed using an UUPS proxy.
+ */
 contract TFHEExecutor is UUPSUpgradeable, Ownable2StepUpgradeable {
     /// @notice Handle version
     uint8 public constant HANDLE_VERSION = 0;
