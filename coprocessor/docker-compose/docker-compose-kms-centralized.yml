@@ -25,8 +25,6 @@ services:
       - minio_secrets:/minio_secrets
       - ../core/service/config/:/app/kms/core/service/config
     depends_on:
-      kms-core-base-build:
-        condition: service_started
       dev-s3-mock-setup:
         condition: service_completed_successfully
     entrypoint: >
