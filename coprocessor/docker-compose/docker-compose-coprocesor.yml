@@ -11,7 +11,7 @@ services:
       - db:/var/lib/postgresql/data
 
   coproc:
-    image: ghcr.io/zama-ai/fhevm-coprocessor:v0.1.1-1
+    image: ghcr.io/zama-ai/fhevm-coprocessor:v0.1.2
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/coprocessor
     ports:
@@ -24,7 +24,7 @@ services:
       - --server-addr=0.0.0.0:50052
       - --coprocessor-private-key=/usr/share/coprocessor.key
   geth:
-    image: ghcr.io/zama-ai/geth-coprocessor-devnode:v8
+    image: ghcr.io/zama-ai/go-ethereum-coprocessor-dev:v0.1.1
     volumes:
       - ../blockchain/geth/entrypoint.sh:/entrypoint.sh
     environment:
