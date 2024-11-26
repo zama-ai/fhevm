@@ -49,7 +49,7 @@ task('task:deployTFHEExecutor')
     if (process.env.HARDHAT_TFHEEXECUTOR_EVENTS !== '1') {
       factory = await ethers.getContractFactory('contracts/TFHEExecutor.sol:TFHEExecutor', deployer);
     } else {
-      factory = await ethers.getContractFactory('contracts/TFHEExecutor.events.sol:TFHEExecutor', deployer);
+      factory = await ethers.getContractFactory('contracts/TFHEExecutorWithEvents.sol:TFHEExecutorWithEvents', deployer);
     }
     const exec = await upgrades.deployProxy(factory, [deployer.address], { initializer: 'initialize', kind: 'uups' });
     await exec.waitForDeployment();
