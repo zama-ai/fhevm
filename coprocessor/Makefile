@@ -38,7 +38,7 @@ KMS_DEV_VERSION ?= $(DOCKER_IMAGES_TAG)
 FHEVM_SOLIDITY_REPO ?= fhevm
 FHEVM_SOLIDITY_PATH ?= $(WORKDIR)/$(FHEVM_SOLIDITY_REPO)
 FHEVM_SOLIDITY_PATH_EXISTS := $(shell test -d $(FHEVM_SOLIDITY_PATH)/.git && echo "true" || echo "false")
-FHEVM_SOLIDITY_VERSION ?= feat/non-trivial-multiple
+FHEVM_SOLIDITY_VERSION ?= main
 
 export GO111MODULE = on
 
@@ -131,11 +131,11 @@ copy-keys-threshold:
 
 copy-keys-threshold-key-gen:
 	@bash ./scripts/copy_fhe_keys_threshold_key_gen.sh $(PWD)/network-fhe-keys
-	@bash ./scripts/update_signers.sh $(PWD)/work_dir/fhevm/.env.example.deployment $(PWD)/network-fhe-keys 4
+	@bash ./scripts/update_signers.sh $(PWD)/env/.env.example.deployment $(PWD)/network-fhe-keys 4
 
 copy-keys-centralized-key-gen:
 	@bash ./scripts/copy_fhe_keys_centralized_key_gen.sh $(PWD)/network-fhe-keys
-	@bash ./scripts/update_signers.sh $(PWD)/work_dir/fhevm/.env.example.deployment $(PWD)/network-fhe-keys 1
+	@bash ./scripts/update_signers.sh $(PWD)/env/.env.example.deployment $(PWD)/network-fhe-keys 1
 
 
 trigger-key-gen-threshold:
@@ -216,18 +216,16 @@ install-packages:
 
 
 prepare-e2e-test: check-all-test-repo
-	# $(MAKE) install-packages
-	# @sleep 5
-	@echo "fund test addresses"
-	@cd $(FHEVM_SOLIDITY_PATH) && cp .env.example.deployment .env
-	@cd $(FHEVM_SOLIDITY_PATH) && rm -rf ./.openzeppelin
-	@cd $(FHEVM_SOLIDITY_PATH) && ./fund_tests_addresses_docker.sh
-	@cd $(FHEVM_SOLIDITY_PATH) && npm i
-	@cd $(FHEVM_SOLIDITY_PATH) && ./precompute-addresses.sh
-	@cd $(FHEVM_SOLIDITY_PATH) && ./launch-fhevm-coprocessor.sh
+	@bash scripts/fund_tests_addresses_docker_coprocessor.sh
+	$(MAKE) deploy-fhevm
+	@cp ./scripts/hardhat-compile.sh $(FHEVM_SOLIDITY_PATH)
+	@cp ./env/.env.example.deployment $(FHEVM_SOLIDITY_PATH)/.env
+	@cd $(FHEVM_SOLIDITY_PATH) &&  ./hardhat-compile.sh
+	
 
 run-async-test:
-	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test --grep 'test async decrypt uint64'
+	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test --grep 'test async decrypt uint64' --network localCoprocessor
+
 
 run-true-input-async-test:
 	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test --grep 'test async decrypt uint64 non-trivial'

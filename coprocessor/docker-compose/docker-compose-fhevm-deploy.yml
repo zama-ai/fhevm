@@ -1,0 +1,16 @@
+services:
+  migration:
+    container_name: fhevm-deploy
+    image: ghcr.io/zama-ai/fhevm-smart-contracts-dev:v0.1.1-1
+    volumes:
+      - ../env/.env.example.deployment:/app/.env.example.deployment
+      - ../env/hardhat.config.ts:/app/hardhat.config.ts
+      - ../scripts/launch-fhevm-coprocessor.sh:/app/launch-fhevm-coprocessor.sh
+      - ../scripts/deploy-smart-contracts.sh:/app/deploy-smart-contracts.sh
+    networks:
+      - zama-kms-gateway_default
+    entrypoint: "./deploy-smart-contracts.sh"
+
+networks:
+  zama-kms-gateway_default:
+    external: true
