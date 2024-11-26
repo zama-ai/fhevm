@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import "./ACL.sol";
-import "./FHEPayment.sol";
-import "../addresses/ACLAddress.sol";
-import "../addresses/FHEPaymentAddress.sol";
-import "../addresses/InputVerifierAddress.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
-import "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+
+import {ACL} from "./ACL.sol";
+import {FHEPayment} from "./FHEPayment.sol";
+import {aclAdd} from "../addresses/ACLAddress.sol";
+import {fhePaymentAdd} from "../addresses/FHEPaymentAddress.sol";
+import {inputVerifierAdd} from "../addresses/InputVerifierAddress.sol";
 
 interface IInputVerifier {
     function verifyCiphertext(
