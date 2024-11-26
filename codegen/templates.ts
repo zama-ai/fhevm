@@ -20,8 +20,11 @@ type ebytes128 is uint256;
 type ebytes256 is uint256;
 type einput is bytes32;
 
+/**
+ * @title   Common
+ * @notice  This library contains all the values used to communicate types to the run time.
+ */
 library Common {
-    // Values used to communicate types to the runtime.
     uint8 internal constant ebool_t = 0;
     uint8 internal constant euint4_t = 1;
     uint8 internal constant euint8_t = 2;
@@ -69,7 +72,6 @@ export function implSol(operators: Operator[]): string {
 
   res.push(`
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-
 pragma solidity ^0.8.24;
 
 import "./TFHE.sol";
@@ -79,8 +81,12 @@ ${coprocessorInterface}
 
 ${aclInterface}
 
+/**
+ * @title   Impl
+ * @notice  This library is the core implementation for computing FHE operations (e.g. add, sub, xor).
+ */
 library Impl {
-  // keccak256(abi.encode(uint256(keccak256("fhevm.storage.FHEVMConfig")) - 1)) & ~bytes32(uint256(0xff))
+  /// @dev keccak256(abi.encode(uint256(keccak256("fhevm.storage.FHEVMConfig")) - 1)) & ~bytes32(uint256(0xff))
   bytes32 private constant FHEVMConfigLocation = 0xed8d60e34876f751cc8b014c560745351147d9de11b9347c854e881b128ea600;
 
   function getFHEVMConfig() internal pure returns (FHEVMConfig.FHEVMConfigStruct storage $) {
@@ -159,7 +165,13 @@ function generateImplFhevmLibInterface(operators: Operator[]): string {
 function generateImplCoprocessorInterface(operators: Operator[]): string {
   const res: string[] = [];
 
-  res.push('interface ITFHEExecutor {');
+  res.push(`
+    /**
+    * @title   ITFHEExecutor
+    * @notice  This interface contains all functions to conduct FHE operations.
+    */
+    interface ITFHEExecutor {`);
+
   operators.forEach((op) => {
     let functionName = operatorFheLibFunction(op);
     const tail = 'external returns (uint256 result);';
@@ -205,6 +217,11 @@ function coprocessorInterfaceCustomFunctions(): string {
 
 function generateACLInterface(): string {
   return `
+  /**
+  * @title   IACL
+  * @notice  This interface contains all functions that are used to conduct operations
+  *          with the ACL contract.
+  */
   interface IACL {
     function allowTransient(uint256 ciphertext, address account) external;
     function allow(uint256 handle, address account) external;
@@ -224,7 +241,6 @@ export function tfheSol(
   const res: string[] = [];
 
   res.push(`// SPDX-License-Identifier: BSD-3-Clause-Clear
-
 pragma solidity ^0.8.24;
 
 import "./Impl.sol";
@@ -234,7 +250,11 @@ import "./FHEVMConfig.sol";
 ${commonSolLib()}
 
 
-
+/**
+ * @title   TFHE
+ * @notice  This library is the interaction point for all smart contract developers
+ *          that interact with TFHE.
+ */
 library TFHE {
   function setFHEVM(FHEVMConfig.FHEVMConfigStruct memory fhevmConfig) internal {
       Impl.setFHEVM(fhevmConfig);
