@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - ci/db-migration
     paths:
       - .github/workflows/fhevm-coprocessor.yml
       - .github/workflows/common-docker.yml
@@ -14,11 +13,11 @@ on:
       - published
 
 concurrency:
-  group: fhevm-coprocessor-${{ github.ref_name }}
+  group: fhevm-db-migration-${{ github.ref_name }}
   cancel-in-progress: false
 
 jobs:
-  docker-coprocessor:
+  docker-db-migration:
     uses: ./.github/workflows/common-docker.yml
     permissions:
       contents: "read"
@@ -43,4 +42,4 @@ jobs:
       - name: Success
         run: echo Pipeline Done
     needs:
-      - docker-coprocessor
+      - docker-db-migration
