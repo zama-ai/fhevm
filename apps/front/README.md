@@ -4,6 +4,10 @@ Displays the user interface
 
 # scripts
 
-- `dev` run in dev mode
-- `generate` update generated graphql schemas
-- `lint` lint the code
+```bash
+# run dev in watch mode
+$ pnpm start
+
+# update generated graphql schemas
+$ pnpm generate
+```
