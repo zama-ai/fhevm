@@ -1,4 +1,4 @@
-import { useRouteError } from 'react-router-dom'
+import { useRouteError } from 'react-router'
 
 export function ErrorPage() {
   const error = useRouteError() as { message: string; statusText: string }

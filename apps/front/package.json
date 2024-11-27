@@ -15,10 +15,16 @@
   },
   "dependencies": {
     "@apollo/client": "^3.11.10",
+    "@chakra-ui/react": "^3.2.0",
+    "@emotion/react": "^11.13.5",
+    "@fontsource-variable/archivo": "^5.1.0",
+    "@fontsource-variable/inter": "^5.1.0",
     "graphql": "^16.9.0",
+    "lucide-react": "^0.461.0",
+    "next-themes": "^0.4.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^7.0.1"
+    "react-router": "^7.0.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.13.0",
