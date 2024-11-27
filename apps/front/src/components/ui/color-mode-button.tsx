@@ -6,7 +6,7 @@ import { useColorMode } from '@/hooks/use-color-mode'
 
 export function ColorModeIcon() {
   const { colorMode } = useColorMode()
-  return colorMode === 'light' ? <Sun /> : <Moon />
+  return colorMode === 'dark' ? <Sun /> : <Moon />
 }
 
 type ColorModeButtonProps = Omit<IconButtonProps, 'aria-label'> & {}
@@ -27,8 +27,8 @@ export const ColorModeButton = forwardRef<
         {...props}
         css={{
           _icon: {
-            width: '5',
-            height: '5',
+            width: '4',
+            height: '4',
           },
         }}
       >

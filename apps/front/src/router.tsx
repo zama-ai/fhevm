@@ -1,6 +1,7 @@
 import { createBrowserRouter, RouterProvider } from 'react-router'
 import { PublicLayout } from './layouts/public.layout'
 
+import { AboutPage } from './pages/about.page'
 import { DefaultPage } from './pages/default.page'
 import { ErrorPage } from './pages/error.page'
 
@@ -26,6 +27,10 @@ const router = createBrowserRouter([
         errorElement: <ErrorPage />,
       },
     ],
+  },
+  {
+    path: '/about',
+    element: <AboutPage />,
   },
 ])
 
