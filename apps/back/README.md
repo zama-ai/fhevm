@@ -5,11 +5,8 @@ The Api-gateway provide data to to the frontend, auth users, stores users & apps
 ## Compile and run the project
 
 ```bash
-# development
+# run dev in watch mode
 $ pnpm start
-
-# watch mode
-$ pnpm start:dev
 
 # production mode
 $ pnpm start:prod
