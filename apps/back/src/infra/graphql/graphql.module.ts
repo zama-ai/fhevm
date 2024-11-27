@@ -10,7 +10,7 @@ import { TeamsModule } from '@/teams/infra/teams.module'
   imports: [
     BaseGraphQLModule.forRoot<ApolloDriverConfig>({
       driver: ApolloDriver,
-      autoSchemaFile: join(process.cwd(), '@/infra/graphql/schema.gql'),
+      autoSchemaFile: join(process.cwd(), 'src/infra/graphql/schema.gql'),
       context: ({ req, res }: { req: Request; res: Response }) => ({
         req,
         res,
