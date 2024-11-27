@@ -7,5 +7,15 @@
 # installation
 
 ```bash
+# build & run your local environment
 $ docker-compose up
+
+# install packages
+$ pnpm install
+```
+
+# develop
+```bash
+# run all in dev mode
+$ pnpm start
 ```
