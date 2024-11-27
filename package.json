@@ -73,7 +73,7 @@
     "eslint": "^8.28.0",
     "eslint-config-prettier": "^8.5.0",
     "ethers": "^6.8.0",
-    "fhevmjs": "^0.6.0-4",
+    "fhevmjs": "^0.6.0-8",
     "fhevm-core-contracts": "0.1.0-2",
     "hardhat": "^2.22.10",
     "hardhat-deploy": "^0.11.29",
