@@ -1,9 +1,11 @@
+import { useCallback } from 'react'
 import { useTheme } from 'next-themes'
+
 export function useColorMode() {
   const { resolvedTheme, setTheme } = useTheme()
-  const toggleColorMode = () => {
+  const toggleColorMode = useCallback(() => {
     setTheme(resolvedTheme === 'light' ? 'dark' : 'light')
-  }
+  }, [resolvedTheme, setTheme])
   return {
     colorMode: resolvedTheme,
     setColorMode: setTheme,
