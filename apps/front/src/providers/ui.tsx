@@ -5,7 +5,7 @@ import {
 } from './color-mode.tsx'
 import { system } from '@/theme.ts'
 
-export function Provider(props: ColorModeProviderProps) {
+export function UiProvider(props: ColorModeProviderProps) {
   return (
     <ChakraProvider value={system}>
       <ColorModeProvider {...props} />

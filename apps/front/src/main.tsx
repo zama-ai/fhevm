@@ -3,15 +3,15 @@ import { createRoot } from 'react-dom/client'
 import { ApolloProvider } from '@apollo/client'
 
 import { App } from './application'
-import { Provider } from '@/components/ui/provider'
-import { apolloClient } from './apolloClient'
+import { UiProvider } from '@/providers/ui'
+import { apolloClient } from '@/providers/apollo'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ApolloProvider client={apolloClient}>
-      <Provider>
+      <UiProvider>
         <App />
-      </Provider>
+      </UiProvider>
     </ApolloProvider>
-  </StrictMode>
+  </StrictMode>,
 )
