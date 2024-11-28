@@ -31,12 +31,12 @@ make prepare-e2e-test
 log "Deployment in progress. You can check the logs of fhevm-deploy if needed."
 log "To monitor: docker logs fhevm-deploy"
 
-timeout=120  # Timeout after 60 seconds
+timeout=140  # Timeout after 60 seconds
 while ! docker logs fhevm-deploy 2>&1 | grep -q "Deployment script completed successfully"; do
-    sleep 7
+    sleep 10
     log "Waiting for fhevm-deploy to complete deployment..."
-    log "To monitor: docker logs fhevm-deploy"
-    timeout=$((timeout - 7))
+    log "To monitor: docker logs fhevm-deploy -f"
+    timeout=$((timeout - 10))
     if [ "$timeout" -le 0 ]; then
         log "Timeout reached waiting for fhevm-deploy to finish. Exiting."
         exit 1
