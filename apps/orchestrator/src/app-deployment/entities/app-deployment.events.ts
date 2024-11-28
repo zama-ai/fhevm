@@ -1,34 +1,37 @@
 /* eslint-disable @typescript-eslint/no-empty-object-type */
-export type AppDeploymentEvents =
-  | DeploymentRequested
-  | DeploymentCompleted
-  | SmartContractDiscovered
-  | SmartContractDiscoveryFailed
-  | SmartContractConfirmed
-  | SmartContractConfirmationFailed
-  | SmartContractRegistered
-  | SmartContractRegistrationFailed;
+import type { ExhaustiveTuple } from '../utils';
 
-type Event<Key extends string, Payload extends object> = {
-  _tag: 'Event';
-  type: `app-deployment.${Key}`;
-  payload: Payload & { applicationId: string };
+type EventMap = {
+  requested: { address: string; chainId: string };
+  'sc-discovered': {};
+  'sc-discovery-failed': {};
+  'sc-confirmed': {};
+  'sc-confirmation-failed': {};
+  'sc-registered': {};
+  'sc-registration-failed': {};
+  completed: {};
 };
 
-type DeploymentRequested = Event<
+export type AppDeploymentEvent = {
+  [Key in EventTypes]: {
+    _tag: 'Event';
+    type: `app-deployment.${Key}`;
+    payload: EventMap[Key] & { applicationId: string };
+  };
+}[EventTypes];
+
+type EventTypes = keyof EventMap;
+const _eventTypes = [
+  'completed',
   'requested',
-  { address: string; chainId: string }
->;
-
-type SmartContractDiscovered = Event<'sc-discovered', {}>;
-type SmartContractDiscoveryFailed = Event<'sc-discovery-failed', {}>;
-type SmartContractConfirmed = Event<'sc-confirmed', {}>;
-type SmartContractConfirmationFailed = Event<'sc-confirmation-failed', {}>;
-type SmartContractRegistered = Event<'sc-registered', {}>;
-type SmartContractRegistrationFailed = Event<'sc-registration-failed', {}>;
-type DeploymentCompleted = Event<'completed', {}>;
-
-// type KeyWithPrfix
+  'sc-confirmation-failed',
+  'sc-confirmed',
+  'sc-discovered',
+  'sc-discovery-failed',
+  'sc-registered',
+  'sc-registration-failed',
+] as const;
+const eventTypes: ExhaustiveTuple<EventTypes, typeof _eventTypes> = _eventTypes;
 
 /**
  * Create a factory to generate a given event
@@ -36,24 +39,49 @@ type DeploymentCompleted = Event<'completed', {}>;
  * @param type The type of the Event to generate
  * @returns the factory function for the selected event
  */
-function factory<K extends AppDeploymentEvents['type']>(type: K) {
-  return function <Event extends Extract<AppDeploymentEvents, { type: K }>>(
-    payload: Event['payload'],
-  ) {
-    // TODO: find a better way to solve this
-    return { _tag: 'Event', type, payload } as Event;
+function factory<K extends EventTypes>(type: K) {
+  // TODO: find a better way to solve this
+  return function (payload: EventMap[K] & { applicationId: string }) {
+    return {
+      _tag: 'Event',
+      type: `app-deployment.${type}`,
+      payload,
+    } as AppDeploymentEvent;
   };
 }
 
-export const requested = factory('app-deployment.requested');
-export const completed = factory('app-deployment.completed');
-export const scDiscovered = factory('app-deployment.sc-discovered');
-export const scDiscoveryFailed = factory('app-deployment.sc-discovery-failed');
-export const scConfirmed = factory('app-deployment.sc-confirmed');
-export const scConfirmationFailed = factory(
-  'app-deployment.sc-confirmation-failed',
-);
-export const scRegistered = factory('app-deployment.sc-registered');
-export const scRegistrationFailed = factory(
-  'app-deployment.sc-registration-failed',
-);
+export const requested = factory('requested');
+export const completed = factory('completed');
+export const scDiscovered = factory('sc-discovered');
+export const scDiscoveryFailed = factory('sc-discovery-failed');
+export const scConfirmed = factory('sc-confirmed');
+export const scConfirmationFailed = factory('sc-confirmation-failed');
+export const scRegistered = factory('sc-registered');
+export const scRegistrationFailed = factory('sc-registration-failed');
+
+export function isAppDeploymentEvent(
+  data: unknown,
+): data is AppDeploymentEvent {
+  if (typeof data !== 'object' || data === null) {
+    return false;
+  }
+  if (!('_tag' in data) || !('type' in data) || !('payload' in data)) {
+    return false;
+  }
+
+  if (
+    data._tag !== 'Event' ||
+    typeof data.type !== 'string' ||
+    data.type.startsWith('app-deployment.') ||
+    typeof data.payload !== 'object' ||
+    data.payload === null
+  ) {
+    return false;
+  }
+
+  return (
+    (eventTypes as readonly string[]).includes(data.type.split('.')[1]) &&
+    'applicationId' in data.payload &&
+    data.payload.applicationId === 'string'
+  );
+}
