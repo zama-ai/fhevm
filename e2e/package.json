@@ -36,7 +36,7 @@
     "ethers": "^6.8.0",
     "fhevm": "0.6.0-0",
     "fhevm-core-contracts": "0.1.0-2",
-    "fhevmjs": "0.6.0-9",
+    "fhevmjs": "0.6.0-13",
     "fs-extra": "^10.1.0",
     "globals": "^15.9.0",
     "hardhat": "^2.22.8",
