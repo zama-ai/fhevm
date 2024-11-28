@@ -135,11 +135,13 @@ export const PasswordStrengthMeter = forwardRef<
 
 function getColorPalette(percent: number) {
   switch (true) {
-    case percent < 33:
+    case percent < 26:
       return { label: 'Low', colorPalette: 'red' }
-    case percent < 66:
+    case percent < 51:
       return { label: 'Medium', colorPalette: 'orange' }
-    default:
+    case percent < 76:
       return { label: 'High', colorPalette: 'green' }
+    default:
+      return { label: 'Great', colorPalette: 'blue' }
   }
 }

@@ -1,3 +1,12 @@
+import { SignupForm } from '@/components/signup-form/signup-form'
+
 export function SignupPage() {
-  return <h1>Signup</h1>
+  return (
+    <SignupForm
+      onSubmit={() => {}}
+      loading={false}
+      invitationKey="a"
+      email="miaouss@poke.mon"
+    />
+  )
 }
