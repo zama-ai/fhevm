@@ -3,6 +3,8 @@ import fs from 'fs';
 import { task, types } from 'hardhat/config';
 import type { TaskArguments } from 'hardhat/types';
 
+import { KMSVerifier } from '../types';
+
 task('task:deployGateway')
   .addParam('privateKey', 'The deployer private key')
   .addParam('ownerAddress', 'The owner address')
@@ -134,12 +136,21 @@ task('task:addSigners')
     false,
     types.boolean,
   )
+  .addOptionalParam(
+    'customKmsVerifierAddress',
+    'Use a custom address for the KMSVerifier contract instead of the default one - ie stored inside .env.kmsverifier',
+  )
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
     const deployer = new ethers.Wallet(taskArguments.privateKey).connect(ethers.provider);
     const factory = await ethers.getContractFactory('fhevmTemp/contracts/KMSVerifier.sol:KMSVerifier', deployer);
-    const kmsAdd = dotenv.parse(
-      fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.kmsverifier'),
-    ).KMS_VERIFIER_CONTRACT_ADDRESS;
+    let kmsAdd;
+    if (taskArguments.customKmsVerifierAddress) {
+      kmsAdd = taskArguments.customKmsVerifierAddress;
+    } else {
+      kmsAdd = dotenv.parse(
+        fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.kmsverifier'),
+      ).KMS_VERIFIER_CONTRACT_ADDRESS;
+    }
     const kmsVerifier = await factory.attach(kmsAdd);
     for (let idx = 0; idx < taskArguments.numSigners; idx++) {
       if (!taskArguments.useAddress) {
@@ -155,4 +166,48 @@ task('task:addSigners')
         console.log(`KMS signer no${idx} (${kmsSignerAddress}) was added to KMSVerifier contract`);
       }
     }
+  });
+
+task('task:getAllSigners')
+  .addOptionalParam(
+    'customKmsVerifierAddress',
+    'Use a custom address for the KMSVerifier contract instead of the default one - ie stored inside .env.kmsverifier',
+  )
+  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    const factory = await ethers.getContractFactory('fhevmTemp/contracts/KMSVerifier.sol:KMSVerifier');
+    let kmsAdd;
+    if (taskArguments.customKmsVerifierAddress) {
+      kmsAdd = taskArguments.customKmsVerifierAddress;
+    } else {
+      kmsAdd = dotenv.parse(
+        fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.kmsverifier'),
+      ).KMS_VERIFIER_CONTRACT_ADDRESS;
+    }
+    const kmsVerifier = (await factory.attach(kmsAdd).connect(ethers.provider)) as KMSVerifier;
+    const listCurrentKMSSigners = await kmsVerifier.getSigners();
+    console.log('The list of current KMS Signers stored inside KMSVerifier contract is: ', listCurrentKMSSigners);
+  });
+
+task('task:removeSigner')
+  .addParam('privateKey', 'The KMSVerifier owner private key')
+  .addParam('kmsSignerAddress', 'The KMS Signer address you wish to remove')
+  .addOptionalParam(
+    'customKmsVerifierAddress',
+    'Use a custom address for the KMSVerifier contract instead of the default one - ie stored inside .env.kmsverifier',
+  )
+  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    const deployer = new ethers.Wallet(taskArguments.privateKey).connect(ethers.provider);
+    const factory = await ethers.getContractFactory('fhevmTemp/contracts/KMSVerifier.sol:KMSVerifier', deployer);
+    let kmsAdd;
+    if (taskArguments.customKmsVerifierAddress) {
+      kmsAdd = taskArguments.customKmsVerifierAddress;
+    } else {
+      kmsAdd = dotenv.parse(
+        fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.kmsverifier'),
+      ).KMS_VERIFIER_CONTRACT_ADDRESS;
+    }
+    const kmsVerifier = (await factory.attach(kmsAdd)) as KMSVerifier;
+    const tx = await kmsVerifier.removeSigner(taskArguments.kmsSignerAddress);
+    await tx.wait();
+    console.log(`KMS signer with address (${taskArguments.kmsSignerAddress}) was removed from KMSVerifier contract`);
   });
