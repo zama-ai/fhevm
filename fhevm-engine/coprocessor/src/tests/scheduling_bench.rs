@@ -202,7 +202,7 @@ async fn schedule_multi_erc20() -> Result<(), Box<dyn std::error::Error>> {
             "10" if i % 4 == 1 => (),   // select trxa
             "90" if i % 4 == 2 => (),   // bals - trxa
             "30" if i % 4 == 3 => (),   // bald + trxa
-            s => assert!(false, "unexpected result: {} for output {i}", s),
+            s => panic!("unexpected result: {} for output {i}", s),
         }
     }
     Ok(())

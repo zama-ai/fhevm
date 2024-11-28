@@ -11,7 +11,7 @@ use fhevm_engine_common::{
     common::FheOperation,
     keys::{FhevmKeys, SerializedFhevmKeys},
     tfhe_ops::{current_ciphertext_version, perform_fhe_operation, try_expand_ciphertext_list},
-    types::{get_ct_type, FhevmError, Handle, SupportedFheCiphertexts, HANDLE_LEN, SCALAR_LEN},
+    types::{get_ct_type, FhevmError, Handle, SupportedFheCiphertexts, HANDLE_LEN},
 };
 use sha3::{Digest, Keccak256};
 use std::{cell::Cell, collections::HashMap};
@@ -264,10 +264,9 @@ impl FhevmExecutorService {
                         let ct = state.ciphertexts.get(h).ok_or(FhevmError::BadInputs)?;
                         Ok(ct.expanded.clone())
                     }
-                    Input::Scalar(s) if s.len() == SCALAR_LEN => {
+                    Input::Scalar(s) => {
                         Ok(SupportedFheCiphertexts::Scalar(s.clone()))
                     }
-                    _ => Err(FhevmError::BadInputs.into()),
                 },
                 None => Err(FhevmError::BadInputs.into()),
             })
@@ -305,7 +304,7 @@ pub fn build_taskgraph_from_request(
     let mut produced_handles: HashMap<&Handle, usize> = HashMap::new();
     // Add all computations as nodes in the graph.
     for computation in &req.computations {
-        let inputs: Result<Vec<DFGTaskInput>> = computation
+        let inputs = computation
             .inputs
             .iter()
             .map(|input| match &input.input {
@@ -317,29 +316,29 @@ pub fn build_taskgraph_from_request(
                             Ok(DFGTaskInput::Dependence(None))
                         }
                     }
-                    Input::Scalar(s) if s.len() == SCALAR_LEN => Ok(DFGTaskInput::Value(
+                    Input::Scalar(s) => Ok(DFGTaskInput::Value(
                         SupportedFheCiphertexts::Scalar(s.clone()),
                     )),
-                    _ => Err(FhevmError::BadInputs.into()),
                 },
-                None => Err(FhevmError::BadInputs.into()),
+                None => Err(SyncComputeError::BadInputs),
             })
-            .collect();
-        if let Ok(mut inputs) = inputs {
-            let res_handle = computation
-                .result_handles
-                .first()
-                .filter(|h| h.len() == HANDLE_LEN)
-                .ok_or(SyncComputeError::BadResultHandles)?;
-            let n = dfg
-                .add_node(
-                    res_handle.clone(),
-                    computation.operation,
-                    std::mem::take(&mut inputs),
-                )
-                .or_else(|_| Err(SyncComputeError::ComputationFailed))?;
-            produced_handles.insert(res_handle, n.index());
-        }
+            .collect::<Result<Vec<DFGTaskInput>, SyncComputeError>>();
+
+        let mut inputs = inputs?;
+
+        let res_handle = computation
+            .result_handles
+            .first()
+            .filter(|h| h.len() == HANDLE_LEN)
+            .ok_or(SyncComputeError::BadResultHandles)?;
+        let n = dfg
+            .add_node(
+                res_handle.clone(),
+                computation.operation,
+                std::mem::take(&mut inputs),
+            )
+            .or_else(|_| Err(SyncComputeError::ComputationFailed))?;
+        produced_handles.insert(res_handle, n.index());
     }
     // Traverse computations and add dependences/edges as required
     for (index, computation) in req.computations.iter().enumerate() {

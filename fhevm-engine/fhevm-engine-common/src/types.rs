@@ -744,7 +744,6 @@ impl From<SupportedFheOperations> for i16 {
 
 pub type Handle = Vec<u8>;
 pub const HANDLE_LEN: usize = 32;
-pub const SCALAR_LEN: usize = 32;
 
 pub fn get_ct_type(handle: &[u8]) -> Result<i16, FhevmError> {
     match handle.len() {
