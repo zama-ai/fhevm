@@ -216,6 +216,4 @@ contract TFHEExecutorWithEvents is TFHEExecutor {
         result = super.fheRandBounded(upperBound, randType);
         emit FheRandBounded(upperBound, randType, result);
     }
-
-    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
 }
