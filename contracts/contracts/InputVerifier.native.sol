@@ -4,7 +4,6 @@ pragma solidity ^0.8.24;
 import "./KMSVerifier.sol";
 import "./TFHEExecutor.sol";
 import "../addresses/KMSVerifierAddress.sol";
-import "../addresses/CoprocessorAddress.sol";
 
 // Importing OpenZeppelin contracts for cryptographic signature verification and access control.
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
