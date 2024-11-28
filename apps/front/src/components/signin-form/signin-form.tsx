@@ -18,7 +18,6 @@ export function SigninForm({ onSubmit, loading, errorMessage }: OwnProps) {
     },
     onSubmit: values => {
       onSubmit(values)
-      console.log(JSON.stringify(values, null, 2))
     },
   })
   return (
