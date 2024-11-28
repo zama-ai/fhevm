@@ -829,6 +829,116 @@ func fheNeRun(sess CoprocessorSession, unslicedInput []byte, _ ExtraData, output
 	}
 }
 
+func fheEqBytesRun(sess CoprocessorSession, unslicedInput []byte, _ ExtraData, outputHandle []byte) error {
+	// uint256,bytes,bytes1
+	if len(unslicedInput) < 128 {
+		return fmt.Errorf("expected at least 128 bytes as input, got %d", len(unslicedInput))
+	}
+	lhs := unslicedInput[0:32]
+	lhsByteOffset := unslicedInput[32:64]
+	isScalar := unslicedInput[64] > 0
+
+	lhsByteOffsetNum := big.NewInt(0)
+	lhsByteOffsetNum.SetBytes(lhsByteOffset)
+
+	offsetEnd := lhsByteOffsetNum.Uint64() + 32
+	if offsetEnd > uint64(len(unslicedInput)) {
+		return fmt.Errorf("byte array offset out of bounds, got %d, input length %d", offsetEnd, len(unslicedInput))
+	}
+
+	scalarOperandLengthBytes := unslicedInput[lhsByteOffsetNum.Uint64() : lhsByteOffsetNum.Uint64()+32]
+	scalarOperandLength := big.NewInt(0)
+	scalarOperandLength.SetBytes(scalarOperandLengthBytes)
+
+	byteArrayEnd := offsetEnd + scalarOperandLength.Uint64()
+	if byteArrayEnd > uint64(len(unslicedInput)) {
+		return fmt.Errorf("byte array offset out of bounds, got %d, input length %d", byteArrayEnd, len(unslicedInput))
+	}
+
+	rhs := unslicedInput[offsetEnd : offsetEnd+scalarOperandLength.Uint64()]
+
+	operation := FheEq
+	if isScalar {
+		err := sess.GetStore().InsertComputation(ComputationToInsert{
+			Operation:    operation,
+			OutputHandle: outputHandle,
+			Operands: []ComputationOperand{
+				{
+					Handle:      lhs,
+					FheUintType: handleType(lhs),
+					IsScalar:    false,
+				},
+				{
+					Handle:      rhs,
+					FheUintType: handleType(rhs),
+					IsScalar:    isScalar,
+				},
+			},
+		})
+		if err != nil {
+			return err
+		}
+		return nil
+	} else {
+		return errors.New("only scalar is operand supported for fheEq(uint256,bytes,bytes1) overload")
+	}
+}
+
+func fheNeBytesRun(sess CoprocessorSession, unslicedInput []byte, _ ExtraData, outputHandle []byte) error {
+	// uint256,bytes,bytes1
+	if len(unslicedInput) < 128 {
+		return fmt.Errorf("expected at least 128 bytes as input, got %d", len(unslicedInput))
+	}
+	lhs := unslicedInput[0:32]
+	lhsByteOffset := unslicedInput[32:64]
+	isScalar := unslicedInput[64] > 0
+
+	lhsByteOffsetNum := big.NewInt(0)
+	lhsByteOffsetNum.SetBytes(lhsByteOffset)
+
+	offsetEnd := lhsByteOffsetNum.Uint64() + 32
+	if offsetEnd > uint64(len(unslicedInput)) {
+		return fmt.Errorf("byte array offset out of bounds, got %d, input length %d", offsetEnd, len(unslicedInput))
+	}
+
+	scalarOperandLengthBytes := unslicedInput[lhsByteOffsetNum.Uint64() : lhsByteOffsetNum.Uint64()+32]
+	scalarOperandLength := big.NewInt(0)
+	scalarOperandLength.SetBytes(scalarOperandLengthBytes)
+
+	byteArrayEnd := offsetEnd + scalarOperandLength.Uint64()
+	if byteArrayEnd > uint64(len(unslicedInput)) {
+		return fmt.Errorf("byte array offset out of bounds, got %d, input length %d", byteArrayEnd, len(unslicedInput))
+	}
+
+	rhs := unslicedInput[offsetEnd : offsetEnd+scalarOperandLength.Uint64()]
+
+	operation := FheNe
+	if isScalar {
+		err := sess.GetStore().InsertComputation(ComputationToInsert{
+			Operation:    operation,
+			OutputHandle: outputHandle,
+			Operands: []ComputationOperand{
+				{
+					Handle:      lhs,
+					FheUintType: handleType(lhs),
+					IsScalar:    false,
+				},
+				{
+					Handle:      rhs,
+					FheUintType: handleType(rhs),
+					IsScalar:    isScalar,
+				},
+			},
+		})
+		if err != nil {
+			return err
+		}
+		return nil
+	} else {
+		return errors.New("only scalar is operand supported for fheNe(uint256,bytes,bytes1) overload")
+	}
+}
+
 func fheGeRun(sess CoprocessorSession, unslicedInput []byte, _ ExtraData, outputHandle []byte) error {
 	if len(unslicedInput) < 65 {
 		return fmt.Errorf("expected at least 65 bytes as input, got %d", len(unslicedInput))
@@ -1472,6 +1582,59 @@ func trivialEncryptRun(sess CoprocessorSession, unslicedInput []byte, ed ExtraDa
 		Operands: []ComputationOperand{
 			{
 				Handle:      unslicedInput[0:32],
+				FheUintType: FheUint256,
+				IsScalar:    true,
+			},
+			{
+				Handle:      []byte{resultTypeByte},
+				FheUintType: FheUint8,
+				IsScalar:    true,
+			},
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func trivialEncryptBytesRun(sess CoprocessorSession, unslicedInput []byte, ed ExtraData, outputHandle []byte) error {
+	if len(unslicedInput) < 96 {
+		return fmt.Errorf("expected at least 96 bytes as input, got %d", len(unslicedInput))
+	}
+
+	resultTypeByte := unslicedInput[32]
+
+	offsetBigNum := big.NewInt(0)
+	offsetBigNum.SetBytes(unslicedInput[0:32])
+	startOfByteArray := offsetBigNum.Uint64()
+	if startOfByteArray+32 > uint64(len(unslicedInput)) {
+		return fmt.Errorf("byte array offset out of bounds, got %d, input length %d", startOfByteArray+32, len(unslicedInput))
+	}
+	byteArrayLength := big.NewInt(0)
+	byteArrayLength.SetBytes(unslicedInput[startOfByteArray : startOfByteArray+32])
+
+	if startOfByteArray+32+byteArrayLength.Uint64() > uint64(len(unslicedInput)) {
+		return fmt.Errorf("byte array offset out of bounds, got %d, input length %d", startOfByteArray+32+byteArrayLength.Uint64(), len(unslicedInput))
+	}
+
+	// array could be empty
+	rawCiphertextByteSlice := []byte{}
+	if byteArrayLength.Uint64() > 0 {
+		rawCiphertextByteSlice = unslicedInput[startOfByteArray+32 : startOfByteArray+32+byteArrayLength.Uint64()]
+	}
+
+	if !IsValidFheType(resultTypeByte) {
+		return fmt.Errorf("invalid fhe type byte: %d", resultTypeByte)
+	}
+
+	err := sess.GetStore().InsertComputation(ComputationToInsert{
+		Operation:    TrivialEncrypt,
+		OutputHandle: outputHandle,
+		Operands: []ComputationOperand{
+			{
+				Handle:      rawCiphertextByteSlice,
 				FheUintType: FheUint256,
 				IsScalar:    true,
 			},

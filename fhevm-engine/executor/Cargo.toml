@@ -1,7 +1,9 @@
 [package]
 name = "executor"
-version = "0.1.0"
-edition = "2021"
+version = "0.1.1"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
 
 [dependencies]
 # workspace dependencies
@@ -17,6 +19,7 @@ tonic = { workspace = true }
 
 # local dependencies
 fhevm-engine-common = { path = "../fhevm-engine-common" }
+scheduler = { path = "../scheduler" }
 
 # arch-specific dependencies
 [target.'cfg(target_arch = "x86_64")'.dependencies]

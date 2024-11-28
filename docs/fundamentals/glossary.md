@@ -1,8 +1,14 @@
 # Glossary
 
-- _Executor_: A component that runs alongside the fhEVM blockchain node/validator and does the FHE computation. The node/validator and the Executor communicate over a network connection.
+- _Coprocessor_: An off-chain component in fhEVM-native that does the actual FHE computation.
 
-- _FheLib_: A precompiled contract that is available on nodes/validators. Exposes a number of functions, e.g. getting ciphertexts, verifying inputs, etc. At the time of writing, it exists at address **0x000000000000000000000000000000000000005d**.
+- _Executor_: A component that runs alongside the fhEVM-native blockchain node/validator and does the FHE computation. The node/validator and the Executor communicate over a network connection.
+
+- _FheLib_: A precompiled contract on fhEVM-native that is available on nodes/validators. Exposes functions such as reading FHE ciphertexts from the on-chain storage in fhEVM-native, etc. At the time of writing, it exists at address **0x000000000000000000000000000000000000005d**.
+
+- _fhEVM-coprocessor_: An fhEVM configuration where an off-chain Coprocessor component does the actual FHE computation. FHE ciphertexts are stored in an off-chain database local to the Coprocessor and in an off-chain public Data Availablility (DA) layer. No modifications the validator software of the existing chain is required (except for the full-node running for the Coprocessor).
+
+- _fhEVM-native_: An fhEVM configuration where each validator is paired with an Executor. FHE ciphertexts are stored on-chain. fhEVM-native requires modifications to the validator software of an existing chain.
 
 - _fhevmjs_: A JavaScript library that allows dApps to interact with the fhEVM.
 

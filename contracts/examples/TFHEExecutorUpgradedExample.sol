@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-
 pragma solidity ^0.8.24;
 
-import "../contracts/TFHEExecutor.sol";
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
+import {TFHEExecutor} from "../contracts/TFHEExecutor.sol";
 
 /// @title TFHEExecutorUpgradedExample
 /// @dev Contract that extends TFHEExecutor with version information

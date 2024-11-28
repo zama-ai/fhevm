@@ -50,12 +50,12 @@ async fn get_input_ciphertext() {
         Resp::ResultCiphertexts(cts) => match (cts.ciphertexts.first(), cts.ciphertexts.len()) {
             (Some(ct), 1) => {
                 if ct.handle != input_handle || ct.serialization.is_empty() {
-                    assert!(false, "response handle or ciphertext are unexpected");
+                    panic!("response handle or ciphertext are unexpected");
                 }
             }
-            _ => assert!(false, "no response"),
+            _ => panic!("no response"),
         },
-        Resp::Error(e) => assert!(false, "error: {}", e),
+        Resp::Error(e) => panic!("error: {}", e),
     }
 }
 
@@ -111,7 +111,7 @@ async fn compute_on_two_serialized_ciphertexts() {
         Resp::ResultCiphertexts(cts) => match (cts.ciphertexts.first(), cts.ciphertexts.len()) {
             (Some(ct), 1) => {
                 if ct.handle != vec![0xaa; HANDLE_LEN] {
-                    assert!(false, "response handle is unexpected");
+                    panic!("response handle is unexpected");
                 }
                 let ct = SupportedFheCiphertexts::decompress(3, &ct.serialization).unwrap();
                 match ct
@@ -119,12 +119,12 @@ async fn compute_on_two_serialized_ciphertexts() {
                     .as_str()
                 {
                     "21" => (),
-                    s => assert!(false, "unexpected result: {}", s),
+                    s => panic!("unexpected result: {}", s),
                 }
             }
-            _ => assert!(false, "unexpected amount of result ciphertexts returned"),
+            _ => panic!("unexpected amount of result ciphertexts returned"),
         },
-        Resp::Error(e) => assert!(false, "error response: {}", e),
+        Resp::Error(e) => panic!("error response: {}", e),
     }
 }
 
@@ -178,7 +178,7 @@ async fn compute_on_compact_and_serialized_ciphertexts() {
         Resp::ResultCiphertexts(cts) => match (cts.ciphertexts.first(), cts.ciphertexts.len()) {
             (Some(ct), 1) => {
                 if ct.handle != vec![0xaa; HANDLE_LEN] {
-                    assert!(false, "response handle is unexpected");
+                    panic!("response handle is unexpected");
                 }
                 let ct = SupportedFheCiphertexts::decompress(3, &ct.serialization).unwrap();
                 match ct
@@ -186,12 +186,12 @@ async fn compute_on_compact_and_serialized_ciphertexts() {
                     .as_str()
                 {
                     "21" => (),
-                    s => assert!(false, "unexpected result: {}", s),
+                    s => panic!("unexpected result: {}", s),
                 }
             }
-            _ => assert!(false, "unexpected amount of result ciphertexts returned"),
+            _ => panic!("unexpected amount of result ciphertexts returned"),
         },
-        Resp::Error(e) => assert!(false, "error response: {}", e),
+        Resp::Error(e) => panic!("error response: {}", e),
     }
 }
 
@@ -256,7 +256,7 @@ async fn compute_on_result_ciphertext() {
         Resp::ResultCiphertexts(cts) => match (cts.ciphertexts.get(1), cts.ciphertexts.len()) {
             (Some(ct), 2) => {
                 if ct.handle != vec![0xbb; HANDLE_LEN] {
-                    assert!(false, "response handle is unexpected");
+                    panic!("response handle is unexpected");
                 }
                 let ct = SupportedFheCiphertexts::decompress(3, &ct.serialization).unwrap();
                 match ct
@@ -264,11 +264,61 @@ async fn compute_on_result_ciphertext() {
                     .as_str()
                 {
                     "32" => (),
-                    s => assert!(false, "unexpected result: {}", s),
+                    s => panic!("unexpected result: {}", s),
                 }
             }
-            _ => assert!(false, "unexpected amount of result ciphertexts returned"),
+            _ => panic!("unexpected amount of result ciphertexts returned"),
         },
-        Resp::Error(e) => assert!(false, "error response: {}", e),
+        Resp::Error(e) => panic!("error response: {}", e),
+    }
+}
+
+#[tokio::test]
+async fn trivial_encryption_scalar_less_than_32_bytes() {
+    let test = get_test().await;
+    test.keys.set_server_key_for_current_thread();
+    let mut client = FhevmExecutorClient::connect(test.server_addr.clone())
+        .await
+        .unwrap();
+    // 10 big endian
+    let mut triv_encrypt_input = vec![0; 31];
+    triv_encrypt_input.push(10);
+    let sync_input1 = SyncInput {
+        input: Some(Input::Scalar(triv_encrypt_input)),
+    };
+    let sync_input2 = SyncInput {
+        input: Some(Input::Scalar(vec![3])),
+    };
+    let computation = SyncComputation {
+        operation: FheOperation::FheTrivialEncrypt.into(),
+        result_handles: vec![vec![0xaa; HANDLE_LEN]],
+        inputs: vec![sync_input1, sync_input2],
+    };
+    let req = SyncComputeRequest {
+        computations: vec![computation],
+        compact_ciphertext_lists: vec![],
+        compressed_ciphertexts: vec![],
+    };
+    let response = client.sync_compute(req).await.unwrap();
+    let sync_compute_response = response.get_ref();
+    let resp = sync_compute_response.resp.clone().unwrap();
+    match resp {
+        Resp::ResultCiphertexts(cts) => match (cts.ciphertexts.first(), cts.ciphertexts.len()) {
+            (Some(ct), 1) => {
+                if ct.handle != vec![0xaa; HANDLE_LEN] {
+                    panic!("response handle is unexpected: {:?}", ct.handle);
+                }
+                let ct = SupportedFheCiphertexts::decompress(3, &ct.serialization).unwrap();
+                match ct
+                    .decrypt(&test.as_ref().keys.client_key.clone().unwrap())
+                    .as_str()
+                {
+                    "10" => (),
+                    s => panic!("unexpected result: {}", s),
+                }
+            }
+            _ => panic!("unexpected amount of result ciphertexts returned: {}", cts.ciphertexts.len()),
+        },
+        Resp::Error(e) => panic!("error response: {}", e),
     }
 }

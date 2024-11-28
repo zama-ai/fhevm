@@ -245,11 +245,11 @@ async fn schedule_dependent_computations() {
                             ),
                         }
                     }
-                    _ => assert!(false, "unexpected handle 0x{:x}", ct.handle[0]),
+                    _ => panic!("unexpected handle 0x{:x}", ct.handle[0]),
                 }
             }
         }
-        Resp::Error(e) => assert!(false, "error response: {}", e),
+        Resp::Error(e) => panic!("error response: {}", e),
     }
 }
 
@@ -539,11 +539,11 @@ async fn schedule_y_patterns() {
                             ),
                         }
                     }
-                    _ => assert!(false, "unexpected handle 0x{:x}", ct.handle[0]),
+                    _ => panic!("unexpected handle 0x{:x}", ct.handle[0]),
                 }
             }
         }
-        Resp::Error(e) => assert!(false, "error response: {}", e),
+        Resp::Error(e) => panic!("error response: {}", e),
     }
 }
 
@@ -831,10 +831,10 @@ async fn schedule_diamond_reduction_dependence_pattern() {
                             ),
                         }
                     }
-                    _ => assert!(false, "unexpected handle 0x{:x}", ct.handle[0]),
+                    _ => panic!("unexpected handle 0x{:x}", ct.handle[0]),
                 }
             }
         }
-        Resp::Error(e) => assert!(false, "error response: {}", e),
+        Resp::Error(e) => panic!("error response: {}", e),
     }
 }

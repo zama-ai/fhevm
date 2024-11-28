@@ -101,6 +101,18 @@ func FheLibMethods() []*FheLibMethod {
 			ScalarSupport: true,
 		},
 		{
+			Name:          "fheEq",
+			ArgTypes:      "(uint256,bytes,bytes1)",
+			runFunction:   fheEqBytesRun,
+			ScalarSupport: true,
+		},
+		{
+			Name:          "fheNe",
+			ArgTypes:      "(uint256,bytes,bytes1)",
+			runFunction:   fheNeBytesRun,
+			ScalarSupport: true,
+		},
+		{
 			Name:          "fheGe",
 			ArgTypes:      "(uint256,uint256,bytes1)",
 			runFunction:   fheGeRun,
@@ -170,6 +182,11 @@ func FheLibMethods() []*FheLibMethod {
 			Name:        "trivialEncrypt",
 			ArgTypes:    "(uint256,bytes1)",
 			runFunction: trivialEncryptRun,
+		},
+		{
+			Name:        "trivialEncrypt",
+			ArgTypes:    "(bytes,bytes1)",
+			runFunction: trivialEncryptBytesRun,
 		},
 	}
 }

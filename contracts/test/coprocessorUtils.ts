@@ -1462,7 +1462,7 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
 
 export function getFHEGasFromTxReceipt(receipt: ethers.TransactionReceipt): number {
   if (process.env.HARDHAT_TFHEEXECUTOR_EVENTS !== '1') {
-    throw Error('FHEGas tracking is currently implemented only with TFHEExecutor.events.sol variant');
+    throw Error('FHEGas tracking is currently implemented only with TFHEExecutorWithEvents.sol variant');
   }
   if (receipt.status === 0) {
     throw new Error('Transaction reverted');

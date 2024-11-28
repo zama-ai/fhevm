@@ -1,15 +1,34 @@
-FROM rust:1.80.1-bullseye AS build
+# Stage 1: Build
+FROM rust:1.82.0-bullseye AS build
 
-RUN apt-get update
-RUN apt-get install -y protobuf-compiler
+WORKDIR /app
 
-# we assume we're in the root directory
-ADD . /app/
+# Install dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends protobuf-compiler=3.12.4* && \
+    rm -rf /var/lib/apt/lists/*
 
-RUN cd /app/fhevm-engine/coprocessor && SQLX_OFFLINE=true cargo build --release
+COPY ./fhevm-engine/ ./fhevm-engine/
+COPY ./proto/ ./proto/
 
-FROM debian:bullseye
+WORKDIR /app/fhevm-engine/coprocessor
 
-COPY --from=build /app/fhevm-engine/target/release/coprocessor /usr/local/bin
+RUN cargo fetch && \
+    SQLX_OFFLINE=true cargo build --release
+
+# Stage 2: Final image
+FROM debian:bullseye-slim
+
+RUN useradd -m zama
+
+COPY --from=build /app/fhevm-engine/target/release/coprocessor /usr/local/bin/
+COPY --from=build /app/fhevm-engine/target/release/cli /usr/local/bin/coprocessor-cli
+
+RUN chown zama:zama /usr/local/bin/coprocessor && \
+    chmod 500 /usr/local/bin/coprocessor
+RUN chown zama:zama /usr/local/bin/coprocessor-cli && \
+    chmod 500 /usr/local/bin/coprocessor-cli
+
+USER zama
 
 ENTRYPOINT ["/usr/local/bin/coprocessor"]

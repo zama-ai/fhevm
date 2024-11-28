@@ -178,6 +178,6 @@ async fn schedule_multi_erc20() {
                 }
             }
         }
-        Resp::Error(e) => assert!(false, "error response: {}", e),
+        Resp::Error(e) => panic!("error response: {}", e),
     }
 }

@@ -2,6 +2,8 @@ name: Check Markdown links
 
 on:
   pull_request:
+    branches:
+      - main
   push:
     branches:
       - main
@@ -18,3 +20,4 @@ jobs:
         with:
           use-quiet-mode: "yes"
           use-verbose-mode: "yes"
+          config-file: "mlc_config.json"

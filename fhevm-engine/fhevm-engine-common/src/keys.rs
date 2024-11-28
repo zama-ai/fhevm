@@ -4,13 +4,16 @@ use tfhe::{
     generate_keys, set_server_key,
     shortint::{
         parameters::{
+            compact_public_key_only::p_fail_2_minus_64::ks_pbs::PARAM_PKE_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M64,
+            key_switching::p_fail_2_minus_64::ks_pbs::PARAM_KEYSWITCH_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M64,
             list_compression::COMP_PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M64,
-            CompressionParameters, PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M64,
+            CompactPublicKeyEncryptionParameters, CompressionParameters,
+            ShortintKeySwitchingParameters, PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M64,
         },
         ClassicPBSParameters,
     },
     zk::{CompactPkeCrs, CompactPkePublicParams},
-    ClientKey, CompactPublicKey, ConfigBuilder, ServerKey,
+    ClientKey, CompactPublicKey, Config, ConfigBuilder, ServerKey,
 };
 
 use crate::utils::{safe_deserialize_key, safe_serialize_key};
@@ -18,9 +21,14 @@ use crate::utils::{safe_deserialize_key, safe_serialize_key};
 pub const TFHE_PARAMS: ClassicPBSParameters = PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M64;
 pub const TFHE_COMPRESSION_PARAMS: CompressionParameters =
     COMP_PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M64;
+pub const TFHE_COMPACT_PK_ENCRYPTION_PARAMS: CompactPublicKeyEncryptionParameters =
+    PARAM_PKE_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M64;
+pub const TFHE_KS_PARAMS: ShortintKeySwitchingParameters =
+    PARAM_KEYSWITCH_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M64;
 
 pub const MAX_BITS_TO_PROVE: usize = 2048;
 
+#[derive(Clone)]
 pub struct FhevmKeys {
     pub server_key: ServerKey,
     pub client_key: Option<ClientKey>,
@@ -38,9 +46,7 @@ pub struct SerializedFhevmKeys {
 impl FhevmKeys {
     pub fn new() -> Self {
         println!("Generating keys...");
-        let config = ConfigBuilder::with_custom_parameters(TFHE_PARAMS)
-            .enable_compression(TFHE_COMPRESSION_PARAMS)
-            .build();
+        let config = Self::new_config();
         let (client_key, server_key) = generate_keys(config);
         let compact_public_key = CompactPublicKey::new(&client_key);
         let crs = CompactPkeCrs::from_config(config, MAX_BITS_TO_PROVE).expect("CRS creation");
@@ -50,6 +56,16 @@ impl FhevmKeys {
             compact_public_key,
             public_params: Arc::new(crs.public_params().clone()),
         }
+    }
+
+    pub fn new_config() -> Config {
+        ConfigBuilder::with_custom_parameters(TFHE_PARAMS)
+            .enable_compression(TFHE_COMPRESSION_PARAMS)
+            .use_dedicated_compact_public_key_parameters((
+                TFHE_COMPACT_PK_ENCRYPTION_PARAMS,
+                TFHE_KS_PARAMS,
+            ))
+            .build()
     }
 
     pub fn set_server_key_for_current_thread(&self) {
@@ -64,6 +80,7 @@ impl SerializedFhevmKeys {
     const PKS: &'static str = "../fhevm-keys/pks";
     const PUBLIC_PARAMS: &'static str = "../fhevm-keys/pp";
 
+    // generating keys is only for testing, so it is okay these are hardcoded
     pub fn save_to_disk(self) {
         println!("Creating directory {}", Self::DIRECTORY);
         std::fs::create_dir_all(Self::DIRECTORY).expect("create keys directory");
@@ -84,14 +101,15 @@ impl SerializedFhevmKeys {
             .expect("write public params");
     }
 
-    pub fn load_from_disk() -> Self {
-        let server_key = read(Self::SKS).expect("read server key");
-        let client_key = read(Self::CKS);
-        let compact_public_key = read(Self::PKS).expect("read compact public key");
-        let public_params = read(Self::PUBLIC_PARAMS).expect("read public params");
+    pub fn load_from_disk(keys_directory: &str) -> Self {
+        let keys_dir = std::path::Path::new(&keys_directory);
+        let server_key = read(keys_dir.join("sks")).expect("read server key");
+        let client_key = read(keys_dir.join("cks")).ok();
+        let compact_public_key = read(keys_dir.join("pks")).expect("read compact public key");
+        let public_params = read(keys_dir.join("pp")).expect("read public params");
         SerializedFhevmKeys {
             server_key,
-            client_key: client_key.ok(),
+            client_key,
             compact_public_key,
             public_params,
         }

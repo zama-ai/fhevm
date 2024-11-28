@@ -17,6 +17,10 @@ init_db:
 	$(DB_URL) sqlx migrate run
 	$(DB_URL) cargo test setup_test_user -- --nocapture --ignored
 
+.PHONY: run
+run:
+	docker compose up -d
+
 .PHONY: recreate_db
 recreate_db:
 	$(MAKE) cleanup

@@ -468,7 +468,7 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
                     input: Some(Input::InputHandle(test_u32.handle.clone())),
                 },
                 AsyncComputationInput {
-                    input: Some(Input::InputHandle(vec![0; 65])),
+                    input: Some(Input::InputHandle(vec![0; 257])),
                 },
             ],
         }];
@@ -487,7 +487,7 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
                 eprintln!("error: {}", e);
                 assert!(e
                     .to_string()
-                    .contains("Found ciphertext handle longer than 64 bytes"));
+                    .contains("Found ciphertext handle longer than 256 bytes"));
             }
         }
     }

@@ -1,7 +1,9 @@
 [package]
 name = "fhevm-engine-common"
-version = "0.1.0"
-edition = "2021"
+version = "0.1.1"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
 
 [dependencies]
 # workspace dependencies
@@ -10,11 +12,14 @@ bincode = { workspace = true }
 serde = { workspace = true }
 sha3 = { workspace = true }
 tfhe = { workspace = true }
+prost = { workspace = true }
+tonic  = { workspace = true }
 
 # crates.io dependencies
 bigdecimal = "0.4.5"
 hex = "0.4"
 rand = "0.8.5"
+paste = "1.0.15"
 rand_chacha = "0.3.1"
 strum = { version = "0.26", features = ["derive"] }
 
@@ -26,6 +31,9 @@ tfhe = { workspace = true, features = ["aarch64-unix"] }
 
 [features]
 nightly-avx512 = ["tfhe/nightly-avx512"]
+
+[build-dependencies]
+tonic-build = "0.12"
 
 [[bin]]
 name = "generate-keys"

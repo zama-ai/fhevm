@@ -1,6 +1,6 @@
 # fhevm-go-coproc
 
-This is coprocessor library for fhevm. It is meant to be integrated into blockchains like go-ethereum. Since it is not trivial to take over control of the command line flags coprocessor is controlled by environment variables instead.
+This is the Go coprocessor library for fhEVM. It is meant to be integrated into EVMs such as go-ethereum (geth). Since it is not trivial to take over control of the command line flags in geth, coprocessor is controlled by environment variables instead.
 
 Example configuration for go-ethereum:
 ```

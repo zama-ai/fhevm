@@ -1758,7 +1758,7 @@ dependencies = [
 
 [[package]]
 name = "coprocessor"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "actix-web",
  "alloy",
@@ -1767,6 +1767,7 @@ dependencies = [
  "clap",
  "fhevm-engine-common",
  "hex",
+ "itertools 0.13.0",
  "lazy_static",
  "lru",
  "opentelemetry",
@@ -1775,7 +1776,9 @@ dependencies = [
  "prometheus",
  "prost",
  "rand",
+ "rayon",
  "regex",
+ "scheduler",
  "serde_json",
  "sha3",
  "sqlx",
@@ -2190,7 +2193,7 @@ checksum = "0206175f82b8d6bf6652ff7d71a1e27fd2e4efde587fd368662814d6ec1d9ce0"
 
 [[package]]
 name = "executor"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "bincode",
@@ -2199,6 +2202,7 @@ dependencies = [
  "fhevm-engine-common",
  "prost",
  "rayon",
+ "scheduler",
  "sha3",
  "tfhe",
  "tokio",
@@ -2235,18 +2239,22 @@ dependencies = [
 
 [[package]]
 name = "fhevm-engine-common"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "bigdecimal",
  "bincode",
  "hex",
+ "paste",
+ "prost",
  "rand",
  "rand_chacha",
  "serde",
  "sha3",
  "strum",
  "tfhe",
+ "tonic",
+ "tonic-build",
 ]
 
 [[package]]
@@ -4424,6 +4432,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fbc91545643bcf3a0bbb6569265615222618bdf33ce4ffbbd13c4bbd4c093534"
 dependencies = [
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "scheduler"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "daggy",
+ "fhevm-engine-common",
+ "rayon",
+ "tfhe",
+ "tokio",
 ]
 
 [[package]]
