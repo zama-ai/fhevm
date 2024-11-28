@@ -272,3 +272,53 @@ async fn compute_on_result_ciphertext() {
         Resp::Error(e) => assert!(false, "error response: {}", e),
     }
 }
+
+#[tokio::test]
+async fn trivial_encryption_scalar_less_than_32_bytes() {
+    let test = get_test().await;
+    test.keys.set_server_key_for_current_thread();
+    let mut client = FhevmExecutorClient::connect(test.server_addr.clone())
+        .await
+        .unwrap();
+    // 10 big endian
+    let mut triv_encrypt_input = vec![0; 31];
+    triv_encrypt_input.push(10);
+    let sync_input1 = SyncInput {
+        input: Some(Input::Scalar(triv_encrypt_input)),
+    };
+    let sync_input2 = SyncInput {
+        input: Some(Input::Scalar(vec![3])),
+    };
+    let computation = SyncComputation {
+        operation: FheOperation::FheTrivialEncrypt.into(),
+        result_handles: vec![vec![0xaa; HANDLE_LEN]],
+        inputs: vec![sync_input1, sync_input2],
+    };
+    let req = SyncComputeRequest {
+        computations: vec![computation],
+        compact_ciphertext_lists: vec![],
+        compressed_ciphertexts: vec![],
+    };
+    let response = client.sync_compute(req).await.unwrap();
+    let sync_compute_response = response.get_ref();
+    let resp = sync_compute_response.resp.clone().unwrap();
+    match resp {
+        Resp::ResultCiphertexts(cts) => match (cts.ciphertexts.first(), cts.ciphertexts.len()) {
+            (Some(ct), 1) => {
+                if ct.handle != vec![0xaa; HANDLE_LEN] {
+                    panic!("response handle is unexpected: {:?}", ct.handle);
+                }
+                let ct = SupportedFheCiphertexts::decompress(3, &ct.serialization).unwrap();
+                match ct
+                    .decrypt(&test.as_ref().keys.client_key.clone().unwrap())
+                    .as_str()
+                {
+                    "10" => (),
+                    s => assert!(false, "unexpected result: {}", s),
+                }
+            }
+            _ => panic!("unexpected amount of result ciphertexts returned: {}", cts.ciphertexts.len()),
+        },
+        Resp::Error(e) => assert!(false, "error response: {}", e),
+    }
+}
