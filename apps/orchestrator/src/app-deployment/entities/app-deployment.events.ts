@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-empty-object-type */
-import type { ExhaustiveTuple } from '../utils';
+import type { ExhaustiveTuple } from '../../utils';
 
 type EventMap = {
   requested: { address: string; chainId: string };

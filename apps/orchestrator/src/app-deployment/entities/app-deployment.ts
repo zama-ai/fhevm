@@ -115,4 +115,12 @@ export class AppDeployment {
   get status() {
     return this.#actor.getSnapshot().value;
   }
+
+  get applicationId() {
+    return this.#actor.getSnapshot().context.applicationId;
+  }
+
+  get snapshot() {
+    return JSON.stringify(this.#actor.getPersistedSnapshot());
+  }
 }

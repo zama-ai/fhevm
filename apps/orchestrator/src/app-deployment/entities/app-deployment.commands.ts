@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-empty-object-type */
 // export type AppDeploymentCommand = DiscoverSM | ConfirmSM | RegisterSM;
 
-import { ExhaustiveTuple } from '../utils';
+import { ExhaustiveTuple } from '../../utils';
 
 type CommandMap = {
   'discover-sm': { address: string; chainId: string };
