@@ -12,7 +12,7 @@ export function DefaultPage() {
         <Link to="/signup/e7e720ef-e8d6-4e07-883d-ed93ea7a6999">signup</Link>
       </Text>
       <Separator orientation="vertical" height="4" />
-      <Text>
+      <Text as="div">
         Set mode <ColorModeButton size="lg" />
       </Text>
     </HStack>

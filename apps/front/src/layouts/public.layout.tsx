@@ -33,7 +33,7 @@ export function PublicLayout() {
             alignItems="center"
             justifyContent="center"
           >
-            <Heading>Welcome back!</Heading>
+            <Heading color="black">Welcome back!</Heading>
           </Box>
         </Flex>
       </Box>

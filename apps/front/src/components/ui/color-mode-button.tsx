@@ -1,7 +1,8 @@
-import type { IconButtonProps } from '@chakra-ui/react'
-import { ClientOnly, IconButton, Skeleton } from '@chakra-ui/react'
 import { forwardRef } from 'react'
+import { ClientOnly, IconButton, Skeleton } from '@chakra-ui/react'
+import type { IconButtonProps } from '@chakra-ui/react'
 import { Moon, Sun } from 'lucide-react'
+
 import { useColorMode } from '@/hooks/use-color-mode'
 
 export function ColorModeIcon() {

@@ -1,4 +1,4 @@
-import { AppError, validation } from '@/utils/app-error'
+import { AppError, validationError } from '@/utils/app-error'
 import { Entity } from '@/utils/entity'
 import { ok, fail, Result } from '@/utils/result'
 import { z } from 'zod'
@@ -18,7 +18,7 @@ export class Team
     const check = schema.safeParse(data)
     return check.success
       ? ok(new Team(check.data))
-      : fail(validation(check.error.message))
+      : fail(validationError(check.error.message))
   }
   static parseArray(data: unknown[]): Result<Team[], AppError> {
     const res = data.map(Team.parse)
