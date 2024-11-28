@@ -1,5 +1,6 @@
 *
 !addresses/**
 !contracts/**
+!gateway/**
 !package.json
 !LICENSE
