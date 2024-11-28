@@ -38,6 +38,7 @@ export function SigninForm({ onSubmit, loading, errorMessage }: OwnProps) {
                 onChange={formik.handleChange}
                 value={formik.values.email}
                 autoComplete="username"
+                required
               />
             </Field>
           </Fieldset.Content>
