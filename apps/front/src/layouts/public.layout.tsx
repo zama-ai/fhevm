@@ -1,7 +1,17 @@
 import { NavLink } from 'react-router'
 import { Outlet } from 'react-router'
-import { Box, Flex, Heading } from '@chakra-ui/react'
+import { Box, Flex, Heading, Stack, Text } from '@chakra-ui/react'
 import { Logo } from '@/components/logo/logo'
+import { Link } from '@/components/ui/link'
+
+function Help() {
+  return (
+    <Text color={{ base: 'gray.500', md: 'yellow.700' }} textStyle="sm">
+      Console is in closed beta. Please{' '}
+      <Link to="https://zama.ai">contact us</Link> for details.
+    </Text>
+  )
+}
 
 export function PublicLayout() {
   return (
@@ -36,6 +46,9 @@ export function PublicLayout() {
             <Heading color="black">Welcome back!</Heading>
           </Box>
         </Flex>
+        <Box p="4" display={{ base: 'none', md: 'block' }}>
+          <Help />
+        </Box>
       </Box>
       <Box
         flexBasis="50%"
@@ -45,7 +58,12 @@ export function PublicLayout() {
         flexShrink={1}
         flexGrow={1}
       >
-        <Outlet />
+        <Stack flexShrink={1} flexGrow={1}>
+          <Outlet />
+          <Box py="4" display={{ base: 'block', md: 'none' }}>
+            <Help />
+          </Box>
+        </Stack>
       </Box>
     </Flex>
   )
