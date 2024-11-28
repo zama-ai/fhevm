@@ -14,7 +14,7 @@ log() {
 
 # Run KMS service
 log "Starting KMS service..."
-# make run-kms
+make run-kms
 log "KMS service started successfully."
 sleep 4  # Allow some time for the service to initialize
 
@@ -33,9 +33,10 @@ log "To monitor: docker logs fhevm-deploy"
 
 timeout=120  # Timeout after 60 seconds
 while ! docker logs fhevm-deploy 2>&1 | grep -q "Deployment script completed successfully"; do
-    sleep 4
+    sleep 7
     log "Waiting for fhevm-deploy to complete deployment..."
-    timeout=$((timeout - 4))
+    log "To monitor: docker logs fhevm-deploy"
+    timeout=$((timeout - 7))
     if [ "$timeout" -le 0 ]; then
         log "Timeout reached waiting for fhevm-deploy to finish. Exiting."
         exit 1
