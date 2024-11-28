@@ -2,8 +2,8 @@ import dotenv from 'dotenv';
 import fs from 'fs';
 import { task } from 'hardhat/config';
 
-task('task:verifyContracts').setAction(async function (taskArguments, { upgrades, run }) {
-  const parsedEnvACL = dotenv.parse(fs.readFileSync('addresses/.env.acl'));
+task('task:verifyACL').setAction(async function (taskArguments, { upgrades, run }) {
+  const parsedEnvACL = dotenv.parse(fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.acl'));
   const proxyACLAddress = parsedEnvACL.ACL_CONTRACT_ADDRESS;
   const implementationACLAddress = await upgrades.erc1967.getImplementationAddress(proxyACLAddress);
   await run('verify:verify', {
@@ -14,8 +14,10 @@ task('task:verifyContracts').setAction(async function (taskArguments, { upgrades
     address: proxyACLAddress,
     constructorArguments: [],
   });
+});
 
-  const parsedEnvTFHEExecutor = dotenv.parse(fs.readFileSync('addresses/.env.exec'));
+task('task:verifyTFHEExecutor').setAction(async function (taskArguments, { upgrades, run }) {
+  const parsedEnvTFHEExecutor = dotenv.parse(fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.exec'));
   const proxyTFHEExecutorAddress = parsedEnvTFHEExecutor.TFHE_EXECUTOR_CONTRACT_ADDRESS;
   const implementationTFHEExecutorAddress = await upgrades.erc1967.getImplementationAddress(proxyTFHEExecutorAddress);
   await run('verify:verify', {
@@ -26,8 +28,12 @@ task('task:verifyContracts').setAction(async function (taskArguments, { upgrades
     address: proxyTFHEExecutorAddress,
     constructorArguments: [],
   });
+});
 
-  const parsedEnvKMSVerifier = dotenv.parse(fs.readFileSync('addresses/.env.kmsverifier'));
+task('task:verifyKMSVerifier').setAction(async function (taskArguments, { upgrades, run }) {
+  const parsedEnvKMSVerifier = dotenv.parse(
+    fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.kmsverifier'),
+  );
   const proxyKMSVerifier = parsedEnvKMSVerifier.KMS_VERIFIER_CONTRACT_ADDRESS;
   const implementationKMSVerifierAddress = await upgrades.erc1967.getImplementationAddress(proxyKMSVerifier);
   await run('verify:verify', {
@@ -38,8 +44,12 @@ task('task:verifyContracts').setAction(async function (taskArguments, { upgrades
     address: proxyKMSVerifier,
     constructorArguments: [],
   });
+});
 
-  const parsedEnvInputVerifier = dotenv.parse(fs.readFileSync('addresses/.env.inputverifier'));
+task('task:verifyInputVerifier').setAction(async function (taskArguments, { upgrades, run }) {
+  const parsedEnvInputVerifier = dotenv.parse(
+    fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.inputverifier'),
+  );
   const proxyInputVerifier = parsedEnvInputVerifier.INPUT_VERIFIER_CONTRACT_ADDRESS;
   const implementationInputVerifierAddress = await upgrades.erc1967.getImplementationAddress(proxyInputVerifier);
   await run('verify:verify', {
@@ -50,8 +60,12 @@ task('task:verifyContracts').setAction(async function (taskArguments, { upgrades
     address: proxyInputVerifier,
     constructorArguments: [],
   });
+});
 
-  const parsedEnvFHEPayment = dotenv.parse(fs.readFileSync('addresses/.env.fhepayment'));
+task('task:verifyFHEPayment').setAction(async function (taskArguments, { upgrades, run }) {
+  const parsedEnvFHEPayment = dotenv.parse(
+    fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.fhepayment'),
+  );
   const proxyFHEPayment = parsedEnvFHEPayment.FHE_PAYMENT_CONTRACT_ADDRESS;
   const implementationFHEPaymentAddress = await upgrades.erc1967.getImplementationAddress(proxyFHEPayment);
   await run('verify:verify', {
@@ -62,7 +76,9 @@ task('task:verifyContracts').setAction(async function (taskArguments, { upgrades
     address: proxyFHEPayment,
     constructorArguments: [],
   });
+});
 
+task('task:verifyGatewayContract').setAction(async function (taskArguments, { upgrades, run }) {
   const parsedEnvGateway = dotenv.parse(fs.readFileSync('gateway/.env.gateway'));
   const proxyGateway = parsedEnvGateway.GATEWAY_CONTRACT_PREDEPLOY_ADDRESS;
   const implementationGatewayAddress = await upgrades.erc1967.getImplementationAddress(proxyGateway);
