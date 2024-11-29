@@ -45,9 +45,9 @@ done
 log "Deployment script completed successfully."
 
 # Run an asynchronous test
-log "Running an asynchronous test..."
+log "Running a decryption test trivial + non trivial..."
 make run-async-test
-log "Asynchronous test completed successfully."
+log "Test completed successfully."
 
 # Final message
 log "All tasks completed successfully!"
