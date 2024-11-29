@@ -1,15 +1,9 @@
-import { Logo } from '@/components/logo/logo'
+import { Outlet } from 'react-router'
 
-type PublicLayoutProps = {
-  children: React.ReactNode
-}
-export function PublicLayout({ children }: PublicLayoutProps) {
+export function PublicLayout() {
   return (
     <div>
-      <div>
-        <Logo />
-      </div>
-      {children}
+      <Outlet />
     </div>
   )
 }
