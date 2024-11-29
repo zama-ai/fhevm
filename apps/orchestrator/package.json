@@ -19,10 +19,14 @@
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
   "dependencies": {
+    "@aws-sdk/client-sns": "^3.699.0",
+    "@aws-sdk/client-sqs": "^3.699.0",
     "@nestjs/common": "^10.0.0",
+    "@nestjs/config": "^3.3.0",
     "@nestjs/core": "^10.0.0",
     "@nestjs/platform-express": "^10.0.0",
     "@prisma/client": "5.22.0",
+    "@ssut/nestjs-sqs": "^3.0.0",
     "reflect-metadata": "^0.2.0",
     "rxjs": "^7.8.1",
     "xstate": "^5.19.0"

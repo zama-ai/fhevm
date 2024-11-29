@@ -12,15 +12,24 @@ services:
     volumes:
       - postgres:/var/lib/postgresql/data
 
-  orchestrator:
-    container_name: console-orchestrator
-    build:
-      context: apps/orchestrator
-      dockerfile: Dockerfile.dev.yaml
-      args:
-    restart: unless-stopped
+  localstack:
+    image: localstack/localstack:latest
+    container_name: console-aws
+    ports:
+      - "127.0.0.1:4566:4566" # LocalStack Gateway
+      - "127.0.0.1:4510-4559:4510-4559" # external services port range
     environment:
-      - DATABASE_URL="postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DB_NAME:-console}?schema=orchestrator"
+      - SERVICES=sqs,sns
+      - DEBUG=${DEBUG:-0}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-test}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-test}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-eu-central-1}
+    volumes:
+      - "${LOCALSTACK_VOLUME_DIR:-./volume}:/var/lib/localstack"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      # Here we mount our setup file so it will be executed when
+      # the container start
+      - ./localstack-setup.sh:/etc/localstack/init/ready.d/script.sh
 
 volumes:
   postgres:

@@ -48,23 +48,31 @@ export function isAppDeploymentCommand(
   if (typeof data !== 'object' || data === null) {
     return false;
   }
-  if (!('_tag' in data) || !('type' in data) || !('payload' in data)) {
+  // Check _tag
+  if (!('_tag' in data) || data._tag !== 'Command') {
     return false;
   }
 
+  // check type
   if (
-    data._tag !== 'Command' ||
+    !('type' in data) ||
     typeof data.type !== 'string' ||
-    data.type.startsWith('app-deployment.') ||
-    typeof data.payload !== 'object' ||
-    data.payload === null
+    !data.type.startsWith('app-deployment.') ||
+    !(cmdTypes as readonly string[]).includes(data.type.split('.')[1])
   ) {
     return false;
   }
 
-  return (
-    (cmdTypes as readonly string[]).includes(data.type.split('.')[1]) &&
-    'applicationId' in data.payload &&
-    data.payload.applicationId === 'string'
-  );
+  // checking payload
+  if (
+    !('payload' in data) ||
+    typeof data.payload !== 'object' ||
+    data.payload === null ||
+    !('applicationId' in data.payload) ||
+    typeof data.payload.applicationId !== 'string'
+  ) {
+    return false;
+  }
+
+  return true;
 }

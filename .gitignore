@@ -70,3 +70,5 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+volume/

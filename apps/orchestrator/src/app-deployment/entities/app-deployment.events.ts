@@ -65,23 +65,31 @@ export function isAppDeploymentEvent(
   if (typeof data !== 'object' || data === null) {
     return false;
   }
-  if (!('_tag' in data) || !('type' in data) || !('payload' in data)) {
+  // Check _tag
+  if (!('_tag' in data) || data._tag !== 'Event') {
     return false;
   }
 
+  // check type
   if (
-    data._tag !== 'Event' ||
+    !('type' in data) ||
     typeof data.type !== 'string' ||
-    data.type.startsWith('app-deployment.') ||
-    typeof data.payload !== 'object' ||
-    data.payload === null
+    !data.type.startsWith('app-deployment.') ||
+    !(eventTypes as readonly string[]).includes(data.type.split('.')[1])
   ) {
     return false;
   }
 
-  return (
-    (eventTypes as readonly string[]).includes(data.type.split('.')[1]) &&
-    'applicationId' in data.payload &&
-    data.payload.applicationId === 'string'
-  );
+  // checking payload
+  if (
+    !('payload' in data) ||
+    typeof data.payload !== 'object' ||
+    data.payload === null ||
+    !('applicationId' in data.payload) ||
+    typeof data.payload.applicationId !== 'string'
+  ) {
+    return false;
+  }
+
+  return true;
 }
