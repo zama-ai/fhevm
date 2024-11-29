@@ -39,34 +39,6 @@ if (!mnemonic) {
   mnemonic = 'adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer'; // default mnemonic in case it is undefined (needed to avoid panicking when deploying on real network)
 }
 
-const chainIds = {
-  localNative: 8009,
-  devnetNative: 9000,
-  localCoprocessor: 12345,
-  sepolia: 11155111,
-  mainnet: 1,
-};
-
-function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
-  let jsonRpcUrl: string;
-  switch (chain) {
-    case 'sepolia':
-      jsonRpcUrl = process.env.SEPOLIA_RPC_URL!;
-      break;
-    default:
-      throw new Error(`unsupported chain: ${chain}`);
-  }
-  return {
-    accounts: {
-      count: 10,
-      mnemonic,
-      path: "m/44'/60'/0'/0",
-    },
-    chainId: chainIds[chain],
-    url: jsonRpcUrl,
-  };
-}
-
 task('coverage').setAction(async (taskArgs, hre, runSuper) => {
   hre.config.networks.hardhat.allowUnlimitedContractSize = true;
   hre.config.networks.hardhat.blockGasLimit = 1099511627775;
@@ -107,6 +79,40 @@ task('test', async (taskArgs, hre, runSuper) => {
   await runSuper();
 });
 
+const chainIds = {
+  localNative: 8009,
+  devnetNative: 9000,
+  localCoprocessor: 12345,
+  sepolia: 11155111,
+  mainnet: 1,
+};
+
+function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
+  let jsonRpcUrl: string;
+  switch (chain) {
+    case 'sepolia':
+      jsonRpcUrl = process.env.SEPOLIA_RPC_URL!;
+      break;
+    case 'localCoprocessor':
+      jsonRpcUrl = 'http://localhost:8745';
+      break;
+    case 'localNative':
+      jsonRpcUrl = 'http://localhost:8545';
+      break;
+    default:
+      throw new Error(`unsupported chain: ${chain}`);
+  }
+  return {
+    accounts: {
+      count: 10,
+      mnemonic,
+      path: "m/44'/60'/0'/0",
+    },
+    chainId: chainIds[chain],
+    url: jsonRpcUrl,
+  };
+}
+
 const config: HardhatUserConfig = {
   defaultNetwork: 'sepolia',
   namedAccounts: {
@@ -130,6 +136,8 @@ const config: HardhatUserConfig = {
       },
     },
     sepolia: getChainConfig('sepolia'),
+    localNative: getChainConfig('localNative'),
+    localCoprocessor: getChainConfig('localCoprocessor'),
   },
   paths: {
     artifacts: './artifacts',
