@@ -25,6 +25,10 @@ export class Task<A, E> {
     return new Task(resolve => resolve(value))
   }
 
+  static reject<A, E>(error: E): Task<A, E> {
+    return new Task((_, reject) => reject(error))
+  }
+
   /**
    * Transforms the value of the Task using the given function.
    *

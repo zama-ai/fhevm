@@ -41,4 +41,8 @@ export class Invitation
   get expiresAt() {
     return this.get('expiresAt')
   }
+
+  get isValid() {
+    return this.expiresAt > new Date()
+  }
 }
