@@ -1,112 +1,71 @@
-# Access Control List
+# Access control list (ACL) overview
 
-This document explains how to prevent unauthorized addresses from accessing the contents of unauthorized ciphertexts.
-This is enabled by the Access Control List (ACL) system in fhEVM, which defines which addresses have the right to manipulate the ciphertext.
+This document describes the Access Control List (ACL) system in fhEVM, a core feature that governs access to encrypted data. The ACL ensures that only authorized accounts or contracts can interact with specific ciphertexts, preserving confidentiality while enabling composable smart contracts. This overview provides a high-level understanding of what the ACL is, why it's essential, and how it works.
 
-## How it works?
+## What is the ACL?
 
-You can configure the ACLs in two ways:
+The ACL is a permission management system designed to control who can access, compute on, or decrypt encrypted values in fhEVM. By defining and enforcing these permissions, the ACL ensures that encrypted data remains secure while still being usable within authorized contexts.
 
-- **Permanent allowance**: `TFHE.allow(ciphertext, address)` allows a ciphertext to be used by a specific address at any time.
-- **Transient allowance**: `TFHE.allowTransient(ciphertext, address)` authorizes access to the ciphertext only for the duration of the transaction.
+## Why is the ACL important?
 
-Additionally, you can use `TFHE.allowThis(ciphertext)` as syntactic sugar for `TFHE.allow(ciphertext, address(this))`. This function is commonly used within dApp smart contracts to authorize the same contract to reuse a newly computed ciphertext handle in a future transaction.
+Encrypted data in fhEVM is entirely confidential, meaning that without proper access control, even the contract holding the ciphertext cannot interact with it. The ACL enables:
 
-Permanent allowance will store the ACL in a dedicated contract, while a temporary allowance will store it in [transient storage](https://eips.ethereum.org/EIPS/eip-1153), allowing developers to save gas. Transient allowance is particularly useful when calling an external function using a ciphertext as a parameter.
+- **Granular Permissions**: Define specific access rules for individual accounts or contracts.
+- **Secure Computations**: Ensure that only authorized entities can manipulate or decrypt encrypted data.
+- **Gas Efficiency**: Optimize permissions using transient access for temporary needs, reducing storage and gas costs.
 
-To illustrate, here is a simple example where one function calls another:
+## How does the ACL work?
 
-```solidity
-import "fhevm/lib/TFHE.sol";
+### Types of access
 
-contract SecretGiver {
-  SecretStore public secretStore;
+1. **Permanent Allowance**:
 
-  constructor() {
-    secretStore = new SecretStore();
-  }
+   - Configured using `TFHE.allow(ciphertext, address)`.
+   - Grants long-term access to the ciphertext for a specific address.
+   - Stored in a dedicated contract for persistent storage.
 
-  function giveMySecret() public {
-    // Create my secret - asEuint16 gives automatically transient allowance for the resulting handle (note: an onchain trivial encryption is not secret)
-    euint16 mySecret = TFHE.asEuint16(42);
+2. **Transient Allowance**:
+   - Configured using `TFHE.allowTransient(ciphertext, address)`.
+   - Grants access to the ciphertext only for the duration of the current transaction.
+   - Stored in transient storage, reducing gas costs.
+   - Ideal for temporary operations like passing ciphertexts to external functions.
 
-    // Allow temporarily the SecretStore contract to manipulate `mySecret`
-    TFHE.allowTransient(mySecret, address(secretStore));
+**Syntactic sugar**:
 
-    // Call `secretStore` with `mySecret`
-    secretStore.storeSecret(mySecret);
-  }
-}
+- `TFHE.allowThis(ciphertext)` is shorthand for `TFHE.allow(ciphertext, address(this))`. It authorizes the current contract to reuse a ciphertext handle in future transactions.
 
-contract SecretStore {
-  euint16 public secretResult;
+### Transient vs. permanent allowance
 
-  function storeSecret(euint16 callerSecret) public {
-    // Verify that the caller has also access to this ciphertext
-    require(TFHE.isSenderAllowed(callerSecret), "The caller is not authorized to access this secret.");
+| **Allowance Type** | **Purpose**                                    | **Storage Type**                                                        | **Use Case**                                                                                        |
+| ------------------ | ---------------------------------------------- | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| **Transient**      | Temporary access during a transaction.         | [Transient storage](https://eips.ethereum.org/EIPS/eip-1153) (EIP-1153) | Calling external functions or computations with ciphertexts. Use when wanting to save on gas costs. |
+| **Permanent**      | Long-term access across multiple transactions. | Dedicated contract storage                                              | Persistent ciphertexts for contracts or users requiring ongoing access.                             |
 
-    // do some FHE computation (result is automatically put in the ACL transient storage)
-    euint16 computationResult = TFHE.add(callerSecret, 3);
+## Granting and verifying access
 
-    // then store the resulting ciphertext handle in the contract storage
-    secretResult = computationResult;
+### Granting access
 
-    // Make the temporary allowance for this ciphertext permanent to let the contract able to reuse it at a later stage or request a decryption of it
-    TFHE.allowThis(secretResult); // this is strictly equivalent to `TFHE.allow(secretResult, address(this));``
-  }
-}
-```
+Developers can use functions like `allow`, `allowThis`, and `allowTransient` to grant permissions:
 
-## Automatic (transient) allowance
+- **`allow`**: Grants permanent access to an address.
+- **`allowThis`**: Grants the current contract access to manipulate the ciphertext.
+- **`allowTransient`**: Grants temporary access to an address for the current transaction.
 
-To simplify matters, a number of functions automatically generate temporary access (using `TFHE.allowTransient` under the hood) for the contract that calls the function. This applies to:
+### Verifying access
 
-- `TFHE.asEuintXX()`, `TFHE.asEaddress()`, `TFHE.asEbool()`
-- `TFHE.randXX()`
-- All results from computations (`TFHE.add()`, `TFHE.select()`, ...)
+To check if an entity has permission to access a ciphertext, use functions like `isAllowed` or `isSenderAllowed`:
 
-```solidity
-function randomize() {
-  // Store this random value. This value is temporarily allowed.
-  random = TFHE.randEuint64();
+- **`isAllowed`**: Verifies if a specific address has permission.
+- **`isSenderAllowed`**: Simplifies checks for the current transaction sender.
 
-  // Permanently store the temporary access for this ciphertext.
-  TFHE.allowThis(random);
-}
-```
+---
 
-## Security best practice: isSenderAllowed()
+## Practical uses of the acl
 
-When a function receives a ciphertext (such as `ebool`, `euint8`, `eaddress`, ...), it needs to verify that the sender also has access to this ciphertext. This verification is crucial for security.
+- **Confidential Parameters**: Pass encrypted values securely between contracts, ensuring only authorized entities can access them.
+- **Secure Stte Management**: Store encrypted state variables while controlling who can modify or read them.
+- **Privacy-Preserving Computations**: Enable computations on encrypted data with confidence that permissions are enforced.
 
-Without this check, a contract could send any ciphertext authorized for the contract and potentially exploit the function to retrieve the value. For example, an attacker could transfer someone's balance as an encrypted amount.
+---
 
-If the function does not include `require(TFHE.isSenderAllowed(encryptedAmount))`, an attacker who doesn't have access to this balance could determine the value by transferring the balance between two well-funded accounts.
-
-## ACL for reencryption
-
-If a ciphertext must be reencrypted by a user, then explicit access must be granted to them. If this authorization is not given, the user will be unable to request a reencryption of this ciphertext.
-
-Due to the reencryption mechanism, a user signs a public key associated with a specific contract; therefore, the ciphertext also needs to be allowed for the contract.
-
-Let's take, for example, a transfer in an ERC20:
-
-```solidity
-function transfer(address to, euint64 encryptedAmount) public {
-  require(TFHE.isSenderAllowed(encryptedAmount), "The caller is not authorized to access this encrypted amount.");
-  euint64 amount = TFHE.asEuint64(encryptedAmount);
-  ebool canTransfer = TFHE.le(amount, balances[msg.sender]);
-
-  euint64 newBalanceTo = TFHE.add(balances[to], TFHE.select(canTransfer, amount, TFHE.asEuint64(0)));
-  balances[to] = newBalanceTo;
-  // Allow this new balance for both the contract and the owner.
-  TFHE.allowThis(newBalanceTo);
-  TFHE.allow(newBalanceTo, to);
-
-  euint64 newBalanceFrom = TFHE.sub(balances[from], TFHE.select(canTransfer, amount, TFHE.asEuint64(0)));
-  balances[from] = newBalanceFrom;
-  // Allow this new balance for both the contract and the owner.
-  TFHE.allowThis(newBalanceFrom);
-  TFHE.allow(newBalanceFrom, from);
-}
-```
+For a detailed explanation of the ACL's functionality, including code examples and advanced configurations, see [working with the acl](./first_step/acl_examples.md).

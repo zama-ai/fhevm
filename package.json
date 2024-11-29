@@ -31,10 +31,7 @@
     "task:getEthereumAddress": "hardhat task:getEthereumAddress",
     "task:deployGateway": "hardhat task:deployGateway",
     "task:addRelayer": "hardhat task:addRelayer",
-    "task:removeRelayer": "hardhat task:removeRelayer",
-    "fhevm:start": " ./launch-fhevm.sh",
-    "fhevm:stop": "docker rm -f fhevm",
-    "fhevm:restart": "fhevm:stop && fhevm:start"
+    "task:removeRelayer": "hardhat task:removeRelayer"
   },
   "repository": {
     "type": "git",

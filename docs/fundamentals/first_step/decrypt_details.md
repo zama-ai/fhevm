@@ -1,41 +1,10 @@
-# Decryption
+# Decryption in depth
 
-This document provides a guide on performing decryption on smart contracts in Solidity.
-
-## Overview
-
-The decryption operation is asynchronous. To use it, your contract must extend the `GatewayCaller` contract. This action will import automatically the `Gateway` solidity library as well. See the following example:
-
-```solidity
-pragma solidity ^0.8.24;
-
-import "fhevm/lib/TFHE.sol";
-import "fhevm/gateway/GatewayCaller.sol";
-
-contract TestAsyncDecrypt is GatewayCaller {
-  ebool xBool;
-  bool public yBool;
-
-  constructor() {
-      xBool = TFHE.asEbool(true);
-      TFHE.allowThis(xBool);
-  }
-
-  function requestBool() public {
-    uint256[] memory cts = new uint256[](1);
-    cts[0] = Gateway.toUint256(xBool);
-    Gateway.requestDecryption(cts, this.myCustomCallback.selector, 0, block.timestamp + 100, false);
-  }
-
-  function myCustomCallback(uint256 /*requestID*/, bool decryptedInput) public onlyGateway returns (bool) {
-    yBool = decryptedInput;
-    return yBool;
-  }
-```
+This document provides a detailed guide on implementing decryption in your smart contracts using the `GatewayContract` in fhEVM. It covers the setup, usage of the `Gateway.requestDecryption` function, and testing with Hardhat.
 
 ## `GatewayContract` set up
 
-The [`GatewayContract`](../../gateway/GatewayContract.sol) is pre-deployed on the fhEVM testnet. It uses a default relayer account specified in the `PRIVATE_KEY_GATEWAY_RELAYER` or `ADDRESS_GATEWAY_RELAYER` environment variable in the `.env` file.
+The [`GatewayContract`](../../../gateway/GatewayContract.sol) is pre-deployed on the fhEVM testnet. It uses a default relayer account specified in the `PRIVATE_KEY_GATEWAY_RELAYER` or `ADDRESS_GATEWAY_RELAYER` environment variable in the `.env` file.
 
 Relayers are the only accounts authorized to fulfill decryption requests. The role of the `GatewayContract`, however, is to independently verify the KMS signature during execution. This ensures that the relayers cannot manipulate or send fraudulent decryption results, even if compromised.
 However, the relayers are still trusted to forward decryption requests on time.
@@ -45,18 +14,18 @@ However, the relayers are still trusted to forward decryption requests on time.
 The interface of the `Gateway.requestDecryption` function from previous snippet is the following:
 
 ```solidity
-function requestDecryption(
-    uint256[] memory ct,
-    bytes4 callbackSelector,
-    uint256 msgValue,
-    uint256 maxTimestamp,
-    bool passSignaturesToCaller
-) returns(uint256 requestID)
+  function requestDecryption(
+      uint256[] calldata ctsHandles,
+      bytes4 callbackSelector,
+      uint256 msgValue,
+      uint256 maxTimestamp,
+      bool passSignaturesToCaller
+  ) external virtual returns (uint256 initialCounter) {
 ```
 
 ### Parameters
 
-The first argument, `ct`, should be an array of ciphertexts handles which could be of different types, i.e `uint256` values coming from unwrapping handles of type either `ebool`, `euint4`, `euint8`, `euint16`, `euint32`, `euint64` or `eaddress`. `ct` is the list of ciphertexts that are requested to be decrypted. Calling `requestDecryption` will emit an `EventDecryption` on the `GatewayContract` contract which will be detected by a relayer. Then, the relayer will send the corresponding ciphertexts to the KMS for decryption before fulfilling the request.
+The first argument, `ctsHandles`, should be an array of ciphertexts handles which could be of different types, i.e `uint256` values coming from unwrapping handles of type either `ebool`, `euint4`, `euint8`, `euint16`, `euint32`, `euint64` or `eaddress`. `ct` is the list of ciphertexts that are requested to be decrypted. Calling `requestDecryption` will emit an `EventDecryption` on the `GatewayContract` contract which will be detected by a relayer. Then, the relayer will send the corresponding ciphertexts to the KMS for decryption before fulfilling the request.
 
 `callbackSelector` is the function selector of the callback function which will be called by the `GatewayContract` contract once the relayer fulfils the decryption request. Notice that the callback function should always follow this convention, if `passSignaturesToCaller` is set to `false`:
 
@@ -80,6 +49,8 @@ Notice that `XXX` should be the decrypted type, which is a native Solidity type 
 | euint16         | uint16         |
 | euint32         | uint32         |
 | euint64         | uint64         |
+| euint128        | uint128        |
+| euint256        | uint256        |
 | eaddress        | address        |
 
 Here `callbackName` is a custom name given by the developer to the callback function, `requestID` will be the request id of the decryption (could be commented if not needed in the logic, but must be present) and `x_0`, `x_1`, ... `x_N-1` are the results of the decryption of the `ct` array values, i.e their number should be the size of the `ct` array.
@@ -88,7 +59,7 @@ Here `callbackName` is a custom name given by the developer to the callback func
 
 `maxTimestamp` is the maximum timestamp after which the callback will not be able to receive the results of decryption, i.e the fulfilment transaction will fail in this case. This can be used for time-sensitive applications, where we prefer to reject decryption results on too old, out-of-date, values.
 
-`passSignaturesToCaller` determines whether the callback needs to transmit signatures from the KMS or not. This is useful if the dApp developer wants to remove trust from the Gateway service and prefers to check the KMS signatures directly from within his dApp smart contract. A concrete example of how to verify the KMS signatures inside a dApp is available [here](../../examples/TestAsyncDecrypt.sol#L82-L94) in the `requestBoolTrustless` function.
+`passSignaturesToCaller` determines whether the callback needs to transmit signatures from the KMS or not. This is useful if the dApp developer wants to remove trust from the Gateway service and prefers to check the KMS signatures directly from within his dApp smart contract. A concrete example of how to verify the KMS signatures inside a dApp is available [here](https://github.com/zama-ai/fhevm/blob/2ff952e8e038e56246c840af31ca3fadd7fccedd/examples/TestAsyncDecrypt.sol#L82-L94) in the `requestBoolTrustless` function.
 
 > **_WARNING:_**
 > Notice that the callback should be protected by the `onlyGateway` modifier to ensure security, as only the `GatewayContract` contract should be able to call it.
@@ -142,10 +113,12 @@ For example, see this snippet where we add two `uint256`s during the request cal
 ```solidity
 pragma solidity ^0.8.24;
 
-import "../lib/TFHE.sol";
-import "../gateway/GatewayCaller.sol";
+import "fhevm/lib/TFHE.sol";
+import { MockZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
+import { MockZamaGatewayConfig } from "fhevm/config/ZamaGatewayConfig.sol";
+import "fhevm/gateway/GatewayCaller.sol";
 
-contract TestAsyncDecrypt is GatewayCaller {
+contract TestAsyncDecrypt is MockZamaFHEVMConfig, MockZamaGatewayConfig, GatewayCaller {
   euint32 xUint32;
   uint32 public yUint32;
 
@@ -180,7 +153,7 @@ event ResultCallback(uint256 indexed requestID, bool success, bytes result);
 
 The first argument is the `requestID` of the corresponding decryption request, `success` is a boolean assessing if the call to the callback succeeded, and `result` is the bytes array corresponding the to return data from the callback.
 
-In your hardhat tests, if you sent some transactions which are requesting one or several decryptions and you wish to await the fulfilment of those decryptions, you should import the two helper methods `initGateway` and `awaitAllDecryptionResults` from the `asyncDecrypt.ts` utility file. This would work both when testing on an fhEVM node or in mocked mode. Here is a simple hardhat test for the previous `TestAsyncDecrypt` contract (more examples can be seen [here](../../test/gatewayDecrypt/testAsyncDecrypt.ts)):
+In your hardhat tests, if you sent some transactions which are requesting one or several decryptions and you wish to await the fulfilment of those decryptions, you should import the two helper methods `initGateway` and `awaitAllDecryptionResults` from the `asyncDecrypt.ts` utility file. This would work both when testing on an fhEVM node or in mocked mode. Here is a simple hardhat test for the previous `TestAsyncDecrypt` contract (more examples can be seen [here](https://github.com/zama-ai/fhevm/blob/main/test/gatewayDecrypt/testAsyncDecrypt.ts)):
 
 ```js
 import { initGateway, awaitAllDecryptionResults } from "../asyncDecrypt";

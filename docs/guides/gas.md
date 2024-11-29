@@ -1,8 +1,14 @@
-# Gas estimation
+# Gas Estimation in fhEVM
 
-This document provides an overview of gas estimation for Fully Homomorphic Encryption (FHE) operations, detailing the gas costs associated with various operations across different data types.
+This guide helps you understand and estimate gas costs for Fully Homomorphic Encryption (FHE) operations in your smart contracts.
 
-FHE operations are typically more computationally expensive than classical operations due to their inherent complexity. As a reference, here is an approximation of the gas cost associated with each operation.
+## Overview
+
+When working with encrypted data in fhEVM, operations consume more gas compared to regular smart contract operations. This is because FHE operations require complex mathematical computations to maintain data privacy and security.
+
+Below you'll find detailed gas cost estimates for common FHE operations across different encrypted data types. Use these as a reference when designing and optimizing your confidential smart contracts.
+
+> **Note**: Gas costs are approximate and may vary slightly based on network conditions and contract complexity.
 
 ## ebool
 
@@ -138,5 +144,23 @@ FHE operations are typically more computationally expensive than classical opera
 
 ## Gas limit
 
-The current devnet has a gas limit of **10,000,000**. If you send a transaction exceeding this limit, it won't be executed. Consequently, your wallet won't be able to emit a new transaction. To address this, emit a new transaction with the same nonce but the correct gas limit.
-In Metamask, you can enforce the use of a specific nonce by enabling the feature in 'Advanced Settings'.
+The current devnet has a gas limit of **10,000,000**. Here's what you need to know:
+
+- If you send a transaction that exceeds this limit:
+  - The transaction will fail to execute
+  - Your wallet will be unable to emit new transactions
+  - You'll need to send a new transaction with the same nonce but correct gas limit
+
+### Fixing Failed Transactions in MetaMask
+
+To resolve a failed transaction due to gas limits:
+
+1. Open MetaMask and go to Settings
+2. Navigate to Advanced Settings
+3. Enable "Customize transaction nonce"
+4. When resending the transaction:
+   - Use the same nonce as the failed transaction
+   - Set an appropriate gas limit under 10M
+   - Adjust other parameters as needed
+
+This allows you to "replace" the failed transaction with a valid one using the correct gas parameters.

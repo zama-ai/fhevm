@@ -6,49 +6,119 @@ This document guides you to start with fhEVM by using our [Hardhat template](htt
 
 To start writing smart contracts with fhEVM, we recommend using our [Hardhat template](https://github.com/zama-ai/fhevm-hardhat-template). This template allows you to launch an fhEVM Docker image and run your smart contract on it. For more information, refer to the [README](https://github.com/zama-ai/fhevm-hardhat-template/blob/main/README.md).
 
-When developing confidential contracts, we recommend using the mocked version of fhEVM first for faster testing. You can achieve this by running `pnpm test:mock` for tests and `pnpm coverage:mock` for coverage computation. This approach provides a better developer experience. However, keep in mind that the mocked fhEVM has limitations and discrepancies compared to the real fhEVM node, as detailed in the [limitations](#limitations) section below.
+# Using hardhat
 
-It's essential to test the final contract version with the real fhEVM before deployment. Run `pnpm test` to ensure everything works correctly.
+This document guides you to start with fhEVM by using our [Hardhat template](https://github.com/zama-ai/fhevm-hardhat-template).
 
-## Mocked mode
+## Using hardhat with fhEVM
 
-For faster iteration testing, you can use the mocked version of the fhEVM instead of launching all tests on a local fhEVM node with `pnpm test` or `npx hardhat test`, which can take several minutes.
+To start writing smart contracts with fhEVM, we recommend using our [Hardhat template](https://github.com/zama-ai/fhevm-hardhat-template). This template simplifies the development process by allowing you to launch an fhEVM Docker image and run your smart contracts on it. For more details, refer to the [README](https://github.com/zama-ai/fhevm-hardhat-template/blob/main/README.md).
 
-The same tests should generally pass without modification—no changes to the JavaScript or Solidity files are required when switching between the mocked and real versions.
+---
 
-In mocked mode, actual encryption for encrypted types is not performed. Instead, the tests run on a local Hardhat node that implements the original EVM (non-fhEVM). Additionally, this mode supports all Hardhat-related testing and debugging methods, such as `evm_mine`, `evm_snapshot`, and `evm_revert`, which are highly useful for testing.
+## Features of the hardhat template
 
-To run the mocked tests use either:
+The Hardhat template comes pre-configured with tools and libraries to streamline the development process:
 
-```
-pnpm test:mock
-```
+- **Frameworks and Libraries**:
 
-Or equivalently:
+  - [Hardhat](https://github.com/nomiclabs/hardhat): Compile, deploy, and test smart contracts.
+  - [TypeChain](https://github.com/ethereum-ts/TypeChain): Generate TypeScript bindings for contracts.
+  - [Ethers.js](https://github.com/ethers-io/ethers.js/): Ethereum library for interactions.
+  - [Solhint](https://github.com/protofire/solhint): Linter for Solidity code.
+  - [Solcover](https://github.com/sc-forks/solidity-coverage): Code coverage analysis.
+  - [Prettier Plugin Solidity](https://github.com/prettier-solidity/prettier-plugin-solidity): Solidity code formatter.
 
-```
-npx hardhat test --network hardhat
-```
+- **Default Configurations**:  
+  Includes sensible default configurations for tools like Prettier, Solhint, and ESLint.
 
-In mocked mode, all tests should pass in few seconds instead of few minutes, allowing a better developer experience.
+- **GitHub Actions**:  
+  Pre-configured for CI/CD pipelines to lint and test contracts on every push or pull request.
 
-### Coverage in mocked mode
+---
 
-Coverage computation is only possible in mocked mode. Run the following command to compute coverage:
+## Getting started
 
-```
-pnpm coverage:mock
-```
+### Prerequisites
 
-Or equivalently:
+1. **Install [pnpm](https://pnpm.io/installation)** for dependency management.
+2. **Set up a mnemonic**: Create a `.env` file by copying `.env.example`:
 
-```
-npx hardhat coverage
-```
+   ```bash
+   cp .env.example .env
+   ```
 
-After running the command, open the `coverage/index.html` file to view the results. This helps identify any missing branches not covered by the current test suite, increasing the security of your contracts.
+   Generate a mnemonic using [this tool](https://iancoleman.io/bip39/) if needed.
 
-#### Important note
+3. **Install dependencies**: Ensure you’re using Node.js v20 or later:
+   ```bash
+   pnpm install
+   ```
+
+---
+
+### Commands overview
+
+Here’s a list of essential commands to work with the Hardhat template:
+
+| **Command**      | **Description**                                               |
+| ---------------- | ------------------------------------------------------------- |
+| `pnpm compile`   | Compiles the smart contracts.                                 |
+| `pnpm typechain` | Compiles contracts and generates TypeChain bindings.          |
+| `pnpm test`      | Runs tests locally in mocked mode, simulating FHE operations. |
+| `pnpm lint:sol`  | Lints Solidity code.                                          |
+| `pnpm lint:ts`   | Lints TypeScript code.                                        |
+| `pnpm clean`     | Cleans contract artifacts, cache, and coverage reports.       |
+| `pnpm coverage`  | Analyzes test coverage (mocked mode only).                    |
+
+---
+
+## Mocked mode vs non-mocked mode
+
+### Mocked mode
+
+Mocked mode allows faster testing by simulating FHE operations. This mode runs tests on a local Hardhat network without requiring a real fhEVM node. Use the following commands:
+
+- **Run tests**:
+
+  ```bash
+  pnpm test
+  ```
+
+- **Analyze coverage**:
+  ```bash
+  pnpm coverage
+  ```
+
+> **Note**: Mocked mode approximates gas consumption for FHE operations but may slightly differ from actual fhEVM behavior.
+
+---
+
+### Non-mocked mode
+
+Non-mocked mode uses a real fhEVM node, such as the coprocessor on the Sepolia test network.
+
+- **Run tests on Sepolia**:
+
+  ```bash
+  npx hardhat test [PATH_TO_TEST] --network sepolia
+  ```
+
+- **Requirements**:
+  1. Fund test accounts on Sepolia.
+  2. Pass the correct `FHEVMConfig` struct in your smart contract’s constructor.
+
+> **Note**: Refer to the [fhEVM documentation](https://docs.zama.ai/fhevm) for configuring `FHEVMConfig`.
+
+---
+
+## Development tips
+
+### Syntax highlighting
+
+For Solidity syntax highlighting, use the [Hardhat Solidity](https://marketplace.visualstudio.com/items?itemName=NomicFoundation.hardhat-solidity) extension for VSCode.
+
+### Important note
 
 Due to limitations in the `solidity-coverage` package, coverage computation in fhEVM does not support tests involving the `evm_snapshot` Hardhat testing method. However, this method is still supported when running tests in mocked mode. If you are using Hardhat snapshots, we recommend to end your your test description with the `[skip-on-coverage]` tag to to avoid coverage issues. Here is an example:
 
@@ -123,12 +193,16 @@ describe('Rand', function () {
 });
 ```
 
-In this snippet, the first test will always run, whether in "real" non-mocked mode (`pnpm test`), testing mocked mode (`pnpm test:mock`) or coverage (mocked) mode (`pnpm coverage:mock`). On the other hand, the second test will be run **only** in testing mocked mode(`pnpm test:mock`), because snapshots only works in that specific case.
+In this snippet, the first test will always run, whether in "real" non-mocked mode (`pnpm test`), testing mocked mode (`pnpm test`) or coverage (mocked) mode (`pnpm coverage`). On the other hand, the second test will be run **only** in testing mocked mode(`pnpm test`), because snapshots only works in that specific case.
 Actually, the second test will be skipped if run in coverage mode, since its description string ends with `[skip-on-coverage]` and similarly, we avoid the test to fail in non-mocked mode since we check that the network name is `hardhat`.
 
 ### Limitations
 
 ⚠️ **Warning :** Due to intrinsic limitations of the original EVM, the mocked version differ in few corner cases from the real fhEVM, mainly in gas prices for the FHE operations. This means that before deploying to production, developers still need to run the tests with the original fhEVM node, as a final check in non-mocked mode, with `pnpm test` or `npx hardhat test`.
+
+---
+
+By using this Hardhat template, you can streamline your fhEVM development workflow and focus on building robust, privacy-preserving smart contracts. For additional details, visit the [fhevm-hardhat-template README](https://github.com/zama-ai/fhevm-hardhat-template/blob/main/README.md).
 
 {% hint style="success" %}
 **Zama 5-Question Developer Survey**
