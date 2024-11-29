@@ -3,7 +3,7 @@
 ## Install
 
 ```bash
-pnpm install
+npm install
 ```
 
 ## Configuration
@@ -14,16 +14,16 @@ pnpm install
 4. Edit `hardhat.config.ts` to set the `defaultNetwork`. By default, it is set to Sepolia, but you can a different one
    or add your own L1 address. 4. Fund your wallet
 5. Fund the primary wallet derived from your mnemomic. If you don't know what is the public address, run
-   `pnpm run task:accounts`
+   `npm run task:accounts`
 
 ## Run
 
 ```bash
-pnpm run test
+npm run test
 ```
 
 or if you want to run only one test
 
 ```bash
-pnpm run test test/encryptedERC20/EncryptedERC20.ts
+npm run test test/encryptedERC20/EncryptedERC20.ts
 ```
