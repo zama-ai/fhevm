@@ -3,20 +3,21 @@ import { useQuery } from '@apollo/client'
 import { NavLink } from 'react-router'
 
 import { graphql } from '../__generated__/gql'
-import { MeQuery } from '@/__generated__/graphql'
+import { AboutMeQuery } from '@/__generated__/graphql'
 
 const GET_ME = graphql(`
-  query Me {
+  query AboutMe {
     me {
       id
       email
+      name
     }
   }
 `)
 
 export function AboutPage() {
   const [count, setCount] = useState(0)
-  const { loading, error, data } = useQuery<MeQuery>(GET_ME)
+  const { loading, error, data } = useQuery<AboutMeQuery>(GET_ME)
   return (
     <div>
       <button onClick={() => setCount(count => count + 1)}>

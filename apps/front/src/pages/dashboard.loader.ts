@@ -7,6 +7,7 @@ const GET_ME = graphql(`
     me {
       id
       email
+      name
     }
   }
 `)

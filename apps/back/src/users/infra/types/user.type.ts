@@ -9,6 +9,9 @@ export class UserType {
   @Field({ nullable: false })
   email: string
 
+  @Field({ nullable: false })
+  name: string
+
   @Field(() => [TeamType], { nullable: false, description: 'User teams' })
   teams: TeamType[]
 }

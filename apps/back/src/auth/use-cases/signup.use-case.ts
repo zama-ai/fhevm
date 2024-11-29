@@ -9,10 +9,8 @@ import { JwtPayload } from '../interfaces/jwt-payload'
 import { Injectable } from '@nestjs/common'
 import { Task } from '@/utils/task'
 import { AppError, notFoundError, validationError } from '@/utils/app-error'
-import { ok } from '@/utils/result'
 
 interface SignupInput {
-  email: string
   name: string
   password: string
   invitationToken: string

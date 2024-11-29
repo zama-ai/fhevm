@@ -7,7 +7,7 @@ export function DashboardPage() {
   return (
     <div>
       <div>(dashboard page)</div>
-      <b>hello {me.email}</b>
+      <b>hello {me.name}</b>
     </div>
   )
 }
