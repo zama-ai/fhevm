@@ -4,7 +4,7 @@ import { Context } from "mocha";
 
 import { AsyncDecrypt } from "../../types";
 import { createInstance } from "../instance";
-import { getSigners } from "../signers";
+import { getSigners, initSigners } from "../signers";
 import { bigIntToBytes64, bigIntToBytes128, bigIntToBytes256, waitNBlocks } from "../utils";
 
 interface AsyncDecryptContext extends Context {
@@ -13,18 +13,14 @@ interface AsyncDecryptContext extends Context {
 
 describe("TestAsyncDecrypt", function () {
   before(async function (this: AsyncDecryptContext) {
+    await initSigners();
     this.signers = await getSigners();
     this.fhevm = await createInstance();
 
-    // very first request of decryption always fail at the moment due to a gateway bug
-    // TODO: remove following 8 lines when the gateway bug will be fixed
     const contractFactory = await ethers.getContractFactory("AsyncDecrypt");
     this.contract = await contractFactory.connect(this.signers.alice).deploy();
     await this.contract.waitForDeployment();
     this.contractAddress = await this.contract.getAddress();
-
-    // const tx = await this.contract.connect(this.signers.carol).requestUint8({ gasLimit: 5_000_000 });
-    // await tx.wait(); // this first request is here just to silence the current gateway bug at the moment
   });
 
   it("test async decrypt bool", async function () {
