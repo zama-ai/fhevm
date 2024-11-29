@@ -11,7 +11,7 @@ task('task:computeACLAddress')
       from: deployer,
       nonce: 1, // using nonce of 1 for the ACL contract (0 for original implementation, +1 for proxy)
     });
-    const envFilePath = path.join(__dirname, '../node_modules/fhevm-core-contracts/addresses/.env.acl');
+    const envFilePath = path.join(__dirname, '../addresses/.env.acl');
     const content = `ACL_CONTRACT_ADDRESS=${aclAddress}\n`;
     try {
       fs.writeFileSync(envFilePath, content, { flag: 'w' });
@@ -27,13 +27,13 @@ pragma solidity ^0.8.24;
 address constant aclAdd = ${aclAddress};\n`;
 
     try {
-      fs.writeFileSync('./node_modules/fhevm-core-contracts/addresses/ACLAddress.sol', solidityTemplate, {
+      fs.writeFileSync('./addresses/ACLAddress.sol', solidityTemplate, {
         encoding: 'utf8',
         flag: 'w',
       });
-      console.log('./node_modules/fhevm-core-contracts/addresses/ACLAddress.sol file generated successfully!');
+      console.log('./addresses/ACLAddress.sol file generated successfully!');
     } catch (error) {
-      console.error('Failed to write ./node_modules/fhevm-core-contracts/addresses/ACLAddress.sol', error);
+      console.error('Failed to write ./addresses/ACLAddress.sol', error);
     }
   });
 
@@ -45,7 +45,7 @@ task('task:computeTFHEExecutorAddress')
       from: deployer,
       nonce: 3, // using nonce of 3 for the TFHEExecutor contract (2 for original implementation, +1 for proxy)
     });
-    const envFilePath = path.join(__dirname, '../node_modules/fhevm-core-contracts/addresses/.env.exec');
+    const envFilePath = path.join(__dirname, '../addresses/.env.exec');
     const content = `TFHE_EXECUTOR_CONTRACT_ADDRESS=${execAddress}\n`;
     try {
       fs.writeFileSync(envFilePath, content, { flag: 'w' });
@@ -61,14 +61,13 @@ pragma solidity ^0.8.24;
 address constant tfheExecutorAdd = ${execAddress};\n`;
 
     try {
-      fs.writeFileSync(
-        './node_modules/fhevm-core-contracts/addresses/TFHEExecutorAddress.sol',
-        solidityTemplateCoprocessor,
-        { encoding: 'utf8', flag: 'w' },
-      );
-      console.log('./node_modules/fhevm-core-contracts/addresses/TFHEExecutorAddress.sol file generated successfully!');
+      fs.writeFileSync('./addresses/TFHEExecutorAddress.sol', solidityTemplateCoprocessor, {
+        encoding: 'utf8',
+        flag: 'w',
+      });
+      console.log('./addresses/TFHEExecutorAddress.sol file generated successfully!');
     } catch (error) {
-      console.error('Failed to write ./node_modules/fhevm-core-contracts/addresses/TFHEExecutorAddress.sol', error);
+      console.error('Failed to write ./addresses/TFHEExecutorAddress.sol', error);
     }
   });
 
@@ -80,7 +79,7 @@ task('task:computeKMSVerifierAddress')
       from: deployer,
       nonce: 5, // using nonce of 5 for the KMSVerifier contract (4 for original implementation, +1 for proxy)
     });
-    const envFilePath = path.join(__dirname, '../node_modules/fhevm-core-contracts/addresses/.env.kmsverifier');
+    const envFilePath = path.join(__dirname, '../addresses/.env.kmsverifier');
     const content = `KMS_VERIFIER_CONTRACT_ADDRESS=${kmsVerfierAddress}\n`;
     try {
       fs.writeFileSync(envFilePath, content, { flag: 'w' });
@@ -96,13 +95,13 @@ pragma solidity ^0.8.24;
 address constant kmsVerifierAdd = ${kmsVerfierAddress};\n`;
 
     try {
-      fs.writeFileSync('./node_modules/fhevm-core-contracts/addresses/KMSVerifierAddress.sol', solidityTemplate, {
+      fs.writeFileSync('./addresses/KMSVerifierAddress.sol', solidityTemplate, {
         encoding: 'utf8',
         flag: 'w',
       });
-      console.log('./node_modules/fhevm-core-contracts/addresses/KMSVerifierAddress.sol file generated successfully!');
+      console.log('./addresses/KMSVerifierAddress.sol file generated successfully!');
     } catch (error) {
-      console.error('Failed to write ./node_modules/fhevm-core-contracts/addresses/KMSVerifierAddress.sol', error);
+      console.error('Failed to write ./addresses/KMSVerifierAddress.sol', error);
     }
   });
 
@@ -121,7 +120,7 @@ task('task:computeInputVerifierAddress')
       from: deployer,
       nonce: 7, // using nonce of 7 for the InputVerifier contract (6 for original implementation, +1 for proxy)
     });
-    const envFilePath = path.join(__dirname, '../node_modules/fhevm-core-contracts/addresses/.env.inputverifier');
+    const envFilePath = path.join(__dirname, '../addresses/.env.inputverifier');
     const content = `INPUT_VERIFIER_CONTRACT_ADDRESS=${inputVerfierAddress}\n`;
     try {
       fs.writeFileSync(envFilePath, content, { flag: 'w' });
@@ -137,15 +136,13 @@ pragma solidity ^0.8.24;
 address constant inputVerifierAdd = ${inputVerfierAddress};\n`;
 
     try {
-      fs.writeFileSync('./node_modules/fhevm-core-contracts/addresses/InputVerifierAddress.sol', solidityTemplate, {
+      fs.writeFileSync('./addresses/InputVerifierAddress.sol', solidityTemplate, {
         encoding: 'utf8',
         flag: 'w',
       });
-      console.log(
-        './node_modules/fhevm-core-contracts/addresses/InputVerifierAddress.sol file generated successfully!',
-      );
+      console.log('./addresses/InputVerifierAddress.sol file generated successfully!');
     } catch (error) {
-      console.error('Failed to write ./node_modules/fhevm-core-contracts/addresses/InputVerifierAddress.sol', error);
+      console.error('Failed to write ./addresses/InputVerifierAddress.sol', error);
     }
     let coprocAddress;
     if (!taskArguments.useAddress) {
@@ -153,7 +150,7 @@ address constant inputVerifierAdd = ${inputVerfierAddress};\n`;
     } else {
       coprocAddress = process.env.ADDRESS_COPROCESSOR_ACCOUNT;
     }
-    const envFilePath2 = path.join(__dirname, '../node_modules/fhevm-core-contracts/addresses/.env.coprocessor');
+    const envFilePath2 = path.join(__dirname, '../addresses/.env.coprocessor');
     const content2 = `COPROCESSOR_ADDRESS=${coprocAddress}\n`;
     try {
       fs.writeFileSync(envFilePath2, content2, { flag: 'w' });
@@ -169,13 +166,13 @@ pragma solidity ^0.8.24;
 address constant coprocessorAdd = ${coprocAddress};\n`;
 
     try {
-      fs.writeFileSync('./node_modules/fhevm-core-contracts/addresses/CoprocessorAddress.sol', solidityTemplate2, {
+      fs.writeFileSync('./addresses/CoprocessorAddress.sol', solidityTemplate2, {
         encoding: 'utf8',
         flag: 'w',
       });
-      console.log('./node_modules/fhevm-core-contracts/addresses/CoprocessorAddress.sol file generated successfully!');
+      console.log('./addresses/CoprocessorAddress.sol file generated successfully!');
     } catch (error) {
-      console.error('Failed to write ./node_modules/fhevm-core-contracts/addresses/CoprocessorAddress.sol', error);
+      console.error('Failed to write ./addresses/CoprocessorAddress.sol', error);
     }
   });
 
@@ -187,7 +184,7 @@ task('task:computeFHEPaymentAddress')
       from: deployer,
       nonce: 9, // using nonce of 9 for the FHEPayment contract (8 for original implementation, +1 for proxy)
     });
-    const envFilePath = path.join(__dirname, '../node_modules/fhevm-core-contracts/addresses/.env.fhepayment');
+    const envFilePath = path.join(__dirname, '../addresses/.env.fhepayment');
     const content = `FHE_PAYMENT_CONTRACT_ADDRESS=${fhePaymentAddress}\n`;
     try {
       fs.writeFileSync(envFilePath, content, { flag: 'w' });
@@ -203,12 +200,12 @@ pragma solidity ^0.8.24;
 address constant fhePaymentAdd = ${fhePaymentAddress};\n`;
 
     try {
-      fs.writeFileSync('./node_modules/fhevm-core-contracts/addresses/FHEPaymentAddress.sol', solidityTemplate, {
+      fs.writeFileSync('./addresses/FHEPaymentAddress.sol', solidityTemplate, {
         encoding: 'utf8',
         flag: 'w',
       });
-      console.log('./node_modules/fhevm-core-contracts/addresses/FHEPaymentAddress.sol file generated successfully!');
+      console.log('./addresses/FHEPaymentAddress.sol file generated successfully!');
     } catch (error) {
-      console.error('Failed to write ./node_modules/fhevm-core-contracts/addresses/FHEPaymentAddress.sol', error);
+      console.error('Failed to write ./addresses/FHEPaymentAddress.sol', error);
     }
   });
