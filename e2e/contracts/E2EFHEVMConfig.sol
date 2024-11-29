@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import {FHEVMConfig, TFHE} from "fhevm/lib/TFHE.sol";
 import { Gateway } from "fhevm/gateway/GatewayCaller.sol";
 
-address constant gatewayAddress = 0x7455c89669cdE1f7Cb6D026DFB87263422D821ca;
+address constant gatewayAddress = 0x33347831500F1e73f0ccCBb95c9f86B94d7b1123;
 
 /**
  * @title   ZamaFHEVMConfig.
@@ -17,10 +17,10 @@ library DefaultFHEVMConfig {
     function getConfig() internal pure returns (FHEVMConfig.FHEVMConfigStruct memory) {
         return
             FHEVMConfig.FHEVMConfigStruct({
-                ACLAddress: 0x9479B455904dCccCf8Bc4f7dF8e9A1105cBa2A8e,
-                TFHEExecutorAddress: 0x199fB61DFdfE46f9F90C9773769c28D9623Bb90e,
-                FHEPaymentAddress: 0x25FE5d92Ae6f89AF37D177cF818bF27EDFe37F7c,
-                KMSVerifierAddress: 0x904Af2B61068f686838bD6257E385C2cE7a09195
+                ACLAddress: 0xFee8407e2f5e3Ee68ad77cAE98c434e637f516e5,
+                TFHEExecutorAddress: 0x687408aB54661ba0b4aeF3a44156c616c6955E07,
+                FHEPaymentAddress: 0xFb03BE574d14C256D56F09a198B586bdfc0A9de2,
+                KMSVerifierAddress: 0x9D6891A6240D6130c54ae243d8005063D05fE14b
             });
     }
 }
