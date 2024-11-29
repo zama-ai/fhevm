@@ -7,4 +7,10 @@ export class SignupInput {
 
   @Field()
   password: string
+
+  @Field()
+  name: string
+
+  @Field()
+  invitationToken: string
 }

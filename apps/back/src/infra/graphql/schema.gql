@@ -46,6 +46,8 @@ input LoginInput {
 input SignupInput {
   email: String!
   password: String!
+  name: String!
+  invitationToken: String!
 }
 
 input CreateInvitationInput {

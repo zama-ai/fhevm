@@ -20,7 +20,7 @@ enum TeamStatus {
 
 model Invitation {
   id        String    @id @default(uuid())
-  email     String
+  email     String    @unique
   token     String    @unique()
   usedAt    DateTime?
   expiresAt DateTime
@@ -34,6 +34,7 @@ model User {
   id        String   @id()
   email     String   @unique
   password  String
+  name      String
   teams     Team[]
   updatedAt DateTime @default(now())
   createdAt DateTime @default(now())
