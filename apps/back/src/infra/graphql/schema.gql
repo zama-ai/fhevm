@@ -20,13 +20,22 @@ type auth {
   token: String!
 }
 
+type Invitation {
+  id: ID!
+  email: String!
+  token: String!
+  expiresAt: Float!
+}
+
 type Query {
   me: User!
+  invitation(token: String!): Invitation!
 }
 
 type Mutation {
   login(input: LoginInput!): auth!
   signup(input: SignupInput!): auth!
+  createInvitation(input: CreateInvitationInput!): Invitation!
 }
 
 input LoginInput {
@@ -37,4 +46,13 @@ input LoginInput {
 input SignupInput {
   email: String!
   password: String!
+}
+
+input CreateInvitationInput {
+  email: String!
+
+  """
+  You need the secret key to create an invitation ask the #zws team to get one
+  """
+  secret: String!
 }

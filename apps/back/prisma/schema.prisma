@@ -18,6 +18,18 @@ enum TeamStatus {
   ACTIVE
 }
 
+model Invitation {
+  id        String    @id @default(uuid())
+  email     String
+  token     String    @unique()
+  usedAt    DateTime?
+  expiresAt DateTime
+  updatedAt DateTime  @default(now())
+  createdAt DateTime  @default(now())
+
+  @@index([token])
+}
+
 model User {
   id        String   @id()
   email     String   @unique

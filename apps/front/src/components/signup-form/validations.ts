@@ -11,7 +11,6 @@ export const RegisterFormSchema = z
       .min(8, 'Password should be at least 8 characters long')
       .max(64, 'Password should be at most 64 characters long'),
     repeatPassword: z.string(),
-    invitationKey: z.string(),
     agree: z.boolean(),
   })
   .refine(data => data.password === data.repeatPassword, {

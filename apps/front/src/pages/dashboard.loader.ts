@@ -12,8 +12,9 @@ const GET_ME = graphql(`
 `)
 
 export async function dashboardLoader() {
-  const { data } = await apolloClient.query({
+  const { error, data } = await apolloClient.query({
     query: GET_ME,
   })
+  if (error) throw error
   return data
 }

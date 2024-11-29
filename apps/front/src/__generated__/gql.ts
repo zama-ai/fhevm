@@ -15,8 +15,8 @@ import { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-node/
  */
 const documents = {
     "\n  query Me {\n    me {\n      id\n      email\n    }\n  }\n": types.MeDocument,
-    "\n  query MyTeamsAndProjects {\n    me {\n      id\n      email\n    }\n  }\n": types.MyTeamsAndProjectsDocument,
     "\n  mutation SignIn($email: String!, $password: String!) {\n    login(input: { email: $email, password: $password }) {\n      token\n      user {\n        id\n        email\n        teams {\n          id\n        }\n      }\n    }\n  }\n": types.SignInDocument,
+    "\n  query InvitationToken($token: String!) {\n    invitation(token: $token) {\n      id\n      expiresAt\n      token\n      email\n    }\n  }\n": types.InvitationTokenDocument,
 };
 
 /**
@@ -40,11 +40,11 @@ export function graphql(source: "\n  query Me {\n    me {\n      id\n      email
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function graphql(source: "\n  query MyTeamsAndProjects {\n    me {\n      id\n      email\n    }\n  }\n"): (typeof documents)["\n  query MyTeamsAndProjects {\n    me {\n      id\n      email\n    }\n  }\n"];
+export function graphql(source: "\n  mutation SignIn($email: String!, $password: String!) {\n    login(input: { email: $email, password: $password }) {\n      token\n      user {\n        id\n        email\n        teams {\n          id\n        }\n      }\n    }\n  }\n"): (typeof documents)["\n  mutation SignIn($email: String!, $password: String!) {\n    login(input: { email: $email, password: $password }) {\n      token\n      user {\n        id\n        email\n        teams {\n          id\n        }\n      }\n    }\n  }\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function graphql(source: "\n  mutation SignIn($email: String!, $password: String!) {\n    login(input: { email: $email, password: $password }) {\n      token\n      user {\n        id\n        email\n        teams {\n          id\n        }\n      }\n    }\n  }\n"): (typeof documents)["\n  mutation SignIn($email: String!, $password: String!) {\n    login(input: { email: $email, password: $password }) {\n      token\n      user {\n        id\n        email\n        teams {\n          id\n        }\n      }\n    }\n  }\n"];
+export function graphql(source: "\n  query InvitationToken($token: String!) {\n    invitation(token: $token) {\n      id\n      expiresAt\n      token\n      email\n    }\n  }\n"): (typeof documents)["\n  query InvitationToken($token: String!) {\n    invitation(token: $token) {\n      id\n      expiresAt\n      token\n      email\n    }\n  }\n"];
 
 export function graphql(source: string) {
   return (documents as any)[source] ?? {};

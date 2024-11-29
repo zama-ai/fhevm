@@ -15,17 +15,21 @@ import {
 import { SpinnerButton } from '@/components/ui/spinner-button'
 
 type OwnProps = {
-  onSubmit: (values: { name: string; password: string }) => void
+  onSubmit: (values: {
+    name: string
+    password: string
+    invitationToken: string
+  }) => void
   email: string
   errorMessage?: string
-  invitationKey: string
+  invitationToken: string
   loading: boolean
 }
 
 export function SignupForm({
   email,
   errorMessage,
-  invitationKey,
+  invitationToken,
   loading,
   onSubmit,
 }: OwnProps) {
@@ -34,11 +38,10 @@ export function SignupForm({
       name: '',
       password: '',
       repeatPassword: '',
-      invitationKey,
       agree: false,
     },
     onSubmit: values => {
-      onSubmit(values)
+      onSubmit({ ...values, invitationToken })
     },
     validate: toFormikValidate(RegisterFormSchema),
   })
