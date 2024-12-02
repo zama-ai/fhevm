@@ -22,5 +22,6 @@ jobs:
       - run: npm run compile
       - uses: JS-DevTools/npm-publish@19c28f1ef146469e409470805ea4279d47c3d35c # v3.1.1
         with:
+          package: ./contracts/package.json
           token: ${{ secrets.NPM_TOKEN }}
           provenance: true
