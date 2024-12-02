@@ -7,6 +7,9 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+      defaults:
+      run:
+        working-directory: ./contracts
     permissions:
       id-token: "write"
     steps:
@@ -14,7 +17,6 @@ jobs:
       - uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
         with:
           node-version: 20.x
-      - run: cd contracts
       - run: cp .env.example .env
       - run: npm ci --include=optional
       - run: npm run compile
