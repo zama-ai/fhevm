@@ -4,7 +4,7 @@ This document provides a detailed guide on implementing decryption in your smart
 
 ## `GatewayContract` set up
 
-The [`GatewayContract`](../../../gateway/GatewayContract.sol) is pre-deployed on the fhEVM testnet. It uses a default relayer account specified in the `PRIVATE_KEY_GATEWAY_RELAYER` or `ADDRESS_GATEWAY_RELAYER` environment variable in the `.env` file.
+The [`GatewayContract`](https://github.com/zama-ai/fhevm-backend/blob/ca7e8490cbc419cd2a1a64ebf3ae1d8fe9b79dd0/contracts/gateway/GatewayContract.sol) is pre-deployed on the fhEVM testnet. It uses a default relayer account specified in the `PRIVATE_KEY_GATEWAY_RELAYER` or `ADDRESS_GATEWAY_RELAYER` environment variable in the `.env` file.
 
 Relayers are the only accounts authorized to fulfill decryption requests. The role of the `GatewayContract`, however, is to independently verify the KMS signature during execution. This ensures that the relayers cannot manipulate or send fraudulent decryption results, even if compromised.
 However, the relayers are still trusted to forward decryption requests on time.
