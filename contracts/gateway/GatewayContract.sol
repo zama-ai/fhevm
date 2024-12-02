@@ -7,7 +7,15 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 import "../addresses/KMSVerifierAddress.sol";
 import "../addresses/ACLAddress.sol";
-import "./IKMSVerifier.sol";
+
+interface IKMSVerifier {
+    function verifyDecryptionEIP712KMSSignatures(
+        address aclAddress,
+        uint256[] memory handlesList,
+        bytes memory decryptedResult,
+        bytes[] memory signatures
+    ) external returns (bool);
+}
 
 contract GatewayContract is UUPSUpgradeable, Ownable2StepUpgradeable {
     /// @notice Name of the contract
