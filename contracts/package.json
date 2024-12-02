@@ -1,7 +1,11 @@
 {
   "name": "fhevm-core-contracts",
-  "version": "0.6.0-1",
+  "version": "0.6.0-2",
   "description": "fhEVM contracts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zama-ai/fhevm-backend.git"
+  },
   "main": "index.js",
   "scripts": {
     "compile": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat compile",
