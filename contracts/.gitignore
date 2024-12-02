@@ -1,6 +1,5 @@
 node_modules
 .env
-addresses
 
 # Hardhat files
 /cache
