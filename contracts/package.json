@@ -9,6 +9,7 @@
   "main": "index.js",
   "scripts": {
     "compile": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat compile",
+    "compile:gateway": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat compile:specific --contract gateway",
     "lint": "npm run lint:sol && npm run lint:ts && npm run prettier:check",
     "lint:ts": "eslint --ignore-path ./.eslintignore --ext .js,.ts .",
     "prettier:check": "prettier --check \"**/*.{js,json,md,sol,ts,yml}\"",
