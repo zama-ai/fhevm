@@ -10,15 +10,15 @@ The library includes templates for common use cases like tokens and governance, 
 
 #### Token
 
-- [EncryptedERC20](https://github.com/zama-ai/fhevm-contracts/blob/main/contracts/token/ERC20/EncryptedERC20.sol): Standard ERC20 with encryption.
-- [EncryptedERC20Mintable](https://github.com/zama-ai/fhevm-contracts/blob/main/contracts/token/ERC20/extensions/EncryptedERC20Mintable.sol): ERC20 with minting capabilities.
-- [EncryptedERC20WithErrors](https://github.com/zama-ai/fhevm-contracts/blob/main/contracts/token/ERC20/extensions/EncryptedERC20WithErrors.sol): ERC20 with integrated error handling.
-- [EncryptedERC20WithErrorsMintable](https://github.com/zama-ai/fhevm-contracts/blob/main/contracts/token/ERC20/extensions/EncryptedERC20WithErrorsMintable.sol): ERC20 with both minting and error handling.
+- [ConfidentialERC20](https://github.com/zama-ai/fhevm-contracts/blob/main/contracts/token/ERC20/ConfidentialERC20.sol): Standard ERC20 with encryption.
+- [ConfidentialERC20Mintable](https://github.com/zama-ai/fhevm-contracts/blob/main/contracts/token/ERC20/extensions/ConfidentialERC20Mintable.sol): ERC20 with minting capabilities.
+- [ConfidentialERC20WithErrors](https://github.com/zama-ai/fhevm-contracts/blob/main/contracts/token/ERC20/extensions/ConfidentialERC20WithErrors.sol): ERC20 with integrated error handling.
+- [ConfidentialERC20WithErrorsMintable](https://github.com/zama-ai/fhevm-contracts/blob/main/contracts/token/ERC20/extensions/ConfidentialERC20WithErrorsMintable.sol): ERC20 with both minting and error handling.
 
 #### Governance
 
-- [Comp](https://github.com/zama-ai/fhevm-contracts/blob/main/contracts/governance/Comp.sol): Governance token implementation.
-- [GovernorAlphaZama](https://github.com/zama-ai/fhevm-contracts/blob/main/contracts/governance/GovernorAlphaZama.sol): A governance contract for managing proposals and votes.
+- [ConfidentialERC20Votes](https://github.com/zama-ai/fhevm-contracts/blob/main/contracts/governance/ConfidentialERC20Votes.sol): Confidential ERC20 governance token implementation. [It is based on Comp.sol](https://github.com/compound-finance/compound-protocol/blob/master/contracts/Governance/Comp.sol).
+- [ConfidentialGovernorAlpha](https://github.com/zama-ai/fhevm-contracts/blob/main/contracts/governance/ConfidentialGovernorAlpha.sol): A governance contract for managing proposals and votes. [It is based on GovernorAlpha.sol](https://github.com/compound-finance/compound-protocol/blob/master/contracts/Governance/GovernorAlpha.sol).
 
 #### Utils
 
