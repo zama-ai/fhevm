@@ -216,6 +216,9 @@ importers:
 
   apps/web3:
     dependencies:
+      '@aws-sdk/client-sqs':
+        specifier: ^3.699.0
+        version: 3.699.0
       '@nestjs/common':
         specifier: ^10.0.0
         version: 10.4.10(reflect-metadata@0.2.2)(rxjs@7.8.1)

@@ -1,9 +1,9 @@
+import { SQSClient } from '@aws-sdk/client-sqs';
 import { Module } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { SqsModule } from 'sqs';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
-import { ConfigModule } from '@nestjs/config';
 import awsConfig from './config/aws.config';
+import { SQSConsumer } from './infra/adapters/sqs.consumer';
 
 @Module({
   imports: [
@@ -11,11 +11,23 @@ import awsConfig from './config/aws.config';
       isGlobal: true,
       load: [awsConfig],
     }),
-    SqsModule.register({
-      consumers: [],
+    SqsModule.registerAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        consumers: [
+          {
+            name: 'web3',
+            queueUrl: config.get<string>('aws.queueUrl')!,
+            useQueueUrlAsEndpoint: false,
+            sqs: new SQSClient({
+              endpoint: config.get<string>('aws.queueUrl'),
+              region: config.get<string>('aws.region'),
+            }),
+          },
+        ],
+      }),
     }),
   ],
-  controllers: [AppController],
-  providers: [AppService],
+  providers: [SQSConsumer],
 })
 export class AppModule {}
