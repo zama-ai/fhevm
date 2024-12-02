@@ -73,7 +73,7 @@ task('task:verifyFHEPayment').setAction(async function (taskArguments, { upgrade
 });
 
 task('task:verifyGatewayContract').setAction(async function (taskArguments, { upgrades, run }) {
-  const parsedEnvGateway = dotenv.parse(fs.readFileSync('gateway/.env.gateway'));
+  const parsedEnvGateway = dotenv.parse(fs.readFileSync('addresses/.env.gateway'));
   const proxyGateway = parsedEnvGateway.GATEWAY_CONTRACT_PREDEPLOY_ADDRESS;
   const implementationGatewayAddress = await upgrades.erc1967.getImplementationAddress(proxyGateway);
   await run('verify:verify', {
