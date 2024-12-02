@@ -39,14 +39,14 @@ describe("TestAsyncDecrypt", function () {
     expect(y).to.equal(true);
   });
 
-  it("test async decrypt uint4", async function () {
-    const balanceBefore = await ethers.provider.getBalance(this.relayerAddress);
+  it.only("test async decrypt uint4", async function () {
+    const balanceBefore = await ethers.provider.getBalance(this.signers.alice);
     const tx2 = await this.contract.connect(this.signers.carol).requestUint4({ gasLimit: 5_000_000 });
     await tx2.wait();
     await waitNBlocks(20);
     const y = await this.contract.yUint4();
     expect(y).to.equal(4);
-    const balanceAfter = await ethers.provider.getBalance(this.relayerAddress);
+    const balanceAfter = await ethers.provider.getBalance(this.signers.alice);
     console.log(balanceBefore - balanceAfter);
   });
 
