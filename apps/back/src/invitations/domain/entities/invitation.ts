@@ -42,7 +42,11 @@ export class Invitation
     return this.get('expiresAt')
   }
 
+  get usedAt() {
+    return this.get('expiresAt')
+  }
+
   get isValid() {
-    return this.expiresAt > new Date()
+    return this.expiresAt > new Date() && this.usedAt === null
   }
 }
