@@ -8,6 +8,7 @@ const schema = z.object({
   email: z.string().email(),
   token: z.string(),
   expiresAt: z.date(),
+  usedAt: z.date().nullable().optional(),
 })
 
 export type InvitationProps = z.infer<typeof schema>
@@ -16,10 +17,7 @@ export class Invitation
   extends Entity<InvitationProps>
   implements Readonly<Omit<InvitationProps, 'password'>>
 {
-  static parse(
-    data: unknown,
-    options?: { hashPassword: boolean },
-  ): Result<Invitation, AppError> {
+  static parse(data: unknown): Result<Invitation, AppError> {
     const check = schema.safeParse(data)
     return check.success
       ? ok(new Invitation(check.data))
@@ -43,10 +41,11 @@ export class Invitation
   }
 
   get usedAt() {
-    return this.get('expiresAt')
+    return this.get('usedAt')
   }
 
   get isValid() {
+    console.log('entity', this.email, this.usedAt, '(should be null)')
     return this.expiresAt > new Date() && this.usedAt === null
   }
 }
