@@ -10,29 +10,12 @@ import {Gateway} from "../gateway/lib/Gateway.sol";
  *          deployed & maintained by Zama.
  */
 library ZamaGatewayConfig {
-    function getMockConfig() internal pure returns (address) {
-        return 0x2C19507EEAd017495e23a98DB1ff20c7eD599ee1;
-    }
-
     function getSepoliaConfig() internal pure returns (address) {
-        return 0x7455c89669cdE1f7Cb6D026DFB87263422D821ca;
+        return 0x33347831500F1e73f0ccCBb95c9f86B94d7b1123;
     }
 
     function getEthereumConfig() internal pure returns (address) {
         /// TODO
-    }
-}
-
-/**
- * @title   MockZamaGatewayConfig
- * @dev     This contract can be inherited by a contract wishing to use the Gateway service
- *          on the mock environment provided by Zama.
- *          Other providers may offer other Gateways that are deployed at different addresses.
- *          If you wish to use them, you should rely on the instructions from these providers.
- */
-contract MockZamaGatewayConfig {
-    constructor() {
-        Gateway.setGateway(ZamaGatewayConfig.getMockConfig());
     }
 }
 

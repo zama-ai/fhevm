@@ -11,41 +11,18 @@ import {FHEVMConfig, TFHE} from "../lib/TFHE.sol";
  *          which are deployed & maintained by Zama.
  */
 library ZamaFHEVMConfig {
-    function getMockConfig() internal pure returns (FHEVMConfig.FHEVMConfigStruct memory) {
-        return
-            FHEVMConfig.FHEVMConfigStruct({
-                ACLAddress: 0xB4d8d77f7F9B465B60c190480c6160b69d695c9D,
-                TFHEExecutorAddress: 0xFdee168C46e1dFD082E78192b3C622cA78B58669,
-                FHEPaymentAddress: 0x2527DD76195fD3BFdd2c76D821e1f5d433d82C25,
-                KMSVerifierAddress: 0x89842EA0b44EF85391Bd1A9f3AC8B382CCF0d3F1
-            });
-    }
-
     function getSepoliaConfig() internal pure returns (FHEVMConfig.FHEVMConfigStruct memory) {
         return
             FHEVMConfig.FHEVMConfigStruct({
-                ACLAddress: 0x9479B455904dCccCf8Bc4f7dF8e9A1105cBa2A8e,
-                TFHEExecutorAddress: 0x199fB61DFdfE46f9F90C9773769c28D9623Bb90e,
-                FHEPaymentAddress: 0x25FE5d92Ae6f89AF37D177cF818bF27EDFe37F7c,
-                KMSVerifierAddress: 0x904Af2B61068f686838bD6257E385C2cE7a09195
+                ACLAddress: 0xFee8407e2f5e3Ee68ad77cAE98c434e637f516e5,
+                TFHEExecutorAddress: 0x687408aB54661ba0b4aeF3a44156c616c6955E07,
+                FHEPaymentAddress: 0xFb03BE574d14C256D56F09a198B586bdfc0A9de2,
+                KMSVerifierAddress: 0x9D6891A6240D6130c54ae243d8005063D05fE14b
             });
     }
 
     function getEthereumConfig() internal pure returns (FHEVMConfig.FHEVMConfigStruct memory) {
         /// TODO
-    }
-}
-
-/**
- * @title   MockZamaFHEVMConfig.
- * @dev     This contract can be inherited by a contract wishing to use these contracts on the mock
- *          environment provided by Zama.
- *          Other providers may offer similar contracts deployed at different addresses.
- *          If you wish to use them, you should rely on the instructions from these providers.
- */
-contract MockZamaFHEVMConfig {
-    constructor() {
-        TFHE.setFHEVM(ZamaFHEVMConfig.getMockConfig());
     }
 }
 

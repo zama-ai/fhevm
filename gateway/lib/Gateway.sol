@@ -3,9 +3,17 @@
 pragma solidity ^0.8.24;
 
 import "./GatewayContractAddress.sol";
-import "../IKMSVerifier.sol";
 import "../../lib/Impl.sol";
 import "fhevm-core-contracts/addresses/ACLAddress.sol";
+
+interface IKMSVerifier {
+    function verifyDecryptionEIP712KMSSignatures(
+        address aclAddress,
+        uint256[] memory handlesList,
+        bytes memory decryptedResult,
+        bytes[] memory signatures
+    ) external returns (bool);
+}
 
 interface IGatewayContract {
     function requestDecryption(
