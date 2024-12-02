@@ -49,6 +49,9 @@ export class SignUp
         }),
       )
       .chain(user => this.userRepository.create(user.toJSON()))
+      .chain(user =>
+        this.invitationRepository.use(input.invitationToken).map(() => user),
+      )
       .map(user => ({
         token: this.jwtService.sign({
           sub: user.id,
