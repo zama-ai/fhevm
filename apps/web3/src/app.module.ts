@@ -4,6 +4,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { SqsModule } from 'sqs';
 import awsConfig from './config/aws.config';
 import { SQSConsumer } from './infra/adapters/sqs.consumer';
+import { SNSClient } from '@aws-sdk/client-sns';
 
 @Module({
   imports: [
@@ -21,6 +22,16 @@ import { SQSConsumer } from './infra/adapters/sqs.consumer';
             useQueueUrlAsEndpoint: false,
             sqs: new SQSClient({
               endpoint: config.get<string>('aws.queueUrl'),
+              region: config.get<string>('aws.region'),
+            }),
+          },
+        ],
+        producers: [
+          {
+            name: 'console',
+            topicArn: config.get<string>('aws.topicArn')!,
+            sns: new SNSClient({
+              endpoint: config.get<string>('aws.endpoint'),
               region: config.get<string>('aws.region'),
             }),
           },
