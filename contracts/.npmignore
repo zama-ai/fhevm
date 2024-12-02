@@ -1,4 +1,12 @@
 *
+!/artifacts/
+!/artifacts/contracts/
+!/artifacts/contracts/**/*.json
+/artifacts/contracts/**/*.dbg.json
+!/artifacts/gateway/
+!/artifacts/gateway/GatewayContract.sol/GatewayContract.json
+/artifacts/gateway/**/*.json
+/artifacts/gateway/**/*.dbg.json
 !addresses/**
 !contracts/**
 !gateway/**
