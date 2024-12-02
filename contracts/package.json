@@ -4,6 +4,7 @@
   "description": "fhEVM contracts",
   "main": "index.js",
   "scripts": {
+    "compile": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat compile",
     "lint": "npm run lint:sol && npm run lint:ts && npm run prettier:check",
     "lint:ts": "eslint --ignore-path ./.eslintignore --ext .js,.ts .",
     "prettier:check": "prettier --check \"**/*.{js,json,md,sol,ts,yml}\"",
@@ -24,6 +25,7 @@
     "@openzeppelin/hardhat-upgrades": "^3.3.0",
     "@trivago/prettier-plugin-sort-imports": "^4.0.0",
     "bigint-buffer": "^1.1.5",
+    "cross-env": "^7.0.3",
     "dotenv": "^16.4.5",
     "eslint": "^8.28.0",
     "eslint-config-prettier": "^8.5.0",
