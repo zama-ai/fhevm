@@ -1,5 +1,6 @@
 *
 !lib/**
+lib/FHEVMConfig.sol
 !gateway/**
 !config/**
 !package.json
