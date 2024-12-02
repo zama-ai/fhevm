@@ -213,7 +213,7 @@ task('task:upgradeGatewayContract')
     types.boolean,
   )
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades, run }) {
-    const parsedEnv = dotenv.parse(fs.readFileSync('gateway/.env.gateway'));
+    const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.gateway'));
     const proxyAddress = parsedEnv.GATEWAY_CONTRACT_PREDEPLOY_ADDRESS;
     await upgradeCurrentToNew(
       taskArguments.privateKey,
