@@ -6,6 +6,7 @@ import { JwtPayload } from '@/auth/interfaces/jwt-payload'
 import { GetUserById } from '@/users/use-cases/get-user-by-id.use-case'
 import { GetTeamsByUserId } from '@/users/use-cases/get-teams-by-user-id.use-case'
 import { UserType } from './types/user.type'
+import { User } from '../domain/entities/user'
 
 @Resolver(() => UserType)
 export class UsersResolver {
@@ -16,8 +17,8 @@ export class UsersResolver {
 
   @Query(() => UserType, { name: 'me' })
   @UseGuards(JwtAuthGuard)
-  me(@CurrentUser() jwt: JwtPayload) {
-    return this.getUserByIdUC.execute(jwt.sub).toPromise()
+  me(@CurrentUser() user: User) {
+    return user
   }
   @ResolveField()
   async teams(@Parent() user: UserType) {
