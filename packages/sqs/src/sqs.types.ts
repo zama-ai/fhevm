@@ -1,4 +1,4 @@
-import { LoggerService } from '@nestjs/common';
+import { LoggerService, ModuleMetadata, Type } from '@nestjs/common';
 import type { Consumer, ConsumerOptions, StopOptions } from 'sqs-consumer';
 
 export type SqsConsumerOptions = Omit<
@@ -18,6 +18,17 @@ export interface SqsOptions {
   consumers: SqsConsumerOptions[];
   logger?: LoggerService;
   globalStopOptions?: StopOptions;
+}
+
+export interface SqsModuleOptionsFactory {
+  createOptions(): Promise<SqsOptions> | SqsOptions;
+}
+
+export interface SqsModuleAsyncOptions extends Pick<ModuleMetadata, 'imports'> {
+  inject?: any[];
+  useFactory?: (...args: any[]) => Promise<SqsOptions> | SqsOptions;
+  useExisting?: Type<SqsModuleOptionsFactory>;
+  useClass?: Type<SqsModuleOptionsFactory>;
 }
 
 export interface SqsMessageHanlderMeta {
