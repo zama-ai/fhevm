@@ -18,6 +18,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+const DEFAULT_FHEVM_COPROCESSOR_SYNC_INTERVAL = "1s"
+
 type FheUintType uint8
 
 const (
@@ -144,6 +146,7 @@ type ApiImpl struct {
 	store              *SqliteComputationStore
 	address            common.Address
 	aclContractAddress common.Address
+	flushInterval      time.Duration
 }
 
 type SessionImpl struct {
@@ -429,10 +432,21 @@ func InitCoprocessor() (CoprocessorApi, error) {
 		}
 		aclContractAddress := common.HexToAddress(aclContractAddressHex)
 
+		coprocessorSyncIntervalString, isConfigured := os.LookupEnv("FHEVM_COPROCESSOR_SYNC_INTERVAL")
+		if !isConfigured {
+			coprocessorSyncIntervalString = DEFAULT_FHEVM_COPROCESSOR_SYNC_INTERVAL
+		}
+		coprocessorSyncInterval, err := time.ParseDuration(coprocessorSyncIntervalString)
+		if err != nil {
+			return nil, fmt.Errorf("parsing FHEVM_COPROCESSOR_SYNC_INTERVAL (%s): %w", coprocessorSyncIntervalString, err)
+		}
+		fmt.Printf("Using coprocessor sync interval %s\n", coprocessorSyncInterval.String())
+
 		apiImpl := ApiImpl{
 			store:              ciphertextDb,
 			address:            fhevmContractAddress,
 			aclContractAddress: aclContractAddress,
+			flushInterval:      coprocessorSyncInterval,
 		}
 
 		// background job to submit computations to coprocessor
@@ -448,7 +462,7 @@ func scheduleCoprocessorFlushes(impl *ApiImpl) {
 	// timer to send polling for messages every 10 seconds
 	go func() {
 		for {
-			time.Sleep(time.Millisecond * 10000)
+			time.Sleep(impl.flushInterval)
 			select {
 			case impl.store.jobChannel <- true:
 			default:
