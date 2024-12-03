@@ -59,11 +59,11 @@ export function PublicLayout() {
         flexGrow={1}
         bg="brand"
       >
-        <Box minH={'60px'} py={{ base: 2 }} px={{ base: 4 }} bg="brand">
+        <Flex minH="70px" py="2" px="4" bg="brand" alignItems="center">
           <Link to="/">
             <Logo width={100} />
           </Link>
-        </Box>
+        </Flex>
         <Flex
           minHeight="calc(100vh - 120px)"
           display={{ base: 'none', md: 'flex' }}

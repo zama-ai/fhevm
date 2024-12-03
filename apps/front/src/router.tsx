@@ -1,5 +1,6 @@
 import { createBrowserRouter, RouterProvider } from 'react-router'
 import { PublicLayout } from './layouts/public.layout'
+import { PrivateLayout } from './layouts/private.layout'
 
 // utility pages
 import { DefaultPage } from './pages/default.page'
@@ -17,9 +18,14 @@ import { dashboardLoader } from './pages/dashboard.loader'
 
 const router = createBrowserRouter([
   {
-    path: '/',
-    element: <DefaultPage />,
-    errorElement: <ErrorPage />,
+    element: <PrivateLayout />,
+    children: [
+      {
+        path: '/',
+        element: <DefaultPage />,
+        errorElement: <ErrorPage />,
+      },
+    ],
   },
   {
     element: <PublicLayout />,
