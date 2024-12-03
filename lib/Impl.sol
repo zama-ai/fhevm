@@ -2,7 +2,17 @@
 pragma solidity ^0.8.24;
 
 import "./TFHE.sol";
-import "./FHEVMConfig.sol";
+
+/**
+ * @title   FHEVMConfigStruct
+ * @notice  This struct contains all addresses of core contrats which are needed in a typical dApp.
+ */
+struct FHEVMConfigStruct {
+    address ACLAddress;
+    address TFHEExecutorAddress;
+    address FHEPaymentAddress;
+    address KMSVerifierAddress;
+}
 
 /**
  * @title   ITFHEExecutor
