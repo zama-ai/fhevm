@@ -17,7 +17,7 @@ task('task:deployGateway')
     });
     await Gateway.waitForDeployment();
     const GatewayContractAddress = await Gateway.getAddress();
-    const envConfig = dotenv.parse(fs.readFileSync('gateway/.env.gateway'));
+    const envConfig = dotenv.parse(fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.gateway'));
     if (GatewayContractAddress !== envConfig.GATEWAY_CONTRACT_PREDEPLOY_ADDRESS) {
       throw new Error(
         `The nonce of the deployer account is not null. Please use another deployer private key or relaunch a clean instance of the fhEVM`,

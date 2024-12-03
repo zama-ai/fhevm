@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 
 import "../lib/TFHE.sol";
 import "./FHEVMConfig.sol";
+import "./GatewayConfig.sol";
 import "./EncryptedERC20.sol";
 import "@openzeppelin/contracts/access/Ownable2Step.sol";
 import "../gateway/GatewayCaller.sol";
@@ -75,7 +76,7 @@ contract BlindAuction is Ownable2Step, GatewayCaller {
         bool isStoppable
     ) Ownable(msg.sender) {
         TFHE.setFHEVM(FHEVMConfig.defaultConfig());
-        Gateway.setGateway(Gateway.defaultGatewayAddress());
+        Gateway.setGateway(GatewayConfig.defaultGatewayContract());
         beneficiary = _beneficiary;
         tokenContract = _tokenContract;
         endTime = block.timestamp + biddingTime;

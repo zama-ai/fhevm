@@ -1,7 +1,6 @@
 *
 !lib/**
-!gateway/GatewayContract.sol
-!gateway/lib/Gateway.sol
+!gateway/**
 !config/**
 !package.json
 !README.md

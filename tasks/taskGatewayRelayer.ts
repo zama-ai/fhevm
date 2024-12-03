@@ -23,13 +23,15 @@ task('task:computeGatewayAddress')
       from: deployerAddress,
       nonce: 1, // deployer is supposed to have nonce 0 when deploying GatewayContract (0 nonce for implementation, +1 for UUPS)
     });
-    const envFilePath = path.join(__dirname, '../gateway/.env.gateway');
+    const envFilePath = path.join(__dirname, '../node_modules/fhevm-core-contracts/addresses/.env.gateway');
     const content = `GATEWAY_CONTRACT_PREDEPLOY_ADDRESS=${gatewayContractAddressPrecomputed}`;
     try {
       fs.writeFileSync(envFilePath, content, { flag: 'w' });
-      console.log('gatewayContractAddress written to gateway/.env.gateway successfully!');
+      console.log(
+        'gatewayContractAddress written to node_modules/fhevm-core-contracts/addresses/.env.gateway successfully!',
+      );
     } catch (err) {
-      console.error('Failed to write to gateway/.env.gateway:', err);
+      console.error('Failed to write to node_modules/fhevm-core-contracts/addresses/.env.gateway:', err);
     }
 
     const solidityTemplate = `// SPDX-License-Identifier: BSD-3-Clause-Clear
@@ -40,10 +42,15 @@ address constant GATEWAY_CONTRACT_PREDEPLOY_ADDRESS = ${gatewayContractAddressPr
 `;
 
     try {
-      fs.writeFileSync('./gateway/lib/GatewayContractAddress.sol', solidityTemplate, { encoding: 'utf8', flag: 'w' });
-      console.log('gateway/lib/GatewayContractAddress.sol file has been generated successfully.');
+      fs.writeFileSync('node_modules/fhevm-core-contracts/addresses/GatewayContractAddress.sol', solidityTemplate, {
+        encoding: 'utf8',
+        flag: 'w',
+      });
+      console.log(
+        'node_modules/fhevm-core-contracts/addresses/GatewayContractAddress.sol file has been generated successfully.',
+      );
     } catch (error) {
-      console.error('Failed to write gateway/lib/GatewayContractAddress.sol', error);
+      console.error('Failed to write node_modules/fhevm-core-contracts/addresses/GatewayContractAddress.sol', error);
     }
   });
 
@@ -115,7 +122,7 @@ task('task:launchFhevm')
     }
     await hre.run('task:deployGateway', { privateKey: privKeyDeployer, ownerAddress: deployerAddress });
 
-    const parsedEnv = dotenv.parse(fs.readFileSync('gateway/.env.gateway'));
+    const parsedEnv = dotenv.parse(fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.gateway'));
     const gatewayContractAddress = parsedEnv.GATEWAY_CONTRACT_PREDEPLOY_ADDRESS;
 
     await hre.run('task:addRelayer', {

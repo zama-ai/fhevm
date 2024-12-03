@@ -24,11 +24,11 @@ interface IGatewayContract {
     ) external returns (uint256);
 }
 
-library Gateway {
-    struct GatewayConfigStruct {
-        address GatewayContractAddress;
-    }
+struct GatewayConfigStruct {
+    address GatewayContractAddress;
+}
 
+library Gateway {
     // keccak256(abi.encode(uint256(keccak256("fhevm.storage.GatewayConfig")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant GatewayLocation = 0x93ab6e17f2c461cce6ea5d4ec117e51dda77a64affc2b2c05f8cd440def0e700;
 
