@@ -26,9 +26,151 @@
   <a href="https://slsa.dev"><img alt="SLSA 3" src="https://slsa.dev/images/gh-badge-level3.svg" /></a>
 </p>
 
+
+## About
+
+### What is fhEVM-backend
+
+**fhEVM-backend** provides the execution service for FHE computations.
+
+It includes:
+- An **Executor** service for [fhEVM-native](https://docs.zama.ai/fhevm-backend/getting-started/fhevm/fhevm-native) 
+- A **Coprocessor** service for [fhEVM-coprocessor](https://docs.zama.ai/fhevm-backend/getting-started/fhevm/fhevm-coprocessor)
+
+*Learn more about fhEVM-backend features in the [documentation](https://docs.zama.ai/fhevm-backend).*
+<br></br>
+
+## Table of Contents
+- **[Getting started](#getting-started)**
+   - [Generating keys](#generating-keys)
+   - [Executor](#executor)
+   - [Coprocessor](#coprocessor)
+- **[Resources](#resources)**
+   - [Documentation](#documentation)
+   - [fhEVM Demo](#fhevm-demo)
+- **[Working with fhEVM-backend](#working-with-fhevm-backend)**
+   - [Citations](#citations)
+   - [Contributing](#contributing)
+   - [License](#license)
+- **[Support](#support)**
+<br></br>
+
+## Getting started
+
+### Generating keys
+
+For testing purposes a set of keys can be generated as follows:
+```
+$ cd fhevm-engine/fhevm-engine-common
+$ cargo run generate-keys
+```
+The keys are stored by default in `fhevm-engine/fhevm-keys`.
+
+### Executor
+
+#### Installation
+
+```
+$ cd fhevm-engine/executor
+$ cargo install --path .
+```
+
+#### Configuration
+
+Once installed, the executor can be started with the following configuration options:
+```
+$ executor --help
+Usage: executor [OPTIONS] --fhe-keys-directory <FHE_KEYS_DIRECTORY>
+
+Options:
+      --tokio-threads <TOKIO_THREADS>
+          [default: 4]
+      --fhe-compute-threads <FHE_COMPUTE_THREADS>
+          [default: 32]
+      --policy-fhe-compute-threads <POLICY_FHE_COMPUTE_THREADS>
+          [default: 32]
+      --server-addr <SERVER_ADDR>
+          [default: 127.0.0.1:50051]
+      --fhe-keys-directory <FHE_KEYS_DIRECTORY>
+          directory for fhe keys, target directory expected to contain files named: sks (server evaluation key), pks (compact public key), pp (public key params)
+  -h, --help
+          Print help
+  -V, --version
+          Print version
+```
+
+More details on configuration can be found in the [documentation](https://docs.zama.ai/fhevm-backend/getting-started/fhevm/fhevm-native/configuration).
+
+### Coprocessor
+
+#### Dependences
+
+- `docker-compose`
+- `rust`
+- `sqlx-cli` (install with `cargo install sqlx-cli`)
+
+#### Installation
+
+```
+$ cd fhevm-engine/coprocessor
+$ cargo install --path .
+```
+
+#### Configuration
+
+```
+$ coprocessor --help
+Usage: coprocessor [OPTIONS]
+
+Options:
+      --run-server
+          Run the API server
+      --run-bg-worker
+          Run the background worker
+      --generate-fhe-keys
+          Generate fhe keys and exit
+      --server-maximum-ciphertexts-to-schedule <SERVER_MAXIMUM_CIPHERTEXTS_TO_SCHEDULE>
+          Server maximum ciphertexts to schedule per batch [default: 5000]
+      --server-maximum-ciphertexts-to-get <SERVER_MAXIMUM_CIPHERTEXTS_TO_GET>
+          Server maximum ciphertexts to serve on get_cihpertexts endpoint [default: 5000]
+      --work-items-batch-size <WORK_ITEMS_BATCH_SIZE>
+          Work items batch size [default: 10]
+      --tenant-key-cache-size <TENANT_KEY_CACHE_SIZE>
+          Tenant key cache size [default: 32]
+      --maximimum-compact-inputs-upload <MAXIMIMUM_COMPACT_INPUTS_UPLOAD>
+          Maximum compact inputs to upload [default: 10]
+      --maximum-handles-per-input <MAXIMUM_HANDLES_PER_INPUT>
+          Maximum compact inputs to upload [default: 255]
+      --coprocessor-fhe-threads <COPROCESSOR_FHE_THREADS>
+          Coprocessor FHE processing threads [default: 8]
+      --tokio-threads <TOKIO_THREADS>
+          Tokio Async IO threads [default: 4]
+      --pg-pool-max-connections <PG_POOL_MAX_CONNECTIONS>
+          Postgres pool max connections [default: 10]
+      --server-addr <SERVER_ADDR>
+          Server socket address [default: 127.0.0.1:50051]
+      --metrics-addr <METRICS_ADDR>
+          Prometheus metrics server address [default: 0.0.0.0:9100]
+      --database-url <DATABASE_URL>
+          Postgres database url. If unspecified DATABASE_URL environment variable is used
+      --coprocessor-private-key <COPROCESSOR_PRIVATE_KEY>
+          Coprocessor private key file path. Private key is in plain text 0x1234.. format [default: ./coprocessor.key]
+```
+
+More details on configuration can be found in the [documentation](https://docs.zama.ai/fhevm-backend/getting-started/fhevm/fhevm-coprocessor/configuration).
+
+## Resources
+
 ### Documentation
 
 Full, comprehensive documentation is available here: [https://docs.zama.ai/fhevm-backend](https://docs.zama.ai/fhevm-backend).
+
+### fhEVM Demo
+
+A complete demo showcasing an integrated fhEVM blockchain and KMS (Key Management System) is available here: [https://github.com/zama-ai/fhevm-devops](https://github.com/zama-ai/fhevm-devops).
+
+
+## Working with fhEVM-backend
 
 ### Citations
 
