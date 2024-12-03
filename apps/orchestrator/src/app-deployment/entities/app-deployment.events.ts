@@ -12,6 +12,8 @@ type EventMap = {
   completed: {};
 };
 
+type EventTypes = keyof EventMap;
+
 export type AppDeploymentEvent = {
   [Key in EventTypes]: {
     _tag: 'Event';
@@ -20,9 +22,7 @@ export type AppDeploymentEvent = {
   };
 }[EventTypes];
 
-type EventTypes = keyof EventMap;
 const _eventTypes = [
-  'completed',
   'requested',
   'sc-confirmation-failed',
   'sc-confirmed',
@@ -30,6 +30,7 @@ const _eventTypes = [
   'sc-discovery-failed',
   'sc-registered',
   'sc-registration-failed',
+  'completed',
 ] as const;
 const eventTypes: ExhaustiveTuple<EventTypes, typeof _eventTypes> = _eventTypes;
 

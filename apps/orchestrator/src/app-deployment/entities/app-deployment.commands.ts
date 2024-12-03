@@ -9,6 +9,8 @@ type CommandMap = {
   'register-sm': {};
 };
 
+type CommandTypes = keyof CommandMap;
+
 export type AppDeploymentCommand = {
   [Key in CommandTypes]: {
     _tag: 'Command';
@@ -16,8 +18,6 @@ export type AppDeploymentCommand = {
     payload: CommandMap[Key] & { applicationId: string };
   };
 }[CommandTypes];
-
-type CommandTypes = keyof CommandMap;
 
 const _cmdTypes = ['confirm-sm', 'discover-sm', 'register-sm'] as const;
 const cmdTypes: ExhaustiveTuple<CommandTypes, typeof _cmdTypes> = _cmdTypes;

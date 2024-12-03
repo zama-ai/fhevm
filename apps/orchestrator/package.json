@@ -16,7 +16,8 @@
     "test": "vitest run",
     "test:watch": "vitest watch",
     "test:cov": "vitest run --coverage.enabled --coverage.all",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "postinstall": "pnpx prisma migrate dev"
   },
   "dependencies": {
     "@aws-sdk/client-sns": "^3.699.0",
