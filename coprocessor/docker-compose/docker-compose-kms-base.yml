@@ -46,18 +46,9 @@ services:
       - ../blockchain/scripts:/app/scripts
       - validator_secrets:/app/secrets
     entrypoint: >
-      /bin/sh -c "
-      chmod +x /app/scripts/setup_wallets.sh &&
-      chmod +x /app/scripts/deploy_contracts.sh &&
-      /app/scripts/setup_wallets.sh &&
-      sleep 10 &&
-      /app/scripts/deploy_contracts.sh &&
-      touch /tmp/done &&
-      sleep 65 &&
-      exit 0
-      "
+      /bin/sh -c " chmod +x /app/scripts/setup_wallets.sh && chmod +x /app/scripts/deploy_contracts.sh && /app/scripts/setup_wallets.sh && sleep 10 && /app/scripts/deploy_contracts.sh && touch /tmp/done && sleep 65 && exit 0 "
     healthcheck:
-      test: ["CMD", "test", "-f", "/tmp/done"]
+      test: [ "CMD", "test", "-f", "/tmp/done" ]
       interval: 5s
       timeout: 1s
       retries: 240
@@ -72,7 +63,7 @@ services:
     ports:
       - "8088:8088"
     volumes:
-      - ../blockchain/gateway/config/:/app/gateway/config
+      - ../blockchain/gateway/config/gateway_centralized.toml:/app/gateway/config/gateway.toml
     command:
       - "kv_store"
     healthcheck:
@@ -94,7 +85,7 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: [ "CMD", "mc", "ready", "local" ]
       interval: 1s
       timeout: 10s
       retries: 10
@@ -107,22 +98,7 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
       MINIO_ENDPOINT: "http://dev-s3-mock:9000"
     entrypoint: >
-      /bin/sh -c "
-      sleep 1 &&
-      /usr/bin/mc alias set myminio $$MINIO_ENDPOINT ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD} &&
-      ACCESS_KEY=$$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 20 | head -n 1) &&
-      SECRET_KEY=$$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 40 | head -n 1) &&
-      /usr/bin/mc admin user add myminio $$ACCESS_KEY $$SECRET_KEY &&
-      /usr/bin/mc admin policy attach myminio readwrite --user $$ACCESS_KEY &&
-      echo '$ACCESS_KEY' &&
-      echo '$SECRET_KEY' &&
-      echo $$ACCESS_KEY > /minio_secrets/access_key &&
-      echo $$SECRET_KEY > /minio_secrets/secret_key &&
-      cat /minio_secrets/access_key &&
-      cat /minio_secrets/secret_key &&
-      mc mb --with-lock --ignore-existing myminio/kms &&
-      mc anonymous set public myminio/kms
-      "
+      /bin/sh -c " sleep 1 && /usr/bin/mc alias set myminio $$MINIO_ENDPOINT ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD} && ACCESS_KEY=$$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 20 | head -n 1) && SECRET_KEY=$$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 40 | head -n 1) && /usr/bin/mc admin user add myminio $$ACCESS_KEY $$SECRET_KEY && /usr/bin/mc admin policy attach myminio readwrite --user $$ACCESS_KEY && echo '$ACCESS_KEY' && echo '$SECRET_KEY' && echo $$ACCESS_KEY > /minio_secrets/access_key && echo $$SECRET_KEY > /minio_secrets/secret_key && cat /minio_secrets/access_key && cat /minio_secrets/secret_key && mc mb --with-lock --ignore-existing myminio/kms && mc anonymous set public myminio/kms "
     volumes:
       - minio_secrets:/minio_secrets
     depends_on:
@@ -132,6 +108,7 @@ services:
 volumes:
   minio_secrets:
   validator_secrets:
+
 
 secrets:
   BLOCKCHAIN_ACTIONS_TOKEN:
