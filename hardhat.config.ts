@@ -13,7 +13,6 @@ import * as path from 'path';
 import CustomProvider from './CustomProvider';
 // Adjust the import path as needed
 import './tasks/accounts';
-import './tasks/etherscanVerify';
 import './tasks/getEthereumAddress';
 import './tasks/taskDeploy';
 import './tasks/taskGatewayRelayer';

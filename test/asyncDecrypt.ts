@@ -32,7 +32,7 @@ const currentTime = (): string => {
   return now.toLocaleTimeString('en-US', { hour12: true, hour: 'numeric', minute: 'numeric', second: 'numeric' });
 };
 
-const parsedEnv = dotenv.parse(fs.readFileSync('gateway/.env.gateway'));
+const parsedEnv = dotenv.parse(fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.gateway'));
 let relayer: Wallet;
 if (networkName === 'hardhat') {
   const privKeyRelayer = process.env.PRIVATE_KEY_GATEWAY_RELAYER;

@@ -98,7 +98,7 @@ contract EncryptedCounter3 is MockZamaFHEVMConfig, MockZamaGatewayConfig, Gatewa
     uint8 public decryptedCounter;
 
     constructor() {
-        Gateway.setGateway(Gateway.defaultGatewayAddress());
+        Gateway.setGateway(GatewayConfig.defaultGatewayContract());
 
         // Initialize counter with an encrypted zero value
         counter = TFHE.asEuint8(0);
