@@ -2,7 +2,17 @@
 pragma solidity ^0.8.24;
 
 import "./TFHE.sol";
-import "./FHEVMConfig.sol";
+
+/**
+ * @title   FHEVMConfigStruct
+ * @notice  This struct contains all addresses of core contrats which are needed in a typical dApp.
+ */
+struct FHEVMConfigStruct {
+    address ACLAddress;
+    address TFHEExecutorAddress;
+    address FHEPaymentAddress;
+    address KMSVerifierAddress;
+}
 
 /**
  * @title   ITFHEExecutor
@@ -68,14 +78,14 @@ library Impl {
     /// @dev keccak256(abi.encode(uint256(keccak256("fhevm.storage.FHEVMConfig")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant FHEVMConfigLocation = 0xed8d60e34876f751cc8b014c560745351147d9de11b9347c854e881b128ea600;
 
-    function getFHEVMConfig() internal pure returns (FHEVMConfig.FHEVMConfigStruct storage $) {
+    function getFHEVMConfig() internal pure returns (FHEVMConfigStruct storage $) {
         assembly {
             $.slot := FHEVMConfigLocation
         }
     }
 
-    function setFHEVM(FHEVMConfig.FHEVMConfigStruct memory fhevmConfig) internal {
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+    function setFHEVM(FHEVMConfigStruct memory fhevmConfig) internal {
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         $.ACLAddress = fhevmConfig.ACLAddress;
         $.TFHEExecutorAddress = fhevmConfig.TFHEExecutorAddress;
         $.FHEPaymentAddress = fhevmConfig.FHEPaymentAddress;
@@ -89,7 +99,7 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).fheAdd(lhs, rhs, scalarByte);
     }
 
@@ -100,7 +110,7 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).fheSub(lhs, rhs, scalarByte);
     }
 
@@ -111,19 +121,19 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).fheMul(lhs, rhs, scalarByte);
     }
 
     function div(uint256 lhs, uint256 rhs) internal returns (uint256 result) {
         bytes1 scalarByte = 0x01;
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).fheDiv(lhs, rhs, scalarByte);
     }
 
     function rem(uint256 lhs, uint256 rhs) internal returns (uint256 result) {
         bytes1 scalarByte = 0x01;
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).fheRem(lhs, rhs, scalarByte);
     }
 
@@ -134,7 +144,7 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).fheBitAnd(lhs, rhs, scalarByte);
     }
 
@@ -145,7 +155,7 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).fheBitOr(lhs, rhs, scalarByte);
     }
 
@@ -156,7 +166,7 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).fheBitXor(lhs, rhs, scalarByte);
     }
 
@@ -167,7 +177,7 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).fheShl(lhs, rhs, scalarByte);
     }
 
@@ -178,7 +188,7 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).fheShr(lhs, rhs, scalarByte);
     }
 
@@ -189,7 +199,7 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).fheRotl(lhs, rhs, scalarByte);
     }
 
@@ -200,7 +210,7 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).fheRotr(lhs, rhs, scalarByte);
     }
 
@@ -211,7 +221,7 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).fheEq(lhs, rhs, scalarByte);
     }
 
@@ -222,7 +232,7 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).fheNe(lhs, rhs, scalarByte);
     }
 
@@ -233,7 +243,7 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).fheGe(lhs, rhs, scalarByte);
     }
 
@@ -244,7 +254,7 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).fheGt(lhs, rhs, scalarByte);
     }
 
@@ -255,7 +265,7 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).fheLe(lhs, rhs, scalarByte);
     }
 
@@ -266,7 +276,7 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).fheLt(lhs, rhs, scalarByte);
     }
 
@@ -277,7 +287,7 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).fheMin(lhs, rhs, scalarByte);
     }
 
@@ -288,29 +298,29 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).fheMax(lhs, rhs, scalarByte);
     }
 
     function neg(uint256 ct) internal returns (uint256 result) {
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).fheNeg(ct);
     }
 
     function not(uint256 ct) internal returns (uint256 result) {
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).fheNot(ct);
     }
 
     // If 'control's value is 'true', the result has the same value as 'ifTrue'.
     // If 'control's value is 'false', the result has the same value as 'ifFalse'.
     function select(uint256 control, uint256 ifTrue, uint256 ifFalse) internal returns (uint256 result) {
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).fheIfThenElse(control, ifTrue, ifFalse);
     }
 
     function verify(bytes32 inputHandle, bytes memory inputProof, uint8 toType) internal returns (uint256 result) {
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).verifyCiphertext(
             inputHandle,
             msg.sender,
@@ -321,17 +331,17 @@ library Impl {
     }
 
     function cast(uint256 ciphertext, uint8 toType) internal returns (uint256 result) {
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).cast(ciphertext, bytes1(toType));
     }
 
     function trivialEncrypt(uint256 value, uint8 toType) internal returns (uint256 result) {
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).trivialEncrypt(value, bytes1(toType));
     }
 
     function trivialEncrypt(bytes memory value, uint8 toType) internal returns (uint256 result) {
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).trivialEncrypt(value, bytes1(toType));
     }
 
@@ -342,7 +352,7 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).fheEq(lhs, rhs, scalarByte);
     }
 
@@ -353,37 +363,37 @@ library Impl {
         } else {
             scalarByte = 0x00;
         }
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).fheNe(lhs, rhs, scalarByte);
     }
 
     function rand(uint8 randType) internal returns (uint256 result) {
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).fheRand(bytes1(randType));
     }
 
     function randBounded(uint256 upperBound, uint8 randType) internal returns (uint256 result) {
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).fheRandBounded(upperBound, bytes1(randType));
     }
 
     function allowTransient(uint256 handle, address account) internal {
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         IACL($.ACLAddress).allowTransient(handle, account);
     }
 
     function allow(uint256 handle, address account) internal {
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         IACL($.ACLAddress).allow(handle, account);
     }
 
     function cleanTransientStorage() internal {
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         IACL($.ACLAddress).cleanTransientStorage();
     }
 
     function isAllowed(uint256 handle, address account) internal view returns (bool) {
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         return IACL($.ACLAddress).isAllowed(handle, account);
     }
 }

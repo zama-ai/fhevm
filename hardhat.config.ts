@@ -96,16 +96,26 @@ task('test', async (_taskArgs, hre, runSuper) => {
     // in fhevm mode all this block is done when launching the node via `pnmp fhevm:start`
     const privKeyGatewayDeployer = process.env.PRIVATE_KEY_GATEWAY_DEPLOYER;
     const privKeyFhevmDeployer = process.env.PRIVATE_KEY_FHEVM_DEPLOYER;
+    if (!fs.existsSync('node_modules/fhevm-core-contracts/addresses')) {
+      fs.mkdirSync('node_modules/fhevm-core-contracts/addresses');
+    }
     await hre.run('task:computeGatewayAddress', { privateKey: privKeyGatewayDeployer });
     await hre.run('task:computeACLAddress', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:computeTFHEExecutorAddress', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:computeKMSVerifierAddress', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:computeInputVerifierAddress', { privateKey: privKeyFhevmDeployer, useAddress: false });
     await hre.run('task:computeFHEPaymentAddress', { privateKey: privKeyFhevmDeployer });
-    const sourceDir = path.resolve(__dirname, 'node_modules/fhevm-core-contracts/');
-    const destinationDir = path.resolve(__dirname, 'fhevmTemp/');
+    const sourceDir = path.resolve(__dirname, 'node_modules/fhevm-core-contracts/contracts');
+    const destinationDir = path.resolve(__dirname, 'fhevmTemp/contracts');
     fs.copySync(sourceDir, destinationDir, { dereference: true });
-    await hre.run('compile:specific', { contract: 'fhevmTemp' });
+    const sourceDir2 = path.resolve(__dirname, 'node_modules/fhevm-core-contracts/addresses');
+    const destinationDir2 = path.resolve(__dirname, 'fhevmTemp/addresses');
+    fs.copySync(sourceDir2, destinationDir2, { dereference: true });
+    const sourceDir3 = path.resolve(__dirname, 'node_modules/fhevm-core-contracts/gateway');
+    const destinationDir3 = path.resolve(__dirname, 'fhevmTemp/gateway');
+    fs.copySync(sourceDir3, destinationDir3, { dereference: true });
+    await hre.run('compile:specific', { contract: 'fhevmTemp/contracts' });
+    await hre.run('compile:specific', { contract: 'fhevmTemp/gateway' });
     await hre.run('compile:specific', { contract: 'lib' });
     await hre.run('compile:specific', { contract: 'gateway' });
     await hre.run('compile:specific', { contract: 'payment' });

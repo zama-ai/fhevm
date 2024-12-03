@@ -58,7 +58,7 @@ function binaryOperatorImpl(op: Operator): string {
     `
     function ${op.name}(uint256 lhs, uint256 rhs${scalarArg}) internal returns (uint256 result) {
         ${scalarSection}
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).${fname}(lhs, rhs, scalarByte);
     }` + '\n'
   );
@@ -75,7 +75,6 @@ export function implSol(operators: Operator[]): string {
 pragma solidity ^0.8.24;
 
 import "./TFHE.sol";
-import "./FHEVMConfig.sol";
 
 ${coprocessorInterface}
 
@@ -89,14 +88,14 @@ library Impl {
   /// @dev keccak256(abi.encode(uint256(keccak256("fhevm.storage.FHEVMConfig")) - 1)) & ~bytes32(uint256(0xff))
   bytes32 private constant FHEVMConfigLocation = 0xed8d60e34876f751cc8b014c560745351147d9de11b9347c854e881b128ea600;
 
-  function getFHEVMConfig() internal pure returns (FHEVMConfig.FHEVMConfigStruct storage $) {
+  function getFHEVMConfig() internal pure returns (FHEVMConfigStruct storage $) {
       assembly {
           $.slot := FHEVMConfigLocation
       }
   }
 
-  function setFHEVM(FHEVMConfig.FHEVMConfigStruct memory fhevmConfig) internal {
-      FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+  function setFHEVM(FHEVMConfigStruct memory fhevmConfig) internal {
+      FHEVMConfigStruct storage $ = getFHEVMConfig();
       $.ACLAddress = fhevmConfig.ACLAddress;
       $.TFHEExecutorAddress = fhevmConfig.TFHEExecutorAddress;
       $.FHEPaymentAddress = fhevmConfig.FHEPaymentAddress;
@@ -166,6 +165,17 @@ function generateImplCoprocessorInterface(operators: Operator[]): string {
   const res: string[] = [];
 
   res.push(`
+    /**
+     * @title   FHEVMConfigStruct
+     * @notice  This struct contains all addresses of core contrats which are needed in a typical dApp.
+     */
+    struct FHEVMConfigStruct {
+        address ACLAddress;
+        address TFHEExecutorAddress;
+        address FHEPaymentAddress;
+        address KMSVerifierAddress;
+    }
+
     /**
     * @title   ITFHEExecutor
     * @notice  This interface contains all functions to conduct FHE operations.
@@ -244,7 +254,6 @@ export function tfheSol(
 pragma solidity ^0.8.24;
 
 import "./Impl.sol";
-import "./FHEVMConfig.sol";
 
 
 ${commonSolLib()}
@@ -256,7 +265,7 @@ ${commonSolLib()}
  *          that interact with TFHE.
  */
 library TFHE {
-  function setFHEVM(FHEVMConfig.FHEVMConfigStruct memory fhevmConfig) internal {
+  function setFHEVM(FHEVMConfigStruct memory fhevmConfig) internal {
       Impl.setFHEVM(fhevmConfig);
   }
 `);
@@ -715,7 +724,7 @@ function unaryOperatorImpl(op: Operator): string {
   let fname = operatorFheLibFunction(op);
   return `
     function ${op.name}(uint256 ct) internal returns (uint256 result) {
-      FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+      FHEVMConfigStruct storage $ = getFHEVMConfig();
       result = ITFHEExecutor($.TFHEExecutorAddress).${fname}(ct);
     }
   `;
@@ -1395,7 +1404,7 @@ function implCustomMethods(): string {
     // If 'control's value is 'true', the result has the same value as 'ifTrue'.
     // If 'control's value is 'false', the result has the same value as 'ifFalse'.
     function select(uint256 control, uint256 ifTrue, uint256 ifFalse) internal returns (uint256 result) {
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).fheIfThenElse(control, ifTrue, ifFalse);
     }
 
@@ -1404,7 +1413,7 @@ function implCustomMethods(): string {
         bytes memory inputProof,
         uint8 toType
     ) internal returns (uint256 result) {
-      FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+      FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).verifyCiphertext(inputHandle, msg.sender, inputProof, bytes1(toType));
         IACL($.ACLAddress).allowTransient(result, msg.sender);
     }
@@ -1413,7 +1422,7 @@ function implCustomMethods(): string {
         uint256 ciphertext,
         uint8 toType
     ) internal returns (uint256 result) {
-        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).cast(ciphertext, bytes1(toType));
     }
 
@@ -1421,7 +1430,7 @@ function implCustomMethods(): string {
         uint256 value,
         uint8 toType
     ) internal returns (uint256 result) {
-      FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+      FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).trivialEncrypt(value, bytes1(toType));
     }
 
@@ -1429,7 +1438,7 @@ function implCustomMethods(): string {
       bytes memory value,
       uint8 toType
     ) internal returns (uint256 result) {
-      FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+      FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).trivialEncrypt(value, bytes1(toType));
     }
 
@@ -1440,7 +1449,7 @@ function implCustomMethods(): string {
       } else {
           scalarByte = 0x00;
       }
-      FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+      FHEVMConfigStruct storage $ = getFHEVMConfig();
       result = ITFHEExecutor($.TFHEExecutorAddress).fheEq(lhs, rhs, scalarByte);
   }
 
@@ -1451,37 +1460,37 @@ function implCustomMethods(): string {
       } else {
           scalarByte = 0x00;
       }
-      FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+      FHEVMConfigStruct storage $ = getFHEVMConfig();
       result = ITFHEExecutor($.TFHEExecutorAddress).fheNe(lhs, rhs, scalarByte);
   }
 
     function rand(uint8 randType) internal returns(uint256 result) {
-      FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+      FHEVMConfigStruct storage $ = getFHEVMConfig();
       result = ITFHEExecutor($.TFHEExecutorAddress).fheRand(bytes1(randType));
     }
 
     function randBounded(uint256 upperBound, uint8 randType) internal returns(uint256 result) {
-      FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+      FHEVMConfigStruct storage $ = getFHEVMConfig();
       result = ITFHEExecutor($.TFHEExecutorAddress).fheRandBounded(upperBound, bytes1(randType));
     }
 
     function allowTransient(uint256 handle, address account) internal {
-      FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+      FHEVMConfigStruct storage $ = getFHEVMConfig();
       IACL($.ACLAddress).allowTransient(handle, account);
     }
 
     function allow(uint256 handle, address account) internal {
-      FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+      FHEVMConfigStruct storage $ = getFHEVMConfig();
       IACL($.ACLAddress).allow(handle, account);
     }
 
     function cleanTransientStorage() internal {
-      FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+      FHEVMConfigStruct storage $ = getFHEVMConfig();
       IACL($.ACLAddress).cleanTransientStorage();
     }
 
     function isAllowed(uint256 handle, address account) internal view returns (bool) {
-      FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+      FHEVMConfigStruct storage $ = getFHEVMConfig();
       return IACL($.ACLAddress).isAllowed(handle, account);
     }
     `;
@@ -1492,7 +1501,6 @@ export function paymentSol(): string {
 
 pragma solidity ^0.8.24;
   
-import "../lib/FHEVMConfig.sol";
 import "../lib/Impl.sol";
 
 interface IFHEPayment {
@@ -1503,32 +1511,32 @@ interface IFHEPayment {
 
 library Payment {
     function depositForAccount(address account, uint256 amount) internal {
-      FHEVMConfig.FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
+      FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
       IFHEPayment($.FHEPaymentAddress).depositETH{value: amount}(account);
     }
 
     function depositForThis(uint256 amount) internal {
-      FHEVMConfig.FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
+      FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
       IFHEPayment($.FHEPaymentAddress).depositETH{value: amount}(address(this));
     }
 
     function withdrawToAccount(address account, uint256 amount) internal {
-      FHEVMConfig.FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
+      FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
       IFHEPayment($.FHEPaymentAddress).withdrawETH(amount, account);
     }
 
     function withdrawToThis(uint256 amount) internal {
-      FHEVMConfig.FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
+      FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
       IFHEPayment($.FHEPaymentAddress).withdrawETH(amount, address(this));
     }
 
     function getDepositedBalanceOfAccount(address account) internal view returns (uint256) {
-      FHEVMConfig.FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
+      FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
       return IFHEPayment($.FHEPaymentAddress).getAvailableDepositsETH(account);
     }
 
     function getDepositedBalanceOfThis() internal view returns (uint256) {
-      FHEVMConfig.FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
+      FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
       return IFHEPayment($.FHEPaymentAddress).getAvailableDepositsETH(address(this));
     }
   }

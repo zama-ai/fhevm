@@ -2,7 +2,6 @@
 pragma solidity ^0.8.24;
 
 import "./Impl.sol";
-import "./FHEVMConfig.sol";
 
 type ebool is uint256;
 type euint4 is uint256;
@@ -43,7 +42,7 @@ library Common {
  *          that interact with TFHE.
  */
 library TFHE {
-    function setFHEVM(FHEVMConfig.FHEVMConfigStruct memory fhevmConfig) internal {
+    function setFHEVM(FHEVMConfigStruct memory fhevmConfig) internal {
         Impl.setFHEVM(fhevmConfig);
     }
 

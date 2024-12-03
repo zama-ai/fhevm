@@ -3,6 +3,7 @@
 pragma solidity ^0.8.24;
 
 import "../lib/TFHE.sol";
+import "./FHEVMConfig.sol";
 import "../gateway/GatewayCaller.sol";
 
 /// @notice Contract for testing asynchronous decryption using the Gateway

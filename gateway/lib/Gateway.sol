@@ -3,9 +3,17 @@
 pragma solidity ^0.8.24;
 
 import "./GatewayContractAddress.sol";
-import "../IKMSVerifier.sol";
 import "../../lib/Impl.sol";
 import "fhevm-core-contracts/addresses/ACLAddress.sol";
+
+interface IKMSVerifier {
+    function verifyDecryptionEIP712KMSSignatures(
+        address aclAddress,
+        uint256[] memory handlesList,
+        bytes memory decryptedResult,
+        bytes[] memory signatures
+    ) external returns (bool);
+}
 
 interface IGatewayContract {
     function requestDecryption(
@@ -100,7 +108,7 @@ library Gateway {
         uint256 maxTimestamp,
         bool passSignaturesToCaller
     ) internal returns (uint256 requestID) {
-        FHEVMConfig.FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
+        FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
         IACL($.ACLAddress).allowForDecryption(ctsHandles);
         GatewayConfigStruct storage $$ = getGetwayConfig();
         requestID = IGatewayContract($$.GatewayContractAddress).requestDecryption(
@@ -122,7 +130,7 @@ library Gateway {
         assembly {
             calldatacopy(add(decryptedResult, 0x20), start, length) // Copy the relevant part of calldata to decryptedResult memory
         }
-        FHEVMConfig.FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
+        FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
         return
             IKMSVerifier($.KMSVerifierAddress).verifyDecryptionEIP712KMSSignatures(
                 aclAdd,
