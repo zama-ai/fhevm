@@ -235,6 +235,7 @@ export function generateSmartContract(os: OverloadShard): string {
         pragma solidity ^0.8.24;
 
         import "../../lib/TFHE.sol";
+        import "../../lib/FHEVMConfig.sol";
 
         contract TFHETestSuite${os.shardNumber} {
           ebool public resb;

@@ -20,6 +20,7 @@ import {
   decrypt32,
   decrypt64,
   decrypt128,
+  decrypt256,
   decryptBool,
 } from '../instance';
 import { getSigners, initSigners } from '../signers';

@@ -42,7 +42,7 @@ library Common {
  *          that interact with TFHE.
  */
 library TFHE {
-    function setFHEVM(FHEVMConfig.FHEVMConfigStruct memory fhevmConfig) internal {
+    function setFHEVM(FHEVMConfigStruct memory fhevmConfig) internal {
         Impl.setFHEVM(fhevmConfig);
     }
 

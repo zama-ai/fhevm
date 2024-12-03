@@ -3,6 +3,7 @@
 pragma solidity ^0.8.24;
 
 import "../lib/TFHE.sol";
+import "../lib/FHEVMConfig.sol";
 import "./EncryptedERC20.sol";
 import "@openzeppelin/contracts/access/Ownable2Step.sol";
 import "../gateway/GatewayCaller.sol";
