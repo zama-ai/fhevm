@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "../../lib/TFHE.sol";
-import "../../lib/FHEVMConfig.sol";
+import "../FHEVMConfig.sol";
 
 contract TFHETestSuite3 {
     ebool public resb;
