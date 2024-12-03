@@ -14,9 +14,16 @@ services:
     environment:
       - RUST_LOG=info
     entrypoint: >
-      /bin/sh -c " sleep 2 && echo \"Launching insecure key-gen\" && simulator -f /app/config/local_threshold_from_compose.toml --max-iter 3600 insecure-key-gen && echo \"Launching crs-gen\" && simulator -f /app/config/local_threshold_from_compose.toml --max-iter 3600 insecure-crs-gen --max-num-bits 2048 && echo \"Success\" "
+      /bin/sh -c " sleep 2 && {
+        echo 'Launching insecure key-gen' &&
+        simulator -f /app/config/local_threshold_from_compose.toml --max-iter 3600 insecure-key-gen &&
+        echo 'Launching crs-gen' &&
+        simulator -f /app/config/local_threshold_from_compose.toml --max-iter 3600 insecure-crs-gen --max-num-bits 2048 &&
+        echo 'Success'
+      } 2>&1 | tee -a /app/logs/key_crs_gen.log "
     volumes:
       - ../blockchain/simulator/config:/app/config
+      - logs_volume:/app/logs
 
   # 6. Start gateway with key-id from key-gen
   # TODO: 
@@ -32,28 +39,13 @@ services:
     ports:
       - "7077:7077"
     entrypoint: >
-      /bin/sh -c "gateway"
+      /bin/sh -c "/app/gateway/update_key_crs_id.sh && sleep 2 && gateway"
     volumes:
       - ../blockchain/gateway/config/connector.toml:/app/gateway/config/connector.toml
-      - ../blockchain/gateway/config/compose_threshold.toml:/app/gateway/config/gateway.toml
+      - ../blockchain/gateway/config/gateway_threshold.toml:/app/gateway/config/gateway.toml
+      - ../scripts/update_key_crs_id.sh:/app/gateway/update_key_crs_id.sh
+      - logs_volume:/app/logs_keygen:ro
     environment:
-      # - GATEWAY__ETHEREUM__LISTENER_TYPE=COPROCESSOR
-      # - GATEWAY__ETHEREUM__MODE=centralized
-      # - GATEWAY__ETHEREUM__CHAIN_ID=12345
-      # - GATEWAY__ETHEREUM__WSS_URL=ws://geth:8546
-      # - GATEWAY__ETHEREUM__HTTP_URL=http://geth:8545
-      # - GATEWAY__ETHEREUM__FHE_LIB_ADDRESS=000000000000000000000000000000000000005d
-      # - GATEWAY__ETHEREUM__ORACLE_PREDEPLOY_ADDRESS=096b4679d45fB675d4e2c1E4565009Cec99A12B1
-      # - GATEWAY__ETHEREUM__ACL_ADDRESS=339EcE85B9E11a3A3AA557582784a15d7F82AAf2
-      # - GATEWAY__ETHEREUM__COPROCESSOR_API_KEY=a1503fb6-d79b-4e9e-826d-44cf262f3e05
-      # - GATEWAY__ETHEREUM__COPROCESSOR_URL=http://coproc:50052
-      # - ASC_CONN__BLOCKCHAIN__ADDRESSES=http://dev-kms-blockchain-validator:9090
-      # - GATEWAY__ETHEREUM__CONTRACT_ADDRESS=wasm1cnuw3f076wgdyahssdkd0g3nr96ckq8cwa2mh029fn5mgf2fmcms9ax00l
-      # - GATEWAY__KMS__CONTRACT_ADDRESS=wasm1cnuw3f076wgdyahssdkd0g3nr96ckq8cwa2mh029fn5mgf2fmcms9ax00l
-      # - GATEWAY__KMS__ADDRESS=http://dev-kms-blockchain-validator:9090
-      # - GATEWAY__STORAGE__URL=http://dev-kv-store:8088
-      # - GATEWAY__ETHEREUM__KMSVERIFIER_VC_ADDRESS=857Ca72A957920Fa0FB138602995839866Bd4005
-      # - GATEWAY__ETHEREUM__RELAYER_KEY=7ec931411ad75a7c201469a385d6f18a325d4923f9f213bd882bbea87e160b67
       - RUST_BACKTRACE=1
     # TODO: Validate that we have a status endpoint on the gateway
     # healthcheck:
@@ -62,3 +54,6 @@ services:
     #   timeout: 2s
     #   retries: 10
     #   start_period: 5s
+
+volumes:
+  logs_volume:
