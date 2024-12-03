@@ -4,7 +4,7 @@
 debug = false
 
 # configure to match the KMS mode: centralized or threshold
-mode = "centralized"
+mode = "threshold"
 
 # api url binding
 api_url = "0.0.0.0:7077"
@@ -30,10 +30,10 @@ listener_type = "COPROCESSOR"
 
 # URL of the Ethereum WebSocket server.
 # Used for establishing a WebSocket connection to an Ethereum node.
-wss_url = "ws://localhost:8746"
+wss_url = "ws://geth:8546"
 
 # Used for establishing an http connection to an Ethereum node.
-http_url = "http://localhost:8745"
+http_url = "http://geth:8545"
 
 # Address of the FHE library smart ontract on the Ethereum blockchain.
 # Used for interactions with the FHE library contract.
@@ -69,7 +69,7 @@ reenc_domain_name = "Authorization token"
 acl_address = "339EcE85B9E11a3A3AA557582784a15d7F82AAf2"
 
 # Address of the coprocessor to query for ciphertexts (gRPC)
-coprocessor_url = "http://127.0.0.1:50055"
+coprocessor_url = "http://coproc:50052"
 
 # optionally explicitly set the gas price
 # gas_price = 1_000_000_000
@@ -86,6 +86,14 @@ gas_escalator_increase = 20
 # relayer private key
 relayer_key = "7ec931411ad75a7c201469a385d6f18a325d4923f9f213bd882bbea87e160b67"
 
+# Retry config for get_cipertext in coprocessor mode
+# MAX_RETRIES sets the maximum retry count (6), resulting in an exponential backoff delay
+# that can reach up to 120 seconds (1s, 2s, 4s, 8s, 16s, 32s).
+[ethereum.get_ciphertext_retry]
+exponential_base = 2
+max_retries = 6
+factor = 1000 # in milliseconds
+
 # KMS Settings
 # Configuration settings related to the Key Management System (KMS).
 [kms]
@@ -100,24 +108,28 @@ mnemonic = "bachelor similar spirit copper rely carbon web hobby conduct wrap co
 
 # Base URL of the KMS service.
 # Used for making HTTP requests to the KMS service.
-address = "http://localhost:9090"
+address = "http://dev-kms-blockchain-validator:9090"
 
 # TODO stop-gap these will eventually be fetched from the ASC. This line can be removed if the key get setup with the simulator
 # Should be removed as part of https://github.com/zama-ai/fhevm/issues/548
 # Key ID used within the KMS.
 # Identifies the specific key to be used for cryptographic operations within the KMS.
-key_id = "408d8cbaa51dece7f782fe04ba0b1c1d017b1088"
+key_id = "4de8f079b1d345c9ed341c400e90fec9edd15775"
+crs_id = "9f58f0b3b8cabd4df89e38f27243b4c6b66f4162"
+
 
 # List of prefixed of URL endpoints for the public storage of the KMS.
 # The key in the map is the MPC ID of the party. I.e. [1; amount of parties]
 [kms.public_storage]
-1 = "http://localhost:8088/public-storage/"
-2 = "http://localhost:8088/public-storage/"
-3 = "http://localhost:8088/public-storage/"
-4 = "http://localhost:8088/public-storage/"
+1 = "http://localhost:9000/kms/PUB-p1"
+2 = "http://localhost:9000/kms/PUB-p2"
+3 = "http://localhost:9000/kms/PUB-p3"
+4 = "http://localhost:9000/kms/PUB-p4"
+
+
 
 [storage]
-url = "http://localhost:8088"
+url = "http://dev-kv-store:8088"
 
 [tracing]
 service_name = "gateway"
