@@ -3,7 +3,6 @@
 pragma solidity ^0.8.24;
 
 import "../../lib/Impl.sol";
-import "fhevm-core-contracts/addresses/ACLAddress.sol";
 
 interface IKMSVerifier {
     function verifyDecryptionEIP712KMSSignatures(
@@ -128,7 +127,7 @@ library Gateway {
         FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
         return
             IKMSVerifier($.KMSVerifierAddress).verifyDecryptionEIP712KMSSignatures(
-                aclAdd,
+                $.ACLAddress,
                 handlesList,
                 decryptedResult,
                 signatures
