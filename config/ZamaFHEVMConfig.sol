@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import {FHEVMConfig, TFHE} from "../lib/TFHE.sol";
+import {TFHE} from "../lib/TFHE.sol";
+import {FHEVMConfigStruct} from "../lib/Impl.sol";
 
 /**
  * @title   ZamaFHEVMConfig.
@@ -11,9 +12,9 @@ import {FHEVMConfig, TFHE} from "../lib/TFHE.sol";
  *          which are deployed & maintained by Zama.
  */
 library ZamaFHEVMConfig {
-    function getSepoliaConfig() internal pure returns (FHEVMConfig.FHEVMConfigStruct memory) {
+    function getSepoliaConfig() internal pure returns (FHEVMConfigStruct memory) {
         return
-            FHEVMConfig.FHEVMConfigStruct({
+            FHEVMConfigStruct({
                 ACLAddress: 0xFee8407e2f5e3Ee68ad77cAE98c434e637f516e5,
                 TFHEExecutorAddress: 0x687408aB54661ba0b4aeF3a44156c616c6955E07,
                 FHEPaymentAddress: 0xFb03BE574d14C256D56F09a198B586bdfc0A9de2,
@@ -21,7 +22,7 @@ library ZamaFHEVMConfig {
             });
     }
 
-    function getEthereumConfig() internal pure returns (FHEVMConfig.FHEVMConfigStruct memory) {
+    function getEthereumConfig() internal pure returns (FHEVMConfigStruct memory) {
         /// TODO
     }
 }
