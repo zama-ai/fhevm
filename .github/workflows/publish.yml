@@ -17,13 +17,12 @@ jobs:
       - run: cp .env.example .env
       - run: npm ci --include=optional
       - run: mkdir node_modules/fhevm-core-contracts/addresses
-      - run: source .env
-      - run: npx hardhat task:computeGatewayAddress --private-key $PRIVATE_KEY_GATEWAY_DEPLOYER
-      - run: npx hardhat task:computeACLAddress --private-key $PRIVATE_KEY_FHEVM_DEPLOYER
-      - run: npx hardhat task:computeTFHEExecutorAddress --private-key $PRIVATE_KEY_FHEVM_DEPLOYER
-      - run: npx hardhat task:computeKMSVerifierAddress --private-key $PRIVATE_KEY_FHEVM_DEPLOYER
-      - run: npx hardhat task:computeInputVerifierAddress --private-key $PRIVATE_KEY_FHEVM_DEPLOYER --use-address false
-      - run: npx hardhat task:computeFHEPaymentAddress --private-key $PRIVATE_KEY_FHEVM_DEPLOYER
+      - run: source .env && npx hardhat task:computeGatewayAddress --private-key $PRIVATE_KEY_GATEWAY_DEPLOYER
+      - run: source .env && npx hardhat task:computeACLAddress --private-key $PRIVATE_KEY_FHEVM_DEPLOYER
+      - run: source .env && npx hardhat task:computeTFHEExecutorAddress --private-key $PRIVATE_KEY_FHEVM_DEPLOYER
+      - run: source .env && npx hardhat task:computeKMSVerifierAddress --private-key $PRIVATE_KEY_FHEVM_DEPLOYER
+      - run: source .env && npx hardhat task:computeInputVerifierAddress --private-key $PRIVATE_KEY_FHEVM_DEPLOYER --use-address false
+      - run: source .env && npx hardhat task:computeFHEPaymentAddress --private-key $PRIVATE_KEY_FHEVM_DEPLOYER
       - run: npm run compile
       - uses: JS-DevTools/npm-publish@19c28f1ef146469e409470805ea4279d47c3d35c # v3.1.1
         with:
