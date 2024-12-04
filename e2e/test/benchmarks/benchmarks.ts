@@ -1,7 +1,8 @@
 import { expect } from "chai";
 
 import { deployEncryptedERC20Fixture } from "../encryptedERC20/EncryptedERC20.fixture";
-import { createInstance } from "../instance";
+import { deployReencryptFixture } from "../gateway/Reencrypt.fixture";
+import { Decrypt, createDecrypt, createInstance } from "../instance";
 import { getSigners, initSigners } from "../signers";
 
 type Timing = {
@@ -11,19 +12,21 @@ type Timing = {
 
 describe("Benchmarks", function () {
   const timings: Timing[] = [];
+  let decrypt: Decrypt;
   before(async function () {
     await initSigners();
     this.signers = await getSigners();
-  });
-
-  before(async function () {
+    this.fhevm = await createInstance();
     const erc20 = await deployEncryptedERC20Fixture();
     this.erc20Address = await erc20.getAddress();
     this.erc20 = erc20;
-    this.fhevm = await createInstance();
+    const reencrypt = await deployReencryptFixture();
+    this.reencryptAddress = await reencrypt.getAddress();
+    this.reencrypt = reencrypt;
   });
 
   it("benchmark erc20", async function () {
+    decrypt = createDecrypt(this.fhevm, this.signers.alice, this.erc20Address);
     // Minting the contract
     let mintTiming: Timing = {
       description: "Mint 1000 tokens",
@@ -76,22 +79,33 @@ describe("Benchmarks", function () {
     await new Promise((resolve) => setTimeout(resolve, 10000));
     start = Date.now();
     const balanceHandleAlice = await this.erc20.balanceOf(this.signers.alice);
-    const signatureAlice = await this.signers.alice.signTypedData(
-      eip712.domain,
-      { Reencrypt: eip712.types.Reencrypt },
-      eip712.message,
-    );
-    const balanceAlice = await this.fhevm.reencrypt(
-      balanceHandleAlice,
-      privateKeyAlice,
-      publicKeyAlice,
-      signatureAlice.replace("0x", ""),
-      this.erc20Address,
-      this.signers.alice.address,
-    );
+    const balanceAlice = await decrypt(balanceHandleAlice);
     reencryptTiming.time = Date.now() - start;
     timings.push(reencryptTiming);
 
     console.log(timings);
+  });
+
+  it.only("benchmark reencrypt", async function () {
+    decrypt = createDecrypt(this.fhevm, this.signers.alice, this.reencryptAddress);
+    const types = [1, 4, 8, 16, 32, 64, 128, 256];
+    const reencryptPromise = types.map(async (type) => {
+      let timing: Timing = {
+        description: `Reencrypt ${type}bits`,
+        time: 0,
+      };
+      let start = Date.now();
+      let handle: bigint;
+      if (type == 1) {
+        handle = await this.reencrypt.resultBool();
+      } else {
+        handle = await this.reencrypt[`result${type}`]();
+      }
+      const result = await decrypt(handle);
+      timing.time = Date.now() - start;
+      return timing;
+    });
+    const reencryptTimings = await Promise.all(reencryptPromise);
+    console.log(reencryptTimings);
   });
 });
