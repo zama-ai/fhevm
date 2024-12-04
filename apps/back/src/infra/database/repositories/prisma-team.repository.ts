@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma.service'
 import { Injectable } from '@nestjs/common'
 import { Task } from '@/utils/task'
 import { AppError, notFoundError, unknownError } from '@/utils/app-error'
+import { TeamId } from '@/users/domain/entities/value-objects/team-id'
 
 @Injectable()
 export class PrismaTeamRepository extends TeamRepository {
@@ -11,10 +12,10 @@ export class PrismaTeamRepository extends TeamRepository {
     super()
   }
 
-  findById(id: string): Task<Team, AppError> {
-    return new Task<TeamProps, AppError>((resolve, reject) => {
+  findById(id: TeamId): Task<Team, AppError> {
+    return new Task<unknown, AppError>((resolve, reject) => {
       this.db.team
-        .findFirst({ where: { id } })
+        .findFirst({ where: { id: id.value } })
         .then(data =>
           data ? resolve(data) : reject(notFoundError('User not found')),
         )
@@ -23,7 +24,7 @@ export class PrismaTeamRepository extends TeamRepository {
   }
 
   findManyByUserId(userId: string): Task<Team[], AppError> {
-    return new Task<TeamProps[], AppError>((resolve, reject) => {
+    return new Task<unknown[], AppError>((resolve, reject) => {
       this.db.user
         .findFirst({ select: { teams: true }, where: { id: userId } })
         .then(data =>
