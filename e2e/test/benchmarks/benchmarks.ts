@@ -87,6 +87,7 @@ describe("Benchmarks", function () {
   });
 
   it.only("benchmark reencrypt", async function () {
+    await new Promise((resolve) => setTimeout(resolve, 10000));
     decrypt = createDecrypt(this.fhevm, this.signers.alice, this.reencryptAddress);
     const types = [1, 4, 8, 16, 32, 64, 128, 256];
     const reencryptPromise = types.map(async (type) => {
