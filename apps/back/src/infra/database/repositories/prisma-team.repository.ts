@@ -3,7 +3,7 @@ import { TeamRepository } from '@/users/domain/repositories/team.repository'
 import { PrismaService } from '../prisma.service'
 import { Injectable } from '@nestjs/common'
 import { Task } from '@/utils/task'
-import { AppError, notFound, unknown } from '@/utils/app-error'
+import { AppError, notFoundError, unknownError } from '@/utils/app-error'
 
 @Injectable()
 export class PrismaTeamRepository extends TeamRepository {
@@ -16,9 +16,9 @@ export class PrismaTeamRepository extends TeamRepository {
       this.db.team
         .findFirst({ where: { id } })
         .then(data =>
-          data ? resolve(data) : reject(notFound('User not found')),
+          data ? resolve(data) : reject(notFoundError('User not found')),
         )
-        .catch(err => reject(unknown(String(err))))
+        .catch(err => reject(unknownError(String(err))))
     }).chain(props => Team.parse(props).asyncMap(team => team))
   }
 
@@ -27,9 +27,9 @@ export class PrismaTeamRepository extends TeamRepository {
       this.db.user
         .findFirst({ select: { teams: true }, where: { id: userId } })
         .then(data =>
-          data ? resolve(data.teams) : reject(notFound('User not found')),
+          data ? resolve(data.teams) : reject(notFoundError('User not found')),
         )
-        .catch(err => reject(unknown(String(err))))
+        .catch(err => reject(unknownError(String(err))))
     }).chain(props => Team.parseArray(props).asyncMap(teams => teams))
   }
 }

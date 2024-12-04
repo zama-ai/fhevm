@@ -5,7 +5,7 @@ import { GetUserById } from '@/users/use-cases/get-user-by-id.use-case'
 import { jwtConstants } from './constants'
 import { JwtPayload } from '@/auth/interfaces/jwt-payload'
 import { fail, ok } from '@/utils/result'
-import { AppError, unauthorized } from '@/utils/app-error'
+import { AppError, unauthorizedError } from '@/utils/app-error'
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -24,7 +24,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     return (
       payload
         ? ok<JwtPayload, AppError>(payload)
-        : fail<JwtPayload, AppError>(unauthorized())
+        : fail<JwtPayload, AppError>(unauthorizedError())
     )
       .asyncChain(jwt => this.getUserById.execute(jwt.sub))
       .toPromise()

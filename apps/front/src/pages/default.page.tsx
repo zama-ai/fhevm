@@ -1,46 +1,20 @@
-import { useState } from 'react'
-import { useQuery } from '@apollo/client'
-import { NavLink } from 'react-router'
-
-import { graphql } from '~generated/gql'
-
-const GET_FILMS = graphql(`
-  query FilmsQuery {
-    allFilms {
-      films {
-        id
-        title
-        releaseDate
-      }
-    }
-  }
-`)
-
+import { HStack, Separator, Text } from '@chakra-ui/react'
+import { ColorModeButton } from '@/components/ui/color-mode-button'
+import { Link } from '@/components/ui/link'
 export function DefaultPage() {
-  const [count, setCount] = useState(0)
-  const { loading, error, data } = useQuery(GET_FILMS)
   return (
-    <div>
-      <button onClick={() => setCount((count) => count + 1)}>
-        count is {count}
-      </button>
-      {loading ? (
-        <p>Loading...</p>
-      ) : error ? (
-        <p>Error :(</p>
-      ) : (
-        <ul>
-          {data?.allFilms?.films?.map((film, index) => (
-            <li key={index}>{film?.title}</li>
-          ))}
-        </ul>
-      )}
-      <hr />
-      go to{' '}
-      <NavLink to="/signup/e7e720ef-e8d6-4e07-883d-ed93ea7a6999">
-        signup
-      </NavLink>{' '}
-      page
-    </div>
+    <HStack gap="4">
+      <Text>
+        <Link to="/signin">signin</Link>
+      </Text>
+      <Separator orientation="vertical" height="4" />
+      <Text>
+        <Link to="/signup/e7e720ef-e8d6-4e07-883d-ed93ea7a6999">signup</Link>
+      </Text>
+      <Separator orientation="vertical" height="4" />
+      <Text as="div">
+        Set mode <ColorModeButton size="lg" />
+      </Text>
+    </HStack>
   )
 }

@@ -2,26 +2,24 @@ import { useState } from 'react'
 import { useQuery } from '@apollo/client'
 import { NavLink } from 'react-router'
 
-import { graphql } from '~generated/gql'
+import { graphql } from '../__generated__/gql'
+import { MeQuery } from '@/__generated__/graphql'
 
-const GET_FILMS = graphql(`
-  query FilmsQuery {
-    allFilms {
-      films {
-        id
-        title
-        releaseDate
-      }
+const GET_ME = graphql(`
+  query Me {
+    me {
+      id
+      email
     }
   }
 `)
 
-export function DefaultPage() {
+export function AboutPage() {
   const [count, setCount] = useState(0)
-  const { loading, error, data } = useQuery(GET_FILMS)
+  const { loading, error, data } = useQuery<MeQuery>(GET_ME)
   return (
     <div>
-      <button onClick={() => setCount((count) => count + 1)}>
+      <button onClick={() => setCount(count => count + 1)}>
         count is {count}
       </button>
       {loading ? (
@@ -29,11 +27,11 @@ export function DefaultPage() {
       ) : error ? (
         <p>Error :(</p>
       ) : (
-        <ul>
-          {data?.allFilms?.films?.map((film, index) => (
-            <li key={index}>{film?.title}</li>
-          ))}
-        </ul>
+        <p>
+          {' '}
+          my email address:
+          {data?.me.email}
+        </p>
       )}
       <hr />
       go to{' '}
