@@ -1,5 +1,4 @@
 import { Logger } from '@nestjs/common';
-import { AppDeployment } from '../entities/app-deployment';
 import { isAppDeploymentEvent } from '../entities/app-deployment.events';
 import { AppDeploymentMessage } from '../entities/app-deployment.messages';
 import { AppDeploymentMessagesProducer } from '../interfaces/app-deployment-messages.producer';
@@ -17,18 +16,12 @@ export class ProcessEventUseCase
   ) {}
 
   async execute(message: AppDeploymentMessage): Promise<void> {
-    let deployment = await this.repo.findByApplicationId(
-      message.payload.applicationId,
-    );
-    if (!deployment) {
-      this.logger.debug(
-        `init new AppDeployment for ${message.payload.applicationId}`,
-      );
-      deployment = AppDeployment.init(message.payload.applicationId);
-    }
-
     if (isAppDeploymentEvent(message)) {
-      const messages = deployment.notify(message);
+      const deployment = await this.repo.findByApplicationId(
+        message.payload.applicationId,
+        message.payload.deploymentId,
+      );
+      const messages = deployment.send(message);
       this.logger.debug(`messages: ${JSON.stringify(messages)}`);
       try {
         await Promise.all(messages.map(this.producer.publish));

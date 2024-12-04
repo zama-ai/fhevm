@@ -1,7 +1,10 @@
 import { AppDeployment } from '../entities/app-deployment';
 
 export interface AppDeploymentRepository {
-  findByApplicationId(applicationId: string): Promise<AppDeployment | null>;
+  findByApplicationId(
+    applicationId: string,
+    deploymentId: string,
+  ): Promise<AppDeployment>;
   upsert(deployment: AppDeployment): Promise<void>;
 }
 

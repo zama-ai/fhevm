@@ -10,14 +10,18 @@ export class DbAppDeploymentRepository implements AppDeploymentRepository {
 
   async findByApplicationId(
     applicationId: string,
-  ): Promise<AppDeployment | null> {
+    deploymentId: string,
+  ): Promise<AppDeployment> {
     this.logger.debug(`requested applicationId=${applicationId}`);
     try {
       const snapshot = await this.db.snapshot.findFirst({
-        where: { id: applicationId },
+        where: { id: `${applicationId}/${deploymentId}` },
       });
       this.logger.debug(`snapshot: ${JSON.stringify(snapshot)}`);
-      return snapshot ? AppDeployment.fromSnapshot(snapshot.content) : null;
+      return new AppDeployment(
+        { applicationId, deploymentId },
+        snapshot?.content,
+      );
     } catch (error) {
       this.logger.error(`Failed: ${error}`);
       throw error;
