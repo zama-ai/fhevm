@@ -11,6 +11,10 @@ pub struct Args {
     #[arg(long)]
     pub run_bg_worker: bool,
 
+    /// Polling interval for the background worker to fetch jobs
+    #[arg(long, default_value_t = 1000)]
+    pub worker_polling_interval_ms: u64,
+
     /// Generate fhe keys and exit
     #[arg(long)]
     pub generate_fhe_keys: bool,

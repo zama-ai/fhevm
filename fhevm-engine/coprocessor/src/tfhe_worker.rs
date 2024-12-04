@@ -85,7 +85,7 @@ async fn tfhe_worker_cycle(
                     WORK_ITEMS_NOTIFICATIONS_COUNTER.inc();
                     info!(target: "tfhe_worker", "Received work_available notification from postgres");
                 },
-                _ = tokio::time::sleep(tokio::time::Duration::from_millis(5000)) => {
+                _ = tokio::time::sleep(tokio::time::Duration::from_millis(args.worker_polling_interval_ms)) => {
                     WORK_ITEMS_POLL_COUNTER.inc();
                     info!(target: "tfhe_worker", "Polling the database for more work on timer");
                 },
