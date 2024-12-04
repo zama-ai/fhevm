@@ -37,7 +37,7 @@ export class PrismaInvitationRepository extends InvitationRepository {
       Invitation.parse(props).asyncMap<Invitation>(invitation => invitation),
     )
   }
-  use(token: string): Task<Invitation, AppError> {
+  markAsUsed(token: string): Task<Invitation, AppError> {
     return new Task<InvitationProps, AppError>((resolve, reject) => {
       this.db.invitation
         .update({ where: { token }, data: { usedAt: new Date() } })

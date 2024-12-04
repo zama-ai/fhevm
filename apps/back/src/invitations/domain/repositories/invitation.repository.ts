@@ -5,5 +5,5 @@ import { Task } from '@/utils/task'
 export abstract class InvitationRepository {
   abstract create(props: InvitationProps): Task<Invitation, AppError>
   abstract findByToken(id: string): Task<Invitation, AppError>
-  abstract use(id: string): Task<Invitation, AppError>
+  abstract markAsUsed(id: string): Task<Invitation, AppError>
 }

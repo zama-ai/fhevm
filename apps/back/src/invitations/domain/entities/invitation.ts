@@ -45,7 +45,6 @@ export class Invitation
   }
 
   get isValid() {
-    console.log('entity', this.email, this.usedAt, '(should be null)')
     return this.expiresAt > new Date() && this.usedAt === null
   }
 }
