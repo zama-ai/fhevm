@@ -21,6 +21,9 @@ export class PrismaUserRepository extends UserRepository {
   }
 
   findById(id: string): Task<User, AppError> {
+    if (!id) {
+      return Task.reject(notFoundError('User not found'))
+    }
     return new Task<UserProps, AppError>((resolve, reject) => {
       this.db.user
         .findFirst({ where: { id } })
@@ -32,6 +35,9 @@ export class PrismaUserRepository extends UserRepository {
   }
 
   findByEmail(email: string): Task<User, AppError> {
+    if (!email) {
+      return Task.reject(notFoundError('User not found'))
+    }
     return new Task<UserProps, AppError>((resolve, reject) => {
       this.db.user
         .findFirst({ where: { email } })

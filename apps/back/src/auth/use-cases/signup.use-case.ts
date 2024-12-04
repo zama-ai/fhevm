@@ -2,30 +2,58 @@ import { JwtService } from '@nestjs/jwt'
 import { randomUUID } from 'crypto'
 import { User } from '@/users/domain/entities/user'
 import { UserRepository } from '@/users/domain/repositories/user.repository'
+import { Invitation } from '@/invitations/domain/entities/invitation'
+import { InvitationRepository } from '@/invitations/domain/repositories/invitation.repository'
 import { UseCase } from '@/utils/use-case'
 import { JwtPayload } from '../interfaces/jwt-payload'
 import { Injectable } from '@nestjs/common'
 import { Task } from '@/utils/task'
-import { AppError } from '@/utils/app-error'
-import { ok } from '@/utils/result'
+import { AppError, notFoundError, validationError } from '@/utils/app-error'
+
+interface SignupInput {
+  name: string
+  password: string
+  invitationToken: string
+}
 
 @Injectable()
 export class SignUp
-  implements
-    UseCase<{ email: string; password: string }, { user: User; token: string }>
+  implements UseCase<SignupInput, { user: User; token: string }>
 {
   constructor(
     private readonly userRepository: UserRepository,
+    private readonly invitationRepository: InvitationRepository,
     private readonly jwtService: JwtService,
   ) {}
 
-  execute(input: {
-    email: string
-    password: string
-  }): Task<{ user: User; token: string }, AppError> {
-    return ok<string, AppError>(randomUUID())
-      .chain(id => User.parse({ ...input, id }, { hashPassword: true }))
-      .asyncChain(user => this.userRepository.create(user.toJSON()))
+  execute(input: SignupInput): Task<{ user: User; token: string }, AppError> {
+    return this.invitationRepository
+      .findByToken(input.invitationToken)
+      .chain<Invitation>(invitation =>
+        invitation.isValid
+          ? Task.of(invitation)
+          : Task.reject(notFoundError('Invalid token')),
+      )
+      .chain<User>(invitation =>
+        User.parse(
+          {
+            id: randomUUID(),
+            email: invitation.email,
+            password: input.password,
+            name: input.name,
+          },
+          { hashPassword: true },
+        ).match<Task<User, AppError>>({
+          ok: Task.of,
+          fail: Task.reject,
+        }),
+      )
+      .chain(user => this.userRepository.create(user.toJSON()))
+      .chain(user =>
+        this.invitationRepository
+          .markAsUsed(input.invitationToken)
+          .map(() => user),
+      )
       .map(user => ({
         token: this.jwtService.sign({
           sub: user.id,

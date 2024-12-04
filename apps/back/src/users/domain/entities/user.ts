@@ -9,6 +9,7 @@ const schema = z.object({
   id: z.string().uuid(),
   email: z.string().email(),
   password: z.string(),
+  name: z.string(),
 })
 
 export type UserProps = z.infer<typeof schema>
@@ -42,6 +43,10 @@ export class User
 
   get email() {
     return this.get('email')
+  }
+
+  get name() {
+    return this.get('name')
   }
 
   checkPassword(password: string): Task<User, AppError> {

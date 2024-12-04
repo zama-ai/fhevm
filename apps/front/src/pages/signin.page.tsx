@@ -4,6 +4,7 @@ import { gql, useMutation } from '@apollo/client'
 
 import { SignInMutation } from '@/__generated__/graphql'
 import { SigninForm } from '@/components/signin-form/signin-form'
+import { formatErrorMessage } from '@/lib/error-message'
 
 const SIGN_IN = gql`
   mutation SignIn($email: String!, $password: String!) {
@@ -12,9 +13,7 @@ const SIGN_IN = gql`
       user {
         id
         email
-        teams {
-          id
-        }
+        name
       }
     }
   }
@@ -32,13 +31,10 @@ export function SigninPage() {
     }
   }, [data, navigate])
 
-  // TODO: tweak when backend returns proper GraphqlError messages
-  const errorMessage = error?.message.replace('GraphQL error: ', '')
+  const errorMessage = error ? formatErrorMessage(error.message) : undefined
   return (
     <SigninForm
-      onSubmit={variables => {
-        signInMutation({ variables })
-      }}
+      onSubmit={variables => signInMutation({ variables })}
       loading={!!loading}
       errorMessage={errorMessage}
     />
