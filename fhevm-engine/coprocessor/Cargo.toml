@@ -1,6 +1,6 @@
 [package]
 name = "coprocessor"
-version = "0.1.1"
+version = "0.1.2"
 default-run = "coprocessor"
 authors.workspace = true
 edition.workspace = true
