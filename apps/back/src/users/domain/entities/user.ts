@@ -1,5 +1,5 @@
 import { compare, hashSync, genSaltSync } from 'bcryptjs'
-import { AppError, unauthorized, validation } from '@/utils/app-error'
+import { AppError, unauthorizedError, validationError } from '@/utils/app-error'
 import { Entity } from '@/utils/entity'
 import { ok, fail, Result } from '@/utils/result'
 import { Task } from '@/utils/task'
@@ -33,7 +33,7 @@ export class User
               : check.data,
           ),
         )
-      : fail(validation(check.error.message))
+      : fail(validationError(check.error.message))
   }
 
   get id() {
@@ -47,8 +47,8 @@ export class User
   checkPassword(password: string): Task<User, AppError> {
     return new Task((resolve, reject) =>
       compare(password, this.get('password'))
-        .then(check => (check ? resolve(this) : reject(unauthorized())))
-        .catch(() => reject(unauthorized())),
+        .then(check => (check ? resolve(this) : reject(unauthorizedError())))
+        .catch(() => reject(unauthorizedError())),
     )
   }
 }
