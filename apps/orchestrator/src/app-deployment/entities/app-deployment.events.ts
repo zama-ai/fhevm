@@ -1,38 +1,60 @@
-/* eslint-disable @typescript-eslint/no-empty-object-type */
-import type { ExhaustiveTuple } from '../../utils';
+import { z } from 'zod';
 
-type EventMap = {
-  requested: { address: string; chainId: string };
-  'sc-discovered': {};
-  'sc-discovery-failed': {};
-  'sc-confirmed': {};
-  'sc-confirmation-failed': {};
-  'sc-registered': {};
-  'sc-registration-failed': {};
-  completed: {};
-};
+type EventTypes =
+  | 'requested'
+  | 'sc-discovered'
+  | 'sc-discovery-failed'
+  | 'sc-confirmed'
+  | 'sc-confirmation-failed'
+  | 'sc-registered'
+  | 'sc-registration-failed'
+  | 'completed';
 
-type EventTypes = keyof EventMap;
+function genSchema<Key extends EventTypes, Payload extends z.ZodRawShape>(
+  key: Key,
+  payload: Payload,
+) {
+  const type = `app-deployment.${key}` as `app-deployment.${Key}`;
+  return z.object({
+    type: z.literal(type),
+    payload: z.object({
+      applicationId: z.string(),
+      deploymentId: z.string(),
+      ...payload,
+    } as {
+      applicationId: z.ZodString;
+      deploymentId: z.ZodString;
+    } & Payload),
+  });
+}
 
-export type AppDeploymentEvent = {
-  [Key in EventTypes]: {
-    _tag: 'Event';
-    type: `app-deployment.${Key}`;
-    payload: EventMap[Key] & { applicationId: string };
-  };
-}[EventTypes];
+const eventMap = {
+  requested: genSchema('requested', {
+    address: z.string(),
+    chainId: z.string(),
+  }),
+  'sc-discovered': genSchema('sc-discovered', {}),
+  'sc-discovery-failed': genSchema('sc-discovery-failed', {}),
+  'sc-confirmed': genSchema('sc-confirmed', {}),
+  'sc-confirmation-failed': genSchema('sc-confirmation-failed', {}),
+  'sc-registered': genSchema('sc-registered', {}),
+  'sc-registration-failed': genSchema('sc-registration-failed', {}),
+  completed: genSchema('completed', {}),
+} as const;
+type EventMap = typeof eventMap;
 
-const _eventTypes = [
-  'requested',
-  'sc-confirmation-failed',
-  'sc-confirmed',
-  'sc-discovered',
-  'sc-discovery-failed',
-  'sc-registered',
-  'sc-registration-failed',
-  'completed',
-] as const;
-const eventTypes: ExhaustiveTuple<EventTypes, typeof _eventTypes> = _eventTypes;
+const schema = z
+  .discriminatedUnion('type', [
+    eventMap['requested'],
+    eventMap['sc-discovered'],
+  ])
+  .and(
+    z.object({
+      _tag: z.literal('Event'),
+      $meta: z.record(z.string(), z.string()).optional(),
+    }),
+  );
+type AppDeploymentEvent = z.infer<typeof schema>;
 
 /**
  * Create a factory to generate a given event
@@ -40,14 +62,13 @@ const eventTypes: ExhaustiveTuple<EventTypes, typeof _eventTypes> = _eventTypes;
  * @param type The type of the Event to generate
  * @returns the factory function for the selected event
  */
-function factory<K extends EventTypes>(type: K) {
-  // TODO: find a better way to solve this
-  return function (payload: EventMap[K] & { applicationId: string }) {
+function factory<K extends keyof EventMap>(type: K) {
+  return function (payload: z.infer<EventMap[K]>['payload']) {
     return {
       _tag: 'Event',
       type: `app-deployment.${type}`,
       payload,
-    } as AppDeploymentEvent;
+    };
   };
 }
 
@@ -63,34 +84,6 @@ export const scRegistrationFailed = factory('sc-registration-failed');
 export function isAppDeploymentEvent(
   data: unknown,
 ): data is AppDeploymentEvent {
-  if (typeof data !== 'object' || data === null) {
-    return false;
-  }
-  // Check _tag
-  if (!('_tag' in data) || data._tag !== 'Event') {
-    return false;
-  }
-
-  // check type
-  if (
-    !('type' in data) ||
-    typeof data.type !== 'string' ||
-    !data.type.startsWith('app-deployment.') ||
-    !(eventTypes as readonly string[]).includes(data.type.split('.')[1])
-  ) {
-    return false;
-  }
-
-  // checking payload
-  if (
-    !('payload' in data) ||
-    typeof data.payload !== 'object' ||
-    data.payload === null ||
-    !('applicationId' in data.payload) ||
-    typeof data.payload.applicationId !== 'string'
-  ) {
-    return false;
-  }
-
-  return true;
+  const result = schema.safeParse(data);
+  return result.success;
 }
