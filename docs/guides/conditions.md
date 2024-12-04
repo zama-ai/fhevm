@@ -1,8 +1,6 @@
-# **Conditional Logic in FHE**
+# Branching in FHE
 
 This document explains how to implement conditional logic (if/else branching) when working with encrypted values in fhEVM. Unlike typical Solidity programming, working with Fully Homomorphic Encryption (FHE) requires specialized methods to handle conditions on encrypted data.
-
----
 
 ## **Overview**
 
@@ -10,9 +8,7 @@ In fhEVM, when you perform [comparison operations](../references/functions.md#co
 
 To facilitate conditional assignments, fhEVM provides the `TFHE.select` function, which acts as a ternary operator for encrypted values.
 
----
-
-## **Using `TFHE.select` for Conditional Logic**
+## **Using `TFHE.select` for conditional logic**
 
 The `TFHE.select` function enables branching logic by selecting one of two encrypted values based on an encrypted condition (`ebool`). It works as follows:
 
@@ -23,8 +19,6 @@ TFHE.select(condition, valueIfTrue, valueIfFalse);
 - **`condition`**: An encrypted boolean (`ebool`) resulting from a comparison.
 - **`valueIfTrue`**: The encrypted value to return if the condition is true.
 - **`valueIfFalse`**: The encrypted value to return if the condition is false.
-
----
 
 ## **Example: Auction Bidding Logic**
 
@@ -46,34 +40,24 @@ function bid(einput encryptedValue, bytes calldata inputProof) external onlyBefo
 }
 ```
 
-> **Note**: This is a simplified example to demonstrate the functionality. For a complete implementation with proper error handling and additional features, see the [BlindAuction contract example](https://github.com/zama-ai/fhevm/blob/29fe1f12236010737d86df156dc22eb6dedd0caa/examples/BlindAuction.sol#L92-L143).
+{% hint style="info" %}
+This is a simplified example to demonstrate the functionality. For a complete implementation with proper error handling and additional features, see the [Blind Auction contract example](https://github.com/zama-ai/fhevm/blob/29fe1f12236010737d86df156dc22eb6dedd0caa/examples/BlindAuction.sol#L92-L143).
+{% endhint %}
 
 ### **How It Works**
 
-1. **Comparison**:
-
-   - The `TFHE.lt` function compares `highestBid` and `bid`, returning an `ebool` (`isAbove`) that indicates whether the new bid is higher.
-
-2. **Selection**:
-
-   - The `TFHE.select` function updates `highestBid` to either the new bid or the previous highest bid, based on the encrypted condition `isAbove`.
-
-3. **Permission Handling**:
-   - After updating `highestBid`, the contract reauthorizes itself to manipulate the updated ciphertext using `TFHE.allowThis`.
+- **Comparison**:
+  - The `TFHE.lt` function compares `highestBid` and `bid`, returning an `ebool` (`isAbove`) that indicates whether the new bid is higher.
+- **Selection**:
+  - The `TFHE.select` function updates `highestBid` to either the new bid or the previous highest bid, based on the encrypted condition `isAbove`.
+- **Permission Handling**:
+  - After updating `highestBid`, the contract reauthorizes itself to manipulate the updated ciphertext using `TFHE.allowThis`.
 
 ## **Key Considerations**
 
-### **1. Value Change Behavior**
-
-Each time `TFHE.select` assigns a value, a new ciphertext is created, even if the underlying plaintext value remains unchanged. This behavior is inherent to FHE and ensures data confidentiality, but developers should account for it when designing their smart contracts.
-
-### **2. Gas Consumption**
-
-Using `TFHE.select` and other encrypted operations incurs additional gas costs compared to traditional Solidity logic. Optimize your code to minimize unnecessary operations.
-
-### **3. Access Control**
-
-Always use appropriate ACL functions (e.g., `TFHE.allowThis`, `TFHE.allow`) to ensure the updated ciphertexts are authorized for use in future computations or transactions.
+- **Value change behavior:** Each time `TFHE.select` assigns a value, a new ciphertext is created, even if the underlying plaintext value remains unchanged. This behavior is inherent to FHE and ensures data confidentiality, but developers should account for it when designing their smart contracts.
+- &#x20;**Gas consumption:** Using `TFHE.select` and other encrypted operations incurs additional gas costs compared to traditional Solidity logic. Optimize your code to minimize unnecessary operations.
+- **Access control:** Always use appropriate ACL functions (e.g., `TFHE.allowThis`, `TFHE.allow`) to ensure the updated ciphertexts are authorized for use in future computations or transactions.
 
 ---
 

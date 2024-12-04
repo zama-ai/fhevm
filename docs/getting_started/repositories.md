@@ -2,13 +2,11 @@
 
 Explore our curated list of repositories to jumpstart your FHE development, contribute to the community, and access essential libraries and implementations.
 
----
-
 ## **Development templates**
 
 Quickly set up your development environment with these ready-to-use templates:
 
-| **Repository**                                                              | **Description**                                     |
+| Repository                                                                  | Description                                         |
 | --------------------------------------------------------------------------- | --------------------------------------------------- |
 | [fhevm-contracts](https://github.com/zama-ai/fhevm-contracts)               | Example FHE-enabled smart contracts                 |
 | [fhevm-hardhat-template](https://github.com/zama-ai/fhevm-hardhat-template) | Hardhat template for FHE smart contract development |
@@ -18,30 +16,25 @@ Quickly set up your development environment with these ready-to-use templates:
 
 ## **IDE plugins**
 
-| **Repository**                                                      | **Description**                      |
+| Repository                                                          | Description                          |
 | ------------------------------------------------------------------- | ------------------------------------ |
 | [fhevm-remix-plugin](https://github.com/zama-ai/fhevm-remix-plugin) | Remix IDE plugin for FHE development |
 
----
-
-## **Bounty program**
+## **Zama Bounty Program**
 
 Contribute to the development of FHE technologies and earn rewards through Zama’s bounty program:
 
 - [bounty-program](https://github.com/zama-ai/bounty-program) - Explore open challenges and submit contributions to earn rewards.
 
----
-
 ## **Core libraries**
 
 Access the essential libraries for building and integrating FHE-enabled applications:
 
-| **Repository**                                 | **Description**                        |
-| ---------------------------------------------- | -------------------------------------- |
-| [fhevm](https://github.com/zama-ai/fhevm/)     | Solidity library for FHE operations    |
-| [fhevmjs](https://github.com/zama-ai/fhevmjs/) | JavaScript library for client-side FHE |
-
----
+| **Repository**                                            | **Description**                                                 |
+| --------------------------------------------------------- | --------------------------------------------------------------- |
+| [fhevm](https://github.com/zama-ai/fhevm/)                | Solidity library for FHE operations                             |
+| [fhevmjs](https://github.com/zama-ai/fhevmjs/)            | JavaScript library for client-side FHE                          |
+| [fhevm-backend](https://github.com/zama-ai/fhevm-backend) | Rust backend and go-ethereum modules for native and coprocessor |
 
 ## **Core implementations**
 
@@ -53,6 +46,4 @@ Explore the foundational implementations enabling FHE integration with blockchai
 | [go-ethereum](https://github.com/zama-ai/go-ethereum)          | Fork of go-ethereum v1.10.19 with FHE capabilities |
 | [zbc-go-ethereum](https://github.com/zama-ai/zbc-go-ethereum/) | Modified go-ethereum with enhanced FHE support     |
 
----
-
-Use these repositories to accelerate your development, integrate FHE into your applications, or contribute to the growing ecosystem. For more resources and guides, refer to the [fhEVM Documentation](https://docs.zama.ai/fhevm).
+Use these repositories to accelerate your development, integrate FHE into your applications, or contribute to the growing ecosystem.&#x20;

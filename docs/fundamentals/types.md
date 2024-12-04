@@ -1,4 +1,4 @@
-# Using Encrypted Types
+# Supported types
 
 This document introduces the encrypted integer types provided by the `TFHE` library in fhEVM and explains their usage, including casting, state variable declarations, and type-specific considerations.
 
@@ -12,18 +12,17 @@ The `TFHE` library offers a robust type system with encrypted integer types, ena
 - Arithmetic operations on `e(u)int` types are **unchecked**, meaning they wrap around on overflow. This design choice ensures confidentiality by avoiding the leakage of information through error detection.
 - Future versions of the `TFHE` library will support encrypted integers with overflow checking, but with the trade-off of exposing limited information about the operands.
 
-> **Info**  
-> Encrypted integers with overflow checking will soon be available in the `TFHE` library. These will allow reversible arithmetic operations but may reveal some information about the input values.
+{% hint style="info" %}
+Encrypted integers with overflow checking will soon be available in the `TFHE` library. These will allow reversible arithmetic operations but may reveal some information about the input values.
+{% endhint %}
 
-Encrypted integers in fhEVM are represented as FHE ciphertexts, abstracted using ciphertext handles. These types, prefixed with `e` (e.g., `euint64`), act as secure wrappers over the ciphertext handles.
-
----
+Encrypted integers in fhEVM are represented as FHE ciphertexts, abstracted using ciphertext handles. These types, prefixed with `e` (for example, `euint64`) act as secure wrappers over the ciphertext handles.
 
 ## List of encrypted types
 
 The `TFHE` library currently supports the following encrypted types:
 
-| **Type**    | **Supported**   |
+| Type        | Supported       |
 | ----------- | --------------- |
 | `ebool`     | Yes             |
 | `euint4`    | Yes             |
@@ -44,10 +43,9 @@ The `TFHE` library currently supports the following encrypted types:
 | `eint128`   | No, coming soon |
 | `eint256`   | No, coming soon |
 
-> **Note**  
-> Higher-precision integer types are available in the `TFHE-rs` library and can be added to `fhEVM` as needed.
-
----
+{% hint style="info" %}
+Higher-precision integer types are available in the `TFHE-rs` library and can be added to `fhEVM` as needed.
+{% endhint %}
 
 ## Casting encrypted types
 
@@ -65,24 +63,23 @@ ebool valueBool = TFHE.asEbool(value32); // Cast encrypted euint32 to ebool
 
 The table below summarizes the available casting functions:
 
-| **From Type** | **To Type**      | **Function**      |
-| ------------- | ---------------- | ----------------- |
-| `uintX`       | `euintX`         | `TFHE.asEuintXX`  |
-| `euintX`      | Higher precision | `TFHE.asEuintXX`  |
-| `euintX`      | `ebool`          | `TFHE.asEbool`    |
-| `address`     | `eaddress`       | `TFHE.asEaddress` |
-| `bytesXX`     | `ebytesXX`       | `TFHE.asEbytesXX` |
+| From type | To type          | Function          |
+| --------- | ---------------- | ----------------- |
+| `uintX`   | `euintX`         | `TFHE.asEuintXX`  |
+| `euintX`  | Higher precision | `TFHE.asEuintXX`  |
+| `euintX`  | `ebool`          | `TFHE.asEbool`    |
+| `address` | `eaddress`       | `TFHE.asEaddress` |
+| `bytesXX` | `ebytesXX`       | `TFHE.asEbytesXX` |
 
-> **Tip**  
-> Casting between encrypted types is efficient and often necessary when handling data with differing precision requirements.
-
----
+{% hint style="info" %}
+Casting between encrypted types is efficient and often necessary when handling data with differing precision requirements.
+{% endhint %}
 
 ## Declaring encrypted state variables
 
 When using encrypted types as state variables in smart contracts, avoid declaring them with the `immutable` or `constant` keywords. This is because the `TFHE.asEuintXX()` method relies on a precompiled contract, making the value resolution at compile time infeasible.
 
-### 🔧 Best practices for declaration
+### Best practices for declaration
 
 Instead of using `immutable` or `constant`, declare and initialize encrypted state variables like this:
 
@@ -102,10 +99,10 @@ constructor() {
 }
 ```
 
-> **Why?**  
-> The `TFHE.asEuintXX()` function is executed at runtime, making `immutable` or `constant` declarations incompatible.
-
----
+{% hint style="info" %}
+**Why?**\
+The `TFHE.asEuintXX()` function is executed at runtime, making `immutable` or `constant` declarations incompatible.
+{% endhint %}
 
 ## **Summary**
 

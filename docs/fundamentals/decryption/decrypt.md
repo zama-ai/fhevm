@@ -1,23 +1,15 @@
-# Decryption: accessing encrypted data securely
+# Decryption
 
-As a continuation of your journey in writing confidential smart contracts, this section explains how to handle decryption in fhEVM. Decryption allows plaintext data to be accessed when required for contract logic or user presentation, ensuring confidentiality is maintained throughout the process.
+This section explains how to handle decryption in fhEVM. Decryption allows plaintext data to be accessed when required for contract logic or user presentation, ensuring confidentiality is maintained throughout the process.
 
-> **_NOTE:_** Understanding how encryption, decryption and reencryption works is a prerequisit before implementation, see [Encryption, Decryption, Re-encryption, and Computation](../d_re_ecrypt_compute.md)
-
-# decryption: accessing encrypted data securely
-
-As a continuation of your journey in writing confidential smart contracts, this section explains how to handle decryption in fhEVM. Decryption allows plaintext data to be accessed when required for contract logic or user presentation, ensuring confidentiality is maintained throughout the process.
-
----
-
-## When to use decryption?
+{% hint style="info" %}
+Understanding how encryption, decryption and reencryption works is a prerequisit before implementation, see [Encryption, Decryption, Re-encryption, and Computation](../d_re_ecrypt_compute.md).
+{% endhint %}
 
 Decryption is essential in two primary cases:
 
-1. **Smart Contract Logic**: A contract requires plaintext values for computations or decision-making.
-2. **User Interaction**: Plaintext data needs to be revealed to all users, such as revealing the decision of the vote.
-
----
+1. **Smart contract logic**: A contract requires plaintext values for computations or decision-making.
+2. **User interaction**: Plaintext data needs to be revealed to all users, such as revealing the decision of the vote.
 
 To learn how decryption works see [Encryption, Decryption, Re-encryption, and Computation](../d_re_ecrypt_compute.md)
 
@@ -58,26 +50,25 @@ contract TestAsyncDecrypt is MockZamaFHEVMConfig, MockZamaGatewayConfig, Gateway
   }
 ```
 
-### Key additions to the code
+#### Key additions to the code
 
-1. **Configuration imports**:
-   The configuration contracts are imported to set up the FHEVM environment and Gateway.
+1.  **Configuration imports**: The configuration contracts are imported to set up the FHEVM environment and Gateway.
 
-   ```solidity
-   import { MockZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
-   import { MockZamaGatewayConfig } from "fhevm/config/ZamaGatewayConfig.sol";
-   ```
+    ```solidity
+    import { MockZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
+    import { MockZamaGatewayConfig } from "fhevm/config/ZamaGatewayConfig.sol";
+    ```
 
-2. **`GatewayCaller` import**:  
-   The `GatewayCaller` contract is imported to enable decryption requests.
+2.  **`GatewayCaller` import**:\
+    The `GatewayCaller` contract is imported to enable decryption requests.
 
-   ```solidity
-   import "fhevm/gateway/GatewayCaller.sol";
-   ```
+    ```solidity
+    import "fhevm/gateway/GatewayCaller.sol";
+    ```
 
-## Applying decryption to the counter example
+### Applying decryption to the counter example
 
-Remember our **Encrypted Counter** contract from before? Here’s an improved version of it, upgraded to support decryption:
+Remember our [**Encrypted Counter**](../../getting_started/first_smart_contract.md) contract from before? Here’s an improved version of it, upgraded to support decryption:
 
 ```
 // SPDX-License-Identifier: MIT
@@ -98,7 +89,7 @@ contract EncryptedCounter3 is MockZamaFHEVMConfig, MockZamaGatewayConfig, Gatewa
     uint8 public decryptedCounter;
 
     constructor() {
-        Gateway.setGateway(GatewayConfig.defaultGatewayContract());
+        Gateway.setGateway(Gateway.defaultGatewayAddress());
 
         // Initialize counter with an encrypted zero value
         counter = TFHE.asEuint8(0);
@@ -136,7 +127,7 @@ contract EncryptedCounter3 is MockZamaFHEVMConfig, MockZamaGatewayConfig, Gatewa
 
 ```
 
-## Tests for `EncryptedCounter3`
+### Tests for `EncryptedCounter3`
 
 Here’s a sample test for the Encrypted Counter contract using Hardhat:
 
@@ -185,31 +176,32 @@ describe("EncryptedCounter3", function () {
 });
 ```
 
-### Key additions in testing
+#### Key additions in testing
 
-1. **Initialize the Gateway**:
+1.  **Initialize the Gateway**:
 
-   ```typescript
-   await initGateway(); // Initialize the gateway for decryption
-   ```
+    ```typescript
+    await initGateway(); // Initialize the gateway for decryption
+    ```
 
-2. **Request decryption and wait for results**:
+2.  **Request decryption and wait for results**:
 
-   ```typescript
-   const decryptTx = await this.counterContract.requestDecryptCounter({ gasLimit: 5_000_000 });
-   await decryptTx.wait();
-   await awaitAllDecryptionResults();
-   ```
+    ```typescript
+    const decryptTx = await this.counterContract.requestDecryptCounter({ gasLimit: 5_000_000 });
+    await decryptTx.wait();
+    await awaitAllDecryptionResults();
+    ```
 
-3. **Verify the decrypted value**:
-   ```typescript
-   const decryptedValue = await this.counterContract.getDecryptedCounter();
-   expect(decryptedValue).to.equal(5);
-   ```
+3.  **Verify the decrypted value**:
 
-## Next steps
+    ```typescript
+    const decryptedValue = await this.counterContract.getDecryptedCounter();
+    expect(decryptedValue).to.equal(5);
+    ```
+
+### Next steps
 
 Explore advanced decryption techniques and learn more about re-encryption:
 
-- [Decryption in Depth](./decrypt_details.md)
-- [Re-encryption](./reencryption.md)
+- [Decryption in depth](decrypt_details.md)
+- [Re-encryption](reencryption.md)

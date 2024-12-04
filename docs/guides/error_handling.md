@@ -1,26 +1,24 @@
-# **Error Handling**
+# Error handling
 
 This document explains how to handle errors effectively in fhEVM smart contracts. Since transactions involving encrypted data do not automatically revert when conditions are not met, developers need alternative mechanisms to communicate errors to users.
 
-## **Challenges in Error Handling**
+## **Challenges in error handling**
 
 In the context of encrypted data:
 
-1. **No Automatic Reversion**: Transactions do not revert if a condition fails, making it challenging to notify users of issues like insufficient funds or invalid inputs.
-2. **Limited Feedback**: Encrypted computations lack direct mechanisms for exposing failure reasons while maintaining confidentiality.
+1. **No automatic reversion**: Transactions do not revert if a condition fails, making it challenging to notify users of issues like insufficient funds or invalid inputs.
+2. **Limited feedback**: Encrypted computations lack direct mechanisms for exposing failure reasons while maintaining confidentiality.
 
----
-
-## **Recommended Approach: Error Logging with a Handler**
+## **Recommended approach: Error logging with a handler**
 
 To address these challenges, implement an **error handler** that records the most recent error for each user. This allows dApps or frontends to query error states and provide appropriate feedback to users.
 
-### **Example Implementation**
+### **Example implementation**
 
 For a complete implementation of error handling, see our reference contracts:
 
 - [EncryptedErrors.sol](https://github.com/zama-ai/fhevm-contracts/blob/main/contracts/utils/EncryptedErrors.sol) - Base error handling contract
-- [ConfidentialERC20WithErrors.sol](https://github.com/zama-ai/fhevm-contracts/blob/main/contracts/token/ERC20/extensions/ConfidentialERC20WithErrors.sol) - Example usage in an ERC20 token
+- [EncryptedERC20WithErrors.sol](https://github.com/zama-ai/fhevm-contracts/blob/main/contracts/token/ERC20/extensions/ConfidentialERC20WithErrors.sol) - Example usage in an ERC20 token
 
 The following contract demonstrates how to implement and use an error handler:
 
@@ -79,30 +77,20 @@ function _transfer(address from, address to, euint32 amount) internal {
 }
 ```
 
----
-
 ## **How It Works**
 
-1. **Define Error Codes**:
-
+1. **Define error codes**:
    - `NO_ERROR`: Indicates a successful operation.
    - `NOT_ENOUGH_FUNDS`: Indicates insufficient balance for a transfer.
-
-2. **Record Errors**:
-
+2. **Record errors**:
    - Use the `setLastError` function to log the latest error for a specific address along with the current timestamp.
    - Emit the `ErrorChanged` event to notify external systems (e.g., dApps) about the error state change.
-
-3. **Conditional Updates**:
-
+3. **Conditional updates**:
    - Use the `TFHE.select` function to update balances and log errors based on the transfer condition (`canTransfer`).
-
-4. **Frontend Integration**:
+4. **Frontend integration**:
    - The dApp can query `_lastErrors` for a user’s most recent error and display appropriate feedback, such as "Insufficient funds" or "Transaction successful."
 
----
-
-## **Example Error Query**
+## **Example error query**
 
 The frontend or another contract can query the `_lastErrors` mapping to retrieve error details:
 
@@ -119,17 +107,13 @@ function getLastError(address user) public view returns (euint8 error, uint time
 }
 ```
 
----
+## **Benefits of this approach**
 
-## **Benefits of This Approach**
-
-1. **User Feedback**:
+1. **User feedback**:
    - Provides actionable error messages without compromising the confidentiality of encrypted computations.
-2. **Scalable Error Tracking**:
+2. **Scalable error tracking**:
    - Logs errors per user, making it easy to identify and debug specific issues.
-3. **Event-Driven Notifications**:
+3. **Event-driven botifications**:
    - Enables frontends to react to errors in real time via the `ErrorChanged` event.
-
----
 
 By implementing error handlers as demonstrated, developers can ensure a seamless user experience while maintaining the privacy and integrity of encrypted data operations.

@@ -1,8 +1,10 @@
-# Encryption and encrypted inputs in fhEVM
+# Encrypted Inputs
 
 This document introduces the concept of encrypted inputs in the fhEVM, explaining their role, structure, validation process, and how developers can integrate them into smart contracts and applications.
 
-> **_NOTE:_** Understanding how encryption, decryption and reencryption works is a prerequisit before implementation, see [Encryption, Decryption, Re-encryption, and Computation](../d_re_ecrypt_compute.md)
+{% hint style="info" %}
+Understanding how encryption, decryption and reencryption works is a prerequisit before implementation, see [Encryption, Decryption, Re-encryption, and Computation](d_re_ecrypt_compute.md)
+{% endhint %}
 
 Encrypted inputs are a core feature of fhEVM, enabling users to push encrypted data onto the blockchain while ensuring data confidentiality and integrity.
 
@@ -14,7 +16,7 @@ Encrypted inputs are data values submitted by users in ciphertext form. These in
 
 1. **Confidentiality**: Data is encrypted using the public FHE key, ensuring that only authorized parties can decrypt or process the values.
 2. **Validation via ZKPoKs**: Each encrypted input is accompanied by a proof verifying that the user knows the plaintext value of the ciphertext, preventing replay attacks or misuse.
-3. **Efficient Packing**: All inputs for a transaction are packed into a single ciphertext in a user-defined order, optimizing the size and generation of the zero-knowledge proof.
+3. **Efficient packing**: All inputs for a transaction are packed into a single ciphertext in a user-defined order, optimizing the size and generation of the zero-knowledge proof.
 
 ## Parameters in encrypted functions
 
@@ -131,18 +133,16 @@ function transfer(
 
 ### How validation works
 
-1. **Input Verification**:  
+1. **Input verification**:\
    The `TFHE.asEuintXX` function ensures that the input is a valid ciphertext with a corresponding ZKPoK.
-2. **Type Conversion**:  
+2. **Type conversion**:\
    The function transforms the `einput` into the appropriate encrypted type (`euintXX`, `ebool`, etc.) for further operations within the contract.
 
----
+## Best Practices
 
-## 🔧 Best Practices
-
-- **Input Packing**: Minimize the size and complexity of zero-knowledge proofs by packing all encrypted inputs into a single ciphertext.
-- **Frontend Encryption**: Always encrypt inputs using the FHE public key on the client side to ensure data confidentiality.
-- **Proof Management**: Ensure that the correct zero-knowledge proof is associated with each encrypted input to avoid validation errors.
+- **Input packing**: Minimize the size and complexity of zero-knowledge proofs by packing all encrypted inputs into a single ciphertext.
+- **Frontend encryption**: Always encrypt inputs using the FHE public key on the client side to ensure data confidentiality.
+- **Proof management**: Ensure that the correct zero-knowledge proof is associated with each encrypted input to avoid validation errors.
 
 Encrypted inputs and their validation form the backbone of secure and private interactions in the fhEVM. By leveraging these tools, developers can create robust, privacy-preserving smart contracts without compromising functionality or scalability.
 
@@ -218,23 +218,19 @@ describe("EncryptedCounter2", function () {
 
 The `EncryptedCounter2` contract builds on the previous example by adding support for encrypted inputs. Here's how it works:
 
-1. **Encrypted State**: Like before, the contract maintains an encrypted counter state variable of type `euint8`.
-
-2. **Encrypted Input Handling**: The `incrementBy` function accepts two parameters:
-
+1. **Encrypted state**: Like before, the contract maintains an encrypted counter state variable of type `euint8`.
+2. **Encrypted input handling**: The `incrementBy` function accepts two parameters:
    - `einput amount`: An encrypted input handle representing the increment value
    - `bytes calldata inputProof`: The zero-knowledge proof validating the encrypted input
-
-3. **Input Processing**: Inside `incrementBy`:
+3. **Input processing**: Inside `incrementBy`:
    - The encrypted input is converted to a `euint8` using `TFHE.asEuint8()`
    - This conversion validates the proof and creates a usable encrypted value
    - The value is then added to the counter using homomorphic addition
 
-### 👀 Can you spot a problem with this contract?
+### Limitations
 
-While we have resolved our problem with the Counter value visibility, there is still the problem with the Access Control for the `counter`.
+While we have resolved our problem with the Counter value visibility, there is still the problem with the Access Control for the `counter`.\
+The counter is encrypted, but no access is granted to decrypt or view its value. Without proper ACL permissions, the counter remains inaccessible to users. To resolve this, refer to:
 
-1. **Access Control for `counter`**:  
-   The counter is encrypted, but no access is granted to decrypt or view its value. Without proper ACL permissions, the counter remains inaccessible to users. To resolve this, refer to:
-   - [decryption](./decrypt.md)
-   - [re-encryption](./reencryption.md)
+- [Decryption](decryption/decrypt.md)
+- [Re-encryption](decryption/reencryption.md)

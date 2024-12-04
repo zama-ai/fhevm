@@ -45,4 +45,4 @@ createFhevmInstance().then((instance) => {
 });
 ```
 
-You can now use your instance to [encrypt parameters](../../fundamentals/first_step/inputs.md) or do a [reencryption](../../fundamentals/first_step/reencryption.md).
+You can now use your instance to [encrypt parameters](../../fundamentals/inputs.md) or do a [reencryption](../../fundamentals/decryption/reencryption.md).

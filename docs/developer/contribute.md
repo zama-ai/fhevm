@@ -7,8 +7,8 @@ There are two ways to contribute to the Zama fhEVM:
 
 Becoming an approved contributor involves signing our Contributor License Agreement (CLA)). Only approved contributors can send pull requests, so please make sure to get in touch before you do!
 
-## Bounty Program
+## Zama Bounty Program
 
-Contribute and earn rewards:
+Solve challenges and earn rewards:
 
 - [bounty-program](https://github.com/zama-ai/bounty-program) - Zama's FHE Bounty Program

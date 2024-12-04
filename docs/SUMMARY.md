@@ -1,43 +1,44 @@
 # Table of contents
 
 - [Welcome to fhEVM](README.md)
+- [Whitepaper](https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper-v2.pdf)
 
 ## Getting Started
 
-- [Quick overview](getting_started/overview.md)
-  - [Key concepts and features](getting_started/key_concepts.md)
-  - [Repositories](getting_started/repositories.md)
-  - [Whitepaper](https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper.pdf)
-- [Get started](getting_started/ethereum.md)
-- [Create a smart contract]()
+- [Overview](getting_started/key_concepts.md)
+- [Quick start](getting_started/ethereum.md)
+- [First smart contract](getting_started/first_smart_contract.md)
   - [Using Hardhat](getting_started/write_contract/hardhat.md)
   - [Using Remix](getting_started/write_contract/remix.md)
   - [Other development environment](getting_started/write_contract/others.md)
+- [Repositories](getting_started/repositories.md)
 
 ## Fundamentals
 
 - [Architecture overview](fundamentals/architecture_overview.md)
+  - [FHE on blockchain](fundamentals/architecture_overview/fhe-on-blockchain.md)
+  - [fhEVM components](fundamentals/architecture_overview/fhevm-components.md)
   - [Encryption, decryption, re-encryption, and computation](fundamentals/d_re_ecrypt_compute.md)
-  - [Access control list](fundamentals/acl.md)
-- [Configuration](fundamentals/first_step/configure.md)
-  - [First smart contract](fundamentals/first_step/start.md)
-  - [Supported types](fundamentals/first_step/types.md)
-  - [Operations on encrypted types](fundamentals/first_step/operations.md)
-  - [Encryption](fundamentals/first_step/inputs.md)
-  - [Decryption](fundamentals/first_step/decrypt.md)
-  - [Decryption in depth](fundamentals/first_step/decrypt_details.md)
-  - [Reencryption](fundamentals/first_step/reencryption.md)
-  - [ACL examples](fundamentals/first_step/acl_examples.md)
+- [Configuration](fundamentals/configure.md)
+- [Supported types](fundamentals/types.md)
+- [Operations on encrypted types](fundamentals/operations.md)
+- [Access Control List](fundamentals/acl/README.md)
+  - [ACL examples](fundamentals/acl/acl_examples.md)
+- [Encrypted Inputs](fundamentals/inputs.md)
+- [Decryption](fundamentals/decryption/README.md)
+  - [Decryption](fundamentals/decryption/decrypt.md)
+  - [Decryption in depth](fundamentals/decryption/decrypt_details.md)
+  - [Re-encryption](fundamentals/decryption/reencryption.md)
 
 ## Guides
 
-- Smart Contracts
+- [Smart contracts](guides/smart-contracts/README.md)
   - [fhevm-contracts](guides/contracts.md)
   - [If sentances](guides/loop.md)
   - [Branching in FHE](guides/conditions.md)
   - [Generate random numbers](guides/random.md)
   - [Error handling](guides/error_handling.md)
-- Frontend
+- [Frontend](guides/frontend/README.md)
   - [Build a web application](guides/frontend/webapp.md)
   - [Build with Node](guides/frontend/node.md)
   - [Using the CLI](guides/frontend/cli.md)

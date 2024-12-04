@@ -1,12 +1,24 @@
-# **Start Creating Confidential Smart Contracts**
-
-This document introduces the fundamentals of writing confidential smart contracts using the fhEVM (Fully Homomorphic Encryption Virtual Machine). You'll learn how to create contracts that can perform computations on encrypted data while maintaining data privacy.
-
-Welcome to your first steps in writing confidential Solidity smart contracts! In this guide, we'll walk through creating a basic smart contract that demonstrates core fhEVM concepts and encrypted operations.
-
+---
+layout:
+  title:
+    visible: true
+  description:
+    visible: true
+  tableOfContents:
+    visible: true
+  outline:
+    visible: true
+  pagination:
+    visible: false
 ---
 
-# Your first smart contract
+# Create a smart contract
+
+This document introduces the fundamentals of writing confidential smart contracts using the fhEVM. You'll learn how to create contracts that can perform computations on encrypted data while maintaining data privacy.
+
+In this guide, we'll walk through creating a basic smart contract that demonstrates core fhEVM concepts and encrypted operations.
+
+## Your first smart contract
 
 Let’s build a simple **Encrypted Counter** smart contract to demonstrate the configuration process and the use of encrypted state variables.
 
@@ -48,56 +60,52 @@ contract EncryptedCounter1 is MockZamaFHEVMConfig {
 }
 ```
 
-### How it works
+#### How it works
 
-1. **Configuring fhEVM**:  
-   The contract inherits from `MockZamaFHEVMConfig` which provides the necessary configuration for local development and testing. This configuration includes the addresses of the TFHE library and Gateway contracts.
+1.  **Configuring fhEVM**:\
+    The contract inherits from `MockZamaFHEVMConfig` which provides the necessary configuration for local development and testing. This configuration includes the addresses of the TFHE library and Gateway contracts.
 
-   When deploying to different networks, you can use the appropriate configuration:
+    When deploying to different networks, you can use the appropriate configuration:
 
-   ```solidity
-   // For local testing
-   import { MockZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
-   contract MyContract is MockZamaFHEVMConfig { ... }
+    ```solidity
+    // For local testing
+    import { MockZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
+    contract MyContract is MockZamaFHEVMConfig { ... }
 
-   // For Sepolia testnet
-   import { SepoliaZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
-   contract MyContract is SepoliaZamaFHEVMConfig { ... }
+    // For Sepolia testnet
+    import { SepoliaZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
+    contract MyContract is SepoliaZamaFHEVMConfig { ... }
 
-   // For Ethereum (when ready)
-    import { EthereumZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
-   contract MyContract is EthereumZamaFHEVMConfig { ... }
-   ```
+    // For Ethereum (when ready)
+     import { EthereumZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
+    contract MyContract is EthereumZamaFHEVMConfig { ... }
+    ```
 
-   The configuration handles setting up:
+    The configuration handles setting up:
 
-   - TFHE library address for encrypted operations
-   - Network-specific parameters
+    - TFHE library address for encrypted operations
+    - Network-specific parameters
 
-2. **Initializing encrypted variables**:
+2.  **Initializing encrypted variables**:
+    - The `counter` variable is set to an encrypted `0` using `TFHE.asEuint8(0)`.
+    - Permissions are granted to the contract itself for the `counter` ciphertext using `TFHE.allowThis(counter)`.
+    - A constant `CONST_ONE` is initialized as an encrypted value to represent the number `1`.
+3.  **Encrypted operations**:\
+    The `increment()` function adds the encrypted constant `CONST_ONE` to the `counter` using `TFHE.add`.
 
-   - The `counter` variable is set to an encrypted `0` using `TFHE.asEuint8(0)`.
-   - Permissions are granted to the contract itself for the `counter` ciphertext using `TFHE.allowThis(counter)`.
-   - A constant `CONST_ONE` is initialized as an encrypted value to represent the number `1`.
-
-3. **Encrypted operations**:  
-   The `increment()` function adds the encrypted constant `CONST_ONE` to the `counter` using `TFHE.add`.
-
-### 👀 Can you spot a problem with this contract?
+#### Limitations:
 
 There are two notable issues with this contract:
 
-1. **Counter Value Visibility**:  
+1. **Counter value visibility**:\
    Since the counter is incremented by a fixed value, observers could deduce its value by analyzing blockchain events. To address this, see the documentation on:
-
-   - [encryption and secure inputs](./inputs.md)
-
-2. **Access Control for `counter`**:  
+   - [encryption and secure inputs](../fundamentals/inputs.md)
+2. **Access control for `counter`**:\
    The counter is encrypted, but no access is granted to decrypt or view its value. Without proper ACL permissions, the counter remains inaccessible to users. To resolve this, refer to:
-   - [decryption](./decrypt.md)
-   - [re-encryption](./reencryption.md)
+   - [decryption](../fundamentals/decryption/decrypt.md)
+   - [re-encryption](../fundamentals/decryption/reencryption.md)
 
-## Your first tests
+### Testing
 
 With any contracts that you write you will need to write tests as well. You can start by using something like this as a template:
 
@@ -128,17 +136,15 @@ describe("EncryptedCounter1", function () {
 });
 ```
 
-### How the tests work
+#### How the tests work
 
 The test file demonstrates key concepts for testing fhEVM smart contracts:
 
-1. **Test Setup**:
-
+1. **Test setup**:
    - `before`: Initializes test signers (users) that will interact with the contract
    - `beforeEach`: Deploys a fresh instance of the contract before each test
    - Creates FHE instances for each signer to handle encryption/decryption
-
-2. **Test Structure**:
+2. **Test structure**:
 
    ```ts
    describe("Contract Name", function() {
@@ -151,14 +157,13 @@ The test file demonstrates key concepts for testing fhEVM smart contracts:
    });
    ```
 
-3. **Key Components**:
-
+3. **Key components**:
    - `createInstances()`: Sets up FHE instances for each signer to handle encrypted operations
    - `getSigners()`: Provides test accounts to interact with the contract
    - `contractFactory.deploy()`: Creates a new contract instance for testing
    - `tx.wait()`: Ensures transactions are mined before continuing
 
-## 🔧 Best Practices
+## Best practices
 
 ### General best practices
 
@@ -169,7 +174,7 @@ The test file demonstrates key concepts for testing fhEVM smart contracts:
 
 ### No constant nor immutable encrypted state variables
 
-Never use encrypted types for constant or immutable state variables, even if they should actually stay constants, or else any transaction involving those will fail. This is because ciphertexts should always be stored in the privileged storage of the contract (see paragraph 4.4 of [whitepaper](../../../fhevm-whitepaper.pdf)) while constant and immutable variables are just appended to the bytecode of the deployed contract at construction time.
+Never use encrypted types for constant or immutable state variables, even if they should actually stay constants, or else any transaction involving those will fail. This is because ciphertexts should always be stored in the privileged storage of the contract (see paragraph 4.4 of [whitepaper](../../fhevm-whitepaper.pdf)) while constant and immutable variables are just appended to the bytecode of the deployed contract at construction time.
 
 ❌ So, even if `a` and `b` should never change after construction, the following example :
 
@@ -199,12 +204,10 @@ contract C {
 }
 ```
 
-## **Next Steps**
+## **Next steps**
 
 Congratulations! You’ve configured and written your first confidential smart contract. Here are some ideas to expand your knowledge:
 
-- **Explore Advanced Configurations**: Customize the `FHEVMConfig` to suit specific encryption requirements.
-- **Add Functionalities**: Extend the contract by adding decrement functionality or resetting the counter.
-- **Integrate Frontend**: Learn how to decrypt and display encrypted data in a dApp using the `fhevmjs` library.
-
-For more information, refer to the [fhEVM documentation](https://docs.zama.ai/fhevm).
+- **Explore advanced configurations**: Customize the `FHEVMConfig` to suit specific encryption requirements.
+- **Add functionalities**: Extend the contract by adding decrement functionality or resetting the counter.
+- **Integrate frontend**: Learn how to decrypt and display encrypted data in a dApp using the `fhevmjs` library.

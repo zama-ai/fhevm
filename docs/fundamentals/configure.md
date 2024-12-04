@@ -1,28 +1,24 @@
-# Configuring Your Smart Contract for Encrypted Computations
+# Configuration
 
 This document explains how to enable encrypted computations in your smart contract by setting up the `fhEVM` environment. Learn how to integrate essential libraries, configure encryption, and add secure computation logic to your contracts.
-
----
 
 ## Core configuration setup
 
 To utilize encrypted computations in Solidity contracts, you must configure the **TFHE library** and **Gateway addresses**. The `fhevm` package simplifies this process with prebuilt configuration contracts, allowing you to focus on developing your contract’s logic without handling the underlying cryptographic setup.
 
-### Key components configured automatically:
+## Key components configured automatically
 
-1. **TFHE Library**: Sets up encryption parameters and cryptographic keys.
+1. **TFHE library**: Sets up encryption parameters and cryptographic keys.
 2. **Gateway**: Manages secure cryptographic operations, including reencryption and decryption.
-3. **Network-Specific Settings**: Adapts to local testing, testnets (e.g., Sepolia), or mainnet deployment.
+3. **Network-specific settings**: Adapts to local testing, testnets (Sepolia for example), or mainnet deployment.
 
 By inheriting these configuration contracts, you ensure seamless initialization and functionality across environments.
 
----
+## ZamaFHEVMConfig.sol
 
-### ZamaFHEVMConfig.sol
+This configuration contract initializes the **fhEVM environment** with required encryption parameters.
 
-This configuration contract initializes the **FHEVM environment** with required encryption parameters.
-
-#### Import based on your environment:
+**Import based on your environment:**
 
 ```solidity
 // For Mock testnet
@@ -35,12 +31,12 @@ import { SepoliaZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
 import { EthereumZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
 ```
 
-#### Purpose:
+**Purpose:**
 
 - Sets encryption parameters such as cryptographic keys and supported ciphertext types.
 - Ensures proper initialization of the FHEVM environment.
 
-#### Example: using mock configuration
+**Example: using mock configuration**
 
 ```solidity
 // SPDX-License-Identifier: BSD-3-Clause-Clear
@@ -55,13 +51,11 @@ contract MyERC20 is MockZamaFHEVMConfig {
 }
 ```
 
----
-
-### ZamaGatewayConfig.sol
+## ZamaGatewayConfig.sol
 
 To perform decryption or reencryption, your contract must interact with the **Gateway**, which acts as a secure bridge between the blockchain, coprocessor, and Key Management System (KMS).
 
-#### Import based on your environment:
+**Import based on your environment**
 
 ```solidity
 // For Mock testnet
@@ -74,12 +68,12 @@ import { SepoliaZamaGatewayConfig } from "fhevm/config/ZamaGatewayConfig.sol";
 import { EthereumZamaGatewayConfig } from "fhevm/config/ZamaGatewayConfig.sol";
 ```
 
-#### Purpose:
+**Purpose**
 
 - Configures the Gateway for secure cryptographic operations.
 - Facilitates reencryption and decryption requests.
 
-#### Example: Configuring the gateway with mock settings
+**Example: Configuring the gateway with mock settings**
 
 ```solidity
 import "fhevm/lib/TFHE.sol";
@@ -94,30 +88,26 @@ contract Test is MockZamaFHEVMConfig, MockZamaGatewayConfig, GatewayCaller {
 }
 ```
 
----
-
-### Using `isInitialized`
+## Using `isInitialized`
 
 The `isInitialized` utility function checks whether an encrypted variable has been properly initialized, preventing unexpected behavior due to uninitialized values.
 
-#### Function Signature:
+**Function signature**
 
 ```solidity
 function isInitialized(T v) internal pure returns (bool)
 ```
 
-#### Purpose:
+**Purpose**
 
 - Ensures encrypted variables are initialized before use.
 - Prevents potential logic errors in contract execution.
 
-#### Example: Initialization Check for Encrypted Counter
+**Example: Initialization Check for Encrypted Counter**
 
 ```solidity
 require(TFHE.isInitialized(counter), "Counter not initialized!");
 ```
-
----
 
 ## Summary
 

@@ -1,16 +1,16 @@
-# Re-encryption: sharing encrypted data securely
+# Re-encryption
 
 This document explains how to perform re-encryption. Re-encryption is required when you want a user to access their private data without it being exposed to the blockchain.
 
 Re-encryption in fhEVM enables the secure sharing or reuse of encrypted data under a new public key without exposing the plaintext. This feature is essential for scenarios where encrypted data must be transferred between contracts, dApps, or users while maintaining its confidentiality.
 
-> **_NOTE:_** Before implementing re-encryption, ensure you are familiar with the foundational concepts of encryption, re-encryption and computation. Refer to [Encryption, Decryption, Re-encryption, and Computation](../d_re_ecrypt_compute.md).
+{% hint style="info" %}
+Before implementing re-encryption, ensure you are familiar with the foundational concepts of encryption, re-encryption and computation. Refer to [Encryption, Decryption, Re-encryption, and Computation](../d_re_ecrypt_compute.md).
+{% endhint %}
 
 ## When to use re-encryption
 
-Re-encryption is particularly useful in scenarios such as:
-
-1. **User Access**: Allowing individual users to securely access and read their encrypted private data, such as balances or counters.
+Re-encryption is particularly useful for **allowing individual users to securely access and decrypt their private data**, such as balances or counters, while maintaining data confidentiality.
 
 ## Overview
 
@@ -20,8 +20,8 @@ This ensures that the data remains encrypted under the blockchain’s FHE key bu
 
 Re-encryption is facilitated by the **Gateway** and the **Key Management System (KMS)**. The workflow consists of the following:
 
-1.  Retrieving the ciphertext from the blockchain using a contract’s view function.
-2.  Re-encrypting the ciphertext client-side with the user’s public key, ensuring only the user can decrypt it.
+1. Retrieving the ciphertext from the blockchain using a contract’s view function.
+2. Re-encrypting the ciphertext client-side with the user’s public key, ensuring only the user can decrypt it.
 
 ## Step 1: retrieve the ciphertext
 
@@ -93,11 +93,9 @@ This code retrieves the user’s encrypted balance, re-encrypts it with their pu
 
 ### Key additions to the code
 
-1.  **`instance.generateKeypair()`**: Generates a public-private keypair for the user.
-
-2.  **`instance.createEIP712(publicKey, CONTRACT_ADDRESS)`**: Creates an EIP712 object for signing the user’s public key.
-
-3.  **`instance.reencrypt()`**: Facilitates the re-encryption process by contacting the Gateway and decrypting the data locally with the private key.
+- **`instance.generateKeypair()`**: Generates a public-private keypair for the user.
+- **`instance.createEIP712(publicKey, CONTRACT_ADDRESS)`**: Creates an EIP712 object for signing the user’s public key.
+- **`instance.reencrypt()`**: Facilitates the re-encryption process by contacting the Gateway and decrypting the data locally with the private key.
 
 ## Applying re-encryption to the counter example
 
@@ -140,8 +138,6 @@ contract EncryptedCounter4 is MockZamaFHEVMConfig {
   }
 }
 ```
-
----
 
 ### Frontend code of re-encryption / tests for EncryptedCounter4
 
@@ -224,12 +220,8 @@ describe("EncryptedCounter4", function () {
 
 ```
 
----
+#### Key additions in testing
 
-### Key additions in testing
-
-1.  **`setupReencryption():`** Prepares the re-encryption process by generating keys and a signature for the user.
-
-2.  **`instance.reencrypt():`** Facilitates re-encryption and local decryption of the data for testing purposes.
-
-3.  **Validation:** Confirms that the decrypted counter matches the expected value.
+- **`setupReencryption():`** Prepares the re-encryption process by generating keys and a signature for the user.
+- **`instance.reencrypt():`** Facilitates re-encryption and local decryption of the data for testing purposes.
+- **Validation:** Confirms that the decrypted counter matches the expected value.

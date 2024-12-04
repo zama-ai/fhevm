@@ -1,10 +1,10 @@
-# Contracts standard library
+# fhevm-contracts
 
 This guide explains how to use the [fhEVM Contracts standard library](https://github.com/zama-ai/fhevm-contracts/tree/main). This library provides secure, extensible, and pre-tested Solidity templates designed for developing smart contracts on fhEVM using the TFHE library.
 
 ## Overview
 
-The **fhEVM Contracts Standard Library** streamlines the development of confidential smart contracts by providing templates and utilities for tokens, governance, and error management. These contracts have been rigorously tested by ZAMA's engineers and are designed to accelerate development while enhancing security.
+The **fhEVM Contracts standard library** streamlines the development of confidential smart contracts by providing templates and utilities for tokens, governance, and error management. These contracts have been rigorously tested by ZAMA's engineers and are designed to accelerate development while enhancing security.
 
 ## Installation
 
@@ -23,7 +23,7 @@ pnpm add fhevm-contracts
 
 ## Example
 
-### Local Testing with the Mock Network
+### Local testing with the mock network
 
 When testing your contracts locally, you can use the `MockZamaFHEVMConfig` which provides a mock configuration for local development and testing. This allows you to test your contracts without needing to connect to a real network:
 
@@ -59,7 +59,7 @@ contract MyERC20 is SepoliaZamaFHEVMConfig, EncryptedERC20 {
 }
 ```
 
-## 🔧 Best Practices for Contract Inheritance
+## Best practices for contract inheritance
 
 When inheriting from configuration contracts, the order of inheritance is critical. Since constructors are evaluated from left to right in Solidity, you must inherit the configuration contract first to ensure proper initialization.
 

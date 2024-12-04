@@ -1,4 +1,4 @@
-# **Loops with Encrypted Conditions in FHE**
+# If sentances
 
 This document explains how to handle loops when working with Fully Homomorphic Encryption (FHE), specifically when a loop break is based on an encrypted condition.
 

@@ -17,7 +17,9 @@ The following arithmetic operations are supported for encrypted integers (`euint
 | Min                          | `TFHE.min`    |        | Binary |
 | Max                          | `TFHE.max`    |        | Binary |
 
-> **Note**: Division (TFHE.div) and remainder (TFHE.rem) operations are currently supported only with plaintext divisors.
+{% hint style="info" %}
+Division (TFHE.div) and remainder (TFHE.rem) operations are currently supported only with plaintext divisors.
+{% endhint %}
 
 ## Bitwise operations
 
@@ -34,21 +36,20 @@ The TFHE library also supports bitwise operations, including shifts and rotation
 | Rotate Right | `TFHE.rotr`   |        | Binary |
 | Rotate Left  | `TFHE.rotl`   |        | Binary |
 
-{% hint style="info" %}
 The shift operators `TFHE.shr` and `TFHE.shl` can take any encrypted type `euintX` as a first operand and either a `uint8`or a `euint8` as a second operand, however the second operand will always be computed modulo the number of bits of the first operand. For example, `TFHE.shr(euint64 x, 70)` is equivalent to `TFHE.shr(euint64 x, 6)` because `70 % 64 = 6`. This differs from the classical shift operators in Solidity, where there is no intermediate modulo operation, so for instance any `uint64` shifted right via `>>` would give a null result.
-{% endhinr %}
 
 ## Comparison operations
 
 Encrypted integers can be compared using the following functions:
-| Name | Function name | Symbol | Type |
-| ----------------------- | ------------------- | ------ | ------- |
-| Equal | `TFHE.eq` | | Binary |
-| Not equal | `TFHE.ne` | | Binary |
-| Greater than or equal | `TFHE.ge` | | Binary |
-| Greater than | `TFHE.gt` | | Binary |
-| Less than or equal | `TFHE.le` | | Binary |
-| Less than | `TFHE.lt` | | Binary |
+
+| Name                  | Function name | Symbol | Type   |
+| --------------------- | ------------- | ------ | ------ |
+| Equal                 | `TFHE.eq`     |        | Binary |
+| Not equal             | `TFHE.ne`     |        | Binary |
+| Greater than or equal | `TFHE.ge`     |        | Binary |
+| Greater than          | `TFHE.gt`     |        | Binary |
+| Less than or equal    | `TFHE.le`     |        | Binary |
+| Less than             | `TFHE.lt`     |        | Binary |
 
 ## Ternary operation
 
@@ -62,18 +63,16 @@ The `TFHE.select` function is a ternary operation that selects one of two encryp
 
 You can generate cryptographically secure random numbers fully on-chain:
 
-| **Name**                | **Function Name**   | **Symbol** | **Type** |
-| ----------------------- | ------------------- | ---------- | -------- |
-| Random Unsigned Integer | `TFHE.randEuintX()` |            | Random   |
+<table data-header-hidden><thead><tr><th></th><th width="206"></th><th></th><th></th></tr></thead><tbody><tr><td><strong>Name</strong></td><td><strong>Function Name</strong></td><td><strong>Symbol</strong></td><td><strong>Type</strong></td></tr><tr><td>Random Unsigned Integer</td><td><code>TFHE.randEuintX()</code></td><td></td><td>Random</td></tr></tbody></table>
 
-For more details, refer to the [Random Encrypted Numbers](../../guides/random.md) document.
+For more details, refer to the [Random Encrypted Numbers](../guides/random.md) document.
 
 ## Overload operators
 
 The `TFHE` library supports operator overloading for encrypted integers (e.g., `+`, `-`, `*`, `&`) using the Solidity [`using for`](https://docs.soliditylang.org/en/v0.8.22/contracts.html#using-for) syntax. These overloaded operators currently perform unchecked operations, meaning they do not include overflow checks.
 
-> **Example**:  
-> Overloaded operators make code more concise:
+**Example**\
+Overloaded operators make code more concise:
 
 ```solidity
 euint64 a = TFHE.asEuint64(42);
@@ -81,7 +80,7 @@ euint64 b = TFHE.asEuint64(58);
 euint64 sum = a + b; // Calls TFHE.add under the hood
 ```
 
-## 🔧 Best Practices
+## Best Practices
 
 Here are some best practices to follow when using encrypted operations in your smart contracts:
 
@@ -162,11 +161,9 @@ Notice that we did not check separately the overflow on `balances[msg.sender]` b
 
 ## Additional Resources
 
-- For detailed API specifications, visit the [fhEVM API Documentation](../../references/functions.md).
-- Check our [Roadmap](../../developer/roadmap.md) for upcoming features or submit a feature request on [Discord](https://discord.com/invite/fhe-org).
+- For detailed API specifications, visit the [fhEVM API Documentation](../references/functions.md).
+- Check our [Roadmap](../developer/roadmap.md) for upcoming features or submit a feature request on [GitHub](https://github.com/zama-ai/fhevm/issues/new?template=feature-request.md).
 - Join the discussion on the [Community Forum](https://community.zama.ai/c/fhevm/15).
-
----
 
 {% hint style="success" %}
 **Zama 5-Question Developer Survey**

@@ -1,6 +1,6 @@
-# Implementing access control with acl
+# ACL examples
 
-This page provides detailed instructions and examples on how to use and implement the ACL (Access Control List) in fhEVM. For an overview of ACL concepts and their importance, refer to the [access control list (ACL) overview](../acl.md).
+This page provides detailed instructions and examples on how to use and implement the ACL (Access Control List) in fhEVM. For an overview of ACL concepts and their importance, refer to the [access control list (ACL) overview](./).
 
 ---
 
@@ -168,4 +168,4 @@ function transfer(address to, euint64 encryptedAmount) public {
 
 ---
 
-By understanding how to grant and verify permissions, you can effectively manage access to encrypted data in your fhEVM smart contracts. For additional context, see the [ACL overview](../acl.md).
+By understanding how to grant and verify permissions, you can effectively manage access to encrypted data in your fhEVM smart contracts. For additional context, see the [ACL overview](./).

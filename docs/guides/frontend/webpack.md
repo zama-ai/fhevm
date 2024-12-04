@@ -2,9 +2,13 @@
 
 This document provides solutions for common Webpack errors encountered during the development process. Follow the steps below to resolve each issue.
 
-## "Module not found: Error: Can't resolve 'tfhe_bg.wasm'"
+## Can't resolve 'tfhe_bg.wasm'
 
-In the codebase, there is a `new URL('tfhe_bg.wasm')` which triggers a resolve by Webpack. If you encounter an issue, you can add a fallback for this file by adding a resolve configuration in your `webpack.config.js`:
+**Error message:** `Module not found: Error: Can't resolve 'tfhe_bg.wasm'`
+
+**Cause:** In the codebase, there is a `new URL('tfhe_bg.wasm')` which triggers a resolve by Webpack.
+
+**Possible sultions:** You can add a fallback for this file by adding a resolve configuration in your `webpack.config.js`:
 
 ```javascript
 resolve: {
@@ -14,10 +18,9 @@ resolve: {
 },
 ```
 
-## ReferenceError: Buffer is not defined
+## Error message: ReferenceError: Buffer is not defined
 
-If you encounter this issue with the Node Buffer object, you should offer an alternative solution. Similar issues might arise with different Node objects.
-In such cases, install the corresponding browserified npm package and include the fallback as follows.
+If you encounter this issue with the Node Buffer object, you should offer an alternative solution. Similar issues might arise with different Node objects. In such cases, install the corresponding browserified npm package and include the fallback as follows.
 
 ```javascript
 resolve: {

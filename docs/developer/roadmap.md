@@ -1,14 +1,16 @@
-# Roadmap
+# Development roadmap
+
+This document gives an preview of the upcoming features of fhEVM. In addition to what's listed here, you can [submit your feature request](https://github.com/zama-ai/fhevm/issues/new?template=feature-request.md) on GitHub.
 
 ## Features
 
-| name             | description                                                 | ETA    |
-| ---------------- | ----------------------------------------------------------- | ------ |
-| Foundry template | [ Forge ](https://book.getfoundry.sh/reference/forge/forge) | Q1 '25 |
+| Name             | Description                                               | ETA    |
+| ---------------- | --------------------------------------------------------- | ------ |
+| Foundry template | [Forge](https://book.getfoundry.sh/reference/forge/forge) | Q1 '25 |
 
 ## Operations
 
-| name                  | function name      | type               | ETA         |
+| Name                  | Function name      | Type               | ETA         |
 | --------------------- | ------------------ | ------------------ | ----------- |
 | Signed Integers       | `eintX`            |                    | Coming soon |
 | Add w/ overflow check | `TFHE.safeAdd`     | Binary, Decryption | Coming soon |
@@ -19,5 +21,6 @@
 | Rem                   | `TFHE.rem`         | Binary             | -           |
 | Set inclusion         | `TFHE.isIn()`      | Binary             | -           |
 
-> **_NOTE 1:_** Random encrypted integers that are generated fully on-chain. Currently, implemented as a mockup by using a PRNG in the plain.
-> Not for use in production!
+{% hint style="info" %}
+Random encrypted integers that are generated fully on-chain. Currently, implemented as a mockup by using a PRNG in the plain. Not for use in production!
+{% endhint %}
