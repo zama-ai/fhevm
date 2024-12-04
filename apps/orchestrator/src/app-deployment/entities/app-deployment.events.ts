@@ -47,6 +47,12 @@ const schema = z
   .discriminatedUnion('type', [
     eventMap['requested'],
     eventMap['sc-discovered'],
+    eventMap['sc-discovery-failed'],
+    eventMap['sc-confirmed'],
+    eventMap['sc-confirmation-failed'],
+    eventMap['sc-registered'],
+    eventMap['sc-registration-failed'],
+    eventMap['completed'],
   ])
   .and(
     z.object({
@@ -54,7 +60,7 @@ const schema = z
       $meta: z.record(z.string(), z.string()).optional(),
     }),
   );
-type AppDeploymentEvent = z.infer<typeof schema>;
+export type AppDeploymentEvent = z.infer<typeof schema>;
 
 /**
  * Create a factory to generate a given event
@@ -63,12 +69,16 @@ type AppDeploymentEvent = z.infer<typeof schema>;
  * @returns the factory function for the selected event
  */
 function factory<K extends keyof EventMap>(type: K) {
-  return function (payload: z.infer<EventMap[K]>['payload']) {
+  return function (
+    payload: z.infer<EventMap[K]>['payload'],
+    $meta?: Record<string, string>,
+  ) {
     return {
       _tag: 'Event',
       type: `app-deployment.${type}`,
       payload,
-    };
+      $meta,
+    } as AppDeploymentEvent;
   };
 }
 
@@ -84,6 +94,5 @@ export const scRegistrationFailed = factory('sc-registration-failed');
 export function isAppDeploymentEvent(
   data: unknown,
 ): data is AppDeploymentEvent {
-  const result = schema.safeParse(data);
-  return result.success;
+  return schema.safeParse(data).success;
 }

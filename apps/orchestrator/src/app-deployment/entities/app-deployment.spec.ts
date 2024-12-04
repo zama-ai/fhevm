@@ -9,7 +9,7 @@ import {
   scDiscovered,
   scRegistered,
 } from './app-deployment.events';
-import { confirmSM, discoverSM, registerSM } from './app-deployment.commands';
+import { confirmSC, discoverSC, registerSC } from './app-deployment.commands';
 
 const address = '0xa2dd817c2fdc3a2996f1a5174cf8f1aaed466e82';
 const chainId = '1';
@@ -17,10 +17,12 @@ const chainId = '1';
 describe('AppDeployment', () => {
   let deployment: AppDeployment;
   let applicationId: string;
+  let deploymentId: string;
 
   beforeEach(() => {
     applicationId = randomUUID();
-    deployment = AppDeployment.init(applicationId);
+    deploymentId = randomUUID();
+    deployment = new AppDeployment({ applicationId, deploymentId });
   });
 
   describe('when idle', () => {
@@ -28,60 +30,150 @@ describe('AppDeployment', () => {
       expect(deployment.status).toBe('Idle');
     });
 
-    it('should request SC discovery on deployment requested', () => {
-      const messages = deployment.notify(
-        requested({ applicationId, address, chainId }),
-      );
+    describe('on deployment requested', () => {
+      it('should request SC discovery', () => {
+        const messages = deployment.send(
+          requested({ applicationId, deploymentId, address, chainId }),
+        );
 
-      expect(messages).toEqual([
-        discoverSM({ applicationId, address, chainId }),
-      ]);
+        expect(messages).toEqual([
+          discoverSC({ applicationId, deploymentId, address, chainId }),
+        ]);
+      });
+
+      it('should propagate the metadata', () => {
+        const $meta = { traceId: randomUUID() };
+        const messages = deployment.send(
+          requested({ applicationId, deploymentId, address, chainId }, $meta),
+        );
+
+        expect(messages.length).toBe(1);
+        expect(messages[0].$meta).toEqual($meta);
+      });
     });
   });
 
   describe('when discovering', () => {
     beforeEach(() => {
-      deployment.notify(requested({ applicationId, address, chainId }));
+      deployment.send(
+        requested({ applicationId, deploymentId, address, chainId }),
+      );
       expect(deployment.status).toBe('Discovering');
     });
 
-    it('should request SC confirmation on SC discovered', () => {
-      const messages = deployment.notify(scDiscovered({ applicationId }));
+    describe('on SC discovered', () => {
+      it('should request SC confirmation', () => {
+        const messages = deployment.send(
+          scDiscovered({ applicationId, deploymentId }),
+        );
 
-      expect(messages).toEqual([confirmSM({ applicationId })]);
+        expect(messages).toEqual([confirmSC({ applicationId, deploymentId })]);
+      });
+
+      it('should propagate metadata', () => {
+        const $meta = { traceId: randomUUID() };
+        const messages = deployment.send(
+          scDiscovered({ applicationId, deploymentId }, $meta),
+        );
+
+        expect(messages.length).toBe(1);
+        expect(messages[0].$meta).toEqual($meta);
+      });
+
+      it('should ignore wrong identifier', () => {
+        for (const key of ['applicationId', 'deploymentId']) {
+          console.log(`sending scDiscover with wrong ${key}`);
+          const id = randomUUID();
+          const messages = deployment.send(
+            scDiscovered({ applicationId, deploymentId, [key]: id }),
+          );
+
+          expect(messages).toStrictEqual([]);
+        }
+      });
     });
-
-    // it('should fail on SM discovery failed', () => {
-    //   const messages = deployment.notify()
-    // })
   });
 
   describe('when confirming', () => {
     beforeEach(() => {
-      deployment.notify(requested({ applicationId, address, chainId }));
-      deployment.notify(scDiscovered({ applicationId }));
+      deployment.send(
+        requested({ applicationId, deploymentId, address, chainId }),
+      );
+      deployment.send(scDiscovered({ applicationId, deploymentId }));
       expect(deployment.status).toBe('Confirming');
     });
 
-    it('should request SM registration on SM confirmation', () => {
-      const messages = deployment.notify(scConfirmed({ applicationId }));
+    describe('on SC confirmation', () => {
+      it('should request SC registration on SC confirmation', () => {
+        const messages = deployment.send(
+          scConfirmed({ applicationId, deploymentId }),
+        );
 
-      expect(messages).toEqual([registerSM({ applicationId })]);
+        expect(messages).toEqual([registerSC({ applicationId, deploymentId })]);
+      });
+
+      it('should request SC registration on SC confirmation', () => {
+        const $meta = { traceId: randomUUID() };
+        const messages = deployment.send(
+          scConfirmed({ applicationId, deploymentId }, $meta),
+        );
+
+        expect(messages.length).toBe(1);
+        expect(messages[0].$meta).toEqual($meta);
+      });
+
+      it('should ignore wrong identifier', () => {
+        for (const key of ['applicationId', 'deploymentId']) {
+          const id = randomUUID();
+          const messages = deployment.send(
+            scConfirmed({ applicationId, deploymentId, [key]: id }),
+          );
+
+          expect(messages).toStrictEqual([]);
+        }
+      });
     });
   });
 
   describe('when registering', () => {
     beforeEach(() => {
-      deployment.notify(requested({ applicationId, address, chainId }));
-      deployment.notify(scDiscovered({ applicationId }));
-      deployment.notify(scConfirmed({ applicationId }));
+      deployment.send(
+        requested({ applicationId, deploymentId, address, chainId }),
+      );
+      deployment.send(scDiscovered({ applicationId, deploymentId }));
+      deployment.send(scConfirmed({ applicationId, deploymentId }));
       expect(deployment.status).toBe('Registering');
     });
 
-    it('should complete on SM registered', () => {
-      const messages = deployment.notify(scRegistered({ applicationId }));
-      expect(messages).toEqual([completed({ applicationId })]);
-      expect(deployment.status).toBe('Active');
+    describe('on SC registered', () => {
+      it('should complete', () => {
+        const messages = deployment.send(
+          scRegistered({ applicationId, deploymentId }),
+        );
+        expect(messages).toEqual([completed({ applicationId, deploymentId })]);
+        expect(deployment.status).toBe('Active');
+      });
+
+      it('should complete', () => {
+        const $meta = { traceId: randomUUID() };
+        const messages = deployment.send(
+          scRegistered({ applicationId, deploymentId }, $meta),
+        );
+
+        expect(messages.length).toBe(1);
+        expect(messages[0].$meta).toEqual($meta);
+      });
+
+      it('should ignore wrong identifier', () => {
+        for (const key of ['applicationId', 'deploymentId']) {
+          const id = randomUUID();
+          const messages = deployment.send(
+            scRegistered({ applicationId, deploymentId, [key]: id }),
+          );
+
+          expect(messages).toStrictEqual([]);
+        }
+      });
     });
   });
 });

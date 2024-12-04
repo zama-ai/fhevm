@@ -1,26 +1,51 @@
-/* eslint-disable @typescript-eslint/no-empty-object-type */
-// export type AppDeploymentCommand = DiscoverSM | ConfirmSM | RegisterSM;
+import { z } from 'zod';
 
-import { ExhaustiveTuple } from '../../utils';
+type CommandTypes = 'discover-sc' | 'confirm-sc' | 'register-sc';
 
-type CommandMap = {
-  'discover-sm': { address: string; chainId: string };
-  'confirm-sm': {};
-  'register-sm': {};
+function genSchema<Key extends CommandTypes, Payload extends z.ZodRawShape>(
+  key: Key,
+  payload: Payload,
+) {
+  const type = `app-deployment.${key}` as `app-deployment.${Key}`;
+  return z.object({
+    _tag: z.literal('Command'),
+    type: z.literal(type),
+    payload: z.object({
+      applicationId: z.string(),
+      deploymentId: z.string(),
+      ...payload,
+    } as {
+      applicationId: z.ZodString;
+      deploymentId: z.ZodString;
+    } & Payload),
+  });
+}
+
+const commandMap = {
+  'discover-sc': genSchema('discover-sc', {
+    address: z.string(),
+    chainId: z.string(),
+  }),
+  'confirm-sc': genSchema('confirm-sc', {}),
+  'register-sc': genSchema('register-sc', {}),
 };
+type CommandMap = typeof commandMap;
 
-type CommandTypes = keyof CommandMap;
+const schema = z
+  .discriminatedUnion('type', [
+    commandMap['discover-sc'],
+    commandMap['confirm-sc'],
+    commandMap['register-sc'],
+  ])
+  .and(
+    z.object({
+      _tag: z.literal('Command'),
+      $meta: z.record(z.string(), z.string()).optional(),
+    }),
+  );
 
-export type AppDeploymentCommand = {
-  [Key in CommandTypes]: {
-    _tag: 'Command';
-    type: `app-deployment.${Key}`;
-    payload: CommandMap[Key] & { applicationId: string };
-  };
-}[CommandTypes];
+export type AppDeploymentCommand = z.infer<typeof schema>;
 
-const _cmdTypes = ['confirm-sm', 'discover-sm', 'register-sm'] as const;
-const cmdTypes: ExhaustiveTuple<CommandTypes, typeof _cmdTypes> = _cmdTypes;
 /**
  * Create a factory to generate a given command
  *
@@ -28,51 +53,25 @@ const cmdTypes: ExhaustiveTuple<CommandTypes, typeof _cmdTypes> = _cmdTypes;
  * @returns the factory function for the selected command
  */
 function factory<K extends CommandTypes>(type: K) {
-  return function (payload: CommandMap[K] & { applicationId: string }) {
-    // TODO: find a better way to solve this
+  return function (
+    payload: z.infer<CommandMap[K]>['payload'],
+    $meta?: Record<string, string>,
+  ) {
     return {
       _tag: 'Command',
       type: `app-deployment.${type}`,
       payload,
+      $meta,
     } as AppDeploymentCommand;
   };
 }
 
-export const discoverSM = factory('discover-sm');
-export const confirmSM = factory('confirm-sm');
-export const registerSM = factory('register-sm');
+export const discoverSC = factory('discover-sc');
+export const confirmSC = factory('confirm-sc');
+export const registerSC = factory('register-sc');
 
 export function isAppDeploymentCommand(
   data: unknown,
 ): data is AppDeploymentCommand {
-  if (typeof data !== 'object' || data === null) {
-    return false;
-  }
-  // Check _tag
-  if (!('_tag' in data) || data._tag !== 'Command') {
-    return false;
-  }
-
-  // check type
-  if (
-    !('type' in data) ||
-    typeof data.type !== 'string' ||
-    !data.type.startsWith('app-deployment.') ||
-    !(cmdTypes as readonly string[]).includes(data.type.split('.')[1])
-  ) {
-    return false;
-  }
-
-  // checking payload
-  if (
-    !('payload' in data) ||
-    typeof data.payload !== 'object' ||
-    data.payload === null ||
-    !('applicationId' in data.payload) ||
-    typeof data.payload.applicationId !== 'string'
-  ) {
-    return false;
-  }
-
-  return true;
+  return schema.safeParse(data).success;
 }
