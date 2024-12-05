@@ -1,14 +1,13 @@
 #!/usr/bin/make -f
 
+# Load environment variables to makefile and export it to shell environment
 include .env
-
+export $(shell cat .env | sed 's/=.*//g')
 
 BINDIR ?= $(GOPATH)/bin
 ETHERMINT_BINARY = ethermintd
 ETHERMINT_DIR = ethermint
 BUILDDIR ?= $(CURDIR)/build
-
-
 
 WORKDIR ?= $(CURDIR)/work_dir
 SUDO := $(shell which sudo)
@@ -34,7 +33,6 @@ check_os:
 # This version must the same as in docker-compose-full.yml
 # TODO add check
 KMS_DEV_VERSION ?= $(DOCKER_IMAGES_TAG)
-
 FHEVM_SOLIDITY_REPO ?= fhevm
 FHEVM_SOLIDITY_PATH ?= $(WORKDIR)/$(FHEVM_SOLIDITY_REPO)
 FHEVM_SOLIDITY_PATH_EXISTS := $(shell test -d $(FHEVM_SOLIDITY_PATH)/.git && echo "true" || echo "false")
@@ -93,7 +91,7 @@ else ifeq ($(CENTRALIZED_KMS),true)
 else
 	@echo "CENTRALIZED_KMS is set to an unrecognized value: $(CENTRALIZED_KMS)"
 endif
-	@COMPOSE_PROJECT_NAME=zama-kms-gateway docker compose -vvv -f docker-compose/docker-compose-db-migration.yml up -d --wait || true
+	docker compose -p $(DOCKER_COMPOSE_PROJECT) -vvv -f docker-compose/docker-compose-db-migration.yml up -d --wait || true
 	@if [ "$$(docker inspect -f '{{.State.ExitCode}}' migration)" -eq 0 ]; then \
 		echo "Container exited with code 0, proceeding..."; \
 	else \
@@ -103,7 +101,7 @@ endif
 
 
 deploy-fhevm: 
-	@COMPOSE_PROJECT_NAME=zama-kms-gateway docker compose -vvv -f docker-compose/docker-compose-fhevm-deploy.yml up -d --wait || true
+	docker compose -p $(DOCKER_COMPOSE_PROJECT) -vvv -f docker-compose/docker-compose-fhevm-deploy.yml up -d --wait || true
 	@if [ "$$(docker inspect -f '{{.State.ExitCode}}' fhevm-deploy)" -eq 0 ]; then \
 		echo "Container exited with code 0, proceeding..."; \
 	else \
@@ -149,13 +147,13 @@ trigger-crs-gen-threshold:
 		insecure-crs-gen --max-num-bits 256
 
 run-kms-threshold:
-	docker compose -vvv \
+	docker compose -p $(DOCKER_COMPOSE_PROJECT) -vvv \
 		-f docker-compose/docker-compose-kms-base.yml \
 		-f docker-compose/docker-compose-kms-threshold.yml \
 		up -d --wait
 
 run-kms-threshold-with-gateway:
-	docker compose -vvv \
+	docker compose -p $(DOCKER_COMPOSE_PROJECT) -vvv \
 		-f docker-compose/docker-compose-kms-base.yml \
 		-f docker-compose/docker-compose-kms-threshold.yml \
 		-f docker-compose/docker-compose-kms-gateway-threshold.yml \
@@ -163,25 +161,25 @@ run-kms-threshold-with-gateway:
 		up -d --wait
 
 stop-kms-threshold:
-	docker compose -vvv \
+	docker compose -p $(DOCKER_COMPOSE_PROJECT) -vvv \
 		-f docker-compose/docker-compose-kms-base.yml \
 		-f docker-compose/docker-compose-kms-threshold.yml \
 		down --volumes --remove-orphans
 
 run-kms-centralized:
-	docker compose -vvv \
+	docker -p $(DOCKER_COMPOSE_PROJECT) compose -vvv \
 		-f docker-compose/docker-compose-kms-base.yml \
 		-f docker-compose/docker-compose-kms-centralized.yml \
 		up -d --wait
 
 stop-kms-centralized:
-	docker compose -vvv \
+	docker compose -p $(DOCKER_COMPOSE_PROJECT) -vvv \
 		-f docker-compose/docker-compose-kms-base.yml \
 		-f docker-compose/docker-compose-kms-centralized.yml \
 		down
 
 run-kms-centralized-with-gateway:
-	docker compose -vvv \
+	docker compose  -p $(DOCKER_COMPOSE_PROJECT) -vvv \
 		-f docker-compose/docker-compose-kms-base.yml \
 		-f docker-compose/docker-compose-kms-centralized.yml \
 		-f docker-compose/docker-compose-kms-gateway-centralized.yml \
@@ -189,7 +187,7 @@ run-kms-centralized-with-gateway:
 		up -d --wait
 
 stop-kms-centralized-with-gateway:
-	docker compose -vvv \
+	docker compose  -p $(DOCKER_COMPOSE_PROJECT) -vvv \
 		-f docker-compose/docker-compose-kms-base.yml \
 		-f docker-compose/docker-compose-kms-centralized.yml \
 		-f docker-compose/docker-compose-kms-gateway-centralized.yml \
@@ -197,7 +195,7 @@ stop-kms-centralized-with-gateway:
 		down -v --remove-orphans
 
 stop-kms-threshold-with-gateway:
-	docker compose -vvv \
+	docker compose  -p $(DOCKER_COMPOSE_PROJECT) -vvv \
 		-f docker-compose/docker-compose-kms-base.yml \
 		-f docker-compose/docker-compose-kms-threshold.yml \
 		-f docker-compose/docker-compose-kms-gateway-threshold.yml \
@@ -320,7 +318,7 @@ run-gw:
 	@docker compose -vvv -f docker-compose/docker-compose-kms-base.yml -f docker-compose/docker-compose-kms-centralized.yml -f docker-compose/docker-compose-kms-gateway-centralized.yml up dev-kms-gateway
 
 restart-kv:
-	docker compose -vvv \
+	docker compose -p $(DOCKER_COMPOSE_PROJECT) -vvv \
     -f docker-compose/docker-compose-kms-base.yml \
     -f docker-compose/docker-compose-kms-threshold.yml \
     -f docker-compose/docker-compose-kms-gateway-threshold.yml \
@@ -329,7 +327,7 @@ restart-kv:
 
 
 restart-coproc:
-	docker compose -vvv \
+	docker compose -p $(DOCKER_COMPOSE_PROJECT) -vvv \
     -f docker-compose/docker-compose-kms-base.yml \
     -f docker-compose/docker-compose-kms-threshold.yml \
     -f docker-compose/docker-compose-kms-gateway-threshold.yml \
@@ -338,7 +336,7 @@ restart-coproc:
 
 
 restart-gw:
-	docker compose -vvv \
+	docker compose -p $(DOCKER_COMPOSE_PROJECT) -vvv \
     -f docker-compose/docker-compose-kms-base.yml \
     -f docker-compose/docker-compose-kms-threshold.yml \
     -f docker-compose/docker-compose-kms-gateway-threshold.yml \

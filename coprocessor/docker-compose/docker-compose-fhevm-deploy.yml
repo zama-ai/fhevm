@@ -8,9 +8,9 @@ services:
       - ../scripts/launch-fhevm-coprocessor.sh:/app/launch-fhevm-coprocessor.sh
       - ../scripts/deploy-smart-contracts.sh:/app/deploy-smart-contracts.sh
     networks:
-      - zama-kms-gateway_default
+      - zama_default
     entrypoint: "./deploy-smart-contracts.sh"
 
 networks:
-  zama-kms-gateway_default:
+  zama_default:
     external: true

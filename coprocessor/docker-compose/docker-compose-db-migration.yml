@@ -7,8 +7,8 @@ services:
     volumes:
       - ../network-fhe-keys/:/fhevm-keys/
     networks:
-      - zama-kms-gateway_default
+      - zama_default
 
 networks:
-  zama-kms-gateway_default:
+  zama_default:
     external: true
