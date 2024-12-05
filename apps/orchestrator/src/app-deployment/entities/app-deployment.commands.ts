@@ -1,12 +1,12 @@
-import { z } from 'zod';
+import { z } from 'zod'
 
-type CommandTypes = 'discover-sc' | 'confirm-sc' | 'register-sc';
+type CommandTypes = 'discover-sc' | 'confirm-sc' | 'register-sc'
 
 function genSchema<Key extends CommandTypes, Payload extends z.ZodRawShape>(
   key: Key,
   payload: Payload,
 ) {
-  const type = `app-deployment.${key}` as `app-deployment.${Key}`;
+  const type = `app-deployment.${key}` as `app-deployment.${Key}`
   return z.object({
     _tag: z.literal('Command'),
     type: z.literal(type),
@@ -15,10 +15,10 @@ function genSchema<Key extends CommandTypes, Payload extends z.ZodRawShape>(
       deploymentId: z.string(),
       ...payload,
     } as {
-      applicationId: z.ZodString;
-      deploymentId: z.ZodString;
+      applicationId: z.ZodString
+      deploymentId: z.ZodString
     } & Payload),
-  });
+  })
 }
 
 const commandMap = {
@@ -28,8 +28,8 @@ const commandMap = {
   }),
   'confirm-sc': genSchema('confirm-sc', {}),
   'register-sc': genSchema('register-sc', {}),
-};
-type CommandMap = typeof commandMap;
+}
+type CommandMap = typeof commandMap
 
 const schema = z
   .discriminatedUnion('type', [
@@ -42,9 +42,9 @@ const schema = z
       _tag: z.literal('Command'),
       $meta: z.record(z.string(), z.string()).optional(),
     }),
-  );
+  )
 
-export type AppDeploymentCommand = z.infer<typeof schema>;
+export type AppDeploymentCommand = z.infer<typeof schema>
 
 /**
  * Create a factory to generate a given command
@@ -62,16 +62,16 @@ function factory<K extends CommandTypes>(type: K) {
       type: `app-deployment.${type}`,
       payload,
       $meta,
-    } as AppDeploymentCommand;
-  };
+    } as AppDeploymentCommand
+  }
 }
 
-export const discoverSC = factory('discover-sc');
-export const confirmSC = factory('confirm-sc');
-export const registerSC = factory('register-sc');
+export const discoverSC = factory('discover-sc')
+export const confirmSC = factory('confirm-sc')
+export const registerSC = factory('register-sc')
 
 export function isAppDeploymentCommand(
   data: unknown,
 ): data is AppDeploymentCommand {
-  return schema.safeParse(data).success;
+  return schema.safeParse(data).success
 }

@@ -1,23 +1,23 @@
-import { Actor, assign, createActor, setup, Snapshot } from 'xstate';
-import { type AppDeploymentEvent, completed } from './app-deployment.events';
-import { confirmSC, discoverSC, registerSC } from './app-deployment.commands';
-import type { AppDeploymentMessage } from './app-deployment.messages';
+import { Actor, assign, createActor, setup, Snapshot } from 'xstate'
+import { type AppDeploymentEvent, completed } from './app-deployment.events'
+import { confirmSC, discoverSC, registerSC } from './app-deployment.commands'
+import type { AppDeploymentMessage } from './app-deployment.messages'
 
 type Context = {
-  applicationId: string;
-  deploymentId: string;
-  address?: string;
-  chainId?: string;
-};
+  applicationId: string
+  deploymentId: string
+  address?: string
+  chainId?: string
+}
 
-type AppDeploymentMachine = ReturnType<typeof factory>;
+type AppDeploymentMachine = ReturnType<typeof factory>
 
 function factory({
   applicationId,
   deploymentId,
   notifyMessage,
 }: Pick<Context, 'applicationId' | 'deploymentId'> & {
-  notifyMessage: (message: AppDeploymentMessage) => void;
+  notifyMessage: (message: AppDeploymentMessage) => void
 }) {
   return setup({
     types: {
@@ -131,10 +131,10 @@ function factory({
         type: 'final',
       },
     },
-  });
+  })
 }
 export class AppDeployment {
-  #actor: Actor<AppDeploymentMachine>;
+  #actor: Actor<AppDeploymentMachine>
 
   constructor(
     {
@@ -154,30 +154,30 @@ export class AppDeployment {
           ? (JSON.parse(snapshot) as Snapshot<unknown>)
           : undefined,
       },
-    );
-    this.#actor.start();
+    )
+    this.#actor.start()
   }
 
-  private messages: AppDeploymentMessage[] = [];
+  private messages: AppDeploymentMessage[] = []
   private notifyMessage = (message: AppDeploymentMessage) => {
-    this.messages.push(message);
-  };
+    this.messages.push(message)
+  }
 
   send(event: AppDeploymentEvent): AppDeploymentMessage[] {
-    this.messages = [];
-    this.#actor.send(event);
-    return this.messages;
+    this.messages = []
+    this.#actor.send(event)
+    return this.messages
   }
 
   get status() {
-    return this.#actor.getSnapshot().value;
+    return this.#actor.getSnapshot().value
   }
 
   get applicationId() {
-    return this.#actor.getSnapshot().context.applicationId;
+    return this.#actor.getSnapshot().context.applicationId
   }
 
   get snapshot() {
-    return JSON.stringify(this.#actor.getPersistedSnapshot());
+    return JSON.stringify(this.#actor.getPersistedSnapshot())
   }
 }
