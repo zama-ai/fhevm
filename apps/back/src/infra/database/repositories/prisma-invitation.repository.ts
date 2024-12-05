@@ -1,7 +1,4 @@
-import {
-  InvitationProps,
-  Invitation,
-} from '@/invitations/domain/entities/invitation'
+import { Invitation } from '@/invitations/domain/entities/invitation'
 import { InvitationRepository } from '@/invitations/domain/repositories/invitation.repository'
 import { PrismaService } from '../prisma.service'
 import { Injectable } from '@nestjs/common'
@@ -18,10 +15,10 @@ export class PrismaInvitationRepository extends InvitationRepository {
     super()
   }
 
-  create(data: InvitationProps): Task<Invitation, AppError> {
+  create(data: Invitation): Task<Invitation, AppError> {
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.invitation
-        .create({ data })
+        .create({ data: data.toJSON() })
         .then(resolve)
         .catch(err => reject(unknownError(String(err))))
     }).chain(props => Invitation.parse(props).async())
