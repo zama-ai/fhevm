@@ -21,10 +21,7 @@ function genSchema<Key extends EventTypes, Payload extends z.ZodRawShape>(
       applicationId: z.string(),
       deploymentId: z.string(),
       ...payload,
-    } as {
-      applicationId: z.ZodString
-      deploymentId: z.ZodString
-    } & Payload),
+    }),
   })
 }
 

@@ -8,16 +8,12 @@ function genSchema<Key extends CommandTypes, Payload extends z.ZodRawShape>(
 ) {
   const type = `app-deployment.${key}` as `app-deployment.${Key}`
   return z.object({
-    _tag: z.literal('Command'),
     type: z.literal(type),
     payload: z.object({
       applicationId: z.string(),
       deploymentId: z.string(),
       ...payload,
-    } as {
-      applicationId: z.ZodString
-      deploymentId: z.ZodString
-    } & Payload),
+    }),
   })
 }
 
