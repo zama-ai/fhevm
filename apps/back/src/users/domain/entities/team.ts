@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { AppError, validationError } from '@/utils/app-error'
 import { Entity } from '@/utils/entity'
 import { ok, fail, Result } from '@/utils/result'
-import { TeamId } from './value-objects/team-id'
+import { TeamId } from './value-objects'
 
 const schema = z.object({
   id: TeamId,

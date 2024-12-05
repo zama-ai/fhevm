@@ -12,7 +12,7 @@ export class PrismaUserRepository extends UserRepository {
   }
 
   create(data: UserProps): Task<User, AppError> {
-    return new Task<UserProps, AppError>((resolve, reject) => {
+    return new Task<unknown, AppError>((resolve, reject) => {
       this.db.user
         .create({ data })
         .then(resolve)
@@ -24,7 +24,7 @@ export class PrismaUserRepository extends UserRepository {
     if (!id) {
       return Task.reject(notFoundError('User not found'))
     }
-    return new Task<UserProps, AppError>((resolve, reject) => {
+    return new Task<unknown, AppError>((resolve, reject) => {
       this.db.user
         .findFirst({ where: { id } })
         .then(data =>
@@ -38,7 +38,7 @@ export class PrismaUserRepository extends UserRepository {
     if (!email) {
       return Task.reject(notFoundError('User not found'))
     }
-    return new Task<UserProps, AppError>((resolve, reject) => {
+    return new Task<unknown, AppError>((resolve, reject) => {
       this.db.user
         .findFirst({ where: { email } })
         .then(data =>

@@ -22,6 +22,8 @@ export interface Ok<T, E> {
   chain<U>(fn: (value: T) => Result<U, E>): Result<U, E>
   /*** Calls the provided function with the current value and returns the awaited result. */
   asyncChain<U = T>(fn: (value: T) => Task<U, E>): Task<U, E>
+  /** Convert a Result<T,E> to a Task<T, E> */
+  async(): Task<T, E>
   /*** Calls the `ok` matcher if the computation is successful, otherwise it calls the `fail` one. */
   match<R1, R2 = R1>(matchers: Matchers<T, E, R1, R2>): R1 | R2
 }
@@ -48,6 +50,7 @@ export interface Fail<T, E> {
   chain<U = T>(fn: (value: T) => Result<U, E>): Result<U, E>
   /*** Calls the provided function with the current value and returns the awaited result. */
   asyncChain<U = T>(fn: (value: T) => Task<U, E>): Task<U, E>
+  async(): Task<T, E>
   /*** Calls the `ok` matcher if the computation is successful, otherwise it calls the `fail` one. */
   match<R1, R2 = R1>(matchers: Matchers<T, E, R1, R2>): R1 | R2
 }
@@ -106,6 +109,9 @@ class OkImpl<T, E> implements Ok<T, E> {
   asyncChain<E, U>(fn: (value: T) => Task<U, E>): Task<U, E> {
     return fn(this.value)
   }
+  async() {
+    return Task.of<T, E>(this.value)
+  }
   match<E, R1, R2 = R1>(matchers: Matchers<T, E, R1, R2>) {
     return matchers.ok(this.value)
   }
@@ -148,7 +154,10 @@ class FailImpl<T, E> implements Fail<T, E> {
     return this as unknown as Result<U, E>
   }
   asyncChain<U>(): Task<U, E> {
-    return new Task((_, reject) => reject(this.error))
+    return Task.reject(this.error)
+  }
+  async() {
+    return Task.reject<T, E>(this.error)
   }
   match<T, R1, R2 = R1>(matchers: Matchers<T, E, R1, R2>) {
     return matchers.fail(this.error)
