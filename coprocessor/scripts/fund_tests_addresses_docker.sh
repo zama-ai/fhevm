@@ -8,7 +8,7 @@ fund_account() {
 	account_name=$1
 	account_address=$2
 	echo "funding $account_name account with address $account_address"
-	docker exec -i zama-kms-gateway-geth-1 faucet $account_address
+docker exec -i $GETH_CONTAINER faucet $account_address
 	sleep 8
 }
 

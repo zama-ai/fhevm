@@ -30,10 +30,10 @@ listener_type = "COPROCESSOR"
 
 # URL of the Ethereum WebSocket server.
 # Used for establishing a WebSocket connection to an Ethereum node.
-wss_url = "ws://geth:8546"
+wss_url = "ws://fhevm-geth:8546"
 
 # Used for establishing an http connection to an Ethereum node.
-http_url = "http://geth:8545"
+http_url = "http://fhevm-geth:8545"
 
 # Address of the FHE library smart ontract on the Ethereum blockchain.
 # Used for interactions with the FHE library contract.
@@ -69,7 +69,7 @@ reenc_domain_name = "Authorization token"
 acl_address = "339EcE85B9E11a3A3AA557582784a15d7F82AAf2"
 
 # Address of the coprocessor to query for ciphertexts (gRPC)
-coprocessor_url = "http://coproc:50052"
+coprocessor_url = "http://fhevm-coprocessor:50052"
 
 # optionally explicitly set the gas price
 # gas_price = 1_000_000_000

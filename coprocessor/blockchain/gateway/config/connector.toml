@@ -2,7 +2,7 @@ tick_interval_secs = 1
 storage_path = "./temp/events.toml"
 
 [oracle]
-addresses = ["http://geth:26657"]
+addresses = ["http://fhevm-geth:26657"]
 
 [blockchain]
 addresses = ["http://dev-kms-blockchain-validator:9090"]

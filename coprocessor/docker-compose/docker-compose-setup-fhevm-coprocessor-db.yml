@@ -1,9 +1,8 @@
 services:
-  migration:
-    container_name: migration
+  setup-fhevm-coprocessor-db:
     image: ghcr.io/zama-ai/fhevm-db-migration:v0.1.2
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@zama-kms-gateway-db-1:5432/coprocessor
+      DATABASE_URL: postgresql://postgres:postgres@${DOCKER_COMPOSE_PROJECT}-fhevm-coprocessor-db-1:5432/coprocessor
     volumes:
       - ../network-fhe-keys/:/fhevm-keys/
     networks:

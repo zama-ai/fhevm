@@ -56,7 +56,7 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
       jsonRpcUrl = 'http://localhost:8545';
       break;
     case 'localCoprocessor':
-      jsonRpcUrl = 'http://geth:8545';
+      jsonRpcUrl = 'http://fhevm-geth:8545';
       break;
     case 'localNetwork1':
       jsonRpcUrl = 'http://127.0.0.1:9650/ext/bc/fhevm/rpc';
