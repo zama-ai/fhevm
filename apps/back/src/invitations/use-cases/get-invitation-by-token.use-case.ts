@@ -4,6 +4,7 @@ import { UseCase } from '@/utils/use-case'
 import { InvitationRepository } from '../domain/repositories/invitation.repository'
 import { Task } from '@/utils/task'
 import { AppError, notFoundError } from '@/utils/app-error'
+import { Token } from '../domain/entities/value-objects'
 
 @Injectable()
 export class GetInvitationByToken implements UseCase<string, Invitation> {
@@ -11,7 +12,7 @@ export class GetInvitationByToken implements UseCase<string, Invitation> {
 
   execute(token: string): Task<Invitation, AppError> {
     return this.invitationRepository
-      .findByToken(token)
+      .findByToken(new Token(token))
       .chain<Invitation>(invitation =>
         invitation.isValid
           ? Task.of(invitation)

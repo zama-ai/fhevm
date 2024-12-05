@@ -24,14 +24,6 @@ interface SignupInput {
   invitationToken: string
 }
 
-function parseUser(invitation: Invitation, password: ValidatedPassword) {
-  return User.parse({
-    id: randomUUID(),
-    email: invitation.email,
-    password: Password.hash(password),
-  }).async()
-}
-
 @Injectable()
 export class SignUp
   implements UseCase<SignupInput, { user: User; token: string }>
@@ -67,7 +59,8 @@ export class SignUp
           User.parse({
             id: randomUUID(),
             email: invitation.email,
-            password: Password.hash(password),
+            password: Password.hash(password).value,
+            name: input.name,
           }).asyncMap(user => ({ user, invitation })),
         )
         .chain(({ user, invitation }) =>

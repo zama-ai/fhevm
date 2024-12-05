@@ -68,7 +68,6 @@ export class Task<A, E> {
    * @param reject - A function to call with the error of type `E` if the Task rejects.
    */
   fork(resolve: (value: A) => void, reject: (error: E) => void): void {
-    console.log('fork', this.computation)
     this.computation(resolve, reject)
   }
 
@@ -79,7 +78,6 @@ export class Task<A, E> {
    */
   toPromise() {
     return new Promise<A>((resolve, reject) => {
-      console.log('toPromise', resolve)
       this.fork(resolve, reject)
     })
   }
