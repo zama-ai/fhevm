@@ -13,6 +13,10 @@ import {
   Password,
   ValidatedPassword,
 } from '@/users/domain/entities/value-objects'
+import {
+  InvitationId,
+  Token,
+} from '@/invitations/domain/entities/value-objects'
 
 interface SignupInput {
   name: string
@@ -43,7 +47,7 @@ export class SignUp
     // that doesn't require any asynchronous call.
     return (
       this.invitationRepository
-        .findByToken(input.invitationToken)
+        .findByToken(new Token(input.invitationToken))
         // Checks if the invitation is valid
         .chain<Invitation>(invitation =>
           invitation.isValid
@@ -64,19 +68,21 @@ export class SignUp
             id: randomUUID(),
             email: invitation.email,
             password: Password.hash(password),
-          }).async(),
+          }).asyncMap(user => ({ user, invitation })),
         )
-        .chain(user => this.userRepository.create(user.toJSON()))
-        .chain(user =>
+        .chain(({ user, invitation }) =>
+          this.userRepository
+            .create(user.toJSON())
+            .map(user => ({ user, invitation })),
+        )
+        .chain(({ user, invitation }) =>
           // Note: we are performing to mutation without a transaction, so
           // it can happen that we fail to mark an invitation as used, and the
           // sign up fails, but we keep the just created user.
           // There are two solution:
           // 1. Create a transaction, so we should revert the user creation
           // 2. Just ignore any errors related to the following operation, using `tap`
-          this.invitationRepository
-            .markAsUsed(input.invitationToken)
-            .map(() => user),
+          this.invitationRepository.markAsUsed(invitation.id).map(() => user),
         )
         .map(user => ({
           token: this.jwtService.sign({

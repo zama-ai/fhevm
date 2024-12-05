@@ -2,11 +2,12 @@ import { AppError, validationError } from '@/utils/app-error'
 import { Entity } from '@/utils/entity'
 import { ok, fail, Result } from '@/utils/result'
 import { z } from 'zod'
+import { InvitationId, Token } from './value-objects'
 
 const schema = z.object({
-  id: z.string().uuid(),
+  id: InvitationId,
   email: z.string().email(),
-  token: z.string(),
+  token: Token,
   expiresAt: z.date(),
   usedAt: z.date().nullable().optional(),
 })
@@ -15,7 +16,10 @@ export type InvitationProps = z.infer<typeof schema>
 
 export class Invitation
   extends Entity<InvitationProps>
-  implements Readonly<InvitationProps>
+  implements
+    Readonly<
+      Omit<InvitationProps, 'id' | 'token'> & { id: InvitationId; token: Token }
+    >
 {
   static parse(data: unknown): Result<Invitation, AppError> {
     const check = schema.safeParse(data)
@@ -25,7 +29,7 @@ export class Invitation
   }
 
   get id() {
-    return this.get('id')
+    return new InvitationId(this.get('id'))
   }
 
   get email() {
@@ -33,7 +37,7 @@ export class Invitation
   }
 
   get token() {
-    return this.get('token')
+    return new Token(this.get('token'))
   }
 
   get expiresAt() {

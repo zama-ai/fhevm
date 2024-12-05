@@ -17,7 +17,7 @@ export class PrismaUserRepository extends UserRepository {
         .create({ data })
         .then(resolve)
         .catch(err => reject(unknownError(String(err))))
-    }).chain(props => User.parse(props).asyncMap<User>(user => user))
+    }).chain(props => User.parse(props).async())
   }
 
   findById(id: string): Task<User, AppError> {
@@ -31,7 +31,7 @@ export class PrismaUserRepository extends UserRepository {
           data ? resolve(data) : reject(notFoundError('User not found')),
         )
         .catch(err => reject(unknownError(String(err))))
-    }).chain(props => User.parse(props).asyncMap<User>(user => user))
+    }).chain(props => User.parse(props).async())
   }
 
   findByEmail(email: string): Task<User, AppError> {
@@ -45,6 +45,6 @@ export class PrismaUserRepository extends UserRepository {
           data ? resolve(data) : reject(notFoundError('User not found')),
         )
         .catch(err => reject(unknownError(String(err))))
-    }).chain(props => User.parse(props).asyncMap<User>(user => user))
+    }).chain(props => User.parse(props).async())
   }
 }

@@ -20,7 +20,7 @@ export class PrismaTeamRepository extends TeamRepository {
           data ? resolve(data) : reject(notFoundError('User not found')),
         )
         .catch(err => reject(unknownError(String(err))))
-    }).chain(props => Team.parse(props).asyncMap(team => team))
+    }).chain(props => Team.parse(props).async())
   }
 
   findManyByUserId(userId: UserId): Task<Team[], AppError> {
@@ -31,6 +31,6 @@ export class PrismaTeamRepository extends TeamRepository {
           data ? resolve(data.teams) : reject(notFoundError('User not found')),
         )
         .catch(err => reject(unknownError(String(err))))
-    }).chain(props => Team.parseArray(props).asyncMap(teams => teams))
+    }).chain(props => Team.parseArray(props).async())
   }
 }
