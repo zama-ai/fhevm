@@ -2239,7 +2239,7 @@ dependencies = [
 
 [[package]]
 name = "fhevm-engine-common"
-version = "0.1.1"
+version = "0.6.0-6"
 dependencies = [
  "anyhow",
  "bigdecimal",
