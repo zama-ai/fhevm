@@ -1,5 +1,5 @@
 use crate::{db_queries::populate_cache_with_tenant_keys, types::TfheTenantKeys};
-use fhevm_engine_common::types::{FhevmError, Handle, SupportedFheCiphertexts};
+use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts};
 use fhevm_engine_common::{tfhe_ops::current_ciphertext_version, types::SupportedFheOperations};
 use itertools::Itertools;
 use lazy_static::lazy_static;
