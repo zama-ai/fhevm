@@ -9,7 +9,8 @@
   "scripts": {
     "test": "pnpm -r run test",
     "start": "pnpm --stream -r run start",
-    "build": "pnpm --stream -r run build"
+    "build": "pnpm --stream -r run build",
+    "lint": "pnpm --stream -r run lint"
   },
   "keywords": [],
   "author": "",
