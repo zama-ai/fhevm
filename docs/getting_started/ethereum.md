@@ -129,4 +129,4 @@ Save this in your `.env` file:
 | KMS_VERIFIER_CONTRACT  | 0x904Af2B61068f686838bD6257E385C2cE7a09195         |
 | GATEWAY_CONTRACT       | 0x7455c89669cdE1f7Cb6D026DFB87263422D821ca         |
 | PUBLIC_KEY_ID          | 55729ddea48547ea837137d122e1c90043e94c41           |
-| GATEWAY_URL            | `https://gateway-sepolia.kms-dev-v1.bc.zama.team/` |
+| GATEWAY_URL            | `https://gateway.sepolia.zama.ai/`                 |
