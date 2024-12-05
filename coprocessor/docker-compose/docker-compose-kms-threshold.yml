@@ -1,7 +1,3 @@
-name: zama-kms-threshold
-# TODO: proper networking between nodes
-# add keygen, tls and pushing keys to s3 mock
-
 services:
   # 1. Generate TLS certificates
   # NOTE: for now we do the key-generation here because kms-server requires one to start

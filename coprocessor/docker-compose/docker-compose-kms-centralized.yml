@@ -6,8 +6,6 @@ services:
       - MODE=centralized
 
   # KMS-Core-centralized
-  # TODO: move the upload of the pub-key from the validator to the core -> or maybe the connector?
-  # anyway where the keys really are
   kms-core:
     container_name: ${DOCKER_COMPOSE_PROJECT}-kms-core
     image: ghcr.io/zama-ai/kms-service:${DOCKER_IMAGES_TAG}

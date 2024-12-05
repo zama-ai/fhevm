@@ -2,7 +2,6 @@ name: zama-kms-gateway
 
 services:
   # 5. Launch key-gen
-  # TODO: store gateway config in volume and modify it with key-id
   setup-kms-key-crs:
     container_name: ${DOCKER_COMPOSE_PROJECT}-setup-kms-key-crs
     image: ghcr.io/zama-ai/kms-blockchain-simulator:${DOCKER_IMAGES_TAG}
@@ -27,7 +26,6 @@ services:
       - setup_kms_key_crs_logs:/app/logs
 
   # 6. Start gateway with key-id from key-gen
-  # TODO: 
   gateway:
     container_name: ${DOCKER_COMPOSE_PROJECT}-gateway
     depends_on:
