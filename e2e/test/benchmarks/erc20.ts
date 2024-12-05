@@ -1,14 +1,9 @@
 import { expect } from "chai";
 
 import { deployEncryptedERC20Fixture } from "../encryptedERC20/EncryptedERC20.fixture";
-import { deployReencryptFixture } from "../gateway/Reencrypt.fixture";
 import { Decrypt, createDecrypt, createInstance } from "../instance";
 import { getSigners, initSigners } from "../signers";
-
-type Timing = {
-  description: string;
-  time: number;
-};
+import { Timing, displayTimings } from "./utils";
 
 describe("Benchmarks", function () {
   const timings: Timing[] = [];
@@ -17,12 +12,12 @@ describe("Benchmarks", function () {
     await initSigners();
     this.signers = await getSigners();
     this.fhevm = await createInstance();
-  });
-
-  it("benchmarks erc20", async function () {
     const erc20 = await deployEncryptedERC20Fixture();
     this.erc20Address = await erc20.getAddress();
     this.erc20 = erc20;
+  });
+
+  it("benchmarks erc20", async function () {
     decrypt = createDecrypt(this.fhevm, this.signers.alice, this.erc20Address);
     // Minting the contract
     let mintTiming: Timing = {
@@ -80,67 +75,6 @@ describe("Benchmarks", function () {
     reencryptTiming.time = Date.now() - start;
     timings.push(reencryptTiming);
 
-    console.log(timings);
-  });
-
-  it("benchmarks reencrypt sequential", async function () {
-    const reencrypt = await deployReencryptFixture();
-    this.reencryptAddress = await reencrypt.getAddress();
-    this.reencrypt = reencrypt;
-    await new Promise((resolve) => setTimeout(resolve, 10000));
-    decrypt = createDecrypt(this.fhevm, this.signers.alice, this.reencryptAddress);
-    let reencryptTimings: Timing[] = [];
-
-    const types = [1, 4, 8, 16, 32, 64, 128, 256];
-    const reencryptPromise = types.reduce(async (p, type) => {
-      await p;
-      let timing: Timing = {
-        description: `Reencrypt ${type}bits`,
-        time: 0,
-      };
-      let start = Date.now();
-      let handle: bigint;
-      if (type == 1) {
-        handle = await this.reencrypt.resultBool();
-      } else {
-        handle = await this.reencrypt[`result${type}`]();
-      }
-      const result = await decrypt(handle);
-      timing.time = Date.now() - start;
-      reencryptTimings.push(timing);
-    }, Promise.resolve());
-
-    await reencryptPromise;
-    console.log(reencryptTimings);
-  });
-
-  it("benchmarks reencrypt parrallel", async function () {
-    const reencrypt = await deployReencryptFixture();
-    this.reencryptAddress = await reencrypt.getAddress();
-    this.reencrypt = reencrypt;
-    await new Promise((resolve) => setTimeout(resolve, 10000));
-    decrypt = createDecrypt(this.fhevm, this.signers.alice, this.reencryptAddress);
-    let reencryptTimings: Timing[] = [];
-
-    const types = [1, 4, 8, 16, 32, 64, 128, 256];
-    const reencryptPromises = types.map(async (type) => {
-      let timing: Timing = {
-        description: `Reencrypt ${type}bits`,
-        time: 0,
-      };
-      let start = Date.now();
-      let handle: bigint;
-      if (type == 1) {
-        handle = await this.reencrypt.resultBool();
-      } else {
-        handle = await this.reencrypt[`result${type}`]();
-      }
-      const result = await decrypt(handle);
-      timing.time = Date.now() - start;
-      reencryptTimings.push(timing);
-    });
-
-    await Promise.all(reencryptPromises);
-    console.log(reencryptTimings);
+    console.log(displayTimings(timings));
   });
 });
