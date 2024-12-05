@@ -15,7 +15,7 @@ export type InvitationProps = z.infer<typeof schema>
 
 export class Invitation
   extends Entity<InvitationProps>
-  implements Readonly<Omit<InvitationProps, 'password'>>
+  implements Readonly<InvitationProps>
 {
   static parse(data: unknown): Result<Invitation, AppError> {
     const check = schema.safeParse(data)
