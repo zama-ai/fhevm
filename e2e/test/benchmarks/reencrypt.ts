@@ -5,7 +5,7 @@ import { Decrypt, createDecrypt, createInstance } from "../instance";
 import { getSigners, initSigners } from "../signers";
 import { Timing, displayTimings } from "./utils";
 
-describe("Benchmarks", function () {
+describe("Benchmark reencrypt", function () {
   const timings: Timing[] = [];
   let decrypt: Decrypt;
   before(async function () {
