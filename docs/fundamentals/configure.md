@@ -21,14 +21,8 @@ This configuration contract initializes the **fhEVM environment** with required 
 **Import based on your environment:**
 
 ```solidity
-// For Mock testnet
-import { MockZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
-
 // For Ethereum Sepolia
 import { SepoliaZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
-
-// For Ethereum Mainnet (when ready)
-import { EthereumZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
 ```
 
 **Purpose:**
@@ -36,15 +30,15 @@ import { EthereumZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
 - Sets encryption parameters such as cryptographic keys and supported ciphertext types.
 - Ensures proper initialization of the FHEVM environment.
 
-**Example: using mock configuration**
+**Example: using Sepolia configuration**
 
 ```solidity
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import { MockZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
+import { SepoliaZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
 
-contract MyERC20 is MockZamaFHEVMConfig {
+contract MyERC20 is SepoliaZamaFHEVMConfig {
   constructor() {
     // Additional initialization logic if needed
   }
@@ -58,14 +52,8 @@ To perform decryption or reencryption, your contract must interact with the **Ga
 **Import based on your environment**
 
 ```solidity
-// For Mock testnet
-import { MockZamaGatewayConfig } from "fhevm/config/ZamaGatewayConfig.sol";
-
 // For Ethereum Sepolia
 import { SepoliaZamaGatewayConfig } from "fhevm/config/ZamaGatewayConfig.sol";
-
-// For Ethereum Mainnet (when ready)
-import { EthereumZamaGatewayConfig } from "fhevm/config/ZamaGatewayConfig.sol";
 ```
 
 **Purpose**
@@ -73,15 +61,15 @@ import { EthereumZamaGatewayConfig } from "fhevm/config/ZamaGatewayConfig.sol";
 - Configures the Gateway for secure cryptographic operations.
 - Facilitates reencryption and decryption requests.
 
-**Example: Configuring the gateway with mock settings**
+**Example: Configuring the gateway with Sepolia settings**
 
 ```solidity
 import "fhevm/lib/TFHE.sol";
-import { MockZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
-import { MockZamaGatewayConfig } from "fhevm/config/ZamaGatewayConfig.sol";
+import { SepoliaZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
+import { SepoliaZamaGatewayConfig } from "fhevm/config/ZamaGatewayConfig.sol";
 import "fhevm/gateway/GatewayCaller.sol";
 
-contract Test is MockZamaFHEVMConfig, MockZamaGatewayConfig, GatewayCaller {
+contract Test is SepoliaZamaFHEVMConfig, SepoliaZamaGatewayConfig, GatewayCaller {
   constructor() {
     // Gateway and FHEVM environment initialized automatically
   }
