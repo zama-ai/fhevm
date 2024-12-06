@@ -1,7 +1,7 @@
 ---
 description: >-
-  fhEVM is a technology that enables confidential smart contracts on the EVM
-  using Fully Homomorphic Encryption (FHE).
+  The fhEVM backend allows users to run their own L1 or coprocessor with fhEVM technology.
+  It enables confidential smart contracts on the EVM using FHE.
 layout:
   title:
     visible: true
@@ -15,11 +15,11 @@ layout:
     visible: false
 ---
 
-# Welcome to fhEVM
+# Welcome to fhEVM backend
 
 ## Get started
 
-Learn the basics of fhEVM, set it up, and make it run with ease.
+Learn the basics of fhEVM backend, set it up, and make it run with ease.
 
 <table data-card-size="large" data-view="cards"><thead><tr><th></th><th></th><th data-hidden data-card-cover data-type="files"></th><th data-hidden data-card-target data-type="content-ref"></th></tr></thead><tbody><tr><td><strong>Quick start</strong></td><td>Understand the basic concepts of fhEVM library.</td><td><a href=".gitbook/assets/start1.png">start1.png</a></td><td><a href="getting_started/quick_start.md">quick_start.md</a></td></tr><tr><td><strong>geth fhEVM-native integration</strong></td><td>Use fhEVM-native with go-ethereum</td><td><a href=".gitbook/assets/start4.png">start4.png</a></td><td><a href="getting_started/fhevm/native/geth.md">geth.md</a></td></tr>
 <tr><td><strong>geth fhEVM-coprocessor integration</strong></td><td>Use fhEVM-coprocessor with go-ethereum</td><td><a href=".gitbook/assets/start4.png">start4.png</a></td><td><a href="getting_started/fhevm/coprocessor/geth.md">geth.md</a></td></tr><tr><td><strong>Setup a Gateway</strong></td><td>Configure a Gateway to handle decryption and reecryption</td><td><a href=".gitbook/assets/start2.png">start2.png</a></td><td><a href="getting_started/gateway/configuration.md">configuration.md</a></td></tr><tr><td><strong>Use TKMS</strong></td><td>Use Zama's TKMS with fhEVM</td><td><a href=".gitbook/assets/start5.png">start5.png</a></td><td><a href="getting_started/tkms/zama.md">zama.md</a></td></tr></tbody></table>
