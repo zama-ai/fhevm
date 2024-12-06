@@ -24,7 +24,6 @@ export class CreateInvitation implements UseCase<Input, Invitation> {
    * It checks the supplied secret matches with the stored one.
    *
    * @param secret - The external secret to check
-   * @returns
    */
   private checkSecret(
     secret: string,
