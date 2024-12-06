@@ -268,21 +268,28 @@ impl<'a> Scheduler<'a> {
             }
         }
 
-        rayon::broadcast(|_| {
-            tfhe::set_server_key(server_key.clone());
-        });
+        
         let (src, dest) = channel();
         let rayon_threads = self.rayon_threads;
-        comps.par_iter().for_each_with(src, |src, (args, index)| {
-            src.send(execute_partition(
-                args.to_vec(),
-                *index,
-                true,
-                rayon_threads,
-                server_key.clone(),
-            ))
-            .unwrap();
-        });
+
+        tokio::task::spawn_blocking(move || {
+            rayon::broadcast(|_| {
+                tfhe::set_server_key(server_key.clone());
+            });
+
+            tfhe::set_server_key(server_key.clone());
+            comps.par_iter().for_each_with(src, |src, (args, index)| {
+                src.send(execute_partition(
+                    args.to_vec(),
+                    *index,
+                    true,
+                    rayon_threads,
+                    server_key.clone(),
+                ))
+                .unwrap();
+            });
+        }).await?;
+        
         let results: Vec<_> = dest.iter().collect();
         for result in results {
             let mut output = result?;
