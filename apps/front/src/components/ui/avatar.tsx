@@ -52,12 +52,12 @@ const AvatarFallback = React.forwardRef<HTMLDivElement, AvatarFallbackProps>(
 )
 
 function getInitials(name: string) {
-  const names = name.trim().split(" ")
-  const firstName = names[0] != null ? names[0] : ""
-  const lastName = names.length > 1 ? names[names.length - 1] : ""
-  return firstName && lastName
-    ? `${firstName.charAt(0)}${lastName.charAt(0)}`
-    : firstName.charAt(0)
+  return name
+    .split(' ')
+    .filter((_, idx) => idx < 2)
+    .map(name => name.charAt(0))
+    .join('')
+    .toUpperCase()
 }
 
 interface AvatarGroupProps extends GroupProps, SlotRecipeProps<"avatar"> {}
