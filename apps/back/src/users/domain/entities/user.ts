@@ -17,10 +17,7 @@ export class User
   extends Entity<UserProps>
   implements Readonly<Omit<UserProps, 'id' | 'password'> & { id: UserId }>
 {
-  static parse(
-    data: unknown,
-    // options?: { hashPassword: boolean },
-  ): Result<User, AppError> {
+  static parse(data: unknown): Result<User, AppError> {
     const check = schema.safeParse(data)
     return check.success
       ? ok(new User(check.data))
