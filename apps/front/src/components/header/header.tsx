@@ -16,7 +16,11 @@ import { Logo } from '@/components/logo/logo'
 import { MeMenu } from '@/components/me-menu/me-menu'
 import { Link } from '@/components/ui/link'
 
-export function Header() {
+type OwnProps = {
+  name: string
+}
+
+export function Header({ name }: OwnProps) {
   const { open, onToggle } = useDisclosure()
   return (
     <Box>
@@ -52,7 +56,7 @@ export function Header() {
           </Flex>
           <MeMenu
             condensed={useBreakpointValue({ base: true, md: false })}
-            name="John Malkovitch"
+            name={name}
             email="janesilas@web3.dev"
             image="https://cdn.prod.website-files.com/6471ebc32c5012b32f0e45ba/66bc763b1cd88de111ad0182_zygLzKmbHcXkBxyHrt47tBrwTi3ZBBwp86Qe8gI11bs.png"
           />
