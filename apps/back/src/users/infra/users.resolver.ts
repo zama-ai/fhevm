@@ -7,6 +7,7 @@ import { GetUserById } from '@/users/use-cases/get-user-by-id.use-case'
 import { GetTeamsByUserId } from '@/users/use-cases/get-teams-by-user-id.use-case'
 import { UserType } from './types/user.type'
 import { User } from '../domain/entities/user'
+import { UserId } from '../domain/entities/value-objects'
 
 @Resolver(() => UserType)
 export class UsersResolver {
@@ -23,6 +24,6 @@ export class UsersResolver {
   @ResolveField()
   async teams(@Parent() user: UserType) {
     const { id } = user
-    return this.getTeamsByUserIdUC.execute(id).toPromise()
+    return this.getTeamsByUserIdUC.execute(new UserId(id)).toPromise()
   }
 }

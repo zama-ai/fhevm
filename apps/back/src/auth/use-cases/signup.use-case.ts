@@ -8,7 +8,15 @@ import { UseCase } from '@/utils/use-case'
 import { JwtPayload } from '../interfaces/jwt-payload'
 import { Injectable } from '@nestjs/common'
 import { Task } from '@/utils/task'
-import { AppError, notFoundError, validationError } from '@/utils/app-error'
+import { AppError, notFoundError } from '@/utils/app-error'
+import {
+  Password,
+  ValidatedPassword,
+} from '@/users/domain/entities/value-objects'
+import {
+  InvitationId,
+  Token,
+} from '@/invitations/domain/entities/value-objects'
 
 interface SignupInput {
   name: string
@@ -27,39 +35,53 @@ export class SignUp
   ) {}
 
   execute(input: SignupInput): Task<{ user: User; token: string }, AppError> {
-    return this.invitationRepository
-      .findByToken(input.invitationToken)
-      .chain<Invitation>(invitation =>
-        invitation.isValid
-          ? Task.of(invitation)
-          : Task.reject(notFoundError('Invalid token')),
-      )
-      .chain<User>(invitation =>
-        User.parse(
-          {
+    // Note: should we start by validating the password? It's the failing path
+    // that doesn't require any asynchronous call.
+    return (
+      this.invitationRepository
+        .findByToken(new Token(input.invitationToken))
+        // Checks if the invitation is valid
+        .chain<Invitation>(invitation =>
+          invitation.isValid
+            ? Task.of(invitation)
+            : Task.reject(notFoundError('Invalid token')),
+        )
+        // Note: I need validating the password while keeping the previous validated
+        // invitation.
+        // TODO: search for any parallel monad
+        .chain(invitation =>
+          ValidatedPassword.validate(input.password).asyncMap(password => ({
+            invitation,
+            password,
+          })),
+        )
+        .chain(({ invitation, password }) =>
+          User.parse({
             id: randomUUID(),
             email: invitation.email,
-            password: input.password,
+            password: Password.hash(password).value,
             name: input.name,
-          },
-          { hashPassword: true },
-        ).match<Task<User, AppError>>({
-          ok: Task.of,
-          fail: Task.reject,
-        }),
-      )
-      .chain(user => this.userRepository.create(user.toJSON()))
-      .chain(user =>
-        this.invitationRepository
-          .markAsUsed(input.invitationToken)
-          .map(() => user),
-      )
-      .map(user => ({
-        token: this.jwtService.sign({
-          sub: user.id,
-          email: user.email,
-        } satisfies JwtPayload),
-        user,
-      }))
+          }).asyncMap(user => ({ user, invitation })),
+        )
+        .chain(({ user, invitation }) =>
+          this.userRepository.create(user).map(user => ({ user, invitation })),
+        )
+        .chain(({ user, invitation }) =>
+          // Note: we are performing to mutation without a transaction, so
+          // it can happen that we fail to mark an invitation as used, and the
+          // sign up fails, but we keep the just created user.
+          // There are two solution:
+          // 1. Create a transaction, so we should revert the user creation
+          // 2. Just ignore any errors related to the following operation, using `tap`
+          this.invitationRepository.markAsUsed(invitation.id).map(() => user),
+        )
+        .map(user => ({
+          token: this.jwtService.sign({
+            sub: user.id.value,
+            email: user.email,
+          } satisfies JwtPayload),
+          user,
+        }))
+    )
   }
 }

@@ -1,12 +1,13 @@
-import {
-  InvitationProps,
-  Invitation,
-} from '@/invitations/domain/entities/invitation'
+import { Invitation } from '@/invitations/domain/entities/invitation'
 import { InvitationRepository } from '@/invitations/domain/repositories/invitation.repository'
 import { PrismaService } from '../prisma.service'
 import { Injectable } from '@nestjs/common'
 import { Task } from '@/utils/task'
 import { AppError, notFoundError, unknownError } from '@/utils/app-error'
+import {
+  InvitationId,
+  Token,
+} from '@/invitations/domain/entities/value-objects'
 
 @Injectable()
 export class PrismaInvitationRepository extends InvitationRepository {
@@ -14,39 +15,34 @@ export class PrismaInvitationRepository extends InvitationRepository {
     super()
   }
 
-  create(data: InvitationProps): Task<Invitation, AppError> {
-    return new Task<InvitationProps, AppError>((resolve, reject) => {
+  create(data: Invitation): Task<Invitation, AppError> {
+    return new Task<unknown, AppError>((resolve, reject) => {
       this.db.invitation
-        .create({ data })
+        .create({ data: data.toJSON() })
         .then(resolve)
         .catch(err => reject(unknownError(String(err))))
-    }).chain(props =>
-      Invitation.parse(props).asyncMap<Invitation>(invitation => invitation),
-    )
+    }).chain(props => Invitation.parse(props).async())
   }
 
-  findByToken(token: string): Task<Invitation, AppError> {
-    return new Task<InvitationProps, AppError>((resolve, reject) => {
+  findByToken(token: Token): Task<Invitation, AppError> {
+    return new Task<unknown, AppError>((resolve, reject) => {
       this.db.invitation
-        .findUnique({ where: { token } })
+        .findUnique({ where: { token: token.value } })
         .then(data =>
           data ? resolve(data) : reject(notFoundError('Invitation not found')),
         )
         .catch(err => reject(unknownError(String(err))))
-    }).chain(props =>
-      Invitation.parse(props).asyncMap<Invitation>(invitation => invitation),
-    )
+    }).chain(props => Invitation.parse(props).async())
   }
-  markAsUsed(token: string): Task<Invitation, AppError> {
-    return new Task<InvitationProps, AppError>((resolve, reject) => {
+
+  markAsUsed(id: InvitationId): Task<Invitation, AppError> {
+    return new Task<unknown, AppError>((resolve, reject) => {
       this.db.invitation
-        .update({ where: { token }, data: { usedAt: new Date() } })
+        .update({ where: { id: id.value }, data: { usedAt: new Date() } })
         .then(data =>
           data ? resolve(data) : reject(notFoundError('Invitation not found')),
         )
         .catch(err => reject(unknownError(String(err))))
-    }).chain(props =>
-      Invitation.parse(props).asyncMap<Invitation>(user => user),
-    )
+    }).chain(props => Invitation.parse(props).async())
   }
 }

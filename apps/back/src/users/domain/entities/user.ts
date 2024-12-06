@@ -1,14 +1,13 @@
-import { compare, hashSync, genSaltSync } from 'bcryptjs'
 import { AppError, unauthorizedError, validationError } from '@/utils/app-error'
 import { Entity } from '@/utils/entity'
 import { ok, fail, Result } from '@/utils/result'
-import { Task } from '@/utils/task'
 import { z } from 'zod'
+import { Password, UserId } from './value-objects'
 
 const schema = z.object({
-  id: z.string().uuid(),
+  id: UserId,
   email: z.string().email(),
-  password: z.string(),
+  password: Password,
   name: z.string(),
 })
 
@@ -16,29 +15,17 @@ export type UserProps = z.infer<typeof schema>
 
 export class User
   extends Entity<UserProps>
-  implements Readonly<Omit<UserProps, 'password'>>
+  implements Readonly<Omit<UserProps, 'id' | 'password'> & { id: UserId }>
 {
-  static parse(
-    data: unknown,
-    options?: { hashPassword: boolean },
-  ): Result<User, AppError> {
+  static parse(data: unknown): Result<User, AppError> {
     const check = schema.safeParse(data)
     return check.success
-      ? ok(
-          new User(
-            options?.hashPassword
-              ? {
-                  ...check.data,
-                  password: hashSync(check.data.password, genSaltSync(10)),
-                }
-              : check.data,
-          ),
-        )
+      ? ok(new User(check.data))
       : fail(validationError(check.error.message))
   }
 
   get id() {
-    return this.get('id')
+    return new UserId(this.get('id'))
   }
 
   get email() {
@@ -49,11 +36,9 @@ export class User
     return this.get('name')
   }
 
-  checkPassword(password: string): Task<User, AppError> {
-    return new Task((resolve, reject) =>
-      compare(password, this.get('password'))
-        .then(check => (check ? resolve(this) : reject(unauthorizedError())))
-        .catch(() => reject(unauthorizedError())),
-    )
+  checkPassword(password: string): Result<User, AppError> {
+    return new Password(this.get('password')).check(password)
+      ? ok(this)
+      : fail(unauthorizedError())
   }
 }

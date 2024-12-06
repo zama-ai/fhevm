@@ -6,7 +6,7 @@ services:
     environment:
       - POSTGRES_USER=${DB_USER:-postgres}
       - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
-      - POSTGRES_NAME=${DB_NAME:-console}
+      - POSTGRES_DB=${DB_NAME:-console}
     ports:
       - "5432:5432"
     volumes:
