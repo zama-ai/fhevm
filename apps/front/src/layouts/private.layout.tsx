@@ -11,9 +11,9 @@ export function PrivateLayout() {
   return (
     <Box className="layout-private">
       <HeaderMemo />
-      <Flex>
+      <Flex direction="row" wrap="nowrap" justify="flex-start" align="stretch">
         <Navigation />
-        <Box p="40px">
+        <Box p="40px" flexGrow="1">
           <Outlet />
         </Box>
       </Flex>

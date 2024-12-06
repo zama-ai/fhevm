@@ -5,6 +5,8 @@ import { PrivateLayout } from './layouts/private.layout'
 // utility pages
 import { DefaultPage } from './pages/default.page'
 import { ErrorPage } from './pages/error.page'
+import { privateLoader } from './pages/private.loader'
+import { UnauthorizedErrorPage } from './pages/unauthorized.error.page.tsx'
 
 // publlic pages
 import { SigninPage } from './pages/signin.page'
@@ -18,14 +20,9 @@ import { dashboardLoader } from './pages/dashboard.loader'
 
 const router = createBrowserRouter([
   {
-    element: <PrivateLayout />,
-    children: [
-      {
-        path: '/',
-        element: <DefaultPage />,
-        errorElement: <ErrorPage />,
-      },
-    ],
+    index: true,
+    element: <DefaultPage />,
+    errorElement: <ErrorPage />,
   },
   {
     element: <PublicLayout />,
@@ -44,13 +41,20 @@ const router = createBrowserRouter([
     ],
   },
   {
-    path: '/dashboard/',
-    element: <DashboardPage />,
-    loader: dashboardLoader,
-  },
-  {
-    path: '/about',
-    element: <AboutPage />,
+    element: <PrivateLayout />,
+    loader: privateLoader,
+    errorElement: <UnauthorizedErrorPage />,
+    children: [
+      {
+        path: '/dashboard/',
+        element: <DashboardPage />,
+        loader: dashboardLoader,
+      },
+      {
+        path: '/about',
+        element: <AboutPage />,
+      },
+    ],
   },
 ])
 
