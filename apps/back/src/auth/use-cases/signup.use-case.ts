@@ -64,9 +64,7 @@ export class SignUp
           }).asyncMap(user => ({ user, invitation })),
         )
         .chain(({ user, invitation }) =>
-          this.userRepository
-            .create(user.toJSON())
-            .map(user => ({ user, invitation })),
+          this.userRepository.create(user).map(user => ({ user, invitation })),
         )
         .chain(({ user, invitation }) =>
           // Note: we are performing to mutation without a transaction, so

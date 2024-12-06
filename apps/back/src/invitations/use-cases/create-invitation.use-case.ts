@@ -45,7 +45,7 @@ export class CreateInvitation implements UseCase<Input, Invitation> {
           email: input.email,
           token,
           expiresAt: new Date(Date.now() + EXPIRATION_TIME_IN_MILLISECONDS),
-        }).map(i => i.toJSON()),
+        }),
       )
       .asyncChain(i => this.invitationRepository.create(i))
   }

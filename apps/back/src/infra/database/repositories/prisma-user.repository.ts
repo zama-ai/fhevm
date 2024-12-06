@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma.service'
 import { Injectable } from '@nestjs/common'
 import { Task } from '@/utils/task'
 import { AppError, notFoundError, unknownError } from '@/utils/app-error'
+import { UserId } from '@/users/domain/entities/value-objects'
 
 @Injectable()
 export class PrismaUserRepository extends UserRepository {
@@ -11,22 +12,22 @@ export class PrismaUserRepository extends UserRepository {
     super()
   }
 
-  create(data: UserProps): Task<User, AppError> {
+  create(data: User): Task<User, AppError> {
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.user
-        .create({ data })
+        .create({ data: data.toJSON() })
         .then(resolve)
         .catch(err => reject(unknownError(String(err))))
     }).chain(props => User.parse(props).async())
   }
 
-  findById(id: string): Task<User, AppError> {
+  findById(id: UserId): Task<User, AppError> {
     if (!id) {
       return Task.reject(notFoundError('User not found'))
     }
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.user
-        .findFirst({ where: { id } })
+        .findFirst({ where: { id: id.value } })
         .then(data =>
           data ? resolve(data) : reject(notFoundError('User not found')),
         )
