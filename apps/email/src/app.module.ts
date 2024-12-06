@@ -4,6 +4,7 @@ import { Module } from '@nestjs/common'
 import { ConfigModule, ConfigService } from '@nestjs/config'
 import { SqsModule } from 'sqs'
 import awsConfig from './config/aws.config'
+import { SQSConsumer } from './infra/adapeters/sqs.consumer'
 
 @Module({
   imports: [
@@ -38,5 +39,6 @@ import awsConfig from './config/aws.config'
       }),
     }),
   ],
+  providers: [SQSConsumer],
 })
 export class AppModule {}
