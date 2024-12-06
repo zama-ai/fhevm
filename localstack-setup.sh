@@ -24,3 +24,12 @@ awslocal sns subscribe \
   --topic-arn "arn:aws:sns:eu-central-1:000000000000:console-topic.fifo" \
   --protocol sqs \
   --notification-endpoint "arn:aws:sqs:eu-central-1:000000000000:web3-queue.fifo"
+
+echo "Creating Email queue"
+awslocal sqs create-queue \
+  --queue-name email-queue.fifo \
+  --attributes "FifoQueue=true"
+awslocal sns subscribe \
+  --topic-arn "arn:aws:sns:eu-central-1:000000000000:console-topic.fifo" \
+  --protocol sqs \
+  --notification-endpoint "arn:aws:sqs:eu-central-1:000000000000:email-queue.fifo"

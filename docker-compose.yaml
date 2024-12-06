@@ -3,9 +3,9 @@ services:
     image: postgres:17-alpine
     restart: always
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_NAME=nestjs
+      - POSTGRES_USER=${DB_USERNAME:-postgres}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
+      - POSTGRES_DB=${DB_NAME:-console}
     ports:
       - "5432:5432"
     volumes:
@@ -24,7 +24,7 @@ services:
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-test}
       - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-eu-central-1}
     volumes:
-      - "${LOCALSTACK_VOLUME_DIR:-./volume}:/var/lib/localstack"
+      - "localstack:/var/lib/localstack"
       - "/var/run/docker.sock:/var/run/docker.sock"
       # Here we mount our setup file so it will be executed when
       # the container start
@@ -32,3 +32,4 @@ services:
 
 volumes:
   postgres:
+  localstack:
