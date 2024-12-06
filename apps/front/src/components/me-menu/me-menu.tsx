@@ -1,7 +1,10 @@
+import { useCallback } from 'react'
 import { Box, Group, Text } from '@chakra-ui/react'
 import { Settings, LogOut, ChevronDown } from 'lucide-react'
+
 import { MenuContent, MenuItem, MenuRoot, MenuTrigger } from '../ui/menu'
 import { Avatar } from '../ui/avatar'
+import { useNavigate } from 'react-router'
 
 type MeMenuProps = {
   name: string
@@ -11,6 +14,11 @@ type MeMenuProps = {
 }
 
 export function MeMenu({ name, image, condensed }: MeMenuProps) {
+  const navigate = useNavigate()
+  const onLogout = useCallback(() => {
+    localStorage.removeItem('token')
+    navigate('/signin')
+  }, [navigate])
   return (
     <MenuRoot positioning={{ placement: 'bottom-end' }}>
       <MenuTrigger asChild>
@@ -39,7 +47,7 @@ export function MeMenu({ name, image, condensed }: MeMenuProps) {
           <Settings />
           <Box flex="1">Preferences</Box>
         </MenuItem>
-        <MenuItem value="logout">
+        <MenuItem value="logout" onClick={onLogout}>
           <LogOut />
           <Box flex="1">Sign out</Box>
         </MenuItem>
