@@ -20,7 +20,7 @@ services:
 
   migration:
       container_name: migration
-      image: ghcr.io/zama-ai/fhevm-db-migration:v1.1
+      image: ghcr.io/zama-ai/fhevm-db-migration:v0.6.0
       environment:
         DATABASE_URL: postgresql://postgres:postgres@db:5432/coprocessor
       depends_on:
@@ -29,7 +29,7 @@ services:
 
   coprocessor:
     container_name: coprocessor
-    image: ghcr.io/zama-ai/fhevm-coprocessor:v0.1.0-3
+    image: ghcr.io/zama-ai/fhevm-coprocessor:v0.6.0
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/coprocessor
     ports:
@@ -47,7 +47,7 @@ services:
 
   geth:
     container_name: geth
-    image: ghcr.io/zama-ai/geth-coprocessor-devnode:v8
+    image: ghcr.io/zama-ai/go-ethereum-coprocessor-dev:v0.1.1
     environment:
       FHEVM_COPROCESSOR_API_KEY: a1503fb6-d79b-4e9e-826d-44cf262f3e05
       FHEVM_COPROCESSOR_URL: coprocessor:50051

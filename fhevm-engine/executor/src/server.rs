@@ -148,9 +148,7 @@ impl FhevmExecutor for FhevmExecutorService {
 
 impl FhevmExecutorService {
     fn new(keys: FhevmKeys) -> Self {
-        FhevmExecutorService {
-            keys,
-        }
+        FhevmExecutorService { keys }
     }
 
     #[allow(dead_code)]
@@ -264,9 +262,7 @@ impl FhevmExecutorService {
                         let ct = state.ciphertexts.get(h).ok_or(FhevmError::BadInputs)?;
                         Ok(ct.expanded.clone())
                     }
-                    Input::Scalar(s) => {
-                        Ok(SupportedFheCiphertexts::Scalar(s.clone()))
-                    }
+                    Input::Scalar(s) => Ok(SupportedFheCiphertexts::Scalar(s.clone())),
                 },
                 None => Err(FhevmError::BadInputs.into()),
             })
@@ -316,9 +312,9 @@ pub fn build_taskgraph_from_request(
                             Ok(DFGTaskInput::Dependence(None))
                         }
                     }
-                    Input::Scalar(s) => Ok(DFGTaskInput::Value(
-                        SupportedFheCiphertexts::Scalar(s.clone()),
-                    )),
+                    Input::Scalar(s) => Ok(DFGTaskInput::Value(SupportedFheCiphertexts::Scalar(
+                        s.clone(),
+                    ))),
                 },
                 None => Err(SyncComputeError::BadInputs),
             })
@@ -347,7 +343,7 @@ pub fn build_taskgraph_from_request(
                 if !state.ciphertexts.contains_key(input) {
                     if let Some(producer_index) = produced_handles.get(input) {
                         dfg.add_dependence(*producer_index, index, input_idx)
-                            .or_else(|_| Err(SyncComputeError::ComputationFailed))?;
+                            .or_else(|_| Err(SyncComputeError::UnsatisfiedDependence))?;
                     } else {
                         return Err(SyncComputeError::ComputationFailed);
                     }

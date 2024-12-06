@@ -85,6 +85,7 @@ async fn setup_test_app_existing_db() -> Result<TestInstance, Box<dyn std::error
 async fn start_coprocessor(rx: Receiver<bool>, app_port: u16, db_url: &str) {
     let args: Args = Args {
         run_bg_worker: true,
+        worker_polling_interval_ms: 1000,
         run_server: true,
         generate_fhe_keys: false,
         server_maximum_ciphertexts_to_schedule: 5000,

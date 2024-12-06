@@ -3,14 +3,12 @@ use crate::server::common::FheOperation;
 use crate::server::coprocessor::{async_computation_input::Input, AsyncComputationInput};
 use crate::server::coprocessor::{
     fhevm_coprocessor_client::FhevmCoprocessorClient, AsyncComputation, AsyncComputeRequest,
-    InputToUpload, InputUploadBatch, TrivialEncryptBatch, TrivialEncryptRequestSingle,
+    InputToUpload, InputUploadBatch,
 };
 use crate::tests::utils::{
     decrypt_ciphertexts, default_api_key, default_tenant_id, random_handle, setup_test_app,
     wait_until_all_ciphertexts_computed,
 };
-use alloy::primitives::keccak256;
-use bigdecimal::num_bigint::BigInt;
 use fhevm_engine_common::utils::safe_serialize;
 use std::str::FromStr;
 use std::time::SystemTime;
@@ -24,24 +22,6 @@ pub fn test_random_user_address() -> String {
 
 pub fn test_random_contract_address() -> String {
     "0x76c222560Db6b8937B291196eAb4Dad8930043aE".to_string()
-}
-
-fn supported_bits_to_bit_type_in_db(inp: i32) -> i32 {
-    match inp {
-        1 => 0, // 1 bit - boolean
-        4 => 1,
-        8 => 2,
-        16 => 3,
-        32 => 4,
-        64 => 5,
-        128 => 6,
-        160 => 7,
-        256 => 8,
-        512 => 9,
-        1024 => 10,
-        2048 => 11,
-        other => panic!("unknown supported bits: {other}"),
-    }
 }
 
 #[tokio::test]
@@ -87,7 +67,6 @@ async fn schedule_multi_erc20() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap();
 
     let serialized = safe_serialize(&the_list);
-    let input_bytes = keccak256(&serialized);
     println!("Encrypting inputs...");
     let mut input_request = tonic::Request::new(InputUploadBatch {
         input_ciphertexts: vec![InputToUpload {
