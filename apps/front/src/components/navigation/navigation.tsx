@@ -1,4 +1,4 @@
-import { useContext } from 'react'
+import { useContext, useState } from 'react'
 import { Box, List, Stack, Text, HStack } from '@chakra-ui/react'
 import { Circle, LayoutGrid, BookOpenText, Monitor, Smile } from 'lucide-react'
 
@@ -35,12 +35,22 @@ type NavAppProps = {
 }
 
 function NavApp({ name, status }: NavAppProps) {
+  const [isHovered, setIsHovered] = useState(false)
   const color = status === 'active' ? 'green.200' : 'gray.300'
   return (
-    <List.Item _hover={{ opacity: '1', bg: 'gray.100' }}>
+    <List.Item
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
       <NavLink to="/app/1">
-        <List.Indicator asChild color={color} width="10px" opacity={0}>
-          <Circle />
+        <List.Indicator
+          asChild
+          color={color}
+          width="10px"
+          opacity={isHovered ? 1 : 0}
+          transition="opacity .5s"
+        >
+          <Circle className="circle" />
         </List.Indicator>
         <Text fontSize="sm">{name}</Text>
       </NavLink>
