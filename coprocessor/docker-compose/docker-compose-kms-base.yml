@@ -12,7 +12,7 @@ name: zama-kms-base
 
 services:
   # KMS Blockchain
-  dev-kms-blockchain-validator:
+  kms-blockchain-validator:
     image: ghcr.io/zama-ai/kms-blockchain-asc:${DOCKER_IMAGES_TAG}
     healthcheck:
       test: "wget -Sq --spider http://localhost:26657/status"
@@ -27,24 +27,24 @@ services:
       - "9090:9090"
     volumes:
       - ../blockchain/scripts:/app/scripts
-      - validator_secrets:/app/secrets
+      - kms_blockchain_validator_secrets:/app/secrets
     entrypoint: [ "/app/scripts/bootstrap_validator.sh" ]
 
   # Smart contract deployment
-  dev-kms-blockchain-asc-deploy:
+  setup-kms-blockchain-contracts:
     image: ghcr.io/zama-ai/kms-blockchain-asc:${DOCKER_IMAGES_TAG}
     restart: "no"
     depends_on:
-      dev-kms-blockchain-validator:
+      kms-blockchain-validator:
         condition: service_healthy
     environment:
-      VALIDATOR_NODE_ENDPOINT: http://dev-kms-blockchain-validator:26657
+      VALIDATOR_NODE_ENDPOINT: http://kms-blockchain-validator:26657
     build:
       context: .
       dockerfile: blockchain/contracts/operations/docker/ci.dockerfile
     volumes:
       - ../blockchain/scripts:/app/scripts
-      - validator_secrets:/app/secrets
+      - kms_blockchain_validator_secrets:/app/secrets
     entrypoint: >
       /bin/sh -c " chmod +x /app/scripts/setup_wallets.sh && chmod +x /app/scripts/deploy_contracts.sh && /app/scripts/setup_wallets.sh && sleep 10 && /app/scripts/deploy_contracts.sh && touch /tmp/done && sleep 65 && exit 0 "
     healthcheck:
@@ -55,7 +55,7 @@ services:
       start_period: 60s
 
   # KV-Store
-  dev-kv-store:
+  kms-kv-store:
     image: ghcr.io/zama-ai/kms-blockchain-gateway:${DOCKER_IMAGES_TAG}
     build:
       context: .
@@ -74,7 +74,7 @@ services:
       start_period: 5s
 
   # S3 mock
-  dev-s3-mock:
+  s3-mock:
     image: quay.io/minio/minio
     ports:
       - "9000:9000"
@@ -91,23 +91,23 @@ services:
       retries: 10
 
   # Minio client to create access keys
-  dev-s3-mock-setup:
+  s3-mock-setup:
     image: quay.io/minio/mc
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-      MINIO_ENDPOINT: "http://dev-s3-mock:9000"
+      MINIO_ENDPOINT: "http://s3-mock:9000"
     entrypoint: >
       /bin/sh -c " sleep 1 && /usr/bin/mc alias set myminio $$MINIO_ENDPOINT ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD} && ACCESS_KEY=$$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 20 | head -n 1) && SECRET_KEY=$$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 40 | head -n 1) && /usr/bin/mc admin user add myminio $$ACCESS_KEY $$SECRET_KEY && /usr/bin/mc admin policy attach myminio readwrite --user $$ACCESS_KEY && echo '$ACCESS_KEY' && echo '$SECRET_KEY' && echo $$ACCESS_KEY > /minio_secrets/access_key && echo $$SECRET_KEY > /minio_secrets/secret_key && cat /minio_secrets/access_key && cat /minio_secrets/secret_key && mc mb --with-lock --ignore-existing myminio/kms && mc anonymous set public myminio/kms "
     volumes:
-      - minio_secrets:/minio_secrets
+      - kms_minio_secrets:/minio_secrets
     depends_on:
-      dev-s3-mock:
+      s3-mock:
         condition: service_healthy
 
 volumes:
-  minio_secrets:
-  validator_secrets:
+  kms_minio_secrets:
+  kms_blockchain_validator_secrets:
 
 
 secrets:

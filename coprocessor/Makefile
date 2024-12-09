@@ -112,21 +112,6 @@ setup-fhevm-contracts:
 check-all-test-repo: check-fhevm-solidity
 
 
-generate-fhe-keys-registry-dev-image:
-ifeq ($(KEY_GEN),false)
-	@echo "KEY_GEN is false, executing corresponding commands..."
-	@bash ./scripts/copy_fhe_keys.sh $(KMS_DEV_VERSION) $(PWD)/network-fhe-keys $(PWD)/kms-fhe-keys
-else ifeq ($(KEY_GEN),true)
-	@echo "KEY_GEN is true, executing corresponding commands..."
-	@bash ./scripts/prepare_volumes_from_kms_core.sh $(KMS_DEV_VERSION) $(PWD)/network-fhe-keys $(PWD)/kms-fhe-keys
-else
-	@echo "KEY_GEN is set to an unrecognized value: $(KEY_GEN)"
-endif
-
-copy-keys-threshold:
-	@bash ./scripts/copy_fhe_keys_threshold.sh zama-kms-threshold-dev-kms-core-1-1 $(PWD)/network-fhe-keys
-	@bash ./scripts/update_signers.sh $(PWD)/work_dir/fhevm/.env.example.deployment $(PWD)/network-fhe-keys
-
 copy-keys-threshold-key-gen:
 	@bash ./scripts/copy_fhe_keys_threshold_key_gen.sh $(PWD)/network-fhe-keys
 	@bash ./scripts/update_signers.sh $(PWD)/env/.env.example.deployment $(PWD)/network-fhe-keys 4

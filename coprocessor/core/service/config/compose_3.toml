@@ -4,7 +4,7 @@ listen_port_client = 50300
 
 # The address and port that tcp listener binds on to
 # communicate with the other cores.
-listen_address_core = "dev-kms-core-3"
+listen_address_core = "kms-core-3"
 listen_port_core = 50003
 
 # maximum grpc message size in bytes
@@ -24,38 +24,38 @@ num_sessions_preproc = 2
 # different parties.
 public_storage_url = "s3://kms"
 private_storage_url = "file://./keys"
-aws_s3_proxy = "http://dev-s3-mock:9000"
+aws_s3_proxy = "http://s3-mock:9000"
 aws_region = "us-east-1"
 
 # The below is optional and used for TLS certificates
-tls_cert_path = "certs/cert_dev-kms-core-3.pem"
-tls_key_path = "certs/key_dev-kms-core-3.pem"
+tls_cert_path = "certs/cert_kms-core-3.pem"
+tls_key_path = "certs/key_kms-core-3.pem"
 
 # The number of peer_confs dictates the total number of parties.
 # This list should be the same for all parties.
 [[peer_confs]]
 party_id = 1
-address = "dev-kms-core-1"
+address = "kms-core-1"
 port = 50001
-tls_cert_path = "certs/cert_dev-kms-core-1.pem"
+tls_cert_path = "certs/cert_kms-core-1.pem"
 
 [[peer_confs]]
 party_id = 2
-address = "dev-kms-core-2"
+address = "kms-core-2"
 port = 50002
-tls_cert_path = "certs/cert_dev-kms-core-2.pem"
+tls_cert_path = "certs/cert_kms-core-2.pem"
 
 [[peer_confs]]
 party_id = 3
-address = "dev-kms-core-3"
+address = "kms-core-3"
 port = 50003
-tls_cert_path = "certs/cert_dev-kms-core-3.pem"
+tls_cert_path = "certs/cert_kms-core-3.pem"
 
 [[peer_confs]]
 party_id = 4
-address = "dev-kms-core-4"
+address = "kms-core-4"
 port = 50004
-tls_cert_path = "certs/cert_dev-kms-core-4.pem"
+tls_cert_path = "certs/cert_kms-core-4.pem"
 
 # Specify the network configuration of the core-to-core communication
 # Values below are the same as the one in the constant file for the core network

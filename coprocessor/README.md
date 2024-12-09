@@ -162,7 +162,7 @@ Then (2) we download keys (with identifiers) from minio (S3 bucket like storage)
 This docker container is starting only after the deployment step (above)
 
 ```bash
-$docker logs zama-kms-gateway-dev-kms-simulator-keygen-1 -f
+$docker logs zama-setup-kms-key-crs-1 -f
 Launching insecure key-gen
 [
   {

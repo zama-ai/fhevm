@@ -108,7 +108,7 @@ mnemonic = "bachelor similar spirit copper rely carbon web hobby conduct wrap co
 
 # Base URL of the KMS service.
 # Used for making HTTP requests to the KMS service.
-address = "http://dev-kms-blockchain-validator:9090"
+address = "http://kms-blockchain-validator:9090"
 
 # TODO stop-gap these will eventually be fetched from the ASC. This line can be removed if the key get setup with the simulator
 # Should be removed as part of https://github.com/zama-ai/fhevm/issues/548
@@ -124,7 +124,7 @@ crs_id = "cfac312251738b71ff7d12e57b7d6eb5f881b7d8"
 
 
 [storage]
-url = "http://dev-kv-store:8088"
+url = "http://kms-kv-store:8088"
 
 [tracing]
 service_name = "gateway"

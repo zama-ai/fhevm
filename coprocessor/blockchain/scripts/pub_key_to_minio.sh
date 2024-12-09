@@ -9,7 +9,7 @@ PATH_TO_SECRET_KEY="${PATH_TO_SECRET_KEY:-/minio_secrets/secret_key}"
 ACCESS_KEY=$(xargs echo -n < "${PATH_TO_ACCESS_KEY}")
 SECRET_KEY=$(xargs echo -n < "${PATH_TO_SECRET_KEY}")
 BUCKET_NAME="${BUCKET_NAME:-kms}"
-ENDPOINT="${ENDPOINT:-http://dev-s3-mock:9000}"
+ENDPOINT="${ENDPOINT:-http://s3-mock:9000}"
 
 echo "ACCESS KEY: '${ACCESS_KEY}'"
 echo "SECRET KEY: '${SECRET_KEY}'"

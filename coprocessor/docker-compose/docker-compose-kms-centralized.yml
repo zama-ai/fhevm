@@ -1,14 +1,14 @@
 name: zama-kms-centralized
 services:
   # KMS-Blockchain validator node
-  dev-kms-blockchain-asc-deploy:
+  setup-kms-blockchain-contracts:
     environment:
       - MODE=centralized
 
   # KMS-Core-centralized
   # TODO: move the upload of the pub-key from the validator to the core -> or maybe the connector?
   # anyway where the keys really are
-  dev-kms-core:
+  kms-core:
     image: ghcr.io/zama-ai/kms-service:${DOCKER_IMAGES_TAG}
     build:
       context: .
@@ -22,22 +22,22 @@ services:
       retries: 5
       start_period: 1s
     volumes:
-      - minio_secrets:/minio_secrets
+      - kms_minio_secrets:/minio_secrets
       - ../core/service/config/:/app/kms/core/service/config
     depends_on:
-      dev-s3-mock-setup:
+      s3-mock-setup:
         condition: service_completed_successfully
     entrypoint: >
       /bin/sh -c "
       export AWS_ACCESS_KEY_ID=$$(cat /minio_secrets/access_key) &&
       export AWS_SECRET_ACCESS_KEY=$$(cat /minio_secrets/secret_key) &&
       echo 'Generating signing keys' &&
-      kms-gen-keys centralized --pub-url s3://kms --aws-s3-endpoint http://dev-s3-mock:9000 --aws-region us-east-1 --priv-url file://./keys --cmd signing-keys &&
+      kms-gen-keys centralized --pub-url s3://kms --aws-s3-endpoint http://s3-mock:9000 --aws-region us-east-1 --priv-url file://./keys --cmd signing-keys &&
       echo 'Starting kms service' &&
       kms-server centralized --config-file config/compose_centralized.toml
       "
 
-  dev-kms-connector:
+  kms-connector:
     build:
       context: .
       dockerfile: blockchain/connector/operations/docker/dev.dockerfile
@@ -49,15 +49,15 @@ services:
       - "--conf-file"
       - "config/centralized.toml"
     environment:
-      - ASC_CONN__BLOCKCHAIN__ADDRESSES=http://dev-kms-blockchain-validator:9090
-      - ASC_CONN__CORE__ADDRESSES=http://dev-kms-core:50051
-      - ASC_CONN__STORE__URL=http://dev-kv-store:8088
+      - ASC_CONN__BLOCKCHAIN__ADDRESSES=http://kms-blockchain-validator:9090
+      - ASC_CONN__CORE__ADDRESSES=http://kms-core:50051
+      - ASC_CONN__STORE__URL=http://kms-kv-store:8088
       - ASC_CONN__CORE__TIMEOUT_CONFIG__DECRYPTION__INITIAL_WAIT_TIME=1
       - ASC_CONN__CORE__TIMEOUT_CONFIG__DECRYPTION__RETRY_INTERVAL=1
       - ASC_CONN__CORE__TIMEOUT_CONFIG__REENCRYPTION__INITIAL_WAIT_TIME=1
       - ASC_CONN__CORE__TIMEOUT_CONFIG__REENCRYPTION__RETRY_INTERVAL=1
     depends_on:
-      dev-kms-blockchain-validator:
+      kms-blockchain-validator:
         condition: service_healthy
-      dev-kms-core:
+      kms-core:
         condition: service_healthy
