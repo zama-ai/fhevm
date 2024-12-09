@@ -16,7 +16,6 @@ export async function privateLoader() {
   const { error, data } = await apolloClient.query<MeQuery>({
     query: GET_ME,
   })
-  console.log('privateLoader', { error, data })
   if (error) {
     throw error
   }
