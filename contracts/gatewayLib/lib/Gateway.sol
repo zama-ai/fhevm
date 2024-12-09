@@ -2,9 +2,8 @@
 
 pragma solidity ^0.8.24;
 
-import "../../addresses/GatewayContractAddress.sol";
 import "../../lib/Impl.sol";
-import "../../addresses/ACLAddress.sol";
+import "../../addresses/GatewayContractAddress.sol";
 
 interface IKMSVerifier {
     function verifyDecryptionEIP712KMSSignatures(
@@ -25,22 +24,22 @@ interface IGatewayContract {
     ) external returns (uint256);
 }
 
-library Gateway {
-    struct GatewayConfigStruct {
-        address GatewayContractAddress;
-    }
+struct GatewayConfigStruct {
+    address GatewayContractAddress;
+}
 
+library Gateway {
     // keccak256(abi.encode(uint256(keccak256("fhevm.storage.GatewayConfig")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant GatewayLocation = 0x93ab6e17f2c461cce6ea5d4ec117e51dda77a64affc2b2c05f8cd440def0e700;
-
-    function defaultGatewayAddress() internal pure returns (address) {
-        return GATEWAY_CONTRACT_PREDEPLOY_ADDRESS;
-    }
 
     function getGetwayConfig() internal pure returns (GatewayConfigStruct storage $) {
         assembly {
             $.slot := GatewayLocation
         }
+    }
+
+    function defaultGatewayAddress() internal pure returns (address) {
+        return GATEWAY_CONTRACT_PREDEPLOY_ADDRESS;
     }
 
     function setGateway(address gatewayAddress) internal {
@@ -130,10 +129,12 @@ library Gateway {
         assembly {
             calldatacopy(add(decryptedResult, 0x20), start, length) // Copy the relevant part of calldata to decryptedResult memory
         }
+
+        decryptedResult = shiftOffsets(decryptedResult, handlesList);
         FHEVMConfig.FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
         return
             IKMSVerifier($.KMSVerifierAddress).verifyDecryptionEIP712KMSSignatures(
-                aclAdd,
+                $.ACLAddress,
                 handlesList,
                 decryptedResult,
                 signatures
@@ -160,7 +161,45 @@ library Gateway {
                 revert("Unsupported handle type");
             }
         }
-        signedDataLength += 32; // for the signatures offset
+        signedDataLength += 32; // add offset of signatures
         return signedDataLength;
+    }
+
+    function shiftOffsets(bytes memory input, uint256[] memory handlesList) private pure returns (bytes memory) {
+        uint256 numArgs = handlesList.length;
+        for (uint256 i = 0; i < numArgs; i++) {
+            uint8 typeCt = uint8(handlesList[i] >> 8);
+            if (typeCt >= 9) {
+                input = subToBytes32Slice(input, 32 * i); // because we append the signatures, all bytes offsets are shifted by 0x20
+            }
+        }
+        input = remove32Slice(input, 32 * numArgs);
+        return input;
+    }
+
+    function subToBytes32Slice(bytes memory data, uint256 offset) private pure returns (bytes memory) {
+        // @note: data is assumed to be more than 32+offset bytes long
+        assembly {
+            let ptr := add(add(data, 0x20), offset)
+            let val := mload(ptr)
+            val := sub(val, 0x20)
+            mstore(ptr, val)
+        }
+        return data;
+    }
+
+    function remove32Slice(bytes memory input, uint256 start) public pure returns (bytes memory) {
+        // @note we assume start+32 is less than input.length
+        bytes memory result = new bytes(input.length - 32);
+
+        for (uint256 i = 0; i < start; i++) {
+            result[i] = input[i];
+        }
+
+        for (uint256 i = start + 32; i < input.length; i++) {
+            result[i - 32] = input[i];
+        }
+
+        return result;
     }
 }

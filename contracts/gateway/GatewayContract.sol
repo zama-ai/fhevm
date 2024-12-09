@@ -24,7 +24,7 @@ contract GatewayContract is UUPSUpgradeable, Ownable2StepUpgradeable {
     /// @notice Version of the contract
     uint256 private constant MAJOR_VERSION = 0;
     uint256 private constant MINOR_VERSION = 1;
-    uint256 private constant PATCH_VERSION = 0;
+    uint256 private constant PATCH_VERSION = 1;
 
     IKMSVerifier private constant kmsVerifier = IKMSVerifier(kmsVerifierAdd);
     address private constant aclAddress = aclAdd;
@@ -184,16 +184,8 @@ contract GatewayContract is UUPSUpgradeable, Ownable2StepUpgradeable {
         bytes[] memory signatures
     ) external payable virtual onlyRelayer {
         GatewayContractStorage storage $ = _getGatewayContractStorage();
-        require(
-            kmsVerifier.verifyDecryptionEIP712KMSSignatures(
-                aclAddress,
-                $.decryptionRequests[requestID].cts,
-                decryptedCts,
-                signatures
-            ),
-            "KMS signature verification failed"
-        );
         require(!$.isFulfilled[requestID], "Request is already fulfilled");
+        $.isFulfilled[requestID] = true;
         DecryptionRequest memory decryptionReq = $.decryptionRequests[requestID];
         require(block.timestamp <= decryptionReq.maxTimestamp, "Too late");
         bytes memory callbackCalldata = abi.encodeWithSelector(decryptionReq.callbackSelector, requestID);
@@ -201,23 +193,99 @@ contract GatewayContract is UUPSUpgradeable, Ownable2StepUpgradeable {
         callbackCalldata = abi.encodePacked(callbackCalldata, decryptedCts); // decryptedCts MUST be correctly abi-encoded by the relayer, according to the requested types of `ctsHandles`
         if (passSignatures) {
             bytes memory packedSignatures = abi.encode(signatures);
-            bytes memory packedSignaturesNoOffset = removeOffset(packedSignatures); // remove the offset (the first 32 bytes) before concatenating with the first part of calldata
-            callbackCalldata = abi.encodePacked(callbackCalldata, packedSignaturesNoOffset);
+            packedSignatures = removeOffset(packedSignatures);
+            callbackCalldata = replaceOffsets(callbackCalldata, decryptionReq.cts, packedSignatures);
+        } else {
+            require(
+                kmsVerifier.verifyDecryptionEIP712KMSSignatures(
+                    aclAddress,
+                    $.decryptionRequests[requestID].cts,
+                    decryptedCts,
+                    signatures
+                ),
+                "KMS signature verification failed"
+            );
         }
-
         (bool success, bytes memory result) = (decryptionReq.contractCaller).call{value: decryptionReq.msgValue}(
             callbackCalldata
         );
         emit ResultCallback(requestID, success, result);
-        $.isFulfilled[requestID] = true;
     }
 
-    function removeOffset(bytes memory input) public pure virtual returns (bytes memory) {
+    function removeOffset(bytes memory input) internal pure virtual returns (bytes memory) {
         uint256 newLength = input.length - 32;
         bytes memory result = new bytes(newLength);
         for (uint256 i = 0; i < newLength; i++) {
             result[i] = input[i + 32];
         }
+        return result;
+    }
+
+    function replaceOffsets(
+        bytes memory input,
+        uint256[] memory handlesList,
+        bytes memory packedSignatures
+    ) internal pure virtual returns (bytes memory) {
+        uint256 numArgs = handlesList.length;
+        uint256 signaturesOffset = 64; // requestID is always first argument of callback + own size of offset = 32+32
+        for (uint256 i = 0; i < numArgs; i++) {
+            uint8 typeCt = uint8(handlesList[i] >> 8);
+            if (typeCt >= 9) {
+                input = addToBytes32Slice(input, 32 * (i + 1) + 4); // because we append the signatures, all bytes offsets are shifted by 0x20
+                if (typeCt == 9) {
+                    //ebytes64
+                    signaturesOffset += 128;
+                } else if (typeCt == 10) {
+                    //ebytes128
+                    signaturesOffset += 192;
+                } else if (typeCt == 11) {
+                    //ebytes256
+                    signaturesOffset += 320;
+                }
+            } else {
+                signaturesOffset += 32;
+            }
+        }
+        input = interleaveBytes(input, 4 + 32 * (numArgs + 1), signaturesOffset); // we add the offset of the signatures at correct location
+        input = abi.encodePacked(input, packedSignatures);
+        return input;
+    }
+
+    function addToBytes32Slice(bytes memory data, uint256 offset) internal pure virtual returns (bytes memory) {
+        // @note: data is assumed to be more than 32+offset bytes long
+        assembly {
+            let ptr := add(add(data, 0x20), offset)
+            let val := mload(ptr)
+            val := add(val, 0x20)
+            mstore(ptr, val)
+        }
+        return data;
+    }
+
+    function interleaveBytes(
+        bytes memory input,
+        uint256 position,
+        uint256 valueToPutINBetween
+    ) internal pure virtual returns (bytes memory) {
+        // @note: we assume position <= input.length
+        uint256 originalLength = input.length;
+        uint256 newLength = originalLength + 32;
+        bytes memory result = new bytes(newLength);
+        for (uint256 i = 0; i < position; i++) {
+            result[i] = input[i];
+        }
+
+        // Insert 32 bytes with the specified value
+        bytes32 valueToInsert = bytes32(valueToPutINBetween);
+        for (uint256 i = 0; i < 32; i++) {
+            result[position + i] = valueToInsert[i];
+        }
+
+        // Copy remainder of input (after insertion point)
+        for (uint256 i = position; i < originalLength; i++) {
+            result[i + 32] = input[i];
+        }
+
         return result;
     }
 

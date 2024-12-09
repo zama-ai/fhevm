@@ -84,7 +84,7 @@ describe('Upgrades', function () {
       kind: 'uups',
     });
     await gateway.waitForDeployment();
-    expect(await gateway.getVersion()).to.equal('GatewayContract v0.1.0');
+    expect(await gateway.getVersion()).to.equal('GatewayContract v0.1.1');
     const gateway2 = await upgrades.upgradeProxy(gateway, this.gatewayFactoryUpgraded);
     await gateway2.waitForDeployment();
     expect(await gateway2.getVersion()).to.equal('GatewayContract v0.2.0');
