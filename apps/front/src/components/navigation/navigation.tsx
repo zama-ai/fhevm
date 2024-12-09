@@ -1,13 +1,19 @@
 import { useContext, useState } from 'react'
 import { Box, List, Stack, Text, HStack } from '@chakra-ui/react'
-import { Circle, LayoutGrid, BookOpenText, Monitor, Smile } from 'lucide-react'
+import {
+  DocumentationIcon,
+  CircleIcon,
+  DashboardIcon,
+  LearnIcon,
+  CommunityIcon,
+} from '@/components/icons/icons'
 
 import { TitleContext } from '@/components/title-context/title-context'
 import { NavLink } from '../ui/link'
 
 type NavBlockProps = {
   title: string
-  icon: typeof BookOpenText
+  icon: typeof DocumentationIcon
   to: string
 }
 
@@ -50,7 +56,7 @@ function NavApp({ name, status }: NavAppProps) {
           opacity={isHovered ? 1 : 0}
           transition="opacity .5s"
         >
-          <Circle className="circle" />
+          <CircleIcon className="circle" />
         </List.Indicator>
         <Text fontSize="sm">{name}</Text>
       </NavLink>
@@ -73,17 +79,17 @@ export function Navigation() {
       py="30px"
     >
       <Stack>
-        <NavBlock title="Dashboard" icon={LayoutGrid} to="/dashboard" />
+        <NavBlock title="Dashboard" icon={DashboardIcon} to="/dashboard" />
         <List.Root pl="2" gap="2" variant="plain" align="center">
           <NavApp name="My Hello World dApp" status="active" />
           <NavApp name="My other dApp" status="draft" />
           <NavApp name={title} status="draft" />
         </List.Root>
-        <NavBlock title="Documentation" icon={BookOpenText} to="/about" />
-        <NavBlock title="Learn" icon={Monitor} to="/" />
+        <NavBlock title="Documentation" icon={DocumentationIcon} to="/about" />
+        <NavBlock title="Learn" icon={LearnIcon} to="/" />
         <NavBlock
           title="Community"
-          icon={Smile}
+          icon={CommunityIcon}
           to="https://zama.ai/community"
         />
       </Stack>

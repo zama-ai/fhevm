@@ -1,10 +1,19 @@
 import { useCallback } from 'react'
-import { Box, Group, Text } from '@chakra-ui/react'
-import { Settings, LogOut, ChevronDown } from 'lucide-react'
-
-import { MenuContent, MenuItem, MenuRoot, MenuTrigger } from '../ui/menu'
-import { Avatar } from '../ui/avatar'
 import { useNavigate } from 'react-router'
+import { Box, Group, Text } from '@chakra-ui/react'
+
+import {
+  MenuContent,
+  MenuItem,
+  MenuRoot,
+  MenuTrigger,
+} from '@/components/ui/menu'
+import { Avatar } from '@/components/ui/avatar'
+import {
+  ChevronDownIcon,
+  LogOutIcon,
+  SettingsIcon,
+} from '@/components/icons/icons'
 
 type MeMenuProps = {
   name: string
@@ -39,16 +48,16 @@ export function MeMenu({ name, image, condensed }: MeMenuProps) {
           >
             {name}
           </Text>
-          <ChevronDown />
+          <ChevronDownIcon />
         </Group>
       </MenuTrigger>
       <MenuContent>
         <MenuItem value="preferences">
-          <Settings />
+          <SettingsIcon />
           <Box flex="1">Preferences</Box>
         </MenuItem>
         <MenuItem value="logout" onClick={onLogout}>
-          <LogOut />
+          <LogOutIcon />
           <Box flex="1">Sign out</Box>
         </MenuItem>
       </MenuContent>
