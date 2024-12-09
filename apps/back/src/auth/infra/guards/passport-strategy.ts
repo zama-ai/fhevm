@@ -4,8 +4,8 @@ import { ExtractJwt, Strategy } from 'passport-jwt'
 import { GetUserById } from '@/users/use-cases/get-user-by-id.use-case'
 import { jwtConstants } from './constants'
 import { JwtPayload } from '@/auth/interfaces/jwt-payload'
-import { fail, ok } from '@/utils/result'
-import { AppError, unauthorizedError } from '@/utils/app-error'
+import type { AppError } from 'utils'
+import { fail, ok, unauthorizedError } from 'utils'
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {

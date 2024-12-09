@@ -1,4 +1,4 @@
-import { ValueObject } from '@/utils/value-object'
+import { ValueObject } from 'utils'
 import { z } from 'zod'
 
 export class InvitationId extends ValueObject(

@@ -1,17 +1,14 @@
 import { Injectable } from '@nestjs/common'
 import { JwtService } from '@nestjs/jwt'
 import { randomUUID } from 'crypto'
-import { UseCase } from '@/utils/use-case'
-import { Task } from '@/utils/task'
-import { AppError, notFoundError } from '@/utils/app-error'
-
 import { User } from '@/users/domain/entities/user'
 import { UserRepository } from '@/users/domain/repositories/user.repository'
 import { Invitation } from '@/invitations/domain/entities/invitation'
 import { TeamRepository } from '@/users/domain/repositories/team.repository'
 import { InvitationRepository } from '@/invitations/domain/repositories/invitation.repository'
-
 import { Token } from '@/invitations/domain/entities/value-objects'
+import type { AppError, UseCase } from 'utils'
+import { Task, notFoundError } from 'utils'
 import {
   Password,
   TeamId,

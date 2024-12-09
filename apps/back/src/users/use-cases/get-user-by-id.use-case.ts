@@ -1,9 +1,7 @@
 import { Injectable } from '@nestjs/common'
 import { User } from '@/users/domain/entities/user'
-import { UseCase } from '@/utils/use-case'
+import { type AppError, Task, type UseCase } from 'utils'
 import { UserRepository } from '../domain/repositories/user.repository'
-import { Task } from '@/utils/task'
-import { AppError } from '@/utils/app-error'
 import { UserId } from '../domain/entities/value-objects'
 
 @Injectable()

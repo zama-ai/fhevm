@@ -1,9 +1,9 @@
-import { UserProps, User } from '@/users/domain/entities/user'
+import { User } from '@/users/domain/entities/user'
 import { UserRepository } from '@/users/domain/repositories/user.repository'
 import { PrismaService } from '../prisma.service'
 import { Injectable } from '@nestjs/common'
-import { Task } from '@/utils/task'
-import { AppError, notFoundError, unknownError } from '@/utils/app-error'
+import type { AppError } from 'utils'
+import { notFoundError, Task, unknownError } from 'utils'
 import { UserId } from '@/users/domain/entities/value-objects'
 
 @Injectable()
