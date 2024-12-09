@@ -122,7 +122,7 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
     const handles = event.args[1];
     const typesList = handles.map((handle) => parseInt(handle.toString(16).slice(-4, -2), 16));
     const msgValue = event.args[4];
-    const passSignaturesToCaller = event.args[6];
+
     if (!results.includes(requestID)) {
       // if request is not already fulfilled
       if (mocked) {
@@ -154,13 +154,9 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
         const abiCoder = new ethers.AbiCoder();
         let encodedData;
         let calldata;
-        if (!passSignaturesToCaller) {
-          encodedData = abiCoder.encode(['uint256', ...types], [31, ...valuesFormatted4]); // 31 is just a dummy uint256 requestID to get correct abi encoding for the remaining arguments (i.e everything except the requestID)
-          calldata = '0x' + encodedData.slice(66); // we just pop the dummy requestID to get the correct value to pass for `decryptedCts`
-        } else {
-          encodedData = abiCoder.encode(['uint256', ...types, 'bytes[]'], [31, ...valuesFormatted4, []]); // adding also a dummy empty array of bytes for correct abi-encoding when used with signatures
-          calldata = '0x' + encodedData.slice(66).slice(0, -64); // we also pop the last 32 bytes (empty bytes[])
-        }
+
+        encodedData = abiCoder.encode(['uint256', ...types], [31, ...valuesFormatted4]); // 31 is just a dummy uint256 requestID to get correct abi encoding for the remaining arguments (i.e everything except the requestID)
+        calldata = '0x' + encodedData.slice(66); // we just pop the dummy requestID to get the correct value to pass for `decryptedCts`
 
         const numSigners = +process.env.NUM_KMS_SIGNERS!;
         const decryptResultsEIP712signatures = await computeDecryptSignatures(handles, calldata, numSigners);
