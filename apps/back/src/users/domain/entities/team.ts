@@ -1,7 +1,6 @@
 import { z } from 'zod'
-import { AppError, validationError } from '@/utils/app-error'
-import { Entity } from '@/utils/entity'
-import { ok, fail, Result } from '@/utils/result'
+import type { AppError, Result } from 'utils'
+import { ok, fail, Entity, validationError } from 'utils'
 import { TeamId } from './value-objects'
 
 const schema = z.object({

@@ -2,11 +2,9 @@ import { Injectable } from '@nestjs/common'
 import { randomUUID } from 'crypto'
 
 import { Invitation } from '../domain/entities/invitation'
-import { UseCase } from '@/utils/use-case'
+import type { AppError, Result, UseCase } from 'utils'
+import { ok, Task, unauthorizedError } from 'utils'
 import { InvitationRepository } from '../domain/repositories/invitation.repository'
-import { Task } from '@/utils/task'
-import { AppError, unauthorizedError } from '@/utils/app-error'
-import { ok, fail, Result } from '@/utils/result'
 
 const EXPIRATION_TIME_IN_MILLISECONDS =
   parseInt(process.env.INVITATION_EXPIRATION_TIME ?? '', 10) || 86400 * 1000 * 7

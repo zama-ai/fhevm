@@ -1,6 +1,5 @@
-import { AppError, validationError } from '@/utils/app-error'
-import { ValueObject } from '@/utils/value-object'
-import { ok, Result } from '@/utils/result'
+import type { AppError, Result } from 'utils'
+import { ok, validationError, ValueObject } from 'utils'
 import { compareSync, genSaltSync, hashSync } from 'bcryptjs'
 import { z, ZodError } from 'zod'
 

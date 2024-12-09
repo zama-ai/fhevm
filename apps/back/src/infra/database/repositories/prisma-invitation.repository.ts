@@ -2,8 +2,8 @@ import { Invitation } from '@/invitations/domain/entities/invitation'
 import { InvitationRepository } from '@/invitations/domain/repositories/invitation.repository'
 import { PrismaService } from '../prisma.service'
 import { Injectable } from '@nestjs/common'
-import { Task } from '@/utils/task'
-import { AppError, notFoundError, unknownError } from '@/utils/app-error'
+import type { AppError } from 'utils'
+import { notFoundError, unknownError, Task } from 'utils'
 import {
   InvitationId,
   Token,

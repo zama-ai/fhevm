@@ -4,19 +4,15 @@ import { User } from '@/users/domain/entities/user'
 import { UserRepository } from '@/users/domain/repositories/user.repository'
 import { Invitation } from '@/invitations/domain/entities/invitation'
 import { InvitationRepository } from '@/invitations/domain/repositories/invitation.repository'
-import { UseCase } from '@/utils/use-case'
+import type { AppError, UseCase } from 'utils'
+import { Task, notFoundError } from 'utils'
 import { JwtPayload } from '../interfaces/jwt-payload'
 import { Injectable } from '@nestjs/common'
-import { Task } from '@/utils/task'
-import { AppError, notFoundError } from '@/utils/app-error'
 import {
   Password,
   ValidatedPassword,
 } from '@/users/domain/entities/value-objects'
-import {
-  InvitationId,
-  Token,
-} from '@/invitations/domain/entities/value-objects'
+import { Token } from '@/invitations/domain/entities/value-objects'
 
 interface SignupInput {
   name: string
