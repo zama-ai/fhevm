@@ -39,15 +39,16 @@ export function MeMenu({ name, image, condensed }: MeMenuProps) {
           style={{ cursor: 'pointer' }}
         >
           <Avatar size="sm" src={image} name={name} />
-          <Text
-            display={condensed ? 'none' : 'inline-block'}
-            maxW={120}
-            overflow="hidden"
-            whiteSpace="nowrap"
-            textOverflow="ellipsis"
-          >
-            {name}
-          </Text>
+          {!condensed && (
+            <Text
+              maxW={120}
+              overflow="hidden"
+              whiteSpace="nowrap"
+              textOverflow="ellipsis"
+            >
+              {name}
+            </Text>
+          )}
           <ChevronDownIcon />
         </Group>
       </MenuTrigger>
