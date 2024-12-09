@@ -121,12 +121,12 @@ Each iteration of the counter will build upon previous concepts while introducin
 
 Save this in your `.env` file:
 
-| Contract/Service       | Address/Value                                      |
-| ---------------------- | -------------------------------------------------- |
-| TFHE_EXECUTOR_CONTRACT | 0x199fB61DFdfE46f9F90C9773769c28D9623Bb90e         |
-| ACL_CONTRACT           | 0x9479B455904dCccCf8Bc4f7dF8e9A1105cBa2A8e         |
-| PAYMENT_CONTRACT       | 0x25FE5d92Ae6f89AF37D177cF818bF27EDFe37F7c         |
-| KMS_VERIFIER_CONTRACT  | 0x904Af2B61068f686838bD6257E385C2cE7a09195         |
-| GATEWAY_CONTRACT       | 0x7455c89669cdE1f7Cb6D026DFB87263422D821ca         |
-| PUBLIC_KEY_ID          | 55729ddea48547ea837137d122e1c90043e94c41           |
-| GATEWAY_URL            | `https://gateway-sepolia.kms-dev-v1.bc.zama.team/` |
+| Contract/Service       | Address/Value                              |
+| ---------------------- | ------------------------------------------ |
+| TFHE_EXECUTOR_CONTRACT | 0x199fB61DFdfE46f9F90C9773769c28D9623Bb90e |
+| ACL_CONTRACT           | 0x9479B455904dCccCf8Bc4f7dF8e9A1105cBa2A8e |
+| PAYMENT_CONTRACT       | 0x25FE5d92Ae6f89AF37D177cF818bF27EDFe37F7c |
+| KMS_VERIFIER_CONTRACT  | 0x904Af2B61068f686838bD6257E385C2cE7a09195 |
+| GATEWAY_CONTRACT       | 0x7455c89669cdE1f7Cb6D026DFB87263422D821ca |
+| PUBLIC_KEY_ID          | 55729ddea48547ea837137d122e1c90043e94c41   |
+| GATEWAY_URL            | `https://gateway.sepolia.zama.ai/`         |
