@@ -4,7 +4,7 @@ services:
     restart: always
     container_name: console-db
     environment:
-      - POSTGRES_USER=${DB_USER:-postgres}
+      - POSTGRES_USER=${DB_USERNAME:-postgres}
       - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
       - POSTGRES_DB=${DB_NAME:-console}
     ports:
@@ -25,7 +25,7 @@ services:
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-test}
       - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-eu-central-1}
     volumes:
-      - "${LOCALSTACK_VOLUME_DIR:-./volume}:/var/lib/localstack"
+      - "localstack:/var/lib/localstack"
       - "/var/run/docker.sock:/var/run/docker.sock"
       # Here we mount our setup file so it will be executed when
       # the container start
@@ -33,3 +33,4 @@ services:
 
 volumes:
   postgres:
+  localstack:
