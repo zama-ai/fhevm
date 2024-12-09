@@ -1,81 +1,42 @@
-import { NavLink } from 'react-router'
+import { useEffect } from 'react'
+import { useNavigate } from 'react-router'
+import { gql, useMutation } from '@apollo/client'
 
-import {
-  Box,
-  Button,
-  Fieldset,
-  Flex,
-  Heading,
-  HStack,
-  Input,
-  Stack,
-  Text,
-} from '@chakra-ui/react'
-import { Field } from '@/components/ui/field'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Logo } from '@/components/logo/logo'
-import { PasswordInput } from '@/components/ui/password-input'
+import { SignInMutation } from '@/__generated__/graphql'
+import { SigninForm } from '@/components/signin-form/signin-form'
+import { formatErrorMessage } from '@/lib/error-message'
+
+const SIGN_IN = gql`
+  mutation SignIn($email: String!, $password: String!) {
+    login(input: { email: $email, password: $password }) {
+      token
+      user {
+        id
+        email
+        name
+      }
+    }
+  }
+`
 
 export function SigninPage() {
+  const [signInMutation, { data, loading, error }] =
+    useMutation<SignInMutation>(SIGN_IN)
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    if (data) {
+      localStorage.setItem('token', data.login.token)
+      navigate('/dashboard/')
+    }
+  }, [data, navigate])
+
+  const errorMessage = error ? formatErrorMessage(error.message) : undefined
   return (
-    <Flex minHeight="100vh" width="100%">
-      <Box
-        flex="1"
-        display="flex"
-        alignItems="center"
-        justifyContent="center"
-        bg="brand"
-      >
-        <Stack>
-          <Logo />
-          <Heading>Welcome back!</Heading>
-        </Stack>
-      </Box>
-      <Box
-        flex="1"
-        display="flex"
-        alignItems="center"
-        p={8}
-        flexShrink={1}
-        flexBasis={0}
-        flexGrow={1}
-      >
-        <Fieldset.Root>
-          <Stack>
-            <Fieldset.Legend>
-              <Heading>Log in to your account</Heading>
-            </Fieldset.Legend>
-          </Stack>
-
-          <Fieldset.Content>
-            <Field label="Email">
-              <Input name="email" type="email" placeholder="bob@eth-app.net" />
-            </Field>
-          </Fieldset.Content>
-
-          <Fieldset.Content>
-            <Field label="Password">
-              <PasswordInput
-                name="password"
-                type="password"
-                placeholder="****"
-              />
-            </Field>
-          </Fieldset.Content>
-
-          <HStack justifyContent="space-between">
-            <Checkbox>Remember me</Checkbox>
-
-            <NavLink to="/forgot-password">
-              <Text textStyle="sm">Forgot password?</Text>
-            </NavLink>
-          </HStack>
-
-          <Button asChild type="submit" alignSelf="flex-start">
-            <NavLink to="/dashboard">Login</NavLink>
-          </Button>
-        </Fieldset.Root>
-      </Box>
-    </Flex>
+    <SigninForm
+      onSubmit={variables => signInMutation({ variables })}
+      loading={!!loading}
+      errorMessage={errorMessage}
+    />
   )
 }

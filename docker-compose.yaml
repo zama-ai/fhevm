@@ -2,6 +2,7 @@ services:
   postgres:
     image: postgres:17-alpine
     restart: always
+    container_name: console-db
     environment:
       - POSTGRES_USER=${DB_USERNAME:-postgres}
       - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}

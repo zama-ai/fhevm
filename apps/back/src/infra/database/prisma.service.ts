@@ -29,4 +29,8 @@ export class PrismaService implements OnModuleInit {
   get team() {
     return this.#client.team
   }
+
+  get invitation() {
+    return this.#client.invitation
+  }
 }

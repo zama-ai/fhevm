@@ -23,10 +23,10 @@ export class LogIn
   }): Task<{ user: User; token: string }, AppError> {
     return this.userRepository
       .findByEmail(input.email)
-      .chain(user => user.checkPassword(input.password))
+      .chain(user => user.checkPassword(input.password).async())
       .map(user => ({
         token: this.jwtService.sign({
-          sub: user.id,
+          sub: user.id.value,
           email: user.email,
         } satisfies JwtPayload),
         user,

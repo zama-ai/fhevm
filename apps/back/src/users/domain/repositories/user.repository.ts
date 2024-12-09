@@ -1,9 +1,10 @@
-import { User, UserProps } from '../entities/user'
+import { User } from '../entities/user'
 import { AppError } from '@/utils/app-error'
 import { Task } from '@/utils/task'
+import { UserId } from '../entities/value-objects'
 
 export abstract class UserRepository {
-  abstract create(props: UserProps): Task<User, AppError>
-  abstract findById(id: string): Task<User, AppError>
+  abstract create(props: User): Task<User, AppError>
+  abstract findById(id: UserId): Task<User, AppError>
   abstract findByEmail(email: string): Task<User, AppError>
 }

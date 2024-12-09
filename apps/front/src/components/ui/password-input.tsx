@@ -1,5 +1,3 @@
-'use client'
-
 import type {
   ButtonProps,
   GroupProps,
@@ -15,7 +13,7 @@ import {
   mergeRefs,
   useControllableState,
 } from '@chakra-ui/react'
-import { forwardRef, useRef } from 'react'
+import { forwardRef, useRef, PointerEvent } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 import { InputGroup } from './input-group'
 
@@ -57,10 +55,10 @@ export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
         endElement={
           <VisibilityTrigger
             disabled={rest.disabled}
-            onPointerDown={(e) => {
+            onPointerDown={(ev: PointerEvent<HTMLButtonElement>) => {
               if (rest.disabled) return
-              if (e.button !== 0) return
-              e.preventDefault()
+              if (ev.button !== 0) return
+              ev.preventDefault()
               setVisible(!visible)
             }}
           >
@@ -76,7 +74,7 @@ export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
         />
       </InputGroup>
     )
-  }
+  },
 )
 
 const VisibilityTrigger = forwardRef<HTMLButtonElement, ButtonProps>(
@@ -94,7 +92,7 @@ const VisibilityTrigger = forwardRef<HTMLButtonElement, ButtonProps>(
         {...props}
       />
     )
-  }
+  },
 )
 
 interface PasswordStrengthMeterProps extends StackProps {
@@ -137,11 +135,13 @@ export const PasswordStrengthMeter = forwardRef<
 
 function getColorPalette(percent: number) {
   switch (true) {
-    case percent < 33:
+    case percent < 26:
       return { label: 'Low', colorPalette: 'red' }
-    case percent < 66:
+    case percent < 51:
       return { label: 'Medium', colorPalette: 'orange' }
-    default:
+    case percent < 76:
       return { label: 'High', colorPalette: 'green' }
+    default:
+      return { label: 'Great', colorPalette: 'blue' }
   }
 }

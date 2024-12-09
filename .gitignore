@@ -71,4 +71,4 @@ dist-ssr
 *.sln
 *.sw?
 
-volume
+volume/

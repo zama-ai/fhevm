@@ -1,10 +1,11 @@
-import { AppError, validation } from '@/utils/app-error'
+import { z } from 'zod'
+import { AppError, validationError } from '@/utils/app-error'
 import { Entity } from '@/utils/entity'
 import { ok, fail, Result } from '@/utils/result'
-import { z } from 'zod'
+import { TeamId } from './value-objects'
 
 const schema = z.object({
-  id: z.string().uuid(),
+  id: TeamId,
   name: z.string(),
 })
 
@@ -12,13 +13,13 @@ export type TeamProps = z.infer<typeof schema>
 
 export class Team
   extends Entity<TeamProps>
-  implements Readonly<Omit<TeamProps, 'password'>>
+  implements Readonly<Omit<TeamProps, 'id'> & { id: TeamId }>
 {
   static parse(data: unknown): Result<Team, AppError> {
     const check = schema.safeParse(data)
     return check.success
       ? ok(new Team(check.data))
-      : fail(validation(check.error.message))
+      : fail(validationError(check.error.message))
   }
   static parseArray(data: unknown[]): Result<Team[], AppError> {
     const res = data.map(Team.parse)
@@ -28,7 +29,7 @@ export class Team
   }
 
   get id() {
-    return this.get('id')
+    return new TeamId(this.get('id'))
   }
 
   get name() {
