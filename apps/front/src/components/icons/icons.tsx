@@ -3,7 +3,6 @@ import { Icon, IconProps } from '@chakra-ui/react'
 import {
   BookOpenText,
   ChevronDown,
-  Circle,
   LayoutGrid,
   LogOut,
   Menu,
@@ -18,12 +17,6 @@ type OwnProps = IconProps & RefAttributes<SVGSVGElement>
 export const ChevronDownIcon = (props: OwnProps) => (
   <Icon {...props}>
     <ChevronDown />
-  </Icon>
-)
-
-export const CircleIcon = (props: OwnProps) => (
-  <Icon {...props}>
-    <Circle />
   </Icon>
 )
 

@@ -1,8 +1,8 @@
 import { useContext, useState } from 'react'
 import { Box, List, Stack, Text, HStack } from '@chakra-ui/react'
+import { Circle } from 'lucide-react'
 import {
   DocumentationIcon,
-  CircleIcon,
   DashboardIcon,
   LearnIcon,
   CommunityIcon,
@@ -41,22 +41,19 @@ type NavAppProps = {
 }
 
 function NavApp({ name, status }: NavAppProps) {
-  const [isHovered, setIsHovered] = useState(false)
   const color = status === 'active' ? 'green.200' : 'gray.300'
   return (
-    <List.Item
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-    >
-      <NavLink to="/app/1">
+    <List.Item>
+      <NavLink to="/app/1" className="group">
         <List.Indicator
           asChild
           color={color}
           width="10px"
-          opacity={isHovered ? 1 : 0}
+          opacity={0}
+          _groupHover={{ opacity: 1 }}
           transition="opacity .5s"
         >
-          <CircleIcon className="circle" />
+          <Circle className="circle" />
         </List.Indicator>
         <Text fontSize="sm">{name}</Text>
       </NavLink>
