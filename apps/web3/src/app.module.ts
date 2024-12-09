@@ -5,12 +5,17 @@ import { SqsModule } from 'sqs';
 import awsConfig from './config/aws.config';
 import { SQSConsumer } from './infra/adapters/sqs.consumer';
 import { SNSClient } from '@aws-sdk/client-sns';
+import ethersConfig, { EtherProvider } from './config/ether.config';
+import { VerifyContract } from './use-cases/verify-contract.use-case';
+import { CONTRACT_SERVICE } from './constants';
+import { EtherscanContractService } from './infra/adapters/etherscan-contract.service';
+import { ContractService } from './domain/services/contract.service';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [awsConfig],
+      load: [awsConfig, ethersConfig],
     }),
     SqsModule.registerAsync({
       inject: [ConfigService],
@@ -39,6 +44,25 @@ import { SNSClient } from '@aws-sdk/client-sns';
       }),
     }),
   ],
-  providers: [SQSConsumer],
+  providers: [
+    SQSConsumer,
+    {
+      provide: CONTRACT_SERVICE,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => {
+        switch (config.get<EtherProvider>('ether.provider')!) {
+          case 'Etherscan':
+            return new EtherscanContractService(config);
+          default:
+            throw new Error('invalid provider');
+        }
+      },
+    },
+    {
+      provide: VerifyContract,
+      inject: [CONTRACT_SERVICE],
+      useFactory: (service: ContractService) => new VerifyContract(service),
+    },
+  ],
 })
 export class AppModule {}

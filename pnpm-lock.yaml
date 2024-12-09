@@ -455,6 +455,12 @@ importers:
       sqs:
         specifier: workspace:*
         version: link:../../packages/sqs
+      utils:
+        specifier: workspace:*
+        version: link:../../packages/utils
+      zod:
+        specifier: ^3.23.8
+        version: 3.23.8
     devDependencies:
       '@nestjs/cli':
         specifier: ^10.0.0
