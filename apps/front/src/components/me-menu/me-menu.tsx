@@ -34,7 +34,7 @@ export function MeMenu({ name, image, condensed }: MeMenuProps) {
         <Group
           gap="3"
           rounded={'md'}
-          _hover={{ bg: '#f9dc5c' }}
+          _hover={{ bg: 'yellowhighlight' }}
           p={2}
           style={{ cursor: 'pointer' }}
         >
