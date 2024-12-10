@@ -6,6 +6,7 @@ services:
   # 1. Generate TLS certificates
   # NOTE: for now we do the key-generation here because kms-server requires one to start
   setup-kms-core-certs:
+    container_name: ${DOCKER_COMPOSE_PROJECT}-setup-kms-core-certs
     image: ghcr.io/zama-ai/kms-service:${DOCKER_IMAGES_TAG}
     environment:
       - RUST_LOG=debug
@@ -21,6 +22,7 @@ services:
 
   # 3. Initialize the different cores
   setup-kms-core-init:
+    container_name: ${DOCKER_COMPOSE_PROJECT}-setup-kms-core-init
     image: ghcr.io/zama-ai/kms-service:${DOCKER_IMAGES_TAG}
     depends_on:
       kms-core-1:
@@ -43,11 +45,13 @@ services:
       "
   # 4. Deploy smart contracts
   setup-kms-blockchain-contracts:
+    container_name: ${DOCKER_COMPOSE_PROJECT}-setup-kms-blockchain-contracts
     environment:
       - MODE=threshold
 
   # 2. We start all cores
   kms-core-1:
+    container_name: ${DOCKER_COMPOSE_PROJECT}-kms-core-1
     image: ghcr.io/zama-ai/kms-service:${DOCKER_IMAGES_TAG}
     ports:
       - "50051:50051"
@@ -92,6 +96,7 @@ services:
       "
 
   kms-connector-1:
+    container_name: ${DOCKER_COMPOSE_PROJECT}-kms-connector-1
     build:
       context: .
       dockerfile: blockchain/connector/operations/docker/dev.dockerfile
@@ -118,6 +123,7 @@ services:
         condition: service_completed_successfully
 
   kms-core-2:
+    container_name: ${DOCKER_COMPOSE_PROJECT}-kms-core-2
     image: ghcr.io/zama-ai/kms-service:${DOCKER_IMAGES_TAG}
     ports:
       - "50052:50052"
@@ -150,6 +156,7 @@ services:
       "
 
   kms-connector-2:
+    container_name: ${DOCKER_COMPOSE_PROJECT}-kms-connector-2
     image: ghcr.io/zama-ai/kms-blockchain-connector-dev:${DOCKER_IMAGES_TAG}
     volumes:
       - ../blockchain/connector/config/:/app/kms-connector/config
@@ -173,6 +180,7 @@ services:
         condition: service_completed_successfully
 
   kms-core-3:
+    container_name: ${DOCKER_COMPOSE_PROJECT}-kms-core-3
     image: ghcr.io/zama-ai/kms-service:${DOCKER_IMAGES_TAG}
     ports:
       - "50053:50053"
@@ -205,6 +213,7 @@ services:
       "
 
   kms-connector-3:
+    container_name: ${DOCKER_COMPOSE_PROJECT}-kms-connector-3
     image: ghcr.io/zama-ai/kms-blockchain-connector-dev:${DOCKER_IMAGES_TAG}
     volumes:
       - ../blockchain/connector/config/:/app/kms-connector/config
@@ -228,6 +237,7 @@ services:
         condition: service_completed_successfully
 
   kms-core-4:
+    container_name: ${DOCKER_COMPOSE_PROJECT}-kms-core-4
     image: ghcr.io/zama-ai/kms-service:${DOCKER_IMAGES_TAG}
     ports:
       - "50054:50054"
@@ -260,6 +270,7 @@ services:
       "
 
   kms-connector-4:
+    container_name: ${DOCKER_COMPOSE_PROJECT}-kms-connector-4
     image: ghcr.io/zama-ai/kms-blockchain-connector-dev:${DOCKER_IMAGES_TAG}
     volumes:
       - ../blockchain/connector/config/:/app/kms-connector/config

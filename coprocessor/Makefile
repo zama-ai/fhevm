@@ -83,7 +83,7 @@ endif
 
 init-db: check-all-test-repo  
 ifeq ($(CENTRALIZED_KMS),false)
-	@echo "CENTRALIZED_KMS is false, we are extracting keys from kms-core-1"
+	@echo "CENTRALIZED_KMS is false, we are extracting keys from kms-core"
 	$(MAKE) copy-keys-threshold-key-gen
 else ifeq ($(CENTRALIZED_KMS),true)
 	@echo "CENTRALIZED_KMS is true, copying fhe keys from dev image"
@@ -92,7 +92,7 @@ else
 	@echo "CENTRALIZED_KMS is set to an unrecognized value: $(CENTRALIZED_KMS)"
 endif
 	docker compose -p $(DOCKER_COMPOSE_PROJECT) -vvv -f docker-compose/docker-compose-setup-fhevm-coprocessor-db.yml up -d --wait || true
-	@if [ "$$(docker inspect -f '{{.State.ExitCode}}' $(DOCKER_COMPOSE_PROJECT)-setup-fhevm-coprocessor-db-1)" -eq 0 ]; then \
+	@if [ "$$(docker inspect -f '{{.State.ExitCode}}' $(DOCKER_COMPOSE_PROJECT)-setup-fhevm-coprocessor-db)" -eq 0 ]; then \
 		echo "Container exited with code 0, proceeding..."; \
 	else \
 		echo "Container did not exit successfully, failing..."; \
@@ -102,7 +102,7 @@ endif
 
 setup-fhevm-contracts:
 	docker compose -p $(DOCKER_COMPOSE_PROJECT) -vvv -f docker-compose/docker-compose-setup-fhevm-contracts.yml up -d --wait || true
-	@if [ "$$(docker inspect -f '{{.State.ExitCode}}' zama-setup-fhevm-contracts-1)" -eq 0 ]; then \
+	@if [ "$$(docker inspect -f '{{.State.ExitCode}}' zama-setup-fhevm-contracts)" -eq 0 ]; then \
 		echo "Container exited with code 0, proceeding..."; \
 	else \
 		echo "Container did not exit successfully, failing..."; \

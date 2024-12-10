@@ -1,5 +1,6 @@
 services:
   fhevm-coprocessor-db:
+    container_name: ${DOCKER_COMPOSE_PROJECT}-fhevm-coprocessor-db
     image: postgres:15.7
     restart: always
     environment:
@@ -11,6 +12,7 @@ services:
       - fhevm_coprocessor_db:/var/lib/postgresql/data
 
   fhevm-coprocessor:
+    container_name: ${DOCKER_COMPOSE_PROJECT}-fhevm-coprocessor
     image: ghcr.io/zama-ai/fhevm-coprocessor:v0.1.2
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@fhevm-coprocessor-db:5432/coprocessor
@@ -24,6 +26,7 @@ services:
       - --server-addr=0.0.0.0:50052
       - --coprocessor-private-key=/usr/share/coprocessor.key
   fhevm-geth:
+    container_name: ${DOCKER_COMPOSE_PROJECT}-fhevm-geth
     image: ghcr.io/zama-ai/go-ethereum-coprocessor-dev:v0.1.1
     volumes:
       - ../blockchain/geth/entrypoint.sh:/entrypoint.sh
