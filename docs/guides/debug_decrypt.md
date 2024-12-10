@@ -1,0 +1,125 @@
+# Debugging with `debug.decryptXX`
+
+This guide explains how to use the `debug.decryptXX` functions for debugging encrypted data in mocked environments during development with fhEVM. These functions allow developers to decrypt encrypted values locally for testing purposes. However, they should not be used in production as they rely on private keys.
+
+---
+
+## Overview
+
+The `debug.decryptXX` functions allow you to decrypt encrypted handles into plaintext values. This feature is useful for debugging encrypted operations such as transfers, balance checks, and other computations involving FHE-encrypted data.
+
+### Key Points:
+
+- **Environment**: These functions work **only in mocked environments** (e.g., `hardhat` network).
+- **Production Limitation**: In production, decryption is performed asynchronously via the Gateway and requires an authorized on-chain request.
+- **Encrypted Types**: Supports various encrypted types, including integers, booleans, and `ebytesXX`.
+
+---
+
+## Supported functions
+
+### Integer decryption
+
+Decrypts encrypted integers of different bit-widths (`euint4`, `euint8`, ..., `euint256`).
+
+| Function Name | Returns  | Encrypted Type |
+| ------------- | -------- | -------------- |
+| `decrypt4`    | `bigint` | `euint4`       |
+| `decrypt8`    | `bigint` | `euint8`       |
+| `decrypt16`   | `bigint` | `euint16`      |
+| `decrypt32`   | `bigint` | `euint32`      |
+| `decrypt64`   | `bigint` | `euint64`      |
+| `decrypt128`  | `bigint` | `euint128`     |
+| `decrypt256`  | `bigint` | `euint256`     |
+
+### Boolean decryption
+
+Decrypts encrypted booleans (`ebool`).
+
+| Function Name | Returns   | Encrypted Type |
+| ------------- | --------- | -------------- |
+| `decryptBool` | `boolean` | `ebool`        |
+
+### Byte array decryption
+
+Decrypts encrypted byte arrays of various sizes (`ebytesXX`).
+
+| Function Name      | Returns  | Encrypted Type |
+| ------------------ | -------- | -------------- |
+| `decryptEbytes64`  | `string` | `ebytes64`     |
+| `decryptEbytes128` | `string` | `ebytes128`    |
+| `decryptEbytes256` | `string` | `ebytes256`    |
+
+### Address decryption
+
+Decrypts encrypted addresses.
+
+| Function Name    | Returns  | Encrypted Type |
+| ---------------- | -------- | -------------- |
+| `decryptAddress` | `string` | `eaddress`     |
+
+---
+
+## Function Usage
+
+### Example: decrypting encrypted values
+
+```typescript
+import { debug } from "./debug";
+
+// Decrypt a 64-bit encrypted integer
+const handle64: bigint = await this.erc20.balanceOf(this.signers.alice);
+const plaintextValue: bigint = await debug.decrypt64(handle64);
+console.log("Decrypted Balance:", plaintextValue);
+```
+
+For a more complete example, refer to the [ConfidentialERC20 test file](https://github.com/zama-ai/fhevm-hardhat-template/blob/f9505a67db31c988f49b6f4210df47ca3ce97841/test/confidentialERC20/ConfidentialERC20.ts#L181-L205).
+
+### Example: decrypting byte arrays
+
+```typescript
+// Decrypt a 128-byte encrypted value
+const ebytes128Handle: bigint = ...; // Get handle for the encrypted bytes
+const decryptedBytes: string = await debug.decryptEbytes128(ebytes128Handle);
+console.log("Decrypted Bytes:", decryptedBytes);
+```
+
+---
+
+## **How it works**
+
+### Verifying types
+
+Each decryption function includes a **type verification step** to ensure the provided handle matches the expected encrypted type. If the type is mismatched, an error is thrown.
+
+```typescript
+function verifyType(handle: bigint, expectedType: number) {
+  const typeCt = handle >> 8n;
+  if (Number(typeCt % 256n) !== expectedType) {
+    throw "Wrong encrypted type for the handle";
+  }
+}
+```
+
+### Environment checks
+
+The functions only work in the `hardhat` network. Attempting to use them in a production environment will result in an error.
+
+```typescript
+if (network.name !== "hardhat") {
+  throw Error("This function can only be called in mocked mode");
+}
+```
+
+---
+
+## **Best Practices**
+
+1. **Use Only for Debugging**:
+   These functions require access to private keys and are meant exclusively for local testing and debugging.
+
+2. **Production Decryption**:
+   For production, always use the asynchronous Gateway-based decryption.
+
+3. **Validate Inputs**:
+   Ensure the provided handle is valid and corresponds to the correct encrypted type.

@@ -112,19 +112,25 @@ _Find more details on implementation instructions in [this repository](https://g
 pragma solidity ^0.8.24;
 
 import "fhevm/lib/TFHE.sol";
+import "fhevm/config/ZamaFHEVMConfig.sol";
 
-contract Counter {
-  euint32 counter;
+contract Counter is SepoliaZamaFHEVMConfig {
+  euint8 counter;
+
+  constructor() {
+    counter = TFHE.asEuint8(0);
+    TFHE.allowThis(counter);
+  }
 
   function add(einput valueInput, bytes calldata inputProof) public {
-    euint32 value = TFHE.asEuint32(valueInput, inputProof);
+    euint32 value = TFHE.asEuint8(valueInput, inputProof);
     counter = TFHE.add(counter, value);
-    TFHE.allow(counter, address(this));
+    TFHE.allowThis(counter);
   }
 }
 ```
 
-_More examples are available [here](https://github.com/zama-ai/fhevm/tree/main/examples)._
+_More examples are available [here](https://docs.zama.ai/fhevm/tutorials/see-all-tutorials)._
 
 <p align="right">
   <a href="#about" > ↑ Back to top </a>
@@ -136,24 +142,74 @@ _More examples are available [here](https://github.com/zama-ai/fhevm/tree/main/e
 
 ## Resources
 
-### White paper
+Here’s an improved and visually appealing version with enhanced styling and clarity:
 
-- [Confidential EVM Smart Contracts using Fully Homomorphic Encryption](https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper.pdf)
-  <br></br>
+---
 
-### Demos and Tutorials
+# **Resources for Zama's fhEVM**
 
-For a comprehensive list of demos and tutorials, visit our [tutorials page](https://docs.zama.ai/fhevm/tutorials/see-all-tutorials).
+Explore the essential resources, tools, and templates to maximize your development experience with Zama's Fully Homomorphic Ethereum Virtual Machine (**fhEVM**).
 
-### Documentation
+---
 
-Full, comprehensive documentation is available here: [https://docs.zama.ai/fhevm](https://docs.zama.ai/fhevm).
+## **White Paper**
+
+Gain insights into the technology powering fhEVM with our in-depth white paper:  
+👉 [**Confidential EVM Smart Contracts using Fully Homomorphic Encryption**](https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper-v2.pdf)
+
+---
+
+## **Demos and Tutorials**
+
+Access a curated collection of demos and step-by-step tutorials to guide your development journey:  
+🔗 [**Visit the Tutorials Page**](https://docs.zama.ai/fhevm/tutorials/see-all-tutorials)
+
+---
+
+## **Documentation**
+
+Master `fhEVM` and build smarter contracts using these resources:
+
+- 📘 [**Comprehensive fhEVM Documentation**](https://docs.zama.ai/fhevm)  
+  Dive deep into Zama's detailed guide for utilizing the full potential of fhEVM.
+
+- 🤖 [**ZAMA Solidity Developer (Modified ChatGPT Model)**](https://chatgpt.com/g/g-67518aee3c708191b9f08d077a7d6fa1-zama-solidity-developer)  
+  Accelerate your smart contract development with AI-powered assistance.
+
+## **Development templates**
+
+Start building faster with pre-configured templates tailored for various frameworks:
+
+### **Smart Contracts**
+
+- 💻 [**fhEVM Contracts**](https://github.com/zama-ai/fhevm-contracts)  
+  A library of FHE-enabled smart contract examples, ready for customization and extension.
+
+### **Backend development**
+
+- 🔧 [**Hardhat Template**](https://github.com/zama-ai/fhevm-hardhat-template)  
+  A robust Hardhat template for developing, testing, and deploying FHE smart contracts.
+
+### **Frontend frameworks**
+
+- 🌐 [**React.js Template**](https://github.com/zama-ai/fhevm-react-template)  
+  Simplify your FHE dApp development with a clean and optimized React.js template.
+- ⚡ [**Next.js Template**](https://github.com/zama-ai/fhevm-next-template)  
+  Build server-rendered, scalable dApps with FHE support using this Next.js template.
+- 🖼️ [**Vue.js Template**](https://github.com/zama-ai/fhevm-vue-template)  
+  Create modular, responsive dApps with FHE capabilities using Vue.js.
+
+---
+
+### 🚀 **Kickstart Your Project Today!**
+
+Leverage these templates to accelerate your development process and bring your ideas to life faster.
 
 <p align="right">
   <a href="#about" > ↑ Back to top </a>
 </p>
 
-### Blockchain Implementation
+## Blockchain Implementation
 
 To support fhEVM in an EVM-based blockchain, the **fhevm-go** library can be used as it implements all the needed FHE functionalities.
 It is available here: [fhevm-go](https://github.com/zama-ai/fhevm-go)
@@ -197,56 +253,10 @@ test/tfheOperations/tfheOperations.ts
   <a href="#about" > ↑ Back to top </a>
 </p>
 
-#### Tests
-
-The easiest way to understand how to write/dev smart contract and interact with them using **fhevmjs** is to read and explore the available tests in this repository.
-
-##### Fast start
-
-```bash
-# in one terminal
-npm run fhevm:start
-# in another terminal
-npm i
-cp .env.example .env
-npm run test:mock
-```
-
-</details>
-
-##### Run test on a real fhEVM
-
-```bash
-npm run test -- --network sepolia
-```
-
 #### Adding new operators
 
 Operators can be defined as data inside `codegen/common.ts` file and code automatically generates solidity overloads.
 Test for overloads must be added (or the build doesn't pass) inside `codegen/overloadsTests.ts` file.
-
-#### Mocked mode
-
-The mocked mode allows faster testing and the ability to analyze coverage of the tests. In this mocked version, encrypted types are not really encrypted, and the tests are run on the original version of the EVM, on a local hardhat network instance. To run the tests in mocked mode, you can use directly the following command:
-
-```bash
-npm run test:mock
-```
-
-To analyze the coverage of the tests (in mocked mode necessarily, as this cannot be done on the real fhEVM node), you can use this command :
-
-```bash
-npm run coverage:mock
-```
-
-Then open the file `coverage/index.html`. You can see there which line or branch for each contract which has been covered or missed by your test suite. This allows increased security by pointing out missing branches not covered yet by the current tests.
-
-> [!Note]
-> Due to intrinsic limitations of the original EVM, the mocked version differ in few corner cases from the real fhEVM, the main difference is the difference in gas prices for the FHE operations. This means that before deploying to production, developers still need to run the tests with the original fhEVM node, as a final check in non-mocked mode, with `npm run test`.
-
-<p align="right">
-  <a href="#about" > ↑ Back to top </a>
-</p>
 
 ### Citations
 

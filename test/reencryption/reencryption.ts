@@ -6,7 +6,7 @@ import { getSigners, initSigners } from '../signers';
 
 describe('Reencryption', function () {
   before(async function () {
-    await initSigners(2);
+    await initSigners();
     this.signers = await getSigners();
     this.instances = await createInstances(this.signers);
     const contractFactory = await ethers.getContractFactory('Reencrypt');

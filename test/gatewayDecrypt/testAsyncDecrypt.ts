@@ -8,7 +8,7 @@ import { bigIntToBytes64, bigIntToBytes128, bigIntToBytes256, waitNBlocks } from
 
 describe('TestAsyncDecrypt', function () {
   before(async function () {
-    await initSigners(2);
+    await initSigners();
     this.signers = await getSigners();
     this.relayerAddress = '0x97F272ccfef4026A1F3f0e0E879d514627B84E69';
     this.instances = await createInstances(this.signers);

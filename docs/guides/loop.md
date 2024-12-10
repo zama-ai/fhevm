@@ -54,18 +54,18 @@ function swapTokensForTokens(einput encryptedAmountAIn, einput encryptedAmountBI
 
   // send tokens from user to AMM contract
   TFHE.allowTransient(encryptedAmountA, tokenA);
-  IEncryptedERC20(tokenA).transferFrom(msg.sender, address(this), encryptedAmountA);
+  IConfidentialERC20(tokenA).transferFrom(msg.sender, address(this), encryptedAmountA);
 
   TFHE.allowTransient(encryptedAmountB, tokenB);
-  IEncryptedERC20(tokenB).transferFrom(msg.sender, address(this), encryptedAmountB);
+  IConfidentialERC20(tokenB).transferFrom(msg.sender, address(this), encryptedAmountB);
 
   // send tokens from AMM contract to user
   // Price of tokenA in tokenB is constant and equal to 1, so we just swap the encrypted amounts here
   TFHE.allowTransient(encryptedAmountB, tokenA);
-  IEncryptedERC20(tokenA).transfer(msg.sender, encryptedAmountB);
+  IConfidentialERC20(tokenA).transfer(msg.sender, encryptedAmountB);
 
   TFHE.allowTransient(encryptedAmountA, tokenB);
-  IEncryptedERC20(tokenB).transferFrom(msg.sender, address(this), encryptedAmountA);
+  IConfidentialERC20(tokenB).transferFrom(msg.sender, address(this), encryptedAmountA);
 }
 ```
 

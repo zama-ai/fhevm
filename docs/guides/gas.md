@@ -1,23 +1,79 @@
-# Gas Estimation in fhEVM
+# Gas estimation in fhEVM
 
-This guide helps you understand and estimate gas costs for Fully Homomorphic Encryption (FHE) operations in your smart contracts.
+This guide explains how to estimate gas costs for Fully Homomorphic Encryption (FHE) operations in your smart contracts on Zama's fhEVM. Understanding gas consumption is critical for designing efficient confidential smart contracts.
 
 ## Overview
 
-When working with encrypted data in fhEVM, operations consume more gas compared to regular smart contract operations. This is because FHE operations require complex mathematical computations to maintain data privacy and security.
+FHE operations in fhEVM are computationally intensive, resulting in higher gas costs compared to standard Ethereum operations. This is due to the complex mathematical operations required to ensure privacy and security.
 
-Below you'll find detailed gas cost estimates for common FHE operations across different encrypted data types. Use these as a reference when designing and optimizing your confidential smart contracts.
+### Types of gas in fhEVM
 
-> **Note**: Gas costs are approximate and may vary slightly based on network conditions and contract complexity.
+1. **Native Gas**:
+   - Represents gas used for standard Ethereum operations.
+   - On fhEVM, native gas consumption is approximately 20% higher than in mocked environments.
+2. **FHE Gas**:
+   - Represents gas consumed by FHE-specific computations.
+   - FHE gas is consistent across both mocked and real fhEVM environments.
 
-## ebool
+> **Note**: Gas values provided are approximate and may vary based on network conditions, implementation details, and contract complexity.
 
-| Function name    | Gas    |
-| ---------------- | ------ |
-| `and`/`or`/`xor` | 26,000 |
-| `not`            | 30,000 |
+---
 
-## euint4
+## Measuring gas consumption
+
+To monitor gas usage during development, use the following tools:
+
+1. **`getFHEGasFromTxReceipt`**:
+
+   - Extracts FHE gas consumption from a transaction receipt.
+   - Works in only in mocked fhEVM environments.
+
+2. **`.gasUsed`**:
+   - Returns the native gas used during a transaction.
+   - In mocked mode, this value underestimates real native gas usage by ~20%.
+   - Works in both mocked and real fhEVM environments.
+
+### Example: gas measurement
+
+The following code demonstrates how to measure both FHE gas and native gas during a transaction:
+
+```typescript
+const transaction = await tx.wait();
+expect(transaction?.status).to.eq(1);
+
+if (network.name === "hardhat") {
+  const FHEGasConsumed = getFHEGasFromTxReceipt(transaction);
+  console.log("FHE Gas Consumed:", FHEGasConsumed);
+}
+
+console.log("Native Gas Consumed:", transaction.gasUsed);
+```
+
+## Gas limit
+
+The current devnet has a gas limit of **10,000,000**. Here's what you need to know:
+
+- If you send a transaction that exceeds this limit:
+  - The transaction will fail to execute
+  - Your wallet will be unable to emit new transactions
+  - You'll need to send a new transaction with the same nonce but correct gas limit
+
+## Gas costs for common operations
+
+### Boolean Operations (`ebool`)
+
+| Function Name    | Gas Cost |
+| ---------------- | -------- |
+| `and`/`or`/`xor` | 26,000   |
+| `not`            | 30,000   |
+
+---
+
+### Unsigned integer operations
+
+Gas costs increase with the bit-width of the encrypted integer type. Below are the detailed costs for various operations on encrypted types.
+
+#### **4-bit Encrypted Integers (`euint4`)**
 
 | function name          | Gas     |
 | ---------------------- | ------- |
@@ -40,7 +96,7 @@ Below you'll find detailed gas cost estimates for common FHE operations across d
 | `not`                  | 33,000  |
 | `select`               | 45,000  |
 
-## euint8
+#### **8-bit Encrypted integers (`euint8`)**
 
 | Function name          | Gas     |
 | ---------------------- | ------- |
@@ -64,9 +120,9 @@ Below you'll find detailed gas cost estimates for common FHE operations across d
 | `select`               | 47,000  |
 | `randEuint8()`         | 100,000 |
 
-## euint16
+#### **16-bit Encrypted integers (`euint16`)**
 
-| function name          | euint16 |
+| Function name          | Gas     |
 | ---------------------- | ------- |
 | `add`/`sub`            | 133,000 |
 | `add`/`sub` (scalar)   | 133,000 |
@@ -88,7 +144,7 @@ Below you'll find detailed gas cost estimates for common FHE operations across d
 | `select`               | 47,000  |
 | `randEuint16()`        | 100,000 |
 
-## euint32
+#### **32-bit Encrypted Integers (`euint32`)**
 
 | Function name          | Gas fee |
 | ---------------------- | ------- |
@@ -112,7 +168,7 @@ Below you'll find detailed gas cost estimates for common FHE operations across d
 | `select`               | 50,000  |
 | `randEuint32()`        | 100,000 |
 
-## euint64
+#### **64-bit Encrypted integers (`euint64`)**
 
 | Function name          | Gas fee   |
 | ---------------------- | --------- |
@@ -136,22 +192,70 @@ Below you'll find detailed gas cost estimates for common FHE operations across d
 | `select`               | 53,000    |
 | `randEuint64()`        | 100,000   |
 
-## eaddress
+#### **128-bit Encrypted integers (`euint128`)**
+
+| Function name          | Gas fee   |
+| ---------------------- | --------- |
+| `add`/`sub`            | 218,000   |
+| `add`/`sub` (scalar)   | 218,000   |
+| `mul`                  | 1,145,000 |
+| `mul` (scalar)         | 480,000   |
+| `div` (scalar)         | 857,000   |
+| `rem` (scalar)         | 1,499,000 |
+| `and`/`or`/`xor`       | 41,000    |
+| `shr`/`shl`            | 282,000   |
+| `shr`/`shl` (scalar)   | 41,000    |
+| `rotr`/`rotl`          | 282,000   |
+| `rotr`/`rotl` (scalar) | 41,000    |
+| `eq`/`ne`              | 88,000    |
+| `ge`/`gt`/`le`/`lt`    | 190,000   |
+| `min`/`max`            | 241,000   |
+| `min`/`max` (scalar)   | 225,000   |
+| `neg`                  | 248,000   |
+| `not`                  | 38,000    |
+| `select`               | 70,000    |
+
+#### **256-bit Encrypted integers (`euint256`)**
+
+| function name          | Gas fee   |
+| ---------------------- | --------- |
+| `add`/`sub`            | 253,000   |
+| `add`/`sub` (scalar)   | 253,000   |
+| `mul`                  | 2,045,000 |
+| `mul` (scalar)         | 647,000   |
+| `div` (scalar)         | 1,258,000 |
+| `rem` (scalar)         | 2,052,000 |
+| `and`/`or`/`xor`       | 44,000    |
+| `shr`/`shl`            | 350,000   |
+| `shr`/`shl` (scalar)   | 44,000    |
+| `rotr`/`rotl`          | 350,000   |
+| `rotr`/`rotl` (scalar) | 44,000    |
+| `eq`/`ne`              | 100,000   |
+| `ge`/`gt`/`le`/`lt`    | 231,000   |
+| `min`/`max`            | 277,000   |
+| `min`/`max` (scalar)   | 264,000   |
+| `neg`                  | 309,000   |
+| `not`                  | 39,000    |
+| `select`               | 90,000    |
+
+### eAddress
 
 | Function name | Gas fee |
 | ------------- | ------- |
 | `eq`/`ne`     | 90,000  |
 
-## Gas limit
+## Additional Operations
 
-The current devnet has a gas limit of **10,000,000**. Here's what you need to know:
+| Function name               | Gas fee         |
+| --------------------------- | --------------- |
+| `cast`                      | 200             |
+| `trivialEncrypt` (basic)    | 100-800         |
+| `trivialEncrypt` (extended) | 1,600-6,400     |
+| `randBounded`               | 100,000         |
+| `ifThenElse`                | 43,000-300,000  |
+| `rand`                      | 100,000-400,000 |
 
-- If you send a transaction that exceeds this limit:
-  - The transaction will fail to execute
-  - Your wallet will be unable to emit new transactions
-  - You'll need to send a new transaction with the same nonce but correct gas limit
-
-### Fixing Failed Transactions in MetaMask
+## Fixing Failed Transactions in MetaMask
 
 To resolve a failed transaction due to gas limits:
 
