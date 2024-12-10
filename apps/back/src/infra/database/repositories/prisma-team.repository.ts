@@ -1,10 +1,11 @@
-import { TeamProps, Team } from '@/users/domain/entities/team'
-import { TeamRepository } from '@/users/domain/repositories/team.repository'
-import { PrismaService } from '../prisma.service'
 import { Injectable } from '@nestjs/common'
-import { Task } from '@/utils/task'
 import { AppError, notFoundError, unknownError } from '@/utils/app-error'
+import { Task } from '@/utils/task'
+
+import { Team } from '@/users/domain/entities/team'
+import { TeamRepository } from '@/users/domain/repositories/team.repository'
 import { TeamId, UserId } from '@/users/domain/entities/value-objects'
+import { PrismaService } from '../prisma.service'
 
 @Injectable()
 export class PrismaTeamRepository extends TeamRepository {
@@ -32,5 +33,23 @@ export class PrismaTeamRepository extends TeamRepository {
         )
         .catch(err => reject(unknownError(String(err))))
     }).chain(props => Team.parseArray(props).async())
+  }
+
+  create(id: TeamId, name: string, userId: UserId): Task<Team, AppError> {
+    return new Task<unknown, AppError>((resolve, reject) => {
+      this.db.team
+        .create({
+          data: {
+            id: id.value,
+            name,
+            users: {
+              connect: { id: userId.value },
+            },
+          },
+          include: { users: true },
+        })
+        .then(team => resolve(team))
+        .catch(err => reject(unknownError(String(err))))
+    }).chain(props => Team.parse(props).async())
   }
 }

@@ -1,22 +1,23 @@
+import { Injectable } from '@nestjs/common'
 import { JwtService } from '@nestjs/jwt'
 import { randomUUID } from 'crypto'
+import { UseCase } from '@/utils/use-case'
+import { Task } from '@/utils/task'
+import { AppError, notFoundError } from '@/utils/app-error'
+
 import { User } from '@/users/domain/entities/user'
 import { UserRepository } from '@/users/domain/repositories/user.repository'
 import { Invitation } from '@/invitations/domain/entities/invitation'
+import { TeamRepository } from '@/users/domain/repositories/team.repository'
 import { InvitationRepository } from '@/invitations/domain/repositories/invitation.repository'
-import { UseCase } from '@/utils/use-case'
-import { JwtPayload } from '../interfaces/jwt-payload'
-import { Injectable } from '@nestjs/common'
-import { Task } from '@/utils/task'
-import { AppError, notFoundError } from '@/utils/app-error'
+
+import { Token } from '@/invitations/domain/entities/value-objects'
 import {
   Password,
+  TeamId,
   ValidatedPassword,
 } from '@/users/domain/entities/value-objects'
-import {
-  InvitationId,
-  Token,
-} from '@/invitations/domain/entities/value-objects'
+import { JwtPayload } from '../interfaces/jwt-payload'
 
 interface SignupInput {
   name: string
@@ -31,6 +32,7 @@ export class SignUp
   constructor(
     private readonly userRepository: UserRepository,
     private readonly invitationRepository: InvitationRepository,
+    private readonly teamRepository: TeamRepository,
     private readonly jwtService: JwtService,
   ) {}
 
@@ -65,6 +67,11 @@ export class SignUp
         )
         .chain(({ user, invitation }) =>
           this.userRepository.create(user).map(user => ({ user, invitation })),
+        )
+        .chain(({ user, invitation }) =>
+          this.teamRepository
+            .create(new TeamId(randomUUID()), 'Personal', user.id)
+            .map(() => ({ user, invitation })),
         )
         .chain(({ user, invitation }) =>
           // Note: we are performing to mutation without a transaction, so
