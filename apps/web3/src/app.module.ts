@@ -1,15 +1,15 @@
-import { SQSClient } from '@aws-sdk/client-sqs';
-import { Module } from '@nestjs/common';
-import { ConfigModule, ConfigService } from '@nestjs/config';
-import { SqsModule } from 'sqs';
-import awsConfig from './config/aws.config';
-import { SQSConsumer } from './infra/adapters/sqs.consumer';
-import { SNSClient } from '@aws-sdk/client-sns';
-import ethersConfig, { EtherProvider } from './config/ether.config';
-import { VerifyContract } from './use-cases/verify-contract.use-case';
-import { CONTRACT_SERVICE } from './constants';
-import { EtherscanContractService } from './infra/adapters/etherscan-contract.service';
-import { ContractService } from './domain/services/contract.service';
+import { SQSClient } from '@aws-sdk/client-sqs'
+import { Module } from '@nestjs/common'
+import { ConfigModule, ConfigService } from '@nestjs/config'
+import { SqsModule } from 'sqs'
+import awsConfig from './config/aws.config'
+import { SQSConsumer } from './infra/adapters/sqs.consumer'
+import { SNSClient } from '@aws-sdk/client-sns'
+import ethersConfig, { EtherProvider } from './config/ether.config'
+import { VerifyContract } from './use-cases/verify-contract.use-case'
+import { CONTRACT_SERVICE } from './constants'
+import { EtherscanContractService } from './infra/adapters/etherscan-contract.service'
+import { ContractService } from './domain/services/contract.service'
 
 @Module({
   imports: [
@@ -52,9 +52,9 @@ import { ContractService } from './domain/services/contract.service';
       useFactory: (config: ConfigService) => {
         switch (config.get<EtherProvider>('ether.provider')!) {
           case 'Etherscan':
-            return new EtherscanContractService(config);
+            return new EtherscanContractService(config)
           default:
-            throw new Error('invalid provider');
+            throw new Error('invalid provider')
         }
       },
     },

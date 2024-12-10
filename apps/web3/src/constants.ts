@@ -1,1 +1,1 @@
-export const CONTRACT_SERVICE = Symbol('ContractService');
+export const CONTRACT_SERVICE = Symbol('ContractService')

@@ -1,6 +1,6 @@
-import { AppError, Task } from 'utils';
-import { Address } from '../entities/address';
+import { AppError, Task } from 'utils'
+import { Address } from '../entities/address'
 
 export interface ContractService {
-  getAbi(address: Address): Task<string, AppError>;
+  getAbi(address: Address): Task<string, AppError>
 }
