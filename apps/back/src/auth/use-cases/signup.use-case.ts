@@ -70,7 +70,12 @@ export class SignUp
         )
         .chain(({ user, invitation }) =>
           this.teamRepository
-            .create(new TeamId(randomUUID()), 'Personal', user.id)
+            .create(new TeamId(randomUUID()), `${user.name}'s personal apps`)
+            .map(team => ({ user, invitation, team })),
+        )
+        .chain(({ user, invitation, team }) =>
+          this.teamRepository
+            .addUser(team.id, user.id)
             .map(() => ({ user, invitation })),
         )
         .chain(({ user, invitation }) =>
