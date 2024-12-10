@@ -17,6 +17,7 @@ import { signupLoader } from './pages/signup.loader'
 import { AboutPage } from './pages/about.page'
 import { DashboardPage } from './pages/dashboard.page'
 import { dashboardLoader } from './pages/dashboard.loader'
+import { CreateStepOnePage } from './pages/create-step-one.page.tsx'
 
 const router = createBrowserRouter([
   {
@@ -53,6 +54,10 @@ const router = createBrowserRouter([
       {
         path: '/about',
         element: <AboutPage />,
+      },
+      {
+        path: '/app/create/1',
+        element: <CreateStepOnePage />,
       },
     ],
   },

@@ -1,10 +1,12 @@
-import { useLoaderData } from 'react-router'
+import { useLoaderData, useNavigate } from 'react-router'
 import { Text } from '@chakra-ui/react'
 import { MeQuery } from '@/__generated__/graphql'
 import { HeroGreetings } from '@/components/hero-greetings/hero-greetings'
+import { DappsList } from '@/components/dapps-list/dapps-list'
 
 export function DashboardPage() {
   const { me } = useLoaderData<MeQuery>()
+  const navigate = useNavigate()
 
   return (
     <>
@@ -15,6 +17,7 @@ export function DashboardPage() {
         nesciunt, quisquam dolorum nam, quidem debitis ut omnis libero quas
         suscipit asperiores.
       </Text>
+      <DappsList createDapp={() => navigate('/app/create/1')} />
     </>
   )
 }

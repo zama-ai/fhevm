@@ -16,10 +16,23 @@ export type Scalars = {
   Float: { input: number; output: number; }
 };
 
+export type CreateDappInput = {
+  address?: InputMaybe<Scalars['String']['input']>;
+  name: Scalars['String']['input'];
+  teamId: Scalars['String']['input'];
+};
+
 export type CreateInvitationInput = {
   email: Scalars['String']['input'];
   /** You need the secret key to create an invitation ask the #zws team to get one */
   secret: Scalars['String']['input'];
+};
+
+export type Dapp = {
+  __typename?: 'Dapp';
+  address?: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  name: Scalars['String']['output'];
 };
 
 export type Invitation = {
@@ -37,9 +50,15 @@ export type LoginInput = {
 
 export type Mutation = {
   __typename?: 'Mutation';
+  createDapp: Dapp;
   createInvitation: Invitation;
   login: Auth;
   signup: Auth;
+};
+
+
+export type MutationCreateDappArgs = {
+  input: CreateDappInput;
 };
 
 
