@@ -5,11 +5,16 @@ import { SqsModule } from 'sqs'
 import awsConfig from './config/aws.config'
 import { SQSConsumer } from './infra/adapters/sqs.consumer'
 import { SNSClient } from '@aws-sdk/client-sns'
-import ethersConfig, { EtherProvider } from './config/ether.config'
+import ethersConfig, {
+  ChainId,
+  EtherConfig,
+  EtherConfigFactory,
+  isChainId,
+} from './config/ether.config'
 import { VerifyContract } from './use-cases/verify-contract.use-case'
 import { CONTRACT_SERVICE } from './constants'
-import { EtherscanContractService } from './infra/adapters/etherscan-contract.service'
 import { ContractService } from './domain/services/contract.service'
+import { ProxyContractService } from './infra/adapters/proxy-contract.service'
 
 @Module({
   imports: [
@@ -50,12 +55,14 @@ import { ContractService } from './domain/services/contract.service'
       provide: CONTRACT_SERVICE,
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
-        switch (config.get<EtherProvider>('ether.provider')!) {
-          case 'Etherscan':
-            return new EtherscanContractService(config)
-          default:
-            throw new Error('invalid provider')
-        }
+        const map = config
+          .get<string[]>('ether.chainIds')!
+          .filter(isChainId)
+          .reduce(function (acc, chainId) {
+            acc.set(chainId, EtherConfigFactory.getEtherConfig(chainId))
+            return acc
+          }, new Map<ChainId, EtherConfig>())
+        return new ProxyContractService(map)
       },
     },
     {

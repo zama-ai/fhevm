@@ -1,21 +1,24 @@
-import { ConfigService } from '@nestjs/config'
 import { Address } from 'src/domain/entities/address'
 import { ContractService } from 'src/domain/services/contract.service'
 import { Task, AppError, unknownError } from 'utils'
 import { stringify } from 'querystring'
+import type { ChainId, EtherConfig } from 'src/config/ether.config'
 
 export class EtherscanContractService implements ContractService {
+  private readonly chainId: ChainId
   private readonly apiEndpoint: string
   private readonly rpcEndpoint: string
-  private readonly apiKey: string
+  private readonly apiKey: string | undefined
 
-  constructor(config: ConfigService) {
-    this.apiEndpoint = config.getOrThrow('ether.apiEndpoint')
-    this.rpcEndpoint = config.getOrThrow('ether.rpcEndpoint')!
-    this.apiKey = config.getOrThrow('ether.apiKey')!
+  constructor({ chainId, apiEndpoint, rpcEndpoint, apiKey }: EtherConfig) {
+    this.chainId = chainId
+    this.apiEndpoint = apiEndpoint
+    this.rpcEndpoint = rpcEndpoint
+    this.apiKey = apiKey
   }
 
-  getAbi(address: Address): Task<string, AppError> {
+  getAbi(chainId: string, address: Address): Task<string, AppError> {
+    // Note: should I check the chainId?
     const params = stringify({
       module: 'contract',
       action: 'getabi',
