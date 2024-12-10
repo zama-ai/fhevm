@@ -63,4 +63,16 @@ export class PrismaTeamRepository extends TeamRepository {
         .catch(err => reject(unknownError(String(err))))
     }).chain(props => Team.parse(props).async())
   }
+  findOneByIdAndUserId(id: TeamId, userId: UserId): Task<Team, AppError> {
+    return new Task<unknown, AppError>((resolve, reject) => {
+      this.db.team
+        .findFirst({
+          where: { id: id.value, users: { some: { id: userId.value } } },
+        })
+        .then(data =>
+          data ? resolve(data) : reject(notFoundError('Team not found')),
+        )
+        .catch(err => reject(unknownError(String(err))))
+    }).chain(props => Team.parse(props).async())
+  }
 }

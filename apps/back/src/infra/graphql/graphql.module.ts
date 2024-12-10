@@ -6,6 +6,7 @@ import { AuthModule } from '@/auth/infra/auth.module'
 import { UsersModule } from '@/users/infra/users.module'
 import { TeamsModule } from '@/teams/infra/teams.module'
 import { InvitationsModule } from '@/invitations/infra/invitations.module'
+import { DappsModule } from '@/dapps/infra/dapps.module'
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { InvitationsModule } from '@/invitations/infra/invitations.module'
     UsersModule,
     TeamsModule,
     InvitationsModule,
+    DappsModule,
   ],
 })
 export class GraphQLModule {}

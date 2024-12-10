@@ -13,6 +13,14 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum DappStatus {
+  DRAFT
+  DEPLOYING
+  LIVE
+  ARCHIVED
+  DELETED
+}
+
 model Invitation {
   id        String    @id
   email     String    @unique
@@ -39,6 +47,18 @@ model Team {
   id        String   @id
   name      String
   users     User[]
+  dapps     Dapp[]
   updatedAt DateTime @updatedAt
   createdAt DateTime @default(now())
+}
+
+model Dapp {
+  id        String     @id
+  name      String
+  address   String?
+  status    DappStatus @default(DRAFT)
+  teamId    String
+  team      Team       @relation(fields: [teamId], references: [id])
+  updatedAt DateTime   @updatedAt
+  createdAt DateTime   @default(now())
 }

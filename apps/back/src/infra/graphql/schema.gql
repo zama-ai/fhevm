@@ -28,6 +28,12 @@ type Invitation {
   expiresAt: Float!
 }
 
+type Dapp {
+  id: ID!
+  name: String!
+  address: String
+}
+
 type Query {
   me: User!
   invitation(token: String!): Invitation!
@@ -37,6 +43,7 @@ type Mutation {
   login(input: LoginInput!): auth!
   signup(input: SignupInput!): auth!
   createInvitation(input: CreateInvitationInput!): Invitation!
+  createDapp(input: CreateDappInput!): Dapp!
 }
 
 input LoginInput {
@@ -57,4 +64,10 @@ input CreateInvitationInput {
   You need the secret key to create an invitation ask the #zws team to get one
   """
   secret: String!
+}
+
+input CreateDappInput {
+  name: String!
+  teamId: String!
+  address: String
 }
