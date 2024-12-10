@@ -1,6 +1,7 @@
 package fhevm
 
 import (
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -8,10 +9,12 @@ import (
 	"os"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	_ "github.com/mattn/go-sqlite3"
+	grpc "google.golang.org/grpc"
 )
 
 type FheUintType uint8
@@ -119,10 +122,7 @@ type ExecutorApi interface {
 	// the cache prepared to be inserted when commit block comes.
 	// We pass current block number to know at which
 	// block ciphertext should be materialized inside blockchain state.
-	CreateSession(blockNumber int64, storage ChainStorageApi) ExecutorSession
-	// Insert existing fhe operations to the state from inside the state
-	// storage queue. This should be called at the end of every block.
-	FlushFheResultsToState(blockNumber int64, storage ChainStorageApi) error
+	CreateSession(blockNumber int64) ExecutorSession
 }
 
 type SegmentId int
@@ -138,8 +138,9 @@ type ExecutorSession interface {
 	NextSegment() SegmentId
 	InvalidateSinceSegment(id SegmentId) SegmentId
 	// After commit fhe computations will be put inside the queue
-	// to the blockchain state
-	Commit() error
+	// to the blockchain state, also flushes pending computations
+	// from storage to the state
+	Commit(blockNumber int64, storage ChainStorageApi) error
 	GetStore() ComputationStore
 }
 
@@ -151,35 +152,43 @@ type ComputationStore interface {
 type CacheBlockData struct {
 	// store ciphertexts by handles
 	materializedCiphertexts map[string][]byte
-	// allow inserting many at once
-	blockEnqueuedCiphertext map[string]bool
-	enqueuedCiphertexts     []*ComputationToInsert
+}
+
+type BlockCiphertextQueue struct {
+	queue []*ComputationToInsert
+	// filter duplicates
+	enqueuedCiphertext map[string]bool
 }
 
 type CiphertextCache struct {
-	lock              sync.RWMutex
-	blocksCiphertexts map[int64]*CacheBlockData
+	lock                 sync.RWMutex
+	blocksCiphertexts    map[int64]*CacheBlockData
+	ciphertextsToCompute map[int64]*BlockCiphertextQueue
+	workAvailableChan    chan bool
+	latestBlockFlushed   int64
+	lastCacheGc          time.Time
 }
 
 type ApiImpl struct {
 	address                common.Address
 	aclContractAddress     common.Address
+	executorUrl            string
 	contractStorageAddress common.Address
 	cache                  *CiphertextCache
 }
 
 type SessionImpl struct {
-	address            common.Address
-	aclContractAddress common.Address
-	isCommitted        bool
-	sessionStore       *SessionComputationStore
-	storage            ChainStorageApi
+	sessionStore *SessionComputationStore
+	apiImpl      *ApiImpl
 }
 
 type ComputationOperand struct {
-	IsScalar    bool
-	Handle      []byte
-	FheUintType FheUintType
+	IsScalar bool
+	Handle   []byte
+	// to be filled from evm storage or cache
+	// when we process queue operations
+	CompressedCiphertext []byte
+	FheUintType          FheUintType
 }
 
 type ComputationToInsert struct {
@@ -191,60 +200,43 @@ type ComputationToInsert struct {
 }
 
 type SessionComputationStore struct {
-	underlyingCiphertextStore ComputationStore
-	insertedHandles           map[string]int
-	invalidatedSegments       map[SegmentId]bool
-	inserts                   []ComputationToInsert
-	isCommitted               bool
-	segmentCount              int
-	blockNumber               int64
+	insertedHandles        map[string]int
+	invalidatedSegments    map[SegmentId]bool
+	inserts                []ComputationToInsert
+	segmentCount           int
+	blockNumber            int64
+	cache                  *CiphertextCache
+	contractStorageAddress common.Address
 }
 
 type EvmStorageComputationStore struct {
-	evmStorage             ChainStorageApi
 	currentBlockNumber     int64
 	contractStorageAddress common.Address
 	cache                  *CiphertextCache
 }
 
-type handleOffset struct {
-	segment int
-	index   int
-}
-
-type ciphertextSegment struct {
-	inserts     []ComputationToInsert
-	invalidated bool
-}
-
-func (executorApi *ApiImpl) CreateSession(blockNumber int64, api ChainStorageApi) ExecutorSession {
+func (executorApi *ApiImpl) CreateSession(blockNumber int64) ExecutorSession {
 	return &SessionImpl{
-		address:            executorApi.address,
-		aclContractAddress: executorApi.aclContractAddress,
-		isCommitted:        false,
+		apiImpl: executorApi,
 		sessionStore: &SessionComputationStore{
-			isCommitted:         false,
-			inserts:             make([]ComputationToInsert, 0),
-			insertedHandles:     make(map[string]int),
-			invalidatedSegments: make(map[SegmentId]bool),
-			segmentCount:        0,
-			blockNumber:         blockNumber,
-			underlyingCiphertextStore: &EvmStorageComputationStore{
-				evmStorage:             api,
-				contractStorageAddress: executorApi.contractStorageAddress,
-				currentBlockNumber:     blockNumber,
-				cache:                  executorApi.cache,
-			},
+			inserts:                make([]ComputationToInsert, 0),
+			insertedHandles:        make(map[string]int),
+			invalidatedSegments:    make(map[SegmentId]bool),
+			segmentCount:           0,
+			blockNumber:            blockNumber,
+			cache:                  executorApi.cache,
+			contractStorageAddress: executorApi.contractStorageAddress,
 		},
 	}
 }
 
-func (sessionApi *SessionImpl) Commit() error {
-	if sessionApi.isCommitted {
-		return errors.New("session is already comitted")
+func (sessionApi *SessionImpl) Commit(blockNumber int64, storage ChainStorageApi) error {
+	err := sessionApi.sessionStore.Commit(storage)
+	if err != nil {
+		return err
 	}
 
-	err := sessionApi.sessionStore.Commit()
+	err = sessionApi.apiImpl.flushFheResultsToState(blockNumber, storage)
 	if err != nil {
 		return err
 	}
@@ -268,7 +260,6 @@ func (sessionApi *SessionImpl) Execute(dataOrig []byte, ed ExtraData, outputOrig
 
 	method, exists := signatureToFheLibMethod[signature]
 	if exists {
-		fmt.Printf("Executing captured operation %s%s\n", method.Name, method.ArgTypes)
 		if len(output) >= 32 {
 			// where to get output handle from?
 			outputHandle := output[0:32]
@@ -295,11 +286,11 @@ func (sessionApi *SessionImpl) InvalidateSinceSegment(id SegmentId) SegmentId {
 }
 
 func (sessionApi *SessionImpl) ContractAddress() common.Address {
-	return sessionApi.address
+	return sessionApi.apiImpl.address
 }
 
 func (sessionApi *SessionImpl) AclContractAddress() common.Address {
-	return sessionApi.aclContractAddress
+	return sessionApi.apiImpl.aclContractAddress
 }
 
 func (sessionApi *SessionImpl) GetStore() ComputationStore {
@@ -330,13 +321,7 @@ func (dbApi *SessionComputationStore) InsertComputation(computation ComputationT
 	return nil
 }
 
-func (dbApi *SessionComputationStore) Commit() error {
-	if dbApi.isCommitted {
-		return errors.New("session computation store already committed")
-	}
-
-	dbApi.isCommitted = true
-
+func (dbApi *SessionComputationStore) Commit(storage ChainStorageApi) error {
 	finalInserts := make([]ComputationToInsert, 0, len(dbApi.inserts))
 	for _, ct := range dbApi.inserts {
 		if !dbApi.invalidatedSegments[ct.segmentId] {
@@ -344,9 +329,19 @@ func (dbApi *SessionComputationStore) Commit() error {
 		}
 	}
 
-	fmt.Printf("Inserting %d computations into database\n", len(finalInserts))
+	dbApi.inserts = dbApi.inserts[:0]
+	dbApi.insertedHandles = make(map[string]int)
+	dbApi.invalidatedSegments = make(map[SegmentId]bool)
+	dbApi.segmentCount = 0
 
-	err := dbApi.underlyingCiphertextStore.InsertComputationBatch(finalInserts)
+	fmt.Printf("Inserting %d computations into the cache\n", len(finalInserts))
+
+	evmInserter := EvmStorageComputationStore{
+		currentBlockNumber:     dbApi.blockNumber,
+		contractStorageAddress: dbApi.contractStorageAddress,
+		cache:                  dbApi.cache,
+	}
+	err := evmInserter.InsertComputationBatch(storage, finalInserts)
 	if err != nil {
 		return err
 	}
@@ -445,7 +440,7 @@ type NativeQueueAddressLayout struct {
 	bigScalarOperand common.Hash
 }
 
-func (dbApi *EvmStorageComputationStore) InsertComputationBatch(computations []ComputationToInsert) error {
+func (dbApi *EvmStorageComputationStore) InsertComputationBatch(evmStorage ChainStorageApi, computations []ComputationToInsert) error {
 	// storage layout for the late commit queue:
 	//
 	// blockNumber address - stores the amount of ciphertexts in the queue in the block,
@@ -484,37 +479,39 @@ func (dbApi *EvmStorageComputationStore) InsertComputationBatch(computations []C
 	}
 	sort.Ints(allKeys)
 
+	one := big.NewInt(1)
 	// iterate all buckets and put items to their appropriate block queues
 	for _, key := range allKeys {
 		queueBlockNumber := int64(key)
 		bucket := buckets[queueBlockNumber]
 
 		countAddress := blockNumberToQueueItemCountAddress(queueBlockNumber)
-		ciphertextsInBlock := dbApi.evmStorage.GetState(dbApi.contractStorageAddress, countAddress).Big()
-		one := big.NewInt(1)
+		ciphertextsInBlock := evmStorage.GetState(dbApi.contractStorageAddress, countAddress).Big()
 
 		for idx, comp := range bucket {
 			layout := blockQueueStorageLayout(queueBlockNumber, int64(idx))
 			ciphertextsInBlock = ciphertextsInBlock.Add(ciphertextsInBlock, one)
 			metadata := computationMetadata(*comp)
-			dbApi.evmStorage.SetState(dbApi.contractStorageAddress, layout.metadata, metadata)
-			dbApi.evmStorage.SetState(dbApi.contractStorageAddress, layout.outputHandle, common.Hash(comp.OutputHandle))
+			evmStorage.SetState(dbApi.contractStorageAddress, layout.metadata, metadata)
+			evmStorage.SetState(dbApi.contractStorageAddress, layout.outputHandle, common.BytesToHash(comp.OutputHandle))
 			if len(comp.Operands) > 0 {
-				dbApi.evmStorage.SetState(dbApi.contractStorageAddress, layout.firstOperand, common.Hash(comp.Operands[0].Handle))
+				evmStorage.SetState(dbApi.contractStorageAddress, layout.firstOperand, common.BytesToHash(comp.Operands[0].Handle))
 			}
 			if len(comp.Operands) > 1 {
-				dbApi.evmStorage.SetState(dbApi.contractStorageAddress, layout.secondOperand, common.Hash(comp.Operands[1].Handle))
+				evmStorage.SetState(dbApi.contractStorageAddress, layout.secondOperand, common.BytesToHash(comp.Operands[1].Handle))
 			}
 		}
 
 		// set updated count back
-		dbApi.evmStorage.SetState(dbApi.contractStorageAddress, countAddress, common.BigToHash(ciphertextsInBlock))
+		evmStorage.SetState(dbApi.contractStorageAddress, countAddress, common.BigToHash(ciphertextsInBlock))
 	}
 
 	// enqueue items to cache, we do this in the
 	// end because it requires locking, so lock for minimal time
 	dbApi.cache.lock.Lock()
-	defer dbApi.cache.lock.Unlock()
+	defer func() {
+		dbApi.cache.lock.Unlock()
+	}()
 
 	// TODO: implement cache warmup algorithm, when we restart blockchain
 	// we want to scan storage queue for computations to be completed
@@ -522,32 +519,124 @@ func (dbApi *EvmStorageComputationStore) InsertComputationBatch(computations []C
 	for _, key := range allKeys {
 		queueBlockNumber := int64(key)
 		bucket := buckets[queueBlockNumber]
-		ctsStorage := dbApi.cache.blocksCiphertexts[queueBlockNumber]
+		ctsStorage := dbApi.cache.ciphertextsToCompute[queueBlockNumber]
 		if ctsStorage == nil {
-			ctsStorage = &CacheBlockData{
-				materializedCiphertexts: make(map[string][]byte),
-				blockEnqueuedCiphertext: make(map[string]bool),
-				enqueuedCiphertexts:     make([]*ComputationToInsert, 0),
+			ctsStorage = &BlockCiphertextQueue{
+				queue:              make([]*ComputationToInsert, 0),
+				enqueuedCiphertext: make(map[string]bool),
 			}
-			dbApi.cache.blocksCiphertexts[queueBlockNumber] = ctsStorage
+			dbApi.cache.ciphertextsToCompute[queueBlockNumber] = ctsStorage
 		}
 
 		for _, comp := range bucket {
 			// don't have duplicates, from possibly evaluating multiple trie caches
-			if !ctsStorage.blockEnqueuedCiphertext[common.Bytes2Hex(comp.OutputHandle)] {
-				ctsStorage.enqueuedCiphertexts = append(ctsStorage.enqueuedCiphertexts, comp)
+			if !ctsStorage.enqueuedCiphertext[common.Bytes2Hex(comp.OutputHandle)] {
+				// we must fill the raw ciphertext values here from storage so cache
+				// would have ciphertexts to compute on, as cache doesn't have easy
+				// access to the evm state
+				dbApi.hydrateComputationFromEvmState(evmStorage, comp)
+				ctsStorage.queue = append(ctsStorage.queue, comp)
 			}
+		}
+	}
+
+	// notify about work available
+	select {
+	case dbApi.cache.workAvailableChan <- true:
+	default:
+	}
+
+	return nil
+}
+
+func (dbApi *EvmStorageComputationStore) hydrateComputationFromEvmState(evmStorage ChainStorageApi, comp *ComputationToInsert) error {
+
+	for idx := range comp.Operands {
+		if !comp.Operands[idx].IsScalar {
+			if len(comp.Operands[idx].Handle) != 32 {
+				panic("non scalar handle should always be 32 bytes")
+			}
+			hash := common.BytesToHash(comp.Operands[idx].Handle)
+			resultCt := ReadBytesToAddress(evmStorage, dbApi.contractStorageAddress, hash)
+			comp.Operands[idx].CompressedCiphertext = resultCt
 		}
 	}
 
 	return nil
 }
 
-func (executorApi *ApiImpl) FlushFheResultsToState(blockNumber int64, api ChainStorageApi) error {
+// write arbitrary byte[] array to evm storage
+func putBytesToAddress(api ChainStorageApi, contractAddress common.Address, address common.Hash, bytes []byte) {
+	ctLength := big.NewInt(int64(len(bytes)))
+
+	startAddress := new(big.Int)
+	startAddress.SetBytes(address[:])
+	wordAddress := func(word int64) common.Hash {
+		res := big.NewInt(word)
+		res.Add(res, startAddress)
+		return common.BigToHash(res)
+	}
+
+	// write array length first
+	api.SetState(contractAddress, address, common.BigToHash(ctLength))
+
+	// write the ciphertext by uint256 chunks
+	wholeBlocks := len(bytes) / 32
+	tailBlockSize := len(bytes) % 32
+
+	// first block starts at handle + 1
+	wordOffset := int64(1)
+	for i := 0; i < wholeBlocks; i++ {
+		ctSlice := common.BytesToHash(bytes[i*32 : i*32+32])
+		api.SetState(contractAddress, wordAddress(wordOffset), ctSlice)
+		wordOffset += 1
+	}
+
+	// write the last partial block if it exists
+	if tailBlockSize > 0 {
+		ctSlice := common.BytesToHash(bytes[wholeBlocks*32 : wholeBlocks*32+tailBlockSize])
+		api.SetState(contractAddress, wordAddress(wordOffset), ctSlice)
+	}
+}
+
+// read arbitrary byte[] array from evm storage, exposed to geth
+func ReadBytesToAddress(api ChainStorageApi, contractAddress common.Address, address common.Hash) []byte {
+	ctLengthHash := api.GetState(contractAddress, address)
+	ctLen := new(big.Int)
+	ctLen.SetBytes(ctLengthHash[:])
+	ctLength := ctLen.Uint64()
+
+	resultBytes := make([]byte, 0, ctLength)
+	fullWords := ctLength / 32
+	finalWordSize := ctLength % 32
+
+	startAddress := new(big.Int)
+	startAddress.SetBytes(address[:])
+	wordAddress := func(word int64) common.Hash {
+		res := big.NewInt(word)
+		res.Add(res, startAddress)
+		return common.BigToHash(res)
+	}
+
+	for i := 1; i <= int(fullWords); i++ {
+		word := api.GetState(contractAddress, wordAddress(int64(i)))
+		resultBytes = append(resultBytes, word[:]...)
+	}
+	if finalWordSize > 0 {
+		word := api.GetState(contractAddress, wordAddress(int64(fullWords+1)))
+		finalSlice := word[len(word)-int(finalWordSize):]
+		resultBytes = append(resultBytes, finalSlice...)
+	}
+
+	return resultBytes
+}
+
+func (executorApi *ApiImpl) flushFheResultsToState(blockNumber int64, api ChainStorageApi) error {
 	// cleanup the queue for the block number
 	countAddress := blockNumberToQueueItemCountAddress(blockNumber)
 	ciphertextsInBlock := api.GetState(executorApi.contractStorageAddress, countAddress).Big()
 	ctCount := ciphertextsInBlock.Int64()
+
 	zero := common.BigToHash(big.NewInt(0))
 	one := big.NewInt(1)
 
@@ -577,7 +666,9 @@ func (executorApi *ApiImpl) FlushFheResultsToState(blockNumber int64, api ChainS
 	}
 
 	// set 0 as count
-	api.SetState(executorApi.contractStorageAddress, countAddress, zero)
+	if ctCount > 0 {
+		api.SetState(executorApi.contractStorageAddress, countAddress, zero)
+	}
 
 	// materialize handles in storage assuming they exist in the cache
 	return executorApi.materializeHandlesInStorage(blockNumber, handlesToMaterialize, api)
@@ -590,69 +681,76 @@ func (executorApi *ApiImpl) materializeHandlesInStorage(blockNumber int64, handl
 	}
 
 	executorApi.cache.lock.Lock()
-	defer executorApi.cache.lock.Unlock()
+	defer func() {
+		executorApi.cache.lock.Unlock()
+	}()
+
+	executorApi.cache.latestBlockFlushed = blockNumber
 
 	contractAddr := executorApi.contractStorageAddress
 
 	blockData, ok := executorApi.cache.blocksCiphertexts[blockNumber]
 	if !ok {
-		return errors.New("block number not found for materialized ciphertexts")
+		// okay, no ciphertexts were computed in this block
+		return nil
 	}
 
 	for _, handle := range handles {
-		hexStr := common.Bytes2Hex(handle[:])
-		ciphertext, ok := blockData.materializedCiphertexts[hexStr]
+		ciphertext, ok := blockData.materializedCiphertexts[string(handle[:])]
 		if !ok {
 			return errors.New("ciphertext not found in cache")
 		}
 
-		ctLength := big.NewInt(int64(len(ciphertext)))
+		putBytesToAddress(api, contractAddr, handle, ciphertext)
+	}
 
-		startAddress := new(big.Int)
-		startAddress.SetBytes(handle[:])
-		wordAddress := func(word int64) common.Hash {
-			res := big.NewInt(word)
-			res.Add(res, startAddress)
-			return common.BigToHash(res)
-		}
+	ciphertextCacheGc(executorApi.cache)
 
-		// write ciphertext length first
-		api.SetState(contractAddr, handle, common.BigToHash(ctLength))
+	return nil
+}
 
-		// write the ciphertext by uint256 chunks
-		wholeBlocks := len(ciphertext) / 32
-		tailBlockSize := len(ciphertext) % 32
+func ciphertextCacheGc(cache *CiphertextCache) {
+	if cache.latestBlockFlushed == 0 {
+		// no flushes processed yet
+		return
+	}
 
-		// first block starts at handle + 1
-		wordOffset := int64(1)
-		for i := 0; i < wholeBlocks; i++ {
-			ctSlice := common.BytesToHash(ciphertext[i*32 : i*32+32])
-			api.SetState(contractAddr, wordAddress(wordOffset), ctSlice)
-			wordOffset += 1
-		}
-		// write the last partial block if it exists
-		if tailBlockSize > 0 {
-			ctSlice := common.BytesToHash(ciphertext[wholeBlocks*32 : wholeBlocks*32+tailBlockSize])
-			api.SetState(contractAddr, wordAddress(wordOffset), ctSlice)
+	// don't run gc more often than 10 seconds
+	sinceLastGcSeconds := time.Since(cache.lastCacheGc).Seconds()
+	if sinceLastGcSeconds < 10.0 {
+		return
+	}
+
+	keysToPurge := make([]int64, 0)
+	// keep last 100 blocks in case of reorgs
+	dontKeepBlockOlderThan := cache.latestBlockFlushed - 100
+
+	for block, _ := range cache.blocksCiphertexts {
+		if block < dontKeepBlockOlderThan {
+			keysToPurge = append(keysToPurge, block)
 		}
 	}
 
-	return nil
-}
+	for _, toPurge := range keysToPurge {
+		delete(cache.blocksCiphertexts, toPurge)
+	}
 
-func (dbApi *EvmStorageComputationStore) InsertComputation(computation ComputationToInsert) error {
-	return dbApi.InsertComputationBatch([]ComputationToInsert{computation})
-}
+	if len(keysToPurge) > 0 {
+		fmt.Printf("ciphertext cache removed %d old blocks data\n", len(keysToPurge))
+	}
 
-func (dbApi *EvmStorageComputationStore) Commit() error {
-	// no commit inside EVM state store
-	return nil
+	cache.lastCacheGc = time.Now()
 }
 
 func InitExecutor() (ExecutorApi, error) {
+	executorUrl, hasUrl := os.LookupEnv("FHEVM_EXECUTOR_URL")
+	if !hasUrl {
+		return nil, errors.New("FHEVM_EXECUTOR_URL is not configured")
+	}
+
 	contractAddr, hasAddr := os.LookupEnv("FHEVM_CONTRACT_ADDRESS")
 	if !hasAddr {
-		return nil, errors.New("FHEVM_CIPHERTEXTS_DB is set but FHEVM_CONTRACT_ADDRESS is not set")
+		return nil, errors.New("FHEVM_EXECUTOR_URL is set but FHEVM_CONTRACT_ADDRESS is not set")
 	}
 	fhevmContractAddress := common.HexToAddress(contractAddr)
 	fmt.Printf("Coprocessor contract address: %s\n", fhevmContractAddress)
@@ -666,15 +764,149 @@ func InitExecutor() (ExecutorApi, error) {
 	// pick hardcoded value in the beginning, we can change later
 	storageAddress := common.HexToAddress("0x0000000000000000000000000000000000000070")
 
-	apiImpl := ApiImpl{
+	workAvailableChan := make(chan bool, 10)
+
+	apiImpl := &ApiImpl{
 		address:                fhevmContractAddress,
 		aclContractAddress:     aclContractAddress,
 		contractStorageAddress: storageAddress,
+		executorUrl:            executorUrl,
 		cache: &CiphertextCache{
-			lock:              sync.RWMutex{},
-			blocksCiphertexts: make(map[int64]CacheBlockData),
+			lock:                 sync.RWMutex{},
+			blocksCiphertexts:    make(map[int64]*CacheBlockData),
+			ciphertextsToCompute: make(map[int64]*BlockCiphertextQueue),
+			workAvailableChan:    workAvailableChan,
+			lastCacheGc:          time.Now(),
 		},
 	}
 
-	return &apiImpl, nil
+	// run executor worker in the background
+	go executorWorkerThread(apiImpl)
+
+	return apiImpl, nil
+}
+
+func executorWorkerThread(impl *ApiImpl) {
+	for {
+		// try reading notification from channel
+		<-impl.cache.workAvailableChan
+
+		// sleep for 500ms to wait for more messages
+		// to consolidate them at one processing batch
+		time.Sleep(time.Millisecond * 500)
+
+		err := executorProcessPendingComputations(impl)
+		if err != nil {
+			fmt.Printf("executor error while processing pending computations: %s\n", err)
+		}
+	}
+}
+
+func executorProcessPendingComputations(impl *ApiImpl) error {
+	startTime := time.Now()
+	impl.cache.lock.Lock()
+	defer func() {
+		impl.cache.lock.Unlock()
+	}()
+
+	availableCts := len(impl.cache.ciphertextsToCompute)
+
+	defer func() {
+		if availableCts > 0 {
+			duration := time.Since(startTime).Milliseconds()
+			fmt.Printf("executor computations completed in %dms\n", duration)
+		}
+	}()
+
+	// empty channel from multiple notifications before processing
+	for len(impl.cache.workAvailableChan) > 0 {
+		<-impl.cache.workAvailableChan
+	}
+
+	// no work to be done
+	if availableCts == 0 {
+		return nil
+	}
+
+	var opts []grpc.DialOption
+	opts = append(opts, grpc.WithInsecure())
+	conn, err := grpc.NewClient(impl.executorUrl, opts...)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	request := SyncComputeRequest{
+		Computations:           make([]*SyncComputation, 0),
+		CompactCiphertextLists: make([][]byte, 0),
+		CompressedCiphertexts:  make([]*CompressedCiphertext, 0),
+	}
+
+	ctToBlockIndex := make(map[string]int64)
+	for block, compute := range impl.cache.ciphertextsToCompute {
+		for _, ct := range compute.queue {
+			syncInputs := make([]*SyncInput, 0, len(ct.Operands))
+			resultHandles := make([][]byte, 0, 1)
+			resultHandles = append(resultHandles, ct.OutputHandle)
+
+			for _, operand := range ct.Operands {
+				if operand.IsScalar {
+					syncInputs = append(syncInputs, &SyncInput{
+						Input: &SyncInput_Scalar{
+							Scalar: operand.Handle,
+						},
+					})
+				} else {
+					syncInputs = append(syncInputs, &SyncInput{
+						Input: &SyncInput_Handle{
+							Handle: operand.Handle,
+						},
+					})
+					request.CompressedCiphertexts = append(request.CompressedCiphertexts, &CompressedCiphertext{
+						Handle:        operand.Handle,
+						Serialization: operand.CompressedCiphertext,
+					})
+				}
+			}
+
+			request.Computations = append(request.Computations, &SyncComputation{
+				Operation:     FheOperation(ct.Operation),
+				Inputs:        syncInputs,
+				ResultHandles: resultHandles,
+			})
+			ctToBlockIndex[string(ct.OutputHandle)] = block
+		}
+	}
+
+	fmt.Printf("sending grpc request with %d computations and %d ciphertexts\n", len(request.Computations), len(request.CompressedCiphertexts))
+
+	client := NewFhevmExecutorClient(conn)
+	response, err := client.SyncCompute(context.Background(), &request)
+	if err != nil {
+		return err
+	}
+
+	outCts := response.GetResultCiphertexts().Ciphertexts
+	fmt.Printf("got %d ciphertext responses from the executor\n", len(outCts))
+	for _, ct := range outCts {
+		theBlock, exists := ctToBlockIndex[string(ct.Handle)]
+		if !exists {
+			return errors.New("ciphertext doesn't exist in our block index we built earlier, should be impossible")
+		}
+
+		blockData := impl.cache.blocksCiphertexts[theBlock]
+		if blockData == nil {
+			blockData = &CacheBlockData{
+				materializedCiphertexts: make(map[string][]byte),
+			}
+			impl.cache.blocksCiphertexts[theBlock] = blockData
+		}
+
+		blockData.materializedCiphertexts[string(ct.Handle)] = ct.Serialization
+	}
+
+	// reset map of the queue
+	impl.cache.ciphertextsToCompute = make(map[int64]*BlockCiphertextQueue)
+
+	return nil
 }
