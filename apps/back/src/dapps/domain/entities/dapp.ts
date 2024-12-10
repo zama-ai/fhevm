@@ -25,6 +25,13 @@ export class DApp extends Entity<DAppProps> implements Readonly<DAppProps> {
       : fail(validationError(check.error.message))
   }
 
+  static parseArray(data: unknown[]): Result<DApp[], AppError> {
+    const res = data.map(DApp.parse)
+    return res.every(dapp => dapp.isOk())
+      ? ok(res.reduce<DApp[]>((acc, dapp) => [...acc, dapp.value], []))
+      : fail(res.find(dapp => dapp.isFail())!.error)
+  }
+
   get id() {
     return this.get('id')
   }

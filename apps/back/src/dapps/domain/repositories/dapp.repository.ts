@@ -9,4 +9,5 @@ export abstract class DAppRepository {
     id: string,
     userId: string,
   ): Task<DApp, AppError>
+  abstract findAllByTeamId(teamId: string): Task<DApp[], AppError>
 }
