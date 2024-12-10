@@ -182,7 +182,7 @@ library Gateway {
         return data;
     }
 
-    function remove32Slice(bytes memory input, uint256 start) public pure returns (bytes memory) {
+    function remove32Slice(bytes memory input, uint256 start) private pure returns (bytes memory) {
         // @note we assume start+32 is less than input.length
         bytes memory result = new bytes(input.length - 32);
 
