@@ -31,8 +31,22 @@ type Invitation {
 type Dapp {
   id: ID!
   name: String!
-  status: String!
+  status: DappStatus!
   address: String
+  teamId: String! @deprecated(reason: "Do not use this, it shall go away when I find a way to make it disappear")
+  team: Team!
+}
+
+enum DappStatus {
+  """Still being worked on"""
+  DRAFT
+
+  """We are deploying it"""
+  DEPLOYING
+
+  """You can use it now"""
+  LIVE
+  DELETED @deprecated(reason: "Not implmented yet")
 }
 
 type Query {

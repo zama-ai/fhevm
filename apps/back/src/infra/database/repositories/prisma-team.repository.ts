@@ -13,7 +13,7 @@ export class PrismaTeamRepository extends TeamRepository {
     super()
   }
 
-  findById(id: TeamId): Task<Team, AppError> {
+  findOneById(id: TeamId): Task<Team, AppError> {
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.team
         .findFirst({ where: { id: id.value } })

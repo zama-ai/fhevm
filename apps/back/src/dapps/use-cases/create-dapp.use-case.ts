@@ -23,7 +23,6 @@ export class CreateDapp implements UseCase<Input, Dapp> {
     private readonly teamRepository: TeamRepository,
   ) {}
   execute(input: Input, ctx: { user: User }): Task<Dapp, AppError> {
-    console.log(ctx.user.toJSON())
     return this.teamRepository
       .findOneByIdAndUserId(new TeamId(input.teamId), ctx.user.id) // this can throw with a "Team not found" error, it should throw an unthorized error
       .chain(() =>

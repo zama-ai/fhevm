@@ -1,3 +1,4 @@
+import { TeamType } from '@/users/infra/types/team.type'
 import { Field, ID, ObjectType, registerEnumType } from '@nestjs/graphql'
 
 export enum DappStatus {
@@ -39,6 +40,18 @@ export class DappType {
   @Field({ nullable: true })
   address: string
 
-  // TODO: Uncomment this line after creating the TeamType
-  // @Field(() => TeamType, { nullable: false })
+  // TODO: Discuss wether this should be kept or not
+  // pro: we can use it to resolve the teams on dapps.resolver
+  // pro: it could be used in frontend to cheaply check the team
+  // con: it is a bit of a hack
+  // con: it is not standard
+  @Field({
+    nullable: false,
+    deprecationReason:
+      'Do not use this, it shall go away when I find a way to make it disappear',
+  })
+  teamId: string
+
+  @Field(() => TeamType, { nullable: false })
+  team: TeamType
 }
