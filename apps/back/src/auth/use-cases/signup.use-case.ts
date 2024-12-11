@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common'
+import { Inject, Injectable } from '@nestjs/common'
 import { JwtService } from '@nestjs/jwt'
 import { randomUUID } from 'crypto'
 import { User } from '@/users/domain/entities/user'
@@ -7,8 +7,8 @@ import { Invitation } from '@/invitations/domain/entities/invitation'
 import { TeamRepository } from '@/users/domain/repositories/team.repository'
 import { InvitationRepository } from '@/invitations/domain/repositories/invitation.repository'
 import { Token } from '@/invitations/domain/entities/value-objects'
-import type { AppError, UseCase } from 'utils'
-import { Task, notFoundError } from 'utils'
+import type { AppError, UnitOfWork, UseCase } from 'utils'
+import { Task, notFoundError, unknownError } from 'utils'
 import {
   Password,
   TeamId,
@@ -16,6 +16,7 @@ import {
 } from '@/users/domain/entities/value-objects'
 import { JwtPayload } from '../interfaces/jwt-payload'
 import { Team } from '@/users/domain/entities/team'
+import { UNIT_OF_WORK } from '@/constants'
 
 interface SignupInput {
   name: string
@@ -28,6 +29,7 @@ export class SignUp
   implements UseCase<SignupInput, { user: User; token: string }>
 {
   constructor(
+    @Inject(UNIT_OF_WORK) private readonly uow: UnitOfWork,
     private readonly userRepository: UserRepository,
     private readonly invitationRepository: InvitationRepository,
     private readonly teamRepository: TeamRepository,
@@ -35,37 +37,39 @@ export class SignUp
   ) {}
 
   execute(input: SignupInput): Task<{ user: User; token: string }, AppError> {
-    return Task.all([
-      // Note: we check the invitation token and validate the password at
-      // the same time. The password validation should be the fastest as it
-      // doesn't require any asyncronous operation
-      this.validateInvitation(input.invitationToken),
+    return this.uow.exec(
+      Task.all([
+        // Note: we check the invitation token and validate the password at
+        // the same time. The password validation should be the fastest as it
+        // doesn't require any asyncronous operation
+        this.validateInvitation(input.invitationToken),
 
-      this.validatePassword(input.password),
-    ])
-      .chain(([invitation, password]) =>
-        // Note: we are performing the mutations without a transaction, so
-        // it can happen that we fail to mark an invitation as used, and the
-        // sign up fails, but we keep the just created user.
-        // There are two solution:
-        // 1. Create a transaction, so we should revert the user creation
-        // 2. Just ignore any errors related to the following operation, using `tap`
-        Task.all([
-          this.createUser(invitation.email, password, input.name),
+        this.validatePassword(input.password),
+      ])
+        .chain(([invitation, password]) =>
+          // Note: we are performing the mutations without a transaction, so
+          // it can happen that we fail to mark an invitation as used, and the
+          // sign up fails, but we keep the just created user.
+          // There are two solution:
+          // 1. Create a transaction, so we should revert the user creation
+          // 2. Just ignore any errors related to the following operation, using `tap`
+          Task.all([
+            this.createUser(invitation.email, password, input.name),
 
-          this.createTeam(input.name),
+            this.createTeam(input.name),
 
-          this.invitationRepository.markAsUsed(invitation.id),
-        ]),
-      )
-      .chain(([user, team]) =>
-        Task.all([
-          this.teamRepository.addUser(team.id, user.id),
+            this.invitationRepository.markAsUsed(invitation.id),
+          ]),
+        )
+        .chain(([user, team]) =>
+          Task.all([
+            this.teamRepository.addUser(team.id, user.id),
 
-          this.getPayload(user),
-        ]),
-      )
-      .map(([_, payload]) => payload)
+            this.getPayload(user),
+          ]),
+        )
+        .map(([_, payload]) => payload),
+    )
   }
 
   private validateInvitation(token: string): Task<Invitation, AppError> {

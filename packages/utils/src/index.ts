@@ -8,6 +8,7 @@ export type {
 export type { Some, None, Option } from './option'
 export type { Fail, Ok, Result } from './result'
 export type { UseCase } from './use-case'
+export type { UnitOfWork } from './unit-of-work'
 
 export {
   notFoundError,
