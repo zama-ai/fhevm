@@ -1,7 +1,6 @@
 import { Actor, assign, createActor, setup, Snapshot } from 'xstate'
-import { type AppDeploymentEvent, completed } from './app-deployment.events'
-import { confirmSC, discoverSC, registerSC } from './app-deployment.commands'
-import type { AppDeploymentMessage } from './app-deployment.messages'
+import type { AppDeploymentMessage, AppDeploymentEvent } from 'messages'
+import { completed, confirmSC, discoverSC, registerSC } from 'messages'
 
 type Context = {
   applicationId: string

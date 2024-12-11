@@ -28,6 +28,7 @@
     "@nestjs/platform-express": "^10.0.0",
     "@prisma/client": "5.22.0",
     "@ssut/nestjs-sqs": "^3.0.0",
+    "messages": "workspace:*",
     "reflect-metadata": "^0.2.0",
     "rxjs": "^7.8.1",
     "xstate": "^5.19.0"
