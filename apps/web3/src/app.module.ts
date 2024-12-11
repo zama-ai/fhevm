@@ -12,9 +12,11 @@ import ethersConfig, {
   isChainId,
 } from './config/ether.config'
 import { VerifyContract } from './use-cases/verify-contract.use-case'
-import { CONTRACT_SERVICE } from './constants'
+import { CONTRACT_SERVICE, MESSAGE_PRODUCER } from './constants'
 import { ContractService } from './domain/services/contract.service'
 import { ProxyContractService } from './infra/adapters/proxy-contract.service'
+import { AwsMessageProducer } from './infra/adapters/aws-message.producer'
+import { MessageProducer } from './domain/services/message.producer'
 
 @Module({
   imports: [
@@ -66,9 +68,14 @@ import { ProxyContractService } from './infra/adapters/proxy-contract.service'
       },
     },
     {
+      provide: MESSAGE_PRODUCER,
+      useClass: AwsMessageProducer,
+    },
+    {
       provide: VerifyContract,
-      inject: [CONTRACT_SERVICE],
-      useFactory: (service: ContractService) => new VerifyContract(service),
+      inject: [CONTRACT_SERVICE, MESSAGE_PRODUCER],
+      useFactory: (service: ContractService, producer: MessageProducer) =>
+        new VerifyContract(service, producer),
     },
   ],
 })

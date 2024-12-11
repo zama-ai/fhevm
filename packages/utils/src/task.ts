@@ -71,6 +71,15 @@ export class Task<A, E> {
     this.computation(resolve, reject)
   }
 
+  match<R1, R2 = R1>(matchers: Matchers<A, E, R1, R2>): Task<R1 | R2, E> {
+    return new Task<R1 | R2, E>(resolve => {
+      this.computation(
+        value => resolve(matchers.ok(value)),
+        error => resolve(matchers.fail(error)),
+      )
+    })
+  }
+
   /**
    * Converts the Task to a Promise.
    *
@@ -81,4 +90,9 @@ export class Task<A, E> {
       this.fork(resolve, reject)
     })
   }
+}
+
+interface Matchers<T, E, R1, R2 = R1> {
+  ok(value: T): R1
+  fail(error: E): R2
 }
