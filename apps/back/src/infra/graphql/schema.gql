@@ -31,6 +31,7 @@ type Invitation {
 type Dapp {
   id: ID!
   name: String!
+  status: String!
   address: String
 }
 
@@ -69,5 +70,9 @@ input CreateInvitationInput {
 input CreateDappInput {
   name: String!
   teamId: String!
+
+  """
+  Your smart contract address, it should start with 0x and have 42 characters
+  """
   address: String
 }

@@ -11,7 +11,7 @@ export function CreateStepOnePage() {
       <CreatorName
         onSubmit={console.log}
         loading={false}
-        errorMessage="Error"
+        errorMessage="Error shall display here"
       />
     </>
   )
