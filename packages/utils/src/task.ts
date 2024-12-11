@@ -89,27 +89,18 @@ export class Task<A, E> {
    * @param tasks - An array of Task to be executed.
    * @returns a Task with the array of all resolved task values.
    */
-  static all<A1, E>(t1: Task<A1, E>): Task<[A1], E>
-  static all<A1, A2, E>(t1: Task<A1, E>, t2: Task<A2, E>): Task<[A1, A2], E>
+  static all<A1, E>(tasks: [Task<A1, E>]): Task<[A1], E>
+  static all<A1, A2, E>(tasks: [Task<A1, E>, Task<A2, E>]): Task<[A1, A2], E>
   static all<A1, A2, A3, E>(
-    t1: Task<A1, E>,
-    t2: Task<A2, E>,
-    t3: Task<A3, E>,
+    tasks: [Task<A1, E>, Task<A2, E>, Task<A3, E>],
   ): Task<[A1, A2, A3], E>
   static all<A1, A2, A3, A4, E>(
-    t1: Task<A1, E>,
-    t2: Task<A2, E>,
-    t3: Task<A3, E>,
-    t4: Task<A4, E>,
+    tasks: [Task<A1, E>, Task<A2, E>, Task<A3, E>, Task<A4, E>],
   ): Task<[A1, A2, A3, A4], E>
   static all<A1, A2, A3, A4, A5, E>(
-    t1: Task<A1, E>,
-    t2: Task<A2, E>,
-    t3: Task<A3, E>,
-    t4: Task<A4, E>,
-    t5: Task<A5, E>,
+    tasks: [Task<A1, E>, Task<A2, E>, Task<A3, E>, Task<A4, E>, Task<A5, E>],
   ): Task<[A1, A2, A3, A4, A5], E>
-  static all<E>(...tasks: any[]): Task<any[], E> {
+  static all<E>(tasks: any[]): Task<any[], E> {
     return new Task(function (resolve, reject) {
       Promise.all(tasks.map(t => t.toPromise()))
         .then(v => resolve(v))
