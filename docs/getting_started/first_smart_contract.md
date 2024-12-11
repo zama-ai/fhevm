@@ -31,7 +31,7 @@ Create a new file called `EncryptedCounter.sol` in your `contracts/` folder and 
 pragma solidity ^0.8.24;
 
 import "fhevm/lib/TFHE.sol";
-import { MockZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
+import { SepoliaZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
 
 /// @title EncryptedCounter1
 /// @notice A basic contract demonstrating the setup of encrypted types
@@ -39,9 +39,9 @@ import { MockZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
 /// @custom:experimental This is a minimal example contract intended only for learning purposes
 /// @custom:notice This contract has limited real-world utility and serves primarily as a starting point
 /// for understanding how to implement basic FHE operations in Solidity
-contract EncryptedCounter1 is MockZamaFHEVMConfig {
-  euint8 counter;
-  euint8 CONST_ONE;
+contract EncryptedCounter1 is SepoliaZamaFHEVMConfig {
+  euint8 internal counter;
+  euint8 internal immutable CONST_ONE;
 
   constructor() {
     // Initialize counter with an encrypted zero value
@@ -63,22 +63,14 @@ contract EncryptedCounter1 is MockZamaFHEVMConfig {
 #### How it works
 
 1.  **Configuring fhEVM**:\
-    The contract inherits from `MockZamaFHEVMConfig` which provides the necessary configuration for local development and testing. This configuration includes the addresses of the TFHE library and Gateway contracts.
+    The contract inherits from `SepoliaZamaFHEVMConfig` which provides the necessary configuration for local development and testing. This configuration includes the addresses of the TFHE library and Gateway contracts.
 
     When deploying to different networks, you can use the appropriate configuration:
 
     ```solidity
-    // For local testing
-    import { MockZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
-    contract MyContract is MockZamaFHEVMConfig { ... }
-
     // For Sepolia testnet
     import { SepoliaZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
     contract MyContract is SepoliaZamaFHEVMConfig { ... }
-
-    // For Ethereum (when ready)
-     import { EthereumZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
-    contract MyContract is EthereumZamaFHEVMConfig { ... }
     ```
 
     The configuration handles setting up:
@@ -110,13 +102,13 @@ There are two notable issues with this contract:
 With any contracts that you write you will need to write tests as well. You can start by using something like this as a template:
 
 ```ts
-import { createInstances } from "../instance";
+import { createInstance } from "../instance";
 import { getSigners, initSigners } from "../signers";
 import { ethers } from "hardhat";
 
 describe("EncryptedCounter1", function () {
   before(async function () {
-    await initSigners(2); // Initialize signers
+    await initSigners(); // Initialize signers
     this.signers = await getSigners();
   });
 
@@ -125,7 +117,7 @@ describe("EncryptedCounter1", function () {
     this.counterContract = await CounterFactory.connect(this.signers.alice).deploy();
     await this.counterContract.waitForDeployment();
     this.contractAddress = await this.counterContract.getAddress();
-    this.instances = await createInstances(this.signers); // Set up instances for testing
+    this.instances = await createInstance();
   });
 
   it("should increment the counter", async function () {
@@ -158,7 +150,7 @@ The test file demonstrates key concepts for testing fhEVM smart contracts:
    ```
 
 3. **Key components**:
-   - `createInstances()`: Sets up FHE instances for each signer to handle encrypted operations
+   - `createInstance()`: Sets up FHE instances for each signer to handle encrypted operations
    - `getSigners()`: Provides test accounts to interact with the contract
    - `contractFactory.deploy()`: Creates a new contract instance for testing
    - `tx.wait()`: Ensures transactions are mined before continuing

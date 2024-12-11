@@ -52,7 +52,7 @@ Choose and inherit the correct configuration based on the environment:
 - **Testnets (e.g., Sepolia)**: For deploying to public test networks.
 - **Mainnet**: When deploying to production.
 
-Ensure configuration contracts (e.g., `MockZamaFHEVMConfig`, `SepoliaZamaFHEVMConfig`) are inherited correctly to initialize encryption parameters, cryptographic keys, and Gateway addresses. See [configuration](../fundamentals/configure.md) for more details.
+Ensure configuration contracts (e.g., `SepoliaZamaFHEVMConfig`, `SepoliaZamaFHEVMConfig`) are inherited correctly to initialize encryption parameters, cryptographic keys, and Gateway addresses. See [configuration](../fundamentals/configure.md) for more details.
 
 ### 4. Begin with unencrypted logic
 
