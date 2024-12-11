@@ -81,4 +81,39 @@ export class Task<A, E> {
       this.fork(resolve, reject)
     })
   }
+
+  /**
+   * Creates a Task that runs all the nested task, and return an array with each resolved value from each
+   * task.
+   *
+   * @param tasks - An array of Task to be executed.
+   * @returns a Task with the array of all resolved task values.
+   */
+  static all<A1, E>(tasks: [Task<A1, E>]): Task<[A1], E>
+  static all<A1, A2, E>(tasks: [Task<A1, E>, Task<A2, E>]): Task<[A1, A2], E>
+  static all<A1, A2, A3, E>(
+    tasks: [Task<A1, E>, Task<A2, E>, Task<A3, E>],
+  ): Task<[A1, A2, A3], E>
+  static all<A1, A2, A3, A4, E>(
+    tasks: [Task<A1, E>, Task<A2, E>, Task<A3, E>, Task<A4, E>],
+  ): Task<[A1, A2, A3, A4], E>
+  static all<A1, A2, A3, A4, A5, E>(
+    tasks: [Task<A1, E>, Task<A2, E>, Task<A3, E>, Task<A4, E>, Task<A5, E>],
+  ): Task<[A1, A2, A3, A4, A5], E>
+  static all<E>(tasks: any[]): Task<any[], E> {
+    return new Task(function (resolve, reject) {
+      Promise.all(tasks.map(t => t.toPromise()))
+        .then(v => resolve(v))
+        .catch(reject)
+    })
+  }
+
+  tap(fn: (value: A) => void): Task<A, E> {
+    return new Task((resolve, reject) => {
+      this.fork(value => {
+        fn(value)
+        resolve(value)
+      }, reject)
+    })
+  }
 }
