@@ -15,8 +15,6 @@ import {
   ValidatedPassword,
 } from '@/users/domain/entities/value-objects'
 import { JwtPayload } from '../interfaces/jwt-payload'
-import { emit } from 'process'
-import { Team } from '@/users/domain/entities/team'
 
 interface SignupInput {
   name: string
