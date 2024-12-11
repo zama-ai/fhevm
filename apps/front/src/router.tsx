@@ -19,6 +19,7 @@ import { DashboardPage } from './pages/dashboard.page'
 import { dashboardLoader } from './pages/dashboard.loader'
 import { CreateStepOnePage } from './pages/create-step-one.page.tsx'
 import { CreateStepTwoPage } from './pages/create-step-two.page.tsx'
+import { CreateStepThreePage } from './pages/create-step-three.page.tsx'
 
 const router = createBrowserRouter([
   {
@@ -57,12 +58,17 @@ const router = createBrowserRouter([
         element: <AboutPage />,
       },
       {
+        loader: dashboardLoader,
         path: '/create/1',
         element: <CreateStepOnePage />,
       },
       {
         path: '/create/2',
         element: <CreateStepTwoPage />,
+      },
+      {
+        path: '/create/3',
+        element: <CreateStepThreePage />,
       },
     ],
   },

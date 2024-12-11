@@ -2,6 +2,7 @@ import { RefAttributes } from 'react'
 import { Icon, IconProps } from '@chakra-ui/react'
 import {
   BookOpenText,
+  Clock,
   ChevronDown,
   LayoutGrid,
   LogOut,
@@ -65,5 +66,11 @@ export const LogOutIcon = (props: OwnProps) => (
 export const SettingsIcon = (props: OwnProps) => (
   <Icon {...props}>
     <Settings />
+  </Icon>
+)
+
+export const WaitIcon = (props: OwnProps) => (
+  <Icon {...props}>
+    <Clock />
   </Icon>
 )

@@ -1,62 +1,51 @@
-import { Box, Fieldset, Input, Stack, Text } from '@chakra-ui/react'
+import { Box, Fieldset, Grid, Input, Stack, Text } from '@chakra-ui/react'
 import { useFormik } from 'formik'
 
+import { toFormikValidate } from '@/lib/zod-schema-validator'
 import { Field } from '@/components/ui/field'
 import { SpinnerButton } from '@/components/ui/spinner-button'
-
+import { TutorialAddress } from './tutorial-address'
 import { Alert } from '../ui/alert'
+import { CreatorAddressFormSchema } from './validations'
 
 type OwnProps = {
-  onSubmit: (values: { name: string }) => void
+  onSubmit: (values: { address: string }) => void
   loading: boolean
   errorMessage?: string
-}
-
-function Tutorial() {
-  return (
-    <Box>
-      <iframe
-        width="100%"
-        height="200"
-        src="https://www.youtube.com/embed/1FtbyHZwNX4?si=2aBiv5N58ffKXD_L"
-        title="YouTube video player"
-        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-      ></iframe>
-      <Text fontSize="xs" my="1">
-        <b>Tutorial:</b> Use this solidity code in Remix and deploy it on
-        Sepolia.
-      </Text>
-      <Alert status="warning" title="Some warning to be redacted" my="5">
-        This code is signed, don't share it with others. Ask Roger to rephrase
-        this warning.
-      </Alert>
-    </Box>
-  )
 }
 
 export function CreatorAddress({ onSubmit, loading, errorMessage }: OwnProps) {
   const formik = useFormik({
     initialValues: {
-      name: '',
+      address: '',
     },
     onSubmit: values => {
       onSubmit(values)
     },
+    validate: toFormikValidate(CreatorAddressFormSchema),
   })
   return (
     <Fieldset.Root>
       <form onSubmit={formik.handleSubmit}>
         <Stack gap="5">
           <Fieldset.Content w={{ base: 'full', md: '1/2' }}>
-            <Field label="dApp name">
+            <Field
+              label="Smart contract address"
+              invalid={!!formik.errors.address && formik.touched.address}
+              errorText={
+                formik.errors.address && formik.touched.address
+                  ? formik.errors.address
+                  : undefined
+              }
+            >
               <Input
                 disabled={loading}
-                name="name"
+                name="address"
                 type="text"
-                placeholder="My first dApp"
+                placeholder="0x1234567890abcdef"
+                onBlur={formik.handleBlur}
                 onChange={formik.handleChange}
-                value={formik.values.name}
-                required
+                value={formik.values.address}
               />
             </Field>
           </Fieldset.Content>
@@ -66,14 +55,24 @@ export function CreatorAddress({ onSubmit, loading, errorMessage }: OwnProps) {
             </Text>
           )}
 
-          <Tutorial />
+          <Grid templateColumns="repeat(2, 1fr)" gap="6">
+            <TutorialAddress />
+
+            <Box>
+              <Alert status="info" title="Reassuring message" my="5">
+                Your smart contract will be shortly deployed on the blockchain.
+                This process may take a few minutes.
+              </Alert>
+            </Box>
+          </Grid>
+
           <Box display="flex" justifyContent="flex-end">
             <SpinnerButton
               loading={loading}
               loadingText="Saving..."
               type="submit"
               alignSelf="flex-start"
-              disabled={loading}
+              disabled={!(formik.isValid && formik.dirty) || loading}
             >
               Next step
             </SpinnerButton>

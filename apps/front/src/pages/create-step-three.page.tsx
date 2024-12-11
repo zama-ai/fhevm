@@ -1,27 +1,22 @@
-import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { Heading, Box } from '@chakra-ui/react'
 
-import { CreatorAddress } from '@/components/creator/creator-address'
 import { CreatorStepper } from '@/components/creator-stepper/creator-stepper'
+import { CreatorThankyou } from '@/components/creator/creator-thankyou'
 
-export function CreateStepTwoPage() {
-  const [isLoading, setIsLoading] = useState(false)
+export function CreateStepThreePage() {
   const navigate = useNavigate()
   return (
     <>
       <Heading mb="5">Create a new dApp</Heading>
       <Box display="flex" justifyContent="start" mb="5">
-        <CreatorStepper currentStep={1} />
+        <CreatorStepper currentStep={2} />
       </Box>
 
-      <CreatorAddress
+      <CreatorThankyou
         onSubmit={() => {
-          setIsLoading(true)
-          navigate('/create/3')
+          navigate('/dashboard')
         }}
-        loading={isLoading}
-        errorMessage="Error shall display here"
       />
     </>
   )
