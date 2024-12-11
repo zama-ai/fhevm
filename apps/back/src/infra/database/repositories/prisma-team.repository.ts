@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common'
-import { AppError, notFoundError, unknownError } from '@/utils/app-error'
-import { Task } from '@/utils/task'
 
 import { Team } from '@/users/domain/entities/team'
 import { TeamRepository } from '@/users/domain/repositories/team.repository'
+import type { AppError } from 'utils'
+import { notFoundError, unknownError, Task } from 'utils'
 import { TeamId, UserId } from '@/users/domain/entities/value-objects'
 import { PrismaService } from '../prisma.service'
 

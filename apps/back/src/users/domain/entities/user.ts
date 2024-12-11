@@ -1,6 +1,5 @@
-import { AppError, unauthorizedError, validationError } from '@/utils/app-error'
-import { Entity } from '@/utils/entity'
-import { ok, fail, Result } from '@/utils/result'
+import type { AppError, Result } from 'utils'
+import { Entity, ok, fail, unauthorizedError, validationError } from 'utils'
 import { z } from 'zod'
 import { Password, UserId } from './value-objects'
 

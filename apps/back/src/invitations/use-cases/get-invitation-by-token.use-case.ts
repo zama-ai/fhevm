@@ -1,9 +1,8 @@
 import { Injectable } from '@nestjs/common'
 import { Invitation } from '../domain/entities/invitation'
-import { UseCase } from '@/utils/use-case'
+import type { AppError, UseCase } from 'utils'
+import { notFoundError, Task } from 'utils'
 import { InvitationRepository } from '../domain/repositories/invitation.repository'
-import { Task } from '@/utils/task'
-import { AppError, notFoundError } from '@/utils/app-error'
 import { Token } from '../domain/entities/value-objects'
 
 @Injectable()
