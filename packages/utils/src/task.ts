@@ -116,4 +116,13 @@ export class Task<A, E> {
         .catch(reject)
     })
   }
+
+  tap(fn: (value: A) => void): Task<A, E> {
+    return new Task((resolve, reject) => {
+      this.fork(value => {
+        fn(value)
+        resolve(value)
+      }, reject)
+    })
+  }
 }
