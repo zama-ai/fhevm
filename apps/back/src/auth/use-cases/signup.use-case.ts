@@ -15,6 +15,8 @@ import {
   ValidatedPassword,
 } from '@/users/domain/entities/value-objects'
 import { JwtPayload } from '../interfaces/jwt-payload'
+import { emit } from 'process'
+import { Team } from '@/users/domain/entities/team'
 
 interface SignupInput {
   name: string
@@ -34,63 +36,58 @@ export class SignUp
   ) {}
 
   execute(input: SignupInput): Task<{ user: User; token: string }, AppError> {
-    // Note: should we start by validating the password? It's the failing path
-    // that doesn't require any asynchronous call.
-    return (
+    return Task.all(
+      // Note: we check the invitation token and validate the password at
+      // the same time. The password validation should be the fastest as it
+      // doesn't require any asyncronous operation
       this.invitationRepository
         .findByToken(new Token(input.invitationToken))
-        // Checks if the invitation is valid
         .chain<Invitation>(invitation =>
           invitation.isValid
             ? Task.of(invitation)
-            : Task.reject(notFoundError('Invalid token')),
-        )
-        // Note: I need validating the password while keeping the previous validated
-        // invitation.
-        // TODO: search for any parallel monad
-        .chain(invitation =>
-          ValidatedPassword.validate(input.password).asyncMap(password => ({
-            invitation,
-            password,
-          })),
-        )
-        .chain(({ invitation, password }) =>
+            : Task.reject(notFoundError('invalid token')),
+        ),
+
+      ValidatedPassword.validate(input.password).async(),
+    )
+      .chain(([invitation, password]) =>
+        // Note: we are performing the mutations without a transaction, so
+        // it can happen that we fail to mark an invitation as used, and the
+        // sign up fails, but we keep the just created user.
+        // There are two solution:
+        // 1. Create a transaction, so we should revert the user creation
+        // 2. Just ignore any errors related to the following operation, using `tap`
+        Task.all(
           User.parse({
             id: randomUUID(),
             email: invitation.email,
             password: Password.hash(password).value,
             name: input.name,
-          }).asyncMap(user => ({ user, invitation })),
-        )
-        .chain(({ user, invitation }) =>
-          this.userRepository.create(user).map(user => ({ user, invitation })),
-        )
-        .chain(({ user, invitation }) =>
-          this.teamRepository
-            .create(new TeamId(randomUUID()), `${user.name}'s personal apps`)
-            .map(team => ({ user, invitation, team })),
-        )
-        .chain(({ user, invitation, team }) =>
-          this.teamRepository
-            .addUser(team.id, user.id)
-            .map(() => ({ user, invitation })),
-        )
-        .chain(({ user, invitation }) =>
-          // Note: we are performing to mutation without a transaction, so
-          // it can happen that we fail to mark an invitation as used, and the
-          // sign up fails, but we keep the just created user.
-          // There are two solution:
-          // 1. Create a transaction, so we should revert the user creation
-          // 2. Just ignore any errors related to the following operation, using `tap`
-          this.invitationRepository.markAsUsed(invitation.id).map(() => user),
-        )
-        .map(user => ({
-          token: this.jwtService.sign({
-            sub: user.id.value,
-            email: user.email,
-          } satisfies JwtPayload),
-          user,
-        }))
-    )
+          }).asyncChain(this.userRepository.create),
+
+          this.teamRepository.create(
+            new TeamId(randomUUID()),
+            `${input.name}'s personal app`,
+          ),
+
+          this.invitationRepository.markAsUsed(invitation.id),
+        ),
+      )
+      .chain(([user, team]) =>
+        Task.all(
+          this.teamRepository.addUser(team.id, user.id),
+
+          Task.of<string, AppError>(
+            this.jwtService.sign({
+              sub: user.id.value,
+              email: user.email,
+            } satisfies JwtPayload),
+          ).map(token => ({
+            token,
+            user,
+          })),
+        ),
+      )
+      .map(([_, payload]) => payload)
   }
 }
