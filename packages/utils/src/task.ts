@@ -102,8 +102,14 @@ export class Task<A, E> {
   ): Task<[A1, A2, A3, A4, A5], E>
   static all<E>(tasks: any[]): Task<any[], E> {
     return new Task(function (resolve, reject) {
-      Promise.all(tasks.map(t => t.toPromise()))
-        .then(v => resolve(v))
+      // Note: I use `Promise.allSettled` to be sure all promises settle before
+      // continuing
+      Promise.allSettled(tasks.map(t => t.toPromise()))
+        .then(promises =>
+          promises.some(isRejected)
+            ? reject(promises.find(isRejected)!.reason)
+            : resolve(promises.filter(isFullfilled).map(p => p.value)),
+        )
         .catch(reject)
     })
   }
@@ -116,4 +122,14 @@ export class Task<A, E> {
       }, reject)
     })
   }
+}
+
+function isFullfilled<T>(
+  p: PromiseSettledResult<T>,
+): p is PromiseFulfilledResult<T> {
+  return p.status === 'fulfilled'
+}
+
+function isRejected<T>(p: PromiseSettledResult<T>): p is PromiseRejectedResult {
+  return p.status === 'rejected'
 }
