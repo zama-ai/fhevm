@@ -30,7 +30,7 @@ To retrieve the ciphertext that needs to be re-encrypted, you can implement a vi
 ```solidity
 import "fhevm/lib/TFHE.sol";
 
-contract EncryptedERC20 {
+contract ConfidentialERC20 {
   ...
   function balanceOf(account address) public view returns (bytes euint64) {
     return balances[msg.sender];
@@ -58,7 +58,7 @@ const provider = new BrowserProvider(window.ethereum);
 const accounts = await provider.send("eth_requestAccounts", []);
 const USER_ADDRESS = accounts[0];
 
-await initSigners(2); // Initialize signers
+await initSigners(); // Initialize signers
 const signers = await getSigners();
 
 const instance = await createInstances(this.signers);
@@ -73,8 +73,8 @@ const params = [USER_ADDRESS, JSON.stringify(eip712)];
 const signature = await window.ethereum.request({ method: "eth_signTypedData_v4", params });
 
 // Get the ciphertext to reencrypt
-const encryptedERC20 = new Contract(CONTRACT_ADDRESS, abi, signer).connect(provider);
-const encryptedBalance = encryptedERC20.balanceOf(userAddress);
+const ConfidentialERC20 = new Contract(CONTRACT_ADDRESS, abi, signer).connect(provider);
+const encryptedBalance = ConfidentialERC20.balanceOf(userAddress);
 
 // This function will call the gateway and decrypt the received value with the provided private key
 const userBalance = instance.reencrypt(
@@ -108,14 +108,14 @@ Here’s an enhanced **Encrypted Counter** example where each user maintains the
 pragma solidity ^0.8.24;
 
 import "fhevm/lib/TFHE.sol";
-import { MockZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
+import { SepoliaZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
 
 /// @title EncryptedCounter4
 /// @notice A contract that maintains encrypted counters for each user and is meant for demonstrating how re-encryption works
 /// @dev Uses TFHE library for fully homomorphic encryption operations
 /// @custom:security Each user can only access and modify their own counter
 /// @custom:experimental This contract is experimental and uses FHE technology
-contract EncryptedCounter4 is MockZamaFHEVMConfig {
+contract EncryptedCounter4 is SepoliaZamaFHEVMConfig {
   // Mapping from user address to their encrypted counter value
   mapping(address => euint8) private counters;
 
@@ -144,35 +144,15 @@ contract EncryptedCounter4 is MockZamaFHEVMConfig {
 Here’s a sample test to verify re-encryption functionality:
 
 ```ts
+import { createInstance } from "../instance";
+import { reencryptEuint8 } from "../reencrypt";
+import { getSigners, initSigners } from "../signers";
 import { expect } from "chai";
 import { ethers } from "hardhat";
-
-import { initGateway, awaitAllReEncryptionResults } from "../asyncReEncrypt";
-import { createInstances } from "../instance";
-import { getSigners, initSigners } from "../signers";
-
-import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import { expect } from "chai";
-import type { FhevmInstance } from "fhevmjs";
-import { ethers } from "hardhat";
-
-import { createInstances } from "../instance";
-import { getSigners, initSigners } from "../signers";
-
-/**
- * Helper function to setup reencryption
- */
-async function setupReencryption(instance: FhevmInstance, signer: HardhatEthersSigner, contractAddress: string) {
-  const { publicKey, privateKey } = instance.generateKeypair();
-  const eip712 = instance.createEIP712(publicKey, contractAddress);
-  const signature = await signer.signTypedData(eip712.domain, { Reencrypt: eip712.types.Reencrypt }, eip712.message);
-
-  return { publicKey, privateKey, signature: signature.replace("0x", "") };
-}
 
 describe("EncryptedCounter4", function () {
   before(async function () {
-    await initSigners(2); // Initialize signers
+    await initSigners(); // Initialize signers
     this.signers = await getSigners();
   });
 
@@ -181,11 +161,11 @@ describe("EncryptedCounter4", function () {
     this.counterContract = await CounterFactory.connect(this.signers.alice).deploy();
     await this.counterContract.waitForDeployment();
     this.contractAddress = await this.counterContract.getAddress();
-    this.instances = await createInstances(this.signers); // Set up instances for testing
+    this.instances = await createInstance();
   });
 
   it("should allow reencryption and decryption of counter value", async function () {
-    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    const input = this.instances.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     input.add8(1); // Increment by 1 as an example
     const encryptedAmount = await input.encrypt();
 
@@ -196,28 +176,44 @@ describe("EncryptedCounter4", function () {
     // Get the encrypted counter value
     const encryptedCounter = await this.counterContract.getCounter();
 
-    // Set up reencryption keys and signature
-    const { publicKey, privateKey, signature } = await setupReencryption(
-      this.instances.alice,
-      this.signers.alice,
-      this.contractAddress,
-    );
-
-    // Perform reencryption and decryption
-    const decryptedValue = await this.instances.alice.reencrypt(
+    const decryptedValue = await reencryptEuint8(
+      this.signers,
+      this.instances,
+      "alice",
       encryptedCounter,
-      privateKey,
-      publicKey,
-      signature,
       this.contractAddress,
-      this.signers.alice.address,
     );
 
-    // Verify the decrypted value is 1
+    // Verify the decrypted value is 1 (since we incremented once)
+    expect(decryptedValue).to.equal(1);
+  });
+
+  it("should allow reencryption of counter value", async function () {
+    const input = this.instances.createEncryptedInput(this.contractAddress, this.signers.bob.address);
+    input.add8(1); // Increment by 1 as an example
+    const encryptedAmount = await input.encrypt();
+
+    // Call incrementBy with encrypted amount
+    const tx = await this.counterContract
+      .connect(this.signers.bob)
+      .incrementBy(encryptedAmount.handles[0], encryptedAmount.inputProof);
+    await tx.wait();
+
+    // Get the encrypted counter value
+    const encryptedCounter = await this.counterContract.connect(this.signers.bob).getCounter();
+
+    const decryptedValue = await reencryptEuint8(
+      this.signers,
+      this.instances,
+      "bob",
+      encryptedCounter,
+      this.contractAddress,
+    );
+
+    // Verify the decrypted value is 1 (since we incremented once)
     expect(decryptedValue).to.equal(1);
   });
 });
-
 ```
 
 #### Key additions in testing

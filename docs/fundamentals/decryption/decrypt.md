@@ -25,11 +25,11 @@ Here’s an example of how to request decryption in a contract:
 pragma solidity ^0.8.24;
 
 import "fhevm/lib/TFHE.sol";
-import { MockZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
-import { MockZamaGatewayConfig } from "fhevm/config/ZamaGatewayConfig.sol";
+import { SepoliaZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
+import { SepoliaZamaGatewayConfig } from "fhevm/config/ZamaGatewayConfig.sol";
 import "fhevm/gateway/GatewayCaller.sol";
 
-contract TestAsyncDecrypt is MockZamaFHEVMConfig, MockZamaGatewayConfig, GatewayCaller {
+contract TestAsyncDecrypt is SepoliaZamaFHEVMConfig, SepoliaZamaGatewayConfig, GatewayCaller {
   ebool xBool;
   bool public yBool;
 
@@ -55,8 +55,8 @@ contract TestAsyncDecrypt is MockZamaFHEVMConfig, MockZamaGatewayConfig, Gateway
 1.  **Configuration imports**: The configuration contracts are imported to set up the FHEVM environment and Gateway.
 
     ```solidity
-    import { MockZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
-    import { MockZamaGatewayConfig } from "fhevm/config/ZamaGatewayConfig.sol";
+    import { SepoliaZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
+    import { SepoliaZamaGatewayConfig } from "fhevm/config/ZamaGatewayConfig.sol";
     ```
 
 2.  **`GatewayCaller` import**:\
@@ -75,17 +75,17 @@ Remember our [**Encrypted Counter**](../../getting_started/first_smart_contract.
 pragma solidity ^0.8.24;
 
 import "fhevm/lib/TFHE.sol";
-import { MockZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
-import { MockZamaGatewayConfig } from "fhevm/config/ZamaGatewayConfig.sol";
+import { SepoliaZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
+import { SepoliaZamaGatewayConfig } from "fhevm/config/ZamaGatewayConfig.sol";
 import "fhevm/gateway/GatewayCaller.sol";
 
 /// @title EncryptedCounter3
 /// @notice A contract that maintains an encrypted counter and is meant for demonstrating how decryption works
 /// @dev Uses TFHE library for fully homomorphic encryption operations and Gateway for decryption
 /// @custom:experimental This contract is experimental and uses FHE technology with decryption capabilities
-contract EncryptedCounter3 is MockZamaFHEVMConfig, MockZamaGatewayConfig, GatewayCaller {
+contract EncryptedCounter3 is SepoliaZamaFHEVMConfig, SepoliaZamaGatewayConfig, GatewayCaller {
     /// @dev Decrypted state variable
-    euint8 counter;
+    euint8 internal counter;
     uint8 public decryptedCounter;
 
     constructor() {
@@ -133,14 +133,14 @@ Here’s a sample test for the Encrypted Counter contract using Hardhat:
 
 ```ts
 import { awaitAllDecryptionResults, initGateway } from "../asyncDecrypt";
-import { createInstances } from "../instance";
+import { createInstance } from "../instance";
 import { getSigners, initSigners } from "../signers";
 import { expect } from "chai";
 import { ethers } from "hardhat";
 
 describe("EncryptedCounter3", function () {
   before(async function () {
-    await initSigners(2); // Initialize signers
+    await initSigners(); // Initialize signers
     this.signers = await getSigners();
     await initGateway(); // Initialize the gateway for decryption
   });
@@ -150,12 +150,12 @@ describe("EncryptedCounter3", function () {
     this.counterContract = await CounterFactory.connect(this.signers.alice).deploy();
     await this.counterContract.waitForDeployment();
     this.contractAddress = await this.counterContract.getAddress();
-    this.instances = await createInstances(this.signers); // Set up instances for testing
+    this.instances = await createInstance(); // Set up instances for testing
   });
 
-  it("should increment counter multiple times and decrypt the result", async function () {
+  it("should increment counter and decrypt the result", async function () {
     // Create encrypted input for amount to increment by
-    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    const input = this.instances.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     input.add8(5); // Increment by 5 as an example
     const encryptedAmount = await input.encrypt();
 
@@ -163,13 +163,13 @@ describe("EncryptedCounter3", function () {
     const tx = await this.counterContract.incrementBy(encryptedAmount.handles[0], encryptedAmount.inputProof);
     await tx.wait();
 
-    const tx4 = await this.counterContract.connect(this.signers.carol).requestDecryptCounter({ gasLimit: 5_000_000 });
+    const tx4 = await this.counterContract.connect(this.signers.carol).requestDecryptCounter();
     await tx4.wait();
 
     // Wait for decryption to complete
     await awaitAllDecryptionResults();
 
-    // Check decrypted value
+    // Check decrypted value (should be 3: initial 0 + three increments)
     const decryptedValue = await this.counterContract.getDecryptedCounter();
     expect(decryptedValue).to.equal(5);
   });

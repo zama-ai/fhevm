@@ -18,7 +18,7 @@ To address these challenges, implement an **error handler** that records the mos
 For a complete implementation of error handling, see our reference contracts:
 
 - [EncryptedErrors.sol](https://github.com/zama-ai/fhevm-contracts/blob/main/contracts/utils/EncryptedErrors.sol) - Base error handling contract
-- [EncryptedERC20WithErrors.sol](https://github.com/zama-ai/fhevm-contracts/blob/main/contracts/token/ERC20/extensions/ConfidentialERC20WithErrors.sol) - Example usage in an ERC20 token
+- [ConfidentialERC20WithErrors.sol](https://github.com/zama-ai/fhevm-contracts/blob/main/contracts/token/ERC20/extensions/ConfidentialERC20WithErrors.sol) - Example usage in an ERC20 token
 
 The following contract demonstrates how to implement and use an error handler:
 

@@ -51,7 +51,7 @@ To interact with such a function, developers can use the [fhevmjs](https://githu
 import { createInstances } from "../instance";
 import { getSigners, initSigners } from "../signers";
 
-await initSigners(2); // Initialize signers
+await initSigners(); // Initialize signers
 const signers = await getSigners();
 
 const instance = await createInstances(this.signers);
@@ -155,16 +155,16 @@ Now that we have new knowledge on how to add encrypted inputs, let's upgrade our
 pragma solidity ^0.8.24;
 
 import "fhevm/lib/TFHE.sol";
-import { MockZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
+import { SepoliaZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
 
 /// @title EncryptedCounter2
 /// @notice A contract that maintains an encrypted counter and is meant for demonstrating how to add encrypted types
 /// @dev Uses TFHE library for fully homomorphic encryption operations
 /// @custom:experimental This contract is experimental and uses FHE technology
-contract EncryptedCounter2 {
-  euint8 counter;
+contract EncryptedCounter2 is SepoliaZamaFHEVMConfig {
+  euint8 internal counter;
 
-  constructor() is MockZamaFHEVMConfig {
+  constructor() {
     // Initialize counter with an encrypted zero value
     counter = TFHE.asEuint8(0);
     TFHE.allowThis(counter);
@@ -182,14 +182,13 @@ contract EncryptedCounter2 {
 ### Tests of for the Counter contract
 
 ```ts
-import { createInstances } from "../instance";
+import { createInstance } from "../instance";
 import { getSigners, initSigners } from "../signers";
-import { expect } from "chai";
 import { ethers } from "hardhat";
 
 describe("EncryptedCounter2", function () {
   before(async function () {
-    await initSigners(2); // Initialize signers
+    await initSigners(); // Initialize signers
     this.signers = await getSigners();
   });
 
@@ -198,13 +197,13 @@ describe("EncryptedCounter2", function () {
     this.counterContract = await CounterFactory.connect(this.signers.alice).deploy();
     await this.counterContract.waitForDeployment();
     this.contractAddress = await this.counterContract.getAddress();
-    this.instances = await createInstances(this.signers); // Set up instances for testing
+    this.instances = await createInstance(); // Set up instances for testing
   });
 
   it("should increment by arbitrary encrypted amount", async function () {
     // Create encrypted input for amount to increment by
-    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
-    input.add8(5); // Increment by 5 as an example
+    const input = this.instances.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    input.add8(5);
     const encryptedAmount = await input.encrypt();
 
     // Call incrementBy with encrypted amount

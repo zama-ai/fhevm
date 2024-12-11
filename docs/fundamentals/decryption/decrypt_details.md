@@ -114,11 +114,11 @@ For example, see this snippet where we add two `uint256`s during the request cal
 pragma solidity ^0.8.24;
 
 import "fhevm/lib/TFHE.sol";
-import { MockZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
-import { MockZamaGatewayConfig } from "fhevm/config/ZamaGatewayConfig.sol";
+import { SepoliaZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
+import { SepoliaZamaGatewayConfig } from "fhevm/config/ZamaGatewayConfig.sol";
 import "fhevm/gateway/GatewayCaller.sol";
 
-contract TestAsyncDecrypt is MockZamaFHEVMConfig, MockZamaGatewayConfig, GatewayCaller {
+contract TestAsyncDecrypt is SepoliaZamaFHEVMConfig, SepoliaZamaGatewayConfig, GatewayCaller {
   euint32 xUint32;
   uint32 public yUint32;
 
