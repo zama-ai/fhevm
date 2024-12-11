@@ -1,6 +1,6 @@
 import { PublishCommand, SNSClient } from '@aws-sdk/client-sns'
 import { Logger } from '@nestjs/common'
-import { AppDeploymentMessage } from 'src/app-deployment/entities/app-deployment.messages'
+import { AppDeploymentMessage } from 'messages'
 import { AppDeploymentMessagesProducer } from 'src/app-deployment/interfaces/app-deployment-messages.producer'
 
 export class SNSProducer implements AppDeploymentMessagesProducer {
