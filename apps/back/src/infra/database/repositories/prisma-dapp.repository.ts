@@ -21,4 +21,31 @@ export class PrismaDappRepository extends DappRepository {
         .catch(err => reject(unknownError(String(err))))
     }).chain(props => Dapp.parse(props).async())
   }
+
+  update(data: Dapp): Task<Dapp, AppError> {
+    return new Task<unknown, AppError>((resolve, reject) => {
+      this.db.dapp
+        .update({ where: { id: data.id }, data })
+        .then(resolve)
+        .catch(err => reject(unknownError(String(err))))
+    }).chain(props => Dapp.parse(props).async())
+  }
+
+  findOneByIdAndUserId(id: string, userId: string): Task<Dapp, AppError> {
+    return new Task<unknown, AppError>((resolve, reject) => {
+      this.db.dapp
+        .findUnique({
+          where: {
+            id,
+            team: {
+              users: {
+                some: { id: { equals: userId } },
+              },
+            },
+          },
+        })
+        .then(resolve)
+        .catch(err => reject(unknownError(String(err))))
+    }).chain(props => Dapp.parse(props).async())
+  }
 }

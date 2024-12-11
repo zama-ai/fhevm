@@ -59,6 +59,7 @@ type Mutation {
   signup(input: SignupInput!): auth!
   createInvitation(input: CreateInvitationInput!): Invitation!
   createDapp(input: CreateDappInput!): Dapp!
+  updateDapp(input: UpdateDappInput!): Dapp!
 }
 
 input LoginInput {
@@ -84,6 +85,16 @@ input CreateInvitationInput {
 input CreateDappInput {
   name: String!
   teamId: String!
+
+  """
+  Your smart contract address, it should start with 0x and have 42 characters
+  """
+  address: String
+}
+
+input UpdateDappInput {
+  id: ID!
+  name: String
 
   """
   Your smart contract address, it should start with 0x and have 42 characters

@@ -63,11 +63,11 @@ const router = createBrowserRouter([
         element: <CreateStepOnePage />,
       },
       {
-        path: '/create/2',
+        path: '/create/2/:dappId',
         element: <CreateStepTwoPage />,
       },
       {
-        path: '/create/3',
+        path: '/create/3/:dappId',
         element: <CreateStepThreePage />,
       },
     ],

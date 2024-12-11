@@ -35,8 +35,8 @@ export function CreateStepOnePage() {
   }, [me])
 
   useEffect(() => {
-    if (data) {
-      navigate('/create/2')
+    if (data && data.createDapp.id) {
+      navigate(`/create/2/${data.createDapp.id}`)
     }
   }, [data, navigate])
 
@@ -47,13 +47,12 @@ export function CreateStepOnePage() {
       <Box display="flex" justifyContent="start" mb="5">
         <CreatorStepper currentStep={0} />
       </Box>
-      {teamId}
       <CreatorName
-        onSubmit={variables => {
+        onSubmit={({ name }) => {
           createDappMutation({
             variables: {
               teamId,
-              name: variables.name,
+              name,
             },
           })
         }}

@@ -3,9 +3,11 @@ import { useFormik } from 'formik'
 
 import { Field } from '@/components/ui/field'
 import { SpinnerButton } from '@/components/ui/spinner-button'
+import { toFormikValidate } from '@/lib/zod-schema-validator'
 
 import { TutorialName } from './tutorial-name'
 import { SolidityCodeTemplate } from './solidity-code-template'
+import { CreatorNameFormSchema } from './validations'
 
 type OwnProps = {
   onSubmit: (values: { name: string }) => void
@@ -21,6 +23,7 @@ export function CreatorName({ onSubmit, loading, errorMessage }: OwnProps) {
     onSubmit: values => {
       onSubmit(values)
     },
+    validate: toFormikValidate(CreatorNameFormSchema),
   })
   return (
     <Fieldset.Root>
@@ -35,7 +38,6 @@ export function CreatorName({ onSubmit, loading, errorMessage }: OwnProps) {
                 placeholder="My first dApp"
                 onChange={formik.handleChange}
                 value={formik.values.name}
-                required
               />
             </Field>
           </Fieldset.Content>
@@ -60,7 +62,7 @@ export function CreatorName({ onSubmit, loading, errorMessage }: OwnProps) {
               loadingText="Saving..."
               type="submit"
               alignSelf="flex-start"
-              disabled={loading}
+              disabled={!(formik.isValid && formik.dirty) || loading}
             >
               Next step
             </SpinnerButton>

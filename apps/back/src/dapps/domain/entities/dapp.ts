@@ -8,7 +8,12 @@ const schema = z.object({
   name: z.string(),
   status: z.enum(['DRAFT', 'DEPLOYING', 'LIVE']),
   teamId: z.string().uuid(),
-  address: z.string().optional().nullable(),
+  address: z
+    .string()
+    .length(42, 'sepolia address must be exactly 42 charaxters long')
+    .startsWith('0x', 'sepolia address must start with 0x')
+    .optional()
+    .nullable(),
 })
 
 export type DappProps = z.infer<typeof schema>
