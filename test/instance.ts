@@ -59,7 +59,6 @@ export const createInstances = async (accounts: Signers): Promise<FhevmInstances
 };
 
 export const createInstance = async () => {
-  console.log('net url:', network.config.url);
   const instance = await createFhevmInstance({
     kmsContractAddress: kmsAdd,
     aclContractAddress: aclAdd,
