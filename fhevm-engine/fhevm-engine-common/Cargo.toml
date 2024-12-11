@@ -1,6 +1,6 @@
 [package]
 name = "fhevm-engine-common"
-version = "0.6.1-alpha.0"
+version = "0.6.1"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
