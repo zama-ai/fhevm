@@ -5,7 +5,7 @@ type OwnProps = { currentStep: number }
 
 export function CreatorStepper({ currentStep }: OwnProps) {
   return (
-    <Card.Root size="sm">
+    <Card.Root size="sm" w={{ sm: 'full', md: '2/3', xl: '1/2' }}>
       <StepsRoot
         defaultValue={1}
         count={3}

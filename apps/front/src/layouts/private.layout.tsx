@@ -14,7 +14,9 @@ export function PrivateLayout() {
     <Box className="layout-private">
       <HeaderMemo name={me.name} />
       <Flex direction="row" wrap="nowrap" justify="flex-start" align="stretch">
-        <Navigation />
+        <Box display={{ base: 'none', lg: 'block' }}>
+          <Navigation />
+        </Box>
         <Box p="40px" flexGrow="1">
           <Outlet />
         </Box>

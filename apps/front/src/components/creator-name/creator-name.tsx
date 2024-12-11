@@ -1,8 +1,11 @@
 import { Box, Fieldset, Grid, Input, Stack, Text } from '@chakra-ui/react'
 import { useFormik } from 'formik'
+import { Highlight, themes } from 'prism-react-renderer'
+
 import { Field } from '@/components/ui/field'
 import { SpinnerButton } from '@/components/ui/spinner-button'
-import { Highlight, themes } from 'prism-react-renderer'
+import { ClipboardButton, ClipboardRoot } from '@/components/ui/clipboard'
+import { Alert } from '../ui/alert'
 
 type OwnProps = {
   onSubmit: (values: { name: string }) => void
@@ -10,7 +13,9 @@ type OwnProps = {
   errorMessage?: string
 }
 
-const codeBlock = `// SPDX-License-Identifier: BSD-3-Clause-Clear
+const codeBlock = `// this is a sample code
+// let's ask etienne or clement
+// SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
 /// @notice A simple contract that maintains a single state variable 'value'
@@ -37,7 +42,21 @@ function CodeHighlight() {
   return (
     <Highlight theme={themes.oneLight} code={codeBlock} language="tsx">
       {({ style, tokens, getLineProps, getTokenProps }) => (
-        <Box style={style} rounded="md" as="pre" p="3" overflow="scroll">
+        <Box
+          style={style}
+          rounded="md"
+          as="pre"
+          p="3"
+          overflow="scroll"
+          position="relative"
+        >
+          <ClipboardRoot
+            value={codeBlock}
+            position="absolute"
+            style={{ right: 10 }}
+          >
+            <ClipboardButton />
+          </ClipboardRoot>
           {tokens.map((line, i) => (
             <Box
               display="block"
@@ -65,7 +84,7 @@ function CodeHighlight() {
 
 function Tutorial() {
   return (
-    <>
+    <Box>
       <iframe
         width="100%"
         height="200"
@@ -73,11 +92,15 @@ function Tutorial() {
         title="YouTube video player"
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
       ></iframe>
-      <Text fontSize="xs">
+      <Text fontSize="xs" my="1">
         <b>Tutorial:</b> Use this solidity code in Remix and deploy it on
         Sepolia.
       </Text>
-    </>
+      <Alert status="warning" title="Some warning to be redacted" my="5">
+        This code is signed, don't share it with others. Ask Roger to rephrase
+        this warning.
+      </Alert>
+    </Box>
   )
 }
 
@@ -94,7 +117,7 @@ export function CreatorName({ onSubmit, loading, errorMessage }: OwnProps) {
     <Fieldset.Root>
       <form onSubmit={formik.handleSubmit}>
         <Stack gap="5">
-          <Fieldset.Content>
+          <Fieldset.Content w={{ base: 'full', md: '1/2' }}>
             <Field label="dApp name">
               <Input
                 disabled={loading}

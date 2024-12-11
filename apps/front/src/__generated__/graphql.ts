@@ -17,6 +17,7 @@ export type Scalars = {
 };
 
 export type CreateDappInput = {
+  /** Your smart contract address, it should start with 0x and have 42 characters */
   address?: InputMaybe<Scalars['String']['input']>;
   name: Scalars['String']['input'];
   teamId: Scalars['String']['input'];
@@ -33,7 +34,22 @@ export type Dapp = {
   address?: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
   name: Scalars['String']['output'];
+  status: DappStatus;
+  team: Team;
+  /** @deprecated Do not use this, it shall go away when I find a way to make it disappear */
+  teamId: Scalars['String']['output'];
 };
+
+export enum DappStatus {
+  /** @deprecated Not implmented yet */
+  Deleted = 'DELETED',
+  /** We are deploying it */
+  Deploying = 'DEPLOYING',
+  /** Still being worked on */
+  Draft = 'DRAFT',
+  /** You can use it now */
+  Live = 'LIVE'
+}
 
 export type Invitation = {
   __typename?: 'Invitation';
