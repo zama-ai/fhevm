@@ -2,18 +2,20 @@ import { RefAttributes } from 'react'
 import { Icon, IconProps } from '@chakra-ui/react'
 import {
   BookOpenText,
-  Clock,
   ChevronDown,
+  Clock,
   LayoutGrid,
   LogOut,
   Menu,
   Monitor,
+  Plus,
   Settings,
   Smile,
   X,
+  LucideProps,
 } from 'lucide-react'
 
-type OwnProps = IconProps & RefAttributes<SVGSVGElement>
+type OwnProps = IconProps & RefAttributes<SVGSVGElement> & LucideProps
 
 export const ChevronDownIcon = (props: OwnProps) => (
   <Icon {...props}>
@@ -60,6 +62,12 @@ export const LearnIcon = (props: OwnProps) => (
 export const LogOutIcon = (props: OwnProps) => (
   <Icon {...props}>
     <LogOut />
+  </Icon>
+)
+
+export const NewIcon = ({ strokeWidth, ...props }: OwnProps) => (
+  <Icon {...props}>
+    <Plus strokeWidth={strokeWidth} />
   </Icon>
 )
 

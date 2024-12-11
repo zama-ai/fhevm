@@ -10,9 +10,11 @@ export const CreatorNameFormSchema = z.object({
 export const CreatorAddressFormSchema = z.object({
   address: z
     .string()
-    // 0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43
-    .length(42, 'Sepolia addesses are 42 characters long and start by 0x')
-    .regex(/^0x[a-z0-9]{39}/i, 'Invalid sepolia address address'),
+    // example: 0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43
+    .regex(
+      /^0x[a-fA-F0-9]{40}$/,
+      'Sepolia addesses are 42 characters long and start by 0x',
+    ),
 })
 
 export type CreatorNameFormSchemaType = z.infer<typeof CreatorNameFormSchema>
