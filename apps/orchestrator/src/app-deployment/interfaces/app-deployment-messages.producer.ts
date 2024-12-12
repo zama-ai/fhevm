@@ -1,4 +1,4 @@
-import { AppDeploymentMessage } from '../entities/app-deployment.messages'
+import { AppDeploymentMessage } from 'messages'
 
 export interface AppDeploymentMessagesProducer {
   publish(message: AppDeploymentMessage): Promise<void>
