@@ -12,12 +12,6 @@ const GET_ME_TEAMS_DAPPS = graphql(`
       teams {
         id
         name
-        #        dapps {
-        #          id
-        #          name
-        #          address
-        #          status
-        #        }
       }
     }
   }
