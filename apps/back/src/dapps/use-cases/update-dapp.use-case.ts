@@ -7,9 +7,12 @@ import { TeamRepository } from '@/users/domain/repositories/team.repository'
 import { User } from '@/users/domain/entities/user'
 
 interface Input {
-  id: string
-  name?: string
-  address?: string
+  dapp: {
+    id: string
+    name?: string
+    address?: string
+  }
+  user: User
 }
 
 @Injectable()
@@ -18,15 +21,15 @@ export class UpdateDapp implements UseCase<Input, DApp> {
     private readonly dappRepository: DAppRepository,
     private readonly teamRepository: TeamRepository,
   ) {}
-  execute(input: Input, ctx: { user: User }): Task<DApp, AppError> {
+  execute(input: Input): Task<DApp, AppError> {
     return this.dappRepository
-      .findOneByIdAndUserId(input.id, String(ctx.user.id))
+      .findOneByIdAndUserId(input.dapp.id, String(input.user.id))
       .chain(dapp =>
         this.dappRepository.update(
           DApp.parse({
             ...dapp.toJSON(),
-            ...(input.name ? { name: input.name } : {}),
-            ...(input.address ? { address: input.address } : {}),
+            ...(input.dapp.name ? { name: input.dapp.name } : {}),
+            ...(input.dapp.address ? { address: input.dapp.address } : {}),
           }).unwrap(),
         ),
       )

@@ -15,7 +15,11 @@ $ pnpm install
 ```
 
 # develop
+
 ```bash
+# build the necessary packages
+pnpm --filter utils build
+
 # run all in dev mode
 $ pnpm start
 ```

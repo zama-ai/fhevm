@@ -22,13 +22,13 @@ export class DappsResolver {
   @Mutation(() => DappType, { name: 'createDapp' })
   @UseGuards(JwtAuthGuard)
   createDapp(@Args('input') input: CreateDappInput, @CurrentUser() user: User) {
-    return this.createDappUC.execute(input, { user }).toPromise()
+    return this.createDappUC.execute({ dapp: input, user }).toPromise()
   }
 
   @Mutation(() => DappType, { name: 'updateDapp' })
   @UseGuards(JwtAuthGuard)
   updateDapp(@Args('input') input: UpdateDappInput, @CurrentUser() user: User) {
-    return this.updateDappUC.execute(input, { user }).toPromise()
+    return this.updateDappUC.execute({ dapp: input, user }).toPromise()
   }
 
   @ResolveField()

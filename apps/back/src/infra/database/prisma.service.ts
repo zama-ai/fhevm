@@ -44,6 +44,6 @@ export class PrismaService implements OnModuleInit {
   }
 
   get dapp() {
-    return this.#client.dapp
+    return this.client.dapp
   }
 }
