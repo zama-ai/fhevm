@@ -1,9 +1,8 @@
 import { Logger } from '@nestjs/common'
-import { isAppDeploymentEvent } from '../entities/app-deployment.events'
-import { AppDeploymentMessage } from '../entities/app-deployment.messages'
 import { AppDeploymentMessagesProducer } from '../interfaces/app-deployment-messages.producer'
 import { AppDeploymentRepository } from '../interfaces/app-deployment.repository'
 import type { UseCase } from './use-case'
+import { type AppDeploymentMessage, isAppDeploymentEvent } from 'messages'
 
 export class ProcessEventUseCase
   implements UseCase<AppDeploymentMessage, void>

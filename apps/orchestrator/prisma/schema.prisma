@@ -6,6 +6,9 @@
 
 generator client {
   provider = "prisma-client-js"
+  // output into a separate subdirectory so multiple schemas can be used in a monorepo
+  // this make the import path `@prisma/client/orchestrator` instead of `@prisma/client`
+  output   = "../../../node_modules/@prisma/client/orchestrator"
 }
 
 datasource db {
