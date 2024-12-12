@@ -1,10 +1,9 @@
 import { Injectable } from '@nestjs/common'
 import { randomUUID } from 'crypto'
+import type { UseCase, AppError } from 'utils'
+import { Task } from 'utils'
 
 import { DApp } from '../domain/entities/dapp'
-import { UseCase } from '@/utils/use-case'
-import { Task } from '@/utils/task'
-import { AppError } from '@/utils/app-error'
 import { DAppRepository } from '../domain/repositories/dapp.repository'
 import { TeamRepository } from '@/users/domain/repositories/team.repository'
 import { User } from '@/users/domain/entities/user'

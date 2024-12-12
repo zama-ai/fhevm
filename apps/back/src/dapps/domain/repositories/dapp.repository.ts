@@ -1,6 +1,6 @@
 import { DApp } from '../entities/dapp'
-import { AppError } from '@/utils/app-error'
-import { Task } from '@/utils/task'
+import type { AppError } from 'utils'
+import { Task } from 'utils'
 
 export abstract class DAppRepository {
   abstract create(data: DApp): Task<DApp, AppError>

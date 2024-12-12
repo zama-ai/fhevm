@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common'
-import { AppError, unknownError } from '@/utils/app-error'
-import { Task } from '@/utils/task'
+import type { AppError } from 'utils'
+import { Task, unknownError } from 'utils'
 
 import { DApp } from '@/dapps/domain/entities/dapp'
 import { DAppRepository } from '@/dapps/domain/repositories/dapp.repository'
