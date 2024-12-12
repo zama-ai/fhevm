@@ -5,15 +5,10 @@ import { ContractService } from 'src/domain/services/contract.service'
 import { type AppError, Task, unknownError } from 'utils'
 import { EtherscanContractService } from './etherscan-contract.service'
 
-// export const CONTRACT_SERVICE_MAP = Symbol('ContractServiceMap')
-
 export class ProxyContractService implements ContractService {
   private readonly services = new Map<ChainId, ContractService>()
 
-  constructor(
-    // @Inject(CONTRACT_SERVICE_MAP)
-    private readonly configs: Map<ChainId, EtherConfig>,
-  ) {}
+  constructor(private readonly configs: Map<ChainId, EtherConfig>) {}
 
   private getService(chainId: ChainId): ContractService | undefined {
     if (!this.services.has(chainId) && this.configs.has(chainId)) {
