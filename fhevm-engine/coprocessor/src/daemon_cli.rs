@@ -71,6 +71,10 @@ pub struct Args {
     /// Private key is in plain text 0x1234.. format.
     #[arg(long, default_value = "./coprocessor.key")]
     pub coprocessor_private_key: String,
+
+    /// Coprocessor service name in OTLP traces
+    #[arg(long, default_value = "coprocessor")]
+    pub service_name: String,
 }
 
 pub fn parse_args() -> Args {

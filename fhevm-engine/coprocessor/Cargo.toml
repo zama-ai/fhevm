@@ -30,6 +30,7 @@ lru = "0.12.3"
 opentelemetry = "0.25.0"
 opentelemetry-otlp = "0.25.0"
 opentelemetry_sdk = { version = "0.25.0", features = ["rt-tokio"] }
+opentelemetry-semantic-conventions = "0.27.0"
 regex = "1.10.5"
 serde_json = "1.0"
 strum = { version = "0.26", features = ["derive"] }

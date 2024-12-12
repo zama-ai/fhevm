@@ -56,7 +56,9 @@ pub async fn async_main(
         tracing_subscriber::fmt().json().with_level(true).init();
     });
 
-    if let Err(err) = tracing::setup_tracing() {
+    info!(target: "async_main", "Starting runtime with args: {:?}", args);
+
+    if let Err(err) = tracing::setup_tracing(&args.service_name) {
         panic!("Error while initializing tracing: {:?}", err);
     }
 
