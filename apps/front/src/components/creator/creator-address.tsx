@@ -57,8 +57,8 @@ export function CreatorAddress({ onSubmit, loading, errorMessage }: OwnProps) {
 
             <Box>
               <Alert status="info" title="Reassuring message" my="5">
-                Your smart contract will be shortly deployed on the blockchain.
-                This process may take a few minutes.
+                We are verifying that your contract have been successfully
+                deployed on the blockchain This process may take a few minutes.
               </Alert>
             </Box>
           </Grid>

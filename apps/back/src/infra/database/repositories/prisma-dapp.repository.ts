@@ -13,7 +13,7 @@ export class PrismaDAppRepository extends DAppRepository {
     super()
   }
 
-  create(data: DApp): Task<DApp, AppError> {
+  create = (data: DApp): Task<DApp, AppError> => {
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.dapp
         .create({ data })
@@ -22,7 +22,7 @@ export class PrismaDAppRepository extends DAppRepository {
     }).chain(props => DApp.parse(props).async())
   }
 
-  update(data: DApp): Task<DApp, AppError> {
+  update = (data: DApp): Task<DApp, AppError> => {
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.dapp
         .update({ where: { id: data.id }, data })
@@ -31,7 +31,7 @@ export class PrismaDAppRepository extends DAppRepository {
     }).chain(props => DApp.parse(props).async())
   }
 
-  findOneByIdAndUserId(id: string, userId: string): Task<DApp, AppError> {
+  findOneByIdAndUserId = (id: string, userId: string): Task<DApp, AppError> => {
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.dapp
         .findUnique({
