@@ -14,7 +14,10 @@ import { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-node/
  * Learn more about it here: https://the-guild.dev/graphql/codegen/plugins/presets/preset-client#reducing-bundle-size
  */
 const documents = {
-    "\n  query AboutMe {\n    me {\n      id\n      email\n      name\n    }\n  }\n": types.AboutMeDocument,
+    "\n  query AboutMe {\n    me {\n      id\n      email\n      name\n      teams {\n        id\n        name\n      }\n    }\n  }\n": types.AboutMeDocument,
+    "\n  mutation CreateDapp($teamId: String!, $name: String!) {\n    createDapp(input: { teamId: $teamId, name: $name }) {\n      id\n      name\n      address\n      status\n    }\n  }\n": types.CreateDappDocument,
+    "\n  mutation SetDappAddress($id: ID!, $address: String!) {\n    updateDapp(input: { id: $id, address: $address }) {\n      id\n      name\n      address\n      status\n    }\n  }\n": types.SetDappAddressDocument,
+    "\n  query MeTeamDapps {\n    me {\n      id\n      email\n      name\n      teams {\n        id\n        name\n      }\n    }\n  }\n": types.MeTeamDappsDocument,
     "\n  query Me {\n    me {\n      id\n      email\n      name\n    }\n  }\n": types.MeDocument,
     "\n  mutation SignIn($email: String!, $password: String!) {\n    login(input: { email: $email, password: $password }) {\n      token\n      user {\n        id\n        email\n        name\n      }\n    }\n  }\n": types.SignInDocument,
     "\n  query InvitationToken($token: String!) {\n    invitation(token: $token) {\n      id\n      expiresAt\n      token\n      email\n    }\n  }\n": types.InvitationTokenDocument,
@@ -38,7 +41,19 @@ export function graphql(source: string): unknown;
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function graphql(source: "\n  query AboutMe {\n    me {\n      id\n      email\n      name\n    }\n  }\n"): (typeof documents)["\n  query AboutMe {\n    me {\n      id\n      email\n      name\n    }\n  }\n"];
+export function graphql(source: "\n  query AboutMe {\n    me {\n      id\n      email\n      name\n      teams {\n        id\n        name\n      }\n    }\n  }\n"): (typeof documents)["\n  query AboutMe {\n    me {\n      id\n      email\n      name\n      teams {\n        id\n        name\n      }\n    }\n  }\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  mutation CreateDapp($teamId: String!, $name: String!) {\n    createDapp(input: { teamId: $teamId, name: $name }) {\n      id\n      name\n      address\n      status\n    }\n  }\n"): (typeof documents)["\n  mutation CreateDapp($teamId: String!, $name: String!) {\n    createDapp(input: { teamId: $teamId, name: $name }) {\n      id\n      name\n      address\n      status\n    }\n  }\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  mutation SetDappAddress($id: ID!, $address: String!) {\n    updateDapp(input: { id: $id, address: $address }) {\n      id\n      name\n      address\n      status\n    }\n  }\n"): (typeof documents)["\n  mutation SetDappAddress($id: ID!, $address: String!) {\n    updateDapp(input: { id: $id, address: $address }) {\n      id\n      name\n      address\n      status\n    }\n  }\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  query MeTeamDapps {\n    me {\n      id\n      email\n      name\n      teams {\n        id\n        name\n      }\n    }\n  }\n"): (typeof documents)["\n  query MeTeamDapps {\n    me {\n      id\n      email\n      name\n      teams {\n        id\n        name\n      }\n    }\n  }\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

@@ -28,6 +28,27 @@ type Invitation {
   expiresAt: Float!
 }
 
+type Dapp {
+  id: ID!
+  name: String!
+  status: DappStatus!
+  address: String
+  teamId: String! @deprecated(reason: "Do not use this, it shall go away when I find a way to make it disappear")
+  team: Team!
+}
+
+enum DappStatus {
+  """Still being worked on"""
+  DRAFT
+
+  """We are deploying it"""
+  DEPLOYING
+
+  """You can use it now"""
+  LIVE
+  DELETED @deprecated(reason: "Not implmented yet")
+}
+
 type Query {
   me: User!
   invitation(token: String!): Invitation!
@@ -37,6 +58,8 @@ type Mutation {
   login(input: LoginInput!): auth!
   signup(input: SignupInput!): auth!
   createInvitation(input: CreateInvitationInput!): Invitation!
+  createDapp(input: CreateDappInput!): Dapp!
+  updateDapp(input: UpdateDappInput!): Dapp!
 }
 
 input LoginInput {
@@ -57,4 +80,24 @@ input CreateInvitationInput {
   You need the secret key to create an invitation ask the #zws team to get one
   """
   secret: String!
+}
+
+input CreateDappInput {
+  name: String!
+  teamId: String!
+
+  """
+  Your smart contract address, it should start with 0x and have 42 characters
+  """
+  address: String
+}
+
+input UpdateDappInput {
+  id: ID!
+  name: String
+
+  """
+  Your smart contract address, it should start with 0x and have 42 characters
+  """
+  address: String
 }

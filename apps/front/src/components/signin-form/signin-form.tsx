@@ -1,8 +1,9 @@
-import { Fieldset, Heading, Input, Stack, Text } from '@chakra-ui/react'
+import { Fieldset, Heading, Input, Stack } from '@chakra-ui/react'
 import { useFormik } from 'formik'
 import { Field } from '@/components/ui/field'
 import { PasswordInput } from '@/components/ui/password-input'
 import { SpinnerButton } from '@/components/ui/spinner-button'
+import { ErrorMessage } from '../error-message/error-message'
 
 type OwnProps = {
   onSubmit: (values: { email: string; password: string }) => void
@@ -65,11 +66,7 @@ export function SigninForm({ onSubmit, loading, errorMessage }: OwnProps) {
             </Field>
           </Fieldset.Content>
 
-          {errorMessage && (
-            <Text color="red.500" fontSize="sm">
-              {errorMessage}
-            </Text>
-          )}
+          {errorMessage && <ErrorMessage>{errorMessage}</ErrorMessage>}
 
           <SpinnerButton
             loading={loading}

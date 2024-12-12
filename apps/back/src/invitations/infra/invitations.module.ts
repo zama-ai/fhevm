@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common'
 import { InvitationsResolver } from './invitations.resolver'
 import { DatabaseModule } from '@/infra/database/database.module'
 import { GetInvitationByToken } from '@/invitations/use-cases/get-invitation-by-token.use-case'
-import { CreateInvitation } from '../use-cases/create-invitation.use-case'
+import { CreateInvitation } from '@/invitations/use-cases/create-invitation.use-case'
 
 @Module({
   imports: [DatabaseModule],
