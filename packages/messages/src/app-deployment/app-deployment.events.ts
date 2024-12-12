@@ -54,7 +54,7 @@ const schema = z
   .and(
     z.object({
       _tag: z.literal('Event'),
-      $meta: z.record(z.string(), z.string()).optional(),
+      $meta: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
     }),
   )
 export type AppDeploymentEvent = z.infer<typeof schema>
@@ -68,7 +68,7 @@ export type AppDeploymentEvent = z.infer<typeof schema>
 function factory<K extends keyof EventMap>(type: K) {
   return function (
     payload: z.infer<EventMap[K]>['payload'],
-    $meta?: Record<string, string>,
+    $meta?: Record<string, string | number>,
   ) {
     return {
       _tag: 'Event',

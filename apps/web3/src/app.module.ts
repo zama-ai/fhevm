@@ -1,16 +1,28 @@
-import { SQSClient } from '@aws-sdk/client-sqs';
-import { Module } from '@nestjs/common';
-import { ConfigModule, ConfigService } from '@nestjs/config';
-import { SqsModule } from 'sqs';
-import awsConfig from './config/aws.config';
-import { SQSConsumer } from './infra/adapters/sqs.consumer';
-import { SNSClient } from '@aws-sdk/client-sns';
+import { SQSClient } from '@aws-sdk/client-sqs'
+import { Module } from '@nestjs/common'
+import { ConfigModule, ConfigService } from '@nestjs/config'
+import { SqsModule } from 'sqs'
+import awsConfig from './config/aws.config'
+import { SQSConsumer } from './infra/adapters/sqs.consumer'
+import { SNSClient } from '@aws-sdk/client-sns'
+import ethersConfig, {
+  ChainId,
+  EtherConfig,
+  EtherConfigFactory,
+  isChainId,
+} from './config/ether.config'
+import { CONTRACT_SERVICE, MESSAGE_PRODUCER } from './constants'
+import { ContractService } from './domain/services/contract.service'
+import { ProxyContractService } from './infra/adapters/proxy-contract.service'
+import { AwsMessageProducer } from './infra/adapters/aws-message.producer'
+import { MessageProducer } from './domain/services/message.producer'
+import { DiscoverContract } from './use-cases/discover-contract.use-case'
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [awsConfig],
+      load: [awsConfig, ethersConfig],
     }),
     SqsModule.registerAsync({
       inject: [ConfigService],
@@ -39,6 +51,32 @@ import { SNSClient } from '@aws-sdk/client-sns';
       }),
     }),
   ],
-  providers: [SQSConsumer],
+  providers: [
+    SQSConsumer,
+    {
+      provide: CONTRACT_SERVICE,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => {
+        const map = config
+          .get<string[]>('ether.chainIds')!
+          .filter(isChainId)
+          .reduce(function (acc, chainId) {
+            acc.set(chainId, EtherConfigFactory.getEtherConfig(chainId))
+            return acc
+          }, new Map<ChainId, EtherConfig>())
+        return new ProxyContractService(map)
+      },
+    },
+    {
+      provide: MESSAGE_PRODUCER,
+      useClass: AwsMessageProducer,
+    },
+    {
+      provide: DiscoverContract,
+      inject: [CONTRACT_SERVICE, MESSAGE_PRODUCER],
+      useFactory: (service: ContractService, producer: MessageProducer) =>
+        new DiscoverContract(service, producer),
+    },
+  ],
 })
 export class AppModule {}

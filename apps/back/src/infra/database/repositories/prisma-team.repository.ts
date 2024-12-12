@@ -1,11 +1,10 @@
-import { Injectable } from '@nestjs/common'
-
 import { Team } from '@/users/domain/entities/team'
 import { TeamRepository } from '@/users/domain/repositories/team.repository'
+import { PrismaService } from '../prisma.service'
+import { Injectable } from '@nestjs/common'
 import type { AppError } from 'utils'
 import { notFoundError, unknownError, Task } from 'utils'
 import { TeamId, UserId } from '@/users/domain/entities/value-objects'
-import { PrismaService } from '../prisma.service'
 
 @Injectable()
 export class PrismaTeamRepository extends TeamRepository {
