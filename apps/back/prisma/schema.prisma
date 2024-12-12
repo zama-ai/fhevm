@@ -13,11 +13,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum TeamStatus {
-  ANONYMOUS
-  ACTIVE
-}
-
 model Invitation {
   id        String    @id
   email     String    @unique

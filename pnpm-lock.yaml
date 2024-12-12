@@ -49,6 +49,9 @@ importers:
       bcryptjs:
         specifier: ^2.4.3
         version: 2.4.3
+      nestjs-cls:
+        specifier: ^4.5.0
+        version: 4.5.0(@nestjs/common@10.4.10(reflect-metadata@0.2.2)(rxjs@7.8.1))(@nestjs/core@10.4.10)(reflect-metadata@0.2.2)(rxjs@7.8.1)
       passport:
         specifier: ^0.7.0
         version: 0.7.0
@@ -449,9 +452,6 @@ importers:
       '@nestjs/platform-express':
         specifier: ^10.0.0
         version: 10.4.10(@nestjs/common@10.4.10(reflect-metadata@0.2.2)(rxjs@7.8.1))(@nestjs/core@10.4.10)
-      messages:
-        specifier: workspace:*
-        version: link:../../packages/messages
       reflect-metadata:
         specifier: ^0.2.0
         version: 0.2.2
@@ -461,12 +461,6 @@ importers:
       sqs:
         specifier: workspace:*
         version: link:../../packages/sqs
-      utils:
-        specifier: workspace:*
-        version: link:../../packages/utils
-      zod:
-        specifier: ^3.23.8
-        version: 3.23.8
     devDependencies:
       '@nestjs/cli':
         specifier: ^10.0.0
@@ -4896,6 +4890,15 @@ packages:
 
   neo-async@2.6.2:
     resolution: {integrity: sha512-Yd3UES5mWCSqR+qNT93S3UoYUkqAZ9lLg8a7g9rimsWmYGK8cVToA4/sF3RrshdyV3sAGMXVUmpMYOw+dLpOuw==}
+
+  nestjs-cls@4.5.0:
+    resolution: {integrity: sha512-oi3GNCc5pnsnVI5WJKMDwmg4NP+JyEw+edlwgepyUba5+RGGtJzpbVaaxXGW1iPbDuQde3/fA8Jdjq9j88BVcQ==}
+    engines: {node: '>=16'}
+    peerDependencies:
+      '@nestjs/common': '> 7.0.0 < 11'
+      '@nestjs/core': '> 7.0.0 < 11'
+      reflect-metadata: '*'
+      rxjs: '>= 7'
 
   next-themes@0.4.3:
     resolution: {integrity: sha512-nG84VPkTdUHR2YeD89YchvV4I9RbiMAql3GiLEQlPvq1ioaqPaIReK+yMRdg/zgiXws620qS1rU30TiWmmG9lA==}
@@ -12221,6 +12224,13 @@ snapshots:
   negotiator@0.6.4: {}
 
   neo-async@2.6.2: {}
+
+  nestjs-cls@4.5.0(@nestjs/common@10.4.10(reflect-metadata@0.2.2)(rxjs@7.8.1))(@nestjs/core@10.4.10)(reflect-metadata@0.2.2)(rxjs@7.8.1):
+    dependencies:
+      '@nestjs/common': 10.4.10(reflect-metadata@0.2.2)(rxjs@7.8.1)
+      '@nestjs/core': 10.4.10(@nestjs/common@10.4.10(reflect-metadata@0.2.2)(rxjs@7.8.1))(@nestjs/platform-express@10.4.10)(reflect-metadata@0.2.2)(rxjs@7.8.1)
+      reflect-metadata: 0.2.2
+      rxjs: 7.8.1
 
   next-themes@0.4.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
     dependencies:

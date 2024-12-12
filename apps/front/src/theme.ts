@@ -17,8 +17,16 @@ const config = defineConfig({
   theme: {
     tokens: {
       colors: {
-        brand: { value: '#FFD208' },
-        secondary: { value: '#F4B458' },
+        brand: { value: '#ffd208', description: 'Primary brand color' },
+        yellowhighlight: {
+          value: '#f9dc5c',
+          description: 'Highlight on brand color',
+        },
+        secondary: { value: '#f4b458', description: 'Secondary brand color' },
+        ivory: {
+          value: 'rgba(255, 210, 8, .1)',
+          description: 'Light yellow tint',
+        },
       },
       fonts: {
         body: { value: '"Inter Variable", system-ui, sans-serif' },
