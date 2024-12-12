@@ -35,3 +35,12 @@ export class UpdateDapp implements UseCase<Input, DApp> {
       )
   }
 }
+
+
+DApp.parse(
+  Object.assign({}, dapp.toJson(), input.dapp).asyncChain(
+    this.dappRepository.update,
+  ),
+),
+
+

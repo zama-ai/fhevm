@@ -35,7 +35,7 @@ export function CreateStepOnePage() {
   }, [me])
 
   useEffect(() => {
-    if (data && data.createDapp.id) {
+    if (data?.createDapp.id) {
       navigate(`/create/2/${data.createDapp.id}`)
     }
   }, [data, navigate])

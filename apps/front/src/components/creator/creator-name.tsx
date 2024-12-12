@@ -20,9 +20,7 @@ export function CreatorName({ onSubmit, loading, errorMessage }: OwnProps) {
     initialValues: {
       name: '',
     },
-    onSubmit: values => {
-      onSubmit(values)
-    },
+    onSubmit,
     validate: toFormikValidate(CreatorNameFormSchema),
   })
   return (
