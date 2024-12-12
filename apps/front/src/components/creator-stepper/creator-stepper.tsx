@@ -1,6 +1,12 @@
 import { StepsItem, StepsList, StepsRoot } from '@/components/ui/steps'
 import { Card } from '@chakra-ui/react'
 
+const steps = [
+  { title: 'Step 1', description: 'Smart contract' },
+  { title: 'Step 2', description: 'Link dApp' },
+  { title: 'Step 3', description: 'Confirmation' },
+]
+
 type OwnProps = { currentStep: number }
 
 export function CreatorStepper({ currentStep }: OwnProps) {
@@ -8,15 +14,20 @@ export function CreatorStepper({ currentStep }: OwnProps) {
     <Card.Root size="sm" w={{ sm: 'full', md: '2/3', xl: '1/2' }}>
       <StepsRoot
         defaultValue={0}
-        count={3}
+        count={steps.length}
         colorPalette="orange"
         step={currentStep}
       >
         <Card.Body color="fg.muted">
           <StepsList fontSize="xs">
-            <StepsItem index={0} title="Step 1" description="Smart contract" />
-            <StepsItem index={1} title="Step 2" description="Link dApp" />
-            <StepsItem index={2} title="Step 3" description="Confirmation" />
+            {steps.map(({ title, description }, index) => (
+              <StepsItem
+                key={index}
+                index={index}
+                title={title}
+                description={description}
+              />
+            ))}
           </StepsList>
         </Card.Body>
       </StepsRoot>
