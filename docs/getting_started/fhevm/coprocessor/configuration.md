@@ -64,6 +64,8 @@ Options:
           Postgres database url. If unspecified DATABASE_URL environment variable is used
       --coprocessor-private-key <COPROCESSOR_PRIVATE_KEY>
           Coprocessor private key file path. Private key is in plain text 0x1234.. format [default: ./coprocessor.key]
+      --service-name <SERVICE_NAME>
+          Coprocessor service name in OTLP traces [default: coprocessor]
   -h, --help
           Print help
   -V, --version
