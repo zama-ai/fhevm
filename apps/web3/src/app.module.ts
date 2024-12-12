@@ -11,12 +11,12 @@ import ethersConfig, {
   EtherConfigFactory,
   isChainId,
 } from './config/ether.config'
-import { VerifyContract } from './use-cases/verify-contract.use-case'
 import { CONTRACT_SERVICE, MESSAGE_PRODUCER } from './constants'
 import { ContractService } from './domain/services/contract.service'
 import { ProxyContractService } from './infra/adapters/proxy-contract.service'
 import { AwsMessageProducer } from './infra/adapters/aws-message.producer'
 import { MessageProducer } from './domain/services/message.producer'
+import { DiscoverContract } from './use-cases/discover-contract.use-case'
 
 @Module({
   imports: [
@@ -72,10 +72,10 @@ import { MessageProducer } from './domain/services/message.producer'
       useClass: AwsMessageProducer,
     },
     {
-      provide: VerifyContract,
+      provide: DiscoverContract,
       inject: [CONTRACT_SERVICE, MESSAGE_PRODUCER],
       useFactory: (service: ContractService, producer: MessageProducer) =>
-        new VerifyContract(service, producer),
+        new DiscoverContract(service, producer),
     },
   ],
 })

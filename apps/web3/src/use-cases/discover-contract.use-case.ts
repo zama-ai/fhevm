@@ -19,8 +19,8 @@ type Input = Extract<
 const MAX_RETRY = 5
 const RETRY_DELAY_RATIO = 2
 
-export class VerifyContract implements UseCase<Input, void> {
-  logger = new Logger(VerifyContract.name)
+export class DiscoverContract implements UseCase<Input, void> {
+  logger = new Logger(DiscoverContract.name)
 
   constructor(
     private readonly service: ContractService,
@@ -33,13 +33,14 @@ export class VerifyContract implements UseCase<Input, void> {
   }: Input): Task<void, AppError> {
     return Address.fromString(address)
       .asyncChain(address => this.service.getAbi(chainId, address))
+      .chain(() => this.producer.produce(scDiscovered(payload, $meta)))
       .match({
-        ok: () => {
-          this.producer.produce(scDiscovered(payload, $meta))
+        ok: message => {
+          this.logger.debug(message)
         },
         fail: err => {
           this.logger.warn(
-            `Failed to verify ${address} on chain ${chainId}: ${err}`,
+            `Failed to verify ${address} on chain ${chainId}: ${JSON.stringify(err)}`,
           )
 
           const retry = Number($meta?.retry ?? 0)
