@@ -27,7 +27,7 @@ export function CreateStepTwoPage() {
     useMutation<SetDappAddressMutation>(SET_DAPP_ADDRESS)
 
   useEffect(() => {
-    if (data && data.updateDapp.id) {
+    if (data?.updateDapp.id) {
       navigate(`/create/2/${data.updateDapp.id}`)
     }
   }, [data, navigate])

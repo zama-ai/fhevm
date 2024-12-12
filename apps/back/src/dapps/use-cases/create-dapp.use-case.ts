@@ -26,15 +26,13 @@ export class CreateDapp implements UseCase<Input, Dapp> {
     return this.teamRepository
       .findOneByIdAndUserId(new TeamId(input.teamId), ctx.user.id) // this can throw with a "Team not found" error, it should throw an unthorized error
       .chain(() =>
-        this.dappRepository.create(
-          Dapp.parse({
+        Dapp.parse({
             id: randomUUID(),
             name: input.name,
             status: 'DRAFT',
             teamId: input.teamId,
             address: input.address,
-          }).unwrap(),
-        ),
+          }).asyncChain(this.dappRepository.create)
       )
   }
 }
