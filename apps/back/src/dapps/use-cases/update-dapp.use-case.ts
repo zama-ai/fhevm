@@ -25,22 +25,9 @@ export class UpdateDapp implements UseCase<Input, DApp> {
     return this.dappRepository
       .findOneByIdAndUserId(input.dapp.id, String(input.user.id))
       .chain(dapp =>
-        this.dappRepository.update(
-          DApp.parse({
-            ...dapp.toJSON(),
-            ...(input.dapp.name ? { name: input.dapp.name } : {}),
-            ...(input.dapp.address ? { address: input.dapp.address } : {}),
-          }).unwrap(),
+        DApp.parse(Object.assign({}, dapp.toJSON(), input.dapp)).asyncChain(
+          this.dappRepository.update,
         ),
       )
   }
 }
-
-
-DApp.parse(
-  Object.assign({}, dapp.toJson(), input.dapp).asyncChain(
-    this.dappRepository.update,
-  ),
-),
-
-
