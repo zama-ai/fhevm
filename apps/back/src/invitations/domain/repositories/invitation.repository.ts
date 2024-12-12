@@ -1,6 +1,6 @@
 import { Invitation } from '../entities/invitation'
-import { AppError } from '@/utils/app-error'
-import { Task } from '@/utils/task'
+import type { AppError } from 'utils'
+import { Task } from 'utils'
 import { InvitationId, Token } from '../entities/value-objects'
 
 export abstract class InvitationRepository {

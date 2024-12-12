@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common'
+import { ClsModule } from 'nestjs-cls'
 import { PrismaService } from './prisma.service'
 import { InvitationRepository } from '@/invitations/domain/repositories/invitation.repository'
 import { DappRepository } from '@/dapps/domain/repositories/dapp.repository'
@@ -8,9 +9,33 @@ import { PrismaInvitationRepository } from './repositories/prisma-invitation.rep
 import { PrismaUserRepository } from './repositories/prisma-user.repository'
 import { PrismaTeamRepository } from './repositories/prisma-team.repository'
 import { PrismaDappRepository } from './repositories/prisma-dapp.repository'
+import { PrismaClient } from '@prisma/client'
+import { UNIT_OF_WORK } from '@/constants'
+import { PrismaUOW } from './prisma.uow'
 
 @Module({
+  imports: [
+    ClsModule.forRoot({
+      middleware: {
+        mount: false,
+      },
+    }),
+  ],
   providers: [
+    {
+      provide: PrismaClient,
+      useFactory: () =>
+        new PrismaClient({
+          log: [
+            {
+              emit: 'stdout',
+              // TODO: create a config service to solve the configuration
+              level:
+                process.env.PRISMA_LOGLEVEL === 'debug' ? 'query' : 'error',
+            },
+          ],
+        }),
+    },
     PrismaService,
     {
       provide: UserRepository,
@@ -28,12 +53,17 @@ import { PrismaDappRepository } from './repositories/prisma-dapp.repository'
       provide: DappRepository,
       useClass: PrismaDappRepository,
     },
+    {
+      provide: UNIT_OF_WORK,
+      useClass: PrismaUOW,
+    },
   ],
   exports: [
     UserRepository,
     TeamRepository,
     InvitationRepository,
     DappRepository,
+    UNIT_OF_WORK,
   ],
 })
 export class DatabaseModule {}

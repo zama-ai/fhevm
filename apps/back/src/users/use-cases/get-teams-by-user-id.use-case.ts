@@ -1,9 +1,7 @@
 import { Injectable } from '@nestjs/common'
 import { Team } from '@/users/domain/entities/team'
-import { UseCase } from '@/utils/use-case'
+import type { AppError, Task, UseCase } from 'utils'
 import { TeamRepository } from '../domain/repositories/team.repository'
-import { Task } from '@/utils/task'
-import { AppError } from '@/utils/app-error'
 import { UserId } from '../domain/entities/value-objects'
 
 @Injectable()

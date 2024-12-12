@@ -1,9 +1,9 @@
-import { UserProps, User } from '@/users/domain/entities/user'
+import { User } from '@/users/domain/entities/user'
 import { UserRepository } from '@/users/domain/repositories/user.repository'
 import { PrismaService } from '../prisma.service'
 import { Injectable } from '@nestjs/common'
-import { Task } from '@/utils/task'
-import { AppError, notFoundError, unknownError } from '@/utils/app-error'
+import type { AppError } from 'utils'
+import { notFoundError, Task, unknownError } from 'utils'
 import { UserId } from '@/users/domain/entities/value-objects'
 
 @Injectable()
@@ -12,7 +12,7 @@ export class PrismaUserRepository extends UserRepository {
     super()
   }
 
-  create(data: User): Task<User, AppError> {
+  create = (data: User): Task<User, AppError> => {
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.user
         .create({ data: data.toJSON() })
@@ -21,7 +21,7 @@ export class PrismaUserRepository extends UserRepository {
     }).chain(props => User.parse(props).async())
   }
 
-  findById(id: UserId): Task<User, AppError> {
+  findById = (id: UserId): Task<User, AppError> => {
     if (!id) {
       return Task.reject(notFoundError('User not found'))
     }
@@ -35,7 +35,7 @@ export class PrismaUserRepository extends UserRepository {
     }).chain(props => User.parse(props).async())
   }
 
-  findByEmail(email: string): Task<User, AppError> {
+  findByEmail = (email: string): Task<User, AppError> => {
     if (!email) {
       return Task.reject(notFoundError('User not found'))
     }
