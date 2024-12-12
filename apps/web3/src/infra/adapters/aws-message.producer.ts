@@ -44,7 +44,7 @@ export class AwsMessageProducer implements MessageProducer {
         .send(
           new SendMessageCommand({
             QueueUrl: this.#queueUrl,
-            DelaySeconds: message.$meta?.dalay as number,
+            DelaySeconds: message.$meta?.delay as number,
             MessageBody: JSON.stringify(message),
           }),
         )
