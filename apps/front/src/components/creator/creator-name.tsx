@@ -12,11 +12,17 @@ import { CreatorNameFormSchema } from './validations'
 
 type OwnProps = {
   onSubmit: (values: { name: string }) => void
+  onUpdateTitle: (title: string) => void
   loading: boolean
   errorMessage?: string
 }
 
-export function CreatorName({ onSubmit, loading, errorMessage }: OwnProps) {
+export function CreatorName({
+  onSubmit,
+  onUpdateTitle,
+  loading,
+  errorMessage,
+}: OwnProps) {
   const formik = useFormik({
     initialValues: {
       name: '',
@@ -24,6 +30,7 @@ export function CreatorName({ onSubmit, loading, errorMessage }: OwnProps) {
     onSubmit,
     validate: toFormikValidate(CreatorNameFormSchema),
   })
+
   return (
     <Fieldset.Root>
       <form onSubmit={formik.handleSubmit}>
@@ -35,7 +42,10 @@ export function CreatorName({ onSubmit, loading, errorMessage }: OwnProps) {
                 name="name"
                 type="text"
                 placeholder="My first dApp"
-                onChange={formik.handleChange}
+                onChange={ev => {
+                  formik.handleChange(ev)
+                  onUpdateTitle(ev.target.value)
+                }}
                 value={formik.values.name}
               />
             </Field>

@@ -59,7 +59,7 @@ const router = createBrowserRouter([
       },
       {
         loader: dashboardLoader,
-        path: '/create/1',
+        path: '/create',
         element: <CreateStepOnePage />,
       },
       {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useContext, useEffect, useState } from 'react'
 import { useLoaderData, useNavigate } from 'react-router'
 import { Heading, Box } from '@chakra-ui/react'
 import { useMutation } from '@apollo/client'
@@ -9,6 +9,7 @@ import { formatErrorMessage } from '@/lib/error-message'
 import { getPersonalTeam } from '@/lib/personal-team'
 import { CreatorName } from '@/components/creator/creator-name'
 import { CreatorStepper } from '@/components/creator-stepper/creator-stepper'
+import { TitleContext } from '@/components/title-context/title-context'
 
 const CREATE_DAPP = graphql(`
   mutation CreateDapp($teamId: String!, $name: String!) {
@@ -27,6 +28,7 @@ export function CreateStepOnePage() {
     useMutation<CreateDappMutation>(CREATE_DAPP)
   const { me } = useLoaderData<MeTeamDappsQuery>()
   const navigate = useNavigate()
+  const { setTitle } = useContext(TitleContext)
 
   useEffect(() => {
     if (me) {
@@ -38,7 +40,14 @@ export function CreateStepOnePage() {
     if (data?.createDapp.id) {
       navigate(`/create/2/${data.createDapp.id}`)
     }
-  }, [data, navigate])
+  }, [data, navigate, setTitle])
+
+  // Reset the title in context when the component is unmounted
+  useEffect(() => {
+    return () => {
+      setTitle('')
+    }
+  }, [setTitle])
 
   const errorMessage = error ? formatErrorMessage(error.message) : undefined
   return (
@@ -56,6 +65,7 @@ export function CreateStepOnePage() {
             },
           })
         }}
+        onUpdateTitle={setTitle}
         loading={loading}
         errorMessage={errorMessage}
       />
