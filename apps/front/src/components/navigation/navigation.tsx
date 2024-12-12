@@ -22,7 +22,8 @@ function NavBlock({ title, icon, to }: NavBlockProps) {
     <NavLink to={to}>
       {({ isActive }) => (
         <HStack
-          bg={isActive ? 'ivory' : 'transparent'}
+          bg={isActive ? 'brand.subtle' : 'transparent'}
+          _dark={{ bg: isActive ? 'brand.subtle' : 'transparent' }}
           width="100%"
           p="2"
           rounded="md"
