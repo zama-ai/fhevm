@@ -1,31 +1,14 @@
-import { Box, Text } from '@chakra-ui/react'
-import { Alert } from '../ui/alert'
+import { Text } from '@chakra-ui/react'
+import { Alert } from '@/components/ui/alert'
+import { Video } from '@/components/video/video'
 
 export function TutorialName() {
   return (
     <>
-      <Box
-        style={{
-          position: 'relative',
-          width: '100%',
-          height: '0',
-          paddingBottom: '56.27198%',
-        }}
-      >
-        <iframe
-          style={{
-            position: 'absolute',
-            top: '0',
-            left: '0',
-            width: '100%',
-            height: '100%',
-          }}
-          width="500"
-          height="294"
-          src="https://www.youtube.com/embed/1FtbyHZwNX4?&theme=dark&keyboard=1&autohide=1"
-          allow="encrypted-media; web-share"
-        ></iframe>
-      </Box>
+      <Video
+        w="1/2"
+        src="https://www.youtube.com/embed/1FtbyHZwNX4?&theme=dark&keyboard=1&autohide=1"
+      />
 
       <Text fontSize="xs" my="1">
         <b>Tutorial:</b> Use this solidity code in Remix and deploy it on
