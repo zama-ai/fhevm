@@ -7,7 +7,7 @@ import { TeamRepository } from '@/users/domain/repositories/team.repository'
 import { PrismaInvitationRepository } from './repositories/prisma-invitation.repository'
 import { PrismaUserRepository } from './repositories/prisma-user.repository'
 import { PrismaTeamRepository } from './repositories/prisma-team.repository'
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient } from '@prisma/client/back'
 import { UNIT_OF_WORK } from '@/constants'
 import { PrismaUOW } from './prisma.uow'
 
