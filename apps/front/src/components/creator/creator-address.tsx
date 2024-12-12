@@ -1,9 +1,10 @@
-import { Box, Fieldset, Grid, Input, Stack, Text } from '@chakra-ui/react'
+import { Box, Fieldset, Grid, Input, Stack } from '@chakra-ui/react'
 import { useFormik } from 'formik'
 
 import { toFormikValidate } from '@/lib/zod-schema-validator'
 import { Field } from '@/components/ui/field'
 import { SpinnerButton } from '@/components/ui/spinner-button'
+import { ErrorMessage } from '@/components/error-message/error-message'
 import { TutorialAddress } from './tutorial-address'
 import { Alert } from '../ui/alert'
 import { CreatorAddressFormSchema } from './validations'
@@ -49,11 +50,7 @@ export function CreatorAddress({ onSubmit, loading, errorMessage }: OwnProps) {
               />
             </Field>
           </Fieldset.Content>
-          {errorMessage && (
-            <Text color="red.500" fontSize="sm">
-              {errorMessage}
-            </Text>
-          )}
+          {errorMessage && <ErrorMessage>{errorMessage}</ErrorMessage>}
 
           <Grid templateColumns="repeat(2, 1fr)" gap="6">
             <TutorialAddress />

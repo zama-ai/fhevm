@@ -13,6 +13,7 @@ import {
   PasswordStrengthMeter,
 } from '@/components/ui/password-input'
 import { SpinnerButton } from '@/components/ui/spinner-button'
+import { ErrorMessage } from '@/components/error-message/error-message'
 
 type OwnProps = {
   onSubmit: (values: {
@@ -167,11 +168,7 @@ export function SignupForm({
               <Text textStyle="sm">I already have an account</Text>
             </Link>
           </HStack>
-          {errorMessage && (
-            <Text color="red.500" fontSize="sm">
-              {errorMessage}
-            </Text>
-          )}
+          {errorMessage && <ErrorMessage>{errorMessage}</ErrorMessage>}
 
           <SpinnerButton
             loading={loading}

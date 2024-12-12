@@ -3,6 +3,7 @@ import { useFormik } from 'formik'
 
 import { Field } from '@/components/ui/field'
 import { SpinnerButton } from '@/components/ui/spinner-button'
+import { ErrorMessage } from '@/components/error-message/error-message'
 import { toFormikValidate } from '@/lib/zod-schema-validator'
 
 import { TutorialName } from './tutorial-name'
@@ -39,11 +40,7 @@ export function CreatorName({ onSubmit, loading, errorMessage }: OwnProps) {
               />
             </Field>
           </Fieldset.Content>
-          {errorMessage && (
-            <Text color="red.500" fontSize="sm">
-              {errorMessage}
-            </Text>
-          )}
+          {errorMessage && <ErrorMessage>{errorMessage}</ErrorMessage>}
           <Text fontSize="sm" fontWeight="medium" mb={0} pb={0}>
             Solidity Code
           </Text>
