@@ -1,12 +1,12 @@
-import { Dapp } from '../entities/dapp'
+import { DApp } from '../entities/dapp'
 import { AppError } from '@/utils/app-error'
 import { Task } from '@/utils/task'
 
-export abstract class DappRepository {
-  abstract create(data: Dapp): Task<Dapp, AppError>
-  abstract update(data: Dapp): Task<Dapp, AppError>
+export abstract class DAppRepository {
+  abstract create(data: DApp): Task<DApp, AppError>
+  abstract update(data: DApp): Task<DApp, AppError>
   abstract findOneByIdAndUserId(
     id: string,
     userId: string,
-  ): Task<Dapp, AppError>
+  ): Task<DApp, AppError>
 }

@@ -2,36 +2,36 @@ import { Injectable } from '@nestjs/common'
 import { AppError, unknownError } from '@/utils/app-error'
 import { Task } from '@/utils/task'
 
-import { Dapp } from '@/dapps/domain/entities/dapp'
-import { DappRepository } from '@/dapps/domain/repositories/dapp.repository'
+import { DApp } from '@/dapps/domain/entities/dapp'
+import { DAppRepository } from '@/dapps/domain/repositories/dapp.repository'
 
 import { PrismaService } from '../prisma.service'
 
 @Injectable()
-export class PrismaDappRepository extends DappRepository {
+export class PrismaDAppRepository extends DAppRepository {
   constructor(private readonly db: PrismaService) {
     super()
   }
 
-  create(data: Dapp): Task<Dapp, AppError> {
+  create(data: DApp): Task<DApp, AppError> {
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.dapp
         .create({ data })
         .then(resolve)
         .catch(err => reject(unknownError(String(err))))
-    }).chain(props => Dapp.parse(props).async())
+    }).chain(props => DApp.parse(props).async())
   }
 
-  update(data: Dapp): Task<Dapp, AppError> {
+  update(data: DApp): Task<DApp, AppError> {
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.dapp
         .update({ where: { id: data.id }, data })
         .then(resolve)
         .catch(err => reject(unknownError(String(err))))
-    }).chain(props => Dapp.parse(props).async())
+    }).chain(props => DApp.parse(props).async())
   }
 
-  findOneByIdAndUserId(id: string, userId: string): Task<Dapp, AppError> {
+  findOneByIdAndUserId(id: string, userId: string): Task<DApp, AppError> {
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.dapp
         .findUnique({
@@ -46,6 +46,6 @@ export class PrismaDappRepository extends DappRepository {
         })
         .then(resolve)
         .catch(err => reject(unknownError(String(err))))
-    }).chain(props => Dapp.parse(props).async())
+    }).chain(props => DApp.parse(props).async())
   }
 }

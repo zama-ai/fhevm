@@ -1,10 +1,8 @@
 import { Injectable } from '@nestjs/common'
-
-import { Dapp } from '../domain/entities/dapp'
-import { UseCase } from '@/utils/use-case'
-import { Task } from '@/utils/task'
-import { AppError } from '@/utils/app-error'
-import { DappRepository } from '../domain/repositories/dapp.repository'
+import type { AppError, UseCase } from 'utils'
+import { Task } from 'utils'
+import { DApp } from '../domain/entities/dapp'
+import { DAppRepository } from '../domain/repositories/dapp.repository'
 import { TeamRepository } from '@/users/domain/repositories/team.repository'
 import { User } from '@/users/domain/entities/user'
 
@@ -15,17 +13,17 @@ interface Input {
 }
 
 @Injectable()
-export class UpdateDapp implements UseCase<Input, Dapp> {
+export class UpdateDapp implements UseCase<Input, DApp> {
   constructor(
-    private readonly dappRepository: DappRepository,
+    private readonly dappRepository: DAppRepository,
     private readonly teamRepository: TeamRepository,
   ) {}
-  execute(input: Input, ctx: { user: User }): Task<Dapp, AppError> {
+  execute(input: Input, ctx: { user: User }): Task<DApp, AppError> {
     return this.dappRepository
       .findOneByIdAndUserId(input.id, String(ctx.user.id))
       .chain(dapp =>
         this.dappRepository.update(
-          Dapp.parse({
+          DApp.parse({
             ...dapp.toJSON(),
             ...(input.name ? { name: input.name } : {}),
             ...(input.address ? { address: input.address } : {}),

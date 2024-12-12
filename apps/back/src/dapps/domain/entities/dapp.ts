@@ -16,13 +16,13 @@ const schema = z.object({
     .nullable(),
 })
 
-export type DappProps = z.infer<typeof schema>
+export type DAppProps = z.infer<typeof schema>
 
-export class Dapp extends Entity<DappProps> implements Readonly<DappProps> {
-  static parse(data: unknown): Result<Dapp, AppError> {
+export class DApp extends Entity<DAppProps> implements Readonly<DAppProps> {
+  static parse(data: unknown): Result<DApp, AppError> {
     const check = schema.safeParse(data)
     return check.success
-      ? ok(new Dapp(check.data))
+      ? ok(new DApp(check.data))
       : fail(validationError(check.error.message))
   }
 
