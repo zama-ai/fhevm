@@ -19,7 +19,7 @@ export class UpdateDapp implements UseCase<Input, DApp> {
   constructor(private readonly dappRepository: DAppRepository) {}
   execute(input: Input): Task<DApp, AppError> {
     return this.dappRepository
-      .findOneByIdAndUserId(input.dapp.id, String(input.user.id))
+      .findOneByIdAndUserId(input.dapp.id, input.user.id.value)
       .chain(dapp =>
         DApp.parse(Object.assign({}, dapp.toJSON(), input.dapp)).asyncChain(
           this.dappRepository.update,
