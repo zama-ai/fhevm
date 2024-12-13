@@ -20,8 +20,10 @@
     "postinstall": "pnpx prisma migrate dev"
   },
   "dependencies": {
+    "@aws-sdk/client-sns": "^3.699.0",
     "@nestjs/apollo": "^12.2.1",
     "@nestjs/common": "^10.0.0",
+    "@nestjs/config": "^3.3.0",
     "@nestjs/core": "^10.0.0",
     "@nestjs/graphql": "^12.2.1",
     "@nestjs/jwt": "^10.2.0",
