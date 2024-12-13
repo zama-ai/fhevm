@@ -28,17 +28,17 @@ log "Preparing for e2e tests. This may take some time..."
 make prepare-e2e-test
 
 # Check deployment logs
-log "Deployment in progress. You can check the logs of zama-setup-fhevm-contracts-1 if needed."
-log "To monitor: docker logs zama-setup-fhevm-contracts-1"
+log "Deployment in progress. You can check the logs of zama-setup-fhevm-contracts if needed."
+log "To monitor: docker logs zama-setup-fhevm-contracts"
 
 timeout=140  # Timeout after 60 seconds
-while ! docker logs zama-setup-fhevm-contracts-1 2>&1 | grep -q "Deployment script completed successfully"; do
+while ! docker logs zama-setup-fhevm-contracts 2>&1 | grep -q "Deployment script completed successfully"; do
     sleep 10
     log "Waiting for fhevm contract deployment..."
-    log "To monitor: docker logs zama-setup-fhevm-contracts-1 -f"
+    log "To monitor: docker logs zama-setup-fhevm-contracts -f"
     timeout=$((timeout - 10))
     if [ "$timeout" -le 0 ]; then
-        log "Timeout reached waiting for zama-setup-fhevm-contracts-1 to finish. Exiting."
+        log "Timeout reached waiting for zama-setup-fhevm-contracts to finish. Exiting."
         exit 1
     fi
 done

@@ -121,22 +121,6 @@ copy-keys-centralized-key-gen:
 	@bash ./scripts/update_signers.sh $(PWD)/env/.env.example.deployment $(PWD)/network-fhe-keys 1
 
 
-trigger-key-gen-threshold:
-	cargo run --bin simulator -- \
-		-f config/local_threshold.toml \
-		insecure-key-gen
-
-trigger-crs-gen-threshold:
-	cargo run --bin simulator -- \
-		-f config/local_threshold.toml \
-		insecure-crs-gen --max-num-bits 256
-
-run-kms-threshold:
-	docker compose -p $(DOCKER_COMPOSE_PROJECT) -vvv \
-		-f docker-compose/docker-compose-kms-base.yml \
-		-f docker-compose/docker-compose-kms-threshold.yml \
-		up -d --wait
-
 run-kms-threshold-with-gateway:
 	docker compose -p $(DOCKER_COMPOSE_PROJECT) -vvv \
 		-f docker-compose/docker-compose-kms-base.yml \
@@ -144,24 +128,6 @@ run-kms-threshold-with-gateway:
 		-f docker-compose/docker-compose-kms-gateway-threshold.yml \
 		-f docker-compose/docker-compose-fhevm-coprocessor.yml \
 		up -d --wait
-
-stop-kms-threshold:
-	docker compose -p $(DOCKER_COMPOSE_PROJECT) -vvv \
-		-f docker-compose/docker-compose-kms-base.yml \
-		-f docker-compose/docker-compose-kms-threshold.yml \
-		down --volumes --remove-orphans
-
-run-kms-centralized:
-	docker -p $(DOCKER_COMPOSE_PROJECT) compose -vvv \
-		-f docker-compose/docker-compose-kms-base.yml \
-		-f docker-compose/docker-compose-kms-centralized.yml \
-		up -d --wait
-
-stop-kms-centralized:
-	docker compose -p $(DOCKER_COMPOSE_PROJECT) -vvv \
-		-f docker-compose/docker-compose-kms-base.yml \
-		-f docker-compose/docker-compose-kms-centralized.yml \
-		down
 
 run-kms-centralized-with-gateway:
 	docker compose  -p $(DOCKER_COMPOSE_PROJECT) -vvv \
@@ -202,9 +168,7 @@ else
 	@echo "CENTRALIZED_KMS is set to an unrecognized value: $(CENTRALIZED_KMS)"
 endif
 
-
-
-stop-kms:
+stop:
 ifeq ($(CENTRALIZED_KMS),true)
 	@echo "CENTRALIZED_KMS is true, Stopping centralized KMS...."
 	$(MAKE) stop-kms-centralized-with-gateway
@@ -216,9 +180,6 @@ else
 	@echo "CENTRALIZED_KMS is set to an unrecognized value: $(CENTRALIZED_KMS)"
 endif
 
-TEST_FILE := run_tests.sh
-TEST_IF_FROM_REGISTRY :=
-
 run-e2e-test: check-all-test-repo
 	@cd $(FHEVM_SOLIDITY_PATH) && npx hardhat test
 
@@ -228,8 +189,6 @@ install-packages:
 	@if [ "$(IS_LINUX)" = "true" ]; then \
 	    cd $(FHEVM_SOLIDITY_PATH) && npm i solidity-comments-linux-x64-gnu; \
 	fi
-
-
 
 prepare-e2e-test: check-all-test-repo
 	@bash scripts/fund_tests_addresses_docker.sh
@@ -278,14 +237,14 @@ e2e-test:
 
 
 clean-keys:
-	$(MAKE) stop-kms
+	$(MAKE) stop
 	rm -rf network-fhe-keys
 	rm -rf kms-fhe-keys
 	rm -rf res
 
 
 clean:
-	$(MAKE) stop-kms
+	$(MAKE) stop
 	rm -rf $(WORKDIR)/
 	rm -rf network-fhe-keys
 	rm -rf kms-fhe-keys
@@ -293,9 +252,7 @@ clean:
 
 
 print-info:
-	@echo 'KMS_DEV_VERSION: $(KMS_DEV_VERSION) for KEY_GEN---extracted from Makefile'
 	@echo 'FHEVM_SOLIDITY_VERSION: $(FHEVM_SOLIDITY_VERSION) ---extracted from Makefile'
-	@bash scripts/get_repository_info.sh fhevm $(FHEVM_SOLIDITY_PATH)
 
 
 
