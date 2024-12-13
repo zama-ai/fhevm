@@ -1688,3 +1688,25 @@ func getThreeFheOperands(sess ExecutorSession, input []byte) (first []byte, seco
 
 	return input[0:32], input[32:64], input[64:96], nil
 }
+
+func isBinaryOp(op FheOp) bool {
+	switch op {
+	case FheAdd, FheBitAnd, FheBitOr, FheBitXor, FheDiv, FheEq, FheGe, FheGt, FheLe, FheLt, FheMax, FheMin, FheMul, FheNe, FheRem, FheRotl, FheRotr, FheShl, FheShr, FheSub:
+		return true
+	case FheCast, FheNeg, FheNot, FheRand, FheRandBounded, FheIfThenElse, TrivialEncrypt:
+		return false
+	default:
+		return false
+	}
+}
+
+func isUnaryOp(op FheOp) bool {
+	switch op {
+	case FheNeg, FheNot:
+		return true
+	case FheAdd, FheBitAnd, FheBitOr, FheBitXor, FheDiv, FheEq, FheGe, FheGt, FheLe, FheLt, FheMax, FheMin, FheMul, FheNe, FheRem, FheRotl, FheRotr, FheShl, FheShr, FheSub, FheCast, FheRand, FheRandBounded, FheIfThenElse, TrivialEncrypt:
+		return false
+	default:
+		return false
+	}
+}
