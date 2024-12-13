@@ -1691,59 +1691,9 @@ func getThreeFheOperands(sess ExecutorSession, input []byte) (first []byte, seco
 
 func isBinaryOp(op FheOp) bool {
 	switch op {
-	case FheAdd:
+	case FheAdd, FheBitAnd, FheBitOr, FheBitXor, FheDiv, FheEq, FheGe, FheGt, FheLe, FheLt, FheMax, FheMin, FheMul, FheNe, FheRem, FheRotl, FheRotr, FheShl, FheShr, FheSub:
 		return true
-	case FheBitAnd:
-		return true
-	case FheBitOr:
-		return true
-	case FheBitXor:
-		return true
-	case FheDiv:
-		return true
-	case FheEq:
-		return true
-	case FheGe:
-		return true
-	case FheGt:
-		return true
-	case FheLe:
-		return true
-	case FheLt:
-		return true
-	case FheMax:
-		return true
-	case FheMin:
-		return true
-	case FheMul:
-		return true
-	case FheNe:
-		return true
-	case FheRem:
-		return true
-	case FheRotl:
-		return true
-	case FheRotr:
-		return true
-	case FheShl:
-		return true
-	case FheShr:
-		return true
-	case FheSub:
-		return true
-	case FheCast:
-		return false
-	case FheNeg:
-		return false
-	case FheNot:
-		return false
-	case FheRand:
-		return false
-	case FheRandBounded:
-		return false
-	case FheIfThenElse:
-		return false
-	case TrivialEncrypt:
+	case FheCast, FheNeg, FheNot, FheRand, FheRandBounded, FheIfThenElse, TrivialEncrypt:
 		return false
 	default:
 		return false
@@ -1752,59 +1702,9 @@ func isBinaryOp(op FheOp) bool {
 
 func isUnaryOp(op FheOp) bool {
 	switch op {
-	case FheNeg:
+	case FheNeg, FheNot:
 		return true
-	case FheNot:
-		return true
-	case FheAdd:
-		return false
-	case FheBitAnd:
-		return false
-	case FheBitOr:
-		return false
-	case FheBitXor:
-		return false
-	case FheDiv:
-		return false
-	case FheEq:
-		return false
-	case FheGe:
-		return false
-	case FheGt:
-		return false
-	case FheLe:
-		return false
-	case FheLt:
-		return false
-	case FheMax:
-		return false
-	case FheMin:
-		return false
-	case FheMul:
-		return false
-	case FheNe:
-		return false
-	case FheRem:
-		return false
-	case FheRotl:
-		return false
-	case FheRotr:
-		return false
-	case FheShl:
-		return false
-	case FheShr:
-		return false
-	case FheSub:
-		return false
-	case FheCast:
-		return false
-	case FheRand:
-		return false
-	case FheRandBounded:
-		return false
-	case FheIfThenElse:
-		return false
-	case TrivialEncrypt:
+	case FheAdd, FheBitAnd, FheBitOr, FheBitXor, FheDiv, FheEq, FheGe, FheGt, FheLe, FheLt, FheMax, FheMin, FheMul, FheNe, FheRem, FheRotl, FheRotr, FheShl, FheShr, FheSub, FheCast, FheRand, FheRandBounded, FheIfThenElse, TrivialEncrypt:
 		return false
 	default:
 		return false
