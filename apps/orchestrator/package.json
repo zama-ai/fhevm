@@ -18,7 +18,7 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "generate": "prisma generate",
     "postinstall": "pnpx prisma migrate dev",
-    "copy:generated": "cpx 'src/generated/**' 'dist/src/generated'"
+    "copy:generated": "cpx 'generated/**' 'dist/generated'"
   },
   "dependencies": {
     "@aws-sdk/client-sns": "^3.699.0",

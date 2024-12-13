@@ -20,7 +20,8 @@
     "strict": true,
     "strictPropertyInitialization": false,
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "@/prisma/client": ["generated/client"]
     }
   }
 }
