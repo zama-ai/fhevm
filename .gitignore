@@ -71,4 +71,9 @@ dist-ssr
 *.sln
 *.sw?
 
+# docker pg data
 volume/
+
+# https://www.prisma.io/docs/orm/prisma-client/setup-and-configuration/generating-prisma-client#keeping-the-query-engine-out-of-version-control-by-default
+apps/back/src/generated/
+apps/orchestrator/src/generated/

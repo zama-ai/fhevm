@@ -8,8 +8,7 @@
   "scripts": {
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
-    "start": "nest start",
-    "start:dev": "nest start --watch",
+    "start": "pnpm copy:generated && nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
@@ -17,7 +16,9 @@
     "test:watch": "vitest watch",
     "test:cov": "vitest run --coverage.enabled --coverage.all",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "postinstall": "pnpx prisma migrate dev"
+    "generate": "prisma generate",
+    "postinstall": "pnpx prisma migrate dev",
+    "copy:generated": "cpx 'src/generated/**' 'dist/src/generated'"
   },
   "dependencies": {
     "@aws-sdk/client-sns": "^3.699.0",
@@ -43,6 +44,7 @@
     "@types/supertest": "^6.0.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
+    "cpx": "^1.5.0",
     "eslint": "^8.0.0",
     "eslint-config-prettier": "^9.0.0",
     "eslint-plugin-prettier": "^5.0.0",
