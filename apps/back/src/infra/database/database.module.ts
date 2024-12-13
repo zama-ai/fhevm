@@ -9,7 +9,7 @@ import { PrismaInvitationRepository } from './repositories/prisma-invitation.rep
 import { PrismaUserRepository } from './repositories/prisma-user.repository'
 import { PrismaTeamRepository } from './repositories/prisma-team.repository'
 import { PrismaDAppRepository } from './repositories/prisma-dapp.repository'
-import { PrismaClient } from '@prisma/client/back'
+import { PrismaClient } from '@/prisma/client'
 import { UNIT_OF_WORK } from '@/constants'
 import { PrismaUOW } from './prisma.uow'
 
