@@ -36,7 +36,7 @@ const schema = z
   .and(
     z.object({
       _tag: z.literal('Command'),
-      $meta: z.record(z.string(), z.string()).optional(),
+      $meta: z.record(z.union([z.string(), z.number()])).optional(),
     }),
   )
 
@@ -51,7 +51,7 @@ export type AppDeploymentCommand = z.infer<typeof schema>
 function factory<K extends CommandTypes>(type: K) {
   return function (
     payload: z.infer<CommandMap[K]>['payload'],
-    $meta?: Record<string, string>,
+    $meta?: Record<string, string | number>,
   ) {
     return {
       _tag: 'Command',

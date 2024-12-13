@@ -6,15 +6,15 @@ import { UserRepository } from '@/users/domain/repositories/user.repository'
 import { Invitation } from '@/invitations/domain/entities/invitation'
 import { TeamRepository } from '@/users/domain/repositories/team.repository'
 import { InvitationRepository } from '@/invitations/domain/repositories/invitation.repository'
-import { Token } from '@/invitations/domain/entities/value-objects'
 import type { AppError, UnitOfWork, UseCase } from 'utils'
-import { Task, notFoundError, unknownError } from 'utils'
+import { Task, notFoundError } from 'utils'
+import type { JwtPayload } from '../interfaces/jwt-payload'
+import { Token } from '@/invitations/domain/entities/value-objects'
 import {
   Password,
   TeamId,
   ValidatedPassword,
 } from '@/users/domain/entities/value-objects'
-import { JwtPayload } from '../interfaces/jwt-payload'
 import { Team } from '@/users/domain/entities/team'
 import { UNIT_OF_WORK } from '@/constants'
 
