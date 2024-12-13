@@ -1,16 +1,14 @@
 import { Injectable } from '@nestjs/common'
 import type { AppError, UseCase } from 'utils'
 import { Task } from 'utils'
-import { DApp } from '../domain/entities/dapp'
+import { DApp, DAppProps } from '../domain/entities/dapp'
 import { DAppRepository } from '../domain/repositories/dapp.repository'
 import { User } from '@/users/domain/entities/user'
 
 interface Input {
   dapp: {
     id: string
-    name?: string
-    address?: string
-  }
+  } & Partial<Omit<DAppProps, 'id'>>
   user: User
 }
 
