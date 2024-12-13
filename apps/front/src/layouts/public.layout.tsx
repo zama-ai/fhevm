@@ -57,9 +57,9 @@ export function PublicLayout() {
         justifyContent="center"
         flexShrink={1}
         flexGrow={1}
-        bg="brand"
+        bg="brand.500"
       >
-        <Flex minH="70px" py="2" px="4" bg="brand" alignItems="center">
+        <Flex minH="70px" py="2" px="4" bg="brand.500" alignItems="center">
           <Link to="/">
             <Logo width={100} />
           </Link>

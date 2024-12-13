@@ -24,7 +24,7 @@ export function Header({ name }: OwnProps) {
   const { open, onToggle } = useDisclosure()
   return (
     <Box>
-      <Flex bg="brand" color="black" h="70px" py="2" px="4" align="center">
+      <Flex bg="brand.500" color="black" h="70px" py="2" px="4" align="center">
         <Flex
           flex={{ base: 1, md: 'auto' }}
           ml={-2}

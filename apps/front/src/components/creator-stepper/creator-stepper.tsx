@@ -15,7 +15,7 @@ export function CreatorStepper({ currentStep }: OwnProps) {
       <StepsRoot
         defaultValue={0}
         count={steps.length}
-        colorPalette="orange"
+        colorPalette="brand"
         step={currentStep}
       >
         <Card.Body color="fg.muted">
