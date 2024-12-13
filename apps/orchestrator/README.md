@@ -1,3 +1,7 @@
+# Description
+
+The orchestrator runs workflows and keep all other services in sync
+
 # requirements
 
 You need the [aws-cli](https://aws.amazon.com/cli/) to be installed

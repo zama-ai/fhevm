@@ -17,7 +17,7 @@ export function DashboardPage() {
         nesciunt, quisquam dolorum nam, quidem debitis ut omnis libero quas
         suscipit asperiores.
       </Text>
-      <DappsList createDapp={() => navigate('/create/1')} />
+      <DappsList createDapp={() => navigate('/create')} />
     </>
   )
 }

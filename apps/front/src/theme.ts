@@ -17,20 +17,45 @@ const config = defineConfig({
   theme: {
     tokens: {
       colors: {
-        brand: { value: '#ffd208', description: 'Primary brand color' },
-        yellowhighlight: {
-          value: '#f9dc5c',
-          description: 'Highlight on brand color',
+        brand: {
+          50: { value: '#aaaaaa' },
+          100: { value: '#fffbec' },
+          200: { value: '#fff5c5' }, // to validate
+          300: { value: '#f9dc5c' }, // yellow highlight
+          400: { value: 'pink' },
+          /** primary brand color */
+          500: { value: '#ffd208' },
+          600: { value: '#aaaaaa' },
+          700: { value: '#aaaaaa' },
+          800: { value: '#aaaaaa' },
+          /** good for .subtle on dark mode */
+          900: { value: '#2b250f' },
+          950: { value: '#aaaaaa' },
         },
         secondary: { value: '#f4b458', description: 'Secondary brand color' },
-        ivory: {
-          value: 'rgba(255, 210, 8, .1)',
-          description: 'Light yellow tint',
-        },
       },
       fonts: {
         body: { value: '"Inter Variable", system-ui, sans-serif' },
         heading: { value: '"Archivo Variable", system-ui, sans-serif' },
+      },
+    },
+    semanticTokens: {
+      colors: {
+        highlight: {
+          value: '{colors.brand.subtle}',
+          description: 'Highlight color for brand color',
+        },
+        brand: {
+          solid: { value: '{colors.brand.500}' },
+          contrast: { value: '{colors.black}' },
+          fg: { value: '{colors.brand.700}' },
+          muted: { value: '{colors.brand.200}' },
+          subtle: {
+            value: { base: '{colors.brand.100}', _dark: '{colors.brand.900}' },
+          },
+          emphasized: { value: '{colors.brand.300}' },
+          focusRing: { value: '{colors.brand.400}' },
+        },
       },
     },
   },

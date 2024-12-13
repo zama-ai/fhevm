@@ -71,4 +71,9 @@ dist-ssr
 *.sln
 *.sw?
 
+# docker pg data
 volume/
+
+# prisma generated folders
+apps/back/generated/
+apps/orchestrator/generated/
