@@ -32,8 +32,19 @@ export class DiscoverContract implements UseCase<Input, void> {
     $meta,
   }: Input): Task<void, AppError> {
     return Address.fromString(address)
-      .asyncChain(address => this.service.getAbi(chainId, address))
-      .chain(() => this.producer.produce(scDiscovered(payload, $meta)))
+      .asyncChain(address => this.service.getContractCreation(chainId, address))
+      .chain(data =>
+        this.producer.produce(
+          scDiscovered(
+            {
+              ...payload,
+              contractAddress: data.contractAddress.value,
+              creatorAddress: data.creatorAddress.value,
+            },
+            $meta,
+          ),
+        ),
+      )
       .match({
         ok: message => {
           this.logger.debug(message)
