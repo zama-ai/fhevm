@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common'
-import { PrismaClient } from '@prisma/client/back'
+import { PrismaClient } from '@/prisma/client'
 import { ClsService } from 'nestjs-cls'
 import { Task, UnitOfWork } from 'utils'
 

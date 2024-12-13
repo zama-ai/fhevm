@@ -4,7 +4,7 @@ import {
   Logger,
   OnModuleInit,
 } from '@nestjs/common'
-import { PrismaClient } from '@prisma/client/back'
+import { PrismaClient } from '@/prisma/client'
 import { ClsService } from 'nestjs-cls'
 @Injectable()
 export class PrismaService implements OnModuleInit {

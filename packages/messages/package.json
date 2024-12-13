@@ -16,6 +16,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@nestjs/cli": "^10.0.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
     "eslint": "^8.0.0",
