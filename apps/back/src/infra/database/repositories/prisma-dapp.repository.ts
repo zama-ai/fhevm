@@ -56,6 +56,7 @@ export class PrismaDAppRepository extends DAppRepository {
         })
         .then(resolve)
         .catch(err => reject(unknownError(String(err))))
-    }).chain(props => Task.all(props.map(DApp.parse)).async())
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    }).chain(props => Task.all((props as any).map(DApp.parse).async()))
   }
 }
