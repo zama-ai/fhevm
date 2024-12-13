@@ -20,31 +20,35 @@ export class SQSConsumer {
       this.logger.debug(`received message: ${message.Body}`)
       const body = JSON.parse(message.Body)
       const data: unknown = JSON.parse(body.Message)
-      if (
-        isAppDeploymentEvent(data) &&
-        data.type === 'app-deployment.sc-discovered'
-      ) {
+      if (isAppDeploymentEvent(data)) {
         if (typeof data.$meta?.userId !== 'string') {
           this.logger.warn(
             `missing userId in $meta: ${JSON.stringify(data.$meta)}`,
           )
           return
         }
-        this.getUserById
-          .execute(data.$meta.userId)
-          .chain(user =>
-            this.updateDappUC.execute({
-              dapp: {
-                id: data.payload.applicationId,
-                status: 'LIVE',
-              },
-              user,
-            }),
-          )
-          .fork(
-            () => this.logger.debug(`${data.type} handled`),
-            err => this.logger.warn(`${data.type} failed: ${err}`),
-          )
+        switch (data.type) {
+          case 'app-deployment.sc-discovered':
+          case 'app-deployment.sc-discovery-failed':
+            this.getUserById
+              .execute(data.$meta.userId)
+              .chain(user =>
+                this.updateDappUC.execute({
+                  dapp: {
+                    id: data.payload.applicationId,
+                    status:
+                      data.type === 'app-deployment.sc-discovered'
+                        ? 'LIVE'
+                        : 'DRAFT',
+                  },
+                  user,
+                }),
+              )
+              .fork(
+                () => this.logger.debug(`${data.type} handled`),
+                err => this.logger.warn(`${data.type} failed: ${err}`),
+              )
+        }
       }
     }
   }
