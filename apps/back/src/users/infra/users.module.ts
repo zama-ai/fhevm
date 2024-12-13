@@ -9,5 +9,6 @@ import { AuthModule } from '@/auth/infra/auth.module'
 @Module({
   imports: [DatabaseModule, AuthModule],
   providers: [UsersResolver, GetUserById, GetTeamsByUserId, GetTeamById],
+  exports: [GetUserById],
 })
 export class UsersModule {}

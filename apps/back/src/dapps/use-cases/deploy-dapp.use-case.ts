@@ -57,13 +57,16 @@ export class DeployDApp implements UseCase<Input, DApp> {
             Task.all([
               this.producer
                 .publish(
-                  requested({
-                    applicationId: applicationId,
-                    deploymentId: randomUUID(),
-                    address: dapp.address!,
-                    // TODO: move it into a constants file
-                    chainId: '11155111', // sepolia
-                  }),
+                  requested(
+                    {
+                      applicationId: applicationId,
+                      deploymentId: randomUUID(),
+                      address: dapp.address!,
+                      // TODO: move it into a constants file
+                      chainId: '11155111', // sepolia
+                    },
+                    { correlationId: randomUUID(), userId: user.id.value },
+                  ),
                 )
                 .tap(r => this.logger.debug(`requested: ${r}`)),
               this.updateDappUC

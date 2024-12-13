@@ -21,5 +21,6 @@ import { DeployDApp } from '../use-cases/deploy-dapp.use-case'
     GetTeamById,
     DeployDApp,
   ],
+  exports: [UpdateDapp],
 })
 export class DappsModule {}
