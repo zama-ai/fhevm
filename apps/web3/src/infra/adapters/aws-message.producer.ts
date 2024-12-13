@@ -72,7 +72,6 @@ export class AwsMessageProducer implements MessageProducer {
           new PublishCommand({
             TopicArn: this.#topicArn,
             Message: JSON.stringify(message),
-            // MessageGroupId: 'app-deployment',
           }),
         )
         .then(result =>

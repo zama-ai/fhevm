@@ -1,10 +1,19 @@
 import { User } from '@/users/domain/entities/user'
-import { type AppError, Task, UnitOfWork, type UseCase } from 'utils'
+import {
+  type AppError,
+  Task,
+  UnitOfWork,
+  type UseCase,
+  validationError,
+} from 'utils'
 import { DApp } from '../domain/entities/dapp'
-import { AppDeploymentProducer } from '../domain/services/app-deployment.producer'
+import {
+  APP_DEPLOYMENT_PRODUCER,
+  AppDeploymentProducer,
+} from '../domain/services/app-deployment.producer'
 import { DAppRepository } from '../domain/repositories/dapp.repository'
 import { UNIT_OF_WORK } from '@/constants'
-import { Inject } from '@nestjs/common'
+import { Inject, Logger } from '@nestjs/common'
 import { UpdateDapp } from './update-dapp.use-case'
 import { requested } from 'messages'
 import { randomUUID } from 'crypto'
@@ -17,44 +26,63 @@ interface Input {
   // address will be fetch from the dapp entity
 }
 
-interface Output {
-  dApp: DApp // the updated dapp
-}
-
-export class DeployDAppUseCase implements UseCase<Input, Output> {
+export class DeployDApp implements UseCase<Input, DApp> {
+  logger = new Logger(DeployDApp.name)
   constructor(
     @Inject(UNIT_OF_WORK) private readonly uow: UnitOfWork,
     private readonly dappRepository: DAppRepository,
+    @Inject(APP_DEPLOYMENT_PRODUCER)
     private readonly producer: AppDeploymentProducer,
     private readonly updateDappUC: UpdateDapp,
   ) {}
-  execute(input: Input): Task<Output, AppError> {
+  execute({ user, applicationId }: Input): Task<DApp, AppError> {
+    this.logger.debug(`[${user.email}] deploying dapp: ${applicationId}`)
+
     // check if the user can deploy by checking if the user belongs to the team that owns the dapp
     return this.uow
       .exec(
         this.dappRepository
-          .findOneByIdAndUserId(input.applicationId, input.user.id.value)
+          .findOneByIdAndUserId(applicationId, user.id.value)
+          .tap(dapp => {
+            this.logger.debug(`dapp: ${dapp}`)
+          })
+          .chain(dapp =>
+            dapp.address
+              ? Task.of(dapp)
+              : Task.reject<DApp, AppError>(
+                  validationError('missing dApp address'),
+                ),
+          )
           .chain(dapp =>
             Task.all([
-              this.producer.publish(
-                requested({
-                  applicationId: input.applicationId,
-                  deploymentId: randomUUID(),
-                  address: dapp.address!,
-                  // TODO: move it into a constants file
-                  chainId: '11155111', // sepolia
+              this.producer
+                .publish(
+                  requested({
+                    applicationId: applicationId,
+                    deploymentId: randomUUID(),
+                    address: dapp.address!,
+                    // TODO: move it into a constants file
+                    chainId: '11155111', // sepolia
+                  }),
+                )
+                .tap(r => this.logger.debug(`requested: ${r}`)),
+              this.updateDappUC
+                .execute({
+                  dapp: {
+                    id: applicationId,
+                    status: 'DEPLOYING',
+                  },
+                  user,
+                })
+                .tap(dapp => {
+                  this.logger.debug(`updated: ${dapp}`)
                 }),
-              ),
-              this.updateDappUC.execute({
-                dapp: {
-                  id: input.applicationId,
-                  status: 'DEPLOYING',
-                },
-                user: input.user,
-              }),
             ]),
           ),
       )
-      .map(([, dapp]) => ({ dApp: dapp }))
+      .tap(([r, dapp]) => {
+        this.logger.debug(`requested: ${r} [${dapp}]`)
+      })
+      .map(([, dapp]) => dapp)
   }
 }

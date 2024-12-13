@@ -60,6 +60,7 @@ type Mutation {
   createInvitation(input: CreateInvitationInput!): Invitation!
   createDapp(input: CreateDappInput!): Dapp!
   updateDapp(input: UpdateDappInput!): Dapp!
+  deployDapp(applicationId: String!): Dapp!
 }
 
 input LoginInput {
