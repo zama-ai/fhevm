@@ -25,6 +25,7 @@ This will:
 1. Copy `.env.example` to `.env`.
 2. Update the `contracts/E2EFHEVMConfig.sol` file with the Sepolia-specific configuration.
 3. Print the list of accounts and remind you to ensure the first account is funded.
+4. Info: In hardhat.config.ts Seploia is already set as default network
 
 ### Local Testing Configuration
 
@@ -39,6 +40,7 @@ This will:
 1. Copy `.env.local` to `.env`.
 2. Update the `contracts/E2EFHEVMConfig.sol` file with the local configuration.
 3. Print the list of accounts and remind you to ensure the first account is funded.
+4. Update hardhat.config.ts to make localCorpocessor as default network
 
 ## Running the Tests
 
