@@ -23,6 +23,7 @@ if (!mnemonic) {
 
 const chainIds = {
   zama: 9000,
+  localCoprocessor: 12345,
   local: 9000,
   ethereum: 1,
   sepolia: 11155111,
@@ -33,6 +34,9 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
   switch (chain) {
     case "local":
       jsonRpcUrl = "http://localhost:8545";
+      break;
+    case 'localCoprocessor':
+      jsonRpcUrl = 'http://localhost:8745';
       break;
     case "zama":
       jsonRpcUrl = "https://devnet.zama.ai";
@@ -85,6 +89,7 @@ const config: HardhatUserConfig = {
     },
     zama: getChainConfig("zama"),
     local: getChainConfig("local"),
+    localCoprocessor: getChainConfig('localCoprocessor'),
     sepolia: getChainConfig("sepolia"),
     ethereum: getChainConfig("ethereum"),
   },
