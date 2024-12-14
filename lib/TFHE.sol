@@ -11033,6 +11033,14 @@ library TFHE {
         Impl.allowTransient(eaddress.unwrap(value), account);
     }
 
+    function allowTransient(ebytes64 value, address account) internal {
+        Impl.allowTransient(ebytes64.unwrap(value), account);
+    }
+
+    function allowTransient(ebytes128 value, address account) internal {
+        Impl.allowTransient(ebytes128.unwrap(value), account);
+    }
+
     function allowTransient(ebytes256 value, address account) internal {
         Impl.allowTransient(ebytes256.unwrap(value), account);
     }
