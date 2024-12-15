@@ -164,38 +164,6 @@ The test file demonstrates key concepts for testing fhEVM smart contracts:
 - Handle asynchronous operations properly with async/await
 - Set up proper encryption instances for testing encrypted values
 
-### No constant nor immutable encrypted state variables
-
-Never use encrypted types for constant or immutable state variables, even if they should actually stay constants, or else any transaction involving those will fail. This is because ciphertexts should always be stored in the privileged storage of the contract (see paragraph 4.4 of [whitepaper](../../fhevm-whitepaper.pdf)) while constant and immutable variables are just appended to the bytecode of the deployed contract at construction time.
-
-❌ So, even if `a` and `b` should never change after construction, the following example :
-
-```solidity
-contract C {
-  euint32 internal constant a = TFHE.asEuint32(42);
-  euint32 internal immutable b;
-
-  constructor(uint32 _b) {
-    b = TFHE.asEuint32(_b);
-    TFHE.allowThis(b);
-  }
-}
-```
-
-✅ Should be replaced by this snippet:
-
-```solidity
-contract C {
-  euint32 internal a = TFHE.asEuint32(42);
-  euint32 internal b;
-
-  constructor(uint32 _b) {
-    b = TFHE.asEuint32(_b);
-    TFHE.allowThis(b);
-  }
-}
-```
-
 ## **Next steps**
 
 Congratulations! You’ve configured and written your first confidential smart contract. Here are some ideas to expand your knowledge:
