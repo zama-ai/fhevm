@@ -43,14 +43,15 @@ Here, `balanceOf` allows retrieval of the user’s encrypted balance stored on t
 
 ## Step 2: re-encrypt the ciphertext
 
-Re-encryption is performed client-side using the `fhevmjs` library. Below is an example of how to implement this in a dApp:
+Re-encryption is performed client-side using the `fhevmjs` library. [Refer to the guide](../../guides/frontend/webapp.md) to learn how to include `fhevmjs` in your project.
+Below is an example of how to implement reencryption in a dApp:
 
 ```ts
 import { createInstances } from "../instance";
 import { getSigners, initSigners } from "../signers";
 import abi from "./abi.json";
 import { Contract, BrowserProvider } from "ethers";
-import { createInstance } from "fhevmjs";
+import { createInstance } from "fhevmjs/bundle";
 
 const CONTRACT_ADDRESS = "";
 

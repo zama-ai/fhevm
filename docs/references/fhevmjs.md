@@ -9,15 +9,14 @@ This document provides an overview of the `fhevmjs` library, detailing its initi
 If you are using `fhevmjs` in a web application, you need to initialize it before creating an instance. To do this, you should call `initFhevm` and wait for the promise to resolve.
 
 ```javascript
-import { FhevmInstance, createInstance as createFhevmInstance } from "fhevmjs/node";
+import { FhevmInstance, createInstance } from "fhevmjs/node";
 
 initFhevm().then(() => {
-  const instance = await createFhevmInstance({
-    networkUrl: (network.config as NetworkConfig & { url: string }).url,
-    gatewayUrl: parsedEnv.GATEWAY_URL,
-    aclContractAddress: parsedEnv.ACL_CONTRACT_ADDRESS,
-    kmsContractAddress: parsedEnv.KMS_VERIFIER_CONTRACT_ADDRESS,
-    publicKeyId: parsedEnv.PUBLIC_KEY_ID,
+  const instance = await createInstance({
+    network: window.ethereum,
+    gatewayUrl: "https://gateway.sepolia.zama.ai",
+    kmsContractAddress: "0x904Af2B61068f686838bD6257E385C2cE7a09195",
+    aclContractAddress: "0x9479B455904dCccCf8Bc4f7dF8e9A1105cBa2A8e",
   });
 });
 ```
@@ -37,26 +36,24 @@ This function returns an instance of fhevmjs, which accepts an object containing
 ```javascript
 import { createInstance } from "fhevmjs";
 
-  const instance = await createFhevmInstance({
-    networkUrl: (network.config as NetworkConfig & { url: string }).url,
-    gatewayUrl: parsedEnv.GATEWAY_URL,
-    aclContractAddress: parsedEnv.ACL_CONTRACT_ADDRESS,
-    kmsContractAddress: parsedEnv.KMS_VERIFIER_CONTRACT_ADDRESS,
-    publicKeyId: parsedEnv.PUBLIC_KEY_ID,
-  });
+const instance = await createInstance({
+  networkUrl: "https://eth-sepolia.public.blastapi.io",
+  gatewayUrl: "https://gateway.sepolia.zama.ai",
+  kmsContractAddress: "0x904Af2B61068f686838bD6257E385C2cE7a09195",
+  aclContractAddress: "0x9479B455904dCccCf8Bc4f7dF8e9A1105cBa2A8e",
+});
 ```
 
 Using `window.ethereum` object:
 
 ```javascript
-import { FhevmInstance, createInstance as createFhevmInstance } from "fhevmjs/node";
+import { FhevmInstance, createInstance } from "fhevmjs/bundle";
 
-const instance = await createFhevmInstance({
+const instance = await createInstance({
   network: window.ethereum,
-  gatewayUrl: parsedEnv.GATEWAY_URL,
-  aclContractAddress: parsedEnv.ACL_CONTRACT_ADDRESS,
-  kmsContractAddress: parsedEnv.KMS_VERIFIER_CONTRACT_ADDRESS,
-  publicKeyId: parsedEnv.PUBLIC_KEY_ID,
+  gatewayUrl: "https://gateway.sepolia.zama.ai",
+  kmsContractAddress: "0x904Af2B61068f686838bD6257E385C2cE7a09195",
+  aclContractAddress: "0x9479B455904dCccCf8Bc4f7dF8e9A1105cBa2A8e",
 });
 ```
 
