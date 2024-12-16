@@ -61,8 +61,8 @@ const start = async () => {
   await window.fhevm.initFhevm(); // load wasm needed
   const instance = window.fhevm
     .createInstance({
-      kmsContractAddress: "0x904Af2B61068f686838bD6257E385C2cE7a09195",
-      aclContractAddress: "0x9479B455904dCccCf8Bc4f7dF8e9A1105cBa2A8e",
+      kmsContractAddress: "0x9D6891A6240D6130c54ae243d8005063D05fE14b",
+      aclContractAddress: "0xFee8407e2f5e3Ee68ad77cAE98c434e637f516e5",
       network: window.ethereum,
       gatewayUrl: "https://gateway.sepolia.zama.ai/",
     })
