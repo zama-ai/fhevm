@@ -13,12 +13,10 @@ This document provides guidance on using the new Zama plugin for the [the offici
 
 ## Configuring the Zama plugin
 
-After connecting to the Zama Plugin, follow the steps to configure it:
+After connecting to the Zama plugin, follow the steps to configure it:
 
 1. Click on the plugin button located on the left of the screen
-2. Add a Gateway URL to be able to request reencryption of ciphertexts, as shown in the picture below.
-
-The default recommended Gateway URL is: `https://gateway.devnet.zama.ai`.
+2. Use the **Zama Coprocessor - Sepolia** settings or use a custom gateway and contracts settings.
 
 <figure><img src="../../.gitbook/assets/useGateway.png" alt="How to install Remix IDE plugin" width="300"><figcaption></figcaption></figure>
 

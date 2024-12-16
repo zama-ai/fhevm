@@ -36,8 +36,8 @@ const { createInstance } = require("fhevmjs");
 const createFhevmInstance = async () => {
   return createInstance({
     chainId: 11155111, // Sepolia chain ID
-    networkUrl: "https://rpc.sepolia.org/", // Sepolia RPC URL
-    gatewayUrl: "https://gateway.zama.ai",
+    networkUrl: "https://eth-sepolia.public.blastapi.io", // Sepolia RPC URL
+    gatewayUrl: "https://gateway.sepolia.zama.ai",
   });
 };
 createFhevmInstance().then((instance) => {

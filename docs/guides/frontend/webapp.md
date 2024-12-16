@@ -20,7 +20,43 @@ You can also use [this template](https://github.com/zama-ai/fhevmjs-next-templat
 
 ## Using directly the library
 
-### Step 1: Install the library
+### Step 1: Setup the library
+
+`fhevmjs` consists of multiple files, including WASM files and WebWorkers, which can make packaging these components correctly in your setup cumbersome. To simplify this process, especially if you're developing a dApp with server-side rendering (SSR), we recommend using our CDN.
+
+#### Using UMD CDN
+
+Include this line at the top of your project.
+
+```html
+<script src="https://cdn.zama.ai/fhevmjs/0.6.2/fhevmjs.umd.cjs" type="text/javascript"></script>
+```
+
+In your project, you can use the bundle import if you install `fhevmjs` package:
+
+```javascript
+import { initFhevm, createInstance } from "fhevmjs/bundle";
+```
+
+#### Using ESM CDN
+
+If you prefer You can also use the `fhevmjs` as a ES module:
+
+```html
+<script type="module">
+  import { initFhevm, createInstance } from "https://cdn.zama.ai/fhevmjs/0.6.2/fhevmjs.js";
+
+  await initFhevm();
+  const instance = await createInstance({
+    network: window.ethereum,
+    kmsContractAddress: "0x9D6891A6240D6130c54ae243d8005063D05fE14b",
+    aclContractAddress: "0xFee8407e2f5e3Ee68ad77cAE98c434e637f516e5",
+    gatewayUrl: "https://gateway.sepolia.zama.ai",
+  });
+</script>
+```
+
+#### Using npm package
 
 Install the `fhevmjs` library to your project:
 
@@ -35,14 +71,18 @@ yarn add fhevmjs
 pnpm add fhevmjs
 ```
 
-### Step 2: Initialize your project
-
 `fhevmjs` uses ESM format. You need to set the [type to "module" in your package.json](https://nodejs.org/api/packages.html#type). If your node project use `"type": "commonjs"` or no type, you can force the loading of the web version by using `import { createInstance } from 'fhevmjs/web';`
+
+```javascript
+import { initFhevm, createInstance } from "fhevmjs";
+```
+
+### Step 2: Initialize your project
 
 To use the library in your project, you need to load the WASM of [TFHE](https://www.npmjs.com/package/tfhe) first with `initFhevm`.
 
 ```javascript
-import { initFhevm } from "fhevmjs";
+import { initFhevm } from "fhevmjs/bundle";
 
 const init = async () => {
   await initFhevm(); // Load needed WASM
@@ -61,15 +101,15 @@ Once the WASM is loaded, you can now create an instance. An instance receives an
 - `coprocessorUrl` (optional): the URL of the coprocessor
 
 ```javascript
-import { initFhevm, createInstance } from "fhevmjs";
+import { initFhevm, createInstance } from "fhevmjs/bundle";
 
 const init = async () => {
   await initFhevm(); // Load TFHE
   return createInstance({
-    kmsContractAddress: "0x208De73316E44722e16f6dDFF40881A3e4F86104",
-    aclContractAddress: "0xc9990FEfE0c27D31D0C2aa36196b085c0c4d456c",
+    kmsContractAddress: "0x9D6891A6240D6130c54ae243d8005063D05fE14b",
+    aclContractAddress: "0xFee8407e2f5e3Ee68ad77cAE98c434e637f516e5",
     network: window.ethereum,
-    gatewayUrl: "https://gateway.zama.ai/",
+    gatewayUrl: "https://gateway.sepolia.zama.ai/",
   });
 };
 
