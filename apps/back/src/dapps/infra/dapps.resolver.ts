@@ -11,6 +11,7 @@ import { JwtAuthGuard } from '@/auth/infra/guards/jwt-auth-guard'
 import { User } from '@/users/domain/entities/user'
 import { TeamId } from '@/users/domain/entities/value-objects'
 import { DeployDApp } from '../use-cases/deploy-dapp.use-case'
+import { DeployDAppInput } from './dto/inputs/deploy-dapp.input'
 
 @Resolver(() => DappType)
 export class DappsResolver {
@@ -35,11 +36,10 @@ export class DappsResolver {
 
   @Mutation(() => DappType, { name: 'deployDapp' })
   @UseGuards(JwtAuthGuard)
-  deployDapp(
-    @Args('applicationId') applicationId: string,
-    @CurrentUser() user: User,
-  ) {
-    return this.deployDappUC.execute({ applicationId, user }).toPromise()
+  deployDapp(@Args('input') input: DeployDAppInput, @CurrentUser() user: User) {
+    return this.deployDappUC
+      .execute({ applicationId: input.dappId, user })
+      .toPromise()
   }
 
   @ResolveField()
