@@ -16,7 +16,7 @@ This document provides guidance on using the new Zama plugin for the [the offici
 After connecting to the Zama Plugin, follow the steps to configure it:
 
 1. Click on the plugin button located on the left of the screen
-2. Use the Zama Sepolia settings or use a custom gateway and contracts settings.
+2. Use the **Zama Coprocessor - Sepolia** settings or use a custom gateway and contracts settings.
 
 <figure><img src="../../.gitbook/assets/useGateway.png" alt="How to install Remix IDE plugin" width="300"><figcaption></figcaption></figure>
 
