@@ -12,14 +12,6 @@ import {
 import { faker } from '@faker-js/faker'
 import { IntegrationManager } from '@/tests/integration.manager'
 
-const CREATE_INVITATION = gql`
-  mutation CreateInvitation($email: String!, $secret: String!) {
-    createInvitation(input: { email: $email, secret: $secret }) {
-      token
-    }
-  }
-`
-
 const GET_INVITATION_BY_TOKEN = gql`
   query GetInvitationByToken($token: String!) {
     invitation(token: $token) {
@@ -51,13 +43,7 @@ describe('createInvitation', () => {
 
       beforeEach(async () => {
         email = faker.internet.email()
-        const resp = await request<{ createInvitation: { token: string } }>(
-          manager.httpServer,
-        )
-          .mutate(CREATE_INVITATION)
-          .variables({ email, secret: process.env.INVITATION_SECRET })
-          .expectNoErrors()
-        token = resp.data!.createInvitation.token
+        token = await manager.createInvitation(email)
       })
 
       test('then it returns a new invitation token', () => {
