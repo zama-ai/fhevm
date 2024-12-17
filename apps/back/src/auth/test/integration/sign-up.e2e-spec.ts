@@ -39,19 +39,22 @@ describe('sign-up', () => {
       let user: { email: string; name: string }
 
       beforeEach(async () => {
-        ;({ token, user } = await manager.signup(
-          invitation,
-          faker.internet.username(),
-          faker.internet.password(),
-        ))
+        const result = await manager.signup({
+          token: invitation,
+          name: faker.internet.username(),
+          password: faker.internet.password(),
+        })
+        if (result.success) {
+          ;({ token, user } = result.data)
+        }
       })
 
       test('then it signs up the user', () => {
-        expect(token).toBeDefined()
+        expect(token, 'Token should be defined after signing up').toBeDefined()
       })
 
       test('then it returns the user', () => {
-        expect(user).toBeDefined()
+        expect(user, 'User should be defined after signing up').toBeDefined()
         expect(user.email).toBe(email)
       })
     })
@@ -62,18 +65,21 @@ describe('sign-up', () => {
       let user: { email: string; name: string }
 
       beforeEach(async () => {
-        ;({ token, user } = await manager.signup(
-          faker.string.uuid(),
-          faker.internet.username(),
-          faker.internet.password(),
-        ))
+        const result = await manager.signup({
+          token: faker.string.uuid(),
+          name: faker.internet.username(),
+          password: faker.internet.password(),
+        })
+        if (result.success) {
+          ;({ token, user } = result.data)
+        }
       })
       test('then it fails', async () => {
-        expect(token).toBeFalsy()
+        expect(token).toBeUndefined()
       })
 
-      test('then it does not create a user', () => {
-        expect(user).toEqual({ email: '', name: '' })
+      test('then it does not return a user', () => {
+        expect(user).toBeUndefined()
       })
     })
   })
