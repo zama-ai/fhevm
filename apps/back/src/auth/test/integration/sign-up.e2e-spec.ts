@@ -3,6 +3,7 @@ import { faker } from '@faker-js/faker'
 import {
   afterAll,
   afterEach,
+  assert,
   beforeAll,
   beforeEach,
   describe,
@@ -61,8 +62,23 @@ describe('sign-up', () => {
       test('then it creates a default team', () => {
         expect(user.teams.length).toBe(1)
       })
+
+      test('then it fails to sign up with the same invitation twice', async () => {
+        const result = await manager.signup({
+          token: invitation,
+          name: faker.internet.username(),
+          password: faker.internet.password(),
+        })
+        console.log(result)
+        if (result.success) {
+          assert.fail('Should not be able to sign up twice')
+        } else {
+          expect(result.errors[0].message).toContain('invalid token')
+        }
+      })
     })
   })
+
   describe('given no invitation exists', () => {
     describe('when signing up', () => {
       let token: string
