@@ -1,4 +1,4 @@
-import { IntegrationManager } from '@/tests/integration.manager'
+import { IntegrationManager, User } from '@/tests/integration.manager'
 import { faker } from '@faker-js/faker'
 import {
   afterAll,
@@ -36,7 +36,7 @@ describe('sign-up', () => {
 
     describe('when signing up', () => {
       let token: string
-      let user: { email: string; name: string }
+      let user: User
 
       beforeEach(async () => {
         const result = await manager.signup({
@@ -56,6 +56,10 @@ describe('sign-up', () => {
       test('then it returns the user', () => {
         expect(user, 'User should be defined after signing up').toBeDefined()
         expect(user.email).toBe(email)
+      })
+
+      test('then it creates a default team', () => {
+        expect(user.teams.length).toBe(1)
       })
     })
   })
