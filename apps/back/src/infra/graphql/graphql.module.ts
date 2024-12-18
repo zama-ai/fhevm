@@ -1,5 +1,8 @@
 import { Module } from '@nestjs/common'
-import { GraphQLModule as BaseGraphQLModule } from '@nestjs/graphql'
+import {
+  GraphQLModule as BaseGraphQLModule,
+  Subscription,
+} from '@nestjs/graphql'
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo'
 import { join } from 'path'
 import { AuthModule } from '#auth/infra/auth.module.js'
@@ -17,6 +20,9 @@ import { DappsModule } from '#dapps/infra/dapps.module.js'
         req,
         res,
       }),
+      subscriptions: {
+        'graphql-ws': true,
+      },
       playground: true,
     }),
     AuthModule,

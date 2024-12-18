@@ -119,3 +119,7 @@ input UpdateDappInput {
 input DeployDAppInput {
   dappId: String!
 }
+
+type Subscription {
+  dappUpdated: Dapp!
+}
