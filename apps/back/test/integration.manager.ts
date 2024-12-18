@@ -9,7 +9,7 @@ import request from 'supertest-graphql'
 export interface User {
   name: string
   email: string
-  teams: { id: number; name: string }[]
+  teams: { id: string; name: string }[]
 }
 
 export type GraphQlResponse<T> =
