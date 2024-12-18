@@ -1,4 +1,9 @@
-import { IntegrationManager, User } from '@/tests/integration.manager'
+import { EXPIRATION_TIME_IN_MILLISECONDS } from '@/invitations/use-cases/create-invitation.use-case'
+import {
+  type GraphQlResponse,
+  IntegrationManager,
+  type User,
+} from '@/tests/integration.manager'
 import { faker } from '@faker-js/faker'
 import {
   afterAll,
@@ -9,6 +14,7 @@ import {
   describe,
   expect,
   test,
+  vi,
 } from 'vitest'
 
 describe('sign-up', () => {
@@ -69,7 +75,6 @@ describe('sign-up', () => {
           name: faker.internet.username(),
           password: faker.internet.password(),
         })
-        console.log(result)
         if (result.success) {
           assert.fail('Should not be able to sign up twice')
         } else {
@@ -100,6 +105,46 @@ describe('sign-up', () => {
 
       test('then it does not return a user', () => {
         expect(user).toBeUndefined()
+      })
+    })
+  })
+
+  describe('given an expired invitation', () => {
+    let invitation: string
+    beforeEach(async () => {
+      invitation = await manager.createInvitation(faker.internet.email())
+    })
+
+    describe('when signing up', () => {
+      let result: GraphQlResponse<{
+        token: string
+        user: User
+      }>
+
+      beforeEach(async () => {
+        // Move forward in time
+        vi.setSystemTime(EXPIRATION_TIME_IN_MILLISECONDS + 1)
+        result = await manager.signup({
+          token: invitation,
+          name: faker.internet.username(),
+          password: faker.internet.password(),
+        })
+      })
+
+      afterEach(() => {
+        // Reset time
+        vi.useRealTimers()
+      })
+
+      test('then it fails', async () => {
+        if (result.success) {
+          assert.fail('Should not be able to sign up')
+        } else {
+          expect(result.success).toBe(false)
+
+          expect(result.errors?.length).toBe(1)
+          expect(result.errors?.[0].message).toContain('not found')
+        }
       })
     })
   })

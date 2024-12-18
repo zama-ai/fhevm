@@ -12,7 +12,7 @@ export interface User {
   teams: { id: number; name: string }[]
 }
 
-type GraphQlResponse<T> =
+export type GraphQlResponse<T> =
   | {
       success: true
       data: T
