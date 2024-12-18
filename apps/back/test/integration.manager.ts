@@ -39,14 +39,13 @@ export class IntegrationManager {
 
   async afterEach() {
     // Clear the database
-    // Note: at the moment it fails because all the test cases are using the same database
-    // const prisma = this.#app.get<PrismaClient>(PrismaClient)
-    // await prisma.$transaction([
-    //   prisma.user.deleteMany(),
-    //   prisma.team.deleteMany(),
-    //   prisma.invitation.deleteMany(),
-    //   prisma.dapp.deleteMany(),
-    // ])
+    const prisma = this.#app.get<PrismaClient>(PrismaClient)
+    await prisma.$transaction([
+      prisma.user.deleteMany(),
+      prisma.team.deleteMany(),
+      prisma.invitation.deleteMany(),
+      prisma.dapp.deleteMany(),
+    ])
   }
 
   get httpServer(): any {
@@ -74,9 +73,7 @@ export class IntegrationManager {
       password: string
     },
     options?: { createInvitation?: boolean; email?: string },
-  ): Promise<
-    GraphQlResponse<{ token: string; user: { email: string; name: string } }>
-  > {
+  ): Promise<GraphQlResponse<{ token: string; user: User }>> {
     if (options?.createInvitation) {
       token = await this.createInvitation(
         options.email ?? faker.internet.email(),

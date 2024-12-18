@@ -11,6 +11,13 @@ export default defineConfig({
     env: {
       ...config({ path: '.env.test' }).parsed,
     },
+    pool: 'threads',
+    poolOptions: {
+      threads: {
+        singleThread: true,
+      },
+    },
+    isolate: false,
   },
   plugins: [
     // This is required to build the test files with SWC

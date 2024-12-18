@@ -9,8 +9,6 @@ services:
       - POSTGRES_DB=${DB_NAME:-console}
     ports:
       - "5432:5432"
-    volumes:
-      - postgres-test:/var/lib/postgresql/data
 
   localstack:
     image: localstack/localstack:latest
@@ -25,12 +23,7 @@ services:
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-test}
       - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-eu-central-1}
     volumes:
-      - "localstack-test:/var/lib/localstack"
       - "/var/run/docker.sock:/var/run/docker.sock"
       # Here we mount our setup file so it will be executed when
       # the container start
       - ./localstack-setup.sh:/etc/localstack/init/ready.d/script.sh
-
-volumes:
-  postgres-test:
-  localstack-test:
