@@ -8,7 +8,6 @@ import { faker } from '@faker-js/faker'
 import {
   afterAll,
   afterEach,
-  assert,
   beforeAll,
   beforeEach,
   describe,
@@ -17,7 +16,7 @@ import {
   vi,
 } from 'vitest'
 
-describe('sign-up', () => {
+describe('signup', () => {
   const manager = new IntegrationManager()
 
   beforeAll(async () => {
@@ -30,6 +29,8 @@ describe('sign-up', () => {
 
   afterEach(async () => {
     await manager.afterEach()
+    // adding some time to debug
+    await new Promise(r => setTimeout(r, 200))
   })
 
   describe('given an invitation exists', () => {
@@ -47,7 +48,7 @@ describe('sign-up', () => {
 
       beforeEach(async () => {
         const result = await manager.signup({
-          token: invitation,
+          invitation,
           name: faker.internet.username(),
           password: faker.internet.password(),
         })
@@ -68,16 +69,32 @@ describe('sign-up', () => {
       test('then it creates a default team', () => {
         expect(user.teams.length).toBe(1)
       })
+    })
 
-      test('then it fails to sign up with the same invitation twice', async () => {
-        const result = await manager.signup({
-          token: invitation,
+    describe('when signing up twice', () => {
+      let result: GraphQlResponse<{
+        token: string
+        user: User
+      }>
+      beforeEach(async () => {
+        // first time
+        result = await manager.signup({
+          invitation,
           name: faker.internet.username(),
           password: faker.internet.password(),
         })
-        if (result.success) {
-          assert.fail('Should not be able to sign up twice')
-        } else {
+
+        // second time
+        result = await manager.signup({
+          invitation,
+          name: faker.internet.username(),
+          password: faker.internet.password(),
+        })
+      })
+
+      test('then it fails', () => {
+        expect(result.success).toBe(false)
+        if (!result.success) {
           expect(result.errors[0].message).toContain('invalid token')
         }
       })
@@ -91,7 +108,7 @@ describe('sign-up', () => {
 
       beforeEach(async () => {
         const result = await manager.signup({
-          token: faker.string.uuid(),
+          invitation: faker.string.uuid(),
           name: faker.internet.username(),
           password: faker.internet.password(),
         })
@@ -123,9 +140,9 @@ describe('sign-up', () => {
 
       beforeEach(async () => {
         // Move forward in time
-        vi.setSystemTime(EXPIRATION_TIME_IN_MILLISECONDS + 1)
+        vi.setSystemTime(Date.now() + EXPIRATION_TIME_IN_MILLISECONDS + 1)
         result = await manager.signup({
-          token: invitation,
+          invitation,
           name: faker.internet.username(),
           password: faker.internet.password(),
         })
@@ -137,13 +154,10 @@ describe('sign-up', () => {
       })
 
       test('then it fails', async () => {
-        if (result.success) {
-          assert.fail('Should not be able to sign up')
-        } else {
-          expect(result.success).toBe(false)
-
+        expect(result.success).toBe(false)
+        if (!result.success) {
           expect(result.errors?.length).toBe(1)
-          expect(result.errors?.[0].message).toContain('not found')
+          expect(result.errors?.[0].message).toContain('invalid token')
         }
       })
     })

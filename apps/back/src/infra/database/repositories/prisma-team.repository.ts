@@ -17,7 +17,7 @@ export class PrismaTeamRepository extends TeamRepository {
       this.db.team
         .findFirst({ where: { id: id.value } })
         .then(data =>
-          data ? resolve(data) : reject(notFoundError('User not found')),
+          data ? resolve(data) : reject(notFoundError('Team not found')),
         )
         .catch(err => reject(unknownError(String(err))))
     }).chain(props => Team.parse(props).async())
@@ -28,7 +28,9 @@ export class PrismaTeamRepository extends TeamRepository {
       this.db.user
         .findFirst({ select: { teams: true }, where: { id: userId.value } })
         .then(data =>
-          data ? resolve(data.teams) : reject(notFoundError('User not found')),
+          data
+            ? resolve(data.teams)
+            : reject(notFoundError(`User ${userId.value} not found`)),
         )
         .catch(err => reject(unknownError(String(err))))
     }).chain(props => Team.parseArray(props).async())

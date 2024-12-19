@@ -1,6 +1,9 @@
-import { IntegrationManager } from '@/tests/integration.manager'
+import {
+  DApp,
+  GraphQlResponse,
+  IntegrationManager,
+} from '@/tests/integration.manager'
 import { faker } from '@faker-js/faker'
-import gql from 'graphql-tag'
 import {
   afterAll,
   afterEach,
@@ -10,34 +13,6 @@ import {
   expect,
   test,
 } from 'vitest'
-import request, { SuperTestExecutionResult } from 'supertest-graphql'
-import { DappStatus } from '@/dapps/infra/types/dapp.type'
-
-const CREATE_DAPP = gql`
-  mutation createDApp($teamId: String!, $name: String!) {
-    createDapp(input: { teamId: $teamId, name: $name }) {
-      id
-      name
-      address
-      status
-      team {
-        id
-        name
-      }
-    }
-  }
-`
-
-interface DApp {
-  id: string
-  name: string
-  address: string | null
-  status: DappStatus
-  team: {
-    id: string
-    name: string
-  }
-}
 
 describe('create-dapp', () => {
   const manager = new IntegrationManager()
@@ -73,12 +48,14 @@ describe('create-dapp', () => {
       let dapp: DApp | undefined
 
       beforeEach(async () => {
-        const result = await request<{ createDapp: DApp }>(manager.httpServer)
-          .auth(token, { type: 'bearer' })
-          .mutate(CREATE_DAPP)
-          .variables({ teamId, name: faker.string.alphanumeric(10) })
-          .expectNoErrors()
-        dapp = result.data?.createDapp
+        const result = await manager.createDApp({
+          token,
+          teamId,
+          name: faker.string.alphanumeric(10),
+        })
+        if (result.success) {
+          dapp = result.data.dapp
+        }
       })
 
       test('then it creates a DRAFT dapp', () => {
@@ -94,21 +71,23 @@ describe('create-dapp', () => {
 
   describe('given a user is not logged in', () => {
     describe('when creating a dapp', () => {
-      let result: SuperTestExecutionResult<{ createDapp: DApp }>
+      let result: GraphQlResponse<{ dapp: DApp; token: string }>
 
       beforeEach(async () => {
-        result = await request<{ createDapp: DApp }>(manager.httpServer)
-          .mutate(CREATE_DAPP)
-          .variables({
-            teamId: faker.string.uuid(),
-            name: faker.string.alphanumeric(10),
-          })
+        result = await manager.createDApp({
+          token: faker.string.uuid(),
+          teamId: faker.string.uuid(),
+          name: faker.string.alphanumeric(10),
+        })
       })
 
       test('then it fails due to unauthorized error', () => {
-        expect(result.errors).toBeDefined()
-        expect(result.errors?.length).toBeGreaterThan(0)
-        expect(result.errors![0].message).toBe('Unauthorized')
+        expect(result.success).toBe(false)
+        if (!result.success) {
+          expect(result.errors).toBeDefined()
+          expect(result.errors.length).toBeGreaterThan(0)
+          expect(result.errors[0].message).toBe('Unauthorized')
+        }
       })
     })
   })

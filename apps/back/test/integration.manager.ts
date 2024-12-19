@@ -1,4 +1,5 @@
 import { AppModule } from '@/app.module'
+import { DAppStatus } from '@/dapps/domain/entities/dapp'
 import { PrismaClient } from '@/prisma/client'
 import { faker } from '@faker-js/faker'
 import { INestApplication } from '@nestjs/common'
@@ -10,6 +11,17 @@ export interface User {
   name: string
   email: string
   teams: { id: string; name: string }[]
+}
+
+export interface DApp {
+  id: string
+  name: string
+  address: string | null
+  status: DAppStatus
+  team: {
+    id: string
+    name: string
+  }
 }
 
 export type GraphQlResponse<T> =
@@ -64,18 +76,18 @@ export class IntegrationManager {
 
   async signup(
     {
-      token,
+      invitation,
       name,
       password,
     }: {
-      token: string
+      invitation?: string
       name: string
       password: string
     },
     options?: { createInvitation?: boolean; email?: string },
   ): Promise<GraphQlResponse<{ token: string; user: User }>> {
-    if (options?.createInvitation) {
-      token = await this.createInvitation(
+    if (!invitation && options?.createInvitation) {
+      invitation = await this.createInvitation(
         options.email ?? faker.internet.email(),
       )
     }
@@ -84,7 +96,7 @@ export class IntegrationManager {
       signup: { token: string; user: User }
     }>(this.httpServer)
       .mutate(SIGN_UP)
-      .variables({ token, name, password })
+      .variables({ invitation, name, password })
       .end()
 
     return resp.data
@@ -99,7 +111,6 @@ export class IntegrationManager {
     if (options?.signup) {
       await this.signup(
         {
-          token: '',
           name: options.name ?? faker.internet.username(),
           password,
         },
@@ -118,6 +129,72 @@ export class IntegrationManager {
       ? { success: true, data: resp.data.login }
       : { success: false, errors: resp.errors! }
   }
+
+  async createDApp({
+    token,
+    teamId,
+    name,
+  }:
+    | {
+        token: string
+        teamId: string
+        name: string
+      }
+    | { token?: never; teamId?: never; name: string }): Promise<
+    GraphQlResponse<{ dapp: DApp; token: string }>
+  > {
+    if (!token) {
+      const result = await this.signup(
+        {
+          name: faker.internet.username(),
+          password: faker.internet.password(),
+        },
+        { createInvitation: true },
+      )
+      if (result.success) {
+        token = result.data?.token
+        teamId = result.data?.user.teams[0].id
+      } else {
+        return result
+      }
+    }
+
+    const resp = await request<{ createDapp: DApp }>(this.httpServer)
+      .auth(token, { type: 'bearer' })
+      .mutate(CREATE_DAPP)
+      .variables({ teamId, name })
+
+    return resp.data
+      ? { success: true, data: { dapp: resp.data.createDapp, token } }
+      : { success: false, errors: resp.errors! }
+  }
+  async updateDApp({
+    token,
+    dappId,
+    name,
+    address,
+  }: {
+    token: string
+    dappId: string
+    name?: string
+    address?: string
+  }): Promise<GraphQlResponse<{ dapp: DApp }>> {
+    const resp = await request<{ updateDapp: DApp }>(this.httpServer)
+      .auth(token, { type: 'bearer' })
+      .mutate(UPDATE_DAPP)
+      .variables({ appId: dappId, name, address })
+
+    return resp.data
+      ? { success: true, data: { dapp: resp.data.updateDapp } }
+      : { success: false, errors: resp.errors! }
+  }
+
+  async listUsers() {
+    const prisma = this.#app.get<PrismaClient>(PrismaClient)
+    return await prisma.user.findMany({
+      select: { id: true, name: true, email: true, teams: true },
+    })
+  }
 }
 
 const CREATE_INVITATION = gql`
@@ -129,9 +206,9 @@ const CREATE_INVITATION = gql`
 `
 
 const SIGN_UP = gql`
-  mutation signup($token: String!, $name: String!, $password: String!) {
+  mutation signup($invitation: String!, $name: String!, $password: String!) {
     signup(
-      input: { invitationToken: $token, password: $password, name: $name }
+      input: { invitationToken: $invitation, password: $password, name: $name }
     ) {
       user {
         id
@@ -160,6 +237,36 @@ const LOGIN = gql`
         }
       }
       token
+    }
+  }
+`
+
+const CREATE_DAPP = gql`
+  mutation createDApp($teamId: String!, $name: String!) {
+    createDapp(input: { teamId: $teamId, name: $name }) {
+      id
+      name
+      address
+      status
+      team {
+        id
+        name
+      }
+    }
+  }
+`
+
+const UPDATE_DAPP = gql`
+  mutation updateApp($appId: ID!, $name: String, $address: String) {
+    updateDapp(input: { id: $appId, name: $name, address: $address }) {
+      id
+      name
+      address
+      status
+      team {
+        id
+        name
+      }
     }
   }
 `

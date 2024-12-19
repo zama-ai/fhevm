@@ -10,7 +10,7 @@ import {
   test,
 } from 'vitest'
 
-describe('log-in', () => {
+describe('login', () => {
   const manager = new IntegrationManager()
 
   beforeAll(async () => {
@@ -35,7 +35,6 @@ describe('log-in', () => {
 
       await manager.signup(
         {
-          token: '',
           name: faker.internet.username(),
           password,
         },

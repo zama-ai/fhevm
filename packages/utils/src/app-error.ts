@@ -25,6 +25,14 @@ export function unauthorizedError(message = 'Unauthorized'): UnauthorizedError {
   return { _tag: 'UnauthorizedError', message }
 }
 
+export type ForbiddenError = {
+  _tag: 'ForbiddenError'
+  message: string
+}
+export function forbiddenError(message = 'Forbidden'): ForbiddenError {
+  return { _tag: 'ForbiddenError', message }
+}
+
 export type UnknownError = {
   _tag: 'UnknowError'
   message: string
@@ -37,4 +45,5 @@ export type AppError =
   | ValidationError
   | NotFoundError
   | UnauthorizedError
+  | ForbiddenError
   | UnknownError

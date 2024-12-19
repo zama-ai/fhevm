@@ -16,6 +16,7 @@
     "test:cov": "vitest run --coverage",
     "test:debug": "vitest --inspect-brk --inspect --logHeapUsage --threads=false",
     "test:e2e": "./scripts/init-db.sh && vitest run --config ./vitest.e2e.config.mts",
+    "test:e2e:watch": "./scripts/init-db.sh && vitest --config ./vitest.e2e.config.mts",
     "generate": "prisma generate",
     "postinstall": "pnpx prisma migrate dev",
     "copy:generated": "cpx 'src/generated/**' 'dist/generated'"
