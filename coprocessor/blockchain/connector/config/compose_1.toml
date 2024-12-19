@@ -26,7 +26,7 @@ channel_timeout = 60
 [core.timeout_config.insecure_crs]
 initial_wait_time = 1
 retry_interval = 3
-max_poll_count = 24
+max_poll_count = 48
 
 [core.timeout_config.crs]
 initial_wait_time = 60
@@ -46,7 +46,7 @@ max_poll_count = 1150
 [core.timeout_config.decryption]
 initial_wait_time = 3
 retry_interval = 2
-max_poll_count = 36
+max_poll_count = 48
 
 [core.timeout_config.insecure_key_gen]
 initial_wait_time = 10
@@ -61,7 +61,7 @@ max_poll_count = 36
 [core.timeout_config.verify_proven_ct]
 initial_wait_time = 1
 retry_interval = 1
-max_poll_count = 24
+max_poll_count = 48
 
 [tracing]
 service_name = "kms-connector-1"
