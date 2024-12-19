@@ -13,7 +13,7 @@ services:
 
   fhevm-coprocessor:
     container_name: ${DOCKER_COMPOSE_PROJECT}-fhevm-coprocessor
-    image: ghcr.io/zama-ai/fhevm-coprocessor:v0.1.2
+    image: ghcr.io/zama-ai/fhevm-coprocessor:v0.6.0-6
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@fhevm-coprocessor-db:5432/coprocessor
     ports:
