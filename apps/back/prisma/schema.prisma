@@ -61,7 +61,7 @@ model Dapp {
   address   String?
   status    DappStatus @default(DRAFT)
   teamId    String
-  team      Team       @relation(fields: [teamId], references: [id])
+  team      Team       @relation(fields: [teamId], references: [id], onDelete: Cascade)
   updatedAt DateTime   @updatedAt
   createdAt DateTime   @default(now())
 }

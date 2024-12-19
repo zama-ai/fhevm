@@ -38,10 +38,13 @@ export class Task<A, E> {
    */
   map<B>(fn: (value: A) => B): Task<B, E> {
     return new Task((resolve, reject) => {
-      this.computation(
-        value => resolve(fn(value)),
-        error => reject(error),
-      )
+      this.computation(value => resolve(fn(value)), reject)
+    })
+  }
+
+  mapError<E2 = E>(fn: (error: E) => E2): Task<A, E2> {
+    return new Task((resolve, reject) => {
+      this.computation(resolve, error => reject(fn(error)))
     })
   }
 

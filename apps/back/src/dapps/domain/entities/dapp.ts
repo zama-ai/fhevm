@@ -2,10 +2,12 @@ import { z } from 'zod'
 import type { AppError, Result } from 'utils'
 import { Entity, ok, fail, validationError } from 'utils'
 
+const status = z.enum(['DRAFT', 'DEPLOYING', 'LIVE'])
+
 const schema = z.object({
   id: z.string().uuid(),
   name: z.string(),
-  status: z.enum(['DRAFT', 'DEPLOYING', 'LIVE']),
+  status,
   teamId: z.string().uuid(),
   address: z
     .string()
@@ -16,9 +18,11 @@ const schema = z.object({
 })
 
 export type DAppProps = z.infer<typeof schema>
+export type DAppStatus = z.infer<typeof status>
 
 export class DApp extends Entity<DAppProps> implements Readonly<DAppProps> {
   static parse(data: unknown): Result<DApp, AppError> {
+    if (!data) return fail(validationError('data is undefined'))
     const check = schema.safeParse(data)
     return check.success
       ? ok(new DApp(check.data))
