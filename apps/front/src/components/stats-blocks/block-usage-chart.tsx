@@ -32,9 +32,9 @@ function draw(ctx: CanvasRenderingContext2D, scale: number) {
     ctx.strokeStyle = colors[c]
     for (let i = 0; i < randomValues.length; i++) {
       ctx.beginPath()
-      ctx.moveTo(10 + i * 5 * scale, c * 50 + 5 + randomValues[i] / 4)
+      ctx.moveTo(10 + i * 5 * scale, c * 50 + 25 + randomValues[i] / 4)
       ctx.lineCap = 'round'
-      ctx.lineTo(10 + i * 5 * scale, 60 * scale)
+      ctx.lineTo(10 + i * 5 * scale, 80 * scale)
       ctx.stroke()
     }
   }
@@ -44,7 +44,7 @@ function Chart() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
   const width = 300
-  const height = 60
+  const height = 80
 
   useEffect(() => {
     const canvas = canvasRef.current
