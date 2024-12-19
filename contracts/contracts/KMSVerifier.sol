@@ -13,6 +13,26 @@ import "@openzeppelin/contracts/utils/Strings.sol";
 /// @notice This contract allows for the management of signers and provides methods to verify signatures
 /// @dev The contract uses OpenZeppelin's EIP712Upgradeable for cryptographic operations
 contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradeable {
+    /// @notice Returned if the KMS signer to add is already a signer.
+    error KMSAlreadySigner();
+
+    /// @notice Returned if the recovered KMS signer is not a valid KMS signer.
+    /// @param invalidSigner Address of the invalid signer.
+    error KMSInvalidSigner(address invalidSigner);
+
+    /// @notice Returned if the KMS signer to remove is not a signer.
+    error KMSNotASigner();
+
+    /// @notice Returned if the KMS signer to add is the null address.
+    error KMSSignerNull();
+
+    /// @notice Returned if the number of signatures is inferior to the threshold.
+    /// @param numSignatures Number of signatures.
+    error KMSSignatureThresholdNotReached(uint256 numSignatures);
+
+    /// @notice Returned if the number of signatures is equal to 0.
+    error KMSZeroSignature();
+
     struct DecryptionResult {
         address aclAddress;
         uint256[] handlesList;
@@ -113,9 +133,15 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
     /// @dev Only the owner can add a signer
     /// @param signer The address to be added as a signer
     function addSigner(address signer) public virtual onlyOwner {
-        require(signer != address(0), "KMSVerifier: Address is null");
+        if (signer == address(0)) {
+            revert KMSSignerNull();
+        }
+
         KMSVerifierStorage storage $ = _getKMSVerifierStorage();
-        require(!$.isSigner[signer], "KMSVerifier: Address is already a signer");
+        if ($.isSigner[signer]) {
+            revert KMSAlreadySigner();
+        }
+
         $.isSigner[signer] = true;
         $.signers.push(signer);
         applyThreshold();
@@ -158,7 +184,9 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
     /// @param signer The address to be removed from signers
     function removeSigner(address signer) public virtual onlyOwner {
         KMSVerifierStorage storage $ = _getKMSVerifierStorage();
-        require($.isSigner[signer], "KMSVerifier: Address is not a signer");
+        if (!$.isSigner[signer]) {
+            revert KMSNotASigner();
+        }
 
         // Remove signer from the mapping
         $.isSigner[signer] = false;
@@ -225,14 +253,24 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
     /// @return true if enough provided signatures are valid, false otherwise
     function verifySignaturesDigest(bytes32 digest, bytes[] memory signatures) internal virtual returns (bool) {
         uint256 numSignatures = signatures.length;
-        require(numSignatures > 0, "KmsVerifier: no signatures provided");
+
+        if (numSignatures == 0) {
+            revert KMSZeroSignature();
+        }
+
         uint256 threshold = getThreshold();
-        require(numSignatures >= threshold, "KmsVerifier: at least threshold number of signatures required");
+
+        if (numSignatures < threshold) {
+            revert KMSSignatureThresholdNotReached(numSignatures);
+        }
+
         address[] memory recoveredSigners = new address[](numSignatures);
         uint256 uniqueValidCount;
         for (uint256 i = 0; i < numSignatures; i++) {
             address signerRecovered = recoverSigner(digest, signatures[i]);
-            require(isSigner(signerRecovered), "KmsVerifier: Invalid KMS signer");
+            if (!isSigner(signerRecovered)) {
+                revert KMSInvalidSigner(signerRecovered);
+            }
             if (!tload(signerRecovered)) {
                 recoveredSigners[uniqueValidCount] = signerRecovered;
                 uniqueValidCount++;
