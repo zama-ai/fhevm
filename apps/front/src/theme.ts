@@ -69,7 +69,7 @@ const config = defineConfig({
           emphasized: { value: '{colors.brand.300}' },
           focusRing: { value: '{colors.brand.400}' },
         },
-        neutlal: {
+        neutral: {
           solid: { value: '{colors.neutral.500}' },
           contrast: { value: '{colors.black}' },
           fg: { value: '{colors.neutral.700}' },
