@@ -1,0 +1,118 @@
+name: 01-sca-trivy-repo
+
+on:
+  push:
+    branches:
+      - '**'
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+#   pull_request:
+#     branches:
+#       - main
+  workflow_dispatch:
+    inputs:
+        import_sarif_into_github:
+            description: "Import :bug: SARIF Trivy report into :lock: GitHub Security Hub"
+            type: choice
+            required: true
+            default: "do-not-import-it"
+            options: 
+            - "import-it"
+            - "do-not-import-it"
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      DATE_BUILD: ${{ steps.myvars.outputs.DATE_BUILD }}
+      GIT_HASH_SHORT: ${{ steps.myvars.outputs.GIT_HASH_SHORT }}
+      GH_ORG_REPO_NAME: ${{ steps.myvars.outputs.GH_ORG_REPO_NAME }}
+
+    steps:
+      - name: Checkout parent Repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683     # v4.2.2
+        with:
+          submodules: true
+          fetch-depth: 0
+
+      - name: Set global vars
+        id: myvars
+        run: |
+          DATE_BUILD=$(date +%y%m%d_%H%M%S)
+          GIT_HASH_SHORT=$(git rev-parse --short HEAD)
+          GH_ORG_REPO_NAME=$( echo ${{ github.repository }} | tr -d ' ' | sed -E 's|/|_|g' )
+
+          ## Set global vars
+          echo "DATE_BUILD=$DATE_BUILD" >> $GITHUB_OUTPUT
+          echo "GIT_HASH_SHORT=$GIT_HASH_SHORT" >> $GITHUB_OUTPUT
+          echo "GH_ORG_REPO_NAME=$GH_ORG_REPO_NAME" >> $GITHUB_OUTPUT
+
+  run-trivy:
+    runs-on: ubuntu-latest
+    needs: [prepare]
+    steps: 
+      - name: Checkout parent Repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683    # v4.2.2
+        with:
+          submodules: true
+          fetch-depth: 0
+
+      - name: Generate Trivy HTML report and check generated MegaLinter files
+        id: run_trivy
+        if: success() || failure()
+        run: |
+            echo "=============== [ Installing Trivy and scan2html plugin ]"
+            curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin v0.58.0
+            trivy -v
+            trivy plugin install github.com/fatihtokus/scan2html
+
+            REPORT_TITLE_REPO_VALUE="[ ${{ needs.prepare.outputs.GH_ORG_REPO_NAME }} | ${{ needs.prepare.outputs.GIT_HASH_SHORT }} | ${{ needs.prepare.outputs.DATE_BUILD }} ]"
+            REPORT_FILE_NAME="${{ needs.prepare.outputs.GH_ORG_REPO_NAME }}.${{ needs.prepare.outputs.GIT_HASH_SHORT }}.${{ needs.prepare.outputs.DATE_BUILD }}"
+
+            ## Set vars
+            echo "REPORT_FILE_NAME=$REPORT_FILE_NAME" >> $GITHUB_OUTPUT
+
+            ## Generates sarif report
+            trivy fs -f sarif \
+            --scanners vuln,misconfig \
+            --quiet \
+            .  \
+            -o trivy.${REPORT_FILE_NAME}.sarif
+
+            ## Generates json report
+            trivy fs -f json \
+            --scanners vuln,misconfig \
+            --quiet \
+            .  \
+            -o trivy.${REPORT_FILE_NAME}.json
+
+            ## Transform json report to html report
+            trivy scan2html generate \
+            --scan2html-flags --with-epss \
+            --output trivy.${REPORT_FILE_NAME}.html \
+            --report-title "$REPORT_TITLE_REPO_VALUE" \
+            --from trivy.${REPORT_FILE_NAME}.json &> /dev/null
+
+            echo "=============== [ List of Trivy reports generated ]"
+            find . -type f -iregex ".*/trivy\..*\..+" | grep -E "json|sarif|html"
+
+             echo "=============== [ Import SARIF Trivy Report into GitHub Security Hub: ${{ github.event.inputs.import_sarif_into_github }}]"
+
+      - name: Upload Trivy reports as Artifacts
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882    # v4.4.3
+        if: success() || failure()
+        with:
+          name: trivy.reports.${{ steps.run_trivy.outputs.REPORT_FILE_NAME }}
+          path: |
+            trivy.*.html
+            trivy.*.sarif
+            trivy.*.json
+
+      # Works in public repos always and only with private repos in GH Enterprise + Advanced Security.
+      # Set true if you have GH Enterprise + Advanced Security enabled for private repos.
+      - name: Load Trivy SARIF Report to GitHub Security Hub
+        uses: github/codeql-action/upload-sarif@ea9e4e37992a54ee68a9622e985e60c8e8f12d9f    # v3.27.4
+        if: github.event.inputs.import_sarif_into_github == 'import-it'
+        with:
+          sarif_file: trivy.${{ steps.run_trivy.outputs.REPORT_FILE_NAME }}.sarif
+          category: sca-trivy-repo
