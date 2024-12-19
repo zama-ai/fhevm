@@ -265,6 +265,16 @@ ${commonSolLib()}
  *          that interact with TFHE.
  */
 library TFHE {
+
+/// @notice Returned if the input's length is greater than 64 bytes.
+error InputLengthAbove64Bytes(uint256 inputLength);
+
+/// @notice Returned if the input's length is greater than 128 bytes.
+error InputLengthAbove128Bytes(uint256 inputLength);
+
+/// @notice Returned if the input's length is greater than 256 bytes.
+error InputLengthAbove256Bytes(uint256 inputLength);
+
   function setFHEVM(FHEVMConfigStruct memory fhevmConfig) internal {
       Impl.setFHEVM(fhevmConfig);
   }
@@ -1011,13 +1021,19 @@ function tfheCustomMethods(): string {
 
     // Left-pad a bytes array with zeros such that it becomes of length 64.
     function padToBytes64(bytes memory input) internal pure returns (bytes memory) {
-      require(input.length <= 64, "Input exceeds 64 bytes");
+      uint256 inputLength = input.length;
+
+      if (inputLength > 64) {
+          revert InputLengthAbove64Bytes(inputLength);
+      }
+
       bytes memory result = new bytes(64);
-      uint256 paddingLength = 64 - input.length;
+      uint256 paddingLength = 64 - inputLength;
+
       for (uint256 i = 0; i < paddingLength; i++) {
           result[i] = 0;
       }
-      for (uint256 i = 0; i < input.length; i++) {
+      for (uint256 i = 0; i < inputLength; i++) {
           result[paddingLength + i] = input[i];
       }
       return result;
@@ -1035,13 +1051,18 @@ function tfheCustomMethods(): string {
 
     // Left-pad a bytes array with zeros such that it becomes of length 128.
     function padToBytes128(bytes memory input) internal pure returns (bytes memory) {
-      require(input.length <= 128, "Input exceeds 128 bytes");
+      uint256 inputLength = input.length;
+
+      if (inputLength > 128) {
+          revert InputLengthAbove128Bytes(inputLength);    
+      }
+
       bytes memory result = new bytes(128);
-      uint256 paddingLength = 128 - input.length;
+      uint256 paddingLength = 128 - inputLength;
       for (uint256 i = 0; i < paddingLength; i++) {
           result[i] = 0;
       }
-      for (uint256 i = 0; i < input.length; i++) {
+      for (uint256 i = 0; i < inputLength; i++) {
           result[paddingLength + i] = input[i];
       }
       return result;
@@ -1059,13 +1080,18 @@ function tfheCustomMethods(): string {
 
     // Left-pad a bytes array with zeros such that it becomes of length 256.
     function padToBytes256(bytes memory input) internal pure returns (bytes memory) {
-      require(input.length <= 256, "Input exceeds 256 bytes");
+      uint256 inputLength = input.length;
+
+      if (inputLength > 256) {
+          revert InputLengthAbove256Bytes(inputLength);    
+      }
+
       bytes memory result = new bytes(256);
-      uint256 paddingLength = 256 - input.length;
+      uint256 paddingLength = 256 - inputLength;
       for (uint256 i = 0; i < paddingLength; i++) {
           result[i] = 0;
       }
-      for (uint256 i = 0; i < input.length; i++) {
+      for (uint256 i = 0; i < inputLength; i++) {
           result[paddingLength + i] = input[i];
       }
       return result;
