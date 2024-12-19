@@ -11,7 +11,7 @@ export function DashboardPage() {
   return (
     <>
       <HeroGreetings name={me.name} />
-      <Text>
+      <Text my="5">
         Lorem ipsum, dolor sit amet consectetur adipisicing elit. Facere magnam
         iste hic qui, sapiente impedit! Recusandae corrupti perspiciatis
         nesciunt, quisquam dolorum nam, quidem debitis ut omnis libero quas
