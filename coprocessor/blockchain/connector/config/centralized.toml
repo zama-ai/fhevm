@@ -62,7 +62,7 @@ max_poll_count = 24
 [core.timeout_config.verify_proven_ct]
 initial_wait_time = 1
 retry_interval = 2
-max_poll_count = 48
+max_poll_count = 60
 
 [tracing]
 service_name = "kms-asc-connector"
