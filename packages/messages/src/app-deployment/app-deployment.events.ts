@@ -9,6 +9,7 @@ type EventTypes =
   | 'sc-registered'
   | 'sc-registration-failed'
   | 'completed'
+  | 'failed'
 
 function genSchema<Key extends EventTypes, Payload extends z.ZodRawShape>(
   key: Key,
@@ -40,6 +41,7 @@ const eventMap = {
   'sc-registered': genSchema('sc-registered', {}),
   'sc-registration-failed': genSchema('sc-registration-failed', {}),
   completed: genSchema('completed', {}),
+  failed: genSchema('failed', {}),
 } as const
 type EventMap = typeof eventMap
 
@@ -53,6 +55,7 @@ const schema = z
     eventMap['sc-registered'],
     eventMap['sc-registration-failed'],
     eventMap['completed'],
+    eventMap['failed'],
   ])
   .and(
     z.object({
@@ -90,6 +93,7 @@ export const scConfirmed = factory('sc-confirmed')
 export const scConfirmationFailed = factory('sc-confirmation-failed')
 export const scRegistered = factory('sc-registered')
 export const scRegistrationFailed = factory('sc-registration-failed')
+export const failed = factory('failed')
 
 export function isAppDeploymentEvent(
   data: unknown,

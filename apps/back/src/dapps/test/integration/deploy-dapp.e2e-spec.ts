@@ -15,7 +15,17 @@ import {
   vi,
 } from 'vitest'
 import { DAppStatus } from '@/dapps/domain/entities/dapp'
-import { completed } from 'messages'
+import {
+  AppDeploymentMessage,
+  completed,
+  failed,
+  isAppDeploymentMessage,
+  requested,
+  scConfirmed,
+  scDiscovered,
+  scRegistered,
+} from 'messages'
+import { assert } from 'console'
 
 describe('deploy-dapp', () => {
   const manager = new IntegrationManager()
@@ -108,7 +118,7 @@ describe('deploy-dapp', () => {
   describe('given a dapp is deployed', () => {
     let token: string
     let teamId: string
-    let dappId: string
+    let dappId = ''
 
     beforeEach(async () => {
       const result = await manager.auth.login(
@@ -138,20 +148,75 @@ describe('deploy-dapp', () => {
       }
     })
 
-    describe('when receiveing `app-deploying.completed` event', () => {
-      beforeEach(async () => {
-        await manager.sendMessage(
-          JSON.stringify(
-            completed({
-              applicationId: dappId,
-              deploymentId: faker.string.uuid(),
-            }),
-          ),
-        )
-      })
-      test('then the dapp status is updated to "DEPLOYED"', async () => {
-        await vi.waitFor(async () => {})
-      })
-    })
+    describe.each([
+      'app-deployment.requested',
+      'app-deployment.completed',
+      'app-deployment.failed',
+    ] satisfies AppDeploymentMessage['type'][])(
+      'when receiving `%s` event',
+      type => {
+        let status: DAppStatus
+        switch (type) {
+          case 'app-deployment.completed':
+            status = 'LIVE'
+            break
+          case 'app-deployment.failed':
+            status = 'DRAFT'
+            break
+          default:
+            status = 'DEPLOYING'
+        }
+
+        beforeEach(async () => {
+          const message = genMessage(type, dappId)
+          if (message) {
+            await manager.sendMessage(JSON.stringify(message))
+          }
+        })
+
+        test(`then the dapp status should be "${status}"`, async () => {
+          await vi.waitFor(async () => {
+            const size = await manager.getQueueSize()
+            expect(size).toBe(0)
+            return
+          })
+
+          const result = await manager.dapp.getDapp({
+            token,
+            dappId,
+          })
+
+          expect(result.success).toBe(true)
+          if (result.success) {
+            expect(result.data.status).toBe(status)
+          }
+        })
+      },
+    )
   })
 })
+
+function genMessage(
+  type: AppDeploymentMessage['type'],
+  dappId: string,
+): AppDeploymentMessage | undefined {
+  switch (type) {
+    case 'app-deployment.requested':
+      return requested({
+        applicationId: dappId,
+        deploymentId: faker.string.uuid(),
+        address: faker.string.hexadecimal({ length: 40 }),
+        chainId: '1',
+      })
+    case 'app-deployment.completed':
+      return completed({
+        applicationId: dappId,
+        deploymentId: faker.string.uuid(),
+      })
+    case 'app-deployment.failed':
+      return failed({
+        applicationId: dappId,
+        deploymentId: faker.string.uuid(),
+      })
+  }
+}

@@ -28,15 +28,7 @@ export class UpdateDapp implements UseCase<Input, DApp> {
         .mapError<AppError>(err =>
           err._tag === 'NotFoundError' ? forbiddenError() : err,
         )
-        .chain(dapp =>
-          DApp.parse(
-            // Note: id is a DAppId, so it's `{ value: string }`
-            // and that breaks the DApp validation
-            Object.assign({}, dapp.toJSON(), input.dapp, {
-              id: input.dapp.id.value,
-            }),
-          ).asyncChain(this.dappRepository.update),
-        ),
+        .chain(() => this.dappRepository.update(input.dapp)),
     )
   }
 }

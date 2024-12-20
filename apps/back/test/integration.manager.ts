@@ -1,7 +1,11 @@
 import { AuthManager } from './auth.manager'
 import { SetupManager } from './setup.manager'
 import { DappManager } from './dapp.manager'
-import { SendMessageCommand, SQSClient } from '@aws-sdk/client-sqs'
+import {
+  GetQueueAttributesCommand,
+  SendMessageCommand,
+  SQSClient,
+} from '@aws-sdk/client-sqs'
 
 export type { GraphQlResponse } from './setup.manager'
 export type { User } from './auth.manager'
@@ -35,8 +39,22 @@ export class IntegrationManager {
     await sqs.send(
       new SendMessageCommand({
         QueueUrl: this.setup.queueUrl,
-        MessageBody: message,
+        MessageBody: JSON.stringify({ Message: message }),
       }),
     )
+  }
+
+  async getQueueSize() {
+    const sqs = new SQSClient({
+      endpoint: process.env.AWS_ENDPOINT,
+      region: process.env.AWS_REGION,
+    })
+    const result = await sqs.send(
+      new GetQueueAttributesCommand({
+        QueueUrl: this.setup.queueUrl,
+        AttributeNames: ['ApproximateNumberOfMessages'],
+      }),
+    )
+    return parseInt(result.Attributes?.ApproximateNumberOfMessages ?? '-1')
   }
 }
