@@ -35,7 +35,6 @@ export function DappsListItem({ dapp }: OwnProps) {
         <Card.Body>
           <Text textStyle="sm" color="fg.muted">
             {lastmodified}
-            <code>{link}</code>
           </Text>
         </Card.Body>
       </Card.Root>
