@@ -30,7 +30,10 @@ const eventMap = {
     address: z.string(),
     chainId: z.string(),
   }),
-  'sc-discovered': genSchema('sc-discovered', {}),
+  'sc-discovered': genSchema('sc-discovered', {
+    contractAddress: z.string(),
+    creatorAddress: z.string(),
+  }),
   'sc-discovery-failed': genSchema('sc-discovery-failed', {}),
   'sc-confirmed': genSchema('sc-confirmed', {}),
   'sc-confirmation-failed': genSchema('sc-confirmation-failed', {}),

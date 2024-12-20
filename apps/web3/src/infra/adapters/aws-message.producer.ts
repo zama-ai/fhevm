@@ -44,7 +44,7 @@ export class AwsMessageProducer implements MessageProducer {
         .send(
           new SendMessageCommand({
             QueueUrl: this.#queueUrl,
-            DelaySeconds: message.$meta?.delay as number,
+            DelaySeconds: message.$meta?.delay as number | undefined,
             MessageBody: JSON.stringify(message),
           }),
         )
@@ -72,7 +72,6 @@ export class AwsMessageProducer implements MessageProducer {
           new PublishCommand({
             TopicArn: this.#topicArn,
             Message: JSON.stringify(message),
-            // MessageGroupId: 'app-deployment',
           }),
         )
         .then(result =>

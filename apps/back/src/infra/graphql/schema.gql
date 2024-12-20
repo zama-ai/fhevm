@@ -66,6 +66,7 @@ type Mutation {
   createInvitation(input: CreateInvitationInput!): Invitation!
   createDapp(input: CreateDappInput!): Dapp!
   updateDapp(input: UpdateDappInput!): Dapp!
+  deployDapp(input: DeployDAppInput!): Dapp!
 }
 
 input LoginInput {
@@ -106,4 +107,8 @@ input UpdateDappInput {
   Your smart contract address, it should start with 0x and have 42 characters
   """
   address: String
+}
+
+input DeployDAppInput {
+  dappId: String!
 }

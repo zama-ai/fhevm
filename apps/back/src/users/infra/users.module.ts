@@ -18,5 +18,6 @@ import { TeamsResolver } from './teams.resolver'
     GetTeamById,
     GetDappsByTeamId,
   ],
+  exports: [GetUserById],
 })
 export class UsersModule {}

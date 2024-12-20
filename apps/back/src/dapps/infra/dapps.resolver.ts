@@ -17,6 +17,8 @@ import { CurrentUser } from '@/auth/infra/decorators/current-user'
 import { JwtAuthGuard } from '@/auth/infra/guards/jwt-auth-guard'
 import { User } from '@/users/domain/entities/user'
 import { TeamId } from '@/users/domain/entities/value-objects'
+import { DeployDApp } from '../use-cases/deploy-dapp.use-case'
+import { DeployDAppInput } from './dto/inputs/deploy-dapp.input'
 import { TeamType } from '@/users/infra/types/team.type'
 import { QueryDappInput } from './dto/inputs/query-dapp.input'
 import { GetDappById } from '../use-cases/get-dapp-by-id.use-case'
@@ -28,6 +30,7 @@ export class DappsResolver {
     private readonly updateDappUC: UpdateDapp,
     private readonly getDappByIdUC: GetDappById,
     private readonly getTeamByIdUC: GetTeamById,
+    private readonly deployDappUC: DeployDApp,
   ) {}
 
   @Query(() => DappType, { name: 'dapp' })
@@ -48,6 +51,14 @@ export class DappsResolver {
   @UseGuards(JwtAuthGuard)
   updateDapp(@Args('input') input: UpdateDappInput, @CurrentUser() user: User) {
     return this.updateDappUC.execute({ dapp: input, user }).toPromise()
+  }
+
+  @Mutation(() => DappType, { name: 'deployDapp' })
+  @UseGuards(JwtAuthGuard)
+  deployDapp(@Args('input') input: DeployDAppInput, @CurrentUser() user: User) {
+    return this.deployDappUC
+      .execute({ applicationId: input.dappId, user })
+      .toPromise()
   }
 
   @ResolveField(() => TeamType, { name: 'team' })

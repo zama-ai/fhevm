@@ -25,7 +25,11 @@ const CREATE_DAPP = graphql(`
 export function CreateStepOnePage() {
   const [teamId, setTeamId] = useState<string | null>(null)
   const [createDappMutation, { loading, error }] =
-    useMutation<CreateDappMutation>(CREATE_DAPP)
+    useMutation<CreateDappMutation>(CREATE_DAPP, {
+      onCompleted(data) {
+        navigate(`/create/2/${data?.createDapp.id}`)
+      },
+    })
   const { me } = useLoaderData<MeTeamDappsQuery>()
   const navigate = useNavigate()
   const { setTitle } = useContext(TitleContext)
