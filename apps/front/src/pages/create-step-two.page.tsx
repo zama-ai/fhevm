@@ -11,7 +11,6 @@ import {
 import { formatErrorMessage } from '@/lib/error-message'
 import { CreatorAddress } from '@/components/creator/creator-address'
 import { CreatorStepper } from '@/components/creator-stepper/creator-stepper'
-import { apolloClient } from '@/providers/apollo'
 import { DappStatus } from '@/components/dapp-status/dapp-status'
 
 const SET_DAPP_ADDRESS = graphql(`
@@ -92,12 +91,6 @@ export function CreateStepTwoPage() {
             variables: {
               id: dappId,
               address,
-            },
-            onCompleted: () => {
-              apolloClient.refetchQueries({
-                include: ['MeTeamDapps'],
-                // include: [MeDocument.definitions[0].name.value],
-              })
             },
           })
         }}
