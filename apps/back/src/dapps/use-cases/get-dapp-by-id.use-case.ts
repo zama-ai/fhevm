@@ -4,8 +4,11 @@ import { AppError, Task, UnitOfWork, UseCase } from 'utils'
 import { DAppRepository } from '../domain/repositories/dapp.repository'
 import { DAppId } from '../domain/entities/value-objects'
 import { DApp } from '../domain/entities/dapp'
+import { UserId } from '@/users/domain/entities/value-objects'
 
-export class GetDappById implements UseCase<DAppId, DApp> {
+export class GetDappById
+  implements UseCase<{ dappId: DAppId; userId: UserId }, DApp>
+{
   constructor(
     @Inject(UNIT_OF_WORK) private readonly uow: UnitOfWork,
     private readonly repo: DAppRepository,
@@ -19,7 +22,13 @@ export class GetDappById implements UseCase<DAppId, DApp> {
    *
    * @returns A Task that resolves with the DApp if found, otherwise rejects with an AppError.
    */
-  execute(id: DAppId): Task<DApp, AppError> {
-    return this.uow.exec(this.repo.findById(id))
+  execute({
+    dappId,
+    userId,
+  }: {
+    dappId: DAppId
+    userId: UserId
+  }): Task<DApp, AppError> {
+    return this.uow.exec(this.repo.findOneByIdAndUserId(dappId, userId))
   }
 }

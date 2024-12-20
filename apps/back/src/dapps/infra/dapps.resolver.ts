@@ -8,11 +8,11 @@ import {
   Resolver,
 } from '@nestjs/graphql'
 import { CreateDappInput } from '@/dapps/infra/dto/inputs/create-dapp.input'
-import { UpdateDappInput } from './dto/inputs/update-dapp.input'
+import { UpdateDappInput } from '@/dapps/infra/dto/inputs/update-dapp.input'
 import { CreateDapp } from '@/dapps/use-cases/create-dapp.use-case'
 import { GetTeamById } from '@/users/use-cases/get-team-by-id.use-case'
-import { UpdateDapp } from '../use-cases/update-dapp.use-case'
-import { DappType } from './types/dapp.type'
+import { UpdateDapp } from '@/dapps/use-cases/update-dapp.use-case'
+import { DappType } from '@/dapps/infra/types/dapp.type'
 import { CurrentUser } from '@/auth/infra/decorators/current-user'
 import { JwtAuthGuard } from '@/auth/infra/guards/jwt-auth-guard'
 import { User } from '@/users/domain/entities/user'
@@ -22,6 +22,8 @@ import { DeployDAppInput } from './dto/inputs/deploy-dapp.input'
 import { GetDappById } from '../use-cases/get-dapp-by-id.use-case'
 import { DAppId } from '../domain/entities/value-objects'
 import { TeamType } from '@/users/infra/types/team.type'
+import { QueryDappInput } from './dto/inputs/query-dapp.input'
+import { GetDappById } from '../use-cases/get-dapp-by-id.use-case'
 
 @Resolver(() => DappType)
 export class DappsResolver {
@@ -32,6 +34,14 @@ export class DappsResolver {
     private readonly getTeamByIdUC: GetTeamById,
     private readonly deployDappUC: DeployDApp,
   ) {}
+
+  @Query(() => DappType, { name: 'dapp' })
+  @UseGuards(JwtAuthGuard)
+  dapp(@Args('input') input: QueryDappInput, @CurrentUser() user: User) {
+    return this.getDappByIdUC
+      .execute({ id: input.id, userId: user.id.value })
+      .toPromise()
+  }
 
   @Mutation(() => DappType, { name: 'createDapp' })
   @UseGuards(JwtAuthGuard)
