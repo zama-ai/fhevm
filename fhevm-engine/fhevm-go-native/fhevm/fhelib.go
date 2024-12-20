@@ -17,6 +17,13 @@ type FheLibMethod struct {
 	NonScalarDisabled bool
 }
 
+func (m FheLibMethod) String() string {
+	return fmt.Sprintf(
+		"FheLibMethod(Name: %s, ArgTypes: %s, ScalarSupport: %t, NonScalarDisabled: %t)",
+		m.Name, m.ArgTypes, m.ScalarSupport, m.NonScalarDisabled,
+	)
+}
+
 var signatureToFheLibMethod = map[uint32]*FheLibMethod{}
 
 func FheLibMethods() []*FheLibMethod {
