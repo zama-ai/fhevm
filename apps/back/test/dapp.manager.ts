@@ -142,8 +142,8 @@ const CREATE_DAPP = gql`
 `
 
 const GET_DAPP = gql`
-  query getApp($appId: String!) {
-    dapp(id: $appId) {
+  query getApp($appId: ID!) {
+    dapp(input: { id: $appId }) {
       id
       name
       address

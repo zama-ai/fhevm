@@ -127,5 +127,25 @@ describe('get-dapp-by-id', () => {
         }
       })
     })
+
+    describe('when an anonimous user gets the dapp by id', () => {
+      let result: GraphQlResponse<DApp>
+
+      beforeEach(async () => {
+        result = await manager.dapp.getDapp({
+          token: '',
+          dappId,
+        })
+      })
+
+      test('then the dapp is not returned', () => {
+        expect(result.success).toBe(false)
+        if (!result.success) {
+          expect(result.errors).toBeDefined()
+          expect(result.errors.length).toBeGreaterThan(0)
+          expect(result.errors[0].message).toContain('Unauthorized')
+        }
+      })
+    })
   })
 })
