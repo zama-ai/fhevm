@@ -5,7 +5,6 @@ pragma solidity ^0.8.24;
 /// @dev This contract provides functionality to increment the 'value' and read its current value
 contract Counter {
     /// @notice State variable to keep track of the count
-    /// @dev Stored as a uint32 to save gas
     uint32 value;
 
     /// @notice Increases the value by 1 each time this function is called
