@@ -33,6 +33,13 @@ export class DApp
       : fail(validationError(check.error.message))
   }
 
+  static parseArray(data: unknown[]): Result<DApp[], AppError> {
+    const res = data.map(DApp.parse)
+    return res.every(dapp => dapp.isOk())
+      ? ok(res.reduce<DApp[]>((acc, dapp) => [...acc, dapp.value], []))
+      : fail(res.find(dapp => dapp.isFail())!.error)
+  }
+
   get id() {
     return new DAppId(this.get('id'))
   }

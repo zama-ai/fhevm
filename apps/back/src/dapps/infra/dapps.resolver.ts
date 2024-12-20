@@ -21,6 +21,7 @@ import { DeployDApp } from '../use-cases/deploy-dapp.use-case'
 import { DeployDAppInput } from './dto/inputs/deploy-dapp.input'
 import { GetDappById } from '../use-cases/get-dapp-by-id.use-case'
 import { DAppId } from '../domain/entities/value-objects'
+import { TeamType } from '@/users/infra/types/team.type'
 
 @Resolver(() => DappType)
 export class DappsResolver {
@@ -55,7 +56,7 @@ export class DappsResolver {
       .toPromise()
   }
 
-  @ResolveField()
+  @ResolveField(() => TeamType, { name: 'team' })
   async team(@Parent() dapp: DappType) {
     const { teamId } = dapp
     return this.getTeamByIdUC.execute(new TeamId(teamId)).toPromise()

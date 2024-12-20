@@ -1,19 +1,32 @@
-import { Box, Button } from '@chakra-ui/react'
+import { Stack, Box, Button, Heading } from '@chakra-ui/react'
 
 import { NewIcon } from '../icons/icons'
+import { DappsListItem } from './dapps-list-item'
+import { Dapp } from '@/__generated__/graphql'
 
 type OwnProps = {
   createDapp: () => void
+  dapps: Dapp[]
 }
-export function DappsList({ createDapp }: OwnProps) {
+export function DappsList({ createDapp, dapps }: OwnProps) {
   return (
-    <Box py="5">
-      <Button onClick={createDapp}>
-        <Box as="span">
-          <NewIcon strokeWidth={3} />
-        </Box>
-        Create a new dAapp
-      </Button>
+    <Box>
+      <Heading as="h2" size="lg" mb="5">
+        My dApps
+      </Heading>
+      <Stack gap="5">
+        {dapps.map(dapp => (
+          <DappsListItem key={dapp.id} dapp={dapp} />
+        ))}
+      </Stack>
+      <Box my="5">
+        <Button onClick={createDapp}>
+          <Box as="span">
+            <NewIcon strokeWidth={3} />
+          </Box>
+          Create a new dAapp
+        </Button>
+      </Box>
     </Box>
   )
 }
