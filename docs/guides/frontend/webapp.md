@@ -18,6 +18,10 @@ You can also use [this template](https://github.com/zama-ai/fhevmjs-vue-template
 
 You can also use [this template](https://github.com/zama-ai/fhevmjs-next-template) to start an application with fhevmjs, using Next + TypeScript.
 
+## Using the mocked coprocessor for front end
+
+As an alternative to use the real coprocessor deployed on Sepolia to help you develop your dApp faster and without needing testnet tokens, you can use a mocked fhevm. Currently, we recommend you to use the `ConfidentialERC20` dApp example available on the `mockedFrontend` branch of the [React template](https://github.com/zama-ai/fhevm-react-template/tree/mockedFrontend). Follow the README on this branch, and you will be able to deploy exactly the same dApp both on Sepolia as well as on the mocked coprocessor seamlessly.
+
 ## Using directly the library
 
 ### Step 1: Setup the library
