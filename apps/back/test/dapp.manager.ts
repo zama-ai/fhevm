@@ -36,15 +36,11 @@ export class DappManager {
     token,
     teamId,
     name,
-  }:
-    | {
-        token: string
-        teamId: string
-        name: string
-      }
-    | { token?: never; teamId?: never; name: string }): Promise<
-    GraphQlResponse<{ dapp: DApp; token: string }>
-  > {
+    address,
+  }: ({ token: string; teamId: string } | { token?: never; teamId?: never }) & {
+    name: string
+    address?: string
+  }): Promise<GraphQlResponse<{ dapp: DApp; token: string }>> {
     if (!token) {
       const result = await this.auth.signup(
         {
@@ -64,7 +60,7 @@ export class DappManager {
     const resp = await request<{ createDapp: DApp }>(this.httpServer)
       .auth(token, { type: 'bearer' })
       .mutate(CREATE_DAPP)
-      .variables({ teamId, name })
+      .variables({ teamId, name, address })
 
     return resp.data
       ? { success: true, data: { dapp: resp.data.createDapp, token } }
@@ -114,8 +110,8 @@ export class DappManager {
 }
 
 const CREATE_DAPP = gql`
-  mutation createDApp($teamId: String!, $name: String!) {
-    createDapp(input: { teamId: $teamId, name: $name }) {
+  mutation createDApp($teamId: String!, $name: String!, $address: String) {
+    createDapp(input: { teamId: $teamId, name: $name, address: $address }) {
       id
       name
       address
