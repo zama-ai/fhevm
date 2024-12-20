@@ -48,4 +48,14 @@ export class PrismaDAppRepository extends DAppRepository {
         .catch(err => reject(unknownError(String(err))))
     }).chain(props => DApp.parse(props).async())
   }
+  findAllByTeamId = (teamId: string): Task<DApp[], AppError> => {
+    return new Task<unknown[], AppError>((resolve, reject) => {
+      this.db.dapp
+        .findMany({
+          where: { teamId },
+        })
+        .then(resolve)
+        .catch(err => reject(unknownError(String(err))))
+    }).chain(dapps => DApp.parseArray(dapps).async())
+  }
 }
