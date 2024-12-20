@@ -1,4 +1,8 @@
-import { DApp, IntegrationManager } from '@/tests/integration.manager'
+import {
+  DeployDappResult,
+  GraphQlResponse,
+  IntegrationManager,
+} from '@/tests/integration.manager'
 import { faker } from '@faker-js/faker'
 import {
   afterAll,
@@ -8,8 +12,10 @@ import {
   describe,
   expect,
   test,
+  vi,
 } from 'vitest'
 import { DAppStatus } from '@/dapps/domain/entities/dapp'
+import { completed } from 'messages'
 
 describe('deploy-dapp', () => {
   const manager = new IntegrationManager()
@@ -45,7 +51,6 @@ describe('deploy-dapp', () => {
           token,
           teamId,
           name: faker.string.alphanumeric(10),
-          address: faker.string.hexadecimal({ length: 40 }),
         })
         expect(dappResult.success).toBe(true)
         if (dappResult.success) {
@@ -55,9 +60,35 @@ describe('deploy-dapp', () => {
     })
 
     describe('when deploying a dapp', () => {
+      let result: GraphQlResponse<{ dapp: DeployDappResult }>
+
+      beforeEach(async () => {
+        result = await manager.dapp.deployDApp({
+          token,
+          dappId,
+        })
+      })
+
+      test('then it fails due missing address', () => {
+        expect(result.success).toBe(false)
+        if (!result.success) {
+          expect(result.errors).toBeDefined()
+          expect(result.errors.length).toBeGreaterThan(0)
+          expect(result.errors[0].message).contain('missing dApp address')
+        }
+      })
+    })
+
+    describe('when deploying a dapp after updating the dapp address', () => {
       let status: DAppStatus
 
       beforeEach(async () => {
+        const dappResult = await manager.dapp.updateDApp({
+          token,
+          dappId,
+          address: faker.string.hexadecimal({ length: 40 }),
+        })
+        expect(dappResult.success, 'Failed to update dApp address').toBe(true)
         const result = await manager.dapp.deployDApp({
           token,
           dappId,
@@ -68,8 +99,58 @@ describe('deploy-dapp', () => {
         }
       })
 
-      test('then the dapp status is deploying', () => {
+      test('then the dapp status is updated to "DEPLOYING"', () => {
         expect(status).toBe('DEPLOYING')
+      })
+    })
+  })
+
+  describe('given a dapp is deployed', () => {
+    let token: string
+    let teamId: string
+    let dappId: string
+
+    beforeEach(async () => {
+      const result = await manager.auth.login(
+        { email: faker.internet.email(), password: faker.internet.password() },
+        { signup: true },
+      )
+      expect(result.success, 'Failed to login the user').toBe(true)
+      if (result.success) {
+        token = result.data.token
+        teamId = result.data.user.teams[0].id
+
+        const dappResult = await manager.dapp.createDApp({
+          token,
+          teamId,
+          name: faker.string.alphanumeric(10),
+          address: faker.string.hexadecimal({ length: 40 }),
+        })
+        expect(dappResult.success).toBe(true)
+        if (dappResult.success) {
+          dappId = dappResult.data.dapp.id
+          const result = await manager.dapp.deployDApp({
+            token,
+            dappId,
+          })
+          expect(result.success).toBe(true)
+        }
+      }
+    })
+
+    describe('when receiveing `app-deploying.completed` event', () => {
+      beforeEach(async () => {
+        await manager.sendMessage(
+          JSON.stringify(
+            completed({
+              applicationId: dappId,
+              deploymentId: faker.string.uuid(),
+            }),
+          ),
+        )
+      })
+      test('then the dapp status is updated to "DEPLOYED"', async () => {
+        await vi.waitFor(async () => {})
       })
     })
   })

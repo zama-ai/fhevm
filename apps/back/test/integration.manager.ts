@@ -1,10 +1,11 @@
 import { AuthManager } from './auth.manager'
 import { SetupManager } from './setup.manager'
 import { DappManager } from './dapp.manager'
+import { SendMessageCommand, SQSClient } from '@aws-sdk/client-sqs'
 
 export type { GraphQlResponse } from './setup.manager'
 export type { User } from './auth.manager'
-export type { DApp } from './dapp.manager'
+export type { DApp, DeployDappResult } from './dapp.manager'
 
 export class IntegrationManager {
   readonly setup = new SetupManager()
@@ -24,5 +25,18 @@ export class IntegrationManager {
 
   async afterEach() {
     await this.setup.afterEach()
+  }
+
+  async sendMessage(message: string) {
+    const sqs = new SQSClient({
+      endpoint: process.env.AWS_ENDPOINT,
+      region: process.env.AWS_REGION,
+    })
+    await sqs.send(
+      new SendMessageCommand({
+        QueueUrl: this.setup.queueUrl,
+        MessageBody: message,
+      }),
+    )
   }
 }

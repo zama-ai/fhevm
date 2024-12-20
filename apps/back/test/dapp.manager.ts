@@ -66,6 +66,24 @@ export class DappManager {
       ? { success: true, data: { dapp: resp.data.createDapp, token } }
       : { success: false, errors: resp.errors! }
   }
+
+  async getDapp({
+    token,
+    dappId,
+  }: {
+    token: string
+    dappId: string
+  }): Promise<GraphQlResponse<DApp>> {
+    const resp = await request<{ dapp: DApp }>(this.httpServer)
+      .auth(token, { type: 'bearer' })
+      .query(GET_DAPP)
+      .variables({ appId: dappId })
+
+    return resp.data
+      ? { success: true, data: resp.data.dapp }
+      : { success: false, errors: resp.errors! }
+  }
+
   async updateDApp({
     token,
     dappId,
@@ -101,7 +119,6 @@ export class DappManager {
       .auth(token, { type: 'bearer' })
       .mutate(DEPLOY_DAPP)
       .variables({ dappId })
-      .expectNoErrors()
 
     return result.data
       ? { success: true, data: { dapp: result.data.deployDapp } }
@@ -112,6 +129,21 @@ export class DappManager {
 const CREATE_DAPP = gql`
   mutation createDApp($teamId: String!, $name: String!, $address: String) {
     createDapp(input: { teamId: $teamId, name: $name, address: $address }) {
+      id
+      name
+      address
+      status
+      team {
+        id
+        name
+      }
+    }
+  }
+`
+
+const GET_DAPP = gql`
+  query getApp($appId: String!) {
+    dapp(id: $appId) {
       id
       name
       address

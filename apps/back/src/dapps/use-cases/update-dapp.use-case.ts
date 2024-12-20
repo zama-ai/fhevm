@@ -6,10 +6,11 @@ import { DAppRepository } from '../domain/repositories/dapp.repository'
 import { User } from '@/users/domain/entities/user'
 import { forbiddenError } from 'utils/dist/app-error'
 import { UNIT_OF_WORK } from '@/constants'
+import { DAppId } from '../domain/entities/value-objects'
 
 interface Input {
   dapp: {
-    id: string
+    id: DAppId
   } & Partial<Omit<DAppProps, 'id'>>
   user: User
 }
@@ -23,14 +24,18 @@ export class UpdateDapp implements UseCase<Input, DApp> {
   execute(input: Input): Task<DApp, AppError> {
     return this.uow.exec(
       this.dappRepository
-        .findOneByIdAndUserId(input.dapp.id, String(input.user.id.value))
+        .findOneByIdAndUserId(input.dapp.id, input.user.id)
         .mapError<AppError>(err =>
           err._tag === 'NotFoundError' ? forbiddenError() : err,
         )
         .chain(dapp =>
-          DApp.parse(Object.assign({}, dapp.toJSON(), input.dapp)).asyncChain(
-            this.dappRepository.update,
-          ),
+          DApp.parse(
+            // Note: id is a DAppId, so it's `{ value: string }`
+            // and that breaks the DApp validation
+            Object.assign({}, dapp.toJSON(), input.dapp, {
+              id: input.dapp.id.value,
+            }),
+          ).asyncChain(this.dappRepository.update),
         ),
     )
   }

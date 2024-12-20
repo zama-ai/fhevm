@@ -1,5 +1,12 @@
 import { UseGuards } from '@nestjs/common'
-import { Args, Mutation, Parent, ResolveField, Resolver } from '@nestjs/graphql'
+import {
+  Args,
+  Mutation,
+  Parent,
+  Query,
+  ResolveField,
+  Resolver,
+} from '@nestjs/graphql'
 import { CreateDappInput } from '@/dapps/infra/dto/inputs/create-dapp.input'
 import { UpdateDappInput } from './dto/inputs/update-dapp.input'
 import { CreateDapp } from '@/dapps/use-cases/create-dapp.use-case'
@@ -12,12 +19,15 @@ import { User } from '@/users/domain/entities/user'
 import { TeamId } from '@/users/domain/entities/value-objects'
 import { DeployDApp } from '../use-cases/deploy-dapp.use-case'
 import { DeployDAppInput } from './dto/inputs/deploy-dapp.input'
+import { GetDappById } from '../use-cases/get-dapp-by-id.use-case'
+import { DAppId } from '../domain/entities/value-objects'
 
 @Resolver(() => DappType)
 export class DappsResolver {
   constructor(
     private readonly createDappUC: CreateDapp,
     private readonly updateDappUC: UpdateDapp,
+    private readonly getDappByIdUC: GetDappById,
     private readonly getTeamByIdUC: GetTeamById,
     private readonly deployDappUC: DeployDApp,
   ) {}
@@ -31,14 +41,17 @@ export class DappsResolver {
   @Mutation(() => DappType, { name: 'updateDapp' })
   @UseGuards(JwtAuthGuard)
   updateDapp(@Args('input') input: UpdateDappInput, @CurrentUser() user: User) {
-    return this.updateDappUC.execute({ dapp: input, user }).toPromise()
+    const { id, ...props } = input
+    return this.updateDappUC
+      .execute({ dapp: { id: new DAppId(id), ...props }, user })
+      .toPromise()
   }
 
   @Mutation(() => DappType, { name: 'deployDapp' })
   @UseGuards(JwtAuthGuard)
   deployDapp(@Args('input') input: DeployDAppInput, @CurrentUser() user: User) {
     return this.deployDappUC
-      .execute({ applicationId: input.dappId, user })
+      .execute({ dappId: new DAppId(input.dappId), user })
       .toPromise()
   }
 
@@ -46,5 +59,10 @@ export class DappsResolver {
   async team(@Parent() dapp: DappType) {
     const { teamId } = dapp
     return this.getTeamByIdUC.execute(new TeamId(teamId)).toPromise()
+  }
+
+  @Query(() => DappType)
+  async dapp(@Args('id') id: string) {
+    return this.getDappByIdUC.execute(new DAppId(id)).toPromise()
   }
 }

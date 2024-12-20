@@ -47,7 +47,7 @@ export class SetupManager {
       region: process.env.AWS_REGION,
     }).send(
       new DeleteQueueCommand({
-        QueueUrl: `http://localhost:4566/000000000000/${this.#queueName}`,
+        QueueUrl: this.queueUrl,
       }),
     )
   }
@@ -65,5 +65,9 @@ export class SetupManager {
 
   get httpServer(): any {
     return this.#app.getHttpServer()
+  }
+
+  get queueUrl(): string {
+    return `http://localhost:4566/000000000000/${this.#queueName}`
   }
 }

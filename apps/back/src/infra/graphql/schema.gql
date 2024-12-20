@@ -52,6 +52,7 @@ enum DappStatus {
 type Query {
   me: User!
   invitation(token: String!): Invitation!
+  dapp(id: String!): Dapp!
 }
 
 type Mutation {

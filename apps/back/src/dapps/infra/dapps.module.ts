@@ -7,6 +7,7 @@ import { GetTeamById } from '@/users/use-cases/get-team-by-id.use-case'
 import { APP_DEPLOYMENT_PRODUCER } from '../domain/services/app-deployment.producer'
 import { SNSAppDeploymentProducer } from './adapter/sns-app-deployment.producer'
 import { DeployDApp } from '../use-cases/deploy-dapp.use-case'
+import { GetDappById } from '../use-cases/get-dapp-by-id.use-case'
 
 @Module({
   imports: [DatabaseModule],
@@ -18,6 +19,7 @@ import { DeployDApp } from '../use-cases/deploy-dapp.use-case'
     DappsResolver,
     CreateDapp,
     UpdateDapp,
+    GetDappById,
     GetTeamById,
     DeployDApp,
   ],
