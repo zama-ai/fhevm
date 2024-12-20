@@ -17,7 +17,6 @@ export class SNSProducer implements AppDeploymentMessagesProducer {
       new PublishCommand({
         TopicArn: process.env.AWS_TOPIC_ARN!,
         Message: JSON.stringify(message),
-        MessageGroupId: 'app-deployment',
       }),
     )
   }

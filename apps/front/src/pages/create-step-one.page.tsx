@@ -24,8 +24,12 @@ const CREATE_DAPP = graphql(`
 
 export function CreateStepOnePage() {
   const [teamId, setTeamId] = useState<string | null>(null)
-  const [createDappMutation, { data, loading, error }] =
-    useMutation<CreateDappMutation>(CREATE_DAPP)
+  const [createDappMutation, { loading, error }] =
+    useMutation<CreateDappMutation>(CREATE_DAPP, {
+      onCompleted(data) {
+        navigate(`/create/2/${data?.createDapp.id}`)
+      },
+    })
   const { me } = useLoaderData<MeTeamDappsQuery>()
   const navigate = useNavigate()
   const { setTitle } = useContext(TitleContext)
@@ -35,12 +39,6 @@ export function CreateStepOnePage() {
       setTeamId(getPersonalTeam(me.teams).id)
     }
   }, [me])
-
-  useEffect(() => {
-    if (data?.createDapp.id) {
-      navigate(`/create/2/${data.createDapp.id}`)
-    }
-  }, [data, navigate, setTitle])
 
   // Reset the title in context when the component is unmounted
   useEffect(() => {

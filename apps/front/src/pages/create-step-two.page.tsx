@@ -1,10 +1,12 @@
-import { useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { Heading, Box } from '@chakra-ui/react'
 import { useMutation } from '@apollo/client'
 
 import { graphql } from '../__generated__/gql'
-import { SetDappAddressMutation } from '@/__generated__/graphql'
+import {
+  SetDappAddressMutation,
+  DeployDappMutation,
+} from '@/__generated__/graphql'
 import { formatErrorMessage } from '@/lib/error-message'
 import { CreatorAddress } from '@/components/creator/creator-address'
 import { CreatorStepper } from '@/components/creator-stepper/creator-stepper'
@@ -20,18 +22,39 @@ const SET_DAPP_ADDRESS = graphql(`
   }
 `)
 
+const DEPLOY_DAPP = graphql(`
+  mutation DeployDapp($applicationId: String!) {
+    deployDapp(input: { dappId: $applicationId }) {
+      id
+      name
+      address
+      status
+    }
+  }
+`)
+
 export function CreateStepTwoPage() {
   const navigate = useNavigate()
   const { dappId } = useParams()
-  const [setDappAddressMutation, { data, loading, error }] =
-    useMutation<SetDappAddressMutation>(SET_DAPP_ADDRESS)
+  const [
+    deployDappMutation,
+    { loading: deployDappLoading, error: deployDappError },
+  ] = useMutation<DeployDappMutation>(DEPLOY_DAPP, {
+    variables: { applicationId: dappId },
+    onCompleted() {
+      navigate(`/create/3/${dappId}`)
+    },
+  })
+  const [
+    setDappAddressMutation,
+    { loading: setAddressLoading, error: setAddressError },
+  ] = useMutation<SetDappAddressMutation>(SET_DAPP_ADDRESS, {
+    onCompleted() {
+      deployDappMutation()
+    },
+  })
 
-  useEffect(() => {
-    if (data?.updateDapp.id) {
-      navigate(`/create/2/${data.updateDapp.id}`)
-    }
-  }, [data, navigate])
-
+  const error = setAddressError ?? deployDappError
   const errorMessage = error ? formatErrorMessage(error.message) : undefined
   return (
     <>
@@ -48,9 +71,8 @@ export function CreateStepTwoPage() {
               address,
             },
           })
-          navigate(`/create/3/${dappId}`)
         }}
-        loading={loading}
+        loading={setAddressLoading || deployDappLoading}
         errorMessage={errorMessage}
       />
     </>

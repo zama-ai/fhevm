@@ -51,6 +51,10 @@ export enum DappStatus {
   Live = 'LIVE'
 }
 
+export type DeployDAppInput = {
+  dappId: Scalars['String']['input'];
+};
+
 export type Invitation = {
   __typename?: 'Invitation';
   email: Scalars['String']['output'];
@@ -68,6 +72,7 @@ export type Mutation = {
   __typename?: 'Mutation';
   createDapp: Dapp;
   createInvitation: Invitation;
+  deployDapp: Dapp;
   login: Auth;
   signup: Auth;
   updateDapp: Dapp;
@@ -81,6 +86,11 @@ export type MutationCreateDappArgs = {
 
 export type MutationCreateInvitationArgs = {
   input: CreateInvitationInput;
+};
+
+
+export type MutationDeployDappArgs = {
+  input: DeployDAppInput;
 };
 
 
@@ -164,6 +174,13 @@ export type SetDappAddressMutationVariables = Exact<{
 
 
 export type SetDappAddressMutation = { __typename?: 'Mutation', updateDapp: { __typename?: 'Dapp', id: string, name: string, address?: string | null, status: DappStatus } };
+
+export type DeployDappMutationVariables = Exact<{
+  applicationId: Scalars['String']['input'];
+}>;
+
+
+export type DeployDappMutation = { __typename?: 'Mutation', deployDapp: { __typename?: 'Dapp', id: string, name: string, address?: string | null, status: DappStatus } };
 
 export type MeTeamDappsQueryVariables = Exact<{ [key: string]: never; }>;
 
