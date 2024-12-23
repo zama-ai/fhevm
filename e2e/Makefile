@@ -13,6 +13,7 @@ all: print-accounts
 
 # Prints accounts with a reminder to ensure they are funded
 print-accounts:
+	@npm i hardhat
 	@echo "Checking accounts. Ensure the first account has sufficient funds."
 	@$(NPM_CMD)
 
@@ -22,14 +23,12 @@ prepare-test-local-coprocessor:
 	@cp -v .env.local $(ENV_FILE)
 	@cp -v contracts/E2EFHEVMConfigLocal.sol $(CONFIG_FILE)
 	@$(MAKE) set-local-network
-	$(MAKE) print-accounts
 
 # Prepares the environment for Sepolia network testing
 prepare-test-sepolia:
 	@echo "Preparing environment for Sepolia network testing..."
 	@cp -v .env.example $(ENV_FILE)
 	@cp -v contracts/E2EFHEVMConfigSepolia.sol $(CONFIG_FILE)
-	$(MAKE) print-accounts
 
 # Sets the default network to "localCoprocessor" in hardhat.config.ts
 set-local-network:
