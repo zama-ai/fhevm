@@ -1,12 +1,18 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-
 pragma solidity ^0.8.24;
 
-import "@openzeppelin/contracts/utils/Strings.sol";
-import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
-import "../addresses/TFHEExecutorAddress.sol";
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import {tfheExecutorAdd} from "../addresses/TFHEExecutorAddress.sol";
 
+/**
+ * @title  ACL
+ * @notice The ACL (Access Control List) is a permission management system designed to
+ *         control who can access, compute on, or decrypt encrypted values in fhEVM.
+ *         By defining and enforcing these permissions, the ACL ensures that encrypted data remains secure while still being usable
+ *         within authorized contexts.
+ */
 contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
     /// @notice Returned if the delegatee contract is already delegatee for sender & delegator addresses.
     error AlreadyDelegated();
@@ -14,18 +20,19 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
     /// @notice Returned if the sender is the delegatee address.
     error SenderCannotBeDelegateeAddress();
 
-    /// @notice Returned if the sender address is not allowed for allow operations.
+    /// @notice         Returned if the sender address is not allowed for allow operations.
+    /// @param sender   Sender address.
     error SenderNotAllowed(address sender);
 
-    /// @notice Name of the contract
-    string private constant CONTRACT_NAME = "ACL";
+    /// @notice             Emitted when a list of handles is allowed for decryption.
+    /// @param handlesList  List of handles allowed for decryption.
+    event AllowedForDecryption(uint256[] handlesList);
 
-    /// @notice Version of the contract
-    uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 1;
-    uint256 private constant PATCH_VERSION = 0;
-
-    address private constant tfheExecutorAddress = tfheExecutorAdd;
+    /// @notice                 Emitted when a new delegate address is added.
+    /// @param sender           Sender address
+    /// @param delegatee        Delegatee address.
+    /// @param contractAddress  Contract address.
+    event NewDelegation(address indexed sender, address indexed delegatee, address indexed contractAddress);
 
     /// @custom:storage-location erc7201:fhevm.storage.ACL
     struct ACLStorage {
@@ -34,38 +41,76 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
         mapping(address account => mapping(address delegatee => mapping(address contractAddress => bool isDelegate))) delegates;
     }
 
+    /// @notice Name of the contract.
+    string private constant CONTRACT_NAME = "ACL";
+
+    /// @notice Major version of the contract.
+    uint256 private constant MAJOR_VERSION = 0;
+
+    /// @notice Minor version of the contract.
+    uint256 private constant MINOR_VERSION = 1;
+
+    /// @notice Patch version of the contract.
+    uint256 private constant PATCH_VERSION = 0;
+
+    /// @notice TFHEExecutor address.
+    address private constant tfheExecutorAddress = tfheExecutorAdd;
+
     /// @dev keccak256(abi.encode(uint256(keccak256("fhevm.storage.ACL")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant ACLStorageLocation = 0xa688f31953c2015baaf8c0a488ee1ee22eb0e05273cc1fd31ea4cbee42febc00;
-
-    function _getACLStorage() internal pure returns (ACLStorage storage $) {
-        assembly {
-            $.slot := ACLStorageLocation
-        }
-    }
-
-    /// @notice Getter function for the TFHEExecutor contract address
-    function getTFHEExecutorAddress() public view virtual returns (address) {
-        return tfheExecutorAddress;
-    }
-
-    event NewDelegation(address indexed sender, address indexed delegatee, address indexed contractAddress);
-    event AllowedForDecryption(uint256[] handlesList);
-
-    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
     }
 
-    /// @notice Initializes the contract setting `initialOwner` as the initial owner
-    function initialize(address initialOwner) external initializer {
+    /**
+     * @notice              Initializes the contract.
+     * @param initialOwner  Initial owner address.
+     */
+    function initialize(address initialOwner) public initializer {
         __Ownable_init(initialOwner);
     }
 
-    // allowTransient use of `handle` for address `account`.
-    // The caller must be allowed to use `handle` for allowTransient() to succeed. If not, allowTransient() reverts.
-    // @note: The Coprocessor contract can always `allowTransient`, contrarily to `allow`
+    /**
+     * @notice              Allows the use of `handle` for the address `account`.
+     * @dev                 The caller must be allowed to use `handle` for allow() to succeed. If not, allow() reverts.
+     * @param handle        Handle.
+     * @param account       Address of the account.
+     */
+    function allow(uint256 handle, address account) public virtual {
+        ACLStorage storage $ = _getACLStorage();
+        if (!isAllowed(handle, msg.sender)) {
+            revert SenderNotAllowed(msg.sender);
+        }
+        $.persistedAllowedPairs[handle][account] = true;
+    }
+
+    /**
+     * @notice              Allows a list of handles to be decrypted.
+     * @param handlesList   List of handles.
+     */
+    function allowForDecryption(uint256[] memory handlesList) public virtual {
+        uint256 len = handlesList.length;
+        ACLStorage storage $ = _getACLStorage();
+        for (uint256 k = 0; k < len; k++) {
+            uint256 handle = handlesList[k];
+            if (!isAllowed(handle, msg.sender)) {
+                revert SenderNotAllowed(msg.sender);
+            }
+            $.allowedForDecryption[handle] = true;
+        }
+        emit AllowedForDecryption(handlesList);
+    }
+
+    /**
+     * @notice              Allows the use of `handle` by address `account` for this transaction.
+     * @dev                 The caller must be allowed to use `handle` for allowTransient() to succeed.
+     *                      If not, allowTransient() reverts.
+     *                      The Coprocessor contract can always `allowTransient`, contrarily to `allow`.
+     * @param handle        Handle.
+     * @param account       Address of the account.
+     */
     function allowTransient(uint256 handle, address account) public virtual {
         if (msg.sender != tfheExecutorAddress) {
             if (!isAllowed(handle, msg.sender)) {
@@ -82,6 +127,54 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
         }
     }
 
+    /**
+     * @notice                  Delegates the access of `handles` in the context of account abstraction for issuing
+     *                          reencryption requests from a smart contract account.
+     * @param delegatee         Delegatee address.
+     * @param delegateeContract Delegatee contract.
+     */
+    function delegateAccount(address delegatee, address delegateeContract) public virtual {
+        if (delegateeContract == msg.sender) {
+            revert SenderCannotBeDelegateeAddress();
+        }
+
+        ACLStorage storage $ = _getACLStorage();
+        if ($.delegates[msg.sender][delegatee][delegateeContract]) {
+            revert AlreadyDelegated();
+        }
+
+        $.delegates[msg.sender][delegatee][delegateeContract] = true;
+        emit NewDelegation(msg.sender, delegatee, delegateeContract);
+    }
+
+    /**
+     * @notice                  Returns whether the delegatee is allowed to access the handle.
+     * @param delegatee         Delegatee address.
+     * @param handle            Handle.
+     * @param contractAddress   Contract address.
+     * @param account           Address of the account.
+     * @return isAllowed        Whether the handle can be accessed.
+     */
+    function allowedOnBehalf(
+        address delegatee,
+        uint256 handle,
+        address contractAddress,
+        address account
+    ) public view virtual returns (bool) {
+        ACLStorage storage $ = _getACLStorage();
+        return
+            $.persistedAllowedPairs[handle][account] &&
+            $.persistedAllowedPairs[handle][contractAddress] &&
+            $.delegates[account][delegatee][contractAddress];
+    }
+
+    /**
+     * @notice                      Checks whether the account is allowed to use the handle in the
+     *                              same transaction (transient).
+     * @param handle                Handle.
+     * @param account               Address of the account.
+     * @return isAllowedTransient   Whether the account can access transiently the handle.
+     */
     function allowedTransient(uint256 handle, address account) public view virtual returns (bool) {
         bool isAllowedTransient;
         bytes32 key = keccak256(abi.encodePacked(handle, account));
@@ -89,6 +182,46 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
             isAllowedTransient := tload(key)
         }
         return isAllowedTransient;
+    }
+
+    /**
+     * @notice                     Getter function for the TFHEExecutor contract address.
+     * @return tfheExecutorAddress Address of the TFHEExecutor.
+     */
+    function getTFHEExecutorAddress() public view virtual returns (address) {
+        return tfheExecutorAddress;
+    }
+
+    /**
+     * @notice              Returns whether the account is allowed to use the `handle`, either due to
+     *                      allowTransient() or allow().
+     * @param handle        Handle.
+     * @param account       Address of the account.
+     * @return isAllowed    Whether the account can access the handle.
+     */
+    function isAllowed(uint256 handle, address account) public view virtual returns (bool) {
+        return allowedTransient(handle, account) || persistAllowed(handle, account);
+    }
+
+    /**
+     * @notice              Checks whether a handle is allowed for decryption.
+     * @param handle        Handle.
+     * @return isAllowed    Whether the handle is allowed for decryption.
+     */
+    function isAllowedForDecryption(uint256 handle) public view virtual returns (bool) {
+        ACLStorage storage $ = _getACLStorage();
+        return $.allowedForDecryption[handle];
+    }
+
+    /**
+     * @notice              Returns `true` if address `a` is allowed to use `c` and `false` otherwise.
+     * @param handle        Handle.
+     * @param account       Address of the account.
+     * @return isAllowed    Whether the account can access the handle.
+     */
+    function persistAllowed(uint256 handle, address account) public view virtual returns (bool) {
+        ACLStorage storage $ = _getACLStorage();
+        return $.persistedAllowedPairs[handle][account];
     }
 
     /**
@@ -112,73 +245,10 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
         }
     }
 
-    // Allow use of `handle` for address `account`.
-    // The caller must be allowed to use `handle` for allow() to succeed. If not, allow() reverts.
-    function allow(uint256 handle, address account) external virtual {
-        ACLStorage storage $ = _getACLStorage();
-        if (!isAllowed(handle, msg.sender)) {
-            revert SenderNotAllowed(msg.sender);
-        }
-        $.persistedAllowedPairs[handle][account] = true;
-    }
-
-    // Returns true if address `a` is allowed to use `c` and false otherwise.
-    function persistAllowed(uint256 handle, address account) public view virtual returns (bool) {
-        ACLStorage storage $ = _getACLStorage();
-        return $.persistedAllowedPairs[handle][account];
-    }
-
-    // Useful in the context of account abstraction for issuing reencryption requests from a smart contract account
-    function isAllowed(uint256 handle, address account) public view virtual returns (bool) {
-        return allowedTransient(handle, account) || persistAllowed(handle, account);
-    }
-
-    function delegateAccountForContract(address delegatee, address delegateeContract) external virtual {
-        if (delegateeContract == msg.sender) {
-            revert SenderCannotBeDelegateeAddress();
-        }
-
-        ACLStorage storage $ = _getACLStorage();
-        if ($.delegates[msg.sender][delegatee][delegateeContract]) {
-            revert AlreadyDelegated();
-        }
-        $.delegates[msg.sender][delegatee][delegateeContract] = true;
-        emit NewDelegation(msg.sender, delegatee, delegateeContract);
-    }
-
-    function allowedOnBehalf(
-        address delegatee,
-        uint256 handle,
-        address contractAddress,
-        address account
-    ) external view virtual returns (bool) {
-        ACLStorage storage $ = _getACLStorage();
-        return
-            $.persistedAllowedPairs[handle][account] &&
-            $.persistedAllowedPairs[handle][contractAddress] &&
-            $.delegates[account][delegatee][contractAddress];
-    }
-
-    function allowForDecryption(uint256[] memory handlesList) external virtual {
-        uint256 len = handlesList.length;
-        ACLStorage storage $ = _getACLStorage();
-        for (uint256 k = 0; k < len; k++) {
-            uint256 handle = handlesList[k];
-            if (!isAllowed(handle, msg.sender)) {
-                revert SenderNotAllowed(msg.sender);
-            }
-            $.allowedForDecryption[handle] = true;
-        }
-        emit AllowedForDecryption(handlesList);
-    }
-
-    function isAllowedForDecryption(uint256 handle) public view virtual returns (bool) {
-        ACLStorage storage $ = _getACLStorage();
-        return $.allowedForDecryption[handle];
-    }
-
-    /// @notice Getter for the name and version of the contract
-    /// @return string representing the name and the version of the contract
+    /**
+     * @notice        Getter for the name and version of the contract.
+     * @return string Name and the version of the contract.
+     */
     function getVersion() external pure virtual returns (string memory) {
         return
             string(
@@ -192,5 +262,19 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
                     Strings.toString(PATCH_VERSION)
                 )
             );
+    }
+
+    /**
+     * @dev Should revert when `msg.sender` is not authorized to upgrade the contract.
+     */
+    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
+
+    /**
+     * @dev                         Returns the ACL storage location.
+     */
+    function _getACLStorage() internal pure returns (ACLStorage storage $) {
+        assembly {
+            $.slot := ACLStorageLocation
+        }
     }
 }
