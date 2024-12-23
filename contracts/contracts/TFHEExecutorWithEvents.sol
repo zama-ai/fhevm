@@ -45,8 +45,8 @@ contract TFHEExecutorWithEvents is TFHEExecutor {
     event TrivialEncrypt(uint256 pt, bytes1 toType, uint256 result);
     event TrivialEncryptBytes(bytes pt, bytes1 toType, uint256 result);
     event FheIfThenElse(uint256 control, uint256 ifTrue, uint256 ifFalse, uint256 result);
-    event FheRand(bytes1 randType, uint256 result);
-    event FheRandBounded(uint256 upperBound, bytes1 randType, uint256 result);
+    event FheRand(bytes1 randType, bytes16 seed, uint256 result);
+    event FheRandBounded(uint256 upperBound, bytes1 randType, bytes16 seed, uint256 result);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -208,12 +208,14 @@ contract TFHEExecutorWithEvents is TFHEExecutor {
     }
 
     function fheRand(bytes1 randType) public virtual override returns (uint256 result) {
-        result = super.fheRand(randType);
-        emit FheRand(randType, result);
+        bytes16 seed = generateSeed();
+        result = generateRand(randType, seed);
+        emit FheRand(randType, seed, result);
     }
 
     function fheRandBounded(uint256 upperBound, bytes1 randType) public virtual override returns (uint256 result) {
-        result = super.fheRandBounded(upperBound, randType);
-        emit FheRandBounded(upperBound, randType, result);
+        bytes16 seed = generateSeed();
+        result = generateRandBounded(upperBound, randType, seed);
+        emit FheRandBounded(upperBound, randType, seed, result);
     }
 }

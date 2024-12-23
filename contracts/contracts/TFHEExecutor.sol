@@ -189,6 +189,49 @@ contract TFHEExecutor is UUPSUpgradeable, Ownable2StepUpgradeable {
         acl.allowTransient(result, msg.sender);
     }
 
+    function generateSeed() internal virtual returns (bytes16 seed) {
+        TFHEExecutorStorage storage $ = _getTFHEExecutorStorage();
+        seed = bytes16(
+            keccak256(abi.encodePacked($.counterRand, acl, block.chainid, blockhash(block.number - 1), block.timestamp))
+        );
+        $.counterRand++;
+    }
+
+    function generateRand(bytes1 randType, bytes16 seed) internal virtual returns (uint256 result) {
+        uint256 supportedTypes = (1 << 0) +
+            (1 << 1) +
+            (1 << 2) +
+            (1 << 3) +
+            (1 << 4) +
+            (1 << 5) +
+            (1 << 6) +
+            (1 << 8) +
+            (1 << 9) +
+            (1 << 10) +
+            (1 << 11);
+        uint8 randT = uint8(randType);
+        require((1 << randT) & supportedTypes > 0, "Unsupported erandom type");
+        fheGasLimit.payForFheRand(randT);
+        result = uint256(keccak256(abi.encodePacked(Operators.fheRand, randType, seed)));
+        result = appendType(result, randT);
+        acl.allowTransient(result, msg.sender);
+    }
+
+    function generateRandBounded(
+        uint256 upperBound,
+        bytes1 randType,
+        bytes16 seed
+    ) internal virtual returns (uint256 result) {
+        uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5) + (1 << 6) + (1 << 8);
+        uint8 randT = uint8(randType);
+        require((1 << randT) & supportedTypes > 0, "Unsupported erandom type");
+        require(isPowerOfTwo(upperBound), "UpperBound must be a power of 2");
+        fheGasLimit.payForFheRandBounded(randT);
+        result = uint256(keccak256(abi.encodePacked(Operators.fheRandBounded, upperBound, randType, seed)));
+        result = appendType(result, randT);
+        acl.allowTransient(result, msg.sender);
+    }
+
     function fheAdd(uint256 lhs, uint256 rhs, bytes1 scalarByte) public virtual returns (uint256 result) {
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5) + (1 << 6) + (1 << 8);
         requireType(lhs, supportedTypes);
@@ -557,44 +600,13 @@ contract TFHEExecutor is UUPSUpgradeable, Ownable2StepUpgradeable {
     }
 
     function fheRand(bytes1 randType) public virtual returns (uint256 result) {
-        TFHEExecutorStorage storage $ = _getTFHEExecutorStorage();
-        uint256 supportedTypes = (1 << 0) +
-            (1 << 1) +
-            (1 << 2) +
-            (1 << 3) +
-            (1 << 4) +
-            (1 << 5) +
-            (1 << 6) +
-            (1 << 8) +
-            (1 << 9) +
-            (1 << 10) +
-            (1 << 11);
-        uint8 randT = uint8(randType);
-        require((1 << randT) & supportedTypes > 0, "Unsupported erandom type");
-        fheGasLimit.payForFheRand(randT);
-        bytes16 seed = bytes16(
-            keccak256(abi.encodePacked($.counterRand, acl, block.chainid, blockhash(block.number - 1), block.timestamp))
-        );
-        result = uint256(keccak256(abi.encodePacked(Operators.fheRand, randType, seed)));
-        result = appendType(result, randT);
-        acl.allowTransient(result, msg.sender);
-        $.counterRand++;
+        bytes16 seed = generateSeed();
+        result = generateRand(randType, seed);
     }
 
     function fheRandBounded(uint256 upperBound, bytes1 randType) public virtual returns (uint256 result) {
-        TFHEExecutorStorage storage $ = _getTFHEExecutorStorage();
-        uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5) + (1 << 6) + (1 << 8);
-        uint8 randT = uint8(randType);
-        require((1 << randT) & supportedTypes > 0, "Unsupported erandom type");
-        require(isPowerOfTwo(upperBound), "UpperBound must be a power of 2");
-        fheGasLimit.payForFheRandBounded(randT);
-        bytes16 seed = bytes16(
-            keccak256(abi.encodePacked($.counterRand, acl, block.chainid, blockhash(block.number - 1), block.timestamp))
-        );
-        result = uint256(keccak256(abi.encodePacked(Operators.fheRandBounded, upperBound, randType, seed)));
-        result = appendType(result, randT);
-        acl.allowTransient(result, msg.sender);
-        $.counterRand++;
+        bytes16 seed = generateSeed();
+        result = generateRandBounded(upperBound, randType, seed);
     }
 
     /// @notice Getter for the name and version of the contract

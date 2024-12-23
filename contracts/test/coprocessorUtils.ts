@@ -1012,8 +1012,8 @@ const abi = [
   'event TrivialEncrypt(uint256 pt, bytes1 toType, uint256 result)',
   'event TrivialEncryptBytes(bytes pt, bytes1 toType, uint256 result)',
   'event FheIfThenElse(uint256 control, uint256 ifTrue, uint256 ifFalse, uint256 result)',
-  'event FheRand(bytes1 randType, uint256 result)',
-  'event FheRandBounded(uint256 upperBound, bytes1 randType, uint256 result)',
+  'event FheRand(bytes1 randType, bytes16 seed, uint256 result)',
+  'event FheRandBounded(uint256 upperBound, bytes1 randType, bytes16 seed, uint256 result)',
 ];
 
 async function processAllPastTFHEExecutorEvents() {
@@ -1444,7 +1444,7 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
 
     case 'FheRand':
       resultType = parseInt(event.args[0], 16);
-      handle = ethers.toBeHex(event.args[1], 32);
+      handle = ethers.toBeHex(event.args[2], 32);
       clearText = getRandomBigInt(Number(NumBits[resultType]));
       insertSQL(handle, clearText, true);
       counterRand++;
@@ -1452,7 +1452,7 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
 
     case 'FheRandBounded':
       resultType = parseInt(event.args[1], 16);
-      handle = ethers.toBeHex(event.args[2], 32);
+      handle = ethers.toBeHex(event.args[3], 32);
       clearText = getRandomBigInt(Number(log2(BigInt(event.args[0]))));
       insertSQL(handle, clearText, true);
       counterRand++;
