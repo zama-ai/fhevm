@@ -140,6 +140,7 @@ describe('signup', () => {
 
       beforeEach(async () => {
         // Move forward in time
+        vi.useFakeTimers()
         vi.setSystemTime(Date.now() + EXPIRATION_TIME_IN_MILLISECONDS + 1)
         result = await manager.auth.signup({
           invitation,

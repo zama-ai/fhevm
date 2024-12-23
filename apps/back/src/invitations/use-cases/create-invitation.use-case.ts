@@ -1,10 +1,12 @@
 import { Injectable } from '@nestjs/common'
-import { randomUUID } from 'crypto'
 
 import { Invitation } from '../domain/entities/invitation'
 import type { AppError, Result, UseCase } from 'utils'
 import { fail, ok, Task, unauthorizedError } from 'utils'
 import { InvitationRepository } from '../domain/repositories/invitation.repository'
+
+export const EXPIRATION_TIME_IN_MILLISECONDS =
+  parseInt(process.env.INVITATION_EXPIRATION_TIME ?? '', 10) || 86400 * 1000 * 7
 
 interface Input {
   email: string
@@ -30,9 +32,14 @@ export class CreateInvitation implements UseCase<Input, Invitation> {
     // Note: using a private function save me from a lot of explicit types
     return this.checkSecret(input.secret)
       .chain(() =>
-        Invitation.create({
-          email: input.email,
-        }),
+        Invitation.create(
+          {
+            email: input.email,
+          },
+          {
+            expirationTime: EXPIRATION_TIME_IN_MILLISECONDS,
+          },
+        ),
       )
       .asyncChain(this.invitationRepository.create)
   }
