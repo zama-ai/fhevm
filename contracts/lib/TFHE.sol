@@ -10818,9 +10818,11 @@ library TFHE {
     }
 
     // cleans the transient storage of ACL containing all the allowedTransient accounts
+    // also cleans transient storage of InputVerifier containing cached inputProofs
     // to be used for integration with Account Abstraction or when bundling UserOps calling the FHEVMCoprocessor
     function cleanTransientStorage() internal {
-        return Impl.cleanTransientStorage();
+        Impl.cleanTransientStorageACL();
+        Impl.cleanTransientStorageInputVerifier();
     }
 
     function isAllowed(ebool value, address account) internal view returns (bool) {

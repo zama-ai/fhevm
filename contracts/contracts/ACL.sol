@@ -81,7 +81,7 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
     }
 
     function cleanTransientStorage() external virtual {
-        // this function removes the transient allowances, could be useful for integration with Account Abstraction when bundling several UserOps calling the TFHEExecutorCoprocessor
+        // this function removes the transient allowances, could be useful for integration with Account Abstraction when bundling several UserOps calling ACL
         assembly {
             let length := tload(0)
             tstore(0, 0)

@@ -2,11 +2,11 @@ import dotenv from 'dotenv';
 import fs from 'fs';
 import { ethers } from 'hardhat';
 
-export async function initializeFHEPayment() {
-  const fhePaymentFactory = await ethers.getContractFactory('FHEPayment');
-  const parsedFHEPayment = dotenv.parse(fs.readFileSync('addresses/.env.fhepayment'));
-  const fhePayment = fhePaymentFactory.attach(parsedFHEPayment.FHE_PAYMENT_CONTRACT_ADDRESS);
-  return fhePayment;
+export async function initializeFHEGasLimit() {
+  const fheGasLimitFactory = await ethers.getContractFactory('FHEGasLimit');
+  const parsedFHEGasLimit = dotenv.parse(fs.readFileSync('addresses/.env.fhegaslimit'));
+  const fheGasLimit = fheGasLimitFactory.attach(parsedFHEGasLimit.FHE_PAYMENT_CONTRACT_ADDRESS);
+  return fheGasLimit;
 }
 
 export const FHE_GASPRICE_NATIVE_RATIO = 0n; // 1000n;

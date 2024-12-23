@@ -52,6 +52,10 @@ interface IACL {
     function allowForDecryption(uint256[] memory handlesList) external;
 }
 
+interface IInputVerifier {
+    function cleanTransientStorage() external;
+}
+
 library Impl {
     // keccak256(abi.encode(uint256(keccak256("fhevm.storage.FHEVMConfig")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant FHEVMConfigLocation = 0xed8d60e34876f751cc8b014c560745351147d9de11b9347c854e881b128ea600;
@@ -66,8 +70,8 @@ library Impl {
         FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
         $.ACLAddress = fhevmConfig.ACLAddress;
         $.TFHEExecutorAddress = fhevmConfig.TFHEExecutorAddress;
-        $.FHEPaymentAddress = fhevmConfig.FHEPaymentAddress;
         $.KMSVerifierAddress = fhevmConfig.KMSVerifierAddress;
+        $.InputVerifierAddress = fhevmConfig.InputVerifierAddress;
     }
 
     function add(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
@@ -365,9 +369,14 @@ library Impl {
         IACL($.ACLAddress).allow(handle, account);
     }
 
-    function cleanTransientStorage() internal {
+    function cleanTransientStorageACL() internal {
         FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
         IACL($.ACLAddress).cleanTransientStorage();
+    }
+
+    function cleanTransientStorageInputVerifier() internal {
+        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        IInputVerifier($.InputVerifierAddress).cleanTransientStorage();
     }
 
     function isAllowed(uint256 handle, address account) internal view returns (bool) {

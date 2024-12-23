@@ -58,16 +58,16 @@ task('task:verifyInputVerifier').setAction(async function (taskArguments, { upgr
   });
 });
 
-task('task:verifyFHEPayment').setAction(async function (taskArguments, { upgrades, run }) {
-  const parsedEnvFHEPayment = dotenv.parse(fs.readFileSync('addresses/.env.fhepayment'));
-  const proxyFHEPayment = parsedEnvFHEPayment.FHE_PAYMENT_CONTRACT_ADDRESS;
-  const implementationFHEPaymentAddress = await upgrades.erc1967.getImplementationAddress(proxyFHEPayment);
+task('task:verifyFHEGasLimit').setAction(async function (taskArguments, { upgrades, run }) {
+  const parsedEnvFHEGasLimit = dotenv.parse(fs.readFileSync('addresses/.env.fhegaslimit'));
+  const proxyFHEGasLimit = parsedEnvFHEGasLimit.FHE_PAYMENT_CONTRACT_ADDRESS;
+  const implementationFHEGasLimitAddress = await upgrades.erc1967.getImplementationAddress(proxyFHEGasLimit);
   await run('verify:verify', {
-    address: implementationFHEPaymentAddress,
+    address: implementationFHEGasLimitAddress,
     constructorArguments: [],
   });
   await run('verify:verify', {
-    address: proxyFHEPayment,
+    address: proxyFHEGasLimit,
     constructorArguments: [],
   });
 });

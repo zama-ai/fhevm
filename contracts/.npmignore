@@ -1,6 +1,6 @@
 *
 !/artifacts/contracts/ACL.sol/ACL.json
-!/artifacts/contracts/FHEPayment.sol/FHEPayment.json
+!/artifacts/contracts/FHEGasLimit.sol/FHEGasLimit.json
 !/artifacts/contracts/InputVerifier.coprocessor.sol/InputVerifier.json
 !/artifacts/contracts/InputVerifier.native.sol/InputVerifier.json
 !/artifacts/contracts/KMSVerifier.sol/KMSVerifier.json

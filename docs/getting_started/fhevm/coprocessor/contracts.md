@@ -33,7 +33,7 @@ For the `SEPOLIA_RPC_URL` env variable, you can either get one from a service pr
 - `node_modules/fhevm-core-contracts/addresses/.env.exec` for TFHEExecutor address
 - `node_modules/fhevm-core-contracts/addresses/.env.kmsverifier` for KMSVerifier address
 - `node_modules/fhevm-core-contracts/addresses/.env.inputverifier` for InputVerifier address
-- `node_modules/fhevm-core-contracts/addresses/.env.fhepayment` for FHEPayment address
+- `node_modules/fhevm-core-contracts/addresses/.env.fhegaslimit` for FHEGasLimit address
 - `gateway/.env.gateway` for GatewayContract address.
 
 This script is found exactly inside the [`./precompute-addresses.sh` file](https://github.com/zama-ai/fhevm/blob/v0.6.0-0/precompute-addresses.sh):
@@ -50,7 +50,7 @@ npx hardhat task:computeACLAddress --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
 npx hardhat task:computeTFHEExecutorAddress --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
 npx hardhat task:computeKMSVerifierAddress --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
 npx hardhat task:computeInputVerifierAddress --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --use-address true
-npx hardhat task:computeFHEPaymentAddress --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
+npx hardhat task:computeFHEGasLimitAddress --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER"
 ```
 
 3/ Launch and setup the Geth node, the Gateway service, setup the KMS, all these using previously precomputed addresses.
@@ -89,7 +89,7 @@ npx hardhat task:deployACL --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --network
 npx hardhat task:deployTFHEExecutor --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --network sepolia
 npx hardhat task:deployKMSVerifier --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --network sepolia
 npx hardhat task:deployInputVerifier --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --network sepolia
-npx hardhat task:deployFHEPayment --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --network sepolia
+npx hardhat task:deployFHEGasLimit --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --network sepolia
 
 npx hardhat task:addSigners --num-signers "$NUM_KMS_SIGNERS" --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --use-address true --network sepolia
 
@@ -101,7 +101,7 @@ npx hardhat task:verifyACL --network sepolia
 npx hardhat task:verifyTFHEExecutor --network sepolia
 npx hardhat task:verifyKMSVerifier --network sepolia
 npx hardhat task:verifyInputVerifier --network sepolia
-npx hardhat task:verifyFHEPayment --network sepolia
+npx hardhat task:verifyFHEGasLimit --network sepolia
 npx hardhat task:verifyGatewayContract --network sepolia
 ```
 
@@ -156,7 +156,7 @@ task:upgradeACL
 task:upgradeTFHEExecutor
 task:upgradeKMSVerifier
 task:upgradeInputVerifier
-task:upgradeFHEPayment
+task:upgradeFHEGasLimit
 task:upgradeGatewayContract
 
 ```

@@ -48,11 +48,11 @@ The coprocessor version of InputVerifier also forwards the KMS signers' signatur
 
 In the native case, the handles are computed onchain, whereas on the coprocessor we trust the handles computation done by the coprocessor before using them in transactions onchain.
 
-## FHEPayment Contract
+## FHEGasLimit Contract
 
-This contract could be used in to handle payments of users for FHE operations, but in current version we decided to set the FHE gas price to `0` in order to make the developer's experience simpler on Sepolia. We could simply change those two constants to positive values at a later stage, if we want to introduce real payments: [FHE gas price constants](../../../contracts/contracts/FHEPayment.sol#L33-L34).
+This contract is needed for security, especially for coprocessor where we could not tweak native gas to be used for FHE operations as for native: [FHE gas price constants](../../../contracts/contracts/FHEGasLimit.sol#L33-L34).
 
-However, even with 0 FHE gas price, we still need to deploy this contract for security, especially for coprocessor (where we could not tweak native gas to be used for FHE operations as for native). Having payments combats DOS attacks by malicious devs. Indeed, this contract also tracks the FHE gas consumed in each block, and reverts the transactions inside a block if the FHE gas block limit is exceeded.
+This contract tracks the FHEGas consumed in each block, and reverts the transactions inside a block if the FHEGas block limit is exceeded.
 
 ## Gateway Contract
 

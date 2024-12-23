@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from 'fs';
 import { ALL_OPERATORS, SUPPORTED_BITS, checks } from './common';
 import { generateInputVerifiers } from './inputVerifier';
 import operatorsPrices from './operatorsPrices.json';
-import { generateFHEPayment } from './payments';
+import { generateFHEGasLimit } from './payments';
 import * as t from './templates';
 import * as testgen from './testgen';
 
@@ -14,10 +14,9 @@ function generateAllFiles() {
   const ovShards = testgen.splitOverloadsToShards(overloads);
   writeFileSync('lib/Impl.sol', t.implSol(operators));
   writeFileSync('lib/TFHE.sol', tfheSolSource);
-  writeFileSync('contracts/FHEPayment.sol', generateFHEPayment(operatorsPrices));
+  writeFileSync('contracts/FHEGasLimit.sol', generateFHEGasLimit(operatorsPrices));
   writeFileSync('contracts/InputVerifier.native.sol', generateInputVerifiers(false));
   writeFileSync('contracts/InputVerifier.coprocessor.sol', generateInputVerifiers(true));
-  writeFileSync('payment/Payment.sol', t.paymentSol());
   mkdirSync('contracts/tests', { recursive: true });
   ovShards.forEach((os) => {
     writeFileSync(`examples/tests/TFHETestSuite${os.shardNumber}.sol`, testgen.generateSmartContract(os));

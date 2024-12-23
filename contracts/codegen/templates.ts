@@ -66,6 +66,7 @@ export function implSol(operators: Operator[]): string {
 
   const coprocessorInterface = generateImplCoprocessorInterface(operators);
   const aclInterface = generateACLInterface();
+  const inputVerifierInterface = generateInputVerifierInterface();
 
   res.push(`
 // SPDX-License-Identifier: BSD-3-Clause-Clear
@@ -78,6 +79,8 @@ import "./FHEVMConfig.sol";
 ${coprocessorInterface}
 
 ${aclInterface}
+
+${inputVerifierInterface}
 
 library Impl {
   // keccak256(abi.encode(uint256(keccak256("fhevm.storage.FHEVMConfig")) - 1)) & ~bytes32(uint256(0xff))
@@ -93,8 +96,8 @@ library Impl {
       FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
       $.ACLAddress = fhevmConfig.ACLAddress;
       $.TFHEExecutorAddress = fhevmConfig.TFHEExecutorAddress;
-      $.FHEPaymentAddress = fhevmConfig.FHEPaymentAddress;
       $.KMSVerifierAddress = fhevmConfig.KMSVerifierAddress;
+      $.InputVerifierAddress = fhevmConfig.InputVerifierAddress;
   }
 `);
 
@@ -211,6 +214,14 @@ function generateACLInterface(): string {
     function cleanTransientStorage() external;
     function isAllowed(uint256 handle, address account) external view returns(bool);
     function allowForDecryption(uint256[] memory handlesList) external;
+  }
+  `;
+}
+
+function generateInputVerifierInterface(): string {
+  return `
+  interface IInputVerifier {
+    function cleanTransientStorage() external;
   }
   `;
 }
@@ -707,9 +718,11 @@ function tfheAclMethods(supportedBits: number[]): string {
   res.push(
     `
     // cleans the transient storage of ACL containing all the allowedTransient accounts
+    // also cleans transient storage of InputVerifier containing cached inputProofs
     // to be used for integration with Account Abstraction or when bundling UserOps calling the FHEVMCoprocessor
     function cleanTransientStorage() internal {
-      return Impl.cleanTransientStorage();
+      Impl.cleanTransientStorageACL();
+      Impl.cleanTransientStorageInputVerifier();
     }
 
     function isAllowed(ebool value, address account) internal view returns (bool) {
@@ -1455,9 +1468,14 @@ function implCustomMethods(): string {
       IACL($.ACLAddress).allow(handle, account);
     }
 
-    function cleanTransientStorage() internal {
+    function cleanTransientStorageACL() internal {
       FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
       IACL($.ACLAddress).cleanTransientStorage();
+    }
+
+    function cleanTransientStorageInputVerifier() internal {
+      FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+      IInputVerifier($.InputVerifierAddress).cleanTransientStorage();
     }
 
     function isAllowed(uint256 handle, address account) internal view returns (bool) {
@@ -1465,54 +1483,4 @@ function implCustomMethods(): string {
       return IACL($.ACLAddress).isAllowed(handle, account);
     }
     `;
-}
-
-export function paymentSol(): string {
-  const res: string = `// SPDX-License-Identifier: BSD-3-Clause-Clear
-
-pragma solidity ^0.8.24;
-  
-import "../lib/FHEVMConfig.sol";
-import "../lib/Impl.sol";
-
-interface IFHEPayment {
-  function depositETH(address account) external payable;
-  function withdrawETH(uint256 amount, address receiver) external;
-  function getAvailableDepositsETH(address account) external view returns(uint256);
-}
-
-library Payment {
-    function depositForAccount(address account, uint256 amount) internal {
-      FHEVMConfig.FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
-      IFHEPayment($.FHEPaymentAddress).depositETH{value: amount}(account);
-    }
-
-    function depositForThis(uint256 amount) internal {
-      FHEVMConfig.FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
-      IFHEPayment($.FHEPaymentAddress).depositETH{value: amount}(address(this));
-    }
-
-    function withdrawToAccount(address account, uint256 amount) internal {
-      FHEVMConfig.FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
-      IFHEPayment($.FHEPaymentAddress).withdrawETH(amount, account);
-    }
-
-    function withdrawToThis(uint256 amount) internal {
-      FHEVMConfig.FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
-      IFHEPayment($.FHEPaymentAddress).withdrawETH(amount, address(this));
-    }
-
-    function getDepositedBalanceOfAccount(address account) internal view returns (uint256) {
-      FHEVMConfig.FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
-      return IFHEPayment($.FHEPaymentAddress).getAvailableDepositsETH(account);
-    }
-
-    function getDepositedBalanceOfThis() internal view returns (uint256) {
-      FHEVMConfig.FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
-      return IFHEPayment($.FHEPaymentAddress).getAvailableDepositsETH(address(this));
-    }
-  }
-  `;
-
-  return res;
 }
