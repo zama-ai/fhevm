@@ -66,6 +66,7 @@ export function implSol(operators: Operator[]): string {
 
   const coprocessorInterface = generateImplCoprocessorInterface(operators);
   const aclInterface = generateACLInterface();
+  const inputVerifierInterface = generateInputVerifierInterface();
 
   res.push(`
 // SPDX-License-Identifier: BSD-3-Clause-Clear
@@ -78,6 +79,8 @@ import "./FHEVMConfig.sol";
 ${coprocessorInterface}
 
 ${aclInterface}
+
+${inputVerifierInterface}
 
 library Impl {
   // keccak256(abi.encode(uint256(keccak256("fhevm.storage.FHEVMConfig")) - 1)) & ~bytes32(uint256(0xff))
@@ -211,6 +214,14 @@ function generateACLInterface(): string {
     function cleanTransientStorage() external;
     function isAllowed(uint256 handle, address account) external view returns(bool);
     function allowForDecryption(uint256[] memory handlesList) external;
+  }
+  `;
+}
+
+function generateInputVerifierInterface(): string {
+  return `
+  interface IInputVerifier {
+    function cleanTransientStorage() external;
   }
   `;
 }
@@ -1464,7 +1475,7 @@ function implCustomMethods(): string {
 
     function cleanTransientStorageInputVerifier() internal {
       FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
-      IACL($.InputVerifierAddress).cleanTransientStorage();
+      IInputVerifier($.InputVerifierAddress).cleanTransientStorage();
     }
 
     function isAllowed(uint256 handle, address account) internal view returns (bool) {
