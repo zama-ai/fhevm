@@ -1,8 +1,12 @@
-name: Publish fhEVM Solidity core contracts release
+name: Publish fhEVM Solidity core contracts
 
 on:
-  release:
-    types: [released]
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Set to true for release tagging"
+        required: false
+        default: false
 
 jobs:
   publish:
@@ -11,17 +15,49 @@ jobs:
       run:
         working-directory: ./contracts
     permissions:
-      id-token: "write"
+      contents: read
+      id-token: write
+      packages: write
     steps:
-      - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
-      - uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
+      - name: Check out repository
+        uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
         with:
           node-version: 20.x
-      - run: cp .env.example.deployment .env
-      - run: npm ci --include=optional
-      - run: npm run compile
-      - run: npm run compile:gateway
-      - uses: JS-DevTools/npm-publish@19c28f1ef146469e409470805ea4279d47c3d35c # v3.1.1
+
+      - name: Prepare environment file 
+        run: cp .env.example.deployment .env
+
+      - name: Install dependencies
+        run: npm ci --include=optional
+
+      - name: Compile contracts
+        run: npm run compile
+
+      - name: Compile gateway
+        run: npm run compile:gateway
+
+      - name: Publish to npm
+        uses: JS-DevTools/npm-publish@19c28f1ef146469e409470805ea4279d47c3d35c # v3.1.1
+        with:
+          package: ./contracts/package.json
+          token: ${{ secrets.NPM_TOKEN }}
+          provenance: true
+
+      - name: Publish prerelease to npm
+        if: ${{ inputs.release != 'true' }}
+        uses: JS-DevTools/npm-publish@19c28f1ef146469e409470805ea4279d47c3d35c # v3.1.1
+        with:
+          package: ./contracts/package.json
+          tag: prerelease
+          token: ${{ secrets.NPM_TOKEN }}
+          provenance: true
+
+      - name: Publish release to npm
+        if: ${{ inputs.release == 'true' }}
+        uses: JS-DevTools/npm-publish@19c28f1ef146469e409470805ea4279d47c3d35c # v3.1.1
         with:
           package: ./contracts/package.json
           token: ${{ secrets.NPM_TOKEN }}
