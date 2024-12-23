@@ -54,13 +54,13 @@ export class ValidatedPassword extends ValueObject(
 }
 
 export class TeamId extends ValueObject('TeamId', z.string().uuid()) {
-  static generate() {
+  static random() {
     return new TeamId(randomUUID())
   }
 }
 
 export class UserId extends ValueObject('UserId', z.string().uuid()) {
-  static generate() {
+  static random() {
     return new UserId(randomUUID())
   }
 }

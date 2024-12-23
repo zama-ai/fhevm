@@ -9,19 +9,19 @@ export class InvitationId extends ValueObject(
   'InvitationId',
   z.string().uuid(),
 ) {
-  static generate() {
+  static random() {
     return new InvitationId(randomUUID())
   }
 }
 
 export class Token extends ValueObject('Token', z.string().uuid()) {
-  static generate() {
+  static random() {
     return new InvitationId(randomUUID())
   }
 }
 
 export class ExpiresAt extends ValueObject('ExpiresAt', z.date()) {
-  static generate(options?: { expirationTime?: number }) {
+  static compute(options?: { expirationTime?: number }) {
     return new ExpiresAt(
       new Date(
         Date.now() +

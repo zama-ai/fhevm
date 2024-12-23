@@ -3,7 +3,7 @@ import { ValueObject } from 'utils'
 import { z } from 'zod'
 
 export class DAppId extends ValueObject('DAppId', z.string().uuid()) {
-  static generate(): DAppId {
+  static random(): DAppId {
     return new DAppId(randomUUID())
   }
 }
@@ -14,7 +14,7 @@ export class CreatedAt extends ValueObject(
     .date()
     .refine(date => date <= new Date(), 'CreatedAt should be in the past'),
 ) {
-  static generate(): CreatedAt {
+  static now(): CreatedAt {
     return new CreatedAt(new Date())
   }
 }

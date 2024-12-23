@@ -33,7 +33,7 @@ export class User
     name: string
   }): Result<User, AppError> {
     return User.parse({
-      id: UserId.generate().value,
+      id: UserId.random().value,
       email,
       password: Password.hash(password).value,
       name,

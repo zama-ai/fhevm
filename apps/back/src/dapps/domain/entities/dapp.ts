@@ -48,12 +48,12 @@ export class DApp
     address?: string
   }): Result<DApp, AppError> {
     return DApp.parse({
-      id: DAppId.generate().value,
+      id: DAppId.random().value,
       name,
       status: 'DRAFT',
       teamId,
       address,
-      createdAt: CreatedAt.generate().value,
+      createdAt: CreatedAt.now().value,
     })
   }
 

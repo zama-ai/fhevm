@@ -22,7 +22,7 @@ export class Team
   }
 
   static create({ name }: { name: string }): Result<Team, AppError> {
-    return Team.parse({ id: TeamId.generate().value, name })
+    return Team.parse({ id: TeamId.random().value, name })
   }
 
   get id() {
