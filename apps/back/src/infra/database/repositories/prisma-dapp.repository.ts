@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common'
-import type { AppError } from 'utils'
-import { notFoundError, Task, unknownError } from 'utils'
+import type { AppError, Result } from 'utils'
+import { fail, notFoundError, ok, Task, unknownError } from 'utils'
 
 import { DApp, DAppProps } from '@/dapps/domain/entities/dapp'
 import { DAppRepository } from '@/dapps/domain/repositories/dapp.repository'
@@ -82,6 +82,21 @@ export class PrismaDAppRepository extends DAppRepository {
         })
         .then(resolve)
         .catch(err => reject(unknownError(String(err))))
-    }).chain(dapps => DApp.parseArray(dapps).async())
+    }).chain(dapps =>
+      dapps
+        .map(DApp.parse)
+        .reduce(
+          (acc, dapp) => {
+            if (acc.isFail()) {
+              return acc
+            }
+            return dapp.isOk()
+              ? ok([...acc.value, dapp.value])
+              : (fail(dapp.error) as Result<DApp[], AppError>)
+          },
+          ok([]) as Result<DApp[], AppError>,
+        )
+        .async(),
+    )
   }
 }
