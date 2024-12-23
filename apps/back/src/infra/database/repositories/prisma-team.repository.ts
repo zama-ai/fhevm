@@ -2,8 +2,8 @@ import { Team } from '@/users/domain/entities/team'
 import { TeamRepository } from '@/users/domain/repositories/team.repository'
 import { PrismaService } from '../prisma.service'
 import { Injectable } from '@nestjs/common'
-import type { AppError } from 'utils'
-import { notFoundError, unknownError, Task } from 'utils'
+import type { AppError, Result } from 'utils'
+import { notFoundError, unknownError, Task, ok, fail } from 'utils'
 import { TeamId, UserId } from '@/users/domain/entities/value-objects'
 
 @Injectable()
@@ -33,7 +33,20 @@ export class PrismaTeamRepository extends TeamRepository {
             : reject(notFoundError(`User ${userId.value} not found`)),
         )
         .catch(err => reject(unknownError(String(err))))
-    }).chain(props => Team.parseArray(props).async())
+    }).chain(props =>
+      props
+        .map(Team.parse)
+        .reduce(
+          (acc, team) => {
+            if (acc.isFail()) return acc
+            return team.isOk()
+              ? ok([...acc.value, team.value])
+              : (fail(team.error) as Result<Team[], AppError>)
+          },
+          ok([]) as Result<Team[], AppError>,
+        )
+        .async(),
+    )
   }
 
   addUser(id: TeamId, userId: UserId): Task<Team, AppError> {

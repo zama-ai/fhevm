@@ -20,12 +20,6 @@ export class Team
       ? ok(new Team(check.data))
       : fail(validationError(check.error.message))
   }
-  static parseArray(data: unknown[]): Result<Team[], AppError> {
-    const res = data.map(Team.parse)
-    return res.every(team => team.isOk())
-      ? ok(res.reduce<Team[]>((acc, team) => [...acc, team.value], []))
-      : fail(res.find(team => team.isFail())!.error)
-  }
 
   get id() {
     return new TeamId(this.get('id'))
