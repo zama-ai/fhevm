@@ -37,6 +37,25 @@ export class DApp
       : fail(validationError(check.error.message))
   }
 
+  static create({
+    teamId,
+    name,
+    address,
+  }: {
+    teamId: string
+    name: string
+    address?: string
+  }): Result<DApp, AppError> {
+    return DApp.parse({
+      id: DAppId.generate().value,
+      name,
+      status: 'DRAFT',
+      teamId,
+      address,
+      createdAt: CreatedAt.generate().value,
+    })
+  }
+
   static parseArray(data: unknown[]): Result<DApp[], AppError> {
     const res = data.map(DApp.parse)
     return res.every(dapp => dapp.isOk())

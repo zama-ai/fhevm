@@ -96,4 +96,35 @@ describe('Dapp', () => {
       })
     })
   })
+
+  describe('create', () => {
+    let dapp: DApp
+
+    beforeEach(() => {
+      const result = DApp.create({
+        name: faker.string.alphanumeric(10),
+        teamId: faker.string.uuid(),
+      })
+      expect(result.isOk()).toBe(true)
+      dapp = result.unwrap()
+    })
+    test('should create a dapp', () => {
+      expect(dapp).toBeDefined()
+    })
+
+    test('should generate a dapp id', () => {
+      expect(dapp.id.value).toBeTruthy()
+    })
+
+    test('status should be DRAFT', () => {
+      expect(dapp.status).toBe('DRAFT')
+    })
+
+    test('createdAt should be now', () => {
+      expect(dapp.createdAt.value.getTime()).toBeLessThanOrEqual(Date.now())
+      expect(dapp.createdAt.value.getTime()).toBeGreaterThanOrEqual(
+        Date.now() - 100,
+      )
+    })
+  })
 })
