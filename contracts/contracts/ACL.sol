@@ -8,6 +8,15 @@ import "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import "../addresses/TFHEExecutorAddress.sol";
 
 contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
+    /// @notice Returned if the delegatee contract is already delegatee for sender & delegator addresses.
+    error AlreadyDelegated();
+
+    /// @notice Returned if the sender is the delegatee address.
+    error SenderCannotBeDelegateeAddress();
+
+    /// @notice Returned if the sender address is not allowed for allow operations.
+    error SenderNotAllowed(address sender);
+
     /// @notice Name of the contract
     string private constant CONTRACT_NAME = "ACL";
 
@@ -25,7 +34,7 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
         mapping(address account => mapping(address delegatee => mapping(address contractAddress => bool isDelegate))) delegates;
     }
 
-    // keccak256(abi.encode(uint256(keccak256("fhevm.storage.ACL")) - 1)) & ~bytes32(uint256(0xff))
+    /// @dev keccak256(abi.encode(uint256(keccak256("fhevm.storage.ACL")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant ACLStorageLocation = 0xa688f31953c2015baaf8c0a488ee1ee22eb0e05273cc1fd31ea4cbee42febc00;
 
     function _getACLStorage() internal pure returns (ACLStorage storage $) {
@@ -59,7 +68,9 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
     // @note: The Coprocessor contract can always `allowTransient`, contrarily to `allow`
     function allowTransient(uint256 handle, address account) public virtual {
         if (msg.sender != tfheExecutorAddress) {
-            require(isAllowed(handle, msg.sender), "sender isn't allowed");
+            if (!isAllowed(handle, msg.sender)) {
+                revert SenderNotAllowed(msg.sender);
+            }
         }
         bytes32 key = keccak256(abi.encodePacked(handle, account));
         assembly {
@@ -80,8 +91,11 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
         return isAllowedTransient;
     }
 
+    /**
+     * @dev This function removes the transient allowances, which could be useful for integration with
+     *      Account Abstraction when bundling several UserOps calling the TFHEExecutorCoprocessor.
+     */
     function cleanTransientStorage() external virtual {
-        // this function removes the transient allowances, could be useful for integration with Account Abstraction when bundling several UserOps calling ACL
         assembly {
             let length := tload(0)
             tstore(0, 0)
@@ -102,7 +116,9 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
     // The caller must be allowed to use `handle` for allow() to succeed. If not, allow() reverts.
     function allow(uint256 handle, address account) external virtual {
         ACLStorage storage $ = _getACLStorage();
-        require(isAllowed(handle, msg.sender), "sender isn't allowed");
+        if (!isAllowed(handle, msg.sender)) {
+            revert SenderNotAllowed(msg.sender);
+        }
         $.persistedAllowedPairs[handle][account] = true;
     }
 
@@ -117,12 +133,17 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
         return allowedTransient(handle, account) || persistAllowed(handle, account);
     }
 
-    function delegateAccountForContract(address delegatee, address contractAddress) external virtual {
-        require(contractAddress != msg.sender, "contractAddress should be different from msg.sender");
+    function delegateAccountForContract(address delegatee, address delegateeContract) external virtual {
+        if (delegateeContract == msg.sender) {
+            revert SenderCannotBeDelegateeAddress();
+        }
+
         ACLStorage storage $ = _getACLStorage();
-        require(!$.delegates[msg.sender][delegatee][contractAddress], "already delegated");
-        $.delegates[msg.sender][delegatee][contractAddress] = true;
-        emit NewDelegation(msg.sender, delegatee, contractAddress);
+        if ($.delegates[msg.sender][delegatee][delegateeContract]) {
+            revert AlreadyDelegated();
+        }
+        $.delegates[msg.sender][delegatee][delegateeContract] = true;
+        emit NewDelegation(msg.sender, delegatee, delegateeContract);
     }
 
     function allowedOnBehalf(
@@ -143,7 +164,9 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
         ACLStorage storage $ = _getACLStorage();
         for (uint256 k = 0; k < len; k++) {
             uint256 handle = handlesList[k];
-            require(isAllowed(handle, msg.sender), "sender isn't allowed");
+            if (!isAllowed(handle, msg.sender)) {
+                revert SenderNotAllowed(msg.sender);
+            }
             $.allowedForDecryption[handle] = true;
         }
         emit AllowedForDecryption(handlesList);
