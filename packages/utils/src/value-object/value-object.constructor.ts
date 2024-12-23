@@ -71,7 +71,6 @@ export class ValueObject<
       T,
       TInput
     >
-
     util.defineImmutable(this, 'schema', Ctor.schema)
     util.defineImmutable(this, 'type', Ctor.type)
     util.defineImmutable(this, 'value', Object.freeze(value), true)
@@ -112,6 +111,9 @@ export class ValueObject<
         ValueObject.toPlainValue(item),
       ) as typeUtil.TPlain<Schema>
     }
+    // Note: fix validation for Dates
+    if (value instanceof Date) return value
+
     if (typeof value === 'object' && value !== null) {
       return Object.entries(value).reduce(
         (acc, [key, value]) => ({
