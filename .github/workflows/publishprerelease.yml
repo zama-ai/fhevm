@@ -22,7 +22,7 @@ jobs:
       - run: source .env && npx hardhat task:computeTFHEExecutorAddress --private-key $PRIVATE_KEY_FHEVM_DEPLOYER
       - run: source .env && npx hardhat task:computeKMSVerifierAddress --private-key $PRIVATE_KEY_FHEVM_DEPLOYER
       - run: source .env && npx hardhat task:computeInputVerifierAddress --private-key $PRIVATE_KEY_FHEVM_DEPLOYER --use-address false
-      - run: source .env && npx hardhat task:computeFHEPaymentAddress --private-key $PRIVATE_KEY_FHEVM_DEPLOYER
+      - run: source .env && npx hardhat task:computeFHEGasLimitAddress --private-key $PRIVATE_KEY_FHEVM_DEPLOYER
       - run: npm run compile
       - uses: JS-DevTools/npm-publish@19c28f1ef146469e409470805ea4279d47c3d35c # v3.1.1
         with:

@@ -8,7 +8,7 @@ import {FHEVMConfigStruct} from "../lib/Impl.sol";
  * @title   ZamaFHEVMConfig.
  * @notice  This library returns the TFHE config for different networks
  *          with the contract addresses for
- *          (1) ACL, (2) TFHEExecutor, (3) FHEPayment, (4) KMSVerifier,
+ *          (1) ACL, (2) TFHEExecutor, (3) KMSVerifier, (4) InputVerifier
  *          which are deployed & maintained by Zama.
  */
 library ZamaFHEVMConfig {
@@ -17,8 +17,8 @@ library ZamaFHEVMConfig {
             FHEVMConfigStruct({
                 ACLAddress: 0xFee8407e2f5e3Ee68ad77cAE98c434e637f516e5,
                 TFHEExecutorAddress: 0x687408aB54661ba0b4aeF3a44156c616c6955E07,
-                FHEPaymentAddress: 0xFb03BE574d14C256D56F09a198B586bdfc0A9de2,
-                KMSVerifierAddress: 0x9D6891A6240D6130c54ae243d8005063D05fE14b
+                KMSVerifierAddress: 0x9D6891A6240D6130c54ae243d8005063D05fE14b,
+                InputVerifierAddress: 0x3a2DA6f1daE9eF988B48d9CF27523FA31a8eBE50
             });
     }
 

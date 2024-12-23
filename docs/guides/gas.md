@@ -14,7 +14,7 @@ FHE operations in fhEVM are computationally intensive, resulting in higher gas c
 2. **FHEGas**:
    - Represents gas consumed by FHE-specific computations.
    - A new synthetic kind of gas consumed by FHE-specific computations.
-   - FHEGas is tracked in each block by the FHEPayment contract to prevent DDOS attacks.
+   - FHEGas is tracked in each block by the FHEGasLimit contract to prevent DDOS attacks.
    - If too many FHE operations are requested in the same block, the transaction will revert once the FHEGas block limit is reached.
    - FHEGas is consistent across both mocked and real fhEVM environments.
 
