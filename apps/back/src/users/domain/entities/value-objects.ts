@@ -2,6 +2,7 @@ import type { AppError, Result } from 'utils'
 import { fail, ok, validationError, ValueObject } from 'utils'
 import { compareSync, genSaltSync, hashSync } from 'bcryptjs'
 import { z, ZodError } from 'zod'
+import { randomUUID } from 'crypto'
 
 export class Password extends ValueObject('Password', z.string()) {
   /**
@@ -54,4 +55,8 @@ export class ValidatedPassword extends ValueObject(
 
 export class TeamId extends ValueObject('TeamId', z.string().uuid()) {}
 
-export class UserId extends ValueObject('UserId', z.string().uuid()) {}
+export class UserId extends ValueObject('UserId', z.string().uuid()) {
+  static generate() {
+    return new UserId(randomUUID())
+  }
+}

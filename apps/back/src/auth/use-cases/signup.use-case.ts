@@ -93,12 +93,9 @@ export class SignUp
     password: ValidatedPassword,
     name: string,
   ): Task<User, AppError> {
-    return User.parse({
-      id: randomUUID(),
-      email,
-      password: Password.hash(password).value,
-      name,
-    }).asyncChain(this.userRepository.create)
+    return User.create({ email, password, name }).asyncChain(
+      this.userRepository.create,
+    )
   }
 
   private createTeam(name: string): Task<Team, AppError> {
