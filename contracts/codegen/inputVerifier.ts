@@ -9,10 +9,12 @@ pragma solidity ^0.8.24;
 
 import "./KMSVerifier.sol";
 import "./TFHEExecutor.sol";
-import "../addresses/KMSVerifierAddress.sol";
-import "../addresses/CoprocessorAddress.sol";
+import "../addresses/KMSVerifierAddress.sol";\n`;
+  if (isCoprocessor) {
+    output += `import "../addresses/CoprocessorAddress.sol";\n`;
+  }
 
-// Importing OpenZeppelin contracts for cryptographic signature verification and access control.
+  output += `\n// Importing OpenZeppelin contracts for cryptographic signature verification and access control.
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
@@ -116,6 +118,28 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
     function cacheProof(bytes32 proofKey) internal virtual {
         assembly {
             tstore(proofKey, 1)
+            let length := tload(0)
+            let lengthPlusOne := add(length, 1)
+            tstore(lengthPlusOne, proofKey)
+            tstore(0, lengthPlusOne)
+        }
+    }
+
+    function cleanTransientStorage() external virtual {
+        // this function removes the transient allowances, could be useful for integration with Account Abstraction when bundling several UserOps calling InputVerifier
+        assembly {
+            let length := tload(0)
+            tstore(0, 0)
+            let lengthPlusOne := add(length, 1)
+            for {
+                let i := 1
+            } lt(i, lengthPlusOne) {
+                i := add(i, 1)
+            } {
+                let handle := tload(i)
+                tstore(i, 0)
+                tstore(handle, 0)
+            }
         }
     }
 

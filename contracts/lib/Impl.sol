@@ -68,6 +68,7 @@ library Impl {
         $.TFHEExecutorAddress = fhevmConfig.TFHEExecutorAddress;
         $.FHEPaymentAddress = fhevmConfig.FHEPaymentAddress;
         $.KMSVerifierAddress = fhevmConfig.KMSVerifierAddress;
+        $.InputVerifierAddress = fhevmConfig.InputVerifierAddress;
     }
 
     function add(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
@@ -365,9 +366,14 @@ library Impl {
         IACL($.ACLAddress).allow(handle, account);
     }
 
-    function cleanTransientStorage() internal {
+    function cleanTransientStorageACL() internal {
         FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
         IACL($.ACLAddress).cleanTransientStorage();
+    }
+
+    function cleanTransientStorageInputVerifier() internal {
+        FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+        IACL($.InputVerifierAddress).cleanTransientStorage();
     }
 
     function isAllowed(uint256 handle, address account) internal view returns (bool) {

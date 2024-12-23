@@ -95,6 +95,7 @@ library Impl {
       $.TFHEExecutorAddress = fhevmConfig.TFHEExecutorAddress;
       $.FHEPaymentAddress = fhevmConfig.FHEPaymentAddress;
       $.KMSVerifierAddress = fhevmConfig.KMSVerifierAddress;
+      $.InputVerifierAddress = fhevmConfig.InputVerifierAddress;
   }
 `);
 
@@ -707,9 +708,11 @@ function tfheAclMethods(supportedBits: number[]): string {
   res.push(
     `
     // cleans the transient storage of ACL containing all the allowedTransient accounts
+    // also cleans transient storage of InputVerifier containing cached inputProofs
     // to be used for integration with Account Abstraction or when bundling UserOps calling the FHEVMCoprocessor
     function cleanTransientStorage() internal {
-      return Impl.cleanTransientStorage();
+      Impl.cleanTransientStorageACL();
+      Impl.cleanTransientStorageInputVerifier();
     }
 
     function isAllowed(ebool value, address account) internal view returns (bool) {
@@ -1455,9 +1458,14 @@ function implCustomMethods(): string {
       IACL($.ACLAddress).allow(handle, account);
     }
 
-    function cleanTransientStorage() internal {
+    function cleanTransientStorageACL() internal {
       FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
       IACL($.ACLAddress).cleanTransientStorage();
+    }
+
+    function cleanTransientStorageInputVerifier() internal {
+      FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
+      IACL($.InputVerifierAddress).cleanTransientStorage();
     }
 
     function isAllowed(uint256 handle, address account) internal view returns (bool) {
