@@ -12,7 +12,7 @@ export class PrismaTeamRepository extends TeamRepository {
     super()
   }
 
-  findOneById(id: TeamId): Task<Team, AppError> {
+  findOneById = (id: TeamId): Task<Team, AppError> => {
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.team
         .findFirst({ where: { id: id.value } })
@@ -23,7 +23,7 @@ export class PrismaTeamRepository extends TeamRepository {
     }).chain(props => Team.parse(props).async())
   }
 
-  findManyByUserId(userId: UserId): Task<Team[], AppError> {
+  findManyByUserId = (userId: UserId): Task<Team[], AppError> => {
     return new Task<unknown[], AppError>((resolve, reject) => {
       this.db.user
         .findFirst({ select: { teams: true }, where: { id: userId.value } })
@@ -49,7 +49,7 @@ export class PrismaTeamRepository extends TeamRepository {
     )
   }
 
-  addUser(id: TeamId, userId: UserId): Task<Team, AppError> {
+  addUser = (id: TeamId, userId: UserId): Task<Team, AppError> => {
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.team
         .update({
@@ -64,20 +64,22 @@ export class PrismaTeamRepository extends TeamRepository {
         .catch(err => reject(unknownError(String(err))))
     }).chain(props => Team.parse(props).async())
   }
-  create(id: TeamId, name: string): Task<Team, AppError> {
+
+  create = (team: Team): Task<Team, AppError> => {
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.team
         .create({
           data: {
-            id: id.value,
-            name,
+            id: team.id.value,
+            name: team.name,
           },
         })
         .then(resolve)
         .catch(err => reject(unknownError(String(err))))
     }).chain(props => Team.parse(props).async())
   }
-  findOneByIdAndUserId(id: TeamId, userId: UserId): Task<Team, AppError> {
+
+  findOneByIdAndUserId = (id: TeamId, userId: UserId): Task<Team, AppError> => {
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.team
         .findFirst({

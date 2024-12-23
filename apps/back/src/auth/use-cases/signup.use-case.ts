@@ -99,9 +99,8 @@ export class SignUp
   }
 
   private createTeam(name: string): Task<Team, AppError> {
-    return this.teamRepository.create(
-      new TeamId(randomUUID()),
-      `${name}'s personal app`,
+    return Team.create({ name: `${name}'s personal app` }).asyncChain(
+      this.teamRepository.create,
     )
   }
 

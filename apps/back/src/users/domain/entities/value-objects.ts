@@ -53,7 +53,11 @@ export class ValidatedPassword extends ValueObject(
   }
 }
 
-export class TeamId extends ValueObject('TeamId', z.string().uuid()) {}
+export class TeamId extends ValueObject('TeamId', z.string().uuid()) {
+  static generate() {
+    return new TeamId(randomUUID())
+  }
+}
 
 export class UserId extends ValueObject('UserId', z.string().uuid()) {
   static generate() {
