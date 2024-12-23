@@ -2,11 +2,11 @@
 
 pragma solidity ^0.8.24;
 
-import "../contracts/FHEPayment.sol";
+import "../contracts/FHEGasLimit.sol";
 
-contract FHEPaymentUpgradedExample is FHEPayment {
+contract FHEGasLimitUpgradedExample is FHEGasLimit {
     /// @notice Name of the contract
-    string private constant CONTRACT_NAME = "FHEPayment";
+    string private constant CONTRACT_NAME = "FHEGasLimit";
 
     /// @notice Version of the contract
     uint256 private constant MAJOR_VERSION = 0;

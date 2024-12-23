@@ -57,7 +57,7 @@ task('test', async (taskArgs, hre, runSuper) => {
     await hre.run('task:computeTFHEExecutorAddress', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:computeKMSVerifierAddress', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:computeInputVerifierAddress', { privateKey: privKeyFhevmDeployer, useAddress: false });
-    await hre.run('task:computeFHEPaymentAddress', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:computeFHEGasLimitAddress', { privateKey: privKeyFhevmDeployer });
     await hre.run('compile:specific', { contract: 'contracts' });
     await hre.run('compile:specific', { contract: 'lib' });
     await hre.run('compile:specific', { contract: 'gateway' });
@@ -67,7 +67,7 @@ task('test', async (taskArgs, hre, runSuper) => {
     await hre.run('task:deployTFHEExecutor', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:deployKMSVerifier', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:deployInputVerifier', { privateKey: privKeyFhevmDeployer });
-    await hre.run('task:deployFHEPayment', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:deployFHEGasLimit', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:addSigners', {
       numSigners: process.env.NUM_KMS_SIGNERS!,
       privateKey: privKeyFhevmDeployer,

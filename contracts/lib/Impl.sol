@@ -66,7 +66,6 @@ library Impl {
         FHEVMConfig.FHEVMConfigStruct storage $ = getFHEVMConfig();
         $.ACLAddress = fhevmConfig.ACLAddress;
         $.TFHEExecutorAddress = fhevmConfig.TFHEExecutorAddress;
-        $.FHEPaymentAddress = fhevmConfig.FHEPaymentAddress;
         $.KMSVerifierAddress = fhevmConfig.KMSVerifierAddress;
         $.InputVerifierAddress = fhevmConfig.InputVerifierAddress;
     }

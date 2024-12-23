@@ -107,24 +107,24 @@ task('task:deployInputVerifier')
     console.log('InputVerifier was deployed at address:', address);
   });
 
-task('task:deployFHEPayment')
+task('task:deployFHEGasLimit')
   .addParam('privateKey', 'The deployer private key')
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
     const deployer = new ethers.Wallet(taskArguments.privateKey).connect(ethers.provider);
-    const factory = await ethers.getContractFactory('./contracts/FHEPayment.sol:FHEPayment', deployer);
+    const factory = await ethers.getContractFactory('./contracts/FHEGasLimit.sol:FHEGasLimit', deployer);
     const payment = await upgrades.deployProxy(factory, [deployer.address], {
       initializer: 'initialize',
       kind: 'uups',
     });
     await payment.waitForDeployment();
     const address = await payment.getAddress();
-    const envConfig = dotenv.parse(fs.readFileSync('addresses/.env.fhepayment'));
+    const envConfig = dotenv.parse(fs.readFileSync('addresses/.env.fhegaslimit'));
     if (address !== envConfig.FHE_PAYMENT_CONTRACT_ADDRESS) {
       throw new Error(
         `The nonce of the deployer account is not correct. Please relaunch a clean instance of the fhEVM`,
       );
     }
-    console.log('FHEPayment was deployed at address:', address);
+    console.log('FHEGasLimit was deployed at address:', address);
   });
 
 task('task:addSigners')

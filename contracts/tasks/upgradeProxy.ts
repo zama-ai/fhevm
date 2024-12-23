@@ -165,14 +165,14 @@ task('task:upgradeInputVerifier')
     );
   });
 
-task('task:upgradeFHEPayment')
+task('task:upgradeFHEGasLimit')
   .addParam(
     'currentImplementation',
-    'The currently deployed implementation solidity contract path and name, eg: contracts/FHEPayment.sol:FHEPayment',
+    'The currently deployed implementation solidity contract path and name, eg: contracts/FHEGasLimit.sol:FHEGasLimit',
   )
   .addParam(
     'newImplementation',
-    'The new implementation solidity contract path and name, eg: examples/FHEPaymentUpgradedExample.sol:FHEPaymentUpgradedExample',
+    'The new implementation solidity contract path and name, eg: examples/FHEGasLimitUpgradedExample.sol:FHEGasLimitUpgradedExample',
   )
   .addParam('privateKey', 'The deployer private key')
   .addOptionalParam(
@@ -182,7 +182,7 @@ task('task:upgradeFHEPayment')
     types.boolean,
   )
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades, run }) {
-    const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.fhepayment'));
+    const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.fhegaslimit'));
     const proxyAddress = parsedEnv.FHE_PAYMENT_CONTRACT_ADDRESS;
     await upgradeCurrentToNew(
       taskArguments.privateKey,

@@ -15,8 +15,8 @@ describe('Upgrades', function () {
     this.kmsFactoryUpgraded = await ethers.getContractFactory('KMSVerifierUpgradedExample');
     this.executorFactory = await ethers.getContractFactory('contracts/TFHEExecutor.sol:TFHEExecutor');
     this.executorFactoryUpgraded = await ethers.getContractFactory('TFHEExecutorUpgradedExample');
-    this.paymentFactory = await ethers.getContractFactory('FHEPayment');
-    this.paymentFactoryUpgraded = await ethers.getContractFactory('FHEPaymentUpgradedExample');
+    this.paymentFactory = await ethers.getContractFactory('FHEGasLimit');
+    this.paymentFactoryUpgraded = await ethers.getContractFactory('FHEGasLimitUpgradedExample');
     this.gatewayFactory = await ethers.getContractFactory('GatewayContract');
     this.gatewayFactoryUpgraded = await ethers.getContractFactory('GatewayContractUpgradedExample');
   });
@@ -66,16 +66,16 @@ describe('Upgrades', function () {
     expect(await executor2.getVersion()).to.equal('TFHEExecutor v0.2.0');
   });
 
-  it('deploy upgradable FHEPayment', async function () {
+  it('deploy upgradable FHEGasLimit', async function () {
     const payment = await upgrades.deployProxy(this.paymentFactory, [this.signers.alice.address], {
       initializer: 'initialize',
       kind: 'uups',
     });
     await payment.waitForDeployment();
-    expect(await payment.getVersion()).to.equal('FHEPayment v0.1.0');
+    expect(await payment.getVersion()).to.equal('FHEGasLimit v0.1.0');
     const payment2 = await upgrades.upgradeProxy(payment, this.paymentFactoryUpgraded);
     await payment2.waitForDeployment();
-    expect(await payment2.getVersion()).to.equal('FHEPayment v0.2.0');
+    expect(await payment2.getVersion()).to.equal('FHEGasLimit v0.2.0');
   });
 
   it('deploy upgradable GatewayContract', async function () {

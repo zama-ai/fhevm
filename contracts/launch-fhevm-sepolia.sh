@@ -14,7 +14,7 @@ npx hardhat task:deployACL --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --network
 npx hardhat task:deployTFHEExecutor --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --network sepolia
 npx hardhat task:deployKMSVerifier --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --network sepolia
 npx hardhat task:deployInputVerifier --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --network sepolia
-npx hardhat task:deployFHEPayment --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --network sepolia
+npx hardhat task:deployFHEGasLimit --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --network sepolia
 
 npx hardhat task:addSigners --num-signers "$NUM_KMS_SIGNERS" --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --use-address true --network sepolia
 
@@ -26,5 +26,5 @@ npx hardhat task:verifyACL --network sepolia
 npx hardhat task:verifyTFHEExecutor --network sepolia
 npx hardhat task:verifyKMSVerifier --network sepolia
 npx hardhat task:verifyInputVerifier --network sepolia
-npx hardhat task:verifyFHEPayment --network sepolia
+npx hardhat task:verifyFHEGasLimit --network sepolia
 npx hardhat task:verifyGatewayContract --network sepolia
