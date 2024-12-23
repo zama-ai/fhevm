@@ -10,8 +10,8 @@ import "./TFHE.sol";
 struct FHEVMConfigStruct {
     address ACLAddress;
     address TFHEExecutorAddress;
-    address FHEPaymentAddress;
     address KMSVerifierAddress;
+    address InputVerifierAddress;
 }
 
 /**
@@ -71,6 +71,14 @@ interface IACL {
 }
 
 /**
+ * @title IInputVerifier
+ * @notice This interface contains the only function required from InputVerifier.
+ */
+interface IInputVerifier {
+    function cleanTransientStorage() external;
+}
+
+/**
  * @title   Impl
  * @notice  This library is the core implementation for computing FHE operations (e.g. add, sub, xor).
  */
@@ -88,8 +96,8 @@ library Impl {
         FHEVMConfigStruct storage $ = getFHEVMConfig();
         $.ACLAddress = fhevmConfig.ACLAddress;
         $.TFHEExecutorAddress = fhevmConfig.TFHEExecutorAddress;
-        $.FHEPaymentAddress = fhevmConfig.FHEPaymentAddress;
         $.KMSVerifierAddress = fhevmConfig.KMSVerifierAddress;
+        $.InputVerifierAddress = fhevmConfig.InputVerifierAddress;
     }
 
     function add(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
@@ -387,9 +395,14 @@ library Impl {
         IACL($.ACLAddress).allow(handle, account);
     }
 
-    function cleanTransientStorage() internal {
+    function cleanTransientStorageACL() internal {
         FHEVMConfigStruct storage $ = getFHEVMConfig();
         IACL($.ACLAddress).cleanTransientStorage();
+    }
+
+    function cleanTransientStorageInputVerifier() internal {
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        IInputVerifier($.InputVerifierAddress).cleanTransientStorage();
     }
 
     function isAllowed(uint256 handle, address account) internal view returns (bool) {

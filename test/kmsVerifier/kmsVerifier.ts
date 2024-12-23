@@ -44,8 +44,9 @@ describe('KMSVerifier', function () {
       expect(y).to.equal(true); // in this case, one signature still suffices to pass the decrypt (threshold is still 1)
 
       const kmsSignerDup = new ethers.Wallet(privKeySigner).connect(ethers.provider);
-      await expect(kmsVerifier.connect(deployer).addSigner(kmsSignerDup.address)).to.revertedWith(
-        'KMSVerifier: Address is already a signer',
+      await expect(kmsVerifier.connect(deployer).addSigner(kmsSignerDup.address)).to.revertedWithCustomError(
+        kmsVerifier,
+        'KMSAlreadySigner',
       ); // cannot add duplicated signer
       expect((await kmsVerifier.getSigners()).length).to.equal(2);
 
@@ -61,9 +62,9 @@ describe('KMSVerifier', function () {
 
       const tx5 = await contract.requestUint4({ gasLimit: 5_000_000 });
       await tx5.wait();
-      await expect(awaitAllDecryptionResults()).to.revertedWith(
-        'KmsVerifier: at least threshold number of signatures required',
-      ); // should revert because now we are below the threshold! (we receive only 1 signature but threshold is 2)
+      await expect(awaitAllDecryptionResults())
+        .to.revertedWithCustomError(kmsVerifier, 'KMSSignatureThresholdNotReached')
+        .withArgs(1n); // should revert because now we are below the threshold! (we receive only 1 signature but threshold is 2)
       const y2 = await contract.yUint4();
       expect(y2).to.equal(0);
 
@@ -92,7 +93,9 @@ describe('KMSVerifier', function () {
         contract2.requestMixedBytes256Trustless(encryptedAmount2.handles[0], encryptedAmount2.inputProof, {
           gasLimit: 5_000_000,
         }),
-      ).to.revertedWith('KmsVerifier: at least threshold number of signatures required'); // this should fail because in this case the InputVerifier received only one KMS signature (instead of at least 2);
+      )
+        .to.revertedWithCustomError(kmsVerifier, 'KMSSignatureThresholdNotReached')
+        .withArgs(1n); // this should fail because in this case the InputVerifier received only one KMS signature (instead of at least 2);
 
       if (process.env.IS_COPROCESSOR === 'true') {
         // different format of inputProof for native

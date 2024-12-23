@@ -103,7 +103,7 @@ task('test', async (_taskArgs, hre, runSuper) => {
     await hre.run('task:computeTFHEExecutorAddress', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:computeKMSVerifierAddress', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:computeInputVerifierAddress', { privateKey: privKeyFhevmDeployer, useAddress: false });
-    await hre.run('task:computeFHEPaymentAddress', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:computeFHEGasLimitAddress', { privateKey: privKeyFhevmDeployer });
     const sourceDir = path.resolve(__dirname, 'node_modules/fhevm-core-contracts/contracts');
     const destinationDir = path.resolve(__dirname, 'fhevmTemp/contracts');
     fs.copySync(sourceDir, destinationDir, { dereference: true });
@@ -123,7 +123,7 @@ task('test', async (_taskArgs, hre, runSuper) => {
     await hre.run('task:deployTFHEExecutor', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:deployKMSVerifier', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:deployInputVerifier', { privateKey: privKeyFhevmDeployer });
-    await hre.run('task:deployFHEPayment', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:deployFHEGasLimit', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:addSigners', {
       numSigners: process.env.NUM_KMS_SIGNERS!,
       privateKey: privKeyFhevmDeployer,

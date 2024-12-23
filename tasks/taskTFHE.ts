@@ -179,36 +179,36 @@ address constant coprocessorAdd = ${coprocAddress};\n`;
     }
   });
 
-task('task:computeFHEPaymentAddress')
+task('task:computeFHEGasLimitAddress')
   .addParam('privateKey', 'The deployer private key')
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
     const deployer = new ethers.Wallet(taskArguments.privateKey).address;
-    const fhePaymentAddress = ethers.getCreateAddress({
+    const fheGasLimitAddress = ethers.getCreateAddress({
       from: deployer,
-      nonce: 9, // using nonce of 9 for the FHEPayment contract (8 for original implementation, +1 for proxy)
+      nonce: 9, // using nonce of 9 for the FHEGasLimit contract (8 for original implementation, +1 for proxy)
     });
-    const envFilePath = path.join(__dirname, '../node_modules/fhevm-core-contracts/addresses/.env.fhepayment');
-    const content = `FHE_PAYMENT_CONTRACT_ADDRESS=${fhePaymentAddress}\n`;
+    const envFilePath = path.join(__dirname, '../node_modules/fhevm-core-contracts/addresses/.env.fhegaslimit');
+    const content = `FHE_PAYMENT_CONTRACT_ADDRESS=${fheGasLimitAddress}\n`;
     try {
       fs.writeFileSync(envFilePath, content, { flag: 'w' });
-      console.log(`FHEPayment address ${fhePaymentAddress} written successfully!`);
+      console.log(`FHEGasLimit address ${fheGasLimitAddress} written successfully!`);
     } catch (err) {
-      console.error('Failed to write FHEPayment address:', err);
+      console.error('Failed to write FHEGasLimit address:', err);
     }
 
     const solidityTemplate = `// SPDX-License-Identifier: BSD-3-Clause-Clear
 
 pragma solidity ^0.8.24;
 
-address constant fhePaymentAdd = ${fhePaymentAddress};\n`;
+address constant fheGasLimitAdd = ${fheGasLimitAddress};\n`;
 
     try {
-      fs.writeFileSync('./node_modules/fhevm-core-contracts/addresses/FHEPaymentAddress.sol', solidityTemplate, {
+      fs.writeFileSync('./node_modules/fhevm-core-contracts/addresses/FHEGasLimitAddress.sol', solidityTemplate, {
         encoding: 'utf8',
         flag: 'w',
       });
-      console.log('./node_modules/fhevm-core-contracts/addresses/FHEPaymentAddress.sol file generated successfully!');
+      console.log('./node_modules/fhevm-core-contracts/addresses/FHEGasLimitAddress.sol file generated successfully!');
     } catch (error) {
-      console.error('Failed to write ./node_modules/fhevm-core-contracts/addresses/FHEPaymentAddress.sol', error);
+      console.error('Failed to write ./node_modules/fhevm-core-contracts/addresses/FHEGasLimitAddress.sol', error);
     }
   });

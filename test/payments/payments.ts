@@ -2,14 +2,14 @@ import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
 import { createInstances } from '../instance';
-import { FHE_GASPRICE_NATIVE_RATIO, MIN_FHE_GASPRICE, initializeFHEPayment } from '../paymentUtils';
+import { FHE_GASPRICE_NATIVE_RATIO, MIN_FHE_GASPRICE, initializeFHEGasLimit } from '../paymentUtils';
 import { getSigners, initSigners } from '../signers';
 
-describe('TestFHEPayment', function () {
+describe('TestFHEGasLimit', function () {
   before(async function () {
     await initSigners(2);
     this.signers = await getSigners();
-    this.fhePayment = await initializeFHEPayment();
+    this.fheGasLimit = await initializeFHEGasLimit();
   });
 
   beforeEach(async function () {
@@ -24,7 +24,7 @@ describe('TestFHEPayment', function () {
         value: ethers.parseEther('0'), // don't fund contract
       });
       await contract.waitForDeployment();
-      await expect(contract.mint(1000)).to.be.revertedWithCustomError(this.fhePayment, 'AccountNotEnoughFunded');
+      await expect(contract.mint(1000)).to.be.revertedWithCustomError(this.fheGasLimit, 'AccountNotEnoughFunded');
     }
   });
 
@@ -35,13 +35,13 @@ describe('TestFHEPayment', function () {
       const contract = await contractFactory.connect(this.signers.alice).deploy('Naraggara', 'NARA', {
         value: ethers.parseEther('0.001'),
       });
-      const initialDeposit = await this.fhePayment.getAvailableDepositsETH(await contract.getAddress());
+      const initialDeposit = await this.fheGasLimit.getAvailableDepositsETH(await contract.getAddress());
       await contract.waitForDeployment();
       const tx = await contract.mint(1000n);
       const rcpt = await tx.wait();
       const ratioGas = (rcpt!.gasPrice * FHE_GASPRICE_NATIVE_RATIO) / 1_000_000n;
       const effectiveFheGasPrice = ratioGas > MIN_FHE_GASPRICE ? ratioGas : MIN_FHE_GASPRICE;
-      const remainingDeposit = await this.fhePayment.getAvailableDepositsETH(await contract.getAddress());
+      const remainingDeposit = await this.fheGasLimit.getAvailableDepositsETH(await contract.getAddress());
       const consumedFheGas = (initialDeposit - remainingDeposit) / effectiveFheGasPrice;
       expect(consumedFheGas).to.equal(188000n + 600n); // scalarFheAdd(euint64) + trivialEncrypt(euint64)
     }
@@ -55,16 +55,16 @@ describe('TestFHEPayment', function () {
         value: ethers.parseEther('0'), // don't fund contract
       });
       await contract.waitForDeployment();
-      const tx = await this.fhePayment.depositETH(this.signers.alice, { value: ethers.parseEther('0.001') });
+      const tx = await this.fheGasLimit.depositETH(this.signers.alice, { value: ethers.parseEther('0.001') });
       await tx.wait();
-      const initialDeposit = await this.fhePayment.getAvailableDepositsETH(this.signers.alice);
-      const txbis = await this.fhePayment.whitelistContract(contract);
+      const initialDeposit = await this.fheGasLimit.getAvailableDepositsETH(this.signers.alice);
+      const txbis = await this.fheGasLimit.whitelistContract(contract);
       await txbis.wait();
       const tx2 = await contract.mint(1000);
       const rcpt = await tx2.wait();
       const ratioGas = (rcpt!.gasPrice * FHE_GASPRICE_NATIVE_RATIO) / 1_000_000n;
       const effectiveFheGasPrice = ratioGas > MIN_FHE_GASPRICE ? ratioGas : MIN_FHE_GASPRICE;
-      const remainingDeposit = await this.fhePayment.getAvailableDepositsETH(this.signers.alice);
+      const remainingDeposit = await this.fheGasLimit.getAvailableDepositsETH(this.signers.alice);
       const consumedFheGas = (initialDeposit - remainingDeposit) / effectiveFheGasPrice;
       expect(consumedFheGas).to.equal(188000n + 600n); // scalarFheAdd(euint64) + trivialEncrypt(euint64)
     }
@@ -78,16 +78,16 @@ describe('TestFHEPayment', function () {
         value: ethers.parseEther('0'), // don't fund contract
       });
       await contract.waitForDeployment();
-      const tx = await this.fhePayment.depositETH(this.signers.alice, { value: ethers.parseEther('0.001') });
+      const tx = await this.fheGasLimit.depositETH(this.signers.alice, { value: ethers.parseEther('0.001') });
       await tx.wait();
-      const initialDeposit = await this.fhePayment.getAvailableDepositsETH(this.signers.alice);
-      const txbis = await this.fhePayment.authorizeAllContracts(contract);
+      const initialDeposit = await this.fheGasLimit.getAvailableDepositsETH(this.signers.alice);
+      const txbis = await this.fheGasLimit.authorizeAllContracts(contract);
       await txbis.wait();
       const tx2 = await contract.mint(1000);
       const rcpt = await tx2.wait();
       const ratioGas = (rcpt!.gasPrice * FHE_GASPRICE_NATIVE_RATIO) / 1_000_000n;
       const effectiveFheGasPrice = ratioGas > MIN_FHE_GASPRICE ? ratioGas : MIN_FHE_GASPRICE;
-      const remainingDeposit = await this.fhePayment.getAvailableDepositsETH(this.signers.alice);
+      const remainingDeposit = await this.fheGasLimit.getAvailableDepositsETH(this.signers.alice);
       const consumedFheGas = (initialDeposit - remainingDeposit) / effectiveFheGasPrice;
       expect(consumedFheGas).to.equal(188000n + 600n); // scalarFheAdd(euint64) + trivialEncrypt(euint64)
     }
@@ -101,13 +101,13 @@ describe('TestFHEPayment', function () {
         value: ethers.parseEther('0'), // don't fund contract
       });
       await contract.waitForDeployment();
-      const tx = await this.fhePayment.depositETH(this.signers.alice, { value: ethers.parseEther('0.001') });
+      const tx = await this.fheGasLimit.depositETH(this.signers.alice, { value: ethers.parseEther('0.001') });
       await tx.wait();
-      const initialDeposit = await this.fhePayment.getAvailableDepositsETH(this.signers.alice);
-      const txbis = await this.fhePayment.removeAuthorizationAllContracts();
+      const initialDeposit = await this.fheGasLimit.getAvailableDepositsETH(this.signers.alice);
+      const txbis = await this.fheGasLimit.removeAuthorizationAllContracts();
       await txbis.wait();
-      await expect(contract.mint(1000)).to.be.revertedWithCustomError(this.fhePayment, 'AccountNotEnoughFunded');
-      const remainingDeposit = await this.fhePayment.getAvailableDepositsETH(this.signers.alice);
+      await expect(contract.mint(1000)).to.be.revertedWithCustomError(this.fheGasLimit, 'AccountNotEnoughFunded');
+      const remainingDeposit = await this.fheGasLimit.getAvailableDepositsETH(this.signers.alice);
       expect(remainingDeposit).to.equal(initialDeposit);
     }
   });
@@ -118,14 +118,14 @@ describe('TestFHEPayment', function () {
       const contractFactory = await ethers.getContractFactory('PaymentLimit');
       const contract = await contractFactory.connect(this.signers.alice).deploy();
       await contract.waitForDeployment();
-      const initialDeposit = await this.fhePayment.getAvailableDepositsETH(this.signers.alice);
-      const txbis = await this.fhePayment.authorizeAllContracts();
+      const initialDeposit = await this.fheGasLimit.getAvailableDepositsETH(this.signers.alice);
+      const txbis = await this.fheGasLimit.authorizeAllContracts();
       await txbis.wait();
       const tx2 = await contract.underBlockFHEGasLimit();
       const rcpt = await tx2.wait();
       const ratioGas = (rcpt!.gasPrice * FHE_GASPRICE_NATIVE_RATIO) / 1_000_000n;
       const effectiveFheGasPrice = ratioGas > MIN_FHE_GASPRICE ? ratioGas : MIN_FHE_GASPRICE;
-      const remainingDeposit = await this.fhePayment.getAvailableDepositsETH(this.signers.alice);
+      const remainingDeposit = await this.fheGasLimit.getAvailableDepositsETH(this.signers.alice);
       const consumedFheGas = (initialDeposit - remainingDeposit) / effectiveFheGasPrice;
       expect(consumedFheGas).to.equal(15n * 641000n + 2n * 600n); // 15*FheMul(euint64) + 2*trivialEncrypt(euint64)
     }
@@ -135,7 +135,10 @@ describe('TestFHEPayment', function () {
     const contractFactory = await ethers.getContractFactory('PaymentLimit');
     const contract = await contractFactory.connect(this.signers.alice).deploy();
     await contract.waitForDeployment();
-    await expect(contract.aboveBlockFHEGasLimit()).revertedWithCustomError(this.fhePayment, 'FHEGasBlockLimitExceeded');
+    await expect(contract.aboveBlockFHEGasLimit()).revertedWithCustomError(
+      this.fheGasLimit,
+      'FHEGasBlockLimitExceeded',
+    );
   });
 
   it('a smart account becomes spender by calling becomeTransientSpender', async function () {
@@ -144,12 +147,12 @@ describe('TestFHEPayment', function () {
       const contractFactory = await ethers.getContractFactory('SmartAccount');
       const smartAccount = await contractFactory.connect(this.signers.bob).deploy();
       await smartAccount.waitForDeployment();
-      const tx = await this.fhePayment
+      const tx = await this.fheGasLimit
         .connect(this.signers.bob)
         .depositETH(await smartAccount.getAddress(), { value: ethers.parseEther('0.001') });
       await tx.wait();
 
-      const initialDeposit = await this.fhePayment.getAvailableDepositsETH(await smartAccount.getAddress());
+      const initialDeposit = await this.fheGasLimit.getAvailableDepositsETH(await smartAccount.getAddress());
 
       const contractFactory2 = await ethers.getContractFactory('PaymentLimit');
       const contract = await contractFactory2.connect(this.signers.alice).deploy();
@@ -157,8 +160,8 @@ describe('TestFHEPayment', function () {
 
       const allowTx = [
         {
-          target: await this.fhePayment.getAddress(),
-          data: this.fhePayment.interface.encodeFunctionData('authorizeAllContracts'),
+          target: await this.fheGasLimit.getAddress(),
+          data: this.fheGasLimit.interface.encodeFunctionData('authorizeAllContracts'),
           value: 0,
         },
       ];
@@ -168,8 +171,8 @@ describe('TestFHEPayment', function () {
 
       const FHETx = [
         {
-          target: await this.fhePayment.getAddress(),
-          data: this.fhePayment.interface.encodeFunctionData('becomeTransientSpender'),
+          target: await this.fheGasLimit.getAddress(),
+          data: this.fheGasLimit.interface.encodeFunctionData('becomeTransientSpender'),
           value: 0,
         },
         {
@@ -185,7 +188,7 @@ describe('TestFHEPayment', function () {
       const rcpt = await txSmartFHE.wait();
       const ratioGas = (rcpt!.gasPrice * FHE_GASPRICE_NATIVE_RATIO) / 1_000_000n;
       const effectiveFheGasPrice = ratioGas > MIN_FHE_GASPRICE ? ratioGas : MIN_FHE_GASPRICE;
-      const remainingDeposit = await this.fhePayment.getAvailableDepositsETH(await smartAccount.getAddress());
+      const remainingDeposit = await this.fheGasLimit.getAvailableDepositsETH(await smartAccount.getAddress());
       const consumedFheGas = (initialDeposit - remainingDeposit) / effectiveFheGasPrice;
       expect(consumedFheGas).to.equal(15n * 641000n + 2n * 600n); // 15*FheMul(euint64) + 2*trivialEncrypt(euint64)
     }
@@ -197,7 +200,7 @@ describe('TestFHEPayment', function () {
       const contractFactory = await ethers.getContractFactory('SmartAccount');
       const smartAccount = await contractFactory.connect(this.signers.bob).deploy();
       await smartAccount.waitForDeployment();
-      const tx = await this.fhePayment
+      const tx = await this.fheGasLimit
         .connect(this.signers.bob)
         .depositETH(await smartAccount.getAddress(), { value: ethers.parseEther('0.001') });
       await tx.wait();
@@ -211,13 +214,15 @@ describe('TestFHEPayment', function () {
         .deploy({ value: ethers.parseEther('0.001') }); // sponsored dApp
       await contract2.waitForDeployment();
 
-      const initialDepositSmartAccount = await this.fhePayment.getAvailableDepositsETH(await smartAccount.getAddress());
-      const initialDepositSponsoredDapp = await this.fhePayment.getAvailableDepositsETH(await contract2.getAddress());
+      const initialDepositSmartAccount = await this.fheGasLimit.getAvailableDepositsETH(
+        await smartAccount.getAddress(),
+      );
+      const initialDepositSponsoredDapp = await this.fheGasLimit.getAvailableDepositsETH(await contract2.getAddress());
 
       const allowTx = [
         {
-          target: await this.fhePayment.getAddress(),
-          data: this.fhePayment.interface.encodeFunctionData('authorizeAllContracts'),
+          target: await this.fheGasLimit.getAddress(),
+          data: this.fheGasLimit.interface.encodeFunctionData('authorizeAllContracts'),
           value: 0,
         },
       ];
@@ -227,8 +232,8 @@ describe('TestFHEPayment', function () {
 
       const FHETx = [
         {
-          target: await this.fhePayment.getAddress(),
-          data: this.fhePayment.interface.encodeFunctionData('becomeTransientSpender'),
+          target: await this.fheGasLimit.getAddress(),
+          data: this.fheGasLimit.interface.encodeFunctionData('becomeTransientSpender'),
           value: 0,
         },
         {
@@ -237,8 +242,8 @@ describe('TestFHEPayment', function () {
           value: 0,
         },
         {
-          target: await this.fhePayment.getAddress(),
-          data: this.fhePayment.interface.encodeFunctionData('stopBeingTransientSpender'),
+          target: await this.fheGasLimit.getAddress(),
+          data: this.fheGasLimit.interface.encodeFunctionData('stopBeingTransientSpender'),
           value: 0,
         },
         {
@@ -254,10 +259,12 @@ describe('TestFHEPayment', function () {
       const rcpt = await txSmartFHE.wait();
       const ratioGas = (rcpt!.gasPrice * FHE_GASPRICE_NATIVE_RATIO) / 1_000_000n;
       const effectiveFheGasPrice = ratioGas > MIN_FHE_GASPRICE ? ratioGas : MIN_FHE_GASPRICE;
-      const remainingDepositSmartAccount = await this.fhePayment.getAvailableDepositsETH(
+      const remainingDepositSmartAccount = await this.fheGasLimit.getAvailableDepositsETH(
         await smartAccount.getAddress(),
       );
-      const remainingDepositSponsoredDapp = await this.fhePayment.getAvailableDepositsETH(await contract2.getAddress());
+      const remainingDepositSponsoredDapp = await this.fheGasLimit.getAvailableDepositsETH(
+        await contract2.getAddress(),
+      );
 
       const consumedFheGasSmartAccount =
         (initialDepositSmartAccount - remainingDepositSmartAccount) / effectiveFheGasPrice;
@@ -270,10 +277,10 @@ describe('TestFHEPayment', function () {
 
   it('user can withdraw his unburnt deposited funds', async function () {
     if (FHE_GASPRICE_NATIVE_RATIO !== 0n || MIN_FHE_GASPRICE !== 0n) {
-      const depositValue = await this.fhePayment.getAvailableDepositsETH(this.signers.alice);
+      const depositValue = await this.fheGasLimit.getAvailableDepositsETH(this.signers.alice);
       expect(depositValue).to.be.greaterThan(0);
       const balBobBefore = await ethers.provider.getBalance(this.signers.bob);
-      const tx = await this.fhePayment.withdrawETH(depositValue, this.signers.bob);
+      const tx = await this.fheGasLimit.withdrawETH(depositValue, this.signers.bob);
       await tx.wait();
       const balBobAfter = await ethers.provider.getBalance(this.signers.bob);
       expect(balBobAfter - balBobBefore).to.equal(depositValue);

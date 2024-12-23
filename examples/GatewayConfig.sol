@@ -5,13 +5,11 @@ import "fhevm-core-contracts/addresses/GatewayContractAddress.sol";
 
 /**
  * @title   FHEVMConfig
- * @notice  This library returns all addresses for the ACL, TFHEExecutor, FHEPayment,
- *          and KMSVerifier contracts.
+ * @notice  This library returns the GatewayContract address
  */
 library GatewayConfig {
     /**
-     * @notice This function returns a struct containing all contract addresses.
-     * @dev    It returns an immutable struct.
+     * @notice This function returns a the gateway contract address.
      */
     function defaultGatewayContract() internal pure returns (address) {
         return GATEWAY_CONTRACT_PREDEPLOY_ADDRESS;

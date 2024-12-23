@@ -11,7 +11,6 @@ function generateAllFiles() {
   const ovShards = testgen.splitOverloadsToShards(overloads);
   writeFileSync('lib/Impl.sol', t.implSol(operators));
   writeFileSync('lib/TFHE.sol', tfheSolSource);
-  writeFileSync('payment/Payment.sol', t.paymentSol());
   mkdirSync('examples/tests', { recursive: true });
   ovShards.forEach((os) => {
     writeFileSync(`examples/tests/TFHETestSuite${os.shardNumber}.sol`, testgen.generateSmartContract(os));
