@@ -345,7 +345,10 @@ curl  http://localhost:7077/keyurl
 ## Testing part
 
 Note: If one of the non-trivial or re-encrypt tests fails, it should succeed
-after a retry..
+after a retry.
+
+> [!Warning]
+> One must set localCoprocessor in `./work_dir/fhevm/hardhat.config.ts` to avoid adding --network localCoprocessor for each following tests
 
 Tests should be run from `work_dir/fhevm`
 

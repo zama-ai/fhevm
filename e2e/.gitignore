@@ -24,3 +24,4 @@ abi/
 coverage.json
 pnpm-lock.yaml
 yarn.lock
+contracts/E2EFHEVMConfig.sol
