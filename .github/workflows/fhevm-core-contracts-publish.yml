@@ -39,13 +39,6 @@ jobs:
       - name: Compile gateway
         run: npm run compile:gateway
 
-      - name: Publish to npm
-        uses: JS-DevTools/npm-publish@19c28f1ef146469e409470805ea4279d47c3d35c # v3.1.1
-        with:
-          package: ./contracts/package.json
-          token: ${{ secrets.NPM_TOKEN }}
-          provenance: true
-
       - name: Publish prerelease to npm
         if: ${{ inputs.release != 'true' }}
         uses: JS-DevTools/npm-publish@19c28f1ef146469e409470805ea4279d47c3d35c # v3.1.1
