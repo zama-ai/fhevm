@@ -10,9 +10,13 @@ contract DecryptionOracle is UUPSUpgradeable, Ownable2StepUpgradeable {
     /// @notice Name of the contract
     string private constant CONTRACT_NAME = "DecryptionOracle";
 
-    /// @notice Version of the contract
+    /// @notice Major version of the contract.
     uint256 private constant MAJOR_VERSION = 0;
+
+    /// @notice Minor version of the contract.
     uint256 private constant MINOR_VERSION = 1;
+
+    /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
 
     event DecryptionRequest(uint256 indexed requestID, uint256[] cts, address contractCaller, bytes4 callbackSelector);
@@ -33,6 +37,9 @@ contract DecryptionOracle is UUPSUpgradeable, Ownable2StepUpgradeable {
     bytes32 private constant DecryptionOracleStorageLocation =
         0xd86fa2a52e99634194c279afa011b5f5166614c3198dd09bbd002d5fb5c0bc00;
 
+    /**
+     * @dev Returns the DecryptionOracle storage location.
+     */
     function _getDecryptionOracleStorage() internal pure returns (DecryptionOracleStorage storage $) {
         assembly {
             $.slot := DecryptionOracleStorageLocation
@@ -48,10 +55,11 @@ contract DecryptionOracle is UUPSUpgradeable, Ownable2StepUpgradeable {
         __Ownable_init(_decryptionOracleOwner);
     }
 
-    /// @notice Requests the decryption of n ciphertexts `ctsHandles` with the result returned in a callback.
-    /// @notice During callback, msg.sender is called with [callbackSelector,requestID,decrypt(ctsHandles[0]),decrypt(ctsHandles[1]),...,decrypt(ctsHandles[n-1]),signatures]
-    /// @param ctsHandles is an array of uint256s handles.
-    /// @param callbackSelector the callback selector to be called on msg.sender later during fulfilment
+    /** @notice Requests the decryption of n ciphertexts `ctsHandles` with the result returned in a callback.
+     * @notice During callback, msg.sender is called with [callbackSelector,requestID,decrypt(ctsHandles[0]),decrypt(ctsHandles[1]),...,decrypt(ctsHandles[n-1]),signatures]
+     * @param ctsHandles is an array of uint256s handles.
+     * @param callbackSelector the callback selector to be called on msg.sender later during fulfilment
+     */
     function requestDecryption(
         uint256[] calldata ctsHandles,
         bytes4 callbackSelector
@@ -62,8 +70,10 @@ contract DecryptionOracle is UUPSUpgradeable, Ownable2StepUpgradeable {
         $.counter++;
     }
 
-    /// @notice Getter for the name and version of the contract
-    /// @return string representing the name and the version of the contract
+    /**
+     * @notice        Getter for the name and version of the contract.
+     * @return string Name and the version of the contract.
+     */
     function getVersion() external pure virtual returns (string memory) {
         return
             string(

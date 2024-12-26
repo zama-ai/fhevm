@@ -2,52 +2,9 @@ import dotenv from 'dotenv';
 import { Wallet } from 'ethers';
 import fs from 'fs';
 import { ethers, network } from 'hardhat';
-import { Database } from 'sqlite3';
 
 import { DecryptionOracle } from '../types';
 import { awaitCoprocessor, getClearText } from './coprocessorUtils';
-
-//const oracleDB = new Database('./oracle.db'); // on-disk db for debugging
-const oracleDB = new Database(':memory:');
-
-oracleDB.serialize(() =>
-  oracleDB.run(
-    'CREATE TABLE decryptionRequests (requestID TEXT PRIMARY KEY,cts TEXT[] NOT NULL,contractCaller BINARY(20) NOT NULL, callbackSelector BINARY(4) NOT NULL, isFulfilled BOOLEAN NOT NULL DEFAULT FALSE);',
-  ),
-);
-
-export function insertSQL(
-  requestID: BigInt,
-  cts: BigInt[],
-  contractCaller: string,
-  callbackSelector: string,
-  isFulfilled: boolean,
-) {
-  try {
-    const requestIDString = requestID.toString();
-    const ctsStrings = cts.map((num) => num.toString());
-    oracleDB.run(
-      'INSERT OR REPLACE INTO decryptionRequests (requestID, cts, contractCaller, callbackSelector, isFulfilled) VALUES (?, ?, ?, ?, ?)',
-      [requestIDString, JSON.stringify(ctsStrings), contractCaller, callbackSelector, isFulfilled],
-    );
-  } catch (error) {
-    if (error.code === 'SQLITE_CONSTRAINT') {
-      console.log(`Record with requestID ${requestID} already exists in database`);
-    }
-    throw error;
-  }
-}
-
-export function markAsFulfilled(requestID: BigInt): boolean {
-  try {
-    const requestIDString = requestID.toString();
-    oracleDB.run('UPDATE decryptionRequests SET isFulfilled = TRUE WHERE requestID = ?', [requestIDString]);
-    return true;
-  } catch (error) {
-    console.warn(`Failed to mark request ${requestID} as fulfilled. Error: ${error.message}`);
-    return false;
-  }
-}
 
 const networkName = network.name;
 
@@ -137,7 +94,6 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
     const handles = event.args[1];
     const contractCaller = event.args[2];
     const callbackSelector = event.args[3];
-    insertSQL(requestID, handles, contractCaller, callbackSelector, false);
     const typesList = handles.map((handle) => parseInt(handle.toString(16).slice(-4, -2), 16));
     // if request is not already fulfilled
     if (mocked) {
@@ -189,7 +145,6 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
       };
       const tx = await relayer.sendTransaction(txData);
       await tx.wait();
-      markAsFulfilled(requestID);
     }
   }
 };
