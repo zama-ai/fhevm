@@ -117,7 +117,7 @@ describe('KMSVerifier', function () {
       process.env.PRIVATE_KEY_KMS_SIGNER_1 = process.env.PRIVATE_KEY_KMS_SIGNER_0;
       const tx7 = await contract.requestUint16();
       await tx7.wait();
-      await expect(awaitAllDecryptionResults()).to.revertedWith('KMS signature verification failed'); // cannot use duplicated signatures if threshold is 2
+      await expect(awaitAllDecryptionResults()).to.revertedWithCustomError(contract, 'InvalidKMSSignatures'); // cannot use duplicated signatures if threshold is 2
       const y5 = await contract.yUint16();
       expect(y5).to.equal(0);
 

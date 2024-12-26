@@ -23,6 +23,11 @@ struct DecryptionOracleConfigStruct {
 }
 
 abstract contract DecryptionOracleCaller {
+    error HandlesAlreadySavedForRequestID();
+    error NoHandleFoundForRequestID();
+    error InvalidKMSSignatures();
+    error UnsupportedHandleType();
+
     mapping(uint256 => ebool[]) private paramsEBool;
     mapping(uint256 => euint4[]) private paramsEUint4;
     mapping(uint256 => euint8[]) private paramsEUint8;
@@ -73,12 +78,16 @@ abstract contract DecryptionOracleCaller {
     }
 
     function saveRequestedHandles(uint256 requestID, uint256[] memory handlesList) internal {
-        require(requestedHandles[requestID].length == 0, "requested handles already saved");
+        if (requestedHandles[requestID].length != 0) {
+            revert HandlesAlreadySavedForRequestID();
+        }
         requestedHandles[requestID] = handlesList;
     }
 
     function loadRequestedHandles(uint256 requestID) internal view returns (uint256[] memory) {
-        require(requestedHandles[requestID].length != 0, "requested handles were not saved for this requestID");
+        if (requestedHandles[requestID].length == 0) {
+            revert NoHandleFoundForRequestID();
+        }
         return requestedHandles[requestID];
     }
 
@@ -232,7 +241,7 @@ abstract contract DecryptionOracleCaller {
                 //ebytes256
                 signedDataLength += 320;
             } else {
-                revert("Unsupported handle type");
+                revert UnsupportedHandleType();
             }
         }
         signedDataLength += 32; // add offset of signatures
@@ -242,7 +251,9 @@ abstract contract DecryptionOracleCaller {
     modifier checkSignatures(uint256 requestID, bytes[] memory signatures) {
         uint256[] memory handlesList = loadRequestedHandles(requestID);
         bool isVerified = verifySignatures(handlesList, signatures);
-        require(isVerified, "KMS signature verification failed");
+        if (!isVerified) {
+            revert InvalidKMSSignatures();
+        }
         _;
     }
 }
