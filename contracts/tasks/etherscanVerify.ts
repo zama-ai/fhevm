@@ -60,7 +60,7 @@ task('task:verifyInputVerifier').setAction(async function (taskArguments, { upgr
 
 task('task:verifyFHEGasLimit').setAction(async function (taskArguments, { upgrades, run }) {
   const parsedEnvFHEGasLimit = dotenv.parse(fs.readFileSync('addresses/.env.fhegaslimit'));
-  const proxyFHEGasLimit = parsedEnvFHEGasLimit.FHE_PAYMENT_CONTRACT_ADDRESS;
+  const proxyFHEGasLimit = parsedEnvFHEGasLimit.FHE_GASLIMIT_CONTRACT_ADDRESS;
   const implementationFHEGasLimitAddress = await upgrades.erc1967.getImplementationAddress(proxyFHEGasLimit);
   await run('verify:verify', {
     address: implementationFHEGasLimitAddress,
@@ -72,16 +72,16 @@ task('task:verifyFHEGasLimit').setAction(async function (taskArguments, { upgrad
   });
 });
 
-task('task:verifyGatewayContract').setAction(async function (taskArguments, { upgrades, run }) {
-  const parsedEnvGateway = dotenv.parse(fs.readFileSync('addresses/.env.gateway'));
-  const proxyGateway = parsedEnvGateway.GATEWAY_CONTRACT_PREDEPLOY_ADDRESS;
-  const implementationGatewayAddress = await upgrades.erc1967.getImplementationAddress(proxyGateway);
+task('task:verifyDecryptionOracle').setAction(async function (taskArguments, { upgrades, run }) {
+  const parsedEnvDecryptionOracle = dotenv.parse(fs.readFileSync('addresses/.env.decryptionoracle'));
+  const proxyDecryptionOracle = parsedEnvDecryptionOracle.DECRYPTION_ORACLE_ADDRESS;
+  const implementationDecryptionOracleAddress = await upgrades.erc1967.getImplementationAddress(proxyDecryptionOracle);
   await run('verify:verify', {
-    address: implementationGatewayAddress,
+    address: implementationDecryptionOracleAddress,
     constructorArguments: [],
   });
   await run('verify:verify', {
-    address: proxyGateway,
+    address: proxyDecryptionOracle,
     constructorArguments: [],
   });
 });

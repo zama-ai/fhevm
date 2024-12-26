@@ -6,9 +6,9 @@
 !/artifacts/contracts/KMSVerifier.sol/KMSVerifier.json
 !/artifacts/contracts/TFHEExecutor.sol/TFHEExecutor.json
 !/artifacts/contracts/TFHEExecutorWithEvents.sol/TFHEExecutorWithEvents.json
-!/artifacts/gateway/GatewayContract.sol/GatewayContract.json
+!/artifacts/decryptionOracle/DecryptionOracle.sol/DecryptionOracle.json
 !contracts/**
-!gateway/**
+!decryptionOracle/**
 !package.json
 !LICENSE
 !README.md

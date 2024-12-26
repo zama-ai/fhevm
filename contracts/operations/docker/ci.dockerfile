@@ -16,6 +16,6 @@ COPY contracts/addresses ./addresses/
 COPY contracts/contracts ./contracts/
 COPY contracts/lib ./lib/
 COPY contracts/tasks ./tasks/
-COPY contracts/gateway ./gateway/
+COPY contracts/decryptionOracle ./decryptionOracle/
 
 RUN chmod +x ./*.sh

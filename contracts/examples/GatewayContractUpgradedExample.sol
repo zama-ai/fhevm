@@ -2,11 +2,11 @@
 
 pragma solidity ^0.8.24;
 
-import "../gateway/GatewayContract.sol";
+import "../decryptionOracle/DecryptionOracle.sol";
 
-contract GatewayContractUpgradedExample is GatewayContract {
+contract DecryptionOracleUpgradedExample is DecryptionOracle {
     /// @notice Name of the contract
-    string private constant CONTRACT_NAME = "GatewayContract";
+    string private constant CONTRACT_NAME = "DecryptionOracle";
 
     /// @notice Version of the contract
     uint256 private constant MAJOR_VERSION = 0;

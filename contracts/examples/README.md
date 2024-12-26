@@ -47,7 +47,7 @@ graph TD
 
 ### 2. **TestAsyncDecrypt.sol**
 
-Tests asynchronous decryption of various encrypted data types using the Gateway. This contract is essential for understanding how to safely decrypt data when needed, without compromising the overall security of the encrypted system.
+Tests asynchronous decryption of various encrypted data types using the DecryptionOracle. This contract is essential for understanding how to safely decrypt data when needed, without compromising the overall security of the encrypted system.
 
 ### 3. **BlindAuction.sol**
 
