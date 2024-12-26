@@ -11,8 +11,8 @@ import { resolve } from 'path';
 import CustomProvider from './CustomProvider';
 // Adjust the import path as needed
 import './tasks/etherscanVerify';
+import './tasks/taskDecryptionOracleRelayer';
 import './tasks/taskDeploy';
-import './tasks/taskGatewayRelayer';
 import './tasks/taskTFHE';
 import './tasks/upgradeProxy';
 
@@ -50,9 +50,9 @@ task('test', async (taskArgs, hre, runSuper) => {
   // Run modified test task
   if (hre.network.name === 'hardhat') {
     // in fhevm mode all this block is done when launching the node via `pnmp fhevm:start`
-    const privKeyGatewayDeployer = process.env.PRIVATE_KEY_GATEWAY_DEPLOYER;
+    const privKeyDecryptionOracleDeployer = process.env.PRIVATE_KEY_DECRYPTION_ORACLE_DEPLOYER;
     const privKeyFhevmDeployer = process.env.PRIVATE_KEY_FHEVM_DEPLOYER;
-    await hre.run('task:computeGatewayAddress', { privateKey: privKeyGatewayDeployer });
+    await hre.run('task:computeDecryptionOracleAddress', { privateKey: privKeyDecryptionOracleDeployer });
     await hre.run('task:computeACLAddress', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:computeTFHEExecutorAddress', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:computeKMSVerifierAddress', { privateKey: privKeyFhevmDeployer });
@@ -60,7 +60,7 @@ task('test', async (taskArgs, hre, runSuper) => {
     await hre.run('task:computeFHEGasLimitAddress', { privateKey: privKeyFhevmDeployer });
     await hre.run('compile:specific', { contract: 'contracts' });
     await hre.run('compile:specific', { contract: 'lib' });
-    await hre.run('compile:specific', { contract: 'gateway' });
+    await hre.run('compile:specific', { contract: 'decryptionOracle' });
     await hre.run('compile:specific', { contract: 'payment' });
     await hre.run('task:faucetToPrivate', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:deployACL', { privateKey: privKeyFhevmDeployer });

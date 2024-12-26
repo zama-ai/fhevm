@@ -54,8 +54,8 @@ This contract is needed for security, especially for coprocessor where we could 
 
 This contract tracks the FHEGas consumed in each block, and reverts the transactions inside a block if the FHEGas block limit is exceeded.
 
-## Gateway Contract
+## DecryptionOracle Contract
 
-The [GatewayContract](../../../contracts/gateway/GatewayContract.sol) is an onchain contract designed to interact with an offchain Gateway component that handles decryption requests. When a dApp calls the `requestDecryption` function, the Gateway contract emits an event that is caught by the Gateway service.
+The [DecryptionOracle](../../../contracts/decryptionOracle/DecryptionOracle.sol) is an onchain contract designed to interact with an offchain Gateway component that handles decryption requests. When a dApp calls the `requestDecryption` function, the `DecryptionOracle` contract emits an event that is caught by the Gateway service.
 
 _Note_: It is possible to have multiple Gateways, so multiple Gateway contracts can also be deployed. This is the only contract from this documentation page that is not strictly part of "core fhEVM" contracts, and as such, it should not be considered as a "trusted" contract. We only trust the KMS and the core fhEVM contracts. The Gateway is only bridging trust from host chain to KMS chain via storage proofs, and from KMS chain to the host chain via the signatures from KMS signers.

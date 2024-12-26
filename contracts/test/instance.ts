@@ -86,7 +86,7 @@ const getDecryptor = () => {
  * @debug
  * This function is intended for debugging purposes only.
  * It cannot be used in production code, since it requires the FHE private key for decryption.
- * In production, decryption is only possible via an asyncronous on-chain call to the Gateway.
+ * In production, decryption is only possible via an asyncronous on-chain call to the Decryption Oracle.
  *
  * @param {bigint} a handle to decrypt
  * @returns {bool}
@@ -104,7 +104,7 @@ export const decryptBool = async (handle: bigint): Promise<boolean> => {
  * @debug
  * This function is intended for debugging purposes only.
  * It cannot be used in production code, since it requires the FHE private key for decryption.
- * In production, decryption is only possible via an asyncronous on-chain call to the Gateway.
+ * In production, decryption is only possible via an asyncronous on-chain call to the Decryption Oracle.
  *
  * @param {bigint} a handle to decrypt
  * @returns {bigint}
@@ -122,7 +122,7 @@ export const decrypt4 = async (handle: bigint): Promise<bigint> => {
  * @debug
  * This function is intended for debugging purposes only.
  * It cannot be used in production code, since it requires the FHE private key for decryption.
- * In production, decryption is only possible via an asyncronous on-chain call to the Gateway.
+ * In production, decryption is only possible via an asyncronous on-chain call to the Decryption Oracle.
  *
  * @param {bigint} a handle to decrypt
  * @returns {bigint}
@@ -140,7 +140,7 @@ export const decrypt8 = async (handle: bigint): Promise<bigint> => {
  * @debug
  * This function is intended for debugging purposes only.
  * It cannot be used in production code, since it requires the FHE private key for decryption.
- * In production, decryption is only possible via an asyncronous on-chain call to the Gateway.
+ * In production, decryption is only possible via an asyncronous on-chain call to the Decryption Oracle.
  *
  * @param {bigint} a handle to decrypt
  * @returns {bigint}
@@ -158,7 +158,7 @@ export const decrypt16 = async (handle: bigint): Promise<bigint> => {
  * @debug
  * This function is intended for debugging purposes only.
  * It cannot be used in production code, since it requires the FHE private key for decryption.
- * In production, decryption is only possible via an asyncronous on-chain call to the Gateway.
+ * In production, decryption is only possible via an asyncronous on-chain call to the Decryption Oracle.
  *
  * @param {bigint} a handle to decrypt
  * @returns {bigint}
@@ -176,7 +176,7 @@ export const decrypt32 = async (handle: bigint): Promise<bigint> => {
  * @debug
  * This function is intended for debugging purposes only.
  * It cannot be used in production code, since it requires the FHE private key for decryption.
- * In production, decryption is only possible via an asyncronous on-chain call to the Gateway.
+ * In production, decryption is only possible via an asyncronous on-chain call to the Decryption Oracle.
  *
  * @param {bigint} a handle to decrypt
  * @returns {bigint}
@@ -194,7 +194,7 @@ export const decrypt64 = async (handle: bigint): Promise<bigint> => {
  * @debug
  * This function is intended for debugging purposes only.
  * It cannot be used in production code, since it requires the FHE private key for decryption.
- * In production, decryption is only possible via an asyncronous on-chain call to the Gateway.
+ * In production, decryption is only possible via an asyncronous on-chain call to the Decryption Oracle.
  *
  * @param {bigint} a handle to decrypt
  * @returns {bigint}
@@ -212,7 +212,7 @@ export const decrypt128 = async (handle: bigint): Promise<bigint> => {
  * @debug
  * This function is intended for debugging purposes only.
  * It cannot be used in production code, since it requires the FHE private key for decryption.
- * In production, decryption is only possible via an asyncronous on-chain call to the Gateway.
+ * In production, decryption is only possible via an asyncronous on-chain call to the Decryption Oracle.
  *
  * @param {bigint} a handle to decrypt
  * @returns {bigint}
@@ -230,7 +230,7 @@ export const decrypt256 = async (handle: bigint): Promise<bigint> => {
  * @debug
  * This function is intended for debugging purposes only.
  * It cannot be used in production code, since it requires the FHE private key for decryption.
- * In production, decryption is only possible via an asyncronous on-chain call to the Gateway.
+ * In production, decryption is only possible via an asyncronous on-chain call to the Decryption Oracle.
  *
  * @param {bigint} a handle to decrypt
  * @returns {string}
@@ -250,7 +250,7 @@ export const decryptAddress = async (handle: bigint): Promise<string> => {
  * @debug
  * This function is intended for debugging purposes only.
  * It cannot be used in production code, since it requires the FHE private key for decryption.
- * In production, decryption is only possible via an asyncronous on-chain call to the Gateway.
+ * In production, decryption is only possible via an asyncronous on-chain call to the Decryption Oracle.
  *
  * @param {bigint} a handle to decrypt
  * @returns {bigint}
@@ -268,7 +268,7 @@ export const decryptEbytes64 = async (handle: bigint): Promise<bigint> => {
  * @debug
  * This function is intended for debugging purposes only.
  * It cannot be used in production code, since it requires the FHE private key for decryption.
- * In production, decryption is only possible via an asyncronous on-chain call to the Gateway.
+ * In production, decryption is only possible via an asyncronous on-chain call to the Decryption Oracle.
  *
  * @param {bigint} a handle to decrypt
  * @returns {bigint}
@@ -286,7 +286,7 @@ export const decryptEbytes128 = async (handle: bigint): Promise<bigint> => {
  * @debug
  * This function is intended for debugging purposes only.
  * It cannot be used in production code, since it requires the FHE private key for decryption.
- * In production, decryption is only possible via an asyncronous on-chain call to the Gateway.
+ * In production, decryption is only possible via an asyncronous on-chain call to the Decryption Oracle.
  *
  * @param {bigint} a handle to decrypt
  * @returns {bigint}

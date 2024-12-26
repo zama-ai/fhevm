@@ -16,7 +16,7 @@ COPY contracts/addresses ./addresses/
 COPY contracts/contracts ./contracts/
 COPY contracts/lib ./lib/
 COPY contracts/tasks ./tasks/
-COPY contracts/gateway ./gateway/
+COPY contracts/decryptionOracle ./decryptionOracle/
 
 # Set SHELL with pipefail option to handle pipe errors properly
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -35,4 +35,4 @@ RUN PRIVATE_KEY_FHEVM_DEPLOYER="$(grep PRIVATE_KEY_FHEVM_DEPLOYER .env | cut -d 
     npx hardhat compile:specific --contract addresses && \
     npx hardhat compile:specific --contract contracts && \
     npx hardhat compile:specific --contract lib && \
-    npx hardhat compile:specific --contract gateway
+    npx hardhat compile:specific --contract decryptionOracle

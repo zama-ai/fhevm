@@ -1,7 +1,7 @@
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
-import { initGateway } from '../asyncDecrypt';
+import { initDecryptionOracle } from '../asyncDecrypt';
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
 
@@ -11,7 +11,7 @@ describe('ACL', function () {
     this.signers = await getSigners();
     this.instances = await createInstances(this.signers);
     const aclFactory = await ethers.getContractFactory('ACL');
-    await initGateway();
+    await initDecryptionOracle();
     const acl = await aclFactory.deploy();
     await acl.waitForDeployment();
     this.acl = acl;

@@ -183,7 +183,7 @@ task('task:upgradeFHEGasLimit')
   )
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades, run }) {
     const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.fhegaslimit'));
-    const proxyAddress = parsedEnv.FHE_PAYMENT_CONTRACT_ADDRESS;
+    const proxyAddress = parsedEnv.FHE_GASLIMIT_CONTRACT_ADDRESS;
     await upgradeCurrentToNew(
       taskArguments.privateKey,
       proxyAddress,
@@ -196,14 +196,14 @@ task('task:upgradeFHEGasLimit')
     );
   });
 
-task('task:upgradeGatewayContract')
+task('task:upgradeDecryptionOracleContract')
   .addParam(
     'currentImplementation',
-    'The currently deployed implementation solidity contract path and name, eg: gateway/GatewayContract.sol:GatewayContract',
+    'The currently deployed implementation solidity contract path and name, eg: decryptionOracle/DecryptionOracle.sol:DecryptionOracle',
   )
   .addParam(
     'newImplementation',
-    'The new implementation solidity contract path and name, eg: example/GatewayContractUpgradedExample.sol:GatewayContractUpgradedExample',
+    'The new implementation solidity contract path and name, eg: example/DecryptionOracleUpgradedExample.sol:DecryptionOracleUpgradedExample',
   )
   .addParam('privateKey', 'The deployer private key')
   .addOptionalParam(
@@ -213,8 +213,8 @@ task('task:upgradeGatewayContract')
     types.boolean,
   )
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades, run }) {
-    const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.gateway'));
-    const proxyAddress = parsedEnv.GATEWAY_CONTRACT_PREDEPLOY_ADDRESS;
+    const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.decryptionoracle'));
+    const proxyAddress = parsedEnv.DECRYPTION_ORACLE_ADDRESS;
     await upgradeCurrentToNew(
       taskArguments.privateKey,
       proxyAddress,

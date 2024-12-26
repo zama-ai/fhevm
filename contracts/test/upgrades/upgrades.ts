@@ -17,8 +17,8 @@ describe('Upgrades', function () {
     this.executorFactoryUpgraded = await ethers.getContractFactory('TFHEExecutorUpgradedExample');
     this.paymentFactory = await ethers.getContractFactory('FHEGasLimit');
     this.paymentFactoryUpgraded = await ethers.getContractFactory('FHEGasLimitUpgradedExample');
-    this.gatewayFactory = await ethers.getContractFactory('GatewayContract');
-    this.gatewayFactoryUpgraded = await ethers.getContractFactory('GatewayContractUpgradedExample');
+    this.decryptionOracleFactory = await ethers.getContractFactory('DecryptionOracle');
+    this.decryptionOracleFactoryUpgraded = await ethers.getContractFactory('DecryptionOracleUpgradedExample');
   });
 
   it('deploy upgradable ACL', async function () {
@@ -78,16 +78,16 @@ describe('Upgrades', function () {
     expect(await payment2.getVersion()).to.equal('FHEGasLimit v0.2.0');
   });
 
-  it('deploy upgradable GatewayContract', async function () {
-    const gateway = await upgrades.deployProxy(this.gatewayFactory, [this.signers.alice.address], {
+  it('deploy upgradable DecryptionOracle', async function () {
+    const decryptionOracle = await upgrades.deployProxy(this.decryptionOracleFactory, [this.signers.alice.address], {
       initializer: 'initialize',
       kind: 'uups',
     });
-    await gateway.waitForDeployment();
-    expect(await gateway.getVersion()).to.equal('GatewayContract v0.1.1');
-    const gateway2 = await upgrades.upgradeProxy(gateway, this.gatewayFactoryUpgraded);
-    await gateway2.waitForDeployment();
-    expect(await gateway2.getVersion()).to.equal('GatewayContract v0.2.0');
+    await decryptionOracle.waitForDeployment();
+    expect(await decryptionOracle.getVersion()).to.equal('DecryptionOracle v0.1.0');
+    const decryptionOracle2 = await upgrades.upgradeProxy(decryptionOracle, this.decryptionOracleFactoryUpgraded);
+    await decryptionOracle2.waitForDeployment();
+    expect(await decryptionOracle2.getVersion()).to.equal('DecryptionOracle v0.2.0');
   });
 
   it('original owner upgrades the original ACL and transfer ownership', async function () {

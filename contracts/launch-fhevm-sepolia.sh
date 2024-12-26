@@ -1,5 +1,5 @@
 #!/bin/bash
-# This script should be launched after precomputing the addresses via `precompute-addresses.sh`, and preferably after setting up the different services - KMS, Geth node, Gateway
+# This script should be launched after precomputing the addresses via `precompute-addresses.sh`, and preferably after setting up the different services - KMS, Geth node, DecryptionOracle
 npx hardhat clean
 
 mkdir -p addresses
@@ -8,7 +8,7 @@ PRIVATE_KEY_FHEVM_DEPLOYER=$(grep PRIVATE_KEY_FHEVM_DEPLOYER .env | cut -d '"' -
 NUM_KMS_SIGNERS=$(grep NUM_KMS_SIGNERS .env | cut -d '"' -f 2)
 
 npx hardhat compile
-npx hardhat compile:specific --contract gateway
+npx hardhat compile:specific --contract decryptionOracle
 
 npx hardhat task:deployACL --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --network sepolia
 npx hardhat task:deployTFHEExecutor --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --network sepolia
@@ -27,4 +27,4 @@ npx hardhat task:verifyTFHEExecutor --network sepolia
 npx hardhat task:verifyKMSVerifier --network sepolia
 npx hardhat task:verifyInputVerifier --network sepolia
 npx hardhat task:verifyFHEGasLimit --network sepolia
-npx hardhat task:verifyGatewayContract --network sepolia
+npx hardhat task:verifyDecryptionOracle --network sepolia

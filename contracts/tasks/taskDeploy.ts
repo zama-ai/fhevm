@@ -5,25 +5,25 @@ import type { TaskArguments } from 'hardhat/types';
 
 import { KMSVerifier } from '../types';
 
-task('task:deployGateway')
+task('task:deployDecryptionOracle')
   .addParam('privateKey', 'The deployer private key')
   .addParam('ownerAddress', 'The owner address')
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
     const deployer = new ethers.Wallet(taskArguments.privateKey).connect(ethers.provider);
-    const factory = await ethers.getContractFactory('GatewayContract', deployer);
-    const Gateway = await upgrades.deployProxy(factory, [taskArguments.ownerAddress], {
+    const factory = await ethers.getContractFactory('DecryptionOracle', deployer);
+    const DecryptionOracle = await upgrades.deployProxy(factory, [taskArguments.ownerAddress], {
       initializer: 'initialize',
       kind: 'uups',
     });
-    await Gateway.waitForDeployment();
-    const GatewayContractAddress = await Gateway.getAddress();
-    const envConfig = dotenv.parse(fs.readFileSync('addresses/.env.gateway'));
-    if (GatewayContractAddress !== envConfig.GATEWAY_CONTRACT_PREDEPLOY_ADDRESS) {
+    await DecryptionOracle.waitForDeployment();
+    const DecryptionOracleAddress = await DecryptionOracle.getAddress();
+    const envConfig = dotenv.parse(fs.readFileSync('addresses/.env.decryptionoracle'));
+    if (DecryptionOracleAddress !== envConfig.DECRYPTION_ORACLE_ADDRESS) {
       throw new Error(
         `The nonce of the deployer account is not null. Please use another deployer private key or relaunch a clean instance of the fhEVM`,
       );
     }
-    console.log('GatewayContract was deployed at address: ', GatewayContractAddress);
+    console.log('DecryptionOracle was deployed at address: ', DecryptionOracleAddress);
   });
 
 task('task:deployACL')
@@ -119,7 +119,7 @@ task('task:deployFHEGasLimit')
     await payment.waitForDeployment();
     const address = await payment.getAddress();
     const envConfig = dotenv.parse(fs.readFileSync('addresses/.env.fhegaslimit'));
-    if (address !== envConfig.FHE_PAYMENT_CONTRACT_ADDRESS) {
+    if (address !== envConfig.FHE_GASLIMIT_CONTRACT_ADDRESS) {
       throw new Error(
         `The nonce of the deployer account is not correct. Please relaunch a clean instance of the fhEVM`,
       );
