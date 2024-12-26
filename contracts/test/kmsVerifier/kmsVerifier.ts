@@ -66,6 +66,8 @@ describe('KMSVerifier', function () {
       const y2 = await contract.yUint4();
       expect(y2).to.equal(0);
 
+      const tx5Bis = await contract.requestUint4();
+      await tx5Bis.wait();
       process.env.NUM_KMS_SIGNERS = '2';
       await awaitAllDecryptionResults();
       const y3 = await contract.yUint4();
@@ -122,6 +124,8 @@ describe('KMSVerifier', function () {
       process.env.NUM_KMS_SIGNERS = '1';
       const tx8 = await kmsVerifier.connect(deployer).removeSigner(kmsSigner2.address);
       await tx8.wait();
+      const tx7Bis = await contract.requestUint16();
+      await tx7Bis.wait();
       await awaitAllDecryptionResults();
       const y6 = await contract.yUint16();
       expect(y6).to.equal(16); // after removing one of the 4 signers, one signature is enough for decryption

@@ -26,6 +26,8 @@ const CiphertextType = {
   11: 'bytes',
 };
 
+let toSkip: BigInt[] = [];
+
 const currentTime = (): string => {
   const now = new Date();
   return now.toLocaleTimeString('en-US', { hour12: true, hour: 'numeric', minute: 'numeric', second: 'numeric' });
@@ -96,7 +98,7 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
     const callbackSelector = event.args[3];
     const typesList = handles.map((handle) => parseInt(handle.toString(16).slice(-4, -2), 16));
     // if request is not already fulfilled
-    if (mocked) {
+    if (mocked && !toSkip.includes(requestID)) {
       // in mocked mode, we trigger the decryption fulfillment manually
       await awaitCoprocessor();
 
@@ -143,8 +145,14 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
         to: contractCaller,
         data: calldata,
       };
-      const tx = await relayer.sendTransaction(txData);
-      await tx.wait();
+      try {
+        const tx = await relayer.sendTransaction(txData);
+        await tx.wait();
+      } catch (error) {
+        console.log('Gateway fulfillment tx failed with the following error:', error.message);
+        toSkip.push(requestID);
+        throw error;
+      }
     }
   }
 };

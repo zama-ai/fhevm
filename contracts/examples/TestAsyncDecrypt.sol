@@ -117,7 +117,6 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
         bytes[] memory signatures
     ) public checkSignatures(requestID, signatures) returns (bool) {
         yBool = decryptedInput;
-        revert();
         return yBool;
     }
 
