@@ -81,7 +81,7 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
 
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
 
-    function isSigner(address account) public virtual returns (bool) {
+    function isSigner(address account) public view virtual returns (bool) {
         KMSVerifierStorage storage $ = _getKMSVerifierStorage();
         return $.isSigner[account];
     }

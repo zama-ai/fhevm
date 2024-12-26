@@ -1,11 +1,12 @@
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
+
 import { initDecryptionOracle } from '../asyncDecrypt';
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
 
-describe.only('ACL', function () {
+describe('ACL', function () {
   before(async function () {
     await initSigners(2);
     this.signers = await getSigners();
