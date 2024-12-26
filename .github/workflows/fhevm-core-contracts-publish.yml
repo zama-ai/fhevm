@@ -27,7 +27,7 @@ jobs:
         with:
           node-version: 20.x
 
-      - name: Prepare environment file 
+      - name: Prepare environment file
         run: cp .env.example.deployment .env
 
       - name: Install dependencies
@@ -36,8 +36,8 @@ jobs:
       - name: Compile contracts
         run: npm run compile
 
-      - name: Compile gateway
-        run: npm run compile:gateway
+      - name: Compile decryption oracle
+        run: npm run compile:decryptionOracle
 
       - name: Publish prerelease to npm
         if: ${{ inputs.release != 'true' }}
