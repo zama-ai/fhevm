@@ -9,94 +9,93 @@ interface PriceData {
 
 export function generateFHEGasLimit(priceData: PriceData): string {
   let output = `// SPDX-License-Identifier: BSD-3-Clause-Clear
-
   pragma solidity ^0.8.24;
   
-  import "../addresses/TFHEExecutorAddress.sol";
-  import "@openzeppelin/contracts/utils/Strings.sol";
-  import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-  import "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
-  
-  error FHEGasBlockLimitExceeded();
-  error UnsupportedOperation();
-  error CallerMustBeTFHEExecutorContract();
-  error OnlyScalarOperationsAreSupported();
-  
-  contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
-      /// @notice Name of the contract
-      string private constant CONTRACT_NAME = "FHEGasLimit";
-  
-      /// @notice Version of the contract
-      uint256 private constant MAJOR_VERSION = 0;
-      uint256 private constant MINOR_VERSION = 1;
-      uint256 private constant PATCH_VERSION = 0;
-      
-      address private constant tfheExecutorAddress = tfheExecutorAdd;
-      uint256 private constant FHE_GAS_BLOCKLIMIT = 10_000_000;
-  
-      /// @custom:storage-location erc7201:fhevm.storage.FHEGasLimit
-      struct FHEGasLimitStorage {
-          uint256 lastBlock;
-          uint256 currentBlockConsumption;
-      }
-  
-      // keccak256(abi.encode(uint256(keccak256("fhevm.storage.FHEGasLimit")) - 1)) & ~bytes32(uint256(0xff))
-      bytes32 private constant FHEGasLimitStorageLocation =
-        0xb5c80b3bbe0bcbcea690f6dbe62b32a45bd1ad263b78db2f25ef8414efe9bc00;
-  
-      function _getFHEGasLimitStorage() internal pure returns (FHEGasLimitStorage storage $) {
-          assembly {
-              $.slot := FHEGasLimitStorageLocation
-          }
-      }
-      
-      /// @notice Getter function for the TFHEExecutor contract address
-      function getTFHEExecutorAddress() public view virtual returns (address) {
-          return tfheExecutorAddress;
-      }
-  
-      function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
-  
-      /// @custom:oz-upgrades-unsafe-allow constructor
-      constructor() {
-          _disableInitializers();
-      }
-  
-      /// @notice Initializes the contract setting \`initialOwner\` as the initial owner
-      function initialize(address initialOwner) external initializer {
-          __Ownable_init(initialOwner);
-      }
+  import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
+  import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+  import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+  import {tfheExecutorAdd} from "../addresses/TFHEExecutorAddress.sol";
 
-      function updateFunding(uint256 paidAmountGas) internal virtual {
-          FHEGasLimitStorage storage $ = _getFHEGasLimitStorage();
-          $.currentBlockConsumption += paidAmountGas;
-      }
-  
-      function checkIfNewBlock() internal virtual {
-          FHEGasLimitStorage storage $ = _getFHEGasLimitStorage();
-          uint256 lastBlock_ = block.number;
-          if (lastBlock_ > $.lastBlock) {
-              $.lastBlock = lastBlock_;
-              $.currentBlockConsumption = 0;
-          }
-      }
-  
-      function checkFHEGasBlockLimit() internal view virtual {
-          FHEGasLimitStorage storage $ = _getFHEGasLimitStorage();
-          if ($.currentBlockConsumption >= FHE_GAS_BLOCKLIMIT) revert FHEGasBlockLimitExceeded();
-      }\n\n`;
+  /**
+   * @title  FHEGasLimit
+   * @notice This contract manages the amount of gas to be paid for FHE operations.
+  */
+contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
+    /// @notice Returned if the sender is not the TFHEExecutor.
+    error CallerMustBeTFHEExecutorContract();
+
+    /// @notice Returned if the block limit is higher than limit for FHE operation.
+    error FHEGasBlockLimitExceeded();
+
+    /// @notice Returned if the operation is not supported.
+    error UnsupportedOperation();
+
+    /// @notice Returned if the operation is not scalar.
+    error OnlyScalarOperationsAreSupported();
+
+    /// @notice Name of the contract.
+    string private constant CONTRACT_NAME = "FHEGasLimit";
+
+    /// @notice Major version of the contract.
+    uint256 private constant MAJOR_VERSION = 0;
+
+    /// @notice Minor version of the contract.
+    uint256 private constant MINOR_VERSION = 1;
+
+    /// @notice Patch version of the contract.
+    uint256 private constant PATCH_VERSION = 0;
+
+    /// @notice TFHEExecutor address.
+    address private constant tfheExecutorAddress = tfheExecutorAdd;
+
+    /// @notice Gas block limit for FHEGas operation.
+    uint256 private constant FHE_GAS_BLOCKLIMIT = 10_000_000;
+
+    /// @custom:storage-location erc7201:fhevm.storage.FHEGasLimit
+    struct FHEGasLimitStorage {
+        uint256 lastBlock;
+        uint256 currentBlockConsumption;
+    }
+
+    /// @dev keccak256(abi.encode(uint256(keccak256("fhevm.storage.FHEGasLimit")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant FHEGasLimitStorageLocation =
+        0xb5c80b3bbe0bcbcea690f6dbe62b32a45bd1ad263b78db2f25ef8414efe9bc00;
+
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    /**
+     * @notice              Initializes the contract.
+     * @param initialOwner  Initial owner address.
+     */
+    function initialize(address initialOwner) external initializer {
+        __Ownable_init(initialOwner);
+    }
+
+\n\n`;
 
   for (const [operation, data] of Object.entries(priceData)) {
     const functionName = `payFor${operation.charAt(0).toUpperCase() + operation.slice(1)}`;
     if (data.binary) {
-      output += `    function ${functionName}(uint8 resultType, bytes1 scalarByte) external virtual {
+      output += `    /**
+     * @notice              Computes the gas required for ${operation.charAt(0).toUpperCase() + operation.slice(1)}.
+     * @param resultType    Result type.
+     * @param scalarByte    Scalar byte.
+     */
+     function ${functionName}(uint8 resultType, bytes1 scalarByte) external virtual {
         if(msg.sender != tfheExecutorAddress) revert CallerMustBeTFHEExecutorContract();
-        checkIfNewBlock();
+        _checkIfNewBlock();
 `;
     } else {
-      output += `        function ${functionName}(uint8 resultType) external virtual {
+      output += `    /**
+     * @notice              Computes the gas required for ${operation.charAt(0).toUpperCase() + operation.slice(1)}.
+     * @param resultType    Result type.
+     */
+    function ${functionName}(uint8 resultType) external virtual {
         if(msg.sender != tfheExecutorAddress) revert CallerMustBeTFHEExecutorContract();
-        checkIfNewBlock();
+        _checkIfNewBlock();
 `;
     }
 
@@ -116,14 +115,24 @@ ${generatePriceChecks(data.nonScalar)}
       if (data.types) output += `${generatePriceChecks(data.types)}`;
     }
 
-    output += `checkFHEGasBlockLimit();
+    output += `_checkFHEGasBlockLimit();
     }\n\n`;
   }
 
   return (
     output +
-    `    /// @notice Getter for the name and version of the contract
-    /// @return string representing the name and the version of the contract
+    `    /**
+     * @notice                     Getter function for the TFHEExecutor contract address.
+     * @return tfheExecutorAddress Address of the TFHEExecutor.
+     */
+    function getTFHEExecutorAddress() public view virtual returns (address) {
+        return tfheExecutorAddress;
+    }
+
+    /**
+     * @notice        Getter for the name and version of the contract.
+     * @return string Name and the version of the contract.
+     */
     function getVersion() external pure virtual returns (string memory) {
         return
             string(
@@ -138,7 +147,52 @@ ${generatePriceChecks(data.nonScalar)}
                 )
             );
     }
-}`
+
+    /**
+     * @dev Checks the accumulated FHE gas used and checks if it is inferior to the limit.
+     *      If so, it reverts.
+     */
+    function _checkFHEGasBlockLimit() internal view virtual {
+        FHEGasLimitStorage storage $ = _getFHEGasLimitStorage();
+        if ($.currentBlockConsumption >= FHE_GAS_BLOCKLIMIT) revert FHEGasBlockLimitExceeded();
+    }
+
+    /**
+     * @dev Checks if it is a new block. If so, it resets information for new block.
+     */
+    function _checkIfNewBlock() internal virtual {
+        FHEGasLimitStorage storage $ = _getFHEGasLimitStorage();
+        uint256 lastBlock_ = block.number;
+        if (lastBlock_ > $.lastBlock) {
+            $.lastBlock = lastBlock_;
+            $.currentBlockConsumption = 0;
+        }
+    }
+
+    /**
+     * @dev                 Updates the funding.
+     * @param paidAmountGas Paid amount gas.
+     */
+    function _updateFunding(uint256 paidAmountGas) internal virtual {
+        FHEGasLimitStorage storage $ = _getFHEGasLimitStorage();
+        $.currentBlockConsumption += paidAmountGas;
+    }
+
+    /**
+     * @dev Should revert when msg.sender is not authorized to upgrade the contract.
+     */
+    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
+
+    /**
+     * @dev  Returns the FHEGasLimit storage location.
+     */
+    function _getFHEGasLimitStorage() internal pure returns (FHEGasLimitStorage storage $) {
+        assembly {
+            $.slot := FHEGasLimitStorageLocation
+        }
+    }
+  }
+  `
   );
 }
 
@@ -147,7 +201,7 @@ function generatePriceChecks(prices: { [key: string]: number }): string {
     Object.entries(prices)
       .map(
         ([resultType, price]) => `        if (resultType == ${resultType}) {
-        updateFunding(${price});
+        _updateFunding(${price});
         }`,
       )
       .join(' else ') + 'else { revert UnsupportedOperation();}'
