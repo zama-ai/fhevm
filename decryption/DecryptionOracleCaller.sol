@@ -15,7 +15,7 @@ interface IKMSVerifier {
 }
 
 interface IDecryptionOracle {
-    function requestDecryption(uint256[] calldata ctsHandles, bytes4 callbackSelector) external returns (uint256);
+    function requestDecryption(uint256 requestID, uint256[] calldata ctsHandles, bytes4 callbackSelector) external;
 }
 
 struct DecryptionOracleConfigStruct {
@@ -28,6 +28,8 @@ abstract contract DecryptionOracleCaller {
     error InvalidKMSSignatures();
     error UnsupportedHandleType();
 
+    uint256 internal counterRequest;
+    mapping(uint256 => uint256[]) private requestedHandles;
     mapping(uint256 => ebool[]) private paramsEBool;
     mapping(uint256 => euint4[]) private paramsEUint4;
     mapping(uint256 => euint8[]) private paramsEUint8;
@@ -37,7 +39,6 @@ abstract contract DecryptionOracleCaller {
     mapping(uint256 => eaddress[]) private paramsEAddress;
     mapping(uint256 => address[]) private paramsAddress;
     mapping(uint256 => uint256[]) private paramsUint256;
-    mapping(uint256 => uint256[]) private requestedHandles;
 
     constructor() {}
 
@@ -199,11 +200,13 @@ abstract contract DecryptionOracleCaller {
         uint256[] memory ctsHandles,
         bytes4 callbackSelector
     ) internal returns (uint256 requestID) {
+        requestID = counterRequest;
         FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
         IACL($.ACLAddress).allowForDecryption(ctsHandles);
         DecryptionOracleConfigStruct storage $$ = getDecryptionOracleConfig();
-        requestID = IDecryptionOracle($$.DecryptionOracleAddress).requestDecryption(ctsHandles, callbackSelector);
+        IDecryptionOracle($$.DecryptionOracleAddress).requestDecryption(requestID, ctsHandles, callbackSelector);
         saveRequestedHandles(requestID, ctsHandles);
+        counterRequest++;
     }
 
     /// @dev this function should be called inside the callback function the dApp contract to verify the signatures
