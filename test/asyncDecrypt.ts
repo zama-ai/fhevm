@@ -39,8 +39,8 @@ if (networkName === 'hardhat') {
   const privKeyRelayer = process.env.PRIVATE_KEY_DECRYPTION_ORACLE_RELAYER;
   relayer = new ethers.Wallet(privKeyRelayer!, ethers.provider);
 }
-
-const argEvents = '(uint256 indexed requestID, uint256[] cts, address contractCaller, bytes4 callbackSelector)';
+const argEvents =
+  '(uint256 indexed counter, uint256 requestID, uint256[] cts, address contractCaller, bytes4 callbackSelector)';
 const ifaceEventDecryption = new ethers.Interface(['event DecryptionRequest' + argEvents]);
 
 let decryptionOracle: DecryptionOracle;
@@ -55,10 +55,15 @@ export const initDecryptionOracle = async (): Promise<void> => {
   }
   // this function will emit logs for every request and fulfilment of a decryption
   decryptionOracle = await ethers.getContractAt('DecryptionOracle', parsedEnv.DECRYPTION_ORACLE_ADDRESS);
-  decryptionOracle.on('DecryptionRequest', async (requestID, cts, contractCaller, callbackSelector, eventData) => {
-    const blockNumber = eventData.log.blockNumber;
-    console.log(`${await currentTime()} - Requested decrypt on block ${blockNumber} (requestID ${requestID})`);
-  });
+  decryptionOracle.on(
+    'DecryptionRequest',
+    async (counter, requestID, cts, contractCaller, callbackSelector, eventData) => {
+      const blockNumber = eventData.log.blockNumber;
+      console.log(
+        `${await currentTime()} - Requested decrypt on block ${blockNumber} (counter ${counter} - requestID ${requestID})`,
+      );
+    },
+  );
 };
 
 export const awaitAllDecryptionResults = async (): Promise<void> => {
@@ -92,10 +97,10 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
   const pastRequests = await ethers.provider.getLogs(filterDecryption);
   for (const request of pastRequests) {
     const event = ifaceEventDecryption.parseLog(request);
-    const requestID = event.args[0];
-    const handles = event.args[1];
-    const contractCaller = event.args[2];
-    const callbackSelector = event.args[3];
+    const requestID = event.args[1];
+    const handles = event.args[2];
+    const contractCaller = event.args[3];
+    const callbackSelector = event.args[4];
     const typesList = handles.map((handle) => parseInt(handle.toString(16).slice(-4, -2), 16));
     // if request is not already fulfilled
     if (mocked && !toSkip.includes(requestID)) {
