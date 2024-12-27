@@ -3,7 +3,7 @@ import dotenv from 'dotenv';
 import fs from 'fs';
 import { ethers } from 'hardhat';
 
-import { awaitAllDecryptionResults, initGateway } from '../asyncDecrypt';
+import { awaitAllDecryptionResults, initDecryptionOracle } from '../asyncDecrypt';
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
 import { bigIntToBytes256 } from '../utils';
@@ -13,8 +13,8 @@ describe('KMSVerifier', function () {
     await initSigners(2);
     this.signers = await getSigners();
     this.instances = await createInstances(this.signers);
-    this.kmsFactory = await ethers.getContractFactory('fhevmTemp/contracts/KMSVerifier.sol:KMSVerifier');
-    await initGateway();
+    this.kmsFactory = await ethers.getContractFactory('KMSVerifier');
+    await initDecryptionOracle();
   });
 
   it('original owner adds one signer, then adds two more signers, then removes one signer', async function () {
@@ -37,7 +37,7 @@ describe('KMSVerifier', function () {
 
       const contractFactory = await ethers.getContractFactory('TestAsyncDecrypt');
       const contract = await contractFactory.connect(this.signers.alice).deploy();
-      const tx2 = await contract.requestBool({ gasLimit: 5_000_000 });
+      const tx2 = await contract.requestBool();
       await tx2.wait();
       await awaitAllDecryptionResults();
       const y = await contract.yBool();
@@ -60,7 +60,7 @@ describe('KMSVerifier', function () {
       await tx4.wait();
       expect((await kmsVerifier.getSigners()).length).to.equal(4); // 3rd and 4th signer has been added successfully
 
-      const tx5 = await contract.requestUint4({ gasLimit: 5_000_000 });
+      const tx5 = await contract.requestUint4();
       await tx5.wait();
       await expect(awaitAllDecryptionResults())
         .to.revertedWithCustomError(kmsVerifier, 'KMSSignatureThresholdNotReached')
@@ -68,13 +68,15 @@ describe('KMSVerifier', function () {
       const y2 = await contract.yUint4();
       expect(y2).to.equal(0);
 
+      const tx5Bis = await contract.requestUint4();
+      await tx5Bis.wait();
       process.env.NUM_KMS_SIGNERS = '2';
       await awaitAllDecryptionResults();
       const y3 = await contract.yUint4();
       expect(y3).to.equal(4); // with 2 signatures decryption should now succeed
 
       process.env.NUM_KMS_SIGNERS = '4';
-      const tx6 = await contract.requestUint8({ gasLimit: 5_000_000 });
+      const tx6 = await contract.requestUint8();
       await tx6.wait();
       await awaitAllDecryptionResults();
       const y4 = await contract.yUint8();
@@ -89,33 +91,21 @@ describe('KMSVerifier', function () {
 
       process.env.NUM_KMS_SIGNERS = '1';
       const encryptedAmount2 = await inputAlice.encrypt();
-      await expect(
-        contract2.requestMixedBytes256Trustless(encryptedAmount2.handles[0], encryptedAmount2.inputProof, {
-          gasLimit: 5_000_000,
-        }),
-      )
+      await expect(contract2.requestMixedBytes256(encryptedAmount2.handles[0], encryptedAmount2.inputProof))
         .to.revertedWithCustomError(kmsVerifier, 'KMSSignatureThresholdNotReached')
-        .withArgs(1n); // this should fail because in this case the InputVerifier received only one KMS signature (instead of at least 2);
+        .withArgs(1n); // should revert because now we are below the threshold! (we receive only 1 signature but threshold is 2)
 
       if (process.env.IS_COPROCESSOR === 'true') {
         // different format of inputProof for native
         const cheatInputProof = encryptedAmount2.inputProof + encryptedAmount2.inputProof.slice(-130); // trying to cheat by repeating the first kms signer signature
         const cheat = cheatInputProof.slice(0, 5) + '2' + cheatInputProof.slice(6);
-        await expect(
-          contract2.requestMixedBytes256Trustless(encryptedAmount2.handles[0], cheat, {
-            gasLimit: 5_000_000,
-          }),
-        ).to.revertedWith('Not enough unique KMS input signatures'); // this should fail because in this case the InputVerifier received only one KMS signature (instead of at least 2)
+        await expect(contract2.requestMixedBytes256(encryptedAmount2.handles[0], cheat)).to.revertedWith(
+          'Not enough unique KMS input signatures',
+        ); // this should fail because in this case the InputVerifier received only one KMS signature (instead of at least 2)
       }
       process.env.NUM_KMS_SIGNERS = '4';
       const encryptedAmount = await inputAlice.encrypt();
-      const tx6bis = await contract2.requestMixedBytes256Trustless(
-        encryptedAmount.handles[0],
-        encryptedAmount.inputProof,
-        {
-          gasLimit: 5_000_000,
-        },
-      );
+      const tx6bis = await contract2.requestMixedBytes256(encryptedAmount.handles[0], encryptedAmount.inputProof);
       await tx6bis.wait();
       await awaitAllDecryptionResults();
       const ybis = await contract2.yBytes256();
@@ -127,15 +117,17 @@ describe('KMSVerifier', function () {
 
       process.env.NUM_KMS_SIGNERS = '2';
       process.env.PRIVATE_KEY_KMS_SIGNER_1 = process.env.PRIVATE_KEY_KMS_SIGNER_0;
-      const tx7 = await contract.requestUint16({ gasLimit: 5_000_000 });
+      const tx7 = await contract.requestUint16();
       await tx7.wait();
-      await expect(awaitAllDecryptionResults()).to.revertedWith('KMS signature verification failed'); // cannot use duplicated signatures if threshold is 2
+      await expect(awaitAllDecryptionResults()).to.revertedWithCustomError(contract, 'InvalidKMSSignatures'); // cannot use duplicated signatures if threshold is 2
       const y5 = await contract.yUint16();
       expect(y5).to.equal(0);
 
       process.env.NUM_KMS_SIGNERS = '1';
       const tx8 = await kmsVerifier.connect(deployer).removeSigner(kmsSigner2.address);
       await tx8.wait();
+      const tx7Bis = await contract.requestUint16();
+      await tx7Bis.wait();
       await awaitAllDecryptionResults();
       const y6 = await contract.yUint16();
       expect(y6).to.equal(16); // after removing one of the 4 signers, one signature is enough for decryption

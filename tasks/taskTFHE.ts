@@ -188,7 +188,7 @@ task('task:computeFHEGasLimitAddress')
       nonce: 9, // using nonce of 9 for the FHEGasLimit contract (8 for original implementation, +1 for proxy)
     });
     const envFilePath = path.join(__dirname, '../node_modules/fhevm-core-contracts/addresses/.env.fhegaslimit');
-    const content = `FHE_PAYMENT_CONTRACT_ADDRESS=${fheGasLimitAddress}\n`;
+    const content = `FHE_GASLIMIT_CONTRACT_ADDRESS=${fheGasLimitAddress}\n`;
     try {
       fs.writeFileSync(envFilePath, content, { flag: 'w' });
       console.log(`FHEGasLimit address ${fheGasLimitAddress} written successfully!`);

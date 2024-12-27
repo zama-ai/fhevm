@@ -3,9 +3,8 @@ import { Wallet } from 'ethers';
 import fs from 'fs';
 import { ethers, network } from 'hardhat';
 
-import { GatewayContract } from '../types';
+import { DecryptionOracle } from '../types';
 import { awaitCoprocessor, getClearText } from './coprocessorUtils';
-import { waitNBlocks } from './utils';
 
 const networkName = network.name;
 
@@ -27,52 +26,43 @@ const CiphertextType = {
   11: 'bytes',
 };
 
+let toSkip: BigInt[] = [];
+
 const currentTime = (): string => {
   const now = new Date();
   return now.toLocaleTimeString('en-US', { hour12: true, hour: 'numeric', minute: 'numeric', second: 'numeric' });
 };
 
-const parsedEnv = dotenv.parse(fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.gateway'));
+const parsedEnv = dotenv.parse(fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.decryptionoracle'));
 let relayer: Wallet;
 if (networkName === 'hardhat') {
-  const privKeyRelayer = process.env.PRIVATE_KEY_GATEWAY_RELAYER;
+  const privKeyRelayer = process.env.PRIVATE_KEY_DECRYPTION_ORACLE_RELAYER;
   relayer = new ethers.Wallet(privKeyRelayer!, ethers.provider);
 }
 
-const argEvents =
-  '(uint256 indexed requestID, uint256[] cts, address contractCaller, bytes4 callbackSelector, uint256 msgValue, uint256 maxTimestamp, bool passSignaturesToCaller)';
-const ifaceEventDecryption = new ethers.Interface(['event EventDecryption' + argEvents]);
+const argEvents = '(uint256 indexed requestID, uint256[] cts, address contractCaller, bytes4 callbackSelector)';
+const ifaceEventDecryption = new ethers.Interface(['event DecryptionRequest' + argEvents]);
 
-const argEvents2 = '(uint256 indexed requestID, bool success, bytes result)';
-const ifaceResultCallback = new ethers.Interface(['event ResultCallback' + argEvents2]);
-
-let gateway: GatewayContract;
+let decryptionOracle: DecryptionOracle;
 let firstBlockListening: number;
 let lastBlockSnapshotForDecrypt: number;
 
-export const initGateway = async (): Promise<void> => {
+export const initDecryptionOracle = async (): Promise<void> => {
   firstBlockListening = await ethers.provider.getBlockNumber();
   if (networkName === 'hardhat' && hre.__SOLIDITY_COVERAGE_RUNNING !== true) {
     // evm_snapshot is not supported in coverage mode
     await ethers.provider.send('set_lastBlockSnapshotForDecrypt', [firstBlockListening]);
   }
   // this function will emit logs for every request and fulfilment of a decryption
-  gateway = await ethers.getContractAt('GatewayContract', parsedEnv.GATEWAY_CONTRACT_PREDEPLOY_ADDRESS);
-  await gateway.on(
-    'EventDecryption',
-    async (requestID, _cts, _contractCaller, _callbackSelector, _msgValue, _maxTimestamp, eventData) => {
-      const blockNumber = eventData.log.blockNumber;
-      console.log(`${currentTime()} - Requested decrypt on block ${blockNumber} (requestID ${requestID})`);
-    },
-  );
-  await gateway.on('ResultCallback', async (requestID, _success, _result, eventData) => {
+  decryptionOracle = await ethers.getContractAt('DecryptionOracle', parsedEnv.DECRYPTION_ORACLE_ADDRESS);
+  decryptionOracle.on('DecryptionRequest', async (requestID, cts, contractCaller, callbackSelector, eventData) => {
     const blockNumber = eventData.log.blockNumber;
-    console.log(`${currentTime()} - Fulfilled decrypt on block ${blockNumber} (requestID ${requestID})`);
+    console.log(`${await currentTime()} - Requested decrypt on block ${blockNumber} (requestID ${requestID})`);
   });
 };
 
 export const awaitAllDecryptionResults = async (): Promise<void> => {
-  gateway = await ethers.getContractAt('GatewayContract', parsedEnv.GATEWAY_CONTRACT_PREDEPLOY_ADDRESS);
+  decryptionOracle = await ethers.getContractAt('DecryptionOracle', parsedEnv.DECRYPTION_ORACLE_ADDRESS);
   const provider = ethers.provider;
   if (networkName === 'hardhat' && hre.__SOLIDITY_COVERAGE_RUNNING !== true) {
     // evm_snapshot is not supported in coverage mode
@@ -89,28 +79,12 @@ export const awaitAllDecryptionResults = async (): Promise<void> => {
   }
 };
 
-const getAlreadyFulfilledDecryptions = async (): Promise<[bigint]> => {
-  let results = [];
-  const eventDecryptionResult = await gateway.filters.ResultCallback().getTopicFilter();
-  const filterDecryptionResult = {
-    address: parsedEnv.GATEWAY_CONTRACT_PREDEPLOY_ADDRESS,
-    fromBlock: firstBlockListening,
-    toBlock: 'latest',
-    topics: eventDecryptionResult,
-  };
-  const pastResults = await ethers.provider.getLogs(filterDecryptionResult);
-  results = results.concat(pastResults.map((result) => ifaceResultCallback.parseLog(result).args[0]));
-
-  return results;
-};
-
 const allTrue = (arr: boolean[], fn = Boolean) => arr.every(fn);
 
 const fulfillAllPastRequestsIds = async (mocked: boolean) => {
-  const eventDecryption = await gateway.filters.EventDecryption().getTopicFilter();
-  const results = await getAlreadyFulfilledDecryptions();
+  const eventDecryption = await decryptionOracle.filters.DecryptionRequest().getTopicFilter();
   const filterDecryption = {
-    address: parsedEnv.GATEWAY_CONTRACT_PREDEPLOY_ADDRESS,
+    address: parsedEnv.DECRYPTION_ORACLE_ADDRESS,
     fromBlock: firstBlockListening,
     toBlock: 'latest',
     topics: eventDecryption,
@@ -120,54 +94,64 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
     const event = ifaceEventDecryption.parseLog(request);
     const requestID = event.args[0];
     const handles = event.args[1];
+    const contractCaller = event.args[2];
+    const callbackSelector = event.args[3];
     const typesList = handles.map((handle) => parseInt(handle.toString(16).slice(-4, -2), 16));
-    const msgValue = event.args[4];
+    // if request is not already fulfilled
+    if (mocked && !toSkip.includes(requestID)) {
+      // in mocked mode, we trigger the decryption fulfillment manually
+      await awaitCoprocessor();
 
-    if (!results.includes(requestID)) {
-      // if request is not already fulfilled
-      if (mocked) {
-        // in mocked mode, we trigger the decryption fulfillment manually
-        await awaitCoprocessor();
+      // first check tat all handles are allowed for decryption
+      const aclFactory = await ethers.getContractFactory('ACL');
+      const acl = aclFactory.attach(aclAdd);
+      const isAllowedForDec = await Promise.all(handles.map(async (handle) => acl.isAllowedForDecryption(handle)));
+      if (!allTrue(isAllowedForDec)) {
+        throw new Error('Some handle is not authorized for decryption');
+      }
+      const types = typesList.map((num) => CiphertextType[num]);
+      const values = await Promise.all(handles.map(async (handle) => BigInt(await getClearText(handle))));
+      const valuesFormatted = values.map((value, index) =>
+        types[index] === 'address' ? '0x' + value.toString(16).padStart(40, '0') : value,
+      );
+      const valuesFormatted2 = valuesFormatted.map((value, index) =>
+        typesList[index] === 9 ? '0x' + value.toString(16).padStart(128, '0') : value,
+      );
+      const valuesFormatted3 = valuesFormatted2.map((value, index) =>
+        typesList[index] === 10 ? '0x' + value.toString(16).padStart(256, '0') : value,
+      );
+      const valuesFormatted4 = valuesFormatted3.map((value, index) =>
+        typesList[index] === 11 ? '0x' + value.toString(16).padStart(512, '0') : value,
+      );
 
-        // first check tat all handles are allowed for decryption
-        const aclFactory = await ethers.getContractFactory('fhevmTemp/contracts/ACL.sol:ACL');
-        const acl = aclFactory.attach(aclAdd);
-        const isAllowedForDec = await Promise.all(handles.map(async (handle) => acl.isAllowedForDecryption(handle)));
-        if (!allTrue(isAllowedForDec)) {
-          throw new Error('Some handle is not authorized for decryption');
-        }
-        const types = typesList.map((num) => CiphertextType[num]);
-        const values = await Promise.all(handles.map(async (handle) => BigInt(await getClearText(handle))));
-        const valuesFormatted = values.map((value, index) =>
-          types[index] === 'address' ? '0x' + value.toString(16).padStart(40, '0') : value,
-        );
-        const valuesFormatted2 = valuesFormatted.map((value, index) =>
-          typesList[index] === 9 ? '0x' + value.toString(16).padStart(128, '0') : value,
-        );
-        const valuesFormatted3 = valuesFormatted2.map((value, index) =>
-          typesList[index] === 10 ? '0x' + value.toString(16).padStart(256, '0') : value,
-        );
-        const valuesFormatted4 = valuesFormatted3.map((value, index) =>
-          typesList[index] === 11 ? '0x' + value.toString(16).padStart(512, '0') : value,
-        );
+      const abiCoder = new ethers.AbiCoder();
+      let encodedData;
+      let decryptedResult;
 
-        const abiCoder = new ethers.AbiCoder();
-        let encodedData;
-        let calldata;
+      encodedData = abiCoder.encode(['uint256', ...types, 'bytes[]'], [31, ...valuesFormatted4, []]); // 31 is just a dummy uint256 requestID to get correct abi encoding for the remaining arguments (i.e everything except the requestID)
+      // + adding also a dummy empty array of bytes for correct abi-encoding when used with signatures
+      decryptedResult = '0x' + encodedData.slice(66).slice(0, -64); // we pop the dummy requestID to get the correct value to pass for `decryptedCts` + we also pop the last 32 bytes (empty bytes[])
 
-        encodedData = abiCoder.encode(['uint256', ...types], [31, ...valuesFormatted4]); // 31 is just a dummy uint256 requestID to get correct abi encoding for the remaining arguments (i.e everything except the requestID)
-        calldata = '0x' + encodedData.slice(66); // we just pop the dummy requestID to get the correct value to pass for `decryptedCts`
+      const numSigners = +process.env.NUM_KMS_SIGNERS!;
+      const decryptResultsEIP712signatures = await computeDecryptSignatures(handles, decryptedResult, numSigners);
 
-        const numSigners = +process.env.NUM_KMS_SIGNERS!;
-        const decryptResultsEIP712signatures = await computeDecryptSignatures(handles, calldata, numSigners);
-        const tx = await gateway
-          .connect(relayer)
-          .fulfillRequest(requestID, calldata, decryptResultsEIP712signatures, { value: msgValue });
+      const calldata =
+        callbackSelector +
+        abiCoder
+          .encode(['uint256', ...types, 'bytes[]'], [requestID, ...valuesFormatted4, decryptResultsEIP712signatures])
+          .slice(2);
+
+      const txData = {
+        to: contractCaller,
+        data: calldata,
+      };
+      try {
+        const tx = await relayer.sendTransaction(txData);
         await tx.wait();
-      } else {
-        // in fhEVM mode we must wait until the gateway service relayer submits the decryption fulfillment tx
-        await waitNBlocks(1);
-        await fulfillAllPastRequestsIds(mocked);
+      } catch (error) {
+        console.log('Gateway fulfillment tx failed with the following error:', error.message);
+        toSkip.push(requestID);
+        throw error;
       }
     }
   }

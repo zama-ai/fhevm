@@ -4,11 +4,11 @@ pragma solidity ^0.8.24;
 
 import "../lib/TFHE.sol";
 import "./FHEVMConfig.sol";
-import "./GatewayConfig.sol";
-import "../gateway/GatewayCaller.sol";
+import "../decryption/DecryptionOracleCaller.sol";
+import "./DecryptionOracleConfig.sol";
 
 /// @notice Contract for testing asynchronous decryption using the Gateway
-contract TestAsyncDecrypt is GatewayCaller {
+contract TestAsyncDecrypt is DecryptionOracleCaller {
     /// @dev Encrypted state variables
     ebool xBool;
     euint4 xUint4;
@@ -46,7 +46,7 @@ contract TestAsyncDecrypt is GatewayCaller {
     /// @notice Constructor to initialize the contract and set up encrypted values
     constructor() {
         TFHE.setFHEVM(FHEVMConfig.defaultConfig());
-        Gateway.setGateway(GatewayConfig.defaultGatewayContract());
+        setDecryptionOracle(DECRYPTION_ORACLE_ADDRESS);
 
         /// @dev Initialize encrypted variables with sample values
         xBool = TFHE.asEbool(true);
@@ -78,12 +78,16 @@ contract TestAsyncDecrypt is GatewayCaller {
     /// @notice Function to request decryption of a boolean value with an infinite loop in the callback
     function requestBoolInfinite() public {
         uint256[] memory cts = new uint256[](1);
-        cts[0] = Gateway.toUint256(xBool);
-        Gateway.requestDecryption(cts, this.callbackBoolInfinite.selector, 0, block.timestamp + 100, false);
+        cts[0] = toUint256(xBool);
+        requestDecryption(cts, this.callbackBoolInfinite.selector);
     }
 
     /// @notice Callback function for the infinite loop decryption request (WARNING: This function will never complete)
-    function callbackBoolInfinite(uint256 /*requestID*/, bool decryptedInput) public onlyGateway returns (bool) {
+    function callbackBoolInfinite(
+        uint256 requestID,
+        bool decryptedInput,
+        bytes[] memory signatures
+    ) public checkSignatures(requestID, signatures) returns (bool) {
         uint256 i = 0;
         while (true) {
             i++;
@@ -92,37 +96,11 @@ contract TestAsyncDecrypt is GatewayCaller {
         return yBool;
     }
 
-    /// @notice Function to request decryption with an excessive delay (should revert)
-    function requestBoolAboveDelay() public {
-        /// @dev This should revert due to the excessive delay
-        uint256[] memory cts = new uint256[](1);
-        cts[0] = Gateway.toUint256(xBool);
-        Gateway.requestDecryption(cts, this.callbackBool.selector, 0, block.timestamp + 2 days, false);
-    }
-
     /// @notice Request decryption of a boolean value
     function requestBool() public {
         uint256[] memory cts = new uint256[](1);
-        cts[0] = Gateway.toUint256(xBool);
-        /// @dev Request decryption with a 100-second deadline and non-trustless mode
-        Gateway.requestDecryption(cts, this.callbackBool.selector, 0, block.timestamp + 100, false);
-    }
-
-    /// @notice Request decryption of a boolean value in trustless mode
-    function requestBoolTrustless() public {
-        uint256[] memory cts = new uint256[](1);
-        cts[0] = Gateway.toUint256(xBool);
-        /// @dev Request decryption with a 100-second deadline and trustless mode (true)
-        uint256 requestID = Gateway.requestDecryption(
-            cts,
-            this.callbackBoolTrustless.selector,
-            0,
-            block.timestamp + 100,
-            true
-        );
-        latestRequestID = requestID;
-        /// @dev Save the requested handles for later verification
-        saveRequestedHandles(requestID, cts);
+        cts[0] = toUint256(xBool);
+        requestDecryption(cts, this.callbackBool.selector);
     }
 
     /// @notice Attempt to request decryption of a fake boolean value (should revert)
@@ -130,29 +108,15 @@ contract TestAsyncDecrypt is GatewayCaller {
         uint256[] memory cts = new uint256[](1);
         cts[0] = uint256(0x4200000000000000000000000000000000000000000000000000000000000000);
         /// @dev This should revert because the previous ebool is not honestly obtained
-        Gateway.requestDecryption(cts, this.callbackBool.selector, 0, block.timestamp + 100, false);
+        requestDecryption(cts, this.callbackBool.selector);
     }
 
-    /// @notice Callback function for non-trustless boolean decryption
-    function callbackBool(uint256, bool decryptedInput) public onlyGateway returns (bool) {
-        yBool = decryptedInput;
-        return yBool;
-    }
-
-    /// @notice Callback function for trustless boolean decryption
-    function callbackBoolTrustless(
+    /// @notice Callback function for boolean decryption
+    function callbackBool(
         uint256 requestID,
         bool decryptedInput,
         bytes[] memory signatures
-    ) public onlyGateway returns (bool) {
-        /// @dev Verify that the requestID matches the latest request
-        require(latestRequestID == requestID, "wrong requestID passed by Gateway");
-        /// @dev Load the previously saved handles for verification
-        uint256[] memory requestedHandles = loadRequestedHandles(latestRequestID);
-        /// @dev Verify the signatures provided by the KMS (Key Management Service)
-        bool isKMSVerified = Gateway.verifySignatures(requestedHandles, signatures);
-        require(isKMSVerified, "KMS did not verify this decryption result");
-        /// @dev If verification passes, store the decrypted value
+    ) public checkSignatures(requestID, signatures) returns (bool) {
         yBool = decryptedInput;
         return yBool;
     }
@@ -160,8 +124,8 @@ contract TestAsyncDecrypt is GatewayCaller {
     /// @notice Request decryption of a 4-bit unsigned integer
     function requestUint4() public {
         uint256[] memory cts = new uint256[](1);
-        cts[0] = Gateway.toUint256(xUint4);
-        Gateway.requestDecryption(cts, this.callbackUint4.selector, 0, block.timestamp + 100, false);
+        cts[0] = toUint256(xUint4);
+        requestDecryption(cts, this.callbackUint4.selector);
     }
 
     /// @notice Attempt to request decryption of a fake 4-bit unsigned integer (should revert)
@@ -169,13 +133,17 @@ contract TestAsyncDecrypt is GatewayCaller {
         uint256[] memory cts = new uint256[](1);
         cts[0] = uint256(0x4200000000000000000000000000000000000000000000000000000000000100);
         /// @dev This should revert because the previous handle is not honestly obtained
-        Gateway.requestDecryption(cts, this.callbackUint4.selector, 0, block.timestamp + 100, false);
+        requestDecryption(cts, this.callbackUint4.selector);
     }
 
     /// @notice Callback function for 4-bit unsigned integer decryption
     /// @param decryptedInput The decrypted 4-bit unsigned integer
     /// @return The decrypted value
-    function callbackUint4(uint256, uint8 decryptedInput) public onlyGateway returns (uint8) {
+    function callbackUint4(
+        uint256 requestID,
+        uint8 decryptedInput,
+        bytes[] memory signatures
+    ) public checkSignatures(requestID, signatures) returns (uint8) {
         yUint4 = decryptedInput;
         return decryptedInput;
     }
@@ -183,8 +151,8 @@ contract TestAsyncDecrypt is GatewayCaller {
     /// @notice Request decryption of an 8-bit unsigned integer
     function requestUint8() public {
         uint256[] memory cts = new uint256[](1);
-        cts[0] = Gateway.toUint256(xUint8);
-        Gateway.requestDecryption(cts, this.callbackUint8.selector, 0, block.timestamp + 100, false);
+        cts[0] = toUint256(xUint8);
+        requestDecryption(cts, this.callbackUint8.selector);
     }
 
     /// @notice Attempt to request decryption of a fake 8-bit unsigned integer (should revert)
@@ -192,13 +160,17 @@ contract TestAsyncDecrypt is GatewayCaller {
         uint256[] memory cts = new uint256[](1);
         cts[0] = uint256(0x4200000000000000000000000000000000000000000000000000000000000200);
         /// @dev This should revert because the previous handle is not honestly obtained
-        Gateway.requestDecryption(cts, this.callbackUint8.selector, 0, block.timestamp + 100, false);
+        requestDecryption(cts, this.callbackUint8.selector);
     }
 
     /// @notice Callback function for 8-bit unsigned integer decryption
     /// @param decryptedInput The decrypted 8-bit unsigned integer
     /// @return The decrypted value
-    function callbackUint8(uint256, uint8 decryptedInput) public onlyGateway returns (uint8) {
+    function callbackUint8(
+        uint256 requestID,
+        uint8 decryptedInput,
+        bytes[] memory signatures
+    ) public checkSignatures(requestID, signatures) returns (uint8) {
         yUint8 = decryptedInput;
         return decryptedInput;
     }
@@ -206,8 +178,8 @@ contract TestAsyncDecrypt is GatewayCaller {
     /// @notice Request decryption of a 16-bit unsigned integer
     function requestUint16() public {
         uint256[] memory cts = new uint256[](1);
-        cts[0] = Gateway.toUint256(xUint16);
-        Gateway.requestDecryption(cts, this.callbackUint16.selector, 0, block.timestamp + 100, false);
+        cts[0] = toUint256(xUint16);
+        requestDecryption(cts, this.callbackUint16.selector);
     }
 
     /// @notice Attempt to request decryption of a fake 16-bit unsigned integer (should revert)
@@ -215,13 +187,17 @@ contract TestAsyncDecrypt is GatewayCaller {
         uint256[] memory cts = new uint256[](1);
         cts[0] = uint256(0x4200000000000000000000000000000000000000000000000000000000000300);
         /// @dev This should revert because the previous handle is not honestly obtained
-        Gateway.requestDecryption(cts, this.callbackUint16.selector, 0, block.timestamp + 100, false);
+        requestDecryption(cts, this.callbackUint16.selector);
     }
 
     /// @notice Callback function for 16-bit unsigned integer decryption
     /// @param decryptedInput The decrypted 16-bit unsigned integer
     /// @return The decrypted value
-    function callbackUint16(uint256, uint16 decryptedInput) public onlyGateway returns (uint16) {
+    function callbackUint16(
+        uint256 requestID,
+        uint16 decryptedInput,
+        bytes[] memory signatures
+    ) public checkSignatures(requestID, signatures) returns (uint16) {
         yUint16 = decryptedInput;
         return decryptedInput;
     }
@@ -231,14 +207,8 @@ contract TestAsyncDecrypt is GatewayCaller {
     /// @param input2 Second additional input
     function requestUint32(uint32 input1, uint32 input2) public {
         uint256[] memory cts = new uint256[](1);
-        cts[0] = Gateway.toUint256(xUint32);
-        uint256 requestID = Gateway.requestDecryption(
-            cts,
-            this.callbackUint32.selector,
-            0,
-            block.timestamp + 100,
-            false
-        );
+        cts[0] = toUint256(xUint32);
+        uint256 requestID = requestDecryption(cts, this.callbackUint32.selector);
         addParamsUint256(requestID, input1);
         addParamsUint256(requestID, input2);
     }
@@ -248,14 +218,18 @@ contract TestAsyncDecrypt is GatewayCaller {
         uint256[] memory cts = new uint256[](1);
         cts[0] = uint256(0x4200000000000000000000000000000000000000000000000000000000000400);
         /// @dev This should revert because the previous handle is not honestly obtained
-        Gateway.requestDecryption(cts, this.callbackUint32.selector, 0, block.timestamp + 100, false);
+        requestDecryption(cts, this.callbackUint32.selector);
     }
 
     /// @notice Callback function for 32-bit unsigned integer decryption
     /// @param requestID The ID of the decryption request
     /// @param decryptedInput The decrypted 32-bit unsigned integer
     /// @return The result of the computation
-    function callbackUint32(uint256 requestID, uint32 decryptedInput) public onlyGateway returns (uint32) {
+    function callbackUint32(
+        uint256 requestID,
+        uint32 decryptedInput,
+        bytes[] memory signatures
+    ) public checkSignatures(requestID, signatures) returns (uint32) {
         uint256[] memory params = getParamsUint256(requestID);
         unchecked {
             uint32 result = uint32(params[0]) + uint32(params[1]) + decryptedInput;
@@ -267,8 +241,8 @@ contract TestAsyncDecrypt is GatewayCaller {
     /// @notice Request decryption of a 64-bit unsigned integer
     function requestUint64() public {
         uint256[] memory cts = new uint256[](1);
-        cts[0] = Gateway.toUint256(xUint64);
-        Gateway.requestDecryption(cts, this.callbackUint64.selector, 0, block.timestamp + 100, false);
+        cts[0] = toUint256(xUint64);
+        requestDecryption(cts, this.callbackUint64.selector);
     }
 
     /// @notice Attempt to request decryption of a fake 64-bit unsigned integer (should revert)
@@ -276,7 +250,7 @@ contract TestAsyncDecrypt is GatewayCaller {
         uint256[] memory cts = new uint256[](1);
         cts[0] = uint256(0x4200000000000000000000000000000000000000000000000000000000000500);
         /// @dev This should revert because the previous handle is not honestly obtained
-        Gateway.requestDecryption(cts, this.callbackUint64.selector, 0, block.timestamp + 100, false);
+        requestDecryption(cts, this.callbackUint64.selector);
     }
 
     /// @notice Request decryption of a non-trivial 64-bit unsigned integer
@@ -285,50 +259,62 @@ contract TestAsyncDecrypt is GatewayCaller {
     function requestUint64NonTrivial(einput inputHandle, bytes calldata inputProof) public {
         euint64 inputNonTrivial = TFHE.asEuint64(inputHandle, inputProof);
         uint256[] memory cts = new uint256[](1);
-        cts[0] = Gateway.toUint256(inputNonTrivial);
-        Gateway.requestDecryption(cts, this.callbackUint64.selector, 0, block.timestamp + 100, false);
+        cts[0] = toUint256(inputNonTrivial);
+        requestDecryption(cts, this.callbackUint64.selector);
     }
 
     /// @notice Callback function for 64-bit unsigned integer decryption
     /// @param decryptedInput The decrypted 64-bit unsigned integer
     /// @return The decrypted value
-    function callbackUint64(uint256, uint64 decryptedInput) public onlyGateway returns (uint64) {
+    function callbackUint64(
+        uint256 requestID,
+        uint64 decryptedInput,
+        bytes[] memory signatures
+    ) public checkSignatures(requestID, signatures) returns (uint64) {
         yUint64 = decryptedInput;
         return decryptedInput;
     }
 
     function requestUint128() public {
         uint256[] memory cts = new uint256[](1);
-        cts[0] = Gateway.toUint256(xUint128);
-        Gateway.requestDecryption(cts, this.callbackUint128.selector, 0, block.timestamp + 100, false);
+        cts[0] = toUint256(xUint128);
+        requestDecryption(cts, this.callbackUint128.selector);
     }
 
     function requestUint128NonTrivial(einput inputHandle, bytes calldata inputProof) public {
         euint128 inputNonTrivial = TFHE.asEuint128(inputHandle, inputProof);
         uint256[] memory cts = new uint256[](1);
-        cts[0] = Gateway.toUint256(inputNonTrivial);
-        Gateway.requestDecryption(cts, this.callbackUint128.selector, 0, block.timestamp + 100, false);
+        cts[0] = toUint256(inputNonTrivial);
+        requestDecryption(cts, this.callbackUint128.selector);
     }
 
-    function callbackUint128(uint256, uint128 decryptedInput) public onlyGateway returns (uint128) {
+    function callbackUint128(
+        uint256 requestID,
+        uint128 decryptedInput,
+        bytes[] memory signatures
+    ) public checkSignatures(requestID, signatures) returns (uint128) {
         yUint128 = decryptedInput;
         return decryptedInput;
     }
 
     function requestUint256() public {
         uint256[] memory cts = new uint256[](1);
-        cts[0] = Gateway.toUint256(xUint256);
-        Gateway.requestDecryption(cts, this.callbackUint256.selector, 0, block.timestamp + 100, false);
+        cts[0] = toUint256(xUint256);
+        requestDecryption(cts, this.callbackUint256.selector);
     }
 
     function requestUint256NonTrivial(einput inputHandle, bytes calldata inputProof) public {
         euint256 inputNonTrivial = TFHE.asEuint256(inputHandle, inputProof);
         uint256[] memory cts = new uint256[](1);
-        cts[0] = Gateway.toUint256(inputNonTrivial);
-        Gateway.requestDecryption(cts, this.callbackUint256.selector, 0, block.timestamp + 100, false);
+        cts[0] = toUint256(inputNonTrivial);
+        requestDecryption(cts, this.callbackUint256.selector);
     }
 
-    function callbackUint256(uint256, uint256 decryptedInput) public onlyGateway returns (uint256) {
+    function callbackUint256(
+        uint256 requestID,
+        uint256 decryptedInput,
+        bytes[] memory signatures
+    ) public checkSignatures(requestID, signatures) returns (uint256) {
         yUint256 = decryptedInput;
         return decryptedInput;
     }
@@ -336,18 +322,22 @@ contract TestAsyncDecrypt is GatewayCaller {
     function requestEbytes64NonTrivial(einput inputHandle, bytes calldata inputProof) public {
         ebytes64 inputNonTrivial = TFHE.asEbytes64(inputHandle, inputProof);
         uint256[] memory cts = new uint256[](1);
-        cts[0] = Gateway.toUint256(inputNonTrivial);
-        Gateway.requestDecryption(cts, this.callbackBytes64.selector, 0, block.timestamp + 100, false);
+        cts[0] = toUint256(inputNonTrivial);
+        requestDecryption(cts, this.callbackBytes64.selector);
     }
 
     function requestEbytes64Trivial(bytes calldata value) public {
         ebytes64 inputTrivial = TFHE.asEbytes64(TFHE.padToBytes64(value));
         uint256[] memory cts = new uint256[](1);
-        cts[0] = Gateway.toUint256(inputTrivial);
-        Gateway.requestDecryption(cts, this.callbackBytes64.selector, 0, block.timestamp + 100, false);
+        cts[0] = toUint256(inputTrivial);
+        requestDecryption(cts, this.callbackBytes64.selector);
     }
 
-    function callbackBytes64(uint256, bytes calldata decryptedInput) public onlyGateway returns (bytes memory) {
+    function callbackBytes64(
+        uint256 requestID,
+        bytes calldata decryptedInput,
+        bytes[] memory signatures
+    ) public checkSignatures(requestID, signatures) returns (bytes memory) {
         yBytes64 = decryptedInput;
         return decryptedInput;
     }
@@ -355,18 +345,22 @@ contract TestAsyncDecrypt is GatewayCaller {
     function requestEbytes128NonTrivial(einput inputHandle, bytes calldata inputProof) public {
         ebytes128 inputNonTrivial = TFHE.asEbytes128(inputHandle, inputProof);
         uint256[] memory cts = new uint256[](1);
-        cts[0] = Gateway.toUint256(inputNonTrivial);
-        Gateway.requestDecryption(cts, this.callbackBytes128.selector, 0, block.timestamp + 100, false);
+        cts[0] = toUint256(inputNonTrivial);
+        requestDecryption(cts, this.callbackBytes128.selector);
     }
 
     function requestEbytes128Trivial(bytes calldata value) public {
         ebytes128 inputTrivial = TFHE.asEbytes128(TFHE.padToBytes128(value));
         uint256[] memory cts = new uint256[](1);
-        cts[0] = Gateway.toUint256(inputTrivial);
-        Gateway.requestDecryption(cts, this.callbackBytes128.selector, 0, block.timestamp + 100, false);
+        cts[0] = toUint256(inputTrivial);
+        requestDecryption(cts, this.callbackBytes128.selector);
     }
 
-    function callbackBytes128(uint256, bytes calldata decryptedInput) public onlyGateway returns (bytes memory) {
+    function callbackBytes128(
+        uint256 requestID,
+        bytes calldata decryptedInput,
+        bytes[] memory signatures
+    ) public checkSignatures(requestID, signatures) returns (bytes memory) {
         yBytes128 = decryptedInput;
         return decryptedInput;
     }
@@ -374,21 +368,25 @@ contract TestAsyncDecrypt is GatewayCaller {
     function requestEbytes256Trivial(bytes calldata value) public {
         ebytes256 inputTrivial = TFHE.asEbytes256(TFHE.padToBytes256(value));
         uint256[] memory cts = new uint256[](1);
-        cts[0] = Gateway.toUint256(inputTrivial);
-        Gateway.requestDecryption(cts, this.callbackBytes256.selector, 0, block.timestamp + 100, false);
+        cts[0] = toUint256(inputTrivial);
+        requestDecryption(cts, this.callbackBytes256.selector);
     }
 
     function requestEbytes256NonTrivial(einput inputHandle, bytes calldata inputProof) public {
         ebytes256 inputNonTrivial = TFHE.asEbytes256(inputHandle, inputProof);
         uint256[] memory cts = new uint256[](1);
-        cts[0] = Gateway.toUint256(inputNonTrivial);
-        Gateway.requestDecryption(cts, this.callbackBytes256.selector, 0, block.timestamp + 100, false);
+        cts[0] = toUint256(inputNonTrivial);
+        requestDecryption(cts, this.callbackBytes256.selector);
     }
 
     /// @notice Callback function for 256-bit encrypted bytes decryption
     /// @param decryptedInput The decrypted 256-bit bytes
     /// @return The decrypted value
-    function callbackBytes256(uint256, bytes calldata decryptedInput) public onlyGateway returns (bytes memory) {
+    function callbackBytes256(
+        uint256 requestID,
+        bytes calldata decryptedInput,
+        bytes[] memory signatures
+    ) public checkSignatures(requestID, signatures) returns (bytes memory) {
         yBytes256 = decryptedInput;
         return decryptedInput;
     }
@@ -396,16 +394,16 @@ contract TestAsyncDecrypt is GatewayCaller {
     /// @notice Request decryption of an encrypted address
     function requestAddress() public {
         uint256[] memory cts = new uint256[](1);
-        cts[0] = Gateway.toUint256(xAddress);
-        Gateway.requestDecryption(cts, this.callbackAddress.selector, 0, block.timestamp + 100, false);
+        cts[0] = toUint256(xAddress);
+        requestDecryption(cts, this.callbackAddress.selector);
     }
 
     /// @notice Request decryption of multiple encrypted addresses
     function requestSeveralAddresses() public {
         uint256[] memory cts = new uint256[](2);
-        cts[0] = Gateway.toUint256(xAddress);
-        cts[1] = Gateway.toUint256(xAddress2);
-        Gateway.requestDecryption(cts, this.callbackAddresses.selector, 0, block.timestamp + 100, false);
+        cts[0] = toUint256(xAddress);
+        cts[1] = toUint256(xAddress2);
+        requestDecryption(cts, this.callbackAddresses.selector);
     }
 
     /// @notice Callback function for multiple address decryption
@@ -413,10 +411,11 @@ contract TestAsyncDecrypt is GatewayCaller {
     /// @param decryptedInput2 The second decrypted address
     /// @return The first decrypted address
     function callbackAddresses(
-        uint256 /*requestID*/,
+        uint256 requestID,
         address decryptedInput1,
-        address decryptedInput2
-    ) public onlyGateway returns (address) {
+        address decryptedInput2,
+        bytes[] memory signatures
+    ) public checkSignatures(requestID, signatures) returns (address) {
         yAddress = decryptedInput1;
         yAddress2 = decryptedInput2;
         return decryptedInput1;
@@ -427,13 +426,17 @@ contract TestAsyncDecrypt is GatewayCaller {
         uint256[] memory cts = new uint256[](1);
         cts[0] = uint256(0x4200000000000000000000000000000000000000000000000000000000000700);
         /// @dev This should revert because the previous handle is not honestly obtained
-        Gateway.requestDecryption(cts, this.callbackAddress.selector, 0, block.timestamp + 100, false);
+        requestDecryption(cts, this.callbackAddress.selector);
     }
 
     /// @notice Callback function for address decryption
     /// @param decryptedInput The decrypted address
     /// @return The decrypted address
-    function callbackAddress(uint256, address decryptedInput) public onlyGateway returns (address) {
+    function callbackAddress(
+        uint256 requestID,
+        address decryptedInput,
+        bytes[] memory signatures
+    ) public checkSignatures(requestID, signatures) returns (address) {
         yAddress = decryptedInput;
         return decryptedInput;
     }
@@ -444,23 +447,17 @@ contract TestAsyncDecrypt is GatewayCaller {
     /// @param input2 Second additional input parameter for the callback function
     function requestMixed(uint32 input1, uint32 input2) public {
         uint256[] memory cts = new uint256[](10);
-        cts[0] = Gateway.toUint256(xBool);
-        cts[1] = Gateway.toUint256(xBool);
-        cts[2] = Gateway.toUint256(xUint4);
-        cts[3] = Gateway.toUint256(xUint8);
-        cts[4] = Gateway.toUint256(xUint16);
-        cts[5] = Gateway.toUint256(xUint32);
-        cts[6] = Gateway.toUint256(xUint64);
-        cts[7] = Gateway.toUint256(xUint64);
-        cts[8] = Gateway.toUint256(xUint64);
-        cts[9] = Gateway.toUint256(xAddress);
-        uint256 requestID = Gateway.requestDecryption(
-            cts,
-            this.callbackMixed.selector,
-            0,
-            block.timestamp + 100,
-            false
-        );
+        cts[0] = toUint256(xBool);
+        cts[1] = toUint256(xBool);
+        cts[2] = toUint256(xUint4);
+        cts[3] = toUint256(xUint8);
+        cts[4] = toUint256(xUint16);
+        cts[5] = toUint256(xUint32);
+        cts[6] = toUint256(xUint64);
+        cts[7] = toUint256(xUint64);
+        cts[8] = toUint256(xUint64);
+        cts[9] = toUint256(xAddress);
+        uint256 requestID = requestDecryption(cts, this.callbackMixed.selector);
         addParamsUint256(requestID, input1);
         addParamsUint256(requestID, input2);
     }
@@ -490,8 +487,9 @@ contract TestAsyncDecrypt is GatewayCaller {
         uint64 decUint64_1,
         uint64 decUint64_2,
         uint64 decUint64_3,
-        address decAddress
-    ) public onlyGateway returns (uint8) {
+        address decAddress,
+        bytes[] memory signatures
+    ) public checkSignatures(requestID, signatures) returns (uint8) {
         yBool = decBool_1;
         require(decBool_1 == decBool_2, "Wrong decryption");
         yUint4 = decUint4;
@@ -515,12 +513,12 @@ contract TestAsyncDecrypt is GatewayCaller {
     function requestMixedBytes256(einput inputHandle, bytes calldata inputProof) public {
         ebytes256 xBytes256 = TFHE.asEbytes256(inputHandle, inputProof);
         uint256[] memory cts = new uint256[](4);
-        cts[0] = Gateway.toUint256(xBool);
-        cts[1] = Gateway.toUint256(xAddress);
-        cts[2] = Gateway.toUint256(xBytes256);
+        cts[0] = toUint256(xBool);
+        cts[1] = toUint256(xAddress);
+        cts[2] = toUint256(xBytes256);
         ebytes64 input64Bytes = TFHE.asEbytes64(TFHE.padToBytes64(hex"aaff42"));
-        cts[3] = Gateway.toUint256(input64Bytes);
-        Gateway.requestDecryption(cts, this.callbackMixedBytes256.selector, 0, block.timestamp + 100, false);
+        cts[3] = toUint256(input64Bytes);
+        requestDecryption(cts, this.callbackMixedBytes256.selector);
     }
 
     /// @notice Callback function for mixed data type decryption including 256-bit encrypted bytes
@@ -529,97 +527,16 @@ contract TestAsyncDecrypt is GatewayCaller {
     /// @param decAddress Decrypted address
     /// @param bytesRes Decrypted 256-bit bytes
     function callbackMixedBytes256(
-        uint256,
+        uint256 requestID,
         bool decBool,
         address decAddress,
         bytes memory bytesRes,
-        bytes memory bytesRes2
-    ) public onlyGateway {
+        bytes memory bytesRes2,
+        bytes[] memory signatures
+    ) public checkSignatures(requestID, signatures) {
         yBool = decBool;
         yAddress = decAddress;
         yBytes256 = bytesRes;
         yBytes64 = bytesRes2;
-    }
-
-    /// @notice Request trustless decryption of non-trivial 256-bit encrypted bytes
-    /// @dev Demonstrates how to request trustless decryption for complex encrypted bytes256
-    /// @param inputHandle The encrypted input handle for the bytes256
-    /// @param inputProof The proof for the encrypted bytes256
-    function requestEbytes256NonTrivialTrustless(einput inputHandle, bytes calldata inputProof) public {
-        ebytes256 inputNonTrivial = TFHE.asEbytes256(inputHandle, inputProof);
-        uint256[] memory cts = new uint256[](1);
-        cts[0] = Gateway.toUint256(inputNonTrivial);
-        uint256 requestID = Gateway.requestDecryption(
-            cts,
-            this.callbackBytes256Trustless.selector,
-            0,
-            block.timestamp + 100,
-            true
-        );
-        latestRequestID = requestID;
-        saveRequestedHandles(requestID, cts);
-    }
-
-    /// @notice Callback function for trustless decryption of 256-bit encrypted bytes
-    /// @dev Verifies the decryption result using KMS signatures
-    /// @param requestID The ID of the decryption request
-    /// @param decryptedInput The decrypted bytes256 value
-    /// @param signatures The signatures from the KMS for verification
-    /// @return The decrypted bytes256 value
-    function callbackBytes256Trustless(
-        uint256 requestID,
-        bytes calldata decryptedInput,
-        bytes[] memory signatures
-    ) public onlyGateway returns (bytes memory) {
-        require(latestRequestID == requestID, "wrong requestID passed by Gateway");
-        uint256[] memory requestedHandles = loadRequestedHandles(latestRequestID);
-        bool isKMSVerified = Gateway.verifySignatures(requestedHandles, signatures);
-        require(isKMSVerified, "KMS did not verify this decryption result");
-        yBytes256 = decryptedInput;
-        return decryptedInput;
-    }
-
-    /// @notice Request trustless decryption of mixed data types including 256-bit encrypted bytes
-    /// @dev Demonstrates how to request trustless decryption for multiple data types
-    /// @param inputHandle The encrypted input handle for the bytes256
-    /// @param inputProof The proof for the encrypted bytes256
-    function requestMixedBytes256Trustless(einput inputHandle, bytes calldata inputProof) public {
-        ebytes256 xBytes256 = TFHE.asEbytes256(inputHandle, inputProof);
-        uint256[] memory cts = new uint256[](3);
-        cts[0] = Gateway.toUint256(xBool);
-        cts[1] = Gateway.toUint256(xBytes256);
-        cts[2] = Gateway.toUint256(xAddress);
-        uint256 requestID = Gateway.requestDecryption(
-            cts,
-            this.callbackMixedBytes256Trustless.selector,
-            0,
-            block.timestamp + 100,
-            true
-        );
-        latestRequestID = requestID;
-        saveRequestedHandles(requestID, cts);
-    }
-
-    /// @notice Callback function for trustless decryption of mixed data types including 256-bit encrypted bytes
-    /// @dev Verifies and processes the decrypted values
-    /// @param requestID The ID of the decryption request
-    /// @param decBool Decrypted boolean
-    /// @param bytesRes Decrypted 256-bit bytes
-    /// @param decAddress Decrypted address
-    /// @param signatures The signatures from the KMS for verification
-    function callbackMixedBytes256Trustless(
-        uint256 requestID,
-        bool decBool,
-        bytes memory bytesRes,
-        address decAddress,
-        bytes[] memory signatures
-    ) public onlyGateway {
-        require(latestRequestID == requestID, "wrong requestID passed by Gateway");
-        uint256[] memory requestedHandles = loadRequestedHandles(latestRequestID);
-        bool isKMSVerified = Gateway.verifySignatures(requestedHandles, signatures);
-        require(isKMSVerified, "KMS did not verify this decryption result");
-        yBool = decBool;
-        yAddress = decAddress;
-        yBytes256 = bytesRes;
     }
 }
