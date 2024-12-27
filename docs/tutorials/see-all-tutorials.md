@@ -24,7 +24,7 @@ The library includes templates for common use cases like tokens and governance, 
 
 ## Code examples on GitHub
 
-- [Blind Auction](https://github.com/zama-ai/fhevm/blob/main/examples/BlindAuction.sol): A smart contract for conducting blind auctions where bids are encrypted and the winning bid remains private.
+- [Blind Auction](https://github.com/zama-ai/dapps/blob/main/hardhat/contracts/auctions/BlindAuction.sol): A smart contract for conducting blind auctions where bids are encrypted and the winning bid remains private.
 - [Decentralized ID](https://github.com/poppyseedDev/FHEPass): A blockchain-based identity management system using smart contracts to store and manage encrypted personal data.
 - [Cipherbomb](https://github.com/immortal-tofu/cipherbomb): A multiplayer game where players must defuse an encrypted bomb by guessing the correct sequence of numbers.
 - [Voting example](https://github.com/allemanfredi/suffragium): Suffragium is a secure, privacy-preserving voting system that combines zero-knowledge proofs (ZKP) and Fully Homomorphic Encryption (FHE) to create a trustless and tamper-resistant voting platform.
