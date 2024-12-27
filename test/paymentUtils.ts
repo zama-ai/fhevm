@@ -7,7 +7,7 @@ export async function initializeFHEGasLimit() {
   const parsedFHEGasLimit = dotenv.parse(
     fs.readFileSync('node_modules/fhevm-core-contracts/addresses/.env.fhegaslimit'),
   );
-  const fheGasLimit = fheGasLimitFactory.attach(parsedFHEGasLimit.FHE_PAYMENT_CONTRACT_ADDRESS);
+  const fheGasLimit = fheGasLimitFactory.attach(parsedFHEGasLimit.FHE_GASLIMIT_CONTRACT_ADDRESS);
   return fheGasLimit;
 }
 

@@ -48,37 +48,3 @@ graph TD
 ### 2. **TestAsyncDecrypt.sol**
 
 Tests asynchronous decryption of various encrypted data types using the Gateway. This contract is essential for understanding how to safely decrypt data when needed, without compromising the overall security of the encrypted system.
-
-### 3. **BlindAuction.sol**
-
-Implements a blind auction system using encrypted bids. Key features include:
-
-- Encrypted bid submission
-- Timed auction periods
-- Winner determination without revealing losing bids
-- Claim and withdrawal mechanisms
-
-This contract showcases how FHE can be used to create fair and private auction systems on the blockchain, ensuring bid confidentiality until the auction ends.
-
-```mermaid
-graph TD
-    subgraph Bidding Phase
-        A[User Submits Encrypted Bid]
-        B[Contract Stores Encrypted Bid]
-        C[Update Highest Bid & Winning Ticket]
-    end
-    subgraph Auction End
-        D[Decrypt Winning Ticket]
-        E[Winner Claims Prize]
-        F[Non-Winners Withdraw Bids]
-        G[Transfer Highest Bid to Beneficiary]
-    end
-    A --> B
-    B --> C
-    C --> |Auction Ends| D
-    D --> E
-    D --> F
-    D --> G
-```
-
-This diagram illustrates the main processes in the BlindAuction contract, from bid submission to the final distribution of funds and prizes.
