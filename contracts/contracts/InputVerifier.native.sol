@@ -1,81 +1,59 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import "./KMSVerifier.sol";
-import "./TFHEExecutor.sol";
-import "../addresses/KMSVerifierAddress.sol";
+import {KMSVerifier} from "./KMSVerifier.sol";
+import {TFHEExecutor} from "./TFHEExecutor.sol";
+import {kmsVerifierAdd} from "../addresses/KMSVerifierAddress.sol";
 
 // Importing OpenZeppelin contracts for cryptographic signature verification and access control.
-import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
-import "@openzeppelin/contracts/utils/Strings.sol";
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
-/// @title InputVerifier for signature verification of users encrypted inputs
-/// @notice This version is only for the Native version of fhEVM
-/// @notice This contract is called by the TFHEExecutor inside verifyCiphertext function, and calls the KMSVerifier to fetch KMS signers addresses
+/**
+ * @title    InputVerifier.
+ * @notice   This contract allows signature verification of user encrypted inputs.
+ *           This version is only for the Native version of fhEVM.
+ *           This contract is called by the TFHEExecutor inside verifyCiphertext function, and calls the KMSVerifier to fetch KMS signers addresses.
+ */
 contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable {
-    /// @notice Handle version
+    /// @notice Handle version.
     uint8 public constant HANDLE_VERSION = 0;
 
+    /// @notice KMSVerifier.
     KMSVerifier public constant kmsVerifier = KMSVerifier(kmsVerifierAdd);
 
     /// @notice Name of the contract
     string private constant CONTRACT_NAME = "InputVerifier";
 
-    /// @notice Version of the contract
+    /// @notice Major version of the contract.
     uint256 private constant MAJOR_VERSION = 0;
+
+    /// @notice Minor version of the contract.
     uint256 private constant MINOR_VERSION = 1;
+
+    /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
-
-    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
-
-    /// @notice Getter function for the KMSVerifier contract address
-    function getKMSVerifierAddress() public view virtual returns (address) {
-        return address(kmsVerifier);
-    }
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
     }
 
-    /// @notice Initializes the contract setting `initialOwner` as the initial owner
-    function initialize(address initialOwner) external initializer {
+    /**
+     * @notice              Initializes the contract.
+     * @param initialOwner  Initial owner address.
+     */
+    function initialize(address initialOwner) public initializer {
         __Ownable_init(initialOwner);
     }
 
-    function typeOf(uint256 handle) internal pure virtual returns (uint8) {
-        uint8 typeCt = uint8(handle >> 8);
-        return typeCt;
-    }
-
-    function checkProofCache(
-        bytes memory inputProof,
-        address userAddress,
-        address contractAddress,
-        address aclAddress
-    ) internal view virtual returns (bool, bytes32) {
-        bool isProofCached;
-        bytes32 key = keccak256(abi.encodePacked(contractAddress, aclAddress, userAddress, inputProof));
-        assembly {
-            isProofCached := tload(key)
-        }
-        return (isProofCached, key);
-    }
-
-    function cacheProof(bytes32 proofKey) internal virtual {
-        assembly {
-            tstore(proofKey, 1)
-            let length := tload(0)
-            let lengthPlusOne := add(length, 1)
-            tstore(lengthPlusOne, proofKey)
-            tstore(0, lengthPlusOne)
-        }
-    }
-
-    function cleanTransientStorage() external virtual {
-        // this function removes the transient allowances, could be useful for integration with Account Abstraction when bundling several UserOps calling InputVerifier
+    /**
+     * @dev This function removes the transient allowances, which could be useful f
+            for integration with Account Abstraction when bundling several UserOps calling InputVerifier
+     */
+    function cleanTransientStorage() public virtual {
         assembly {
             let length := tload(0)
             tstore(0, 0)
@@ -92,12 +70,19 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable {
         }
     }
 
+    /**
+     * @notice              Verifies the ciphertext.
+     * @param context       Context user inputs.
+     * @param inputHandle   Input handle.
+     * @param inputProof    Input proof.
+     * @return result       Result.
+     */
     function verifyCiphertext(
         TFHEExecutor.ContextUserInputs memory context,
         bytes32 inputHandle,
         bytes memory inputProof
-    ) external virtual returns (uint256) {
-        (bool isProofCached, bytes32 cacheKey) = checkProofCache(
+    ) public virtual returns (uint256) {
+        (bool isProofCached, bytes32 cacheKey) = _checkProofCache(
             inputProof,
             context.userAddress,
             context.contractAddress,
@@ -107,21 +92,23 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable {
         uint256 indexHandle = (result & 0x0000000000000000000000000000000000000000000000000000000000ff0000) >> 16;
 
         if (!isProofCached) {
-            // bundleCiphertext is compressedPackedCT+ZKPOK
-            // inputHandle is keccak256(keccak256(bundleCiphertext)+index)[0:29]+index+type+version
-            // and inputProof is len(list_handles) + numSignersKMS + list_handles + signatureKMSSigners + bundleCiphertext (1+1+NUM_HANDLES*32+65*numSignersKMS+bundleCiphertext.length)
+            /// @dev bundleCiphertext is compressedPackedCT+ZKPOK
+            ///      inputHandle is keccak256(keccak256(bundleCiphertext)+index)[0:29]+index+type+version
+            ///      and inputProof is len(list_handles) + numSignersKMS + list_handles + signatureKMSSigners +
+            ///      bundleCiphertext (1+1+NUM_HANDLES*32+65*numSignersKMS+bundleCiphertext.length)
 
             uint256 inputProofLen = inputProof.length;
             require(inputProofLen > 0, "Empty inputProof");
             uint256 numHandles = uint256(uint8(inputProof[0]));
             uint256 numSignersKMS = uint256(uint8(inputProof[1]));
 
-            require(numHandles > indexHandle, "Invalid index"); // @note: this checks in particular that the list is non-empty
-            // @note: on native if an invalid indexHandle above the "real" numHandles is passed, it will be mapped to a trivialEncrypt(0) by backend
+            require(numHandles > indexHandle, "Invalid index"); /// @dev this checks in particular that the list is non-empty.
+            /// @dev on native if an invalid indexHandle above the "real" numHandles is passed, it will be mapped to a trivialEncrypt(0) by backend.
 
             require(inputProofLen > 2 + 32 * numHandles + 65 * numSignersKMS, "Error deserializing inputProof");
 
             bytes32 hashCT;
+            
             {
                 uint256 prefixLength = 2 + 32 * numHandles + 65 * numSignersKMS;
                 uint256 bundleCiphertextLength = inputProofLen - prefixLength;
@@ -149,7 +136,8 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable {
                 require(kmsCheck, "Not enough unique KMS input signatures");
             }
 
-            // deseralize handle and check they are from correct version and correct values (handles are recomputed onchain in native case)
+            /// @dev Deserialize handle and check they are from the correct version and correct values
+            ///     (handles are recomputed onchain in native case).
             for (uint256 i = 0; i < numHandles; i++) {
                 uint256 element;
                 assembly {
@@ -166,15 +154,18 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable {
                     (recomputedHandle & 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000000) ==
                         (element & 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000000),
                     "Wrong handle in inputProof"
-                ); // @note only the before last byte corresponding to type, ie element[30] could not be checked, i.e on native type is malleable, this means it will be casted accordingly by the backend (or trivialEncrypt(0) if index is invalid)
+                );
+                /// @dev only the before last byte corresponding to type, ie element[30] could not be checked,
+                ///      i.e on native type is malleable, this means it will be casted accordingly by the backend
+                ///      (or trivialEncrypt(0) if index is invalid).
                 if (i == indexHandle) {
                     require(result == element, "Wrong inputHandle");
                 }
             }
 
-            cacheProof(cacheKey);
+            _cacheProof(cacheKey);
         } else {
-            uint8 numHandles = uint8(inputProof[0]); // @note: we know inputProof is non-empty since it has been previously cached
+            uint8 numHandles = uint8(inputProof[0]); /// @dev we know inputProof is non-empty since it has been previously cached.
             require(numHandles > indexHandle, "Invalid index");
             uint256 element;
             for (uint256 j = 0; j < 32; j++) {
@@ -185,8 +176,17 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable {
         return result;
     }
 
-    /// @notice Getter for the name and version of the contract
-    /// @return string representing the name and the version of the contract
+    /**
+     * @notice Getter function for the KMSVerifier contract address.
+     */
+    function getKMSVerifierAddress() public view virtual returns (address) {
+        return address(kmsVerifier);
+    }
+
+    /**
+     * @notice        Getter for the name and version of the contract.
+     * @return string Name and the version of the contract.
+     */
     function getVersion() external pure virtual returns (string memory) {
         return
             string(
@@ -201,4 +201,30 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable {
                 )
             );
     }
+
+    function _cacheProof(bytes32 proofKey) internal virtual {
+        assembly {
+            tstore(proofKey, 1)
+            let length := tload(0)
+            let lengthPlusOne := add(length, 1)
+            tstore(lengthPlusOne, proofKey)
+            tstore(0, lengthPlusOne)
+        }
+    }
+
+    function _checkProofCache(
+        bytes memory inputProof,
+        address userAddress,
+        address contractAddress,
+        address aclAddress
+    ) internal view virtual returns (bool, bytes32) {
+        bool isProofCached;
+        bytes32 key = keccak256(abi.encodePacked(contractAddress, aclAddress, userAddress, inputProof));
+        assembly {
+            isProofCached := tload(key)
+        }
+        return (isProofCached, key);
+    }
+
+    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
 }
