@@ -29,6 +29,39 @@ interface IInputVerifier {
  * @dev      This contract is deployed using an UUPS proxy.
  */
 contract TFHEExecutor is UUPSUpgradeable, Ownable2StepUpgradeable {
+    /// @notice         Returned when the handle is not allowed in the ACL for the account.
+    /// @param handle   Handle.
+    /// @param account  Address of the account.
+    error ACLNotAllowed(uint256 handle, address account);
+
+    /// @notice Returned when the FHE operator attempts to divide by zero.
+    error DivisionByZero();
+
+    /// @notice Returned if two types are not compatible for this operation.
+    error IncompatibleTypes();
+
+    /// @notice Returned if the length of the bytes is not as expected.
+    error InvalidByteLength(uint8 typeOf, uint256 length);
+
+    /// @notice Returned if the type is not the expected one.
+    error InvalidType();
+
+    /// @notice Returned if it uses the wrong overloaded function (for functions fheEq/fheNe),
+    ///         which does not handle scalar.
+    error IsScalar();
+
+    /// @notice Returned if operation is supported only for a scalar (functions fheDiv/fheRem).
+    error IsNotScalar();
+
+    /// @notice Returned if the upper bound for generating randomness is not a power of two.
+    error NotPowerOfTwo();
+
+    /// @notice Returned if the second operand is not a scalar (for functions fheEq/fheNe).
+    error SecondOperandIsNotScalar();
+
+    /// @notice Returned if the type is not supported for this operation.
+    error UnsupportedType();
+
     /**
      * @param aclAddress        ACL address.
      * @param userAddress       Address of the user.
@@ -42,7 +75,9 @@ contract TFHEExecutor is UUPSUpgradeable, Ownable2StepUpgradeable {
 
     /// @custom:storage-location erc7201:fhevm.storage.TFHEExecutor
     struct TFHEExecutorStorage {
-        uint256 counterRand; /// @notice Counter used for computing handles of randomness operators.
+        /// @dev Counter used for computing handles of randomness operators. It is also used for OPRF, which is used to
+        ///      generate pseudo-random ciphertexts.
+        uint256 counterRand;
     }
 
     enum Operators {
@@ -173,8 +208,8 @@ contract TFHEExecutor is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @return result       Result.
      */
     function fheDiv(uint256 lhs, uint256 rhs, bytes1 scalarByte) public virtual returns (uint256 result) {
-        require(scalarByte & 0x01 == 0x01, "Only fheDiv by a scalar is supported");
-        require(rhs != 0, "Could not divide by 0");
+        if (scalarByte & 0x01 != 0x01) revert IsNotScalar();
+        if (rhs == 0) revert DivisionByZero();
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5) + (1 << 6) + (1 << 8);
         _requireType(lhs, supportedTypes);
         uint8 lhsType = _typeOf(lhs);
@@ -191,8 +226,8 @@ contract TFHEExecutor is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @return result       Result.
      */
     function fheRem(uint256 lhs, uint256 rhs, bytes1 scalarByte) public virtual returns (uint256 result) {
-        require(scalarByte & 0x01 == 0x01, "Only fheRem by a scalar is supported");
-        require(rhs != 0, "Could not divide by 0");
+        if (scalarByte & 0x01 != 0x01) revert IsNotScalar();
+        if (rhs == 0) revert DivisionByZero();
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5) + (1 << 6) + (1 << 8);
         _requireType(lhs, supportedTypes);
         uint8 lhsType = _typeOf(lhs);
@@ -336,9 +371,8 @@ contract TFHEExecutor is UUPSUpgradeable, Ownable2StepUpgradeable {
         _requireType(lhs, supportedTypes);
         uint8 lhsType = _typeOf(lhs);
         bytes1 scalar = scalarByte & 0x01;
-        if (scalar == 0x01) {
-            require(lhsType <= 8, "Scalar fheEq for ebytesXXX types must use the overloaded fheEq");
-        }
+        if (scalar == 0x01 && lhsType > 8) revert IsScalar();
+
         fheGasLimit.payForFheEq(lhsType, scalar);
         result = _binaryOp(Operators.fheEq, lhs, rhs, scalar, 0);
     }
@@ -355,18 +389,13 @@ contract TFHEExecutor is UUPSUpgradeable, Ownable2StepUpgradeable {
         _requireType(lhs, supportedTypes);
         uint8 lhsType = _typeOf(lhs);
         bytes1 scalar = scalarByte & 0x01;
-        require(scalar == 0x01, "Overloaded fheEq is only for scalar ebytesXXX second operand");
+
+        if (scalar != 0x01) revert SecondOperandIsNotScalar();
         fheGasLimit.payForFheEq(lhsType, scalar);
-        require(acl.isAllowed(lhs, msg.sender), "Sender doesn't own lhs on op");
-        uint256 lenBytesPT = rhs.length;
-        if (lhsType == 9) {
-            require(lenBytesPT == 64, "Bytes array length of Bytes64 should be 64");
-        } else if (lhsType == 10) {
-            require(lenBytesPT == 128, "Bytes array length of Bytes128 should be 128");
-        } else {
-            // @note: i.e lhsType == 11 thanks to the first pre-condition
-            require(lenBytesPT == 256, "Bytes array length of Bytes256 should be 256");
-        }
+
+        if (!acl.isAllowed(lhs, msg.sender)) revert ACLNotAllowed(lhs, msg.sender);
+        _checkByteLengthForTypeOfAbove8(rhs.length, lhsType);
+
         result = uint256(keccak256(abi.encodePacked(Operators.fheEq, lhs, rhs, scalar, acl, block.chainid)));
         result = _appendType(result, 0);
         acl.allowTransient(result, msg.sender);
@@ -395,9 +424,9 @@ contract TFHEExecutor is UUPSUpgradeable, Ownable2StepUpgradeable {
         _requireType(lhs, supportedTypes);
         uint8 lhsType = _typeOf(lhs);
         bytes1 scalar = scalarByte & 0x01;
-        if (scalar == 0x01) {
-            require(lhsType <= 8, "Scalar fheNe for ebytesXXX types must use the overloaded fheNe");
-        }
+
+        if (scalar == 0x01 && lhsType > 8) revert IsScalar();
+
         fheGasLimit.payForFheNe(lhsType, scalar);
         result = _binaryOp(Operators.fheNe, lhs, rhs, scalar, 0);
     }
@@ -414,18 +443,11 @@ contract TFHEExecutor is UUPSUpgradeable, Ownable2StepUpgradeable {
         _requireType(lhs, supportedTypes);
         uint8 lhsType = _typeOf(lhs);
         bytes1 scalar = scalarByte & 0x01;
-        require(scalar == 0x01, "Overloaded fheNe is only for scalar ebytesXXX second operand");
+
+        if (scalar != 0x01) revert SecondOperandIsNotScalar();
         fheGasLimit.payForFheNe(lhsType, scalar);
-        require(acl.isAllowed(lhs, msg.sender), "Sender doesn't own lhs on op");
-        uint256 lenBytesPT = rhs.length;
-        if (lhsType == 9) {
-            require(lenBytesPT == 64, "Bytes array length of Bytes64 should be 64");
-        } else if (lhsType == 10) {
-            require(lenBytesPT == 128, "Bytes array length of Bytes128 should be 128");
-        } else {
-            /// @dev i.e lhsType == 11 thanks to the first pre-condition
-            require(lenBytesPT == 256, "Bytes array length of Bytes256 should be 256");
-        }
+        if (!acl.isAllowed(lhs, msg.sender)) revert ACLNotAllowed(lhs, msg.sender);
+        _checkByteLengthForTypeOfAbove8(rhs.length, lhsType);
         result = uint256(keccak256(abi.encodePacked(Operators.fheNe, lhs, rhs, scalar, acl, block.chainid)));
         result = _appendType(result, 0);
         acl.allowTransient(result, msg.sender);
@@ -607,7 +629,7 @@ contract TFHEExecutor is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @return result   Result value of the target type.
      */
     function cast(uint256 ct, bytes1 toType) public virtual returns (uint256 result) {
-        require(acl.isAllowed(ct, msg.sender), "Sender doesn't own ct on cast");
+        if (!acl.isAllowed(ct, msg.sender)) revert ACLNotAllowed(ct, msg.sender);
         uint256 supportedTypesInput = (1 << 0) +
             (1 << 1) +
             (1 << 2) +
@@ -618,9 +640,10 @@ contract TFHEExecutor is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << 8);
         _requireType(ct, supportedTypesInput);
         uint256 supportedTypesOutput = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5) + (1 << 6) + (1 << 8); // @note: unsupported casting to ebool (use fheNe instead)
-        require((1 << uint8(toType)) & supportedTypesOutput > 0, "Unsupported output type");
+        if ((1 << uint8(toType)) & supportedTypesOutput == 0) revert UnsupportedType();
         uint8 typeCt = _typeOf(ct);
-        require(bytes1(typeCt) != toType, "Cannot cast to same type");
+        /// @dev It must not cast to same type.
+        if (bytes1(typeCt) == toType) revert InvalidType();
         fheGasLimit.payForCast(typeCt);
         result = uint256(keccak256(abi.encodePacked(Operators.cast, ct, toType, acl, block.chainid)));
         result = _appendType(result, uint8(toType));
@@ -644,7 +667,7 @@ contract TFHEExecutor is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << 7) +
             (1 << 8);
         uint8 toT = uint8(toType);
-        require((1 << toT) & supportedTypes > 0, "Unsupported type");
+        if ((1 << toT) & supportedTypes == 0) revert UnsupportedType();
         fheGasLimit.payForTrivialEncrypt(toT);
         result = uint256(keccak256(abi.encodePacked(Operators.trivialEncrypt, pt, toType, acl, block.chainid)));
         result = _appendType(result, toT);
@@ -661,17 +684,9 @@ contract TFHEExecutor is UUPSUpgradeable, Ownable2StepUpgradeable {
     function trivialEncrypt(bytes memory pt, bytes1 toType) public virtual returns (uint256 result) {
         uint256 supportedTypes = (1 << 9) + (1 << 10) + (1 << 11);
         uint8 toT = uint8(toType);
-        require((1 << toT) & supportedTypes > 0, "Unsupported type");
+        if ((1 << toT) & supportedTypes == 0) revert UnsupportedType();
         fheGasLimit.payForTrivialEncrypt(toT);
-        uint256 lenBytesPT = pt.length;
-        if (toT == 9) {
-            require(lenBytesPT == 64, "Bytes array length of Bytes64 should be 64");
-        } else if (toT == 10) {
-            require(lenBytesPT == 128, "Bytes array length of Bytes128 should be 128");
-        } else {
-            // @note: i.e toT == 11 thanks to the pre-condition above
-            require(lenBytesPT == 256, "Bytes array length of Bytes256 should be 256");
-        }
+        _checkByteLengthForTypeOfAbove8(pt.length, toT);
         result = uint256(keccak256(abi.encodePacked(Operators.trivialEncrypt, pt, toType, acl, block.chainid)));
         result = _appendType(result, toT);
         acl.allowTransient(result, msg.sender);
@@ -697,7 +712,7 @@ contract TFHEExecutor is UUPSUpgradeable, Ownable2StepUpgradeable {
             contractAddress: msg.sender
         });
         uint8 typeCt = _typeOf(uint256(inputHandle));
-        require(uint8(inputType) == typeCt, "Wrong type");
+        if (uint8(inputType) != typeCt) revert InvalidType();
         result = inputVerifier.verifyCiphertext(contextUserInputs, inputHandle, inputProof);
         acl.allowTransient(result, msg.sender);
     }
@@ -758,13 +773,27 @@ contract TFHEExecutor is UUPSUpgradeable, Ownable2StepUpgradeable {
         result = result | HANDLE_VERSION;
     }
 
+    /**
+     * @dev Checks the length for typeOf >= 9.
+     */
+    function _checkByteLengthForTypeOfAbove8(uint256 byteLength, uint8 typeOf) internal pure virtual {
+        if (typeOf == 9) {
+            if (byteLength != 64) revert InvalidByteLength(typeOf, byteLength);
+        } else if (typeOf == 10) {
+            if (byteLength != 128) revert InvalidByteLength(typeOf, byteLength);
+        } else {
+            /// @dev i.e typeOf == 11.
+            if (byteLength != 256) revert InvalidByteLength(typeOf, byteLength);
+        }
+    }
+
     function _requireType(uint256 handle, uint256 supportedTypes) internal pure virtual {
         uint8 typeCt = _typeOf(handle);
-        require((1 << typeCt) & supportedTypes > 0, "Unsupported type");
+        if ((1 << typeCt) & supportedTypes == 0) revert UnsupportedType();
     }
 
     function _unaryOp(Operators op, uint256 ct) internal virtual returns (uint256 result) {
-        require(acl.isAllowed(ct, msg.sender), "Sender doesn't own ct on op");
+        if (!acl.isAllowed(ct, msg.sender)) revert ACLNotAllowed(ct, msg.sender);
         result = uint256(keccak256(abi.encodePacked(op, ct, acl, block.chainid)));
         uint8 typeCt = _typeOf(ct);
         result = _appendType(result, typeCt);
@@ -778,12 +807,13 @@ contract TFHEExecutor is UUPSUpgradeable, Ownable2StepUpgradeable {
         bytes1 scalar,
         uint8 resultType
     ) internal virtual returns (uint256 result) {
-        require(acl.isAllowed(lhs, msg.sender), "Sender doesn't own lhs on op");
+        if (!acl.isAllowed(lhs, msg.sender)) revert ACLNotAllowed(lhs, msg.sender);
         if (scalar == 0x00) {
-            require(acl.isAllowed(rhs, msg.sender), "Sender doesn't own rhs on op");
+            if (!acl.isAllowed(rhs, msg.sender)) revert ACLNotAllowed(rhs, msg.sender);
+
             uint8 typeRhs = _typeOf(rhs);
             uint8 typeLhs = _typeOf(lhs);
-            require(typeLhs == typeRhs, "Incompatible types for lhs and rhs");
+            if (typeLhs != typeRhs) revert IncompatibleTypes();
         }
         result = uint256(keccak256(abi.encodePacked(op, lhs, rhs, scalar, acl, block.chainid)));
         result = _appendType(result, resultType);
@@ -796,14 +826,17 @@ contract TFHEExecutor is UUPSUpgradeable, Ownable2StepUpgradeable {
         uint256 middle,
         uint256 rhs
     ) internal virtual returns (uint256 result) {
-        require(acl.isAllowed(lhs, msg.sender), "Sender doesn't own lhs on op");
-        require(acl.isAllowed(middle, msg.sender), "Sender doesn't own middle on op");
-        require(acl.isAllowed(rhs, msg.sender), "Sender doesn't own rhs on op");
+        if (!acl.isAllowed(lhs, msg.sender)) revert ACLNotAllowed(lhs, msg.sender);
+        if (!acl.isAllowed(middle, msg.sender)) revert ACLNotAllowed(middle, msg.sender);
+        if (!acl.isAllowed(rhs, msg.sender)) revert ACLNotAllowed(rhs, msg.sender);
+
         uint8 typeLhs = _typeOf(lhs);
         uint8 typeMiddle = _typeOf(middle);
         uint8 typeRhs = _typeOf(rhs);
-        require(typeLhs == 0, "Unsupported type for lhs"); /// @dev lhs must be ebool
-        require(typeMiddle == typeRhs, "Incompatible types for middle and rhs");
+
+        if (typeLhs != 0) revert UnsupportedType(); /// @dev lhs must be ebool
+        if (typeMiddle != typeRhs) revert IncompatibleTypes();
+
         result = uint256(keccak256(abi.encodePacked(op, lhs, middle, rhs, acl, block.chainid)));
         result = _appendType(result, typeMiddle);
         acl.allowTransient(result, msg.sender);
@@ -830,7 +863,8 @@ contract TFHEExecutor is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << 10) +
             (1 << 11);
         uint8 randT = uint8(randType);
-        require((1 << randT) & supportedTypes > 0, "Unsupported erandom type");
+        /// @dev Unsupported erandom type.
+        if ((1 << randT) & supportedTypes == 0) revert UnsupportedType();
         fheGasLimit.payForFheRand(randT);
         result = uint256(keccak256(abi.encodePacked(Operators.fheRand, randType, seed)));
         result = _appendType(result, randT);
@@ -844,8 +878,9 @@ contract TFHEExecutor is UUPSUpgradeable, Ownable2StepUpgradeable {
     ) internal virtual returns (uint256 result) {
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5) + (1 << 6) + (1 << 8);
         uint8 randT = uint8(randType);
-        require((1 << randT) & supportedTypes > 0, "Unsupported erandom type");
-        require(_isPowerOfTwo(upperBound), "UpperBound must be a power of 2");
+        /// @dev Unsupported erandom type.
+        if ((1 << randT) & supportedTypes == 0) revert UnsupportedType();
+        if (!_isPowerOfTwo(upperBound)) revert NotPowerOfTwo();
         fheGasLimit.payForFheRandBounded(randT);
         result = uint256(keccak256(abi.encodePacked(Operators.fheRandBounded, upperBound, randType, seed)));
         result = _appendType(result, randT);
