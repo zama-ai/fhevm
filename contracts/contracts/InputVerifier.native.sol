@@ -12,19 +12,44 @@ import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/acces
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 /**
- * @title    InputVerifier.
- * @notice   This contract allows signature verification of user encrypted inputs.
- *           This version is only for the Native version of fhEVM.
- *           This contract is called by the TFHEExecutor inside verifyCiphertext function, and calls the KMSVerifier to fetch KMS signers addresses.
- */
+* @title    InputVerifier.
+* @notice   This contract allows signature verification of user encrypted inputs.
+*           This version is only for the native version of the fhEVM.
+*           This contract is called by the TFHEExecutor inside verifyCiphertext function, and calls the KMSVerifier to fetch KMS signer addresses.
+
+*/
 contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable {
+    /// @notice Returned if the deserializing of the input proof fails.
+    error DeserializingInputProofFail();
+
+    /// @notice Returned if the input proof is empty.
+    error EmptyInputProof();
+
+    /// @notice Returned if the index is invalid.
+    error InvalidIndex();
+
+    /// @notice Returned if the input handle is wrong.
+    error InvalidInputHandle();
+
+    /// @notice Returned if the handle version is not the correct one.
+    error InvalidHandleVersion();
+
+    /// @notice Returned if the input proof handle is wrong.
+    error InvalidInputProofHandle();
+
+    /// @notice Returned if the serialized handle index is invalid.
+    error InvalidSerializedHandleIndex();
+
+    /// @notice Returned if the number of EIP712 KMS signature is not sufficient.
+    error KMSNumberSignaturesInsufficient();
+
     /// @notice Handle version.
     uint8 public constant HANDLE_VERSION = 0;
 
     /// @notice KMSVerifier.
     KMSVerifier public constant kmsVerifier = KMSVerifier(kmsVerifierAdd);
 
-    /// @notice Name of the contract
+    /// @notice Name of the contract.
     string private constant CONTRACT_NAME = "InputVerifier";
 
     /// @notice Major version of the contract.
@@ -50,8 +75,8 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable {
     }
 
     /**
-     * @dev This function removes the transient allowances, which could be useful f
-            for integration with Account Abstraction when bundling several UserOps calling InputVerifier
+     * @dev This function removes the transient allowances, which could be useful for
+            integration with Account Abstraction when bundling several UserOps calling InputVerifier.
      */
     function cleanTransientStorage() public virtual {
         assembly {
@@ -98,17 +123,17 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable {
             ///      bundleCiphertext (1+1+NUM_HANDLES*32+65*numSignersKMS+bundleCiphertext.length)
 
             uint256 inputProofLen = inputProof.length;
-            require(inputProofLen > 0, "Empty inputProof");
+            if (inputProofLen == 0) revert EmptyInputProof();
             uint256 numHandles = uint256(uint8(inputProof[0]));
             uint256 numSignersKMS = uint256(uint8(inputProof[1]));
 
-            require(numHandles > indexHandle, "Invalid index"); /// @dev this checks in particular that the list is non-empty.
-            /// @dev on native if an invalid indexHandle above the "real" numHandles is passed, it will be mapped to a trivialEncrypt(0) by backend.
-
-            require(inputProofLen > 2 + 32 * numHandles + 65 * numSignersKMS, "Error deserializing inputProof");
+            /// @dev This checks in particular that the list is non-empty.
+            if (numHandles <= indexHandle) revert InvalidIndex();
+            /// @dev On native, if an invalid indexHandle above the "real" numHandles is passed, it will be mapped to a trivialEncrypt(0) by backend.
+            if (inputProofLen <= 2 + 32 * numHandles + 65 * numSignersKMS) revert DeserializingInputProofFail();
 
             bytes32 hashCT;
-            
+
             {
                 uint256 prefixLength = 2 + 32 * numHandles + 65 * numSignersKMS;
                 uint256 bundleCiphertextLength = inputProofLen - prefixLength;
@@ -133,7 +158,7 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable {
                 cvKMS.userAddress = context.userAddress;
                 cvKMS.contractAddress = context.contractAddress;
                 bool kmsCheck = kmsVerifier.verifyInputEIP712KMSSignatures(cvKMS, signaturesKMS);
-                require(kmsCheck, "Not enough unique KMS input signatures");
+                if (!kmsCheck) revert KMSNumberSignaturesInsufficient();
             }
 
             /// @dev Deserialize handle and check they are from the correct version and correct values
@@ -143,35 +168,38 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable {
                 assembly {
                     element := mload(add(inputProof, add(34, mul(i, 32))))
                 }
-                // check all handles are from correct version
-                require(uint8(element) == HANDLE_VERSION, "Wrong handle version");
+                /// @dev Check all handles are from correct version.
+                if (uint8(element) != HANDLE_VERSION) revert InvalidHandleVersion();
                 uint256 indexElement = (element & 0x0000000000000000000000000000000000000000000000000000000000ff0000) >>
                     16;
-                require(indexElement == i, "Wrong index for serialized handle");
+
+                if (indexElement != i) revert InvalidSerializedHandleIndex();
 
                 uint256 recomputedHandle = uint256(keccak256(abi.encodePacked(hashCT, uint8(i))));
-                require(
-                    (recomputedHandle & 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000000) ==
-                        (element & 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000000),
-                    "Wrong handle in inputProof"
-                );
-                /// @dev only the before last byte corresponding to type, ie element[30] could not be checked,
+
+                if (
+                    (recomputedHandle & 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000000) !=
+                    (element & 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000000)
+                ) revert InvalidInputProofHandle();
+
+                /// @dev Only the before last byte corresponding to type, ie element[30] could not be checked,
                 ///      i.e on native type is malleable, this means it will be casted accordingly by the backend
                 ///      (or trivialEncrypt(0) if index is invalid).
                 if (i == indexHandle) {
-                    require(result == element, "Wrong inputHandle");
+                    if (element != result) revert InvalidInputHandle();
                 }
             }
 
             _cacheProof(cacheKey);
         } else {
-            uint8 numHandles = uint8(inputProof[0]); /// @dev we know inputProof is non-empty since it has been previously cached.
-            require(numHandles > indexHandle, "Invalid index");
+            uint8 numHandles = uint8(inputProof[0]);
+            /// @dev We know inputProof is non-empty since it has been previously cached.
+            if (numHandles <= indexHandle) revert InvalidIndex();
             uint256 element;
             for (uint256 j = 0; j < 32; j++) {
                 element |= uint256(uint8(inputProof[2 + indexHandle * 32 + j])) << (8 * (31 - j));
             }
-            require(element == result, "Wrong inputHandle");
+            if (element != result) revert InvalidInputHandle();
         }
         return result;
     }
@@ -226,5 +254,8 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable {
         return (isProofCached, key);
     }
 
+    /**
+     * @dev Should revert when msg.sender is not authorized to upgrade the contract.
+     */
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
 }

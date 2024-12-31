@@ -16,11 +16,32 @@ import {EIP712Upgradeable} from "@openzeppelin/contracts-upgradeable/utils/crypt
 /**
  * @title    InputVerifier.
  * @notice   This contract allows signature verification of user encrypted inputs.
- *           This version is only for the Coprocessor version of fhEVM.
- *           This contract is called by the TFHEExecutor inside verifyCiphertext function, and calls the KMSVerifier to fetch KMS signers addresses.
+ *           This version is only for the Coprocessor version of the fhEVM.
+ *           This contract is called by the TFHEExecutor inside verifyCiphertext function, and calls the KMSVerifier to fetch KMS signer addresses.
  * @dev      The contract uses OpenZeppelin's EIP712Upgradeable for cryptographic operations.
  */
 contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradeable {
+    /// @notice Returned if the deserializing of the input proof fails.
+    error DeserializingInputProofFail();
+
+    /// @notice Returned if the input proof is empty.
+    error EmptyInputProof();
+
+    /// @notice Returned if the index is invalid.
+    error InvalidIndex();
+
+    /// @notice Returned if the input handle is wrong.
+    error InvalidInputHandle();
+
+    /// @notice Returned if the handle version is not the correct one.
+    error InvalidHandleVersion();
+
+    /// @notice Returned if the number of EIP712 KMS signature is not sufficient.
+    error KMSNumberSignaturesInsufficient();
+
+    /// @notice Returned if the recovered signer address is not the coprocessor address.
+    error SignerIsNotCoprocessor();
+
     /// @param aclAddress       ACL address.
     /// @param hashOfCiphertext Hash of ciphertext.
     /// @param handlesList      List of handles.
@@ -40,16 +61,19 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
     /// @notice KMSVerifier.
     KMSVerifier public constant kmsVerifier = KMSVerifier(kmsVerifierAdd);
 
+    /// @notice Name of the contract.
+    string private constant CONTRACT_NAME = "InputVerifier";
+
     /// @notice Ciphertext verification type.
-    string public constant CIPHERTEXTVERIFICATION_COPRO_TYPE =
+    string public constant CIPHERTEXT_VERIFICATION_COPRO_TYPE =
         "CiphertextVerificationForCopro(address aclAddress,bytes32 hashOfCiphertext,uint256[] handlesList,address userAddress,address contractAddress)";
 
     /// @notice Ciphertext verification typehash.
     bytes32 public constant CIPHERTEXT_VERIFICATION_COPRO_TYPEHASH =
-        keccak256(bytes(CIPHERTEXTVERIFICATION_COPRO_TYPE));
+        keccak256(bytes(CIPHERTEXT_VERIFICATION_COPRO_TYPE));
 
-    /// @notice Name of the contract
-    string private constant CONTRACT_NAME = "InputVerifier";
+    /// @notice Coprocessor address.
+    address private constant coprocessorAddress = coprocessorAdd;
 
     /// @notice Major version of the contract.
     uint256 private constant MAJOR_VERSION = 0;
@@ -59,9 +83,6 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
 
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
-
-    /// @notice Coprocessor address.
-    address private constant coprocessorAddress = coprocessorAdd;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -78,8 +99,8 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
     }
 
     /**
-     * @dev This function removes the transient allowances, which could be useful f
-            for integration with Account Abstraction when bundling several UserOps calling InputVerifier
+     * @dev This function removes the transient allowances, which could be useful for
+            integration with Account Abstraction when bundling several UserOps calling InputVerifier.
      */
     function cleanTransientStorage() public virtual {
         assembly {
@@ -126,14 +147,16 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
             ///      signatureCopro + signatureKMSSigners (1+1+32+NUM_HANDLES*32+65+65*numSignersKMS)
 
             uint256 inputProofLen = inputProof.length;
-            require(inputProofLen > 0, "Empty inputProof");
+            if (inputProofLen == 0) revert EmptyInputProof();
             uint256 numHandles = uint256(uint8(inputProof[0]));
             uint256 numSignersKMS = uint256(uint8(inputProof[1]));
 
-            require(numHandles > indexHandle, "Invalid index"); /// @dev this checks in particular that the list is non-empty
-            require(inputProofLen == 99 + 32 * numHandles + 65 * numSignersKMS, "Error deserializing inputProof");
+            /// @dev This checks in particular that the list is non-empty.
+            if (numHandles <= indexHandle) revert InvalidIndex();
+            if (inputProofLen != 99 + 32 * numHandles + 65 * numSignersKMS) revert DeserializingInputProofFail();
 
             bytes32 hashCT;
+
             assembly {
                 hashCT := mload(add(inputProof, 34))
             }
@@ -146,7 +169,7 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
                     element := mload(add(inputProof, add(66, mul(i, 32))))
                 }
                 /// @dev Check that all handles are from the correct version.
-                require(uint8(element) == HANDLE_VERSION, "Wrong handle version");
+                if (uint8(element) != HANDLE_VERSION) revert InvalidHandleVersion();
                 listHandles[i] = element;
             }
 
@@ -163,6 +186,7 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
                 cvCopro.contractAddress = context.contractAddress;
                 _verifyEIP712Copro(cvCopro, signatureCoproc);
             }
+
             {
                 bytes[] memory signaturesKMS = new bytes[](numSignersKMS);
                 for (uint256 j = 0; j < numSignersKMS; j++) {
@@ -177,18 +201,20 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
                 cvKMS.userAddress = context.userAddress;
                 cvKMS.contractAddress = context.contractAddress;
                 bool kmsCheck = kmsVerifier.verifyInputEIP712KMSSignatures(cvKMS, signaturesKMS);
-                require(kmsCheck, "Not enough unique KMS input signatures");
+                if (!kmsCheck) revert KMSNumberSignaturesInsufficient();
             }
+
             _cacheProof(cacheKey);
-            require(result == listHandles[indexHandle], "Wrong inputHandle");
+            if (result != listHandles[indexHandle]) revert InvalidInputHandle();
         } else {
-            uint8 numHandles = uint8(inputProof[0]); /// @dev We know inputProof is non-empty since it has been previously cached.
-            require(numHandles > indexHandle, "Invalid index");
+            uint8 numHandles = uint8(inputProof[0]);
+            /// @dev We know inputProof is non-empty since it has been previously cached.
+            if (numHandles <= indexHandle) revert InvalidIndex();
             uint256 element;
             for (uint256 j = 0; j < 32; j++) {
                 element |= uint256(uint8(inputProof[34 + indexHandle * 32 + j])) << (8 * (31 - j));
             }
-            require(element == result, "Wrong inputHandle");
+            if (element != result) revert InvalidInputHandle();
         }
         return result;
     }
@@ -274,7 +300,7 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
     ) internal view virtual {
         bytes32 digest = _hashCiphertextVerificationForCopro(cv);
         address signer = ECDSA.recover(digest, signature);
-        require(signer == coprocessorAddress, "Coprocessor address mismatch");
+        if (signer != coprocessorAddress) revert SignerIsNotCoprocessor();
     }
 
     /**
