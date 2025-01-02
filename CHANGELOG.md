@@ -41,7 +41,7 @@ This version is a specific release for the coprocessor architecture with tfhe-rs
 
 ## Notes
 
-- Testing in the work_dir for fhevm is based on the fhevm-specific tag v0.6.0-2-test.
+- Testing in the coprocessor/work_dir for fhevm is based on the fhevm-specific tag v0.6.0-2-test.
 - Testing in the e2e folder was initially designed to work with Sepolia (fewer tests and optimized for gas preservation). In this release, the same tests can also be run against a local setup.
 - For anyone wanting to run the local setup to "see the magic happen," please use the centralized version of KMS (default). Otherwise, some tests may take significantly longer to execute (between 20 and 150 seconds), especially due to input proof verification.
 
