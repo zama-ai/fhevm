@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common'
-import { randomUUID } from 'crypto'
 import type { UseCase, AppError } from 'utils'
 import { Task } from 'utils'
 
@@ -11,7 +10,7 @@ import { TeamId } from '@/users/domain/entities/value-objects'
 
 interface Input {
   dapp: {
-    teamId: string
+    teamId: `t_${string}`
     name: string
     address?: string
   }

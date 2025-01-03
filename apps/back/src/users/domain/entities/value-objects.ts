@@ -56,9 +56,16 @@ export class ValidatedPassword extends ValueObject(
   }
 }
 
-export class TeamId extends ValueObject('TeamId', z.string().uuid()) {
+export class TeamId extends ValueObject(
+  'TeamId',
+  z
+    .string()
+    .startsWith('t_')
+    .refine(value => uuidRegex.test(value.slice(2)))
+    .and(z.custom<`t_${string}`>()),
+) {
   static random() {
-    return new TeamId(randomUUID())
+    return new TeamId(`t_${randomUUID()}`)
   }
 }
 
