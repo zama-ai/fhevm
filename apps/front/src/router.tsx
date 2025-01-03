@@ -59,9 +59,9 @@ const router = createBrowserRouter([
         element: <AboutPage />,
       },
       {
-        loader: dashboardLoader,
         path: '/create',
         element: <CreateStepOnePage />,
+        loader: dashboardLoader,
       },
       {
         path: '/create/2/:dappId',

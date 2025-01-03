@@ -12,9 +12,16 @@ import {
 import { TitleContext } from '@/components/title-context/title-context'
 import { NavBlock } from './nav-block'
 import { NavApp, NewNavApp } from './nav-app'
-import { Dapp } from '@/__generated__/graphql'
 
-export function Navigation({ dapps }: { dapps: Dapp[] }) {
+type OwnProps = {
+  dapps: Array<{
+    id: string
+    name: string
+    status: string
+  }>
+}
+
+export function Navigation({ dapps }: OwnProps) {
   const { pathname } = useLocation()
   const { title } = useContext(TitleContext)
   return (

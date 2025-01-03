@@ -31,7 +31,7 @@ export function DappPage() {
     <Box>
       {data ? (
         <Stack direction="row" align="center">
-          <Heading my="5">{data.dapp.name}</Heading>
+          <Heading mb="5">{data.dapp.name}</Heading>
           <DappStatus status={data.dapp.status} ml="2" size="xs" />
         </Stack>
       ) : (

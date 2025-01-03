@@ -61,6 +61,9 @@ export function CreateStepOnePage() {
               teamId,
               name,
             },
+            onCompleted: data => {
+              navigate(`/create/2/${data.createDapp.id}`)
+            },
           })
         }}
         onUpdateTitle={setTitle}
