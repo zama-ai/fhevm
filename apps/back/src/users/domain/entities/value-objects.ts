@@ -4,6 +4,9 @@ import { compareSync, genSaltSync, hashSync } from 'bcryptjs'
 import { z, ZodError } from 'zod'
 import { randomUUID } from 'crypto'
 
+const uuidRegex =
+  /^[0-9a-fA-F]{8}\b-[0-9a-fA-F]{4}\b-[0-9a-fA-F]{4}\b-[0-9a-fA-F]{4}\b-[0-9a-fA-F]{12}$/i
+
 export class Password extends ValueObject('Password', z.string()) {
   /**
    * It creates a new password from a not-hashed one.
@@ -59,8 +62,15 @@ export class TeamId extends ValueObject('TeamId', z.string().uuid()) {
   }
 }
 
-export class UserId extends ValueObject('UserId', z.string().uuid()) {
+export class UserId extends ValueObject(
+  'UserId',
+  z
+    .string()
+    .startsWith('usr_')
+    .refine(value => uuidRegex.test(value.slice(4)))
+    .and(z.custom<`usr_${string}`>()),
+) {
   static random() {
-    return new UserId(randomUUID())
+    return new UserId(`usr_${randomUUID()}`)
   }
 }
