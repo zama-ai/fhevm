@@ -15,6 +15,7 @@ services:
   localstack:
     image: localstack/localstack:latest
     container_name: console-aws
+    restart: always
     ports:
       - "127.0.0.1:4566:4566" # LocalStack Gateway
       - "127.0.0.1:4510-4559:4510-4559" # external services port range
