@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common'
+import { Injectable, Logger } from '@nestjs/common'
 import type { AppError } from 'utils'
 import { notFoundError, Task, unknownError } from 'utils'
 
@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma.service'
 
 @Injectable()
 export class PrismaDAppRepository extends DAppRepository {
+  logger = new Logger(PrismaDAppRepository.name)
   constructor(private readonly db: PrismaService) {
     super()
   }
@@ -23,11 +24,18 @@ export class PrismaDAppRepository extends DAppRepository {
   }
 
   update = (data: DApp): Task<DApp, AppError> => {
+    this.logger.debug(`update: ${data}`)
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.dapp
         .update({ where: { id: data.id }, data })
-        .then(resolve)
-        .catch(err => reject(unknownError(String(err))))
+        .then(data => {
+          this.logger.verbose(`updated: ${JSON.stringify(data)}`)
+          resolve(data)
+        })
+        .catch(err => {
+          this.logger.warn(`failed: ${err}`)
+          reject(unknownError(String(err)))
+        })
     }).chain(props => DApp.parse(props).async())
   }
 
@@ -49,5 +57,15 @@ export class PrismaDAppRepository extends DAppRepository {
         )
         .catch(err => reject(unknownError(String(err))))
     }).chain(props => DApp.parse(props).async())
+  }
+  findAllByTeamId = (teamId: string): Task<DApp[], AppError> => {
+    return new Task<unknown[], AppError>((resolve, reject) => {
+      this.db.dapp
+        .findMany({
+          where: { teamId },
+        })
+        .then(resolve)
+        .catch(err => reject(unknownError(String(err))))
+    }).chain(dapps => DApp.parseArray(dapps).async())
   }
 }

@@ -10,6 +10,9 @@ import { CurrentUser } from '@/auth/infra/decorators/current-user'
 import { JwtAuthGuard } from '@/auth/infra/guards/jwt-auth-guard'
 import { User } from '@/users/domain/entities/user'
 import { TeamId } from '@/users/domain/entities/value-objects'
+import { DeployDApp } from '../use-cases/deploy-dapp.use-case'
+import { DeployDAppInput } from './dto/inputs/deploy-dapp.input'
+import { TeamType } from '@/users/infra/types/team.type'
 
 @Resolver(() => DappType)
 export class DappsResolver {
@@ -17,6 +20,7 @@ export class DappsResolver {
     private readonly createDappUC: CreateDapp,
     private readonly updateDappUC: UpdateDapp,
     private readonly getTeamByIdUC: GetTeamById,
+    private readonly deployDappUC: DeployDApp,
   ) {}
 
   @Mutation(() => DappType, { name: 'createDapp' })
@@ -31,7 +35,15 @@ export class DappsResolver {
     return this.updateDappUC.execute({ dapp: input, user }).toPromise()
   }
 
-  @ResolveField()
+  @Mutation(() => DappType, { name: 'deployDapp' })
+  @UseGuards(JwtAuthGuard)
+  deployDapp(@Args('input') input: DeployDAppInput, @CurrentUser() user: User) {
+    return this.deployDappUC
+      .execute({ applicationId: input.dappId, user })
+      .toPromise()
+  }
+
+  @ResolveField(() => TeamType, { name: 'team' })
   async team(@Parent() dapp: DappType) {
     const { teamId } = dapp
     return this.getTeamByIdUC.execute(new TeamId(teamId)).toPromise()

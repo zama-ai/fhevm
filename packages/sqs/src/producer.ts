@@ -31,7 +31,6 @@ export class Producer {
         TopicArn: this.topicArn,
         Message: message.body,
         MessageDeduplicationId: message.deduplicationId,
-        MessageGroupId: message.groupId,
         MessageAttributes: message.messageAttributes,
       }),
     );
@@ -45,7 +44,6 @@ export class Producer {
           Id: message.id,
           Message: message.body,
           MessageDeduplicationId: message.deduplicationId,
-          MessageGroupId: message.groupId,
           MessageAttributes: message.messageAttributes,
         })),
       }),

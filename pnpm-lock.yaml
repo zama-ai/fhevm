@@ -22,6 +22,12 @@ importers:
 
   apps/back:
     dependencies:
+      '@aws-sdk/client-sns':
+        specifier: ^3.699.0
+        version: 3.699.0
+      '@aws-sdk/client-sqs':
+        specifier: ^3.699.0
+        version: 3.699.0
       '@nestjs/apollo':
         specifier: ^12.2.1
         version: 12.2.1(@apollo/server@4.11.2(graphql@16.9.0))(@nestjs/common@10.4.10(reflect-metadata@0.2.2)(rxjs@7.8.1))(@nestjs/core@10.4.10)(@nestjs/graphql@12.2.1(@nestjs/common@10.4.10(reflect-metadata@0.2.2)(rxjs@7.8.1))(@nestjs/core@10.4.10)(graphql@16.9.0)(reflect-metadata@0.2.2))(graphql@16.9.0)
@@ -55,6 +61,9 @@ importers:
       dotenv:
         specifier: ^16.4.7
         version: 16.4.7
+      messages:
+        specifier: workspace:*
+        version: link:../../packages/messages
       nestjs-cls:
         specifier: ^4.5.0
         version: 4.5.0(@nestjs/common@10.4.10(reflect-metadata@0.2.2)(rxjs@7.8.1))(@nestjs/core@10.4.10)(reflect-metadata@0.2.2)(rxjs@7.8.1)
@@ -67,6 +76,9 @@ importers:
       reflect-metadata:
         specifier: ^0.2.0
         version: 0.2.2
+      sqs:
+        specifier: workspace:*
+        version: link:../../packages/sqs
       utils:
         specifier: workspace:*
         version: link:../../packages/utils

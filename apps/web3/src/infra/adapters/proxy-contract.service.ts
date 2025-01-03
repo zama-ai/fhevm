@@ -21,7 +21,20 @@ export class ProxyContractService implements ContractService {
     return this.services.get(chainId)
   }
 
-  getAbi(chainId: string, address: Address): Task<string, AppError> {
+  getContractCreation = (
+    chainId: string,
+    address: Address,
+  ): Task<{ contractAddress: Address; creatorAddress: Address }, AppError> => {
+    let service: ContractService | undefined
+    if (isChainId(chainId) && (service = this.getService(chainId))) {
+      return service.getContractCreation(chainId, address)
+    }
+    return Task.reject(
+      unknownError(`no service available for chain ${chainId}`),
+    )
+  }
+
+  getAbi = (chainId: string, address: Address): Task<string, AppError> => {
     let service: ContractService | undefined
     if (isChainId(chainId) && (service = this.getService(chainId))) {
       return service.getAbi(chainId, address)

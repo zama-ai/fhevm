@@ -22,6 +22,8 @@
     "copy:generated": "cpx 'src/generated/**' 'dist/generated'"
   },
   "dependencies": {
+    "@aws-sdk/client-sns": "^3.699.0",
+    "@aws-sdk/client-sqs": "^3.699.0",
     "@nestjs/apollo": "^12.2.1",
     "@nestjs/common": "^10.0.0",
     "@nestjs/config": "^3.3.0",
@@ -33,10 +35,12 @@
     "@prisma/client": "5.22.0",
     "bcryptjs": "^2.4.3",
     "dotenv": "^16.4.7",
+    "messages": "workspace:*",
     "nestjs-cls": "^4.5.0",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "reflect-metadata": "^0.2.0",
+    "sqs": "workspace:*",
     "utils": "workspace:*",
     "zod": "^3.23.8"
   },
