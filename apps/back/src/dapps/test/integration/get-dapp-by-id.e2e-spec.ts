@@ -1,3 +1,4 @@
+import { DAppId } from '@/dapps/domain/entities/value-objects'
 import {
   DApp,
   GraphQlResponse,
@@ -81,7 +82,7 @@ describe('get-dapp-by-id', () => {
       beforeEach(async () => {
         result = await manager.dapp.getDapp({
           token,
-          dappId: faker.string.uuid(),
+          dappId: DAppId.random().value,
         })
       })
 

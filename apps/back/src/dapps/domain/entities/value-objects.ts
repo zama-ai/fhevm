@@ -1,10 +1,18 @@
 import { randomUUID } from 'crypto'
 import { ValueObject } from 'utils'
+import { uuidRegex } from 'utils/dist/validation'
 import { z } from 'zod'
 
-export class DAppId extends ValueObject('DAppId', z.string().uuid()) {
+export class DAppId extends ValueObject(
+  'DAppId',
+  z
+    .string()
+    .startsWith('dap_')
+    .refine(value => uuidRegex.test(value.slice(4)))
+    .and(z.custom<`dap_${string}`>()),
+) {
   static random(): DAppId {
-    return new DAppId(randomUUID())
+    return new DAppId(`dap_${randomUUID()}`)
   }
 }
 
