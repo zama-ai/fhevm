@@ -85,13 +85,10 @@ describe('update-dapp', () => {
       let token2: string
 
       beforeEach(async () => {
-        const result = await manager.auth.signup(
-          {
-            name: faker.string.alphanumeric(10),
-            password: faker.internet.password(),
-          },
-          { createInvitation: true },
-        )
+      const result = await manager.auth.login(
+        { email: faker.internet.email(), password: faker.internet.password() },
+        { signup: true },
+      )
 
         expect(result.success, 'Failed to sign up a new user').toBe(true)
         if (result.success) {
