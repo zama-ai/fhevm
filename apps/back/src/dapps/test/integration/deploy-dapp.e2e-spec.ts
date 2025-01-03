@@ -21,11 +21,7 @@ import {
   failed,
   isAppDeploymentMessage,
   requested,
-  scConfirmed,
-  scDiscovered,
-  scRegistered,
 } from 'messages'
-import { assert } from 'console'
 
 describe('deploy-dapp', () => {
   const manager = new IntegrationManager()
