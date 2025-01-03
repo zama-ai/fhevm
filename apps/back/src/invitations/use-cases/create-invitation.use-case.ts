@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common'
-import { randomUUID } from 'crypto'
 
 import { Invitation } from '../domain/entities/invitation'
 import type { AppError, Result, UseCase } from 'utils'
@@ -23,27 +22,24 @@ export class CreateInvitation implements UseCase<Input, Invitation> {
    *
    * @param secret - The external secret to check
    */
-  private checkSecret(
-    secret: string,
-  ): Result<{ token: string; id: string }, AppError> {
+  private checkSecret(secret: string): Result<void, AppError> {
     return secret !== process.env.INVITATION_SECRET
       ? fail(unauthorizedError('Invalid secret'))
-      : ok({
-          token: randomUUID(),
-          id: randomUUID(),
-        })
+      : ok(void 0)
   }
 
   execute(input: Input): Task<Invitation, AppError> {
     // Note: using a private function save me from a lot of explicit types
     return this.checkSecret(input.secret)
-      .chain(({ id, token }) =>
-        Invitation.parse({
-          id,
-          email: input.email,
-          token,
-          expiresAt: new Date(Date.now() + EXPIRATION_TIME_IN_MILLISECONDS),
-        }),
+      .chain(() =>
+        Invitation.create(
+          {
+            email: input.email,
+          },
+          {
+            expirationTime: EXPIRATION_TIME_IN_MILLISECONDS,
+          },
+        ),
       )
       .asyncChain(this.invitationRepository.create)
   }

@@ -6,7 +6,7 @@ import { SetupManager, type GraphQlResponse } from './setup.manager'
 export interface User {
   name: string
   email: string
-  teams: { id: string; name: string }[]
+  teams: { id: string; name: string; dapps?: { id: string; name: string }[] }[]
 }
 
 export class AuthManager {
@@ -80,6 +80,17 @@ export class AuthManager {
       ? { success: true, data: resp.data.login }
       : { success: false, errors: resp.errors! }
   }
+
+  async me(token: string): Promise<GraphQlResponse<User>> {
+    const resp = await request<{ me: User }>(this.httpServer)
+      .auth(token, { type: 'bearer' })
+      .query(ME)
+      .end()
+
+    return resp.data
+      ? { success: true, data: resp.data.me }
+      : { success: false, errors: resp.errors! }
+  }
 }
 
 const CREATE_INVITATION = gql`
@@ -122,6 +133,25 @@ const LOGIN = gql`
         }
       }
       token
+    }
+  }
+`
+
+const ME = gql`
+  query me {
+    me {
+      id
+      email
+      name
+      teams {
+        id
+        name
+        dapps {
+          id
+          name
+          status
+        }
+      }
     }
   }
 `
