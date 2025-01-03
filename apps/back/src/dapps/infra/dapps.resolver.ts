@@ -19,9 +19,10 @@ import { User } from '@/users/domain/entities/user'
 import { TeamId } from '@/users/domain/entities/value-objects'
 import { DeployDApp } from '../use-cases/deploy-dapp.use-case'
 import { DeployDAppInput } from './dto/inputs/deploy-dapp.input'
+import { GetDappById } from '../use-cases/get-dapp-by-id.use-case'
+import { DAppId } from '../domain/entities/value-objects'
 import { TeamType } from '@/users/infra/types/team.type'
 import { QueryDappInput } from './dto/inputs/query-dapp.input'
-import { GetDappById } from '../use-cases/get-dapp-by-id.use-case'
 
 @Resolver(() => DappType)
 export class DappsResolver {
@@ -37,7 +38,7 @@ export class DappsResolver {
   @UseGuards(JwtAuthGuard)
   dapp(@Args('input') input: QueryDappInput, @CurrentUser() user: User) {
     return this.getDappByIdUC
-      .execute({ id: input.id, userId: user.id.value })
+      .execute({ dappId: new DAppId(input.id), userId: user.id })
       .toPromise()
   }
 
@@ -50,14 +51,17 @@ export class DappsResolver {
   @Mutation(() => DappType, { name: 'updateDapp' })
   @UseGuards(JwtAuthGuard)
   updateDapp(@Args('input') input: UpdateDappInput, @CurrentUser() user: User) {
-    return this.updateDappUC.execute({ dapp: input, user }).toPromise()
+    const { id, ...props } = input
+    return this.updateDappUC
+      .execute({ dapp: { id: new DAppId(id), ...props }, user })
+      .toPromise()
   }
 
   @Mutation(() => DappType, { name: 'deployDapp' })
   @UseGuards(JwtAuthGuard)
   deployDapp(@Args('input') input: DeployDAppInput, @CurrentUser() user: User) {
     return this.deployDappUC
-      .execute({ applicationId: input.dappId, user })
+      .execute({ dappId: new DAppId(input.dappId), user })
       .toPromise()
   }
 

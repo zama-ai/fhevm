@@ -1,5 +1,5 @@
-import { UpdateDapp } from '@/dapps/use-cases/update-dapp.use-case'
-import { GetUserById } from '@/users/use-cases/get-user-by-id.use-case'
+import { DAppId } from '@/dapps/domain/entities/value-objects'
+import { AppDeploymentEnded } from '@/dapps/use-cases/app-deployment-ended.use-case'
 import type { Message } from '@aws-sdk/client-sqs'
 import { Injectable, Logger } from '@nestjs/common'
 import { isAppDeploymentEvent } from 'messages'
@@ -9,46 +9,27 @@ import { SqsMessageHandler } from 'sqs'
 export class SQSConsumer {
   private logger = new Logger(SQSConsumer.name)
 
-  constructor(
-    private readonly getUserById: GetUserById,
-    private readonly updateDappUC: UpdateDapp,
-  ) {}
+  constructor(private readonly appDeploymentEndedUC: AppDeploymentEnded) {}
 
   @SqsMessageHandler('back', false)
-  public handleMessage(message: Message) {
+  public async handleMessage(message: Message) {
     if (message.Body) {
-      this.logger.debug(`received message: ${message.Body}`)
-      const body = JSON.parse(message.Body)
-      const data: unknown = JSON.parse(body.Message)
-      if (isAppDeploymentEvent(data)) {
-        if (typeof data.$meta?.userId !== 'string') {
-          this.logger.warn(
-            `missing userId in $meta: ${JSON.stringify(data.$meta)}`,
-          )
-          return
+      try {
+        this.logger.debug(`received message: ${message.Body}`)
+        const body = JSON.parse(message.Body)
+        const data: unknown = JSON.parse(body.Message)
+        if (isAppDeploymentEvent(data)) {
+          switch (data.type) {
+            case 'app-deployment.completed':
+            case 'app-deployment.failed':
+              await this.appDeploymentEndedUC
+                .execute({ event: data })
+                .toPromise()
+              break
+          }
         }
-        switch (data.type) {
-          case 'app-deployment.sc-discovered':
-          case 'app-deployment.sc-discovery-failed':
-            this.getUserById
-              .execute(data.$meta.userId)
-              .chain(user =>
-                this.updateDappUC.execute({
-                  dapp: {
-                    id: data.payload.applicationId,
-                    status:
-                      data.type === 'app-deployment.sc-discovered'
-                        ? 'LIVE'
-                        : 'DRAFT',
-                  },
-                  user,
-                }),
-              )
-              .fork(
-                () => this.logger.debug(`${data.type} handled`),
-                err => this.logger.warn(`${data.type} failed: ${err}`),
-              )
-        }
+      } catch (err) {
+        this.logger.error(`failed to handle message: ${err}`)
       }
     }
   }

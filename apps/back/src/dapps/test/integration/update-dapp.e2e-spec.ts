@@ -42,7 +42,7 @@ describe('update-dapp', () => {
     let dapp: DApp
 
     beforeEach(async () => {
-      const result = await manager.createDApp({
+      const result = await manager.dapp.createDApp({
         name: faker.string.alphanumeric(10),
       })
       if (result.success) {
@@ -58,7 +58,7 @@ describe('update-dapp', () => {
         name = faker.string.alphanumeric(10)
         address = faker.string.hexadecimal({ length: 40 })
 
-        const result = await manager.updateDApp({
+        const result = await manager.dapp.updateDApp({
           token,
           dappId: dapp.id,
           name,
@@ -85,13 +85,10 @@ describe('update-dapp', () => {
       let token2: string
 
       beforeEach(async () => {
-        const result = await manager.signup(
-          {
-            name: faker.string.alphanumeric(10),
-            password: faker.internet.password(),
-          },
-          { createInvitation: true },
-        )
+      const result = await manager.auth.login(
+        { email: faker.internet.email(), password: faker.internet.password() },
+        { signup: true },
+      )
 
         expect(result.success, 'Failed to sign up a new user').toBe(true)
         if (result.success) {
@@ -100,7 +97,7 @@ describe('update-dapp', () => {
       })
 
       test('then it rejects the update', async () => {
-        const result = await manager.updateDApp({
+        const result = await manager.dapp.updateDApp({
           token: token2,
           dappId: dapp.id,
           name: faker.string.alphanumeric(10),

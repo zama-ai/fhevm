@@ -39,7 +39,7 @@ describe('signup', () => {
 
     beforeEach(async () => {
       email = faker.internet.email()
-      invitation = await manager.createInvitation(email)
+      invitation = await manager.auth.createInvitation(email)
     })
 
     describe('when signing up', () => {
@@ -47,7 +47,7 @@ describe('signup', () => {
       let user: User
 
       beforeEach(async () => {
-        const result = await manager.signup({
+        const result = await manager.auth.signup({
           invitation,
           name: faker.internet.username(),
           password: faker.internet.password(),
@@ -78,14 +78,14 @@ describe('signup', () => {
       }>
       beforeEach(async () => {
         // first time
-        result = await manager.signup({
+        result = await manager.auth.signup({
           invitation,
           name: faker.internet.username(),
           password: faker.internet.password(),
         })
 
         // second time
-        result = await manager.signup({
+        result = await manager.auth.signup({
           invitation,
           name: faker.internet.username(),
           password: faker.internet.password(),
@@ -107,7 +107,7 @@ describe('signup', () => {
       let user: { email: string; name: string }
 
       beforeEach(async () => {
-        const result = await manager.signup({
+        const result = await manager.auth.signup({
           invitation: faker.string.uuid(),
           name: faker.internet.username(),
           password: faker.internet.password(),
@@ -129,7 +129,7 @@ describe('signup', () => {
   describe('given an expired invitation', () => {
     let invitation: string
     beforeEach(async () => {
-      invitation = await manager.createInvitation(faker.internet.email())
+      invitation = await manager.auth.createInvitation(faker.internet.email())
     })
 
     describe('when signing up', () => {
@@ -141,7 +141,7 @@ describe('signup', () => {
       beforeEach(async () => {
         // Move forward in time
         vi.setSystemTime(Date.now() + EXPIRATION_TIME_IN_MILLISECONDS + 1)
-        result = await manager.signup({
+        result = await manager.auth.signup({
           invitation,
           name: faker.internet.username(),
           password: faker.internet.password(),

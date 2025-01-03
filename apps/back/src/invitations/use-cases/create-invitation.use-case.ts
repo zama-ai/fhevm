@@ -45,6 +45,6 @@ export class CreateInvitation implements UseCase<Input, Invitation> {
           expiresAt: new Date(Date.now() + EXPIRATION_TIME_IN_MILLISECONDS),
         }),
       )
-      .asyncChain(i => this.invitationRepository.create(i))
+      .asyncChain(this.invitationRepository.create)
   }
 }

@@ -34,7 +34,7 @@ describe('create-dapp', () => {
     let teamId: string
 
     beforeEach(async () => {
-      const result = await manager.login(
+      const result = await manager.auth.login(
         { email: faker.internet.email(), password: faker.internet.password() },
         { signup: true },
       )
@@ -48,7 +48,7 @@ describe('create-dapp', () => {
       let dapp: DApp | undefined
 
       beforeEach(async () => {
-        const result = await manager.createDApp({
+        const result = await manager.dapp.createDApp({
           token,
           teamId,
           name: faker.string.alphanumeric(10),
@@ -74,7 +74,7 @@ describe('create-dapp', () => {
       let result: GraphQlResponse<{ dapp: DApp; token: string }>
 
       beforeEach(async () => {
-        result = await manager.createDApp({
+        result = await manager.dapp.createDApp({
           token: faker.string.uuid(),
           teamId: faker.string.uuid(),
           name: faker.string.alphanumeric(10),

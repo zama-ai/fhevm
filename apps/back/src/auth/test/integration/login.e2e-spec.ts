@@ -33,7 +33,7 @@ describe('login', () => {
       email = faker.internet.email()
       password = faker.internet.password()
 
-      await manager.signup(
+      await manager.auth.signup(
         {
           name: faker.internet.username(),
           password,
@@ -47,7 +47,7 @@ describe('login', () => {
       let user: User
 
       beforeEach(async () => {
-        const result = await manager.login({ email, password })
+        const result = await manager.auth.login({ email, password })
         if (result.success) {
           ;({ token, user } = result.data)
         }

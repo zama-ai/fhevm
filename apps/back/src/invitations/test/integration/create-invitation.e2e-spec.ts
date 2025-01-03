@@ -43,7 +43,7 @@ describe('createInvitation', () => {
 
       beforeEach(async () => {
         email = faker.internet.email()
-        token = await manager.createInvitation(email)
+        token = await manager.auth.createInvitation(email)
       })
 
       test('then it returns a new invitation token', () => {

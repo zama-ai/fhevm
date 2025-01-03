@@ -17,10 +17,11 @@ import { Inject, Logger } from '@nestjs/common'
 import { UpdateDapp } from './update-dapp.use-case'
 import { requested } from 'messages'
 import { randomUUID } from 'crypto'
+import { DAppId } from '../domain/entities/value-objects'
 
 interface Input {
   user: User // to check if they can deploy
-  applicationId: string
+  dappId: DAppId
   // deploymentId: string  // it will be random uuid for now
   // chainId: string // for now it's sepolia
   // address will be fetch from the dapp entity
@@ -35,14 +36,14 @@ export class DeployDApp implements UseCase<Input, DApp> {
     private readonly producer: AppDeploymentProducer,
     private readonly updateDappUC: UpdateDapp,
   ) {}
-  execute({ user, applicationId }: Input): Task<DApp, AppError> {
-    this.logger.debug(`[${user.email}] deploying dapp: ${applicationId}`)
+  execute({ user, dappId }: Input): Task<DApp, AppError> {
+    this.logger.debug(`[${user.email}] deploying dapp: ${dappId}`)
 
     // check if the user can deploy by checking if the user belongs to the team that owns the dapp
     return this.uow
       .exec(
         this.dappRepository
-          .findOneByIdAndUserId(applicationId, user.id.value)
+          .findOneByIdAndUserId(dappId, user.id)
           .tap(dapp => {
             this.logger.debug(`dapp: ${dapp}`)
           })
@@ -59,7 +60,7 @@ export class DeployDApp implements UseCase<Input, DApp> {
                 .publish(
                   requested(
                     {
-                      applicationId: applicationId,
+                      applicationId: dappId.value,
                       deploymentId: randomUUID(),
                       address: dapp.address!,
                       // TODO: move it into a constants file
@@ -72,7 +73,7 @@ export class DeployDApp implements UseCase<Input, DApp> {
               this.updateDappUC
                 .execute({
                   dapp: {
-                    id: applicationId,
+                    id: dappId,
                     status: 'DEPLOYING',
                   },
                   user,

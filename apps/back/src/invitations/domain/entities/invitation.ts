@@ -21,6 +21,7 @@ export class Invitation
     >
 {
   static parse(data: unknown): Result<Invitation, AppError> {
+    if (!data) return fail(validationError('data is undefined'))
     const check = schema.safeParse(data)
     return check.success
       ? ok(new Invitation(check.data))

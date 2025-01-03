@@ -15,7 +15,7 @@ export class PrismaInvitationRepository extends InvitationRepository {
     super()
   }
 
-  create(data: Invitation): Task<Invitation, AppError> {
+  create = (data: Invitation): Task<Invitation, AppError> => {
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.invitation
         .create({ data: data.toJSON() })
@@ -24,7 +24,7 @@ export class PrismaInvitationRepository extends InvitationRepository {
     }).chain(props => Invitation.parse(props).async())
   }
 
-  findByToken(token: Token): Task<Invitation, AppError> {
+  findByToken = (token: Token): Task<Invitation, AppError> => {
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.invitation
         .findUnique({ where: { token: token.value } })
@@ -35,7 +35,7 @@ export class PrismaInvitationRepository extends InvitationRepository {
     }).chain(props => Invitation.parse(props).async())
   }
 
-  markAsUsed(id: InvitationId): Task<Invitation, AppError> {
+  markAsUsed = (id: InvitationId): Task<Invitation, AppError> => {
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.invitation
         .update({ where: { id: id.value }, data: { usedAt: new Date() } })

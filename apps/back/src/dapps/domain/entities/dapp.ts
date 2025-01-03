@@ -1,11 +1,12 @@
 import { z } from 'zod'
 import type { AppError, Result } from 'utils'
 import { Entity, ok, fail, validationError } from 'utils'
+import { DAppId } from './value-objects'
 
 const status = z.enum(['DRAFT', 'DEPLOYING', 'LIVE'])
 
 const schema = z.object({
-  id: z.string().uuid(),
+  id: DAppId,
   name: z.string(),
   status,
   teamId: z.string().uuid(),
@@ -20,7 +21,10 @@ const schema = z.object({
 export type DAppProps = z.infer<typeof schema>
 export type DAppStatus = z.infer<typeof status>
 
-export class DApp extends Entity<DAppProps> implements Readonly<DAppProps> {
+export class DApp
+  extends Entity<DAppProps>
+  implements Readonly<Omit<DAppProps, 'id'> & { id: DAppId }>
+{
   static parse(data: unknown): Result<DApp, AppError> {
     if (!data) return fail(validationError('data is undefined'))
     const check = schema.safeParse(data)
@@ -37,7 +41,7 @@ export class DApp extends Entity<DAppProps> implements Readonly<DAppProps> {
   }
 
   get id() {
-    return this.get('id')
+    return new DAppId(this.get('id'))
   }
 
   get name() {
