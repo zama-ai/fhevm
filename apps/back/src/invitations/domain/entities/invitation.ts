@@ -1,5 +1,5 @@
 import type { AppError, Result } from 'utils'
-import { Entity, ok, validationError } from 'utils'
+import { Entity, fail, ok, validationError } from 'utils'
 import { z } from 'zod'
 import { InvitationId, Token } from './value-objects'
 

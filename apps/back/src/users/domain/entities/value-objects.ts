@@ -1,5 +1,5 @@
 import type { AppError, Result } from 'utils'
-import { ok, validationError, ValueObject } from 'utils'
+import { fail, ok, validationError, ValueObject } from 'utils'
 import { compareSync, genSaltSync, hashSync } from 'bcryptjs'
 import { z, ZodError } from 'zod'
 

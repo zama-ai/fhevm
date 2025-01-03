@@ -29,7 +29,9 @@ $ pnpx prisma studio
 $ pnpm test
 
 # e2e tests
-$ pnpm test:e2e
+# in the repo root directory
+$ docker compose -f docker-compose.test.yaml up
+$ pnpm --filter back test:e2e
 
 # test coverage
 $ pnpm test:cov
