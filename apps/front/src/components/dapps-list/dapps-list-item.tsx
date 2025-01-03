@@ -7,19 +7,6 @@ type OwnProps = {
   dapp: Dapp
 }
 export function DappsListItem({ dapp }: OwnProps) {
-  // let lastmodified = `Created ${dapp.createdAt}`
-  // if (dapp.updatedAt !== dapp.createdAt) {
-  //   lastmodified = `Updated ${dapp.updatedAt}`
-  // }
-  // if (dapp.status === 'LIVE') {
-  //   lastmodified = `Deployed ${dapp.updatedAt}`
-  // }
-  // const lastmodified =
-  //   dapp.updatedAt === dapp.createdAt
-  //     ? `Created ${dapp.createdAt}`
-  //     : dapp.status === 'LIVE'
-  //       ? `Deployed ${dapp.updatedAt}`
-  //       : `Updated ${dapp.updatedAt}`
   const lastmodified = 'Created some time ago'
   const link =
     dapp.status === 'DRAFT' ? `/create/2/${dapp.id}` : `/dapp/${dapp.id}`
