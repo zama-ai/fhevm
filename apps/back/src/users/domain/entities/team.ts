@@ -21,6 +21,10 @@ export class Team
       : fail(validationError(check.error.message))
   }
 
+  static create({ name }: { name: string }): Result<Team, AppError> {
+    return Team.parse({ id: TeamId.random().value, name })
+  }
+
   get id() {
     return new TeamId(this.get('id'))
   }

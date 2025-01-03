@@ -15,13 +15,7 @@ import {
   vi,
 } from 'vitest'
 import { DAppStatus } from '@/dapps/domain/entities/dapp'
-import {
-  AppDeploymentMessage,
-  completed,
-  failed,
-  isAppDeploymentMessage,
-  requested,
-} from 'messages'
+import { AppDeploymentMessage, completed, failed, requested } from 'messages'
 
 describe('deploy-dapp', () => {
   const manager = new IntegrationManager()
@@ -58,7 +52,7 @@ describe('deploy-dapp', () => {
           teamId,
           name: faker.string.alphanumeric(10),
         })
-        expect(dappResult.success).toBe(true)
+        expect(dappResult.success, 'Failed to create dApp').toBe(true)
         if (dappResult.success) {
           dappId = dappResult.data.dapp.id
         }
@@ -76,9 +70,9 @@ describe('deploy-dapp', () => {
       })
 
       test('then it fails due missing address', () => {
-        expect(result.success).toBe(false)
+        expect(result.success, 'dApp should not be deployed').toBe(false)
         if (!result.success) {
-          expect(result.errors).toBeDefined()
+          expect(result.errors, 'should returns a list of errors').toBeDefined()
           expect(result.errors.length).toBeGreaterThan(0)
           expect(result.errors[0].message).contain('missing dApp address')
         }

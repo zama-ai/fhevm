@@ -50,7 +50,7 @@ export class DappType {
     deprecationReason:
       'Do not use this, it shall go away when I find a way to make it disappear',
   })
-  teamId: string
+  teamId: `t_${string}`
 
   @Field(() => TeamType, { nullable: false })
   team: TeamType

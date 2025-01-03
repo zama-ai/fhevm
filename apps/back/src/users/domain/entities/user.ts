@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { AppError, Result } from 'utils'
 import { Entity, ok, fail, unauthorizedError, validationError } from 'utils'
-import { Password, UserId } from './value-objects'
+import { Password, UserId, ValidatedPassword } from './value-objects'
 
 const schema = z.object({
   id: UserId,
@@ -21,6 +21,23 @@ export class User
     return check.success
       ? ok(new User(check.data))
       : fail(validationError(check.error.message))
+  }
+
+  static create({
+    email,
+    password,
+    name,
+  }: {
+    email: string
+    password: ValidatedPassword
+    name: string
+  }): Result<User, AppError> {
+    return User.parse({
+      id: UserId.random().value,
+      email,
+      password: Password.hash(password).value,
+      name,
+    })
   }
 
   get id() {

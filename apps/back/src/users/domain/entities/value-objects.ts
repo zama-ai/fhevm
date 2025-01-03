@@ -1,8 +1,9 @@
 import type { AppError, Result } from 'utils'
 import { fail, ok, validationError, ValueObject } from 'utils'
+import { validateNanoId } from 'utils/dist/validation'
 import { compareSync, genSaltSync, hashSync } from 'bcryptjs'
 import { z, ZodError } from 'zod'
-
+import { nanoid } from 'nanoid'
 export class Password extends ValueObject('Password', z.string()) {
   /**
    * It creates a new password from a not-hashed one.
@@ -52,6 +53,30 @@ export class ValidatedPassword extends ValueObject(
   }
 }
 
-export class TeamId extends ValueObject('TeamId', z.string().uuid()) {}
+export class TeamId extends ValueObject(
+  'TeamId',
+  z
+    .string()
+    .startsWith('team_')
+    .length(15)
+    .refine(validateNanoId(10, 'team_'), 'Invalid Team ID')
+    .and(z.custom<`team_${string}`>()),
+) {
+  static random() {
+    return new TeamId(`team_${nanoid(10)}`)
+  }
+}
 
-export class UserId extends ValueObject('UserId', z.string().uuid()) {}
+export class UserId extends ValueObject(
+  'UserId',
+  z
+    .string()
+    .startsWith('user_')
+    .length(15)
+    .refine(validateNanoId(10, 'user_'), 'Invalid User ID')
+    .and(z.custom<`user_${string}`>()),
+) {
+  static random() {
+    return new UserId(`user_${nanoid(10)}`)
+  }
+}

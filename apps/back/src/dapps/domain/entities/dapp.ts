@@ -2,7 +2,7 @@ import { z } from 'zod'
 import type { AppError, Result } from 'utils'
 import { Entity, ok, fail, validationError } from 'utils'
 import { CreatedAt, DAppId } from './value-objects'
-import { da } from '@faker-js/faker/.'
+import { TeamId } from '@/users/domain/entities/value-objects'
 
 const status = z.enum(['DRAFT', 'DEPLOYING', 'LIVE'])
 
@@ -10,7 +10,7 @@ const schema = z.object({
   id: DAppId,
   name: z.string(),
   status,
-  teamId: z.string().uuid(),
+  teamId: TeamId,
   address: z
     .string()
     .length(42, 'sepolia address must be exactly 42 charaxters long')
@@ -48,12 +48,12 @@ export class DApp
     address?: string
   }): Result<DApp, AppError> {
     return DApp.parse({
-      id: DAppId.generate().value,
+      id: DAppId.random().value,
       name,
       status: 'DRAFT',
       teamId,
       address,
-      createdAt: CreatedAt.generate().value,
+      createdAt: CreatedAt.now().value,
     })
   }
 

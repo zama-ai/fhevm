@@ -38,10 +38,10 @@ export class Invitation
     options?: { expirationTime?: number },
   ): Result<Invitation, AppError> {
     return Invitation.parse({
-      id: InvitationId.generate().value,
+      id: InvitationId.random().value,
       email,
-      token: Token.generate().value,
-      expiresAt: ExpiresAt.generate(options).value,
+      token: Token.random().value,
+      expiresAt: ExpiresAt.compute(options).value,
     })
   }
 
