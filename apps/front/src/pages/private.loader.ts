@@ -10,6 +10,7 @@ const GET_ME = graphql(`
       name
       teams {
         id
+        name
         dapps {
           id
           name

@@ -28,7 +28,11 @@ export class UpdateDapp implements UseCase<Input, DApp> {
         .mapError<AppError>(err =>
           err._tag === 'NotFoundError' ? forbiddenError() : err,
         )
-        .chain(() => this.dappRepository.update(input.dapp)),
+        .chain(dapp =>
+          DApp.parse(Object.assign({}, dapp.toJSON(), input.dapp)).asyncChain(
+            this.dappRepository.update,
+          ),
+        ),
     )
   }
 }
