@@ -35,6 +35,7 @@
     "@prisma/client": "5.22.0",
     "bcryptjs": "^2.4.3",
     "messages": "workspace:*",
+    "nanoid": "^5.0.9",
     "nestjs-cls": "^4.5.0",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",

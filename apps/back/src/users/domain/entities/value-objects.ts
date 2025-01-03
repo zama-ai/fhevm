@@ -1,10 +1,9 @@
 import type { AppError, Result } from 'utils'
 import { fail, ok, validationError, ValueObject } from 'utils'
-import { uuidRegex } from 'utils/dist/validation'
+import { validateNanoId } from 'utils/dist/validation'
 import { compareSync, genSaltSync, hashSync } from 'bcryptjs'
 import { z, ZodError } from 'zod'
-import { randomUUID } from 'crypto'
-
+import { nanoid } from 'nanoid'
 export class Password extends ValueObject('Password', z.string()) {
   /**
    * It creates a new password from a not-hashed one.
@@ -58,12 +57,13 @@ export class TeamId extends ValueObject(
   'TeamId',
   z
     .string()
-    .startsWith('t_')
-    .refine(value => uuidRegex.test(value.slice(2)))
-    .and(z.custom<`t_${string}`>()),
+    .startsWith('team_')
+    .length(15)
+    .refine(validateNanoId(10, 'team_'), 'Invalid Team ID')
+    .and(z.custom<`team_${string}`>()),
 ) {
   static random() {
-    return new TeamId(`t_${randomUUID()}`)
+    return new TeamId(`team_${nanoid(10)}`)
   }
 }
 
@@ -71,11 +71,12 @@ export class UserId extends ValueObject(
   'UserId',
   z
     .string()
-    .startsWith('usr_')
-    .refine(value => uuidRegex.test(value.slice(4)))
-    .and(z.custom<`usr_${string}`>()),
+    .startsWith('user_')
+    .length(15)
+    .refine(validateNanoId(10, 'user_'), 'Invalid User ID')
+    .and(z.custom<`user_${string}`>()),
 ) {
   static random() {
-    return new UserId(`usr_${randomUUID()}`)
+    return new UserId(`user_${nanoid(10)}`)
   }
 }

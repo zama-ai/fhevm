@@ -1,18 +1,19 @@
-import { randomUUID } from 'crypto'
 import { ValueObject } from 'utils'
-import { uuidRegex } from 'utils/dist/validation'
+import { validateNanoId } from 'utils/dist/validation'
 import { z } from 'zod'
+import { nanoid } from 'nanoid'
 
 export class DAppId extends ValueObject(
   'DAppId',
   z
     .string()
-    .startsWith('dap_')
-    .refine(value => uuidRegex.test(value.slice(4)))
-    .and(z.custom<`dap_${string}`>()),
+    .startsWith('dapp_')
+    .length(17)
+    .refine(validateNanoId(12, 'dapp_'), 'Invalid DAppId')
+    .and(z.custom<`dapp_${string}`>()),
 ) {
   static random(): DAppId {
-    return new DAppId(`dap_${randomUUID()}`)
+    return new DAppId(`dapp_${nanoid(12)}`)
   }
 }
 
