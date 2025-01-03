@@ -128,9 +128,6 @@ importers:
       cpx:
         specifier: ^1.5.0
         version: 1.5.0
-      dotenv:
-        specifier: ^16.4.7
-        version: 16.4.7
       eslint:
         specifier: 'catalog:'
         version: 9.15.0(jiti@2.4.0)
