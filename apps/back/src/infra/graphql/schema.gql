@@ -53,6 +53,11 @@ type Invitation {
 type Query {
   me: User!
   invitation(token: String!): Invitation!
+  dapp(input: QueryDappInput!): Dapp!
+}
+
+input QueryDappInput {
+  id: ID!
 }
 
 type Mutation {

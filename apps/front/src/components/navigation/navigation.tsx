@@ -13,7 +13,15 @@ import { TitleContext } from '@/components/title-context/title-context'
 import { NavBlock } from './nav-block'
 import { NavApp, NewNavApp } from './nav-app'
 
-export function Navigation() {
+type OwnProps = {
+  dapps: Array<{
+    id: string
+    name: string
+    status: string
+  }>
+}
+
+export function Navigation({ dapps }: OwnProps) {
   const { pathname } = useLocation()
   const { title } = useContext(TitleContext)
   return (
@@ -32,8 +40,14 @@ export function Navigation() {
         <NavBlock title="Dashboard" icon={DashboardIcon} to="/dashboard" />
         <List.Root gap="2" variant="plain" align="center">
           {pathname === '/create' && <NewNavApp name={title} />}
-          <NavApp name="My Hello World dApp" status="active" />
-          <NavApp name="My other dApp" status="draft" />
+          {dapps.map(dapp => (
+            <NavApp
+              key={dapp.id}
+              id={dapp.id}
+              name={dapp.name}
+              status={dapp.status}
+            />
+          ))}
         </List.Root>
         <NavBlock title="Documentation" icon={DocumentationIcon} to="/about" />
         <NavBlock title="Learn" icon={LearnIcon} to="/" />

@@ -20,6 +20,7 @@ import { dashboardLoader } from './pages/dashboard.loader'
 import { CreateStepOnePage } from './pages/create-step-one.page.tsx'
 import { CreateStepTwoPage } from './pages/create-step-two.page.tsx'
 import { CreateStepThreePage } from './pages/create-step-three.page.tsx'
+import { DappPage } from './pages/dapp.page.tsx'
 
 const router = createBrowserRouter([
   {
@@ -58,9 +59,9 @@ const router = createBrowserRouter([
         element: <AboutPage />,
       },
       {
-        loader: dashboardLoader,
         path: '/create',
         element: <CreateStepOnePage />,
+        loader: dashboardLoader,
       },
       {
         path: '/create/2/:dappId',
@@ -69,6 +70,10 @@ const router = createBrowserRouter([
       {
         path: '/create/3/:dappId',
         element: <CreateStepThreePage />,
+      },
+      {
+        path: '/dapp/:dappId',
+        element: <DappPage />,
       },
     ],
   },

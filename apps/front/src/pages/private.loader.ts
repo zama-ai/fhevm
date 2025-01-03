@@ -8,6 +8,15 @@ const GET_ME = graphql(`
       id
       email
       name
+      teams {
+        id
+        name
+        dapps {
+          id
+          name
+          status
+        }
+      }
     }
   }
 `)

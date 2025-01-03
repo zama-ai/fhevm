@@ -1,59 +1,36 @@
-import { List, Text } from '@chakra-ui/react'
-import { Circle } from 'lucide-react'
+import { List } from '@chakra-ui/react'
 import { NavLink } from '@/components/ui/link'
-
-type NavAppBlockProps = {
-  name: string
-  color: string
-}
-
-function NavAppBlock({ name, color }: NavAppBlockProps) {
-  return (
-    <>
-      <List.Indicator
-        asChild
-        color={color}
-        width="10px"
-        opacity={0}
-        _groupHover={{ opacity: 1 }}
-        transition="opacity .5s"
-      >
-        <Circle className="circle" />
-      </List.Indicator>
-      <Text
-        fontSize="sm"
-        overflow="hidden"
-        textOverflow="ellipsis"
-        textWrap="nowrap"
-        maxWidth="130px"
-      >
-        {name.length ? name : 'New app'}
-      </Text>
-    </>
-  )
-}
+import { NavAppBlock } from './nav-app-block'
 
 type NavAppProps = {
+  id: string
   name: string
   status: string
 }
 
-export function NavApp({ name, status }: NavAppProps) {
-  const color = status === 'active' ? 'green.200' : 'gray.300'
+export function NavApp({ id, name, status }: NavAppProps) {
+  const color = ['LIVE', 'DEPLOYING'].includes(status)
+    ? 'green.200'
+    : 'gray.300'
+  const link = ['LIVE', 'DEPLOYING'].includes(status)
+    ? `/dapp/${id}`
+    : `/create/2/${id}`
   return (
     <List.Item>
-      <NavLink to="/app/1" className="group">
-        <NavAppBlock name={name} color={color} />
+      <NavLink to={link} className="group">
+        {({ isActive }) => (
+          <NavAppBlock name={name} color={color} isActive={isActive} />
+        )}
       </NavLink>
     </List.Item>
   )
 }
 
-type CurrentNavAppProps = {
+type NewNavAppProps = {
   name: string
 }
 
-export function NewNavApp({ name }: CurrentNavAppProps) {
+export function NewNavApp({ name }: NewNavAppProps) {
   return (
     <List.Item
       className="group"
