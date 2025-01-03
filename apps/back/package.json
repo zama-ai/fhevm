@@ -32,6 +32,7 @@
     "@nestjs/platform-express": "^10.0.0",
     "@prisma/client": "5.22.0",
     "bcryptjs": "^2.4.3",
+    "dotenv": "^16.4.7",
     "nestjs-cls": "^4.5.0",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
