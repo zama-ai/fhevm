@@ -54,4 +54,13 @@ describe('ACL', function () {
       .to.be.revertedWithCustomError(this.acl, 'SenderNotAllowed')
       .withArgs(sender);
   });
+
+  it('cannot initialize if not initializer', async function () {
+    const randomAccount = this.signers.carol;
+
+    await expect(this.acl.connect(randomAccount).initialize(randomAccount)).to.be.revertedWithCustomError(
+      this.acl,
+      'InvalidInitialization',
+    );
+  });
 });
