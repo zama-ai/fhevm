@@ -150,6 +150,47 @@ func fheSubRun(sess ExecutorSession, unslicedInput []byte, _ ExtraData, outputHa
 	}
 }
 
+func fheDivRun(sess ExecutorSession, unslicedInput []byte, _ ExtraData, outputHandle []byte) error {
+	if len(unslicedInput) < 65 {
+		return fmt.Errorf("expected at least 65 bytes as input, got %d", len(unslicedInput))
+	}
+	input := unslicedInput[:65]
+
+	isScalar, err := isScalarOp(input)
+	if err != nil {
+		return err
+	}
+
+	var lhs, rhs []byte
+	if isScalar {
+		lhs, rhs, err = getScalarOperands(sess, input)
+	} else {
+		lhs, rhs, err = get2FheOperands(sess, input)
+	}
+	if err != nil {
+		return err
+	}
+
+	computation := ComputationToInsert{
+		Operation:    FheDiv,
+		OutputHandle: outputHandle,
+		Operands: []ComputationOperand{
+			{
+				Handle:      lhs,
+				FheUintType: handleType(lhs),
+				IsScalar:    false,
+			},
+			{
+				Handle:      rhs,
+				FheUintType: handleType(rhs),
+				IsScalar:    isScalar,
+			},
+		},
+	}
+
+	return sess.GetStore().InsertComputation(computation)
+}
+
 func fheMulRun(sess ExecutorSession, unslicedInput []byte, _ ExtraData, outputHandle []byte) error {
 	if len(unslicedInput) < 65 {
 		return fmt.Errorf("expected at least 65 bytes as input, got %d", len(unslicedInput))

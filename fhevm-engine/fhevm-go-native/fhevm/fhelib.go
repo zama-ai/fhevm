@@ -47,6 +47,12 @@ func FheLibMethods() []*FheLibMethod {
 			ScalarSupport: true,
 		},
 		{
+			Name:          "fheDiv",
+			ArgTypes:      "(uint256,uint256,bytes1)",
+			runFunction:   fheDivRun,
+			ScalarSupport: true,
+		},
+		{
 			Name:              "fheRem",
 			ArgTypes:          "(uint256,uint256,bytes1)",
 			runFunction:       fheRemRun,
