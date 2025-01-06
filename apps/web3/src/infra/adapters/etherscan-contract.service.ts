@@ -37,7 +37,8 @@ export class EtherscanContractService implements ContractService {
   ): Task<{ contractAddress: Address; creatorAddress: Address }, AppError> => {
     this.logger.debug(`getContractCreation: ${chainId}/${address}`)
 
-    // Note: should I check the chainId?
+    // NOTE: should I check the chainId?
+    // NOTE:(Luis) I'm not sure why we would have a chain-id here since it's implictly provided in the `apiEndpoint`
     const params = stringify({
       module: 'contract',
       action: 'getcontractcreation',
@@ -56,9 +57,9 @@ export class EtherscanContractService implements ContractService {
         .then(data =>
           data.status === '1'
             ? resolve({
-                contractAddress: new Address(data.result[0].contractAddress),
-                creatorAddress: new Address(data.result[0].contractCreator),
-              })
+              contractAddress: new Address(data.result[0].contractAddress),
+              creatorAddress: new Address(data.result[0].contractCreator),
+            })
             : reject(notFoundError('Contract not found')),
         )
         .catch(err => reject(unknownError(String(err)))),

@@ -68,7 +68,7 @@ export class SignUp
             this.getPayload(user),
           ]),
         )
-        .map(([_, payload]) => payload),
+        .map(([, payload]) => payload),
     )
   }
 

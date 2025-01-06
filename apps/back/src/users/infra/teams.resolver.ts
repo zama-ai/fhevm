@@ -1,5 +1,5 @@
 import { Resolver, ResolveField, Parent } from '@nestjs/graphql'
-import { TeamId, UserId } from '../domain/entities/value-objects'
+import { TeamId } from '../domain/entities/value-objects'
 import { DappType } from '@/dapps/infra/types/dapp.type'
 import { TeamType } from './types/team.type'
 import { GetDappsByTeamId } from '@/dapps/use-cases/get-dapps-by-team-id.use-case'
