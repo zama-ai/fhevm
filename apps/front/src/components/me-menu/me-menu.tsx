@@ -17,7 +17,6 @@ import {
 
 type MeMenuProps = {
   name: string
-  email: string
   image: string
   condensed?: boolean
 }
@@ -28,6 +27,15 @@ export function MeMenu({ name, image, condensed }: MeMenuProps) {
     localStorage.removeItem('token')
     navigate('/signin')
   }, [navigate])
+  return <PureMeMenu {...{ name, image, condensed, onLogout }} />
+}
+
+export function PureMeMenu({
+  name,
+  image,
+  condensed,
+  onLogout,
+}: MeMenuProps & { onLogout: () => void }) {
   return (
     <MenuRoot positioning={{ placement: 'bottom-end' }}>
       <MenuTrigger asChild>
