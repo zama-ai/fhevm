@@ -1,3 +1,4 @@
+import '@nomicfoundation/hardhat-foundry';
 import '@nomicfoundation/hardhat-toolbox';
 import '@openzeppelin/hardhat-upgrades';
 import dotenv from 'dotenv';
