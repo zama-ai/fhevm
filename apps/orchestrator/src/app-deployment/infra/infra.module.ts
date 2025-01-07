@@ -4,7 +4,7 @@ import {
   APP_DEPLOYMENT_REPO,
   AppDeploymentRepository,
 } from '../interfaces/app-deployment.repository.js'
-import { DatabaseModule } from 'src/database/database.module'
+import { DatabaseModule } from '#database/database.module.js'
 import { SqsModule } from '@ssut/nestjs-sqs'
 import { SQSConsumer } from './adapters/sqs.consumer.js'
 import { SNSProducer } from './adapters/sns.producer.js'
@@ -15,7 +15,7 @@ import {
 import { ProcessEventUseCase } from '../use-cases/process-event.use-case.js'
 import { ConfigService } from '@nestjs/config'
 import { SQSClient } from '@aws-sdk/client-sqs'
-import { DatabaseService } from 'src/database/database.service'
+import { DatabaseService } from '#database/database.service.js'
 
 @Module({
   imports: [
