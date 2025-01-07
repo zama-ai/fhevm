@@ -140,4 +140,31 @@ describe('KMSVerifier', function () {
       expect(y6).to.equal(16); // after removing one of the 4 signers, one signature is enough for decryption
     }
   });
+
+  it('cannot add/remove signers if not the owner', async function () {
+    const origKMSAdd = dotenv.parse(fs.readFileSync('addresses/.env.kmsverifier')).KMS_VERIFIER_CONTRACT_ADDRESS;
+    const kmsVerifier = await this.kmsFactory.attach(origKMSAdd);
+    const randomAccount = this.signers.carol;
+
+    await expect(kmsVerifier.connect(randomAccount).addSigner(randomAccount)).to.be.revertedWithCustomError(
+      kmsVerifier,
+      'OwnableUnauthorizedAccount',
+    );
+
+    await expect(kmsVerifier.connect(randomAccount).removeSigner(randomAccount)).to.be.revertedWithCustomError(
+      kmsVerifier,
+      'OwnableUnauthorizedAccount',
+    );
+  });
+
+  it('cannot initialize if not initializer', async function () {
+    const origKMSAdd = dotenv.parse(fs.readFileSync('addresses/.env.kmsverifier')).KMS_VERIFIER_CONTRACT_ADDRESS;
+    const kmsVerifier = await this.kmsFactory.attach(origKMSAdd);
+    const randomAccount = this.signers.carol;
+
+    await expect(kmsVerifier.connect(randomAccount).initialize(randomAccount)).to.be.revertedWithCustomError(
+      kmsVerifier,
+      'InvalidInitialization',
+    );
+  });
 });
