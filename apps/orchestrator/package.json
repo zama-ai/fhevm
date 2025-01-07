@@ -21,7 +21,7 @@
     "test:e2e": "vitest run --config ./vitest.e2e.config.mts",
     "test:e2e:watch": "vitest --config ./vitest.e2e.config.mts",
     "generate": "prisma generate",
-    "postinstall": "pnpx prisma migrate dev",
+    "prestart": "pnpx prisma migrate dev",
     "copy:generated": "cpx 'generated/**' 'dist/generated'"
   },
   "dependencies": {

@@ -1,6 +1,6 @@
 import type { AppError, Result } from 'utils'
 import { fail, ok, validationError, ValueObject } from 'utils'
-import { validateNanoId } from 'utils/dist/validation.js'
+import { validateNanoId } from 'utils/dist/src/validation.js'
 import bcrypt from 'bcryptjs'
 import { z, ZodError } from 'zod'
 import { nanoid } from 'nanoid'

@@ -2,7 +2,7 @@ import type { AppError, Result } from 'utils'
 import { Entity, fail, ok, validationError } from 'utils'
 import { z } from 'zod'
 import { ExpiresAt, InvitationId, Token } from './value-objects.js'
-import { fromZodError } from 'utils/dist/app-error.js'
+import { fromZodError } from 'utils/dist/src/app-error.js'
 
 const schema = z.object({
   id: InvitationId,
@@ -17,14 +17,13 @@ export type InvitationProps = z.infer<typeof schema>
 export class Invitation
   extends Entity<InvitationProps>
   implements
-    Readonly<
-      Omit<InvitationProps, 'id' | 'token' | 'expiresAt'> & {
-        id: InvitationId
-        token: Token
-        expiresAt: ExpiresAt
-      }
-    >
-{
+  Readonly<
+    Omit<InvitationProps, 'id' | 'token' | 'expiresAt'> & {
+      id: InvitationId
+      token: Token
+      expiresAt: ExpiresAt
+    }
+  > {
   static parse(data: unknown): Result<Invitation, AppError> {
     if (!data) return fail(validationError('data is undefined'))
     const check = schema.safeParse(data)

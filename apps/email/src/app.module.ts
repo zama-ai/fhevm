@@ -41,4 +41,4 @@ import { SQSConsumer } from './infra/adapeters/sqs.consumer.js'
   ],
   providers: [SQSConsumer],
 })
-export class AppModule {}
+export class AppModule { }

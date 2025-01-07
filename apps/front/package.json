@@ -11,7 +11,8 @@
     "lint": "eslint . --fix",
     "preview": "vite preview",
     "generate": "graphql-codegen",
-    "test": "vitest",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "storybook": "storybook dev -p 6006 --no-open",
     "build-storybook": "storybook build"
   },
