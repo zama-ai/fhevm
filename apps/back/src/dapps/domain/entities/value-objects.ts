@@ -1,5 +1,5 @@
 import { ValueObject } from 'utils'
-import { validateNanoId } from 'utils/dist/validation'
+import { validateNanoId } from 'utils/dist/validation.js'
 import { z } from 'zod'
 import { nanoid } from 'nanoid'
 

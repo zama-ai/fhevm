@@ -3,10 +3,10 @@ import type {
   SqsModuleAsyncOptions,
   SqsModuleOptionsFactory,
   SqsOptions,
-} from './sqs.types';
+} from './sqs.types.js';
 import { DiscoveryModule, DiscoveryService } from '@golevelup/nestjs-discovery';
-import { SQS_OPTIONS } from './sqs.constants';
-import { SqsService } from './sqs.service';
+import { SQS_OPTIONS } from './sqs.constants.js';
+import { SqsService } from './sqs.service.js';
 
 @Global()
 @Module({})

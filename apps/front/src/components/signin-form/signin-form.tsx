@@ -1,9 +1,9 @@
 import { Fieldset, Heading, Input, Stack } from '@chakra-ui/react'
 import { useFormik } from 'formik'
-import { Field } from '@/components/ui/field'
-import { PasswordInput } from '@/components/ui/password-input'
-import { SpinnerButton } from '@/components/ui/spinner-button'
-import { ErrorMessage } from '../error-message/error-message'
+import { Field } from '#components/ui/field.js'
+import { PasswordInput } from '#components/ui/password-input.js'
+import { SpinnerButton } from '#components/ui/spinner-button.js'
+import { ErrorMessage } from '../error-message/error-message.js'
 
 type OwnProps = {
   onSubmit: (values: { email: string; password: string }) => void

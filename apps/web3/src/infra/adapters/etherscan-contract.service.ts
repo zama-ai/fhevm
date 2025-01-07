@@ -57,12 +57,12 @@ export class EtherscanContractService implements ContractService {
         .then(data =>
           data.status === '1'
             ? resolve({
-              contractAddress: new Address(data.result[0].contractAddress),
-              creatorAddress: new Address(data.result[0].contractCreator),
-            })
+                contractAddress: new Address(data.result[0].contractAddress),
+                creatorAddress: new Address(data.result[0].contractCreator),
+              })
             : reject(notFoundError('Contract not found')),
         )
-        .catch(err => reject(unknownError(String(err)))),
+        .catch((err: unknown) => reject(unknownError(String(err)))),
     )
   }
 
@@ -88,7 +88,7 @@ export class EtherscanContractService implements ContractService {
             ? resolve(data.result)
             : reject(notFoundError('Contract not found')),
         )
-        .catch(err => reject(unknownError(String(err)))),
+        .catch((err: unknown) => reject(unknownError(String(err)))),
     )
   }
 }

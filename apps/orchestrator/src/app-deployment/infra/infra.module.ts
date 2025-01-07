@@ -1,18 +1,18 @@
 import { Module } from '@nestjs/common'
-import { DbAppDeploymentRepository } from './adapters/db-app-deployment.repository'
+import { DbAppDeploymentRepository } from './adapters/db-app-deployment.repository.js'
 import {
   APP_DEPLOYMENT_REPO,
   AppDeploymentRepository,
-} from '../interfaces/app-deployment.repository'
+} from '../interfaces/app-deployment.repository.js'
 import { DatabaseModule } from 'src/database/database.module'
 import { SqsModule } from '@ssut/nestjs-sqs'
-import { SQSConsumer } from './adapters/sqs.consumer'
-import { SNSProducer } from './adapters/sns.producer'
+import { SQSConsumer } from './adapters/sqs.consumer.js'
+import { SNSProducer } from './adapters/sns.producer.js'
 import {
   APP_DEPLOYMENT_PRODUCER,
   AppDeploymentMessagesProducer,
-} from '../interfaces/app-deployment-messages.producer'
-import { ProcessEventUseCase } from '../use-cases/process-event.use-case'
+} from '../interfaces/app-deployment-messages.producer.js'
+import { ProcessEventUseCase } from '../use-cases/process-event.use-case.js'
 import { ConfigService } from '@nestjs/config'
 import { SQSClient } from '@aws-sdk/client-sqs'
 import { DatabaseService } from 'src/database/database.service'

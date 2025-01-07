@@ -1,6 +1,6 @@
 import { Box, Text, HStack } from '@chakra-ui/react'
-import { DocumentationIcon } from '@/components/icons/icons'
-import { NavLink } from '@/components/ui/link'
+import { DocumentationIcon } from '#components/icons/icons.js'
+import { NavLink } from '#components/ui/link.js'
 
 type OwnProps = {
   title: string

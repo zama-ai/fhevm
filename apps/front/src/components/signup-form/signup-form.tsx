@@ -1,19 +1,19 @@
 import { Fieldset, Heading, HStack, Input, Stack, Text } from '@chakra-ui/react'
 import { useFormik } from 'formik'
 
-import { toFormikValidate } from '@/lib/zod-schema-validator'
-import { RegisterFormSchema, getPasswordStrengthScore } from './validations'
+import { toFormikValidate } from '#lib/zod-schema-validator.js'
+import { RegisterFormSchema, getPasswordStrengthScore } from './validations.js'
 
-import { Checkbox } from '@/components/ui/checkbox'
-import { Field } from '@/components/ui/field'
-import { Link } from '@/components/ui/link'
+import { Checkbox } from '#components/ui/checkbox.js'
+import { Field } from '#components/ui/field.js'
+import { Link } from '#components/ui/link.js'
 
 import {
   PasswordInput,
   PasswordStrengthMeter,
-} from '@/components/ui/password-input'
-import { SpinnerButton } from '@/components/ui/spinner-button'
-import { ErrorMessage } from '@/components/error-message/error-message'
+} from '#components/ui/password-input.js'
+import { SpinnerButton } from '#components/ui/spinner-button.js'
+import { ErrorMessage } from '#components/error-message/error-message.js'
 
 type OwnProps = {
   onSubmit: (values: {

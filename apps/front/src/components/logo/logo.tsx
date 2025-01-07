@@ -1,5 +1,5 @@
 import { RefAttributes } from 'react'
-import zamaLogo from '@/assets/zama-logo.svg'
+import zamaLogo from '#assets/zama-logo.svg.js'
 
 type OwnProps = Omit<RefAttributes<HTMLImageElement>, 'src'> & {
   width?: number

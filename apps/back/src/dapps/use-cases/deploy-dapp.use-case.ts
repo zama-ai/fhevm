@@ -1,4 +1,4 @@
-import { User } from '@/users/domain/entities/user'
+import { User } from '#users/domain/entities/user.js'
 import {
   type AppError,
   Task,
@@ -6,18 +6,18 @@ import {
   type UseCase,
   validationError,
 } from 'utils'
-import { DApp } from '../domain/entities/dapp'
+import { DApp } from '../domain/entities/dapp.js'
 import {
   APP_DEPLOYMENT_PRODUCER,
   AppDeploymentProducer,
-} from '../domain/services/app-deployment.producer'
-import { DAppRepository } from '../domain/repositories/dapp.repository'
-import { UNIT_OF_WORK } from '@/constants'
+} from '../domain/services/app-deployment.producer.js'
+import { DAppRepository } from '../domain/repositories/dapp.repository.js'
+import { UNIT_OF_WORK } from '#constants.js'
 import { Inject, Logger } from '@nestjs/common'
-import { UpdateDapp } from './update-dapp.use-case'
+import { UpdateDapp } from './update-dapp.use-case.js'
 import { requested } from 'messages'
 import { randomUUID } from 'crypto'
-import { DAppId } from '../domain/entities/value-objects'
+import { DAppId } from '../domain/entities/value-objects.js'
 
 interface Input {
   user: User // to check if they can deploy

@@ -1,4 +1,4 @@
-import { TeamType } from '@/users/infra/types/team.type'
+import { TeamType } from '#users/infra/types/team.type.js'
 import { Field, ID, ObjectType, registerEnumType } from '@nestjs/graphql'
 
 export enum DappStatus {

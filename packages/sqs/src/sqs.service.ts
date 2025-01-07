@@ -12,15 +12,15 @@ import {
   SqsConsumerMapValues,
   SqsMessageHanlderMeta,
   SqsOptions,
-} from './sqs.types';
+} from './sqs.types.js';
 import { StopOptions } from 'sqs-consumer';
 import {
   SQS_CONSUMER_EVENT_HANDLER,
   SQS_CONSUMER_METHOD,
   SQS_OPTIONS,
-} from './sqs.constants';
+} from './sqs.constants.js';
 import { Consumer } from 'sqs-consumer';
-import { Producer } from './producer';
+import { Producer } from './producer.js';
 
 @Injectable()
 export class SqsService implements OnModuleInit, OnModuleDestroy {

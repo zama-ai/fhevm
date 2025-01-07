@@ -1,6 +1,6 @@
-import { apolloClient } from '@/providers/apollo'
-import { graphql } from '../__generated__/gql'
-import { MeQuery } from '@/__generated__/graphql'
+import { apolloClient } from '#providers/apollo.js'
+import { graphql } from '../__generated__/gql.js'
+import { MeQuery } from '#__generated__/graphql.js'
 
 const GET_ME = graphql(`
   query Me {

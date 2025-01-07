@@ -2,11 +2,11 @@ import { Injectable } from '@nestjs/common'
 import type { UseCase, AppError } from 'utils'
 import { Task } from 'utils'
 
-import { DApp } from '../domain/entities/dapp'
-import { DAppRepository } from '../domain/repositories/dapp.repository'
-import { TeamRepository } from '@/users/domain/repositories/team.repository'
-import { User } from '@/users/domain/entities/user'
-import { TeamId } from '@/users/domain/entities/value-objects'
+import { DApp } from '../domain/entities/dapp.js'
+import { DAppRepository } from '../domain/repositories/dapp.repository.js'
+import { TeamRepository } from '#users/domain/repositories/team.repository.js'
+import { User } from '#users/domain/entities/user.js'
+import { TeamId } from '#users/domain/entities/value-objects.js'
 
 interface Input {
   dapp: {

@@ -1,9 +1,9 @@
-import { DAppId } from '@/dapps/domain/entities/value-objects'
+import { DAppId } from '#dapps/domain/entities/value-objects.js'
 import {
   DApp,
   GraphQlResponse,
   IntegrationManager,
-} from '@/tests/integration.manager'
+} from '#tests/integration.manager.js'
 import { faker } from '@faker-js/faker'
 import {
   afterAll,

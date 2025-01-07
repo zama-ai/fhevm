@@ -1,7 +1,7 @@
 import type { AppError, Result } from 'utils'
 import { fail, ok, validationError, ValueObject } from 'utils'
-import { validateNanoId } from 'utils/dist/validation'
-import { compareSync, genSaltSync, hashSync } from 'bcryptjs'
+import { validateNanoId } from 'utils/dist/validation.js'
+import * as bcrypt from 'bcryptjs'
 import { z, ZodError } from 'zod'
 import { nanoid } from 'nanoid'
 export class Password extends ValueObject('Password', z.string()) {
@@ -12,7 +12,7 @@ export class Password extends ValueObject('Password', z.string()) {
    * @returns an hashed password
    */
   static hash(password: ValidatedPassword) {
-    return new Password(hashSync(password.value, genSaltSync(10)))
+    return new Password(bcrypt.hashSync(password.value, bcrypt.genSaltSync(10)))
   }
 
   /**
@@ -21,7 +21,7 @@ export class Password extends ValueObject('Password', z.string()) {
    * @returns true if they match, false otherwise
    */
   check(password: string) {
-    return compareSync(password, this.value)
+    return bcrypt.compareSync(password, this.value)
   }
 }
 

@@ -1,4 +1,4 @@
-import { AppDeployment } from '../entities/app-deployment'
+import { AppDeployment } from '../entities/app-deployment.js'
 
 export interface AppDeploymentRepository {
   findByApplicationId(

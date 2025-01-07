@@ -3,7 +3,7 @@ import { ChainId, EtherConfig, isChainId } from 'src/config/ether.config'
 import { Address } from 'src/domain/entities/address'
 import { ContractService } from 'src/domain/services/contract.service'
 import { type AppError, Task, unknownError } from 'utils'
-import { EtherscanContractService } from './etherscan-contract.service'
+import { EtherscanContractService } from './etherscan-contract.service.js'
 
 export class ProxyContractService implements ContractService {
   private readonly services = new Map<ChainId, ContractService>()

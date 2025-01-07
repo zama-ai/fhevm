@@ -1,4 +1,4 @@
-import { DappType } from '@/dapps/infra/types/dapp.type'
+import { DappType } from '#dapps/infra/types/dapp.type.js'
 import { Field, ID, ObjectType } from '@nestjs/graphql'
 
 @ObjectType('Team')

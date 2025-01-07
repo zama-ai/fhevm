@@ -1,7 +1,7 @@
 import { Card, Text, Flex, LinkBox } from '@chakra-ui/react'
-import { DappStatus } from '../dapp-status/dapp-status'
-import { Dapp } from '@/__generated__/graphql'
-import { LinkOverlay } from '../ui/link'
+import { DappStatus } from '../dapp-status/dapp-status.js'
+import { Dapp } from '#__generated__/graphql.js'
+import { LinkOverlay } from '../ui/link.js'
 
 type OwnProps = {
   dapp: Dapp

@@ -1,10 +1,10 @@
-import { Team } from '@/users/domain/entities/team'
-import { TeamRepository } from '@/users/domain/repositories/team.repository'
-import { PrismaService } from '../prisma.service'
+import { Team } from '#users/domain/entities/team.js'
+import { TeamRepository } from '#users/domain/repositories/team.repository.js'
+import { PrismaService } from '../prisma.service.js'
 import { Injectable } from '@nestjs/common'
 import type { AppError, Result } from 'utils'
 import { notFoundError, unknownError, Task, ok, fail } from 'utils'
-import { TeamId, UserId } from '@/users/domain/entities/value-objects'
+import { TeamId, UserId } from '#users/domain/entities/value-objects.js'
 
 @Injectable()
 export class PrismaTeamRepository extends TeamRepository {
@@ -19,7 +19,7 @@ export class PrismaTeamRepository extends TeamRepository {
         .then(data =>
           data ? resolve(data) : reject(notFoundError('Team not found')),
         )
-        .catch(err => reject(unknownError(String(err))))
+        .catch((err: unknown) => reject(unknownError(String(err))))
     }).chain(props => Team.parse(props).async())
   }
 
@@ -32,7 +32,7 @@ export class PrismaTeamRepository extends TeamRepository {
             ? resolve(data.teams)
             : reject(notFoundError(`User ${userId.value} not found`)),
         )
-        .catch(err => reject(unknownError(String(err))))
+        .catch((err: unknown) => reject(unknownError(String(err))))
     }).chain(props =>
       props
         .map(Team.parse)
@@ -61,7 +61,7 @@ export class PrismaTeamRepository extends TeamRepository {
           },
         })
         .then(resolve)
-        .catch(err => reject(unknownError(String(err))))
+        .catch((err: unknown) => reject(unknownError(String(err))))
     }).chain(props => Team.parse(props).async())
   }
 
@@ -75,7 +75,7 @@ export class PrismaTeamRepository extends TeamRepository {
           },
         })
         .then(resolve)
-        .catch(err => reject(unknownError(String(err))))
+        .catch((err: unknown) => reject(unknownError(String(err))))
     }).chain(props => Team.parse(props).async())
   }
 
@@ -88,7 +88,7 @@ export class PrismaTeamRepository extends TeamRepository {
         .then(data =>
           data ? resolve(data) : reject(notFoundError('Team not found')),
         )
-        .catch(err => reject(unknownError(String(err))))
+        .catch((err: unknown) => reject(unknownError(String(err))))
     }).chain(props => Team.parse(props).async())
   }
 }

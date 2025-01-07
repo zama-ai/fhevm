@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { AppError, Result } from 'utils'
 import { Entity, ok, fail, unauthorizedError, validationError } from 'utils'
-import { Password, UserId, ValidatedPassword } from './value-objects'
+import { Password, UserId, ValidatedPassword } from './value-objects.js'
 
 const schema = z.object({
   id: UserId,

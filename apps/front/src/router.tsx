@@ -1,26 +1,26 @@
 import { createBrowserRouter, RouterProvider } from 'react-router'
-import { PublicLayout } from './layouts/public.layout'
-import { PrivateLayout } from './layouts/private.layout'
+import { PublicLayout } from './layouts/public.layout.js'
+import { PrivateLayout } from './layouts/private.layout.js'
 
 // utility pages
-import { DefaultPage } from './pages/default.page'
-import { ErrorPage } from './pages/error.page'
-import { privateLoader } from './pages/private.loader'
-import { UnauthorizedErrorPage } from './pages/unauthorized.error.page.tsx'
+import { DefaultPage } from './pages/default.page.js'
+import { ErrorPage } from './pages/error.page.js'
+import { privateLoader } from './pages/private.loader.js'
+import { UnauthorizedErrorPage } from './pages/unauthorized.error.page.tsx.js'
 
 // publlic pages
-import { SigninPage } from './pages/signin.page'
-import { SignupPage } from './pages/signup.page'
-import { SignupErrorPage } from './pages/signup.error.page'
-import { signupLoader } from './pages/signup.loader'
+import { SigninPage } from './pages/signin.page.js'
+import { SignupPage } from './pages/signup.page.js'
+import { SignupErrorPage } from './pages/signup.error.page.js'
+import { signupLoader } from './pages/signup.loader.js'
 
-import { AboutPage } from './pages/about.page'
-import { DashboardPage } from './pages/dashboard.page'
-import { dashboardLoader } from './pages/dashboard.loader'
-import { CreateStepOnePage } from './pages/create-step-one.page.tsx'
-import { CreateStepTwoPage } from './pages/create-step-two.page.tsx'
-import { CreateStepThreePage } from './pages/create-step-three.page.tsx'
-import { DappPage } from './pages/dapp.page.tsx'
+import { AboutPage } from './pages/about.page.js'
+import { DashboardPage } from './pages/dashboard.page.js'
+import { dashboardLoader } from './pages/dashboard.loader.js'
+import { CreateStepOnePage } from './pages/create-step-one.page.tsx.js'
+import { CreateStepTwoPage } from './pages/create-step-two.page.tsx.js'
+import { CreateStepThreePage } from './pages/create-step-three.page.tsx.js'
+import { DappPage } from './pages/dapp.page.tsx.js'
 
 const router = createBrowserRouter([
   {

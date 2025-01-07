@@ -1,6 +1,6 @@
 import type { AppError, Task } from 'utils'
-import { Team } from '../entities/team'
-import { TeamId, UserId } from '../entities/value-objects'
+import { Team } from '../entities/team.js'
+import { TeamId, UserId } from '../entities/value-objects.js'
 
 export abstract class TeamRepository {
   abstract findManyByUserId(id: UserId): Task<Team[], AppError>

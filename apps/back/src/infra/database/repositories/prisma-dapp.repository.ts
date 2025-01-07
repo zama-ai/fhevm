@@ -2,12 +2,12 @@ import { Injectable, Logger } from '@nestjs/common'
 import type { AppError, Result } from 'utils'
 import { fail, notFoundError, ok, Task, unknownError } from 'utils'
 
-import { DApp, DAppProps } from '@/dapps/domain/entities/dapp'
-import { DAppRepository } from '@/dapps/domain/repositories/dapp.repository'
+import { DApp, DAppProps } from '#dapps/domain/entities/dapp.js'
+import { DAppRepository } from '#dapps/domain/repositories/dapp.repository.js'
 
-import { PrismaService } from '../prisma.service'
-import { DAppId } from '@/dapps/domain/entities/value-objects'
-import { UserId } from '@/users/domain/entities/value-objects'
+import { PrismaService } from '../prisma.service.js'
+import { DAppId } from '#dapps/domain/entities/value-objects.js'
+import { UserId } from '#users/domain/entities/value-objects.js'
 
 @Injectable()
 export class PrismaDAppRepository extends DAppRepository {
@@ -21,7 +21,7 @@ export class PrismaDAppRepository extends DAppRepository {
       this.db.dapp
         .create({ data: data.toJSON() })
         .then(resolve)
-        .catch(err => reject(unknownError(String(err))))
+        .catch((err: unknown) => reject(unknownError(String(err))))
     }).chain(props => DApp.parse(props).async())
   }
 
@@ -37,7 +37,7 @@ export class PrismaDAppRepository extends DAppRepository {
           this.logger.verbose(`updated: ${JSON.stringify(data)}`)
           resolve(data)
         })
-        .catch(err => {
+        .catch((err: unknown) => {
           this.logger.warn(`failed: ${err}`)
           reject(unknownError(String(err)))
         })
@@ -51,7 +51,7 @@ export class PrismaDAppRepository extends DAppRepository {
         .then(data =>
           data ? resolve(data) : reject(notFoundError('DApp not found')),
         )
-        .catch(err => reject(unknownError(String(err))))
+        .catch((err: unknown) => reject(unknownError(String(err))))
     }).chain(props => DApp.parse(props).async())
   }
 
@@ -71,7 +71,7 @@ export class PrismaDAppRepository extends DAppRepository {
         .then(data =>
           data ? resolve(data) : reject(notFoundError('DApp not found')),
         )
-        .catch(err => reject(unknownError(String(err))))
+        .catch((err: unknown) => reject(unknownError(String(err))))
     }).chain(props => DApp.parse(props).async())
   }
   findAllByTeamId = (teamId: string): Task<DApp[], AppError> => {
@@ -81,7 +81,7 @@ export class PrismaDAppRepository extends DAppRepository {
           where: { teamId },
         })
         .then(resolve)
-        .catch(err => reject(unknownError(String(err))))
+        .catch((err: unknown) => reject(unknownError(String(err))))
     }).chain(dapps =>
       dapps
         .map(DApp.parse)

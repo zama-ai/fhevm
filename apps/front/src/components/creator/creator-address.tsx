@@ -1,13 +1,13 @@
 import { Box, Fieldset, Grid, Input, Stack } from '@chakra-ui/react'
 import { useFormik } from 'formik'
 
-import { toFormikValidate } from '@/lib/zod-schema-validator'
-import { Field } from '@/components/ui/field'
-import { SpinnerButton } from '@/components/ui/spinner-button'
-import { ErrorMessage } from '@/components/error-message/error-message'
-import { TutorialAddress } from './tutorial-address'
-import { Alert } from '../ui/alert'
-import { CreatorAddressFormSchema } from './validations'
+import { toFormikValidate } from '#lib/zod-schema-validator.js'
+import { Field } from '#components/ui/field.js'
+import { SpinnerButton } from '#components/ui/spinner-button.js'
+import { ErrorMessage } from '#components/error-message/error-message.js'
+import { TutorialAddress } from './tutorial-address.js'
+import { Alert } from '../ui/alert.js'
+import { CreatorAddressFormSchema } from './validations.js'
 
 type OwnProps = {
   onSubmit: (values: { address: string }) => void

@@ -1,4 +1,4 @@
-import { getPasswordStrengthScore } from './validations'
+import { getPasswordStrengthScore } from './validations.js'
 
 describe('getPasswordStrengthScore', () => {
   it('should return 0 for passwords shorter than 8 characters', () => {

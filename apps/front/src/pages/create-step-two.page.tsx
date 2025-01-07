@@ -2,16 +2,16 @@ import { useNavigate, useParams } from 'react-router'
 import { Heading, Box, Stack, Skeleton } from '@chakra-ui/react'
 import { useMutation, useQuery } from '@apollo/client'
 
-import { graphql } from '../__generated__/gql'
+import { graphql } from '../__generated__/gql.js'
 import {
   GetDappQuery,
   SetDappAddressMutation,
   DeployDappMutation,
-} from '@/__generated__/graphql'
-import { formatErrorMessage } from '@/lib/error-message'
-import { CreatorAddress } from '@/components/creator/creator-address'
-import { CreatorStepper } from '@/components/creator-stepper/creator-stepper'
-import { DappStatus } from '@/components/dapp-status/dapp-status'
+} from '#__generated__/graphql.js'
+import { formatErrorMessage } from '#lib/error-message.js'
+import { CreatorAddress } from '#components/creator/creator-address.js'
+import { CreatorStepper } from '#components/creator-stepper/creator-stepper.js'
+import { DappStatus } from '#components/dapp-status/dapp-status.js'
 
 const SET_DAPP_ADDRESS = graphql(`
   mutation SetDappAddress($id: ID!, $address: String!) {

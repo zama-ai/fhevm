@@ -1,22 +1,22 @@
 import { Inject, Injectable } from '@nestjs/common'
 import { JwtService } from '@nestjs/jwt'
 import { randomUUID } from 'crypto'
-import { User } from '@/users/domain/entities/user'
-import { UserRepository } from '@/users/domain/repositories/user.repository'
-import { Invitation } from '@/invitations/domain/entities/invitation'
-import { TeamRepository } from '@/users/domain/repositories/team.repository'
-import { InvitationRepository } from '@/invitations/domain/repositories/invitation.repository'
+import { User } from '#users/domain/entities/user.js'
+import { UserRepository } from '#users/domain/repositories/user.repository.js'
+import { Invitation } from '#invitations/domain/entities/invitation.js'
+import { TeamRepository } from '#users/domain/repositories/team.repository.js'
+import { InvitationRepository } from '#invitations/domain/repositories/invitation.repository.js'
 import type { AppError, UnitOfWork, UseCase } from 'utils'
 import { Task, notFoundError } from 'utils'
-import type { JwtPayload } from '../interfaces/jwt-payload'
-import { Token } from '@/invitations/domain/entities/value-objects'
+import type { JwtPayload } from '../interfaces/jwt-payload.js'
+import { Token } from '#invitations/domain/entities/value-objects.js'
 import {
   Password,
   TeamId,
   ValidatedPassword,
-} from '@/users/domain/entities/value-objects'
-import { Team } from '@/users/domain/entities/team'
-import { UNIT_OF_WORK } from '@/constants'
+} from '#users/domain/entities/value-objects.js'
+import { Team } from '#users/domain/entities/team.js'
+import { UNIT_OF_WORK } from '#constants.js'
 
 interface SignupInput {
   name: string

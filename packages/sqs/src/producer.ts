@@ -3,7 +3,7 @@ import {
   PublishCommand,
   SNSClient,
 } from '@aws-sdk/client-sns';
-import type { Message, ProducerOptions } from './sqs.types';
+import type { Message, ProducerOptions } from './sqs.types.js';
 
 const requiredOptions: Array<keyof ProducerOptions> = ['topicArn'];
 

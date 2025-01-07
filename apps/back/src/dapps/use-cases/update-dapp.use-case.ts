@@ -1,12 +1,12 @@
 import { Inject, Injectable } from '@nestjs/common'
 import type { AppError, UnitOfWork, UseCase } from 'utils'
 import { Task } from 'utils'
-import { DApp, DAppProps } from '../domain/entities/dapp'
-import { DAppRepository } from '../domain/repositories/dapp.repository'
-import { User } from '@/users/domain/entities/user'
-import { forbiddenError } from 'utils/dist/app-error'
-import { UNIT_OF_WORK } from '@/constants'
-import { DAppId } from '../domain/entities/value-objects'
+import { DApp, DAppProps } from '../domain/entities/dapp.js'
+import { DAppRepository } from '../domain/repositories/dapp.repository.js'
+import { User } from '#users/domain/entities/user.js'
+import { forbiddenError } from 'utils/dist/app-error.js'
+import { UNIT_OF_WORK } from '#constants.js'
+import { DAppId } from '../domain/entities/value-objects.js'
 
 interface Input {
   dapp: {

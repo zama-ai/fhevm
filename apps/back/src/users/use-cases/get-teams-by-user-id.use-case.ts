@@ -1,9 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { Team } from '@/users/domain/entities/team'
+import { Team } from '#users/domain/entities/team.js'
 import type { AppError, Task, UnitOfWork, UseCase } from 'utils'
-import { TeamRepository } from '../domain/repositories/team.repository'
-import { UserId } from '../domain/entities/value-objects'
-import { UNIT_OF_WORK } from '@/constants'
+import { TeamRepository } from '../domain/repositories/team.repository.js'
+import { UserId } from '../domain/entities/value-objects.js'
+import { UNIT_OF_WORK } from '#constants.js'
 
 @Injectable()
 export class GetTeamsByUserId implements UseCase<UserId, Team[]> {

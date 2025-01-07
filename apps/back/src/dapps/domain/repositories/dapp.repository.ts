@@ -1,8 +1,8 @@
-import { DApp, DAppProps } from '../entities/dapp'
+import { DApp, DAppProps } from '../entities/dapp.js'
 import type { AppError } from 'utils'
 import { Task } from 'utils'
-import { DAppId } from '../entities/value-objects'
-import { UserId } from '@/users/domain/entities/value-objects'
+import { DAppId } from '../entities/value-objects.js'
+import { UserId } from '#users/domain/entities/value-objects.js'
 
 export abstract class DAppRepository {
   abstract create(data: DApp): Task<DApp, AppError>

@@ -1,13 +1,13 @@
-import { Invitation } from '@/invitations/domain/entities/invitation'
-import { InvitationRepository } from '@/invitations/domain/repositories/invitation.repository'
-import { PrismaService } from '../prisma.service'
+import { Invitation } from '#invitations/domain/entities/invitation.js'
+import { InvitationRepository } from '#invitations/domain/repositories/invitation.repository.js'
+import { PrismaService } from '../prisma.service.js'
 import { Injectable } from '@nestjs/common'
 import type { AppError } from 'utils'
 import { notFoundError, unknownError, Task } from 'utils'
 import {
   InvitationId,
   Token,
-} from '@/invitations/domain/entities/value-objects'
+} from '#invitations/domain/entities/value-objects.js'
 
 @Injectable()
 export class PrismaInvitationRepository extends InvitationRepository {
@@ -20,7 +20,7 @@ export class PrismaInvitationRepository extends InvitationRepository {
       this.db.invitation
         .create({ data: data.toJSON() })
         .then(resolve)
-        .catch(err => reject(unknownError(String(err))))
+        .catch((err: unknown) => reject(unknownError(String(err))))
     }).chain(props => Invitation.parse(props).async())
   }
 
@@ -31,7 +31,7 @@ export class PrismaInvitationRepository extends InvitationRepository {
         .then(data =>
           data ? resolve(data) : reject(notFoundError('Invitation not found')),
         )
-        .catch(err => reject(unknownError(String(err))))
+        .catch((err: unknown) => reject(unknownError(String(err))))
     }).chain(props => Invitation.parse(props).async())
   }
 
@@ -42,7 +42,7 @@ export class PrismaInvitationRepository extends InvitationRepository {
         .then(data =>
           data ? resolve(data) : reject(notFoundError('Invitation not found')),
         )
-        .catch(err => reject(unknownError(String(err))))
+        .catch((err: unknown) => reject(unknownError(String(err))))
     }).chain(props => Invitation.parse(props).async())
   }
 }

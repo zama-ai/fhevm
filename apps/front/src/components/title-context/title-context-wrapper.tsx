@@ -1,5 +1,5 @@
 import { useState, ReactNode, createElement } from 'react'
-import { TitleContext } from './title-context'
+import { TitleContext } from './title-context.js'
 
 type OwnProps = {
   children: ReactNode

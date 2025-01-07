@@ -1,7 +1,7 @@
 import { ZodBranded, ZodTypeAny } from 'zod'
 
-import { typeUtil, util } from './util'
-import { ValueObject as ValueObjectCtor } from './value-object.constructor'
+import { typeUtil, util } from './util.js'
+import { ValueObject as ValueObjectCtor } from './value-object.constructor.js'
 
 /**
  * This factory is used to type our instance correctly

@@ -1,9 +1,9 @@
 import { AppDeploymentMessage } from 'messages'
 import { AppError, Task, UnitOfWork, UseCase } from 'utils'
-import { DAppRepository } from '../domain/repositories/dapp.repository'
+import { DAppRepository } from '../domain/repositories/dapp.repository.js'
 import { Inject, Injectable, Logger } from '@nestjs/common'
-import { UNIT_OF_WORK } from '@/constants'
-import { DAppId } from '../domain/entities/value-objects'
+import { UNIT_OF_WORK } from '#constants.js'
+import { DAppId } from '../domain/entities/value-objects.js'
 
 type Input = {
   event: Extract<

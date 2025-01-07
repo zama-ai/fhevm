@@ -1,11 +1,11 @@
 import { useNavigate } from 'react-router'
 import { Heading, Box } from '@chakra-ui/react'
 
-import { CreatorStepper } from '@/components/creator-stepper/creator-stepper'
-import { CreatorThankyou } from '@/components/creator/creator-thankyou'
-import { MeTeamDappsQuery } from '@/__generated__/graphql'
+import { CreatorStepper } from '#components/creator-stepper/creator-stepper.js'
+import { CreatorThankyou } from '#components/creator/creator-thankyou.js'
+import { MeTeamDappsQuery } from '#__generated__/graphql.js'
 import { useQuery } from '@apollo/client'
-import { graphql } from '@/__generated__/gql'
+import { graphql } from '#__generated__/gql.js'
 
 const GET_ME_TEAMS_DAPPS = graphql(`
   query MeTeamDapps {

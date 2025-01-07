@@ -2,6 +2,12 @@
 # THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
 # ------------------------------------------------------
 
+type Team {
+  id: ID!
+  name: String!
+  dapps: [Dapp!]!
+}
+
 type Dapp {
   id: ID!
   name: String!
@@ -21,12 +27,6 @@ enum DappStatus {
   """You can use it now"""
   LIVE
   DELETED @deprecated(reason: "Not implmented yet")
-}
-
-type Team {
-  id: ID!
-  name: String!
-  dapps: [Dapp!]!
 }
 
 type User {

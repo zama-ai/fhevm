@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common'
 
-import { Invitation } from '../domain/entities/invitation'
+import { Invitation } from '../domain/entities/invitation.js'
 import type { AppError, Result, UseCase } from 'utils'
 import { fail, ok, Task, unauthorizedError } from 'utils'
-import { InvitationRepository } from '../domain/repositories/invitation.repository'
+import { InvitationRepository } from '../domain/repositories/invitation.repository.js'
 
 export const EXPIRATION_TIME_IN_MILLISECONDS =
   parseInt(process.env.INVITATION_EXPIRATION_TIME ?? '', 10) || 86400 * 1000 * 7

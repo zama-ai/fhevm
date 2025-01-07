@@ -1,5 +1,5 @@
-import { DAppId } from '@/dapps/domain/entities/value-objects'
-import { AppDeploymentEnded } from '@/dapps/use-cases/app-deployment-ended.use-case'
+import { DAppId } from '#dapps/domain/entities/value-objects.js'
+import { AppDeploymentEnded } from '#dapps/use-cases/app-deployment-ended.use-case.js'
 import type { Message } from '@aws-sdk/client-sqs'
 import { Injectable, Logger } from '@nestjs/common'
 import { isAppDeploymentEvent } from 'messages'
