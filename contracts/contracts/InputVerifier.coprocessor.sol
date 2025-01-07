@@ -90,11 +90,9 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
     }
 
     /**
-     * @notice              Initializes the contract.
-     * @param initialOwner  Initial owner address.
+     * @notice  Re-initializes the contract.
      */
-    function initialize(address initialOwner) public initializer {
-        __Ownable_init(initialOwner);
+    function reinitialize() public reinitializer(2) {
         __EIP712_init(CONTRACT_NAME, "1");
     }
 

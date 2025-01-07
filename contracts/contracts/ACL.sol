@@ -65,14 +65,6 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
     }
 
     /**
-     * @notice              Initializes the contract.
-     * @param initialOwner  Initial owner address.
-     */
-    function initialize(address initialOwner) public initializer {
-        __Ownable_init(initialOwner);
-    }
-
-    /**
      * @notice              Allows the use of `handle` for the address `account`.
      * @dev                 The caller must be allowed to use `handle` for allow() to succeed. If not, allow() reverts.
      * @param handle        Handle.

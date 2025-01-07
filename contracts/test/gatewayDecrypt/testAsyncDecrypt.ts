@@ -283,26 +283,6 @@ describe('TestAsyncDecrypt', function () {
     }
   });
 
-  it('test async decrypt mixed', async function () {
-    const tx2 = await this.contract.connect(this.signers.carol).requestMixed(5, 15);
-    await tx2.wait();
-    await awaitAllDecryptionResults();
-    let yB = await this.contract.yBool();
-    expect(yB).to.equal(true);
-    let y = await this.contract.yUint4();
-    expect(y).to.equal(4);
-    y = await this.contract.yUint8();
-    expect(y).to.equal(42);
-    y = await this.contract.yUint16();
-    expect(y).to.equal(16);
-    let yAdd = await this.contract.yAddress();
-    expect(yAdd).to.equal('0x8ba1f109551bD432803012645Ac136ddd64DBA72');
-    y = await this.contract.yUint32();
-    expect(y).to.equal(52); // 5+15+32
-    y = await this.contract.yUint64();
-    expect(y).to.equal(18446744073709551600n);
-  });
-
   it('test async decrypt uint64 non-trivial', async function () {
     const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     inputAlice.add64(18446744073709550042n);

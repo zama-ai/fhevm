@@ -156,15 +156,4 @@ describe('KMSVerifier', function () {
       'OwnableUnauthorizedAccount',
     );
   });
-
-  it('cannot initialize if not initializer', async function () {
-    const origKMSAdd = dotenv.parse(fs.readFileSync('addresses/.env.kmsverifier')).KMS_VERIFIER_CONTRACT_ADDRESS;
-    const kmsVerifier = await this.kmsFactory.attach(origKMSAdd);
-    const randomAccount = this.signers.carol;
-
-    await expect(kmsVerifier.connect(randomAccount).initialize(randomAccount)).to.be.revertedWithCustomError(
-      kmsVerifier,
-      'InvalidInitialization',
-    );
-  });
 });

@@ -57,14 +57,6 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
     }
 
     /**
-     * @notice              Initializes the contract.
-     * @param initialOwner  Initial owner address.
-     */
-    function initialize(address initialOwner) external initializer {
-        __Ownable_init(initialOwner);
-    }
-
-    /**
      * @notice              Computes the gas required for FheAdd.
      * @param resultType    Result type.
      * @param scalarByte    Scalar byte.
