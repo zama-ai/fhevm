@@ -4,7 +4,7 @@ import { TeamType } from './team.type'
 @ObjectType('User')
 export class UserType {
   @Field(() => ID, { nullable: false })
-  id: string
+  id: `user_${string}`
 
   @Field({ nullable: false })
   email: string

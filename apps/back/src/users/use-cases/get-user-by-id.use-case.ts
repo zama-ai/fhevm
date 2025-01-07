@@ -8,7 +8,7 @@ import { UserId } from '../domain/entities/value-objects'
 export class GetUserById implements UseCase<string, User> {
   constructor(private readonly userRepository: UserRepository) {}
 
-  execute(userId: string): Task<User, AppError> {
+  execute(userId: `user_${string}`): Task<User, AppError> {
     return this.userRepository.findById(new UserId(userId))
   }
 }

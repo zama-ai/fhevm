@@ -7,7 +7,7 @@ import { UserId } from '@/users/domain/entities/value-objects'
 export abstract class DAppRepository {
   abstract create(data: DApp): Task<DApp, AppError>
   abstract update(
-    data: { id: DAppId } & Partial<Omit<DAppProps, 'id'>>,
+    data: { id: DAppId } & Partial<Omit<DAppProps, 'id' | 'createdAt'>>,
   ): Task<DApp, AppError>
   abstract findById(id: DAppId): Task<DApp, AppError>
   abstract findOneByIdAndUserId(

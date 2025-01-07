@@ -1,4 +1,4 @@
 export interface JwtPayload {
-  sub: string
+  sub: `user_${string}`
   email: string
 }

@@ -10,7 +10,7 @@ import { TeamId } from '@/users/domain/entities/value-objects'
 
 interface Input {
   dapp: {
-    teamId: `t_${string}`
+    teamId: `team_${string}`
     name: string
     address?: string
   }
