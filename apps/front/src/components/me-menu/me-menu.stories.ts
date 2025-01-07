@@ -8,6 +8,9 @@ const meta = {
   component: PureMeMenu,
   parameters: {
     layout: 'centered',
+    backgrounds: {
+      default: 'brand',
+    },
   },
   tags: ['autodocs'],
   argTypes: {
@@ -31,7 +34,7 @@ type Story = StoryObj<typeof meta>
 
 export const Default: Story = {
   args: {
-    name: 'Jane ',
+    name: 'Jane Doe',
     image: 'https://picsum.photos/seed/plop/50/50',
     condensed: false,
     onLogout: fn(),

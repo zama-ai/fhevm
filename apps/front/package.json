@@ -37,6 +37,7 @@
     "@graphql-codegen/client-preset": "^4.5.1",
     "@storybook/addon-essentials": "^8.4.7",
     "@storybook/addon-interactions": "^8.4.7",
+    "@storybook/addon-themes": "^8.4.7",
     "@storybook/blocks": "^8.4.7",
     "@storybook/react": "^8.4.7",
     "@storybook/react-vite": "^8.4.7",

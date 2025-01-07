@@ -6,7 +6,7 @@ const meta = {
   title: 'Molecules/CreatorStepper',
   component: CreatorStepper,
   parameters: {
-    layout: 'centered',
+    layout: 'padded',
   },
   tags: ['autodocs'],
   argTypes: {
