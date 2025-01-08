@@ -21,15 +21,15 @@ export class UpdateDapp implements UseCase<Input, DApp> {
     @Inject(UNIT_OF_WORK) private readonly uow: UnitOfWork,
     private readonly dappRepository: DAppRepository,
   ) {}
-  execute(input: Input): Task<DApp, AppError> {
+  execute({ dapp: { id, ...data }, user }: Input): Task<DApp, AppError> {
     return this.uow.exec(
       this.dappRepository
-        .findOneByIdAndUserId(input.dapp.id, input.user.id)
+        .findOneByIdAndUserId(id, user.id)
         .mapError<AppError>(err =>
           err._tag === 'NotFoundError' ? forbiddenError() : err,
         )
         .chain(dapp =>
-          DApp.parse(Object.assign({}, dapp.toJSON(), input.dapp)).asyncChain(
+          DApp.parse(Object.assign({}, dapp.toJSON(), data)).asyncChain(
             this.dappRepository.update,
           ),
         ),
