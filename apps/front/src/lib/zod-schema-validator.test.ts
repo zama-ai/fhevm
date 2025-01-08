@@ -2,7 +2,7 @@ import { z } from 'zod'
 import {
   toFormikValidationSchema,
   toFormikValidate,
-} from './zod-schema-validator.js'
+} from './zod-schema-validator'
 
 type Sut = () => {
   schema: z.ZodObject<{ name: z.ZodString; age: z.ZodNumber }>
