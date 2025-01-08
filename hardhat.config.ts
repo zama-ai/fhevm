@@ -14,9 +14,8 @@ import CustomProvider from './CustomProvider';
 // Adjust the import path as needed
 import './tasks/accounts';
 import './tasks/getEthereumAddress';
-import './tasks/taskDecryptionOracleRelayer';
 import './tasks/taskDeploy';
-import './tasks/taskTFHE';
+import './tasks/taskUtils';
 
 extendProvider((provider) => {
   return new CustomProvider(provider);
@@ -95,17 +94,15 @@ task('test', async (_taskArgs, hre, runSuper) => {
   // Run modified test task
   if (hre.network.name === 'hardhat') {
     // in fhevm mode all this block is done when launching the node via `pnmp fhevm:start`
-    const privKeyDecryptionOracleDeployer = process.env.PRIVATE_KEY_DECRYPTION_ORACLE_DEPLOYER;
     const privKeyFhevmDeployer = process.env.PRIVATE_KEY_FHEVM_DEPLOYER;
+    const privKeyFhevmRelayer = process.env.PRIVATE_KEY_DECRYPTION_ORACLE_RELAYER;
+    await hre.run('task:faucetToPrivate', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:faucetToPrivate', { privateKey: privKeyFhevmRelayer });
+
     if (!fs.existsSync('node_modules/fhevm-core-contracts/addresses')) {
       fs.mkdirSync('node_modules/fhevm-core-contracts/addresses');
     }
-    await hre.run('task:computeDecryptionOracleAddress', { privateKey: privKeyDecryptionOracleDeployer });
-    await hre.run('task:computeACLAddress', { privateKey: privKeyFhevmDeployer });
-    await hre.run('task:computeTFHEExecutorAddress', { privateKey: privKeyFhevmDeployer });
-    await hre.run('task:computeKMSVerifierAddress', { privateKey: privKeyFhevmDeployer });
-    await hre.run('task:computeInputVerifierAddress', { privateKey: privKeyFhevmDeployer, useAddress: false });
-    await hre.run('task:computeFHEGasLimitAddress', { privateKey: privKeyFhevmDeployer });
+
     const sourceDir = path.resolve(__dirname, 'node_modules/fhevm-core-contracts/contracts');
     const destinationDir = path.resolve(__dirname, 'fhevmTemp/contracts');
     fs.copySync(sourceDir, destinationDir, { dereference: true });
@@ -115,22 +112,29 @@ task('test', async (_taskArgs, hre, runSuper) => {
     const sourceDir3 = path.resolve(__dirname, 'node_modules/fhevm-core-contracts/decryptionOracle');
     const destinationDir3 = path.resolve(__dirname, 'fhevmTemp/decryptionOracle');
     fs.copySync(sourceDir3, destinationDir3, { dereference: true });
+
+    await hre.run('compile:specific', { contract: 'fhevmTemp/contracts/emptyProxy' });
+    await hre.run('task:deployEmptyUUPSProxies', { privateKey: privKeyFhevmDeployer, useCoprocessorAddress: false });
+
+    fs.copySync(destinationDir2, sourceDir2, { dereference: true });
+
     await hre.run('compile:specific', { contract: 'fhevmTemp/contracts' });
     await hre.run('compile:specific', { contract: 'fhevmTemp/decryptionOracle' });
     await hre.run('compile:specific', { contract: 'lib' });
     await hre.run('compile:specific', { contract: 'decryption' });
-    await hre.run('task:faucetToPrivate', { privateKey: privKeyFhevmDeployer });
+
     await hre.run('task:deployACL', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:deployTFHEExecutor', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:deployKMSVerifier', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:deployInputVerifier', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:deployFHEGasLimit', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:deployDecryptionOracle', { privateKey: privKeyFhevmDeployer });
+
     await hre.run('task:addSigners', {
       numSigners: process.env.NUM_KMS_SIGNERS!,
       privateKey: privKeyFhevmDeployer,
       useAddress: false,
     });
-    await hre.run('task:launchFhevm', { skipGetCoin: false, useAddress: false });
   }
   await hre.run('compile:specific', { contract: 'examples' });
   await runSuper();
@@ -186,7 +190,7 @@ const config: HardhatUserConfig = {
         enabled: true,
         runs: 800,
       },
-      viaIR: true,
+      viaIR: false,
       evmVersion: 'cancun',
     },
   },

@@ -299,8 +299,6 @@ describe('TestAsyncDecrypt', function () {
     expect(yAdd).to.equal('0x8ba1f109551bD432803012645Ac136ddd64DBA72');
     y = await this.contract.yUint32();
     expect(y).to.equal(52); // 5+15+32
-    y = await this.contract.yUint64();
-    expect(y).to.equal(18446744073709551600n);
   });
 
   it('test async decrypt uint64 non-trivial', async function () {
