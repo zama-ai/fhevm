@@ -23,8 +23,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # Set executable permissions and prepare the environment
 RUN chmod +x ./*.sh && \
-    cp .env.example.deployment .env && \
-    ./precompute-addresses.sh
+    cp .env.example.deployment .env
 
 # Set up environment variables and compile contracts
 RUN PRIVATE_KEY_FHEVM_DEPLOYER="$(grep PRIVATE_KEY_FHEVM_DEPLOYER .env | cut -d '"' -f 2)" && \
