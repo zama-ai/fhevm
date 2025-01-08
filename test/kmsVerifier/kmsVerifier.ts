@@ -99,8 +99,16 @@ describe('KMSVerifier', function () {
         // different format of inputProof for native
         const cheatInputProof = encryptedAmount2.inputProof + encryptedAmount2.inputProof.slice(-130); // trying to cheat by repeating the first kms signer signature
         const cheat = cheatInputProof.slice(0, 5) + '2' + cheatInputProof.slice(6);
-        await expect(contract2.requestMixedBytes256(encryptedAmount2.handles[0], cheat)).to.revertedWith(
-          'Not enough unique KMS input signatures',
+
+        const orig = dotenv.parse(
+          fs.readFileSync('fhevmTemp/addresses/.env.inputverifier'),
+        ).INPUT_VERIFIER_CONTRACT_ADDRESS;
+        const inputVerifier = (
+          await ethers.getContractFactory('fhevmTemp/contracts/InputVerifier.coprocessor.sol:InputVerifier')
+        ).attach(orig);
+        await expect(contract2.requestMixedBytes256(encryptedAmount2.handles[0], cheat)).to.revertedWithCustomError(
+          inputVerifier,
+          'KMSNumberSignaturesInsufficient',
         ); // this should fail because in this case the InputVerifier received only one KMS signature (instead of at least 2)
       }
       process.env.NUM_KMS_SIGNERS = '4';
