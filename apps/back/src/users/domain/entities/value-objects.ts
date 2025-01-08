@@ -1,9 +1,10 @@
 import type { AppError, Result } from 'utils'
 import { fail, ok, validationError, ValueObject } from 'utils'
 import { validateNanoId } from 'utils/dist/validation.js'
-import * as bcrypt from 'bcryptjs'
+import bcrypt from 'bcryptjs'
 import { z, ZodError } from 'zod'
 import { nanoid } from 'nanoid'
+
 export class Password extends ValueObject('Password', z.string()) {
   /**
    * It creates a new password from a not-hashed one.
