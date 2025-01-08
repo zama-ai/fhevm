@@ -2,7 +2,7 @@ import { Message } from '@aws-sdk/client-sqs'
 import { Injectable, Logger } from '@nestjs/common'
 import { isAppDeploymentCommand } from 'messages'
 import { SqsMessageHandler } from 'sqs'
-import { DiscoverContract } from 'src/use-cases/discover-contract.use-case'
+import { DiscoverContract } from '#use-cases/discover-contract.use-case.js'
 
 @Injectable()
 export class SQSConsumer {

@@ -1,10 +1,10 @@
 import { Box, Fieldset, Grid, Input, Stack, Text } from '@chakra-ui/react'
 import { useFormik } from 'formik'
 
-import { Field } from '#components/ui/field.js'
-import { SpinnerButton } from '#components/ui/spinner-button.js'
-import { ErrorMessage } from '#components/error-message/error-message.js'
-import { toFormikValidate } from '#lib/zod-schema-validator.js'
+import { Field } from '@/components/ui/field.js'
+import { SpinnerButton } from '@/components/ui/spinner-button.js'
+import { ErrorMessage } from '@/components/error-message/error-message.js'
+import { toFormikValidate } from '@/lib/zod-schema-validator.js'
 
 import { TutorialName } from './tutorial-name.js'
 import { SolidityCodeTemplate } from './solidity-code-template.js'

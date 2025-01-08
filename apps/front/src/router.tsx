@@ -6,7 +6,7 @@ import { PrivateLayout } from './layouts/private.layout.js'
 import { DefaultPage } from './pages/default.page.js'
 import { ErrorPage } from './pages/error.page.js'
 import { privateLoader } from './pages/private.loader.js'
-import { UnauthorizedErrorPage } from './pages/unauthorized.error.page.tsx.js'
+import { UnauthorizedErrorPage } from './pages/unauthorized.error.page.js'
 
 // publlic pages
 import { SigninPage } from './pages/signin.page.js'
@@ -17,10 +17,10 @@ import { signupLoader } from './pages/signup.loader.js'
 import { AboutPage } from './pages/about.page.js'
 import { DashboardPage } from './pages/dashboard.page.js'
 import { dashboardLoader } from './pages/dashboard.loader.js'
-import { CreateStepOnePage } from './pages/create-step-one.page.tsx.js'
-import { CreateStepTwoPage } from './pages/create-step-two.page.tsx.js'
-import { CreateStepThreePage } from './pages/create-step-three.page.tsx.js'
-import { DappPage } from './pages/dapp.page.tsx.js'
+import { CreateStepOnePage } from './pages/create-step-one.page.js'
+import { CreateStepTwoPage } from './pages/create-step-two.page.js'
+import { CreateStepThreePage } from './pages/create-step-three.page.js'
+import { DappPage } from './pages/dapp.page.js'
 
 const router = createBrowserRouter([
   {

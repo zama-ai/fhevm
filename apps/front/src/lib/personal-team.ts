@@ -1,4 +1,4 @@
-import { Team } from '#__generated__/graphql.js'
+import { Team } from '@/__generated__/graphql.js'
 
 /**
  * returns the user personal team

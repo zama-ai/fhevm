@@ -1,6 +1,6 @@
 import { HStack, Separator, Text } from '@chakra-ui/react'
-import { ColorModeButton } from '#components/ui/color-mode-button.js'
-import { Link } from '#components/ui/link.js'
+import { ColorModeButton } from '@/components/ui/color-mode-button.js'
+import { Link } from '@/components/ui/link.js'
 export function DefaultPage() {
   return (
     <HStack gap="4">

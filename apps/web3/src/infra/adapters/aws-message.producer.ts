@@ -3,7 +3,7 @@ import { SendMessageCommand, SQSClient } from '@aws-sdk/client-sqs'
 import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { AppDeploymentMessage } from 'messages'
-import { MessageProducer } from 'src/domain/services/message.producer'
+import { MessageProducer } from '#domain/services/message.producer.js'
 import { AppError, Task, unknownError } from 'utils'
 
 @Injectable()

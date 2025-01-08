@@ -1,11 +1,11 @@
 import { useQuery } from '@apollo/client'
 import { useParams } from 'react-router'
 import { Box, Heading, Skeleton, Stack } from '@chakra-ui/react'
-import { graphql } from '#__generated__/gql.js'
-import { GetDappQuery } from '#__generated__/graphql.js'
-import { BlockUsageChart } from '#components/stats-blocks/block-usage-chart.js'
-import { DappStatus } from '#components/dapp-status/dapp-status.js'
-import { BlockUaw } from '#components/stats-blocks/block-uaw.js'
+import { graphql } from '@/__generated__/gql.js'
+import { GetDappQuery } from '@/__generated__/graphql.js'
+import { BlockUsageChart } from '@/components/stats-blocks/block-usage-chart.js'
+import { DappStatus } from '@/components/dapp-status/dapp-status.js'
+import { BlockUaw } from '@/components/stats-blocks/block-uaw.js'
 
 const GET_DAPP = graphql(`
   query GetDapp($dappId: ID!) {

@@ -5,7 +5,7 @@ import {
   StatRoot,
   StatUpTrend,
   StatValueText,
-} from '#components/ui/stat.js'
+} from '@/components/ui/stat.js'
 
 type OwnProps = {
   title: string

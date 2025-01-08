@@ -101,7 +101,7 @@ describe('get-dapp-by-id', () => {
       let token2: string
 
       beforeEach(async () => {
-        let loginResult = await manager.auth.login(
+        const loginResult = await manager.auth.login(
           {
             email: faker.internet.email(),
             password: faker.internet.password(),

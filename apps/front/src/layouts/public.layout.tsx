@@ -1,8 +1,8 @@
 import { useLocation } from 'react-router'
 import { Outlet } from 'react-router'
 import { Box, Flex, Stack, Text } from '@chakra-ui/react'
-import { Logo } from '#components/logo/logo.js'
-import { Link } from '#components/ui/link.js'
+import { Logo } from '@/components/logo/logo.js'
+import { Link } from '@/components/ui/link.js'
 
 function Help() {
   return (

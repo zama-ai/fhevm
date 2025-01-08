@@ -1,8 +1,8 @@
-import { Address } from 'src/domain/entities/address'
-import { ContractService } from 'src/domain/services/contract.service'
+import { Address } from '#domain/entities/address.js'
+import { ContractService } from '#domain/services/contract.service.js'
 import { Task, AppError, unknownError, notFoundError } from 'utils'
 import { stringify } from 'querystring'
-import type { ChainId, EtherConfig } from 'src/config/ether.config'
+import type { ChainId, EtherConfig } from '#config/ether.config.js'
 import { Logger } from '@nestjs/common'
 
 type EtherScanResponse<T> =

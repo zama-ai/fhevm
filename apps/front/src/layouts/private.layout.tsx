@@ -2,10 +2,10 @@ import { memo } from 'react'
 import { Outlet, useLoaderData } from 'react-router'
 
 import { Box, Flex } from '@chakra-ui/react'
-import { Header } from '#components/header/header.js'
-import { Navigation } from '#components/navigation/navigation.js'
-import { MeQuery } from '#__generated__/graphql.js'
-import { getPersonalTeam } from '#lib/personal-team.js'
+import { Header } from '@/components/header/header.js'
+import { Navigation } from '@/components/navigation/navigation.js'
+import { MeQuery } from '@/__generated__/graphql.js'
+import { getPersonalTeam } from '@/lib/personal-team.js'
 
 const HeaderMemo = memo(Header)
 

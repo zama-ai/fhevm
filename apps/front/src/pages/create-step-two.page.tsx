@@ -7,11 +7,11 @@ import {
   GetDappQuery,
   SetDappAddressMutation,
   DeployDappMutation,
-} from '#__generated__/graphql.js'
-import { formatErrorMessage } from '#lib/error-message.js'
-import { CreatorAddress } from '#components/creator/creator-address.js'
-import { CreatorStepper } from '#components/creator-stepper/creator-stepper.js'
-import { DappStatus } from '#components/dapp-status/dapp-status.js'
+} from '@/__generated__/graphql.js'
+import { formatErrorMessage } from '@/lib/error-message.js'
+import { CreatorAddress } from '@/components/creator/creator-address.js'
+import { CreatorStepper } from '@/components/creator-stepper/creator-stepper.js'
+import { DappStatus } from '@/components/dapp-status/dapp-status.js'
 
 const SET_DAPP_ADDRESS = graphql(`
   mutation SetDappAddress($id: ID!, $address: String!) {

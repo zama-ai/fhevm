@@ -3,9 +3,12 @@ import { useLoaderData } from 'react-router'
 import { useNavigate } from 'react-router'
 import { gql, useMutation } from '@apollo/client'
 
-import { InvitationTokenQuery, SignUpMutation } from '#__generated__/graphql.js'
-import { SignupForm } from '#components/signup-form/signup-form.js'
-import { formatErrorMessage } from '#lib/error-message.js'
+import {
+  InvitationTokenQuery,
+  SignUpMutation,
+} from '@/__generated__/graphql.js'
+import { SignupForm } from '@/components/signup-form/signup-form.js'
+import { formatErrorMessage } from '@/lib/error-message.js'
 
 const SIGN_UP = gql`
   mutation SignUp(

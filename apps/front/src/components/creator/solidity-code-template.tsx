@@ -1,4 +1,4 @@
-import { ClipboardButton, ClipboardRoot } from '#components/ui/clipboard.js'
+import { ClipboardButton, ClipboardRoot } from '@/components/ui/clipboard.js'
 import { Box } from '@chakra-ui/react'
 import { Highlight, themes } from 'prism-react-renderer'
 

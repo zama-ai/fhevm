@@ -2,7 +2,7 @@ import { Stack, Box, Button, Heading } from '@chakra-ui/react'
 
 import { NewIcon } from '../icons/icons.js'
 import { DappsListItem } from './dapps-list-item.js'
-import { Dapp } from '#__generated__/graphql.js'
+import { Dapp } from '@/__generated__/graphql.js'
 
 type OwnProps = {
   createDapp: () => void

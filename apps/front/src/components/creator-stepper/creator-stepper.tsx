@@ -1,4 +1,4 @@
-import { StepsItem, StepsList, StepsRoot } from '#components/ui/steps.js'
+import { StepsItem, StepsList, StepsRoot } from '@/components/ui/steps.js'
 import { Card } from '@chakra-ui/react'
 
 const steps = [

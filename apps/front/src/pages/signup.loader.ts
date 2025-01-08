@@ -1,7 +1,7 @@
 import { LoaderFunctionArgs } from 'react-router'
-import { apolloClient } from '#providers/apollo.js'
-import { graphql } from '#__generated__/gql.js'
-import { InvitationTokenQuery } from '#__generated__/graphql.js'
+import { apolloClient } from '@/providers/apollo.js'
+import { graphql } from '@/__generated__/gql.js'
+import { InvitationTokenQuery } from '@/__generated__/graphql.js'
 
 const GET_INVITATION_TOKEN = graphql(`
   query InvitationToken($token: String!) {

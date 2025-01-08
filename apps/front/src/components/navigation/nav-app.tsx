@@ -1,5 +1,5 @@
 import { List } from '@chakra-ui/react'
-import { NavLink } from '#components/ui/link.js'
+import { NavLink } from '@/components/ui/link.js'
 import { NavAppBlock } from './nav-app-block.js'
 
 type NavAppProps = {

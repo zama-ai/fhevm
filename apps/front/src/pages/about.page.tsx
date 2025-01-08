@@ -3,7 +3,7 @@ import { useQuery } from '@apollo/client'
 import { NavLink } from 'react-router'
 
 import { graphql } from '../__generated__/gql.js'
-import { AboutMeQuery } from '#__generated__/graphql.js'
+import { AboutMeQuery } from '@/__generated__/graphql.js'
 
 const GET_ME = graphql(`
   query AboutMe {
