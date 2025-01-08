@@ -13,6 +13,10 @@ contract DecryptionOracleUpgradedExample is DecryptionOracle {
     uint256 private constant MINOR_VERSION = 2;
     uint256 private constant PATCH_VERSION = 0;
 
+    function lol() external pure returns (uint256) {
+        return 42;
+    }
+
     /// @notice Getter for the name and version of the contract
     /// @return string representing the name and the version of the contract
     function getVersion() external pure virtual override returns (string memory) {
