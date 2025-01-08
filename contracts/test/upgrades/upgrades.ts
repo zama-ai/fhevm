@@ -9,6 +9,7 @@ describe('Upgrades', function () {
   before(async function () {
     await initSigners(2);
     this.signers = await getSigners();
+    this.emptyUUPSFactory = await ethers.getContractFactory('EmptyUUPSProxy');
     this.aclFactory = await ethers.getContractFactory('ACL');
     this.aclFactoryUpgraded = await ethers.getContractFactory('ACLUpgradedExample');
     this.kmsFactory = await ethers.getContractFactory('KMSVerifier');
@@ -23,10 +24,11 @@ describe('Upgrades', function () {
 
   it('deploy upgradable ACL', async function () {
     const nonceBef = await ethers.provider.getTransactionCount(this.signers.alice);
-    const acl = await upgrades.deployProxy(this.aclFactory, [this.signers.alice.address], {
+    const emptyUUPS = await upgrades.deployProxy(this.emptyUUPSFactory, [this.signers.alice.address], {
       initializer: 'initialize',
       kind: 'uups',
     });
+    const acl = await upgrades.upgradeProxy(emptyUUPS, this.aclFactory);
     await acl.waitForDeployment();
     const ownerBef = await acl.owner();
     expect(await acl.getVersion()).to.equal('ACL v0.1.0');
@@ -43,10 +45,11 @@ describe('Upgrades', function () {
   });
 
   it('deploy upgradable KMSVerifier', async function () {
-    const kms = await upgrades.deployProxy(this.kmsFactory, [this.signers.alice.address], {
+    const emptyUUPS = await upgrades.deployProxy(this.emptyUUPSFactory, [this.signers.alice.address], {
       initializer: 'initialize',
       kind: 'uups',
     });
+    const kms = await upgrades.upgradeProxy(emptyUUPS, this.kmsFactory);
     await kms.waitForDeployment();
     expect(await kms.getVersion()).to.equal('KMSVerifier v0.1.0');
     const kms2 = await upgrades.upgradeProxy(kms, this.kmsFactoryUpgraded);
@@ -55,10 +58,11 @@ describe('Upgrades', function () {
   });
 
   it('deploy upgradable TFHEExecutor', async function () {
-    const executor = await upgrades.deployProxy(this.executorFactory, [this.signers.alice.address], {
+    const emptyUUPS = await upgrades.deployProxy(this.emptyUUPSFactory, [this.signers.alice.address], {
       initializer: 'initialize',
       kind: 'uups',
     });
+    const executor = await upgrades.upgradeProxy(emptyUUPS, this.executorFactory);
     await executor.waitForDeployment();
     expect(await executor.getVersion()).to.equal('TFHEExecutor v0.1.0');
     const executor2 = await upgrades.upgradeProxy(executor, this.executorFactoryUpgraded);
@@ -67,10 +71,11 @@ describe('Upgrades', function () {
   });
 
   it('deploy upgradable FHEGasLimit', async function () {
-    const payment = await upgrades.deployProxy(this.paymentFactory, [this.signers.alice.address], {
+    const emptyUUPS = await upgrades.deployProxy(this.emptyUUPSFactory, [this.signers.alice.address], {
       initializer: 'initialize',
       kind: 'uups',
     });
+    const payment = await upgrades.upgradeProxy(emptyUUPS, this.paymentFactory);
     await payment.waitForDeployment();
     expect(await payment.getVersion()).to.equal('FHEGasLimit v0.1.0');
     const payment2 = await upgrades.upgradeProxy(payment, this.paymentFactoryUpgraded);
@@ -79,10 +84,11 @@ describe('Upgrades', function () {
   });
 
   it('deploy upgradable DecryptionOracle', async function () {
-    const decryptionOracle = await upgrades.deployProxy(this.decryptionOracleFactory, [this.signers.alice.address], {
+    const emptyUUPS = await upgrades.deployProxy(this.emptyUUPSFactory, [this.signers.alice.address], {
       initializer: 'initialize',
       kind: 'uups',
     });
+    const decryptionOracle = await upgrades.upgradeProxy(emptyUUPS, this.decryptionOracleFactory);
     await decryptionOracle.waitForDeployment();
     expect(await decryptionOracle.getVersion()).to.equal('DecryptionOracle v0.1.0');
     const decryptionOracle2 = await upgrades.upgradeProxy(decryptionOracle, this.decryptionOracleFactoryUpgraded);

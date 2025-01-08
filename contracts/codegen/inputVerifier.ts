@@ -143,23 +143,11 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
   if (isCoprocessor) {
     output += `
     /**
-     * @notice              Initializes the contract.
-     * @param initialOwner  Initial owner address.
+     * @notice  Re-initializes the contract.
      */
-        function initialize(address initialOwner) public initializer {
-            __Ownable_init(initialOwner);
-            __EIP712_init(CONTRACT_NAME, "1");
-        }
-    `;
-  } else {
-    output += `
-    /**
-     * @notice              Initializes the contract.
-     * @param initialOwner  Initial owner address.
-     */
-        function initialize(address initialOwner) public initializer {
-            __Ownable_init(initialOwner);
-        }
+    function reinitialize() public reinitializer(2) {
+        __EIP712_init(CONTRACT_NAME, "1");
+    }
     `;
   }
 

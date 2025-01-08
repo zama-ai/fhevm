@@ -66,14 +66,6 @@ contract FHEGasLimit is UUPSUpgradeable, Ownable2StepUpgradeable {
         _disableInitializers();
     }
 
-    /**
-     * @notice              Initializes the contract.
-     * @param initialOwner  Initial owner address.
-     */
-    function initialize(address initialOwner) external initializer {
-        __Ownable_init(initialOwner);
-    }
-
 \n\n`;
 
   for (const [operation, data] of Object.entries(priceData)) {
