@@ -6,6 +6,6 @@ import { Team } from '@/__generated__/graphql.js'
  * @param {Team[]} teams
  * @returns {Team} team
  */
-export function getPersonalTeam<T extends Team>(teams: T[]): T {
+export function getPersonalTeam<T extends Omit<Team, 'dapps'>>(teams: T[]): T {
   return teams[0]
 }
