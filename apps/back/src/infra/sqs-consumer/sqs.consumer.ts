@@ -1,5 +1,5 @@
-import { DAppId } from '#dapps/domain/entities/value-objects.js'
 import { AppDeploymentEnded } from '#dapps/use-cases/app-deployment-ended.use-case.js'
+import { AppDeploymentRequested } from '#dapps/use-cases/app-deployment-requested.use-case.js'
 import type { Message } from '@aws-sdk/client-sqs'
 import { Injectable, Logger } from '@nestjs/common'
 import { isAppDeploymentEvent } from 'messages'
@@ -9,7 +9,10 @@ import { SqsMessageHandler } from 'sqs'
 export class SQSConsumer {
   private logger = new Logger(SQSConsumer.name)
 
-  constructor(private readonly appDeploymentEndedUC: AppDeploymentEnded) {}
+  constructor(
+    private readonly appDeploymentRequestedUC: AppDeploymentRequested,
+    private readonly appDeploymentEndedUC: AppDeploymentEnded,
+  ) {}
 
   @SqsMessageHandler('back', false)
   public async handleMessage(message: Message) {
@@ -20,6 +23,11 @@ export class SQSConsumer {
         const data: unknown = JSON.parse(body.Message)
         if (isAppDeploymentEvent(data)) {
           switch (data.type) {
+            case 'app-deployment.requested':
+              await this.appDeploymentRequestedUC
+                .execute({ event: data })
+                .toPromise()
+              break
             case 'app-deployment.completed':
             case 'app-deployment.failed':
               await this.appDeploymentEndedUC

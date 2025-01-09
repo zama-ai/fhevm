@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common'
 import type { AppError, Result } from 'utils'
 import { fail, notFoundError, ok, Task, unknownError } from 'utils'
 
-import { DApp } from '#dapps/domain/entities/dapp.js'
+import { DApp, DAppProps } from '#dapps/domain/entities/dapp.js'
 import { DAppRepository } from '#dapps/domain/repositories/dapp.repository.js'
 
 import { PrismaService } from '../prisma.service.js'
@@ -25,12 +25,14 @@ export class PrismaDAppRepository extends DAppRepository {
     }).chain(props => DApp.parse(props).async())
   }
 
-  update = (dapp: DApp): Task<DApp, AppError> => {
-    const { id, ...data } = dapp.toJSON()
+  update = (
+    id: DAppId,
+    data: Partial<Omit<DAppProps, 'id'>>,
+  ): Task<DApp, AppError> => {
     this.logger.debug(`update: ${id} ${data}`)
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.dapp
-        .update({ where: { id }, data })
+        .update({ where: { id: id.value }, data })
         .then(data => {
           this.logger.verbose(`updated: ${JSON.stringify(data)}`)
           resolve(data)

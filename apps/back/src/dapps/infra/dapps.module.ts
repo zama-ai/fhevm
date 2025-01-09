@@ -9,6 +9,7 @@ import { APP_DEPLOYMENT_PRODUCER } from '../domain/services/app-deployment.produ
 import { SNSAppDeploymentProducer } from './adapter/sns-app-deployment.producer.js'
 import { DeployDApp } from '../use-cases/deploy-dapp.use-case.js'
 import { AppDeploymentEnded } from '../use-cases/app-deployment-ended.use-case.js'
+import { AppDeploymentRequested } from '#dapps/use-cases/app-deployment-requested.use-case.js'
 
 @Module({
   imports: [DatabaseModule],
@@ -23,8 +24,14 @@ import { AppDeploymentEnded } from '../use-cases/app-deployment-ended.use-case.j
     GetDappById,
     GetTeamById,
     DeployDApp,
+    AppDeploymentRequested,
     AppDeploymentEnded,
   ],
-  exports: [AppDeploymentEnded, UpdateDapp, GetDappById],
+  exports: [
+    AppDeploymentRequested,
+    AppDeploymentEnded,
+    UpdateDapp,
+    GetDappById,
+  ],
 })
 export class DappsModule {}

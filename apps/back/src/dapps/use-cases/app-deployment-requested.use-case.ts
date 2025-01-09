@@ -6,15 +6,12 @@ import { UNIT_OF_WORK } from '#constants.js'
 import { DAppId } from '../domain/entities/value-objects.js'
 
 type Input = {
-  event: Extract<
-    AppDeploymentMessage,
-    { type: 'app-deployment.completed' } | { type: 'app-deployment.failed' }
-  >
+  event: Extract<AppDeploymentMessage, { type: 'app-deployment.requested' }>
 }
 
 @Injectable()
-export class AppDeploymentEnded implements UseCase<Input, void> {
-  logger = new Logger(AppDeploymentEnded.name)
+export class AppDeploymentRequested implements UseCase<Input, void> {
+  logger = new Logger(AppDeploymentRequested.name)
 
   constructor(
     @Inject(UNIT_OF_WORK) private readonly uow: UnitOfWork,
@@ -25,7 +22,7 @@ export class AppDeploymentEnded implements UseCase<Input, void> {
     return this.uow.exec(
       this.repo
         .update(new DAppId(event.payload.applicationId as `dapp_${string}`), {
-          status: event.type === 'app-deployment.completed' ? 'LIVE' : 'DRAFT',
+          status: 'DEPLOYING',
         })
         .match({
           ok: dapp =>
