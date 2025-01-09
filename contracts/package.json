@@ -26,7 +26,6 @@
   "license": "BSD-3-Clause",
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
-    "@nomicfoundation/hardhat-foundry": "^1.1.3",
     "@openzeppelin/contracts-upgradeable": "^5.0.2",
     "@openzeppelin/foundry-upgrades": "^0.3.6",
     "@openzeppelin/hardhat-upgrades": "^3.3.0",
