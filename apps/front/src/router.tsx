@@ -5,10 +5,9 @@ import { PrivateLayout } from './layouts/private.layout.js'
 // utility pages
 import { DefaultPage } from './pages/default.page.js'
 import { ErrorPage } from './pages/error.page.js'
-import { privateLoader } from './pages/private.loader.js'
 import { UnauthorizedErrorPage } from './pages/unauthorized.error.page.js'
 
-// publlic pages
+// public pages
 import { SigninPage } from './pages/signin.page.js'
 import { SignupPage } from './pages/signup.page.js'
 import { SignupErrorPage } from './pages/signup.error.page.js'
@@ -45,7 +44,6 @@ const router = createBrowserRouter([
   },
   {
     element: <PrivateLayout />,
-    loader: privateLoader,
     errorElement: <UnauthorizedErrorPage />,
     children: [
       {
