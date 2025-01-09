@@ -1,5 +1,5 @@
 import { AppError, Task } from 'utils'
-import { Address } from '../entities/address'
+import { Address } from '../entities/address.js'
 
 export interface ContractService {
   getContractCreation(

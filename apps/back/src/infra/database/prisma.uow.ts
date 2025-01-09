@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common'
-import { PrismaClient } from '@/prisma/client'
+import { PrismaClient } from '#prisma/client/index.js'
 import { ClsService } from 'nestjs-cls'
 import { Task, UnitOfWork } from 'utils'
 
@@ -27,7 +27,7 @@ export class PrismaUOW implements UnitOfWork {
             })
           })
         })
-        .catch(err => {
+        .catch((err: unknown) => {
           this.logger.warn(`failed: ${err} - rolling back tx`)
           reject(err as E)
         })

@@ -1,6 +1,6 @@
-import { User } from '../entities/user'
+import { User } from '../entities/user.js'
 import type { AppError, Task } from 'utils'
-import { UserId } from '../entities/value-objects'
+import { UserId } from '../entities/value-objects.js'
 
 export abstract class UserRepository {
   abstract create(props: User): Task<User, AppError>

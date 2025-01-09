@@ -2,9 +2,9 @@ import { useEffect } from 'react'
 import { useNavigate } from 'react-router'
 import { gql, useMutation } from '@apollo/client'
 
-import { SignInMutation } from '@/__generated__/graphql'
-import { SigninForm } from '@/components/signin-form/signin-form'
-import { formatErrorMessage } from '@/lib/error-message'
+import { SignInMutation } from '@/__generated__/graphql.js'
+import { SigninForm } from '@/components/signin-form/signin-form.js'
+import { formatErrorMessage } from '@/lib/error-message.js'
 
 const SIGN_IN = gql`
   mutation SignIn($email: String!, $password: String!) {

@@ -1,1 +1,1 @@
-export * from './app-deployment'
+export * from './app-deployment/index.js'

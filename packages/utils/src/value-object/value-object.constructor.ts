@@ -1,6 +1,6 @@
 import { ZodBranded, ZodFirstPartySchemaTypes, ZodTypeAny } from 'zod'
 
-import { typeUtil, util } from './util'
+import { typeUtil, util } from './util.js'
 
 export class ValueObject<
   Type extends string,

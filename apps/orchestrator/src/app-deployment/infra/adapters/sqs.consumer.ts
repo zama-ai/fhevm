@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common'
 import { SqsMessageHandler } from '@ssut/nestjs-sqs'
 import type { Message } from '@aws-sdk/client-sqs'
 import { isAppDeploymentMessage } from 'messages'
-import { ProcessEventUseCase } from 'src/app-deployment/use-cases/process-event.use-case'
+import { ProcessEventUseCase } from '#app-deployment/use-cases/process-event.use-case.js'
 
 @Injectable()
 export class SQSConsumer {

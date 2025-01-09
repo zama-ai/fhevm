@@ -1,6 +1,6 @@
-import { apolloClient } from '@/providers/apollo'
-import { graphql } from '@/__generated__/gql'
-import { MeTeamDappsQuery } from '@/__generated__/graphql'
+import { apolloClient } from '@/providers/apollo.js'
+import { graphql } from '@/__generated__/gql.js'
+import { MeTeamDappsQuery } from '@/__generated__/graphql.js'
 
 // load and cache general informations for faster rendering
 const GET_ME_TEAMS_DAPPS = graphql(`

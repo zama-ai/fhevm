@@ -1,8 +1,8 @@
 import type { AppError, Result } from 'utils'
 import { Entity, fail, ok, validationError } from 'utils'
 import { z } from 'zod'
-import { ExpiresAt, InvitationId, Token } from './value-objects'
-import { fromZodError } from 'utils/dist/app-error'
+import { ExpiresAt, InvitationId, Token } from './value-objects.js'
+import { fromZodError } from 'utils/dist/app-error.js'
 
 const schema = z.object({
   id: InvitationId,

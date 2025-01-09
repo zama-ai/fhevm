@@ -1,12 +1,14 @@
 {
   "compilerOptions": {
-    "module": "commonjs",
+    "module": "NodeNext",
+    "moduleResolution": "nodenext",
     "declaration": true,
     "removeComments": true,
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "allowSyntheticDefaultImports": true,
-    "target": "ES2021",
+    "target": "ES2022",
+    "lib": ["ES2022"],
     "sourceMap": true,
     "outDir": "./dist",
     "baseUrl": "./",
@@ -19,10 +21,11 @@
     "noFallthroughCasesInSwitch": false,
     "strict": true,
     "strictPropertyInitialization": false,
+    "rootDir": ".",
     "paths": {
-      "@/*": ["src/*"],
-      "@/prisma/client": ["generated/client"],
-      "@/tests/*": ["test/*"]
+      "#prisma/client/*": ["generated/client/*"],
+      "#*": ["src/*"],
+      "#tests/*": ["test/*"]
     }
   }
 }

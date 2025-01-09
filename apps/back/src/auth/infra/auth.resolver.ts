@@ -1,9 +1,9 @@
 import { Args, Mutation, Resolver } from '@nestjs/graphql'
-import { AuthType } from './dto/types/auth.type'
-import { LoginInput } from './dto/inputs/login.input'
-import { SignUp } from '@/auth/use-cases/signup.use-case'
-import { LogIn } from '@/auth/use-cases/login.use-case'
-import { SignupInput } from './dto/inputs/signup.input'
+import { AuthType } from './dto/types/auth.type.js'
+import { LoginInput } from './dto/inputs/login.input.js'
+import { SignUp } from '#auth/use-cases/signup.use-case.js'
+import { LogIn } from '#auth/use-cases/login.use-case.js'
+import { SignupInput } from './dto/inputs/signup.input.js'
 
 @Resolver(() => AuthType)
 export class AuthResolver {

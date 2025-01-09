@@ -1,4 +1,4 @@
-import { Task } from './task'
+import { Task } from './task.js'
 
 /*** Represents a successful computation. */
 export interface Ok<T, E> {

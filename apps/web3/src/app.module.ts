@@ -2,21 +2,21 @@ import { SQSClient } from '@aws-sdk/client-sqs'
 import { Module } from '@nestjs/common'
 import { ConfigModule, ConfigService } from '@nestjs/config'
 import { SqsModule } from 'sqs'
-import awsConfig from './config/aws.config'
-import { SQSConsumer } from './infra/adapters/sqs.consumer'
+import awsConfig from './config/aws.config.js'
+import { SQSConsumer } from './infra/adapters/sqs.consumer.js'
 import { SNSClient } from '@aws-sdk/client-sns'
 import ethersConfig, {
   ChainId,
   EtherConfig,
   EtherConfigFactory,
   isChainId,
-} from './config/ether.config'
-import { CONTRACT_SERVICE, MESSAGE_PRODUCER } from './constants'
-import { ContractService } from './domain/services/contract.service'
-import { ProxyContractService } from './infra/adapters/proxy-contract.service'
-import { AwsMessageProducer } from './infra/adapters/aws-message.producer'
-import { MessageProducer } from './domain/services/message.producer'
-import { DiscoverContract } from './use-cases/discover-contract.use-case'
+} from './config/ether.config.js'
+import { CONTRACT_SERVICE, MESSAGE_PRODUCER } from './constants.js'
+import { ContractService } from './domain/services/contract.service.js'
+import { ProxyContractService } from './infra/adapters/proxy-contract.service.js'
+import { AwsMessageProducer } from './infra/adapters/aws-message.producer.js'
+import { MessageProducer } from './domain/services/message.producer.js'
+import { DiscoverContract } from './use-cases/discover-contract.use-case.js'
 
 @Module({
   imports: [

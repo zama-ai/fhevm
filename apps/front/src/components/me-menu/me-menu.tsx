@@ -7,13 +7,13 @@ import {
   MenuItem,
   MenuRoot,
   MenuTrigger,
-} from '@/components/ui/menu'
-import { Avatar } from '@/components/ui/avatar'
+} from '@/components/ui/menu.js'
+import { Avatar } from '@/components/ui/avatar.js'
 import {
   ChevronDownIcon,
   LogOutIcon,
   SettingsIcon,
-} from '@/components/icons/icons'
+} from '@/components/icons/icons.js'
 
 type MeMenuProps = {
   name: string

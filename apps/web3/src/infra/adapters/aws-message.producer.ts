@@ -3,7 +3,7 @@ import { SendMessageCommand, SQSClient } from '@aws-sdk/client-sqs'
 import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { AppDeploymentMessage } from 'messages'
-import { MessageProducer } from 'src/domain/services/message.producer'
+import { MessageProducer } from '#domain/services/message.producer.js'
 import { AppError, Task, unknownError } from 'utils'
 
 @Injectable()
@@ -49,7 +49,7 @@ export class AwsMessageProducer implements MessageProducer {
           }),
         )
         .then(res => resolve(`status code: ${res.$metadata.httpStatusCode}`))
-        .catch(err => {
+        .catch((err: unknown) => {
           this.logger.warn(`failed to send message: ${err}`)
           reject(unknownError(String(err)))
         }),
@@ -77,7 +77,7 @@ export class AwsMessageProducer implements MessageProducer {
         .then(result =>
           resolve(`status code: ${result.$metadata.httpStatusCode}`),
         )
-        .catch(err => {
+        .catch((err: unknown) => {
           this.logger.warn(`failed to publish command: ${err}`)
           reject(unknownError(String(err)))
         }),

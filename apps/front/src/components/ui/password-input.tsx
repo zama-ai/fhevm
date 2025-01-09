@@ -15,7 +15,7 @@ import {
 } from '@chakra-ui/react'
 import { forwardRef, useRef, PointerEvent } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
-import { InputGroup } from './input-group'
+import { InputGroup } from './input-group.js'
 
 export interface PasswordVisibilityProps {
   defaultVisible?: boolean

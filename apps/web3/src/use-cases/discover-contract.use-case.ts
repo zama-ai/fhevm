@@ -5,9 +5,9 @@ import {
   scDiscovered,
   scDiscoveryFailed,
 } from 'messages'
-import { Address } from 'src/domain/entities/address'
-import { ContractService } from 'src/domain/services/contract.service'
-import { MessageProducer } from 'src/domain/services/message.producer'
+import { Address } from '#domain/entities/address.js'
+import { ContractService } from '#domain/services/contract.service.js'
+import { MessageProducer } from '#domain/services/message.producer.js'
 import { AppError, Task, UseCase } from 'utils'
 
 type Input = Extract<

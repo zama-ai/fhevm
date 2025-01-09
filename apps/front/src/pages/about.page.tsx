@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { useQuery } from '@apollo/client'
 import { NavLink } from 'react-router'
 
-import { graphql } from '../__generated__/gql'
-import { AboutMeQuery } from '@/__generated__/graphql'
+import { graphql } from '../__generated__/gql.js'
+import { AboutMeQuery } from '@/__generated__/graphql.js'
 
 const GET_ME = graphql(`
   query AboutMe {

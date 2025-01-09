@@ -1,5 +1,5 @@
 import { Box, Text } from '@chakra-ui/react'
-import { Video } from '@/components/video/video'
+import { Video } from '@/components/video/video.js'
 export function TutorialAddress() {
   return (
     <Box>

@@ -1,6 +1,5 @@
-import { AppModule } from '@/app.module'
-import { DAppStatus } from '@/dapps/domain/entities/dapp'
-import { PrismaClient } from '@/prisma/client'
+import { AppModule } from '#app.module.js'
+import { PrismaClient } from '#prisma/client/index.js'
 import {
   CreateQueueCommand,
   DeleteQueueCommand,

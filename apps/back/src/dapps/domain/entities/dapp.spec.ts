@@ -1,6 +1,6 @@
 import { faker } from '@faker-js/faker'
 import { beforeEach, describe, expect, test } from 'vitest'
-import { DApp } from './dapp'
+import { DApp } from './dapp.js'
 
 describe('Dapp', () => {
   describe('parse', () => {

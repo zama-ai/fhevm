@@ -3,13 +3,16 @@ import { useLoaderData, useNavigate } from 'react-router'
 import { Heading, Box } from '@chakra-ui/react'
 import { useMutation } from '@apollo/client'
 
-import { graphql } from '../__generated__/gql'
-import { CreateDappMutation, MeTeamDappsQuery } from '@/__generated__/graphql'
-import { formatErrorMessage } from '@/lib/error-message'
-import { getPersonalTeam } from '@/lib/personal-team'
-import { CreatorName } from '@/components/creator/creator-name'
-import { CreatorStepper } from '@/components/creator-stepper/creator-stepper'
-import { TitleContext } from '@/components/title-context/title-context'
+import { graphql } from '../__generated__/gql.js'
+import {
+  CreateDappMutation,
+  MeTeamDappsQuery,
+} from '@/__generated__/graphql.js'
+import { formatErrorMessage } from '@/lib/error-message.js'
+import { getPersonalTeam } from '@/lib/personal-team.js'
+import { CreatorName } from '@/components/creator/creator-name.js'
+import { CreatorStepper } from '@/components/creator-stepper/creator-stepper.js'
+import { TitleContext } from '@/components/title-context/title-context.js'
 
 const CREATE_DAPP = graphql(`
   mutation CreateDapp($teamId: String!, $name: String!) {

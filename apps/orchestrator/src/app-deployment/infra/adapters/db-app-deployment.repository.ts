@@ -1,7 +1,7 @@
+import { AppDeployment } from '#app-deployment/entities/app-deployment.js'
+import { AppDeploymentRepository } from '#app-deployment/interfaces/app-deployment.repository.js'
+import { DatabaseService } from '#database/database.service.js'
 import { Logger } from '@nestjs/common'
-import { AppDeployment } from 'src/app-deployment/entities/app-deployment'
-import { AppDeploymentRepository } from 'src/app-deployment/interfaces/app-deployment.repository'
-import { DatabaseService } from 'src/database/database.service'
 
 export class DbAppDeploymentRepository implements AppDeploymentRepository {
   logger = new Logger(DbAppDeploymentRepository.name)

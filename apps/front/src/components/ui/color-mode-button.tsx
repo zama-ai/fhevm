@@ -3,7 +3,7 @@ import { ClientOnly, IconButton, Skeleton } from '@chakra-ui/react'
 import type { IconButtonProps } from '@chakra-ui/react'
 import { Moon, Sun } from 'lucide-react'
 
-import { useColorMode } from '@/hooks/use-color-mode'
+import { useColorMode } from '@/hooks/use-color-mode.js'
 
 export function ColorModeIcon() {
   const { colorMode } = useColorMode()

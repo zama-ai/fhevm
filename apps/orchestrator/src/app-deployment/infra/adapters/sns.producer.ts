@@ -1,7 +1,7 @@
 import { PublishCommand, SNSClient } from '@aws-sdk/client-sns'
 import { Logger } from '@nestjs/common'
 import { AppDeploymentMessage } from 'messages'
-import { AppDeploymentMessagesProducer } from 'src/app-deployment/interfaces/app-deployment-messages.producer'
+import { AppDeploymentMessagesProducer } from '#app-deployment/interfaces/app-deployment-messages.producer.js'
 
 export class SNSProducer implements AppDeploymentMessagesProducer {
   logger = new Logger(SNSProducer.name)

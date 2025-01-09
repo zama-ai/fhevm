@@ -2,9 +2,9 @@ import { Injectable } from '@nestjs/common'
 import { JwtService } from '@nestjs/jwt'
 import type { AppError, UseCase } from 'utils'
 import { Task } from 'utils'
-import { UserRepository } from '@/users/domain/repositories/user.repository'
-import { User } from '@/users/domain/entities/user'
-import { JwtPayload } from '../interfaces/jwt-payload'
+import { UserRepository } from '#users/domain/repositories/user.repository.js'
+import { User } from '#users/domain/entities/user.js'
+import { JwtPayload } from '../interfaces/jwt-payload.js'
 
 @Injectable()
 export class LogIn

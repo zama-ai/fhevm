@@ -1,8 +1,8 @@
-import { Address } from 'src/domain/entities/address'
-import { ContractService } from 'src/domain/services/contract.service'
+import { Address } from '#domain/entities/address.js'
+import { ContractService } from '#domain/services/contract.service.js'
 import { Task, AppError, unknownError, notFoundError } from 'utils'
 import { stringify } from 'querystring'
-import type { ChainId, EtherConfig } from 'src/config/ether.config'
+import type { ChainId, EtherConfig } from '#config/ether.config.js'
 import { Logger } from '@nestjs/common'
 
 type EtherScanResponse<T> =
@@ -57,12 +57,12 @@ export class EtherscanContractService implements ContractService {
         .then(data =>
           data.status === '1'
             ? resolve({
-              contractAddress: new Address(data.result[0].contractAddress),
-              creatorAddress: new Address(data.result[0].contractCreator),
-            })
+                contractAddress: new Address(data.result[0].contractAddress),
+                creatorAddress: new Address(data.result[0].contractCreator),
+              })
             : reject(notFoundError('Contract not found')),
         )
-        .catch(err => reject(unknownError(String(err)))),
+        .catch((err: unknown) => reject(unknownError(String(err)))),
     )
   }
 
@@ -88,7 +88,7 @@ export class EtherscanContractService implements ContractService {
             ? resolve(data.result)
             : reject(notFoundError('Contract not found')),
         )
-        .catch(err => reject(unknownError(String(err)))),
+        .catch((err: unknown) => reject(unknownError(String(err)))),
     )
   }
 }

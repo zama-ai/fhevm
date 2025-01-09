@@ -3,8 +3,8 @@ import { SQSClient } from '@aws-sdk/client-sqs'
 import { Module } from '@nestjs/common'
 import { ConfigModule, ConfigService } from '@nestjs/config'
 import { SqsModule } from 'sqs'
-import awsConfig from './config/aws.config'
-import { SQSConsumer } from './infra/adapeters/sqs.consumer'
+import awsConfig from './config/aws.config.js'
+import { SQSConsumer } from './infra/adapeters/sqs.consumer.js'
 
 @Module({
   imports: [

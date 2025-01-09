@@ -1,7 +1,7 @@
 import { Box, Grid, Heading, Text, Stack } from '@chakra-ui/react'
 
-import { SpinnerButton } from '@/components/ui/spinner-button'
-import { WaitIcon } from '../icons/icons'
+import { SpinnerButton } from '@/components/ui/spinner-button.js'
+import { WaitIcon } from '../icons/icons.js'
 
 type OwnProps = {
   onSubmit: () => void
