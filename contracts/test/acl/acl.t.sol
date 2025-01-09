@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {UnsafeUpgrades} from "@openzeppelin/foundry-upgrades/src/Upgrades.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 import {ACL} from "../../contracts/ACL.sol";
 import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
@@ -216,10 +217,15 @@ contract ACLTest is Test {
         acl.allowForDecryption(handlesList);
     }
 
-    function testFail_OnlyOwnerCanAuthorizeUpgrade(address randomAccount) public {
+    function test_OnlyOwnerCanAuthorizeUpgrade(address randomAccount) public {
         vm.assume(randomAccount != owner);
-        /// @dev It reverts due to OwnableUpgradeable.OwnableUnauthorizedAccount.selector.
+        /// @dev Have to use external call to this to avoid this issue:
         ///      https://github.com/foundry-rs/foundry/issues/5806
+        vm.expectPartialRevert(OwnableUpgradeable.OwnableUnauthorizedAccount.selector);
+        this.upgrade(randomAccount);
+    }
+
+    function upgrade(address randomAccount) external {
         UnsafeUpgrades.upgradeProxy(proxy, address(new EmptyUUPSProxy()), "", randomAccount);
     }
 
