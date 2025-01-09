@@ -28,7 +28,7 @@ export function NavAppBlock({ name, color, isActive }: OwnProps) {
         maxWidth="130px"
         fontWeight={isActive ? 'bold' : 'normal'}
       >
-        {name.length ? name : 'New app'}
+        {name.length ? name : 'New dApp'}
       </Text>
     </>
   )

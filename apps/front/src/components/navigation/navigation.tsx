@@ -39,7 +39,7 @@ export function Navigation({ dapps }: OwnProps) {
       <Stack>
         <NavBlock title="Dashboard" icon={DashboardIcon} to="/dashboard" />
         <List.Root gap="2" variant="plain" align="center">
-          {pathname === '/create' && <NewNavApp name={title} />}
+          {/^\/create\/team_/.test(pathname) && <NewNavApp name={title} />}
           {dapps.map(dapp => (
             <NavApp
               key={dapp.id}
