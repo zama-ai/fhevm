@@ -27,6 +27,7 @@
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "@openzeppelin/contracts-upgradeable": "^5.0.2",
+    "@openzeppelin/foundry-upgrades": "^0.3.6",
     "@openzeppelin/hardhat-upgrades": "^3.3.0",
     "@trivago/prettier-plugin-sort-imports": "^4.0.0",
     "bigint-buffer": "^1.1.5",

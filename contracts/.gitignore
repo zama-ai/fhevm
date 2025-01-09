@@ -18,3 +18,9 @@ node_modules
 ignition/deployments/chain-31337
 
 *DS_Store
+
+# Forge
+/cache_forge
+/out
+lcov.info
+/report
