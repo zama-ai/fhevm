@@ -1,18 +1,15 @@
-import { useContext, useEffect, useState } from 'react'
-import { useLoaderData, useNavigate } from 'react-router'
+import { useContext, useEffect } from 'react'
+import { useNavigate, useParams } from 'react-router'
 import { Heading, Box } from '@chakra-ui/react'
 import { useMutation } from '@apollo/client'
 
 import { graphql } from '../__generated__/gql.js'
-import {
-  CreateDappMutation,
-  MeTeamDappsQuery,
-} from '@/__generated__/graphql.js'
+import { CreateDappMutation } from '@/__generated__/graphql.js'
 import { formatErrorMessage } from '@/lib/error-message.js'
-import { getPersonalTeam } from '@/lib/personal-team.js'
 import { CreatorName } from '@/components/creator/creator-name.js'
 import { CreatorStepper } from '@/components/creator-stepper/creator-stepper.js'
 import { TitleContext } from '@/components/title-context/title-context.js'
+import { GET_ME_TEAMS_DAPPS } from '@/queries.js'
 
 const CREATE_DAPP = graphql(`
   mutation CreateDapp($teamId: String!, $name: String!) {
@@ -26,22 +23,18 @@ const CREATE_DAPP = graphql(`
 `)
 
 export function CreateStepOnePage() {
-  const [teamId, setTeamId] = useState<string | null>(null)
+  const { teamId } = useParams()
+
   const [createDappMutation, { loading, error }] =
     useMutation<CreateDappMutation>(CREATE_DAPP, {
+      refetchQueries: [GET_ME_TEAMS_DAPPS],
       onCompleted(data) {
         navigate(`/create/2/${data?.createDapp.id}`)
       },
     })
-  const { me } = useLoaderData<MeTeamDappsQuery>()
+
   const navigate = useNavigate()
   const { setTitle } = useContext(TitleContext)
-
-  useEffect(() => {
-    if (me) {
-      setTeamId(getPersonalTeam(me.teams).id)
-    }
-  }, [me])
 
   // Reset the title in context when the component is unmounted
   useEffect(() => {

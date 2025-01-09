@@ -16,7 +16,6 @@ import { signupLoader } from './pages/signup.loader.js'
 
 import { AboutPage } from './pages/about.page.js'
 import { DashboardPage } from './pages/dashboard.page.js'
-import { dashboardLoader } from './pages/dashboard.loader.js'
 import { CreateStepOnePage } from './pages/create-step-one.page.js'
 import { CreateStepTwoPage } from './pages/create-step-two.page.js'
 import { CreateStepThreePage } from './pages/create-step-three.page.js'
@@ -52,16 +51,14 @@ const router = createBrowserRouter([
       {
         path: '/dashboard/',
         element: <DashboardPage />,
-        loader: dashboardLoader,
       },
       {
         path: '/about',
         element: <AboutPage />,
       },
       {
-        path: '/create',
+        path: '/create/:teamId',
         element: <CreateStepOnePage />,
-        loader: dashboardLoader,
       },
       {
         path: '/create/2/:dappId',

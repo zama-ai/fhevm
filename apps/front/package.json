@@ -7,7 +7,7 @@
   "type": "module",
   "scripts": {
     "start": "vite --host",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build --logLevel error",
     "lint": "eslint . --fix",
     "preview": "vite preview",
     "generate": "graphql-codegen",

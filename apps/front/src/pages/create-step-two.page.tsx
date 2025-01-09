@@ -13,6 +13,16 @@ import { CreatorAddress } from '@/components/creator/creator-address.js'
 import { CreatorStepper } from '@/components/creator-stepper/creator-stepper.js'
 import { DappStatus } from '@/components/dapp-status/dapp-status.js'
 
+const GET_DAPP = graphql(`
+  query GetDapp($dappId: ID!) {
+    dapp(input: { id: $dappId }) {
+      id
+      name
+      status
+    }
+  }
+`)
+
 const SET_DAPP_ADDRESS = graphql(`
   mutation SetDappAddress($id: ID!, $address: String!) {
     updateDapp(input: { id: $id, address: $address }) {
@@ -24,15 +34,6 @@ const SET_DAPP_ADDRESS = graphql(`
   }
 `)
 
-const GET_DAPP = graphql(`
-  query GetDapp($dappId: ID!) {
-    dapp(input: { id: $dappId }) {
-      id
-      name
-      status
-    }
-  }
-`)
 const DEPLOY_DAPP = graphql(`
   mutation DeployDapp($applicationId: String!) {
     deployDapp(input: { dappId: $applicationId }) {
