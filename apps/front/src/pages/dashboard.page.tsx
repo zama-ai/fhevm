@@ -4,13 +4,12 @@ import { useQuery } from '@apollo/client'
 import { HeroGreetings } from '@/components/hero-greetings/hero-greetings.js'
 import { DappsList } from '@/components/dapps-list/dapps-list.js'
 import { getPersonalTeam } from '@/lib/personal-team.js'
-import { Dapp, MeTeamsDappsQuery } from '@/__generated__/graphql.js'
-import { GET_ME_TEAMS_DAPPS } from '@/queries.js'
+import { Dapp, MeQuery } from '@/__generated__/graphql.js'
+import { GET_ME } from '@/queries.js'
 
 export function DashboardPage() {
   const navigate = useNavigate()
-  const { loading, error, data } =
-    useQuery<MeTeamsDappsQuery>(GET_ME_TEAMS_DAPPS)
+  const { loading, error, data } = useQuery<MeQuery>(GET_ME)
   if (error) throw new Error(error.message)
   const team = data?.me ? getPersonalTeam(data.me.teams) : null
 

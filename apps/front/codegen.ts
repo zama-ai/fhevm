@@ -4,7 +4,7 @@ config()
 
 const genConfig: CodegenConfig = {
   schema: process.env.VITE_API_URL,
-  documents: ['src/**/*.tsx', 'src/**/*.loader.ts'],
+  documents: ['src/**/*.tsx', 'src/queries.ts', 'src/**/*.loader.ts'],
   generates: {
     './src/__generated__/': {
       preset: 'client',

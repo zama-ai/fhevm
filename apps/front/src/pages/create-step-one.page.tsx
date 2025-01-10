@@ -9,7 +9,7 @@ import { formatErrorMessage } from '@/lib/error-message.js'
 import { CreatorName } from '@/components/creator/creator-name.js'
 import { CreatorStepper } from '@/components/creator-stepper/creator-stepper.js'
 import { TitleContext } from '@/components/title-context/title-context.js'
-import { GET_ME, GET_ME_TEAMS_DAPPS } from '@/queries.js'
+import { GET_ME } from '@/queries.js'
 
 const CREATE_DAPP = graphql(`
   mutation CreateDapp($teamId: String!, $name: String!) {
@@ -27,7 +27,7 @@ export function CreateStepOnePage() {
 
   const [createDappMutation, { loading, error }] =
     useMutation<CreateDappMutation>(CREATE_DAPP, {
-      refetchQueries: [GET_ME_TEAMS_DAPPS, GET_ME],
+      refetchQueries: [GET_ME],
       onCompleted(data) {
         navigate(`/create/2/${data?.createDapp.id}`)
       },
