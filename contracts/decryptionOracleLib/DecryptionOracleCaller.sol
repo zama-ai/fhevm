@@ -40,6 +40,8 @@ abstract contract DecryptionOracleCaller {
     mapping(uint256 => address[]) private paramsAddress;
     mapping(uint256 => uint256[]) private paramsUint256;
 
+    event DecryptionFulfilled(uint256 indexed requestID);
+
     function addParamsEBool(uint256 requestID, ebool _ebool) internal {
         paramsEBool[requestID].push(_ebool);
     }
@@ -256,5 +258,6 @@ abstract contract DecryptionOracleCaller {
             revert InvalidKMSSignatures();
         }
         _;
+        emit DecryptionFulfilled(requestID);
     }
 }
