@@ -54,6 +54,7 @@
     "@nestjs/schematics": "^10.0.0",
     "@nestjs/testing": "^10.4.10",
     "@swc/core": "^1.10.1",
+    "@testcontainers/localstack": "^10.16.0",
     "@testcontainers/postgresql": "^10.16.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/express": "^5.0.0",

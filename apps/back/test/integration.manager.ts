@@ -33,8 +33,8 @@ export class IntegrationManager {
 
   async sendMessage(message: string) {
     const sqs = new SQSClient({
-      endpoint: process.env.AWS_ENDPOINT,
-      region: process.env.AWS_REGION,
+      endpoint: this.setup.queueUrl,
+      region: this.setup.awsRegion,
     })
     await sqs.send(
       new SendMessageCommand({
@@ -46,8 +46,8 @@ export class IntegrationManager {
 
   async getQueueSize() {
     const sqs = new SQSClient({
-      endpoint: process.env.AWS_ENDPOINT,
-      region: process.env.AWS_REGION,
+      endpoint: this.setup.queueUrl,
+      region: this.setup.awsRegion,
     })
     const result = await sqs.send(
       new GetQueueAttributesCommand({

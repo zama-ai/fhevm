@@ -107,6 +107,9 @@ importers:
       '@swc/core':
         specifier: ^1.10.1
         version: 1.10.1(@swc/helpers@0.5.15)
+      '@testcontainers/localstack':
+        specifier: ^10.16.0
+        version: 10.16.0
       '@testcontainers/postgresql':
         specifier: ^10.16.0
         version: 10.16.0
@@ -2995,6 +2998,9 @@ packages:
 
   '@swc/types@0.1.17':
     resolution: {integrity: sha512-V5gRru+aD8YVyCOMAjMpWR1Ui577DD5KSJsHP8RAxopAH22jFz6GZd/qxqjO6MJHQhcsjvjOFXyDhyLQUnMveQ==}
+
+  '@testcontainers/localstack@10.16.0':
+    resolution: {integrity: sha512-u9Od+suQoIKLwcz9wK0NQZP8O4SDdn6GvdJE9pD18PphsDg1wU61b1YCZVuhL32SXJBlExAzWsHN29B1hFzmmg==}
 
   '@testcontainers/postgresql@10.16.0':
     resolution: {integrity: sha512-zWFQI+3QxlEELRvVv27i6zlVEPNUz9zKaSh7iWmFlCdfhcyr78daS0FG8FIfdQ79VK7YXA4jv+dTYXa2SwXu/w==}
@@ -10544,6 +10550,12 @@ snapshots:
   '@swc/types@0.1.17':
     dependencies:
       '@swc/counter': 0.1.3
+
+  '@testcontainers/localstack@10.16.0':
+    dependencies:
+      testcontainers: 10.16.0
+    transitivePeerDependencies:
+      - supports-color
 
   '@testcontainers/postgresql@10.16.0':
     dependencies:

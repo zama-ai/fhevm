@@ -1,19 +1,22 @@
-import {
-  CreateQueueCommand,
-  DeleteQueueCommand,
-  SQSClient,
-} from '@aws-sdk/client-sqs'
-import { faker } from '@faker-js/faker'
+import { CreateQueueCommand, SQSClient } from '@aws-sdk/client-sqs'
 import { INestApplication } from '@nestjs/common'
 import { Test } from '@nestjs/testing'
+import {
+  LocalstackContainer,
+  type StartedLocalStackContainer,
+} from '@testcontainers/localstack'
 import {
   PostgreSqlContainer,
   type StartedPostgreSqlContainer,
 } from '@testcontainers/postgresql'
 
-import { AppModule } from '#app.module.js'
+import { AppModule, configModule } from '#app.module.js'
 import { PrismaClient } from '#prisma/client/index.js'
 import { execSync } from 'child_process'
+import { ConfigModule, registerAs } from '@nestjs/config'
+import dbConfig from '#config/db.config.js'
+import jwtConfig from '#config/jwt.config.js'
+import { CreateTopicCommand, SNSClient } from '@aws-sdk/client-sns'
 export type GraphQlResponse<T> =
   | {
       success: true
@@ -26,7 +29,11 @@ export type GraphQlResponse<T> =
 
 export class SetupManager {
   #app: INestApplication
-  #queueName: string
+
+  // AWS Configuration
+  #awsContainer: StartedLocalStackContainer
+
+  // DB Configuration
   #pgContainer: StartedPostgreSqlContainer
   #prismaClient: PrismaClient
 
@@ -60,16 +67,34 @@ export class SetupManager {
   }
 
   private async startAws() {
-    this.#queueName = faker.string.alphanumeric(10)
-    const sqs = new SQSClient({
-      endpoint: process.env.AWS_ENDPOINT,
-      region: process.env.AWS_REGION,
+    await new Promise(resolve => {
+      setTimeout(resolve, 10_000)
     })
-    await sqs.send(new CreateQueueCommand({ QueueName: this.#queueName }))
-    process.env.AWS_QUEUE_URL = `http://localhost:4566/000000000000/${this.#queueName}`
+    this.#awsContainer = await new LocalstackContainer(
+      'localstack/localstack:latest',
+    ).start()
+
+    const sns = new SNSClient({
+      endpoint: this.#awsContainer.getConnectionUri(),
+      region: this.awsRegion,
+    })
+    await sns.send(
+      new CreateTopicCommand({
+        Name: this.topicName,
+      }),
+    )
+
+    const sqs = new SQSClient({
+      endpoint: this.#awsContainer.getConnectionUri(),
+      region: this.awsRegion,
+    })
+    await sqs.send(new CreateQueueCommand({ QueueName: 'back-test' }))
   }
 
-  private async stopAws() {}
+  private async stopAws() {
+    // await this.#sqs.send(new DeleteQueueCommand({ QueueUrl: this.queueUrl }))
+    await this.#awsContainer.stop()
+  }
 
   async beforeAll() {
     // Start services
@@ -78,6 +103,22 @@ export class SetupManager {
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
     })
+      .overrideModule(configModule)
+      .useModule(
+        ConfigModule.forRoot({
+          isGlobal: true,
+          load: [
+            registerAs('aws', () => ({
+              endpoint: this.#awsContainer.getConnectionUri(),
+              queueUrl: this.queueUrl,
+              region: this.awsRegion,
+              topicArn: this.topicArn,
+            })),
+            dbConfig,
+            jwtConfig,
+          ],
+        }),
+      )
       .overrideProvider(PrismaClient)
       .useValue(this.#prismaClient)
       .compile()
@@ -87,18 +128,10 @@ export class SetupManager {
   }
 
   async afterAll() {
+    await this.#app.close()
+
     // Stop services
     await Promise.all([this.stopAws(), this.stopPostgres()])
-
-    await this.#app.close()
-    await new SQSClient({
-      endpoint: process.env.AWS_ENDPOINT,
-      region: process.env.AWS_REGION,
-    }).send(
-      new DeleteQueueCommand({
-        QueueUrl: this.queueUrl,
-      }),
-    )
   }
 
   async afterEach() {
@@ -115,7 +148,23 @@ export class SetupManager {
     return this.#app.getHttpServer()
   }
 
+  get awsRegion(): string {
+    return 'eu-central-1'
+  }
+
+  get awsEdnpoint(): string {
+    return this.#awsContainer.getConnectionUri()
+  }
+
+  get topicName(): string {
+    return 'back-test-topic'
+  }
+
+  get topicArn(): string {
+    return `arn:aws:sns:${this.awsRegion}:000000000000:${this.topicName}`
+  }
+
   get queueUrl(): string {
-    return `http://localhost:4566/000000000000/${this.#queueName}`
+    return `${this.#awsContainer.getConnectionUri()}/000000000000/back-test`
   }
 }
