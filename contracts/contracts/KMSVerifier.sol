@@ -17,6 +17,9 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
     /// @notice Returned if the KMS signer to add is already a signer.
     error KMSAlreadySigner();
 
+    /// @notice Returned if the owner tries to remove all the KMS signers.
+    error AtLeastOneSignerIsRequired();
+
     /// @notice Returned if the recovered KMS signer is not a valid KMS signer.
     /// @param invalidSigner Address of the invalid signer.
     error KMSInvalidSigner(address invalidSigner);
@@ -257,8 +260,8 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
         if (signerLength != 0) {
             $.threshold = (signerLength - 1) / 3 + 1;
         } else {
-            /// @dev It is impossible to remove the last signer otherwise since it would underflow.
-            $.threshold = 0;
+            /// @dev It is impossible to remove all KMS signers.
+            revert AtLeastOneSignerIsRequired();
         }
     }
 
