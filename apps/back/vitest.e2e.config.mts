@@ -12,11 +12,11 @@ export default defineConfig({
       ...config({ path: '.env.test' }).parsed,
     },
     pool: 'threads',
-    poolOptions: {
-      threads: {
-        singleThread: true,
-      },
-    },
+    // poolOptions: {
+    //   threads: {
+    //     singleThread: true,
+    //   },
+    // },
     isolate: false,
   },
   plugins: [

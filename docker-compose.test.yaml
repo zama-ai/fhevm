@@ -1,15 +1,4 @@
 services:
-  postgres:
-    image: postgres:17-alpine
-    restart: always
-    container_name: console-db-test
-    environment:
-      - POSTGRES_USER=${DB_USERNAME:-postgres}
-      - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
-      - POSTGRES_DB=${DB_NAME:-tests}
-    ports:
-      - "5432:5432"
-
   localstack:
     image: localstack/localstack:latest
     container_name: console-aws-test
