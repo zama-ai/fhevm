@@ -1,7 +1,7 @@
 import { faker } from '@faker-js/faker'
 import gql from 'graphql-tag'
 import request from 'supertest-graphql'
-import { SetupManager, type GraphQlResponse } from './setup.manager'
+import { SetupManager, type GraphQlResponse } from './setup.manager.js'
 
 export interface User {
   name: string

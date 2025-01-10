@@ -2,7 +2,7 @@ import {
   DeployDappResult,
   GraphQlResponse,
   IntegrationManager,
-} from '@/tests/integration.manager'
+} from '#tests/integration.manager.js'
 import { faker } from '@faker-js/faker'
 import {
   afterAll,
@@ -14,7 +14,7 @@ import {
   test,
   vi,
 } from 'vitest'
-import { DAppStatus } from '@/dapps/domain/entities/dapp'
+import { DAppStatus } from '#dapps/domain/entities/dapp.js'
 import { AppDeploymentMessage, completed, failed, requested } from 'messages'
 
 describe('deploy-dapp', () => {

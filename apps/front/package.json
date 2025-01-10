@@ -42,6 +42,7 @@
     "@storybook/react": "^8.4.7",
     "@storybook/react-vite": "^8.4.7",
     "@storybook/test": "^8.4.7",
+    "@graphql-typed-document-node/core": "^3.2.0",
     "@types/jest": "^29.5.2",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",

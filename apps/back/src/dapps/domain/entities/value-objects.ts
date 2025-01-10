@@ -1,5 +1,5 @@
 import { ValueObject } from 'utils'
-import { validateNanoId } from 'utils/dist/validation'
+import { validateNanoId } from 'utils/dist/validation.js'
 import { z } from 'zod'
 import { nanoid } from 'nanoid'
 
@@ -14,6 +14,10 @@ export class DAppId extends ValueObject(
 ) {
   static random(): DAppId {
     return new DAppId(`dapp_${nanoid(12)}`)
+  }
+
+  static fromString(id: string): DAppId {
+    return new DAppId(id as `dapp_${string}`)
   }
 }
 

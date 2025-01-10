@@ -1,4 +1,4 @@
-import { IntegrationManager, User } from '@/tests/integration.manager'
+import { IntegrationManager, User } from '#tests/integration.manager.js'
 import { faker } from '@faker-js/faker'
 import {
   afterAll,

@@ -6,7 +6,7 @@ import {
   StatRoot,
   StatValueText,
   StatHelpText,
-} from '@/components/ui/stat'
+} from '@/components/ui/stat.js'
 
 function Ball({ color = 'neutral.200' }) {
   return <Box w=".4em" h=".4em" bg={color} rounded="full" flexShrink={0} />

@@ -1,9 +1,9 @@
 // import { Inject } from '@nestjs/common'
-import { ChainId, EtherConfig, isChainId } from 'src/config/ether.config'
-import { Address } from 'src/domain/entities/address'
-import { ContractService } from 'src/domain/services/contract.service'
+import { ChainId, EtherConfig, isChainId } from '#config/ether.config.js'
+import { Address } from '#domain/entities/address.js'
+import { ContractService } from '#domain/services/contract.service.js'
 import { type AppError, Task, unknownError } from 'utils'
-import { EtherscanContractService } from './etherscan-contract.service'
+import { EtherscanContractService } from './etherscan-contract.service.js'
 
 export class ProxyContractService implements ContractService {
   private readonly services = new Map<ChainId, ContractService>()

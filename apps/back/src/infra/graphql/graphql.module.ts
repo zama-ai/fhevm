@@ -2,11 +2,11 @@ import { Module } from '@nestjs/common'
 import { GraphQLModule as BaseGraphQLModule } from '@nestjs/graphql'
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo'
 import { join } from 'path'
-import { AuthModule } from '@/auth/infra/auth.module'
-import { UsersModule } from '@/users/infra/users.module'
-import { TeamsModule } from '@/teams/infra/teams.module'
-import { InvitationsModule } from '@/invitations/infra/invitations.module'
-import { DappsModule } from '@/dapps/infra/dapps.module'
+import { AuthModule } from '#auth/infra/auth.module.js'
+import { UsersModule } from '#users/infra/users.module.js'
+import { TeamsModule } from '#teams/infra/teams.module.js'
+import { InvitationsModule } from '#invitations/infra/invitations.module.js'
+import { DappsModule } from '#dapps/infra/dapps.module.js'
 
 @Module({
   imports: [

@@ -1,10 +1,10 @@
-import { UNIT_OF_WORK } from '@/constants'
+import { UNIT_OF_WORK } from '#constants.js'
 import { Inject } from '@nestjs/common'
 import { AppError, Task, UnitOfWork, UseCase } from 'utils'
-import { DAppRepository } from '../domain/repositories/dapp.repository'
-import { DAppId } from '../domain/entities/value-objects'
-import { DApp } from '../domain/entities/dapp'
-import { UserId } from '@/users/domain/entities/value-objects'
+import { DAppRepository } from '../domain/repositories/dapp.repository.js'
+import { DAppId } from '../domain/entities/value-objects.js'
+import { DApp } from '../domain/entities/dapp.js'
+import { UserId } from '#users/domain/entities/value-objects.js'
 
 export class GetDappById
   implements UseCase<{ dappId: DAppId; userId: UserId }, DApp>

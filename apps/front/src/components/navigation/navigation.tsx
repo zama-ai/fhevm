@@ -7,11 +7,11 @@ import {
   DashboardIcon,
   LearnIcon,
   CommunityIcon,
-} from '@/components/icons/icons'
+} from '@/components/icons/icons.js'
 
-import { TitleContext } from '@/components/title-context/title-context'
-import { NavBlock } from './nav-block'
-import { NavApp, NewNavApp } from './nav-app'
+import { TitleContext } from '@/components/title-context/title-context.js'
+import { NavBlock } from './nav-block.js'
+import { NavApp, NewNavApp } from './nav-app.js'
 
 type OwnProps = {
   dapps: Array<{

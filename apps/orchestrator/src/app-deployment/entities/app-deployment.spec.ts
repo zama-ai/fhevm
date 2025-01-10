@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { AppDeployment } from './app-deployment'
+import { AppDeployment } from './app-deployment.js'
 import { randomUUID } from 'crypto'
 
 import {
@@ -8,8 +8,8 @@ import {
   scConfirmed,
   scDiscovered,
   scRegistered,
-} from './app-deployment.events'
-import { confirmSC, discoverSC, registerSC } from './app-deployment.commands'
+} from './app-deployment.events.js'
+import { confirmSC, discoverSC, registerSC } from './app-deployment.commands.js'
 
 const address = '0xa2dd817c2fdc3a2996f1a5174cf8f1aaed466e82'
 const chainId = '1'

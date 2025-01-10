@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common'
-import { Invitation } from '../domain/entities/invitation'
+import { Invitation } from '../domain/entities/invitation.js'
 import type { AppError, UseCase } from 'utils'
 import { notFoundError, Task } from 'utils'
-import { InvitationRepository } from '../domain/repositories/invitation.repository'
-import { Token } from '../domain/entities/value-objects'
+import { InvitationRepository } from '../domain/repositories/invitation.repository.js'
+import { Token } from '../domain/entities/value-objects.js'
 
 @Injectable()
 export class GetInvitationByToken implements UseCase<string, Invitation> {

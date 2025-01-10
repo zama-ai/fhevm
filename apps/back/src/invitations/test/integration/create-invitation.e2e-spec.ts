@@ -10,7 +10,7 @@ import {
   test,
 } from 'vitest'
 import { faker } from '@faker-js/faker'
-import { IntegrationManager } from '@/tests/integration.manager'
+import { IntegrationManager } from '#tests/integration.manager.js'
 
 const GET_INVITATION_BY_TOKEN = gql`
   query GetInvitationByToken($token: String!) {

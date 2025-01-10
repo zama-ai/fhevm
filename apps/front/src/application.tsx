@@ -1,6 +1,6 @@
-import { CheckEnv } from './lib/check-env.tsx'
-import { Router } from './router.tsx'
-import { TitleContextWrapper } from './components/title-context/title-context-wrapper.tsx'
+import { CheckEnv } from './lib/check-env.js'
+import { Router } from './router.js'
+import { TitleContextWrapper } from './components/title-context/title-context-wrapper.js'
 
 export function App() {
   return (

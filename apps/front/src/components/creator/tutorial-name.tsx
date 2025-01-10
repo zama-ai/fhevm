@@ -1,6 +1,6 @@
 import { Text } from '@chakra-ui/react'
-import { Alert } from '@/components/ui/alert'
-import { Video } from '@/components/video/video'
+import { Alert } from '@/components/ui/alert.js'
+import { Video } from '@/components/video/video.js'
 
 export function TutorialName() {
   return (

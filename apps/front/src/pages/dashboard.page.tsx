@@ -1,9 +1,9 @@
 import { useLoaderData, useNavigate } from 'react-router'
 import { Text } from '@chakra-ui/react'
-import { Dapp, MeTeamDappsQuery } from '@/__generated__/graphql'
-import { HeroGreetings } from '@/components/hero-greetings/hero-greetings'
-import { DappsList } from '@/components/dapps-list/dapps-list'
-import { getPersonalTeam } from '@/lib/personal-team'
+import { Dapp, MeTeamDappsQuery } from '@/__generated__/graphql.js'
+import { HeroGreetings } from '@/components/hero-greetings/hero-greetings.js'
+import { DappsList } from '@/components/dapps-list/dapps-list.js'
+import { getPersonalTeam } from '@/lib/personal-team.js'
 
 export function DashboardPage() {
   const { me } = useLoaderData<MeTeamDappsQuery>()

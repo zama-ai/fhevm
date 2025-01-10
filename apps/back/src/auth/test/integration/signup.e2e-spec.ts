@@ -1,9 +1,9 @@
-import { EXPIRATION_TIME_IN_MILLISECONDS } from '@/invitations/use-cases/create-invitation.use-case'
+import { EXPIRATION_TIME_IN_MILLISECONDS } from '#invitations/use-cases/create-invitation.use-case.js'
 import {
   type GraphQlResponse,
   IntegrationManager,
   type User,
-} from '@/tests/integration.manager'
+} from '#tests/integration.manager.js'
 import { faker } from '@faker-js/faker'
 import {
   afterAll,

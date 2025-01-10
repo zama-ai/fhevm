@@ -1,1 +1,1 @@
-export { ValueObject } from './value-object.factory'
+export { ValueObject } from './value-object.factory.js'

@@ -1,8 +1,8 @@
 import { z } from 'zod'
 import type { AppError, Result } from 'utils'
 import { Entity, ok, fail, validationError } from 'utils'
-import { CreatedAt, DAppId } from './value-objects'
-import { TeamId } from '@/users/domain/entities/value-objects'
+import { CreatedAt, DAppId } from './value-objects.js'
+import { TeamId } from '#users/domain/entities/value-objects.js'
 
 const status = z.enum(['DRAFT', 'DEPLOYING', 'LIVE'])
 

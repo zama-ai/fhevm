@@ -1,10 +1,10 @@
-import { DappType } from '@/dapps/infra/types/dapp.type'
+import { DappType } from '#dapps/infra/types/dapp.type.js'
 import { Field, ID, ObjectType } from '@nestjs/graphql'
 
 @ObjectType('Team')
 export class TeamType {
   @Field(() => ID, { nullable: false })
-  id: `t_${string}`
+  id: `team_${string}`
 
   @Field({ nullable: false })
   name: string

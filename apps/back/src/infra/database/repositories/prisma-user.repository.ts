@@ -1,10 +1,10 @@
-import { User } from '@/users/domain/entities/user'
-import { UserRepository } from '@/users/domain/repositories/user.repository'
-import { PrismaService } from '../prisma.service'
+import { User } from '#users/domain/entities/user.js'
+import { UserRepository } from '#users/domain/repositories/user.repository.js'
+import { PrismaService } from '../prisma.service.js'
 import { Injectable } from '@nestjs/common'
 import type { AppError } from 'utils'
 import { notFoundError, Task, unknownError } from 'utils'
-import { UserId } from '@/users/domain/entities/value-objects'
+import { UserId } from '#users/domain/entities/value-objects.js'
 
 @Injectable()
 export class PrismaUserRepository extends UserRepository {
@@ -17,7 +17,7 @@ export class PrismaUserRepository extends UserRepository {
       this.db.user
         .create({ data: data.toJSON() })
         .then(resolve)
-        .catch(err => reject(unknownError(String(err))))
+        .catch((err: unknown) => reject(unknownError(String(err))))
     }).chain(props => User.parse(props).async())
   }
 
@@ -31,7 +31,7 @@ export class PrismaUserRepository extends UserRepository {
         .then(data =>
           data ? resolve(data) : reject(notFoundError('User not found')),
         )
-        .catch(err => reject(unknownError(String(err))))
+        .catch((err: unknown) => reject(unknownError(String(err))))
     }).chain(props => User.parse(props).async())
   }
 
@@ -45,7 +45,7 @@ export class PrismaUserRepository extends UserRepository {
         .then(data =>
           data ? resolve(data) : reject(notFoundError('User not found')),
         )
-        .catch(err => reject(unknownError(String(err))))
+        .catch((err: unknown) => reject(unknownError(String(err))))
     }).chain(props => User.parse(props).async())
   }
 }

@@ -1,11 +1,11 @@
 import {
   isAppDeploymentCommand,
   type AppDeploymentCommand,
-} from './app-deployment.commands'
+} from './app-deployment.commands.js'
 import {
   isAppDeploymentEvent,
   type AppDeploymentEvent,
-} from './app-deployment.events'
+} from './app-deployment.events.js'
 
 export type AppDeploymentMessage = AppDeploymentEvent | AppDeploymentCommand
 

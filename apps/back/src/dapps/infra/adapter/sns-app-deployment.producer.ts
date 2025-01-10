@@ -1,4 +1,4 @@
-import { AppDeploymentProducer } from '@/dapps/domain/services/app-deployment.producer'
+import { AppDeploymentProducer } from '#dapps/domain/services/app-deployment.producer.js'
 import { PublishCommand, SNSClient } from '@aws-sdk/client-sns'
 import { Injectable } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'

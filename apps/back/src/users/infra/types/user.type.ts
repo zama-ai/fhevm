@@ -1,10 +1,10 @@
 import { Field, ID, ObjectType } from '@nestjs/graphql'
-import { TeamType } from './team.type'
+import { TeamType } from './team.type.js'
 
 @ObjectType('User')
 export class UserType {
   @Field(() => ID, { nullable: false })
-  id: string
+  id: `user_${string}`
 
   @Field({ nullable: false })
   email: string

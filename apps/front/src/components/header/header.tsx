@@ -10,11 +10,11 @@ import {
   useDisclosure,
 } from '@chakra-ui/react'
 
-import { useColorModeValue } from '@/hooks/use-color-mode'
-import { CloseIcon, HamburgerIcon } from '@/components/icons/icons'
-import { Logo } from '@/components/logo/logo'
-import { MeMenu } from '@/components/me-menu/me-menu'
-import { Link } from '@/components/ui/link'
+import { useColorModeValue } from '@/hooks/use-color-mode.js'
+import { CloseIcon, HamburgerIcon } from '@/components/icons/icons.js'
+import { Logo } from '@/components/logo/logo.js'
+import { MeMenu } from '@/components/me-menu/me-menu.js'
+import { Link } from '@/components/ui/link.js'
 
 type OwnProps = {
   name: string

@@ -1,6 +1,6 @@
 import { useRouteError } from 'react-router'
 import { Code, Heading, List, Stack, Text } from '@chakra-ui/react'
-import { Link } from '@/components/ui/link'
+import { Link } from '@/components/ui/link.js'
 
 export function UnauthorizedErrorPage() {
   const error = useRouteError() as { message: string; statusText: string }

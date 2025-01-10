@@ -1,3 +1,3 @@
-export * from './app-deployment.commands'
-export * from './app-deployment.events'
-export * from './app-deployment.messages'
+export * from './app-deployment.commands.js'
+export * from './app-deployment.events.js'
+export * from './app-deployment.messages.js'

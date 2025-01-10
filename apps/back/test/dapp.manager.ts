@@ -1,9 +1,9 @@
-import { DAppStatus } from '@/dapps/domain/entities/dapp'
+import { DAppStatus } from '#dapps/domain/entities/dapp.js'
 import { faker } from '@faker-js/faker'
 import gql from 'graphql-tag'
 import request from 'supertest-graphql'
-import { GraphQlResponse, SetupManager } from './setup.manager'
-import { AuthManager } from './auth.manager'
+import { GraphQlResponse, SetupManager } from './setup.manager.js'
+import { AuthManager } from './auth.manager.js'
 
 export interface DApp {
   id: string

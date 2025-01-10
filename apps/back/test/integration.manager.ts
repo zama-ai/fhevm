@@ -1,15 +1,15 @@
-import { AuthManager } from './auth.manager'
-import { SetupManager } from './setup.manager'
-import { DappManager } from './dapp.manager'
+import { AuthManager } from './auth.manager.js'
+import { SetupManager } from './setup.manager.js'
+import { DappManager } from './dapp.manager.js'
 import {
   GetQueueAttributesCommand,
   SendMessageCommand,
   SQSClient,
 } from '@aws-sdk/client-sqs'
 
-export type { GraphQlResponse } from './setup.manager'
-export type { User } from './auth.manager'
-export type { DApp, DeployDappResult } from './dapp.manager'
+export type { GraphQlResponse } from './setup.manager.js'
+export type { User } from './auth.manager.js'
+export type { DApp, DeployDappResult } from './dapp.manager.js'
 
 export class IntegrationManager {
   readonly setup = new SetupManager()

@@ -1,4 +1,4 @@
-import { TeamType } from '@/users/infra/types/team.type'
+import { TeamType } from '#users/infra/types/team.type.js'
 import { Field, ID, ObjectType, registerEnumType } from '@nestjs/graphql'
 
 export enum DappStatus {
@@ -50,7 +50,7 @@ export class DappType {
     deprecationReason:
       'Do not use this, it shall go away when I find a way to make it disappear',
   })
-  teamId: `t_${string}`
+  teamId: `team_${string}`
 
   @Field(() => TeamType, { nullable: false })
   team: TeamType
