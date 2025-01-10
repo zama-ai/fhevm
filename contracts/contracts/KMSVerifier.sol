@@ -252,7 +252,14 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
      */
     function _applyThreshold() internal virtual {
         KMSVerifierStorage storage $ = _getKMSVerifierStorage();
-        $.threshold = ($.signers.length - 1) / 3 + 1;
+        uint256 signerLength = $.signers.length;
+
+        if (signerLength != 0) {
+            $.threshold = (signerLength - 1) / 3 + 1;
+        } else {
+            /// @dev It is impossible to remove the last signer otherwise since it would underflow.
+            $.threshold = 0;
+        }
     }
 
     /**
