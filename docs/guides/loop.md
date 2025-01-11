@@ -43,7 +43,7 @@ However, this is sometimes not enough. Enhancing the privacy of smart contracts 
 
 For example, if implementing a simple AMM for two encrypted ERC20 tokens based on a linear constant function, it is recommended to not only hide the amounts being swapped, but also the token which is swapped in a pair.
 
-✅ Here is a very simplified example implementations, we suppose here that the the rate between tokenA and tokenB is constant and equals to 1:
+✅ Here is a very simplified example implementations, we suppose here that the rate between tokenA and tokenB is constant and equals to 1:
 
 ```solidity
 // typically either encryptedAmountAIn or encryptedAmountBIn is an encrypted null value

@@ -158,7 +158,7 @@ Master `fhEVM` and build smart contracts using these resources:
 - 📘 [**Comprehensive fhEVM Documentation**](https://docs.zama.ai/fhevm)  
   Dive deep into Zama's detailed guide for utilizing the full potential of fhEVM.
 
-- 🤖 [**ZAMA Solidity Developer (Modified ChatGPT Model)**](https://chatgpt.com/g/g-67518aee3c708191b9f08d077a7d6fa1-zama-solidity-developer)  
+- 🤖 [**Zama Solidity Developer (Modified ChatGPT Model)**](https://chatgpt.com/g/g-67518aee3c708191b9f08d077a7d6fa1-zama-solidity-developer)
   Accelerate your smart contract development with AI-powered assistance.
 
 ### **Development templates**
@@ -264,7 +264,7 @@ There are two ways to contribute to the Zama fhEVM:
 - [Open issues](https://github.com/zama-ai/fhevm/issues/new/choose) to report bugs and typos, or to suggest new ideas
 - Request to become an official contributor by emailing hello@zama.ai.
 
-Becoming an approved contributor involves signing our Contributor License Agreement (CLA)). Only approved contributors can send pull requests, so please make sure to get in touch before you do!
+Becoming an approved contributor involves signing our Contributor License Agreement (CLA). Only approved contributors can send pull requests, so please make sure to get in touch before you do!
 <br></br>
 
 ### License

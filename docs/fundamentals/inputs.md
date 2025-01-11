@@ -113,7 +113,7 @@ This example demonstrates a function that performs multiple encrypted operations
 }
 ```
 
-### Example validation in the `encyrptedERC20.sol` smart contract
+### Example validation in the `encryptedERC20.sol` smart contract
 
 Here’s an example of a smart contract function that verifies an encrypted input before proceeding:
 
@@ -179,7 +179,7 @@ contract EncryptedCounter2 is SepoliaZamaFHEVMConfig {
 }
 ```
 
-### Tests of for the Counter contract
+### Tests of the Counter contract
 
 ```ts
 import { createInstance } from "../instance";

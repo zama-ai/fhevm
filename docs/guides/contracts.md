@@ -4,7 +4,7 @@ This guide explains how to use the [fhEVM Contracts standard library](https://gi
 
 ## Overview
 
-The **fhEVM Contracts standard library** streamlines the development of confidential smart contracts by providing templates and utilities for tokens, governance, and error management. These contracts have been rigorously tested by ZAMA's engineers and are designed to accelerate development while enhancing security.
+The **fhEVM Contracts standard library** streamlines the development of confidential smart contracts by providing templates and utilities for tokens, governance, and error management. These contracts have been rigorously tested by Zama's engineers and are designed to accelerate development while enhancing security.
 
 ## Installation
 
