@@ -79,6 +79,7 @@ export class PrismaDAppRepository extends DAppRepository {
       this.db.dapp
         .findMany({
           where: { teamId },
+          orderBy: { createdAt: 'desc' },
         })
         .then(resolve)
         .catch((err: unknown) => reject(unknownError(String(err))))
