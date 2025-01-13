@@ -16,13 +16,7 @@ export function DappsList({ createDapp, dapps }: OwnProps) {
       </Heading>
       <Stack gap="5">
         {dapps.map(dapp => (
-          <DappsListItem
-            key={dapp.id}
-            id={dapp.id}
-            name={dapp.name}
-            status={dapp.status}
-            createdAt={dapp.createdAt}
-          />
+          <DappsListItem key={dapp.id} {...dapp} />
         ))}
       </Stack>
       <Box my="5">
