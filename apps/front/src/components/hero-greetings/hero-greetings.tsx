@@ -15,10 +15,8 @@ function randomGreeting() {
   return greetings[Math.floor(Math.random() * greetings.length)]
 }
 
-type OwnProps = {
-  name?: string
-  loading: boolean
-}
+type OwnProps = { loading: boolean; name?: string }
+
 export function HeroGreetings({ name, loading }: OwnProps) {
   return (
     <Skeleton asChild loading={loading} maxW="300px">
@@ -26,7 +24,7 @@ export function HeroGreetings({ name, loading }: OwnProps) {
         {randomGreeting()}
         <Text color="orange.400" as="span">
           {' '}
-          {name}!
+          {name ?? ''}!
         </Text>
       </Heading>
     </Skeleton>
