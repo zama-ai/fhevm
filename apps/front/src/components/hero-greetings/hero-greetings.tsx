@@ -1,4 +1,5 @@
 import { Heading, Text } from '@chakra-ui/react'
+import { Skeleton } from '@/components/ui/skeleton'
 
 function randomGreeting() {
   const greetings = [
@@ -14,17 +15,18 @@ function randomGreeting() {
   return greetings[Math.floor(Math.random() * greetings.length)]
 }
 
-type OwnProps = {
-  name: string
-}
-export function HeroGreetings({ name }: OwnProps) {
+type OwnProps = { loading: boolean; name?: string }
+
+export function HeroGreetings({ name, loading }: OwnProps) {
   return (
-    <Heading>
-      {randomGreeting()}
-      <Text color="orange.400" as="span">
-        {' '}
-        {name}!
-      </Text>
-    </Heading>
+    <Skeleton asChild loading={loading} maxW="300px">
+      <Heading mb="5">
+        {randomGreeting()}
+        <Text color="orange.400" as="span">
+          {' '}
+          {name ?? ''}!
+        </Text>
+      </Heading>
+    </Skeleton>
   )
 }

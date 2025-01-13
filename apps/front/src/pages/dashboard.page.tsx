@@ -1,25 +1,25 @@
-import { useLoaderData, useNavigate } from 'react-router'
-import { Text } from '@chakra-ui/react'
-import { Dapp, MeTeamDappsQuery } from '@/__generated__/graphql.js'
+import { useNavigate } from 'react-router'
+import { useQuery } from '@apollo/client'
+
 import { HeroGreetings } from '@/components/hero-greetings/hero-greetings.js'
 import { DappsList } from '@/components/dapps-list/dapps-list.js'
 import { getPersonalTeam } from '@/lib/personal-team.js'
+import { Dapp, MeQuery } from '@/__generated__/graphql.js'
+import { GET_ME } from '@/queries.js'
 
 export function DashboardPage() {
-  const { me } = useLoaderData<MeTeamDappsQuery>()
   const navigate = useNavigate()
-  const team = me ? getPersonalTeam(me.teams) : null
-  if (!me) throw new Error('No user data found')
+  const { loading, error, data } = useQuery<MeQuery>(GET_ME)
+  if (error) throw new Error(error.message)
+  const team = data?.me ? getPersonalTeam(data.me.teams) : null
+
   return (
     <>
-      <HeroGreetings name={me.name} />
-      <Text my="5">
-        We do not support FHE yet, but you can create a new Dapp and start using
-        it.
-      </Text>
+      <HeroGreetings name={data?.me.name} loading={loading} />
+
       {team && (
         <DappsList
-          createDapp={() => navigate('/create')}
+          createDapp={() => navigate(`/create/${team.id}`)}
           dapps={team.dapps as Dapp[]}
         />
       )}
