@@ -15,6 +15,7 @@ export const GET_ME = graphql(`
           id
           name
           status
+          createdAt
         }
       }
     }
