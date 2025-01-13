@@ -41,7 +41,7 @@ export function CreatorName({
                 disabled={loading}
                 name="name"
                 type="text"
-                placeholder="My first dApp"
+                placeholder="New dApp"
                 onChange={ev => {
                   formik.handleChange(ev)
                   onUpdateTitle(ev.target.value)
