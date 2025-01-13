@@ -15,19 +15,27 @@ import {
   SettingsIcon,
 } from '@/components/icons/icons.js'
 
-type MeMenuProps = {
+type OwnProps = {
   name: string
-  email: string
   image: string
   condensed?: boolean
 }
 
-export function MeMenu({ name, image, condensed }: MeMenuProps) {
+export function MeMenu({ name, image, condensed }: OwnProps) {
   const navigate = useNavigate()
   const onLogout = useCallback(() => {
     localStorage.removeItem('token')
     navigate('/signin')
   }, [navigate])
+  return <PureMeMenu {...{ name, image, condensed, onLogout }} />
+}
+
+export function PureMeMenu({
+  name,
+  image,
+  condensed,
+  onLogout,
+}: OwnProps & { onLogout: () => void }) {
   return (
     <MenuRoot positioning={{ placement: 'bottom-end' }}>
       <MenuTrigger asChild>

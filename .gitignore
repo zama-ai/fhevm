@@ -77,3 +77,4 @@ volume/
 # prisma generated folders
 apps/back/generated/
 apps/orchestrator/generated/
+*storybook.log
