@@ -57,7 +57,4 @@ export class DappType {
 
   @Field({ nullable: false })
   createdAt: number
-
-  @Field({ nullable: true })
-  updatedAt: number
 }

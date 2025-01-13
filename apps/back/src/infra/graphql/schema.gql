@@ -16,7 +16,6 @@ type Dapp {
   teamId: String! @deprecated(reason: "Do not use this, it shall go away when I find a way to make it disappear")
   team: Team!
   createdAt: Float!
-  updatedAt: Float
 }
 
 enum DappStatus {
