@@ -57,7 +57,6 @@ export function Header({ name }: OwnProps) {
           <MeMenu
             condensed={useBreakpointValue({ base: true, md: false })}
             name={name}
-            email="janesilas@web3.dev"
             image="https://cdn.prod.website-files.com/6471ebc32c5012b32f0e45ba/66bc763b1cd88de111ad0182_zygLzKmbHcXkBxyHrt47tBrwTi3ZBBwp86Qe8gI11bs.png"
           />
         </HStack>
