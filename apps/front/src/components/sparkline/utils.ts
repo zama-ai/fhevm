@@ -8,10 +8,10 @@ export const createCategoryColors = (
   categories: string[],
   colors: string[],
 ) => {
-  return Object.fromEntries(
-    categories.map((category, index) => {
-      const color = colors[index] ?? 'gray.500'
-      return [category, color]
-    }),
-  )
+  const categoryColors: { [key: string]: string } = {}
+  categories.forEach((category, index) => {
+    const color = colors[index] ?? 'gray.500'
+    categoryColors[category] = color
+  })
+  return categoryColors
 }

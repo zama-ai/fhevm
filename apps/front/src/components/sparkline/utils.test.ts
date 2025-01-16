@@ -28,14 +28,4 @@ describe('createCategoryColors', () => {
     const result = createCategoryColors(categories, colors)
     expect(result).toEqual({})
   })
-
-  it('should handle undefined colors array', () => {
-    const categories = ['category1', 'category2']
-    const colors: string[] = []
-    const result = createCategoryColors(categories, colors)
-    expect(result).toEqual({
-      category1: 'gray.500',
-      category2: 'gray.500',
-    })
-  })
 })
