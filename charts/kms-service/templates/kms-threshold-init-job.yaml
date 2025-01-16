@@ -65,9 +65,7 @@ spec:
               # TODO uncomment this when health check will properly report initialization status
               #if [ "${kmsInitCount}" -lt "${kmsPeersCount}" ]; then
                 echo "there are kms-cores to initialize, launching threshold-init"
-                {{- range $i := $peersIDList }}
-                timeout 10 bin/kms-init --addresses {{ printf "http://%s-%d:%d" $kmsCoreName $i (int $.Values.kmsCore.ports.client) | quote }}
-                {{- end }}
+                timeout 10 bin/kms-init --addresses {{ range $i := $peersIDList }}{{ printf "http://%s-%d:%d" $kmsCoreName $i (int $.Values.kmsCore.ports.client) | quote }} {{ end }}
                 #exit 1
               #fi
               exit 0
