@@ -40,6 +40,12 @@ func FheLibMethods() []*FheLibMethod {
 			ScalarSupport: true,
 		},
 		{
+			Name:          "fheDiv",
+			ArgTypes:      "(uint256,uint256,bytes1)",
+			runFunction:   fheDivRun,
+			ScalarSupport: true,
+		},
+		{
 			Name:              "fheRem",
 			ArgTypes:          "(uint256,uint256,bytes1)",
 			runFunction:       fheRemRun,
@@ -187,6 +193,11 @@ func FheLibMethods() []*FheLibMethod {
 			Name:        "trivialEncrypt",
 			ArgTypes:    "(bytes,bytes1)",
 			runFunction: trivialEncryptBytesRun,
+		},
+		{
+			Name:        "verifyCiphertext",
+			ArgTypes:    "(bytes32,address,bytes,bytes1)",
+			runFunction: fheVerifyCiphertext,
 		},
 	}
 }

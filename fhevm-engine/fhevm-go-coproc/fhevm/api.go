@@ -543,6 +543,8 @@ func flushWorkItemsToCoprocessor(store *SqliteComputationStore) (int, error) {
 		}
 		defer conn.Close()
 
+		fmt.Printf("Sending %d computations to coproc\n", len(asyncCompReq.Computations))
+
 		client := NewFhevmCoprocessorClient(conn)
 		md := metadata.Pairs("Authorization", fmt.Sprintf("Bearer %s", store.coprocessorApiKey))
 		grpcContext := metadata.NewOutgoingContext(context.Background(), md)

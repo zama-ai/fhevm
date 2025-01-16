@@ -150,6 +150,47 @@ func fheSubRun(sess CoprocessorSession, unslicedInput []byte, _ ExtraData, outpu
 	}
 }
 
+func fheDivRun(sess CoprocessorSession, unslicedInput []byte, _ ExtraData, outputHandle []byte) error {
+	if len(unslicedInput) < 65 {
+		return fmt.Errorf("expected at least 65 bytes as input, got %d", len(unslicedInput))
+	}
+	input := unslicedInput[:65]
+
+	isScalar, err := isScalarOp(input)
+	if err != nil {
+		return err
+	}
+
+	var lhs, rhs []byte
+	if isScalar {
+		lhs, rhs, err = getScalarOperands(sess, input)
+	} else {
+		lhs, rhs, err = get2FheOperands(sess, input)
+	}
+	if err != nil {
+		return err
+	}
+
+	computation := ComputationToInsert{
+		Operation:    FheDiv,
+		OutputHandle: outputHandle,
+		Operands: []ComputationOperand{
+			{
+				Handle:      lhs,
+				FheUintType: handleType(lhs),
+				IsScalar:    false,
+			},
+			{
+				Handle:      rhs,
+				FheUintType: handleType(rhs),
+				IsScalar:    isScalar,
+			},
+		},
+	}
+
+	return sess.GetStore().InsertComputation(computation)
+}
+
 func fheMulRun(sess CoprocessorSession, unslicedInput []byte, _ ExtraData, outputHandle []byte) error {
 	if len(unslicedInput) < 65 {
 		return fmt.Errorf("expected at least 65 bytes as input, got %d", len(unslicedInput))
@@ -1649,6 +1690,11 @@ func trivialEncryptBytesRun(sess CoprocessorSession, unslicedInput []byte, ed Ex
 		return err
 	}
 
+	return nil
+}
+
+func fheVerifyCiphertext(_ CoprocessorSession, _ []byte, _ ExtraData, _ []byte) error {
+	// Added to suppress an unregistered operation error
 	return nil
 }
 
