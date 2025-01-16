@@ -54,16 +54,12 @@ spec:
                   name: {{ .Values.kmsSimulator.contractAddress.configmap.name }}
                   key: {{ .Values.kmsSimulator.contractAddress.configmap.cscAddressKey }}
           volumeMounts:
-            - mountPath: /app/simulator
-              name: workdir
             - mountPath: /app/load-simulator-config.sh
               subPath: load-simulator-config.sh
               name: config
       imagePullSecrets:
         - name: registry-credentials
       volumes:
-        - name: workdir
-          emptyDir: {}
         - name: config
           configMap:
             name: {{ include "kmsSimulatorName" . }}-config
