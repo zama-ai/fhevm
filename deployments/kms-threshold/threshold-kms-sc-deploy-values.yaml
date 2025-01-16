@@ -1,0 +1,73 @@
+kmsWallets:
+  enabled: true
+
+kmsSCAdmin:
+  enabled: true
+  image:
+    name: ghcr.io/zama-ai/kms-blockchain-asc
+    tag: nightly-dec472c
+
+kmsSCDeploy:
+  enabled: true
+  image:
+    name: ghcr.io/zama-ai/kms-blockchain-asc
+    tag: nightly-dec472c
+  chainID: "testing"
+  env:
+    - name: CONNECTOR_1
+      valueFrom:
+        secretKeyRef:
+          name: kms-connector-keys
+          key: connector-1.address
+    - name: CONNECTOR_2
+      valueFrom:
+        secretKeyRef:
+          name: kms-connector-keys
+          key: connector-2.address
+    - name: CONNECTOR_3
+      valueFrom:
+        secretKeyRef:
+          name: kms-connector-keys
+          key: connector-3.address
+    - name: CONNECTOR_4
+      valueFrom:
+        secretKeyRef:
+          name: kms-connector-keys
+          key: connector-4.address
+    - name: CONNECTOR_ADDRESSES
+      value: '{"address":"http://kms-service-core-1:50001","party_id": "01"},{"address":"http://kms-service-core-2:50001","party_id": "02"},{"address":"http://kms-service-core-3:50001","party_id": "03"},{"address":"http://kms-service-core-4:50001","party_id": "04"}'
+    - name: CONNECTOR_KEYS
+      value: '["$(CONNECTOR_1)", "$(CONNECTOR_2)", "$(CONNECTOR_3)", "$(CONNECTOR_4)"]'
+    - name: STORAGE_BASE_URL
+      value: 's3://kms-public'
+    - name: GATEWAY_ADDRESS
+      valueFrom:
+        secretKeyRef:
+          name: kms-gateway-keys
+          key: gateway-sc-owner.address
+  contracts:
+    - sourcePath: "/app/ethereum_ipsc.wasm"
+      instantiation:
+        json: "{}"
+      output:
+        envName: "IPSC_ETHEREUM_ADDRESS"
+    - sourcePath: "/app/csc.wasm"
+      instantiation:
+        json: '{"parties": {"01": {"public_storage_label": "PUB-p1"}, "02": {"public_storage_label": "PUB-p2"}, "03": {"public_storage_label": "PUB-p3"}, "04": {"public_storage_label": "PUB-p4"}}, "response_count_for_majority_vote": 3, "response_count_for_reconstruction": 3, "degree_for_reconstruction": 1, "fhe_parameter": "default", "storage_base_url": "${STORAGE_BASE_URL}", "allowlists":{"admin": ["${CONNECTOR_1}"], "configure": ["${CONNECTOR_1}"]}}'
+      output:
+        envName: "CSC_ADDRESS"
+    - sourcePath: "/app/bsc.wasm"
+      output:
+        envName: "BSC_ADDRESS"
+      instantiation:
+        json: '{"csc_address": "${CSC_ADDRESS}", "allowlists":{"generate": ["${CONNECTOR_1}"], "response": ["${CONNECTOR_1}","${CONNECTOR_2}","${CONNECTOR_3}","${CONNECTOR_4}"], "admin": ["${CONNECTOR_1}"]} }'
+    - sourcePath: "/app/asc.wasm"
+      output:
+        envName: "ASC_ETHEREUM_ADDRESS"
+      instantiation:
+        json: '{"debug_proof": false, "verify_proof_contract_addr": "${IPSC_ETHEREUM_ADDRESS}", "csc_address": "${CSC_ADDRESS}", "allowlists":{"generate": ["${CONNECTOR_1}"], "response": ["${CONNECTOR_1}","${CONNECTOR_2}","${CONNECTOR_3}","${CONNECTOR_4}"], "admin": ["${CONNECTOR_1}"]} }'
+    - sourcePath: "/app/asc.wasm"
+      output:
+        envName: "DEBUG_ASC_ETHEREUM_ADDRESS"
+      instantiation:
+        json: '{"debug_proof": true, "verify_proof_contract_addr": "dummy", "csc_address": "${CSC_ADDRESS}", "allowlists":{"generate": ["${CONNECTOR_1}"], "response": ["${CONNECTOR_1}","${CONNECTOR_2}","${CONNECTOR_3}","${CONNECTOR_4}"], "admin": ["${CONNECTOR_1}"]} }'

@@ -1,0 +1,164 @@
+kmsPeers:
+  # Defines either the peer ID when count=1 or the start ID of a set of peers when count>1
+  id: 1
+  # The number of peers managed by the StatefulSets
+  count: 1
+
+kmsConnector:
+  nameOverride:
+  image:
+    name: ghcr.io/zama-ai/kms-blockchain-connector
+    tag: v0.8.1
+  storage:
+    # storageClassName: gp3
+    capacity: 5Gi
+  catchUpNumBlocks: 100000
+  contractAddress:
+    configmap:
+      name: kms-sc-deploy-kms-sc-addresses
+      ascAddressKey: DEBUG_ASC_ETHEREUM_ADDRESS
+      cscAddressKey: CSC_ADDRESS
+  blockchainGrpcUrl: "http://kms-blockchain-rpc:9090"
+  blockchainRpcUrl: "http://kms-blockchain-rpc:26657"
+  kvStoreUrl: "http://kms-blockchain-kv-store:8088"
+  wallet:
+    secret:
+      name: kms-connector-keys
+  nodeSelector:
+  affinity:
+  tolerations:
+
+kmsCore:
+  nameOverride:
+  addressOverride:
+  image:
+    name: ghcr.io/zama-ai/kms-service
+    tag: latest
+  serviceAccountName:
+  thresholdMode:
+    enabled: false
+    initializationScript:
+      enabled: true
+    dec_capacity: 10000
+    min_dec_cache: 6000
+    num_sessions_preproc: 2
+  nitroEnclave:
+    enabled: false
+    cpu: 6
+    memory: 20480
+    cid: 20
+    ports:
+      logger: 3000
+      config: 4000
+      tracing: 4317
+      imds: 5000
+      s3: 6000
+      awskms: 7000
+      peer: 50000
+  publicVault:
+    s3:
+      enabled: true
+      bucket: kms-public
+      path: kms
+  privateVault:
+    s3:
+      enabled: false
+      bucket: kms-private
+      path: kms
+  aws:
+    region: eu-west-1
+  storage:
+    # storageClassName: gp3
+    capacity: 5Gi
+  ports:
+    client: 50100
+    peer: 50001
+    metrics: 9464
+  serviceMonitor:
+    enabled: false
+  resources:
+    requests: {}
+      # memory: 28Gi
+      # cpu: 6
+    limits:
+      # memory: 30Gi
+      ephemeralStorage: 1Gi
+      grpcTimeout: 360
+      grpcMaxMessageSize: 2097520
+  nodeSelector:
+  affinity:
+  tolerations:
+mtls:
+  enabled: false
+
+kmsSimulator:
+  enabled: true
+  image:
+    name: ghcr.io/zama-ai/kms-blockchain-simulator
+    tag: latest
+  contractAddress:
+    configmap:
+      name: kms-sc-deploy-kms-sc-addresses
+      ascAddressKey: DEBUG_ASC_ETHEREUM_ADDRESS
+      cscAddressKey: CSC_ADDRESS
+  wallet:
+    secret:
+      name: kms-connector-keys
+      key: connector-1.mnemonic
+
+grpcHealthProbe:
+  image:
+    name: ghcr.io/zama-ai/kube-utils
+    tag: 0.2.0
+
+runMode: dev
+
+redis:
+  enabled: false
+  host: "redis://redis-master.common.svc.cluster.local"
+
+tracing:
+  enabled: false
+  endpoint: "http://otel-deployment-opentelemetry-collector.observability.svc.cluster.local:4317"
+  metrics:
+    enabled: false
+    interval_sec: 20
+
+socat:
+  image:
+    name: alpine/socat
+    tag: latest
+
+minio:
+  enabled: false
+  fullnameOverride: minio
+  auth:
+    rootUser: minio-admin
+    rootPassword: minio-admin
+  provisioning:
+    enabled: true
+    buckets:
+      - name: kms-public
+        region: eu-west-1
+    users:
+      - username: kms-access-key-id
+        password: kms-secret-access-key
+        policies:
+          - readwrite
+    extraCommands:
+      - "mc anonymous set public provisioning/kms-public"
+
+rustLog: info
+
+podSecurityContext:
+  # To set when the image will support non root user
+  #  runAsUser: 1000
+  #  runAsGroup: 1000
+  #  fsGroup: 1000
+  #  runAsNonRoot: true
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+  privileged: false

@@ -1,0 +1,18 @@
+{{- if .Values.kmsBlockchainRpc.enabled -}}
+{{- if .Values.kmsBlockchainRpc.serviceMonitor.enabled -}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app: kms-blockchain-rpc
+    app.kubernetes.io/name: {{ include "kmsBlockchainRpcName" . }}
+  name: {{ include "kmsBlockchainRpcName" . }}
+spec:
+  selector:
+    matchLabels:
+      app: kms-blockchain-rpc
+      app.kubernetes.io/name: {{ include "kmsBlockchainRpcName" . }}
+  endpoints:
+  - port: prometheus
+{{- end -}}
+{{- end -}}

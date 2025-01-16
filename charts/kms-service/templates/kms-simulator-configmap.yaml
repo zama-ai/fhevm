@@ -1,0 +1,25 @@
+{{- if .Values.kmsSimulator.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    app: kms-simulator
+  name: {{ include "kmsSimulatorName" . }}-config
+data:
+  load-simulator-config.sh: |
+    #!/bin/sh
+    set -e
+    echo "loading configuration from env vars into the config.toml file"
+    cat <<EOF >>config.toml
+    s3_endpoint = "${S3_ENDPOINT}"
+    object_folder = [${OBJECT_FOLDER_LIST}]
+    validator_addresses = ["${BLOCKCHAIN_GRPC_URL}"]
+    http_validator_endpoints = ["${BLOCKCHAIN_RPC_URL}"]
+    kv_store_address = "${KV_STORE_URL}"
+    mnemonic = "${MNEMONIC}"
+    asc_address = "${ASC_ETHEREUM_ADDRESS}"
+    csc_address = "${CSC_ADDRESS}"
+    EOF
+    # Keep the pod running
+    tail -f /dev/null
+{{- end -}}

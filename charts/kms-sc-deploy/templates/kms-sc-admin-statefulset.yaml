@@ -1,0 +1,98 @@
+{{- if .Values.kmsSCAdmin.enabled -}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    app: kms-sc-admin
+    app.kubernetes.io/name: {{ include "kmsSCAdminName" . }}
+  name: {{ include "kmsSCAdminName" . }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "kmsSCAdminName" . }}
+  template:
+    metadata:
+      labels:
+        app: kms-sc-admin
+        app.kubernetes.io/name: {{ include "kmsSCAdminName" . }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/kms-sc-admin-configmap.yaml") . | sha256sum }}
+    spec:
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - command:
+            - /app/import-wallets.sh
+          env:
+            - name: WASMD_NODE
+              value: {{ .Values.kmsSCDeploy.nodeRPCAddress | quote }}
+            {{- if .Values.kmsWallets.keyring.create }}
+            - name: KEYRING_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.kmsWallets.keyring.password.secret.name | quote }}
+                  key: password
+            {{- else }}
+            - name: WASMD_KEYRING_BACKEND
+              value: "test"
+            - name:  WASMD_KEYRING_DIR
+              value: "/tmp/.wasm-keys"
+            {{- end }}
+            - name:  WASMD_CHAIN_ID
+              value: {{ .Values.kmsSCDeploy.chainID | quote }}
+            - name:  WASMD_GAS
+              value: "auto"
+            - name:  WASMD_GAS_PRICES
+              value: "0.5ucosm"
+            - name:  WASMD_GAS_ADJUSTMENT
+              value: "1.5"
+          image: {{ .Values.kmsSCAdmin.image.name }}:{{ .Values.kmsSCAdmin.image.tag }}
+          name: kms-sc-admin
+          workingDir: /root/
+          volumeMounts:
+            - mountPath: /root/
+              name: workdir
+            - mountPath: "/keystore"
+              name: keystore
+            - mountPath: /addon-keystore/
+              name: addon-keystore
+            - mountPath: /app/import-wallets.sh
+              subPath: import-wallets.sh
+              name: config
+      imagePullSecrets:
+        - name: registry-credentials
+      volumes:
+        - name: workdir
+          emptyDir: {}
+        - name: config
+          configMap:
+            name: {{ include "kmsSCAdminName" . }}-config
+            defaultMode: 0777
+            items:
+              - key: "import-wallets.sh"
+                path: "import-wallets.sh"
+        - name: keystore
+          secret:
+            secretName: {{ .Values.kmsWallets.deployer.secret.name }}
+            defaultMode: 0600
+            items:
+              - key: "{{ .Values.kmsWallets.deployer.name }}.mnemonic"
+                path: "{{ .Values.kmsWallets.deployer.name }}.mnemonic"
+        - name: addon-keystore
+          secret:
+            secretName: {{ .Values.kmsWallets.connectors.secret.name }}
+            defaultMode: 0600
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end -}}

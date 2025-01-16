@@ -1,0 +1,81 @@
+{{- if .Values.kvStore.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    app: kv-store
+    app.kubernetes.io/name: {{ include "kvStoreName" . }}
+  annotations:
+    checksum/config: {{ include (print $.Template.BasePath "/gateway-configmap.yaml") . | sha256sum }}
+  name: {{ include "kvStoreName" . }}
+spec:
+  replicas: {{ .Values.kvStore.replicas }}
+  selector:
+    matchLabels:
+      app: kv-store
+  serviceName: {{ include "kvStoreName" . }}
+  template:
+    metadata:
+      labels:
+        app: kv-store
+        app.kubernetes.io/name: {{ include "kvStoreName" . }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/gateway-configmap.yaml") . | sha256sum }}
+    spec:
+      containers:
+        - name: kv-store
+          ports:
+            - containerPort: {{ .Values.kvStore.ports.rpc }}
+              protocol: TCP
+          command:
+            - kv_store
+          image: {{ .Values.kvStore.image.name }}:{{ .Values.kvStore.image.tag }}
+          volumeMounts:
+            - mountPath: /app/gateway/kv-store
+              name: {{ include "kvStoreName" . }}-data
+            - mountPath: /app/gateway/config/gateway.toml
+              subPath: gateway.toml
+              name: config-files
+            - mountPath: /app/gateway/config/connector.toml
+              subPath: connector.toml
+              name: config-files
+      restartPolicy: Always
+      imagePullSecrets:
+        - name: registry-credentials
+      volumes:
+        - name: config-files
+          configMap:
+            # Provide the name of the ConfigMap you want to mount.
+            name: {{ include "gatewayName" . }}-config
+            defaultMode: 0777
+            # An array of keys from the ConfigMap to create as files
+            items:
+            - key: "gateway.toml"
+              path: "gateway.toml"
+            - key: "connector.toml"
+              path: "connector.toml"
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  volumeClaimTemplates:
+    - metadata:
+        labels:
+          app: kv-store-data
+        name: {{ include "kvStoreName" . }}-data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: {{ .Values.kvStore.storage.storageClassName }}
+        resources:
+          requests:
+            storage: {{ .Values.kvStore.storage.capacity }}
+{{- end }}

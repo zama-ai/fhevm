@@ -1,0 +1,19 @@
+kmsPeers:
+  count: 1
+
+kmsCore:
+  image:
+    name: ghcr.io/zama-ai/kms-service
+    tag: nightly-dec472c
+  thresholdMode:
+    enabled: false
+
+kmsConnector:
+  image:
+    name: ghcr.io/zama-ai/kms-blockchain-connector
+    tag: nightly-dec472c
+
+kmsSimulator:
+  image:
+    name: ghcr.io/zama-ai/kms-blockchain-simulator
+    tag: nightly-dec472c

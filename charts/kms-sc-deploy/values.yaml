@@ -1,0 +1,100 @@
+nodeSelector: []
+affinity: []
+tolerations: []
+
+kmsWallets:
+  enabled: true
+  image:
+    name: ghcr.io/zama-ai/wasmd-utils
+    tag: 0.1.1
+  funds:
+    # Use a faucet to fund accounts
+    useFaucet: true
+    faucetUrl: kms-blockchain-faucet:8000
+    faucetDenom: ucosm
+  # Create the deployer wallet secret
+  deployer:
+    create: true
+    name: gateway-sc-owner
+    secret:
+      name: kms-gateway-keys
+  # Create the connectors wallet secret
+  connectors:
+    create: true
+    names:
+      - connector-1
+      - connector-2
+      - connector-3
+      - connector-4
+    secret:
+      name: kms-connector-keys
+  # Create the keyring secret
+  keyring:
+    create: true
+    password:
+      length: 10
+      secret:
+        name: kms-keyring
+
+kmsSCAdmin:
+  # To disable in production
+  enabled: true
+  nameOverride:
+  image:
+    name: ghcr.io/zama-ai/kms-blockchain-asc
+    tag: 93f4394
+
+kmsSCDeploy:
+  enabled: true
+  nameOverride:
+  image:
+    name: ghcr.io/zama-ai/kms-blockchain-asc
+    tag: 93f4394
+  nodeRPCAddress: "tcp://kms-blockchain-rpc:26657"
+  chainID: "testing"
+  migrate: false
+  env:
+    - name: CONNECTOR_1
+      valueFrom:
+        secretKeyRef:
+          name: kms-connector-keys
+          key: connector-1.address
+    - name: CONNECTOR_2
+      valueFrom:
+        secretKeyRef:
+          name: kms-connector-keys
+          key: connector-2.address
+    - name: CONNECTOR_3
+      valueFrom:
+        secretKeyRef:
+          name: kms-connector-keys
+          key: connector-3.address
+    - name: CONNECTOR_4
+      valueFrom:
+        secretKeyRef:
+          name: kms-connector-keys
+          key: connector-4.address
+    - name: CONNECTOR_ADDRESSES
+      value: '{"address":"http://kms-service-core-1:50001","party_id": "01"},{"address":"http://kms-service-core-2:50001","party_id": "02"},{"address":"http://kms-service-core-3:50001","party_id": "03"},{"address":"http://kms-service-core-4:50001","party_id": "04"}'
+    - name: CONNECTOR_KEYS
+      value: '["$(CONNECTOR_1)", "$(CONNECTOR_2)", "$(CONNECTOR_3)", "$(CONNECTOR_4)"]'
+    - name: STORAGE_BASE_URL
+      value: 's3://kms-public'
+    - name: GATEWAY_ADDRESS
+      valueFrom:
+        secretKeyRef:
+          name: kms-gateway-keys
+          key: gateway-sc-owner.address
+  contracts: []
+
+podSecurityContext:
+  #  runAsUser: 1000
+  #  runAsGroup: 1000
+  #  fsGroup: 1000
+  #  runAsNonRoot: true
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+  privileged: false

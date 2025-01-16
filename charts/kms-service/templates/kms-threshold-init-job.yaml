@@ -1,0 +1,97 @@
+{{- if and .Values.kmsCore.thresholdMode.enabled .Values.kmsCore.thresholdMode.initializationScript.enabled -}}
+{{- $kmsCoreName := include "kmsCoreName" . }}
+{{- $peersIDList := untilStep (include "kmsPeersStartID" . | int) (.Values.kmsPeers.count | add1 | int) 1  }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  labels:
+    app: kms-threshold-init-job
+    app.kubernetes.io/name: {{ include "kmsThresholdInitJobName" . }}
+  name: {{ include "kmsThresholdInitJobName" . }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: kms-sc-deploy
+        app.kubernetes.io/name: {{ include "kmsThresholdInitJobName" . }}
+    spec:
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      initContainers:
+        - name: check-kms-cores
+          image: {{ .Values.grpcHealthProbe.image.name }}:{{ .Values.grpcHealthProbe.image.tag }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              echo "starting init process for kms-cores to be ready to be initialized"
+              kmsInitCount=0
+              {{- range $i := $peersIDList }}
+              while true
+                do
+                /bin/grpc_health_probe -addr={{ printf "%s-%d:%d" $kmsCoreName $i (int $.Values.kmsCore.ports.client) | quote }}
+                healthStatus=$?
+                {{- /* Checking grpc-health-probe response codes, see https://github.com/grpc-ecosystem/grpc-health-probe?tab=readme-ov-file#exit-codes*/}}
+                if [ ${healthStatus} -eq 0 ]; then
+                  echo "kms-core #{{ $i }} is already initialized"
+                  kmsInitCount=$((kmsInitCount + 1))
+                  break
+                fi
+                if [ ${healthStatus} -eq 4 ]; then
+                  echo "kms-core #{{ $i }} is reachable but not yet initialized"
+                  break
+                fi;
+                echo "failed to connect to kms-core #{{ $i }}, retrying"
+                sleep 1
+              done
+              {{- end }}
+              echo "all kms-core peers have been reached"
+              echo "${kmsInitCount}" > /mnt/kms-init-count
+          volumeMounts:
+            - name: kms-core-health
+              mountPath: /mnt
+      containers:
+        - name: threshold-init
+          image: {{ .Values.kmsCore.image.name }}:{{ .Values.kmsCore.image.tag }}
+          command: [ "/bin/sh", "-c" ]
+          args:
+            - |
+              kmsPeersCount={{ .Values.kmsPeers.count }}
+              kmsInitCount="$(cat /mnt/kms-init-count)"
+              echo "${kmsInitCount}/${kmsPeersCount} peers have been initialized"
+              if [ "${kmsInitCount}" -eq "${kmsPeersCount}" ]; then
+                echo "all kms-cores have been initialized, aborting threshold-init"
+                #exit 0
+              fi
+              # TODO uncomment this when health check will properly report initialization status
+              #if [ "${kmsInitCount}" -lt "${kmsPeersCount}" ]; then
+                echo "there are kms-cores to initialize, launching threshold-init"
+                {{- range $i := $peersIDList }}
+                timeout 10 bin/kms-init --addresses {{ printf "http://%s-%d:%d" $kmsCoreName $i (int $.Values.kmsCore.ports.client) | quote }}
+                {{- end }}
+                #exit 1
+              #fi
+              exit 0
+          volumeMounts:
+            - name: kms-core-health
+              mountPath: /mnt
+              readOnly: true
+      volumes:
+        - name: kms-core-health
+          emptyDir:
+            medium: Memory
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: registry-credentials
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end -}}

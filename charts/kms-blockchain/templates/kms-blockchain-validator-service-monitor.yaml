@@ -1,0 +1,21 @@
+{{- if .Values.kmsBlockchainValidator.enabled -}}
+{{- if .Values.kmsBlockchainValidator.serviceMonitor.enabled -}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app: kms-blockchain-validator
+    app.kubernetes.io/name: {{ include "kmsBlockchainValidatorName" . }}
+  name: {{ include "kmsBlockchainValidatorName" . }}
+  annotations:
+    "helm.sh/hook": "pre-install"
+    "helm.sh/hook-weight": "2"  
+spec:
+  selector:
+    matchLabels:
+      app: kms-blockchain-validator
+      app.kubernetes.io/name: {{ include "kmsBlockchainValidatorName" . }}
+  endpoints:
+  - port: prometheus
+{{- end -}}
+{{- end -}}

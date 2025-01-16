@@ -1,0 +1,141 @@
+{{- if .Values.kmsSCDeploy.enabled -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  labels:
+    app: kms-sc-deploy
+    app.kubernetes.io/name: {{ include "kmsSCDeployJobName" . }}
+  name: {{ include "kmsSCDeployJobName" . }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: kms-sc-deploy
+        app.kubernetes.io/name: {{ include "kmsSCDeployJobName" . }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/kms-sc-deploy-config.yaml") . | sha256sum }}
+    spec:
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      serviceAccountName: {{ include "kmsSCDeployJobName" . }}-config-writer
+      initContainers:
+        - name: check-sc-addresses-configmap
+          image: {{ .Values.kmsWallets.image.name }}:{{ .Values.kmsWallets.image.tag }}
+          command:
+            - /app/check-configmap.sh
+          volumeMounts:
+            - mountPath: /app/check-configmap.sh
+              subPath: check-configmap.sh
+              name: config
+            - mountPath: "/job"
+              name: workdir
+        - name: kms-sc-deploy
+          image: {{ .Values.kmsSCDeploy.image.name }}:{{ .Values.kmsSCDeploy.image.tag }}
+          command:
+            - /app/sc-deploy.sh
+          env:
+            - name: WASMD_NODE
+              value: {{ .Values.kmsSCDeploy.nodeRPCAddress | quote }}
+            - name: WASMD_KEYRING_BACKEND
+              value: "test"
+            - name:  WASMD_KEYRING_DIR
+              value: "/tmp/.wasm-keys"
+            - name:  WASMD_CHAIN_ID
+              value: {{ .Values.kmsSCDeploy.chainID | quote }}
+            - name:  WASMD_GAS
+              value: "auto"
+            - name:  WASMD_GAS_PRICES
+              value: "0.5ucosm"
+            - name:  WASMD_GAS_ADJUSTMENT
+              value: "1.5"
+            - name:  WASMD_OUTPUT
+              value: "json"
+            {{- if .Values.kmsSCDeploy.env }}
+{{ toYaml .Values.kmsSCDeploy.env | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            - mountPath: /app/sc-deploy.sh
+              subPath: sc-deploy.sh
+              name: config
+            - mountPath: "/job"
+              name: workdir
+            - mountPath: "/keys"
+              name: attached-keystore
+      containers:
+        - name: create-sc-addresses-configmap
+          image: {{ .Values.kmsWallets.image.name }}:{{ .Values.kmsWallets.image.tag }}
+          command:
+            - /app/create-configmap.sh
+          volumeMounts:
+            - mountPath: /app/create-configmap.sh
+              subPath: create-configmap.sh
+              name: config
+            - mountPath: "/job"
+              name: workdir
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: registry-credentials
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "kmsSCDeployJobName" . }}-config
+            defaultMode: 0777
+            items:
+            - key: "check-configmap.sh"
+              path: "check-configmap.sh"
+            - key: "sc-deploy.sh"
+              path: "sc-deploy.sh"
+            - key: "create-configmap.sh"
+              path: "create-configmap.sh"
+        - name: workdir
+          emptyDir: {}
+        - name: attached-keystore
+          secret:
+            secretName: {{ .Values.kmsWallets.deployer.secret.name }}
+            defaultMode: 0600
+            items:
+              - key: "{{ .Values.kmsWallets.deployer.name }}.mnemonic"
+                path: "{{ .Values.kmsWallets.deployer.name }}.mnemonic"
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ include "kmsSCDeployJobName" . }}-config-writer
+  namespace: {{ .Release.Namespace }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "watch", "list", "create", "patch"]
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ include "kmsSCDeployJobName" . }}-config-writer
+  namespace: {{ .Release.Namespace }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "kmsSCDeployJobName" . }}-config-writer
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: {{ include "kmsSCDeployJobName" . }}-config-writer
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "kmsSCDeployJobName" . }}-config-writer
+  namespace: {{ .Release.Namespace }}
+{{- end -}}

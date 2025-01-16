@@ -1,0 +1,281 @@
+{{- $kmsCoreName := include "kmsCoreName" . }}
+{{- $peersIDList := untilStep (default 1 .Values.kmsPeers.id | int) (.Values.kmsPeers.count | add1 | int) 1  }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    app: kms-core
+    app.kubernetes.io/name: {{ include "kmsCoreName" . }}
+  annotations:
+    checksum/config: {{ include (print $.Template.BasePath "/kms-core-configmap.yaml") . | sha256sum }}
+  name: {{ include "kmsCoreName" . }}
+spec:
+  replicas: {{ .Values.kmsPeers.count }}
+  ordinals:
+    start: {{include "kmsPeersStartID" . }}
+  podManagementPolicy: Parallel
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: kms-core
+  serviceName: {{ include "kmsCoreName" . }}
+  template:
+    metadata:
+      labels:
+        app: kms-core
+        app.kubernetes.io/name: {{ include "kmsCoreName" . }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/kms-core-configmap.yaml") . | sha256sum }}
+    spec:
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      serviceAccountName: {{ .Values.kmsCore.serviceAccountName }}
+      subdomain: {{ include "kmsCoreName" . }}
+      initContainers:
+        {{- if .Values.kmsCore.nitroEnclave.enabled }}
+        - {{ include "proxyFromEnclave"
+               (dict "name" "enclave-logger"
+                     "image" .Values.socat.image
+                     "vsockPort" .Values.kmsCore.nitroEnclave.ports.logger
+                     "to" "STDOUT"
+               ) | indent 10 | trim }}
+        - {{ include "proxyFromEnclave"
+               (dict "name" "enclave-config"
+                     "image" .Values.socat.image
+                     "vsockPort" .Values.kmsCore.nitroEnclave.ports.config
+                     "to" "OPEN:/var/lib/kms-core/config/kms-server.toml,rdonly"
+                ) | indent 10 | trim }}
+          volumeMounts:
+            - mountPath: /var/lib/kms-core/config
+              name: config-files
+        - {{ include "proxyFromEnclave"
+               (dict "name" "enclave-tracing"
+                     "image" .Values.socat.image
+                     "vsockPort" .Values.kmsCore.nitroEnclave.ports.tracing
+                     "to" (printf "TCP:%s" (urlParse .Values.tracing.endpoint).host)
+                ) | indent 10 | trim }}
+        - {{ include "proxyFromEnclaveTcp"
+               (dict "name" "aws-imds-proxy"
+                     "image" .Values.socat.image
+                     "vsockPort" .Values.kmsCore.nitroEnclave.ports.imds
+                     "ipAddr" "169.254.169.254"
+                     "ipPort" 80
+                ) | indent 10 | trim }}
+        - {{ include "proxyFromEnclaveTcp"
+               (dict "name" "aws-s3-proxy"
+                     "image" .Values.socat.image
+                     "vsockPort" .Values.kmsCore.nitroEnclave.ports.s3
+                     "ipAddr" (printf "s3.%s.amazonaws.com" .Values.kmsCore.aws.region)
+                     "ipPort" 443
+                ) | indent 10 | trim }}
+        - {{ include "proxyFromEnclaveTcp"
+               (dict "name" "aws-kms-proxy"
+                     "image" .Values.socat.image
+                     "vsockPort" .Values.kmsCore.nitroEnclave.ports.awskms
+                     "ipAddr" (printf "kms.%s.amazonaws.com" .Values.kmsCore.aws.region)
+                     "ipPort" 443
+                ) | indent 10 | trim }}
+        - {{ include "proxyToEnclaveTcp"
+               (dict "name" "grpc-client-proxy"
+                     "image" .Values.socat.image
+                     "cid" .Values.kmsCore.nitroEnclave.cid
+                     "port" .Values.kmsCore.ports.client
+                ) | indent 10 | trim }}
+        {{- if .Values.kmsCore.thresholdMode.enabled }}
+        - {{ include "proxyToEnclaveTcp"
+               (dict "name" "grpc-peer-proxy"
+                     "image" .Values.socat.image
+                     "cid" .Values.kmsCore.nitroEnclave.cid
+                     "port" .Values.kmsCore.ports.peer
+                ) | indent 10 | trim }}
+        {{- range $i := $peersIDList }}
+        - {{ include "proxyFromEnclaveTcp"
+               (dict "name" (printf "enclave-peer-proxy-%d" (int $i))
+                     "image" $.Values.socat.image
+                     "vsockPort" (add $.Values.kmsCore.nitroEnclave.ports.peer $i)
+                     "ipAddr" (printf "%s-%d" $kmsCoreName $i) | quote
+                     "ipPort" int $.Values.kmsCore.ports.peer
+                ) | indent 10 | trim }}
+        {{- end }}
+        {{- end }}
+        {{- end }}
+        - image: {{ .Values.kmsCore.image.name }}:{{ .Values.kmsCore.image.tag }}
+          name: {{ include "kmsCoreName" . }}-gen-keys
+          command:
+            - /bin/sh
+          args:
+            - -c
+            - |
+              kms-gen-keys --cmd signing-keys \
+              {{- if .Values.minio.enabled }}
+              --aws-s3-endpoint http://minio:9000 \
+              {{- end }}
+              --aws-region {{ .Values.kmsCore.aws.region }} \
+              --pub-url {{ include "kmsPublicVaultStorage" . | quote }} \
+              --priv-url {{ include "kmsPrivateVaultStorage" . | quote }} \
+              {{ include "kmsCoreMode" . }} \
+              {{- if .Values.kmsCore.thresholdMode.enabled }}
+              --signing-key-party-id ${KMS_CORE_ID}
+              {{- else }}
+              --write-privkey
+              {{- end }}
+          env:
+            - name: KMS_CORE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['apps.kubernetes.io/pod-index']
+            {{- if .Values.minio.enabled }}
+            - name: AWS_ACCESS_KEY_ID
+              value: {{ (index .Values.minio.provisioning.users 0).username}}
+            - name: AWS_SECRET_ACCESS_KEY
+              value: {{ (index .Values.minio.provisioning.users 0).password}}
+            {{- end }}
+            - name: "NO_COLOR"
+              value: "true"
+            - name: RUN_MODE
+              value: {{ .Values.runMode }}
+            - name: RUST_LOG
+              value: {{ .Values.rustLog }}
+          volumeMounts:
+            - mountPath: /keys
+              name: keys
+          resources:
+            requests:
+              memory: {{ .Values.kmsCore.resources.requests.memory }}
+              cpu: {{ .Values.kmsCore.resources.requests.cpu }}
+            limits:
+              memory: {{ .Values.kmsCore.resources.limits.memory }}
+              ephemeral-storage: {{ .Values.kmsCore.resources.limits.ephemeralStorage }}
+      containers:
+        - image: {{ .Values.kmsCore.image.name }}:{{ .Values.kmsCore.image.tag }}
+          name: {{ include "kmsCoreName" . }}
+          imagePullPolicy: Always
+          {{- if .Values.kmsCore.nitroEnclave.enabled }}
+          command:
+            - /bin/sh
+          args:
+            - -c
+            - |
+              nitro-cli run-enclave --config /var/lib/kms-core/config/enclave.json
+              while true; do
+                nitro-cli describe-enclaves > /var/log/nitro_enclaves/status
+                sleep 60
+              done
+          {{- else }}
+          command:
+            - /bin/sh
+          args:
+            - -c
+            - |
+              mkdir -p ~/.aws/
+              echo '[default]' > ~/.aws/credentials
+              echo 'aws_access_key_id = ${AWS_ACCESS_KEY_ID}' >> ~/.aws/credentials
+              echo 'aws_secret_access_key = ${AWS_SECRET_ACCESS_KEY}' >> ~/.aws/credentials
+              kms-server --config-file=/var/lib/kms-core/config/kms-server.toml
+          {{- end }}
+          env:
+            {{- if .Values.kmsCore.thresholdMode.enabled }}
+            - name: KMS_CORE__THRESHOLD__MY_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['apps.kubernetes.io/pod-index']
+            {{- end }}
+            - name: "NO_COLOR"
+              value: "true"
+            - name: RUN_MODE
+              value: {{ .Values.runMode }}
+            - name: RUST_LOG
+              value: {{ .Values.rustLog }}
+            {{- if .Values.minio.enabled }}
+            - name: AWS_ACCESS_KEY_ID
+              value: {{ (index .Values.minio.provisioning.users 0).username}}
+            - name: AWS_SECRET_ACCESS_KEY
+              value: {{ (index .Values.minio.provisioning.users 0).password}}
+            {{- end }}
+          volumeMounts:
+            - mountPath: /root
+              name: workdir
+            - mountPath: /var/lib/kms-core/config
+              name: config-files
+            - mountPath: /keys
+              name: keys
+            {{- if .Values.kmsCore.nitroEnclave.enabled }}
+            - mountPath: /hugepages
+              name: hugepage
+            {{- end }}
+          ports:
+            - containerPort: {{ .Values.kmsCore.ports.client }}
+              protocol: TCP
+            {{- if .Values.kmsCore.thresholdMode.enabled }}
+            - containerPort: {{ .Values.kmsCore.ports.peer }}
+              protocol: TCP
+            {{- end }}
+            - containerPort: {{ .Values.kmsCore.ports.metrics }}
+              protocol: TCP
+          resources:
+            requests:
+              {{- if .Values.kmsCore.nitroEnclave.enabled }}
+              memory: 2Gi
+              aws.ec2.nitro/nitro_enclaves: "1"
+              hugepages-1Gi: {{ .Values.kmsCore.nitroEnclave.memory }}Mi
+              {{- else }}
+              memory: {{ .Values.kmsCore.resources.requests.memory }}
+              cpu: {{ .Values.kmsCore.resources.requests.cpu }}
+              {{- end }}
+            limits:
+              ephemeral-storage: {{ .Values.kmsCore.resources.limits.ephemeralStorage }}
+              {{- if .Values.kmsCore.nitroEnclave.enabled }}
+              memory: 4Gi
+              aws.ec2.nitro/nitro_enclaves: "1"
+              hugepages-1Gi: {{ .Values.kmsCore.nitroEnclave.memory }}Mi
+              {{- else }}
+              memory: {{ .Values.kmsCore.resources.limits.memory }}
+              {{- end }}
+          {{- if .Values.kmsCore.nitroEnclave.enabled }}
+          lifecycle:
+            preStop:
+              exec:
+                command: [ "nitro-cli", "terminate-enclave", "--all" ]
+          {{- end }}
+      {{- with .Values.kmsCore.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.kmsCore.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.kmsCore.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      restartPolicy: Always
+      imagePullSecrets:
+        - name: registry-credentials
+      volumes:
+        - name: workdir
+          emptyDir: {}
+        - name: config-files
+          configMap:
+            name: {{ include "kmsCoreName" . }}-config
+            defaultMode: 0444
+        {{- if .Values.kmsCore.nitroEnclave.enabled }}
+        - name: hugepage
+          emptyDir:
+            medium: HugePages
+        {{- end }}
+  volumeClaimTemplates:
+    - metadata:
+        labels:
+          app: kms-core
+        name: keys
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: {{ .Values.kmsCore.storage.storageClassName }}
+        resources:
+          requests:
+            storage: {{ .Values.kmsCore.storage.capacity }}

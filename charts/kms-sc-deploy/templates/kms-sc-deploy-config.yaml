@@ -1,0 +1,86 @@
+{{- if .Values.kmsSCDeploy.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    app: kms-sc-deploy
+    app.kubernetes.io/name: {{ include "kmsSCDeployJobName" . }}-config
+  name: {{ include "kmsSCDeployJobName" . }}-config
+data:
+  sc-deploy.sh: |
+    #!/bin/sh
+    set -e
+    echo "loading deployer key from mnemonic"
+    cat /keys/{{ .Values.kmsWallets.deployer.name }}.mnemonic | wasmd keys add deployer --recover
+    {{- range .Values.kmsSCDeploy.contracts }}
+    echo "deploying contract {{ .sourcePath }}"
+    UPLOAD_RES="$(wasmd tx wasm upload {{ .sourcePath }} --from deployer -y)"
+    UPLOAD_TX="$(echo "$UPLOAD_RES" | jq -r '.txhash')"
+    echo "uploading TX: $UPLOAD_TX"
+    sleep 5
+    UPLOAD_TX_RES="$(wasmd query tx --type=hash "$UPLOAD_TX")"
+    UPLOAD_CONTRACT_CODE="$(echo "$UPLOAD_TX_RES" | jq -r '.events[] | select(.type == "store_code").attributes[] | select(.key == "code_id").value')"
+    touch /job/.env
+    source /job/.env
+    if [[ -z "${{ .output.envName }}" ]]; then
+      echo "instantiating new contract for {{ .output.envName }} with instantiation json:"
+      echo {{ .instantiation.json | quote }}
+      INSTANTIATE_RES="$(wasmd tx wasm instantiate $UPLOAD_CONTRACT_CODE {{ .instantiation.json | quote }} --label "configuration_0" --from deployer -y --no-admin)"
+      INSTANTIATE_TX_HASH="$(echo "$INSTANTIATE_RES" | jq -r '.txhash')"
+      echo "Instantiation TX: $INSTANTIATE_TX_HASH"
+      sleep 5
+      INSTANTIATE_TX_RES="$(wasmd query tx --type=hash "$INSTANTIATE_TX_HASH")"
+      INSTANTIATE_CODE="$(echo "$INSTANTIATE_TX_RES" | jq -r '.code')"
+      {{ .output.envName }}="$(echo "${INSTANTIATE_TX_RES}" | jq -r '.events[] | select(.type=="instantiate") | .attributes[] | select(.key=="_contract_address") | .value')"
+      if [ $INSTANTIATE_CODE -gt 0 ]; then
+        echo "Contract Instantiation Failed"
+        echo "Code: $INSTANTIATE_CODE"
+        echo "Raw Log: $(echo $INSTANTIATE_TX_RES | jq -r '.raw_log')"
+        exit 1
+      fi
+      echo "contract deployment succeeded"
+    else
+      echo "migrating existing contract {{ .output.envName }}"
+      MIGRATE_TX_RES="$(wasmd tx wasm migrate $CONTRACT_ADDRESS $UPLOAD_CONTRACT_CODE --from deployer -y)"
+      MIGRATE_CODE="$(echo "$MIGRATE_TX_RES" | jq -r '.code')"
+      {{ .output.envName }}="$(echo "${INSTANTIATE_TX_RES}" | jq -r '.events[] | select(.type=="instantiate") | .attributes[] | select(.key=="_contract_address") | .value')"
+      if [ $MIGRATE_CODE -gt 0 ]; then
+        echo "Contract Migration Failed"
+        echo "Code: $MIGRATE_CODE"
+        echo "Raw Log: $(echo $MIGRATE_TX_RES | jq -r '.raw_log')"
+        exit 1
+      fi
+      echo "contract deployment succeeded"
+    fi
+    echo "{{ .output.envName }}=${{ .output.envName }}"
+    echo "{{ .output.envName }}=${{ .output.envName }}" >> /job/.env
+    {{- end }}
+  check-configmap.sh: |
+    #!/bin/bash
+    CONFIGMAP_NAME="{{ include "kmsSCDeployConfigmapName" . }}"
+    if kubectl get configmap ${CONFIGMAP_NAME}; then
+      if [[ "{{ .Values.kmsSCDeploy.migrate }}" = "true" ]]; then
+        echo "${CONFIGMAP_NAME} already exist, this version of wasm smart contracts have already been deployed, setting kms-sc-deploy job as a migration"
+        {{- range .Values.kmsSCDeploy.contracts }}
+        CONTRACT_ADDRESS="$(kubectl get configmap ${CONFIGMAP_NAME} -o jsonpath="{.data.{{ .output.envName }}}")"
+        if [[ ! -z "$CONTRACT_ADDRESS" ]]; then
+          touch /job/.env
+          echo "${CONTRACT_ADDRESS}" >> /job/.env
+        fi
+        {{- end }}
+      else
+        echo "${CONFIGMAP_NAME} already exist, this version of wasm smart contracts have already been deployed, cancelling kms-sc-deploy job"
+        exit 1
+      fi
+    fi
+  create-configmap.sh: |
+    #!/bin/bash
+    source /job/.env
+    CONFIGMAP_NAME="{{ include "kmsSCDeployConfigmapName" . }}"
+    if ! kubectl get configmap ${CONFIGMAP_NAME}; then
+      kubectl create configmap ${CONFIGMAP_NAME}
+    fi
+    {{- range .Values.kmsSCDeploy.contracts }}
+    kubectl patch configmap "${CONFIGMAP_NAME}" -p="{\"data\": {\"{{ .output.envName }}\": \"${{ .output.envName }}\"}}"
+    {{- end }}
+{{- end -}}
