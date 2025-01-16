@@ -1,0 +1,83 @@
+{{- if .Values.kmsWallets.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    app: kms-blockchain-wallets-config
+    app.kubernetes.io/name: {{ include "kmsWalletsName" . }}-config
+  name: {{ include "kmsWalletsName" . }}-config
+  annotations:
+    "helm.sh/hook": "pre-install"
+    "helm.sh/hook-weight": "0"
+data:
+  {{- if .Values.kmsWallets.keyring.create }}
+  create-keyring.sh: |
+    #!/bin/bash
+    set -euo
+    CONNECTORS_SECRET_NAME="{{ .Values.kmsWallets.keyring.password.secret.name }}"
+    if [[ -z "$(kubectl get secret ${CONNECTORS_SECRET_NAME})" ]]; then
+      PASSWORD=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c {{ .Values.kmsWallets.keyring.password.length }})
+      kubectl create secret generic ${CONNECTORS_SECRET_NAME} --from-literal password=${PASSWORD}
+    else
+      echo "skipping: secret ${CONNECTORS_SECRET_NAME} already exists" 2>&1
+    fi
+  {{- end }}
+  create-wallets.sh: |
+    #!/bin/bash
+    set -eo pipefail
+    FAUCET_URL="{{ .Values.kmsWallets.funds.faucetUrl }}"
+    FAUCET_DENOM="{{ .Values.kmsWallets.funds.faucetDenom }}"
+    {{- if .Values.kmsWallets.deployer.create }}
+    DEPLOYER="{{ .Values.kmsWallets.deployer.name }}"
+    DEPLOYER_SECRET_NAME="{{ .Values.kmsWallets.deployer.secret.name }}"
+    if kubectl get secret ${DEPLOYER_SECRET_NAME}; then
+      echo "skipping deployer wallet creation: secret ${DEPLOYER} already exists"
+    else
+      echo "creating kubernetes secret for the KMS deployer wallet"
+      DEPLOYER_RES="$(wasmd keys --keyring-backend memory add ${DEPLOYER} --output json)"
+      ADDRESS="$(echo -n $DEPLOYER_RES | jq -r '.address')"
+      MNEMONIC="$(echo -n $DEPLOYER_RES | jq -r '.mnemonic')"
+      PUB_KEY="$(echo -n $DEPLOYER_RES | jq -r '.pubkey')"
+      HEX_CMD="$(wasmd debug addr ${ADDRESS} | sed '2q;d')"
+      kubectl create secret generic ${DEPLOYER_SECRET_NAME} \
+        --from-literal=${DEPLOYER}.address="$ADDRESS" \
+        --from-literal=${DEPLOYER}.mnemonic="$MNEMONIC" \
+        --from-literal=${DEPLOYER}.pubkey="$PUB_KEY" \
+        --from-literal=${DEPLOYER}.hex="${HEX_CMD:15}"
+      {{- if .Values.kmsWallets.funds.useFaucet }}
+      echo "requesting funds from faucet for ${DEPLOYER}: ${ADDRESS}"
+      curl -sS --header "Content-Type: application/json" --request POST --data "{\"denom\":\"${FAUCET_DENOM}\",\"address\":\"${ADDRESS}\"}" "http://${FAUCET_URL}/credit"
+      {{- end }}
+    fi
+    {{- end }}
+    {{- if .Values.kmsWallets.connectors.create }}
+    CONNECTORS_SECRET_NAME="{{ .Values.kmsWallets.connectors.secret.name }}"
+    if kubectl get secret ${CONNECTORS_SECRET_NAME}; then
+      echo "skipping: secret ${CONNECTORS_SECRET_NAME} already exists" 2>&1
+    else
+      echo "generating and funding kms connector wallets"
+      for connector in {{ join " " .Values.kmsWallets.connectors.names }}; do
+        ID=$(echo -n ${connector}  |tr a-z A-Z | tr "-" "_")
+        KEY="$(wasmd keys --keyring-backend memory add ${connector} --output json)"
+        ADDRESS="$(echo ${KEY} | jq -r '.address')"
+        HEX_CMD="$(wasmd debug addr ${ADDRESS} | sed '2q;d')"
+        declare "${ID}_HEX"="${HEX_CMD:15}"
+        declare "${ID}_ADDRESS"="${ADDRESS}"
+        declare "${ID}_MNEMONIC"="$(echo ${KEY} | jq -r '.mnemonic')"
+        declare "${ID}_PUBKEY"="$(echo ${KEY} | jq -r '.pubkey')"
+        {{- if .Values.kmsWallets.funds.useFaucet }}
+        echo "fund wallet ${connector} with faucet"
+        curl -sS --header "Content-Type: application/json" --request POST --data "{\"denom\":\"${FAUCET_DENOM}\",\"address\":\"${ADDRESS}\"}" "http://${FAUCET_URL}/credit"
+        {{- end }}
+      done
+      ls
+      echo "creating kubernetes secret: ${CONNECTORS_SECRET_NAME}"
+      kubectl create secret generic ${CONNECTORS_SECRET_NAME}{{ range $connector := .Values.kmsWallets.connectors.names }} \
+        --from-literal={{ $connector }}.address="{{ printf "${%s" $connector | upper | replace "-" "_" }}_ADDRESS}" \
+        --from-literal={{ $connector }}.mnemonic="{{ printf "${%s" $connector | upper | replace "-" "_" }}_MNEMONIC}" \
+        --from-literal={{ $connector }}.pubkey="{{ printf "${%s" $connector | upper | replace "-" "_" }}_PUBKEY}" \
+        --from-literal={{ $connector }}.hex="{{ printf "${%s" $connector | upper | replace "-" "_" }}_HEX}"
+        {{- end }}
+    fi
+    {{- end }}
+{{- end -}}

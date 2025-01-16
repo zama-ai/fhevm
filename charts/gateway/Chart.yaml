@@ -1,0 +1,8 @@
+name: gateway
+description: A helm chart to distribute and deploy Zama Blockchain Gateways
+version: 0.2.38
+apiVersion: v2
+keywords:
+  - blockchain
+sources:
+home:

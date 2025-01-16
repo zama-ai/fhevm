@@ -1,0 +1,145 @@
+{{- if .Values.kmsBlockchainValidator.enabled -}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    app: kms-blockchain-validator
+    app.kubernetes.io/name: {{ include "kmsBlockchainValidatorName" . }}
+  name: {{ include "kmsBlockchainValidatorName" . }}
+spec:
+  replicas: {{ .Values.kmsBlockchainValidator.replicas }}
+  podManagementPolicy: {{ .Values.kmsBlockchainValidator.podManagementPolicy }}
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+{{ toYaml .Values.kmsBlockchainValidator.rollingUpdate | nindent 6 }}
+  selector:
+    matchLabels:
+      app: kms-blockchain-validator
+  serviceName: {{ include "kmsBlockchainValidatorName" . }}
+  template:
+    metadata:
+      labels:
+        app: kms-blockchain-validator
+        app.kubernetes.io/name: {{ include "kmsBlockchainValidatorName" . }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/kms-blockchain-validator-config.yaml") . | sha256sum }}
+    spec:
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      subdomain: {{ include "kmsBlockchainValidatorName" . }}
+      containers:
+        - name: kms-blockchain-validator
+          command: [ "/bin/sh", "-c" ]
+          args:
+            - "/opt/start-validator.sh"
+          image: {{ .Values.kmsBlockchainValidator.image.name }}:{{ .Values.kmsBlockchainValidator.image.tag }}
+          env:
+            - name: POD_INDEX
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['apps.kubernetes.io/pod-index']
+            - name: BOOTNODE_SEEDS
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "genesisConfigmapName" . }}
+                  key: bootnode_seeds
+            - name: PERSISTENT_PEERS
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "genesisConfigmapName" . }}
+                  key: persistent_peers
+          resources:
+            {{- toYaml .Values.kmsBlockchainValidator.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.kmsBlockchainValidator.healthcheck.path }}
+              port: {{ .Values.kmsBlockchainValidator.healthcheck.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.kmsBlockchainValidator.healthcheck.path }}
+              port: {{ .Values.kmsBlockchainValidator.healthcheck.port }}
+            failureThreshold: 20
+            initialDelaySeconds: 20
+            periodSeconds: 5
+            timeoutSeconds: 5
+          ports:
+            {{- range $portName, $portNumber := .Values.kmsBlockchainValidator.exposedPorts }}
+            - name: {{ $portName }}
+              containerPort: {{ $portNumber }}
+            {{- end }}
+          workingDir: /root/
+          volumeMounts:
+            - mountPath: /root
+              name: workdir
+            - mountPath: /validator-keys
+              name: validator-keys
+              readOnly: true
+            - mountPath: /root/.wasmd/data
+              name: data
+            - mountPath: /root/.wasmd/config/genesis.json
+              subPath: genesis.json
+              name: genesis
+            - mountPath: /root/.wasmd/config/config.toml
+              subPath: config.toml
+              name: config-files
+            - mountPath: /root/.wasmd/config/app.toml
+              subPath: app.toml
+              name: config-files
+            - mountPath: /opt/start-validator.sh
+              subPath: start-validator.sh
+              name: config-files
+      restartPolicy: Always
+      imagePullSecrets:
+        - name: registry-credentials
+      volumes:
+        - name: workdir
+          emptyDir: {}
+        - name: validator-keys
+          secret:
+            secretName: {{ include "kmsBlockchainValidatorName" . }}
+        - name: genesis
+          configMap:
+            name: {{ include "genesisConfigmapName" . }}
+            items:
+              - key: "genesis.json"
+                path: "genesis.json"
+        - name: config-files
+          configMap:
+            name: {{ include "kmsBlockchainValidatorName" . }}-config
+            defaultMode: 0777
+            items:
+            - key: "config.toml"
+              path: "config.toml"
+            - key: "app.toml"
+              path: "app.toml"
+            - key: "start-validator.sh"
+              path: "start-validator.sh"
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  volumeClaimTemplates:
+    - metadata:
+        labels:
+          app: validator-data
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: {{ .Values.kmsBlockchainValidator.storage.storageClassName }}
+        resources:
+          requests:
+            storage: {{ .Values.kmsBlockchainValidator.storage.capacity }}
+{{- end -}}

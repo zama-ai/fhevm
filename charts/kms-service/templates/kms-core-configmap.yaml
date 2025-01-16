@@ -1,0 +1,86 @@
+{{- $kmsCoreName := include "kmsCoreName" . }}
+{{- $peersIDList := untilStep (include "kmsPeersStartID" . | int) (.Values.kmsPeers.count | add1 | int) 1  }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    app: kms-core
+    app.kubernetes.io/name: {{ include "kmsCoreName" . }}
+  name: {{ include "kmsCoreName" . }}-config
+data:
+  kms-server.toml: |
+    [service]
+    listen_address = "0.0.0.0"
+    listen_port = {{ int .Values.kmsCore.ports.client }}
+    timeout_secs = {{ int .Values.kmsCore.resources.limits.grpcTimeout }}
+    grpc_max_message_size = {{ int .Values.kmsCore.resources.limits.grpcMaxMessageSize }}
+
+    {{- if .Values.tracing.enabled -}}
+    [tracing]
+    service_name = {{ include "kmsCoreName" . | quote }}
+    {{- if .Values.kmsCore.nitroEnclave.enabled }}
+    endpoint = "http://localhost:{{ .Values.kmsCore.nitroEnclave.ports.tracing }}"
+    {{- else }}
+    endpoint = {{ .Values.tracing.endpoint | quote }}
+    {{- end }}
+    metrics = { enabled = {{ .Values.tracing.metrics.enabled | default false }}, interval_sec = {{ .Values.tracing.metrics.interval_sec | default 20 }} }
+    {{- end }}
+
+    [aws]
+    region = "{{ .Values.kmsCore.aws.region }}"
+    {{- if .Values.minio.enabled }}
+    s3_endpoint = "http://minio:9000"
+    {{- else }}
+    {{- if .Values.kmsCore.nitroEnclave.enabled }}
+    imds_endpoint = "http://localhost:{{ .Values.kmsCore.nitroEnclave.ports.imds }}"
+    s3_endpoint = "https://localhost:{{ .Values.kmsCore.nitroEnclave.ports.s3 }}"
+    awskms_endpoint = "https://localhost:{{ .Values.kmsCore.nitroEnclave.ports.awskms }}"
+    {{- end }}
+    {{- end }}
+
+    [public_vault]
+    storage = {{ include "kmsPublicVaultStorage" . | quote }}
+
+    [private_vault]
+    storage = {{ include "kmsPrivateVaultStorage" . | quote }}
+    {{- if .Values.kmsCore.nitroEnclave.enabled }}
+    keychain = "awskms://ce3e1bc3-a273-4418-bdaa-e1a9e6424596"
+    {{- end }}
+
+    {{ if .Values.kmsCore.thresholdMode.enabled -}}
+    [threshold]
+    listen_address = "0.0.0.0"
+    listen_port = {{ int .Values.kmsCore.ports.peer }}
+    my_id = 0
+    threshold = 1
+    dec_capacity = {{ int .Values.kmsCore.thresholdMode.dec_capacity }}
+    min_dec_cache = {{ int .Values.kmsCore.thresholdMode.min_dec_cache }}
+    num_sessions_preproc = {{ int .Values.kmsCore.thresholdMode.num_sessions_preproc }}
+
+    {{- range $i := $peersIDList }}
+    [[threshold.peers]]
+    party_id = {{ int $i }}
+    {{- if $.Values.kmsCore.nitroEnclave.enabled }}
+    address = "localhost"
+    port = {{ add $.Values.kmsCore.nitroEnclave.ports.peer .party_id }}
+    {{ else }}
+    address = {{ (printf "%s-%d" $kmsCoreName $i) | quote }}
+    port = {{ int $.Values.kmsCore.ports.peer }}
+    {{ end }}
+    {{- end }}
+
+    {{- if .Values.redis.enabled -}}
+    [threshold.preproc_redis]
+    host = {{ .Values.redis.host | quote }}
+    {{- end }}
+    {{- end }}
+    {{- if .Values.kmsCore.nitroEnclave.enabled }}
+  enclave.json: |
+    {
+      "cpu_count": {{ int .Values.kmsCore.nitroEnclave.cpu }},
+      "memory_mib": {{ int .Values.kmsCore.nitroEnclave.memory }},
+      "enclave_cid": {{ int .Values.kmsCore.nitroEnclave.cid }},
+      "eif_path": "/app/kms/core/service/enclave.eif"
+    }
+  {{- end }}
+

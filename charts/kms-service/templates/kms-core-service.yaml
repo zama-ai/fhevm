@@ -1,0 +1,51 @@
+{{- $kmsCoreName := include "kmsCoreName" . -}}
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: kms-core
+    app.kubernetes.io/name: {{ $kmsCoreName }}
+  name: {{ $kmsCoreName }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - name: client
+      port: {{ .Values.kmsCore.ports.client }}
+      targetPort: {{ .Values.kmsCore.ports.client }}
+    {{- if .Values.kmsCore.thresholdMode.enabled }}
+    - name: peer
+      port: {{ .Values.kmsCore.ports.peer }}
+      targetPort: {{ .Values.kmsCore.ports.peer }}
+    {{- end }}
+    - name: metrics
+      port: {{ .Values.kmsCore.ports.metrics }}
+      targetPort: {{ .Values.kmsCore.ports.metrics }}
+  selector:
+    app: kms-core
+    app.kubernetes.io/name: {{ $kmsCoreName }}
+{{- range $coreId := untilStep (.Values.kmsPeers.id | int) (.Values.kmsPeers.count | add1 | int) 1 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: kms-core
+    app.kubernetes.io/name: {{ $kmsCoreName }}
+  name: {{ $kmsCoreName }}-{{ $coreId }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: client
+      port: {{ $.Values.kmsCore.ports.client }}
+      targetPort: {{ $.Values.kmsCore.ports.client }}
+    {{- if $.Values.kmsCore.thresholdMode.enabled }}
+    - name: peer
+      port: {{ $.Values.kmsCore.ports.peer }}
+      targetPort: {{ $.Values.kmsCore.ports.peer }}
+    {{- end }}
+  selector:
+    app: kms-core
+    app.kubernetes.io/name: {{ $kmsCoreName }}
+    statefulset.kubernetes.io/pod-name: {{ $kmsCoreName }}-{{ $coreId }}
+{{- end }}

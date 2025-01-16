@@ -1,0 +1,23 @@
+{{- if .Values.kvStore.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: kv-store
+    app.kubernetes.io/name: {{ include "kvStoreName" . }}
+  name: {{ include "kvStoreName" . }}
+  {{- with .Values.kvStore.service.annotations }}
+  annotations:
+  {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  clusterIP: None
+  ports:
+    - name: rpc
+      port: {{ .Values.kvStore.ports.rpc }}
+      targetPort: {{ .Values.kvStore.ports.rpc}}
+  selector:
+    app: kv-store
+    app.kubernetes.io/name: {{ include "kvStoreName" . }}
+  type: ClusterIP
+{{- end }}

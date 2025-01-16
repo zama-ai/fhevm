@@ -1,0 +1,77 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    app: kms-connector
+    app.kubernetes.io/name: {{ include "kmsConnectorName" . }}
+  name: {{ include "kmsConnectorName" . }}-config
+data:
+  config.toml: |
+    tick_interval_secs = 3
+    storage_path = "/var/lib/kms-connector/events.toml"
+
+    [oracle]
+    addresses = [{{ .Values.kmsConnector.blockchainRpcUrl | quote }}]
+
+    [blockchain]
+    addresses = [{{ .Values.kmsConnector.blockchainGrpcUrl | quote }}]
+    asc_address = ""
+    csc_address = ""
+
+    [blockchain.signkey]
+    # It should be either mnemonic or bip32
+    mnemonic = ""
+    bip32 = ""
+
+    [blockchain.fee]
+    denom = "ucosm"
+    # amount = 3_100_000
+    # amount = 4_417_005
+    amount = 50_000_000
+
+    [sharding]
+    index = 0
+    total = 1
+
+    [core]
+    addresses = []
+
+    [core.timeout_config]
+    channel_timeout = 60
+
+    [core.timeout_config.crs]
+    initial_wait_time = 60
+    retry_interval = 60
+    max_poll_count = 120
+
+    [core.timeout_config.keygen]
+    initial_wait_time = 18000
+    retry_interval = 15000
+    max_poll_count = 1150
+
+    [core.timeout_config.preproc]
+    initial_wait_time = 18000
+    retry_interval = 15000
+    max_poll_count = 1150
+
+    [core.timeout_config.decryption]
+    initial_wait_time = 0
+    {{- if .Values.kmsCore.thresholdMode.enabled }}
+    # More wait time for the threshold version
+    retry_interval = 1
+    {{- else }}
+    retry_interval = 0
+    {{- end }}
+    max_poll_count = 240
+
+    [core.timeout_config.reencryption]
+    initial_wait_time = 0
+    retry_interval = 1
+    max_poll_count = 240
+
+    [tracing]
+    service_name = "{{ include "kmsConnectorName" . }}"
+    endpoint = {{ .Values.tracing.endpoint | quote }}
+
+    [store]
+    url = {{ .Values.kmsConnector.kvStoreUrl | quote }}

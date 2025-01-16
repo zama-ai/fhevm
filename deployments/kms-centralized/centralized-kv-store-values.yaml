@@ -1,0 +1,13 @@
+gateway:
+  enabled: false
+
+kvStore:
+  enabled: true
+  image:
+    name: ghcr.io/zama-ai/kms-blockchain-gateway
+    tag: nightly-dec472c
+  config:
+    coreAddresses: '["http://kms-service-core-1:50100"]'
+  storage:
+    storageClassName:
+    capacity: 5Gi

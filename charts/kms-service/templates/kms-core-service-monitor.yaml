@@ -1,0 +1,16 @@
+{{- if .Values.kmsCore.serviceMonitor.enabled -}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app: kms-core
+    app.kubernetes.io/name: {{ include "kmsCoreName" . }}
+  name: {{ include "kmsCoreName" . }}
+spec:
+  selector:
+    matchLabels:
+      app: kms-core
+      app.kubernetes.io/name: {{ include "kmsCoreName" . }}
+  endpoints:
+  - port: metrics
+{{- end -}}

@@ -1,0 +1,116 @@
+{{- if .Values.kmsBlockchainNetworkSetup.enabled }}
+{{ $kmsBlockchainValidatorName := include "kmsBlockchainValidatorName" . }}
+{{ $kmsBlockchainBootnodeName := include "kmsBlockchainBootnodeName" . }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    app: kms-blockchain-validator-network-setup
+    app.kubernetes.io/name: {{ $kmsBlockchainValidatorName }}-network-setup
+  name: {{ $kmsBlockchainValidatorName }}-network-setup
+  annotations:
+    "helm.sh/hook": "pre-install"
+    "helm.sh/hook-weight": "1"
+data:
+  setup_network.sh: |
+    #!/bin/sh
+    set -o errexit -o nounset -o pipefail
+
+    CONFIGMAP_NAME="{{ include "genesisConfigmapName" .}}"
+    if kubectl get configmap ${CONFIGMAP_NAME}; then
+      echo "${CONFIGMAP_NAME} already exist, this network genesis has already been created, aborting  this version of wasm smart contracts have already been deployed job"
+      exit 0
+    fi
+
+    STAKE=${STAKE_TOKEN:-ustake}
+    FEE=${FEE_TOKEN:-ucosm}
+    CHAIN_ID=${CHAIN_ID:-{{ .Values.kmsBlockchainNetworkSetup.chainId }}}
+    MONIKER=${MONIKER:-zama001}
+
+    # Initialize Genesis config
+    wasmd init --chain-id "$CHAIN_ID" "$MONIKER"
+    # staking/governance token is hardcoded in config, change this
+    sed -i "s/\"stake\"/\"$STAKE\"/" "${HOME}/.wasmd/config/genesis.json"
+    # this is essential for sub-1s block times (or header times go crazy)
+    sed -i 's/"time_iota_ms": "1000"/"time_iota_ms": "10"/' "${HOME}/.wasmd/config/genesis.json"
+
+    # Add genesis accounts
+    for addr in "$@"; do
+      echo "adding genesis account: ${addr}"
+      wasmd genesis add-genesis-account "${addr}" "1000000000$STAKE,1000000000$FEE"
+    done
+    {{- if .Values.kmsBlockchainNetworkSetup.genesisFaucetFunding.enabled }}
+
+    FAUCET_WALLET_SECRET="{{ .Values.kmsBlockchainNetworkSetup.genesisFaucetFunding.wallet.secretName }}"
+    if ! kubectl get secret ${FAUCET_WALLET_SECRET}; then
+      FAUCET_MNEMONIC=$(wasmd keys add faucet --keyring-backend=test --output json | jq -r ".mnemonic")
+      kubectl create secret generic ${FAUCET_WALLET_SECRET} --from-literal mnemonic="${FAUCET_MNEMONIC}"
+    else
+      echo "secret ${FAUCET_WALLET_SECRET} already exists, importing faucet mnemonic from secret" 2>&1
+      FAUCET_MNEMONIC=$(kubectl get secrets kms-blockchain-faucet --template="{{`{{.data.mnemonic | base64decode}}`}}")
+      echo "${FAUCET_MNEMONIC}" | wasmd keys add faucet --keyring-backend=test --recover
+    fi
+    wasmd keys show faucet --keyring-backend=test
+    wasmd genesis add-genesis-account faucet "0$STAKE,10000000000000$FEE" --keyring-backend=test
+    {{- end }}
+    # Generate bootnode keys
+    for i in $(seq 0 $(({{ .Values.kmsBlockchainBootnode.replicas }} - 1))); do
+      wasmd init --home="${HOME}/bootnode-${i}" bootnode-${i}
+    done
+
+    # Generate validator root mnemonic
+    wasmd keys mnemonic | tr -d "\n"  > validator.mnemonic
+    # Generate validator keys
+    # See https://tutorials.cosmos.network/tutorials/9-path-to-prod/3-keys.html#what-validator-keys
+    mkdir -p "${HOME}/.wasmd/config/gentx/"
+    for i in $(seq 0 $(({{ .Values.kmsBlockchainNetworkSetup.validatorCount }} - 1))); do
+      # Generate validator keys: consensus (priv_validator_key.json) and node p2p (node_key.json)
+      wasmd init --home="${HOME}/validator-${i}" validator-${i}
+      # Create validator "operator/delegator" accounts as derivation of the root mnemonic
+      # And link them to each validator consensus key
+      # https://docs.cosmos.network/main/user/run-node/run-node#adding-genesis-accounts
+      cat validator.mnemonic | wasmd keys add "validator-${i}" --account="${i}" --recover --keyring-backend=test
+      wasmd genesis add-genesis-account "validator-${i}" "1000000000$STAKE,10000000000000$FEE" --keyring-backend=test
+      wasmd genesis gentx "validator-${i}" \
+        "250000000$STAKE" \
+        --chain-id="$CHAIN_ID" \
+        --amount="250000000$STAKE" \
+        --keyring-backend=test \
+        --output-document="${HOME}/.wasmd/config/gentx/gentx-validator-${i}.json" \
+        --pubkey "{\"@type\":\"/cosmos.crypto.ed25519.PubKey\",\"key\":\"$(cat ${HOME}/validator-${i}/config/priv_validator_key.json |jq -r .pub_key.value)\"}"
+    done
+    wasmd genesis collect-gentxs
+
+    BOOTNODE_SEEDS="{{- range $i := until (int .Values.kmsBlockchainBootnode.replicas) -}}
+      $(wasmd comet show-node-id --home ${HOME}/bootnode-{{ $i }})@{{ $kmsBlockchainBootnodeName }}-{{ $i }}:{{ $.Values.kmsBlockchainBootnode.exposedPorts.p2p}},
+    {{- end -}}"
+    echo "bootnode_seeds: ${BOOTNODE_SEEDS}"
+
+    PERSISTENT_PEERS="{{- range $i := until (int .Values.kmsBlockchainNetworkSetup.validatorCount) -}}
+      $(wasmd comet show-node-id --home ${HOME}/validator-{{ $i }})@{{ $kmsBlockchainValidatorName }}-{{ $i }}.{{ $kmsBlockchainValidatorName }}.$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace).svc.cluster.local:{{ $.Values.kmsBlockchainValidator.exposedPorts.p2p}},
+    {{- end -}}"
+    echo "persistent_peers: ${PERSISTENT_PEERS}"
+
+    # Save network genesis and keys in the namespace
+    kubectl create configmap ${CONFIGMAP_NAME} \
+      --from-file=genesis.json="${HOME}/.wasmd/config/genesis.json" \
+      --from-literal=bootnode_seeds="${BOOTNODE_SEEDS%?}" \
+      --from-literal=persistent_peers="${PERSISTENT_PEERS%?}"
+
+    kubectl create secret generic {{ $kmsBlockchainValidatorName }}-seed \
+      --from-file=mnemonic=validator.mnemonic \
+      --from-literal=validatorCount={{ .Values.kmsBlockchainNetworkSetup.validatorCount }}
+
+    kubectl create secret generic {{ $kmsBlockchainBootnodeName }} \
+      {{- range $i := until (int .Values.kmsBlockchainBootnode.replicas) }}
+      --from-literal=bootnode-{{ $i }}-node_id="$(wasmd comet show-node-id --home ${HOME}/bootnode-{{ $i }})" \
+      --from-file=bootnode-{{ $i }}-node_key.json=${HOME}/bootnode-{{ $i }}/config/node_key.json
+      {{- end }}
+
+    kubectl create secret generic {{ $kmsBlockchainValidatorName }} \
+      {{- range $i := until (int .Values.kmsBlockchainNetworkSetup.validatorCount) }}
+      --from-literal=validator-{{ $i }}-node_id="$(wasmd comet show-node-id --home ${HOME}/validator-{{ $i }})" \
+      --from-file=validator-{{ $i }}-node_key.json=${HOME}/validator-{{ $i }}/config/node_key.json \
+      --from-file=validator-{{ $i }}-priv_validator_key.json=${HOME}/validator-{{ $i }}/config/priv_validator_key.json \
+      {{- end }}
+{{- end }}

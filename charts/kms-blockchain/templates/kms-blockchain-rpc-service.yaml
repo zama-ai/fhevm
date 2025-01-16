@@ -1,0 +1,24 @@
+{{- if .Values.kmsBlockchainRpc.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: kms-blockchain-rpc
+    app.kubernetes.io/name: {{ include "kmsBlockchainRpcName" . }}
+  name: {{ include "kmsBlockchainRpcName" . }}
+  {{- with .Values.kmsBlockchainRpc.service.annotations }}
+  annotations:
+  {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ports:
+    {{- range $portName, $portNumber := .Values.kmsBlockchainRpc.exposedPorts }}
+    - name: {{ $portName }}
+      port: {{ $portNumber }}
+      targetPort: {{ $portNumber }}
+    {{- end }}
+  selector:
+    app: kms-blockchain-rpc
+    app.kubernetes.io/name: {{ include "kmsBlockchainRpcName" . }}
+  type: ClusterIP
+{{- end -}}
