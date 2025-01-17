@@ -1,3 +1,4 @@
+import { lazy } from 'react'
 import { Box, Fieldset, Grid, Input, Stack, Text } from '@chakra-ui/react'
 import { useFormik } from 'formik'
 
@@ -7,8 +8,13 @@ import { ErrorMessage } from '@/components/error-message/error-message.js'
 import { toFormikValidate } from '@/lib/zod-schema-validator.js'
 
 import { TutorialName } from './tutorial-name.js'
-import { SolidityCodeTemplate } from './solidity-code-template.js'
 import { CreatorNameFormSchema } from './validations.js'
+
+const SolidityCodeTemplate = lazy(() =>
+  import('./solidity-code-template.js').then(module => ({
+    default: module.SolidityCodeTemplate,
+  })),
+)
 
 type OwnProps = {
   onSubmit: (values: { name: string }) => void
