@@ -1,11 +1,17 @@
+import { lazy } from 'react'
 import { Card, StatRoot, StatValueText } from '@chakra-ui/react'
-import { Sparkline } from '../sparkline/sparkline'
 import {
   StatLabel,
   StatHelpText,
   StatUpTrend,
   StatDownTrend,
 } from '@/components/ui/stat'
+
+const Sparkline = lazy(() =>
+  import('../sparkline/sparkline.js').then(module => ({
+    default: module.Sparkline,
+  })),
+)
 
 export function BlockSparkline() {
   const value = Number(data[data.length - 1].value ?? 0)
