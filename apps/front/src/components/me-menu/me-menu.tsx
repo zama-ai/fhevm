@@ -17,7 +17,7 @@ import {
 
 type OwnProps = {
   name: string
-  image: string
+  image?: string
   condensed?: boolean
 }
 
