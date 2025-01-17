@@ -1,14 +1,21 @@
+import { lazy, Suspense } from 'react'
 import { Box, Fieldset, Grid, Input, Stack, Text } from '@chakra-ui/react'
 import { useFormik } from 'formik'
 
 import { Field } from '@/components/ui/field.js'
 import { SpinnerButton } from '@/components/ui/spinner-button.js'
 import { ErrorMessage } from '@/components/error-message/error-message.js'
+import { Skeleton } from '@/components/ui/skeleton'
 import { toFormikValidate } from '@/lib/zod-schema-validator.js'
 
 import { TutorialName } from './tutorial-name.js'
-import { SolidityCodeTemplate } from './solidity-code-template.js'
 import { CreatorNameFormSchema } from './validations.js'
+
+const SolidityCodeTemplate = lazy(() =>
+  import('./solidity-code-template.js').then(module => ({
+    default: module.SolidityCodeTemplate,
+  })),
+)
 
 type OwnProps = {
   onSubmit: (values: { name: string }) => void
@@ -55,7 +62,9 @@ export function CreatorName({
             Solidity Code
           </Text>
           <Grid templateColumns="repeat(2, 1fr)" gap="6">
-            <SolidityCodeTemplate />
+            <Suspense fallback={<Skeleton />}>
+              <SolidityCodeTemplate />
+            </Suspense>
             <Box>
               <TutorialName />
             </Box>
