@@ -1,4 +1,4 @@
-import { lazy } from 'react'
+import { lazy, Suspense } from 'react'
 import { Card, StatRoot, StatValueText } from '@chakra-ui/react'
 import {
   StatLabel,
@@ -33,13 +33,15 @@ export function BlockSparkline() {
           <StatValueText>
             {Math.ceil(data[data.length - 1].value ?? 0)}
           </StatValueText>
-          <Sparkline
-            data={data}
-            categories={['value', 'compareValue']}
-            colors={['orange', 'gray']}
-            height="60px"
-            mx="-4"
-          />
+          <Suspense fallback={null}>
+            <Sparkline
+              data={data}
+              categories={['value', 'compareValue']}
+              colors={['orange', 'gray']}
+              height="60px"
+              mx="-4"
+            />
+          </Suspense>
         </StatRoot>
       </Card.Body>
     </Card.Root>
