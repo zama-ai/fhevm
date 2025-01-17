@@ -16,7 +16,6 @@ export function DashboardPage() {
   return (
     <>
       <HeroGreetings name={data?.me.name} loading={loading} />
-
       {team && (
         <DappsList
           createDapp={() => navigate(`/create/${team.id}`)}
