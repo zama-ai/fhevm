@@ -2,26 +2,28 @@ import { Card, Text, Flex, LinkBox } from '@chakra-ui/react'
 import { DappStatus } from '../dapp-status/dapp-status.js'
 import { Dapp } from '@/__generated__/graphql.js'
 import { LinkOverlay } from '../ui/link.js'
+import { formatDistanceToNow } from 'date-fns'
 
 type OwnProps = {
-  dapp: Dapp
+  id: string
+  name: string
+  status: Dapp['status']
+  createdAt: number
 }
-export function DappsListItem({ dapp }: OwnProps) {
-  const lastmodified = 'Created some time ago'
-  const link =
-    dapp.status === 'DRAFT' ? `/create/2/${dapp.id}` : `/dapp/${dapp.id}`
+export function DappsListItem({ id, name, status, createdAt }: OwnProps) {
+  const link = status === 'DRAFT' ? `/create/2/${id}` : `/dapp/${id}`
   return (
     <LinkBox as="article">
       <Card.Root variant="outline">
         <Card.Header>
           <Flex justify="space-between">
-            <LinkOverlay to={link}>{dapp.name}</LinkOverlay>
-            <DappStatus status={dapp.status} />
+            <LinkOverlay to={link}>{name}</LinkOverlay>
+            <DappStatus status={status} />
           </Flex>
         </Card.Header>
         <Card.Body>
           <Text textStyle="sm" color="fg.muted">
-            {lastmodified}
+            created {formatDistanceToNow(createdAt)} ago
           </Text>
         </Card.Body>
       </Card.Root>

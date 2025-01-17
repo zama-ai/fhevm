@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react'
 import { withRouter } from 'storybook-addon-remix-react-router'
 
 import { DappsListItem } from './dapps-list-item'
-import { Dapp, DappStatus } from '@/__generated__/graphql'
+import { DappStatus } from '@/__generated__/graphql'
 
 const meta = {
   title: 'Molecules/DappsListItem',
@@ -14,15 +14,21 @@ const meta = {
 
   tags: ['autodocs', 'router', 'graphql'],
   argTypes: {
-    dapp: {},
+    id: {
+      control: { type: 'text' },
+    },
+    name: {
+      control: { type: 'text' },
+    },
+    status: {
+      control: { type: 'select', options: DappStatus },
+    },
+    createdAt: {
+      control: { type: 'number' },
+    },
   },
 
-  args: {
-    dapp: Object.assign(
-      {},
-      { id: '1', name: 'Dapp name', status: DappStatus.Draft },
-    ) as Dapp,
-  },
+  args: { id: '1', name: 'Dapp name', status: DappStatus.Draft },
 } satisfies Meta<typeof DappsListItem>
 
 export default meta
@@ -30,10 +36,9 @@ type Story = StoryObj<typeof meta>
 
 export const Default: Story = {
   args: {
-    dapp: {
-      id: '1',
-      name: 'Dapp name',
-      status: DappStatus.Draft,
-    } as unknown as Dapp,
+    id: '1',
+    name: 'Dapp name',
+    status: DappStatus.Draft,
+    createdAt: 1630000000000,
   },
 }

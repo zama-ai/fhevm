@@ -54,4 +54,7 @@ export class DappType {
 
   @Field(() => TeamType, { nullable: false })
   team: TeamType
+
+  @Field({ nullable: false })
+  createdAt: number
 }

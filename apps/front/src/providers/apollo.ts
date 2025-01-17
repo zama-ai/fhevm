@@ -32,4 +32,5 @@ const authLink = setContext((_, { headers }) => {
 export const apolloClient = new ApolloClient({
   link: from([authLink, errorLink, httpLink]),
   cache: new InMemoryCache(),
+  name: 'ConsoleWebClient',
 })

@@ -11,7 +11,7 @@ import {
 
 import { TitleContext } from '@/components/title-context/title-context.js'
 import { NavBlock } from './nav-block.js'
-import { NavApp, NewNavApp } from './nav-app.js'
+import { NavApp, PureNavApp } from './nav-app.js'
 
 type OwnProps = {
   dapps: Array<{
@@ -39,7 +39,9 @@ export function Navigation({ dapps }: OwnProps) {
       <Stack>
         <NavBlock title="Dashboard" icon={DashboardIcon} to="/dashboard" />
         <List.Root gap="2" variant="plain" align="center">
-          {pathname === '/create' && <NewNavApp name={title} />}
+          {/^\/create\/team_/.test(pathname) && (
+            <PureNavApp name={title} color="gray.300" isActive />
+          )}
           {dapps.map(dapp => (
             <NavApp
               key={dapp.id}

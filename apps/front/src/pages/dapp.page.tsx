@@ -6,6 +6,7 @@ import { GetDappQuery } from '@/__generated__/graphql.js'
 import { BlockUsageChart } from '@/components/stats-blocks/block-usage-chart.js'
 import { DappStatus } from '@/components/dapp-status/dapp-status.js'
 import { BlockUaw } from '@/components/stats-blocks/block-uaw.js'
+import { BlockSparkline } from '@/components/stats-blocks/block-sparkline'
 
 const GET_DAPP = graphql(`
   query GetDapp($dappId: ID!) {
@@ -37,15 +38,17 @@ export function DappPage() {
       ) : (
         <Skeleton height="5" my="5" width="30rem" />
       )}
-
-      <Stack direction="row" gap="5">
-        <BlockUsageChart />
-        <BlockUaw
-          title="Unique Active Wallets"
-          amount={182}
-          percentage={12}
-          description="Since last month"
-        />
+      <Stack direction="column" gap="5">
+        <Stack direction="row" gap="5">
+          <BlockUsageChart />
+          <BlockUaw
+            title="Unique Active Wallets"
+            amount={182}
+            percentage={12}
+            description="Since last month"
+          />
+        </Stack>
+        <BlockSparkline />
       </Stack>
     </Box>
   )
