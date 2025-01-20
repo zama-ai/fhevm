@@ -1,3 +1,4 @@
+import { describe, expect, it } from 'vitest'
 import { createCategoryColors } from './utils'
 describe('createCategoryColors', () => {
   it('should map categories to corresponding colors', () => {
