@@ -27,7 +27,10 @@ export function MeMenu({ name, image, condensed }: OwnProps) {
     localStorage.removeItem('token')
     navigate('/signin')
   }, [navigate])
-  return <PureMeMenu {...{ name, image, condensed, onLogout }} />
+
+  const onPreferences = useCallback(() => navigate('/preferences'), [navigate])
+
+  return <PureMeMenu {...{ name, image, condensed, onLogout, onPreferences }} />
 }
 
 export function PureMeMenu({
@@ -35,7 +38,8 @@ export function PureMeMenu({
   image,
   condensed,
   onLogout,
-}: OwnProps & { onLogout: () => void }) {
+  onPreferences,
+}: OwnProps & { onLogout: () => void; onPreferences: () => void }) {
   return (
     <MenuRoot positioning={{ placement: 'bottom-end' }}>
       <MenuTrigger asChild>
@@ -61,7 +65,7 @@ export function PureMeMenu({
         </Group>
       </MenuTrigger>
       <MenuContent>
-        <MenuItem value="preferences">
+        <MenuItem value="preferences" onClick={onPreferences}>
           <SettingsIcon />
           <Box flex="1">Preferences</Box>
         </MenuItem>

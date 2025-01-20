@@ -48,4 +48,16 @@ export class PrismaUserRepository extends UserRepository {
         .catch((err: unknown) => reject(unknownError(String(err))))
     }).chain(props => User.parse(props).async())
   }
+
+  update(user: User): Task<User, AppError> {
+    return new Task<unknown, AppError>((resolve, reject) => {
+      this.db.user
+        .update({
+          where: { id: String(user.id) },
+          data: { ...user, id: undefined },
+        })
+        .then(resolve)
+        .catch((err: unknown) => reject(unknownError(String(err))))
+    }).chain(props => User.parse(props).async())
+  }
 }
