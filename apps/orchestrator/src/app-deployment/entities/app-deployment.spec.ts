@@ -4,12 +4,14 @@ import { randomUUID } from 'crypto'
 
 import {
   completed,
+  confirmSC,
+  discoverSC,
+  registerSC,
   requested,
   scConfirmed,
   scDiscovered,
   scRegistered,
-} from './app-deployment.events.js'
-import { confirmSC, discoverSC, registerSC } from './app-deployment.commands.js'
+} from 'messages'
 
 const address = '0xa2dd817c2fdc3a2996f1a5174cf8f1aaed466e82'
 const chainId = '1'
@@ -54,7 +56,12 @@ describe('AppDeployment', () => {
   })
 
   describe('when discovering', () => {
+    let contractAddress: string
+    let creatorAddress: string
+
     beforeEach(() => {
+      contractAddress = randomUUID()
+      creatorAddress = randomUUID()
       deployment.send(
         requested({ applicationId, deploymentId, address, chainId }),
       )
@@ -64,7 +71,12 @@ describe('AppDeployment', () => {
     describe('on SC discovered', () => {
       it('should request SC confirmation', () => {
         const messages = deployment.send(
-          scDiscovered({ applicationId, deploymentId }),
+          scDiscovered({
+            applicationId,
+            deploymentId,
+            contractAddress,
+            creatorAddress,
+          }),
         )
 
         expect(messages).toEqual([confirmSC({ applicationId, deploymentId })])
@@ -73,7 +85,10 @@ describe('AppDeployment', () => {
       it('should propagate metadata', () => {
         const $meta = { traceId: randomUUID() }
         const messages = deployment.send(
-          scDiscovered({ applicationId, deploymentId }, $meta),
+          scDiscovered(
+            { applicationId, deploymentId, contractAddress, creatorAddress },
+            $meta,
+          ),
         )
 
         expect(messages.length).toBe(1)
@@ -85,7 +100,13 @@ describe('AppDeployment', () => {
           console.log(`sending scDiscover with wrong ${key}`)
           const id = randomUUID()
           const messages = deployment.send(
-            scDiscovered({ applicationId, deploymentId, [key]: id }),
+            scDiscovered({
+              applicationId,
+              deploymentId,
+              contractAddress,
+              creatorAddress,
+              [key]: id,
+            }),
           )
 
           expect(messages).toStrictEqual([])
@@ -95,11 +116,23 @@ describe('AppDeployment', () => {
   })
 
   describe('when confirming', () => {
+    let contractAddress: string
+    let creatorAddress: string
+
     beforeEach(() => {
+      contractAddress = randomUUID()
+      creatorAddress = randomUUID()
       deployment.send(
         requested({ applicationId, deploymentId, address, chainId }),
       )
-      deployment.send(scDiscovered({ applicationId, deploymentId }))
+      deployment.send(
+        scDiscovered({
+          applicationId,
+          deploymentId,
+          contractAddress,
+          creatorAddress,
+        }),
+      )
       expect(deployment.status).toBe('Confirming')
     })
 
@@ -136,11 +169,23 @@ describe('AppDeployment', () => {
   })
 
   describe('when registering', () => {
+    let contractAddress: string
+    let creatorAddress: string
+
     beforeEach(() => {
+      contractAddress = randomUUID()
+      creatorAddress = randomUUID()
       deployment.send(
         requested({ applicationId, deploymentId, address, chainId }),
       )
-      deployment.send(scDiscovered({ applicationId, deploymentId }))
+      deployment.send(
+        scDiscovered({
+          applicationId,
+          deploymentId,
+          contractAddress,
+          creatorAddress,
+        }),
+      )
       deployment.send(scConfirmed({ applicationId, deploymentId }))
       expect(deployment.status).toBe('Registering')
     })
