@@ -20,7 +20,7 @@ describe('get-dapp-by-id', () => {
 
   beforeAll(async () => {
     await manager.beforeAll()
-  })
+  }, 30000)
 
   afterAll(async () => {
     await manager.afterAll()

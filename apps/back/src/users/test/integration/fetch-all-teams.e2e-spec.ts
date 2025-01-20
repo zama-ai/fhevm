@@ -15,7 +15,7 @@ describe('fetch all teams', () => {
 
   beforeAll(async () => {
     await manager.beforeAll()
-  })
+  }, 30000)
 
   afterAll(async () => {
     await manager.afterAll()

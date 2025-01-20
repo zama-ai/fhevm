@@ -1,14 +1,17 @@
 import { AppDeploymentProducer } from '#dapps/domain/services/app-deployment.producer.js'
 import { PublishCommand, SNSClient } from '@aws-sdk/client-sns'
-import { Injectable } from '@nestjs/common'
+import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { AppDeploymentMessage } from 'messages'
 import { AppError, Task, unknownError } from 'utils'
 
 @Injectable()
-export class SNSAppDeploymentProducer implements AppDeploymentProducer {
+export class SNSAppDeploymentProducer
+  implements AppDeploymentProducer, OnModuleDestroy
+{
   #sns: SNSClient
   #topicArn: string
+  #logger = new Logger(SNSAppDeploymentProducer.name)
 
   constructor(config: ConfigService) {
     this.#sns = new SNSClient({
@@ -21,6 +24,7 @@ export class SNSAppDeploymentProducer implements AppDeploymentProducer {
   publish = (message: AppDeploymentMessage): Task<string, AppError> => {
     switch (message.type) {
       case 'app-deployment.requested':
+        this.#logger.debug(`publishing: ${JSON.stringify(message)}`)
         return new Task((resolve, reject) => {
           this.#sns
             .send(
@@ -37,5 +41,9 @@ export class SNSAppDeploymentProducer implements AppDeploymentProducer {
       default:
         return Task.reject(unknownError('Unknown message type'))
     }
+  }
+
+  async onModuleDestroy() {
+    await this.#sns.destroy()
   }
 }
