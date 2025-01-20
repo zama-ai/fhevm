@@ -19,7 +19,7 @@ describe('create-dapp', () => {
 
   beforeAll(async () => {
     await manager.beforeAll()
-  })
+  }, 30000)
 
   afterAll(async () => {
     await manager.afterAll()

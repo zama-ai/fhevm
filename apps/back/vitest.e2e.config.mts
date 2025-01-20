@@ -11,13 +11,8 @@ export default defineConfig({
     env: {
       ...config({ path: '.env.test' }).parsed,
     },
-    pool: 'threads',
-    poolOptions: {
-      threads: {
-        singleThread: true,
-      },
-    },
-    isolate: false,
+    isolate: true,
+    globalSetup: './test/setup.e2e.ts',
   },
   plugins: [
     // This is required to build the test files with SWC
