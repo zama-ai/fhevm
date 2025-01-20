@@ -1,22 +1,16 @@
 import { CreateQueueCommand, SQSClient } from '@aws-sdk/client-sqs'
 import { INestApplication } from '@nestjs/common'
 import { Test } from '@nestjs/testing'
-import {
-  LocalstackContainer,
-  type StartedLocalStackContainer,
-} from '@testcontainers/localstack'
-import {
-  PostgreSqlContainer,
-  type StartedPostgreSqlContainer,
-} from '@testcontainers/postgresql'
 
 import { AppModule, configModule } from '#app.module.js'
 import { PrismaClient } from '#prisma/client/index.js'
-import { execSync } from 'child_process'
 import { ConfigModule, registerAs } from '@nestjs/config'
 import dbConfig from '#config/db.config.js'
 import jwtConfig from '#config/jwt.config.js'
 import { CreateTopicCommand, SNSClient } from '@aws-sdk/client-sns'
+import { inject } from 'vitest'
+import { randomUUID } from 'crypto'
+import { execSync } from 'child_process'
 export type GraphQlResponse<T> =
   | {
       success: true
@@ -30,52 +24,35 @@ export type GraphQlResponse<T> =
 export class SetupManager {
   #app: INestApplication
 
-  // AWS Configuration
-  #awsContainer: StartedLocalStackContainer
-
-  // DB Configuration
-  #pgContainer: StartedPostgreSqlContainer
   #prismaClient: PrismaClient
 
+  #topicName: string
+  #queueName: string
+
   private async startPostgres() {
-    // Note: for better integration tests, keep the database image aligned with the one used in production
-    this.#pgContainer = await new PostgreSqlContainer(
-      'postgres:17-alpine',
-    ).start()
+    const databaseUrl = inject('databaseUrl')
 
-    const host = this.#pgContainer.getHost()
-    const port = this.#pgContainer.getPort()
-    const database = this.#pgContainer.getDatabase()
-    const username = this.#pgContainer.getUsername()
-    const password = this.#pgContainer.getPassword()
+    // use a random schema
+    const url = `${databaseUrl}?schema=${randomUUID()}`
 
-    const databaseUrl = `postgresql://${username}:${password}@${host}:${port}/${database}`
     // Execute Prisma migrations
     execSync('pnpx prisma migrate deploy', {
-      env: { DATABASE_URL: databaseUrl, PATH: process.env.PATH },
+      env: { DATABASE_URL: url, PATH: process.env.PATH },
     })
 
     this.#prismaClient = new PrismaClient({
       datasources: {
-        db: { url: databaseUrl },
+        db: { url },
       },
     })
   }
 
-  private async stopPostgres() {
-    await this.#pgContainer.stop()
-  }
-
-  private async startAws() {
-    await new Promise(resolve => {
-      setTimeout(resolve, 10_000)
-    })
-    this.#awsContainer = await new LocalstackContainer(
-      'localstack/localstack:latest',
-    ).start()
+  private async startAws(connectionUri: string) {
+    // Generate a random topic name
+    this.#topicName = `back-test-topic-${randomUUID()}`
 
     const sns = new SNSClient({
-      endpoint: this.#awsContainer.getConnectionUri(),
+      endpoint: connectionUri,
       region: this.awsRegion,
     })
     await sns.send(
@@ -84,21 +61,20 @@ export class SetupManager {
       }),
     )
 
+    // Generate a random queue name
+    this.#queueName = `back-test-queue-${randomUUID()}`
     const sqs = new SQSClient({
-      endpoint: this.#awsContainer.getConnectionUri(),
+      endpoint: connectionUri,
       region: this.awsRegion,
     })
-    await sqs.send(new CreateQueueCommand({ QueueName: 'back-test' }))
-  }
-
-  private async stopAws() {
-    // await this.#sqs.send(new DeleteQueueCommand({ QueueUrl: this.queueUrl }))
-    await this.#awsContainer.stop()
+    await sqs.send(new CreateQueueCommand({ QueueName: this.#queueName }))
   }
 
   async beforeAll() {
+    const connectionUri = this.awsEdnpoint
+
     // Start services
-    await Promise.all([this.startAws(), this.startPostgres()])
+    await Promise.all([this.startAws(connectionUri), this.startPostgres()])
 
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
@@ -109,7 +85,7 @@ export class SetupManager {
           isGlobal: true,
           load: [
             registerAs('aws', () => ({
-              endpoint: this.#awsContainer.getConnectionUri(),
+              endpoint: connectionUri,
               queueUrl: this.queueUrl,
               region: this.awsRegion,
               topicArn: this.topicArn,
@@ -128,10 +104,11 @@ export class SetupManager {
   }
 
   async afterAll() {
-    await this.#app.close()
-
-    // Stop services
-    await Promise.all([this.stopAws(), this.stopPostgres()])
+    // In case of errors during the setup process, #app could be undefined
+    if (this.#app) {
+      // Close the app
+      await this.#app.close()
+    }
   }
 
   async afterEach() {
@@ -153,18 +130,18 @@ export class SetupManager {
   }
 
   get awsEdnpoint(): string {
-    return this.#awsContainer.getConnectionUri()
+    return inject('connectionUri')
   }
 
   get topicName(): string {
-    return 'back-test-topic'
+    return this.#topicName
   }
 
   get topicArn(): string {
-    return `arn:aws:sns:${this.awsRegion}:000000000000:${this.topicName}`
+    return `arn:aws:sns:${this.awsRegion}:000000000000:${this.#topicName}`
   }
 
   get queueUrl(): string {
-    return `${this.#awsContainer.getConnectionUri()}/000000000000/back-test`
+    return `${this.awsEdnpoint}/000000000000/${this.#queueName}`
   }
 }
