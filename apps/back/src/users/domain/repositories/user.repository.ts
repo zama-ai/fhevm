@@ -6,5 +6,8 @@ export abstract class UserRepository {
   abstract create(props: User): Task<User, AppError>
   abstract findById(id: UserId): Task<User, AppError>
   abstract findByEmail(email: string): Task<User, AppError>
-  abstract update(user: User): Task<User, AppError>
+  abstract update(
+    id: UserId,
+    data: Partial<Omit<User, 'id'>>,
+  ): Task<User, AppError>
 }

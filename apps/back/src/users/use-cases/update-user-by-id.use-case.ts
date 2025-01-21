@@ -38,7 +38,7 @@ export class UpdateUser implements UseCase<Input, User> {
           }
         })
         .chain(() =>
-          this.userRepository.update({
+          this.userRepository.update(user.id, {
             ...user,
             ...newUser,
           } as unknown as User),
