@@ -53,7 +53,7 @@ export class PrismaUserRepository extends UserRepository {
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.user
         .update({
-          where: { id: String(user.id) },
+          where: { id: user.id.value },
           data: { ...user, id: undefined },
         })
         .then(resolve)
