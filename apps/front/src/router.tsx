@@ -13,7 +13,6 @@ import { SignupPage } from './pages/signup.page.js'
 import { SignupErrorPage } from './pages/signup.error.page.js'
 import { signupLoader } from './pages/signup.loader.js'
 
-import { AboutPage } from './pages/about.page.js'
 import { DashboardPage } from './pages/dashboard.page.js'
 import { CreateStepOnePage } from './pages/create-step-one.page.js'
 import { CreateStepTwoPage } from './pages/create-step-two.page.js'
@@ -54,10 +53,6 @@ const router = createBrowserRouter([
       {
         path: '/preferences/',
         element: <PreferencesPage />,
-      },
-      {
-        path: '/about',
-        element: <AboutPage />,
       },
       {
         path: '/create/:teamId',

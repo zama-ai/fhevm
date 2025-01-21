@@ -7,13 +7,16 @@ export function UnauthorizedErrorPage() {
   console.error(error)
 
   return (
-    <Stack id="error-page">
-      <Heading>Unauthorized</Heading>
+    <Stack id="error-page" m="5">
+      <Heading>{error.message ?? 'Unauthorized'}</Heading>
       <Text>You are not authorized to access this page.</Text>
       <Text>Here is a list of possible causes 🤔</Text>
       <List.Root>
         <List.Item>
-          Your session has expired <Link to="/signin">try signin in</Link>
+          Your session has expired{' '}
+          <Link variant="underline" to="/signin">
+            try signin in
+          </Link>
         </List.Item>
         <List.Item>You are trying to access a private page</List.Item>
       </List.Root>

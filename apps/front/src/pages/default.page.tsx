@@ -1,20 +1,24 @@
-import { HStack, Separator, Text } from '@chakra-ui/react'
-import { ColorModeButton } from '@/components/ui/color-mode-button.js'
+import { Stack, Text } from '@chakra-ui/react'
 import { Link } from '@/components/ui/link.js'
+import { useNavigate } from 'react-router'
+import { useEffect } from 'react'
+
 export function DefaultPage() {
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    const logged = !!localStorage.getItem('token')
+    if (logged) {
+      navigate('/dashboard')
+    } else {
+      navigate('/signin')
+    }
+  }, [navigate])
   return (
-    <HStack gap="4">
+    <Stack gap="4">
       <Text>
         <Link to="/signin">signin</Link>
       </Text>
-      <Separator orientation="vertical" height="4" />
-      <Text>
-        <Link to="/signup/e7e720ef-e8d6-4e07-883d-ed93ea7a6999">signup</Link>
-      </Text>
-      <Separator orientation="vertical" height="4" />
-      <Text as="div">
-        Set mode <ColorModeButton size="lg" />
-      </Text>
-    </HStack>
+    </Stack>
   )
 }
