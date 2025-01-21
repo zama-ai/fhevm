@@ -64,6 +64,7 @@ input QueryDappInput {
 type Mutation {
   login(input: LoginInput!): auth!
   signup(input: SignupInput!): auth!
+  updateUser(input: UpdateUserInput!): User!
   createInvitation(input: CreateInvitationInput!): Invitation!
   createDapp(input: CreateDappInput!): Dapp!
   updateDapp(input: UpdateDappInput!): Dapp!
@@ -79,6 +80,11 @@ input SignupInput {
   password: String!
   name: String!
   invitationToken: String!
+}
+
+input UpdateUserInput {
+  id: ID!
+  name: String!
 }
 
 input CreateInvitationInput {
