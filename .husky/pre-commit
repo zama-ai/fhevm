@@ -1,0 +1,2 @@
+pnpm --no-install prettier:check
+pnpm --no-install lint:sol
