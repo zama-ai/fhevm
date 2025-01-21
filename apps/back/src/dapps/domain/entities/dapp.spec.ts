@@ -1,6 +1,8 @@
 import { faker } from '@faker-js/faker'
 import { beforeEach, describe, expect, test } from 'vitest'
 import { DApp } from './dapp.js'
+import { TeamId } from '#users/domain/entities/value-objects.js'
+import { DAppId } from './value-objects.js'
 
 describe('Dapp', () => {
   describe('parse', () => {
@@ -8,10 +10,10 @@ describe('Dapp', () => {
 
     beforeEach(() => {
       params = {
-        id: faker.string.uuid(),
+        id: DAppId.random().value,
         name: faker.string.alphanumeric(10),
         status: faker.helpers.arrayElement(['DRAFT', 'DEPLOYING', 'LIVE']),
-        teamId: faker.string.uuid(),
+        teamId: TeamId.random().value,
         createdAt: new Date(Date.now() - 1000),
       }
     })
@@ -103,7 +105,7 @@ describe('Dapp', () => {
     beforeEach(() => {
       const result = DApp.create({
         name: faker.string.alphanumeric(10),
-        teamId: faker.string.uuid(),
+        teamId: TeamId.random().value,
       })
       expect(result.isOk()).toBe(true)
       dapp = result.unwrap()
