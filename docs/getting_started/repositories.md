@@ -40,10 +40,9 @@ Access the essential libraries for building and integrating FHE-enabled applicat
 
 Explore the foundational implementations enabling FHE integration with blockchain systems:
 
-| **Repository**                                                 | **Description**                                    |
-| -------------------------------------------------------------- | -------------------------------------------------- |
-| [fhevm-go](https://github.com/zama-ai/fhevm-go/)               | Go implementation of the FHE Virtual Machine       |
-| [go-ethereum](https://github.com/zama-ai/go-ethereum)          | Fork of go-ethereum v1.10.19 with FHE capabilities |
-| [zbc-go-ethereum](https://github.com/zama-ai/zbc-go-ethereum/) | Modified go-ethereum with enhanced FHE support     |
+| **Repository**                                                 | **Description**                                |
+| -------------------------------------------------------------- | ---------------------------------------------- |
+| [fhevm-go](https://github.com/zama-ai/fhevm-go/)               | Go implementation of the FHE Virtual Machine   |
+| [zbc-go-ethereum](https://github.com/zama-ai/zbc-go-ethereum/) | Modified go-ethereum with enhanced FHE support |
 
 Use these repositories to accelerate your development, integrate FHE into your applications, or contribute to the growing ecosystem.&#x20;
