@@ -5,15 +5,15 @@ import { useEffect } from 'react'
 
 export function DefaultPage() {
   const navigate = useNavigate()
-  const logged = !!localStorage.getItem('token')
 
   useEffect(() => {
+    const logged = !!localStorage.getItem('token')
     if (logged) {
       navigate('/dashboard')
     } else {
       navigate('/signin')
     }
-  }, [logged, navigate])
+  }, [navigate])
   return (
     <Stack gap="4">
       <Text>
