@@ -47,6 +47,8 @@ kmsCore:
     cpu: 6
     memory: 20480
     cid: 20
+    userId: 10003
+    groupId: 10002
     ports:
       logger: 3000
       config: 4000
