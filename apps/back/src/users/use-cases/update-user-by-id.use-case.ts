@@ -37,12 +37,14 @@ export class UpdateUser implements UseCase<Input, User> {
             return Task.reject<never, AppError>(unknownError('User not found'))
           }
         })
-        .chain(() =>
-          this.userRepository.update(user.id, {
-            ...user,
-            ...newUser,
-          } as unknown as User),
-        ),
+        .chain(() => {
+          const { id, ...userProps } = user
+          const { name } = newUser
+          return this.userRepository.update(id, {
+            ...userProps,
+            name,
+          })
+        }),
     )
   }
 }
