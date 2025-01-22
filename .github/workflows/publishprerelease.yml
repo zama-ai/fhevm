@@ -16,7 +16,7 @@ jobs:
           node-version: 20.x
       - run: cp .env.example .env
       - run: npm ci --include=optional
-      - run: HARDHAT_TFHEEXECUTOR_EVENTS=1 npx hardhat test test/encryptedERC20/EncryptedERC20.ts --network hardhat
+      - run: npx hardhat test test/encryptedERC20/EncryptedERC20.ts --network hardhat
       - run: npm run compile
       - uses: JS-DevTools/npm-publish@19c28f1ef146469e409470805ea4279d47c3d35c # v3.1.1
         with:
