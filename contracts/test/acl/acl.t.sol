@@ -108,8 +108,11 @@ contract ACLTest is Test {
 
         vm.prank(sender);
         vm.expectEmit(address(acl));
-        emit ACL.NewDelegation(sender, delegatee, delegateeContract);
-        acl.delegateAccount(delegatee, delegateeContract);
+
+        address[] memory contractAddresses = new address[](1);
+        contractAddresses[0] = delegateeContract;
+        emit ACL.NewDelegation(sender, delegatee, contractAddresses);
+        acl.delegateAccount(delegatee, contractAddresses);
         vm.assertFalse(acl.allowedOnBehalf(delegatee, handle, delegateeContract, sender));
 
         /// @dev The sender and the delegatee contract must be allowed to use the handle before it delegates.
@@ -135,13 +138,17 @@ contract ACLTest is Test {
 
         vm.prank(sender);
         vm.expectRevert(ACL.AlreadyDelegated.selector);
-        acl.delegateAccount(delegatee, delegateeContract);
+        address[] memory contractAddresses = new address[](1);
+        contractAddresses[0] = delegateeContract;
+        acl.delegateAccount(delegatee, contractAddresses);
     }
 
     function test_CannotDelegateIfSenderIsDelegateeContract(address sender, address delegatee) public {
         vm.prank(sender);
-        vm.expectRevert(ACL.SenderCannotBeDelegateeAddress.selector);
-        acl.delegateAccount(delegatee, sender);
+        vm.expectRevert(ACL.SenderCannotBeContractAddress.selector);
+        address[] memory contractAddresses = new address[](1);
+        contractAddresses[0] = sender;
+        acl.delegateAccount(delegatee, contractAddresses);
     }
 
     function test_CanDelegateAccountIfAccountNotAllowed(
@@ -156,17 +163,18 @@ contract ACLTest is Test {
 
         vm.prank(sender);
         vm.expectEmit(address(acl));
-        emit ACL.NewDelegation(sender, delegatee, delegateeContract);
-        acl.delegateAccount(delegatee, delegateeContract);
+        address[] memory contractAddresses = new address[](1);
+        contractAddresses[0] = delegateeContract;
+        emit ACL.NewDelegation(sender, delegatee, contractAddresses);
+        acl.delegateAccount(delegatee, contractAddresses);
 
         vm.assertFalse(acl.allowedOnBehalf(delegatee, handle, delegateeContract, sender));
     }
 
-    function test_AnyoneCanAllowForDecryptionIfEmptyList(address sender) public {
+    function test_NoOneCanAllowForDecryptionIfEmptyList(address sender) public {
         uint256[] memory handlesList = new uint256[](0);
         vm.prank(sender);
-        vm.expectEmit(address(acl));
-        emit ACL.AllowedForDecryption(address(sender), handlesList);
+        vm.expectRevert(ACL.HandlesListIsEmpty.selector);
         acl.allowForDecryption(handlesList);
     }
 

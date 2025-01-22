@@ -18,16 +18,23 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
     error AlreadyDelegated();
 
     /// @notice Returned if the sender is the delegatee address.
-    error SenderCannotBeDelegateeAddress();
+    error SenderCannotBeContractAddress();
+
+    /// @notice Returned if the contractAddresses array is empty.
+    error ContractAddressesIsEmpty();
+
+    /// @notice Maximum length of contractAddresses array exceeded.
+    error ContractAddressesMaxLengthExceeded();
+
+    /// @notice Returned if the handlesList array is empty.
+    error HandlesListIsEmpty();
+
+    /// @notice Returned if the the delegatee contract is not already delegatee for sender & delegator addresses.
+    error NotDelegatedYet();
 
     /// @notice         Returned if the sender address is not allowed for allow operations.
     /// @param sender   Sender address.
     error SenderNotAllowed(address sender);
-
-    /// @notice             Emitted when a list of handles is allowed for decryption.
-    /// @param caller       account calling the allowForDecryption function.
-    /// @param handlesList  List of handles allowed for decryption.
-    event AllowedForDecryption(address indexed caller, uint256[] handlesList);
 
     /// @notice         Emitted when a handle is allowed.
     /// @param caller   account calling the allow function.
@@ -35,16 +42,27 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
     /// @param handle   handle being allowed.
     event Allowed(address indexed caller, address indexed account, uint256 handle);
 
-    /// @notice                 Emitted when a new delegate address is added.
-    /// @param sender           Sender address
+    /// @notice             Emitted when a list of handles is allowed for decryption.
+    /// @param caller       account calling the allowForDecryption function.
+    /// @param handlesList  List of handles allowed for decryption.
+    event AllowedForDecryption(address indexed caller, uint256[] handlesList);
+
+    /// @notice                 Emitted when a new delegatee address is added.
+    /// @param caller           caller address
     /// @param delegatee        Delegatee address.
-    /// @param contractAddress  Contract address.
-    event NewDelegation(address indexed sender, address indexed delegatee, address indexed contractAddress);
+    /// @param contractAddresses  Contract addresses.
+    event NewDelegation(address indexed caller, address indexed delegatee, address[] contractAddresses);
+
+    /// @notice                 Emitted when a delegatee address is revoked.
+    /// @param caller           caller address
+    /// @param delegatee        Delegatee address.
+    /// @param contractAddresses  Contract addresses.
+    event RevokedDelegation(address indexed caller, address indexed delegatee, address[] contractAddresses);
 
     /// @custom:storage-location erc7201:fhevm.storage.ACL
     struct ACLStorage {
         mapping(uint256 handle => mapping(address account => bool isAllowed)) persistedAllowedPairs;
-        mapping(uint256 => bool) allowedForDecryption;
+        mapping(uint256 handle => bool isAllowedForDecryption) allowedForDecryption;
         mapping(address account => mapping(address delegatee => mapping(address contractAddress => bool isDelegate))) delegates;
     }
 
@@ -62,6 +80,9 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
 
     /// @notice TFHEExecutor address.
     address private constant tfheExecutorAddress = tfheExecutorAdd;
+
+    /// @notice maximum length of contractAddresses array during delegation.
+    uint256 private constant MAX_NUM_CONTRACT_ADDRESSES = 10;
 
     /// @dev keccak256(abi.encode(uint256(keccak256("fhevm.storage.ACL")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant ACLStorageLocation = 0xa688f31953c2015baaf8c0a488ee1ee22eb0e05273cc1fd31ea4cbee42febc00;
@@ -91,9 +112,13 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param handlesList   List of handles.
      */
     function allowForDecryption(uint256[] memory handlesList) public virtual {
-        uint256 len = handlesList.length;
+        uint256 lenHandlesList = handlesList.length;
+        if (lenHandlesList == 0) {
+            revert HandlesListIsEmpty();
+        }
+
         ACLStorage storage $ = _getACLStorage();
-        for (uint256 k = 0; k < len; k++) {
+        for (uint256 k = 0; k < lenHandlesList; k++) {
             uint256 handle = handlesList[k];
             if (!isAllowed(handle, msg.sender)) {
                 revert SenderNotAllowed(msg.sender);
@@ -128,23 +153,56 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
     }
 
     /**
-     * @notice                  Delegates the access of `handles` in the context of account abstraction for issuing
+     * @notice                  Delegates the access of handles in the context of account abstraction for issuing
      *                          reencryption requests from a smart contract account.
      * @param delegatee         Delegatee address.
-     * @param delegateeContract Delegatee contract.
+     * @param contractAddresses Contract addresses.
      */
-    function delegateAccount(address delegatee, address delegateeContract) public virtual {
-        if (delegateeContract == msg.sender) {
-            revert SenderCannotBeDelegateeAddress();
+    function delegateAccount(address delegatee, address[] memory contractAddresses) public virtual {
+        uint256 lenghtContractAddresses = contractAddresses.length;
+        if (lenghtContractAddresses == 0) {
+            revert ContractAddressesIsEmpty();
+        }
+        if (lenghtContractAddresses > MAX_NUM_CONTRACT_ADDRESSES) {
+            revert ContractAddressesMaxLengthExceeded();
         }
 
         ACLStorage storage $ = _getACLStorage();
-        if ($.delegates[msg.sender][delegatee][delegateeContract]) {
-            revert AlreadyDelegated();
+        for (uint256 k = 0; k < lenghtContractAddresses; k++) {
+            if (contractAddresses[k] == msg.sender) {
+                revert SenderCannotBeContractAddress();
+            }
+            if ($.delegates[msg.sender][delegatee][contractAddresses[k]]) {
+                revert AlreadyDelegated();
+            }
+            $.delegates[msg.sender][delegatee][contractAddresses[k]] = true;
         }
 
-        $.delegates[msg.sender][delegatee][delegateeContract] = true;
-        emit NewDelegation(msg.sender, delegatee, delegateeContract);
+        emit NewDelegation(msg.sender, delegatee, contractAddresses);
+    }
+
+    /**
+     * @notice                  Revokes delegated access of handles in the context of account abstraction for issuing
+     *                          reencryption requests from a smart contract account.
+     * @param delegatee         Delegatee address.
+     * @param contractAddresses Contract addresses.
+     */
+    function revokeDelegation(address delegatee, address[] memory contractAddresses) public virtual {
+        uint256 lenghtContractAddresses = contractAddresses.length;
+        if (lenghtContractAddresses == 0) {
+            revert ContractAddressesIsEmpty();
+        }
+
+        ACLStorage storage $ = _getACLStorage();
+
+        for (uint256 k = 0; k < lenghtContractAddresses; k++) {
+            if ($.delegates[msg.sender][delegatee][contractAddresses[k]]) {
+                revert NotDelegatedYet();
+            }
+            $.delegates[msg.sender][delegatee][contractAddresses[k]] = false;
+        }
+
+        emit RevokedDelegation(msg.sender, delegatee, contractAddresses);
     }
 
     /**
