@@ -38,6 +38,7 @@ export const Default: Story = {
     image: 'https://picsum.photos/seed/plop/50/50',
     condensed: false,
     onLogout: fn(),
+    onPreferences: fn(),
   },
 }
 
