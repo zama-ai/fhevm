@@ -137,7 +137,7 @@ contract ACLTest is Test {
         );
 
         vm.prank(sender);
-        vm.expectRevert(ACL.AlreadyDelegated.selector);
+        vm.expectPartialRevert(ACL.AlreadyDelegated.selector);
         address[] memory contractAddresses = new address[](1);
         contractAddresses[0] = delegateeContract;
         acl.delegateAccount(delegatee, contractAddresses);
@@ -145,7 +145,7 @@ contract ACLTest is Test {
 
     function test_CannotDelegateIfSenderIsDelegateeContract(address sender, address delegatee) public {
         vm.prank(sender);
-        vm.expectRevert(ACL.SenderCannotBeContractAddress.selector);
+        vm.expectPartialRevert(ACL.SenderCannotBeContractAddress.selector);
         address[] memory contractAddresses = new address[](1);
         contractAddresses[0] = sender;
         acl.delegateAccount(delegatee, contractAddresses);

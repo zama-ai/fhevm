@@ -15,10 +15,12 @@ import {tfheExecutorAdd} from "../addresses/TFHEExecutorAddress.sol";
  */
 contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
     /// @notice Returned if the delegatee contract is already delegatee for sender & delegator addresses.
-    error AlreadyDelegated();
+    /// @param delegatee   delegatee address.
+    /// @param contractAddress   contract address.
+    error AlreadyDelegated(address delegatee, address contractAddress);
 
     /// @notice Returned if the sender is the delegatee address.
-    error SenderCannotBeContractAddress();
+    error SenderCannotBeContractAddress(address contractAddress);
 
     /// @notice Returned if the contractAddresses array is empty.
     error ContractAddressesIsEmpty();
@@ -30,7 +32,9 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
     error HandlesListIsEmpty();
 
     /// @notice Returned if the the delegatee contract is not already delegatee for sender & delegator addresses.
-    error NotDelegatedYet();
+    /// @param delegatee   delegatee address.
+    /// @param contractAddress   contract address.
+    error NotDelegatedYet(address delegatee, address contractAddress);
 
     /// @notice         Returned if the sender address is not allowed for allow operations.
     /// @param sender   Sender address.
@@ -170,10 +174,10 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
         ACLStorage storage $ = _getACLStorage();
         for (uint256 k = 0; k < lenghtContractAddresses; k++) {
             if (contractAddresses[k] == msg.sender) {
-                revert SenderCannotBeContractAddress();
+                revert SenderCannotBeContractAddress(contractAddresses[k]);
             }
             if ($.delegates[msg.sender][delegatee][contractAddresses[k]]) {
-                revert AlreadyDelegated();
+                revert AlreadyDelegated(delegatee, contractAddresses[k]);
             }
             $.delegates[msg.sender][delegatee][contractAddresses[k]] = true;
         }
@@ -197,7 +201,7 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
 
         for (uint256 k = 0; k < lenghtContractAddresses; k++) {
             if ($.delegates[msg.sender][delegatee][contractAddresses[k]]) {
-                revert NotDelegatedYet();
+                revert NotDelegatedYet(delegatee, contractAddresses[k]);
             }
             $.delegates[msg.sender][delegatee][contractAddresses[k]] = false;
         }
