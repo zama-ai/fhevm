@@ -25,8 +25,15 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
     error SenderNotAllowed(address sender);
 
     /// @notice             Emitted when a list of handles is allowed for decryption.
+    /// @param caller       account calling the allowForDecryption function.
     /// @param handlesList  List of handles allowed for decryption.
-    event AllowedForDecryption(uint256[] handlesList);
+    event AllowedForDecryption(address indexed caller, uint256[] handlesList);
+
+    /// @notice         Emitted when a handle is allowed.
+    /// @param caller   account calling the allow function.
+    /// @param account  account being allowed for the handle.
+    /// @param handle   handle being allowed.
+    event Allowed(address indexed caller, address indexed account, uint256 handle);
 
     /// @notice                 Emitted when a new delegate address is added.
     /// @param sender           Sender address
@@ -76,6 +83,7 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
             revert SenderNotAllowed(msg.sender);
         }
         $.persistedAllowedPairs[handle][account] = true;
+        emit Allowed(msg.sender, account, handle);
     }
 
     /**
@@ -92,7 +100,7 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
             }
             $.allowedForDecryption[handle] = true;
         }
-        emit AllowedForDecryption(handlesList);
+        emit AllowedForDecryption(msg.sender, handlesList);
     }
 
     /**
