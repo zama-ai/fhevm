@@ -97,7 +97,7 @@ For Solidity syntax highlighting, use the [Hardhat Solidity](https://marketplace
 
 ### Important note
 
-Due to limitations in the `solidity-coverage` package, coverage computation in fhEVM does not support tests involving the `evm_snapshot` Hardhat testing method. However, this method is still supported when running tests in mocked mode. If you are using Hardhat snapshots, we recommend to end your your test description with the `[skip-on-coverage]` tag to to avoid coverage issues. Here is an example:
+Due to limitations in the `solidity-coverage` package, coverage computation in fhEVM does not support tests involving the `evm_snapshot` Hardhat testing method. However, this method is still supported when running tests in mocked mode. If you are using Hardhat snapshots, we recommend to end your test description with the `[skip-on-coverage]` tag to avoid coverage issues. Here is an example:
 
 ```js
 import { expect } from 'chai';

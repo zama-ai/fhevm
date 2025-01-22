@@ -68,7 +68,7 @@ console.log("Native Gas Consumed:", transaction.gasUsed);
 
 The current devnet has a FHEGas limit of **10,000,000** per block. Here's what you need to know:
 
-- If you send a transaction that exceeds this limit or if the FHEGas block limit is exceeded, depending on other previous transaction in same block:
+- If you send a transaction that exceeds this limit or if the FHEGas block limit is exceeded, depending on other previous transaction in the same block:
   - The transaction will revert
   - Any native gas fees (but not FHEGas) will still be charged
   - You should do one of the following:

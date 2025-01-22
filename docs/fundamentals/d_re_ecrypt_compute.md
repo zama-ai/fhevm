@@ -52,7 +52,7 @@ Encrypted computations are performed using the **evaluation key** on the coproce
 
 ### **Decryption**
 
-Decryption is used when plaintext results are required for contract logic or for presentation to a user. After the decryption in preformed on the blockchain, the decrypted result is exposed to everyone who has access to the blockchain.
+Decryption is used when plaintext results are required for contract logic or for presentation to a user. After the decryption is performed on the blockchain, the decrypted result is exposed to everyone who has access to the blockchain.
 
 <figure><img src="../.gitbook/assets/decryption.png" alt="decryption"><figcaption></figcaption></figure>
 
@@ -69,7 +69,7 @@ Decryption is used when plaintext results are required for contract logic or for
 
 <figure><img src="../.gitbook/assets/asyncDecrypt.png" alt="re-encryption"><figcaption><p>re-encryption</p></figcaption></figure>
 
-You can read about the implemention details in [our decryption guide](decryption/decrypt.md).
+You can read about the implementation details in [our decryption guide](decryption/decrypt.md).
 
 ---
 

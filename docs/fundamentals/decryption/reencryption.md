@@ -112,7 +112,7 @@ import "fhevm/lib/TFHE.sol";
 import { SepoliaZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
 
 /// @title EncryptedCounter4
-/// @notice A contract that maintains encrypted counters for each user and is meant for demonstrating how re-encryption works
+/// @notice A contract that maintains encrypted counters for each user and is meant to demonstrate how re-encryption works
 /// @dev Uses TFHE library for fully homomorphic encryption operations
 /// @custom:security Each user can only access and modify their own counter
 /// @custom:experimental This contract is experimental and uses FHE technology

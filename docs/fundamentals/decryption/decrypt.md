@@ -3,7 +3,7 @@
 This section explains how to handle decryption in fhEVM. Decryption allows plaintext data to be accessed when required for contract logic or user presentation, ensuring confidentiality is maintained throughout the process.
 
 {% hint style="info" %}
-Understanding how encryption, decryption and reencryption works is a prerequisit before implementation, see [Encryption, Decryption, Re-encryption, and Computation](../d_re_ecrypt_compute.md).
+Understanding how encryption, decryption and reencryption works is a prerequisite before implementation, see [Encryption, Decryption, Re-encryption, and Computation](../d_re_ecrypt_compute.md).
 {% endhint %}
 
 Decryption is essential in two primary cases:
@@ -80,7 +80,7 @@ import { SepoliaZamaGatewayConfig } from "fhevm/config/ZamaGatewayConfig.sol";
 import "fhevm/gateway/GatewayCaller.sol";
 
 /// @title EncryptedCounter3
-/// @notice A contract that maintains an encrypted counter and is meant for demonstrating how decryption works
+/// @notice A contract that maintains an encrypted counter and is meant to demonstrate how decryption works
 /// @dev Uses TFHE library for fully homomorphic encryption operations and Gateway for decryption
 /// @custom:experimental This contract is experimental and uses FHE technology with decryption capabilities
 contract EncryptedCounter3 is SepoliaZamaFHEVMConfig, SepoliaZamaGatewayConfig, GatewayCaller {

@@ -113,7 +113,7 @@ function getLastError(address user) public view returns (euint8 error, uint time
    - Provides actionable error messages without compromising the confidentiality of encrypted computations.
 2. **Scalable error tracking**:
    - Logs errors per user, making it easy to identify and debug specific issues.
-3. **Event-driven botifications**:
+3. **Event-driven notifications**:
    - Enables frontends to react to errors in real time via the `ErrorChanged` event.
 
 By implementing error handlers as demonstrated, developers can ensure a seamless user experience while maintaining the privacy and integrity of encrypted data operations.
