@@ -5,10 +5,10 @@
 # the repo. Unless a later match takes precedence,
 # the following team members will be requested for review when 
 # someone opens a pull request.
-*       @romanbredehoft
+*       @jot2re
 *       @maksymsur
 *       @isaacdecoded
-*       @jot2re
+*       @romanbredehoft
 
 # Order is important; the last matching pattern takes the most
 # precedence.
