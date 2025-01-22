@@ -166,7 +166,7 @@ contract ACLTest is Test {
         uint256[] memory handlesList = new uint256[](0);
         vm.prank(sender);
         vm.expectEmit(address(acl));
-        emit ACL.AllowedForDecryption(handlesList);
+        emit ACL.AllowedForDecryption(address(sender), handlesList);
         acl.allowForDecryption(handlesList);
     }
 
@@ -184,7 +184,7 @@ contract ACLTest is Test {
 
         vm.prank(sender);
         vm.expectEmit(address(acl));
-        emit ACL.AllowedForDecryption(handlesList);
+        emit ACL.AllowedForDecryption(address(sender), handlesList);
         acl.allowForDecryption(handlesList);
 
         assertTrue(acl.isAllowedForDecryption(handle0));
