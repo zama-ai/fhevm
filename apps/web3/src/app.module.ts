@@ -17,6 +17,7 @@ import { ProxyContractService } from './infra/adapters/proxy-contract.service.js
 import { AwsMessageProducer } from './infra/adapters/aws-message.producer.js'
 import { MessageProducer } from './domain/services/message.producer.js'
 import { DiscoverContract } from './use-cases/discover-contract.use-case.js'
+import { DatabaseModule } from './infra/database/database.module.js'
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { DiscoverContract } from './use-cases/discover-contract.use-case.js'
       isGlobal: true,
       load: [awsConfig, ethersConfig],
     }),
+    DatabaseModule,
     SqsModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({

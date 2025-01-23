@@ -21,6 +21,7 @@
     "forceConsistentCasingInFileNames": false,
     "noFallthroughCasesInSwitch": false,
     "paths": {
+      "#prisma/client/*": ["generated/client/*"],
       "#*": ["src/*"],
       "#tests/*": ["test/*"]
     }
