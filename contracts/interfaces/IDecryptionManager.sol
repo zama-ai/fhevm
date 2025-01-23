@@ -18,12 +18,12 @@ interface IDecryptionManager {
         uint256 chainId,
         address kmsVerifier,
         address acl,
-        uint256[] memory ciphertextHandles
+        uint256[] calldata ciphertextHandles
     ) external;
 
     function oracleDecryptionResponse(
         uint256 oracleDecryptionId,
-        bytes memory decryptedResult,
-        bytes memory signature
+        bytes calldata decryptedResult,
+        bytes calldata signature
     ) external;
 }
