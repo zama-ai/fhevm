@@ -54,7 +54,7 @@ _Learn more about fhEVM features in the [documentation](https://docs.zama.ai/fhe
 
 ### Use cases
 
-fhEVM is built for developers to write confidential smart contracts without learning cryptography. Leveraging fhEVM, you can unlock a myriad of new use cases such as DeFI, gaming, and more. For instance:
+fhEVM is built for developers to write confidential smart contracts without learning cryptography. Leveraging fhEVM, you can unlock a myriad of new use cases such as DeFi, gaming, and more. For instance:
 
 - **Tokenization**: Swap tokens and RWAs on-chain without others seeing the amounts.
 - **Blind auctions**: Bid on items without revealing the amount or the winner.
