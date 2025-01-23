@@ -11,7 +11,7 @@ trailingComma: "all"
 overrides:
   - files: "*.sol"
     options:
-      compiler: "0.8.24"
+      compiler: "0.8.28"
       parser: "solidity-parse"
       tabWidth: 4
   - files: "*.ts"
