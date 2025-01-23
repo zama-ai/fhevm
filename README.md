@@ -133,7 +133,7 @@ _More examples are available [here](https://docs.zama.ai/fhevm/tutorials/see-all
 
 > [!Note] > **Zama 5-Question Developer Survey**
 >
-> We want to hear from you! Take 1 minute to share your thoughts and helping us enhance our documentation and libraries. 👉 **[Click here](https://www.zama.ai/developer-survey)** to participate.
+> We want to hear from you! Take 1 minute to share your thoughts and help us enhance our documentation and libraries. 👉 **[Click here](https://www.zama.ai/developer-survey)** to participate.
 
 ## Resources
 
