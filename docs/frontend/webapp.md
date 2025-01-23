@@ -122,4 +122,4 @@ init().then((instance) => {
 });
 ```
 
-You can now use your instance to [encrypt parameters](../../fundamentals/inputs.md) or do a [reencryption](../../fundamentals/decryption/reencryption.md).
+You can now use your instance to [encrypt parameters](../../smart_contracts/inputs.md) or do a [reencryption](../../smart_contracts/decryption/reencryption.md).

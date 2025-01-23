@@ -65,7 +65,7 @@ You can generate cryptographically secure random numbers fully on-chain:
 
 <table data-header-hidden><thead><tr><th></th><th width="206"></th><th></th><th></th></tr></thead><tbody><tr><td><strong>Name</strong></td><td><strong>Function Name</strong></td><td><strong>Symbol</strong></td><td><strong>Type</strong></td></tr><tr><td>Random Unsigned Integer</td><td><code>TFHE.randEuintX()</code></td><td></td><td>Random</td></tr></tbody></table>
 
-For more details, refer to the [Random Encrypted Numbers](../guides/random.md) document.
+For more details, refer to the [Random Encrypted Numbers](random.md) document.
 
 ## Overload operators
 

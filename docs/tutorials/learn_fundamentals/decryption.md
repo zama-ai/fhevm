@@ -1,74 +1,6 @@
-# Decryption
+# Decrypt for everyone
 
-This section explains how to handle decryption in fhEVM. Decryption allows plaintext data to be accessed when required for contract logic or user presentation, ensuring confidentiality is maintained throughout the process.
-
-{% hint style="info" %}
-Understanding how encryption, decryption and reencryption works is a prerequisit before implementation, see [Encryption, Decryption, Re-encryption, and Computation](../d_re_ecrypt_compute.md).
-{% endhint %}
-
-Decryption is essential in two primary cases:
-
-1. **Smart contract logic**: A contract requires plaintext values for computations or decision-making.
-2. **User interaction**: Plaintext data needs to be revealed to all users, such as revealing the decision of the vote.
-
-To learn how decryption works see [Encryption, Decryption, Re-encryption, and Computation](../d_re_ecrypt_compute.md)
-
-## Overview
-
-Decryption in fhEVM is an asynchronous process that involves the Gateway and Key Management System (KMS). Contracts requiring decryption must extend the GatewayCaller contract, which imports the necessary libraries and provides access to the Gateway.
-
-Here’s an example of how to request decryption in a contract:
-
-### Example: asynchronous decryption in a contract
-
-```solidity
-pragma solidity ^0.8.24;
-
-import "fhevm/lib/TFHE.sol";
-import { SepoliaZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
-import { SepoliaZamaGatewayConfig } from "fhevm/config/ZamaGatewayConfig.sol";
-import "fhevm/gateway/GatewayCaller.sol";
-
-contract TestAsyncDecrypt is SepoliaZamaFHEVMConfig, SepoliaZamaGatewayConfig, GatewayCaller {
-  ebool xBool;
-  bool public yBool;
-
-  constructor() {
-      xBool = TFHE.asEbool(true);
-      TFHE.allowThis(xBool);
-  }
-
-  function requestBool() public {
-    uint256[] memory cts = new uint256[](1);
-    cts[0] = Gateway.toUint256(xBool);
-    Gateway.requestDecryption(cts, this.myCustomCallback.selector, 0, block.timestamp + 100, false);
-  }
-
-  function myCustomCallback(uint256 /*requestID*/, bool decryptedInput) public onlyGateway returns (bool) {
-    yBool = decryptedInput;
-    return yBool;
-  }
-```
-
-#### Key additions to the code
-
-1.  **Configuration imports**: The configuration contracts are imported to set up the FHEVM environment and Gateway.
-
-    ```solidity
-    import { SepoliaZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
-    import { SepoliaZamaGatewayConfig } from "fhevm/config/ZamaGatewayConfig.sol";
-    ```
-
-2.  **`GatewayCaller` import**:\
-    The `GatewayCaller` contract is imported to enable decryption requests.
-
-    ```solidity
-    import "fhevm/gateway/GatewayCaller.sol";
-    ```
-
-### Applying decryption to the counter example
-
-Remember our [**Encrypted Counter**](../../getting_started/first_smart_contract.md) contract from before? Here’s an improved version of it, upgraded to support decryption:
+Here’s an improved version of our Counter contract, upgraded to support decryption:
 
 ```solidity
 // SPDX-License-Identifier: MIT
@@ -87,14 +19,6 @@ contract EncryptedCounter3 is SepoliaZamaFHEVMConfig, SepoliaZamaGatewayConfig, 
   /// @dev Decrypted state variable
   euint8 internal counter;
   uint8 public decryptedCounter;
-
-  constructor() {
-    Gateway.setGateway(Gateway.defaultGatewayAddress());
-
-    // Initialize counter with an encrypted zero value
-    counter = TFHE.asEuint8(0);
-    TFHE.allowThis(counter);
-  }
 
   function incrementBy(einput amount, bytes calldata inputProof) public {
     // Convert input to euint8 and add to counter
@@ -197,10 +121,3 @@ describe("EncryptedCounter3", function () {
     const decryptedValue = await this.counterContract.getDecryptedCounter();
     expect(decryptedValue).to.equal(5);
     ```
-
-### Next steps
-
-Explore advanced decryption techniques and learn more about re-encryption:
-
-- [Decryption in depth](decrypt_details.md)
-- [Re-encryption](reencryption.md)

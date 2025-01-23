@@ -12,6 +12,16 @@ layout:
     visible: false
 ---
 
+# 1. Configure the contract
+
+Choose and inherit the correct configuration based on the environment:
+
+- **Mock network**: For local testing and development.
+- **Testnets (e.g., Sepolia)**: For deploying to public test networks.
+- **Mainnet**: When deploying to production.
+
+Ensure configuration contracts (e.g., `SepoliaZamaFHEVMConfig`, `SepoliaZamaFHEVMConfig`) are inherited correctly to initialize encryption parameters, cryptographic keys, and Gateway addresses. See [configuration](../smart_contracts/configure.md) for more details.
+
 # Create a smart contract
 
 This document introduces the fundamentals of writing confidential smart contracts using the fhEVM. You'll learn how to create contracts that can perform computations on encrypted data while maintaining data privacy.
@@ -24,7 +34,7 @@ Let’s build a simple **Encrypted Counter** smart contract to demonstrate the c
 
 ### Writing the contract
 
-Create a new file called `EncryptedCounter.sol` in your `contracts/` folder and add the following code:
+Create a new file called `ConfidentialCounter.sol` in your `contracts/` folder and add the following code:
 
 ```solidity
 // SPDX-License-Identifier: MIT
@@ -41,20 +51,10 @@ import { SepoliaZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
 /// for understanding how to implement basic FHE operations in Solidity
 contract EncryptedCounter1 is SepoliaZamaFHEVMConfig {
   euint8 internal counter;
-  euint8 internal immutable CONST_ONE;
-
-  constructor() {
-    // Initialize counter with an encrypted zero value
-    counter = TFHE.asEuint8(0);
-    TFHE.allowThis(counter);
-    // Save on gas by computing the constant here
-    CONST_ONE = TFHE.asEuint8(1);
-    TFHE.allowThis(CONST_ONE);
-  }
 
   function increment() public {
     // Perform encrypted addition to increment the counter
-    counter = TFHE.add(counter, CONST_ONE);
+    counter = TFHE.add(counter, 1);
     TFHE.allowThis(counter);
   }
 }
@@ -91,11 +91,11 @@ There are two notable issues with this contract:
 
 1. **Counter value visibility**:\
    Since the counter is incremented by a fixed value, observers could deduce its value by analyzing blockchain events. To address this, see the documentation on:
-   - [encryption and secure inputs](../fundamentals/inputs.md)
+   - [encryption and secure inputs](inputs.md
 2. **Access control for `counter`**:\
    The counter is encrypted, but no access is granted to decrypt or view its value. Without proper ACL permissions, the counter remains inaccessible to users. To resolve this, refer to:
-   - [decryption](../fundamentals/decryption/decrypt.md)
-   - [re-encryption](../fundamentals/decryption/reencryption.md)
+   - [decryption](decryption/decrypt.md
+   - [re-encryption](decryption/reencryption.md
 
 ### Testing
 
@@ -163,11 +163,3 @@ The test file demonstrates key concepts for testing fhEVM smart contracts:
 - Use descriptive test names that explain the expected behavior
 - Handle asynchronous operations properly with async/await
 - Set up proper encryption instances for testing encrypted values
-
-## **Next steps**
-
-Congratulations! You’ve configured and written your first confidential smart contract. Here are some ideas to expand your knowledge:
-
-- **Explore advanced configurations**: Customize the `FHEVMConfig` to suit specific encryption requirements.
-- **Add functionalities**: Extend the contract by adding decrement functionality or resetting the counter.
-- **Integrate frontend**: Learn how to decrypt and display encrypted data in a dApp using the `fhevmjs` library.
