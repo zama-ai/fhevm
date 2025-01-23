@@ -37,10 +37,24 @@ pnpm --filter sqs build
 
 ## develop
 
+### run services locally
+
 ```bash
 # pick what you want to run
 pnpm --filter front start
 pnpm --filter back start
 pnpm --filter orchestrator start
 pnpm --filter web3 start
+```
+
+### run a blockchain locally
+
+```bash
+make blockchain-install
+
+# create some noise on the blockchain
+make blockchain-test
+
+# listen to the blockchain activity
+make blockchain-listen
 ```
