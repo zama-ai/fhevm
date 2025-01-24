@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 interface IDecryptionManager {
     event OracleDecryptionId(uint256 indexed oracleDecryptionId);
     event OracleDecryptionRequest(
+        uint256 indexed keychainId,
         uint256 indexed oracleDecryptionId,
         uint256 chainId,
         address kmsVerifier,
