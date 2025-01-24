@@ -1,0 +1,28 @@
+@startuml Crash Recovery
+
+[*] --> Received
+
+state has_permission <<choice>>
+Received --> has_permission: Host_Blockchain:has_permission
+has_permission --> InsufficientPermission: no
+has_permission --> PermissionVerified: yes
+InsufficientPermission -[hidden]right->PermissionVerified
+
+PermissionVerified --> SendingToKMS: prepare_kms_request
+
+state send_to_kms <<choice>>
+SendingToKMS --> send_to_kms: KMS:check_if_request_exists
+
+send_to_kms --> SentToKMS: yes\ndo nothing\nand\nupdate status
+send_to_kms ---> SentToKMS: no\nprepare_kms_request\nand\nKMS:send_request
+
+state wait <<choice>>
+SentToKMS --> wait
+wait --> KMSResponseReceived: do nothing\n(listener  will handle response)
+
+state sent_response <<choice>>
+KMSResponseReceived --> sent_response: Host_Blockchain:check_if_response_sent
+sent_response --> SentResponse: yes\ndo nothing\nand\nupdate status
+sent_response --> SendingResponse: no\nprepare_response\nand\nHost_Blockchain:send_response
+
+@enduml

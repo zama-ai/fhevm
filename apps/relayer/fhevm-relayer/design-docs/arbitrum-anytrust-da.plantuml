@@ -1,0 +1,55 @@
+@startuml Arbitrum with AnyTrust DA
+
+skinparam sequenceMessageAlign center 
+
+actor User
+participant Sequencer
+participant "Active Validator" as ActiveValidator
+participant "Validator (Non-Active)" as Validator
+participant "AnyTrust DAC Members" as AnyTrust
+participant "Ethereum" as Ethereum
+
+User -> Sequencer: Submit Transaction
+Sequencer -> User: Return Receipt
+note over User, Sequencer: **Soft Finality**\n- Tx will be included in next L2 Block\n- Tx will be eventually finalized on L2\n- Tx will be eventually finalized on L1
+
+Sequencer -> Validator: Broadcast L2 Block via Sequencer Feed
+Sequencer -> ActiveValidator: Broadcast L2 Block via Sequencer Feed
+
+Validator -> AnyTrust: Is data for L2 Block available ?
+alt
+AnyTrust -> Validator: Yes
+Validator -> Validator: Confirm L2 Block
+note over User, Ethereum: **Confirmed**\n- Txs in the L2 Block are finalized on L2
+else 
+AnyTrust -> Validator: No
+Validator -> Validator: L2 chain is halted until Yes is received
+end
+opt Check for Tx confirmed
+User -> Validator: Reads that Tx is confirmed
+end
+
+
+ActiveValidator -> ActiveValidator: Collect L2 Blocks\nand form an RBlock
+ActiveValidator -> Ethereum: Post RBlock to L1
+
+
+note over ActiveValidator, Ethereum: **Settlement**\n- RBlock is registered on L1\n- Fraud proof challenge window starts
+
+alt Fraud detected in Rblock
+    Validator -> Ethereum: Submit fraud proof
+    note over ActiveValidator, Ethereum: Interactive fraud proof resolution
+    ' note over ActiveValidator, Validator, Ethereum: Interactive fraud proof resolution
+    Ethereum -> ActiveValidator: Slash bond for fraud
+    Ethereum -> Ethereum: Fraudulent L2 Blocks are reverted
+    Validator -> Ethereum: Reads the last unreverted L2 Block
+    ActiveValidator -> Ethereum: Reads the last unreverted L2 Block
+    Validator -> Validator: Resets the L2 chain to this L2 Block
+    ActiveValidator -> ActiveValidator: Resets the L2 chain to this L2 Block
+    User -> Validator: Reads that Tx was reverted
+else Challenge period expired
+    Ethereum -> Validator: Finalize RBlock 
+end
+
+note over User, Ethereum:**Hard finality**\n- Tx is finalized on L1
+@enduml

@@ -1,0 +1,62 @@
+@startuml KMS Operation State Transition Diagram
+
+skinparam state {
+  BackgroundColor<<happy>> #D0F0C0
+  BackgroundColor<<error>> #FFCCCB
+  BackgroundColor<<initial>> #E8E8E8
+}
+
+[*] --> RequestListener : Start
+
+state RequestListener <<initial>>
+RequestListener :
+
+RequestListener --> ReadPermission : Event: CTReadPermission
+
+state ReadPermission <<initial>>
+ReadPermission : 
+
+ReadPermission --> CheckPermission
+
+state CheckPermission <<choice>>
+
+CheckPermission --> PermissionGranted : [Permission == true]
+CheckPermission --> PermissionDenied : [Permission == false]
+
+state PermissionGranted <<happy>>
+PermissionGranted : 
+
+state PermissionDenied <<error>>
+PermissionDenied : 
+
+PermissionGranted --> SendKMSRequest : Event: CTSendKmsRequest
+PermissionDenied --> ErrorResponse : Event: CTRequestFailed
+
+state SendKMSRequest <<initial>>
+SendKMSRequest : 
+
+SendKMSRequest --> KMSRequestSent : Event: CTKMSRequestSent
+SendKMSRequest --> ErrorResponse : Event: CTRequestFailed
+
+state KMSRequestSent <<initial>>
+KMSRequestSent : 
+
+KMSRequestSent --> KMSResponseReceived : Event: KMSResponseReceived
+KMSRequestSent --> ErrorResponse : Event: CTRequestFailed
+
+state KMSResponseReceived <<happy>>
+KMSResponseReceived : 
+
+KMSResponseReceived --> SuccessResponse : Event: CTRequestSucceeded
+KMSResponseReceived --> ErrorResponse : Event: CTRequestFailed
+
+state SuccessResponse <<happy>>
+SuccessResponse : 
+
+state ErrorResponse <<error>>
+ErrorResponse : 
+
+SuccessResponse --> [*] : End
+ErrorResponse --> [*] : End
+
+@enduml

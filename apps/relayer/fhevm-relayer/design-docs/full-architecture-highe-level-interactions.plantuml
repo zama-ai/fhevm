@@ -1,0 +1,310 @@
+@startuml gateway-external-connections
+
+title "Gateway: Connections to external systems"
+
+skinparam PackageBorderColor white
+skinparam PackageBackgroundColor lightgrey
+skinparam PackageStyle rectangle
+skinparam ComponentStyle rectangle
+
+!define colour_withHostL1 #red
+!define colour_withGatewayL2 #green
+!define color_withUser #Blue
+
+
+legend center
+    |  Color  |   Connection with   |
+    |<colour_withHostL1>|   Host L1 |
+    |<colour_withGatewayL2>|   Gateway L2 |
+    |<color_withUser>|   User  - ZWS |
+endlegend
+
+' column 1: Relayer, Accounts and payments, User
+together {
+
+package "ZWS Relayer Service" as zwsRelayerService{
+
+  package "Relayer SDK" as relayer {
+    package "Host L1 Adapter" as relayerSdk_hostL1Adapter {
+      component "Event Listener" as  relayerSdk_hostL1Adapter_eventListener
+      component "Tx Sender" as relayerSdk_hostL1Adapter_txSender
+      component "Account Reader" as relayerSdk_hostL1Adapter_AccountReader
+    }
+
+    package "User API" as relayerSdk_userAPI {
+      component "Rest API for user" as relayerSdk_userAPI_restAPIForUser
+      () "HTTP" as relayerSdk_userAPI_http
+    }
+
+    package "Gateway L2 Adapter" as relayerSdk_gatewayL2Adapter {
+      component "Event Listener" as relayerSdk_gatewayL2Adapter_eventListener
+      component "Tx Sender" as relayerSdk_gatewayL2Adapter_txSender
+      component "Account Reader" as relayerSdk_gatewayL2Adapter_accountReader
+    }
+  }
+
+  package "Wallet Manager" as zwsRelayerService_walletManager {
+    component "Rest API for user" as walletManager_restApiForUser
+    () "HTTP" as restApiForUser_http
+  }
+}
+
+actor User
+}
+
+' column 2: host L1, gateway L2
+together {
+  package "Host L1" as hostL1 {
+    component "Dapp Contract" as hostL1_dappContract
+    component "Oracle Contract" as hostL1_OracleContract
+    component "ACL Contract" as hostL1_aclContract
+    component "TFHE Executor Contract" as hostL1_Rpc
+    component "Input Verifier" as hostL1_inputVerifierContract
+    component "RPC" as hostL1_Rpc
+    () "WebSocket" as hostL1_Rpc_ws
+    () "HTTP" as hostL1_Rpc_http
+  }
+
+
+  package "Gateway L2" as gatewayL2 {
+    component "Gateway ACL" as gatewayL2_aclContract
+    component "ZkPoK Manager" as gatewayL2_ZkPoKManagerContract
+    component "Decryption Manager" as gatewayL2_decryptionManagerContract
+    component "Coprocessor Manager" as gatewayL2_coprocessorManagerContract
+    component "Domain Manager" as gatewayL2_domainManagerContract
+    component "RPC" as gatewayL2_Rpc
+    () "WebSocket" as gatewayL2_ws
+    () "HTTP" as gatewayL2_http
+  }
+}
+
+' column 3: Coprocessor, KMS Connector, Ciphertext DA, KeyChain DA, KMS Core, ZkPoK Service
+together {
+  package "Ciphertext DA" as ciphertextDa{
+    component "Ciphertext Storage" as ciphertextDa_ciphertextStorage
+    () "gRPC" as ciphertextDa_ciphertextStorage_grpc
+  }
+
+  package "KeyChain DA" as keychainDA{
+    component "Keys Storage" as keychainDA_readApi
+    () "gRPC" as keychainDA_readApi_grpc
+  }
+
+  package "Kms Core" as kmsCore {
+    component "Keygen" as kmsCore_keygen
+    component "Decryption" as kmsCore_decryption
+    component "API" as kmsCore_api
+    () "gRPC" as kmsCore_grpc
+  }
+
+  package "KMS connector" as kmsConnector {
+
+    package "Gateway L2 Adapter" as kmsConnector_gatewayL2Adapter {
+      component "Event Listener" as kmsConnector_gatewayL2Adapter_eventListener
+      component "Tx Sender" as kmsConnector_gatewayL2Adapter_txSender
+      component "ACL Reader" as kmsConnector_gatewayL2Adapter_aclChecker
+    }
+
+    package "Kms Core Adapter" as kmsConnector_kmsCoreAdapter {
+      component "Decrypt" as kmsConnector_Decrypt
+      component "Keygen" as kmsConnector_Keygen
+    }
+
+    package "Ciphertext DA Adapter" as kmsConnector_ciphertextDaAdapter {
+      component "Ciphertext fetcher" as ciphertextDaAdapter_ciphertextFetcher
+    }
+  }
+
+  package "Coprocessor" as coprocessorParty {
+    package "Gateway L2 Adapter" as coprocessorParty_gatewayL2Adapter{
+      component "Event Listener" as coprocessorParty_gatewayL2Adapter_eventListener
+      component "Tx Sender" as coprocessorParty_gatewayL2Adapter_txSender
+    }
+
+    package "Host L1 Adapter" as coprocessorParty_hostL1Adapter{
+      component "Event Listener" as coprocessorParty_hostL1Adapter_eventListener
+    }
+
+    package "Coprocessor" as coprocessorParty_coprocessor {
+      component "Compute Handler" as coprocessor_computeHandler
+      component "Input Handler" as coprocessor_inputHandler
+      component "ACL Handler" as coprocessor_aclHandler
+    }
+
+    package "Coprocessor Identity" as coprocessorParty_coprocessorIdentity {
+      component "Coprocessor Identity Keys" as coprocessorIdentity_coprocessorIdentityKeys
+    }
+
+    package "Coprocessor Keys" as coprocessorParty_keys {
+      component "Coprocessor FHE Keys" as coprocessorKeys_coprocessorFHEKeys
+    }
+
+    package "Coprocessor DA" as coprocessorParty_coprocessorDa {
+      component "Ciphertext Storage" as coprocessorDa_ciphertextStorage
+    }
+
+    package "ZkPoK Service" as coprocessorParty_zkpokService {
+      component "ZkPoK Verifier" as zkpokService_zkpokVerifier
+    }
+  }
+
+}
+
+
+' Connections within block 1
+' =====================================
+
+' Ciphertext DA internal connections
+ciphertextDa_ciphertextStorage -right- ciphertextDa_ciphertextStorage_grpc
+
+' Kms Core internal connections
+kmsCore_api -- kmsCore_grpc
+kmsCore_keygen --> keychainDA_readApi_grpc
+
+' KeyChain DA internal connection
+keychainDA_readApi - keychainDA_readApi_grpc
+
+' Coprocessor to Ciphertext DA connections
+gatewayL2_ws <.[colour_withGatewayL2]. ciphertextDa_ciphertextStorage
+
+' KMS Connector to Ciphertext DA connections
+ciphertextDaAdapter_ciphertextFetcher --> ciphertextDa_ciphertextStorage_grpc
+
+' KMS Connector to Kms Core connections
+kmsConnector_Decrypt -up-> kmsCore_grpc
+kmsConnector_Keygen -up-> kmsCore_grpc
+
+' Alignment
+' ---------
+coprocessorParty_gatewayL2Adapter -[hidden]down- coprocessorParty_hostL1Adapter
+kmsConnector_gatewayL2Adapter_txSender -[hidden]up- kmsConnector_Keygen
+
+
+
+' Connections within block 2
+' =======================================
+
+' Gateway L2 internal connections
+gatewayL2_Rpc --- gatewayL2_http
+gatewayL2_Rpc -- gatewayL2_ws
+
+' Host L1 internal connections
+hostL1_Rpc -- hostL1_Rpc_ws
+hostL1_Rpc --- hostL1_Rpc_http
+
+
+' Alignment
+' ---------
+gatewayL2 -[hidden]down-- hostL1
+
+' Connections across together blocks 1,2
+' =======================================
+
+' Coprocessor to hostL1 connections
+coprocessorParty_hostL1Adapter_eventListener .[colour_withHostL1].> hostL1_Rpc_ws
+
+' TODO: Coprocessor to keychain DA
+' coprocessorParty_keyFetcher --> keychainDA_readApi_grpc
+
+' Coprocessor to Gateway L2 connections
+coprocessorParty_gatewayL2Adapter_eventListener .[colour_withGatewayL2].> gatewayL2_ws
+coprocessorParty_gatewayL2Adapter_txSender -[colour_withGatewayL2]-> gatewayL2_http
+
+' KMS Connector to Gateway L2 connections
+kmsConnector_gatewayL2Adapter_eventListener .[colour_withGatewayL2].> gatewayL2_ws
+kmsConnector_gatewayL2Adapter_txSender -[colour_withGatewayL2]-> gatewayL2_http
+kmsConnector_gatewayL2Adapter_aclChecker -[colour_withGatewayL2]-> gatewayL2_http
+
+' TODO: User to KeyChain DA (key fetching)
+
+' Alignment
+' ---------
+
+' Connections within block 3
+' =====================================
+
+' Relayer internal connections
+
+' Accounts and payments internal connections
+walletManager_restApiForUser -right- restApiForUser_http
+
+' User to host L1 connections
+User -[colour_withHostL1]-> hostL1_Rpc_http
+
+' User to relayer connections
+relayerSdk_userAPI_restAPIForUser - relayerSdk_userAPI_http
+
+' User to User API http
+User -[color_withUser]-> relayerSdk_userAPI_http
+
+' User to zwsRelayerService payment connections
+User -[color_withUser]-> restApiForUser_http
+
+
+' Alignment
+' ---------
+relayerSdk_hostL1Adapter -[hidden]up---- relayerSdk_gatewayL2Adapter
+
+' Connections across togethers blocks 2,3
+' =======================================
+
+' Relayer to host L1 connections
+relayerSdk_hostL1Adapter_eventListener .[colour_withHostL1].> hostL1_Rpc_ws
+
+' zwsRelayerService payment to Host L1 connections
+relayerSdk_hostL1Adapter_txSender -[colour_withHostL1]-> hostL1_Rpc_http
+relayerSdk_hostL1Adapter_AccountReader -[colour_withHostL1]-> hostL1_Rpc_http
+
+' Relayer to Gateway L2 connections
+relayerSdk_gatewayL2Adapter_eventListener .[colour_withGatewayL2].> gatewayL2_ws
+
+' zwsRelayerService payment to Gateway L2 connections
+relayerSdk_gatewayL2Adapter_txSender -[colour_withGatewayL2]-> gatewayL2_http
+relayerSdk_gatewayL2Adapter_accountReader -[colour_withGatewayL2]-> gatewayL2_http
+
+
+' note top of Manager_restApiForUser
+'   This service exposes: 
+'   /keyurl: to fetch FHE keys
+'   /input_proven_ct: to validate and store inputs
+'   /reencrypt: to securely decrypt user data
+' end note
+
+' note top of hostL1Adapter_eventListener
+'   This listener catches
+'   all decryption events
+'   coming from Oracle
+' end note
+
+' note top of hostL1Adapter_txSender
+'   This connection allows
+'   to return the decrypted
+'   value based on the initial
+'   callback and through
+'   a transaction to Host BC.
+' end note
+
+' note top of copro_conn
+'   This connection forwards
+'   input to coprocessor in 
+'   order to store it and retrieve 
+'   the corresponding handle.
+' end note
+
+' note top of ZkPoK_conn
+'   This connection allows
+'   to forward inputs to ZkPoK
+'   service in order to verify
+'   and sign (attest) input is
+'   legitimate
+' end note
+
+' note top of Gateway_L2_conn
+'   This connection allows
+'   to make transactions to 
+'   Gateway L2 blockchain for different
+'   requests as decryption, reencryption
+'   key and crs gen.
+' end note
+
+@enduml
