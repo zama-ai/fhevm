@@ -30,11 +30,7 @@ import {
   SubscriptionService,
 } from '#subscriptions/domain/services/subscription.service.js'
 
-import { PubSub } from 'graphql-subscriptions'
-
-let it = 0 // This is a dummy variable to make the code compile
-
-const pubSub = new PubSub()
+let it = -1
 
 @Resolver(() => DappType)
 export class DappsResolver {
@@ -82,7 +78,7 @@ export class DappsResolver {
   @Mutation(() => DummyType)
   testSubscription() {
     it++
-    pubSub.publish('dummy', {
+    this.subscriptions.publish('dummy', {
       dummy: { id: 'dummyid' + it, name: 'dummyname' },
     })
     return { id: 'dummyid' + it, name: 'dummyname2' }
@@ -90,7 +86,7 @@ export class DappsResolver {
 
   @Subscription(() => DummyType)
   dummy() {
-    return pubSub.asyncIterableIterator('dummy')
+    return this.subscriptions.asyncIterableIterator('dummy')
   }
 
   @Subscription(() => DappType)

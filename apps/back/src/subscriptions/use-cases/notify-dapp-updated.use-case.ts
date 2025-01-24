@@ -11,16 +11,22 @@ export class NotifyDappUpdated implements UseCase<DApp, void> {
     return new Task((resolve, reject) => {
       console.log('📢 notify dapp updated use case')
       this.service
-        .publish('dappUpdated', {
-          dapp: {
-            id: dapp.id.value as `dapp_${string}` & BRAND<'DAppId'>,
-            teamId: dapp.teamId,
-            createdAt: dapp.createdAt.value as Date & BRAND<'CreatedAt'>,
-            status: dapp.status,
+        .publish('dummy', {
+          dummy: {
+            id: dapp.id.value,
             name: dapp.name,
-            address: dapp.address,
           },
         })
+        // .publish('dappUpdated', {
+        //   dapp: {
+        //     id: dapp.id.value as `dapp_${string}` & BRAND<'DAppId'>,
+        //     teamId: dapp.teamId,
+        //     createdAt: dapp.createdAt.value as Date & BRAND<'CreatedAt'>,
+        //     status: dapp.status,
+        //     name: dapp.name,
+        //     address: dapp.address,
+        //   },
+        // })
 
         .then(resolve)
         .catch(err => reject(unknownError(String(err))))

@@ -4,6 +4,7 @@ import { Injectable } from '@nestjs/common'
 import {
   SubscriptionTypes,
   Subscription,
+  SubscriptionPayload,
 } from '../domain/entities/subscription.js'
 import { SubscriptionId } from '../domain/entities/subscription-id.js'
 import { SubscriptionService } from '../domain/services/subscription.service.js'
@@ -39,7 +40,7 @@ export class PubSubSubscriptionService implements SubscriptionService {
 
   asyncIterableIterator<K extends SubscriptionTypes>(
     topic: K,
-  ): AsyncIterableIterator<Extract<Subscription, { type: K }>['payload']> {
+  ): AsyncIterableIterator<SubscriptionPayload> {
     return this.#pubSub.asyncIterableIterator(topic)
   }
 }

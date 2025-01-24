@@ -46,7 +46,10 @@ export class ScDiscovered implements UseCase<Input, void> {
         dapp =>
           new Task((resolve, reject) =>
             this.subscriptions
-              .publish('dappUpdated', { dapp: dapp.toJSON() })
+              // .publish('dappUpdated', { dapp: dapp.toJSON() })
+              .publish('dummy', {
+                dummy: { id: dapp.toJSON().id, name: dapp.toJSON().name },
+              })
               .then(resolve)
               .catch(reject),
           ),

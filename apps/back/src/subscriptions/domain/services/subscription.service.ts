@@ -1,4 +1,8 @@
-import { Subscription, SubscriptionTypes } from '../entities/subscription.js'
+import type {
+  Subscription,
+  SubscriptionPayload,
+  SubscriptionTypes,
+} from '../entities/subscription.js'
 import { SubscriptionId } from '../entities/subscription-id.js'
 
 export interface SubscriptionService {
@@ -10,10 +14,7 @@ export interface SubscriptionService {
    * @param {Subscription[K]} payload - The payload of the message to be published.
    * @returns {Promise<void>} A promise that resolves when the message has been published.
    */
-  publish(
-    topic: SubscriptionTypes,
-    payload: Extract<Subscription, { type: SubscriptionTypes }>['payload'],
-  ): Promise<void>
+  publish(topic: SubscriptionTypes, payload: SubscriptionPayload): Promise<void>
 
   /**
    * Subscribes to a specific topic and registers a callback to be invoked
@@ -40,7 +41,7 @@ export interface SubscriptionService {
 
   asyncIterableIterator<K extends SubscriptionTypes>(
     topic: K,
-  ): AsyncIterableIterator<Extract<Subscription, { type: K }>['payload']>
+  ): AsyncIterableIterator<SubscriptionPayload>
 }
 
 export const SUBSCRIPTION_SERVICE = Symbol('SubscriptionService')
