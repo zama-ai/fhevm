@@ -36,6 +36,41 @@ interface IDecryptionManager {
     /// @param signatures The signatures of all the KMS Connectors that responded
     event OracleDecryptionResponse(uint256 indexed oracleDecryptionId, bytes decryptedResult, bytes[] signatures);
 
+    /// @notice Emitted when a user decryption request is made
+    /// @dev This event is meant to be listened by a user or relayer
+    /// @param userDecryptionId The user decryption request's unique ID
+    event UserDecryptionId(uint256 indexed userDecryptionId);
+
+    /// @notice Emitted when a user decryption request is made
+    /// @dev This event is meant to be listened by the KMS Connectors
+    /// @param keychainId The keychain's unique ID
+    /// @param userDecryptionId The user decryption request's unique ID
+    /// @param chainId The network's chain ID
+    /// @param kmsVerifier The network's KMS Verifier address to consider
+    /// @param acl The network's ACL address to consider
+    /// @param userAddress The user's address
+    /// @param encryptionKey The encryption key
+    /// @param proof The proof
+    /// @param ciphertextHandle The handles of the ciphertexts to decrypt
+    event UserDecryptionRequest(
+        uint256 indexed keychainId,
+        uint256 indexed userDecryptionId,
+        uint256 indexed chainId,
+        address kmsVerifier,
+        address acl,
+        address userAddress,
+        bytes encryptionKey,
+        string proof,
+        uint256 ciphertextHandle
+    );
+
+    /// @notice Emitted when an oracle decryption response is made
+    /// @dev This event is meant to be listened by a user or relayer
+    /// @param userDecryptionId The user decryption request's unique ID associated with the response
+    /// @param decryptedResult The decrypted result
+    /// @param signatures The signatures of all the KMS Connectors that responded
+    event UserDecryptionResponse(uint256 indexed userDecryptionId, bytes decryptedResult, bytes[] signatures);
+
     /// @notice Requests an oracle decryption
     /// @dev This function can be called by a user or relayer
     /// @param keychainId The keychain's unique ID
@@ -58,6 +93,38 @@ interface IDecryptionManager {
     /// @param signature The signature of the KMS Connector that responded
     function oracleDecryptionResponse(
         uint256 oracleDecryptionId,
+        bytes calldata decryptedResult,
+        bytes calldata signature
+    ) external;
+
+    /// @notice Requests a user decryption
+    /// @dev This function can be called by a user or relayer
+    /// @param keychainId The keychain's unique ID
+    /// @param chainId The network's chain ID
+    /// @param kmsVerifier The network's KMS Verifier address to consider
+    /// @param acl The network's ACL address to consider
+    /// @param userAddress The user's address
+    /// @param encryptionKey The encryption key
+    /// @param proof The proof
+    /// @param ciphertextHandle The handles of the ciphertexts to decrypt
+    function userDecryptionRequest(
+        uint256 keychainId,
+        uint256 chainId,
+        address kmsVerifier,
+        address acl,
+        address userAddress,
+        bytes calldata encryptionKey,
+        string calldata proof,
+        uint256 ciphertextHandle
+    ) external;
+
+    /// @notice Responds to a user decryption request
+    /// @dev This function can only be called by the KMS Connectors
+    /// @param userDecryptionId The user decryption request's unique ID associated with the response
+    /// @param decryptedResult The decrypted result
+    /// @param signature The signature of the KMS Connector that responded
+    function userDecryptionResponse(
+        uint256 userDecryptionId,
         bytes calldata decryptedResult,
         bytes calldata signature
     ) external;
