@@ -101,18 +101,9 @@ export class Task<A, E> {
    * @param tasks - An array of Task to be executed.
    * @returns a Task with the array of all resolved task values.
    */
-  static all<A1, E>(tasks: [Task<A1, E>]): Task<[A1], E>
-  static all<A1, A2, E>(tasks: [Task<A1, E>, Task<A2, E>]): Task<[A1, A2], E>
-  static all<A1, A2, A3, E>(
-    tasks: [Task<A1, E>, Task<A2, E>, Task<A3, E>],
-  ): Task<[A1, A2, A3], E>
-  static all<A1, A2, A3, A4, E>(
-    tasks: [Task<A1, E>, Task<A2, E>, Task<A3, E>, Task<A4, E>],
-  ): Task<[A1, A2, A3, A4], E>
-  static all<A1, A2, A3, A4, A5, E>(
-    tasks: [Task<A1, E>, Task<A2, E>, Task<A3, E>, Task<A4, E>, Task<A5, E>],
-  ): Task<[A1, A2, A3, A4, A5], E>
-  static all<E>(tasks: any[]): Task<any[], E> {
+  static all<E, Arg extends Task<any, E> = Task<any, E>>(
+    tasks: Arg[],
+  ): Task<Tuple<Arg>, E> {
     return new Task(function (resolve, reject) {
       // Note: I use `Promise.allSettled` to be sure all promises settle before
       // continuing
@@ -120,7 +111,9 @@ export class Task<A, E> {
         .then(promises =>
           promises.some(isRejected)
             ? reject(promises.find(isRejected)!.reason)
-            : resolve(promises.filter(isFullfilled).map(p => p.value)),
+            : resolve(
+                promises.filter(isFullfilled).map(p => p.value) as Tuple<Arg>,
+              ),
         )
         .catch(reject)
     })
@@ -150,3 +143,9 @@ interface Matchers<T, E, R1, R2 = R1> {
   ok(value: T): R1
   fail(error: E): R2
 }
+
+type Tuple<T> = T extends []
+  ? []
+  : T extends [infer First, ...infer Rest]
+    ? [First, ...Tuple<Rest>]
+    : never
