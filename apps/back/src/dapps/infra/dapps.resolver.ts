@@ -14,6 +14,7 @@ import { CreateDapp } from '#dapps/use-cases/create-dapp.use-case.js'
 import { GetTeamById } from '#users/use-cases/get-team-by-id.use-case.js'
 import { UpdateDapp } from '#dapps/use-cases/update-dapp.use-case.js'
 import { DappType } from '#dapps/infra/types/dapp.type.js'
+import { DummyType } from '#dapps/infra/types/dummy.type.js'
 import { CurrentUser } from '#auth/infra/decorators/current-user.js'
 import { JwtAuthGuard } from '#auth/infra/guards/jwt-auth-guard.js'
 import { User } from '#users/domain/entities/user.js'
@@ -28,6 +29,12 @@ import {
   SUBSCRIPTION_SERVICE,
   SubscriptionService,
 } from '#subscriptions/domain/services/subscription.service.js'
+
+import { PubSub } from 'graphql-subscriptions'
+
+let it = 0 // This is a dummy variable to make the code compile
+
+const pubSub = new PubSub()
 
 @Resolver(() => DappType)
 export class DappsResolver {
@@ -72,10 +79,21 @@ export class DappsResolver {
       .toPromise()
   }
 
-  @Subscription(() => DappType, {
-    filter: (payload, variables) => payload.dappId === variables.dappId,
-    resolve: payload => payload,
-  })
+  @Mutation(() => DummyType)
+  testSubscription() {
+    it++
+    pubSub.publish('dummy', {
+      dummy: { id: 'dummyid' + it, name: 'dummyname' },
+    })
+    return { id: 'dummyid' + it, name: 'dummyname2' }
+  }
+
+  @Subscription(() => DummyType)
+  dummy() {
+    return pubSub.asyncIterableIterator('dummy')
+  }
+
+  @Subscription(() => DappType)
   dappUpdated() {
     return this.subscriptions.asyncIterableIterator('dappUpdated')
   }

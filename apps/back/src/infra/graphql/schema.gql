@@ -30,6 +30,11 @@ enum DappStatus {
   DELETED @deprecated(reason: "Not implmented yet")
 }
 
+type Dummy {
+  id: ID!
+  name: String!
+}
+
 type User {
   id: ID!
   email: String!
@@ -69,6 +74,7 @@ type Mutation {
   createDapp(input: CreateDappInput!): Dapp!
   updateDapp(input: UpdateDappInput!): Dapp!
   deployDapp(input: DeployDAppInput!): Dapp!
+  testSubscription: Dummy!
 }
 
 input LoginInput {
@@ -121,5 +127,6 @@ input DeployDAppInput {
 }
 
 type Subscription {
+  dummy: Dummy!
   dappUpdated: Dapp!
 }

@@ -21,7 +21,20 @@ import { DappsModule } from '#dapps/infra/dapps.module.js'
         res,
       }),
       subscriptions: {
-        'graphql-ws': true,
+        'graphql-ws': {
+          path: '/graphql',
+          onConnect: context => {
+            const { connectionParams } = context
+            if (!connectionParams) {
+              throw new Error('Missing auth token!')
+            }
+            return {
+              req: {
+                headers: { authorization: connectionParams.authorization },
+              },
+            }
+          },
+        },
       },
       playground: true,
     }),

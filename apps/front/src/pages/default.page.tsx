@@ -1,23 +1,26 @@
 import { Stack, Text } from '@chakra-ui/react'
 import { Link } from '@/components/ui/link.js'
-import { useNavigate } from 'react-router'
-import { useEffect } from 'react'
+
+import { gql, useSubscription } from '@apollo/client'
+import { DummyLiveSubscription } from '@/__generated__/graphql'
+
+const GET_PROJECT_LIVE = gql(`
+  subscription DummyLive {
+    dummy {
+      id
+      name
+    }
+  }
+`)
 
 export function DefaultPage() {
-  const navigate = useNavigate()
-
-  useEffect(() => {
-    const logged = !!localStorage.getItem('token')
-    if (logged) {
-      navigate('/dashboard')
-    } else {
-      navigate('/signin')
-    }
-  }, [navigate])
+  const { data: liveData } =
+    useSubscription<DummyLiveSubscription>(GET_PROJECT_LIVE)
   return (
     <Stack gap="4">
       <Text>
         <Link to="/signin">signin</Link>
+        {liveData?.dummy?.id}
       </Text>
     </Stack>
   )
