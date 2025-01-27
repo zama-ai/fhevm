@@ -1,12 +1,24 @@
-import { Stack, Text } from '@chakra-ui/react'
+import { Box, Stack, Text } from '@chakra-ui/react'
 import { Link } from '@/components/ui/link.js'
 
 import { gql, useSubscription } from '@apollo/client'
-import { DummyLiveSubscription } from '@/__generated__/graphql'
+import {
+  DappUpdatedSubscription,
+  DummyLiveSubscription,
+} from '@/__generated__/graphql'
 
 const GET_PROJECT_LIVE = gql(`
-  subscription DummyLive {
-    dummy {
+  subscription DummyLive($id: ID!) {
+    dummy(input: { id: $id}) {
+      id
+      name
+    }
+  }
+`)
+
+const SUB_DAPP_UPDATED = gql(`
+  subscription DappUpdated($id: ID!) {
+    dappUpdated(input: { id: $id }) {
       id
       name
     }
@@ -14,14 +26,28 @@ const GET_PROJECT_LIVE = gql(`
 `)
 
 export function DefaultPage() {
-  const { data: liveData } =
-    useSubscription<DummyLiveSubscription>(GET_PROJECT_LIVE)
+  const { data: dummyData } = useSubscription<DummyLiveSubscription>(
+    GET_PROJECT_LIVE,
+    {
+      variables: { id: 'dapp_123abc' },
+    },
+  )
+  const { data: dappData } = useSubscription<DappUpdatedSubscription>(
+    SUB_DAPP_UPDATED,
+    {
+      variables: { id: '1' },
+    },
+  )
   return (
     <Stack gap="4">
       <Text>
         <Link to="/signin">signin</Link>
-        {liveData?.dummy?.id}
       </Text>
+      <Box>{localStorage.getItem('token') ? 'has token' : 'no token'}</Box>
+      <Box>dummy:{dummyData?.dummy?.id}</Box>
+      <Box>
+        dapp:{dappData?.dappUpdated?.id} / {dappData?.dappUpdated?.name}
+      </Box>
     </Stack>
   )
 }

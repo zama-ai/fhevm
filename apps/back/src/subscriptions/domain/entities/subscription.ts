@@ -22,7 +22,7 @@ const subscriptionMap = {
     dapp: dAppSchema,
   }),
   dappUpdated: genSchema('dappUpdated', {
-    dapp: dAppSchema,
+    dappUpdated: dAppSchema,
   }),
   dappDeleted: genSchema('dappDeleted', {
     dapp: dAppSchema,
@@ -33,6 +33,25 @@ const subscriptionMap = {
       name: z.string(),
     }),
   }),
+}
+
+// TODO: use deiscriminatedUnion instead of calling types directly
+export type SubscriptionDummyPayload = {
+  dummy: {
+    id: string
+    name: string
+  }
+}
+
+export type SubscriptionDappUpdatedPayload = {
+  dapp: {
+    id: string
+    name: string
+    description: string
+    teamId: string
+    createdAt: string
+    updatedAt: string
+  }
 }
 
 export const schema = z.discriminatedUnion('type', [

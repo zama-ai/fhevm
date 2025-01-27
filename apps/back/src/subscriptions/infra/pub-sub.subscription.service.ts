@@ -26,9 +26,9 @@ export class PubSubSubscriptionService implements SubscriptionService {
     return this.#pubSub.publish(topic, payload)
   }
 
-  async subscribe<K extends keyof Subscription>(
-    topic: K,
-    callback: (payload: Subscription[K]) => void,
+  async subscribe<T>(
+    topic: string,
+    callback: (payload: T) => void,
   ): Promise<SubscriptionId> {
     const subId = await this.#pubSub.subscribe(topic, callback)
     return new SubscriptionId(subId)
@@ -38,9 +38,7 @@ export class PubSubSubscriptionService implements SubscriptionService {
     this.#pubSub.unsubscribe(id.value)
   }
 
-  asyncIterableIterator<K extends SubscriptionTypes>(
-    topic: K,
-  ): AsyncIterableIterator<SubscriptionPayload> {
+  asyncIterableIterator<T>(topic: string): AsyncIterableIterator<T> {
     return this.#pubSub.asyncIterableIterator(topic)
   }
 }

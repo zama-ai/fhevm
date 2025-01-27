@@ -2,7 +2,6 @@ import { AppError, Task, unknownError, UseCase } from 'utils'
 
 import { DApp } from '#dapps/domain/entities/dapp.js'
 import { SubscriptionService } from '../domain/services/subscription.service.js'
-import { BRAND } from 'zod'
 
 export class NotifyDappUpdated implements UseCase<DApp, void> {
   constructor(private readonly service: SubscriptionService) {}

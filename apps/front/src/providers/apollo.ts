@@ -20,6 +20,7 @@ const wsLink = new GraphQLWsLink(
     url: import.meta.env.VITE_BACK_WS_URL,
     connectionParams: () => {
       const token = localStorage.getItem('token')
+      console.log('wsLink token', token)
       if (!token) return {}
       return {
         authorization: `Bearer ${token}`,

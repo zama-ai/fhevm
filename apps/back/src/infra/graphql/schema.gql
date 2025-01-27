@@ -74,7 +74,8 @@ type Mutation {
   createDapp(input: CreateDappInput!): Dapp!
   updateDapp(input: UpdateDappInput!): Dapp!
   deployDapp(input: DeployDAppInput!): Dapp!
-  testSubscription: Dummy!
+  testDummySubscription: Dummy!
+  testDappSubscription: Dapp!
 }
 
 input LoginInput {
@@ -127,6 +128,10 @@ input DeployDAppInput {
 }
 
 type Subscription {
-  dummy: Dummy!
-  dappUpdated: Dapp!
+  dummy(input: DeployedDAppInput!): Dummy!
+  dappUpdated(input: DeployedDAppInput!): Dapp!
+}
+
+input DeployedDAppInput {
+  id: ID!
 }

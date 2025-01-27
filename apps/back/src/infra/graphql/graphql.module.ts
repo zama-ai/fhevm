@@ -1,8 +1,5 @@
 import { Module } from '@nestjs/common'
-import {
-  GraphQLModule as BaseGraphQLModule,
-  Subscription,
-} from '@nestjs/graphql'
+import { GraphQLModule as BaseGraphQLModule } from '@nestjs/graphql'
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo'
 import { join } from 'path'
 import { AuthModule } from '#auth/infra/auth.module.js'
@@ -23,17 +20,6 @@ import { DappsModule } from '#dapps/infra/dapps.module.js'
       subscriptions: {
         'graphql-ws': {
           path: '/graphql',
-          onConnect: context => {
-            const { connectionParams } = context
-            if (!connectionParams) {
-              throw new Error('Missing auth token!')
-            }
-            return {
-              req: {
-                headers: { authorization: connectionParams.authorization },
-              },
-            }
-          },
         },
       },
       playground: true,

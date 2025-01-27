@@ -11,6 +11,7 @@ import { DeployDApp } from '../use-cases/deploy-dapp.use-case.js'
 import { AppDeploymentEnded } from '../use-cases/app-deployment-ended.use-case.js'
 import { AppDeploymentRequested } from '#dapps/use-cases/app-deployment-requested.use-case.js'
 import { SubscriptionsModule } from '#subscriptions/infra/subscriptions.module.js'
+import { AppUpdatesSubscription } from '#dapps/use-cases/app-updates-subscription.use-case.js'
 
 @Module({
   imports: [DatabaseModule, SubscriptionsModule],
@@ -27,6 +28,7 @@ import { SubscriptionsModule } from '#subscriptions/infra/subscriptions.module.j
     DeployDApp,
     AppDeploymentRequested,
     AppDeploymentEnded,
+    AppUpdatesSubscription,
   ],
   exports: [
     AppDeploymentRequested,

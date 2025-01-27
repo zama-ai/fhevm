@@ -1,5 +1,4 @@
 import type {
-  Subscription,
   SubscriptionPayload,
   SubscriptionTypes,
 } from '../entities/subscription.js'
@@ -27,9 +26,12 @@ export interface SubscriptionService {
    * @returns {Promise<SubscriptionId>} A promise that resolves to a SubscriptionId
    * which can be used to unsubscribe from the topic.
    */
-  subscribe<K extends keyof Subscription>(
-    topic: K,
-    callback: (payload: Subscription[K]) => void,
+  // subscribe<K extends keyof Subscription>(
+  //   topic: K,
+  //   callback: (payload: Subscription[K]) => void,
+  subscribe<T>(
+    topic: string,
+    callback: (payload: T) => void,
   ): Promise<SubscriptionId>
 
   /**
@@ -38,10 +40,12 @@ export interface SubscriptionService {
    * @param {SubscriptionId} id - The SubscriptionId to unsubscribe from.
    */
   unsubscribe(id: SubscriptionId): void
+  // TODO: restore usage of deiscriminatedUnion instead of calling types directly
+  // asyncIterableIterator<K extends SubscriptionTypes>(
+  //   topic: K,
+  // ): AsyncIterableIterator<SubscriptionPayload>
 
-  asyncIterableIterator<K extends SubscriptionTypes>(
-    topic: K,
-  ): AsyncIterableIterator<SubscriptionPayload>
+  asyncIterableIterator<T>(topic: string): AsyncIterableIterator<T>
 }
 
 export const SUBSCRIPTION_SERVICE = Symbol('SubscriptionService')
