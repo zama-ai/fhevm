@@ -29,9 +29,9 @@ export class UpdateUser implements UseCase<Input, User> {
   execute({ newUser, user }: Input): Task<User, AppError> {
     return this.uow.exec(
       this.userRepository
-        .findById(new UserId(user.id))
+        .findById(user.id)
         .chain(user => {
-          if (user && user.id === new UserId(newUser.id)) {
+          if (user && user.id === UserId.from(newUser.id)) {
             return Task.of(user)
           } else {
             return Task.reject<never, AppError>(unknownError('User not found'))

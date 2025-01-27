@@ -38,7 +38,7 @@ export class DappsResolver {
   @UseGuards(JwtAuthGuard)
   dapp(@Args('input') input: QueryDappInput, @CurrentUser() user: User) {
     return this.getDappByIdUC
-      .execute({ dappId: new DAppId(input.id), userId: user.id })
+      .execute({ dappId: DAppId.from(input.id), userId: user.id })
       .toPromise()
   }
 
@@ -53,7 +53,7 @@ export class DappsResolver {
   updateDapp(@Args('input') input: UpdateDappInput, @CurrentUser() user: User) {
     const { id, ...props } = input
     return this.updateDappUC
-      .execute({ dapp: { id: new DAppId(id), ...props }, user })
+      .execute({ dapp: { id: DAppId.from(id), ...props }, user })
       .toPromise()
   }
 
@@ -61,13 +61,13 @@ export class DappsResolver {
   @UseGuards(JwtAuthGuard)
   deployDapp(@Args('input') input: DeployDAppInput, @CurrentUser() user: User) {
     return this.deployDappUC
-      .execute({ dappId: new DAppId(input.dappId), user })
+      .execute({ dappId: DAppId.from(input.dappId), user })
       .toPromise()
   }
 
   @ResolveField(() => TeamType, { name: 'team' })
   async team(@Parent() dapp: DappType) {
     const { teamId } = dapp
-    return this.getTeamByIdUC.execute(new TeamId(teamId)).toPromise()
+    return this.getTeamByIdUC.execute(TeamId.from(teamId)).toPromise()
   }
 }

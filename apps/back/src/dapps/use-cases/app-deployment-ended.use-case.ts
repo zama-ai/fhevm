@@ -24,7 +24,7 @@ export class AppDeploymentEnded implements UseCase<Input, void> {
   execute({ event }: Input): Task<void, AppError> {
     return this.uow.exec(
       this.repo
-        .update(new DAppId(event.payload.applicationId as `dapp_${string}`), {
+        .update(DAppId.from(event.payload.applicationId as `dapp_${string}`), {
           status: event.type === 'app-deployment.completed' ? 'LIVE' : 'DRAFT',
         })
         .match({

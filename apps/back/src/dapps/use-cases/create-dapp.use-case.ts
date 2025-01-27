@@ -25,7 +25,7 @@ export class CreateDapp implements UseCase<Input, DApp> {
   ) {}
   execute(input: Input): Task<DApp, AppError> {
     return this.teamRepository
-      .findOneByIdAndUserId(new TeamId(input.dapp.teamId), input.user.id) // this can throw with a "Team not found" error, it should throw an unthorized error
+      .findOneByIdAndUserId(TeamId.from(input.dapp.teamId), input.user.id) // this can throw with a "Team not found" error, it should throw an unthorized error
       .chain(team =>
         DApp.create({
           name: input.dapp.name,

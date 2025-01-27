@@ -57,8 +57,8 @@ export class EtherscanContractService implements ContractService {
         .then(data =>
           data.status === '1'
             ? resolve({
-                contractAddress: new Address(data.result[0].contractAddress),
-                creatorAddress: new Address(data.result[0].contractCreator),
+                contractAddress: Address.from(data.result[0].contractAddress),
+                creatorAddress: Address.from(data.result[0].contractCreator),
               })
             : reject(notFoundError('Contract not found')),
         )

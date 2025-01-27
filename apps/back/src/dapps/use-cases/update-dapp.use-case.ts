@@ -20,7 +20,7 @@ export class UpdateDapp implements UseCase<Input, DApp> {
   constructor(
     @Inject(UNIT_OF_WORK) private readonly uow: UnitOfWork,
     private readonly dappRepository: DAppRepository,
-  ) { }
+  ) {}
   execute({ dapp: { id, ...data }, user }: Input): Task<DApp, AppError> {
     return this.uow.exec(
       this.dappRepository

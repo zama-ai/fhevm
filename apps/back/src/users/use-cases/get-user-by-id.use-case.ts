@@ -9,6 +9,6 @@ export class GetUserById implements UseCase<string, User> {
   constructor(private readonly userRepository: UserRepository) {}
 
   execute(userId: `user_${string}`): Task<User, AppError> {
-    return this.userRepository.findById(new UserId(userId))
+    return this.userRepository.findById(UserId.from(userId))
   }
 }

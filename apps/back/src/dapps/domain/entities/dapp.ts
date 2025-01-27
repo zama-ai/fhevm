@@ -7,17 +7,17 @@ import { TeamId } from '#users/domain/entities/value-objects.js'
 const status = z.enum(['DRAFT', 'DEPLOYING', 'LIVE'])
 
 const schema = z.object({
-  id: DAppId,
+  id: DAppId.schema,
   name: z.string(),
   status,
-  teamId: TeamId,
+  teamId: TeamId.schema,
   address: z
     .string()
     .length(42, 'sepolia address must be exactly 42 charaxters long')
     .startsWith('0x', 'sepolia address must start with 0x')
     .optional()
     .nullable(),
-  createdAt: CreatedAt,
+  createdAt: CreatedAt.schema,
 })
 
 export type DAppProps = z.infer<typeof schema>

@@ -1,6 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common'
 import { JwtService } from '@nestjs/jwt'
-import { randomUUID } from 'crypto'
 import { User } from '#users/domain/entities/user.js'
 import { UserRepository } from '#users/domain/repositories/user.repository.js'
 import { Invitation } from '#invitations/domain/entities/invitation.js'
@@ -10,11 +9,7 @@ import type { AppError, UnitOfWork, UseCase } from 'utils'
 import { Task, notFoundError } from 'utils'
 import type { JwtPayload } from '../interfaces/jwt-payload.js'
 import { Token } from '#invitations/domain/entities/value-objects.js'
-import {
-  Password,
-  TeamId,
-  ValidatedPassword,
-} from '#users/domain/entities/value-objects.js'
+import { ValidatedPassword } from '#users/domain/entities/value-objects.js'
 import { Team } from '#users/domain/entities/team.js'
 import { UNIT_OF_WORK } from '#constants.js'
 
@@ -74,7 +69,7 @@ export class SignUp
 
   private validateInvitation(token: string): Task<Invitation, AppError> {
     return this.invitationRepository
-      .findByToken(new Token(token))
+      .findByToken(Token.from(token))
       .chain<Invitation>(invitation =>
         invitation.isValid
           ? Task.of(invitation)

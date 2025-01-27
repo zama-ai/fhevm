@@ -13,11 +13,7 @@ export class DAppId extends ValueObject(
     .and(z.custom<`dapp_${string}`>()),
 ) {
   static random(): DAppId {
-    return new DAppId(`dapp_${nanoid(12)}`)
-  }
-
-  static fromString(id: string): DAppId {
-    return new DAppId(id as `dapp_${string}`)
+    return DAppId.from(`dapp_${nanoid(12)}`)
   }
 }
 
@@ -28,6 +24,6 @@ export class CreatedAt extends ValueObject(
     .refine(date => date <= new Date(), 'CreatedAt should be in the past'),
 ) {
   static now(): CreatedAt {
-    return new CreatedAt(new Date())
+    return CreatedAt.from(new Date())
   }
 }

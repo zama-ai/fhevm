@@ -13,7 +13,9 @@ export class Password extends ValueObject('Password', z.string()) {
    * @returns an hashed password
    */
   static hash(password: ValidatedPassword) {
-    return new Password(bcrypt.hashSync(password.value, bcrypt.genSaltSync(10)))
+    return Password.from(
+      bcrypt.hashSync(password.value, bcrypt.genSaltSync(10)),
+    )
   }
 
   /**
@@ -44,7 +46,7 @@ export class ValidatedPassword extends ValueObject(
     // TODO: investigate the reason and try to solve it.
   ): Result<ValidatedPassword, AppError> {
     try {
-      return ok(new ValidatedPassword(password))
+      return ok(ValidatedPassword.from(password))
     } catch (error) {
       if (error instanceof ZodError) {
         return fail(validationError(error.message))
@@ -64,7 +66,7 @@ export class TeamId extends ValueObject(
     .and(z.custom<`team_${string}`>()),
 ) {
   static random() {
-    return new TeamId(`team_${nanoid(10)}`)
+    return TeamId.from(`team_${nanoid(10)}`)
   }
 }
 
@@ -78,6 +80,6 @@ export class UserId extends ValueObject(
     .and(z.custom<`user_${string}`>()),
 ) {
   static random() {
-    return new UserId(`user_${nanoid(10)}`)
+    return UserId.from(`user_${nanoid(10)}`)
   }
 }
