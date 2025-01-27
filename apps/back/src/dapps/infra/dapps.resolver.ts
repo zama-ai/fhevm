@@ -22,7 +22,7 @@ import { TeamId } from '#users/domain/entities/value-objects.js'
 import { DeployDApp } from '../use-cases/deploy-dapp.use-case.js'
 import { DeployDAppInput } from './dto/inputs/deploy-dapp.input.js'
 import { GetDappById } from '../use-cases/get-dapp-by-id.use-case.js'
-import { CreatedAt, DAppId } from '../domain/entities/value-objects.js'
+import { DAppId } from '../domain/entities/value-objects.js'
 import { TeamType } from '#users/infra/types/team.type.js'
 import { QueryDappInput } from './dto/inputs/query-dapp.input.js'
 import {
@@ -30,13 +30,9 @@ import {
   SubscriptionService,
 } from '#subscriptions/domain/services/subscription.service.js'
 import { DApp } from '#dapps/domain/entities/dapp.js'
-import { BRAND } from 'zod'
 import { DeployedDAppInput } from './dto/inputs/deployed-dapp.input.js'
 import { AppUpdatesSubscription } from '#dapps/use-cases/app-updates-subscription.use-case.js'
-import {
-  SubscriptionDappUpdatedPayload,
-  SubscriptionDummyPayload,
-} from '#subscriptions/domain/entities/subscription.js'
+import { SubscriptionDummyPayload } from '#subscriptions/domain/entities/subscription.js'
 
 @Resolver(() => DappType)
 export class DappsResolver {
@@ -99,7 +95,7 @@ export class DappsResolver {
       id: 'dapp_cRcSlh0_the9',
       teamId: 'team_lSOuxerGl4',
       createdAt: new Date(),
-      status: 'LIVE',
+      status: 'DEPLOYING',
       name: 'test' + Math.floor(Math.random() * 100),
       address: '0x004f6ab8b0c9977fb5464354ac152d3d1b5605f9',
     })
@@ -126,21 +122,12 @@ export class DappsResolver {
     @CurrentUser() user: User,
   ) {
     console.log('input', input, user.email)
-    // @Subscription(() => DappType)
-    // @UseGuards(JwtAuthGuard)
-    // dappUpdated(
-    //   // @Args('input') input: DeployedDAppInput,
-    //   // @CurrentUser() user: User,
-    // ) {
-    //   return this.subscriptions.asyncIterableIterator('dummy')
-    // return this.appUpdatesSubscriptionUC.execute({
-    //   dappId: input.id,
-    // })
-    // TODO: try doing a usecase that checks permission
-    // and returns an asyncIterableIterator
-    return this.subscriptions.asyncIterableIterator<SubscriptionDappUpdatedPayload>(
-      'dappUpdated',
-    )
+    return this.appUpdatesSubscriptionUC
+      .execute({
+        dappId: input.id,
+        user,
+      })
+      .toPromise()
   }
 
   @ResolveField(() => TeamType, { name: 'team' })

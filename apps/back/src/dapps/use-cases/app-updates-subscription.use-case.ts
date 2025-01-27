@@ -7,21 +7,21 @@ import {
   SubscriptionService,
 } from '#subscriptions/domain/services/subscription.service.js'
 import { DAppId } from '#dapps/domain/entities/value-objects.js'
-import {
-  SubscriptionDappUpdatedPayload,
-  SubscriptionDummyPayload,
-  SubscriptionPayload,
-} from '#subscriptions/domain/entities/subscription.js'
+import { SubscriptionDappUpdatedPayload } from '#subscriptions/domain/entities/subscription.js'
 
 type Input = {
   dappId: `dapp_${string}`
-  // user: User
+  user: User
 }
 
 type Output = AsyncIterableIterator<{
-  dummy: {
+  dapp: {
     id: string
     name: string
+    description: string
+    teamId: string
+    createdAt: string
+    updatedAt: string
   }
 }>
 
@@ -33,30 +33,22 @@ export class AppUpdatesSubscription implements UseCase<Input, Output> {
     @Inject(SUBSCRIPTION_SERVICE)
     private readonly subscriptions: SubscriptionService,
   ) {}
-  execute({ dappId }: Input): Task<Output, AppError> {
-    this.logger.debug(`dapp: ${dappId} user: `)
-    return Task.of(
-      this.subscriptions.asyncIterableIterator<SubscriptionDummyPayload>(
-        'dummy',
-      ),
-    )
+  execute({ dappId, user }: Input): Task<Output, AppError> {
+    return this.dappRepository
+      .findOneByIdAndUserId(new DAppId(dappId), user.id)
+      .tap(dapp => {
+        this.logger.log(`dapp: ${dapp}`)
+      })
+      .chain(dapp =>
+        dapp.address
+          ? Task.of(
+              this.subscriptions.asyncIterableIterator<SubscriptionDappUpdatedPayload>(
+                'dappUpdated',
+              ),
+            )
+          : Task.reject<Output, AppError>(
+              validationError('missing dApp address'),
+            ),
+      )
   }
-
-  // execute({ dappId, user }: Input): Task<Output, AppError> {
-  //   return this.dappRepository
-  //     .findOneByIdAndUserId(new DAppId(dappId), user.id)
-  //     .tap(dapp => {
-  //       this.logger.debug(`dapp: ${dapp}`)
-  //     })
-  //     .chain(dapp =>
-  //       dapp.address
-  //         ? Task.of(this.subscriptions.asyncIterableIterator<'dummy'>('dummy'))
-  //         : Task.reject<Output, AppError>(
-  //             validationError('missing dApp address'),
-  //           ),
-  //     )
-  // get dapp
-  // check if users belongs to dapp.teamId
-  // subscribe to dapp updates
-  // }
 }

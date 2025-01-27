@@ -21,6 +21,7 @@ const SUB_DAPP_UPDATED = gql(`
     dappUpdated(input: { id: $id }) {
       id
       name
+      status
     }
   }
 `)
@@ -35,7 +36,7 @@ export function DefaultPage() {
   const { data: dappData } = useSubscription<DappUpdatedSubscription>(
     SUB_DAPP_UPDATED,
     {
-      variables: { id: '1' },
+      variables: { id: 'dapp_cRcSlh0_the9' },
     },
   )
   return (
@@ -46,7 +47,8 @@ export function DefaultPage() {
       <Box>{localStorage.getItem('token') ? 'has token' : 'no token'}</Box>
       <Box>dummy:{dummyData?.dummy?.id}</Box>
       <Box>
-        dapp:{dappData?.dappUpdated?.id} / {dappData?.dappUpdated?.name}
+        dapp:{dappData?.dappUpdated?.id} / {dappData?.dappUpdated?.name} /{' '}
+        {dappData?.dappUpdated?.status}
       </Box>
     </Stack>
   )
