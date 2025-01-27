@@ -15,8 +15,8 @@ import { UpdateDapp } from '#dapps/use-cases/update-dapp.use-case.js'
 import { DappType } from '#dapps/infra/types/dapp.type.js'
 import { CurrentUser } from '#auth/infra/decorators/current-user.js'
 import { JwtAuthGuard } from '#auth/infra/guards/jwt-auth-guard.js'
-import { User } from '#users/domain/entities/user.js'
-import { TeamId } from '#users/domain/entities/value-objects.js'
+import { type UserProps } from '#users/domain/entities/user.js'
+import { TeamId, UserId } from '#users/domain/entities/value-objects.js'
 import { DeployDApp } from '../use-cases/deploy-dapp.use-case.js'
 import { DeployDAppInput } from './dto/inputs/deploy-dapp.input.js'
 import { GetDappById } from '../use-cases/get-dapp-by-id.use-case.js'
@@ -36,21 +36,27 @@ export class DappsResolver {
 
   @Query(() => DappType, { name: 'dapp' })
   @UseGuards(JwtAuthGuard)
-  dapp(@Args('input') input: QueryDappInput, @CurrentUser() user: User) {
+  dapp(@Args('input') input: QueryDappInput, @CurrentUser() user: UserProps) {
     return this.getDappByIdUC
-      .execute({ dappId: DAppId.from(input.id), userId: user.id })
+      .execute({ dappId: DAppId.from(input.id), userId: UserId.from(user.id) })
       .toPromise()
   }
 
   @Mutation(() => DappType, { name: 'createDapp' })
   @UseGuards(JwtAuthGuard)
-  createDapp(@Args('input') input: CreateDappInput, @CurrentUser() user: User) {
+  createDapp(
+    @Args('input') input: CreateDappInput,
+    @CurrentUser() user: UserProps,
+  ) {
     return this.createDappUC.execute({ dapp: input, user }).toPromise()
   }
 
   @Mutation(() => DappType, { name: 'updateDapp' })
   @UseGuards(JwtAuthGuard)
-  updateDapp(@Args('input') input: UpdateDappInput, @CurrentUser() user: User) {
+  updateDapp(
+    @Args('input') input: UpdateDappInput,
+    @CurrentUser() user: UserProps,
+  ) {
     const { id, ...props } = input
     return this.updateDappUC
       .execute({ dapp: { id: DAppId.from(id), ...props }, user })
@@ -59,7 +65,10 @@ export class DappsResolver {
 
   @Mutation(() => DappType, { name: 'deployDapp' })
   @UseGuards(JwtAuthGuard)
-  deployDapp(@Args('input') input: DeployDAppInput, @CurrentUser() user: User) {
+  deployDapp(
+    @Args('input') input: DeployDAppInput,
+    @CurrentUser() user: UserProps,
+  ) {
     return this.deployDappUC
       .execute({ dappId: DAppId.from(input.dappId), user })
       .toPromise()

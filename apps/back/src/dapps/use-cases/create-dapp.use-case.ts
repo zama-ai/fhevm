@@ -5,8 +5,8 @@ import { Task } from 'utils'
 import { DApp } from '../domain/entities/dapp.js'
 import { DAppRepository } from '../domain/repositories/dapp.repository.js'
 import { TeamRepository } from '#users/domain/repositories/team.repository.js'
-import { User } from '#users/domain/entities/user.js'
-import { TeamId } from '#users/domain/entities/value-objects.js'
+import { type UserProps } from '#users/domain/entities/user.js'
+import { TeamId, UserId } from '#users/domain/entities/value-objects.js'
 
 interface Input {
   dapp: {
@@ -14,7 +14,7 @@ interface Input {
     name: string
     address?: string
   }
-  user: User
+  user: UserProps
 }
 
 @Injectable()
@@ -25,7 +25,10 @@ export class CreateDapp implements UseCase<Input, DApp> {
   ) {}
   execute(input: Input): Task<DApp, AppError> {
     return this.teamRepository
-      .findOneByIdAndUserId(TeamId.from(input.dapp.teamId), input.user.id) // this can throw with a "Team not found" error, it should throw an unthorized error
+      .findOneByIdAndUserId(
+        TeamId.from(input.dapp.teamId),
+        UserId.from(input.user.id),
+      ) // this can throw with a "Team not found" error, it should throw an unthorized error
       .chain(team =>
         DApp.create({
           name: input.dapp.name,

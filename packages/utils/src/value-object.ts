@@ -1,6 +1,12 @@
-import { z, type ZodBranded, type ZodTypeAny } from 'zod'
+import { z, ZodType, type ZodBranded, type ZodTypeAny } from 'zod'
 import { fromZodError } from './app-error.js'
 
+type TPlain<TSchemaBranded> =
+  TSchemaBranded extends ZodBranded<infer TSchema, infer _TBrand> // eslint-disable-line @typescript-eslint/no-unused-vars
+    ? z.infer<TSchema>
+    : TSchemaBranded extends ZodType
+      ? z.infer<TSchemaBranded>
+      : never
 type ZodUnbranded<T extends ZodTypeAny = ZodTypeAny> =
   T extends ZodBranded<any, any> ? never : T
 
@@ -29,8 +35,21 @@ export function ValueObject<TType extends string, TSchema extends ZodUnbranded>(
       return new this(parsed.data)
     }
 
-    to(): UnbrandedValue {
-      return this.#value as UnbrandedValue
+    toPlainValue(): TPlain<TSchema> {
+      return this.#value
+    }
+
+    toString() {
+      return this.toPlainValue().toString()
+    }
+
+    valueOf() {
+      return this.toPlainValue().valueOf()
+    }
+
+    toJSON() {
+      const plain = this.toPlainValue()
+      return isPrimitive(plain) ? plain : JSON.stringify(plain)
     }
 
     get value(): Value {
@@ -42,4 +61,15 @@ export function ValueObject<TType extends string, TSchema extends ZodUnbranded>(
       return this.value === other.value
     }
   }
+}
+
+type Primitive = string | number | boolean | bigint | symbol | undefined | null
+function isPrimitive(value: unknown): value is Primitive {
+  const type = typeof value
+  return (
+    value === null ||
+    ['string', 'number', 'boolean', 'bigint', 'symbol', 'undefined'].includes(
+      type,
+    )
+  )
 }

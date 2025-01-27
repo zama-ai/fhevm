@@ -51,7 +51,7 @@ describe('fetch all teams', () => {
       let user: User
       beforeEach(async () => {
         const res = await manager.auth.me(token)
-        expect(res.success).toBe(true)
+        expect(res.success, 'Failed to query ME').toBe(true)
         if (res.success) {
           user = res.data
         }
