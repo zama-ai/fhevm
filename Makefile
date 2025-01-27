@@ -24,15 +24,27 @@ blockchain-install:
 
 # test the blockchain
 blockchain-test:
-	bash scripts/blockchain-tests.sh
+	bash scripts/blockchain-test.sh
 
 # display blockchain operations
 blockchain-listen:
 	bash scripts/blockchain-listen.sh
-
 
 run-fhevm-devops:
 	$(MAKE) -C $(FHEVM_DEVOPS_PATH)/coprocessor run-full
 
 clean-fhevm-devops:
 	$(MAKE) -C $(FHEVM_DEVOPS_PATH)/coprocessor clean
+	
+# Hardhat
+# First launch hardhat node
+hardhat-run:
+	bash scripts/hardhat-run.sh
+# Then launch events listener	
+hardhat-listen:
+	bash scripts/hardhat-listen.sh
+# Then launch some tests
+hardhat-test:
+	bash scripts/hardhat-test.sh
+
+
