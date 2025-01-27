@@ -23,7 +23,7 @@ interface IZKPoKManager {
         uint256 indexed chainId,
         address contractAddress,
         address userAddress,
-        bytes ctProofHandle
+        bytes ciphertextProof
     );
 
     /// @notice Emitted once a ZKProof verification is completed
@@ -39,13 +39,13 @@ interface IZKPoKManager {
     /// @param chainId The network's chain ID
     /// @param contractAddress The address of the dapp the input is used for
     /// @param userAddress The address of the user providing the input
-    /// @param ctProofHandle The Coprocessor DA handle of the ciphertext and proof to be verified
+    /// @param ciphertextProof The ciphertext and proof to be verified
     function verifyProofRequest(
         uint256 keychainId,
         uint256 chainId,
         address contractAddress,
         address userAddress,
-        bytes calldata ctProofHandle
+        bytes calldata ciphertextProof
     ) external;
 
     /// @notice Processes ZKProof verification responses and validates the verification completion
