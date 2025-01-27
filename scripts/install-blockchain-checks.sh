@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Check for required tools
-required_tools=("npm" "jq" "docker" "python3")
+required_tools=("npm" "jq" "docker" "python3" "cargo" "npx")
 
 for tool in "${required_tools[@]}"; do
   if ! command -v "$tool" &> /dev/null; then
