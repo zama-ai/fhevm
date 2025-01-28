@@ -12,7 +12,7 @@ export default [
     },
     ignores: ["abi/", "artifacts/", "cache/", "res/", "types/*"],
     rules: {
-      "@typescript-eslint/no-explicit-any": "0",
+      "@typescript-eslint/no-explicit-any": 0,
     },
   },
   eslint.configs.recommended,
