@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { schema as dAppSchema } from '#dapps/domain/entities/dapp.js'
+import { DApp, schema as dAppSchema } from '#dapps/domain/entities/dapp.js'
 
 export type SubscriptionTypes =
   | 'dummy'
@@ -44,14 +44,7 @@ export type SubscriptionDummyPayload = {
 }
 
 export type SubscriptionDappUpdatedPayload = {
-  dapp: {
-    id: string
-    name: string
-    description: string
-    teamId: string
-    createdAt: string
-    updatedAt: string
-  }
+  dappUpdated: DApp
 }
 
 export const schema = z.discriminatedUnion('type', [

@@ -8,22 +8,15 @@ import {
 } from '#subscriptions/domain/services/subscription.service.js'
 import { DAppId } from '#dapps/domain/entities/value-objects.js'
 import { SubscriptionDappUpdatedPayload } from '#subscriptions/domain/entities/subscription.js'
+import { DApp } from '#dapps/domain/entities/dapp.js'
 
 type Input = {
   dappId: `dapp_${string}`
   user: User
 }
 
-// TODO: use entity here
 type Output = AsyncIterableIterator<{
-  dapp: {
-    id: string
-    name: string
-    description: string
-    teamId: string
-    createdAt: string
-    updatedAt: string
-  }
+  dappUpdated: DApp
 }>
 
 @Injectable()
@@ -38,7 +31,7 @@ export class AppUpdatesSubscription implements UseCase<Input, Output> {
     return this.dappRepository
       .findOneByIdAndUserId(new DAppId(dappId), user.id)
       .tap(dapp => {
-        this.logger.log(`dapp: ${dapp}`)
+        this.logger.debug(`${user.id} subscribed to ${dapp.id}`)
       })
       .chain(dapp =>
         dapp
