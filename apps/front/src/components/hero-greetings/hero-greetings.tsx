@@ -2,16 +2,7 @@ import { Heading, Text } from '@chakra-ui/react'
 import { Skeleton } from '@/components/ui/skeleton'
 
 function randomGreeting() {
-  const greetings = [
-    'Welcome',
-    'Hello',
-    'Hi',
-    'Hey',
-    'Yo',
-    'Sup',
-    'Hiya',
-    'Howdy',
-  ]
+  const greetings = ['Welcome', 'Hello', 'Hi', 'Hey', 'Yo', 'Hiya', 'Howdy']
   return greetings[Math.floor(Math.random() * greetings.length)]
 }
 
