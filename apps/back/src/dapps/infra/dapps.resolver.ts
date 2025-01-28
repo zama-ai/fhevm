@@ -115,7 +115,14 @@ export class DappsResolver {
     )
   }
 
-  @Subscription(() => DappType)
+  @Subscription(() => DappType, {
+    filter: (
+      payload: { dappUpdated: DappType },
+      variables: { input: DeployedDAppInput },
+    ) => {
+      return payload.dappUpdated.id === variables.input.id
+    },
+  })
   @UseGuards(JwtAuthGuard)
   dappUpdated(
     @Args('input') input: DeployedDAppInput,
