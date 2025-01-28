@@ -32,8 +32,7 @@ spec:
     spec:
     {{- if .Values.kmsCore.nitroEnclave.enabled }}
       securityContext:
-        fsGroup: 1001     # Keep this as 1001 to match device group
-        supplementalGroups: [1001]  # Add device group as supplemental
+      {{- toYaml .Values.podSecurityContextForEnclave | nindent 8 }}
     {{- else }}
       securityContext:
       {{- toYaml .Values.podSecurityContext | nindent 8 }}
