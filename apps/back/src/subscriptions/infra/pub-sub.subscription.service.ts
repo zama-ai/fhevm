@@ -4,7 +4,6 @@ import { Injectable } from '@nestjs/common'
 import {
   SubscriptionTypes,
   Subscription,
-  SubscriptionPayload,
 } from '../domain/entities/subscription.js'
 import { SubscriptionId } from '../domain/entities/subscription-id.js'
 import { SubscriptionService } from '../domain/services/subscription.service.js'

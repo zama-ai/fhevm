@@ -44,8 +44,8 @@ export class ScDiscovered implements UseCase<Input, void> {
             user,
           }),
         )
-        // TODO we should split this into multiple tasks using internal pubsub queue
-        // TODO create a task for that
+        // TODO split this into multiple tasks using internal pubsub queue / event bus
+        // https://github.com/zama-zws/console/issues/120
         .chain(
           dapp =>
             new Task((resolve, reject) =>

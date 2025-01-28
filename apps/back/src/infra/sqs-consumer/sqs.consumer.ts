@@ -37,10 +37,6 @@ export class SQSConsumer {
                 () => this.logger.debug(`${data.type} handled`),
                 err => this.logger.warn(`${data.type} failed: ${err}`),
               )
-              // this.scBroadcastDiscovered.execute(data).fork(
-              //   () => this.logger.debug(`${data.type} handled`),
-              //   err => this.logger.warn(`${data.type} failed: ${err}`),
-              // )
               break
             case 'app-deployment.requested':
               await this.appDeploymentRequestedUC

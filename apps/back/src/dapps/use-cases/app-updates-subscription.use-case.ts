@@ -1,4 +1,4 @@
-import { AppError, Task, UseCase, validationError } from 'utils'
+import { AppError, Task, unauthorizedError, UseCase } from 'utils'
 import { DAppRepository } from '../domain/repositories/dapp.repository.js'
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { User } from '#users/domain/entities/user.js'
@@ -14,6 +14,7 @@ type Input = {
   user: User
 }
 
+// TODO: use entity here
 type Output = AsyncIterableIterator<{
   dapp: {
     id: string
@@ -40,14 +41,14 @@ export class AppUpdatesSubscription implements UseCase<Input, Output> {
         this.logger.log(`dapp: ${dapp}`)
       })
       .chain(dapp =>
-        dapp.address
+        dapp
           ? Task.of(
               this.subscriptions.asyncIterableIterator<SubscriptionDappUpdatedPayload>(
                 'dappUpdated',
               ),
             )
           : Task.reject<Output, AppError>(
-              validationError('missing dApp address'),
+              unauthorizedError('User cannot access this dapp'),
             ),
       )
   }

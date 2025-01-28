@@ -9,7 +9,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     const { req } = ctx.getContext()
 
     // in case of graphql, reroute connectionparams to headers
-    // inspired by https://stackoverflow.com/questions/77941243/nestjs-graphql-unable-to-authenticate-graphql-subscription-with-graphql-ws-and-a
+    // inspired by https://stackoverflow.com/questions/77941243
     if (!req.headers) {
       if (req.connectionParams?.authorization) {
         req.headers = { authorization: req.connectionParams.authorization }
