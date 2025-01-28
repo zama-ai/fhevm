@@ -8,16 +8,13 @@ import {
 } from '#subscriptions/domain/services/subscription.service.js'
 import { DAppId } from '#dapps/domain/entities/value-objects.js'
 import { SubscriptionDappUpdatedPayload } from '#subscriptions/domain/entities/subscription.js'
-import { DApp } from '#dapps/domain/entities/dapp.js'
 
 type Input = {
   dappId: `dapp_${string}`
   user: User
 }
 
-type Output = AsyncIterableIterator<{
-  dappUpdated: DApp
-}>
+type Output = AsyncIterableIterator<SubscriptionDappUpdatedPayload>
 
 @Injectable()
 export class AppUpdatesSubscription implements UseCase<Input, Output> {

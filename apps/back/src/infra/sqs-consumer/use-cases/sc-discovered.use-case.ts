@@ -1,5 +1,6 @@
 import { DAppId } from '#dapps/domain/entities/value-objects.js'
 import { UpdateDapp } from '#dapps/use-cases/update-dapp.use-case.js'
+import { SubscriptionDappUpdatedPayload } from '#subscriptions/domain/entities/subscription.js'
 import {
   SUBSCRIPTION_SERVICE,
   SubscriptionService,
@@ -50,7 +51,9 @@ export class ScDiscovered implements UseCase<Input, void> {
           dapp =>
             new Task((resolve, reject) =>
               this.subscriptions
-                .publish('dappUpdated', { dappUpdated: dapp.toJSON() })
+                .publish<SubscriptionDappUpdatedPayload>('dappUpdated', {
+                  dappUpdated: dapp.toJSON(),
+                })
                 .then(resolve)
                 .catch(reject),
             ),

@@ -1,10 +1,7 @@
 import { PubSub } from 'graphql-subscriptions'
 import { Injectable } from '@nestjs/common'
 
-import {
-  SubscriptionTypes,
-  Subscription,
-} from '../domain/entities/subscription.js'
+import { SubscriptionTypes } from '../domain/entities/subscription.js'
 import { SubscriptionId } from '../domain/entities/subscription-id.js'
 import { SubscriptionService } from '../domain/services/subscription.service.js'
 
@@ -17,10 +14,7 @@ export class PubSubSubscriptionService implements SubscriptionService {
   // https://github.com/apollographql/graphql-subscriptions?tab=readme-ov-file#pubsub-implementations
   #pubSub = new PubSub()
 
-  publish(
-    topic: SubscriptionTypes,
-    payload: Extract<Subscription, { type: SubscriptionTypes }>['payload'],
-  ): Promise<void> {
+  publish<T>(topic: SubscriptionTypes, payload: T): Promise<void> {
     this.#pubSub.asyncIterableIterator(topic)
     return this.#pubSub.publish(topic, payload)
   }

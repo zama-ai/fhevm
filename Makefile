@@ -12,6 +12,7 @@ publish-app-deployment-discover-sc:
 		--region eu-central-1 \
 		--message '{"_tag": "Command", "type": "app-deployment.discover-sc", "payload": {"applicationId": "test-app", "deploymentId": "depl-id", "address": "0x278a72ccffee5dc758c1b573ca71f377609e39af", "chainId": "11155111"}}'
 
+# simulate the event of the smart contract being discovered
 .PHONY: publish-app-deployment.sc-discovered
 publish-app-deployment-sc-discovered:
 	aws --endpoint=http://localhost:4566 sns publish \

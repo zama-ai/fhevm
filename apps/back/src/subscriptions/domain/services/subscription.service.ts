@@ -1,7 +1,4 @@
-import type {
-  SubscriptionPayload,
-  SubscriptionTypes,
-} from '../entities/subscription.js'
+import type { SubscriptionTypes } from '../entities/subscription.js'
 import { SubscriptionId } from '../entities/subscription-id.js'
 
 export interface SubscriptionService {
@@ -13,7 +10,7 @@ export interface SubscriptionService {
    * @param {Subscription[K]} payload - The payload of the message to be published.
    * @returns {Promise<void>} A promise that resolves when the message has been published.
    */
-  publish(topic: SubscriptionTypes, payload: SubscriptionPayload): Promise<void>
+  publish<T>(topic: SubscriptionTypes, payload: T): Promise<void>
 
   /**
    * Subscribes to a specific topic and registers a callback to be invoked

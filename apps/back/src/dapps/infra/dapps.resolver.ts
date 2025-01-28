@@ -14,7 +14,6 @@ import { CreateDapp } from '#dapps/use-cases/create-dapp.use-case.js'
 import { GetTeamById } from '#users/use-cases/get-team-by-id.use-case.js'
 import { UpdateDapp } from '#dapps/use-cases/update-dapp.use-case.js'
 import { DappType } from '#dapps/infra/types/dapp.type.js'
-import { DummyType } from '#dapps/infra/types/dummy.type.js'
 import { CurrentUser } from '#auth/infra/decorators/current-user.js'
 import { JwtAuthGuard } from '#auth/infra/guards/jwt-auth-guard.js'
 import { User } from '#users/domain/entities/user.js'
@@ -32,7 +31,7 @@ import {
 import { DApp } from '#dapps/domain/entities/dapp.js'
 import { DeployedDAppInput } from './dto/inputs/deployed-dapp.input.js'
 import { AppUpdatesSubscription } from '#dapps/use-cases/app-updates-subscription.use-case.js'
-import { SubscriptionDummyPayload } from '#subscriptions/domain/entities/subscription.js'
+import { SubscriptionDappUpdatedPayload } from '#subscriptions/domain/entities/subscription.js'
 
 @Resolver(() => DappType)
 export class DappsResolver {
@@ -76,43 +75,6 @@ export class DappsResolver {
     return this.deployDappUC
       .execute({ dappId: new DAppId(input.dappId), user })
       .toPromise()
-  }
-
-  @Mutation(() => DummyType, { name: 'testDummySubscription' })
-  testDummySubscription() {
-    this.subscriptions.publish('dummy', {
-      dummy: {
-        id: 'dummy_' + Math.floor(Math.random() * 100),
-        name: 'test',
-      },
-    })
-    return { id: 'dummy_1', name: 'test' + Math.floor(Math.random() * 100) }
-  }
-
-  @Mutation(() => DappType, { name: 'testDappSubscription' })
-  testDappSubscription() {
-    const dapp = DApp.parse({
-      id: 'dapp_cRcSlh0_the9',
-      teamId: 'team_lSOuxerGl4',
-      createdAt: new Date(),
-      status: 'DEPLOYING',
-      name: 'test' + Math.floor(Math.random() * 100),
-      address: '0x004f6ab8b0c9977fb5464354ac152d3d1b5605f9',
-    })
-      .unwrap()
-      .toJSON()
-
-    this.subscriptions.publish('dappUpdated', { dappUpdated: dapp })
-    return dapp
-  }
-
-  @Subscription(() => DummyType)
-  @UseGuards(JwtAuthGuard)
-  dummy(@Args('input') input: DeployedDAppInput, @CurrentUser() user: User) {
-    console.log('input', input, user.email)
-    return this.subscriptions.asyncIterableIterator<SubscriptionDummyPayload>(
-      'dummy',
-    )
   }
 
   @Subscription(() => DappType, {
