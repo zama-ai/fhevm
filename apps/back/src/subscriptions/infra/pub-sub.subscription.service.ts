@@ -12,6 +12,7 @@ export class PubSubSubscriptionService implements SubscriptionService {
   // For production usage you'll want to use one of the PubSub implementations backed by an
   // external store. (e.g. Redis)
   // https://github.com/apollographql/graphql-subscriptions?tab=readme-ov-file#pubsub-implementations
+  // https://github.com/zama-zws/console/issues/121
   #pubSub = new PubSub()
 
   publish<T>(topic: SubscriptionTypes, payload: T): Promise<void> {

@@ -28,10 +28,8 @@ import {
   SUBSCRIPTION_SERVICE,
   SubscriptionService,
 } from '#subscriptions/domain/services/subscription.service.js'
-import { DApp } from '#dapps/domain/entities/dapp.js'
 import { DeployedDAppInput } from './dto/inputs/deployed-dapp.input.js'
 import { AppUpdatesSubscription } from '#dapps/use-cases/app-updates-subscription.use-case.js'
-import { SubscriptionDappUpdatedPayload } from '#subscriptions/domain/entities/subscription.js'
 
 @Resolver(() => DappType)
 export class DappsResolver {
