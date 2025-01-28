@@ -1,0 +1,44 @@
+
+# config/local.yaml.example
+# Example local configuration - Copy this file to local.yaml and adjust values as needed
+# Command to copy: cp config/local.yaml.example config/local.yaml
+
+environment: development
+
+network:
+  # Local WebSocket endpoint - Update with your local node
+  ws_url: "ws://localhost:8746"
+  # Quick retries for development
+  retry_delay: 1000  # 1 second for faster local development
+  max_reconnection_attempts: 3
+
+contracts:
+  # Example local contract addresses - Update these after deployment
+  decryption_oracle_address: "0x67aa98a03CC4559E1e98e7b4Ed071C35c40b588d"
+  tfhe_executor_address: "0x4e142887e3Dc6e414a9b260a1034D20C9B4Eb11F"
+
+log:
+  # Set log level for development
+  level: "info"
+  # Choose format: compact, pretty, or json
+  format: "pretty"
+  # Show source code location for debugging
+  show_file_line: false
+  # Show thread IDs for concurrency debugging
+  show_thread_ids: false
+  # Include timestamps in logs
+  show_timestamp: true
+  # Optional: Set specific log levels for different modules
+
+
+# Development-specific settings
+development:
+  # Enable for detailed error messages
+  verbose_errors: true
+
+
+# Instructions:
+# 1. Copy this file to local.yaml: cp config/local.yaml.example config/local.yaml
+# 2. Update the contract addresses after deploying your contracts
+# 3. Adjust the ws_url to match your local Ethereum node
+# 4. Modify log settings based on your debugging needs

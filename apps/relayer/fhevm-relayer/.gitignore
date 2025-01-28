@@ -23,3 +23,6 @@ Cargo.lock
 # Added by cargo
 
 /target
+
+# Local config file
+config/local.yaml

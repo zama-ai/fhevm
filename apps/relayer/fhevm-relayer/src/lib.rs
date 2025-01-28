@@ -1,14 +1,12 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+// Re-export public modules
+pub mod common;
+pub mod config;
+pub mod errors;
+pub mod ethereum;
+pub mod event;
+pub mod service;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+// Re-export commonly used types
+pub use errors::Error;
+pub use event::{processor::EventProcessor, registry::EventRegistry, types::EventType};
+pub use service::handler::RealEventHandler;

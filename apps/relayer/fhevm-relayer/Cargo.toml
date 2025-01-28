@@ -1,6 +1,24 @@
 [package]
-name = "gateway-core"
+name = "fhevm-relayer"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "fhevm_relayer"
+path = "src/lib.rs"
+
 [dependencies]
+alloy = { version = "0.9.2", features = ["full"] }
+alloy-sol-types = "0.8.18"
+dashmap = "6.1.0"
+eyre = "0.6.12"
+futures = "0.3.31"
+futures-util = "0.3.31"
+hex = "0.4.3"
+serde = { version = "1.0", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1.41"
+zerocopy = "0.8.14"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+thiserror = "2.0.11"
+config = "0.15.6"
