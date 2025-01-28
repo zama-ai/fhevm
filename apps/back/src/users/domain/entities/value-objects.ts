@@ -62,8 +62,7 @@ export class TeamId extends ValueObject(
     .string()
     .startsWith('team_')
     .length(15)
-    .refine(validateNanoId(10, 'team_'), 'Invalid Team ID')
-    .and(z.custom<`team_${string}`>()),
+    .refine(validateNanoId(10, 'team_'), 'Invalid Team ID'),
 ) {
   static random() {
     return TeamId.from(`team_${nanoid(10)}`)
@@ -76,8 +75,7 @@ export class UserId extends ValueObject(
     .string()
     .startsWith('user_')
     .length(15)
-    .refine(validateNanoId(10, 'user_'), 'Invalid User ID')
-    .and(z.custom<`user_${string}`>()),
+    .refine(validateNanoId(10, 'user_'), 'Invalid User ID'),
 ) {
   static random() {
     return UserId.from(`user_${nanoid(10)}`)

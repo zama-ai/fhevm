@@ -8,7 +8,7 @@ import { UserId } from '../domain/entities/value-objects.js'
 export class GetUserById implements UseCase<string, UserProps> {
   constructor(private readonly userRepository: UserRepository) {}
 
-  execute(userId: `user_${string}`): Task<UserProps, AppError> {
+  execute(userId: string): Task<UserProps, AppError> {
     return this.userRepository
       .findById(UserId.from(userId))
       .map(user => user.toJSON())

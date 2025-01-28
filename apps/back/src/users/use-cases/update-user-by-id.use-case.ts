@@ -14,7 +14,7 @@ import { UserId } from '../domain/entities/value-objects.js'
 interface Input {
   newUser: {
     name: string
-    id: `user_${string}`
+    id: string
   }
   user: UserProps
 }

@@ -9,8 +9,7 @@ export class DAppId extends ValueObject(
     .string()
     .startsWith('dapp_')
     .length(17)
-    .refine(validateNanoId(12, 'dapp_'), 'Invalid DAppId')
-    .and(z.custom<`dapp_${string}`>()),
+    .refine(validateNanoId(12, 'dapp_'), 'Invalid DAppId'),
 ) {
   static random(): DAppId {
     return DAppId.from(`dapp_${nanoid(12)}`)
