@@ -11,7 +11,7 @@ pub mod server;
 mod tests;
 pub mod tfhe_worker;
 pub mod tracing;
-mod types;
+pub mod types;
 mod utils;
 
 // separate function for testing

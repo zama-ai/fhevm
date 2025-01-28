@@ -8,7 +8,28 @@ Our contracts actively emits events that forms the trace of a symbolic execution
 
 ## Command-line
 
-WIP
+If already compiled you can just call the binary directly:
+```
+../target/debug/listen -coprocessor-api-key 00000000000000000000000000000000
+```
+
+If you have no coprocessor-api-key, for local tests, you can do
+```
+psql
+postgres=# insert into tenants values (13, '00000000000000000000000000000000', 0, 'contract verify', 'contract acl', '0'::bytea, '0'::bytea, '0'::bytea);
+```
+
+Otherwise you can compile + run with:
+
+```
+DATABASE_URL=postgresql://postgres:testmdp@0.0.0.0:5432 cargo run -- --coprocessor-api-key 00000000000000000000000000000000
+```
+
+DATABASE_URL need to specify an online database to compile SQL requests.
+
+By default the listener propagate TFHE operation events to the database.
+You can change the database url using --database-url, it defaults to a local test database url.
+If you want to disable TFHE operation events propagation, you can provide an empty database-url.
 
 ## Events in FHEVM
 

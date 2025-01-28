@@ -1,5 +1,6 @@
 use alloy_provider::fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller};
 use futures_util::stream::StreamExt;
+use sqlx::types::Uuid;
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -13,6 +14,7 @@ use alloy_sol_types::SolEventInterface;
 use clap::Parser;
 
 use fhevm_listener::contracts::{AclContract, TfheContract};
+use fhevm_listener::database::tfhe_event_propagate::Database;
 
 const DEFAULT_CATCHUP: u64 = 5;
 
@@ -34,14 +36,17 @@ pub struct Args {
     #[arg(long, default_value = None)]
     pub tfhe_contract_address: Option<String>,
 
-    #[arg(long, default_value = None)]
-    pub database_url: Option<String>,
+    #[arg(long, default_value = "postgresql://postgres:testmdp@localhost:5432/postgres")]
+    pub database_url: String,
 
     #[arg(long, default_value = None, help = "Can be negative from last block", allow_hyphen_values = true)]
     pub start_at_block: Option<i64>,
 
     #[arg(long, default_value = None)]
     pub end_at_block: Option<u64>,
+
+    #[arg(long, default_value = None, help = "A Coprocessor API key is needed for database access")]
+    pub coprocessor_api_key: Option<Uuid>,
 }
 
 type RProvider = FillProvider<JoinFill<alloy::providers::Identity, JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>>, RootProvider>;
@@ -194,6 +199,14 @@ async fn main() -> () {
         };
     }
 
+    let mut db: Option<Database> = None;
+    if !args.database_url.is_empty() {
+        if let Some(coprocessor_api_key) = args.coprocessor_api_key {
+            db = Some(Database::new(&args.database_url, &coprocessor_api_key).await);
+        } else {
+            panic!("A Coprocessor API key is required to access the database");
+        }
+    }
     log_iter.new_log_stream(true).await;
     while let Some(log) = log_iter.next().await {
         if let Some(block_number) = log.block_number {
@@ -203,7 +216,13 @@ async fn main() -> () {
         if !args.ignore_tfhe_events {
             if let Ok(event) = TfheContract::TfheContractEvents::decode_log(&log.inner, true) {
                 // TODO: filter on contract address if known
-                println!("TFHE {event:#?}");
+                println!("\nTFHE {event:#?}");
+                if let Some(ref mut db) = db {
+                    match db.insert_tfhe_event(&event).await {
+                        Ok(_) => db.notify_scheduler().await, // we always notify, e.g. for catchup
+                        Err(err) => eprintln!("Error inserting tfhe event: {err}"),
+                    }
+                }
                 continue;
             }
         }

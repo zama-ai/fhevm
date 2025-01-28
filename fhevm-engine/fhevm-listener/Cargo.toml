@@ -11,13 +11,19 @@ bench = false
 
 [dependencies]
 # external dependencies
-alloy = { version = "0.11", features = ["contract", "json", "providers", "provider-ws", "pubsub", "rpc-types", "sol-types"] }
 alloy-primitives = "0.8.21"
 alloy-provider = "0.11.1"
 alloy-eips = "0.11.1"
 alloy-rpc-types = "0.11"
 alloy-sol-types = "0.8"
+
+# workspace dependency
+alloy = { workspace = true, features = ["contract", "json", "providers", "provider-ws", "pubsub", "rpc-types", "sol-types"] }
 clap = { workspace = true }
 futures-util = { workspace = true }
 serde = { workspace = true }
+sqlx = { workspace = true }
 tokio = { workspace = true }
+
+# local dependencies
+fhevm-engine-common = { path = "../fhevm-engine-common" }

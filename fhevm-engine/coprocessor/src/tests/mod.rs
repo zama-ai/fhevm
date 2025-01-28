@@ -16,6 +16,7 @@ use utils::{
 mod errors;
 mod inputs;
 mod operators;
+mod operators_from_events;
 mod random;
 mod scheduling_bench;
 mod utils;

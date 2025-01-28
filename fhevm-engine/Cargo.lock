@@ -1813,6 +1813,7 @@ dependencies = [
  "bincode",
  "clap",
  "fhevm-engine-common",
+ "fhevm-listener",
  "hex",
  "itertools 0.13.0",
  "lazy_static",
@@ -2433,8 +2434,10 @@ dependencies = [
  "alloy-rpc-types",
  "alloy-sol-types",
  "clap",
+ "fhevm-engine-common",
  "futures-util",
  "serde",
+ "sqlx",
  "tokio",
 ]
 

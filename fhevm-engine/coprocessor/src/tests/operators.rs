@@ -19,23 +19,23 @@ use std::{ops::Not, str::FromStr};
 use strum::IntoEnumIterator;
 use tonic::metadata::MetadataValue;
 
-struct BinaryOperatorTestCase {
-    bits: i32,
-    operand: i32,
-    input_types: i32,
-    expected_output_type: i32,
-    lhs: BigInt,
-    rhs: BigInt,
-    expected_output: BigInt,
-    is_scalar: bool,
+pub struct BinaryOperatorTestCase {
+    pub bits: i32,
+    pub operand: i32,
+    pub input_types: i32,
+    pub expected_output_type: i32,
+    pub lhs: BigInt,
+    pub rhs: BigInt,
+    pub expected_output: BigInt,
+    pub is_scalar: bool,
 }
 
-struct UnaryOperatorTestCase {
-    bits: i32,
-    inp: BigInt,
-    operand: i32,
-    operand_types: i32,
-    expected_output: BigInt,
+pub struct UnaryOperatorTestCase {
+    pub bits: i32,
+    pub inp: BigInt,
+    pub operand: i32,
+    pub operand_types: i32,
+    pub expected_output: BigInt,
 }
 
 fn supported_bits() -> &'static [i32] {
@@ -727,7 +727,7 @@ async fn test_fhe_if_then_else() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn generate_binary_test_cases() -> Vec<BinaryOperatorTestCase> {
+pub fn generate_binary_test_cases() -> Vec<BinaryOperatorTestCase> {
     let mut cases = Vec::new();
     let bit_shift_ops = [
         SupportedFheOperations::FheShl,
@@ -836,7 +836,7 @@ fn generate_binary_test_cases() -> Vec<BinaryOperatorTestCase> {
     cases
 }
 
-fn generate_unary_test_cases() -> Vec<UnaryOperatorTestCase> {
+pub fn generate_unary_test_cases() -> Vec<UnaryOperatorTestCase> {
     let mut cases = Vec::new();
 
     for bits in supported_bits() {
