@@ -11,10 +11,6 @@ pragma solidity ^0.8.28;
  * function is called by the Coprocessors that process the verification.
  */
 interface IZKPoKManager {
-    /// @notice Emitted when a ZKProof verification ID is created
-    /// @dev This event is meant to be listened by the fhEVM Relayer
-    event ZKProofId(uint256 indexed zkProofId);
-
     /// @notice Emitted when a ZKProof verification is started
     /// @dev This event is meant to be listened by the Coprocessor
     event VerifyProofRequest(
