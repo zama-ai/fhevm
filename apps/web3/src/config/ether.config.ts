@@ -1,8 +1,8 @@
+import { SEPOLIA_CHAIN_ID } from '#constants.js'
+import { ChainId } from '#src/domain/entities/value-objects.js'
 import { registerAs } from '@nestjs/config'
 
 export type EtherProvider = 'Etherscan'
-export const SEPOLIA_CHAIN_ID = '11155111'
-export type ChainId = typeof SEPOLIA_CHAIN_ID
 
 export interface EtherConfig {
   chainId: ChainId
@@ -13,7 +13,7 @@ export interface EtherConfig {
 }
 
 const configs: Record<
-  ChainId,
+  string,
   Omit<EtherConfig, 'chainId' | 'apiKey'> & { apiKey: () => string | undefined }
 > = {
   [SEPOLIA_CHAIN_ID]: {
@@ -31,17 +31,16 @@ export default registerAs('ether', () => {
   }
 })
 
-export function isChainId(chainId: string): chainId is ChainId {
-  return [SEPOLIA_CHAIN_ID].includes(chainId)
-}
-
 export class EtherConfigFactory {
-  static getEtherConfig(chainId: ChainId): EtherConfig {
+  static getEtherConfig(chainId: string): EtherConfig | null {
     const config = configs[chainId]
-    return {
-      ...config,
-      chainId,
-      apiKey: config.apiKey(),
-    }
+    return config
+      ? {
+          ...config,
+          // Note: if I found a config it should be safe to unwrap
+          chainId: ChainId.fromString(chainId).unwrap(),
+          apiKey: config.apiKey(),
+        }
+      : null
   }
 }

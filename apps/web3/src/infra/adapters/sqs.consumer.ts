@@ -1,14 +1,20 @@
 import { Message } from '@aws-sdk/client-sqs'
-import { Injectable, Logger } from '@nestjs/common'
-import { isAppDeploymentCommand } from 'messages'
+import { Inject, Injectable, Logger } from '@nestjs/common'
+import { isAppDeploymentCommand, web3 } from 'messages'
 import { SqsMessageHandler } from 'sqs'
 import { DiscoverContract } from '#use-cases/discover-contract.use-case.js'
+import { PubSub } from 'utils'
+import { PUBSUB } from '#constants.js'
 
 @Injectable()
 export class SQSConsumer {
   private readonly logger = new Logger(SQSConsumer.name)
 
-  constructor(private readonly discoverSC: DiscoverContract) {}
+  constructor(
+    @Inject(PUBSUB)
+    private readonly pubsub: PubSub<web3.Web3Event>,
+    private readonly discoverSC: DiscoverContract,
+  ) {}
 
   @SqsMessageHandler('web3', false)
   public handleMessage(message: Message) {
@@ -33,6 +39,8 @@ export class SQSConsumer {
         this.logger.warn(`failed to parse Message: ${err}`)
       }
 
+      // TODO: Rework the app-deployment process. It should use a web3 prefix
+      // furthermore, it should publish to the pubsub instead of calling the use case
       if (isAppDeploymentCommand(data)) {
         if (data.type === 'app-deployment.discover-sc') {
           this.logger.debug(
@@ -45,6 +53,9 @@ export class SQSConsumer {
         } else {
           this.logger.warn(`type ${data.type} is not supported`)
         }
+      } else if (web3.isWeb3Event(data)) {
+        this.logger.debug(`publishing ${JSON.stringify(data)}`)
+        this.pubsub.publish(data)
       } else {
         this.logger.warn('data is not an app-deployment command')
       }

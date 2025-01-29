@@ -5,10 +5,10 @@ import {
   scDiscovered,
   scDiscoveryFailed,
 } from 'messages'
-import { Address } from '#domain/entities/address.js'
 import { ContractService } from '#domain/services/contract.service.js'
 import { MessageProducer } from '#domain/services/message.producer.js'
 import { AppError, Task, UseCase } from 'utils'
+import { Web3Address } from '#domain/entities/value-objects.js'
 
 type Input = Extract<
   AppDeploymentCommand,
@@ -31,7 +31,7 @@ export class DiscoverContract implements UseCase<Input, void> {
     payload: { chainId, address, ...payload },
     $meta,
   }: Input): Task<void, AppError> {
-    return Address.fromString(address)
+    return Web3Address.fromString(address)
       .asyncChain(address => this.service.getContractCreation(chainId, address))
       .chain(data =>
         this.producer.produce(

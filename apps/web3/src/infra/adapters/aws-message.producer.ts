@@ -1,10 +1,11 @@
 import { PublishCommand, SNSClient } from '@aws-sdk/client-sns'
 import { SendMessageCommand, SQSClient } from '@aws-sdk/client-sqs'
-import { Injectable, Logger } from '@nestjs/common'
+import { Inject, Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
-import { AppDeploymentMessage } from 'messages'
+import { AppDeploymentMessage, web3 } from 'messages'
 import { MessageProducer } from '#domain/services/message.producer.js'
-import { AppError, Task, unknownError } from 'utils'
+import { AppError, PubSub, Subscriber, Task, unknownError } from 'utils'
+import { PUBSUB } from '#src/constants.js'
 
 @Injectable()
 export class AwsMessageProducer implements MessageProducer {
@@ -15,7 +16,11 @@ export class AwsMessageProducer implements MessageProducer {
   #topicArn: string
   #queueUrl: string
 
-  constructor(config: ConfigService) {
+  constructor(
+    @Inject(PUBSUB)
+    private readonly pubsub: PubSub<web3.Web3Event>,
+    config: ConfigService,
+  ) {
     this.logger.debug(`endpoint: ${config.get('aws.endpoint')}`)
     this.#sns = new SNSClient({
       endpoint: config.get('aws.endpoint'),
@@ -28,6 +33,34 @@ export class AwsMessageProducer implements MessageProducer {
       region: config.get('aws.region'),
     })
     this.#queueUrl = config.getOrThrow('aws.queueUrl')
+
+    this.pubsub.subscribe('web3:*', this.handleWeb3Events)
+  }
+
+  private handleWeb3Events: Subscriber<web3.Web3Event, 'web3:*'> = (
+    event,
+    payload,
+  ): Task<void, AppError> => {
+    switch (event as string) {
+      // Note: I need to improve the PubSub typing.
+      // event should be an expanded of `web:*` and
+      // payload should be narrowed to the right type
+      case 'web3:fhe-event:detected':
+        return this.sendMessage<web3.Web3Event>({
+          type: 'web3:fhe-event:detected',
+          payload: payload as Extract<
+            web3.Web3Event,
+            { type: 'web3:fhe-event:fetched' }
+          >['payload'],
+        }).map<void>(() => void 0)
+
+      default:
+        // Note: after improving PubSub typing,
+        // the default behavior should be publishing the event
+        // and I should define a case statement for all the events
+        // I want to ignore
+        return Task.of(void 0)
+    }
   }
 
   /**
@@ -35,8 +68,14 @@ export class AwsMessageProducer implements MessageProducer {
    * It's used in case of error to retry with an exponential delay.
    * @param message - The message to publish
    */
-  private sendMessage = (
-    message: AppDeploymentMessage,
+  private sendMessage = <
+    T extends {
+      type: string
+      payload: any
+      $meta?: Record<string, string | number>
+    },
+  >(
+    message: T,
   ): Task<string, AppError> => {
     this.logger.debug(`sendMessage: ${JSON.stringify(message)}`)
     return new Task((resolve, reject) =>

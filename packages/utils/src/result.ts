@@ -9,7 +9,7 @@ export interface Ok<T, E> {
   /*** Retruns the value of the Result if it is successful, otherwise returns the provided default value. */
   unwrapOr(defaultValue: T): T
   /*** Returns the value of the Result if it is successful, otherwise calls the provided function and returns its result. */
-  unwrapOrElse(fn: () => T): T
+  unwrapOrElse(fn: (err: E) => T): T
   /*** Returns true if the Result is successful, false otherwise. */
   isOk(this: Result<T, E>): this is Ok<T, E>
   /*** Returns true if the Result is a failure, false otherwise. */
@@ -37,7 +37,7 @@ export interface Fail<T, E> {
   /*** Retruns the value of the Result if it is successful, otherwise returns the provided default value. */
   unwrapOr(defaultValue: T): T
   /*** Returns the value of the Result if it is successful, otherwise calls the provided function and returns its result. */
-  unwrapOrElse(fn: () => T): T
+  unwrapOrElse(fn: (err: E) => T): T
   /*** Returns true if the Result is successful, false otherwise. */
   isOk(this: Result<T, E>): this is Ok<T, E>
   /*** Returns true if the Result is a failure, false otherwise. */
@@ -135,8 +135,8 @@ class FailImpl<T, E> implements Fail<T, E> {
   unwrapOr<T>(defaultValue: T): T {
     return defaultValue
   }
-  unwrapOrElse<T>(fn: () => T): T {
-    return fn()
+  unwrapOrElse<T>(fn: (err: E) => T): T {
+    return fn(this.error)
   }
   isOk(this: Result<T, E>): this is Ok<T, E> {
     return false

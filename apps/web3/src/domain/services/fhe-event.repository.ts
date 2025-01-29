@@ -1,9 +1,8 @@
 import { AppError, Task } from 'utils'
 import { FheEvent } from '../entities/fhe-event.js'
-
-export const FHE_EVENT_REPOSITORY = Symbol('FheEventRepository')
+import { ChainId } from '../entities/value-objects.js'
 
 export interface FheEventRepository {
-  getLastBlockNumber(chainId: string): Task<number, AppError>
+  getLastBlockNumber(chainId: ChainId): Task<number, AppError>
   create(data: FheEvent): Task<FheEvent, AppError>
 }

@@ -6,18 +6,31 @@ import awsConfig from './config/aws.config.js'
 import { SQSConsumer } from './infra/adapters/sqs.consumer.js'
 import { SNSClient } from '@aws-sdk/client-sns'
 import ethersConfig, {
-  ChainId,
   EtherConfig,
   EtherConfigFactory,
-  isChainId,
 } from './config/ether.config.js'
-import { CONTRACT_SERVICE, MESSAGE_PRODUCER } from './constants.js'
+import {
+  CONTRACT_SERVICE,
+  FHE_EVENT_REPOSITORY,
+  FHE_EVENT_SERVICE,
+  MESSAGE_PRODUCER,
+  PUBSUB,
+} from './constants.js'
 import { ContractService } from './domain/services/contract.service.js'
 import { ProxyContractService } from './infra/adapters/proxy-contract.service.js'
 import { AwsMessageProducer } from './infra/adapters/aws-message.producer.js'
 import { MessageProducer } from './domain/services/message.producer.js'
 import { DiscoverContract } from './use-cases/discover-contract.use-case.js'
 import { DatabaseModule } from './infra/database/database.module.js'
+import { ChainId } from './domain/entities/value-objects.js'
+import { isOk, PubSub } from 'utils'
+import { FheConfig, FheConfigFactory } from './config/fhe.config.js'
+import { EthersFheEventService } from './infra/adapters/ethers-fhe-event.service.js'
+import { FetchFHEEvents } from './use-cases/fetch-fhe-events.use-case.js'
+import { FheEventService } from './domain/services/fhe-event.service.js'
+import { FheEventRepository } from './domain/services/fhe-event.repository.js'
+import { PrismaFheEventRepository } from './infra/database/repositories/prisma-fhe-event.repository.js'
+import { web3 } from 'messages'
 
 @Module({
   imports: [
@@ -54,6 +67,10 @@ import { DatabaseModule } from './infra/database/database.module.js'
     }),
   ],
   providers: [
+    {
+      provide: PUBSUB,
+      useClass: PubSub,
+    },
     SQSConsumer,
     {
       provide: CONTRACT_SERVICE,
@@ -61,10 +78,12 @@ import { DatabaseModule } from './infra/database/database.module.js'
       useFactory: (config: ConfigService) => {
         const map = config
           .get<string[]>('ether.chainIds')!
-          .filter(isChainId)
+          .map(ChainId.fromString)
+          .filter(isOk)
+          .map(r => r.unwrap())
           .reduce(function (acc, chainId) {
-            acc.set(chainId, EtherConfigFactory.getEtherConfig(chainId))
-            return acc
+            const config = EtherConfigFactory.getEtherConfig(chainId.value)
+            return config ? acc.set(chainId, config) : acc
           }, new Map<ChainId, EtherConfig>())
         return new ProxyContractService(map)
       },
@@ -78,6 +97,37 @@ import { DatabaseModule } from './infra/database/database.module.js'
       inject: [CONTRACT_SERVICE, MESSAGE_PRODUCER],
       useFactory: (service: ContractService, producer: MessageProducer) =>
         new DiscoverContract(service, producer),
+    },
+    {
+      provide: FHE_EVENT_SERVICE,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => {
+        const map = config
+          .get<string[]>('fhe.chainIds')!
+          .map(ChainId.fromString)
+          .filter(isOk)
+          .map(r => r.unwrap())
+          .map(FheConfigFactory.getFheConfig)
+          .filter(c => c !== null)
+          .reduce(
+            (map, cfg) => map.set(cfg.chainId, cfg),
+            new Map<ChainId, FheConfig>(),
+          )
+        return new EthersFheEventService(map)
+      },
+    },
+    {
+      provide: FHE_EVENT_REPOSITORY,
+      useClass: PrismaFheEventRepository,
+    },
+    {
+      provide: FetchFHEEvents,
+      inject: [PUBSUB, FHE_EVENT_SERVICE, FHE_EVENT_REPOSITORY],
+      useFactory: (
+        pubsub: PubSub<web3.Web3Event>,
+        service: FheEventService,
+        repo: FheEventRepository,
+      ) => new FetchFHEEvents(pubsub, service, repo),
     },
   ],
 })

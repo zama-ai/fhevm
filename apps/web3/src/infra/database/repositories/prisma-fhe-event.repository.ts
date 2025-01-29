@@ -1,20 +1,21 @@
-import { FheEventRepository } from '#src/domain/services/fhe-event.repository.js'
+import { FheEventRepository } from '#domain/services/fhe-event.repository.js'
 import { Logger } from '@nestjs/common'
 import { Task, AppError, unknownError } from 'utils'
 import { PrismaService } from '../prisma.service.js'
-import { FheEvent } from '#src/domain/entities/fhe-event.js'
+import { FheEvent } from '#domain/entities/fhe-event.js'
+import { ChainId } from '#domain/entities/value-objects.js'
 
 export class PrismaFheEventRepository implements FheEventRepository {
   logger = new Logger(PrismaFheEventRepository.name)
 
   constructor(private readonly db: PrismaService) {}
 
-  getLastBlockNumber = (chainId: string): Task<number, AppError> => {
+  getLastBlockNumber = (chainId: ChainId): Task<number, AppError> => {
     return new Task<number, AppError>((resolve, reject) => {
       this.db.fheEvent
         .aggregate({
           _max: { blockNumber: true },
-          where: { chainId },
+          where: { chainId: chainId.value },
         })
         .then(value => resolve(value._max.blockNumber ?? 0))
         .catch((err: unknown) => reject(unknownError(String(err))))

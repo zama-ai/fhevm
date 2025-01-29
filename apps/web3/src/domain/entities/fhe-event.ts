@@ -1,10 +1,10 @@
 import { z } from 'zod'
-import { FheEventId, Web3Address } from './value-objects.js'
+import { ChainId, FheEventId, Web3Address } from './value-objects.js'
 import { AppError, Entity, fail, ok, Result, validationError } from 'utils'
 
 const schema = z.object({
-  chainId: z.string(),
-  id: FheEventId,
+  chainId: ChainId.schema,
+  id: FheEventId.schema,
   name: z.string(), // Note: should we use an enum?
   callerAddress: Web3Address,
   blockNumber: z.number(),
