@@ -24,18 +24,15 @@ export class SQSConsumer {
         const body = JSON.parse(message.Body)
         const data: unknown = JSON.parse(body.Message)
         if (isAppDeploymentEvent(data)) {
-          if (typeof data.meta?.userId !== 'string') {
-            this.logger.warn(
-              `missing userId in meta: ${JSON.stringify(data.meta)}`,
-            )
-            return
-          }
           switch (data.type) {
             case 'app-deployment.sc-discovered':
             case 'app-deployment.sc-discovery-failed':
               this.scDiscovered.execute(data).fork(
                 () => this.logger.debug(`${data.type} handled`),
-                err => this.logger.warn(`${data.type} failed: ${err}`),
+                err => {
+                  this.logger.log(`${data.type} failed: ${err.message}`)
+                  throw err
+                },
               )
               break
             case 'app-deployment.requested':
@@ -51,10 +48,11 @@ export class SQSConsumer {
               break
           }
         } else {
-          this.logger.warn(`unhandled message: ${message.Body}`)
+          this.logger.log(`unhandled message: ${message.Body}`)
         }
       } catch (err) {
-        this.logger.error(`failed to handle message: ${err}`)
+        this.logger.warn(`failed to handle message: ${err}`)
+        throw err
       }
     }
   }
