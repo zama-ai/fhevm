@@ -58,3 +58,13 @@ make blockchain-test
 # listen to the blockchain activity
 make blockchain-listen
 ```
+
+### run fhevm contracts with events using hardhat
+
+An alternative to running the full stack is to use hardhat.
+This also allows for the use of the latest version of the FHEVM set of smart contracts.
+To do so one can do the following:
+
+1. `make hardhat-run` in a first terminal, that will launch the hardhat node
+2. `make hardhat-listen` in a second terminal will deploy the contracts and launch the event listener
+3. `make hardhat-test` in a third terminal will then launch some tests that will trigger events
