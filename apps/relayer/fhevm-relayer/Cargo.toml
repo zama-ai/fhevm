@@ -22,3 +22,7 @@ zerocopy = "0.8.14"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 thiserror = "2.0.11"
 config = "0.15.6"
+anyhow = "1.0.44"
+async-trait = "0.1.51"
+strum_macros = "0.21.0"
+uuid = { version = "0.8.2", features = ["v1"] }

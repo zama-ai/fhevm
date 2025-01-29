@@ -5,6 +5,7 @@ pub mod errors;
 pub mod ethereum;
 pub mod event;
 pub mod service;
+pub mod orchestrator;
 
 // Re-export commonly used types
 pub use errors::Error;
