@@ -25,10 +25,8 @@ export class ScDiscovered implements UseCase<Input, void> {
     private readonly subscriptions: SubscriptionService,
   ) {}
   execute({ type, payload, meta }: Input): Task<void, AppError> {
-    if (!meta?.userId) {
-      return Task.reject(unknownError('Missing user id'))
-    }
-    const id = UserId.parse(meta.userId)
+    // SqsConsumer checks that meta.userId exists
+    const id = UserId.parse(meta!.userId)
     if (!id) {
       return Task.reject(unknownError('Badly formatted user id'))
     }

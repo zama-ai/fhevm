@@ -29,7 +29,7 @@ export class PrismaDAppRepository extends DAppRepository {
     id: DAppId,
     data: Partial<Omit<DAppProps, 'id'>>,
   ): Task<DApp, AppError> => {
-    this.logger.debug(`update: ${id} ${data}`)
+    this.logger.debug(`update: ${id} ${JSON.stringify(data)}`)
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.dapp
         .update({ where: { id: id.value }, data })
