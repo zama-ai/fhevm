@@ -1,0 +1,9 @@
+[submodule "external/fhevm-devops"]
+	path = external/fhevm-devops
+	url = git@github.com:zama-ai/fhevm-devops.git
+	branch = fd0r/zws
+
+[submodule "external/fhevm-relayer"]
+	path = external/fhevm-relayer
+	url = git@github.com:zama-ai/fhevm-relayer.git
+	branch = hardhatMock
