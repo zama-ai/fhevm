@@ -1,4 +1,12 @@
 services:
+  redis:
+    image: redis:7.4-alpine
+    restart: always
+    ports:
+      - '6379:6379'
+    command: redis-server --save 20 1 --loglevel warning
+    volumes: 
+      - cache:/data
   postgres:
     image: postgres:17-alpine
     restart: always
@@ -33,5 +41,6 @@ services:
       - ./localstack-setup.sh:/etc/localstack/init/ready.d/script.sh
 
 volumes:
+  cache:
   postgres:
   localstack:

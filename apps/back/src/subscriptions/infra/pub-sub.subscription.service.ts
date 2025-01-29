@@ -1,19 +1,26 @@
-import { PubSub } from 'graphql-subscriptions'
+import { RedisPubSub } from 'graphql-redis-subscriptions'
 import { Injectable } from '@nestjs/common'
+import { Redis } from 'ioredis'
 
+const options = {
+  host: process.env.REDIS_HOST,
+  port: parseInt(process.env.REDIS_PORT ?? '6379', 10),
+  password: process.env.REDIS_PASSWORD,
+  db: 0,
+  retryStrategy: (times: number) => {
+    return Math.min(times * 50, 2000)
+  },
+}
 import { SubscriptionTypes } from '../domain/entities/subscription.js'
 import { SubscriptionId } from '../domain/entities/subscription-id.js'
 import { SubscriptionService } from '../domain/services/subscription.service.js'
 
 @Injectable()
 export class PubSubSubscriptionService implements SubscriptionService {
-  // Note that the default PubSub implementation is intended for demo purposes. It only works
-  // if you have a single instance of your server and doesn't scale beyond a couple of connections.
-  // For production usage you'll want to use one of the PubSub implementations backed by an
-  // external store. (e.g. Redis)
-  // https://github.com/apollographql/graphql-subscriptions?tab=readme-ov-file#pubsub-implementations
-  // https://github.com/zama-zws/console/issues/121
-  #pubSub = new PubSub()
+  #pubSub = new RedisPubSub({
+    publisher: new Redis(options),
+    subscriber: new Redis(options),
+  })
 
   publish<T>(topic: SubscriptionTypes, payload: T): Promise<void> {
     this.#pubSub.asyncIterableIterator(topic)
