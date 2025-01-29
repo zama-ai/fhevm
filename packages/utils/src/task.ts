@@ -101,9 +101,81 @@ export class Task<A, E> {
    * @param tasks - An array of Task to be executed.
    * @returns a Task with the array of all resolved task values.
    */
-  static all<E, Arg extends Task<any, E> = Task<any, E>>(
-    tasks: Arg[],
-  ): Task<Tuple<Arg>, E> {
+  static all<
+    E,
+    A,
+    B,
+    T extends [Task<A, E>, Task<B, E>] = [Task<A, E>, Task<B, E>],
+  >(tasks: T): Task<[A, B], E>
+  static all<
+    E,
+    A,
+    B,
+    C,
+    T extends [Task<A, E>, Task<B, E>, Task<C, E>] = [
+      Task<A, E>,
+      Task<B, E>,
+      Task<C, E>,
+    ],
+  >(tasks: T): Task<[A, B, C], E>
+  static all<
+    E,
+    A,
+    B,
+    C,
+    D,
+    T extends [Task<A, E>, Task<B, E>, Task<C, E>, Task<D, E>] = [
+      Task<A, E>,
+      Task<B, E>,
+      Task<C, E>,
+      Task<D, E>,
+    ],
+  >(tasks: T): Task<[A, B, C, D], E>
+  static all<
+    E,
+    A,
+    B,
+    C,
+    D,
+    F,
+    T extends [Task<A, E>, Task<B, E>, Task<C, E>, Task<D, E>, Task<F, E>] = [
+      Task<A, E>,
+      Task<B, E>,
+      Task<C, E>,
+      Task<D, E>,
+      Task<F, E>,
+    ],
+  >(tasks: T): Task<[A, B, C, D, F], E>
+  static all<
+    E,
+    A,
+    B,
+    C,
+    D,
+    F,
+    G,
+    T extends [
+      Task<A, E>,
+      Task<B, E>,
+      Task<C, E>,
+      Task<D, E>,
+      Task<F, E>,
+      Task<G, E>,
+    ] = [
+      Task<A, E>,
+      Task<B, E>,
+      Task<C, E>,
+      Task<D, E>,
+      Task<F, E>,
+      Task<G, E>,
+    ],
+  >(tasks: T): Task<[A, B, C, D, F, G], E>
+  static all<E, A, T extends Task<A, E>[] = Task<A, E>[]>(
+    tasks: T,
+  ): Task<A[], E>
+  static all<E, T extends Task<any, E>[] = Task<any, E>[]>(
+    tasks: T,
+  ): Task<any[], E> {
     return new Task(function (resolve, reject) {
       // Note: I use `Promise.allSettled` to be sure all promises settle before
       // continuing
@@ -111,9 +183,7 @@ export class Task<A, E> {
         .then(promises =>
           promises.some(isRejected)
             ? reject(promises.find(isRejected)!.reason)
-            : resolve(
-                promises.filter(isFullfilled).map(p => p.value) as Tuple<Arg>,
-              ),
+            : resolve(promises.filter(isFullfilled).map(p => p.value)),
         )
         .catch(reject)
     })
@@ -143,9 +213,3 @@ interface Matchers<T, E, R1, R2 = R1> {
   ok(value: T): R1
   fail(error: E): R2
 }
-
-type Tuple<T> = T extends []
-  ? []
-  : T extends [infer First, ...infer Rest]
-    ? [First, ...Tuple<Rest>]
-    : never

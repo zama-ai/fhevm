@@ -72,7 +72,7 @@ export class PubSub<TEvent extends EventObject> {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       .flatMap(([_key, handlers]) => handlers)
 
-    return Task.all<AppError>(
+    return Task.all<AppError, void>(
       handlers.map(handler =>
         handler(
           event.type,

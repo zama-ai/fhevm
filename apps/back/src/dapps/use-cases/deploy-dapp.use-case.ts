@@ -55,7 +55,7 @@ export class DeployDApp implements UseCase<Input, DApp> {
                 ),
           )
           .chain(dapp =>
-            Task.all([
+            Task.all<AppError, string, DApp>([
               this.producer
                 .publish(
                   requested(

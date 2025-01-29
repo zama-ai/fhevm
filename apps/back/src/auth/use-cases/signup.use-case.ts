@@ -1,6 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common'
 import { JwtService } from '@nestjs/jwt'
-import { randomUUID } from 'crypto'
 import { User } from '#users/domain/entities/user.js'
 import { UserRepository } from '#users/domain/repositories/user.repository.js'
 import { Invitation } from '#invitations/domain/entities/invitation.js'
@@ -10,11 +9,7 @@ import type { AppError, UnitOfWork, UseCase } from 'utils'
 import { Task, notFoundError } from 'utils'
 import type { JwtPayload } from '../interfaces/jwt-payload.js'
 import { Token } from '#invitations/domain/entities/value-objects.js'
-import {
-  Password,
-  TeamId,
-  ValidatedPassword,
-} from '#users/domain/entities/value-objects.js'
+import { ValidatedPassword } from '#users/domain/entities/value-objects.js'
 import { Team } from '#users/domain/entities/team.js'
 import { UNIT_OF_WORK } from '#constants.js'
 
@@ -38,7 +33,7 @@ export class SignUp
 
   execute(input: SignupInput): Task<{ user: User; token: string }, AppError> {
     return this.uow.exec(
-      Task.all([
+      Task.all<AppError, Invitation, ValidatedPassword>([
         // Note: we check the invitation token and validate the password at
         // the same time. The password validation should be the fastest as it
         // doesn't require any asyncronous operation
@@ -53,7 +48,7 @@ export class SignUp
           // There are two solution:
           // 1. Create a transaction, so we should revert the user creation
           // 2. Just ignore any errors related to the following operation, using `tap`
-          Task.all([
+          Task.all<AppError, User, Team, Invitation>([
             this.createUser(invitation.email, password, input.name),
 
             this.createTeam(input.name),
@@ -62,7 +57,7 @@ export class SignUp
           ]),
         )
         .chain(([user, team]) =>
-          Task.all([
+          Task.all<AppError, Team, { user: User; token: string }>([
             this.teamRepository.addUser(team.id, user.id),
 
             this.getPayload(user),
