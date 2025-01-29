@@ -20,7 +20,6 @@ const wsLink = new GraphQLWsLink(
     url: import.meta.env.VITE_BACK_WS_URL,
     connectionParams: () => {
       const token = localStorage.getItem('token')
-      console.log('wsLink token', token)
       if (!token) return {}
       return {
         authorization: `Bearer ${token}`,
@@ -56,7 +55,6 @@ const authLink = setContext((_, { headers }) => {
   // get the authentication token from local storage if it exists
   const token = localStorage.getItem('token')
   // return the headers to the context so httpLink can read them
-  console.log('authLink headers', headers)
   return {
     headers: {
       ...headers,

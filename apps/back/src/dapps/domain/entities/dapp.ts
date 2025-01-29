@@ -6,7 +6,7 @@ import { TeamId } from '#users/domain/entities/value-objects.js'
 
 const status = z.enum(['DRAFT', 'DEPLOYING', 'LIVE'])
 
-export const schema = z.object({
+const schema = z.object({
   id: DAppId,
   name: z.string(),
   status,

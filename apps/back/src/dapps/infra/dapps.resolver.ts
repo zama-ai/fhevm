@@ -88,7 +88,6 @@ export class DappsResolver {
     @Args('input') input: DeployedDAppInput,
     @CurrentUser() user: User,
   ) {
-    console.log('input', input, user.email)
     return this.appUpdatesSubscriptionUC
       .execute({
         dappId: input.id,
