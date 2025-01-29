@@ -44,13 +44,13 @@ describe('AppDeployment', () => {
       })
 
       it('should propagate the metadata', () => {
-        const $meta = { traceId: randomUUID() }
+        const meta = { traceId: randomUUID() }
         const messages = deployment.send(
-          requested({ applicationId, deploymentId, address, chainId }, $meta),
+          requested({ applicationId, deploymentId, address, chainId }, meta),
         )
 
         expect(messages.length).toBe(1)
-        expect(messages[0].$meta).toEqual($meta)
+        expect(messages[0].meta).toEqual(meta)
       })
     })
   })
@@ -83,16 +83,16 @@ describe('AppDeployment', () => {
       })
 
       it('should propagate metadata', () => {
-        const $meta = { traceId: randomUUID() }
+        const meta = { traceId: randomUUID() }
         const messages = deployment.send(
           scDiscovered(
             { applicationId, deploymentId, contractAddress, creatorAddress },
-            $meta,
+            meta,
           ),
         )
 
         expect(messages.length).toBe(1)
-        expect(messages[0].$meta).toEqual($meta)
+        expect(messages[0].meta).toEqual(meta)
       })
 
       it('should ignore wrong identifier', () => {
@@ -146,13 +146,13 @@ describe('AppDeployment', () => {
       })
 
       it('should request SC registration on SC confirmation', () => {
-        const $meta = { traceId: randomUUID() }
+        const meta = { traceId: randomUUID() }
         const messages = deployment.send(
-          scConfirmed({ applicationId, deploymentId }, $meta),
+          scConfirmed({ applicationId, deploymentId }, meta),
         )
 
         expect(messages.length).toBe(1)
-        expect(messages[0].$meta).toEqual($meta)
+        expect(messages[0].meta).toEqual(meta)
       })
 
       it('should ignore wrong identifier', () => {
@@ -200,13 +200,13 @@ describe('AppDeployment', () => {
       })
 
       it('should complete', () => {
-        const $meta = { traceId: randomUUID() }
+        const meta = { traceId: randomUUID() }
         const messages = deployment.send(
-          scRegistered({ applicationId, deploymentId }, $meta),
+          scRegistered({ applicationId, deploymentId }, meta),
         )
 
         expect(messages.length).toBe(1)
-        expect(messages[0].$meta).toEqual($meta)
+        expect(messages[0].meta).toEqual(meta)
       })
 
       it('should ignore wrong identifier', () => {

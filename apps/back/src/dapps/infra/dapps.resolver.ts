@@ -1,4 +1,4 @@
-import { UseGuards } from '@nestjs/common'
+import { Inject, UseGuards } from '@nestjs/common'
 import {
   Args,
   Mutation,
@@ -6,6 +6,7 @@ import {
   Query,
   ResolveField,
   Resolver,
+  Subscription,
 } from '@nestjs/graphql'
 import { CreateDappInput } from '#dapps/infra/dto/inputs/create-dapp.input.js'
 import { UpdateDappInput } from '#dapps/infra/dto/inputs/update-dapp.input.js'
@@ -23,6 +24,12 @@ import { GetDappById } from '../use-cases/get-dapp-by-id.use-case.js'
 import { DAppId } from '../domain/entities/value-objects.js'
 import { TeamType } from '#users/infra/types/team.type.js'
 import { QueryDappInput } from './dto/inputs/query-dapp.input.js'
+import {
+  SUBSCRIPTION_SERVICE,
+  SubscriptionService,
+} from '#subscriptions/domain/services/subscription.service.js'
+import { DeployedDAppInput } from './dto/inputs/deployed-dapp.input.js'
+import { AppUpdatesSubscription } from '#dapps/use-cases/app-updates-subscription.use-case.js'
 
 @Resolver(() => DappType)
 export class DappsResolver {
@@ -32,6 +39,9 @@ export class DappsResolver {
     private readonly getDappByIdUC: GetDappById,
     private readonly getTeamByIdUC: GetTeamById,
     private readonly deployDappUC: DeployDApp,
+    private readonly appUpdatesSubscriptionUC: AppUpdatesSubscription,
+    @Inject(SUBSCRIPTION_SERVICE)
+    private readonly subscriptions: SubscriptionService,
   ) {}
 
   @Query(() => DappType, { name: 'dapp' })
@@ -62,6 +72,27 @@ export class DappsResolver {
   deployDapp(@Args('input') input: DeployDAppInput, @CurrentUser() user: User) {
     return this.deployDappUC
       .execute({ dappId: new DAppId(input.dappId), user })
+      .toPromise()
+  }
+
+  @Subscription(() => DappType, {
+    filter: (
+      payload: { dappUpdated: DappType },
+      variables: { input: DeployedDAppInput },
+    ) => {
+      return payload.dappUpdated.id === variables.input.id
+    },
+  })
+  @UseGuards(JwtAuthGuard)
+  dappUpdated(
+    @Args('input') input: DeployedDAppInput,
+    @CurrentUser() user: User,
+  ) {
+    return this.appUpdatesSubscriptionUC
+      .execute({
+        dappId: input.id,
+        user,
+      })
       .toPromise()
   }
 

@@ -4,6 +4,7 @@ import type { Message } from '@aws-sdk/client-sqs'
 import { Injectable, Logger } from '@nestjs/common'
 import { isAppDeploymentEvent } from 'messages'
 import { SqsMessageHandler } from 'sqs'
+import { ScDiscovered } from './use-cases/sc-discovered.use-case.js'
 
 @Injectable()
 export class SQSConsumer {
@@ -12,6 +13,7 @@ export class SQSConsumer {
   constructor(
     private readonly appDeploymentRequestedUC: AppDeploymentRequested,
     private readonly appDeploymentEndedUC: AppDeploymentEnded,
+    private readonly scDiscovered: ScDiscovered,
   ) {}
 
   @SqsMessageHandler('back', false)
@@ -23,6 +25,16 @@ export class SQSConsumer {
         const data: unknown = JSON.parse(body.Message)
         if (isAppDeploymentEvent(data)) {
           switch (data.type) {
+            case 'app-deployment.sc-discovered':
+            case 'app-deployment.sc-discovery-failed':
+              this.scDiscovered.execute(data).fork(
+                () => this.logger.debug(`${data.type} handled`),
+                err => {
+                  this.logger.log(`${data.type} failed: ${err.message}`)
+                  throw err
+                },
+              )
+              break
             case 'app-deployment.requested':
               await this.appDeploymentRequestedUC
                 .execute({ event: data })
@@ -35,9 +47,12 @@ export class SQSConsumer {
                 .toPromise()
               break
           }
+        } else {
+          this.logger.log(`unhandled message: ${message.Body}`)
         }
       } catch (err) {
-        this.logger.error(`failed to handle message: ${err}`)
+        this.logger.warn(`failed to handle message: ${err}`)
+        throw err
       }
     }
   }

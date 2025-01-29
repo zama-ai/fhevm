@@ -1,8 +1,11 @@
-import { useQuery } from '@apollo/client'
+import { gql, useQuery, useSubscription } from '@apollo/client'
 import { useParams } from 'react-router'
 import { Box, Heading, Skeleton, Stack } from '@chakra-ui/react'
 import { graphql } from '@/__generated__/gql.js'
-import { GetDappQuery } from '@/__generated__/graphql.js'
+import {
+  DappUpdatedSubscription,
+  GetDappQuery,
+} from '@/__generated__/graphql.js'
 import { BlockUsageChart } from '@/components/stats-blocks/block-usage-chart.js'
 import { DappStatus } from '@/components/dapp-status/dapp-status.js'
 import { BlockUaw } from '@/components/stats-blocks/block-uaw.js'
@@ -18,11 +21,27 @@ const GET_DAPP = graphql(`
   }
 `)
 
+const SUB_DAPP_UPDATED = gql(`
+  subscription DappUpdated($dappId: ID!) {
+    dappUpdated(input: { id: $dappId }) {
+      id
+      name
+      status
+    }
+  }
+`)
+
 export function DappPage() {
   const { dappId } = useParams()
   const { data, error } = useQuery<GetDappQuery>(GET_DAPP, {
     variables: { dappId },
   })
+  const { data: liveData } = useSubscription<DappUpdatedSubscription>(
+    SUB_DAPP_UPDATED,
+    {
+      variables: { dappId },
+    },
+  )
 
   if (error) {
     throw Error(error.message)
@@ -32,8 +51,14 @@ export function DappPage() {
     <Box>
       {data ? (
         <Stack direction="row" align="center">
-          <Heading mb="5">{data.dapp.name}</Heading>
-          <DappStatus status={data.dapp.status} ml="2" size="xs" />
+          <Heading mb="5">
+            {liveData ? liveData.dappUpdated.name : data.dapp.name}
+          </Heading>
+          <DappStatus
+            status={liveData ? liveData.dappUpdated.status : data.dapp.status}
+            ml="2"
+            size="xs"
+          />
         </Stack>
       ) : (
         <Skeleton height="5" my="5" width="30rem" />

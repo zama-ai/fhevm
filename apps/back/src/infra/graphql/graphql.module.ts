@@ -17,6 +17,11 @@ import { DappsModule } from '#dapps/infra/dapps.module.js'
         req,
         res,
       }),
+      subscriptions: {
+        'graphql-ws': {
+          path: '/graphql',
+        },
+      },
       playground: true,
     }),
     AuthModule,
