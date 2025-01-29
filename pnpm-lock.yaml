@@ -134,6 +134,9 @@ importers:
       '@testcontainers/postgresql':
         specifier: ^10.16.0
         version: 10.16.0
+      '@testcontainers/redis':
+        specifier: ^10.17.2
+        version: 10.17.2
       '@types/bcryptjs':
         specifier: ^2.4.6
         version: 2.4.6
@@ -2987,6 +2990,9 @@ packages:
 
   '@testcontainers/postgresql@10.16.0':
     resolution: {integrity: sha512-zWFQI+3QxlEELRvVv27i6zlVEPNUz9zKaSh7iWmFlCdfhcyr78daS0FG8FIfdQ79VK7YXA4jv+dTYXa2SwXu/w==}
+
+  '@testcontainers/redis@10.17.2':
+    resolution: {integrity: sha512-PWiXrCYAePLmcHP7wSHshMj67naVf2ZuXvzTShX47Y8x1zUMHGK7PQpQnK6od/BKRsSGpTL9lv5yY7Zwk2XVNA==}
 
   '@testing-library/dom@10.4.0':
     resolution: {integrity: sha512-pemlzrSESWbdAloYml3bAJMEfNh1Z7EduzqPKprCH5S341frlpYnUEW0H72dLxa6IsYr+mPno20GiSm+h9dEdQ==}
@@ -7136,6 +7142,9 @@ packages:
   testcontainers@10.16.0:
     resolution: {integrity: sha512-oxPLuOtrRWS11A+Yn0+zXB7GkmNarflWqmy6CQJk8KJ75LZs2/zlUXDpizTbPpCGtk4kE2EQYwFZjrE967F8Wg==}
 
+  testcontainers@10.17.2:
+    resolution: {integrity: sha512-tnvXQsqwnOUjNENWLllfFmDLQUm24Q0MNL6kbVH35bIKPujEhyG6dOcpU8N5vwA4mD/ZdtwfHel++Z1Tw084uQ==}
+
   text-decoder@1.2.3:
     resolution: {integrity: sha512-3/o9z3X0X0fTupwsYvR03pJ/DjWuqqrfwBgTQzdWDiQSm9KitAyz/9WqsT2JQW7KV2m+bC2ol/zqpW37NHxLaA==}
 
@@ -7367,6 +7376,10 @@ packages:
 
   undici@5.28.4:
     resolution: {integrity: sha512-72RFADWFqKmUb2hmmvNODKL3p9hcB6Gt2DOQMis1SEBaV6a4MH8soBvzg+95CYhCKPFedut2JY9bMfrDl9D23g==}
+    engines: {node: '>=14.0'}
+
+  undici@5.28.5:
+    resolution: {integrity: sha512-zICwjrDrcrUE0pyyJc1I2QzBkLM8FINsgOrt6WjA+BgajVq9Nxu2PbFFXUrAggLfDXlZGZBVZYw7WNV5KiBiBA==}
     engines: {node: '>=14.0'}
 
   union-value@1.0.1:
@@ -10668,6 +10681,12 @@ snapshots:
   '@testcontainers/postgresql@10.16.0':
     dependencies:
       testcontainers: 10.16.0
+    transitivePeerDependencies:
+      - supports-color
+
+  '@testcontainers/redis@10.17.2':
+    dependencies:
+      testcontainers: 10.17.2
     transitivePeerDependencies:
       - supports-color
 
@@ -15768,6 +15787,26 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  testcontainers@10.17.2:
+    dependencies:
+      '@balena/dockerignore': 1.0.2
+      '@types/dockerode': 3.3.34
+      archiver: 7.0.1
+      async-lock: 1.4.1
+      byline: 5.0.0
+      debug: 4.4.0
+      docker-compose: 0.24.8
+      dockerode: 3.3.5
+      get-port: 5.1.1
+      proper-lockfile: 4.1.2
+      properties-reader: 2.3.0
+      ssh-remote-port-forward: 1.0.4
+      tar-fs: 3.0.6
+      tmp: 0.2.3
+      undici: 5.28.5
+    transitivePeerDependencies:
+      - supports-color
+
   text-decoder@1.2.3:
     dependencies:
       b4a: 1.6.7
@@ -15961,6 +16000,10 @@ snapshots:
   undici-types@6.19.8: {}
 
   undici@5.28.4:
+    dependencies:
+      '@fastify/busboy': 2.1.1
+
+  undici@5.28.5:
     dependencies:
       '@fastify/busboy': 2.1.1
 

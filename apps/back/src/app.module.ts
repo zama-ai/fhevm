@@ -7,13 +7,14 @@ import { GraphQLModule } from './infra/graphql/graphql.module.js'
 import awsConfig from './config/aws.config.js'
 import dbConfig from './config/db.config.js'
 import jwtConfig from './config/jwt.config.js'
+import redisConfig from './config/redis.config.js'
 
 // Note: I need to override the default behavior of ConfigModule in the tests,
 // and, as we use a dynamic module, we need to store the current instance to
 // override it in the tests.
 export const configModule = ConfigModule.forRoot({
   isGlobal: true,
-  load: [awsConfig, dbConfig, jwtConfig],
+  load: [awsConfig, dbConfig, jwtConfig, redisConfig],
 })
 @Module({
   imports: [configModule, GraphQLModule, SqsConsumerModule],

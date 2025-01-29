@@ -60,6 +60,7 @@
     "@swc/core": "^1.10.1",
     "@testcontainers/localstack": "^10.16.0",
     "@testcontainers/postgresql": "^10.16.0",
+    "@testcontainers/redis": "^10.17.2",
     "@types/bcryptjs": "^2.4.6",
     "@types/express": "^5.0.0",
     "@types/node": "^20.3.1",
