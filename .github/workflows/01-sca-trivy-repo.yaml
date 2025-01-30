@@ -1,9 +1,9 @@
 name: 01-sca-trivy-repo
 
-description: |
-    This workflows uses Trivy to scan for vulnerabilities, leaked secrets and misconfigurations in the repository. 
-    Trivy generates 3 reports (HTML, SARIF and JSON), publish them as artifacts, at the same time send activity to stdout.
-    Finally, you have the option of uploading SARIF report to Github Security Hub. This works only with Github Enterprise/private repos or public repos.
+# description: |
+#     This workflows uses Trivy to scan for vulnerabilities, leaked secrets and misconfigurations in the repository. 
+#     Trivy generates 3 reports (HTML, SARIF and JSON), publish them as artifacts, at the same time send activity to stdout.
+#     Finally, you have the option of uploading SARIF report to Github Security Hub. This works only with Github Enterprise/private repos or public repos.
 
 on:
   push:
