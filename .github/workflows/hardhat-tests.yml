@@ -1,0 +1,29 @@
+# Run hardhat tests
+name: "Hardhat tests"
+
+on:
+  pull_request:
+
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ci-hardhat-tests-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install pnpm
+        run: npm install -g pnpm
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Run hardhat tests
+        run: make tests

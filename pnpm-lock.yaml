@@ -7,6 +7,10 @@ settings:
 importers:
 
   .:
+    dependencies:
+      '@openzeppelin/contracts':
+        specifier: ^5.2.0
+        version: 5.2.0
     devDependencies:
       '@commitlint/cli':
         specifier: ^19.6.1
@@ -34,7 +38,7 @@ importers:
         version: 1.0.12(hardhat@2.22.18(ts-node@10.9.2(@types/node@22.10.7)(typescript@5.7.3))(typescript@5.7.3))
       '@nomicfoundation/hardhat-toolbox':
         specifier: ^5.0.0
-        version: 5.0.0(7witvjkxsqbfqrjqhcx3wd7fd4)
+        version: 5.0.0(8f8a72eed3155b28b5cb5e03683b5dae)
       '@nomicfoundation/hardhat-verify':
         specifier: ^2.0.0
         version: 2.0.12(hardhat@2.22.18(ts-node@10.9.2(@types/node@22.10.7)(typescript@5.7.3))(typescript@5.7.3))
@@ -554,6 +558,9 @@ packages:
   '@nomicfoundation/solidity-analyzer@0.1.2':
     resolution: {integrity: sha512-q4n32/FNKIhQ3zQGGw5CvPF6GTvDCpYwIf7bEY/dZTZbgfDsHyjJwURxUJf3VQuuJj+fDIFl4+KkBVbw4Ef6jA==}
     engines: {node: '>= 12'}
+
+  '@openzeppelin/contracts@5.2.0':
+    resolution: {integrity: sha512-bxjNie5z89W1Ea0NZLZluFh8PrFNn9DH8DQlujEok2yjsOlraUPKID5p1Wk3qdNbf6XkQ1Os2RvfiHrrXLHWKA==}
 
   '@pnpm/config.env-replace@1.1.0':
     resolution: {integrity: sha512-htyl8TWnKL7K/ESFa1oW2UB5lVDxuF5DpM7tBi6Hu2LNL3mWkIzNLG6N4zoCUP1lCKNxWy/3iu8mS8MvToGd6w==}
@@ -3334,7 +3341,7 @@ snapshots:
       ethereumjs-util: 7.1.5
       hardhat: 2.22.18(ts-node@10.9.2(@types/node@22.10.7)(typescript@5.7.3))(typescript@5.7.3)
 
-  '@nomicfoundation/hardhat-toolbox@5.0.0(7witvjkxsqbfqrjqhcx3wd7fd4)':
+  '@nomicfoundation/hardhat-toolbox@5.0.0(8f8a72eed3155b28b5cb5e03683b5dae)':
     dependencies:
       '@nomicfoundation/hardhat-chai-matchers': 2.0.8(@nomicfoundation/hardhat-ethers@3.0.8(ethers@6.13.5)(hardhat@2.22.18(ts-node@10.9.2(@types/node@22.10.7)(typescript@5.7.3))(typescript@5.7.3)))(chai@4.5.0)(ethers@6.13.5)(hardhat@2.22.18(ts-node@10.9.2(@types/node@22.10.7)(typescript@5.7.3))(typescript@5.7.3))
       '@nomicfoundation/hardhat-ethers': 3.0.8(ethers@6.13.5)(hardhat@2.22.18(ts-node@10.9.2(@types/node@22.10.7)(typescript@5.7.3))(typescript@5.7.3))
@@ -3418,6 +3425,8 @@ snapshots:
       '@nomicfoundation/solidity-analyzer-linux-x64-gnu': 0.1.2
       '@nomicfoundation/solidity-analyzer-linux-x64-musl': 0.1.2
       '@nomicfoundation/solidity-analyzer-win32-x64-msvc': 0.1.2
+
+  '@openzeppelin/contracts@5.2.0': {}
 
   '@pnpm/config.env-replace@1.1.0': {}
 
