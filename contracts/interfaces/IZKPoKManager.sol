@@ -14,7 +14,6 @@ interface IZKPoKManager {
     /// @notice Emitted when a ZKProof verification is started
     /// @dev This event is meant to be listened by the Coprocessor
     event VerifyProofRequest(
-        uint256 indexed keychainId,
         uint256 indexed zkProofId,
         uint256 indexed chainId,
         address contractAddress,
@@ -26,18 +25,16 @@ interface IZKPoKManager {
     /// @dev This event is meant to be listened by the fhEVM Relayer
     event VerifyProofResponse(uint256 indexed zkProofId, bytes32[] handles, bytes[] signatures);
 
-    /// @notice Error indicating that a given chain ID is not attached to the keychain ID
-    error NetworkNotRegisteredInKeychain();
+    /// @notice Error indicating that a given chain ID is not registered
+    error NetworkNotRegistered();
 
     /// @notice Starts the ZKProof verification
     /// @dev This function is called by the fhEVM Relayer
-    /// @param keychainId The ID of the keychain used
     /// @param chainId The network's chain ID
     /// @param contractAddress The address of the dapp the input is used for
     /// @param userAddress The address of the user providing the input
     /// @param ciphertextProof The ciphertext and proof to be verified
     function verifyProofRequest(
-        uint256 keychainId,
         uint256 chainId,
         address contractAddress,
         address userAddress,
