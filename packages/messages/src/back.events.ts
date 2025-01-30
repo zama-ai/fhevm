@@ -1,13 +1,13 @@
 import { z } from 'zod'
-import { chainId, Meta, meta, web3Address } from './shared.js'
+import { chainId, meta, Meta, web3Address } from './shared.js'
 
-type EventTypes = 'fhe-event:requested' | 'fhe-event:detected'
+type EventTypes = 'dapp:stats-requested' | 'dapp:stats-available'
 
 function genSchema<Key extends EventTypes, Payload extends z.ZodRawShape>(
   key: Key,
   payload: Payload,
 ) {
-  const type = `web3:${key}` as `web3:${Key}`
+  const type = `back:${key}` as `back:${Key}`
   return z.object({
     type: z.literal(type),
     payload: z.object({
@@ -19,8 +19,8 @@ function genSchema<Key extends EventTypes, Payload extends z.ZodRawShape>(
 }
 
 const eventMap = {
-  'fhe-event:requested': genSchema('fhe-event:requested', {}),
-  'fhe-event:detected': genSchema('fhe-event:detected', {
+  'dapp:stats-requested': genSchema('dapp:stats-requested', {}),
+  'dapp:stats-available': genSchema('dapp:stats-available', {
     name: z.string(),
     timestamp: z.date(),
   }),
@@ -29,8 +29,8 @@ type EventMap = typeof eventMap
 
 const schema = z
   .discriminatedUnion('type', [
-    eventMap['fhe-event:requested'],
-    eventMap['fhe-event:detected'],
+    eventMap['dapp:stats-requested'],
+    eventMap['dapp:stats-available'],
   ])
   .and(
     z.object({
@@ -48,16 +48,16 @@ export type Web3Event = z.infer<typeof schema>
 function factory<K extends keyof EventMap>(type: K) {
   return function (payload: z.infer<EventMap[K]>['payload'], $meta: Meta) {
     return {
-      type: `web3:${type}`,
+      type: `back:${type}`,
       payload,
       $meta,
     } as Web3Event
   }
 }
 
-export const fheRequested = factory('fhe-event:requested')
-export const fheDetected = factory('fhe-event:detected')
+export const dappStatsRequested = factory('dapp:stats-requested')
+export const dappStatsAvailable = factory('dapp:stats-available')
 
-export function isWeb3Event(data: unknown): data is Web3Event {
+export function isBackEvent(data: unknown): data is Web3Event {
   return schema.safeParse(data).success
 }
