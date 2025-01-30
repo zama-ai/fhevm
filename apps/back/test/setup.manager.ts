@@ -4,7 +4,7 @@ import { Test } from '@nestjs/testing'
 
 import { AppModule, configModule } from '#app.module.js'
 import { PrismaClient } from '#prisma/client/index.js'
-import { ConfigModule, ConfigService, registerAs } from '@nestjs/config'
+import { ConfigModule, registerAs } from '@nestjs/config'
 import dbConfig from '#config/db.config.js'
 import jwtConfig from '#config/jwt.config.js'
 import { CreateTopicCommand, SNSClient } from '@aws-sdk/client-sns'
