@@ -12,7 +12,7 @@ import { UpdateDappInput } from '#dapps/infra/dto/inputs/update-dapp.input.js'
 import { CreateDapp } from '#dapps/use-cases/create-dapp.use-case.js'
 import { GetTeamById } from '#users/use-cases/get-team-by-id.use-case.js'
 import { UpdateDapp } from '#dapps/use-cases/update-dapp.use-case.js'
-import { DappType } from '#dapps/infra/types/dapp.type.js'
+import { DappType, StatsType } from '#dapps/infra/types/dapp.type.js'
 import { CurrentUser } from '#auth/infra/decorators/current-user.js'
 import { JwtAuthGuard } from '#auth/infra/guards/jwt-auth-guard.js'
 import { User } from '#users/domain/entities/user.js'
@@ -69,5 +69,10 @@ export class DappsResolver {
   async team(@Parent() dapp: DappType) {
     const { teamId } = dapp
     return this.getTeamByIdUC.execute(new TeamId(teamId)).toPromise()
+  }
+
+  @ResolveField(() => [StatsType], { name: 'stats' })
+  async stats(@Parent() dapp: DappType) {
+    return []
   }
 }

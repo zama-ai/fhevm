@@ -56,12 +56,21 @@ model Team {
 }
 
 model Dapp {
-  id        String     @id
+  id        String      @id
   name      String
   address   String?
-  status    DappStatus @default(DRAFT)
+  status    DappStatus  @default(DRAFT)
   teamId    String
-  team      Team       @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  updatedAt DateTime   @updatedAt
-  createdAt DateTime   @default(now())
+  team      Team        @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  updatedAt DateTime    @updatedAt
+  createdAt DateTime    @default(now())
+  DappStats DappStats[]
+}
+
+model DappStats {
+  id        String   @id
+  name      String
+  timestamp DateTime
+  dappId    String
+  dapp      Dapp     @relation(fields: [dappId], references: [id], onDelete: Cascade)
 }

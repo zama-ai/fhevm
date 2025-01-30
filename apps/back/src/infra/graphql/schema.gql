@@ -8,6 +8,12 @@ type Team {
   dapps: [Dapp!]!
 }
 
+type Stats {
+  id: ID!
+  name: String!
+  timestamp: Float!
+}
+
 type Dapp {
   id: ID!
   name: String!
@@ -16,6 +22,9 @@ type Dapp {
   teamId: String! @deprecated(reason: "Do not use this, it shall go away when I find a way to make it disappear")
   team: Team!
   createdAt: Float!
+
+  """DApp usage statistics"""
+  stats: [Stats!]!
 }
 
 enum DappStatus {
