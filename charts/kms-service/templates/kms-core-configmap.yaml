@@ -33,6 +33,7 @@ data:
     {{- else }}
     {{- if .Values.kmsCore.nitroEnclave.enabled }}
     imds_endpoint = "http://localhost:{{ .Values.kmsCore.nitroEnclave.ports.imds }}"
+    sts_endpoint = "http://localhost:{{ .Values.kmsCore.nitroEnclave.ports.sts }}"
     s3_endpoint = "https://localhost:{{ .Values.kmsCore.nitroEnclave.ports.s3 }}"
     awskms_endpoint = "https://localhost:{{ .Values.kmsCore.nitroEnclave.ports.awskms }}"
     {{- end }}
