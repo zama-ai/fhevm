@@ -137,6 +137,8 @@ jobs:
           file: ${{ inputs.working-directory }}/${{ inputs.docker-file }}
           push: ${{ inputs.push_image }}
           pull: false
+          provenance: false
+          sbom: false
           tags: ghcr.io/zama-ai/${{ inputs.image-name }}:${{env.DOCKER_TAG_IMAGE }},ghcr.io/zama-ai/${{ inputs.image-name }}:latest
           cache-from: ${{ inputs.cache-from }}
           cache-to: ${{ inputs.cache-to }}
@@ -167,6 +169,8 @@ jobs:
           file: ${{ inputs.working-directory }}/${{ inputs.docker-file-dev }}
           push: ${{ inputs.push_image }}
           pull: false
+          provenance: false
+          sbom: false
           tags: ghcr.io/zama-ai/${{ inputs.image-dev-name }}:${{env.DOCKER_TAG_IMAGE}},ghcr.io/zama-ai/${{ inputs.image-dev-name }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
