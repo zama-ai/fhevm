@@ -13,21 +13,22 @@ contract ZKPoKManager is IZKPoKManager {
         _PAYMENT_MANAGER = paymentManager;
     }
 
+    /// @dev See {IZKPoKManager-verifyProofRequest}.
     function verifyProofRequest(
-        uint256 keychainId,
         uint256 chainId,
         address contractAddress,
         address userAddress,
         bytes calldata ctProofHandle
     ) public {
-        if (!_isNetworkRegisteredInKeychain(keychainId, chainId)) {
-            revert NetworkNotRegisteredInKeychain();
+        if (!_isNetworkRegistered(chainId)) {
+            revert NetworkNotRegistered();
         }
         _sendServiceFees();
         uint256 zkProofId = _generateZKProofId();
-        emit VerifyProofRequest(keychainId, zkProofId, chainId, contractAddress, userAddress, ctProofHandle);
+        emit VerifyProofRequest(zkProofId, chainId, contractAddress, userAddress, ctProofHandle);
     }
 
+    /// @dev See {IZKPoKManager-verifyProofResponse}.
     function verifyProofResponse(uint256 zkProofId, bytes32[] calldata handles, bytes calldata signature) public {
         if (_isConsensusAgreed()) {
             _burnAndDistributeFees();
@@ -41,9 +42,9 @@ contract ZKPoKManager is IZKPoKManager {
         // TODO: Implement zkProofId generation
     }
 
-    /// @notice Checks if the current network (block.chainid) is attached to the keychainId
-    function _isNetworkRegisteredInKeychain(uint256 keychainId, uint256 chainId) internal pure returns (bool) {
-        // TODO: Implement DomainManager contract call to check networks by keychainId
+    /// @notice Checks if the given chain ID is already registered
+    function _isNetworkRegistered(uint256 chainId) internal pure returns (bool) {
+        // TODO: Implement DomainManager contract call to check network is registered
         return true;
     }
 
