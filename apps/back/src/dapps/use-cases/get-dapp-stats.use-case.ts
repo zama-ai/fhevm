@@ -39,8 +39,12 @@ export class GetDappStatsUseCase implements UseCase<Input, Output> {
                 ? Task.of(dapp)
                 : Task.reject(validationError('missing dApp address')),
             )
-            .chain<void>(dapp =>
-              this.pubsub
+            .chain<void>(dapp => {
+              console.log(`publishing dappStatsRequested for dappId=${dappId}`)
+              this.logger.debug(
+                `publishing dappStatsRequested for dappId=${dappId}`,
+              )
+              return this.pubsub
                 .publish(
                   back.dappStatsRequested(
                     {
@@ -57,8 +61,8 @@ export class GetDappStatsUseCase implements UseCase<Input, Output> {
                   this.logger.warn(
                     `failed to publish dappStatsRequested for dappId=${dappId}`,
                   )
-                }),
-            ),
+                })
+            }),
         ]),
       )
       .map(([stats]) => ({ stats: stats.map(stat => stat.toJSON()) }))

@@ -2,6 +2,7 @@ import { DAppStats } from '#tests/dapp.manager.js'
 import { IntegrationManager } from '#tests/integration.manager.js'
 import { GraphQlResponse } from '#tests/setup.manager.js'
 import { faker } from '@faker-js/faker'
+import { back } from 'messages'
 import {
   afterAll,
   afterEach,
@@ -10,6 +11,7 @@ import {
   describe,
   expect,
   test,
+  vi,
 } from 'vitest'
 
 describe('get-dapp-stats', () => {
@@ -70,6 +72,19 @@ describe('get-dapp-stats', () => {
         if (result.success) {
           expect(result.data.stats.length).toBe(0)
         }
+      })
+
+      test('then it should emit a dapp stats requested event', async () => {
+        await vi.waitUntil(async () => {
+          const size = await manager.getLogQueueSize()
+          return size > 0
+        })
+
+        const message = await manager.getMessageFromLogQueue()
+        const parsedMessage = JSON.parse(message!)
+        const event = JSON.parse(parsedMessage.Message)
+        expect(back.isBackEvent(event)).toBe(true)
+        expect(event.type).toBe('back:dapp:stats-requested')
       })
     })
   })
