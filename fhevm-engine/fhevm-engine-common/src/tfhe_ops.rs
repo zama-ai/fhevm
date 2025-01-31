@@ -15,7 +15,7 @@ use tfhe::{
         CastInto, CiphertextList, FheEq, FheMax, FheMin, FheOrd, FheTryTrivialEncrypt, IfThenElse,
         RotateLeft, RotateRight,
     },
-    zk::CompactPkePublicParams,
+    zk::CompactPkeCrs,
     FheBool, FheUint1024, FheUint128, FheUint16, FheUint160, FheUint2, FheUint2048, FheUint256,
     FheUint32, FheUint4, FheUint512, FheUint64, FheUint8, Seed,
 };
@@ -271,7 +271,7 @@ pub fn current_ciphertext_version() -> i16 {
 
 pub fn try_expand_ciphertext_list(
     input_ciphertext: &[u8],
-    public_params: &CompactPkePublicParams,
+    public_params: &CompactPkeCrs,
 ) -> Result<Vec<SupportedFheCiphertexts>, FhevmError> {
     let mut res = Vec::new();
 

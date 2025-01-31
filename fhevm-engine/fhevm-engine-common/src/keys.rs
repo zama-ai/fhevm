@@ -4,15 +4,15 @@ use tfhe::{
     generate_keys, set_server_key,
     shortint::{
         parameters::{
-            compact_public_key_only::p_fail_2_minus_64::ks_pbs::PARAM_PKE_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M64,
-            key_switching::p_fail_2_minus_64::ks_pbs::PARAM_KEYSWITCH_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M64,
+            compact_public_key_only::p_fail_2_minus_64::ks_pbs::V0_11_PARAM_PKE_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M64,
+            key_switching::p_fail_2_minus_64::ks_pbs::V0_11_PARAM_KEYSWITCH_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M64,
             list_compression::COMP_PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M64,
             CompactPublicKeyEncryptionParameters, CompressionParameters,
             ShortintKeySwitchingParameters, PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M64,
         },
         ClassicPBSParameters,
     },
-    zk::{CompactPkeCrs, CompactPkePublicParams},
+    zk::CompactPkeCrs,
     ClientKey, CompactPublicKey, Config, ConfigBuilder, ServerKey,
 };
 
@@ -22,9 +22,9 @@ pub const TFHE_PARAMS: ClassicPBSParameters = PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUN
 pub const TFHE_COMPRESSION_PARAMS: CompressionParameters =
     COMP_PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M64;
 pub const TFHE_COMPACT_PK_ENCRYPTION_PARAMS: CompactPublicKeyEncryptionParameters =
-    PARAM_PKE_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M64;
+    V0_11_PARAM_PKE_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M64;
 pub const TFHE_KS_PARAMS: ShortintKeySwitchingParameters =
-    PARAM_KEYSWITCH_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M64;
+    V0_11_PARAM_KEYSWITCH_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M64;
 
 pub const MAX_BITS_TO_PROVE: usize = 2048;
 
@@ -33,7 +33,7 @@ pub struct FhevmKeys {
     pub server_key: ServerKey,
     pub client_key: Option<ClientKey>,
     pub compact_public_key: CompactPublicKey,
-    pub public_params: Arc<CompactPkePublicParams>,
+    pub public_params: Arc<CompactPkeCrs>,
 }
 
 pub struct SerializedFhevmKeys {
@@ -54,7 +54,7 @@ impl FhevmKeys {
             server_key,
             client_key: Some(client_key),
             compact_public_key,
-            public_params: Arc::new(crs.public_params().clone()),
+            public_params: Arc::new(crs.clone()),
         }
     }
 

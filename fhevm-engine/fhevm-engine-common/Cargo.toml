@@ -23,12 +23,6 @@ paste = "1.0.15"
 rand_chacha = "0.3.1"
 strum = { version = "0.26", features = ["derive"] }
 
-# arch-specific dependencies
-[target.'cfg(target_arch = "x86_64")'.dependencies]
-tfhe = { workspace = true, features = ["x86_64-unix"] }
-[target.'cfg(target_arch = "aarch64")'.dependencies]
-tfhe = { workspace = true, features = ["aarch64-unix"] }
-
 [features]
 nightly-avx512 = ["tfhe/nightly-avx512"]
 

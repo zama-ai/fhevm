@@ -197,5 +197,5 @@ pub struct TfheTenantKeys {
     #[allow(dead_code)]
     pub pks: tfhe::CompactPublicKey,
     #[allow(dead_code)]
-    pub public_params: Arc<tfhe::zk::CompactPkePublicParams>,
+    pub public_params: Arc<tfhe::zk::CompactPkeCrs>,
 }

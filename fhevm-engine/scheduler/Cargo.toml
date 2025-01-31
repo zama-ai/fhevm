@@ -8,17 +8,11 @@ edition = "2021"
 anyhow = { workspace = true }
 daggy = { workspace = true }
 rayon = { workspace = true }
+tfhe = { workspace = true }
 tokio = { workspace = true }
 
 # local dependencies
 fhevm-engine-common = { path = "../fhevm-engine-common" }
 
-# arch-specific dependencies
-[target.'cfg(target_arch = "x86_64")'.dependencies]
-tfhe = { workspace = true, features = ["x86_64-unix"] }
-[target.'cfg(target_arch = "aarch64")'.dependencies]
-tfhe = { workspace = true, features = ["aarch64-unix"] }
-
 [features]
 nightly-avx512 = ["tfhe/nightly-avx512"]
-

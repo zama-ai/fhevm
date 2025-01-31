@@ -17,6 +17,7 @@ rand = { workspace = true }
 rayon = { workspace = true }
 sha3 = { workspace = true }
 sqlx = { workspace = true }
+tfhe = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 tonic = { workspace = true }
@@ -44,12 +45,6 @@ tonic-web = "0.12"
 # local dependencies
 fhevm-engine-common = { path = "../fhevm-engine-common" }
 scheduler = { path = "../scheduler" }
-
-# arch-specific dependencies
-[target.'cfg(target_arch = "x86_64")'.dependencies]
-tfhe = { workspace = true, features = ["x86_64-unix"] }
-[target.'cfg(target_arch = "aarch64")'.dependencies]
-tfhe = { workspace = true, features = ["aarch64-unix"] }
 
 [features]
 nightly-avx512 = ["tfhe/nightly-avx512"]

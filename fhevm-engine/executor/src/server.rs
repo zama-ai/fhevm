@@ -15,7 +15,7 @@ use fhevm_engine_common::{
 };
 use sha3::{Digest, Keccak256};
 use std::{cell::Cell, collections::HashMap};
-use tfhe::{set_server_key, zk::CompactPkePublicParams};
+use tfhe::{set_server_key, zk::CompactPkeCrs};
 use tokio::task::spawn_blocking;
 use tonic::{transport::Server, Code, Request, Response, Status};
 
@@ -184,7 +184,7 @@ impl FhevmExecutorService {
     fn expand_compact_lists(
         lists: &Vec<Vec<u8>>,
         state: &mut ComputationState,
-        public_params: &CompactPkePublicParams,
+        public_params: &CompactPkeCrs,
     ) -> Result<(), FhevmError> {
         for list in lists {
             let cts = try_expand_ciphertext_list(&list, &public_params)?;

@@ -63,7 +63,7 @@ pub struct FetchTenantKeyResult {
     pub verifying_contract_address: String,
     pub acl_contract_address: String,
     pub server_key: tfhe::ServerKey,
-    pub public_params: Arc<tfhe::zk::CompactPkePublicParams>,
+    pub public_params: Arc<tfhe::zk::CompactPkeCrs>,
 }
 
 /// Returns chain id and verifying contract address for EIP712 signature and tfhe server key
@@ -118,7 +118,7 @@ where
             .expect("We can't deserialize our own validated sks key");
         let pks: tfhe::CompactPublicKey = safe_deserialize_key(&key.pks_key)
             .expect("We can't deserialize our own validated pks key");
-        let public_params: tfhe::zk::CompactPkePublicParams =
+        let public_params: tfhe::zk::CompactPkeCrs =
             safe_deserialize_key(&key.public_params)
                 .expect("We can't deserialize our own validated public params");
         res.push(TfheTenantKeys {
