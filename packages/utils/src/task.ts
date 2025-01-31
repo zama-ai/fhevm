@@ -65,6 +65,32 @@ export class Task<A, E> {
   }
 
   /**
+   * Creates a new Task that resolves with the value of this Task if it resolves,
+   * otherwise resolves with the given default value.
+   *
+   * @param defaultValue - The value to resolve the new Task with if this Task rejects.
+   * @returns A new Task that resolves with the value of this Task or the given default value.
+   */
+  or(defaultValue: A): Task<A, E> {
+    return new Task(resolve => {
+      this.computation(resolve, () => resolve(defaultValue))
+    })
+  }
+
+  /**
+   * Creates a new Task that resolves with the value of this Task if it resolves,
+   * otherwise calls the given function with the error and resolves with its result.
+   *
+   * @param fn - A function that takes an error of type `E` and returns a value of type `A`.
+   * @returns A new Task that resolves with the value of this Task or the result of the given function.
+   */
+  orElse(fn: (error: E) => A): Task<A, E> {
+    return new Task(resolve => {
+      this.computation(resolve, error => resolve(fn(error)))
+    })
+  }
+
+  /**
    * Executes the computation of the Task.
    *
    * @param resolve - A function to call with the value of type `A` if the Task resolves.

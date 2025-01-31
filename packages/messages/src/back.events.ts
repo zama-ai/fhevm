@@ -37,7 +37,7 @@ const schema = z
       $meta: meta,
     }),
   )
-export type Web3Event = z.infer<typeof schema>
+export type BackEvent = z.infer<typeof schema>
 
 /**
  * Create a factory to generate a given event
@@ -51,13 +51,13 @@ function factory<K extends keyof EventMap>(type: K) {
       type: `back:${type}`,
       payload,
       $meta,
-    } as Web3Event
+    } as BackEvent
   }
 }
 
 export const dappStatsRequested = factory('dapp:stats-requested')
 export const dappStatsAvailable = factory('dapp:stats-available')
 
-export function isBackEvent(data: unknown): data is Web3Event {
+export function isBackEvent(data: unknown): data is BackEvent {
   return schema.safeParse(data).success
 }

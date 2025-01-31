@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common'
 import type { UseCase, AppError } from 'utils'
 import { Task } from 'utils'
 
-import { DApp } from '../domain/entities/dapp.js'
+import { DApp, DAppProps } from '../domain/entities/dapp.js'
 import { DAppRepository } from '../domain/repositories/dapp.repository.js'
 import { TeamRepository } from '#users/domain/repositories/team.repository.js'
 import { User } from '#users/domain/entities/user.js'
@@ -18,12 +18,12 @@ interface Input {
 }
 
 @Injectable()
-export class CreateDapp implements UseCase<Input, DApp> {
+export class CreateDapp implements UseCase<Input, DAppProps> {
   constructor(
     private readonly dappRepository: DAppRepository,
     private readonly teamRepository: TeamRepository,
   ) {}
-  execute(input: Input): Task<DApp, AppError> {
+  execute(input: Input): Task<DAppProps, AppError> {
     return this.teamRepository
       .findOneByIdAndUserId(new TeamId(input.dapp.teamId), input.user.id) // this can throw with a "Team not found" error, it should throw an unthorized error
       .chain(team =>
@@ -31,7 +31,9 @@ export class CreateDapp implements UseCase<Input, DApp> {
           name: input.dapp.name,
           teamId: team.id.value,
           address: input.dapp.address,
-        }).asyncChain(this.dappRepository.create),
+        })
+          .asyncChain(this.dappRepository.create)
+          .map(dapp => dapp.toJSON()),
       )
   }
 }

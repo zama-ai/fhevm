@@ -24,7 +24,9 @@ import { DAppId } from '../domain/entities/value-objects.js'
 import { TeamType } from '#users/infra/types/team.type.js'
 import { QueryDappInput } from './dto/inputs/query-dapp.input.js'
 import { GetDappStatsUseCase } from '#dapps/use-cases/get-dapp-stats.use-case.js'
-import { DApp } from '#dapps/domain/entities/dapp.js'
+import { DAppStatProps } from '#dapps/domain/entities/dapp-stat.js'
+import { DAppProps } from '#dapps/domain/entities/dapp.js'
+import { TeamProps } from '#users/domain/entities/team.js'
 
 @Resolver(() => DappType)
 export class DappsResolver {
@@ -40,7 +42,10 @@ export class DappsResolver {
 
   @Query(() => DappType, { name: 'dapp' })
   @UseGuards(JwtAuthGuard)
-  dapp(@Args('input') input: QueryDappInput, @CurrentUser() user: User) {
+  dapp(
+    @Args('input') input: QueryDappInput,
+    @CurrentUser() user: User,
+  ): Promise<DAppProps> {
     return this.getDappByIdUC
       .execute({ dappId: new DAppId(input.id), userId: user.id })
       .toPromise()
@@ -48,13 +53,19 @@ export class DappsResolver {
 
   @Mutation(() => DappType, { name: 'createDapp' })
   @UseGuards(JwtAuthGuard)
-  createDapp(@Args('input') input: CreateDappInput, @CurrentUser() user: User) {
+  createDapp(
+    @Args('input') input: CreateDappInput,
+    @CurrentUser() user: User,
+  ): Promise<DAppProps> {
     return this.createDappUC.execute({ dapp: input, user }).toPromise()
   }
 
   @Mutation(() => DappType, { name: 'updateDapp' })
   @UseGuards(JwtAuthGuard)
-  updateDapp(@Args('input') input: UpdateDappInput, @CurrentUser() user: User) {
+  updateDapp(
+    @Args('input') input: UpdateDappInput,
+    @CurrentUser() user: User,
+  ): Promise<DAppProps> {
     const { id, ...props } = input
     return this.updateDappUC
       .execute({ dapp: { id: new DAppId(id), ...props }, user })
@@ -70,14 +81,13 @@ export class DappsResolver {
   }
 
   @ResolveField(() => TeamType, { name: 'team' })
-  async team(@Parent() dapp: DappType) {
+  async team(@Parent() dapp: DappType): Promise<TeamProps> {
     const { teamId } = dapp
     return this.getTeamByIdUC.execute(new TeamId(teamId)).toPromise()
   }
 
   @ResolveField(() => [StatsType], { name: 'stats' })
-  // Note: the parent should be a DappType, but it actually is a DApp
-  async stats(@Parent() dapp: DApp) {
+  async stats(@Parent() dapp: DappType): Promise<DAppStatProps[]> {
     this.logger.debug(`getting stats for dappId=${dapp.id}`)
     const result = await this.getDappStatsUC
       .execute({ dappId: dapp.id })

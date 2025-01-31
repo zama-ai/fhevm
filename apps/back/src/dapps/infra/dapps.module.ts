@@ -11,9 +11,10 @@ import { DeployDApp } from '../use-cases/deploy-dapp.use-case.js'
 import { AppDeploymentEnded } from '../use-cases/app-deployment-ended.use-case.js'
 import { AppDeploymentRequested } from '#dapps/use-cases/app-deployment-requested.use-case.js'
 import { GetDappStatsUseCase } from '#dapps/use-cases/get-dapp-stats.use-case.js'
+import { SharedModule } from '#shared/shared.module.js'
 
 @Module({
-  imports: [DatabaseModule],
+  imports: [DatabaseModule, SharedModule],
   providers: [
     {
       provide: APP_DEPLOYMENT_PRODUCER,

@@ -10,6 +10,7 @@
     "target": "ES2022",
     "lib": ["ES2022"],
     "sourceMap": true,
+    "rootDir": ".",
     "outDir": "./dist",
     "baseUrl": "./",
     "incremental": true,
