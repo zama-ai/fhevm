@@ -37,8 +37,16 @@ kmsCore:
   serviceAccountName:
   thresholdMode:
     enabled: false
+    # If left unset, the chart will generate the list automatically based on pod replicas of the statefulset
+    peersList:
+#      - id: 1
+#        host: kms-service-core-1
+#        port: 50001
+#      - id: 2
+#        host: kms-service-core-2
+#        port: 50001
     initializationScript:
-      enabled: true
+      enabled: false
     dec_capacity: 10000
     min_dec_cache: 6000
     num_sessions_preproc: 2
@@ -95,7 +103,7 @@ mtls:
   enabled: false
 
 kmsSimulator:
-  enabled: true
+  enabled: false
   image:
     name: ghcr.io/zama-ai/kms-blockchain-simulator
     tag: latest

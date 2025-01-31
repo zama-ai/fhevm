@@ -58,6 +58,14 @@ data:
     min_dec_cache = {{ int .Values.kmsCore.thresholdMode.min_dec_cache }}
     num_sessions_preproc = {{ int .Values.kmsCore.thresholdMode.num_sessions_preproc }}
 
+    {{- if .Values.kmsCore.thresholdMode.peersList }}
+    {{ range .Values.kmsCore.thresholdMode.peersList }}
+    [[threshold.peers]]
+    party_id = {{ int .id }}
+    address = {{ .host | quote }}
+    port = {{ int .port }}
+    {{ end }}
+    {{- else }}
     {{- range $i := $peersIDList }}
     [[threshold.peers]]
     party_id = {{ int $i }}
@@ -68,6 +76,7 @@ data:
     address = {{ (printf "%s-%d" $kmsCoreName $i) | quote }}
     port = {{ int $.Values.kmsCore.ports.peer }}
     {{ end }}
+    {{- end }}
     {{- end }}
 
     {{- if .Values.redis.enabled -}}

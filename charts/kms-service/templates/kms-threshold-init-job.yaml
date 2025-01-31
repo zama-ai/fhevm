@@ -20,28 +20,51 @@ spec:
       initContainers:
         - name: check-kms-cores
           image: {{ .Values.grpcHealthProbe.image.name }}:{{ .Values.grpcHealthProbe.image.tag }}
-          command: ["/bin/sh", "-c"]
+          command: ["/bin/bash", "-c"]
           args:
             - |
               echo "starting init process for kms-cores to be ready to be initialized"
               kmsInitCount=0
-              {{- range $i := $peersIDList }}
-              while true
-                do
-                /bin/grpc_health_probe -addr={{ printf "%s-%d:%d" $kmsCoreName $i (int $.Values.kmsCore.ports.client) | quote }}
-                healthStatus=$?
-                {{- /* Checking grpc-health-probe response codes, see https://github.com/grpc-ecosystem/grpc-health-probe?tab=readme-ov-file#exit-codes*/}}
-                if [ ${healthStatus} -eq 0 ]; then
-                  echo "kms-core #{{ $i }} is already initialized"
-                  kmsInitCount=$((kmsInitCount + 1))
-                  break
-                fi
-                if [ ${healthStatus} -eq 4 ]; then
-                  echo "kms-core #{{ $i }} is reachable but not yet initialized"
-                  break
-                fi;
-                echo "failed to connect to kms-core #{{ $i }}, retrying"
-                sleep 1
+              {{- if .Values.kmsCore.thresholdMode.peersList }}
+              peerAddresses=({{ range $peer := .Values.kmsCore.thresholdMode.peersList }}{{ printf "%s:%d" $peer.host (int $peer.port) | quote }} {{ end }})
+              for peerAddress in "${peerAddresses[@]}"; do
+                while true
+                  do
+                  /bin/grpc_health_probe -addr="${peerAddress}"
+                  healthStatus=$?
+                  if [ ${healthStatus} -eq 0 ]; then
+                    echo "kms-core #${peerAddress} is already initialized"
+                    kmsInitCount=$((kmsInitCount + 1))
+                    break
+                  fi
+                  if [ ${healthStatus} -eq 4 ]; then
+                    echo "kms-core #${peerAddress} is reachable but not yet initialized"
+                    break
+                  fi;
+                  echo "failed to connect to kms-core at ${peerAddress}, retrying"
+                  sleep 1
+                done
+              done
+              {{- else }}
+              peersIDList=({{ $peersIDList | join " " }})
+              for peerID in "${peersIDList[@]}"; do
+                while true
+                  do
+                  /bin/grpc_health_probe -addr={{ printf "%s-${peerID}:%d" $kmsCoreName (int .Values.kmsCore.ports.client) | quote }}
+                  healthStatus=$?
+                  {{- /* Checking grpc-health-probe response codes, see https://github.com/grpc-ecosystem/grpc-health-probe?tab=readme-ov-file#exit-codes*/}}
+                  if [ ${healthStatus} -eq 0 ]; then
+                    echo "kms-core #${peerID} is already initialized"
+                    kmsInitCount=$((kmsInitCount + 1))
+                    break
+                  fi
+                  if [ ${healthStatus} -eq 4 ]; then
+                    echo "kms-core #${peerID} is reachable but not yet initialized"
+                    break
+                  fi;
+                  echo "failed to connect to kms-core #${peerID}, retrying"
+                  sleep 1
+                done
               done
               {{- end }}
               echo "all kms-core peers have been reached"
@@ -55,19 +78,14 @@ spec:
           command: [ "/bin/sh", "-c" ]
           args:
             - |
-              kmsPeersCount={{ .Values.kmsPeers.count }}
               kmsInitCount="$(cat /mnt/kms-init-count)"
-              echo "${kmsInitCount}/${kmsPeersCount} peers have been initialized"
-              if [ "${kmsInitCount}" -eq "${kmsPeersCount}" ]; then
-                echo "all kms-cores have been initialized, aborting threshold-init"
-                #exit 0
-              fi
-              # TODO uncomment this when health check will properly report initialization status
-              #if [ "${kmsInitCount}" -lt "${kmsPeersCount}" ]; then
-                echo "there are kms-cores to initialize, launching threshold-init"
-                timeout 10 bin/kms-init --addresses {{ range $i := $peersIDList }}{{ printf "http://%s-%d:%d" $kmsCoreName $i (int $.Values.kmsCore.ports.client) | quote }} {{ end }}
-                #exit 1
-              #fi
+              echo "${kmsInitCount} peers to initialize"
+              timeout 10 bin/kms-init --addresses
+              {{- if .Values.kmsCore.thresholdMode.peersList -}}
+              {{ range $peer := .Values.kmsCore.thresholdMode.peersList }} {{ printf "%s:%d" $peer.host (int $peer.port) }}{{ end }}
+              {{- else -}}
+              {{ range $peerID := $peersIDList }} {{ printf "http://%s-%d:%d" $kmsCoreName $peerID (int $.Values.kmsCore.ports.client) }}{{ end }}
+              {{- end }}
               exit 0
           volumeMounts:
             - name: kms-core-health

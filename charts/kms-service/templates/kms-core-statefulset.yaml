@@ -103,6 +103,7 @@ spec:
                      "cid" .Values.kmsCore.nitroEnclave.cid
                      "port" .Values.kmsCore.ports.peer
                 ) | indent 10 | trim }}
+        {{/* TODO add support for kmsCore.thresholdMode.peersList */}}
         {{- range $i := $peersIDList }}
         - {{ include "proxyFromEnclaveTcp"
                (dict "name" (printf "enclave-peer-proxy-%d" (int $i))
