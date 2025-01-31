@@ -25,6 +25,7 @@
     "date-fns": "^4.1.0",
     "formik": "^2.4.6",
     "graphql": "^16.9.0",
+    "graphql-ws": "^6.0.2",
     "lucide-react": "^0.461.0",
     "next-themes": "^0.4.3",
     "prism-react-renderer": "^2.4.0",

@@ -70,6 +70,12 @@ importers:
       dotenv:
         specifier: ^16.4.7
         version: 16.4.7
+      graphql-subscriptions:
+        specifier: ^3.0.0
+        version: 3.0.0(graphql@16.9.0)
+      graphql-ws:
+        specifier: ^6.0.2
+        version: 6.0.2(graphql@16.9.0)(ws@8.18.0)
       messages:
         specifier: workspace:*
         version: link:../../packages/messages
@@ -305,7 +311,7 @@ importers:
     dependencies:
       '@apollo/client':
         specifier: ^3.11.10
-        version: 3.11.10(@types/react@18.3.12)(graphql-ws@5.16.0(graphql@16.9.0))(graphql@16.9.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(subscriptions-transport-ws@0.11.0(graphql@16.9.0))
+        version: 3.11.10(@types/react@18.3.12)(graphql-ws@6.0.2(graphql@16.9.0)(ws@8.18.0))(graphql@16.9.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(subscriptions-transport-ws@0.11.0(graphql@16.9.0))
       '@chakra-ui/react':
         specifier: ^3.2.0
         version: 3.2.1(@emotion/react@11.13.5(@types/react@18.3.12)(react@18.3.1))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -327,6 +333,9 @@ importers:
       graphql:
         specifier: ^16.9.0
         version: 16.9.0
+      graphql-ws:
+        specifier: ^6.0.2
+        version: 6.0.2(graphql@16.9.0)(ws@8.18.0)
       lucide-react:
         specifier: ^0.461.0
         version: 0.461.0(react@18.3.1)
@@ -5082,6 +5091,11 @@ packages:
     peerDependencies:
       graphql: 14 - 16
 
+  graphql-subscriptions@3.0.0:
+    resolution: {integrity: sha512-kZCdevgmzDjGAOqH7GlDmQXYAkuHoKpMlJrqF40HMPhUhM5ZWSFSxCwD/nSi6AkaijmMfsFhoJRGJ27UseCvRA==}
+    peerDependencies:
+      graphql: ^15.7.2 || ^16.0.0
+
   graphql-tag@2.12.6:
     resolution: {integrity: sha512-FdSNcu2QQcWnM2VNvSCCDCVS5PpPqpzgFT8+GXzqJuoDd0CBncxCY278u4mhRO7tMgo2JjgJA5aZ+nWSQ/Z+xg==}
     engines: {node: '>=10'}
@@ -5093,6 +5107,22 @@ packages:
     engines: {node: '>=10'}
     peerDependencies:
       graphql: '>=0.11 <=16'
+
+  graphql-ws@6.0.2:
+    resolution: {integrity: sha512-9fzn1gacbVA2h8JWQhStEfHiGnrF0lJJJLdAJWvwBVEw8h6khOrQy/WO1cXopLGgnzls4gIeMj+csZVTnsDzrw==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      '@fastify/websocket': ^10 || ^11
+      graphql: ^15.10.1 || ^16
+      uWebSockets.js: ^20
+      ws: ^8
+    peerDependenciesMeta:
+      '@fastify/websocket':
+        optional: true
+      uWebSockets.js:
+        optional: true
+      ws:
+        optional: true
 
   graphql@16.9.0:
     resolution: {integrity: sha512-GGTKBX4SD7Wdb8mqeDLni2oaRGYQWjWHGKPQ24ZMnUtKfcsVoiv4uX8+LJr1K6U5VW2Lu1BwJnj7uiori0YtRw==}
@@ -7680,7 +7710,7 @@ snapshots:
     dependencies:
       graphql: 16.9.0
 
-  '@apollo/client@3.11.10(@types/react@18.3.12)(graphql-ws@5.16.0(graphql@16.9.0))(graphql@16.9.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(subscriptions-transport-ws@0.11.0(graphql@16.9.0))':
+  '@apollo/client@3.11.10(@types/react@18.3.12)(graphql-ws@6.0.2(graphql@16.9.0)(ws@8.18.0))(graphql@16.9.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(subscriptions-transport-ws@0.11.0(graphql@16.9.0))':
     dependencies:
       '@graphql-typed-document-node/core': 3.2.0(graphql@16.9.0)
       '@wry/caches': 1.0.1
@@ -7698,7 +7728,7 @@ snapshots:
       tslib: 2.8.1
       zen-observable-ts: 1.2.5
     optionalDependencies:
-      graphql-ws: 5.16.0(graphql@16.9.0)
+      graphql-ws: 6.0.2(graphql@16.9.0)(ws@8.18.0)
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
       subscriptions-transport-ws: 0.11.0(graphql@16.9.0)
@@ -13389,6 +13419,10 @@ snapshots:
     transitivePeerDependencies:
       - encoding
 
+  graphql-subscriptions@3.0.0(graphql@16.9.0):
+    dependencies:
+      graphql: 16.9.0
+
   graphql-tag@2.12.6(graphql@16.9.0):
     dependencies:
       graphql: 16.9.0
@@ -13397,6 +13431,12 @@ snapshots:
   graphql-ws@5.16.0(graphql@16.9.0):
     dependencies:
       graphql: 16.9.0
+
+  graphql-ws@6.0.2(graphql@16.9.0)(ws@8.18.0):
+    dependencies:
+      graphql: 16.9.0
+    optionalDependencies:
+      ws: 8.18.0
 
   graphql@16.9.0: {}
 

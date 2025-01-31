@@ -10,9 +10,11 @@ import { SNSAppDeploymentProducer } from './adapter/sns-app-deployment.producer.
 import { DeployDApp } from '../use-cases/deploy-dapp.use-case.js'
 import { AppDeploymentEnded } from '../use-cases/app-deployment-ended.use-case.js'
 import { AppDeploymentRequested } from '#dapps/use-cases/app-deployment-requested.use-case.js'
+import { SubscriptionsModule } from '#subscriptions/infra/subscriptions.module.js'
+import { AppUpdatesSubscription } from '#dapps/use-cases/app-updates-subscription.use-case.js'
 
 @Module({
-  imports: [DatabaseModule],
+  imports: [DatabaseModule, SubscriptionsModule],
   providers: [
     {
       provide: APP_DEPLOYMENT_PRODUCER,
@@ -26,6 +28,7 @@ import { AppDeploymentRequested } from '#dapps/use-cases/app-deployment-requeste
     DeployDApp,
     AppDeploymentRequested,
     AppDeploymentEnded,
+    AppUpdatesSubscription,
   ],
   exports: [
     AppDeploymentRequested,

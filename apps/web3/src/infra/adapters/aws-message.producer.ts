@@ -44,11 +44,11 @@ export class AwsMessageProducer implements MessageProducer {
         .send(
           new SendMessageCommand({
             QueueUrl: this.#queueUrl,
-            DelaySeconds: message.$meta?.delay as number | undefined,
+            DelaySeconds: message.meta?.delay as number | undefined,
             MessageBody: JSON.stringify(message),
           }),
         )
-        .then(res => resolve(`status code: ${res.$metadata.httpStatusCode}`))
+        .then(res => resolve(`status code: ${res.metadata.httpStatusCode}`))
         .catch((err: unknown) => {
           this.logger.warn(`failed to send message: ${err}`)
           reject(unknownError(String(err)))
@@ -75,7 +75,7 @@ export class AwsMessageProducer implements MessageProducer {
           }),
         )
         .then(result =>
-          resolve(`status code: ${result.$metadata.httpStatusCode}`),
+          resolve(`status code: ${result.metadata.httpStatusCode}`),
         )
         .catch((err: unknown) => {
           this.logger.warn(`failed to publish command: ${err}`)
