@@ -24,7 +24,7 @@ spec:
   selector:
     app: kms-core
     app.kubernetes.io/name: {{ $kmsCoreName }}
-{{- range $coreId := untilStep (.Values.kmsPeers.id | int) (.Values.kmsPeers.count | add1 | int) 1 }}
+{{- range $coreId := untilStep (.Values.kmsPeers.id | int) (.Values.kmsPeers.count | add .Values.kmsPeers.id | int) 1 }}
 ---
 apiVersion: v1
 kind: Service
