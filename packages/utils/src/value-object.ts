@@ -1,6 +1,5 @@
 import { z, ZodType, type ZodBranded, type ZodTypeAny } from 'zod'
-import { AppError, fromZodError } from './app-error.js'
-import { fail, ok, Result } from './result.js'
+import { fromZodError } from './app-error.js'
 
 type TPlain<TSchemaBranded> =
   TSchemaBranded extends ZodBranded<infer TSchema, infer _TBrand> // eslint-disable-line @typescript-eslint/no-unused-vars
@@ -28,13 +27,6 @@ export function ValueObject<TType extends string, TSchema extends ZodUnbranded>(
       this.#value = value
     }
 
-    static parse(value: UnbrandedValue): Result<ValueObject, AppError> {
-      const parsed = schema.safeParse(value)
-      return parsed.success
-        ? ok(new this(parsed.data))
-        : fail(fromZodError(parsed.error))
-    }
-
     static from(value: UnbrandedValue) {
       const parsed = schema.safeParse(value)
       if (!parsed.success) {
@@ -55,11 +47,6 @@ export function ValueObject<TType extends string, TSchema extends ZodUnbranded>(
       return this.toPlainValue().valueOf()
     }
 
-    toJSON() {
-      const plain = this.toPlainValue()
-      return isPrimitive(plain) ? plain : JSON.stringify(plain)
-    }
-
     get value(): Value {
       return this.#value
     }
@@ -69,15 +56,4 @@ export function ValueObject<TType extends string, TSchema extends ZodUnbranded>(
       return this.value === other.value
     }
   }
-}
-
-type Primitive = string | number | boolean | bigint | symbol | undefined | null
-function isPrimitive(value: unknown): value is Primitive {
-  const type = typeof value
-  return (
-    value === null ||
-    ['string', 'number', 'boolean', 'bigint', 'symbol', 'undefined'].includes(
-      type,
-    )
-  )
 }
