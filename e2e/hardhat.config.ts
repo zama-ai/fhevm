@@ -59,6 +59,7 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
   };
 }
 
+// NOTE: we should probably add the coverage as a metric pushed to open-telemetry
 task("coverage").setAction(async (taskArgs, hre, runSuper) => {
   hre.config.networks.hardhat.allowUnlimitedContractSize = true;
   hre.config.networks.hardhat.blockGasLimit = 1099511627775;
@@ -72,6 +73,13 @@ const config: HardhatUserConfig = {
   },
   mocha: {
     timeout: 500000,
+    // NOTE: `spec` is the default mocha reporter
+    // List of other available reporters can be found in https://github.com/mochajs/mocha/tree/main/lib/reporters
+    reporter: ((process.env["MOCHA_REPORTER"] || "BASE") === "OTEL") ? './instrument-tests/otel-reporter.js' : 'spec',
+    // NOTE: We can't use the `--require` flags because of a discrepancy in Mocha as used in Hardhat
+    // https://github.com/mochajs/mocha/issues/5006
+    // require: ['./instrument-tests/otel-setup'],
+    parallel: false,
   },
   gasReporter: {
     currency: "USD",
