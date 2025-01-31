@@ -187,3 +187,13 @@ export function match<R1, R2, T, E>(matchers: Matchers<T, E, R1, R2>) {
       : matchers.fail(result.error)
   }
 }
+
+export function every<T, E>(values: Result<T, E>[]): Result<T[], E> {
+  return values.reduce(
+    (acc, item) => {
+      if (acc.isFail()) return acc
+      return item.isFail() ? fail(item.error) : ok([...acc.value, item.value])
+    },
+    ok([]) as Result<T[], E>,
+  )
+}

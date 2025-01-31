@@ -12,6 +12,7 @@ type Stats {
   id: ID!
   name: String!
   timestamp: Float!
+  externalRef: String!
 }
 
 type Dapp {

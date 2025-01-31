@@ -3,6 +3,7 @@ import type { AppError } from 'utils'
 import { Task } from 'utils'
 import { DAppId } from '../entities/value-objects.js'
 import { UserId } from '#users/domain/entities/value-objects.js'
+import { DAppStat } from '../entities/dapp-stat.js'
 
 export abstract class DAppRepository {
   abstract create(data: DApp): Task<DApp, AppError>
@@ -16,4 +17,6 @@ export abstract class DAppRepository {
     userId: UserId,
   ): Task<DApp, AppError>
   abstract findAllByTeamId(teamId: string): Task<DApp[], AppError>
+
+  abstract findAllStats(id: DAppId): Task<DAppStat[], AppError>
 }

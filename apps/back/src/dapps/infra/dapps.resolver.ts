@@ -1,4 +1,4 @@
-import { UseGuards } from '@nestjs/common'
+import { Logger, UseGuards } from '@nestjs/common'
 import {
   Args,
   Mutation,
@@ -23,15 +23,19 @@ import { GetDappById } from '../use-cases/get-dapp-by-id.use-case.js'
 import { DAppId } from '../domain/entities/value-objects.js'
 import { TeamType } from '#users/infra/types/team.type.js'
 import { QueryDappInput } from './dto/inputs/query-dapp.input.js'
+import { GetDappStatsUseCase } from '#dapps/use-cases/get-dapp-stats.use-case.js'
+import { DApp } from '#dapps/domain/entities/dapp.js'
 
 @Resolver(() => DappType)
 export class DappsResolver {
+  private readonly logger = new Logger(DappsResolver.name)
   constructor(
     private readonly createDappUC: CreateDapp,
     private readonly updateDappUC: UpdateDapp,
     private readonly getDappByIdUC: GetDappById,
     private readonly getTeamByIdUC: GetTeamById,
     private readonly deployDappUC: DeployDApp,
+    private readonly getDappStatsUC: GetDappStatsUseCase,
   ) {}
 
   @Query(() => DappType, { name: 'dapp' })
@@ -72,7 +76,12 @@ export class DappsResolver {
   }
 
   @ResolveField(() => [StatsType], { name: 'stats' })
-  async stats(@Parent() dapp: DappType) {
-    return []
+  // Note: the parent should be a DappType, but it actually is a DApp
+  async stats(@Parent() dapp: DApp) {
+    this.logger.debug(`getting stats for dappId=${dapp.id}`)
+    const result = await this.getDappStatsUC
+      .execute({ dappId: dapp.id })
+      .toPromise()
+    return result.stats
   }
 }

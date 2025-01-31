@@ -26,6 +26,6 @@ export {
 export { Entity } from './entity.js'
 export { isNone, isSome, none, some } from './option.js'
 export { PubSub } from './pubsub.js'
-export { isFail, isOk, fail, ok, wrap, match } from './result.js'
-export { Task } from './task.js'
+export { isFail, isOk, every, fail, ok, wrap, match } from './result.js'
+export { Task, executeTask } from './task.js'
 export { ValueObject } from './value-object/index.js'

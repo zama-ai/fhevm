@@ -10,6 +10,7 @@ import { SNSAppDeploymentProducer } from './adapter/sns-app-deployment.producer.
 import { DeployDApp } from '../use-cases/deploy-dapp.use-case.js'
 import { AppDeploymentEnded } from '../use-cases/app-deployment-ended.use-case.js'
 import { AppDeploymentRequested } from '#dapps/use-cases/app-deployment-requested.use-case.js'
+import { GetDappStatsUseCase } from '#dapps/use-cases/get-dapp-stats.use-case.js'
 
 @Module({
   imports: [DatabaseModule],
@@ -24,6 +25,7 @@ import { AppDeploymentRequested } from '#dapps/use-cases/app-deployment-requeste
     GetDappById,
     GetTeamById,
     DeployDApp,
+    GetDappStatsUseCase,
     AppDeploymentRequested,
     AppDeploymentEnded,
   ],

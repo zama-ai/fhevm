@@ -36,6 +36,9 @@ export class StatsType {
 
   @Field({ nullable: false })
   timestamp: number
+
+  @Field({ nullable: false })
+  externalRef: string
 }
 
 @ObjectType('Dapp')

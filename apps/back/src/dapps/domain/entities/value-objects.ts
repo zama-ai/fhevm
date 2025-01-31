@@ -1,7 +1,8 @@
-import { ValueObject } from 'utils'
+import { AppError, fail, ok, Result, ValueObject } from 'utils'
 import { validateNanoId } from 'utils/dist/src/validation.js'
 import { z } from 'zod'
 import { nanoid } from 'nanoid'
+import { fromZodError } from 'utils/dist/src/app-error.js'
 
 export class DAppId extends ValueObject(
   'DAppId',
@@ -16,8 +17,27 @@ export class DAppId extends ValueObject(
     return new DAppId(`dapp_${nanoid(12)}`)
   }
 
-  static fromString(id: string): DAppId {
-    return new DAppId(id as `dapp_${string}`)
+  static fromString(id: string): Result<DAppId, AppError> {
+    const result = DAppId.schema.safeParse(id)
+    return result.success
+      ? ok(new DAppId(id as `dapp_${string}`))
+      : fail(fromZodError(result.error))
+  }
+}
+
+export class DAppStatId extends ValueObject(
+  'DAppStatId',
+  z.string().startsWith('stat_').length(22).refine(validateNanoId(17, 'stat_')),
+) {
+  static random(): DAppStatId {
+    return new DAppStatId(`stat_${nanoid(17)}`)
+  }
+
+  static fromString(id: string): Result<DAppStatId, AppError> {
+    const result = DAppStatId.schema.safeParse(id)
+    return result.success
+      ? ok(new DAppStatId(id))
+      : fail(fromZodError(result.error))
   }
 }
 

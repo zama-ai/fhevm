@@ -213,3 +213,23 @@ interface Matchers<T, E, R1, R2 = R1> {
   ok(value: T): R1
   fail(error: E): R2
 }
+
+/**
+ * It executes the task, without throwing an error in case of failure.
+ *
+ * @param task Task to execute
+ * @returns A promise that resolves with the result of the task
+ */
+export function executeTask<A extends object | string | number, E>(
+  task: Task<A, E>,
+): Promise<
+  | { success: true; value: A; error: undefined }
+  | { success: false; value: undefined; error: E }
+> {
+  return new Promise(resolve => {
+    task.fork(
+      v => resolve({ success: true, value: v, error: undefined }),
+      e => resolve({ success: false, value: undefined, error: e }),
+    )
+  })
+}
