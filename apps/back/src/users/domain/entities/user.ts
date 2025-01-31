@@ -4,9 +4,9 @@ import { Entity, ok, fail, unauthorizedError, validationError } from 'utils'
 import { Password, UserId, ValidatedPassword } from './value-objects.js'
 
 const schema = z.object({
-  id: UserId,
+  id: UserId.schema,
   email: z.string().email(),
-  password: Password,
+  password: Password.schema,
   name: z.string(),
 })
 

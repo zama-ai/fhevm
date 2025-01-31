@@ -103,6 +103,7 @@ export class SqsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy() {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
     const that = this
     const promises = Array.from(this.consumers.values()).map(consumer => {
       return new Promise<void>(function (resolve) {

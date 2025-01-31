@@ -25,10 +25,12 @@ export class ScDiscovered implements UseCase<Input, void> {
     private readonly subscriptions: SubscriptionService,
   ) {}
   execute({ type, payload, meta }: Input): Task<void, AppError> {
-    if (!meta?.userId) {
+    if (typeof meta?.userId !== 'string') {
       return Task.reject(unknownError('Missing user id'))
     }
-    const id = UserId.parse(meta.userId)
+    // TODO: fix this code!
+    // UserId.from throws an error if the userId is not valid
+    const id = UserId.from(meta.userId).value
     if (!id) {
       return Task.reject(unknownError('Badly formatted user id'))
     }
@@ -38,7 +40,7 @@ export class ScDiscovered implements UseCase<Input, void> {
         .chain(user =>
           this.updateDappUC.execute({
             dapp: {
-              id: new DAppId(DAppId.parse(payload.applicationId)),
+              id: DAppId.from(payload.applicationId),
               status:
                 type === 'app-deployment.sc-discovered' ? 'LIVE' : 'DRAFT',
             },

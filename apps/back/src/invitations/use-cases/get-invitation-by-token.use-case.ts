@@ -11,7 +11,7 @@ export class GetInvitationByToken implements UseCase<string, Invitation> {
 
   execute(token: string): Task<Invitation, AppError> {
     return this.invitationRepository
-      .findByToken(new Token(token))
+      .findByToken(Token.from(token))
       .chain<Invitation>(invitation =>
         invitation.isValid
           ? Task.of(invitation)

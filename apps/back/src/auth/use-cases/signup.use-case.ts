@@ -1,7 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common'
 import { JwtService } from '@nestjs/jwt'
-import { randomUUID } from 'crypto'
-import { User } from '#users/domain/entities/user.js'
+import { User, type UserProps } from '#users/domain/entities/user.js'
 import { UserRepository } from '#users/domain/repositories/user.repository.js'
 import { Invitation } from '#invitations/domain/entities/invitation.js'
 import { TeamRepository } from '#users/domain/repositories/team.repository.js'
@@ -10,11 +9,7 @@ import type { AppError, UnitOfWork, UseCase } from 'utils'
 import { Task, notFoundError } from 'utils'
 import type { JwtPayload } from '../interfaces/jwt-payload.js'
 import { Token } from '#invitations/domain/entities/value-objects.js'
-import {
-  Password,
-  TeamId,
-  ValidatedPassword,
-} from '#users/domain/entities/value-objects.js'
+import { ValidatedPassword } from '#users/domain/entities/value-objects.js'
 import { Team } from '#users/domain/entities/team.js'
 import { UNIT_OF_WORK } from '#constants.js'
 
@@ -26,7 +21,7 @@ interface SignupInput {
 
 @Injectable()
 export class SignUp
-  implements UseCase<SignupInput, { user: User; token: string }>
+  implements UseCase<SignupInput, { user: UserProps; token: string }>
 {
   constructor(
     @Inject(UNIT_OF_WORK) private readonly uow: UnitOfWork,
@@ -36,7 +31,9 @@ export class SignUp
     private readonly jwtService: JwtService,
   ) {}
 
-  execute(input: SignupInput): Task<{ user: User; token: string }, AppError> {
+  execute(
+    input: SignupInput,
+  ): Task<{ user: UserProps; token: string }, AppError> {
     return this.uow.exec(
       Task.all([
         // Note: we check the invitation token and validate the password at
@@ -74,7 +71,7 @@ export class SignUp
 
   private validateInvitation(token: string): Task<Invitation, AppError> {
     return this.invitationRepository
-      .findByToken(new Token(token))
+      .findByToken(Token.from(token))
       .chain<Invitation>(invitation =>
         invitation.isValid
           ? Task.of(invitation)
@@ -106,7 +103,7 @@ export class SignUp
 
   private getPayload(
     user: User,
-  ): Task<{ user: User; token: string }, AppError> {
+  ): Task<{ user: UserProps; token: string }, AppError> {
     return Task.of<string, AppError>(
       this.jwtService.sign({
         sub: user.id.value,
@@ -114,7 +111,7 @@ export class SignUp
       } satisfies JwtPayload),
     ).map(token => ({
       token,
-      user,
+      user: user.toJSON(),
     }))
   }
 }

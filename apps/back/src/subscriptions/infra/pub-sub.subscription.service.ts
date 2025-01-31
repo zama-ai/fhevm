@@ -25,7 +25,7 @@ export class PubSubSubscriptionService implements SubscriptionService {
     callback: (payload: T) => void,
   ): Promise<SubscriptionId> {
     const subId = await this.#pubSub.subscribe(topic, callback)
-    return new SubscriptionId(subId)
+    return SubscriptionId.from(subId)
   }
 
   unsubscribe(id: SubscriptionId): void {

@@ -26,7 +26,7 @@ export class AppUpdatesSubscription implements UseCase<Input, Output> {
   ) {}
   execute({ dappId, user }: Input): Task<Output, AppError> {
     return this.dappRepository
-      .findOneByIdAndUserId(new DAppId(dappId), user.id)
+      .findOneByIdAndUserId(DAppId.from(dappId), user.id)
       .tap(dapp => {
         this.logger.debug(`${user.id} subscribed to ${dapp.id}`)
       })

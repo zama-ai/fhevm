@@ -10,6 +10,6 @@ export class TeamsResolver {
 
   @ResolveField(() => [DappType], { name: 'dapps' })
   async dapps(@Parent() team: TeamType) {
-    return this.getDappsByTeamUC.execute(new TeamId(team.id)).toPromise()
+    return this.getDappsByTeamUC.execute(TeamId.from(team.id)).toPromise()
   }
 }

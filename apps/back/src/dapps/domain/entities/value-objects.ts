@@ -9,25 +9,9 @@ export class DAppId extends ValueObject(
     .string()
     .startsWith('dapp_')
     .length(17)
-    .refine(validateNanoId(12, 'dapp_'), 'Invalid DAppId')
-    .and(z.custom<`dapp_${string}`>()),
+    .refine(validateNanoId(12, 'dapp_'), 'Invalid DAppId'),
 ) {
   static random(): DAppId {
-    return new DAppId(`dapp_${nanoid(12)}`)
-  }
-
-  static fromString(id: string): DAppId {
-    return new DAppId(id as `dapp_${string}`)
-  }
-}
-
-export class CreatedAt extends ValueObject(
-  'CreatedAt',
-  z
-    .date()
-    .refine(date => date <= new Date(), 'CreatedAt should be in the past'),
-) {
-  static now(): CreatedAt {
-    return new CreatedAt(new Date())
+    return DAppId.from(`dapp_${nanoid(12)}`)
   }
 }
