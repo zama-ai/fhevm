@@ -15,14 +15,3 @@ export class DAppId extends ValueObject(
     return DAppId.from(`dapp_${nanoid(12)}`)
   }
 }
-
-export class CreatedAt extends ValueObject(
-  'CreatedAt',
-  z
-    .date()
-    .refine(date => date <= new Date(), 'CreatedAt should be in the past'),
-) {
-  static now(): CreatedAt {
-    return CreatedAt.from(new Date())
-  }
-}

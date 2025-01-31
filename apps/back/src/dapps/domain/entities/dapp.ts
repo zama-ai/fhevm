@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { AppError, Result } from 'utils'
 import { Entity, ok, fail, validationError } from 'utils'
-import { CreatedAt, DAppId } from './value-objects.js'
+import { DAppId } from './value-objects.js'
 import { TeamId } from '#users/domain/entities/value-objects.js'
 
 const status = z.enum(['DRAFT', 'DEPLOYING', 'LIVE'])
@@ -17,7 +17,9 @@ const schema = z.object({
     .startsWith('0x', 'sepolia address must start with 0x')
     .optional()
     .nullable(),
-  createdAt: CreatedAt.schema,
+  createdAt: z
+    .date()
+    .refine(date => date <= new Date(), 'CreatedAt should be in the past'),
 })
 
 export type DAppProps = z.infer<typeof schema>
@@ -25,10 +27,7 @@ export type DAppStatus = z.infer<typeof status>
 
 export class DApp
   extends Entity<DAppProps>
-  implements
-    Readonly<
-      Omit<DAppProps, 'id' | 'createdAt'> & { id: DAppId; createdAt: CreatedAt }
-    >
+  implements Readonly<Omit<DAppProps, 'id'> & { id: DAppId }>
 {
   static parse(data: unknown): Result<DApp, AppError> {
     if (!data) return fail(validationError('data is undefined'))
@@ -53,7 +52,7 @@ export class DApp
       status: 'DRAFT',
       teamId,
       address,
-      createdAt: CreatedAt.now().value,
+      createdAt: new Date(),
     })
   }
 
@@ -78,6 +77,6 @@ export class DApp
   }
 
   get createdAt() {
-    return new CreatedAt(this.get('createdAt'))
+    return this.get('createdAt')
   }
 }
