@@ -123,10 +123,8 @@ describe('Dapp', () => {
     })
 
     test('createdAt should be now', () => {
-      expect(dapp.createdAt.value.getTime()).toBeLessThanOrEqual(Date.now())
-      expect(dapp.createdAt.value.getTime()).toBeGreaterThanOrEqual(
-        Date.now() - 100,
-      )
+      expect(dapp.createdAt.getTime()).toBeLessThanOrEqual(Date.now())
+      expect(dapp.createdAt.getTime()).toBeGreaterThanOrEqual(Date.now() - 100)
     })
   })
 })

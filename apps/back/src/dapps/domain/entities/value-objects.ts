@@ -10,17 +10,16 @@ export class DAppId extends ValueObject(
     .string()
     .startsWith('dapp_')
     .length(17)
-    .refine(validateNanoId(12, 'dapp_'), 'Invalid DAppId')
-    .and(z.custom<`dapp_${string}`>()),
+    .refine(validateNanoId(12, 'dapp_'), 'Invalid DAppId'),
 ) {
   static random(): DAppId {
-    return new DAppId(`dapp_${nanoid(12)}`)
+    return DAppId.from(`dapp_${nanoid(12)}`)
   }
 
   static fromString(id: string): Result<DAppId, AppError> {
     const result = DAppId.schema.safeParse(id)
     return result.success
-      ? ok(new DAppId(id as `dapp_${string}`))
+      ? ok(DAppId.from(id))
       : fail(fromZodError(result.error))
   }
 }
@@ -30,24 +29,13 @@ export class DAppStatId extends ValueObject(
   z.string().startsWith('stat_').length(22).refine(validateNanoId(17, 'stat_')),
 ) {
   static random(): DAppStatId {
-    return new DAppStatId(`stat_${nanoid(17)}`)
+    return DAppStatId.from(`stat_${nanoid(17)}`)
   }
 
   static fromString(id: string): Result<DAppStatId, AppError> {
     const result = DAppStatId.schema.safeParse(id)
     return result.success
-      ? ok(new DAppStatId(id))
+      ? ok(DAppStatId.from(id))
       : fail(fromZodError(result.error))
-  }
-}
-
-export class CreatedAt extends ValueObject(
-  'CreatedAt',
-  z
-    .date()
-    .refine(date => date <= new Date(), 'CreatedAt should be in the past'),
-) {
-  static now(): CreatedAt {
-    return new CreatedAt(new Date())
   }
 }

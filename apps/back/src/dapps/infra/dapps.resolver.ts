@@ -1,4 +1,4 @@
-import { Logger, UseGuards } from '@nestjs/common'
+import { Logger, Inject, UseGuards } from '@nestjs/common'
 import {
   Args,
   Mutation,
@@ -6,6 +6,7 @@ import {
   Query,
   ResolveField,
   Resolver,
+  Subscription,
 } from '@nestjs/graphql'
 import { CreateDappInput } from '#dapps/infra/dto/inputs/create-dapp.input.js'
 import { UpdateDappInput } from '#dapps/infra/dto/inputs/update-dapp.input.js'
@@ -15,8 +16,8 @@ import { UpdateDapp } from '#dapps/use-cases/update-dapp.use-case.js'
 import { DappType, StatsType } from '#dapps/infra/types/dapp.type.js'
 import { CurrentUser } from '#auth/infra/decorators/current-user.js'
 import { JwtAuthGuard } from '#auth/infra/guards/jwt-auth-guard.js'
-import { User } from '#users/domain/entities/user.js'
-import { TeamId } from '#users/domain/entities/value-objects.js'
+import { User, type UserProps } from '#users/domain/entities/user.js'
+import { TeamId, UserId } from '#users/domain/entities/value-objects.js'
 import { DeployDApp } from '../use-cases/deploy-dapp.use-case.js'
 import { DeployDAppInput } from './dto/inputs/deploy-dapp.input.js'
 import { GetDappById } from '../use-cases/get-dapp-by-id.use-case.js'
@@ -25,8 +26,13 @@ import { TeamType } from '#users/infra/types/team.type.js'
 import { QueryDappInput } from './dto/inputs/query-dapp.input.js'
 import { GetDappStatsUseCase } from '#dapps/use-cases/get-dapp-stats.use-case.js'
 import { DAppStatProps } from '#dapps/domain/entities/dapp-stat.js'
-import { DAppProps } from '#dapps/domain/entities/dapp.js'
 import { TeamProps } from '#users/domain/entities/team.js'
+import {
+  SUBSCRIPTION_SERVICE,
+  SubscriptionService,
+} from '#subscriptions/domain/services/subscription.service.js'
+import { DeployedDAppInput } from './dto/inputs/deployed-dapp.input.js'
+import { AppUpdatesSubscription } from '#dapps/use-cases/app-updates-subscription.use-case.js'
 
 @Resolver(() => DappType)
 export class DappsResolver {
@@ -38,16 +44,16 @@ export class DappsResolver {
     private readonly getTeamByIdUC: GetTeamById,
     private readonly deployDappUC: DeployDApp,
     private readonly getDappStatsUC: GetDappStatsUseCase,
+    private readonly appUpdatesSubscriptionUC: AppUpdatesSubscription,
+    @Inject(SUBSCRIPTION_SERVICE)
+    private readonly subscriptions: SubscriptionService,
   ) {}
 
   @Query(() => DappType, { name: 'dapp' })
   @UseGuards(JwtAuthGuard)
-  dapp(
-    @Args('input') input: QueryDappInput,
-    @CurrentUser() user: User,
-  ): Promise<DAppProps> {
+  dapp(@Args('input') input: QueryDappInput, @CurrentUser() user: UserProps) {
     return this.getDappByIdUC
-      .execute({ dappId: new DAppId(input.id), userId: user.id })
+      .execute({ dappId: DAppId.from(input.id), userId: UserId.from(user.id) })
       .toPromise()
   }
 
@@ -55,8 +61,8 @@ export class DappsResolver {
   @UseGuards(JwtAuthGuard)
   createDapp(
     @Args('input') input: CreateDappInput,
-    @CurrentUser() user: User,
-  ): Promise<DAppProps> {
+    @CurrentUser() user: UserProps,
+  ) {
     return this.createDappUC.execute({ dapp: input, user }).toPromise()
   }
 
@@ -64,26 +70,50 @@ export class DappsResolver {
   @UseGuards(JwtAuthGuard)
   updateDapp(
     @Args('input') input: UpdateDappInput,
-    @CurrentUser() user: User,
-  ): Promise<DAppProps> {
+    @CurrentUser() user: UserProps,
+  ) {
     const { id, ...props } = input
     return this.updateDappUC
-      .execute({ dapp: { id: new DAppId(id), ...props }, user })
+      .execute({ dapp: { id: DAppId.from(id), ...props }, user })
       .toPromise()
   }
 
   @Mutation(() => DappType, { name: 'deployDapp' })
   @UseGuards(JwtAuthGuard)
-  deployDapp(@Args('input') input: DeployDAppInput, @CurrentUser() user: User) {
+  deployDapp(
+    @Args('input') input: DeployDAppInput,
+    @CurrentUser() user: UserProps,
+  ) {
     return this.deployDappUC
-      .execute({ dappId: new DAppId(input.dappId), user })
+      .execute({ dappId: DAppId.from(input.dappId), user })
+      .toPromise()
+  }
+
+  @Subscription(() => DappType, {
+    filter: (
+      payload: { dappUpdated: DappType },
+      variables: { input: DeployedDAppInput },
+    ) => {
+      return payload.dappUpdated.id === variables.input.id
+    },
+  })
+  @UseGuards(JwtAuthGuard)
+  dappUpdated(
+    @Args('input') input: DeployedDAppInput,
+    @CurrentUser() user: User,
+  ) {
+    return this.appUpdatesSubscriptionUC
+      .execute({
+        dappId: input.id,
+        user,
+      })
       .toPromise()
   }
 
   @ResolveField(() => TeamType, { name: 'team' })
   async team(@Parent() dapp: DappType): Promise<TeamProps> {
     const { teamId } = dapp
-    return this.getTeamByIdUC.execute(new TeamId(teamId)).toPromise()
+    return this.getTeamByIdUC.execute(TeamId.from(teamId)).toPromise()
   }
 
   @ResolveField(() => [StatsType], { name: 'stats' })

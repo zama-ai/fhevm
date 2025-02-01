@@ -83,7 +83,7 @@ export class AwsMessageProducer implements MessageProducer {
         .send(
           new SendMessageCommand({
             QueueUrl: this.#queueUrl,
-            DelaySeconds: message.$meta?.delay as number | undefined,
+            DelaySeconds: message.meta?.delay as number | undefined,
             MessageBody: JSON.stringify(message),
           }),
         )

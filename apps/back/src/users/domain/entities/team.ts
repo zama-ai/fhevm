@@ -4,7 +4,7 @@ import { ok, fail, Entity, validationError } from 'utils'
 import { TeamId } from './value-objects.js'
 
 const schema = z.object({
-  id: TeamId,
+  id: TeamId.schema,
   name: z.string(),
 })
 

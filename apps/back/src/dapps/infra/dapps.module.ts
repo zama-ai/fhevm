@@ -12,9 +12,11 @@ import { AppDeploymentEnded } from '../use-cases/app-deployment-ended.use-case.j
 import { AppDeploymentRequested } from '#dapps/use-cases/app-deployment-requested.use-case.js'
 import { GetDappStatsUseCase } from '#dapps/use-cases/get-dapp-stats.use-case.js'
 import { SharedModule } from '#shared/shared.module.js'
+import { SubscriptionsModule } from '#subscriptions/infra/subscriptions.module.js'
+import { AppUpdatesSubscription } from '#dapps/use-cases/app-updates-subscription.use-case.js'
 
 @Module({
-  imports: [DatabaseModule, SharedModule],
+  imports: [DatabaseModule, SharedModule, SubscriptionsModule],
   providers: [
     {
       provide: APP_DEPLOYMENT_PRODUCER,
@@ -29,6 +31,7 @@ import { SharedModule } from '#shared/shared.module.js'
     GetDappStatsUseCase,
     AppDeploymentRequested,
     AppDeploymentEnded,
+    AppUpdatesSubscription,
   ],
   exports: [
     AppDeploymentRequested,

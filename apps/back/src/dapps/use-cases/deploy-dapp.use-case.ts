@@ -1,4 +1,4 @@
-import { User } from '#users/domain/entities/user.js'
+import { type UserProps } from '#users/domain/entities/user.js'
 import {
   type AppError,
   Task,
@@ -18,9 +18,10 @@ import { UpdateDapp } from './update-dapp.use-case.js'
 import { requested } from 'messages'
 import { randomUUID } from 'crypto'
 import { DAppId } from '../domain/entities/value-objects.js'
+import { UserId } from '#users/domain/entities/value-objects.js'
 
 interface Input {
-  user: User // to check if they can deploy
+  user: UserProps // to check if they can deploy
   dappId: DAppId
   // deploymentId: string  // it will be random uuid for now
   // chainId: string // for now it's sepolia
@@ -43,7 +44,7 @@ export class DeployDApp implements UseCase<Input, DAppProps> {
     return this.uow
       .exec(
         this.dappRepository
-          .findOneByIdAndUserId(dappId, user.id)
+          .findOneByIdAndUserId(dappId, UserId.from(user.id))
           .tap(dapp => {
             this.logger.debug(`dapp: ${dapp}`)
           })
@@ -66,7 +67,7 @@ export class DeployDApp implements UseCase<Input, DAppProps> {
                       // TODO: move it into a constants file
                       chainId: '11155111', // sepolia
                     },
-                    { correlationId: randomUUID(), userId: user.id.value },
+                    { correlationId: randomUUID(), userId: user.id },
                   ),
                 )
                 .tap(r => this.logger.debug(`requested: ${r}`)),

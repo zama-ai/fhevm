@@ -6,7 +6,7 @@ export class CreateDappInput {
   name: string
 
   @Field()
-  teamId: `team_${string}`
+  teamId: string
 
   @Field({
     description:
