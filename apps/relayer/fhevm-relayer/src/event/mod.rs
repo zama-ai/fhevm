@@ -1,4 +1,3 @@
-pub mod processor;
+pub mod processors;
 pub mod registry;
-pub mod transfer;
 pub mod types;

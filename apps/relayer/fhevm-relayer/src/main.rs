@@ -1,49 +1,29 @@
 use alloy::primitives::Address;
-use alloy::transports::TransportError;
-use eyre::Result;
-use fhevm_relayer::common::provider::{
-    DECRYPTION_ORACLE_EVENT_SIGNATURE, TFHE_EXECUTOR_FHE_ADD_EVENT_SIGNATURE,
-};
-use fhevm_relayer::config::settings::LogConfig;
-use fhevm_relayer::config::settings::Settings;
-
-use fhevm_relayer::event::registry::EventRegistry;
-use fhevm_relayer::RealEventHandler;
-use std::str::FromStr;
-use std::sync::Arc;
-use thiserror::Error;
+use std::{str::FromStr, sync::Arc};
 use tracing::{error, info};
-use tracing_subscriber::fmt::SubscriberBuilder;
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::{fmt::SubscriberBuilder, EnvFilter};
 
-#[derive(Error, Debug)]
-pub enum EventHandlerError {
-    #[error("ABI decode error: {0}")]
-    AbiError(#[from] alloy_sol_types::Error),
-
-    #[error("Transport error: {0}")]
-    TransportError(#[from] TransportError),
-
-    #[error("Event processing failed: {0}")]
-    ProcessingError(String),
-
-    #[error("Task failed: {0}")]
-    TaskError(#[from] tokio::task::JoinError),
-}
+use fhevm_relayer::{
+    config::settings::{LogConfig, Settings},
+    event::{
+        processors::{tfhe_executor::TfheExecutor, DecryptionOracleExecutor},
+        registry::EventRegistry,
+    },
+    service::RealEventHandler,
+};
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> eyre::Result<()> {
     let settings =
         Settings::new().map_err(|e| eyre::eyre!("Failed to load configuration: {}", e))?;
 
-    // Validate contract addresses
     settings
         .validate_addresses()
         .map_err(|e| eyre::eyre!("Configuration validation failed: {}", e))?;
 
     init_tracing(&settings.log)?;
 
-    info!("--- Real Event Handler ---");
+    info!("Starting FHE Event Handler");
 
     let decryption_oracle_address =
         Address::from_str(&settings.contracts.decryption_oracle_address)
@@ -59,42 +39,43 @@ async fn main() -> Result<()> {
         "Initialized contract addresses"
     );
 
+    // Create and configure the event registry
     let registry = Arc::new(EventRegistry::new());
     registry.register_contract(decryption_oracle_address);
     registry.register_contract(tfhe_executor_address);
 
-    let real_event_handler =
-        RealEventHandler::new(&settings.network.ws_url, registry.clone()).await?;
-    let real_event_handler = Arc::new(real_event_handler);
+    // Create the real event handler for WebSocket connection
+    let event_handler = RealEventHandler::new(&settings.network.ws_url, registry.clone())
+        .await
+        .map_err(|e| eyre::eyre!("Failed to create event handler: {}", e))?;
+    let event_handler = Arc::new(event_handler);
 
-    registry.register_event(
-        decryption_oracle_address,
-        DECRYPTION_ORACLE_EVENT_SIGNATURE,
-        real_event_handler.clone(),
-    );
+    // Create and register event processors
+    let tfhe_executor = TfheExecutor::new();
+    registry.register_event(tfhe_executor_address, tfhe_executor);
 
-    registry.register_event(
-        tfhe_executor_address,
-        TFHE_EXECUTOR_FHE_ADD_EVENT_SIGNATURE,
-        real_event_handler.clone(),
-    );
+    let decryption_oracle_executor = DecryptionOracleExecutor;
+    registry.register_event(decryption_oracle_address, decryption_oracle_executor);
 
+    // Set up shutdown handling
     let (shutdown_tx, mut shutdown_rx) = tokio::sync::broadcast::channel(1);
     let shutdown_handle = shutdown_tx.clone();
 
+    // Spawn the event listener
     let listener_handle = tokio::spawn({
-        let real_event_handler = real_event_handler.clone();
+        let event_handler = event_handler.clone();
         async move {
-            match real_event_handler.listen_for_contract_events().await {
+            match event_handler.listen_for_contract_events().await {
                 Ok(()) => Ok(()),
                 Err(e) => {
                     error!(?e, "Event listener error");
-                    Err(EventHandlerError::ProcessingError(e.to_string()))
+                    Err(e)
                 }
             }
         }
     });
 
+    // Handle shutdown signals
     tokio::select! {
         result = listener_handle => {
             match result {
@@ -123,7 +104,7 @@ async fn main() -> Result<()> {
 }
 
 /// Initialize tracing based on configuration settings
-fn init_tracing(log_config: &LogConfig) -> Result<()> {
+fn init_tracing(log_config: &LogConfig) -> eyre::Result<()> {
     let env_filter = match log_config.level.as_str() {
         "trace" => EnvFilter::new("trace"),
         "debug" => EnvFilter::new("debug"),
@@ -133,7 +114,7 @@ fn init_tracing(log_config: &LogConfig) -> Result<()> {
         _ => EnvFilter::from_default_env(), // Fallback to env if invalid level
     };
 
-    // Build base subscriber with common settings
+    // Build subscriber with common settings
     let builder = SubscriberBuilder::default()
         .with_env_filter(env_filter)
         .with_ansi(true)
@@ -147,12 +128,11 @@ fn init_tracing(log_config: &LogConfig) -> Result<()> {
         .try_init()
         .map_err(|e| eyre::eyre!("Failed to initialize tracing: {}", e))?;
 
-    // Log the initialization success with current settings
-    tracing::info!(
-        level = log_config.level,
-        format = log_config.format,
-        show_file_line = log_config.show_file_line,
-        show_thread_ids = log_config.show_thread_ids,
+    info!(
+        level = ?log_config.level,
+        format = ?log_config.format,
+        show_file_line = ?log_config.show_file_line,
+        show_thread_ids = ?log_config.show_thread_ids,
         "Tracing initialized successfully"
     );
 
