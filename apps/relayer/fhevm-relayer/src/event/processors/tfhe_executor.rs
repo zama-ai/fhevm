@@ -63,14 +63,7 @@ impl ContractEvent for TfheExecutorEventHandler {
     fn process_event(&self, log: &RpcLog) -> Result<(), EventProcessingError> {
         debug!(?log.inner.address, "Processing TFHE event");
 
-        let event_signature = log
-            .inner
-            .data
-            .topics()
-            .first()
-            .ok_or(EventProcessingError::MissingTopic)?;
-
-        let event = match event_signature {
+        let event = match extract_event_signature(log)? {
             &TFHEExecutor::FheAdd::SIGNATURE_HASH => {
                 TFHEExecutor::FheAdd::decode_log_data(log.data(), true)
                     .map(EventType::FheAdd)
@@ -86,6 +79,16 @@ impl ContractEvent for TfheExecutorEventHandler {
 
         self.handle_event(event)
     }
+}
+
+fn extract_event_signature(
+    log: &RpcLog,
+) -> Result<&alloy::primitives::FixedBytes<32>, EventProcessingError> {
+    log.inner
+        .data
+        .topics()
+        .first()
+        .ok_or(EventProcessingError::MissingTopic)
 }
 
 impl ContractEvent for Arc<TfheExecutorEventHandler> {

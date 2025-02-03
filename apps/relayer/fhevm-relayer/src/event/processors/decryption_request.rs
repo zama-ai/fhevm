@@ -52,16 +52,8 @@ impl ContractEvent for DecryptionOracleEventHandler {
     fn process_event(&self, log: &RpcLog) -> Result<(), EventProcessingError> {
         debug!(?log.inner.address, "Processing event");
 
-        // Extract event signature
-        let event_signature = log
-            .inner
-            .data
-            .topics()
-            .first()
-            .ok_or(EventProcessingError::MissingTopic)?;
-
         // Match to one of the options and decode it. Very unlikely to have a decoding error.
-        let event = match event_signature {
+        let event = match extract_event_signature(log)? {
             &GatewayContract::EventDecryption::SIGNATURE_HASH => {
                 GatewayContract::EventDecryption::decode_log_data(log.data(), true)
                     .map(EventType::EventDecryption)
@@ -77,6 +69,16 @@ impl ContractEvent for DecryptionOracleEventHandler {
 
         self.handle_event(event)
     }
+}
+
+fn extract_event_signature(
+    log: &RpcLog,
+) -> Result<&alloy::primitives::FixedBytes<32>, EventProcessingError> {
+    log.inner
+        .data
+        .topics()
+        .first()
+        .ok_or(EventProcessingError::MissingTopic)
 }
 
 impl ContractEvent for Arc<DecryptionOracleEventHandler> {

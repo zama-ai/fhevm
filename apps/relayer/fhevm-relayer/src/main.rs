@@ -11,6 +11,7 @@ use fhevm_relayer::{
     },
     service::RealEventHandler,
 };
+use futures_util::StreamExt;
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
@@ -58,44 +59,28 @@ async fn main() -> eyre::Result<()> {
     registry.register_event(decryption_oracle_address, decryption_oracle_executor);
 
     // Set up shutdown handling
-    let (shutdown_tx, mut shutdown_rx) = tokio::sync::broadcast::channel(1);
-    let shutdown_handle = shutdown_tx.clone();
+    // let (shutdown_tx, mut shutdown_rx) = tokio::sync::broadcast::channel(1);
+    // let shutdown_handle = shutdown_tx.clone();
+
+    let event_handler = event_handler.clone();
+    let mut subscription = event_handler.new_subscription().await?;
 
     // Spawn the event listener
-    let listener_handle = tokio::spawn({
-        let event_handler = event_handler.clone();
-        async move {
-            match event_handler.listen_for_contract_events().await {
-                Ok(()) => Ok(()),
-                Err(e) => {
-                    error!(?e, "Event listener error");
-                    Err(e)
+    loop {
+        tokio::select! {
+            event = subscription.next() => match event {
+                Some(event) => {
+                    info!(?event, "Received event");
                 }
+                None => {
+                    info!("Subscription stream ended");
+                    break;
+                }
+            },
+            _ = tokio::signal::ctrl_c() => {
+                info!("Received ctrl + c signal, stopping...");
+                break;
             }
-        }
-    });
-
-    // Handle shutdown signals
-    tokio::select! {
-        result = listener_handle => {
-            match result {
-                Ok(Ok(())) => info!("Event listener completed successfully"),
-                Ok(Err(e)) => {
-                    error!(?e, "Event listener failed");
-                    let _ = shutdown_handle.send(());
-                }
-                Err(e) => {
-                    error!(?e, "Event listener task panicked");
-                    let _ = shutdown_handle.send(());
-                }
-            }
-        }
-        _ = tokio::signal::ctrl_c() => {
-            info!("Received interrupt signal, initiating graceful shutdown...");
-            let _ = shutdown_handle.send(());
-        }
-        _ = shutdown_rx.recv() => {
-            info!("Received shutdown request, stopping...");
         }
     }
 

@@ -31,16 +31,12 @@ impl RealEventHandler {
         })
     }
 
-    pub async fn listen_for_contract_events(&self) -> Result<(), Error> {
+    pub async fn new_subscription(
+        &self,
+    ) -> Result<alloy::pubsub::SubscriptionStream<RpcLog>, Error> {
         let contracts = self.registry.get_contracts();
 
-        info!("Subscribing to logs for contracts: {:?}", contracts);
-        info!("Connecting to Ethereum provider...");
-
-        let filter = Filter::new()
-            .from_block(BlockNumberOrTag::Latest)
-            .address(contracts);
-
+        let filter = new_filter(contracts);
         info!("Subscribing to logs with filters: {:?}", filter);
 
         let sub = self
@@ -50,27 +46,51 @@ impl RealEventHandler {
             .map_err(Error::Transport)?;
 
         info!("Subscription successful. Listening for logs...");
+        let stream = sub.into_stream();
+        Ok(stream)
+        // let subscription = self.new_subscription(filter).await?;
 
-        let mut stream = sub.into_stream();
+        // self.listen_and_process(subscription).await;
 
-        while let Some(log) = stream.next().await {
-            debug!("Received Log: {:#?}", log);
-            let contract_address = log.inner.address;
-
-            if let Some(event_name) = self.identify_event(&log) {
-                if let Err(e) = self
-                    .registry
-                    .process_event(contract_address, &event_name, &log)
-                {
-                    warn!(error = ?e, "Failed to process event");
-                }
-            }
-        }
-
-        Ok(())
+        // Ok(())
     }
 
-    fn identify_event(&self, log: &RpcLog) -> Option<String> {
+    // async fn listen_and_process(
+    //     &self,
+    //     mut subscription: alloy::pubsub::SubscriptionStream<RpcLog>,
+    // ) {
+    //     while let Some(log) = subscription.next().await {
+    //         debug!("Received Log: {:#?}", log);
+    //         let contract_address = log.inner.address;
+
+    //         if let Some(event_topic) = self.extract_event_topic(&log) {
+    //             if let Err(e) = self
+    //                 .registry
+    //                 .process_event(contract_address, &event_topic, &log)
+    //             {
+    //                 warn!(error = ?e, "Failed to process event");
+    //             }
+    //         }
+    //     }
+    // }
+
+    // async fn new_subscription(
+    //     &self,
+    //     filter: Filter,
+    // ) -> Result<alloy::pubsub::SubscriptionStream<RpcLog>, Error> {
+    // }
+
+    fn extract_event_topic(&self, log: &RpcLog) -> Option<String> {
         log.inner.data.topics().first().map(|sig| sig.to_string())
     }
+}
+
+fn new_filter(contracts: Vec<alloy::primitives::Address>) -> Filter {
+    info!("Subscribing to logs for contracts: {:?}", contracts);
+    info!("Connecting to Ethereum provider...");
+
+    let filter = Filter::new()
+        .from_block(BlockNumberOrTag::Latest)
+        .address(contracts);
+    filter
 }
