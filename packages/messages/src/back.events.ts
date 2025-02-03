@@ -22,12 +22,12 @@ const eventMap = {
   'dapp:stats-requested': genSchema('dapp:stats-requested', {}),
   'dapp:stats-available': genSchema('dapp:stats-available', {
     name: z.string(),
-    timestamp: z.date(),
+    timestamp: z.string().datetime(),
   }),
 } as const
 type EventMap = typeof eventMap
 
-const schema = z
+export const schema = z
   .discriminatedUnion('type', [
     eventMap['dapp:stats-requested'],
     eventMap['dapp:stats-available'],

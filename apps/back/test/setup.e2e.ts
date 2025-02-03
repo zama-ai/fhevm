@@ -1,10 +1,10 @@
 import {
   LocalstackContainer,
-  StartedLocalStackContainer,
+  type StartedLocalStackContainer,
 } from '@testcontainers/localstack'
 import {
   PostgreSqlContainer,
-  StartedPostgreSqlContainer,
+  type StartedPostgreSqlContainer,
 } from '@testcontainers/postgresql'
 import type { TestProject } from 'vitest/node'
 

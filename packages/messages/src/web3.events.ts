@@ -22,12 +22,12 @@ const eventMap = {
   'fhe-event:requested': genSchema('fhe-event:requested', {}),
   'fhe-event:detected': genSchema('fhe-event:detected', {
     name: z.string(),
-    timestamp: z.date(),
+    timestamp: z.string().datetime(),
   }),
 } as const
 type EventMap = typeof eventMap
 
-const schema = z
+export const schema = z
   .discriminatedUnion('type', [
     eventMap['fhe-event:requested'],
     eventMap['fhe-event:detected'],

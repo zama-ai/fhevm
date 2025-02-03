@@ -79,7 +79,7 @@ export class SetupManager {
   }
 
   async beforeAll() {
-    const connectionUri = this.awsEdnpoint
+    const connectionUri = this.awsEndpoint
 
     // Start services
     await Promise.all([this.startAws(connectionUri), this.startPostgres()])
@@ -137,7 +137,7 @@ export class SetupManager {
     return 'eu-central-1'
   }
 
-  get awsEdnpoint(): string {
+  get awsEndpoint(): string {
     return inject('connectionUri')
   }
 
@@ -154,7 +154,7 @@ export class SetupManager {
   }
 
   get queueUrl(): string {
-    return `${this.awsEdnpoint}/000000000000/${this.#queueName}`
+    return `${this.awsEndpoint}/000000000000/${this.#queueName}`
   }
 
   get logQueueArn(): string {
@@ -162,6 +162,6 @@ export class SetupManager {
   }
 
   get logQueueUrl(): string {
-    return `${this.awsEdnpoint}/000000000000/${this.#logQueueName}`
+    return `${this.awsEndpoint}/000000000000/${this.#logQueueName}`
   }
 }
