@@ -30,8 +30,13 @@ spec:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/kms-core-configmap.yaml") . | sha256sum }}
     spec:
+    {{- if .Values.kmsCore.nitroEnclave.enabled }}
       securityContext:
-        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- toYaml .Values.podSecurityContextForEnclave | nindent 8 }}
+    {{- else }}
+      securityContext:
+      {{- toYaml .Values.podSecurityContext | nindent 8 }}
+    {{- end }}
       serviceAccountName: {{ .Values.kmsCore.serviceAccountName }}
       subdomain: {{ include "kmsCoreName" . }}
       initContainers:
@@ -214,6 +219,8 @@ spec:
             {{- if .Values.kmsCore.nitroEnclave.enabled }}
             - mountPath: /hugepages
               name: hugepage
+            - name: nitro-device
+              mountPath: /dev/nitro_enclaves
             {{- end }}
           ports:
             - containerPort: {{ .Values.kmsCore.ports.client }}
@@ -275,6 +282,10 @@ spec:
         - name: hugepage
           emptyDir:
             medium: HugePages
+        - name: nitro-device
+          hostPath:
+            path: /dev/nitro_enclaves
+            type: CharDevice
         {{- end }}
   volumeClaimTemplates:
     - metadata:
