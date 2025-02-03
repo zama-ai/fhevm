@@ -208,6 +208,15 @@ impl InfiniteLogIter {
                 tokio::time::sleep(Duration::from_secs(1)).await;
                 continue;
             };
+            match (self.last_seen_block, log.block_number) {
+                (Some(last_seen_block), Some(block_number)) => {
+                    self.last_seen_block = Some(last_seen_block.max(block_number));
+                }
+                (None, Some(block_number)) => {
+                    self.last_seen_block = Some(block_number);
+                }
+                _ => (),
+            }
             return Some(log);
         }
     }
@@ -241,7 +250,10 @@ async fn main() {
     log_iter.new_log_stream(true).await;
     while let Some(log) = log_iter.next().await {
         if let Some(block_number) = log.block_number {
-            eprintln!("Event at block: {}", { block_number });
+            if log.block_number != log_iter.last_seen_block {
+                eprintln!("\n--------------------");
+                eprintln!("Block {block_number}");
+            }
             log_iter.last_seen_block = Some(block_number);
         }
         if !args.ignore_tfhe_events {
@@ -249,7 +261,7 @@ async fn main() {
                 TfheContract::TfheContractEvents::decode_log(&log.inner, true)
             {
                 // TODO: filter on contract address if known
-                println!("\nTFHE {event:#?}");
+                println!("TFHE {event:#?}");
                 if let Some(ref mut db) = db {
                     match db.insert_tfhe_event(&event).await {
                         Ok(_) => db.notify_database(EVENT_WORK_AVAILABLE).await, /* we always notify, e.g. for catchup */
@@ -261,10 +273,8 @@ async fn main() {
                 continue;
             }
         }
-        if !args.ignore_tfhe_events {
-            if let Ok(event) =
-                AclContract::AclContractEvents::decode_log(&log.inner, true)
-            {
+        if !args.ignore_acl_events {
+            if let Ok(event) = AclContract::AclContractEvents::decode_log(&log.inner, true) {
                 println!("ACL {event:#?}");
 
                 if let Some(ref mut db) = db {
