@@ -177,10 +177,12 @@ spec:
           args:
             - -c
             - |
+              {{- if .Values.minio.enabled }}
               mkdir -p ~/.aws/
               echo '[default]' > ~/.aws/credentials
               echo 'aws_access_key_id = ${AWS_ACCESS_KEY_ID}' >> ~/.aws/credentials
               echo 'aws_secret_access_key = ${AWS_SECRET_ACCESS_KEY}' >> ~/.aws/credentials
+              {{- end }}
               kms-server --config-file=/var/lib/kms-core/config/kms-server.toml
           {{- end }}
           env:
