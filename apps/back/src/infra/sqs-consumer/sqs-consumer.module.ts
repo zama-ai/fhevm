@@ -20,8 +20,8 @@ import { SubscriptionsModule } from '#subscriptions/infra/subscriptions.module.j
             queueUrl: config.get<string>('aws.queueUrl')!,
             useQueueUrlAsEndpoint: false,
             sqs: new SQSClient({
-              endpoint: config.get<string>('aws.queueUrl'),
-              region: config.get<string>('aws.region'),
+              endpoint: config.get('aws.queueUrl'),
+              region: config.get('aws.region'),
             }),
             // stopOptions: { abort: true },
           },

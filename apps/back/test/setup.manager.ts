@@ -47,12 +47,12 @@ export class SetupManager {
     })
   }
 
-  private async startAws(connectionUri: string) {
+  private async startAws(awsEndpoint: string) {
     // Generate a random topic name
     this.#topicName = `back-test-topic-${randomUUID()}`
 
     const sns = new SNSClient({
-      endpoint: connectionUri,
+      endpoint: awsEndpoint,
       region: this.awsRegion,
     })
     await sns.send(
@@ -64,17 +64,17 @@ export class SetupManager {
     // Generate a random queue name
     this.#queueName = `back-test-queue-${randomUUID()}`
     const sqs = new SQSClient({
-      endpoint: connectionUri,
+      endpoint: awsEndpoint,
       region: this.awsRegion,
     })
     await sqs.send(new CreateQueueCommand({ QueueName: this.#queueName }))
   }
 
   async beforeAll() {
-    const connectionUri = this.awsEdnpoint
+    const awsEndpoint = this.awsEndpoint
 
     // Start services
-    await Promise.all([this.startAws(connectionUri), this.startPostgres()])
+    await Promise.all([this.startAws(awsEndpoint), this.startPostgres()])
 
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
@@ -85,13 +85,14 @@ export class SetupManager {
           isGlobal: true,
           load: [
             registerAs('aws', () => ({
-              endpoint: connectionUri,
+              endpoint: awsEndpoint,
               queueUrl: this.queueUrl,
               region: this.awsRegion,
               topicArn: this.topicArn,
             })),
             dbConfig,
             jwtConfig,
+            registerAs('redis', () => this.redisConnection),
           ],
         }),
       )
@@ -129,8 +130,8 @@ export class SetupManager {
     return 'eu-central-1'
   }
 
-  get awsEdnpoint(): string {
-    return inject('connectionUri')
+  get awsEndpoint(): string {
+    return inject('awsEndpoint')
   }
 
   get topicName(): string {
@@ -142,6 +143,10 @@ export class SetupManager {
   }
 
   get queueUrl(): string {
-    return `${this.awsEdnpoint}/000000000000/${this.#queueName}`
+    return `${this.awsEndpoint}/000000000000/${this.#queueName}`
+  }
+
+  get redisConnection(): { host: string; port: number } {
+    return inject('redisConnection')
   }
 }
