@@ -24,13 +24,13 @@ export class ScDiscovered implements UseCase<Input, void> {
     @Inject(SUBSCRIPTION_SERVICE)
     private readonly subscriptions: SubscriptionService,
   ) {}
-  execute({ type, payload, meta }: Input): Task<void, AppError> {
-    if (typeof meta?.userId !== 'string') {
+  execute({ type, payload, $meta }: Input): Task<void, AppError> {
+    if (typeof $meta?.userId !== 'string') {
       return Task.reject(unknownError('Missing user id'))
     }
     // TODO: fix this code!
     // UserId.from throws an error if the userId is not valid
-    const id = UserId.from(meta.userId).value
+    const id = UserId.from($meta.userId).value
     if (!id) {
       return Task.reject(unknownError('Badly formatted user id'))
     }
@@ -54,7 +54,7 @@ export class ScDiscovered implements UseCase<Input, void> {
             new Task((resolve, reject) =>
               this.subscriptions
                 .publish<SubscriptionDappUpdatedPayload>('dappUpdated', {
-                  dappUpdated: dapp.toJSON(),
+                  dappUpdated: dapp,
                 })
                 .then(resolve)
                 .catch(reject),
