@@ -1,4 +1,3 @@
 pub mod event;
-pub mod handler;
+pub mod event_dispatcher;
 pub mod orchestrator;
-pub mod pubsub;

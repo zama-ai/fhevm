@@ -1,25 +1,25 @@
 use crate::orchestrator::event::traits::Event;
-use crate::orchestrator::pubsub::traits::{Publisher, Subscriber};
+use crate::orchestrator::event_dispatcher::traits::{Dispatcher, HandleRegistry};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::v1::{Context, Timestamp};
 use uuid::Uuid;
 
-pub struct Orchestrator<PS: Publisher<E> + Subscriber<E>, E: Event> {
+pub struct Orchestrator<D: Dispatcher<E> + HandleRegistry<E>, E: Event> {
     /// Used for generation UUIDs to uniquely identify incoming requests.
     /// TODO: Document more details.
     pub uuid_generator: UuidGenerator,
 
-    pub pubsub: Arc<PS>,
+    pub event_dispatcher: Arc<D>,
 
     _marker: std::marker::PhantomData<E>,
 }
 
-impl<PS: Publisher<E> + Subscriber<E>, E: Event> Orchestrator<PS, E> {
-    pub fn new(pubsub: Arc<PS>, node_id: &[u8]) -> Self {
+impl<D: Dispatcher<E> + HandleRegistry<E>, E: Event> Orchestrator<D, E> {
+    pub fn new(event_dispatcher: Arc<D>, node_id: &[u8]) -> Self {
         Self {
             uuid_generator: UuidGenerator::new(node_id, DEFAULT_UUID_CONTEXT_INITIAL_VALUE),
-            pubsub,
+            event_dispatcher,
             _marker: std::marker::PhantomData,
         }
     }
@@ -62,8 +62,8 @@ mod tests {
     use super::*;
     use crate::orchestrator::event::relayer_event::{self, RelayerEvent};
     use crate::orchestrator::event::traits::Event;
-    use crate::orchestrator::handler::traits::EventHandler;
-    use crate::orchestrator::pubsub::local_pubsub::LocalPubsub;
+    use crate::orchestrator::event_dispatcher::tokio_dispatcher::TokioDispatcher;
+    use crate::orchestrator::event_dispatcher::traits::EventHandler;
 
     #[test]
     fn test_uuid_generator() {
@@ -88,7 +88,7 @@ mod tests {
     async fn test_orchestrator() {
         let node_id = [0x01, 0x23, 0x45, 0x67, 0x89, 0xab];
 
-        let pubsub = Arc::new(LocalPubsub::<RelayerEvent>::new());
+        let pubsub = Arc::new(TokioDispatcher::<RelayerEvent>::new());
         let orchestrator = Orchestrator::new(pubsub, &node_id);
 
         let id = orchestrator.uuid_generator.generate_id();
@@ -105,8 +105,10 @@ mod tests {
         );
 
         let handler = Arc::new(SimpleEventHandler);
-        orchestrator.pubsub.subscribe(event.event_id(), handler);
-        orchestrator.pubsub.publish(event).await;
+        orchestrator
+            .event_dispatcher
+            .register_handler(event.event_id(), handler);
+        orchestrator.event_dispatcher.dispatch(event).await;
         tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
     }
 }
