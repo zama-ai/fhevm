@@ -70,6 +70,13 @@ spec:
                      "ipPort" 80
                 ) | indent 10 | trim }}
         - {{ include "proxyFromEnclaveTcp"
+               (dict "name" "aws-sts-proxy"
+                     "image" .Values.socat.image
+                     "vsockPort" .Values.kmsCore.nitroEnclave.ports.sts
+                     "ipAddr" (printf "sts.%s.amazonaws.com" .Values.kmsCore.aws.region)
+                     "ipPort" 443
+                ) | indent 10 | trim }}
+        - {{ include "proxyFromEnclaveTcp"
                (dict "name" "aws-s3-proxy"
                      "image" .Values.socat.image
                      "vsockPort" .Values.kmsCore.nitroEnclave.ports.s3
@@ -175,10 +182,12 @@ spec:
           args:
             - -c
             - |
+              {{- if .Values.minio.enabled }}
               mkdir -p ~/.aws/
               echo '[default]' > ~/.aws/credentials
               echo 'aws_access_key_id = ${AWS_ACCESS_KEY_ID}' >> ~/.aws/credentials
               echo 'aws_secret_access_key = ${AWS_SECRET_ACCESS_KEY}' >> ~/.aws/credentials
+              {{- end }}
               kms-server --config-file=/var/lib/kms-core/config/kms-server.toml
           {{- end }}
           env:
