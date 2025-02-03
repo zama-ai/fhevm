@@ -65,6 +65,13 @@ spec:
                      "ipPort" 80
                 ) | indent 10 | trim }}
         - {{ include "proxyFromEnclaveTcp"
+               (dict "name" "aws-sts-proxy"
+                     "image" .Values.socat.image
+                     "vsockPort" .Values.kmsCore.nitroEnclave.ports.sts
+                     "ipAddr" (printf "sts.%s.amazonaws.com" .Values.kmsCore.aws.region)
+                     "ipPort" 443
+                ) | indent 10 | trim }}
+        - {{ include "proxyFromEnclaveTcp"
                (dict "name" "aws-s3-proxy"
                      "image" .Values.socat.image
                      "vsockPort" .Values.kmsCore.nitroEnclave.ports.s3

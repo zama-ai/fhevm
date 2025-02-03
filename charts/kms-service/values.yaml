@@ -52,6 +52,7 @@ kmsCore:
       config: 4000
       tracing: 4317
       imds: 5000
+      sts: 5500
       s3: 6000
       awskms: 7000
       peer: 50000
