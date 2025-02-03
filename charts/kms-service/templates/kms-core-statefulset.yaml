@@ -128,8 +128,11 @@ spec:
               --aws-s3-endpoint http://minio:9000 \
               {{- end }}
               --aws-region {{ .Values.kmsCore.aws.region }} \
-              --pub-url {{ include "kmsPublicVaultStorage" . | quote }} \
-              --priv-url {{ include "kmsPrivateVaultStorage" . | quote }} \
+              --pub-url "${KMS_CORE__PUBLIC_VAULT__STORAGE:={{ include "kmsPublicVaultStorage" . | squote }}}" \
+              --priv-url "${KMS_CORE__PRIVATE_VAULT__STORAGE:={{ include "kmsPublicVaultStorage" . | squote }}}" \
+              {{- if .Values.kmsCore.nitroEnclave.enabled }}
+              --aws-kms-endpoint "${KMS_CORE__PRIVATE_VAULT__KEYCHAIN}" \
+              {{- end }}
               {{ include "kmsCoreMode" . }} \
               {{- if .Values.kmsCore.thresholdMode.enabled }}
               --signing-key-party-id ${KMS_CORE_ID}
@@ -153,6 +156,11 @@ spec:
               value: {{ .Values.runMode }}
             - name: RUST_LOG
               value: {{ .Values.rustLog }}
+          {{- if .Values.kmsCore.envFrom.configmap.name }}
+          envFrom:
+            - configMapRef:
+                name: {{ .Values.kmsCore.envFrom.configmap.name }}
+          {{- end }}
           volumeMounts:
             - mountPath: /keys
               name: keys
@@ -211,6 +219,11 @@ spec:
             - name: AWS_SECRET_ACCESS_KEY
               value: {{ (index .Values.minio.provisioning.users 0).password}}
             {{- end }}
+          {{- if .Values.kmsCore.envFrom.configmap.name }}
+          envFrom:
+            - configMapRef:
+                name: {{ .Values.kmsCore.envFrom.configmap.name }}
+          {{- end }}
           volumeMounts:
             - mountPath: /root
               name: workdir

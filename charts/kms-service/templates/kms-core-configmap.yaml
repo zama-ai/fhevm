@@ -40,13 +40,12 @@ data:
     {{- end }}
     {{- end }}
 
+    {{- if .Values.kmsCore.envFrom.configmap.name }}
     [public_vault]
     storage = {{ include "kmsPublicVaultStorage" . | quote }}
 
     [private_vault]
     storage = {{ include "kmsPrivateVaultStorage" . | quote }}
-    {{- if .Values.kmsCore.nitroEnclave.enabled }}
-    keychain = "awskms://ce3e1bc3-a273-4418-bdaa-e1a9e6424596"
     {{- end }}
 
     {{ if .Values.kmsCore.thresholdMode.enabled -}}
