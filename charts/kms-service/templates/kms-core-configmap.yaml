@@ -52,7 +52,7 @@ data:
     [threshold]
     listen_address = "0.0.0.0"
     listen_port = {{ int .Values.kmsCore.ports.peer }}
-    my_id = 0
+    # Threshold is the number of corruptions that the protocol handles.
     threshold = 1
     dec_capacity = {{ int .Values.kmsCore.thresholdMode.dec_capacity }}
     min_dec_cache = {{ int .Values.kmsCore.thresholdMode.min_dec_cache }}
