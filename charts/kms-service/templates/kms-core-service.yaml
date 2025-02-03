@@ -1,3 +1,4 @@
+{{- if .Values.kmsCore.enabled -}}
 {{- $kmsCoreName := include "kmsCoreName" . -}}
 apiVersion: v1
 kind: Service
@@ -49,3 +50,4 @@ spec:
     app.kubernetes.io/name: {{ $kmsCoreName }}
     statefulset.kubernetes.io/pod-name: {{ $kmsCoreName }}-{{ $coreId }}
 {{- end }}
+{{- end -}}

@@ -1,3 +1,4 @@
+{{- if .Values.kmsCore.enabled -}}
 {{- $kmsCoreName := include "kmsCoreName" . }}
 {{- $peersIDList := untilStep (default 1 .Values.kmsPeers.id | int) (.Values.kmsPeers.count | add1 | int) 1  }}
 apiVersion: apps/v1
@@ -300,3 +301,4 @@ spec:
         resources:
           requests:
             storage: {{ .Values.kmsCore.storage.capacity }}
+{{- end -}}

@@ -1,3 +1,4 @@
+{{- if .Values.kmsConnector.enabled -}}
 {{- $kmsCoreName := include "kmsCoreName" . }}
 apiVersion: apps/v1
 kind: StatefulSet
@@ -117,3 +118,4 @@ spec:
         resources:
           requests:
             storage: {{ .Values.kmsConnector.storage.capacity }}
+{{- end -}}

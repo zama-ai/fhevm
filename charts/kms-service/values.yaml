@@ -5,6 +5,7 @@ kmsPeers:
   count: 1
 
 kmsConnector:
+  enabled: true
   nameOverride:
   image:
     name: ghcr.io/zama-ai/kms-blockchain-connector
@@ -29,6 +30,7 @@ kmsConnector:
   tolerations:
 
 kmsCore:
+  enabled: true
   nameOverride:
   addressOverride:
   image:
