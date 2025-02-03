@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["coprocessor", "executor", "fhevm-engine-common"]
+members = ["coprocessor", "executor", "fhevm-engine-common", "listener"]
 
 [workspace.package]
 authors = ["Zama"]

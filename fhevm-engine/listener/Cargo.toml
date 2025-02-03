@@ -1,0 +1,22 @@
+[package]
+name = "listener"
+version = "0.0.1"
+edition = "2021"
+
+[[bin]]
+path = "src/bin/main.rs"
+name = "listen"
+test = false
+bench = false
+
+[dependencies]
+# workspace dependencies
+alloy = { version = "=0.9.2", features = ["contract", "json", "providers", "provider-ws", "pubsub", "rpc-types", "sol-types"] }
+alloy-rpc-types = "=0.9.2"
+alloy-sol-types = "=0.8.19"
+alloy-primitives = "=0.8.19"
+alloy-provider = "=0.9.2"
+clap = { workspace = true }
+futures-util = "=0.3"
+serde = { workspace = true }
+tokio = { workspace = true }
