@@ -18,13 +18,13 @@ interface ICiphertextStorage {
 
     /// @notice Adds a new ciphertext to the storage.
     /// @param ctHandle The handle of the storing ciphertext.
+    /// @param keyId The ID of the key under the ciphertext has been generated.
     /// @param ciphertext64 The normal ciphertext (64-bit) to be stored.
     /// @param ciphertext128 The 128-PBS ciphertext (128-bit) to be stored.
-    /// @param keyId The ID of the key under the ciphertext has been generated.
     function addCiphertext(
         uint256 ctHandle,
-        bytes memory ciphertext64,
-        bytes memory ciphertext128,
-        uint256 keyId
+        uint256 keyId,
+        bytes calldata ciphertext64,
+        bytes calldata ciphertext128
     ) external;
 }
