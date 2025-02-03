@@ -1,4 +1,4 @@
-{{- if .Values.kmsCore.serviceMonitor.enabled -}}
+{{- if and .Values.kmsCore.enabled .Values.kmsCore.serviceMonitor.enabled -}}
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:

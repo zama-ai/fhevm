@@ -7,6 +7,8 @@ kmsCore:
     tag: nightly-dec472c
   thresholdMode:
     enabled: true
+    initializationScript:
+      enabled: true
 
 kmsConnector:
   image:
@@ -14,6 +16,7 @@ kmsConnector:
     tag: nightly-dec472c
 
 kmsSimulator:
+  enabled: true
   image:
     name: ghcr.io/zama-ai/kms-blockchain-simulator
     tag: nightly-dec472c
