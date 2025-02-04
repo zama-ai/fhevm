@@ -1,6 +1,5 @@
 // Re-export public modules
 pub mod config;
-pub mod constants;
 pub mod errors;
 pub mod ethereum;
 pub mod event;
