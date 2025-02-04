@@ -1,12 +1,9 @@
 use crate::{
     errors::EventProcessingError,
-    ethereum::provider::{
-        DecryptionOracle, GatewayContract, DECRYPTION_EVENT_SIGNATURE,
-        DECRYPTION_ORACLE_EVENT_SIGNATURE,
-    },
+    ethereum::provider::{DecryptionOracle, GatewayContract},
     event::types::ContractEvent,
 };
-use alloy::primitives::{keccak256, B256};
+use alloy::primitives::B256;
 use alloy::rpc::types::Log as RpcLog;
 use alloy_sol_types::SolEvent;
 use std::sync::Arc;
@@ -49,12 +46,13 @@ impl DecryptionOracleExecutor {
 
 impl ContractEvent for DecryptionOracleExecutor {
     fn topics(&self) -> Vec<B256> {
-        vec![keccak256(DECRYPTION_ORACLE_EVENT_SIGNATURE)]
+        vec![DecryptionOracle::DecryptionRequest::SIGNATURE_HASH]
     }
 
     fn process_event(&self, log: &RpcLog) -> Result<(), EventProcessingError> {
         debug!(?log.inner.address, "Processing event");
 
+        // Extract event signature
         let event_signature = log
             .inner
             .data
@@ -62,13 +60,14 @@ impl ContractEvent for DecryptionOracleExecutor {
             .first()
             .ok_or(EventProcessingError::MissingTopic)?;
 
+        // Match to one of the options and decode it. Very unlikely to have a decoding error.
         let event = match event_signature {
-            sig if sig == &keccak256(DECRYPTION_EVENT_SIGNATURE) => {
+            &GatewayContract::EventDecryption::SIGNATURE_HASH => {
                 GatewayContract::EventDecryption::decode_log_data(log.data(), true)
                     .map(EventType::EventDecryption)
                     .map_err(EventProcessingError::DecodingError)?
             }
-            sig if sig == &keccak256(DECRYPTION_ORACLE_EVENT_SIGNATURE) => {
+            &DecryptionOracle::DecryptionRequest::SIGNATURE_HASH => {
                 DecryptionOracle::DecryptionRequest::decode_log_data(log.data(), true)
                     .map(EventType::DecryptionRequest)
                     .map_err(EventProcessingError::DecodingError)?

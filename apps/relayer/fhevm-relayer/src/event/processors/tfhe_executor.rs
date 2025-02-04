@@ -1,11 +1,7 @@
 use crate::{
-    errors::EventProcessingError,
-    ethereum::provider::{
-        TFHEExecutor, TFHE_EXECUTOR_FHE_ADD_EVENT_SIGNATURE, TFHE_EXECUTOR_FHE_SUB_EVENT_SIGNATURE,
-    },
-    event::types::ContractEvent,
+    errors::EventProcessingError, ethereum::provider::TFHEExecutor, event::types::ContractEvent,
 };
-use alloy::primitives::{keccak256, B256};
+use alloy::primitives::B256;
 use alloy::rpc::types::Log as RpcLog;
 use alloy_sol_types::SolEvent;
 use std::sync::Arc;
@@ -59,8 +55,8 @@ impl TfheExecutor {
 impl ContractEvent for TfheExecutor {
     fn topics(&self) -> Vec<B256> {
         vec![
-            keccak256(TFHE_EXECUTOR_FHE_ADD_EVENT_SIGNATURE),
-            keccak256(TFHE_EXECUTOR_FHE_SUB_EVENT_SIGNATURE),
+            TFHEExecutor::FheAdd::SIGNATURE_HASH,
+            TFHEExecutor::FheSub::SIGNATURE_HASH,
         ]
     }
 
@@ -75,12 +71,12 @@ impl ContractEvent for TfheExecutor {
             .ok_or(EventProcessingError::MissingTopic)?;
 
         let event = match event_signature {
-            sig if sig == &keccak256(TFHE_EXECUTOR_FHE_ADD_EVENT_SIGNATURE) => {
+            &TFHEExecutor::FheAdd::SIGNATURE_HASH => {
                 TFHEExecutor::FheAdd::decode_log_data(log.data(), true)
                     .map(EventType::FheAdd)
                     .map_err(EventProcessingError::DecodingError)?
             }
-            sig if sig == &keccak256(TFHE_EXECUTOR_FHE_SUB_EVENT_SIGNATURE) => {
+            &TFHEExecutor::FheSub::SIGNATURE_HASH => {
                 TFHEExecutor::FheSub::decode_log_data(log.data(), true)
                     .map(EventType::FheSub)
                     .map_err(EventProcessingError::DecodingError)?

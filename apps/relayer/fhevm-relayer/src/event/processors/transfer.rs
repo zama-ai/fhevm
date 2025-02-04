@@ -1,10 +1,7 @@
 use crate::{errors::EventProcessingError, event::types::ContractEvent};
 #[cfg(test)]
 use alloy::primitives::{Address, Bytes, U256};
-use alloy::{
-    primitives::{keccak256, B256},
-    rpc::types::Log as RpcLog,
-};
+use alloy::{primitives::B256, rpc::types::Log as RpcLog};
 use alloy_sol_types::{sol, SolEvent};
 use tracing::{debug, info, instrument, warn};
 
@@ -81,12 +78,14 @@ impl TransferProcessor {
 
 impl ContractEvent for TransferProcessor {
     fn topics(&self) -> Vec<B256> {
-        vec![keccak256("Transfer(address,address,uint256)")]
+        vec![Transfer::SIGNATURE_HASH]
     }
 
     fn process_event(&self, log: &RpcLog) -> Result<(), EventProcessingError> {
         debug!(?log.inner.address, "Processing Transfer event");
 
+        // Decoded without checking event signature,
+        // Assumed that it will match, else decode error.
         let event = match Transfer::decode_log_data(log.data(), true) {
             Ok(transfer) => {
                 debug!(
