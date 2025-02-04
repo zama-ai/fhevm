@@ -72,19 +72,43 @@ export class AwsMessageProducer implements MessageProducer {
   ): Task<string, AppError> => {
     this.logger.debug(`sendMessage: ${JSON.stringify(message)}`)
     return new Task((resolve, reject) =>
-      this.#sqs
-        .send(
-          new SendMessageCommand({
-            QueueUrl: this.#queueUrl,
-            DelaySeconds: message.$meta?.delay as number | undefined,
-            MessageBody: JSON.stringify(message),
-          }),
-        )
-        .then(res => resolve(`status code: ${res.$metadata.httpStatusCode}`))
-        .catch((err: unknown) => {
-          this.logger.warn(`failed to send message: ${err}`)
-          reject(unknownError(String(err)))
-        }),
+      // Note: think a better way to resend failed messages
+      message.$meta?.delay
+        ? this.#sqs
+            .send(
+              new SendMessageCommand({
+                QueueUrl: this.#queueUrl,
+                DelaySeconds: message.$meta.delay as number | undefined,
+                MessageBody: JSON.stringify(message),
+              }),
+            )
+            .then(res => {
+              this.logger.debug(
+                `message ${message.type} sent to queue ${this.#queueUrl}`,
+              )
+              resolve(`status code: ${res.$metadata.httpStatusCode}`)
+            })
+            .catch((err: unknown) => {
+              this.logger.warn(`failed to send delayed message: ${err}`)
+              reject(unknownError(String(err)))
+            })
+        : this.#sns
+            .send(
+              new PublishCommand({
+                TopicArn: this.#topicArn,
+                Message: JSON.stringify(message),
+              }),
+            )
+            .then(res => {
+              this.logger.debug(
+                `message ${message.type} sent to topic ${this.#topicArn}`,
+              )
+              resolve(`status code: ${res.$metadata.httpStatusCode}`)
+            })
+            .catch((err: unknown) => {
+              this.logger.warn(`failed to send message: ${err}`)
+              reject(unknownError(String(err)))
+            }),
     )
   }
 

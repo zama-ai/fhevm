@@ -40,7 +40,6 @@ export class GetDappStatsUseCase implements UseCase<Input, Output> {
                 : Task.reject(validationError('missing dApp address')),
             )
             .chain<void>(dapp => {
-              console.log(`publishing dappStatsRequested for dappId=${dappId}`)
               this.logger.debug(
                 `publishing dappStatsRequested for dappId=${dappId}`,
               )

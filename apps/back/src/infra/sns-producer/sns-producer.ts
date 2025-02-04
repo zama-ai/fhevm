@@ -47,9 +47,6 @@ export class SnsProducer {
   }
 
   handleBackEvent: Subscriber<back.BackEvent> = event => {
-    console.log(
-      `received event: ${event.type} with payload: ${JSON.stringify(event.payload)}`,
-    )
     this.logger.debug(`handling event: ${event.type}`)
     switch (event.type as unknown as back.BackEvent['type']) {
       case 'back:dapp:stats-requested':

@@ -23,6 +23,7 @@ const eventMap = {
   'dapp:stats-available': genSchema('dapp:stats-available', {
     name: z.string(),
     timestamp: z.string().datetime(),
+    externalRef: z.string(),
   }),
 } as const
 type EventMap = typeof eventMap

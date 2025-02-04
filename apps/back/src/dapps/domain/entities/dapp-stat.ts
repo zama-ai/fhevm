@@ -23,7 +23,6 @@ export class DAppStat
     >
 {
   static parse(data: unknown): Result<DAppStat, AppError> {
-    console.log(`DAppStat.parse: ${JSON.stringify(data)}`)
     if (!data) return fail(validationError('data is undefined'))
     const check = schema.safeParse(data)
     return check.success

@@ -50,7 +50,7 @@ describe('AppDeployment', () => {
         )
 
         expect(messages.length).toBe(1)
-        expect(messages[0].meta).toEqual(meta)
+        expect(messages[0].$meta).toEqual(meta)
       })
     })
   })
@@ -92,12 +92,11 @@ describe('AppDeployment', () => {
         )
 
         expect(messages.length).toBe(1)
-        expect(messages[0].meta).toEqual(meta)
+        expect(messages[0].$meta).toEqual(meta)
       })
 
       it('should ignore wrong identifier', () => {
         for (const key of ['applicationId', 'deploymentId']) {
-          console.log(`sending scDiscover with wrong ${key}`)
           const id = randomUUID()
           const messages = deployment.send(
             scDiscovered({
@@ -152,7 +151,7 @@ describe('AppDeployment', () => {
         )
 
         expect(messages.length).toBe(1)
-        expect(messages[0].meta).toEqual(meta)
+        expect(messages[0].$meta).toEqual(meta)
       })
 
       it('should ignore wrong identifier', () => {
@@ -206,7 +205,7 @@ describe('AppDeployment', () => {
         )
 
         expect(messages.length).toBe(1)
-        expect(messages[0].meta).toEqual(meta)
+        expect(messages[0].$meta).toEqual(meta)
       })
 
       it('should ignore wrong identifier', () => {

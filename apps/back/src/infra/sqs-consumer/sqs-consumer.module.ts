@@ -8,9 +8,11 @@ import { SqsModule } from 'sqs'
 import { SQSConsumer } from './sqs.consumer.js'
 import { ScDiscovered } from './use-cases/sc-discovered.use-case.js'
 import { SubscriptionsModule } from '#subscriptions/infra/subscriptions.module.js'
+import { SharedModule } from '#shared/shared.module.js'
 
 @Module({
   imports: [
+    SharedModule,
     SqsModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({

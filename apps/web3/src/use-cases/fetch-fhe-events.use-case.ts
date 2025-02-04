@@ -51,6 +51,7 @@ export class FetchFHEEvents implements UseCase<ChainId, FheEvent[]> {
         events.forEach(event => {
           const toPublish = web3.fheDetected(
             {
+              id: event.id.value,
               address: event.callerAddress.value,
               chainId: event.chainId.value,
               name: event.name,
@@ -61,9 +62,18 @@ export class FetchFHEEvents implements UseCase<ChainId, FheEvent[]> {
             },
           )
           this.logger.log(
-            `publishing ${toPublish.type}: ${JSON.stringify(toPublish.payload)}`,
+            `🚀 publishing ${toPublish.type}: ${JSON.stringify(toPublish.payload)}`,
           )
-          this.pubsub.publish(toPublish)
+          this.pubsub.publish(toPublish).fork(
+            () => {
+              this.logger.verbose(`${toPublish.type} sent`)
+            },
+            error => {
+              this.logger.warn(
+                `❌ Failed to send ${toPublish.type}: [${error._tag}] ${error.message}`,
+              )
+            },
+          )
         })
       })
   }

@@ -21,6 +21,7 @@ function genSchema<Key extends EventTypes, Payload extends z.ZodRawShape>(
 const eventMap = {
   'fhe-event:requested': genSchema('fhe-event:requested', {}),
   'fhe-event:detected': genSchema('fhe-event:detected', {
+    id: z.string(),
     name: z.string(),
     timestamp: z.string().datetime(),
   }),

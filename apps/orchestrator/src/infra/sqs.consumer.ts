@@ -16,24 +16,27 @@ export class SQSConsumer {
   @SqsMessageHandler('orchestrator')
   public async handleMessage(message: Message) {
     if (message.Body) {
-      this.logger.debug(`received message: ${message.Body}`)
       let data: unknown
       try {
         const body = JSON.parse(message.Body)
         data = JSON.parse(body.Message)
       } catch (err) {
-        this.logger.warn(`failed to parse message: ${err}`)
+        this.logger.debug(`message received: ${message.Body}`)
+        this.logger.warn(`❌ failed to parse message: ${err}`)
         return
       }
 
       try {
         if (back.isBackEvent(data) || web3.isWeb3Event(data)) {
+          this.logger.debug(
+            `📬 publishing event ${data.type} on the internal queue`,
+          )
           await this.pubsub.publish(data).toPromise()
         } else {
-          this.logger.debug(`unhandled message ${JSON.stringify(data)}`)
+          this.logger.debug(`❌ unhandled message ${(data as any).type}`)
         }
       } catch (error) {
-        this.logger.warn(`failed to publish message: ${error}`)
+        this.logger.warn(`❌ failed to publish message: ${error}`)
         // Note: I need to throw the error here so that the message
         // is kept in the queue and, after a while, it will be moved to
         // the dead letter queue

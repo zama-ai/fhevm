@@ -29,7 +29,7 @@ export class SnsProducer {
   }
 
   private readonly sendMessage = (message: string): Task<void, AppError> => {
-    this.logger.log(`publishing: ${message}`)
+    this.logger.log(`🚀 publishing: ${message}`)
     return new Task((resolve, reject) => {
       this.client
         .send(
@@ -40,12 +40,14 @@ export class SnsProducer {
         )
         .then(result => {
           this.logger.debug(
-            `PublishCommand status code: ${result.$metadata.httpStatusCode}`,
+            `✅ PublishCommand status code: ${result.$metadata.httpStatusCode}`,
           )
           resolve()
         })
         .catch(err => {
-          this.logger.warn(`failed to publish message: ${JSON.stringify(err)}`)
+          this.logger.warn(
+            `❌ failed to publish message: ${JSON.stringify(err)}`,
+          )
           return reject(unknownError(String(err)))
         })
     })
@@ -55,16 +57,29 @@ export class SnsProducer {
     EventMap<web3.Web3Event | back.BackEvent>
   > = {
     // Map `back:dapp:stats-requested` to `web3:fhe-event:detected`
-    'back:dapp:stats-requested': event =>
-      this.sendMessage(
+    'back:dapp:stats-requested': event => {
+      this.logger.log(`back:dapp:stats-requested ➡️ web3:fhe-event:requested`)
+      return this.sendMessage(
         JSON.stringify(web3.fheRequested(event.payload, event.$meta)),
-      ),
+      )
+    },
 
     // Map `web3:fhe-event:detected` to `back:dapp:stats-available`
-    'web3:fhe-event:detected': event =>
-      this.sendMessage(
-        JSON.stringify(back.dappStatsAvailable(event.payload, event.$meta)),
-      ),
+    'web3:fhe-event:detected': event => {
+      this.logger.log(`web3:fhe-event:detected ➡️ back:dapp:stats-available`)
+      const { id, ...props } = event.payload
+      return this.sendMessage(
+        JSON.stringify(
+          back.dappStatsAvailable(
+            {
+              externalRef: id,
+              ...props,
+            },
+            event.$meta,
+          ),
+        ),
+      )
+    },
   }
 
   handleEvent: Subscriber<back.BackEvent | web3.Web3Event> = (
@@ -77,10 +92,10 @@ export class SnsProducer {
 
     return handler
       ? handler(event).tap(() => {
-          this.logger.debug(`handled ${event.type}`)
+          this.logger.debug(`✅ handled ${event.type}`)
         })
       : Task.of<void, AppError>(void 0).tap(() => {
-          this.logger.log(`no handler for ${event.type}`)
+          this.logger.log(`⛔️ no handler for ${event.type}`)
         })
   }
 }

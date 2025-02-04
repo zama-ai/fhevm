@@ -93,6 +93,9 @@ class EthersFheEventServiceImpl implements FheEventService {
             Task.of<FheEvent[], AppError>(
               logs
                 .map<FheEvent | null>(log => {
+                  this.logger.verbose(
+                    `log: ${JSON.stringify(log, (_, v) => (typeof v === 'bigint' ? v.toString() : v))}`,
+                  )
                   const parsed = contract.interface.parseLog(log)
                   const block = map.get(log.blockNumber)
                   this.logger.verbose(
