@@ -80,7 +80,7 @@ export function isFail<T, E>(result: Result<T, E>): result is Fail<T, E> {
 }
 
 class OkImpl<T, E> implements Ok<T, E> {
-  _tag: 'Ok'
+  _tag = 'Ok' as const
   constructor(readonly value: T) {}
   unwrap(): T {
     return this.value
@@ -127,7 +127,7 @@ export function ok<T, E>(value: T): Ok<T, E> {
 }
 
 class FailImpl<T, E> implements Fail<T, E> {
-  _tag: 'Fail'
+  _tag = 'Fail' as const
   constructor(readonly error: E) {}
   unwrap<T>(): T {
     throw this.error

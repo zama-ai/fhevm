@@ -21,20 +21,29 @@ export class FetchFHEEvents implements UseCase<ChainId, FheEvent[]> {
   handleFheEvent: Subscriber<web3.Web3Event> = (
     event,
   ): Task<void, AppError> => {
-    this.logger.log(`received ${event}: ${JSON.stringify(event.payload)}`)
+    this.logger.log(`received ${event.type}: ${JSON.stringify(event.payload)}`)
     return ChainId.fromString(event.payload.chainId)
       .asyncChain(this.execute)
       .map<void>(() => void 0)
   }
 
   execute = (chainId: ChainId): Task<FheEvent[], AppError> => {
+    this.logger.log(`fetching fhe events for chain ${chainId.value}`)
     // Note: use a Unit of Work to handle transactions
     return this.repo
       .getLastBlockNumber(chainId)
-      .map(blockNumebr => ({ chainId, blockNumebr }))
-      .chain(({ chainId, blockNumebr }) =>
-        this.service.fetchEvents(chainId, blockNumebr),
+      .tap(block => {
+        this.logger.debug(`last block for ${chainId.value} is ${block}`)
+      })
+      .map(blockNumber => ({ chainId, blockNumber }))
+      .chain(({ chainId, blockNumber }) =>
+        this.service.fetchEvents(chainId, blockNumber),
       )
+      .tap(events => {
+        this.logger.debug(
+          `fetched #${events.length} events from chain ${chainId.value}`,
+        )
+      })
       .chain(events =>
         Task.all<AppError, FheEvent>(events.map(this.repo.create)),
       )

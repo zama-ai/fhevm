@@ -29,6 +29,8 @@ export class SQSConsumer {
       try {
         if (back.isBackEvent(data) || web3.isWeb3Event(data)) {
           await this.pubsub.publish(data).toPromise()
+        } else {
+          this.logger.debug(`unhandled message ${JSON.stringify(data)}`)
         }
       } catch (error) {
         this.logger.warn(`failed to publish message: ${error}`)

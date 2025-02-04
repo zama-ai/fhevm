@@ -1,4 +1,4 @@
-import { PrismaClient } from '#generated/client/index.js'
+import { PrismaClient } from '#prisma/client/index.js'
 import {
   INestApplication,
   Injectable,

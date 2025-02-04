@@ -32,9 +32,9 @@ export class ChainId extends ValueObject(
   }, 'Invalid Chain Id'),
 ) {
   static fromString(value: string | number): Result<ChainId, AppError> {
-    const data = ChainId.schema.safeParse(value)
-    return data.success
-      ? ok(new ChainId(data.data))
-      : fail(fromZodError(data.error))
+    const parsed = ChainId.schema.safeParse(value)
+    return parsed.success
+      ? ok(ChainId.from(parsed.data))
+      : fail(fromZodError(parsed.error))
   }
 }

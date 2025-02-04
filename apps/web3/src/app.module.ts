@@ -24,7 +24,7 @@ import { DiscoverContract } from './use-cases/discover-contract.use-case.js'
 import { DatabaseModule } from './infra/database/database.module.js'
 import { ChainId } from './domain/entities/value-objects.js'
 import { isOk, PubSub } from 'utils'
-import { FheConfig, FheConfigFactory } from './config/fhe.config.js'
+import fheConfig, { FheConfig, FheConfigFactory } from './config/fhe.config.js'
 import { EthersFheEventService } from './infra/adapters/ethers-fhe-event.service.js'
 import { FetchFHEEvents } from './use-cases/fetch-fhe-events.use-case.js'
 import { FheEventService } from './domain/services/fhe-event.service.js'
@@ -36,7 +36,7 @@ import { web3 } from 'messages'
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [awsConfig, ethersConfig],
+      load: [awsConfig, fheConfig, ethersConfig],
     }),
     DatabaseModule,
     SqsModule.registerAsync({
@@ -110,8 +110,8 @@ import { web3 } from 'messages'
           .map(FheConfigFactory.getFheConfig)
           .filter(c => c !== null)
           .reduce(
-            (map, cfg) => map.set(cfg.chainId, cfg),
-            new Map<ChainId, FheConfig>(),
+            (map, cfg) => map.set(cfg.chainId.value, cfg),
+            new Map<string, FheConfig>(),
           )
         return new EthersFheEventService(map)
       },

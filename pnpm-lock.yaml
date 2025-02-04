@@ -599,6 +599,9 @@ importers:
       '@prisma/client':
         specifier: 6.2.1
         version: 6.2.1(prisma@5.22.0)
+      cpx:
+        specifier: ^1.5.0
+        version: 1.5.0
       ethers:
         specifier: ^6.13.5
         version: 6.13.5

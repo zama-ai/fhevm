@@ -5,7 +5,7 @@ import { ConfigService } from '@nestjs/config'
 import { AppDeploymentMessage, web3 } from 'messages'
 import { MessageProducer } from '#domain/services/message.producer.js'
 import { AppError, PubSub, Subscriber, Task, unknownError } from 'utils'
-import { PUBSUB } from '#src/constants.js'
+import { PUBSUB } from '#constants.js'
 
 @Injectable()
 export class AwsMessageProducer implements MessageProducer {

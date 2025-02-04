@@ -15,8 +15,8 @@ import { FHE_EVENT_REPOSITORY, UNIT_OF_WORK } from '#constants.js'
   ],
   providers: [
     {
-      provide: 'PrismaClient',
-      useFactory: () => {
+      provide: PrismaClient,
+      useFactory: () =>
         new PrismaClient({
           log: [
             {
@@ -26,8 +26,7 @@ import { FHE_EVENT_REPOSITORY, UNIT_OF_WORK } from '#constants.js'
                 process.env.PRISMA_LOGLEVEL === 'debug' ? 'query' : 'error',
             },
           ],
-        })
-      },
+        }),
     },
     PrismaService,
     {
@@ -39,6 +38,6 @@ import { FHE_EVENT_REPOSITORY, UNIT_OF_WORK } from '#constants.js'
       useClass: PrismaService,
     },
   ],
-  exports: [FHE_EVENT_REPOSITORY, UNIT_OF_WORK],
+  exports: [PrismaService, FHE_EVENT_REPOSITORY, UNIT_OF_WORK],
 })
 export class DatabaseModule {}

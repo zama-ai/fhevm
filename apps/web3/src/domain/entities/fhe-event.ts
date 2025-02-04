@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { ChainId, FheEventId, Web3Address } from './value-objects.js'
-import { AppError, Entity, fail, ok, Result, validationError } from 'utils'
+import { AppError, Entity, fail, ok, Result } from 'utils'
+import { fromZodError } from 'utils/dist/src/app-error.js'
 
 const schema = z.object({
   chainId: ChainId.schema,
@@ -27,7 +28,7 @@ export class FheEvent
     const check = schema.safeParse(data)
     return check.success
       ? ok(new FheEvent(check.data))
-      : fail(validationError(check.error.message))
+      : fail(fromZodError(check.error))
   }
   get chainId() {
     return ChainId.from(this.get('chainId'))

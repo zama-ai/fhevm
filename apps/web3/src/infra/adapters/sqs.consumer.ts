@@ -3,7 +3,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common'
 import { isAppDeploymentCommand, web3 } from 'messages'
 import { SqsMessageHandler } from 'sqs'
 import { DiscoverContract } from '#use-cases/discover-contract.use-case.js'
-import { PubSub } from 'utils'
+import { isAppError, PubSub } from 'utils'
 import { PUBSUB } from '#constants.js'
 
 @Injectable()
@@ -17,7 +17,7 @@ export class SQSConsumer {
   ) {}
 
   @SqsMessageHandler('web3', false)
-  public handleMessage(message: Message) {
+  public async handleMessage(message: Message) {
     if (message.Body) {
       this.logger.debug(`received message: ${message.Body}`)
       let body: Record<string, any>
@@ -54,8 +54,21 @@ export class SQSConsumer {
           this.logger.warn(`type ${data.type} is not supported`)
         }
       } else if (web3.isWeb3Event(data)) {
-        this.logger.debug(`publishing ${JSON.stringify(data)}`)
-        this.pubsub.publish(data)
+        this.logger.debug(
+          `publishing to internal pubsub ${JSON.stringify(data)}`,
+        )
+        try {
+          await this.pubsub.publish(data).toPromise()
+        } catch (error: unknown) {
+          if (isAppError(error)) {
+            this.logger.warn(
+              `Failed to process ${data.type}: ${error._tag}/${error.message}`,
+            )
+          } else {
+            this.logger.warn(`Failed to process ${data.type}: ${error}`)
+          }
+          throw error
+        }
       } else {
         this.logger.warn('data is not an app-deployment command')
       }
