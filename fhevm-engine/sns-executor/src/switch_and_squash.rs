@@ -3,18 +3,16 @@ use anyhow::anyhow;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use std::num::Wrapping;
 
 use std::panic::Location;
 
 use tfhe::boolean::prelude::PolynomialSize;
 use tfhe::core_crypto::prelude::{
-    allocate_and_trivially_encrypt_new_glwe_ciphertext, decrypt_lwe_ciphertext,
-    keyswitch_lwe_ciphertext, lwe_ciphertext_cleartext_mul_assign,
-    programmable_bootstrap_f128_lwe_ciphertext, CiphertextModulus, Cleartext, Container,
-    ContainerMut, Fourier128LweBootstrapKey, GlweCiphertextOwned, GlweSize, LweCiphertext,
-    LweCiphertextOwned, LweKeyswitchKey, LweSecretKeyOwned, LweSize, PlaintextList,
-    UnsignedInteger, UnsignedTorus,
+    allocate_and_trivially_encrypt_new_glwe_ciphertext, keyswitch_lwe_ciphertext,
+    lwe_ciphertext_cleartext_mul_assign, programmable_bootstrap_f128_lwe_ciphertext,
+    CiphertextModulus, Cleartext, Container, ContainerMut, Fourier128LweBootstrapKey,
+    GlweCiphertextOwned, GlweSize, LweCiphertext, LweCiphertextOwned, LweKeyswitchKey,
+    LweSecretKeyOwned, LweSize, PlaintextList, UnsignedInteger, UnsignedTorus,
 };
 
 use tfhe::{
@@ -23,13 +21,20 @@ use tfhe::{
     shortint::PBSOrder,
 };
 
-use tfhe::integer::block_decomposition::BlockRecomposer;
 use tfhe::integer::ciphertext::BaseRadixCiphertext;
 
 use tfhe::shortint::ClassicPBSParameters;
 
+#[cfg(feature = "decrypt_128")]
+use {
+    num_traits::{AsPrimitive, ConstZero},
+    std::num::Wrapping,
+    tfhe::core_crypto::prelude::decrypt_lwe_ciphertext,
+    tfhe::integer::block_decomposition::BlockRecomposer,
+};
+
+#[cfg(feature = "decrypt_128")]
 pub type Z128 = Wrapping<u128>;
-use num_traits::{AsPrimitive, ConstZero};
 
 pub type Ciphertext64 = BaseRadixCiphertext<tfhe::shortint::Ciphertext>;
 pub type Ciphertext64Block = tfhe::shortint::Ciphertext;
@@ -309,6 +314,7 @@ impl SnsClientKey {
     }
 }
 
+#[cfg(feature = "decrypt_128")]
 // Map a raw, decrypted message to its real value by dividing by the appropriate shift, delta, assuming padding
 pub(crate) fn from_expanded_msg<Scalar: UnsignedInteger + AsPrimitive<u128>>(
     raw_plaintext: Scalar,
@@ -333,6 +339,6 @@ pub(crate) fn from_expanded_msg<Scalar: UnsignedInteger + AsPrimitive<u128>>(
         // add delta/2 to kill the negative noise, note this does not affect the message.
         // and then divide by delta
         let raw_msg = raw_plaintext.as_().wrapping_add(delta_pad_half) >> delta_pad_bits;
-        Wrapping(raw_msg % (1 << message_and_carry_mod_bits))
+        std::num::Wrapping(raw_msg % (1 << message_and_carry_mod_bits))
     }
 }
