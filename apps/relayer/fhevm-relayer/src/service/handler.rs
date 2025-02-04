@@ -104,7 +104,7 @@ impl RealEventHandler {
     // ) -> Result<alloy::pubsub::SubscriptionStream<RpcLog>, Error> {
     // }
 
-    fn extract_event_topic(&self, log: &RpcLog) -> Option<String> {
-        log.inner.data.topics().first().map(|sig| sig.to_string())
-    }
+    // fn extract_event_topic(&self, log: &RpcLog) -> Option<String> {
+    //     log.inner.data.topics().first().map(|sig| sig.to_string())
+    // }
 }
