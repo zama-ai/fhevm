@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::thread::sleep;
 use std::time::Duration;
 
 use sqlx::postgres::PgListener;
@@ -59,6 +60,17 @@ pub(crate) async fn run_loop(
             if let Err(err) = poll_and_execute_sns_tasks(&mut conn, &keys, conf).await {
                 error!(target: "worker", "Failed to poll and execute tasks: {err}");
                 break; // Break to reacquire a connection
+            }
+
+            // Check if more tasks are available
+            let count = get_remaining_tasks(&mut conn).await?;
+            if count > 0 {
+                if cancel_chan.try_recv().is_ok() {
+                    return Ok(());
+                }
+                info!(target: "worker", {count}, "SnS tasks available");
+                // Continue to poll_and_execute for more tasks
+                continue;
             }
 
             select! {
@@ -155,6 +167,34 @@ async fn query_sns_tasks(
         .collect();
 
     Ok(Some(tasks))
+}
+
+/// Returns the number of remaining tasks in the database.
+async fn get_remaining_tasks(
+    conn: &mut sqlx::pool::PoolConnection<sqlx::Postgres>,
+) -> Result<i64, Box<dyn Error>> {
+    let mut db_txn = match conn.begin().await {
+        Ok(txn) => txn,
+        Err(err) => {
+            error!(target: "worker", "Failed to begin transaction: {err}");
+            return Err(err.into());
+        }
+    };
+
+    let records_count = sqlx::query_scalar!(
+        "
+        SELECT COUNT(*)
+        FROM ciphertexts
+        WHERE ciphertext IS NOT NULL
+          AND is_allowed = TRUE
+          AND is_sent = FALSE
+          AND large_ct IS NULL;
+        ",
+    )
+    .fetch_one(db_txn.as_mut())
+    .await?;
+
+    Ok(records_count.unwrap_or(0))
 }
 
 /// Processes the tasks by decompressing and transforming ciphertexts.
