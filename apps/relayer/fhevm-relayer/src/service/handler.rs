@@ -29,15 +29,15 @@ impl ContractAndTopicsFilter {
     }
 }
 
-pub struct RealEventHandler {
+pub struct EthereumHostL1 {
     provider: Arc<dyn Provider<PubSubFrontend> + Send + Sync>,
     registry: Arc<EventRegistry>,
 }
 
-unsafe impl Send for RealEventHandler {}
-unsafe impl Sync for RealEventHandler {}
+unsafe impl Send for EthereumHostL1 {}
+unsafe impl Sync for EthereumHostL1 {}
 
-impl RealEventHandler {
+impl EthereumHostL1 {
     #[instrument(skip_all)]
     pub async fn new(ws_url: &str, registry: Arc<EventRegistry>) -> Result<Self, Error> {
         let ws = WsConnect::new(ws_url);
@@ -46,7 +46,7 @@ impl RealEventHandler {
             .await
             .map_err(Error::Transport)?;
 
-        Ok(RealEventHandler {
+        Ok(EthereumHostL1 {
             provider: Arc::new(provider),
             registry,
         })

@@ -9,4 +9,4 @@ pub mod service;
 // Re-export commonly used types
 pub use errors::Error;
 pub use event::registry::EventRegistry;
-pub use service::handler::RealEventHandler;
+pub use service::handler::EthereumHostL1;

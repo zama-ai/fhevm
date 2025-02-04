@@ -9,7 +9,7 @@ use fhevm_relayer::{
         processors::{tfhe_executor::TfheExecutorEventHandler, DecryptionOracleEventHandler},
         registry::EventRegistry,
     },
-    service::{ContractAndTopicsFilter, RealEventHandler},
+    service::{ContractAndTopicsFilter, EthereumHostL1},
 };
 use futures_util::StreamExt;
 
@@ -53,7 +53,7 @@ async fn main() -> eyre::Result<()> {
     registry.register_event(decryption_oracle_address, decryption_oracle_executor);
 
     // Create the real event handler for WebSocket connection
-    let event_handler = RealEventHandler::new(&settings.network.ws_url, registry.clone())
+    let event_handler = EthereumHostL1::new(&settings.network.ws_url, registry.clone())
         .await
         .map_err(|e| eyre::eyre!("Failed to create event handler: {}", e))?;
     let event_handler = Arc::new(event_handler);
