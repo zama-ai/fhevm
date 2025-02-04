@@ -1,5 +1,5 @@
 use alloy::primitives::Address;
-use fhevm_relayer::event::{processors::transfer::TransferProcessor, registry::EventRegistry};
+use fhevm_relayer::event::{processors::transfer::TransferEventHandler, registry::EventRegistry};
 use std::{str::FromStr, sync::Arc};
 
 #[tokio::main]
@@ -14,7 +14,7 @@ async fn main() -> eyre::Result<()> {
     registry.register_contract(test_address);
 
     // Create and register the transfer processor
-    let transfer_processor = TransferProcessor::new();
+    let transfer_processor = TransferEventHandler::new();
     registry.register_event(test_address, transfer_processor);
 
     println!("Successfully registered Transfer event handler");

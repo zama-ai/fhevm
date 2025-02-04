@@ -16,7 +16,7 @@ use tracing::{debug, error, info, instrument};
 ///
 /// ```rust
 /// use fhevm_relayer::event::registry::EventRegistry;
-/// use fhevm_relayer::event::processors::tfhe_executor::TfheExecutor;
+/// use fhevm_relayer::event::processors::tfhe_executor::TfheExecutorEventHandler;
 /// use alloy::primitives::Address;
 /// use std::str::FromStr;
 ///
@@ -31,7 +31,7 @@ use tracing::{debug, error, info, instrument};
 /// registry.register_contract(contract_address);
 ///
 /// // Register an event processor
-/// let processor = TfheExecutor::new();
+/// let processor = TfheExecutorEventHandler::new();
 /// registry.register_event(contract_address, processor);
 /// # Ok(())
 /// # }

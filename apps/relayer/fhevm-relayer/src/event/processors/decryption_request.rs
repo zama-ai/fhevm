@@ -16,17 +16,17 @@ pub enum EventType {
 }
 
 #[derive(Debug, Clone)]
-pub struct DecryptionOracleExecutor;
+pub struct DecryptionOracleEventHandler;
 
-impl Default for DecryptionOracleExecutor {
+impl Default for DecryptionOracleEventHandler {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl DecryptionOracleExecutor {
+impl DecryptionOracleEventHandler {
     pub fn new() -> Self {
-        DecryptionOracleExecutor
+        DecryptionOracleEventHandler
     }
 
     #[instrument(skip_all)]
@@ -44,7 +44,7 @@ impl DecryptionOracleExecutor {
     }
 }
 
-impl ContractEvent for DecryptionOracleExecutor {
+impl ContractEvent for DecryptionOracleEventHandler {
     fn topics(&self) -> Vec<B256> {
         vec![DecryptionOracle::DecryptionRequest::SIGNATURE_HASH]
     }
@@ -79,7 +79,7 @@ impl ContractEvent for DecryptionOracleExecutor {
     }
 }
 
-impl ContractEvent for Arc<DecryptionOracleExecutor> {
+impl ContractEvent for Arc<DecryptionOracleEventHandler> {
     fn topics(&self) -> Vec<B256> {
         (**self).topics()
     }

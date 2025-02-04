@@ -4,7 +4,7 @@ mod integration_tests {
     use alloy::rpc::types::Log as RpcLog;
     use alloy_sol_types::{sol, SolEvent};
 
-    use fhevm_relayer::event::processors::DecryptionOracleExecutor;
+    use fhevm_relayer::event::processors::DecryptionOracleEventHandler;
     use fhevm_relayer::EventRegistry;
     use std::str::FromStr;
     use std::sync::Arc;
@@ -13,14 +13,14 @@ mod integration_tests {
     struct TestContext {
         registry: Arc<EventRegistry>,
         contract_address: Address,
-        executor: DecryptionOracleExecutor,
+        executor: DecryptionOracleEventHandler,
     }
 
     impl TestContext {
         fn new() -> Self {
             let contract_address =
                 Address::from_str("0x67aa98a03CC4559E1e98e7b4Ed071C35c40b588d").unwrap();
-            let executor = DecryptionOracleExecutor::new();
+            let executor = DecryptionOracleEventHandler::new();
             let registry = Arc::new(EventRegistry::new());
 
             registry.register_contract(contract_address);

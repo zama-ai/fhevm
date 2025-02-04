@@ -18,7 +18,7 @@ use tracing::{debug, info, instrument};
 /// - `FheSub(address,uint256,uint256,bytes1,uint256)`
 ///
 #[derive(Debug, Clone)]
-pub struct TfheExecutor;
+pub struct TfheExecutorEventHandler;
 
 #[derive(Debug, Clone)]
 pub enum EventType {
@@ -26,15 +26,15 @@ pub enum EventType {
     FheSub(TFHEExecutor::FheSub),
 }
 
-impl Default for TfheExecutor {
+impl Default for TfheExecutorEventHandler {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl TfheExecutor {
+impl TfheExecutorEventHandler {
     pub fn new() -> Self {
-        TfheExecutor
+        TfheExecutorEventHandler
     }
 
     #[instrument(skip_all)]
@@ -52,7 +52,7 @@ impl TfheExecutor {
     }
 }
 
-impl ContractEvent for TfheExecutor {
+impl ContractEvent for TfheExecutorEventHandler {
     fn topics(&self) -> Vec<B256> {
         vec![
             TFHEExecutor::FheAdd::SIGNATURE_HASH,
@@ -88,7 +88,7 @@ impl ContractEvent for TfheExecutor {
     }
 }
 
-impl ContractEvent for Arc<TfheExecutor> {
+impl ContractEvent for Arc<TfheExecutorEventHandler> {
     fn topics(&self) -> Vec<B256> {
         (**self).topics()
     }

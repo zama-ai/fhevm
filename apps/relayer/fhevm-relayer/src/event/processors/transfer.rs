@@ -12,7 +12,7 @@ sol! {
 }
 
 #[derive(Debug)]
-pub struct TransferProcessor {
+pub struct TransferEventHandler {
     #[cfg(test)]
     last_transfer: std::sync::Mutex<Option<TransferEvent>>,
 }
@@ -30,15 +30,15 @@ pub struct TransferEvent {
     pub value: U256,
 }
 
-impl Default for TransferProcessor {
+impl Default for TransferEventHandler {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl TransferProcessor {
+impl TransferEventHandler {
     pub fn new() -> Self {
-        TransferProcessor {
+        TransferEventHandler {
             #[cfg(test)]
             last_transfer: std::sync::Mutex::new(None),
         }
@@ -76,7 +76,7 @@ impl TransferProcessor {
     }
 }
 
-impl ContractEvent for TransferProcessor {
+impl ContractEvent for TransferEventHandler {
     fn topics(&self) -> Vec<B256> {
         vec![Transfer::SIGNATURE_HASH]
     }
@@ -151,13 +151,13 @@ mod tests {
 
     #[test]
     fn test_transfer_processor_creation() {
-        let processor = TransferProcessor::new();
+        let processor = TransferEventHandler::new();
         assert!(processor.get_last_transfer().is_none());
     }
 
     #[test]
     fn test_process_valid_transfer_event() {
-        let processor = TransferProcessor::new();
+        let processor = TransferEventHandler::new();
         let log = create_test_log();
 
         processor.process_event(&log).unwrap();
@@ -176,7 +176,7 @@ mod tests {
 
     #[test]
     fn test_process_invalid_transfer_event() {
-        let processor = TransferProcessor::new();
+        let processor = TransferEventHandler::new();
         let mut log = create_test_log();
         // Corrupt the log data
         log.inner.data = LogData::new_unchecked(vec![], Bytes::default());

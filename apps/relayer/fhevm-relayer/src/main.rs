@@ -6,7 +6,7 @@ use tracing_subscriber::{fmt::SubscriberBuilder, EnvFilter};
 use fhevm_relayer::{
     config::settings::{LogConfig, Settings},
     event::{
-        processors::{tfhe_executor::TfheExecutor, DecryptionOracleExecutor},
+        processors::{tfhe_executor::TfheExecutorEventHandler, DecryptionOracleEventHandler},
         registry::EventRegistry,
     },
     service::RealEventHandler,
@@ -51,10 +51,10 @@ async fn main() -> eyre::Result<()> {
     let event_handler = Arc::new(event_handler);
 
     // Create and register event processors
-    let tfhe_executor = TfheExecutor::new();
+    let tfhe_executor = TfheExecutorEventHandler::new();
     registry.register_event(tfhe_executor_address, tfhe_executor);
 
-    let decryption_oracle_executor = DecryptionOracleExecutor;
+    let decryption_oracle_executor = DecryptionOracleEventHandler;
     registry.register_event(decryption_oracle_address, decryption_oracle_executor);
 
     // Set up shutdown handling
