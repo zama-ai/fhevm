@@ -1,11 +1,11 @@
 {{- define "kmsConnectorName" -}}
 {{- $kmsConnectorNameDefault := printf "%s-%s" .Release.Name "connector" }}
-{{- default $kmsConnectorNameDefault .Values.kmsConnector.nameOverride | trunc 63 | trimSuffix "-" -}}
+{{- default $kmsConnectorNameDefault .Values.kmsConnector.nameOverride | trunc 52 | trimSuffix "-" -}}
 {{- end -}}
 
 {{- define "kmsCoreName" -}}
 {{- $kmsCoreNameDefault := printf "%s-%s" .Release.Name "core" }}
-{{- default $kmsCoreNameDefault .Values.kmsCore.nameOverride | trunc 63 | trimSuffix "-" -}}
+{{- default $kmsCoreNameDefault .Values.kmsCore.nameOverride | trunc 52 | trimSuffix "-" -}}
 {{- end -}}
 
 {{- define "kmsCoreAddress" -}}
@@ -115,10 +115,10 @@ args:
 
 {{- define "kmsThresholdInitJobName" -}}
 {{- $kmsCoreNameDefault := printf "%s-%s" .Release.Name "threshold-init" }}
-{{- default $kmsCoreNameDefault .Values.kmsCore.nameOverride | trunc 63 | trimSuffix "-" -}}
+{{- default $kmsCoreNameDefault .Values.kmsCore.nameOverride | trunc 52 | trimSuffix "-" -}}
 {{- end -}}
 
 {{- define "kmsSimulatorName" -}}
 {{- $kmsCoreNameDefault := printf "%s-%s" .Release.Name "simulator" }}
-{{- default $kmsCoreNameDefault .Values.kmsCore.nameOverride | trunc 63 | trimSuffix "-" -}}
+{{- default $kmsCoreNameDefault .Values.kmsCore.nameOverride | trunc 52 | trimSuffix "-" -}}
 {{- end -}}
