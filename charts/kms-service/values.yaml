@@ -37,6 +37,9 @@ kmsCore:
     name: ghcr.io/zama-ai/kms-service
     tag: latest
   serviceAccountName:
+  envFrom:
+    configmap:
+      name:
   thresholdMode:
     enabled: false
     # If left unset, the chart will generate the list automatically based on pod replicas of the statefulset
