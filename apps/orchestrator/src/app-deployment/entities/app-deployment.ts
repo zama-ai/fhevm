@@ -43,26 +43,26 @@ function factory({
                 ({
                   event: {
                     payload: { applicationId, deploymentId, address, chainId },
-                    meta,
+                    $meta,
                   },
                 }) => ({
                   applicationId,
                   deploymentId,
                   address,
                   chainId,
-                  meta,
+                  $meta,
                 }),
               ),
               ({
                 event: {
                   payload: { applicationId, deploymentId, address, chainId },
-                  meta,
+                  $meta,
                 },
               }) =>
                 notifyMessage(
                   discoverSC(
                     { applicationId, deploymentId, address, chainId },
-                    meta,
+                    $meta,
                   ),
                 ),
             ],
@@ -78,10 +78,12 @@ function factory({
               ({
                 event: {
                   payload: { applicationId, deploymentId },
-                  meta,
+                  $meta,
                 },
               }) =>
-                notifyMessage(confirmSC({ applicationId, deploymentId }, meta)),
+                notifyMessage(
+                  confirmSC({ applicationId, deploymentId }, $meta),
+                ),
             ],
           },
         },
@@ -95,11 +97,11 @@ function factory({
               ({
                 event: {
                   payload: { applicationId, deploymentId },
-                  meta,
+                  $meta,
                 },
               }) =>
                 notifyMessage(
-                  registerSC({ applicationId, deploymentId }, meta),
+                  registerSC({ applicationId, deploymentId }, $meta),
                 ),
             ],
           },
@@ -114,10 +116,12 @@ function factory({
               ({
                 event: {
                   payload: { applicationId, deploymentId },
-                  meta,
+                  $meta,
                 },
               }) =>
-                notifyMessage(completed({ applicationId, deploymentId }, meta)),
+                notifyMessage(
+                  completed({ applicationId, deploymentId }, $meta),
+                ),
             ],
           },
         },
