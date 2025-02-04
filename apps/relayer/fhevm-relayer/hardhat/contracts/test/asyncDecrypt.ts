@@ -35,7 +35,7 @@ const currentTime = (): string => {
 
 const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.decryptionoracle'));
 let relayer: Wallet;
-if (networkName === 'hardhat' || networkName === 'localCoprocessorMocked') {
+if (networkName === 'hardhat' || networkName === 'localCoprocessorL1') {
   const privKeyRelayer = process.env.PRIVATE_KEY_DECRYPTION_ORACLE_RELAYER;
   relayer = new ethers.Wallet(privKeyRelayer!, ethers.provider);
 }
@@ -50,10 +50,7 @@ let lastBlockSnapshotForDecrypt: number;
 
 export const initDecryptionOracle = async (): Promise<void> => {
   firstBlockListening = await ethers.provider.getBlockNumber();
-  if (
-    (networkName === 'hardhat' || networkName === 'localCoprocessorMocked') &&
-    hre.__SOLIDITY_COVERAGE_RUNNING !== true
-  ) {
+  if ((networkName === 'hardhat' || networkName === 'localCoprocessorL1') && hre.__SOLIDITY_COVERAGE_RUNNING !== true) {
     // evm_snapshot is not supported in coverage mode
     await ethers.provider.send('set_lastBlockSnapshotForDecrypt', [firstBlockListening]);
   }
@@ -73,22 +70,16 @@ export const initDecryptionOracle = async (): Promise<void> => {
 export const awaitAllDecryptionResults = async (): Promise<void> => {
   decryptionOracle = await ethers.getContractAt('DecryptionOracle', parsedEnv.DECRYPTION_ORACLE_ADDRESS);
   const provider = ethers.provider;
-  if (
-    (networkName === 'hardhat' || networkName === 'localCoprocessorMocked') &&
-    hre.__SOLIDITY_COVERAGE_RUNNING !== true
-  ) {
+  if ((networkName === 'hardhat' || networkName === 'localCoprocessorL1') && hre.__SOLIDITY_COVERAGE_RUNNING !== true) {
     // evm_snapshot is not supported in coverage mode
     lastBlockSnapshotForDecrypt = await provider.send('get_lastBlockSnapshotForDecrypt');
     if (lastBlockSnapshotForDecrypt < firstBlockListening) {
       firstBlockListening = lastBlockSnapshotForDecrypt + 1;
     }
   }
-  await fulfillAllPastRequestsIds(networkName === 'hardhat' || networkName === 'localCoprocessorMocked');
+  await fulfillAllPastRequestsIds(networkName === 'hardhat' || networkName === 'localCoprocessorL1');
   firstBlockListening = (await ethers.provider.getBlockNumber()) + 1;
-  if (
-    (networkName === 'hardhat' || networkName === 'localCoprocessorMocked') &&
-    hre.__SOLIDITY_COVERAGE_RUNNING !== true
-  ) {
+  if ((networkName === 'hardhat' || networkName === 'localCoprocessorL1') && hre.__SOLIDITY_COVERAGE_RUNNING !== true) {
     // evm_snapshot is not supported in coverage mode
     await provider.send('set_lastBlockSnapshotForDecrypt', [firstBlockListening]);
   }

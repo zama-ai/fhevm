@@ -347,7 +347,7 @@ describe('Rand', function () {
   });
 
   it('8 and 16 bits generate and decrypt with hardhat snapshots [skip-on-coverage]', async function () {
-    if (network.name === 'hardhat' || network.name === 'localCoprocessorMocked') {
+    if (network.name === 'hardhat' || network.name === 'localCoprocessorL1') {
       // snapshots are only possible in hardhat node, i.e in mocked mode
       this.snapshotId = await ethers.provider.send('evm_snapshot');
       const values: number[] = [];

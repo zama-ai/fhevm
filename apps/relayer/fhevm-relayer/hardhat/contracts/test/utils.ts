@@ -7,7 +7,7 @@ import { TypedContractMethod } from '../types/common';
 import { getSigners } from './signers';
 
 export const waitForBlock = (blockNumber: bigint | number) => {
-  if (network.name === 'hardhat' || network.name === 'localCoprocessorMocked') {
+  if (network.name === 'hardhat' || network.name === 'localCoprocessorL1') {
     return new Promise((resolve, reject) => {
       const intervalId = setInterval(async () => {
         try {
@@ -39,7 +39,7 @@ export const waitForBlock = (blockNumber: bigint | number) => {
 
 export const waitNBlocks = async (Nblocks: number) => {
   const currentBlock = await ethers.provider.getBlockNumber();
-  if (network.name === 'hardhat' || network.name === 'localCoprocessorMocked') {
+  if (network.name === 'hardhat' || network.name === 'localCoprocessorL1') {
     await produceDummyTransactions(Nblocks);
   }
   await waitForBlock(currentBlock + Nblocks);

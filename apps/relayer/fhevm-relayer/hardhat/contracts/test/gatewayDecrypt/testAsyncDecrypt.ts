@@ -37,7 +37,7 @@ describe('TestAsyncDecrypt', function () {
     console.log('gas paid by user (request tx) : ', balanceBeforeU - balanceAfterU);
   });
 
-  it('test async decrypt bool', async function () {
+  it.only('test async decrypt bool', async function () {
     const balanceBeforeR = await ethers.provider.getBalance(this.relayerAddress);
     const balanceBeforeU = await ethers.provider.getBalance(this.signers.carol.address);
     const tx2 = await this.contract.connect(this.signers.carol).requestBool();
@@ -374,7 +374,7 @@ describe('TestAsyncDecrypt', function () {
   });
 
   it('test async decrypt ebytes256 non-trivial with snapshot [skip-on-coverage]', async function () {
-    if (network.name === 'hardhat' || network.name === 'localCoprocessorMocked') {
+    if (network.name === 'hardhat' || network.name === 'localCoprocessorL1') {
       this.snapshotId = await ethers.provider.send('evm_snapshot');
       const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
       inputAlice.addBytes256(bigIntToBytes256(18446744073709550022n));

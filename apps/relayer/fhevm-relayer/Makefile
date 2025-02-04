@@ -50,12 +50,12 @@ start-event-listener:
 # Run decrypt tests
 run-test-decrypt:
 	@echo "$(GREEN)Running decrypt tests...$(RESET)"
-	@cd hardhat/contracts && RUST_RELAYER=true npx hardhat test test/gatewayDecrypt/* --network localCoprocessorMocked
+	@cd hardhat/contracts && RUST_RELAYER=true npx hardhat test test/gatewayDecrypt/* --network localCoprocessorL1
 
 # Run ERC20 tests
 run-test-erc20:
 	@echo "$(GREEN)Running decrypt tests...$(RESET)"
-	@cd hardhat/contracts && RUST_RELAYER=true npx hardhat test test/encryptedERC20/EncryptedERC20.ts --network localCoprocessorMocked
+	@cd hardhat/contracts && RUST_RELAYER=true npx hardhat test test/encryptedERC20/EncryptedERC20.ts --network localCoprocessorL1
 
 # Help message
 help:

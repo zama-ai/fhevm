@@ -7,15 +7,15 @@ environment: development
 
 network:
   # Local WebSocket endpoint - Update with your local node
-  ws_url: "ws://localhost:8746"
+  ws_url: "ws://localhost:8756"
   # Quick retries for development
   retry_delay: 1000  # 1 second for faster local development
   max_reconnection_attempts: 3
 
 contracts:
   # Example local contract addresses - Update these after deployment
-  decryption_oracle_address: "0x67aa98a03CC4559E1e98e7b4Ed071C35c40b588d"
-  tfhe_executor_address: "0x4e142887e3Dc6e414a9b260a1034D20C9B4Eb11F"
+  decryption_oracle_address: "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d"
+  tfhe_executor_address: "0x12B064FB845C1cc05e9493856a1D637a73e944bE"
 
 log:
   # Set log level for development

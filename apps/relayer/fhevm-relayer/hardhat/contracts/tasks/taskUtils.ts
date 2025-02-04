@@ -25,7 +25,7 @@ task('task:faucetToPrivate')
   .setAction(async function (taskArgs, hre) {
     const receiverAddress = new hre.ethers.Wallet(taskArgs.privateKey).address;
 
-    if (hre.network.name === 'hardhat' || hre.network.name === 'localCoprocessorMocked') {
+    if (hre.network.name === 'hardhat' || hre.network.name === 'localCoprocessorL1') {
       const bal = '0x1000000000000000000000000000000000000000';
       await hre.network.provider.send('hardhat_setBalance', [receiverAddress, bal]);
     } else {
@@ -39,7 +39,7 @@ task('task:faucetToAddress')
   .setAction(async function (taskArgs, hre) {
     const receiverAddress = taskArgs.address;
 
-    if (hre.network.name === 'hardhat' || hre.network.name === 'localCoprocessorMocked') {
+    if (hre.network.name === 'hardhat' || hre.network.name === 'localCoprocessorL1') {
       const bal = '0x1000000000000000000000000000000000000000';
       await hre.network.provider.send('hardhat_setBalance', [receiverAddress, bal]);
     } else {
