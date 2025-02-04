@@ -1,4 +1,5 @@
 use crate::{errors::Error, event::registry::EventRegistry};
+use alloy::primitives::Address;
 use alloy::{
     providers::{Provider, ProviderBuilder, WsConnect},
     pubsub::PubSubFrontend,
@@ -7,6 +8,26 @@ use alloy::{
 use futures_util::StreamExt;
 use std::sync::Arc;
 use tracing::{debug, info, instrument, warn};
+
+pub struct ContractAndTopicsFilter {
+    contract_addresses: Vec<Address>,
+    topics: Vec<String>,
+}
+
+impl ContractAndTopicsFilter {
+    pub fn new(contract_addresses: Vec<Address>, topics: Vec<String>) -> Self {
+        Self {
+            contract_addresses,
+            topics,
+        }
+    }
+    fn ethereum_filter(&self, block_number_or_tag: BlockNumberOrTag) -> Filter {
+        let filter = Filter::new()
+            .from_block(block_number_or_tag)
+            .address(self.contract_addresses.clone());
+        filter
+    }
+}
 
 pub struct RealEventHandler {
     provider: Arc<dyn Provider<PubSubFrontend> + Send + Sync>,
@@ -33,11 +54,13 @@ impl RealEventHandler {
 
     pub async fn new_subscription(
         &self,
+        filter: ContractAndTopicsFilter,
+        from_block_number: Option<u64>,
     ) -> Result<alloy::pubsub::SubscriptionStream<RpcLog>, Error> {
-        let contracts = self.registry.get_contracts();
-
-        let filter = new_filter(contracts);
-        info!("Subscribing to logs with filters: {:?}", filter);
+        let block_number_or_tag = from_block_number
+            .map(BlockNumberOrTag::Number)
+            .unwrap_or(BlockNumberOrTag::Latest);
+        let filter = filter.ethereum_filter(block_number_or_tag);
 
         let sub = self
             .provider
@@ -48,6 +71,7 @@ impl RealEventHandler {
         info!("Subscription successful. Listening for logs...");
         let stream = sub.into_stream();
         Ok(stream)
+
         // let subscription = self.new_subscription(filter).await?;
 
         // self.listen_and_process(subscription).await;
@@ -83,14 +107,4 @@ impl RealEventHandler {
     fn extract_event_topic(&self, log: &RpcLog) -> Option<String> {
         log.inner.data.topics().first().map(|sig| sig.to_string())
     }
-}
-
-fn new_filter(contracts: Vec<alloy::primitives::Address>) -> Filter {
-    info!("Subscribing to logs for contracts: {:?}", contracts);
-    info!("Connecting to Ethereum provider...");
-
-    let filter = Filter::new()
-        .from_block(BlockNumberOrTag::Latest)
-        .address(contracts);
-    filter
 }

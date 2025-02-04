@@ -9,7 +9,7 @@ use fhevm_relayer::{
         processors::{tfhe_executor::TfheExecutorEventHandler, DecryptionOracleEventHandler},
         registry::EventRegistry,
     },
-    service::RealEventHandler,
+    service::{ContractAndTopicsFilter, RealEventHandler},
 };
 use futures_util::StreamExt;
 
@@ -45,12 +45,6 @@ async fn main() -> eyre::Result<()> {
     registry.register_contract(decryption_oracle_address);
     registry.register_contract(tfhe_executor_address);
 
-    // Create the real event handler for WebSocket connection
-    let event_handler = RealEventHandler::new(&settings.network.ws_url, registry.clone())
-        .await
-        .map_err(|e| eyre::eyre!("Failed to create event handler: {}", e))?;
-    let event_handler = Arc::new(event_handler);
-
     // Create and register event processors
     let tfhe_executor = TfheExecutorEventHandler::new();
     registry.register_event(tfhe_executor_address, tfhe_executor);
@@ -58,12 +52,16 @@ async fn main() -> eyre::Result<()> {
     let decryption_oracle_executor = DecryptionOracleEventHandler;
     registry.register_event(decryption_oracle_address, decryption_oracle_executor);
 
-    // Set up shutdown handling
-    // let (shutdown_tx, mut shutdown_rx) = tokio::sync::broadcast::channel(1);
-    // let shutdown_handle = shutdown_tx.clone();
-
-    let event_handler = event_handler.clone();
-    let mut subscription = event_handler.new_subscription().await?;
+    // Create the real event handler for WebSocket connection
+    let event_handler = RealEventHandler::new(&settings.network.ws_url, registry.clone())
+        .await
+        .map_err(|e| eyre::eyre!("Failed to create event handler: {}", e))?;
+    let event_handler = Arc::new(event_handler);
+    let filter = ContractAndTopicsFilter::new(
+        vec![decryption_oracle_address, tfhe_executor_address],
+        vec![],
+    );
+    let mut subscription = event_handler.new_subscription(filter, None).await?;
 
     // Spawn the event listener
     loop {
