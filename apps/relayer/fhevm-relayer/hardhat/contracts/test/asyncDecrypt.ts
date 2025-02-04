@@ -161,8 +161,11 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
         data: calldata,
       };
       try {
-        const tx = await relayer.sendTransaction(txData);
-        await tx.wait();
+        if (process.env.RUST_RELAYER === 'true') {
+        } else {
+          const tx = await relayer.sendTransaction(txData);
+          await tx.wait();
+        }
       } catch (error) {
         console.log('Gateway fulfillment tx failed with the following error:', error.message);
         toSkip.push(requestID);

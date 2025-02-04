@@ -1,4 +1,6 @@
-.PHONY: all setup run-hardhat deploy-fhevm-smart-contracts start-event-listener run-decrypt-test help
+#.PHONY: all setup run-hardhat deploy-fhevm-smart-contracts start-event-listener run-decrypt-test help
+include .env
+export $(shell cat .env | sed 's/=.*//g')
 
 # Default target
 all: help
@@ -10,8 +12,8 @@ WHITE  := $(shell tput -Txterm setaf 7)
 RESET  := $(shell tput -Txterm sgr0)
 
 # Setup target for initial configuration
-setup-hardhat:
-	@echo "$(GREEN)Setting up FHEVM environment...$(RESET)"
+setup-mock:
+	@echo "$(GREEN)Setting up mock environment...$(RESET)"
 	@cd hardhat/contracts && npm install
 	@cd hardhat/contracts && cp .env.example .env
 	@echo "$(GREEN)Setup completed!$(RESET)"
@@ -20,50 +22,64 @@ setup-hardhat:
 config-event-listener:
 	@./setup-config.sh
 
-# Run Hardhat node
-run-hardhat:
-	@echo "$(GREEN)Starting Hardhat node...$(RESET)"
-	@cd hardhat/contracts && npx hardhat node --hostname 127.0.0.1 --port 8746
+# Run Anvil node for httpz chain
+run-httpz-mock:
+	@echo "$(GREEN)Starting Anvil node for mock HTTPZ chain...$(RESET)"
+	@cd hardhat/contracts && source .env && anvil --block-time 1 --port 8756 --chain-id 123456 --accounts 15 --mnemonic $(MNEMONIC)
 
-# Deploy FHEVM smart contracts
-deploy-fhevm-smart-contracts:
-	@echo "$(GREEN)Deploying FHEVM smart contracts...$(RESET)"
-	@cd hardhat/contracts && sh launch-fhevm-local-coprocessor.sh
+# Run Anvil node for gateway chain
+run-gateway-mock:
+	@echo "$(GREEN)Starting Anvil node for mock GATEWAY chain...$(RESET)"
+	@cd hardhat/contracts && source .env && anvil --block-time 1 --port 8757 --chain-id 654321 --accounts 15 --mnemonic $(MNEMONIC)
+
+# Deploy HTTPZ smart contracts
+deploy-httpz-smart-contracts:
+	@echo "$(GREEN)Deploying HTTPZ smart contracts...$(RESET)"
+	@cd hardhat/contracts && ./launch-httpz-local-coprocessor.sh
+
+# Deploy GATEWAY smart contracts
+deploy-gateway-smart-contracts:
+	@echo "$(GREEN)Deploying GATEWAY smart contracts...$(RESET)"
+	@cd hardhat/contracts && ./launch-gateway-local-coprocessor.sh
 
 # Start event listener
 start-event-listener:
-	@echo "$(GREEN)Starting FHEVM event listener...$(RESET)"
+	@echo "$(GREEN)Starting HTTPZ event listener...$(RESET)"
 	@cargo run --bin fhevm-relayer
 
 # Run decrypt tests
 run-test-decrypt:
 	@echo "$(GREEN)Running decrypt tests...$(RESET)"
-	@cd hardhat/contracts && npx hardhat test test/gatewayDecrypt/* --network localCoprocessorMocked
+	@cd hardhat/contracts && RUST_RELAYER=true npx hardhat test test/gatewayDecrypt/* --network localCoprocessorMocked
 
 # Run ERC20 tests
 run-test-erc20:
 	@echo "$(GREEN)Running decrypt tests...$(RESET)"
-	@cd hardhat/contracts && npx hardhat test test/encryptedERC20/EncryptedERC20.ts --network localCoprocessorMocked
+	@cd hardhat/contracts && RUST_RELAYER=true npx hardhat test test/encryptedERC20/EncryptedERC20.ts --network localCoprocessorMocked
 
 # Help message
 help:
 	@echo ''
 	@echo 'Available commands:'
 	@echo ''
-	@echo '  ${YELLOW}make setup-hardhat${RESET}                        - Initial setup of the environment'
-	@echo '  ${YELLOW}make run-hardhat${RESET}                 - Start Hardhat node'
-	@echo '  ${YELLOW}make deploy-fhevm-smart-contracts${RESET} - Deploy FHEVM smart contracts'
-	@echo '  ${YELLOW}make config-event-listener${RESET}        - Configure FHEVM event listener'
-	@echo '  ${YELLOW}make start-event-listener${RESET}        - Start FHEVM event listener'
+	@echo '  ${YELLOW}make setup-mock${RESET}                        - Initial setup of the environment'
+	@echo '  ${YELLOW}make run-httpz-mock${RESET}                 - Start Anvil node for httpz chain'
+	@echo '  ${YELLOW}make run-gateway-mock${RESET}                 - Start Anvil node for gateway chain'
+	@echo '  ${YELLOW}make deploy-httpz-smart-contracts${RESET} - Deploy HTTPZ smart contracts'
+	@echo '  ${YELLOW}make deploy-gateway-smart-contracts${RESET} - Deploy Gateway smart contracts'
+	@echo '  ${YELLOW}make config-event-listener${RESET}        - Configure HTTPZ event listener'
+	@echo '  ${YELLOW}make start-event-listener${RESET}        - Start HTTPZ event listener'
 	@echo '  ${YELLOW}make run-test-decrypt${RESET}            - Run decryption tests'
 	@echo '  ${YELLOW}make run-test-erc20${RESET}            - Run erc20 tests'
 	@echo ''
 	@echo 'Run sequence:'
-	@echo '  1. ${WHITE}make setup-hardhat${RESET}                        - First time only'
-	@echo '  2. ${WHITE}make run-hardhat${RESET}                 - Terminal 1'
-	@echo '  3. ${WHITE}make deploy-fhevm-smart-contracts${RESET} - Terminal 2'
-	@echo '  4. ${WHITE}make config-event-listener${RESET}        - Terminal 2'
-	@echo '  4. ${WHITE}make start-event-listener${RESET}        - Terminal 2'
-	@echo '  5. ${WHITE}make run-test-decrypt${RESET}            - Terminal 3'
-	@echo '  5. ${WHITE}make run-test-erc20${RESET}            - Terminal 3'
+	@echo '  1. ${WHITE}make setup-mock${RESET}                        - First time only'
+	@echo '  2. ${WHITE}make run-httpz-mock${RESET}                 - Terminal 1'
+	@echo '  3. ${WHITE}make run-gateway-mock${RESET}                 - Terminal 2'
+	@echo '  4. ${WHITE}make deploy-httpz-smart-contracts${RESET} - Terminal 3'
+	@echo '  5. ${WHITE}make deploy-gateway-smart-contracts${RESET} - Terminal 3'
+	@echo '  6. ${WHITE}make config-event-listener${RESET}        - Terminal 3'
+	@echo '  7. ${WHITE}make start-event-listener${RESET}        - Terminal 3'
+	@echo '  8. ${WHITE}make run-test-decrypt${RESET}            - Terminal 4'
+	@echo '  9. ${WHITE}make run-test-erc20${RESET}            - Terminal 4'
 	@echo ''

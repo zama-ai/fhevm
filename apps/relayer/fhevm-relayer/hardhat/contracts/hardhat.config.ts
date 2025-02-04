@@ -12,8 +12,11 @@ import CustomProvider from './CustomProvider';
 import './tasks/accounts';
 import './tasks/etherscanVerify';
 import './tasks/taskDeploy';
+import './tasks/taskDeployL2';
 import './tasks/taskUtils';
 import './tasks/upgradeProxy';
+
+const NUM_ACCOUNTS = 15;
 
 extendProvider(async (provider, config, network) => {
   const newProvider = new CustomProvider(provider);
@@ -83,6 +86,8 @@ const chainIds = {
   localCoprocessor: 12345,
   sepolia: 11155111,
   mainnet: 1,
+  localCoprocessorL1: 123456,
+  localCoprocessorL2: 654321,
 };
 
 function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
@@ -97,12 +102,18 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
     case 'localNative':
       jsonRpcUrl = 'http://localhost:8545';
       break;
+    case 'localCoprocessorL1':
+      jsonRpcUrl = 'http://localhost:8756';
+      break;
+    case 'localCoprocessorL2':
+      jsonRpcUrl = 'http://localhost:8757';
+      break;
     default:
       throw new Error(`unsupported chain: ${chain}`);
   }
   return {
     accounts: {
-      count: 10,
+      count: NUM_ACCOUNTS,
       mnemonic,
       path: "m/44'/60'/0'/0",
     },
@@ -124,16 +135,21 @@ const config: HardhatUserConfig = {
   networks: {
     hardhat: {
       accounts: {
-        count: 10,
+        count: NUM_ACCOUNTS,
         mnemonic,
         path: "m/44'/60'/0'/0",
       },
-      chainId: 12345,
+      chainId: process.env.CUSTOM_CHAIN_ID ? Number(process.env.CUSTOM_CHAIN_ID) : 31337,
+      mining: {
+        auto: true,
+        interval: 1000,
+      },
     },
     sepolia: getChainConfig('sepolia'),
     localNative: getChainConfig('localNative'),
     localCoprocessor: getChainConfig('localCoprocessor'),
-    localCoprocessorMocked: getChainConfig('localCoprocessor'),
+    localCoprocessorL1: getChainConfig('localCoprocessorL1'),
+    localCoprocessorL2: getChainConfig('localCoprocessorL2'),
   },
   paths: {
     artifacts: './artifacts',
