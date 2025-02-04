@@ -1,4 +1,4 @@
-use crate::{errors::Error, event::registry::EventRegistry};
+use crate::errors::Error;
 use alloy::primitives::Address;
 use alloy::{
     providers::{Provider, ProviderBuilder, WsConnect},
@@ -31,7 +31,6 @@ impl ContractAndTopicsFilter {
 
 pub struct EthereumHostL1 {
     provider: Arc<dyn Provider<PubSubFrontend> + Send + Sync>,
-    registry: Arc<EventRegistry>,
 }
 
 unsafe impl Send for EthereumHostL1 {}
@@ -39,7 +38,7 @@ unsafe impl Sync for EthereumHostL1 {}
 
 impl EthereumHostL1 {
     #[instrument(skip_all)]
-    pub async fn new(ws_url: &str, registry: Arc<EventRegistry>) -> Result<Self, Error> {
+    pub async fn new(ws_url: &str) -> Result<Self, Error> {
         let ws = WsConnect::new(ws_url);
         let provider = ProviderBuilder::new()
             .on_ws(ws)
@@ -48,7 +47,6 @@ impl EthereumHostL1 {
 
         Ok(EthereumHostL1 {
             provider: Arc::new(provider),
-            registry,
         })
     }
 
