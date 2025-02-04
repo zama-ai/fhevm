@@ -1,8 +1,10 @@
 use anyhow::Result;
 use bigdecimal::num_bigint::BigInt;
 use tfhe::integer::bigint::StaticUnsignedBigInt;
+use tfhe::integer::ciphertext::BaseRadixCiphertext;
 use tfhe::integer::U256;
 use tfhe::prelude::{CiphertextList, FheDecrypt};
+use tfhe::shortint::Ciphertext;
 use tfhe::{CompressedCiphertextList, CompressedCiphertextListBuilder};
 
 use crate::utils::{safe_deserialize, safe_serialize};
@@ -385,6 +387,28 @@ impl SupportedFheCiphertexts {
             SupportedFheCiphertexts::FheBytes256(v) => (type_num, safe_serialize(v)),
             SupportedFheCiphertexts::Scalar(_) => {
                 panic!("we should never need to serialize scalar")
+            }
+        }
+    }
+
+    pub fn to_ciphertext64(self) -> BaseRadixCiphertext<Ciphertext> {
+        match self {
+            SupportedFheCiphertexts::FheBool(v) => {
+                BaseRadixCiphertext::from(vec![v.into_raw_parts()])
+            }
+            SupportedFheCiphertexts::FheUint4(v) => v.into_raw_parts().0,
+            SupportedFheCiphertexts::FheUint8(v) => v.into_raw_parts().0,
+            SupportedFheCiphertexts::FheUint16(v) => v.into_raw_parts().0,
+            SupportedFheCiphertexts::FheUint32(v) => v.into_raw_parts().0,
+            SupportedFheCiphertexts::FheUint64(v) => v.into_raw_parts().0,
+            SupportedFheCiphertexts::FheUint128(v) => v.into_raw_parts().0,
+            SupportedFheCiphertexts::FheUint160(v) => v.into_raw_parts().0,
+            SupportedFheCiphertexts::FheUint256(v) => v.into_raw_parts().0,
+            SupportedFheCiphertexts::FheBytes64(v) => v.into_raw_parts().0,
+            SupportedFheCiphertexts::FheBytes128(v) => v.into_raw_parts().0,
+            SupportedFheCiphertexts::FheBytes256(v) => v.into_raw_parts().0,
+            SupportedFheCiphertexts::Scalar(_) => {
+                panic!("scalar cannot be converted to regular ciphertext")
             }
         }
     }
