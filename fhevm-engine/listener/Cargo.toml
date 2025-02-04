@@ -11,11 +11,11 @@ bench = false
 
 [dependencies]
 # workspace dependencies
-alloy = { version = "=0.9.2", features = ["contract", "json", "providers", "provider-ws", "pubsub", "rpc-types", "sol-types"] }
-alloy-rpc-types = "=0.9.2"
-alloy-sol-types = "=0.8.19"
-alloy-primitives = "=0.8.19"
-alloy-provider = "=0.9.2"
+alloy = { version = "0.9", features = ["contract", "json", "providers", "provider-ws", "pubsub", "rpc-types", "sol-types"] }
+alloy-rpc-types = "0.11"
+alloy-sol-types = "0.8"
+alloy-primitives = "0.8"
+alloy-provider = "0.11"
 clap = { workspace = true }
 futures-util = "=0.3"
 serde = { workspace = true }

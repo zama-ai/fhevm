@@ -5,8 +5,8 @@ use std::time::Duration;
 use alloy::primitives::Address;
 use alloy::providers::{Provider, ProviderBuilder, RootProvider, WsConnect};
 use alloy::pubsub::{PubSubFrontend, SubscriptionStream};
-use alloy::rpc::types::{BlockNumberOrTag, Filter};
-use alloy_rpc_types::Log;
+use alloy::rpc::types::{BlockNumberOrTag, Filter, Log};
+
 use alloy_sol_types::SolEventInterface;
 
 use clap::Parser;
