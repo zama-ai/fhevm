@@ -1,10 +1,13 @@
 import { AppError, Task } from 'utils'
-import { Address } from '../entities/address.js'
+import { Web3Address } from '../entities/value-objects.js'
 
 export interface ContractService {
   getContractCreation(
     chainId: string,
-    address: Address,
-  ): Task<{ contractAddress: Address; creatorAddress: Address }, AppError>
-  getAbi(chainId: string, address: Address): Task<string, AppError>
+    address: Web3Address,
+  ): Task<
+    { contractAddress: Web3Address; creatorAddress: Web3Address },
+    AppError
+  >
+  getAbi(chainId: string, address: Web3Address): Task<string, AppError>
 }

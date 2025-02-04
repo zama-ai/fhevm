@@ -5,6 +5,7 @@ import { FheEventRepository } from '#domain/services/fhe-event.repository.js'
 import { AppError, PubSub, Subscriber, Task, UseCase } from 'utils'
 import { web3 } from 'messages'
 import { Logger } from '@nestjs/common'
+import { randomUUID } from 'crypto'
 
 export class FetchFHEEvents implements UseCase<ChainId, FheEvent[]> {
   private readonly logger = new Logger(FetchFHEEvents.name)
@@ -17,12 +18,11 @@ export class FetchFHEEvents implements UseCase<ChainId, FheEvent[]> {
     this.pubsub.subscribe('web3:fhe-event:requested', this.handleFheEvent)
   }
 
-  handleFheEvent: Subscriber<web3.Web3Event, 'web3:fhe-event:requested'> = (
+  handleFheEvent: Subscriber<web3.Web3Event> = (
     event,
-    payload,
   ): Task<void, AppError> => {
-    this.logger.log(`received ${event}: ${JSON.stringify(payload)}`)
-    return ChainId.fromString(payload.chainId)
+    this.logger.log(`received ${event}: ${JSON.stringify(event.payload)}`)
+    return ChainId.fromString(event.payload.chainId)
       .asyncChain(this.execute)
       .map<void>(() => void 0)
   }
@@ -40,12 +40,17 @@ export class FetchFHEEvents implements UseCase<ChainId, FheEvent[]> {
       )
       .tap(events => {
         events.forEach(event => {
-          const toPublish = web3.fheDetected({
-            address: event.callerAddress,
-            chainId: event.chainId,
-            name: event.name,
-            timestamp: event.timestamp,
-          })
+          const toPublish = web3.fheDetected(
+            {
+              address: event.callerAddress.value,
+              chainId: event.chainId.value,
+              name: event.name,
+              timestamp: event.timestamp.toISOString(),
+            },
+            {
+              correlationId: randomUUID(),
+            },
+          )
           this.logger.log(
             `publishing ${toPublish.type}: ${JSON.stringify(toPublish.payload)}`,
           )

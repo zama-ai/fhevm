@@ -26,7 +26,15 @@ export class PrismaFheEventRepository implements FheEventRepository {
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.fheEvent
         .create({
-          data: data.toJSON(),
+          data: {
+            chainId: data.chainId.value,
+            id: data.id.value,
+            name: data.name,
+            callerAddress: data.callerAddress.value,
+            blockNumber: data.blockNumber,
+            args: data.args,
+            timestamp: data.timestamp,
+          },
         })
         .then(resolve)
         .catch((err: unknown) => reject(unknownError(String(err))))

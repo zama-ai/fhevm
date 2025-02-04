@@ -2,9 +2,8 @@ import { Module } from '@nestjs/common'
 import { ClsModule } from 'nestjs-cls'
 import { PrismaClient } from '#prisma/client/index.js'
 import { PrismaService } from './prisma.service.js'
-import { FHE_EVENT_REPOSITORY } from '#domain/services/fhe-event.repository.js'
 import { PrismaFheEventRepository } from './repositories/prisma-fhe-event.repository.js'
-import { UNIT_OF_WORK } from '#constants.js'
+import { FHE_EVENT_REPOSITORY, UNIT_OF_WORK } from '#constants.js'
 
 @Module({
   imports: [

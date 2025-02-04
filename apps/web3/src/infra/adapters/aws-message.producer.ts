@@ -37,22 +37,15 @@ export class AwsMessageProducer implements MessageProducer {
     this.pubsub.subscribe('web3:*', this.handleWeb3Events)
   }
 
-  private handleWeb3Events: Subscriber<web3.Web3Event, 'web3:*'> = (
+  private handleWeb3Events: Subscriber<web3.Web3Event> = (
     event,
-    payload,
   ): Task<void, AppError> => {
-    switch (event as string) {
+    switch (event.type) {
       // Note: I need to improve the PubSub typing.
       // event should be an expanded of `web:*` and
       // payload should be narrowed to the right type
       case 'web3:fhe-event:detected':
-        return this.sendMessage<web3.Web3Event>({
-          type: 'web3:fhe-event:detected',
-          payload: payload as Extract<
-            web3.Web3Event,
-            { type: 'web3:fhe-event:fetched' }
-          >['payload'],
-        }).map<void>(() => void 0)
+        return this.sendMessage<web3.Web3Event>(event).map<void>(() => void 0)
 
       default:
         // Note: after improving PubSub typing,
@@ -83,7 +76,7 @@ export class AwsMessageProducer implements MessageProducer {
         .send(
           new SendMessageCommand({
             QueueUrl: this.#queueUrl,
-            DelaySeconds: message.meta?.delay as number | undefined,
+            DelaySeconds: message.$meta?.delay as number | undefined,
             MessageBody: JSON.stringify(message),
           }),
         )
