@@ -8,7 +8,7 @@ use fhevm_relayer::{
     ethereum::{ContractAndTopicsFilter, EthereumHostL1},
     // handlers_ethereum::handle_event,
     listeners_ethereum::event_listener,
-    orchestrator::{orchestrator::Orchestrator, traits::HandleRegistry, TokioEventDispatcher},
+    orchestrator::{orchestrator::Orchestrator, traits::HandlerRegistry, TokioEventDispatcher},
     relayer_event::RelayerEvent,
 };
 

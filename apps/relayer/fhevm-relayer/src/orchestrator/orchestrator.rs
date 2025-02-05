@@ -1,11 +1,11 @@
 use crate::orchestrator::traits::Event;
-use crate::orchestrator::traits::{Dispatcher, HandleRegistry};
+use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::v1::{Context, Timestamp};
 use uuid::Uuid;
 
-pub struct Orchestrator<D: Dispatcher<E> + HandleRegistry<E>, E: Event> {
+pub struct Orchestrator<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> {
     /// Used for generation UUIDs to uniquely identify incoming requests.
     /// TODO: Document more details.
     pub uuid_generator: Arc<UuidGenerator>,
@@ -15,7 +15,7 @@ pub struct Orchestrator<D: Dispatcher<E> + HandleRegistry<E>, E: Event> {
     _marker: std::marker::PhantomData<E>,
 }
 
-impl<D: Dispatcher<E> + HandleRegistry<E>, E: Event> Orchestrator<D, E> {
+impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> Orchestrator<D, E> {
     pub fn new(event_dispatcher: Arc<D>, node_id: &[u8]) -> Self {
         Self {
             uuid_generator: Arc::new(UuidGenerator::new(

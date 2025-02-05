@@ -1,4 +1,4 @@
-use super::traits::{Dispatcher, HandleRegistry};
+use super::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::traits::Event;
 use crate::orchestrator::traits::EventHandler;
 use anyhow::Error;
@@ -37,14 +37,14 @@ impl<E: Event> TokioEventDispatcher<E> {
 }
 
 #[async_trait]
-impl<E: Event> Dispatcher<E> for TokioEventDispatcher<E> {
+impl<E: Event> EventDispatcher<E> for TokioEventDispatcher<E> {
     async fn dispatch(&self, event: E) -> Result<(), Error> {
         self.handle_event(event);
         Ok(())
     }
 }
 
-impl<E: Event> HandleRegistry<E> for TokioEventDispatcher<E> {
+impl<E: Event> HandlerRegistry<E> for TokioEventDispatcher<E> {
     fn register_handler(&self, event_id: u8, handler: Arc<dyn EventHandler<E>>) {
         self.suscribers.insert(event_id, handler);
     }

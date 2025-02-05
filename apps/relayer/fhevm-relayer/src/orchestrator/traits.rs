@@ -10,7 +10,7 @@ pub trait Event: Clone + Send + Sync {
 }
 
 #[async_trait]
-pub trait Dispatcher<E: Event>: Send + Sync {
+pub trait EventDispatcher<E: Event>: Send + Sync {
     async fn dispatch(&self, event: E) -> Result<(), Error>;
 }
 
@@ -19,7 +19,7 @@ pub trait EventHandler<E: Event>: Send + Sync {
     fn handle(&self, event: E);
 }
 
-pub trait HandleRegistry<E: Event> {
+pub trait HandlerRegistry<E: Event> {
     fn register_handler(&self, event_id: u8, handler: Arc<dyn EventHandler<E>>);
     fn register_once_handler(
         &self,

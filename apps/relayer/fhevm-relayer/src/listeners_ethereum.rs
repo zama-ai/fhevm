@@ -1,7 +1,7 @@
 use tracing::info;
 
 use crate::orchestrator::orchestrator::UuidGenerator;
-use crate::orchestrator::traits::Dispatcher;
+use crate::orchestrator::traits::EventDispatcher;
 use crate::orchestrator::TokioEventDispatcher;
 use crate::relayer_event::{self, RelayerEvent};
 use alloy::rpc::types::Log;
