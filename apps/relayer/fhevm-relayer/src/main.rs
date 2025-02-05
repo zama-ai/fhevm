@@ -8,10 +8,6 @@ use fhevm_relayer::ethereum::provider::{DecryptionOracle, GatewayContract, TFHEE
 
 use fhevm_relayer::{
     config::settings::{LogConfig, Settings},
-    event::{
-        processors::{tfhe_executor::TfheExecutorEventHandler, DecryptionOracleEventHandler},
-        registry::EventRegistry,
-    },
     service::{extract_event_signature, ContractAndTopicsFilter, EthereumHostL1},
 };
 use futures_util::StreamExt;
@@ -42,18 +38,6 @@ async fn main() -> eyre::Result<()> {
         ?settings.network.ws_url,
         "Initialized contract addresses"
     );
-
-    // Create and configure the event registry
-    // let registry = Arc::new(EventRegistry::new());
-    // registry.register_contract(decryption_oracle_address);
-    // registry.register_contract(tfhe_executor_address);
-
-    // // Create and register event processors
-    // let tfhe_executor = TfheExecutorEventHandler::new();
-    // registry.register_event(tfhe_executor_address, tfhe_executor);
-
-    // let decryption_oracle_executor = DecryptionOracleEventHandler;
-    // registry.register_event(decryption_oracle_address, decryption_oracle_executor);
 
     // Create the real event handler for WebSocket connection
     let event_handler = EthereumHostL1::new(&settings.network.ws_url)
