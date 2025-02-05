@@ -1,7 +1,10 @@
 use alloy::primitives::Address;
+use alloy_sol_types::SolEvent;
 use std::{str::FromStr, sync::Arc};
 use tracing::{error, info};
 use tracing_subscriber::{fmt::SubscriberBuilder, EnvFilter};
+
+use fhevm_relayer::ethereum::provider::{DecryptionOracle, GatewayContract, TFHEExecutor};
 
 use fhevm_relayer::{
     config::settings::{LogConfig, Settings},
@@ -9,7 +12,7 @@ use fhevm_relayer::{
         processors::{tfhe_executor::TfheExecutorEventHandler, DecryptionOracleEventHandler},
         registry::EventRegistry,
     },
-    service::{ContractAndTopicsFilter, EthereumHostL1},
+    service::{extract_event_signature, ContractAndTopicsFilter, EthereumHostL1},
 };
 use futures_util::StreamExt;
 
@@ -41,16 +44,16 @@ async fn main() -> eyre::Result<()> {
     );
 
     // Create and configure the event registry
-    let registry = Arc::new(EventRegistry::new());
-    registry.register_contract(decryption_oracle_address);
-    registry.register_contract(tfhe_executor_address);
+    // let registry = Arc::new(EventRegistry::new());
+    // registry.register_contract(decryption_oracle_address);
+    // registry.register_contract(tfhe_executor_address);
 
-    // Create and register event processors
-    let tfhe_executor = TfheExecutorEventHandler::new();
-    registry.register_event(tfhe_executor_address, tfhe_executor);
+    // // Create and register event processors
+    // let tfhe_executor = TfheExecutorEventHandler::new();
+    // registry.register_event(tfhe_executor_address, tfhe_executor);
 
-    let decryption_oracle_executor = DecryptionOracleEventHandler;
-    registry.register_event(decryption_oracle_address, decryption_oracle_executor);
+    // let decryption_oracle_executor = DecryptionOracleEventHandler;
+    // registry.register_event(decryption_oracle_address, decryption_oracle_executor);
 
     // Create the real event handler for WebSocket connection
     let event_handler = EthereumHostL1::new(&settings.network.ws_url)
@@ -68,7 +71,27 @@ async fn main() -> eyre::Result<()> {
         tokio::select! {
             event = subscription.next() => match event {
                 Some(event) => {
-                    info!(?event, "Received event");
+                    // info!(?event, "Received event");
+                    match extract_event_signature(&event)? {
+                        &GatewayContract::EventDecryption::SIGNATURE_HASH => {
+                            info!("{:?} {:?}", GatewayContract::EventDecryption::SIGNATURE, event.block_number)
+                        }
+                        &DecryptionOracle::DecryptionRequest::SIGNATURE_HASH => {
+                            info!("{:?} {:?}", DecryptionOracle::DecryptionRequest::SIGNATURE, event.block_number)
+                        }
+                        &TFHEExecutor::FheAdd::SIGNATURE_HASH => {
+                            info!("{:?} {:?}", TFHEExecutor::FheAdd::SIGNATURE, event.block_number)
+                        }
+                        &TFHEExecutor::FheSub::SIGNATURE_HASH => {
+                            info!("{:?} {:?}", TFHEExecutor::FheSub::SIGNATURE, event.block_number)
+                        }
+                        &Transfer::SIGNATURE_HASH => {
+                            info!("{:?} {:?}", Transfer::SIGNATURE, event.block_number)
+                        }
+                       _ => {
+                           // Ignore the event
+                       }
+                    }
                 }
                 None => {
                     info!("Subscription stream ended");
@@ -84,6 +107,13 @@ async fn main() -> eyre::Result<()> {
 
     info!("Shutdown complete");
     Ok(())
+}
+
+use alloy_sol_types::sol;
+// Define the Transfer event structure using alloy_sol_types
+sol! {
+    #[derive(Debug)]
+    event Transfer(address indexed from, address indexed to, uint256 value);
 }
 
 /// Initialize tracing based on configuration settings

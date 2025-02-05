@@ -1,4 +1,5 @@
 use crate::errors::Error;
+use crate::errors::EventProcessingError;
 use alloy::primitives::Address;
 use alloy::{
     providers::{Provider, ProviderBuilder, WsConnect},
@@ -101,8 +102,14 @@ impl EthereumHostL1 {
     //     filter: Filter,
     // ) -> Result<alloy::pubsub::SubscriptionStream<RpcLog>, Error> {
     // }
+}
 
-    // fn extract_event_topic(&self, log: &RpcLog) -> Option<String> {
-    //     log.inner.data.topics().first().map(|sig| sig.to_string())
-    // }
+pub fn extract_event_signature(
+    log: &RpcLog,
+) -> Result<&alloy::primitives::FixedBytes<32>, EventProcessingError> {
+    log.inner
+        .data
+        .topics()
+        .first()
+        .ok_or(EventProcessingError::MissingTopic)
 }
