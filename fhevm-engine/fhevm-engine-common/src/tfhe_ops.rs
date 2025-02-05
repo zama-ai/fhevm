@@ -1,7 +1,7 @@
 use crate::{
     keys::FhevmKeys,
     types::{
-        is_ebytes_type, FheOperationType, FhevmError, SupportedFheCiphertexts,
+        FheOperationType, FhevmError, SupportedFheCiphertexts,
         SupportedFheOperations,
     },
     utils::{safe_deserialize, safe_deserialize_conformant},
@@ -430,15 +430,12 @@ pub fn try_expand_ciphertext_list(
 // return output ciphertext type
 pub fn check_fhe_operand_types(
     fhe_operation: i32,
-    input_types: &[i16],
     input_handles: &[Vec<u8>],
     is_input_handle_scalar: &[bool],
-) -> Result<i16, FhevmError> {
+) -> Result<(), FhevmError> {
     let fhe_op: SupportedFheOperations = fhe_operation.try_into()?;
 
     assert_eq!(input_handles.len(), is_input_handle_scalar.len());
-    // TODO: figure out typing system with constants
-    let fhe_bool_type = 0;
 
     let scalar_operands = is_input_handle_scalar
         .iter()
@@ -489,28 +486,12 @@ pub fn check_fhe_operand_types(
     match fhe_op.op_type() {
         FheOperationType::Binary => {
             let expected_operands = 2;
-            if input_types.len() != expected_operands {
+            if input_handles.len() != expected_operands {
                 return Err(FhevmError::UnexpectedOperandCountForFheOperation {
                     fhe_operation,
                     fhe_operation_name: format!("{:?}", fhe_op),
                     expected_operands,
-                    got_operands: input_types.len(),
-                });
-            }
-
-            if !is_scalar && input_types[0] != input_types[1] {
-                return Err(FhevmError::FheOperationDoesntHaveUniformTypesAsInput {
-                    fhe_operation,
-                    fhe_operation_name: format!("{:?}", fhe_op),
-                    operand_types: input_types.to_vec(),
-                });
-            }
-
-            if input_types[0] == fhe_bool_type && !fhe_op.supports_bool_inputs() {
-                return Err(FhevmError::OperationDoesntSupportBooleanInputs {
-                    fhe_operation,
-                    fhe_operation_name: format!("{:?}", fhe_op),
-                    operand_type: fhe_bool_type,
+                    got_operands: input_handles.len(),
                 });
             }
 
@@ -529,54 +510,24 @@ pub fn check_fhe_operand_types(
                 }
             }
 
-            if is_ebytes_type(input_types[0]) {
-                if !fhe_op.supports_ebytes_inputs() {
-                    return Err(FhevmError::FheOperationDoesntSupportEbytesAsInput {
-                        lhs_handle: format!("0x{}", hex::encode(&input_handles[0])),
-                        rhs_handle: format!("0x{}", hex::encode(&input_handles[1])),
-                        fhe_operation,
-                        fhe_operation_name: format!("{:?}", fhe_op),
-                    });
-                }
-            }
-
             if fhe_op.is_comparison() {
-                return Ok(fhe_bool_type); // fhe bool type
+                return Ok(()); // fhe bool type
             }
 
-            return Ok(input_types[0]);
+            return Ok(());
         }
         FheOperationType::Unary => {
             let expected_operands = 1;
-            if input_types.len() != expected_operands {
+            if input_handles.len() != expected_operands {
                 return Err(FhevmError::UnexpectedOperandCountForFheOperation {
                     fhe_operation,
                     fhe_operation_name: format!("{:?}", fhe_op),
                     expected_operands,
-                    got_operands: input_types.len(),
+                    got_operands: input_handles.len(),
                 });
             }
 
-            if input_types[0] == fhe_bool_type && !fhe_op.supports_bool_inputs() {
-                return Err(FhevmError::OperationDoesntSupportBooleanInputs {
-                    fhe_operation,
-                    fhe_operation_name: format!("{:?}", fhe_op),
-                    operand_type: fhe_bool_type,
-                });
-            }
-
-            if is_ebytes_type(input_types[0]) {
-                if !fhe_op.supports_ebytes_inputs() {
-                    return Err(FhevmError::FheOperationDoesntSupportEbytesAsInput {
-                        lhs_handle: format!("0x{}", hex::encode(&input_handles[0])),
-                        rhs_handle: format!("0x{}", hex::encode(&input_handles[1])),
-                        fhe_operation,
-                        fhe_operation_name: format!("{:?}", fhe_op),
-                    });
-                }
-            }
-
-            return Ok(input_types[0]);
+            return Ok(());
         }
         FheOperationType::Other => {
             match &fhe_op {
@@ -584,46 +535,25 @@ pub fn check_fhe_operand_types(
                 // what about scalar compute?
                 SupportedFheOperations::FheIfThenElse => {
                     let expected_operands = 3;
-                    if input_types.len() != expected_operands {
+                    if input_handles.len() != expected_operands {
                         return Err(FhevmError::UnexpectedOperandCountForFheOperation {
                             fhe_operation,
                             fhe_operation_name: format!("{:?}", fhe_op),
                             expected_operands,
-                            got_operands: input_types.len(),
+                            got_operands: input_handles.len(),
                         });
                     }
 
-                    if input_types[0] != fhe_bool_type {
-                        return Err(FhevmError::FheIfThenElseUnexpectedOperandTypes {
-                            fhe_operation,
-                            fhe_operation_name: format!("{:?}", fhe_op),
-                            first_expected_operand_type: fhe_bool_type,
-                            first_expected_operand_type_name: "FheBool".to_string(),
-                            first_operand_type: input_types[0],
-                        });
-                    }
-
-                    if input_types[1] != input_types[2] {
-                        return Err(
-                            FhevmError::FheIfThenElseMismatchingSecondAndThirdOperatorTypes {
-                                fhe_operation,
-                                fhe_operation_name: format!("{:?}", fhe_op),
-                                second_operand_type: input_types[1],
-                                third_operand_type: input_types[2],
-                            },
-                        );
-                    }
-
-                    Ok(input_types[1])
+                    Ok(())
                 }
                 SupportedFheOperations::FheCast => {
                     let expected_operands = 2;
-                    if input_types.len() != expected_operands {
+                    if input_handles.len() != expected_operands {
                         return Err(FhevmError::UnexpectedOperandCountForFheOperation {
                             fhe_operation,
                             fhe_operation_name: format!("{:?}", fhe_op),
                             expected_operands,
-                            got_operands: input_types.len(),
+                            got_operands: input_handles.len(),
                         });
                     }
 
@@ -641,9 +571,7 @@ pub fn check_fhe_operand_types(
                                 );
                             }
 
-                            let output_type = op[0] as i32;
-                            validate_fhe_type(output_type)?;
-                            Ok(output_type as i16)
+                            Ok(())
                         }
                         (other_left, other_right) => {
                             let bool_to_op =
@@ -666,12 +594,12 @@ pub fn check_fhe_operand_types(
                 }
                 SupportedFheOperations::FheTrivialEncrypt => {
                     let expected_operands = 2;
-                    if input_types.len() != expected_operands {
+                    if input_handles.len() != expected_operands {
                         return Err(FhevmError::UnexpectedOperandCountForFheOperation {
                             fhe_operation,
                             fhe_operation_name: format!("{:?}", fhe_op),
                             expected_operands,
-                            got_operands: input_types.len(),
+                            got_operands: input_handles.len(),
                         });
                     }
 
@@ -694,19 +622,17 @@ pub fn check_fhe_operand_types(
                         );
                     }
 
-                    let output_type = op[0] as i32;
-                    validate_fhe_type(output_type)?;
-                    Ok(output_type as i16)
+                    Ok(())
                 }
                 SupportedFheOperations::FheRand => {
                     // counter and output type
                     let expected_operands = 2;
-                    if input_types.len() != expected_operands {
+                    if input_handles.len() != expected_operands {
                         return Err(FhevmError::UnexpectedOperandCountForFheOperation {
                             fhe_operation,
                             fhe_operation_name: format!("{:?}", fhe_op),
                             expected_operands,
-                            got_operands: input_types.len(),
+                            got_operands: input_handles.len(),
                         });
                     }
 
@@ -732,17 +658,17 @@ pub fn check_fhe_operand_types(
 
                     validate_fhe_type(rand_type[0] as i32)?;
 
-                    Ok(rand_type[0] as i16)
+                    Ok(())
                 }
                 SupportedFheOperations::FheRandBounded => {
                     // counter, bound and output type
                     let expected_operands = 3;
-                    if input_types.len() != expected_operands {
+                    if input_handles.len() != expected_operands {
                         return Err(FhevmError::UnexpectedOperandCountForFheOperation {
                             fhe_operation,
                             fhe_operation_name: format!("{:?}", fhe_op),
                             expected_operands,
-                            got_operands: input_types.len(),
+                            got_operands: input_handles.len(),
                         });
                     }
 
@@ -775,9 +701,7 @@ pub fn check_fhe_operand_types(
                         });
                     }
 
-                    validate_fhe_type(rand_type[0] as i32)?;
-
-                    Ok(rand_type[0] as i16)
+                    Ok(())
                 }
                 other => {
                     panic!("Unexpected branch: {:?}", other)

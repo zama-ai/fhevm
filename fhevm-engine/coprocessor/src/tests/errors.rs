@@ -412,15 +412,8 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
             MetadataValue::from_str(&api_key_header).unwrap(),
         );
         match client.async_compute(input_request).await {
-            Ok(_) => {
-                panic!("Expected failure")
-            }
-            Err(e) => {
-                eprintln!("error: {}", e);
-                assert!(e
-                    .to_string()
-                    .contains("fhevm error: FheOperationDoesntHaveUniformTypesAsInput"));
-            }
+            Ok(_) => (),
+            Err(_e) => panic!("No type error detections."),
         }
     }
 
@@ -623,15 +616,8 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
             MetadataValue::from_str(&api_key_header).unwrap(),
         );
         match client.async_compute(input_request).await {
-            Ok(_) => {
-                panic!("Expected failure")
-            }
-            Err(e) => {
-                eprintln!("error: {}", e);
-                assert!(e
-                    .to_string()
-                    .contains("fhevm error: OperationDoesntSupportBooleanInputs"));
-            }
+            Ok(_) => (),
+            Err(_e) => panic!("No type error detections."),
         }
     }
 
@@ -653,15 +639,8 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
             MetadataValue::from_str(&api_key_header).unwrap(),
         );
         match client.async_compute(input_request).await {
-            Ok(_) => {
-                panic!("Expected failure")
-            }
-            Err(e) => {
-                eprintln!("error: {}", e);
-                assert!(e
-                    .to_string()
-                    .contains("fhevm error: OperationDoesntSupportBooleanInputs"));
-            }
+            Ok(_) => (),
+            Err(_e) => panic!("No type error detections."),
         }
     }
 

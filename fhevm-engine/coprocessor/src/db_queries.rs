@@ -1,4 +1,3 @@
-use std::collections::{BTreeSet, HashMap};
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -58,52 +57,6 @@ pub async fn check_if_api_key_is_valid<T>(
     }
 }
 
-/// Returns ciphertext types
-pub async fn check_if_ciphertexts_exist_in_db(
-    mut cts: BTreeSet<Vec<u8>>,
-    tenant_id: i32,
-    pool: &sqlx::Pool<Postgres>,
-) -> Result<HashMap<Vec<u8>, i16>, CoprocessorError> {
-    let handles_to_check_in_db_vec = cts.iter().cloned().collect::<Vec<_>>();
-    let ciphertexts = query!(
-        r#"
-            -- existing computations
-            SELECT handle AS "handle!", ciphertext_type AS "ciphertext_type!"
-            FROM ciphertexts
-            WHERE tenant_id = $2
-            AND handle = ANY($1::BYTEA[])
-                UNION
-            -- pending computations
-            SELECT output_handle AS "handle!", output_type AS "ciphertext_type!"
-            FROM computations
-            WHERE tenant_id = $2
-            AND output_handle = ANY($1::BYTEA[])
-        "#,
-        &handles_to_check_in_db_vec,
-        tenant_id,
-    )
-    .fetch_all(pool)
-    .await
-    .map_err(Into::<CoprocessorError>::into)?;
-
-    let mut result = HashMap::with_capacity(cts.len());
-    for ct in ciphertexts {
-        assert!(cts.remove(&ct.handle), "any ciphertext selected must exist");
-        assert!(result
-            .insert(ct.handle.clone(), ct.ciphertext_type)
-            .is_none());
-    }
-
-    if !cts.is_empty() {
-        return Err(CoprocessorError::UnexistingInputCiphertextsFound(
-            cts.into_iter()
-                .map(|i| format!("0x{}", hex::encode(i)))
-                .collect(),
-        ));
-    }
-
-    Ok(result)
-}
 
 pub struct FetchTenantKeyResult {
     pub chain_id: i32,

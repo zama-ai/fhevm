@@ -4,7 +4,7 @@ use std::num::NonZeroUsize;
 use std::str::FromStr;
 
 use crate::db_queries::{
-    check_if_api_key_is_valid, check_if_ciphertexts_exist_in_db, fetch_tenant_server_key,
+    check_if_api_key_is_valid, fetch_tenant_server_key,
 };
 use crate::server::coprocessor::GenericResponse;
 use crate::types::{CoprocessorError, TfheTenantKeys};
@@ -626,22 +626,17 @@ impl CoprocessorService {
         let mut span = tracer.child_span("sort_computations_by_dependencies");
         // computations are now sorted based on dependencies or error should have
         // been returned if there's circular dependency
-        let (sorted_computations, handles_to_check_in_db) =
+        let (sorted_computations, _handles_to_check_in_db) =
             sort_computations_by_dependencies(&req.computations)?;
         span.end();
 
         // to insert to db
-        let mut span = tracer.child_span("check_if_ciphertexts_exist_in_db");
-        let mut ct_types =
-            check_if_ciphertexts_exist_in_db(handles_to_check_in_db, tenant_id, &self.pool).await?;
-        span.end();
         let mut computations_inputs: Vec<Vec<Vec<u8>>> =
             Vec::with_capacity(sorted_computations.len());
         let mut computations_outputs: Vec<Vec<u8>> = Vec::with_capacity(sorted_computations.len());
         let mut are_comps_scalar: Vec<bool> = Vec::with_capacity(sorted_computations.len());
         for comp in &sorted_computations {
             computations_outputs.push(comp.output_handle.clone());
-            let mut handle_types = Vec::with_capacity(comp.inputs.len());
             let mut is_computation_scalar = false;
             let mut this_comp_inputs: Vec<Vec<u8>> = Vec::with_capacity(comp.inputs.len());
             let mut is_scalar_op_vec: Vec<bool> = Vec::with_capacity(comp.inputs.len());
@@ -653,16 +648,11 @@ impl CoprocessorService {
                 if let Some(input) = &ih.input {
                     match input {
                         Input::InputHandle(ih) => {
-                            let ct_type = ct_types
-                                .get(ih)
-                                .expect("this must be found if operand is non scalar");
-                            handle_types.push(*ct_type);
                             this_comp_inputs.push(ih.clone());
                             is_scalar_op_vec.push(false);
                         }
                         Input::Scalar(sc) => {
                             is_computation_scalar = true;
-                            handle_types.push(-1);
                             this_comp_inputs.push(sc.clone());
                             is_scalar_op_vec.push(true);
                             assert!(idx == 1 || fhe_op.does_have_more_than_one_scalar(), "we should have checked earlier that only second operand can be scalar");
@@ -673,9 +663,8 @@ impl CoprocessorService {
 
             // check before we insert computation that it has
             // to succeed according to the type system
-            let output_type = check_fhe_operand_types(
+            check_fhe_operand_types(
                 comp.operation,
-                &handle_types,
                 &this_comp_inputs,
                 &is_scalar_op_vec,
             )
@@ -683,10 +672,6 @@ impl CoprocessorService {
 
             computations_inputs.push(this_comp_inputs);
             are_comps_scalar.push(is_computation_scalar);
-            // fill in types with output handles that are computed as we go
-            assert!(ct_types
-                .insert(comp.output_handle.clone(), output_type)
-                .is_none());
         }
 
         let mut tx_span = tracer.child_span("db_transaction");
@@ -698,9 +683,6 @@ impl CoprocessorService {
 
         let mut new_work_available = false;
         for (idx, comp) in sorted_computations.iter().enumerate() {
-            let output_type = ct_types
-                .get(&comp.output_handle)
-                .expect("we should have collected all output result types by now with check_fhe_operand_types");
             let fhe_operation: i16 = comp.operation.try_into().map_err(|_| {
                 CoprocessorError::FhevmError(FhevmError::UnknownFheOperation(comp.operation))
             })?;
@@ -717,18 +699,16 @@ impl CoprocessorService {
                         dependencies,
                         fhe_operation,
                         is_completed,
-                        is_scalar,
-                        output_type
+                        is_scalar
                     )
-                    VALUES($1, $2, $3, $4, false, $5, $6)
+                    VALUES($1, $2, $3, $4, false, $5)
                     ON CONFLICT (tenant_id, output_handle) DO NOTHING
                 ",
                 tenant_id,
                 comp.output_handle,
                 &computations_inputs[idx],
                 fhe_operation,
-                are_comps_scalar[idx],
-                output_type
+                are_comps_scalar[idx]
             )
             .execute(trx.as_mut())
             .await
