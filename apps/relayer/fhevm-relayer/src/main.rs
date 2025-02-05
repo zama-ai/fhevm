@@ -8,7 +8,7 @@ use fhevm_relayer::ethereum::provider::{DecryptionOracle, GatewayContract, TFHEE
 
 use fhevm_relayer::{
     config::settings::{LogConfig, Settings},
-    service::{extract_event_signature, ContractAndTopicsFilter, EthereumHostL1},
+    ethereum::handler::{extract_event_signature, ContractAndTopicsFilter, EthereumHostL1},
 };
 use futures_util::StreamExt;
 

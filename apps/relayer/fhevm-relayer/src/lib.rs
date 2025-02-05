@@ -3,8 +3,7 @@ pub mod config;
 pub mod errors;
 pub mod ethereum;
 pub mod orchestrator;
-pub mod service;
 
 // Re-export commonly used types
 pub use errors::Error;
-pub use service::handler::EthereumHostL1;
+pub use ethereum::handler::EthereumHostL1;
