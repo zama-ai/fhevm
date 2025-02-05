@@ -6,9 +6,9 @@ use alloy::{
     pubsub::PubSubFrontend,
     rpc::types::{BlockNumberOrTag, Filter, Log as RpcLog},
 };
-use futures_util::StreamExt;
+
 use std::sync::Arc;
-use tracing::{debug, info, instrument, warn};
+use tracing::{info, instrument};
 
 pub struct ContractAndTopicsFilter {
     contract_addresses: Vec<Address>,

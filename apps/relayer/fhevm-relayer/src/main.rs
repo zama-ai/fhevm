@@ -1,7 +1,7 @@
 use alloy::primitives::Address;
 use alloy_sol_types::SolEvent;
 use std::{str::FromStr, sync::Arc};
-use tracing::{error, info};
+use tracing::info;
 use tracing_subscriber::{fmt::SubscriberBuilder, EnvFilter};
 
 use fhevm_relayer::ethereum::provider::{DecryptionOracle, GatewayContract, TFHEExecutor};
