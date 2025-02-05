@@ -29,3 +29,9 @@ sol!(
     TFHEExecutor,
     "./artifacts/TFHEExecutor.json"
 );
+
+// Define the Transfer event structure using alloy_sol_types
+sol! {
+    #[derive(Debug)]
+    event Transfer(address indexed from, address indexed to, uint256 value);
+}

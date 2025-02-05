@@ -7,7 +7,7 @@ use tracing_subscriber::{fmt::SubscriberBuilder, EnvFilter};
 use fhevm_relayer::{
     config::settings::{LogConfig, Settings},
     ethereum::{
-        bindings::{DecryptionOracle, GatewayContract, TFHEExecutor},
+        bindings::{DecryptionOracle, GatewayContract, TFHEExecutor, Transfer},
         extract_event_signature, ContractAndTopicsFilter, EthereumHostL1,
     },
 };
@@ -114,13 +114,6 @@ pub fn handle_event(event: alloy::rpc::types::Log) -> Result<(), eyre::Error> {
         }
     }
     Ok(())
-}
-
-use alloy_sol_types::sol;
-// Define the Transfer event structure using alloy_sol_types
-sol! {
-    #[derive(Debug)]
-    event Transfer(address indexed from, address indexed to, uint256 value);
 }
 
 /// Initialize tracing based on configuration settings
