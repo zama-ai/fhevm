@@ -11,12 +11,12 @@ pub trait Event: Clone + Send + Sync {
 
 #[async_trait]
 pub trait EventDispatcher<E: Event>: Send + Sync {
-    async fn dispatch(&self, event: E) -> Result<(), Error>;
+    async fn dispatch_event(&self, event: E) -> Result<(), Error>;
 }
 
 #[async_trait]
 pub trait EventHandler<E: Event>: Send + Sync {
-    fn handle(&self, event: E);
+    fn handle_event(&self, event: E);
 }
 
 pub trait HandlerRegistry<E: Event> {

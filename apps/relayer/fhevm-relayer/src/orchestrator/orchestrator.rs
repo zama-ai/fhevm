@@ -35,8 +35,8 @@ impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> Orchestrator<D, E> {
 impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> EventDispatcher<E>
     for Orchestrator<D, E>
 {
-    async fn dispatch(&self, event: E) -> Result<(), Error> {
-        self.event_dispatcher.dispatch(event).await
+    async fn dispatch_event(&self, event: E) -> Result<(), Error> {
+        self.event_dispatcher.dispatch_event(event).await
     }
 }
 

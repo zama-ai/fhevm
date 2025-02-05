@@ -21,7 +21,7 @@ impl EthereumHostL1EventLogHandler {
 }
 
 impl EventHandler<RelayerEvent> for EthereumHostL1EventLogHandler {
-    fn handle(&self, event: relayer_event::RelayerEvent) {
+    fn handle_event(&self, event: relayer_event::RelayerEvent) {
         let eth_event_log: Log;
         match event.data {
             relayer_event::RelayerEventData::HostL1EventLogReceived { log: l } => eth_event_log = l,

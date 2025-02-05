@@ -32,7 +32,7 @@ pub async fn event_listener(
                             log: event_log,
                         },
                     );
-                    _ = orchestrator.dispatch(event).await; // TODO: Proper error handling and make it aync.
+                    _ = orchestrator.dispatch_event(event).await; // TODO: Proper error handling and make it aync.
                 }
                 None => {
                     info!("Subscription stream ended");

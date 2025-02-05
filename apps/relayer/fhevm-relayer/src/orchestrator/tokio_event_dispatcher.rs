@@ -26,10 +26,10 @@ impl<E: Event> TokioEventDispatcher<E> {
             .once_subscribers
             .remove(&(event.event_id(), event.request_id()))
         {
-            handler.handle(event.clone());
+            handler.handle_event(event.clone());
         } else if let Some(handler) = self.suscribers.get(&event.event_id()) {
             let handler = handler.clone();
-            handler.handle(event);
+            handler.handle_event(event);
         } else {
             // Log warning and ignore event.
         }
@@ -38,7 +38,7 @@ impl<E: Event> TokioEventDispatcher<E> {
 
 #[async_trait]
 impl<E: Event> EventDispatcher<E> for TokioEventDispatcher<E> {
-    async fn dispatch(&self, event: E) -> Result<(), Error> {
+    async fn dispatch_event(&self, event: E) -> Result<(), Error> {
         self.handle_event(event);
         Ok(())
     }
