@@ -1,4 +1,5 @@
-use super::traits::Event;
+use crate::orchestrator::event::traits::Event;
+use alloy::rpc::types::Log;
 use std::fmt::Display;
 use strum_macros::{AsRefStr, Display};
 use uuid::Uuid;
@@ -28,11 +29,12 @@ impl Event for RelayerEvent {
     //TODO: Replace boiler plate with macro based code.
     fn event_id(&self) -> u8 {
         match &self.data {
-            RelayerEventData::DecryptionRequestReceived { .. } => 0,
-            RelayerEventData::HttpzRequestSent { .. } => 1,
-            RelayerEventData::HttpzResponseReceived { .. } => 2,
-            RelayerEventData::DecryptionResultSent { .. } => 3,
-            RelayerEventData::DecryptionFailed { .. } => 4,
+            RelayerEventData::HostL1EventLogReceived { .. } => 0,
+            RelayerEventData::DecryptionRequestReceived { .. } => 1,
+            RelayerEventData::HttpzRequestSent { .. } => 2,
+            RelayerEventData::HttpzResponseReceived { .. } => 3,
+            RelayerEventData::DecryptionResultSent { .. } => 4,
+            RelayerEventData::DecryptionFailed { .. } => 5,
         }
     }
 
@@ -61,6 +63,9 @@ pub enum ApiCategory {
 
 #[derive(Clone, AsRefStr)]
 pub enum RelayerEventData {
+    HostL1EventLogReceived {
+        log: Log,
+    },
     DecryptionRequestReceived {
         ct_handle: String,
         operation: DecryptionType,
