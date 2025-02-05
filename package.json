@@ -8,7 +8,7 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "prettier:check": "prettier --check \"**/*.{js,json,md,sol,ts,yml}\"",
     "prettier:write": "prettier --write \"**/*.{js,json,md,sol,ts,yml}\"",
-    "lint:sol": "solhint --max-warnings 10 \"contracts/*.sol\""
+    "lint:sol": "solhint --max-warnings 10 \"contracts/**/*.sol\""
   },
   "keywords": [],
   "author": "",
