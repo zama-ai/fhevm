@@ -11,7 +11,7 @@ describe('back', () => {
           chainId: faker.string.numeric(5),
           address: faker.string.hexadecimal({ length: 40 }),
         },
-        $meta: {
+        meta: {
           correlationId: faker.string.uuid(),
         },
       } satisfies back.BackEvent
@@ -27,7 +27,7 @@ describe('back', () => {
           name: faker.string.alphanumeric(),
           timestamp: faker.date.past().toISOString(),
         },
-        $meta: {
+        meta: {
           correlationId: faker.string.uuid(),
         },
       } satisfies back.BackEvent

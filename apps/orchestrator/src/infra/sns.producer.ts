@@ -60,7 +60,7 @@ export class SnsProducer {
     'back:dapp:stats-requested': event => {
       this.logger.log(`back:dapp:stats-requested ➡️ web3:fhe-event:requested`)
       return this.sendMessage(
-        JSON.stringify(web3.fheRequested(event.payload, event.$meta)),
+        JSON.stringify(web3.fheRequested(event.payload, event.meta)),
       )
     },
 
@@ -75,7 +75,7 @@ export class SnsProducer {
               externalRef: id,
               ...props,
             },
-            event.$meta,
+            event.meta,
           ),
         ),
       )

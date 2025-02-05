@@ -50,7 +50,7 @@ describe('AppDeployment', () => {
         )
 
         expect(messages.length).toBe(1)
-        expect(messages[0].$meta).toEqual(meta)
+        expect(messages[0].meta).toEqual(meta)
       })
     })
   })
@@ -92,7 +92,7 @@ describe('AppDeployment', () => {
         )
 
         expect(messages.length).toBe(1)
-        expect(messages[0].$meta).toEqual(meta)
+        expect(messages[0].meta).toEqual(meta)
       })
 
       it('should ignore wrong identifier', () => {
@@ -151,7 +151,7 @@ describe('AppDeployment', () => {
         )
 
         expect(messages.length).toBe(1)
-        expect(messages[0].$meta).toEqual(meta)
+        expect(messages[0].meta).toEqual(meta)
       })
 
       it('should ignore wrong identifier', () => {
@@ -205,7 +205,7 @@ describe('AppDeployment', () => {
         )
 
         expect(messages.length).toBe(1)
-        expect(messages[0].$meta).toEqual(meta)
+        expect(messages[0].meta).toEqual(meta)
       })
 
       it('should ignore wrong identifier', () => {

@@ -65,7 +65,7 @@ export class AwsMessageProducer implements MessageProducer {
     T extends {
       type: string
       payload: any
-      $meta?: Record<string, string | number>
+      meta?: Record<string, string | number>
     },
   >(
     message: T,
@@ -73,12 +73,12 @@ export class AwsMessageProducer implements MessageProducer {
     this.logger.debug(`sendMessage: ${JSON.stringify(message)}`)
     return new Task((resolve, reject) =>
       // Note: think a better way to resend failed messages
-      message.$meta?.delay
+      message.meta?.delay
         ? this.#sqs
             .send(
               new SendMessageCommand({
                 QueueUrl: this.#queueUrl,
-                DelaySeconds: message.$meta.delay as number | undefined,
+                DelaySeconds: message.meta.delay as number | undefined,
                 MessageBody: JSON.stringify(message),
               }),
             )

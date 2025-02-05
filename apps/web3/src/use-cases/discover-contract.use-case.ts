@@ -29,7 +29,7 @@ export class DiscoverContract implements UseCase<Input, void> {
 
   execute({
     payload: { chainId, address, ...payload },
-    $meta,
+    meta,
   }: Input): Task<void, AppError> {
     return Web3Address.fromString(address)
       .asyncChain(address => this.service.getContractCreation(chainId, address))
@@ -41,7 +41,7 @@ export class DiscoverContract implements UseCase<Input, void> {
               contractAddress: data.contractAddress.value,
               creatorAddress: data.creatorAddress.value,
             },
-            $meta,
+            meta,
           ),
         ),
       )
@@ -54,20 +54,20 @@ export class DiscoverContract implements UseCase<Input, void> {
             `Failed to verify ${address} on chain ${chainId}: ${JSON.stringify(err)}`,
           )
 
-          const retry = Number($meta?.retry ?? 0)
-          const delay = Number($meta?.retry ?? 60)
+          const retry = Number(meta?.retry ?? 0)
+          const delay = Number(meta?.retry ?? 60)
 
           this.producer.produce(
             retry >= MAX_RETRY
               ? discoverSC(
                   { ...payload, address, chainId },
                   {
-                    ...$meta,
+                    ...meta,
                     retry: retry + 1,
                     delay: delay * RETRY_DELAY_RATIO,
                   },
                 )
-              : scDiscoveryFailed(payload, $meta),
+              : scDiscoveryFailed(payload, meta),
           )
         },
       })

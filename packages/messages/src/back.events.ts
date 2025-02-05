@@ -35,7 +35,7 @@ export const schema = z
   ])
   .and(
     z.object({
-      $meta: meta,
+      meta: meta,
     }),
   )
 export type BackEvent = z.infer<typeof schema>
@@ -47,11 +47,11 @@ export type BackEvent = z.infer<typeof schema>
  * @returns the factory function for the selected event
  */
 function factory<K extends keyof EventMap>(type: K) {
-  return function (payload: z.infer<EventMap[K]>['payload'], $meta: Meta) {
+  return function (payload: z.infer<EventMap[K]>['payload'], meta: Meta) {
     return {
       type: `back:${type}`,
       payload,
-      $meta,
+      meta,
     } as BackEvent
   }
 }
