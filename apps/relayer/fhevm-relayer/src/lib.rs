@@ -2,9 +2,11 @@
 pub mod config;
 pub mod errors;
 pub mod ethereum;
-pub mod handlers_ethereum; // TODO: Understand how to use crate level imports.
-pub mod listeners_ethereum; // TODO: Understand how to use crate level imports.
 pub mod orchestrator;
 
+// TODO: Understand how to use crate level imports.
+pub mod handlers_ethereum;
+pub mod listeners_ethereum;
+pub mod relayer_event;
 // Re-export commonly used types
 pub use errors::Error;
