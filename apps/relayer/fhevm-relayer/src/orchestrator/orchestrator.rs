@@ -108,7 +108,7 @@ mod tests {
         orchestrator
             .event_dispatcher
             .register_handler(event.event_id(), handler);
-        orchestrator.event_dispatcher.dispatch(event).await;
+        _ = orchestrator.event_dispatcher.dispatch(event).await;
         tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
     }
 }
