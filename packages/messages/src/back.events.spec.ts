@@ -26,6 +26,7 @@ describe('back', () => {
           address: faker.string.hexadecimal({ length: 40 }),
           name: faker.string.alphanumeric(),
           timestamp: faker.date.past().toISOString(),
+          externalRef: faker.string.alphanumeric(10),
         },
         meta: {
           correlationId: faker.string.uuid(),
@@ -60,6 +61,7 @@ describe('back', () => {
           address: faker.string.hexadecimal({ length: 40 }),
           name: faker.string.alphanumeric(),
           timestamp: faker.date.past().toISOString(),
+          externalRef: faker.string.alphanumeric(10),
         },
         {
           correlationId: faker.string.uuid(),

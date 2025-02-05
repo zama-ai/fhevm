@@ -22,6 +22,7 @@ describe('web3', () => {
       const event = {
         type: 'web3:fhe-event:detected',
         payload: {
+          id: faker.string.alphanumeric(),
           chainId: faker.string.numeric(5),
           address: faker.string.hexadecimal({ length: 40 }),
           name: faker.string.alphanumeric(),
@@ -56,6 +57,7 @@ describe('web3', () => {
     test('returns a valid `web3:fhe-event:detected`', () => {
       const event = web3.fheDetected(
         {
+          id: faker.string.alphanumeric(10),
           chainId: faker.string.numeric(5),
           address: faker.string.hexadecimal({ length: 40 }),
           name: faker.string.alphanumeric(),
