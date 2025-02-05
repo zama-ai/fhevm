@@ -116,7 +116,7 @@ spec:
         {{- end }}
         {{- end }}
         {{- end }}
-        - image: {{ .Values.kmsCore.image.name }}:{{ .Values.kmsCore.image.tag }}
+        - image: {{ .Values.kmsCore.image.name }}:nightly-37785f0
           name: {{ include "kmsCoreName" . }}-gen-keys
           command:
             - /bin/sh

@@ -40,7 +40,7 @@ data:
     {{- end }}
     {{- end }}
 
-    {{- if .Values.kmsCore.envFrom.configmap.name }}
+    {{- if not .Values.kmsCore.envFrom.configmap.name }}
     [public_vault]
     storage = {{ include "kmsPublicVaultStorage" . | quote }}
 
