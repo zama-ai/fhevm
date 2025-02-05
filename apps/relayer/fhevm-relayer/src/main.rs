@@ -8,7 +8,7 @@ use fhevm_relayer::{
     ethereum::{ContractAndTopicsFilter, EthereumHostL1},
     // handlers_ethereum::handle_event,
     listeners_ethereum::event_listener,
-    orchestrator::{orchestrator::Orchestrator, traits::HandlerRegistry, TokioEventDispatcher},
+    orchestrator::{traits::HandlerRegistry, Orchestrator, TokioEventDispatcher},
     relayer_event::RelayerEvent,
 };
 
@@ -48,9 +48,7 @@ async fn main() -> eyre::Result<()> {
     // === Register the event handlers
     let host_l1_event_log_handler =
         Arc::new(fhevm_relayer::handlers_ethereum::EthereumHostL1EventLogHandler::new());
-    orchestrator
-        .event_dispatcher
-        .register_handler(0, host_l1_event_log_handler);
+    orchestrator.register_handler(0, host_l1_event_log_handler);
 
     // === Initialize Ethereum host L1 adapter
     let host_l1 = EthereumHostL1::new(&settings.network.ws_url)
@@ -65,11 +63,7 @@ async fn main() -> eyre::Result<()> {
         vec![],
     );
     let subscription = host_l1.new_subscription(filter, None).await?;
-    tokio::spawn(event_listener(
-        subscription,
-        Arc::clone(&dispatcher),
-        Arc::clone(&orchestrator.uuid_generator),
-    ));
+    tokio::spawn(event_listener(subscription, Arc::clone(&orchestrator)));
 
     // === Wait for ctrl + c signal to stop the application
     tokio::signal::ctrl_c().await?;
