@@ -1,5 +1,5 @@
-use crate::orchestrator::event::traits::Event;
-use crate::orchestrator::event_dispatcher::traits::{Dispatcher, HandleRegistry};
+use crate::orchestrator::traits::Event;
+use crate::orchestrator::traits::{Dispatcher, HandleRegistry};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::v1::{Context, Timestamp};

@@ -1,18 +1,18 @@
 use super::traits::{Dispatcher, HandleRegistry};
-use crate::orchestrator::event::traits::Event;
-use crate::orchestrator::event_dispatcher::traits::EventHandler;
+use crate::orchestrator::traits::Event;
+use crate::orchestrator::traits::EventHandler;
 use anyhow::Error;
 use async_trait::async_trait;
 use dashmap::DashMap;
 use std::sync::Arc;
 use uuid::Uuid;
 
-pub struct TokioDispatcher<E: Event> {
+pub struct TokioEventDispatcher<E: Event> {
     once_subscribers: Arc<DashMap<(u8, Uuid), Arc<dyn EventHandler<E>>>>,
     suscribers: Arc<DashMap<u8, Arc<dyn EventHandler<E>>>>,
 }
 
-impl<E: Event> TokioDispatcher<E> {
+impl<E: Event> TokioEventDispatcher<E> {
     pub fn new() -> Self {
         Self {
             once_subscribers: Arc::new(DashMap::new()),
@@ -37,14 +37,14 @@ impl<E: Event> TokioDispatcher<E> {
 }
 
 #[async_trait]
-impl<E: Event> Dispatcher<E> for TokioDispatcher<E> {
+impl<E: Event> Dispatcher<E> for TokioEventDispatcher<E> {
     async fn dispatch(&self, event: E) -> Result<(), Error> {
         self.handle_event(event);
         Ok(())
     }
 }
 
-impl<E: Event> HandleRegistry<E> for TokioDispatcher<E> {
+impl<E: Event> HandleRegistry<E> for TokioEventDispatcher<E> {
     fn register_handler(&self, event_id: u8, handler: Arc<dyn EventHandler<E>>) {
         self.suscribers.insert(event_id, handler);
     }

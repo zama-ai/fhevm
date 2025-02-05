@@ -1,3 +1,6 @@
-pub mod event;
-pub mod event_dispatcher;
+pub mod traits;
+
 pub mod orchestrator;
+
+mod tokio_event_dispatcher;
+pub use tokio_event_dispatcher::TokioEventDispatcher;

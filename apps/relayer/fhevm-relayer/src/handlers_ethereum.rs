@@ -5,7 +5,7 @@ use crate::{
         bindings::{DecryptionOracle, GatewayContract, TFHEExecutor, Transfer},
         extract_event_signature,
     },
-    orchestrator::event_dispatcher::traits::EventHandler,
+    orchestrator::traits::EventHandler,
     relayer_event::{self, RelayerEvent},
 };
 use alloy::rpc::types::Log;

@@ -1,8 +1,8 @@
 use tracing::info;
 
-use crate::orchestrator::event_dispatcher::tokio_dispatcher::TokioDispatcher;
-use crate::orchestrator::event_dispatcher::traits::Dispatcher;
 use crate::orchestrator::orchestrator::UuidGenerator;
+use crate::orchestrator::traits::Dispatcher;
+use crate::orchestrator::TokioEventDispatcher;
 use crate::relayer_event::{self, RelayerEvent};
 use alloy::rpc::types::Log;
 use futures_util::StreamExt;
@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 pub async fn event_listener(
     mut subscription: alloy::pubsub::SubscriptionStream<Log>,
-    dispatcher: Arc<TokioDispatcher<RelayerEvent>>,
+    dispatcher: Arc<TokioEventDispatcher<RelayerEvent>>,
     uuid_generator: Arc<UuidGenerator>,
 ) {
     loop {

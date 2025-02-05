@@ -8,10 +8,7 @@ use fhevm_relayer::{
     ethereum::{ContractAndTopicsFilter, EthereumHostL1},
     // handlers_ethereum::handle_event,
     listeners_ethereum::event_listener,
-    orchestrator::{
-        event_dispatcher::{tokio_dispatcher::TokioDispatcher, traits::HandleRegistry},
-        orchestrator::Orchestrator,
-    },
+    orchestrator::{orchestrator::Orchestrator, traits::HandleRegistry, TokioEventDispatcher},
     relayer_event::RelayerEvent,
 };
 
@@ -45,7 +42,7 @@ async fn main() -> eyre::Result<()> {
 
     // === Intialize the orchestrator.
     let node_id = [0x01, 0x23, 0x45, 0x67, 0x89, 0xab];
-    let dispatcher = Arc::new(TokioDispatcher::<RelayerEvent>::new());
+    let dispatcher = Arc::new(TokioEventDispatcher::<RelayerEvent>::new());
     let orchestrator = Orchestrator::new(Arc::clone(&dispatcher), &node_id);
 
     // === Register the event handlers
