@@ -8,10 +8,16 @@ use fhevm_relayer::{
     ethereum::{ContractAndTopicsFilter, EthereumHostL1},
     // handlers_ethereum::handle_event,
     listeners_ethereum::event_listener,
+    orchestrator::{
+        event_dispatcher::{tokio_dispatcher::TokioDispatcher, traits::HandleRegistry},
+        orchestrator::Orchestrator,
+    },
+    relayer_event::RelayerEvent,
 };
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
+    // === Initialize settings
     let settings =
         Settings::new().map_err(|e| eyre::eyre!("Failed to load configuration: {}", e))?;
 
@@ -37,18 +43,38 @@ async fn main() -> eyre::Result<()> {
         "Initialized contract addresses"
     );
 
+    // === Intialize the orchestrator.
+    let node_id = [0x01, 0x23, 0x45, 0x67, 0x89, 0xab];
+    let dispatcher = Arc::new(TokioDispatcher::<RelayerEvent>::new());
+    let orchestrator = Orchestrator::new(Arc::clone(&dispatcher), &node_id);
+
+    // === Register the event handlers
+    let host_l1_event_log_handler =
+        Arc::new(fhevm_relayer::handlers_ethereum::EthereumHostL1EventLogHandler::new());
+    orchestrator
+        .event_dispatcher
+        .register_handler(0, host_l1_event_log_handler);
+
+    // === Initialize Ethereum host L1 adapter
     let host_l1 = EthereumHostL1::new(&settings.network.ws_url)
         .await
         .map_err(|e| eyre::eyre!("Failed to create event handler: {}", e))?;
     let host_l1 = Arc::new(host_l1);
 
+    // === Create a subscription for events and spawn a listener to listen for events from the subcription.
+    // TODO: Pass the event_dispatcher to the event_listener
     let filter = ContractAndTopicsFilter::new(
         vec![decryption_oracle_address, tfhe_executor_address],
         vec![],
     );
     let subscription = host_l1.new_subscription(filter, None).await?;
-    tokio::spawn(event_listener(subscription));
+    tokio::spawn(event_listener(
+        subscription,
+        Arc::clone(&dispatcher),
+        Arc::clone(&orchestrator.uuid_generator),
+    ));
 
+    // === Wait for ctrl + c signal to stop the application
     tokio::signal::ctrl_c().await?;
     info!("Received ctrl + c signal, stopping...");
     Ok(())
