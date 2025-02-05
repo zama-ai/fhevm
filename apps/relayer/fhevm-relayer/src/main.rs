@@ -4,11 +4,12 @@ use std::{str::FromStr, sync::Arc};
 use tracing::info;
 use tracing_subscriber::{fmt::SubscriberBuilder, EnvFilter};
 
-use fhevm_relayer::ethereum::provider::{DecryptionOracle, GatewayContract, TFHEExecutor};
-
 use fhevm_relayer::{
     config::settings::{LogConfig, Settings},
-    ethereum::handler::{extract_event_signature, ContractAndTopicsFilter, EthereumHostL1},
+    ethereum::{
+        bindings::{DecryptionOracle, GatewayContract, TFHEExecutor},
+        extract_event_signature, ContractAndTopicsFilter, EthereumHostL1,
+    },
 };
 use futures_util::StreamExt;
 

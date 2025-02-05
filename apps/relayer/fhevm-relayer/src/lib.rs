@@ -6,4 +6,3 @@ pub mod orchestrator;
 
 // Re-export commonly used types
 pub use errors::Error;
-pub use ethereum::handler::EthereumHostL1;
