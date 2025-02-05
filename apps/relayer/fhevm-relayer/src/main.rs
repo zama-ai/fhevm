@@ -1,17 +1,14 @@
 use alloy::primitives::Address;
-use alloy_sol_types::SolEvent;
 use std::{str::FromStr, sync::Arc};
 use tracing::info;
 use tracing_subscriber::{fmt::SubscriberBuilder, EnvFilter};
 
 use fhevm_relayer::{
     config::settings::{LogConfig, Settings},
-    ethereum::{
-        bindings::{DecryptionOracle, GatewayContract, TFHEExecutor, Transfer},
-        extract_event_signature, ContractAndTopicsFilter, EthereumHostL1,
-    },
+    ethereum::{ContractAndTopicsFilter, EthereumHostL1},
+    // handlers_ethereum::handle_event,
+    listeners_ethereum::event_listener,
 };
-use futures_util::StreamExt;
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
@@ -40,79 +37,20 @@ async fn main() -> eyre::Result<()> {
         "Initialized contract addresses"
     );
 
-    // Create the real event handler for WebSocket connection
-    let event_handler = EthereumHostL1::new(&settings.network.ws_url)
+    let host_l1 = EthereumHostL1::new(&settings.network.ws_url)
         .await
         .map_err(|e| eyre::eyre!("Failed to create event handler: {}", e))?;
-    let event_handler = Arc::new(event_handler);
+    let host_l1 = Arc::new(host_l1);
+
     let filter = ContractAndTopicsFilter::new(
         vec![decryption_oracle_address, tfhe_executor_address],
         vec![],
     );
-    let mut subscription = event_handler.new_subscription(filter, None).await?;
+    let subscription = host_l1.new_subscription(filter, None).await?;
+    tokio::spawn(event_listener(subscription));
 
-    // Spawn the event listener
-    loop {
-        let ethereum_events_listener = tokio::select! {
-            event = subscription.next() => match event {
-                Some(event) => {
-                    handle_event(event).unwrap();
-                    // info!(?event, "Received event");
-                }
-                None => {
-                    info!("Subscription stream ended");
-                    break;
-                }
-            },
-            _ = tokio::signal::ctrl_c() => {
-                info!("Received ctrl + c signal, stopping...");
-                break;
-            }
-        };
-        ethereum_events_listener
-    }
-
-    info!("Shutdown complete");
-    Ok(())
-}
-
-pub fn handle_event(event: alloy::rpc::types::Log) -> Result<(), eyre::Error> {
-    match extract_event_signature(&event)? {
-        &GatewayContract::EventDecryption::SIGNATURE_HASH => {
-            info!(
-                "{:?} {:?}",
-                GatewayContract::EventDecryption::SIGNATURE,
-                event.block_number
-            )
-        }
-        &DecryptionOracle::DecryptionRequest::SIGNATURE_HASH => {
-            info!(
-                "{:?} {:?}",
-                DecryptionOracle::DecryptionRequest::SIGNATURE,
-                event.block_number
-            )
-        }
-        &TFHEExecutor::FheAdd::SIGNATURE_HASH => {
-            info!(
-                "{:?} {:?}",
-                TFHEExecutor::FheAdd::SIGNATURE,
-                event.block_number
-            )
-        }
-        &TFHEExecutor::FheSub::SIGNATURE_HASH => {
-            info!(
-                "{:?} {:?}",
-                TFHEExecutor::FheSub::SIGNATURE,
-                event.block_number
-            )
-        }
-        &Transfer::SIGNATURE_HASH => {
-            info!("{:?} {:?}", Transfer::SIGNATURE, event.block_number)
-        }
-        _ => {
-            // Ignore the event
-        }
-    }
+    tokio::signal::ctrl_c().await?;
+    info!("Received ctrl + c signal, stopping...");
     Ok(())
 }
 
