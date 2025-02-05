@@ -1,0 +1,61 @@
+name: Rust tests
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/cargo-tests.yml
+      - fhevm-engine/**
+      - proto/**
+
+jobs:
+  cargo-tests:
+    permissions:
+      contents: "read"
+      id-token: "write"
+      packages: "write"
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [1.82.0]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      with:
+        lfs: true
+
+    - name: Checkout LFS objects
+      run: git lfs checkout
+
+    - name: Set up Rust
+      uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
+      with:
+        toolchain: ${{ matrix.rust }}
+        profile: minimal
+        override: true
+
+    - name: Install cargo dependencies
+      run: |
+        sudo apt-get install -y protobuf-compiler && \
+        cargo install sqlx-cli
+
+    - name: Cache cargo
+      uses: actions/cache@6849a6489940f00c2f30c0fb92c6274307ccb58a # v4.1.2
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: ${{ runner.os }}-cargo-
+
+    - name: Init database
+      run: make init_db
+      working-directory: fhevm-engine/coprocessor
+
+    - name: Run tests
+      run: |
+        DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor cargo test --release -- --test-threads=1
+      working-directory: fhevm-engine
