@@ -8,7 +8,7 @@ use uuid::Uuid;
 pub struct Orchestrator<D: Dispatcher<E> + HandleRegistry<E>, E: Event> {
     /// Used for generation UUIDs to uniquely identify incoming requests.
     /// TODO: Document more details.
-    pub uuid_generator: UuidGenerator,
+    pub uuid_generator: Arc<UuidGenerator>,
 
     pub event_dispatcher: Arc<D>,
 
@@ -18,7 +18,10 @@ pub struct Orchestrator<D: Dispatcher<E> + HandleRegistry<E>, E: Event> {
 impl<D: Dispatcher<E> + HandleRegistry<E>, E: Event> Orchestrator<D, E> {
     pub fn new(event_dispatcher: Arc<D>, node_id: &[u8]) -> Self {
         Self {
-            uuid_generator: UuidGenerator::new(node_id, DEFAULT_UUID_CONTEXT_INITIAL_VALUE),
+            uuid_generator: Arc::new(UuidGenerator::new(
+                node_id,
+                DEFAULT_UUID_CONTEXT_INITIAL_VALUE,
+            )),
             event_dispatcher,
             _marker: std::marker::PhantomData,
         }
