@@ -116,7 +116,7 @@ spec:
         {{- end }}
         {{- end }}
         {{- end }}
-        - image: {{ .Values.kmsCore.image.name }}:nightly-37785f0
+        - image: {{ .Values.kmsCore.image.name }}:{{ .Values.kmsCore.image.tag }}
           name: {{ include "kmsCoreName" . }}-gen-keys
           command:
             - /bin/sh
@@ -161,9 +161,11 @@ spec:
             - configMapRef:
                 name: {{ .Values.kmsCore.envFrom.configmap.name }}
           {{- end }}
+          {{- if not .Values.kmsCore.privateVault.s3.enabled }}
           volumeMounts:
             - mountPath: /keys
               name: keys
+          {{- end }}
           resources:
             requests:
               memory: {{ .Values.kmsCore.resources.requests.memory }}
@@ -229,8 +231,10 @@ spec:
               name: workdir
             - mountPath: /var/lib/kms-core/config
               name: config-files
+            {{- if not .Values.kmsCore.privateVault.s3.enabled }}
             - mountPath: /keys
               name: keys
+            {{- end }}
             {{- if .Values.kmsCore.nitroEnclave.enabled }}
             - mountPath: /hugepages
               name: hugepage
@@ -302,6 +306,7 @@ spec:
             path: /dev/nitro_enclaves
             type: CharDevice
         {{- end }}
+  {{- if not .Values.kmsCore.privateVault.s3.enabled }}
   volumeClaimTemplates:
     - metadata:
         labels:
@@ -314,4 +319,5 @@ spec:
         resources:
           requests:
             storage: {{ .Values.kmsCore.storage.capacity }}
+  {{- end }}
 {{- end -}}
