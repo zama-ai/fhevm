@@ -3,10 +3,10 @@ import { PublishCommand, SNSClient } from '@aws-sdk/client-sns'
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { back, web3 } from 'messages'
-import { AppError, PubSub, Task, unknownError, type Subscriber } from 'utils'
+import { AppError, PubSub, Task, unknownError, type ISubscriber } from 'utils'
 
 type EventMap<TEvent extends back.BackEvent | web3.Web3Event> = {
-  [key in TEvent['type']]: Subscriber<Extract<TEvent, { type: key }>>
+  [key in TEvent['type']]: ISubscriber<Extract<TEvent, { type: key }>>
 }
 
 @Injectable()
@@ -82,11 +82,11 @@ export class SnsProducer {
     },
   }
 
-  handleEvent: Subscriber<back.BackEvent | web3.Web3Event> = (
+  handleEvent: ISubscriber<back.BackEvent | web3.Web3Event> = (
     event: back.BackEvent | web3.Web3Event,
   ): Task<void, AppError> => {
     // Note: improve tyiping to remove tha cast
-    const handler = this.handlers[event.type] as Subscriber<
+    const handler = this.handlers[event.type] as ISubscriber<
       back.BackEvent | web3.Web3Event
     >
 

@@ -3,7 +3,7 @@ import { DAppStatId } from '#dapps/domain/entities/value-objects.js'
 import { DAppRepository } from '#dapps/domain/repositories/dapp.repository.js'
 import { Logger } from '@nestjs/common'
 import { back } from 'messages'
-import { AppError, PubSub, Subscriber, Task, UseCase } from 'utils'
+import { AppError, PubSub, type ISubscriber, Task, UseCase } from 'utils'
 
 type Input = {
   chainId: string
@@ -26,7 +26,7 @@ export class StoreDAppStats implements UseCase<Input, Output> {
     )
   }
 
-  private handleStatsAvailableEvent: Subscriber<back.BackEvent> = event => {
+  private handleStatsAvailableEvent: ISubscriber<back.BackEvent> = event => {
     // Note: I should receive only `back:dapp:stats-available` events but I
     // need to restrict the event type
     return event.type === 'back:dapp:stats-available'

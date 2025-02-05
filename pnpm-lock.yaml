@@ -630,6 +630,9 @@ importers:
         specifier: ^3.23.8
         version: 3.23.8
     devDependencies:
+      '@faker-js/faker':
+        specifier: ^9.3.0
+        version: 9.3.0
       '@nestjs/cli':
         specifier: ^10.0.0
         version: 10.4.8(@swc/core@1.10.1(@swc/helpers@0.5.15))
@@ -637,7 +640,7 @@ importers:
         specifier: ^10.0.0
         version: 10.2.3(chokidar@3.6.0)(typescript@5.6.3)
       '@nestjs/testing':
-        specifier: ^10.0.0
+        specifier: ^10.4.10
         version: 10.4.10(@nestjs/common@10.4.10(reflect-metadata@0.2.2)(rxjs@7.8.1))(@nestjs/core@10.4.10)(@nestjs/platform-express@10.4.10)
       '@types/express':
         specifier: ^5.0.0
@@ -699,6 +702,9 @@ importers:
       vitest:
         specifier: 'catalog:'
         version: 3.0.2(@types/node@20.17.14)(terser@5.36.0)
+      vitest-mock-extended:
+        specifier: ^2.0.2
+        version: 2.0.2(typescript@5.6.3)(vitest@3.0.2(@types/node@20.17.14)(terser@5.36.0))
 
   packages/messages:
     dependencies:

@@ -42,9 +42,10 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@faker-js/faker": "^9.3.0",
     "@nestjs/cli": "^10.0.0",
     "@nestjs/schematics": "^10.0.0",
-    "@nestjs/testing": "^10.0.0",
+    "@nestjs/testing": "^10.4.10",
     "@types/express": "^5.0.0",
     "@types/node": "^20.3.1",
     "@types/supertest": "^6.0.0",
@@ -64,7 +65,8 @@
     "typescript": "catalog:",
     "unplugin-swc": "catalog:",
     "vite-tsconfig-paths": "catalog:",
-    "vitest": "catalog:"
+    "vitest": "catalog:",
+    "vitest-mock-extended": "^2.0.2"
   },
   "imports": {
     "#prisma/client": "./dist/generated/client",

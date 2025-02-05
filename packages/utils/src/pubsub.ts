@@ -22,27 +22,36 @@ export type EventDescriptor<TEvent extends EventObject> =
   | PartialEventDescriptor<TEvent['type']>
   | '*'
 
-// export type Subscriber<
-//   TEvent extends EventObject,
-//   TType extends EventDescriptor<TEvent>,
-// > = (type: TType, payload: GetPayload<TEvent, TType>) => Task<void, AppError>
-export type Subscriber<
+export type ISubscriber<
   TEvent extends EventObject,
   // TType extends EventDescriptor<TEvent>,
 > = (event: TEvent /*, key: TType*/) => Task<void, AppError>
 
-type SubscriberMap<TEvent extends EventObject> = {
+type ISubscriberMap<TEvent extends EventObject> = {
   // [K in EventDescriptor<TEvent>]: Subscriber<TEvent, K>[]
-  [K in EventDescriptor<TEvent>]: Subscriber<TEvent>[]
+  [K in EventDescriptor<TEvent>]: ISubscriber<TEvent>[]
 }
 
-export class PubSub<TEvent extends EventObject> {
-  #subscribers: Partial<SubscriberMap<TEvent>> = {}
+export interface IPubSub<TEvent extends EventObject> {
+  subscribe<TKey extends EventDescriptor<TEvent>>(
+    descriptor: TKey,
+    subscriber: ISubscriber<TEvent>,
+  ): void
+
+  unsubscribe<TKey extends EventDescriptor<TEvent>>(
+    descriptor: TKey,
+    subscriber: ISubscriber<TEvent>,
+  ): void
+
+  publish(event: TEvent): Task<void, AppError>
+}
+
+export class PubSub<TEvent extends EventObject> implements IPubSub<TEvent> {
+  #subscribers: Partial<ISubscriberMap<TEvent>> = {}
 
   subscribe<TKey extends EventDescriptor<TEvent>>(
     descriptor: TKey,
-    // subscriber: Subscriber<TEvent, TKey>,
-    subscriber: Subscriber<TEvent>,
+    subscriber: ISubscriber<TEvent>,
   ) {
     if (!this.#subscribers[descriptor]) {
       this.#subscribers[descriptor] = []
@@ -52,8 +61,7 @@ export class PubSub<TEvent extends EventObject> {
 
   unsubscribe<TKey extends EventDescriptor<TEvent>>(
     descriptor: TKey,
-    // subscriber: Subscriber<TEvent, TKey>,
-    subscriber: Subscriber<TEvent>,
+    subscriber: ISubscriber<TEvent>,
   ) {
     this.#subscribers[descriptor] = this.#subscribers[descriptor]?.filter(
       s => s !== subscriber,
@@ -64,7 +72,7 @@ export class PubSub<TEvent extends EventObject> {
     // const handlers: Subscriber<TEvent, TEvent['type']>[] = Object.entries(
     //   this.#subscribers,
     // )
-    const handlers: Subscriber<TEvent>[] = Object.entries(this.#subscribers)
+    const handlers: ISubscriber<TEvent>[] = Object.entries(this.#subscribers)
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       .filter(([key, _handlers]) => {
         if (key === '*') {

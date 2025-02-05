@@ -3,7 +3,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common'
 import { isAppDeploymentCommand, web3 } from 'messages'
 import { SqsMessageHandler } from 'sqs'
 import { DiscoverContract } from '#use-cases/discover-contract.use-case.js'
-import { isAppError, PubSub } from 'utils'
+import { isAppError, type IPubSub } from 'utils'
 import { PUBSUB } from '#constants.js'
 
 @Injectable()
@@ -12,7 +12,7 @@ export class SQSConsumer {
 
   constructor(
     @Inject(PUBSUB)
-    private readonly pubsub: PubSub<web3.Web3Event>,
+    private readonly pubsub: IPubSub<web3.Web3Event>,
     private readonly discoverSC: DiscoverContract,
   ) {}
 

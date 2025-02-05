@@ -4,7 +4,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { AppDeploymentMessage, web3 } from 'messages'
 import { MessageProducer } from '#domain/services/message.producer.js'
-import { AppError, PubSub, Subscriber, Task, unknownError } from 'utils'
+import { AppError, PubSub, type ISubscriber, Task, unknownError } from 'utils'
 import { PUBSUB } from '#constants.js'
 
 @Injectable()
@@ -37,7 +37,7 @@ export class AwsMessageProducer implements MessageProducer {
     this.pubsub.subscribe('web3:*', this.handleWeb3Events)
   }
 
-  private handleWeb3Events: Subscriber<web3.Web3Event> = (
+  private handleWeb3Events: ISubscriber<web3.Web3Event> = (
     event,
   ): Task<void, AppError> => {
     switch (event.type) {

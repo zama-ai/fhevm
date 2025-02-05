@@ -3,7 +3,7 @@ import { PublishCommand, SNSClient } from '@aws-sdk/client-sns'
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { back } from 'messages'
-import { AppError, PubSub, Subscriber, Task, unknownError } from 'utils'
+import { AppError, PubSub, type ISubscriber, Task, unknownError } from 'utils'
 
 @Injectable()
 export class SnsProducer {
@@ -46,7 +46,7 @@ export class SnsProducer {
     })
   }
 
-  handleBackEvent: Subscriber<back.BackEvent> = event => {
+  handleBackEvent: ISubscriber<back.BackEvent> = event => {
     this.logger.debug(`handling event: ${event.type}`)
     switch (event.type as unknown as back.BackEvent['type']) {
       case 'back:dapp:stats-requested':

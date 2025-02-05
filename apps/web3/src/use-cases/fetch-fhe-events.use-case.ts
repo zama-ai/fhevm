@@ -2,7 +2,7 @@ import { FheEvent } from '#domain/entities/fhe-event.js'
 import { FheEventService } from '#domain/services/fhe-event.service.js'
 import { ChainId } from '#domain/entities/value-objects.js'
 import { FheEventRepository } from '#domain/services/fhe-event.repository.js'
-import { AppError, PubSub, Subscriber, Task, UseCase } from 'utils'
+import { AppError, PubSub, type ISubscriber, Task, UseCase } from 'utils'
 import { web3 } from 'messages'
 import { Logger } from '@nestjs/common'
 import { randomUUID } from 'crypto'
@@ -18,7 +18,7 @@ export class FetchFHEEvents implements UseCase<ChainId, FheEvent[]> {
     this.pubsub.subscribe('web3:fhe-event:requested', this.handleFheEvent)
   }
 
-  handleFheEvent: Subscriber<web3.Web3Event> = (
+  handleFheEvent: ISubscriber<web3.Web3Event> = (
     event,
   ): Task<void, AppError> => {
     this.logger.log(`received ${event.type}: ${JSON.stringify(event.payload)}`)
