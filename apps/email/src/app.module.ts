@@ -24,6 +24,7 @@ import { SQSConsumer } from './infra/adapeters/sqs.consumer.js'
               endpoint: config.get<string>('aws.queueUrl'),
               region: config.get<string>('aws.region'),
             }),
+            messageAttributeNames: ['All'],
           },
         ],
         producers: [

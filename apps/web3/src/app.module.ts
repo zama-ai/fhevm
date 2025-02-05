@@ -51,6 +51,7 @@ import { web3 } from 'messages'
               endpoint: config.get<string>('aws.queueUrl'),
               region: config.get<string>('aws.region'),
             }),
+            messageAttributeNames: ['All'],
           },
         ],
         producers: [

@@ -1,16 +1,16 @@
-import { PUBSUB } from '#constants.js'
+import { MS_NAME, PUBSUB } from '#constants.js'
 import { Message } from '@aws-sdk/client-sqs'
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { SqsMessageHandler } from '@ssut/nestjs-sqs'
 import { back, web3 } from 'messages'
-import { PubSub } from 'utils'
+import { type IPubSub } from 'utils'
 
 @Injectable()
 export class SQSConsumer {
   private readonly logger = new Logger(SQSConsumer.name)
   constructor(
     @Inject(PUBSUB)
-    private readonly pubsub: PubSub<back.BackEvent | web3.Web3Event>,
+    private readonly pubsub: IPubSub<back.BackEvent | web3.Web3Event>,
   ) {}
 
   @SqsMessageHandler('orchestrator')
@@ -28,6 +28,10 @@ export class SQSConsumer {
 
       try {
         if (back.isBackEvent(data) || web3.isWeb3Event(data)) {
+          if (message.MessageAttributes?.['Sender']?.StringValue === MS_NAME) {
+            this.logger.debug(`⛔️ stopping ${data.type} propagation`)
+            return
+          }
           this.logger.debug(
             `📬 publishing event ${data.type} on the internal queue`,
           )

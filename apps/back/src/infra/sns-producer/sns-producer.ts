@@ -1,4 +1,4 @@
-import { PUBSUB } from '#constants.js'
+import { MS_NAME, PUBSUB } from '#constants.js'
 import { PublishCommand, SNSClient } from '@aws-sdk/client-sns'
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
@@ -33,10 +33,13 @@ export class SnsProducer {
           new PublishCommand({
             TopicArn: this.topicArn,
             Message: JSON.stringify(event),
+            MessageAttributes: {
+              Sender: { DataType: 'string', StringValue: MS_NAME },
+            },
           }),
         )
         .then(result => {
-          this.logger.debug(`status code: ${result.$metadata.httpStatusCode}`)
+          this.logger.debug(`status code: ${result.$metadata?.httpStatusCode}`)
           resolve(void 0)
         })
         .catch(error => {

@@ -68,7 +68,8 @@
     "typescript": "catalog:",
     "unplugin-swc": "catalog:",
     "vite-tsconfig-paths": "catalog:",
-    "vitest": "catalog:"
+    "vitest": "catalog:",
+    "vitest-mock-extended": "^2.0.2"
   },
   "imports": {
     "#prisma/client/*": "./dist/generated/client/*",

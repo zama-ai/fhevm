@@ -575,6 +575,9 @@ importers:
       vitest:
         specifier: 'catalog:'
         version: 3.0.2(@types/node@20.17.14)(terser@5.36.0)
+      vitest-mock-extended:
+        specifier: ^2.0.2
+        version: 2.0.2(typescript@5.6.3)(vitest@3.0.2(@types/node@20.17.14)(terser@5.36.0))
 
   apps/web3:
     dependencies:

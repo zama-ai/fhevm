@@ -1,4 +1,4 @@
-import { PUBSUB } from '#constants.js'
+import { MS_NAME, PUBSUB } from '#constants.js'
 import { PublishCommand, SNSClient } from '@aws-sdk/client-sns'
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
@@ -36,6 +36,9 @@ export class SnsProducer {
           new PublishCommand({
             TopicArn: this.topicArn,
             Message: message,
+            MessageAttributes: {
+              Sender: { DataType: 'string', StringValue: MS_NAME },
+            },
           }),
         )
         .then(result => {

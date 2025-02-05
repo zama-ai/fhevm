@@ -25,7 +25,7 @@ import { SharedModule } from '#shared/shared.module.js'
               endpoint: config.get<string>('aws.queueUrl'),
               region: config.get<string>('aws.region'),
             }),
-            // stopOptions: { abort: true },
+            messageAttributeNames: ['All'],
           },
         ],
       }),

@@ -1,13 +1,10 @@
-import { Test } from '@nestjs/testing'
-import { beforeEach, describe, expect, test } from 'vitest'
-import { SQSConsumer } from './sqs.consumer.js'
-import { PUBSUB } from '#constants.js'
-import { mock, MockProxy } from 'vitest-mock-extended'
-import { Task, unknownError, type IPubSub } from 'utils'
 import { back } from 'messages'
-import { AppDeploymentRequested } from '#dapps/use-cases/app-deployment-requested.use-case.js'
-import { AppDeploymentEnded } from '#dapps/use-cases/app-deployment-ended.use-case.js'
-import { ScDiscovered } from './use-cases/sc-discovered.use-case.js'
+import { IPubSub, Task, unknownError } from 'utils'
+import { beforeEach, describe, expect, test } from 'vitest'
+import { mock, MockProxy } from 'vitest-mock-extended'
+import { SQSConsumer } from './sqs.consumer.js'
+import { Test } from '@nestjs/testing'
+import { PUBSUB } from '#constants.js'
 import { faker } from '@faker-js/faker'
 import { Message } from '@aws-sdk/client-sqs'
 
@@ -25,18 +22,6 @@ describe('SqsConsumer', () => {
             provide: PUBSUB,
             useValue: pubsub,
           },
-          {
-            provide: AppDeploymentRequested,
-            useValue: mock<AppDeploymentRequested>(),
-          },
-          {
-            provide: AppDeploymentEnded,
-            useValue: mock<AppDeploymentEnded>,
-          },
-          {
-            provide: ScDiscovered,
-            useValue: mock<ScDiscovered>(),
-          },
         ],
       }).compile()
 
@@ -44,8 +29,9 @@ describe('SqsConsumer', () => {
     })
 
     describe.each([
-      ['back', false],
-      ['orch', true],
+      ['back', true],
+      ['email', true],
+      ['orch', false],
       ['web3', true],
     ])(
       'when it receives a message from the %s microservice',

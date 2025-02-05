@@ -27,68 +27,66 @@ describe('SQSConsumer', () => {
       consumer = moduleRef.get(SQSConsumer)
     })
 
-    describe(`when it receives a 'web3:fhe-event:requested' event`, () => {
-      test('should forward it to the pubsub', async () => {
-        pubsub.publish.mockReturnValue(Task.of(void 0))
-        const event = getFheEventRequested()
-        const message = encodeMessage(event)
+    describe.each([
+      ['back', true],
+      ['email', true],
+      ['orch', true],
+      ['web3', false],
+    ])(
+      'when it receives a message from the %s microservice',
+      (sender, forward) => {
+        let event: web3.Web3Event
+        beforeEach(() => {
+          event = {
+            type: 'web3:fhe-event:requested',
+            payload: {
+              chainId: faker.string.numeric(5),
+              address: faker.string.hexadecimal({ length: 40 }),
+            },
+            meta: {
+              correlationId: faker.string.uuid(),
+            },
+          }
+        })
 
-        await consumer.handleMessage(message)
-        expect(pubsub.publish).toBeCalledWith(event)
-      })
+        test(`should ${forward ? 'forward it to the pubsub' : 'stop the propagation'}`, async () => {
+          pubsub.publish.mockReturnValue(Task.of(void 0))
+          const message = encodeMessage(event, sender)
 
-      test('should forward errors', async () => {
-        pubsub.publish.mockReturnValue(
-          Task.reject(unknownError('Mocked error')),
-        )
-        const event = getFheEventRequested()
-        const message = encodeMessage(event)
+          await consumer.handleMessage(message)
+          if (forward) {
+            expect(pubsub.publish).toBeCalledWith(event)
+          } else {
+            expect(pubsub.publish).not.toBeCalled()
+          }
+        })
 
-        await expect(consumer.handleMessage(message)).rejects.toThrow(
-          'Mocked error',
-        )
-      })
-    })
+        if (forward) {
+          test('should forward errors', async () => {
+            pubsub.publish.mockReturnValue(
+              Task.reject(unknownError('Mocked error')),
+            )
+            const message = encodeMessage(event)
 
-    describe(`when it receives a 'web3:fhe-event:detected' event`, () => {
-      test('should drop it', async () => {
-        const event = getFheEventDetected()
-        const message = encodeMessage(event)
-
-        await consumer.handleMessage(message)
-        expect(pubsub.publish).not.toBeCalled()
-      })
-    })
+            await expect(consumer.handleMessage(message)).rejects.toThrow(
+              'Mocked error',
+            )
+          })
+        }
+      },
+    )
   })
 })
 
-function encodeMessage(message: object): Message {
+function encodeMessage(message: object, sender?: string): Message {
   return {
     Body: JSON.stringify({
       Message: JSON.stringify(message),
     }),
+    MessageAttributes: {
+      ...(sender
+        ? { Sender: { DataType: 'String', StringValue: sender } }
+        : {}),
+    },
   }
-}
-
-function getFheEventRequested() {
-  return web3.fheRequested(
-    {
-      chainId: faker.string.numeric(5),
-      address: faker.string.hexadecimal({ length: 40 }),
-    },
-    { correlationId: faker.string.uuid() },
-  )
-}
-
-function getFheEventDetected() {
-  return web3.fheDetected(
-    {
-      chainId: faker.string.numeric(5),
-      address: faker.string.hexadecimal({ length: 40 }),
-      name: faker.string.alphanumeric(10),
-      timestamp: faker.date.anytime().toISOString(),
-      id: faker.string.alphanumeric(10),
-    },
-    { correlationId: faker.string.uuid() },
-  )
 }

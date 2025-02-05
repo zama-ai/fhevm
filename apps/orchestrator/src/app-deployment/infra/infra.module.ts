@@ -32,6 +32,7 @@ import { DatabaseService } from '#database/database.service.js'
               endpoint: config.get<string>('aws.queueUrl'),
               region: config.get<string>('aws.region'),
             }),
+            messageAttributeNames: ['All'],
           },
         ],
       }),
