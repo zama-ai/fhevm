@@ -1,6 +1,8 @@
 #.PHONY: all setup run-hardhat deploy-fhevm-smart-contracts start-event-listener run-decrypt-test help
-include .env
-export $(shell cat .env | sed 's/=.*//g')
+-include hardhat/contracts/.env
+ifneq (,$(wildcard hardhat/contracts/.env))
+    export $(shell cat hardhat/contracts/.env | sed 's/=.*//g')
+endif
 
 # Default target
 all: help
@@ -25,22 +27,22 @@ config-event-listener:
 # Run Anvil node for httpz chain
 run-httpz-mock:
 	@echo "$(GREEN)Starting Anvil node for mock HTTPZ chain...$(RESET)"
-	@cd hardhat/contracts && source .env && anvil --block-time 1 --port 8756 --chain-id 123456 --accounts 15 --mnemonic $(MNEMONIC)
+	@cd hardhat/contracts && anvil --block-time 0.1 --port 8756 --chain-id 123456 --accounts 15 --mnemonic $(MNEMONIC)
 
 # Run Anvil node for gateway chain
 run-gateway-mock:
 	@echo "$(GREEN)Starting Anvil node for mock GATEWAY chain...$(RESET)"
-	@cd hardhat/contracts && source .env && anvil --block-time 1 --port 8757 --chain-id 654321 --accounts 15 --mnemonic $(MNEMONIC)
+	@cd hardhat/contracts && source .env && anvil --block-time 0.1 --port 8757 --chain-id 654321 --accounts 15 --mnemonic $(MNEMONIC)
 
 # Deploy HTTPZ smart contracts
 deploy-httpz-smart-contracts:
 	@echo "$(GREEN)Deploying HTTPZ smart contracts...$(RESET)"
-	@cd hardhat/contracts && ./launch-httpz-local-coprocessor.sh
+	@unset $$(cat hardhat/contracts/.env | sed 's/=.*//g') && cd hardhat/contracts && sh ./launch-httpz-local-coprocessor.sh
 
 # Deploy GATEWAY smart contracts
 deploy-gateway-smart-contracts:
 	@echo "$(GREEN)Deploying GATEWAY smart contracts...$(RESET)"
-	@cd hardhat/contracts && ./launch-gateway-local-coprocessor.sh
+	@unset $$(cat hardhat/contracts/.env | sed 's/=.*//g') && cd hardhat/contracts && ./launch-gateway-local-coprocessor.sh
 
 # Start event listener
 start-event-listener:
@@ -50,12 +52,12 @@ start-event-listener:
 # Run decrypt tests
 run-test-decrypt:
 	@echo "$(GREEN)Running decrypt tests...$(RESET)"
-	@cd hardhat/contracts && RUST_RELAYER=true npx hardhat test test/gatewayDecrypt/* --network localCoprocessorL1
+	@unset $$(cat hardhat/contracts/.env | sed 's/=.*//g') && cd hardhat/contracts && RUST_RELAYER=true npx hardhat test test/gatewayDecrypt/* --network localCoprocessorL1
 
 # Run ERC20 tests
 run-test-erc20:
 	@echo "$(GREEN)Running decrypt tests...$(RESET)"
-	@cd hardhat/contracts && RUST_RELAYER=true npx hardhat test test/encryptedERC20/EncryptedERC20.ts --network localCoprocessorL1
+	@unset $$(cat hardhat/contracts/.env | sed 's/=.*//g') && cd hardhat/contracts && RUST_RELAYER=true npx hardhat test test/encryptedERC20/EncryptedERC20.ts --network localCoprocessorL1
 
 # Help message
 help:

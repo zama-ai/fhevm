@@ -382,7 +382,7 @@ address constant inputVerifierAdd = ${taskArguments.address};\n`;
       if (!taskArguments.useAddress) {
         coprocAddress = new ethers.Wallet(process.env.PRIVATE_KEY_COPROCESSOR_ACCOUNT!).address;
       } else {
-        coprocAddress = process.env.ADDRESS_COPROCESSOR_ACCOUNT;
+        coprocAddress = process.env.ADDRESS_COPROCESSOR_ACCOUNT?.replace(/['"]/g, '');
       }
       const envFilePath2 = path.join(__dirname, '../addresses/.env.coprocessor');
       const content2 = `COPROCESSOR_ADDRESS=${coprocAddress}\n`;
