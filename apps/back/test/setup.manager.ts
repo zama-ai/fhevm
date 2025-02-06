@@ -46,13 +46,13 @@ export class SetupManager {
     })
   }
 
-  private async startAws(connectionUri: string) {
+  private async startAws(awsEndpoint: string) {
     const id = randomUUID()
     // Generate a random topic name
     this.#topicName = `back-test-topic-${id}`
 
     await execSync(
-      `aws --endpoint-url ${connectionUri} sns create-topic --region ${this.awsRegion} --name ${this.topicName} --attributes "FifoTopic=false,ContentBasedDeduplication=true"`,
+      `aws --endpoint-url ${awsEndpoint} sns create-topic --region ${this.awsRegion} --name ${this.topicName} --attributes "FifoTopic=false,ContentBasedDeduplication=true"`,
       {
         env: { PATH: process.env.PATH },
       },
@@ -61,28 +61,28 @@ export class SetupManager {
     // Generate a random queue name
     this.#queueName = `back-test-queue-${id}`
     await execSync(
-      `aws --endpoint-url ${connectionUri} sqs create-queue --region ${this.awsRegion} --queue-name ${this.#queueName}`,
+      `aws --endpoint-url ${awsEndpoint} sqs create-queue --region ${this.awsRegion} --queue-name ${this.#queueName}`,
       { env: { PATH: process.env.PATH, AWS_DEFAULT_REGION: this.awsRegion } },
     )
 
     // Generate a random log queue name
     this.#logQueueName = `back-test-log-queue-${id}`
     await execSync(
-      `aws --endpoint-url ${connectionUri} sqs create-queue --region ${this.awsRegion} --queue-name ${this.#logQueueName}`,
+      `aws --endpoint-url ${awsEndpoint} sqs create-queue --region ${this.awsRegion} --queue-name ${this.#logQueueName}`,
       { env: { PATH: process.env.PATH, AWS_DEFAULT_REGION: this.awsRegion } },
     )
 
     await execSync(
-      `aws --endpoint-url ${connectionUri} sns subscribe --region ${this.awsRegion} --topic-arn ${this.topicArn} --protocol sqs --notification-endpoint ${this.logQueueArn}`,
+      `aws --endpoint-url ${awsEndpoint} sns subscribe --region ${this.awsRegion} --topic-arn ${this.topicArn} --protocol sqs --notification-endpoint ${this.logQueueArn}`,
       { env: { PATH: process.env.PATH, AWS_DEFAULT_REGION: this.awsRegion } },
     )
   }
 
   async beforeAll() {
-    const connectionUri = this.awsEndpoint
+    const awsEndpoint = this.awsEndpoint
 
     // Start services
-    await Promise.all([this.startAws(connectionUri), this.startPostgres()])
+    await Promise.all([this.startAws(awsEndpoint), this.startPostgres()])
 
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
@@ -93,13 +93,14 @@ export class SetupManager {
           isGlobal: true,
           load: [
             registerAs('aws', () => ({
-              endpoint: connectionUri,
+              endpoint: awsEndpoint,
               queueUrl: this.queueUrl,
               region: this.awsRegion,
               topicArn: this.topicArn,
             })),
             dbConfig,
             jwtConfig,
+            registerAs('redis', () => this.redisConnection),
           ],
         }),
       )
@@ -138,7 +139,7 @@ export class SetupManager {
   }
 
   get awsEndpoint(): string {
-    return inject('connectionUri')
+    return inject('awsEndpoint')
   }
 
   get topicName(): string {
@@ -163,5 +164,9 @@ export class SetupManager {
 
   get logQueueUrl(): string {
     return `${this.awsEndpoint}/000000000000/${this.#logQueueName}`
+  }
+
+  get redisConnection(): { host: string; port: number } {
+    return inject('redisConnection')
   }
 }

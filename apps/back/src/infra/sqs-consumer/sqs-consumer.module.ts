@@ -22,8 +22,8 @@ import { SharedModule } from '#shared/shared.module.js'
             queueUrl: config.get<string>('aws.queueUrl')!,
             useQueueUrlAsEndpoint: false,
             sqs: new SQSClient({
-              endpoint: config.get<string>('aws.queueUrl'),
-              region: config.get<string>('aws.region'),
+              endpoint: config.get('aws.queueUrl'),
+              region: config.get('aws.region'),
             }),
             messageAttributeNames: ['All'],
             attributeNames: ['All'],
