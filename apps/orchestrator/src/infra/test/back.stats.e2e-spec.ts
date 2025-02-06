@@ -85,6 +85,7 @@ describe('back dapp stats', () => {
             address: faker.string.hexadecimal({ length: 40 }),
             name: 'FheAdd',
             timestamp: faker.date.past().toISOString(),
+            externalRef: faker.string.alphanumeric(10),
           },
           { correlationId },
         )

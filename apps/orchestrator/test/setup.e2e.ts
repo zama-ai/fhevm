@@ -16,6 +16,15 @@ async function startPostgres() {
   if (!pgContainer) {
     throw new Error('Failed to start postgres container')
   }
+
+  const host = pgContainer.getHost()
+  const port = pgContainer.getPort()
+  const database = pgContainer.getDatabase()
+
+  console.log(
+    `🚛 testcontainer Postgres running on ${host}:${port}/${database}`,
+  )
+
   return pgContainer.getConnectionUri()
 }
 
@@ -30,7 +39,10 @@ async function startAws() {
     'localstack/localstack:latest',
   ).start()
 
-  return awsContainer.getConnectionUri()
+  const connectionUri = awsContainer.getConnectionUri()
+  console.log(`🚛 testcontainer AWS running on ${connectionUri}`)
+
+  return connectionUri
 }
 
 async function stopAws() {

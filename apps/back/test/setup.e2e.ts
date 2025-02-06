@@ -28,6 +28,10 @@ async function startPostgres() {
   const username = pgContainer.getUsername()
   const password = pgContainer.getPassword()
 
+  console.log(
+    `🚛 testcontainer Postgres running on ${host}:${port}/${database}`,
+  )
+
   return `postgresql://${username}:${password}@${host}:${port}/${database}`
 }
 
@@ -42,7 +46,10 @@ async function startAws() {
     'localstack/localstack:latest',
   ).start()
 
-  return awsContainer.getConnectionUri()
+  const connectionUri = awsContainer.getConnectionUri()
+  console.log(`🚛 testcontainer AWS running on ${connectionUri}`)
+
+  return connectionUri
 }
 
 async function stopAws() {

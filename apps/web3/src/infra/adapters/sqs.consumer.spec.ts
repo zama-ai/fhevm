@@ -51,7 +51,7 @@ describe('SQSConsumer', () => {
 
         test(`should ${forward ? 'forward it to the pubsub' : 'stop the propagation'}`, async () => {
           pubsub.publish.mockReturnValue(Task.of(void 0))
-          const message = encodeMessage(event, sender)
+          const message = encodeMessage(event, { sender })
 
           await consumer.handleMessage(message)
           if (forward) {
@@ -78,15 +78,18 @@ describe('SQSConsumer', () => {
   })
 })
 
-function encodeMessage(message: object, sender?: string): Message {
+function encodeMessage(
+  message: object,
+  options?: { sender?: string },
+): Message {
   return {
     Body: JSON.stringify({
       Message: JSON.stringify(message),
+      MessageAttributes: options?.sender
+        ? {
+            Sender: { Type: 'String', Value: options.sender },
+          }
+        : {},
     }),
-    MessageAttributes: {
-      ...(sender
-        ? { Sender: { DataType: 'String', StringValue: sender } }
-        : {}),
-    },
   }
 }

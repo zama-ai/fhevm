@@ -66,6 +66,7 @@ describe('web3 dapp stats', () => {
         correlationId = faker.string.uuid()
         const message = web3.fheDetected(
           {
+            id: faker.string.alphanumeric(10),
             chainId: faker.string.numeric(5),
             address: faker.string.hexadecimal({ length: 40 }),
             name: faker.string.alphanumeric(),
