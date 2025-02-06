@@ -6,8 +6,8 @@ use tracing_subscriber::{fmt::SubscriberBuilder, EnvFilter};
 use fhevm_relayer::{
     config::settings::{LogConfig, Settings},
     ethereum::{ContractAndTopicsFilter, EthereumHostL1},
-    // handlers_ethereum::handle_event,
-    listeners_ethereum::event_listener,
+    ethereum_host_l1_handers::EthereumHostL1Handler,
+    ethereum_listener::event_listener,
     orchestrator::{
         traits::{EventHandler, HandlerRegistry},
         Orchestrator, TokioEventDispatcher,
@@ -49,9 +49,8 @@ async fn main() -> eyre::Result<()> {
     let orchestrator = Orchestrator::new(Arc::clone(&dispatcher), &node_id);
 
     // === Register the event handlers
-    let host_l1_event_log_handler: Arc<dyn EventHandler<RelayerEvent>> = Arc::new(
-        fhevm_relayer::handlers_ethereum::EthereumHostL1Handler::new(Arc::clone(&dispatcher)),
-    );
+    let host_l1_event_log_handler: Arc<dyn EventHandler<RelayerEvent>> =
+        Arc::new(EthereumHostL1Handler::new(Arc::clone(&dispatcher)));
     orchestrator.register_handler(0, Arc::clone(&host_l1_event_log_handler));
     orchestrator.register_handler(4, Arc::clone(&host_l1_event_log_handler));
 

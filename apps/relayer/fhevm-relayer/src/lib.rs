@@ -6,8 +6,8 @@ pub mod orchestrator;
 
 // TODO: Understand how to use crate level imports.
 pub mod arbitrum_gateway_l2_handlers;
-pub mod handlers_ethereum;
-pub mod listeners_ethereum;
+pub mod ethereum_host_l1_handers;
+pub mod ethereum_listener;
 pub mod relayer_event;
 
 // Re-export commonly used types
