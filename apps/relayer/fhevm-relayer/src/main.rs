@@ -8,7 +8,10 @@ use fhevm_relayer::{
     ethereum::{ContractAndTopicsFilter, EthereumHostL1},
     // handlers_ethereum::handle_event,
     listeners_ethereum::event_listener,
-    orchestrator::{traits::HandlerRegistry, Orchestrator, TokioEventDispatcher},
+    orchestrator::{
+        traits::{EventHandler, HandlerRegistry},
+        Orchestrator, TokioEventDispatcher,
+    },
     relayer_event::RelayerEvent,
 };
 
@@ -46,10 +49,11 @@ async fn main() -> eyre::Result<()> {
     let orchestrator = Orchestrator::new(Arc::clone(&dispatcher), &node_id);
 
     // === Register the event handlers
-    let host_l1_event_log_handler = Arc::new(
+    let host_l1_event_log_handler: Arc<dyn EventHandler<RelayerEvent>> = Arc::new(
         fhevm_relayer::handlers_ethereum::EthereumHostL1Handler::new(Arc::clone(&dispatcher)),
     );
-    orchestrator.register_handler(0, host_l1_event_log_handler);
+    orchestrator.register_handler(0, Arc::clone(&host_l1_event_log_handler));
+    orchestrator.register_handler(4, Arc::clone(&host_l1_event_log_handler));
 
     // === Initialize Ethereum host L1 adapter
     let host_l1 = EthereumHostL1::new(&settings.network.ws_url)
