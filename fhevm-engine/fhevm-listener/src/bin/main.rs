@@ -1,10 +1,11 @@
+use alloy_provider::fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller};
 use futures_util::stream::StreamExt;
 use std::str::FromStr;
 use std::time::Duration;
 
 use alloy::primitives::Address;
 use alloy::providers::{Provider, ProviderBuilder, RootProvider, WsConnect};
-use alloy::pubsub::{PubSubFrontend, SubscriptionStream};
+use alloy::pubsub::SubscriptionStream;
 use alloy::rpc::types::{BlockNumberOrTag, Filter, Log};
 
 use alloy_sol_types::SolEventInterface;
@@ -43,12 +44,14 @@ pub struct Args {
     pub end_at_block: Option<u64>,
 }
 
+type RProvider = FillProvider<JoinFill<alloy::providers::Identity, JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>>, RootProvider>;
+
 // TODO: to merge with Levent works
 struct InfiniteLogIter {
     url: String,
     contract_addresses: Vec<Address>,
     stream: Option<SubscriptionStream<Log>>,
-    provider: Option<RootProvider<PubSubFrontend>>, // required to maintain the stream
+    provider: Option<RProvider>, // required to maintain the stream
     last_seen_block: Option<u64>,
     start_at_block: Option<i64>,
     end_at_block: Option<u64>,
@@ -76,7 +79,7 @@ impl InfiniteLogIter {
 
     async fn catchup_block_from(
         &self,
-        provider: &RootProvider<PubSubFrontend>,
+        provider: &RProvider,
     ) -> BlockNumberOrTag {
         if let Some(last_seen_block) = self.last_seen_block {
             return BlockNumberOrTag::Number(last_seen_block - 1);

@@ -10,12 +10,13 @@ test = false
 bench = false
 
 [dependencies]
-# workspace dependencies
-alloy = { version = "0.9", features = ["contract", "json", "providers", "provider-ws", "pubsub", "rpc-types", "sol-types"] }
+# external dependencies
+alloy = { version = "0.11", features = ["contract", "json", "providers", "provider-ws", "pubsub", "rpc-types", "sol-types"] }
+alloy-primitives = "0.8.21"
+alloy-provider = "0.11.1"
+alloy-eips = "0.11.1"
 alloy-rpc-types = "0.11"
 alloy-sol-types = "0.8"
-alloy-primitives = "0.8"
-alloy-provider = "0.11"
 clap = { workspace = true }
 futures-util = { workspace = true }
 serde = { workspace = true }
