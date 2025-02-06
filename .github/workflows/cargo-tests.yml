@@ -9,16 +9,13 @@ on:
       - fhevm-engine/**
       - proto/**
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref }}
+  cancel-in-progress: true
+
 jobs:
   cargo-tests:
-    permissions:
-      contents: "read"
-      id-token: "write"
-      packages: "write"
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        rust: [1.82.0]
+    runs-on: large_ubuntu_16
 
     steps:
     - name: Checkout code
@@ -29,12 +26,10 @@ jobs:
     - name: Checkout LFS objects
       run: git lfs checkout
 
-    - name: Set up Rust
-      uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203
       with:
-        toolchain: ${{ matrix.rust }}
-        profile: minimal
-        override: true
+        toolchain: stable
 
     - name: Install cargo dependencies
       run: |
@@ -59,3 +54,7 @@ jobs:
       run: |
         DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor cargo test --release -- --test-threads=1
       working-directory: fhevm-engine
+
+permissions:
+  contents: read
+  checks: write
