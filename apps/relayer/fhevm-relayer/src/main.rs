@@ -47,9 +47,7 @@ async fn main() -> eyre::Result<()> {
 
     // === Register the event handlers
     let host_l1_event_log_handler = Arc::new(
-        fhevm_relayer::handlers_ethereum::EthereumHostL1EventLogHandler::new(Arc::clone(
-            &dispatcher,
-        )),
+        fhevm_relayer::handlers_ethereum::EthereumHostL1Handler::new(Arc::clone(&dispatcher)),
     );
     orchestrator.register_handler(0, host_l1_event_log_handler);
 
