@@ -81,6 +81,9 @@ kmsCore:
       enabled: false
       bucket: kms-private
       path: kms
+    awskms:
+      enabled: false
+      keychain: awskms://symm/00000000-0000-0000-0000-000000000000
   aws:
     region: eu-west-1
   storage:

@@ -46,6 +46,9 @@ data:
 
     [private_vault]
     storage = {{ include "kmsPrivateVaultStorage" . | quote }}
+    {{- if .Values.kmsCore.privateVault.awskms.enabled -}}
+    keychain = {{ .Values.kmsCore.privateVault.awskms.keychain }}
+    {{- end }}
     {{- end }}
 
     {{ if .Values.kmsCore.thresholdMode.enabled -}}

@@ -130,8 +130,8 @@ spec:
               --aws-region {{ .Values.kmsCore.aws.region }} \
               --pub-url "${KMS_CORE__PUBLIC_VAULT__STORAGE:={{ include "kmsPublicVaultStorage" . }}}" \
               --priv-url "${KMS_CORE__PRIVATE_VAULT__STORAGE:={{ include "kmsPrivateVaultStorage" . }}}" \
-              {{- if .Values.kmsCore.nitroEnclave.enabled }}
-              --aws-kms-endpoint "${KMS_CORE__PRIVATE_VAULT__KEYCHAIN}" \
+              {{- if .Values.kmsCore.privateVault.awskms.enabled -}}
+              --root-key-id "${KMS_CORE__PRIVATE_VAULT__KEYCHAIN:={{ .Values.kmsCore.privateVault.awskms.keychain }}" \
               {{- end }}
               {{ include "kmsCoreMode" . }} \
               {{- if .Values.kmsCore.thresholdMode.enabled }}
