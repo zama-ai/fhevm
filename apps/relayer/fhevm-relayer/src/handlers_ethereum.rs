@@ -6,18 +6,21 @@ use crate::{
         bindings::{DecryptionOracle, GatewayContract, TFHEExecutor, Transfer},
         extract_event_signature,
     },
-    orchestrator::traits::EventHandler,
+    orchestrator::{traits::EventHandler, TokioEventDispatcher},
     relayer_event::{self, RelayerEvent},
 };
 use alloy::rpc::types::Log;
+use std::sync::Arc;
 
 use alloy_sol_types::SolEvent;
 
-pub struct EthereumHostL1EventLogHandler {}
+pub struct EthereumHostL1EventLogHandler {
+    dispatcher: Arc<TokioEventDispatcher<RelayerEvent>>,
+}
 
 impl EthereumHostL1EventLogHandler {
-    pub fn new() -> Self {
-        Self {}
+    pub fn new(dispatcher: Arc<TokioEventDispatcher<RelayerEvent>>) -> Self {
+        Self { dispatcher }
     }
 }
 
