@@ -2,7 +2,7 @@
 
 This document gives an detail explanantion of each components of fhEVM and illustrate how they work together to perform compuations.&#x20;
 
-## O**verview**
+## Overview
 
 The fhEVM architecture is built around four primary components, each contributing to the system's functionality and performance. These components work together to enable the development and execution of private, composable smart contracts on EVM-compatible blockchains. Below is an overview of these components and their responsibilities:
 

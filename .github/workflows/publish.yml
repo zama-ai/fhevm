@@ -16,7 +16,13 @@ jobs:
           node-version: 20.x
       - run: cp .env.example .env
       - run: npm ci --include=optional
-      - run: npx hardhat test test/encryptedERC20/EncryptedERC20.ts --network hardhat
+      - run: mkdir node_modules/fhevm-core-contracts/addresses
+      - run: source .env && npx hardhat task:computeGatewayAddress --private-key $PRIVATE_KEY_GATEWAY_DEPLOYER
+      - run: source .env && npx hardhat task:computeACLAddress --private-key $PRIVATE_KEY_FHEVM_DEPLOYER
+      - run: source .env && npx hardhat task:computeTFHEExecutorAddress --private-key $PRIVATE_KEY_FHEVM_DEPLOYER
+      - run: source .env && npx hardhat task:computeKMSVerifierAddress --private-key $PRIVATE_KEY_FHEVM_DEPLOYER
+      - run: source .env && npx hardhat task:computeInputVerifierAddress --private-key $PRIVATE_KEY_FHEVM_DEPLOYER --use-address false
+      - run: source .env && npx hardhat task:computeFHEGasLimitAddress --private-key $PRIVATE_KEY_FHEVM_DEPLOYER
       - run: npm run compile
       - uses: JS-DevTools/npm-publish@19c28f1ef146469e409470805ea4279d47c3d35c # v3.1.1
         with:

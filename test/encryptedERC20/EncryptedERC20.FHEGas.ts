@@ -33,10 +33,12 @@ describe('EncryptedERC20:FHEGas', function () {
     );
     const t2 = await tx.wait();
     expect(t2?.status).to.eq(1);
-
-    const FHEGasConsumedTransfer = getFHEGasFromTxReceipt(t2);
-    console.log('FHEGas Consumed in transfer', FHEGasConsumedTransfer);
-    console.log('Native Gas Consumed in transfer', t2.gasUsed);
+    if (process.env.HARDHAT_TFHEEXECUTOR_EVENTS === '1') {
+      // FHEGas tracking is currently implemented only with TFHEExecutor.events.sol variant
+      const FHEGasConsumedTransfer = getFHEGasFromTxReceipt(t2);
+      console.log('FHEGas Consumed in transfer', FHEGasConsumedTransfer);
+      console.log('Native Gas Consumed in transfer', t2.gasUsed);
+    }
   });
 
   it('should be able to transferFrom only if allowance is sufficient', async function () {
@@ -64,9 +66,11 @@ describe('EncryptedERC20:FHEGas', function () {
       encryptedTransferAmount2.inputProof,
     );
     const t3 = await tx3.wait();
-
-    const FHEGasConsumedTransferFrom = getFHEGasFromTxReceipt(t3);
-    console.log('FHEGas Consumed in transferFrom', FHEGasConsumedTransferFrom);
-    console.log('Native Gas Consumed in transferFrom', t3.gasUsed);
+    if (process.env.HARDHAT_TFHEEXECUTOR_EVENTS === '1') {
+      // FHEGas tracking is currently implemented only with TFHEExecutor.events.sol variant
+      const FHEGasConsumedTransferFrom = getFHEGasFromTxReceipt(t3);
+      console.log('FHEGas Consumed in transferFrom', FHEGasConsumedTransferFrom);
+      console.log('Native Gas Consumed in transferFrom', t3.gasUsed);
+    }
   });
 });

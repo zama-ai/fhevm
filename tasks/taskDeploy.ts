@@ -106,7 +106,15 @@ task('task:deployTFHEExecutor')
       'fhevmTemp/contracts/emptyProxy/EmptyUUPSProxy.sol:EmptyUUPSProxy',
       deployer,
     );
-    const newImplem = await ethers.getContractFactory('fhevmTemp/contracts/TFHEExecutor.sol:TFHEExecutor', deployer);
+    let newImplem;
+    if (process.env.HARDHAT_TFHEEXECUTOR_EVENTS !== '1') {
+      newImplem = await ethers.getContractFactory('fhevmTemp/contracts/TFHEExecutor.sol:TFHEExecutor', deployer);
+    } else {
+      newImplem = await ethers.getContractFactory(
+        'fhevmTemp/contracts/TFHEExecutorWithEvents.sol:TFHEExecutorWithEvents',
+        deployer,
+      );
+    }
     const parsedEnv = dotenv.parse(fs.readFileSync('fhevmTemp/addresses/.env.exec'));
     const proxyAddress = parsedEnv.TFHE_EXECUTOR_CONTRACT_ADDRESS;
     const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);

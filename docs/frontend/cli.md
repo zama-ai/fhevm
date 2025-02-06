@@ -46,7 +46,3 @@ Encrypt the integer `71721075` (64-bit) and the boolean `1` for the contract at 
 ```bash
 fhevm encrypt --node http://localhost:8545 0x8Fdb26641d14a80FCCBE87BF455338Dd9C539a50 0xa5e1defb98EFe38EBb2D958CEe052410247F4c80 71721075:64 1:1
 ```
-
-## Additional Resources
-
-For more advanced features and examples, refer to the [fhevmjs documentation](../../references/fhevmjs.md).

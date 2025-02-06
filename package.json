@@ -1,7 +1,7 @@
 {
   "name": "fhevm",
   "description": "A Solidity library for interacting with the Zama Blockchain",
-  "version": "0.7.0-0",
+  "version": "0.6.2",
   "engines": {
     "node": ">=20.0.0"
   },
@@ -21,8 +21,10 @@
     "prettier": "prettier --write \"**/*.{js,json,md,sol,ts,yml}\"",
     "test:inband": "hardhat test",
     "test": "HARDHAT_PARALLEL=1 hardhat test --parallel",
-    "test:mock": "hardhat test --network hardhat",
-    "coverage:mock": "hardhat coverage",
+    "test:mock": "HARDHAT_TFHEEXECUTOR_EVENTS=1 hardhat test --network hardhat",
+    "test:mock:original": "hardhat test --network hardhat",
+    "coverage:mock": "HARDHAT_TFHEEXECUTOR_EVENTS=1 hardhat coverage",
+    "coverage:mock:original": "hardhat coverage",
     "typechain": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat typechain",
     "codegen": "npx ts-node codegen/main.ts && npm run prettier",
     "codegen:overloads": "npx ts-node codegen/generateOverloads.ts",
@@ -70,7 +72,7 @@
     "eslint": "^8.28.0",
     "eslint-config-prettier": "^8.5.0",
     "ethers": "^6.8.0",
-    "fhevm-core-contracts": "^0.7.0-4",
+    "fhevm-core-contracts": "0.7.0-3",
     "fhevmjs": "^0.6.0-8",
     "hardhat": "^2.22.10",
     "hardhat-deploy": "^0.11.29",

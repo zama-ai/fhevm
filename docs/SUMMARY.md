@@ -5,56 +5,65 @@
 
 ## Getting Started
 
-- [Overview](getting_started/key_concepts.md)
-- [Quick start](getting_started/ethereum.md)
-- [First smart contract](getting_started/first_smart_contract.md)
-  - [Using Hardhat](getting_started/write_contract/hardhat.md)
-  - [Using Remix](getting_started/write_contract/remix.md)
-  - [Other development environment](getting_started/write_contract/others.md)
-- [Repositories](getting_started/repositories.md)
-
-## Fundamentals
-
-- [Architecture overview](fundamentals/architecture_overview.md)
-  - [FHE on blockchain](fundamentals/architecture_overview/fhe-on-blockchain.md)
-  - [fhEVM components](fundamentals/architecture_overview/fhevm-components.md)
-  - [Encryption, decryption, re-encryption, and computation](fundamentals/d_re_ecrypt_compute.md)
-- [Configuration](fundamentals/configure.md)
-- [Supported types](fundamentals/types.md)
-- [Operations on encrypted types](fundamentals/operations.md)
-- [asEbool, asEuintXX, asEaddress and asEbytesXX operations](fundamentals/asEXXoperators.md)
-- [Access Control List](fundamentals/acl/README.md)
-  - [ACL examples](fundamentals/acl/acl_examples.md)
-- [Encrypted Inputs](fundamentals/inputs.md)
-- [Decryption](fundamentals/decryption/README.md)
-  - [Decryption](fundamentals/decryption/decrypt.md)
-  - [Decryption in depth](fundamentals/decryption/decrypt_details.md)
-  - [Re-encryption](fundamentals/decryption/reencryption.md)
-
-## Guides
-
-- [Smart contracts](guides/smart-contracts/README.md)
-  - [fhevm-contracts](guides/contracts.md)
-  - [If sentances](guides/loop.md)
-  - [Branching in FHE](guides/conditions.md)
-  - [Generate random numbers](guides/random.md)
-  - [Error handling](guides/error_handling.md)
-  - [Gas estimation](guides/gas.md)
-  - [Debug decrypt](guides/debug_decrypt.md)
-- [Frontend](guides/frontend/README.md)
-  - [Build a web application](guides/frontend/webapp.md)
-  - [Build with Node](guides/frontend/node.md)
-  - [Using the CLI](guides/frontend/cli.md)
-  - [Common webpack errors](guides/frontend/webpack.md)
+- [Overview](getting_started/overview.md)
+- [Quick start](getting_started/quick_start/overview.md)
+  - [1. Setting up Remix](getting_started/quick_start/remix.md)
+  - [2. Connect your wallet to Remix](getting_started/quick_start/connect_wallet.md)
+  - [3. Deploying ConfidentialERC20](getting_started/quick_start/deploying_cerc20.md)
+  - [4. Interacting with the contract](getting_started/quick_start/interact.md)
 
 ## Tutorials
 
+- [Tutorial: Setting up Hardhat](tutorials/hardhat.md)
 - [See all tutorials](tutorials/see-all-tutorials.md)
+
+## Smart contract
+
+- [Key features](smart_contracts/key_concepts.md)
+- [Configuration](smart_contracts/configure.md)
+- [FhEVM contracts](smart_contracts/contracts.md)
+- [Supported types](smart_contracts/types.md)
+- [Operations on encrypted types](smart_contracts/operations.md)
+- [Access Controxl List](smart_contracts/acl/README.md)
+  - [ACL examples](smart_contracts/acl/acl_examples.md)
+- [Encrypted Inputs](smart_contracts/inputs.md)
+- [Decryption](smart_contracts/decryption/README.md)
+  - [Decryption](smart_contracts/decryption/decrypt.md)
+  - [Decryption in depth](smart_contracts/decryption/decrypt_details.md)
+  - [Re-encryption](smart_contracts/decryption/reencryption.md)
+- [If sentances](smart_contracts/loop.md)
+- [Branching in FHE](smart_contracts/conditions.md)
+- [AsEbool, asEuintXX, asEaddress and asEbytesXX operations](smart_contracts/asEXXoperators.md)
+- [Generate random numbers](smart_contracts/random.md)
+- [Error handling](smart_contracts/error_handling.md)
+- [Gas estimation](smart_contracts/gas.md)
+- [Debug decrypt](smart_contracts/debug_decrypt.md)
+- [Using Foundry](smart_contracts/write_contract/foundry.md)
+
+## Frontend
+
+- [Setup](frontend/setup.md)
+- [Build a web application](frontend/webapp.md)
+- [Using React.js](https://github.com/zama-ai/fhevm-react-template)
+- [Using Next.js](https://github.com/zama-ai/fhevm-next-template)
+- [Using Vue.js](https://github.com/zama-ai/fhevm-vue-template)
+- [Using Node or Typescript](frontend/node.md)
+- [Using the CLI](frontend/cli.md)
+- [Common webpack errors](frontend/webpack.md)
+
+## Explanations
+
+- [Architectural overview](smart_contracts/architecture_overview.md)
+- [FHE on blockchain](smart_contracts/architecture_overview/fhe-on-blockchain.md)
+- [fhEVM components](smart_contracts/architecture_overview/fhevm-components.md)
+- [Encryption, decryption, re-encryption, and computation](smart_contracts/d_re_ecrypt_compute.md)
 
 ## References
 
+- [Table of all addresses](references/table_of_addresses.md)
 - [Smart contracts - fhEVM API](references/functions.md)
 - [Frontend - fhevmjs lib](references/fhevmjs.md)
+- [Repositories](references/repositories.md)
 
 ## Developer
 
