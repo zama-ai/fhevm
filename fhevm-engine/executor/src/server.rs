@@ -120,13 +120,22 @@ impl FhevmExecutor for FhevmExecutorService {
                     now.elapsed().unwrap().as_millis()
                 );
                 // Extract the results from the graph
-                match graph.get_results() {
-                    Ok(mut result_cts) => Some(Resp::ResultCiphertexts(ResultCiphertexts {
-                        ciphertexts: result_cts
+                let results = graph.get_results();
+                let outputs: Result<Vec<(Handle, (SupportedFheCiphertexts, i16, Vec<u8>))>> =
+                    results
+                        .into_iter()
+                        .map(|(h, output)| match output {
+                            Ok(output) => Ok((h, output)),
+                            Err(e) => Err(e),
+                        })
+                        .collect();
+                match outputs {
+                    Ok(mut outputs) => Some(Resp::ResultCiphertexts(ResultCiphertexts {
+                        ciphertexts: outputs
                             .iter_mut()
-                            .map(|(h, ct)| CompressedCiphertext {
+                            .map(|(h, output)| CompressedCiphertext {
                                 handle: h.clone(),
-                                serialization: std::mem::take(&mut ct.2),
+                                serialization: std::mem::take(&mut output.2),
                             })
                             .collect(),
                     })),

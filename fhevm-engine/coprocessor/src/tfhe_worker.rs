@@ -1,13 +1,16 @@
+use crate::types::CoprocessorError;
 use crate::{db_queries::populate_cache_with_tenant_keys, types::TfheTenantKeys};
-use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts};
+use fhevm_engine_common::types::{FhevmError, Handle, SupportedFheCiphertexts};
 use fhevm_engine_common::{tfhe_ops::current_ciphertext_version, types::SupportedFheOperations};
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use opentelemetry::trace::{Span, TraceContextExt, Tracer};
 use opentelemetry::KeyValue;
 use prometheus::{register_int_counter, IntCounter};
+use scheduler::dfg::types::SchedulerError;
 use scheduler::dfg::{scheduler::Scheduler, types::DFGTaskInput, DFGraph};
 use sqlx::{postgres::PgListener, query, Acquire};
+use std::borrow::Borrow;
 use std::{
     collections::{BTreeSet, HashMap},
     num::NonZeroUsize,
@@ -357,29 +360,43 @@ async fn tfhe_worker_cycle(
                 let keys = rk.get(tenant_id).expect("Can't get tenant key from cache");
 
                 // Schedule computations in parallel as dependences allow
+                tfhe::set_server_key(keys.sks.clone());
                 let mut sched = Scheduler::new(&mut graph.graph, args.coprocessor_fhe_threads);
                 sched.schedule(keys.sks.clone()).await?;
             }
             // Extract the results from the graph
-            let res = graph.get_results().unwrap();
+            let mut res = graph.get_results();
 
             for (idx, w) in work.iter().enumerate() {
                 // Filter out computations that could not complete
                 if uncomputable.contains_key(&idx) {
                     continue;
                 }
-                let r = res.iter().find(|(h, _)| *h == w.output_handle).unwrap();
-                {
-                    let mut rk = tenant_key_cache.write().await;
-                    let keys = rk
-                        .get(&w.tenant_id)
-                        .expect("Can't get tenant key from cache");
-                    tfhe::set_server_key(keys.sks.clone());
-                }
+                let r = &mut res
+                    .iter_mut()
+                    .find(|(h, _)| *h == w.output_handle)
+                    .unwrap()
+                    .1;
+
                 let finished_work_unit: Result<
                     _,
                     (Box<(dyn std::error::Error + Send + Sync)>, i32, Vec<u8>),
-                > = Ok((w, r.1 .1, &r.1 .2));
+                > = r
+                    .as_mut()
+                    .map(|rok| (w, rok.1, std::mem::take(&mut rok.2)))
+                    .map_err(|rerr| {
+                        (
+                            CoprocessorError::SchedulerError(
+                                *rerr
+                                    .downcast_ref::<SchedulerError>()
+                                    .or(Some(&SchedulerError::SchedulerError))
+                                    .unwrap(),
+                            )
+                            .into(),
+                            w.tenant_id,
+                            w.output_handle.clone(),
+                        )
+                    });
                 match finished_work_unit {
                     Ok((w, db_type, db_bytes)) => {
                         let mut s = tracer.start_with_context("insert_ct_into_db", &loop_ctx);

@@ -71,16 +71,19 @@ impl DFGraph {
 
     pub fn get_results(
         &mut self,
-    ) -> Result<Vec<(Handle, (SupportedFheCiphertexts, i16, Vec<u8>))>> {
+    ) -> Vec<(Handle, Result<(SupportedFheCiphertexts, i16, Vec<u8>)>)> {
         let mut res = Vec::with_capacity(self.graph.node_count());
         for index in 0..self.graph.node_count() {
             let node = self.graph.node_weight_mut(NodeIndex::new(index)).unwrap();
-            if let Some(ct) = &node.result {
-                res.push((node.result_handle.clone(), ct.clone()));
+            if let Some(ct) = std::mem::take(&mut node.result) {
+                res.push((node.result_handle.clone(), ct));
             } else {
-                return Err(SchedulerError::DataflowGraphError.into());
+                res.push((
+                    node.result_handle.clone(),
+                    Err(SchedulerError::DataflowGraphError.into()),
+                ));
             }
         }
-        Ok(res)
+        res
     }
 }

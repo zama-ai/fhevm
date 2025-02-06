@@ -98,7 +98,7 @@ impl<'a> Scheduler<'a> {
     }
 
     async fn schedule_fine_grain(&mut self, server_key: tfhe::ServerKey) -> Result<()> {
-        let mut set: JoinSet<Result<(usize, (SupportedFheCiphertexts, i16, Vec<u8>))>> =
+        let mut set: JoinSet<(usize, Result<(SupportedFheCiphertexts, i16, Vec<u8>)>)> =
             JoinSet::new();
         tfhe::set_server_key(server_key.clone());
         // Prime the scheduler with all nodes without dependences
@@ -127,36 +127,39 @@ impl<'a> Scheduler<'a> {
         }
         // Get results from computations and update dependences of remaining computations
         while let Some(result) = set.join_next().await {
-            let output = result??;
-            let index = output.0;
+            let result = result?;
+            let index = result.0;
             let node_index = NodeIndex::new(index);
-            // Satisfy deps from the executed task
-            for edge in self.edges.edges_directed(node_index, Direction::Outgoing) {
-                let sks = server_key.clone();
-                let child_index = edge.target();
-                let child_node = self.graph.node_weight_mut(child_index).unwrap();
-                child_node.inputs[*edge.weight() as usize] =
-                    DFGTaskInput::Value(output.1 .0.clone());
-                if Self::is_ready(child_node) {
-                    let opcode = child_node.opcode;
-                    let inputs: Result<Vec<SupportedFheCiphertexts>> = child_node
-                        .inputs
-                        .iter()
-                        .map(|i| match i {
-                            DFGTaskInput::Value(i) => Ok(i.clone()),
-                            DFGTaskInput::Compressed((t, c)) => {
-                                SupportedFheCiphertexts::decompress(*t, c)
-                            }
-                            _ => Err(SchedulerError::UnsatisfiedDependence.into()),
-                        })
-                        .collect();
-                    set.spawn_blocking(move || {
-                        tfhe::set_server_key(sks.clone());
-                        run_computation(opcode, inputs, child_index.index())
-                    });
+            if let Ok(output) = &result.1 {
+                // Satisfy deps from the executed task
+                for edge in self.edges.edges_directed(node_index, Direction::Outgoing) {
+                    let sks = server_key.clone();
+                    let child_index = edge.target();
+                    let child_node = self.graph.node_weight_mut(child_index).unwrap();
+                    child_node.inputs[*edge.weight() as usize] =
+                        DFGTaskInput::Value(output.0.clone());
+                    if Self::is_ready(child_node) {
+                        let opcode = child_node.opcode;
+                        let inputs: Result<Vec<SupportedFheCiphertexts>> = child_node
+                            .inputs
+                            .iter()
+                            .map(|i| match i {
+                                DFGTaskInput::Value(i) => Ok(i.clone()),
+                                DFGTaskInput::Compressed((t, c)) => {
+                                    SupportedFheCiphertexts::decompress(*t, c)
+                                }
+                                _ => Err(SchedulerError::UnsatisfiedDependence.into()),
+                            })
+                            .collect();
+                        set.spawn_blocking(move || {
+                            tfhe::set_server_key(sks.clone());
+                            run_computation(opcode, inputs, child_index.index())
+                        });
+                    }
                 }
             }
-            self.graph[node_index].result = Some(output.1);
+            let node_index = NodeIndex::new(result.0);
+            self.graph[node_index].result = Some(result.1);
         }
         Ok(())
     }
@@ -167,12 +170,10 @@ impl<'a> Scheduler<'a> {
         server_key: tfhe::ServerKey,
     ) -> Result<()> {
         tfhe::set_server_key(server_key.clone());
-        let mut set: JoinSet<
-            Result<(
-                Vec<(usize, (SupportedFheCiphertexts, i16, Vec<u8>))>,
-                NodeIndex,
-            )>,
-        > = JoinSet::new();
+        let mut set: JoinSet<(
+            Vec<(usize, Result<(SupportedFheCiphertexts, i16, Vec<u8>)>)>,
+            NodeIndex,
+        )> = JoinSet::new();
         let mut execution_graph: Dag<ExecNode, ()> = Dag::default();
         let _ = match strategy {
             PartitionStrategy::MaxLocality => {
@@ -205,18 +206,25 @@ impl<'a> Scheduler<'a> {
         }
         // Get results from computations and update dependences of remaining computations
         while let Some(result) = set.join_next().await {
-            let mut output = result??;
-            let task_index = output.1;
-            while let Some(o) = output.0.pop() {
+            let mut result = result?;
+            let task_index = result.1;
+            while let Some(o) = result.0.pop() {
                 let index = o.0;
                 let node_index = NodeIndex::new(index);
-                // Satisfy deps from the executed computation in the DFG
-                for edge in self.edges.edges_directed(node_index, Direction::Outgoing) {
-                    let child_index = edge.target();
-                    let child_node = self.graph.node_weight_mut(child_index).unwrap();
-                    if !child_node.inputs.is_empty() {
-                        child_node.inputs[*edge.weight() as usize] =
-                            DFGTaskInput::Value(o.1 .0.clone());
+                // If this node result is an error, we can't satisfy
+                // any dependences with it, so skip - all dependences
+                // on this will remain unsatisfied and result in
+                // further errors.
+                if o.1.is_ok() {
+                    // Satisfy deps from the executed computation in the DFG
+                    for edge in self.edges.edges_directed(node_index, Direction::Outgoing) {
+                        let child_index = edge.target();
+                        let child_node = self.graph.node_weight_mut(child_index).unwrap();
+                        if !child_node.inputs.is_empty() {
+                            // Here cannot be an error
+                            child_node.inputs[*edge.weight() as usize] =
+                                DFGTaskInput::Value(o.1.as_ref().unwrap().0.clone());
+                        }
                     }
                 }
                 self.graph[node_index].result = Some(o.1);
@@ -268,7 +276,6 @@ impl<'a> Scheduler<'a> {
             }
         }
 
-        
         let (src, dest) = channel();
         let rayon_threads = self.rayon_threads;
 
@@ -288,12 +295,12 @@ impl<'a> Scheduler<'a> {
                 ))
                 .unwrap();
             });
-        }).await?;
-        
+        })
+        .await?;
+
         let results: Vec<_> = dest.iter().collect();
-        for result in results {
-            let mut output = result?;
-            while let Some(o) = output.0.pop() {
+        for mut result in results {
+            while let Some(o) = result.0.pop() {
                 let index = o.0;
                 let node_index = NodeIndex::new(index);
                 self.graph[node_index].result = Some(o.1);
@@ -424,35 +431,45 @@ fn execute_partition(
     use_global_threadpool: bool,
     rayon_threads: usize,
     server_key: tfhe::ServerKey,
-) -> Result<(
-    Vec<(usize, (SupportedFheCiphertexts, i16, Vec<u8>))>,
+) -> (
+    Vec<(usize, Result<(SupportedFheCiphertexts, i16, Vec<u8>)>)>,
     NodeIndex,
-)> {
-    let mut res: HashMap<usize, (SupportedFheCiphertexts, i16, Vec<u8>)> =
+) {
+    let mut res: HashMap<usize, Result<(SupportedFheCiphertexts, i16, Vec<u8>)>> =
         HashMap::with_capacity(computations.len());
-    for (opcode, inputs, nidx) in computations {
+    'comps: for (opcode, inputs, nidx) in computations {
         let mut cts = Vec::with_capacity(inputs.len());
         for i in inputs.iter() {
             match i {
                 DFGTaskInput::Dependence(d) => {
                     if let Some(d) = d {
-                        if let Some(ct) = res.get(d) {
+                        if let Some(Ok(ct)) = res.get(d) {
                             cts.push(ct.0.clone());
+                        } else {
+                            res.insert(
+                                nidx.index(),
+                                Err(SchedulerError::UnsatisfiedDependence.into()),
+                            );
+                            continue 'comps;
                         }
-                    } else {
-                        return Err(SchedulerError::UnsatisfiedDependence.into());
                     }
                 }
                 DFGTaskInput::Value(v) => {
                     cts.push(v.clone());
                 }
                 DFGTaskInput::Compressed((t, c)) => {
-                    cts.push(SupportedFheCiphertexts::decompress(*t, c)?);
+                    let decomp = SupportedFheCiphertexts::decompress(*t, c);
+                    if let Ok(decomp) = decomp {
+                        cts.push(decomp);
+                    } else {
+                        res.insert(nidx.index(), Err(decomp.err().unwrap()));
+                        continue 'comps;
+                    }
                 }
             }
         }
         if use_global_threadpool {
-            let (node_index, result) = run_computation(opcode, Ok(cts), nidx.index())?;
+            let (node_index, result) = run_computation(opcode, Ok(cts), nidx.index());
             res.insert(node_index, result);
         } else {
             let thread_pool = THREAD_POOL
@@ -470,38 +487,41 @@ fn execute_partition(
             thread_pool.broadcast(|_| {
                 tfhe::set_server_key(server_key.clone());
             });
-            thread_pool.install(|| -> Result<()> {
-                let (node_index, result) = run_computation(opcode, Ok(cts), nidx.index())?;
+            let _ = thread_pool.install(|| -> Result<()> {
+                let (node_index, result) = run_computation(opcode, Ok(cts), nidx.index());
                 res.insert(node_index, result);
                 Ok(())
-            })?;
+            });
             THREAD_POOL.set(Some(thread_pool));
         }
     }
-    Ok((Vec::from_iter(res), task_id))
+    (Vec::from_iter(res), task_id)
 }
 
 fn run_computation(
     operation: i32,
     inputs: Result<Vec<SupportedFheCiphertexts>>,
     graph_node_index: usize,
-) -> Result<(usize, (SupportedFheCiphertexts, i16, Vec<u8>))> {
+) -> (usize, Result<(SupportedFheCiphertexts, i16, Vec<u8>)>) {
     let op = FheOperation::try_from(operation);
     match inputs {
         Ok(inputs) => match op {
             Ok(FheOperation::FheGetCiphertext) => {
                 let (ct_type, ct_bytes) = inputs[0].compress();
-                Ok((graph_node_index, (inputs[0].clone(), ct_type, ct_bytes)))
+                (graph_node_index, Ok((inputs[0].clone(), ct_type, ct_bytes)))
             }
             Ok(_) => match perform_fhe_operation(operation as i16, &inputs) {
                 Ok(result) => {
                     let (ct_type, ct_bytes) = result.compress();
-                    Ok((graph_node_index, (result.clone(), ct_type, ct_bytes)))
+                    (graph_node_index, Ok((result.clone(), ct_type, ct_bytes)))
                 }
-                Err(e) => Err(e.into()),
+                Err(e) => (graph_node_index, Err(e.into())),
             },
-            _ => Err(SchedulerError::UnknownOperation(operation).into()),
+            _ => (
+                graph_node_index,
+                Err(SchedulerError::UnknownOperation(operation).into()),
+            ),
         },
-        Err(_) => Err(SchedulerError::InvalidInputs.into()),
+        Err(_) => (graph_node_index, Err(SchedulerError::InvalidInputs.into())),
     }
 }

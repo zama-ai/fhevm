@@ -1,6 +1,7 @@
+use anyhow::Result;
 use fhevm_engine_common::types::SupportedFheCiphertexts;
 
-pub type DFGTaskResult = Option<(SupportedFheCiphertexts, i16, Vec<u8>)>;
+pub type DFGTaskResult = Option<Result<(SupportedFheCiphertexts, i16, Vec<u8>)>>;
 
 #[derive(Clone)]
 pub enum DFGTaskInput {
@@ -9,7 +10,7 @@ pub enum DFGTaskInput {
     Dependence(Option<usize>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum SchedulerError {
     UnsatisfiedDependence,
     CyclicDependence,
