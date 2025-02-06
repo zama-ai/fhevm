@@ -102,6 +102,7 @@ async fn poll_and_execute_sns_tasks(
 
     if let Some(mut tasks) = query_sns_tasks(&mut db_txn, conf.batch_limit).await? {
         process_tasks(&mut tasks, keys)?;
+        update_computations_status(&mut db_txn, &tasks).await?;
         update_large_ct(&mut db_txn, &tasks).await?;
         notify_large_ct_ready(&mut db_txn, &conf.notify_channel).await?;
         db_txn.commit().await?;
@@ -138,14 +139,16 @@ async fn query_sns_tasks(
 ) -> Result<Option<Vec<SnSTask>>, Box<dyn std::error::Error>> {
     let records = sqlx::query!(
         " 
-        SELECT handle, ciphertext
-        FROM ciphertexts
-        WHERE ciphertext IS NOT NULL
-          AND is_allowed = TRUE
-          AND is_sent = FALSE
-          AND large_ct IS NULL
+        SELECT a.*, c.ciphertext
+        FROM pbs_computations a
+        JOIN ciphertexts c 
+        ON a.handle = c.handle          -- fetch handles inserted into the ciphertexts table
+        WHERE c.ciphertext IS NOT NULL  -- filter out tasks with no computed ciphertext64
+        AND a.is_completed = FALSE      -- filter out completed tasks
+        ORDER BY a.created_at           -- quickly find uncompleted tasks
         FOR UPDATE SKIP LOCKED
-        LIMIT $1;",
+        LIMIT $1;
+        ",
         limit as i64
     )
     .fetch_all(db_txn.as_mut())
@@ -184,11 +187,15 @@ async fn get_remaining_tasks(
     let records_count = sqlx::query_scalar!(
         "
         SELECT COUNT(*)
-        FROM ciphertexts
-        WHERE ciphertext IS NOT NULL
-          AND is_allowed = TRUE
-          AND is_sent = FALSE
-          AND large_ct IS NULL;
+        FROM (
+            SELECT 1
+            FROM pbs_computations a
+            JOIN ciphertexts c 
+            ON a.handle = c.handle
+            WHERE c.ciphertext IS NOT NULL
+            AND a.is_completed = FALSE -- filter out completed tasks
+            FOR UPDATE OF a SKIP LOCKED -- don't count locked rows
+        ) AS unlocked_rows;
         ",
     )
     .fetch_one(db_txn.as_mut())
@@ -251,6 +258,28 @@ async fn update_large_ct(
                 SET large_ct = $1
                 WHERE handle = $2;",
                 large_ct_bytes,
+                task.handle
+            )
+            .execute(db_txn.as_mut())
+            .await?;
+        } else {
+            error!(target: "worker", handle = ?task.handle, "Large ciphertext not computed for task");
+        }
+    }
+    Ok(())
+}
+
+async fn update_computations_status(
+    db_txn: &mut Transaction<'_, Postgres>,
+    tasks: &[SnSTask],
+) -> Result<(), Box<dyn Error>> {
+    for task in tasks {
+        if task.large_ct.is_some() {
+            sqlx::query!(
+                "
+                UPDATE pbs_computations
+                SET is_completed = TRUE, completed_at = NOW()
+                WHERE handle = $1;",
                 task.handle
             )
             .execute(db_txn.as_mut())

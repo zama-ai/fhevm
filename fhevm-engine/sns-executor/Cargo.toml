@@ -23,7 +23,7 @@ hex = "0.4"
 
 aligned-vec = "0.5.0"
 num-traits = "=0.2.19"
-sqlx = { version = "0.7", features = ["runtime-tokio", "tls-rustls", "postgres", "uuid"] }
+sqlx = { version = "0.7", features = ["runtime-tokio", "time", "tls-rustls", "postgres", "uuid"] }
 
 serde_json = "=1.0"
 
