@@ -17,7 +17,7 @@ pub async fn event_listener(
     >,
 ) {
     loop {
-        let ethereum_events_listener = tokio::select! {
+        tokio::select! {
             event = subscription.next() => match event {
                 Some(event_log) => {
 
@@ -44,6 +44,5 @@ pub async fn event_listener(
                 break;
             }
         };
-        ethereum_events_listener
     }
 }
