@@ -128,10 +128,10 @@ spec:
               --aws-s3-endpoint http://minio:9000 \
               {{- end }}
               --aws-region {{ .Values.kmsCore.aws.region }} \
-              --pub-url "${KMS_CORE__PUBLIC_VAULT__STORAGE:={{ include "kmsPublicVaultStorage" . | squote }}}" \
-              --priv-url "${KMS_CORE__PRIVATE_VAULT__STORAGE:={{ include "kmsPublicVaultStorage" . | squote }}}" \
-              {{- if .Values.kmsCore.nitroEnclave.enabled }}
-              --aws-kms-endpoint "${KMS_CORE__PRIVATE_VAULT__KEYCHAIN}" \
+              --pub-url "${KMS_CORE__PUBLIC_VAULT__STORAGE:={{ include "kmsPublicVaultStorage" . }}}" \
+              --priv-url "${KMS_CORE__PRIVATE_VAULT__STORAGE:={{ include "kmsPrivateVaultStorage" . }}}" \
+              {{- if .Values.kmsCore.privateVault.awskms.enabled -}}
+              --root-key-id "${KMS_CORE__PRIVATE_VAULT__KEYCHAIN:={{ .Values.kmsCore.privateVault.awskms.keychain }}" \
               {{- end }}
               {{ include "kmsCoreMode" . }} \
               {{- if .Values.kmsCore.thresholdMode.enabled }}
@@ -161,9 +161,11 @@ spec:
             - configMapRef:
                 name: {{ .Values.kmsCore.envFrom.configmap.name }}
           {{- end }}
+          {{- if not .Values.kmsCore.privateVault.s3.enabled }}
           volumeMounts:
             - mountPath: /keys
               name: keys
+          {{- end }}
           resources:
             requests:
               memory: {{ .Values.kmsCore.resources.requests.memory }}
@@ -229,8 +231,10 @@ spec:
               name: workdir
             - mountPath: /var/lib/kms-core/config
               name: config-files
+            {{- if not .Values.kmsCore.privateVault.s3.enabled }}
             - mountPath: /keys
               name: keys
+            {{- end }}
             {{- if .Values.kmsCore.nitroEnclave.enabled }}
             - mountPath: /hugepages
               name: hugepage
@@ -302,6 +306,7 @@ spec:
             path: /dev/nitro_enclaves
             type: CharDevice
         {{- end }}
+  {{- if not .Values.kmsCore.privateVault.s3.enabled }}
   volumeClaimTemplates:
     - metadata:
         labels:
@@ -314,4 +319,5 @@ spec:
         resources:
           requests:
             storage: {{ .Values.kmsCore.storage.capacity }}
+  {{- end }}
 {{- end -}}

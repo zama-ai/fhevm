@@ -40,12 +40,15 @@ data:
     {{- end }}
     {{- end }}
 
-    {{- if .Values.kmsCore.envFrom.configmap.name }}
+    {{- if not .Values.kmsCore.envFrom.configmap.name }}
     [public_vault]
     storage = {{ include "kmsPublicVaultStorage" . | quote }}
 
     [private_vault]
     storage = {{ include "kmsPrivateVaultStorage" . | quote }}
+    {{- if .Values.kmsCore.privateVault.awskms.enabled -}}
+    keychain = {{ .Values.kmsCore.privateVault.awskms.keychain }}
+    {{- end }}
     {{- end }}
 
     {{ if .Values.kmsCore.thresholdMode.enabled -}}
@@ -57,6 +60,8 @@ data:
     dec_capacity = {{ int .Values.kmsCore.thresholdMode.dec_capacity }}
     min_dec_cache = {{ int .Values.kmsCore.thresholdMode.min_dec_cache }}
     num_sessions_preproc = {{ int .Values.kmsCore.thresholdMode.num_sessions_preproc }}
+
+    decryption_mode = "NoiseFloodSmall"
 
     {{- if .Values.kmsCore.thresholdMode.peersList }}
     {{ range .Values.kmsCore.thresholdMode.peersList }}
