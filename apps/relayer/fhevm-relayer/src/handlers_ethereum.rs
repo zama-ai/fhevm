@@ -1,15 +1,10 @@
-use async_trait::async_trait;
-use tracing::info;
-
 use crate::{
-    ethereum::{
-        bindings::{DecryptionOracle, GatewayContract, TFHEExecutor, Transfer},
-        extract_event_signature,
-    },
-    orchestrator::{traits::EventHandler, TokioEventDispatcher},
-    relayer_event::{self, RelayerEvent},
+    ethereum::bindings::DecryptionOracle,
+    orchestrator::{traits::EventDispatcher, traits::EventHandler, TokioEventDispatcher},
+    relayer_event::{DecryptionType, RelayerEvent, RelayerEventData},
 };
 use alloy::rpc::types::Log;
+use async_trait::async_trait;
 use std::sync::Arc;
 
 use alloy_sol_types::SolEvent;
@@ -26,50 +21,29 @@ impl EthereumHostL1EventLogHandler {
 
 #[async_trait]
 impl EventHandler<RelayerEvent> for EthereumHostL1EventLogHandler {
-    async fn handle_event(&self, event: relayer_event::RelayerEvent) {
+    async fn handle_event(&self, event: RelayerEvent) {
         let eth_event_log: Log;
-        match event.data {
-            relayer_event::RelayerEventData::HostL1EventLogReceived { log: l } => eth_event_log = l,
+        match event.clone().data {
+            RelayerEventData::HostL1EventLogReceived { log: l } => eth_event_log = l,
             _ => {
                 return;
             }
         }
 
-        match extract_event_signature(&eth_event_log).unwrap() {
-            &GatewayContract::EventDecryption::SIGNATURE_HASH => {
-                info!(
-                    "{:?} {:?}",
-                    GatewayContract::EventDecryption::SIGNATURE,
-                    eth_event_log.block_number
-                )
+        let next_event: RelayerEvent;
+        match DecryptionOracle::DecryptionRequest::decode_log_data(eth_event_log.data(), true) {
+            Ok(_eth_decryption_request) => {
+                next_event = event.derive_next_event(RelayerEventData::DecryptionRequestReceived {
+                    ct_handle: "sample ct handler".to_string(),
+                    operation: DecryptionType::PublicDecrypt,
+                });
             }
-            &DecryptionOracle::DecryptionRequest::SIGNATURE_HASH => {
-                info!(
-                    "{:?} {:?}",
-                    DecryptionOracle::DecryptionRequest::SIGNATURE,
-                    eth_event_log.block_number
-                )
-            }
-            &TFHEExecutor::FheAdd::SIGNATURE_HASH => {
-                info!(
-                    "{:?} {:?}",
-                    TFHEExecutor::FheAdd::SIGNATURE,
-                    eth_event_log.block_number
-                )
-            }
-            &TFHEExecutor::FheSub::SIGNATURE_HASH => {
-                info!(
-                    "{:?} {:?}",
-                    TFHEExecutor::FheSub::SIGNATURE,
-                    eth_event_log.block_number
-                )
-            }
-            &Transfer::SIGNATURE_HASH => {
-                info!("{:?} {:?}", Transfer::SIGNATURE, eth_event_log.block_number)
-            }
-            _ => {
-                // Ignore the event
+            Err(e) => {
+                next_event = event.derive_next_event(RelayerEventData::DecryptionFailed {
+                    error: format!("error decoding ethereum event log data: {:?}", e),
+                });
             }
         }
+        self.dispatcher.dispatch_event(next_event).await;
     }
 }

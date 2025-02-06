@@ -46,8 +46,11 @@ async fn main() -> eyre::Result<()> {
     let orchestrator = Orchestrator::new(Arc::clone(&dispatcher), &node_id);
 
     // === Register the event handlers
-    let host_l1_event_log_handler =
-        Arc::new(fhevm_relayer::handlers_ethereum::EthereumHostL1EventLogHandler::new());
+    let host_l1_event_log_handler = Arc::new(
+        fhevm_relayer::handlers_ethereum::EthereumHostL1EventLogHandler::new(Arc::clone(
+            &dispatcher,
+        )),
+    );
     orchestrator.register_handler(0, host_l1_event_log_handler);
 
     // === Initialize Ethereum host L1 adapter

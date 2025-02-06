@@ -19,6 +19,14 @@ impl RelayerEvent {
             data,
         }
     }
+
+    pub fn derive_next_event(self, next_event_data: RelayerEventData) -> RelayerEvent {
+        RelayerEvent {
+            request_id: self.request_id,
+            api_version: self.api_version,
+            data: next_event_data,
+        }
+    }
 }
 
 impl Event for RelayerEvent {
