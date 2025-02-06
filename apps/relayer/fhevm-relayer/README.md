@@ -87,14 +87,14 @@ DecryptionOracle code set successfully at address: 0x67aa98a03CC4559E1e98e7b4Ed0
 KMS signer no0 (0x0971C80fF03B428fD2094dd5354600ab103201C5) was added to KMSVerifier contract
 ```
 
+</details>
+<br>
+
 Terminal 3 - GATEWAY Smart Contracts:
 
 ```bash
 make deploy-gateway-smart-contracts
 ```
-
-</details>
-<br>
 
 Terminal 3 - Event Listener:
 

@@ -9,7 +9,6 @@ import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 contract DecryptionManager is Ownable2Step, EIP712 {
     mapping(address => bool) internal isSigner;
     mapping(uint256 publicDecryptionId => uint256[] handlesList) internal requestedPublicHandles;
-    mapping(uint256 publicDecryptionId => bool decryptionDone) internal publicDecryptionDone;
     mapping(uint256 publicDecryptionId => mapping(address signer => bool alreadySigned)) internal alreadySignedPublic; // there is an edge case which is hard to deal with if we change the signers set in the middle of pending signatures being sent, but maybe we can ignore it for the moment
     mapping(uint256 publicDecryptionId => mapping(bytes32 digest => bytes[] pendingSignatures))
         internal pendingSignaturesPublic;
@@ -102,14 +101,11 @@ contract DecryptionManager is Ownable2Step, EIP712 {
         bytes calldata decryptedResult,
         bytes calldata signature
     ) public virtual {
-        if(publicDecryptionDone[publicDecryptionId]){
-            revert PublicDecryptionAlreadyDone();
-        }
         PublicDecryptionResult memory decRes;
         decRes.handlesList = requestedPublicHandles[publicDecryptionId];
         decRes.decryptedResult = decryptedResult;
         bytes32 digest = _hashPublicDecryptionResult(decRes);
-
+        bool isDoneBefore = isPublicDecryptionDone(publicDecryptionId, digest);
         address signerRecovered = _recoverSigner(digest, signature);
         if (!isSigner[signerRecovered]) {
             revert KMSInvalidSigner(signerRecovered);
@@ -120,10 +116,16 @@ contract DecryptionManager is Ownable2Step, EIP712 {
         alreadySignedPublic[publicDecryptionId][signerRecovered] = true;
         pendingSignaturesPublic[publicDecryptionId][digest].push(signature);
         bytes[] memory pendingSignaturesArray = pendingSignaturesPublic[publicDecryptionId][digest];
-        if (pendingSignaturesArray.length >= getThreshold()) {
+        bool isDoneAfter = isPublicDecryptionDone(publicDecryptionId, digest);
+        if (isDoneAfter && (!isDoneBefore)) {
             emit PublicDecryptionResponse(publicDecryptionId, decryptedResult, pendingSignaturesArray);
-            publicDecryptionDone[publicDecryptionId] = true;
         }
+    }
+
+    function isPublicDecryptionDone(uint256 publicDecryptionId, bytes32 digest) public virtual returns(bool) {
+        bytes[] memory pendingSignaturesArray = pendingSignaturesPublic[publicDecryptionId][digest];
+        bool isDone = pendingSignaturesArray.length >= getThreshold();
+        return isDone;
     }
 
     function getSigners() public view virtual returns (address[] memory) {
