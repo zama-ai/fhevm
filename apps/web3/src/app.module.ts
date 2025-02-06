@@ -18,7 +18,7 @@ import {
 } from './constants.js'
 import { ContractService } from './domain/services/contract.service.js'
 import { ProxyContractService } from './infra/adapters/proxy-contract.service.js'
-import { AwsMessageProducer } from './infra/adapters/aws-message.producer.js'
+import { SnsProducer } from './infra/adapters/sns.producer.js'
 import { MessageProducer } from './domain/services/message.producer.js'
 import { DiscoverContract } from './use-cases/discover-contract.use-case.js'
 import { DatabaseModule } from './infra/database/database.module.js'
@@ -52,6 +52,7 @@ import { web3 } from 'messages'
               region: config.get<string>('aws.region'),
             }),
             messageAttributeNames: ['All'],
+            attributeNames: ['All'],
           },
         ],
         producers: [
@@ -91,7 +92,7 @@ import { web3 } from 'messages'
     },
     {
       provide: MESSAGE_PRODUCER,
-      useClass: AwsMessageProducer,
+      useClass: SnsProducer,
     },
     {
       provide: DiscoverContract,

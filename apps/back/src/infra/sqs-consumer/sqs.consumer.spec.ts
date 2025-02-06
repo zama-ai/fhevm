@@ -100,7 +100,7 @@ function encodeMessage(message: object, sender?: string): Message {
     }),
     MessageAttributes: sender
       ? {
-          Sender: { DataType: 'string', StringValue: sender },
+          Sender: { DataType: 'String', StringValue: sender },
         }
       : {},
   }

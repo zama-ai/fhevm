@@ -26,6 +26,7 @@ import { SharedModule } from '#shared/shared.module.js'
               region: config.get<string>('aws.region'),
             }),
             messageAttributeNames: ['All'],
+            attributeNames: ['All'],
           },
         ],
       }),

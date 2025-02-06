@@ -16,19 +16,15 @@ export class SQSConsumer {
   @SqsMessageHandler('orchestrator')
   public async handleMessage(message: Message) {
     if (message.Body) {
-      let data: unknown
-      try {
-        const body = JSON.parse(message.Body)
-        data = JSON.parse(body.Message)
-      } catch (err) {
-        this.logger.debug(`message received: ${message.Body}`)
-        this.logger.warn(`❌ failed to parse message: ${err}`)
-        return
-      }
+      const body = JSON.parse(message.Body)
+      const data = JSON.parse(body.Message)
 
       try {
         if (back.isBackEvent(data) || web3.isWeb3Event(data)) {
-          if (message.MessageAttributes?.['Sender']?.StringValue === MS_NAME) {
+          const messageAttributes:
+            | Record<string, { Type: 'String'; Value: 'string' }>
+            | undefined = body.MessageAttributes
+          if (messageAttributes?.Sender?.Value === (MS_NAME as string)) {
             this.logger.debug(`⛔️ stopping ${data.type} propagation`)
             return
           }

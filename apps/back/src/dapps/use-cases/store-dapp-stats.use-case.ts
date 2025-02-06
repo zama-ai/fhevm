@@ -3,7 +3,14 @@ import { DAppStatId } from '#dapps/domain/entities/value-objects.js'
 import { DAppRepository } from '#dapps/domain/repositories/dapp.repository.js'
 import { Logger } from '@nestjs/common'
 import { back } from 'messages'
-import { AppError, PubSub, type ISubscriber, Task, UseCase } from 'utils'
+import {
+  AppError,
+  PubSub,
+  type ISubscriber,
+  Task,
+  UseCase,
+  isNotFoundError,
+} from 'utils'
 
 type Input = {
   chainId: string
@@ -34,7 +41,12 @@ export class StoreDAppStats implements UseCase<Input, Output> {
           .tap(stat => {
             this.logger.debug(`stat created ${JSON.stringify(stat.toJSON())}`)
           })
-          .map(() => void 0)
+          .map<void>(() => void 0)
+          .orChain(err =>
+            isNotFoundError(err)
+              ? Task.of<void, AppError>(void 0)
+              : Task.reject<void, AppError>(err),
+          )
       : Task.of(void 0)
   }
 

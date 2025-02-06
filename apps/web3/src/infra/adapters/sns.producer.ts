@@ -1,20 +1,17 @@
 import { PublishCommand, SNSClient } from '@aws-sdk/client-sns'
-import { SendMessageCommand, SQSClient } from '@aws-sdk/client-sqs'
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { AppDeploymentMessage, web3 } from 'messages'
 import { MessageProducer } from '#domain/services/message.producer.js'
 import { AppError, PubSub, type ISubscriber, Task, unknownError } from 'utils'
-import { PUBSUB } from '#constants.js'
+import { MS_NAME, PUBSUB } from '#constants.js'
 
 @Injectable()
-export class AwsMessageProducer implements MessageProducer {
-  logger = new Logger(AwsMessageProducer.name)
+export class SnsProducer implements MessageProducer {
+  logger = new Logger(SnsProducer.name)
 
   #sns: SNSClient
-  #sqs: SQSClient
   #topicArn: string
-  #queueUrl: string
 
   constructor(
     @Inject(PUBSUB)
@@ -28,12 +25,6 @@ export class AwsMessageProducer implements MessageProducer {
     })
     this.#topicArn = config.getOrThrow('aws.topicArn')
 
-    this.#sqs = new SQSClient({
-      endpoint: config.get('aws.endpoint'),
-      region: config.get('aws.region'),
-    })
-    this.#queueUrl = config.getOrThrow('aws.queueUrl')
-
     this.pubsub.subscribe('web3:*', this.handleWeb3Events)
   }
 
@@ -45,6 +36,9 @@ export class AwsMessageProducer implements MessageProducer {
       // event should be an expanded of `web:*` and
       // payload should be narrowed to the right type
       case 'web3:fhe-event:detected':
+        this.logger.debug(
+          `🚀 publishing ${event.type} => ${event.payload.chainId}/${event.payload.address}`,
+        )
         return this.sendMessage<web3.Web3Event>(event).map<void>(() => void 0)
 
       default:
@@ -73,42 +67,26 @@ export class AwsMessageProducer implements MessageProducer {
     this.logger.debug(`sendMessage: ${JSON.stringify(message)}`)
     return new Task((resolve, reject) =>
       // Note: think a better way to resend failed messages
-      message.meta?.delay
-        ? this.#sqs
-            .send(
-              new SendMessageCommand({
-                QueueUrl: this.#queueUrl,
-                DelaySeconds: message.meta.delay as number | undefined,
-                MessageBody: JSON.stringify(message),
-              }),
-            )
-            .then(res => {
-              this.logger.debug(
-                `message ${message.type} sent to queue ${this.#queueUrl}`,
-              )
-              resolve(`status code: ${res.$metadata.httpStatusCode}`)
-            })
-            .catch((err: unknown) => {
-              this.logger.warn(`failed to send delayed message: ${err}`)
-              reject(unknownError(String(err)))
-            })
-        : this.#sns
-            .send(
-              new PublishCommand({
-                TopicArn: this.#topicArn,
-                Message: JSON.stringify(message),
-              }),
-            )
-            .then(res => {
-              this.logger.debug(
-                `message ${message.type} sent to topic ${this.#topicArn}`,
-              )
-              resolve(`status code: ${res.$metadata.httpStatusCode}`)
-            })
-            .catch((err: unknown) => {
-              this.logger.warn(`failed to send message: ${err}`)
-              reject(unknownError(String(err)))
-            }),
+      this.#sns
+        .send(
+          new PublishCommand({
+            TopicArn: this.#topicArn,
+            Message: JSON.stringify(message),
+            MessageAttributes: {
+              Sender: { DataType: 'String', StringValue: MS_NAME },
+            },
+          }),
+        )
+        .then(res => {
+          this.logger.debug(
+            `message ${message.type} sent to topic ${this.#topicArn}`,
+          )
+          resolve(`status code: ${res.$metadata.httpStatusCode}`)
+        })
+        .catch((err: unknown) => {
+          this.logger.warn(`failed to send message: ${err}`)
+          reject(unknownError(String(err)))
+        }),
     )
   }
 

@@ -33,6 +33,7 @@ import { DatabaseService } from '#database/database.service.js'
               region: config.get<string>('aws.region'),
             }),
             messageAttributeNames: ['All'],
+            attributeNames: ['All'],
           },
         ],
       }),

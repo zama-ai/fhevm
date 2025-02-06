@@ -37,7 +37,7 @@ export class SnsProducer {
             TopicArn: this.topicArn,
             Message: message,
             MessageAttributes: {
-              Sender: { DataType: 'string', StringValue: MS_NAME },
+              Sender: { DataType: 'String', StringValue: MS_NAME },
             },
           }),
         )

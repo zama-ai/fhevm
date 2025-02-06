@@ -91,6 +91,22 @@ export class Task<A, E> {
   }
 
   /**
+   * Creates a new Task that resolves with the value of this Task if it resolves,
+   * otherwise calls the given function with the error and resolves with the value of the Task it returns.
+   *
+   * @param fn - A function that takes an error of type `E` and returns a Task of type `A`.
+   * @returns A new Task that resolves with the value of this Task or the value of the Task returned by the given function.
+   */
+  orChain(fn: (error: E) => Task<A, E>): Task<A, E> {
+    return new Task((resolve, reject) => {
+      this.computation(
+        value => resolve(value),
+        error => fn(error).fork(resolve, reject),
+      )
+    })
+  }
+
+  /**
    * Executes the computation of the Task.
    *
    * @param resolve - A function to call with the value of type `A` if the Task resolves.
