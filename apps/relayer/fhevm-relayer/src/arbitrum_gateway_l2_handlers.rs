@@ -1,51 +1,65 @@
 use crate::{
-    ethereum::bindings::DecryptionOracle,
-    orchestrator::{traits::EventHandler, TokioEventDispatcher},
-    relayer_event::{DecryptedValue, DecryptionType, RelayerEvent, RelayerEventData},
+    orchestrator::{
+        traits::{EventDispatcher, EventHandler},
+        TokioEventDispatcher,
+    },
+    relayer_event::{DecryptedValue, RelayerEvent, RelayerEventData},
 };
-use alloy::primitives::{FixedBytes, Uint};
-use alloy::rpc::types::Log;
+use async_trait::async_trait;
 use std::sync::Arc;
+use tracing::info;
 use uuid::Uuid;
 
-use alloy_sol_types::SolEvent;
-
 struct DecryptionResultData {
-    request_id: String,
+    gateway_l2_request_id: String,
 }
 
 pub struct ArbitrumGatewayL2Handler {
-    _dispatcher: Arc<TokioEventDispatcher<RelayerEvent>>,
+    dispatcher: Arc<TokioEventDispatcher<RelayerEvent>>,
     context_data: dashmap::DashMap<Uuid, DecryptionResultData>,
 }
 
 impl ArbitrumGatewayL2Handler {
     pub fn new(dispatcher: Arc<TokioEventDispatcher<RelayerEvent>>) -> Self {
         Self {
-            _dispatcher: dispatcher,
+            dispatcher,
             context_data: dashmap::DashMap::new(),
         }
     }
 
-    // fn handle_ethereum_host_l1_event_log_received(&self, event: RelayerEvent, eth_event_log: Log) {
-    // }
-
-    // fn handle_httpz_response_received(
-    // }
+    async fn mock_handle_decrypt_request_received(&self, event: RelayerEvent) {
+        let next_event_data = RelayerEventData::DecryptionResponseRcvdFromGwL2 {
+            decrypted_value: DecryptedValue::PublicDecrypt {
+                plaintext: vec![1, 2, 3],
+                signatures: vec![vec![1, 2, 3]],
+            },
+        };
+        info!(
+            "Decryption request received. Responding with mock data: request_id: {:?}",
+            event.request_id,
+        );
+        let _ = self
+            .dispatcher
+            .dispatch_event(event.derive_next_event(next_event_data))
+            .await;
+    }
+    async fn noop_handle_decrypt_reponse_event_log(&self, _event: RelayerEvent) {}
 }
 
+#[async_trait]
 impl EventHandler<RelayerEvent> for ArbitrumGatewayL2Handler {
-    fn handle_event(&self, event: RelayerEvent) {
-        // match event.clone().data {
-        //     RelayerEventData::HostL1EventLogReceived { log: eth_event_log } => {
-        //         self.handle_ethereum_host_l1_event_log_received(event, eth_event_log);
-        //     }
-        //     RelayerEventData::HttpzResponseReceived { decrypted_value } => {
-        //         self.handle_httpz_response_received(event, decrypted_value);
-        //     }
-        //     _ => {
-        //         return;
-        //     }
-        // }
+    async fn handle_event(&self, event: RelayerEvent) {
+        match event.clone().data {
+            RelayerEventData::DecryptRequestRcvd {
+                ct_handles,
+                operation,
+            } => {
+                self.mock_handle_decrypt_request_received(event).await;
+            }
+            RelayerEventData::DecryptResponseEventLogRcvdFromGwL2 { log } => {}
+            _ => {
+                self.noop_handle_decrypt_reponse_event_log(event).await;
+            }
+        }
     }
 }

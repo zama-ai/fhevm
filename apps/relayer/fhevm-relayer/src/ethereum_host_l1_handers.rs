@@ -13,7 +13,7 @@ use uuid::Uuid;
 use alloy_sol_types::SolEvent;
 
 struct DecryptionRequestData {
-    request_id: Uint<256, 4>,
+    host_l1_request_id: Uint<256, 4>,
     callback_selector: FixedBytes<4>,
     contract_Address: Address,
 }
@@ -38,13 +38,13 @@ impl EthereumHostL1Handler {
                 self.context_data.insert(
                     event.request_id,
                     DecryptionRequestData {
-                        request_id: eth_decryption_request.requestID,
+                        host_l1_request_id: eth_decryption_request.requestID,
                         callback_selector: eth_decryption_request.callbackSelector,
                         contract_Address: eth_decryption_request.contractCaller,
                     },
                 );
                 info!(
-                    "Handling decryption event: orch request_id: {:?} block number: {:?}, ethereum_request_id: {:?}",
+                    "Decryption event log received: request_id: {:?} block number: {:?}, ethereum_request_id: {:?}",
                     event.request_id, eth_event_log.block_number, eth_decryption_request.requestID
                 );
                 let mut ct_handles: Vec<[u8; 32]> = Vec::new();
@@ -66,13 +66,13 @@ impl EthereumHostL1Handler {
         _ = self.dispatcher.dispatch_event(next_event).await;
     }
 
-    async fn handle_decrypt_response(&self, event: RelayerEvent, _decrypted_value: DecryptedValue) {
+    async fn handle_decrypt_response(&self, event: RelayerEvent, decrypted_value: DecryptedValue) {
         // TODO: Send the decryped value to ethereum L1.
         match self.context_data.get(&event.request_id) {
             Some(_decrypted_request_data) => {
                 info!(
-                    "Handling decryption event: orch request_id: {:?}",
-                    event.request_id,
+                    "Decryption response received: request_id: {:?}, value: {:?}",
+                    event.request_id, decrypted_value,
                 );
                 // send the transaction using the request_id and callback selection from request data
             }
