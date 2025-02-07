@@ -3,13 +3,61 @@ use config::{Config, ConfigError, Environment, File};
 use serde::Deserialize;
 use std::env;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct NetworkConfig {
     pub ws_url: String,
     pub http_url: String,
     pub chain_id: u64,
     pub retry_delay: u64,
     pub max_reconnection_attempts: u32,
+}
+
+impl NetworkConfig {
+    pub fn validate(&self) -> Result<(), AppConfigError> {
+        // Validate URLs
+        if !self.ws_url.starts_with("ws://") && !self.ws_url.starts_with("wss://") {
+            return Err(AppConfigError::InvalidNetworkConfig(format!(
+                "Invalid WebSocket URL: {}",
+                self.ws_url
+            )));
+        }
+        if !self.http_url.starts_with("http://") && !self.http_url.starts_with("https://") {
+            return Err(AppConfigError::InvalidNetworkConfig(format!(
+                "Invalid HTTP URL: {}",
+                self.http_url
+            )));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct NetworksConfig {
+    pub fhevm: NetworkConfig,
+    pub rollup: Option<NetworkConfig>,
+}
+
+impl NetworksConfig {
+    pub fn validate(&self) -> Result<(), AppConfigError> {
+        self.fhevm.validate()?;
+        if let Some(rollup) = &self.rollup {
+            rollup.validate()?;
+        }
+        Ok(())
+    }
+
+    pub fn get_network(&self, network_name: &str) -> Result<&NetworkConfig, AppConfigError> {
+        match network_name {
+            "fhevm" => Ok(&self.fhevm),
+            "rollup" => self.rollup.as_ref().ok_or_else(|| {
+                AppConfigError::InvalidNetworkConfig("Rollup network not configured".into())
+            }),
+            _ => Err(AppConfigError::InvalidNetworkConfig(format!(
+                "Unknown network: {}",
+                network_name
+            ))),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -42,7 +90,7 @@ pub struct ContractConfig {
 #[derive(Debug, Deserialize)]
 pub struct Settings {
     pub environment: String,
-    pub network: NetworkConfig,
+    pub networks: NetworksConfig,
     pub transaction: TransactionConfig,
     pub contracts: ContractConfig,
     pub log: LogConfig,
@@ -58,6 +106,9 @@ pub enum AppConfigError {
 
     #[error("Missing required environment variable: {0}")]
     MissingEnvVar(String),
+
+    #[error("Invalid network configuration: {0}")]
+    InvalidNetworkConfig(String),
 }
 
 impl Settings {
@@ -77,7 +128,17 @@ impl Settings {
             .build()?;
 
         let settings: Settings = s.try_deserialize()?;
-        println!("Final WS URL: {}", settings.network.ws_url);
+
+        // Validate network configurations
+        settings.networks.validate()?;
+
+        // Log the network configurations for debugging
+        tracing::info!(
+            fhevm_ws = %settings.networks.fhevm.ws_url,
+            fhevm_chain_id = %settings.networks.fhevm.chain_id,
+            rollup_configured = settings.networks.rollup.is_some(),
+            "Loaded network configurations"
+        );
 
         Ok(settings)
     }
@@ -103,6 +164,10 @@ impl Settings {
         }
 
         Ok(())
+    }
+
+    pub fn get_network(&self, network_name: &str) -> Result<&NetworkConfig, AppConfigError> {
+        self.networks.get_network(network_name)
     }
 }
 

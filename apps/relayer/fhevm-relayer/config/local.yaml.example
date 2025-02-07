@@ -5,14 +5,22 @@
 
 environment: development
 
-network:
-  # Local WebSocket endpoint - Update with your local node
-  ws_url: "ws://localhost:8756"
-  http_url: "http://localhost:8756"
-  chain_id: 123456
-  # Quick retries for development
-  retry_delay: 1000  # 1 second for faster local development
-  max_reconnection_attempts: 3
+
+
+
+networks:
+  fhevm:
+    ws_url: "ws://localhost:8756"
+    http_url: "http://localhost:8756"
+    chain_id: 123456
+    retry_delay: 1000
+    max_reconnection_attempts: 3
+  rollup:
+    ws_url: "ws://localhost:8757"
+    http_url: "http://localhost:8757"
+    chain_id: 654321
+    retry_delay: 1000
+    max_reconnection_attempts: 3
 
 transaction:
   private_key_env: "ETHEREUM_PRIVATE_KEY"

@@ -16,7 +16,7 @@ use tokio::task;
 use tracing::{error, info};
 use uuid::Uuid;
 
-use alloy::primitives::{keccak256, Bytes, B256, U256};
+use alloy::primitives::{Bytes, U256};
 use alloy_sol_types::SolEvent;
 
 #[derive(Debug, Clone)]

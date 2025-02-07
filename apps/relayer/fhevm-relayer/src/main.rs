@@ -23,16 +23,16 @@ async fn main() -> eyre::Result<()> {
     let settings =
         Settings::new().map_err(|e| eyre::eyre!("Failed to load configuration: {}", e))?;
 
+    init_tracing(&settings.log)?;
+
     settings
         .validate_addresses()
         .map_err(|e| eyre::eyre!("Configuration validation failed: {}", e))?;
 
-    init_tracing(&settings.log)?;
-
     let tx_service = TransactionService::new(
-        &settings.network.http_url,
+        &settings.networks.fhevm.http_url,
         &settings.transaction.private_key_env,
-        settings.network.chain_id,
+        settings.networks.fhevm.chain_id,
     )
     .await
     .map_err(|e| eyre::eyre!("Failed to create transaction service: {}", e))?;
@@ -58,7 +58,7 @@ async fn main() -> eyre::Result<()> {
     info!(
         ?decryption_oracle_address,
         ?tfhe_executor_address,
-        ?settings.network.ws_url,
+        ?settings.networks.fhevm.ws_url,
         "Initialized contract addresses"
     );
 
@@ -81,7 +81,7 @@ async fn main() -> eyre::Result<()> {
     orchestrator.register_handler(2, Arc::clone(&gateway_l2_event_handler));
 
     // === Initialize Ethereum host L1 adapter
-    let host_l1 = EthereumHostL1::new(&settings.network.ws_url)
+    let host_l1 = EthereumHostL1::new(&settings.networks.fhevm.ws_url)
         .await
         .map_err(|e| eyre::eyre!("Failed to create event handler: {}", e))?;
     let host_l1 = Arc::new(host_l1);
