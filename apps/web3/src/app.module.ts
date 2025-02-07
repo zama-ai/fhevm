@@ -32,12 +32,17 @@ import { FheEventRepository } from './domain/services/fhe-event.repository.js'
 import { PrismaFheEventRepository } from './infra/database/repositories/prisma-fhe-event.repository.js'
 import { web3 } from 'messages'
 
+// Note: I need to override the default behavior of ConfigModule in the tests,
+// and, as we use a dynamic module, we need to store the current instance to
+// override it in the tests.
+export const configModule = ConfigModule.forRoot({
+  isGlobal: true,
+  load: [awsConfig, fheConfig, ethersConfig],
+})
+
 @Module({
   imports: [
-    ConfigModule.forRoot({
-      isGlobal: true,
-      load: [awsConfig, fheConfig, ethersConfig],
-    }),
+    configModule,
     DatabaseModule,
     SqsModule.registerAsync({
       inject: [ConfigService],

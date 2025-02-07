@@ -1,17 +1,10 @@
 import { Module } from '@nestjs/common'
 import { SnsProducer } from './sns.producer.js'
-import { PUBSUB } from '#constants.js'
-import { PubSub } from 'utils'
 import { SQSConsumer } from './sqs.consumer.js'
+import { SharedModule } from '#shared/shared.module.js'
 
 @Module({
-  providers: [
-    {
-      provide: PUBSUB,
-      useClass: PubSub,
-    },
-    SnsProducer,
-    SQSConsumer,
-  ],
+  imports: [SharedModule],
+  providers: [SnsProducer, SQSConsumer],
 })
 export class InfraModule {}

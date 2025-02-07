@@ -24,7 +24,7 @@ export class SnsProducer {
     this.pubsub.subscribe('back:*', this.handleBackEvent)
   }
 
-  publish = (event: any): Task<void, AppError> => {
+  publish = (event: back.BackEvent): Task<void, AppError> => {
     this.logger.debug(`publishing: ${JSON.stringify(event)}`)
 
     return new Task((resolve, reject) => {
@@ -49,7 +49,7 @@ export class SnsProducer {
     })
   }
 
-  handleBackEvent: ISubscriber<back.BackEvent> = event => {
+  private handleBackEvent: ISubscriber<back.BackEvent> = event => {
     this.logger.debug(`handling event: ${event.type}`)
     switch (event.type as unknown as back.BackEvent['type']) {
       case 'back:dapp:stats-requested':

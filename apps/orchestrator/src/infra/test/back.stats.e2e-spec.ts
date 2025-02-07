@@ -11,6 +11,7 @@ import {
   vi,
 } from 'vitest'
 import { faker } from '@faker-js/faker'
+import { MS_NAME } from '#constants.js'
 
 describe('back dapp stats', () => {
   const manager = new IntegrationManager()
@@ -50,12 +51,12 @@ describe('back dapp stats', () => {
         })
         const messages = await manager.getLogQueueMessages()
         expect(messages.length).toBe(2)
-        expect(back.isBackEvent(messages[0])).toBe(true)
-        expect((messages[0] as back.BackEvent).type).toBe(
+        expect(back.isBackEvent(messages[0]?.event)).toBe(true)
+        expect((messages[0]?.event as back.BackEvent).type).toBe(
           'back:dapp:stats-requested',
         )
-        expect(web3.isWeb3Event(messages[1])).toBe(true)
-        expect((messages[1] as web3.Web3Event).type).toBe(
+        expect(web3.isWeb3Event(messages[1]?.event)).toBe(true)
+        expect((messages[1]?.event as web3.Web3Event).type).toBe(
           'web3:fhe-event:requested',
         )
       })
@@ -67,8 +68,8 @@ describe('back dapp stats', () => {
         })
         const messages = await manager.getLogQueueMessages()
         expect(messages.length).toBe(2)
-        expect(messages[0]?.meta.correlationId).toBe(correlationId)
-        expect(messages[1]?.meta.correlationId).toBe(correlationId)
+        expect(messages[0]?.event.meta.correlationId).toBe(correlationId)
+        expect(messages[1]?.event.meta.correlationId).toBe(correlationId)
       })
     })
   })
@@ -89,20 +90,26 @@ describe('back dapp stats', () => {
           },
           { correlationId },
         )
-        await manager.sendMessage(message)
+        // Note: The only micro service that should rise this event is the orchestrator
+        // In case another micro service publishes this event, the orchestrator is going to
+        // republish.
+        await manager.sendMessage(message, MS_NAME)
         await vi.waitUntil(async () => {
           const size = await manager.getLogQueueSize()
-          return size === 1
+          return size > 0
         })
       })
 
       test('then it ignores it', async () => {
         const messages = await manager.getLogQueueMessages()
         expect(messages.length).toBe(1)
-        expect(back.isBackEvent(messages[0])).toBe(true)
-        expect((messages[0] as back.BackEvent).type).toBe(
-          'back:dapp:stats-available',
-        )
+        for (const message of messages) {
+          expect(back.isBackEvent(message?.event)).toBe(true)
+          expect(message?.attributes?.Sender.Value).toBe(MS_NAME)
+          expect((message?.event as back.BackEvent).type).toBe(
+            'back:dapp:stats-available',
+          )
+        }
       })
     })
   })

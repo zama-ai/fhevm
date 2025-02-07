@@ -30,6 +30,7 @@ async function startPostgres() {
 
 async function stopPostgres() {
   if (pgContainer) {
+    console.log(`🛑 testcontainer stopping Postgres`)
     await pgContainer.stop()
   }
 }
@@ -47,21 +48,26 @@ async function startAws() {
 
 async function stopAws() {
   if (awsContainer) {
+    console.log(`🛑 testcontainer stopping Postgres`)
     await awsContainer.stop()
   }
 }
 
-export async function setup(project: TestProject) {
+export default async function setup(project: TestProject) {
   const [databaseUrl, awsEndpoint] = await Promise.all([
     startPostgres(),
     startAws(),
   ])
   project.provide('databaseUrl', databaseUrl)
   project.provide('awsEndpoint', awsEndpoint)
-}
 
-export async function teardown() {
-  await Promise.all([stopPostgres(), stopAws()])
+  project.onTestsRerun(() => {
+    console.log(`global setup: rerunning...`)
+  })
+
+  return async () => {
+    await Promise.all([stopPostgres(), stopAws()])
+  }
 }
 
 declare module 'vitest' {

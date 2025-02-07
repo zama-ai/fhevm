@@ -55,7 +55,7 @@ export class SnsProducer implements MessageProducer {
    * It's used in case of error to retry with an exponential delay.
    * @param message - The message to publish
    */
-  private sendMessage = <
+  sendMessage = <
     T extends {
       type: string
       payload: any
@@ -81,7 +81,7 @@ export class SnsProducer implements MessageProducer {
           this.logger.debug(
             `message ${message.type} sent to topic ${this.#topicArn}`,
           )
-          resolve(`status code: ${res.$metadata.httpStatusCode}`)
+          resolve(`status code: ${res.$metadata?.httpStatusCode}`)
         })
         .catch((err: unknown) => {
           this.logger.warn(`failed to send message: ${err}`)
@@ -109,7 +109,7 @@ export class SnsProducer implements MessageProducer {
           }),
         )
         .then(result =>
-          resolve(`status code: ${result.$metadata.httpStatusCode}`),
+          resolve(`status code: ${result.$metadata?.httpStatusCode}`),
         )
         .catch((err: unknown) => {
           this.logger.warn(`failed to publish command: ${err}`)

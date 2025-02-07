@@ -5,10 +5,6 @@ import { ConfigService } from '@nestjs/config'
 import { back, web3 } from 'messages'
 import { AppError, PubSub, Task, unknownError, type ISubscriber } from 'utils'
 
-type EventMap<TEvent extends back.BackEvent | web3.Web3Event> = {
-  [key in TEvent['type']]: ISubscriber<Extract<TEvent, { type: key }>>
-}
-
 @Injectable()
 export class SnsProducer {
   private readonly logger = new Logger(SnsProducer.name)
@@ -28,14 +24,16 @@ export class SnsProducer {
     this.pubsub.subscribe('*', this.handleEvent)
   }
 
-  private readonly sendMessage = (message: string): Task<void, AppError> => {
-    this.logger.log(`🚀 publishing: ${message}`)
+  readonly sendMessage = (
+    message: back.BackEvent | web3.Web3Event,
+  ): Task<void, AppError> => {
+    this.logger.log(`🚀 publishing: ${message.type}`)
     return new Task((resolve, reject) => {
       this.client
         .send(
           new PublishCommand({
             TopicArn: this.topicArn,
-            Message: message,
+            Message: JSON.stringify(message),
             MessageAttributes: {
               Sender: { DataType: 'String', StringValue: MS_NAME },
             },
@@ -43,7 +41,7 @@ export class SnsProducer {
         )
         .then(result => {
           this.logger.debug(
-            `✅ PublishCommand status code: ${result.$metadata.httpStatusCode}`,
+            `✅ PublishCommand status code: ${result.$metadata?.httpStatusCode}`,
           )
           resolve()
         })
@@ -56,49 +54,18 @@ export class SnsProducer {
     })
   }
 
-  private readonly handlers: Partial<
-    EventMap<web3.Web3Event | back.BackEvent>
-  > = {
-    // Map `back:dapp:stats-requested` to `web3:fhe-event:detected`
-    'back:dapp:stats-requested': event => {
-      this.logger.log(`back:dapp:stats-requested ➡️ web3:fhe-event:requested`)
-      return this.sendMessage(
-        JSON.stringify(web3.fheRequested(event.payload, event.meta)),
-      )
-    },
-
-    // Map `web3:fhe-event:detected` to `back:dapp:stats-available`
-    'web3:fhe-event:detected': event => {
-      this.logger.log(`web3:fhe-event:detected ➡️ back:dapp:stats-available`)
-      const { id, ...props } = event.payload
-      return this.sendMessage(
-        JSON.stringify(
-          back.dappStatsAvailable(
-            {
-              externalRef: id,
-              ...props,
-            },
-            event.meta,
-          ),
-        ),
-      )
-    },
-  }
-
   handleEvent: ISubscriber<back.BackEvent | web3.Web3Event> = (
     event: back.BackEvent | web3.Web3Event,
   ): Task<void, AppError> => {
-    // Note: improve tyiping to remove tha cast
-    const handler = this.handlers[event.type] as ISubscriber<
-      back.BackEvent | web3.Web3Event
-    >
+    switch (event.type) {
+      case 'web3:fhe-event:requested':
+      case 'back:dapp:stats-available':
+        this.logger.log(`publishing ${event.type}`)
+        return this.sendMessage(event)
 
-    return handler
-      ? handler(event).tap(() => {
-          this.logger.debug(`✅ handled ${event.type}`)
-        })
-      : Task.of<void, AppError>(void 0).tap(() => {
-          this.logger.log(`⛔️ no handler for ${event.type}`)
-        })
+      default:
+        this.logger.log(`⛔️ no handler for ${event.type}`)
+        return Task.of<void, AppError>(void 0).tap(() => {})
+    }
   }
 }

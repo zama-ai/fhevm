@@ -11,6 +11,7 @@ export default defineConfig({
     env: {
       ...config({ path: '.env.test' }).parsed,
     },
+    setupFiles: ['./test/setup.ts'],
   },
   plugins: [
     // This is required to build the test files with SWC

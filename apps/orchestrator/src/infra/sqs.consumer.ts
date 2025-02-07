@@ -21,6 +21,8 @@ export class SQSConsumer {
 
       try {
         if (back.isBackEvent(data) || web3.isWeb3Event(data)) {
+          // Note: I need to drop all the messages coming from the orchestrator
+          // otherwise I start an infinite loop
           const messageAttributes:
             | Record<string, { Type: 'String'; Value: 'string' }>
             | undefined = body.MessageAttributes
@@ -28,6 +30,7 @@ export class SQSConsumer {
             this.logger.debug(`⛔️ stopping ${data.type} propagation`)
             return
           }
+
           this.logger.debug(
             `📬 publishing event ${data.type} on the internal queue`,
           )

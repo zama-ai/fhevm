@@ -22,12 +22,15 @@ export class IntegrationManager {
     await this.setup.afterEach()
   }
 
-  async sendMessage(message: string | object) {
+  async sendMessage(message: string | object, sender = 'test') {
     const result = await this.setup.sns.send(
       new PublishCommand({
         TopicArn: this.setup.topicArn,
         Message:
           typeof message === 'string' ? message : JSON.stringify(message),
+        MessageAttributes: {
+          Sender: { DataType: 'String', StringValue: sender },
+        },
       }),
     )
     expect(
@@ -57,7 +60,10 @@ export class IntegrationManager {
   }
 
   async getLogQueueMessages(): Promise<
-    (back.BackEvent | web3.Web3Event | null)[]
+    Array<{
+      event: back.BackEvent | web3.Web3Event
+      attributes?: Record<string, { Type: string; Value: string }>
+    } | null>
   > {
     const result = await this.setup.sqs.send(
       new ReceiveMessageCommand({
@@ -72,8 +78,14 @@ export class IntegrationManager {
       result.Messages?.map(message => {
         try {
           const parsedMessage = JSON.parse(message.Body ?? '')
-          const event = JSON.parse(parsedMessage.Message)
-          return event as back.BackEvent | web3.Web3Event
+          const attributes = parsedMessage.MessageAttributes as Record<
+            string,
+            { Type: string; Value: string }
+          >
+          const event = JSON.parse(parsedMessage.Message) as
+            | back.BackEvent
+            | web3.Web3Event
+          return { event, attributes }
         } catch {
           return null
         }
