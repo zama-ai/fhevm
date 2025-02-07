@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use std::sync::Arc;
 use uuid::Uuid;
 
-pub trait Event: Clone + Send + Sync {
+pub trait Event: Clone + Send + Sync + 'static {
     fn event_name(&self) -> &str;
     fn event_id(&self) -> u8;
     fn request_id(&self) -> Uuid;
@@ -16,7 +16,7 @@ pub trait EventDispatcher<E: Event>: Send + Sync {
 
 #[async_trait]
 pub trait EventHandler<E: Event>: Send + Sync {
-    fn handle_event(&self, event: E);
+    async fn handle_event(&self, event: E);
 }
 
 pub trait HandlerRegistry<E: Event> {

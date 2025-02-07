@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use tracing::info;
 
 use crate::{
@@ -20,8 +21,9 @@ impl EthereumHostL1EventLogHandler {
     }
 }
 
+#[async_trait]
 impl EventHandler<RelayerEvent> for EthereumHostL1EventLogHandler {
-    fn handle_event(&self, event: relayer_event::RelayerEvent) {
+    async fn handle_event(&self, event: relayer_event::RelayerEvent) {
         let eth_event_log: Log;
         match event.data {
             relayer_event::RelayerEventData::HostL1EventLogReceived { log: l } => eth_event_log = l,

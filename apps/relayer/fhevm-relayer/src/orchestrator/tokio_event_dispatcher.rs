@@ -19,27 +19,26 @@ impl<E: Event> TokioEventDispatcher<E> {
             suscribers: Arc::new(DashMap::new()),
         }
     }
-
-    fn handle_event(&self, event: E) {
-        let event = event.clone();
-        if let Some((_, handler)) = self
-            .once_subscribers
-            .remove(&(event.event_id(), event.request_id()))
-        {
-            handler.handle_event(event.clone());
-        } else if let Some(handler) = self.suscribers.get(&event.event_id()) {
-            let handler = handler.clone();
-            handler.handle_event(event);
-        } else {
-            // Log warning and ignore event.
-        }
-    }
 }
 
 #[async_trait]
 impl<E: Event> EventDispatcher<E> for TokioEventDispatcher<E> {
     async fn dispatch_event(&self, event: E) -> Result<(), Error> {
-        self.handle_event(event);
+        let event = event.clone();
+        if let Some((_, handler)) = self
+            .once_subscribers
+            .remove(&(event.event_id(), event.request_id()))
+        {
+            let handler = handler.clone();
+            let event = event.clone();
+            tokio::spawn(async move { handler.handle_event(event).await });
+        } else if let Some(handler) = self.suscribers.get(&event.event_id()) {
+            let handler = handler.clone();
+            let event = event.clone();
+            tokio::spawn(async move { handler.handle_event(event).await });
+        } else {
+            // Log warning and ignore event.
+        }
         Ok(())
     }
 }
