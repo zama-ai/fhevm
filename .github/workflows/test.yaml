@@ -47,7 +47,7 @@ jobs:
           pnpm --filter messages build
           pnpm --filter utils build
           pnpm --filter sqs build
-      - name: Copy generated code
-        run: pnpm copy:generated
+      - name: Generate Prisma code
+        run: pnpm prisma:generate
       - name: Test
         run: pnpm test
