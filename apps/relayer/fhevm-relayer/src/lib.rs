@@ -3,6 +3,7 @@ pub mod config;
 pub mod errors;
 pub mod ethereum;
 pub mod orchestrator;
+pub mod transaction;
 
 // TODO: Understand how to use crate level imports.
 pub mod arbitrum_gateway_l2_handlers;

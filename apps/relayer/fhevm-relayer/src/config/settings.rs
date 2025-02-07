@@ -4,26 +4,49 @@ use serde::Deserialize;
 use std::env;
 
 #[derive(Debug, Deserialize)]
+pub struct NetworkConfig {
+    pub ws_url: String,
+    pub http_url: String,
+    pub chain_id: u64,
+    pub retry_delay: u64,
+    pub max_reconnection_attempts: u32,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TransactionConfig {
+    pub private_key_env: String,
+    pub gas_limit: Option<u64>,
+    pub max_priority_fee: Option<String>,
+    pub timeout_secs: Option<u64>,
+    pub confirmations: Option<u64>,
+}
+
+impl TransactionConfig {
+    pub fn get_max_priority_fee(&self) -> Result<Option<u128>, AppConfigError> {
+        match &self.max_priority_fee {
+            Some(fee_str) => fee_str
+                .parse::<u128>()
+                .map(Some)
+                .map_err(|e| AppConfigError::Config(config::ConfigError::Foreign(Box::new(e)))),
+            None => Ok(None),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
 pub struct ContractConfig {
     pub decryption_oracle_address: String,
     pub tfhe_executor_address: String,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct NetworkConfig {
-    pub ws_url: String,
-    pub retry_delay: u64,
-    pub max_reconnection_attempts: u32,
-}
-
-#[derive(Debug, Deserialize)]
 pub struct Settings {
     pub environment: String,
     pub network: NetworkConfig,
+    pub transaction: TransactionConfig,
     pub contracts: ContractConfig,
     pub log: LogConfig,
 }
-
 // Error type for application-specific configuration errors
 #[derive(thiserror::Error, Debug)]
 pub enum AppConfigError {
@@ -41,33 +64,46 @@ impl Settings {
     pub fn new() -> Result<Self, AppConfigError> {
         let run_mode = env::var("RUN_MODE").unwrap_or_else(|_| "development".into());
 
+        // First get base config from files
         let s = Config::builder()
-            // Add environment-specific settings
             .add_source(File::with_name(&format!("config/{}", run_mode)).required(false))
-            // Add local settings (ignored by git)
             .add_source(File::with_name("config/local").required(false))
-            // Add environment variables with prefix "APP"
-            .add_source(Environment::with_prefix("APP"))
+            // Change how we specify environment variables
+            .add_source(
+                Environment::with_prefix("APP")
+                    .separator("__") // Use double underscore
+                    .prefix_separator("_"), // Separator between APP and the rest
+            )
             .build()?;
 
-        s.try_deserialize().map_err(AppConfigError::Config)
+        let settings: Settings = s.try_deserialize()?;
+        println!("Final WS URL: {}", settings.network.ws_url);
+
+        Ok(settings)
     }
 
-    // Helper method to validate all contract addresses
     pub fn validate_addresses(&self) -> Result<(), AppConfigError> {
-        validate_ethereum_address(&self.contracts.decryption_oracle_address)?;
-        validate_ethereum_address(&self.contracts.tfhe_executor_address)?;
+        // Create a vector of (name, address) pairs to validate
+        let addresses = vec![
+            (
+                "decryption_oracle",
+                &self.contracts.decryption_oracle_address,
+            ),
+            ("tfhe_executor", &self.contracts.tfhe_executor_address),
+        ];
+
+        // Iterate and validate each address
+        for (name, address) in addresses {
+            if !address.starts_with("0x") || address.len() != 42 {
+                return Err(AppConfigError::InvalidAddress(format!(
+                    "Invalid {} address: {}",
+                    name, address
+                )));
+            }
+        }
+
         Ok(())
     }
-}
-
-// Helper function to validate Ethereum addresses
-pub fn validate_ethereum_address(address: &str) -> Result<(), AppConfigError> {
-    if !address.starts_with("0x") || address.len() != 42 {
-        return Err(AppConfigError::InvalidAddress(address.to_string()));
-    }
-    // Could add additional hex validation here
-    Ok(())
 }
 
 // Helper function to get a required environment variable

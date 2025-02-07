@@ -8,9 +8,18 @@ environment: development
 network:
   # Local WebSocket endpoint - Update with your local node
   ws_url: "ws://localhost:8756"
+  http_url: "http://localhost:8756"
+  chain_id: 123456
   # Quick retries for development
   retry_delay: 1000  # 1 second for faster local development
   max_reconnection_attempts: 3
+
+transaction:
+  private_key_env: "ETHEREUM_PRIVATE_KEY"
+  gas_limit: 150000
+  max_priority_fee: 2000000000 
+  timeout_secs: 30
+  confirmations: 1
 
 contracts:
   # Example local contract addresses - Update these after deployment

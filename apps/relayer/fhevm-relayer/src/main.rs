@@ -1,5 +1,5 @@
 use alloy::primitives::Address;
-use std::{str::FromStr, sync::Arc};
+use std::{str::FromStr, sync::Arc, time::Duration};
 use tracing::info;
 use tracing_subscriber::{fmt::SubscriberBuilder, EnvFilter};
 
@@ -14,6 +14,7 @@ use fhevm_relayer::{
         Orchestrator, TokioEventDispatcher,
     },
     relayer_event::RelayerEvent,
+    transaction::{TransactionService, TxConfig},
 };
 
 #[tokio::main]
@@ -27,6 +28,23 @@ async fn main() -> eyre::Result<()> {
         .map_err(|e| eyre::eyre!("Configuration validation failed: {}", e))?;
 
     init_tracing(&settings.log)?;
+
+    let tx_service = TransactionService::new(
+        &settings.network.http_url,
+        &settings.transaction.private_key_env,
+        settings.network.chain_id,
+    )
+    .await
+    .map_err(|e| eyre::eyre!("Failed to create transaction service: {}", e))?;
+
+    let tx_service_clone = tx_service.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(60));
+        loop {
+            interval.tick().await;
+            tx_service_clone.cleanup_pending().await;
+        }
+    });
 
     info!("Starting FHE Event Handler");
 
@@ -50,8 +68,10 @@ async fn main() -> eyre::Result<()> {
     let orchestrator = Orchestrator::new(Arc::clone(&dispatcher), &node_id);
 
     // === Register the event handlers
-    let host_l1_event_log_handler: Arc<dyn EventHandler<RelayerEvent>> =
-        Arc::new(EthereumHostL1Handler::new(Arc::clone(&dispatcher)));
+    let tx_config = TxConfig::from(settings.transaction);
+    let host_l1_event_log_handler: Arc<dyn EventHandler<RelayerEvent>> = Arc::new(
+        EthereumHostL1Handler::new(Arc::clone(&dispatcher), tx_service.clone(), tx_config),
+    );
     orchestrator.register_handler(0, Arc::clone(&host_l1_event_log_handler));
     orchestrator.register_handler(3, Arc::clone(&host_l1_event_log_handler));
 
