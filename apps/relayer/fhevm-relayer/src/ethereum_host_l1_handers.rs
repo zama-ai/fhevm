@@ -8,6 +8,7 @@ use alloy::primitives::{Address, FixedBytes, Uint};
 use alloy::rpc::types::Log;
 use async_trait::async_trait;
 use std::sync::Arc;
+use tracing::info;
 use uuid::Uuid;
 
 use alloy_sol_types::SolEvent;
@@ -42,6 +43,10 @@ impl EthereumHostL1Handler {
                         callback_selector: eth_decryption_request.callbackSelector,
                         contract_Address: eth_decryption_request.contractCaller,
                     },
+                );
+                info!(
+                    "Decryption event received: block number: {:?}, ethereum_request_id: {:?}",
+                    eth_event_log.block_number, eth_decryption_request.requestID
                 );
                 next_event = event.derive_next_event(RelayerEventData::DecryptionRequestReceived {
                     ct_handle: "sample ct handler".to_string(),
