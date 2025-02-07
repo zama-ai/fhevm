@@ -37,11 +37,11 @@ impl Event for RelayerEvent {
     //TODO: Replace boiler plate with macro based code.
     fn event_id(&self) -> u8 {
         match &self.data {
-            RelayerEventData::HostL1EventLogReceived { .. } => 0,
-            RelayerEventData::DecryptionRequestReceived { .. } => 1,
-            RelayerEventData::HttpzRequestSent { .. } => 2,
-            RelayerEventData::HttpzResponseReceived { .. } => 3,
-            RelayerEventData::DecryptionResultSent { .. } => 4,
+            RelayerEventData::PubDecryptEventLogRcvdFromHostL1 { .. } => 0,
+            RelayerEventData::DecryptRequestRcvd { .. } => 1,
+            RelayerEventData::DecryptResponseEventLogRcvdFromGwL2 { .. } => 2,
+            RelayerEventData::DecryptionResponseRcvdFromGwL2 { .. } => 3,
+            RelayerEventData::DecryptResponseSentToHostL1 { .. } => 4,
             RelayerEventData::DecryptionFailed { .. } => 5,
         }
     }
@@ -71,25 +71,49 @@ pub enum ApiCategory {
 
 #[derive(Clone, AsRefStr)]
 pub enum RelayerEventData {
-    HostL1EventLogReceived {
-        log: Log,
+    // Raw event log from ethereum. Handler will check event type, decode the
+    // event, store ethereum related contextual data and dispatch a decryption
+    // request event.
+    PubDecryptEventLogRcvdFromHostL1 {
+        // For ethereum handler
+        // TODO: Make relayer event generic of this log type, to make it blockchain agnostic.
+        event_log: Log,
     },
-    DecryptionRequestReceived {
-        ct_handle: String,
+    // Decryption request after processing by ethereum adapter. This will be
+    // picked up by gateway l2 adapter, which will send a request to decryption
+    // manager contract on the gateway l2 blockchain.
+    // After sending the request, it will receive a gateway_l2_request_id, which
+    // it will persist in contextual data of gateway l2 adapter.
+    //
+    // After this system will wait until a gateway l2 listener catches a response and creates a new request.
+    DecryptRequestRcvd {
+        // For gateway l2 handler
+        ct_handles: Vec<[u8; 32]>,
         operation: DecryptionType,
-    },
-    HttpzRequestSent {
-        ct_handle: String,
-        operation: DecryptionType,
-    },
-    HttpzResponseReceived {
-        decrypted_value: DecryptedValue,
-    },
-    DecryptionResultSent {
-        host_l1_tx_id: String,
     },
 
+    // Raw event log from gateway l2. Will be processed by gateway l2 handler.
+    // Handler will check the event type and decode the event. After decoding,
+    // it will check if gateway_l2_request_id is available in the contextual
+    // data store of the handler. if not, drops the request (not meant for this
+    // relayer instance). if found, creates the next event with the original
+    // orchestrator request id retreived from contextual data store.
+    DecryptResponseEventLogRcvdFromGwL2 {
+        // For gateway l2 handler
+        log: Log,
+    },
+    DecryptionResponseRcvdFromGwL2 {
+        // For ethereum handler
+        decrypted_value: DecryptedValue,
+    },
+    // This event data could be used to update the dashboard.
+    DecryptResponseSentToHostL1 {
+        // For no handler, just status update.
+        tx_hash: DecryptedValue,
+        decrypted_value: DecryptedValue,
+    },
     DecryptionFailed {
+        // For no handler, just status updated.
         error: String,
     },
 }
@@ -100,7 +124,7 @@ pub enum DecryptionType {
     UserDecrypt { user_public_key: Vec<u8> },
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum DecryptedValue {
     PublicDecrypt {
         plaintext: Vec<u8>,

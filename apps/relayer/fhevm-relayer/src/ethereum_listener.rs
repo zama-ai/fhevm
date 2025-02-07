@@ -28,8 +28,8 @@ pub async fn event_listener(
                             category: relayer_event::ApiCategory::PRODUCTION,
                             number: 1,
                         },
-                        relayer_event::RelayerEventData::HostL1EventLogReceived {
-                            log: event_log,
+                        relayer_event::RelayerEventData::PubDecryptEventLogRcvdFromHostL1  {
+                            event_log,
                         },
                     );
                     _ = orchestrator.dispatch_event(event).await; // TODO: Proper error handling and make it aync.
