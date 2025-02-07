@@ -1,9 +1,10 @@
 import { PublishCommand, SNSClient } from '@aws-sdk/client-sns'
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
-import { AppDeploymentMessage, web3 } from 'messages'
-import { MessageProducer } from '#domain/services/message.producer.js'
-import { AppError, PubSub, type ISubscriber, Task, unknownError } from 'utils'
+import type { AppDeploymentMessage, web3 } from 'messages'
+import type { MessageProducer } from '#domain/services/message.producer.js'
+import type { AppError, IPubSub, ISubscriber } from 'utils'
+import { Task, unknownError } from 'utils'
 import { MS_NAME, PUBSUB } from '#constants.js'
 
 @Injectable()
@@ -15,7 +16,7 @@ export class SnsProducer implements MessageProducer {
 
   constructor(
     @Inject(PUBSUB)
-    private readonly pubsub: PubSub<web3.Web3Event>,
+    private readonly pubsub: IPubSub<web3.Web3Event>,
     config: ConfigService,
   ) {
     this.logger.debug(`endpoint: ${config.get('aws.endpoint')}`)

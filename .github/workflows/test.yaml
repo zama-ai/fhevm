@@ -39,7 +39,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          cache: 'pnpm'
+          cache: "pnpm"
       - name: Install dependencies
         run: pnpm install
       - name: Build packages
@@ -47,5 +47,7 @@ jobs:
           pnpm --filter messages build
           pnpm --filter utils build
           pnpm --filter sqs build
+      - name: Copy generated code
+        run: pnpm copy:generated
       - name: Test
         run: pnpm test
