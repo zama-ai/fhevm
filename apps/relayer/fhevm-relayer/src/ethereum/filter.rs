@@ -16,6 +16,6 @@ impl ContractAndTopicsFilter {
     pub fn to_eth_subscription_filter(&self, block_number_or_tag: BlockNumberOrTag) -> Filter {
         Filter::new()
             .from_block(block_number_or_tag)
-            .address(self.contract_addresses.clone());
+            .address(self.contract_addresses.clone())
     }
 }
