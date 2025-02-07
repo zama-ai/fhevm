@@ -22,3 +22,6 @@ target/
 
 # Local config file
 config/local.yaml
+
+# Advisory db and lock file
+Advisory-db*
