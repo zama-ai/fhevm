@@ -1,5 +1,4 @@
 use std::error::Error;
-use std::thread::sleep;
 use std::time::Duration;
 
 use sqlx::postgres::PgListener;
@@ -57,8 +56,8 @@ pub(crate) async fn run_loop(
         };
 
         loop {
-            if let Err(err) = poll_and_execute_sns_tasks(&mut conn, &keys, conf).await {
-                error!(target: "worker", "Failed to poll and execute tasks: {err}");
+            if let Err(err) = fetch_and_execute_sns_tasks(&mut conn, &keys, conf).await {
+                error!(target: "worker", "Failed to fetch and execute tasks: {err}");
                 break; // Break to reacquire a connection
             }
 
@@ -86,8 +85,8 @@ pub(crate) async fn run_loop(
     }
 }
 
-/// Polls the database for tasks and executes them.
-async fn poll_and_execute_sns_tasks(
+/// Fetch and process SnS tasks from the database.
+async fn fetch_and_execute_sns_tasks(
     conn: &mut sqlx::pool::PoolConnection<sqlx::Postgres>,
     keys: &KeySet,
     conf: &DBConfig,
