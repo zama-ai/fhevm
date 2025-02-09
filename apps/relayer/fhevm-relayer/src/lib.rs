@@ -7,9 +7,10 @@ pub mod transaction;
 
 // TODO: Understand how to use crate level imports.
 pub mod arbitrum_gateway_l2_handlers;
-pub mod ethereum_host_l1_handers;
+pub mod ethereum_host_l1_handlers;
 pub mod ethereum_listener;
 pub mod relayer_event;
+pub mod rollup_listener;
 
 // Re-export commonly used types
 pub use errors::Error;

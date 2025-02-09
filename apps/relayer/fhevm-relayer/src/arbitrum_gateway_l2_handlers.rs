@@ -28,6 +28,7 @@ impl ArbitrumGatewayL2Handler {
     }
 
     async fn mock_handle_decrypt_request_received(&self, event: RelayerEvent) {
+        // TODO: make a tx to Rollup
         let next_event_data = RelayerEventData::DecryptionResponseRcvdFromGwL2 {
             decrypted_value: DecryptedValue::PublicDecrypt {
                 plaintext: vec![1, 2, 3],

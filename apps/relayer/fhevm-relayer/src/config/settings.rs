@@ -85,6 +85,7 @@ impl TransactionConfig {
 pub struct ContractConfig {
     pub decryption_oracle_address: String,
     pub tfhe_executor_address: String,
+    pub decryption_manager_address: String,
 }
 
 #[derive(Debug, Deserialize)]

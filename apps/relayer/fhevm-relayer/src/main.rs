@@ -6,14 +6,15 @@ use tracing_subscriber::{fmt::SubscriberBuilder, EnvFilter};
 use fhevm_relayer::{
     arbitrum_gateway_l2_handlers::ArbitrumGatewayL2Handler,
     config::settings::{LogConfig, Settings},
-    ethereum::{ContractAndTopicsFilter, EthereumHostL1},
-    ethereum_host_l1_handers::EthereumHostL1Handler,
+    ethereum::{ContractAndTopicsFilter, EthereumHostL1, RollupL2},
+    ethereum_host_l1_handlers::EthereumHostL1Handler,
     ethereum_listener::event_listener,
     orchestrator::{
         traits::{EventHandler, HandlerRegistry},
         Orchestrator, TokioEventDispatcher,
     },
     relayer_event::RelayerEvent,
+    rollup_listener::event_listener_rollup,
     transaction::{TransactionService, TxConfig},
 };
 
@@ -55,6 +56,10 @@ async fn main() -> eyre::Result<()> {
     let tfhe_executor_address = Address::from_str(&settings.contracts.tfhe_executor_address)
         .map_err(|_| eyre::eyre!("Invalid TFHE executor address"))?;
 
+    let decryption_manager_address =
+        Address::from_str(&settings.contracts.decryption_manager_address)
+            .map_err(|_| eyre::eyre!("Invalid TFHE executor address"))?;
+
     info!(
         ?decryption_oracle_address,
         ?tfhe_executor_address,
@@ -94,6 +99,21 @@ async fn main() -> eyre::Result<()> {
     );
     let subscription = host_l1.new_subscription(filter, None).await?;
     tokio::spawn(event_listener(subscription, Arc::clone(&orchestrator)));
+
+    // === Initialize Rollup L2 adapter
+    let rollup_l2 = RollupL2::new(&settings.networks.rollup.unwrap().ws_url)
+        .await
+        .map_err(|e| eyre::eyre!("Failed to create event handler for Rollup L2: {}", e))?;
+    let rollup_l2 = Arc::new(rollup_l2);
+
+    // === Create a subscription for events and spawn a listener to listen for events from the subcription.
+    // TODO: Pass the event_dispatcher to the event_listener
+    let filter_rollup = ContractAndTopicsFilter::new(vec![decryption_manager_address], vec![]);
+    let subscription_rollup = rollup_l2.new_subscription(filter_rollup, None).await?;
+    tokio::spawn(event_listener_rollup(
+        subscription_rollup,
+        Arc::clone(&orchestrator),
+    ));
 
     // === Wait for ctrl + c signal to stop the application
     tokio::signal::ctrl_c().await?;

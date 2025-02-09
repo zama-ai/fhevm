@@ -30,6 +30,16 @@ sol!(
     "./artifacts/TFHEExecutor.json"
 );
 
+// Decryption Manager (Rollup)
+
+sol!(
+    #[allow(missing_docs)]
+    #[sol(rpc)]
+    #[derive(Debug, serde::Serialize, serde::Deserialize)]
+    DecyptionManager,
+    "./artifacts/DecryptionManager.json"
+);
+
 // Define the Transfer event structure using alloy_sol_types
 sol! {
     #[derive(Debug)]
