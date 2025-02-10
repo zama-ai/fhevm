@@ -136,7 +136,7 @@ spec:
         {{- end }}
         {{- end }}
         - image: {{ .Values.kmsCore.image.name }}:{{ .Values.kmsCore.image.tag }}
-          name: {{ include "kmsCoreName" . }}-load-enclave-env
+          name: kms-service-init-load-enclave-env
           command:
             - /bin/sh
           args:
@@ -161,7 +161,7 @@ spec:
           {{- end }}
         {{- end }}
         - image: {{ .Values.kmsCore.image.name }}:{{ .Values.kmsCore.image.tag }}
-          name: {{ include "kmsCoreName" . }}-gen-keys
+          name: kms-service-init-gen-keys
           command:
             - /bin/sh
           args:
@@ -219,9 +219,9 @@ spec:
               ephemeral-storage: {{ .Values.kmsCore.resources.limits.ephemeralStorage }}
       containers:
         - image: {{ .Values.kmsCore.image.name }}:{{ .Values.kmsCore.image.tag }}
-          name: {{ include "kmsCoreName" . }}
           imagePullPolicy: Always
           {{- if .Values.kmsCore.nitroEnclave.enabled }}
+          name: kms-service-enclave
           command:
             - /bin/sh
           args:
@@ -234,6 +234,7 @@ spec:
                 sleep 60
               done
           {{- else }}
+          name: kms-service
           command:
             - /bin/sh
           args:
