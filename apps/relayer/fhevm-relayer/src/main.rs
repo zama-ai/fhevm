@@ -30,6 +30,7 @@ async fn main() -> eyre::Result<()> {
         .validate_addresses()
         .map_err(|e| eyre::eyre!("Configuration validation failed: {}", e))?;
 
+    // Prepare tx service for L1
     let tx_service = TransactionService::new(
         &settings.networks.fhevm.http_url,
         &settings.transaction.private_key_env,
@@ -44,6 +45,29 @@ async fn main() -> eyre::Result<()> {
         loop {
             interval.tick().await;
             tx_service_clone.cleanup_pending().await;
+        }
+    });
+
+    let rollup_settings = settings
+        .get_network("rollup")
+        .cloned()
+        .map_err(|e| eyre::eyre!("Failed to get rollup settings: {}", e))?;
+
+    // Prepare tx service for rollup
+    let tx_service_rollup = TransactionService::new(
+        &rollup_settings.http_url,
+        &settings.transaction.private_key_env,
+        rollup_settings.chain_id,
+    )
+    .await
+    .map_err(|e| eyre::eyre!("Failed to create transaction service: {}", e))?;
+
+    let tx_service_rollup_clone = tx_service_rollup.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(60));
+        loop {
+            interval.tick().await;
+            tx_service_rollup_clone.cleanup_pending().await;
         }
     });
 
@@ -74,15 +98,26 @@ async fn main() -> eyre::Result<()> {
 
     // === Register the event handlers
     let tx_config = TxConfig::from(settings.transaction);
-    let host_l1_event_log_handler: Arc<dyn EventHandler<RelayerEvent>> = Arc::new(
-        EthereumHostL1Handler::new(Arc::clone(&dispatcher), tx_service.clone(), tx_config),
-    );
+    let host_l1_event_log_handler: Arc<dyn EventHandler<RelayerEvent>> =
+        Arc::new(EthereumHostL1Handler::new(
+            Arc::clone(&dispatcher),
+            tx_service.clone(),
+            tx_config.clone(),
+        ));
+
+    // Event type: PubDecryptEventLogRcvdFromHostL1
     orchestrator.register_handler(0, Arc::clone(&host_l1_event_log_handler));
+    // Event type: DecryptionResponseRcvdFromGwL2
     orchestrator.register_handler(3, Arc::clone(&host_l1_event_log_handler));
 
-    let gateway_l2_event_handler: Arc<dyn EventHandler<RelayerEvent>> =
-        Arc::new(ArbitrumGatewayL2Handler::new(Arc::clone(&dispatcher)));
+    let gateway_l2_event_handler: Arc<dyn EventHandler<RelayerEvent>> = Arc::new(
+        ArbitrumGatewayL2Handler::new(Arc::clone(&dispatcher), tx_service_rollup, tx_config),
+    );
+
+    // Event type: DecryptRequestRcvd
     orchestrator.register_handler(1, Arc::clone(&gateway_l2_event_handler));
+
+    // Event type: DecryptResponseEventLogRcvdFromGwL2
     orchestrator.register_handler(2, Arc::clone(&gateway_l2_event_handler));
 
     // === Initialize Ethereum host L1 adapter
@@ -101,7 +136,7 @@ async fn main() -> eyre::Result<()> {
     tokio::spawn(event_listener(subscription, Arc::clone(&orchestrator)));
 
     // === Initialize Rollup L2 adapter
-    let rollup_l2 = RollupL2::new(&settings.networks.rollup.unwrap().ws_url)
+    let rollup_l2 = RollupL2::new(&rollup_settings.ws_url)
         .await
         .map_err(|e| eyre::eyre!("Failed to create event handler for Rollup L2: {}", e))?;
     let rollup_l2 = Arc::new(rollup_l2);

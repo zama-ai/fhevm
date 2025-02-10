@@ -1,4 +1,4 @@
-use tracing::info;
+use tracing::{error, info};
 
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
@@ -34,7 +34,11 @@ pub async fn event_listener_rollup(
                             log:event_log,
                         },
                     );
-                    _ = orchestrator.dispatch_event(event).await; // TODO: Proper error handling and make it aync.
+                    orchestrator.dispatch_event(event).await.unwrap_or_else(|e| {
+                        error!("Failed to dispatch event: {e}");
+                    });
+
+
                 }
                 None => {
                     info!("Subscription stream ended");

@@ -105,6 +105,7 @@ impl EthereumHostL1Handler {
             }
             None => {
                 let request_id = event.clone().request_id;
+                info!("unknown request id: {:?}", request_id);
                 let _next_event = event.derive_next_event(RelayerEventData::DecryptionFailed {
                     error: format!(
                         "httpz response received for unknown request id: {:?}",
@@ -246,6 +247,7 @@ impl EventHandler<RelayerEvent> for EthereumHostL1Handler {
                     .await;
             }
             RelayerEventData::DecryptionResponseRcvdFromGwL2 { decrypted_value } => {
+                info!("In ethereum_host_L1_handler, received  DecryptionResponseRcvdFromGwL2");
                 self.handle_decrypt_response(event, decrypted_value).await;
             }
             _ => {
