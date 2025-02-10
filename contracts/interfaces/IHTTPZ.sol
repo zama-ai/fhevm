@@ -32,16 +32,18 @@ interface IHTTPZ {
 
     /// @notice Struct that represents a KMS (Key Management Service) node
     struct KmsNode {
+        /// @notice Address of the KMS node's connector
+        address connectorAddress;
         /// @notice Identity of the KMS node (its public signature key)
         bytes identity;
-        /// @notice Gateway address for the KMS node
-        address gateway;
         /// @notice IP address of the KMS node
         string ipAddress;
     }
 
     /// @notice Struct that represents a coprocessor
     struct Coprocessor {
+        /// @notice Address of the coprocessor's connector
+        address connectorAddress;
         /// @notice Identity of the coprocessor (its public signature key)
         bytes identity;
     }
@@ -74,17 +76,21 @@ interface IHTTPZ {
     /// @param admins List of admin addresses
     event Initialization(ProtocolMetadata protocolMetadata, address[] admins);
 
-    /// @notice Emitted to trigger the initialization of a KMS node
-    event KmsNodeInit();
+    /// @notice Emitted to trigger the initialization of KMS nodes
+    /// @param identities List of KMS nodes' identities
+    event KmsNodesInit(bytes[] identities);
 
     /// @notice Emitted when all KMS nodes are ready
-    event KmsReady();
+    /// @param identities List of KMS nodes' identities
+    event KmsServiceReady(bytes[] identities);
 
-    /// @notice Emitted to trigger the initialization of a coprocessor
-    event CoprocessorInit();
+    /// @notice Emitted to trigger the initialization of coprocessors
+    /// @param identities List of coprocessors' identities
+    event CoprocessorsInit(bytes[] identities);
 
     /// @notice Emitted when all coprocessors are ready
-    event CoprocessorReady();
+    /// @param identities List of coprocessors' identities
+    event CoprocessorServiceReady(bytes[] identities);
 
     /// @notice Emitted when a network has been added
     /// @param chainId The chain ID of the network
@@ -100,11 +106,11 @@ interface IHTTPZ {
 
     /// @notice Emitted to trigger a KSK generation preprocessing
     /// @param fheParams The FHE parameters to use
-    event PreprocessKskRequest(FheParams fheParams);
+    event PreprocessKskgenRequest(FheParams fheParams);
 
     /// @notice Emitted when the KSK generation preprocessing is completed
     /// @param preKskId The preprocessed KSK ID
-    event PreprocessKskResponse(uint256 preKskId);
+    event PreprocessKskgenResponse(uint256 preKskId);
 
     /// @notice Emitted to trigger a key generation
     /// @param preKeyId The preprocessed key ID
@@ -116,8 +122,9 @@ interface IHTTPZ {
     event KeygenResponse(uint256 keygenId);
 
     /// @notice Emitted to trigger a CRS (Common Reference String) generation
+    /// @param preCrsId The preprocessed CRS ID
     /// @param fheParams The FHE parameters to use
-    event CrsgenRequest(FheParams fheParams);
+    event CrsgenRequest(uint256 preCrsId, FheParams fheParams);
 
     /// @notice Emitted when the CRS generation is completed
     /// @param crsId The generated CRS ID
@@ -128,11 +135,11 @@ interface IHTTPZ {
     /// @param sourceKeyId The key ID to key switch from
     /// @param destKeyId The key ID to key switch to
     /// @param fheParams The FHE parameters to use
-    event KskRequest(uint256 preKskId, uint256 sourceKeyId, uint256 destKeyId, FheParams fheParams);
+    event KskgenRequest(uint256 preKskId, uint256 sourceKeyId, uint256 destKeyId, FheParams fheParams);
 
     /// @notice Emitted when the KSK generation is completed
     /// @param kskId The generated KSK ID
-    event KskResponse(uint256 kskId);
+    event KskgenResponse(uint256 kskId);
 
     /// @notice Emitted to activate the key in coprocessors
     /// @param keyId The key ID
@@ -146,6 +153,96 @@ interface IHTTPZ {
     /// @param newFheParams The new FHE parameters
     event UpdateFheParams(FheParams newFheParams);
 
+    /// @notice Error thrown when a key generation preprocessing step is already ongoing
+    error PreprocessKeygenAlreadyOngoing();
+
+    /// @notice Error thrown when a key generation preprocessing step is not ongoing
+    error PreprocessKeygenNotOngoing();
+
+    /// @notice Error thrown when a key generation preprocessing ID is 0
+    error PreprocessKeyIdNull();
+
+    /// @notice Error thrown when a KMS node has already responded to a key generation preprocessing step
+    error PreprocessKeygenKmsNodeAlreadyResponded(uint256 preKeyId);
+
+    /// @notice Error thrown when a KSK generation preprocessing step is already ongoing
+    error PreprocessKskgenAlreadyOngoing();
+
+    /// @notice Error thrown when a KSK generation preprocessing step is not ongoing
+    error PreprocessKskgenNotOngoing();
+
+    /// @notice Error thrown when a KSK generation preprocessing ID is 0
+    error PreprocessKskIdNull();
+
+    /// @notice Error thrown when a KMS node has already responded to a KSK generation preprocessing step
+    error PreprocessKskgenKmsNodeAlreadyResponded(uint256 preKskId);
+
+    /// @notice Error thrown when a key generation step is already ongoing
+    error KeygenAlreadyOngoing();
+
+    /// @notice Error thrown when a key generation step is not ongoing
+    error KeygenNotOngoing();
+
+    /// @notice Error thrown when a key generation ID is 0
+    error KeyIdNull();
+
+    /// @notice Error thrown when a KMS node has already responded to a key generation step
+    error KeygenKmsNodeAlreadyResponded(uint256 keyId);
+
+    /// @notice Error thrown when a key generation step requires preprocessing
+    error KeygenRequiresPreprocessing();
+
+    /// @notice Error thrown when a CRS generation step is already ongoing
+    error CrsgenAlreadyOngoing();
+
+    /// @notice Error thrown when a CRS generation step is not ongoing
+    error CrsgenNotOngoing();
+
+    /// @notice Error thrown when a CRS generation ID is 0
+    error CrsIdNull();
+
+    /// @notice Error thrown when a KMS node has already responded to a CRS generation step
+    error CrsgenKmsNodeAlreadyResponded(uint256 crsId);
+
+    /// @notice Error thrown when a KSK generation step is already ongoing
+    error KskgenAlreadyOngoing();
+
+    /// @notice Error thrown when a KSK generation step is not ongoing
+    error KskgenNotOngoing();
+
+    /// @notice Error thrown when a KSK generation source key ID is 0
+    error KskgenSourceKeyIdNull();
+
+    /// @notice Error thrown when a KSK generation destination key ID is 0
+    error KskgenDestKeyIdNull();
+
+    /// @notice Error thrown when a KSK generation step requires preprocessing
+    error KskgenRequiresPreprocessing();
+
+    /// @notice Error thrown when a KSK generation ID is 0
+    error KskIdNull();
+
+    /// @notice Error thrown when a KMS node has already responded to a KSK generation step
+    error KskgenKmsNodeAlreadyResponded(uint256 kskId);
+
+    /// @notice Error thrown when a key activation step requires a key generation step
+    error ActivateKeyRequiresKeygen(uint256 currentKeyId, uint256 pendingKeyId);
+
+    /// @notice Error thrown when a key activation step requires a KSK generation step
+    error ActivateKeyRequiresKskgen(uint256 currentKeyId, uint256 pendingKeyId);
+
+    /// @notice Error thrown when a key activation step is already ongoing
+    error ActivateKeyAlreadyOngoing();
+
+    /// @notice Error thrown when a key activation step is not ongoing
+    error ActivateKeyNotOngoing();
+
+    /// @notice Error thrown when a key activation step key ID is 0
+    error ActivateKeyKeyIdNull();
+
+    /// @notice Error thrown when a KMS node has already responded to a key activation step
+    error ActivateKeyKmsNodeAlreadyResponded(uint256 keyId);
+
     /// @notice Initialize the protocol
     /// @dev This function can only be called once by the owner
     /// @param protocolMetadata Metadata of the protocol
@@ -154,124 +251,29 @@ interface IHTTPZ {
 
     /// @notice Add KMS nodes
     /// @dev This function can only be called by an administrator
-    /// @param kmsNodes List of KMS nodes to add
-    function addKmsNodes(KmsNode[] calldata kmsNodes) external;
+    /// @param initialKmsNodes List of KMS nodes to add
+    function addKmsNodes(KmsNode[] calldata initialKmsNodes) external;
 
     /// @notice Mark a KMS node as ready
     /// @dev This function can only be called by a KMS connector
-    /// @param signature Signature to verify readiness
-    function kmsNodeReady(bytes calldata signature) external;
+    /// @param signedNodes Signed nodes to verify readiness
+    /// @param keychainDaAddress Address of the KMS node's keychain DA
+    function kmsNodeReady(bytes calldata signedNodes, address keychainDaAddress) external;
 
     /// @notice Add coprocessors
     /// @dev This function can only be called by an administrator
-    /// @param coprocessors List of coprocessors to add
-    function addCoprocessors(Coprocessor[] calldata coprocessors) external;
+    /// @param initialCoprocessors List of coprocessors to add
+    function addCoprocessors(Coprocessor[] calldata initialCoprocessors) external;
 
     /// @notice Mark a coprocessor as ready
     /// @dev This function can only be called by a coprocessor
-    function coprocessorReady() external;
+    /// @param coprocessorDaAddress Address of the coprocessor's DA
+    function coprocessorReady(address coprocessorDaAddress) external;
 
     /// @notice Add a network
     /// @dev This function can only be called by an administrator
     /// @param network The network to add
     function addNetwork(Network calldata network) external;
-
-    /// @notice Trigger a key generation preprocessing
-    /// @dev This function can only be called by an administrator
-    function preprocessKeygenRequest() external;
-
-    /// @notice Handle the response of a key generation preprocessing
-    /// @dev This function can only be called by a KMS connector
-    /// @param preKeyId The preprocessed key ID
-    function preprocessKeygenResponse(uint256 preKeyId) external;
-
-    /// @notice Trigger a KSK generation preprocessing
-    /// @dev This function can only be called by an administrator
-    function preprocessKskRequest() external;
-
-    /// @notice Handle the response of a KSK generation preprocessing
-    /// @dev This function can only be called by a KMS connector
-    /// @param preKskId The preprocessed KSK ID
-    function preprocessKskResponse(uint256 preKskId) external;
-
-    /// @notice Trigger a key generation
-    /// @dev This function can only be called by an administrator
-    /// @param preKeyId The preprocessed key ID
-    function keygenRequest(uint256 preKeyId) external;
-
-    /// @notice Handle the response of a key generation
-    /// @dev This function can only be called by a KMS connector
-    /// @param keyId The generated key ID
-    function keygenResponse(uint256 keyId) external;
-
-    /// @notice Trigger a CRS generation
-    /// @dev This function can only be called by an administrator
-    function crsgenRequest() external;
-
-    /// @notice Handle the response of a CRS generation
-    /// @dev This function can only be called by a KMS connector
-    /// @param crsId The generated CRS ID
-    function crsgenResponse(uint256 crsId) external;
-
-    /// @notice Trigger a KSK generation
-    /// @dev This function can only be called by an administrator
-    /// @param preKskId The preprocessed KSK ID
-    /// @param sourceKeyId The key ID to key switch from
-    /// @param destKeyId The key ID to key switch to
-    function kskRequest(uint256 preKskId, uint256 sourceKeyId, uint256 destKeyId) external;
-
-    /// @notice Handle the response of a KSK generation
-    /// @dev This function can only be called by a KMS connector
-    /// @param kskId The generated KSK ID
-    function kskResponse(uint256 kskId) external;
-
-    /// @notice Activate the key in coprocessors
-    /// @dev This function can only be called by an administrator
-    /// @dev A key can only be activated if a key switch key from the current key to this key has
-    /// @dev already been generated
-    /// @param keyId The key ID
-    function activateKeyRequest(uint256 keyId) external;
-
-    /// @notice Handle the response of a key activation
-    /// @dev This function can only be called by a coprocessor
-    /// @param keyId The key ID
-    function activateKeyResponse(uint256 keyId) external;
-
-    /// @notice Update the FHE params
-    /// @dev This function can only be called by the owner
-    /// @param newFheParams The new FHE params
-    function updateFheParams(FheParams memory newFheParams) external;
-
-    /// @notice Get the current key ID
-    /// @dev The current key is the latest generated key that has been activated
-    /// @return The current key ID
-    function getCurrentKeyId() external view returns (uint256);
-
-    // TODO: May not be needed if contracts are made pausable
-    // https://github.com/zama-ai/gateway-l2/issues/51
-    /// @notice Check if a given key ID is the current one
-    /// @dev The current key is the latest generated key that has been activated
-    /// @param keyId The key ID to check
-    /// @return True if the key ID is the current one, false otherwise
-    function isCurrentKeyId(uint256 keyId) external view returns (bool);
-
-    /// @notice Get all KMS nodes
-    /// @return List of all KMS nodes
-    function getKmsNodes() external view returns (KmsNode[] calldata);
-
-    /// @notice Get all the KMS nodes' identities
-    /// @dev An identity is the public signature key of a KMS node
-    /// @return List of all the KMS nodes' identities
-    function getKmsIdentities() external view returns (bytes[] calldata);
-
-    /// @notice Get all coprocessors
-    /// @return List of all coprocessors
-    function getCoprocessors() external view returns (Coprocessor[] calldata);
-
-    /// @notice Get all the coprocessors' identities
-    /// @dev An identity is the public signature key of a coprocessor
-    /// @return List of all the coprocessors' identities
-    function getCoprocessorIdentities() external view returns (bytes[] calldata);
 
     /// @notice Check if an address is a registered KMS node
     /// @param kmsNodeAddress The address to check
@@ -287,8 +289,4 @@ interface IHTTPZ {
     /// @param chainId The chain ID to check
     /// @return True if the chain ID corresponds to a registered network, false otherwise
     function isNetwork(uint256 chainId) external view returns (bool);
-
-    /// @notice Get the FHE parameters currently used
-    /// @return The FHE parameters
-    function getFheParams() external view returns (FheParams memory);
 }
