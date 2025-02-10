@@ -13,6 +13,11 @@ pragma solidity ^0.8.28;
 interface IZKPoKManager {
     /// @notice Emitted when a ZK Proof verification is started
     /// @dev This event is meant to be listened by the Coprocessor
+    /// @param zkProofId The ID of the ZK Proof
+    /// @param contractChainId The chainId of the contract requiring the ZK Proof verification
+    /// @param contractAddress The address of the dapp requiring the ZK Proof verification
+    /// @param userAddress The address of the user providing the input
+    /// @param ciphertextProof The ciphertext and proof to be verified
     event VerifyProofRequest(
         uint256 indexed zkProofId,
         uint256 indexed contractChainId,
@@ -23,15 +28,21 @@ interface IZKPoKManager {
 
     /// @notice Emitted once a ZK Proof verification is completed
     /// @dev This event is meant to be listened by the fhEVM Relayer
+    /// @param zkProofId The ID of the ZK Proof
+    /// @param handles The Coprocessor's computed handles
+    /// @param signatures The Coprocessor's signature
     event VerifyProofResponse(uint256 indexed zkProofId, bytes32[] handles, bytes[] signatures);
 
     /// @notice Error indicating that a given chain ID is not registered
     error NetworkNotRegistered();
 
     /// @notice Error indicating that the signer is not a valid Coprocessor
+    /// @param signer The address of the invalid coprocessor signer
     error InvalidCoprocessorSigner(address signer);
 
-    /// @notice Error indicating that the Coprocessor has already signed the ZK Proof
+    /// @notice Error indicating that the Coprocessor has already signed its ZK Proof verification response
+    /// @param zkProofId The ID of the ZK Proof
+    /// @param signer The address of the Coprocessor signer that has already signed
     error CoprocessorHasAlreadySigned(uint256 zkProofId, address signer);
 
     /// @notice Requests the verification of a ZK Proof
@@ -53,4 +64,9 @@ interface IZKPoKManager {
     /// @param handles The Coprocessor's computed handles
     /// @param signature The Coprocessor's signature
     function verifyProofResponse(uint256 zkProofId, bytes32[] calldata handles, bytes calldata signature) external;
+
+    /// @notice Indicates if a given ZK Proof is already verified
+    /// @param zkProofId The ID of the ZK Proof
+    /// @return Whether the ZK Proof is verified
+    function isProofVerified(uint256 zkProofId) external view returns (bool);
 }
