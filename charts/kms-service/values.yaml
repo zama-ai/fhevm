@@ -97,10 +97,11 @@ kmsCore:
     metrics: 9464
   serviceMonitor:
     enabled: false
+  # Important: this request limit is only for non-enclave workloads
   resources:
     requests: {}
-      # memory: 28Gi
-      # cpu: 6
+      # memory: 1Gi
+      # cpu: 1
     limits:
       # memory: 30Gi
       ephemeralStorage: 1Gi
@@ -126,7 +127,6 @@ kmsSimulator:
     secret:
       name: kms-connector-keys
       key: connector-1.mnemonic
-
 grpcHealthProbe:
   image:
     name: ghcr.io/zama-ai/kube-utils
