@@ -75,7 +75,7 @@ impl Default for TxConfig {
 
 #[derive(Clone)]
 pub struct TransactionManager {
-    provider: Arc<dyn Provider<Http<Client>>>,
+    pub provider: Arc<dyn Provider<Http<Client>>>,
     wallet: EthereumWallet,
     chain_id: u64,
 }
@@ -121,6 +121,10 @@ impl TransactionManager {
             wallet,
             chain_id,
         })
+    }
+
+    pub fn provider(&self) -> &Arc<dyn Provider<Http<Client>>> {
+        &self.provider
     }
 
     pub fn sender_address(&self) -> Address {

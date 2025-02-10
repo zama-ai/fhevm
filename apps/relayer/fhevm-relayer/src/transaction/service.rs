@@ -1,5 +1,6 @@
 use crate::errors::TransactionServiceError;
 use alloy::primitives::{Address, Bytes, B256};
+use alloy::rpc::types::TransactionReceipt;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
@@ -104,6 +105,17 @@ impl TransactionService {
             .wait_for_confirmation(hash, 1)
             .await
             .map(Some)
+            .map_err(|e| TransactionServiceError::Failed(e.to_string()))
+    }
+
+    pub async fn get_transaction_receipt(
+        &self,
+        hash: B256,
+    ) -> Result<Option<TransactionReceipt>, TransactionServiceError> {
+        self.manager
+            .provider
+            .get_transaction_receipt(hash)
+            .await
             .map_err(|e| TransactionServiceError::Failed(e.to_string()))
     }
 

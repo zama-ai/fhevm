@@ -1,5 +1,5 @@
 use crate::orchestrator::traits::Event;
-use alloy::rpc::types::Log;
+use alloy::{primitives::U256, rpc::types::Log};
 use std::fmt::Display;
 use strum_macros::{AsRefStr, Display};
 use uuid::Uuid;

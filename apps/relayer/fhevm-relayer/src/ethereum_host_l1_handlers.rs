@@ -1,6 +1,9 @@
 use crate::{
     errors::{EventProcessingError, TransactionServiceError},
-    ethereum::{bindings::DecryptionOracle, callback_handler::CallbackHandler},
+    ethereum::{
+        bindings::{DecryptionOracle, DecyptionManager},
+        callback_handler::CallbackHandler,
+    },
     orchestrator::{
         traits::{EventDispatcher, EventHandler},
         TokioEventDispatcher,
@@ -8,7 +11,7 @@ use crate::{
     relayer_event::{DecryptedValue, DecryptionType, RelayerEvent, RelayerEventData},
     transaction::{TransactionService, TxConfig},
 };
-use alloy::primitives::{Address, FixedBytes, Uint};
+use alloy::primitives::{keccak256, Address, FixedBytes, Uint};
 use alloy::rpc::types::Log;
 use async_trait::async_trait;
 use std::{sync::Arc, time::Duration};
@@ -133,7 +136,7 @@ impl EthereumHostL1Handler {
             .await
             .map_err(EventProcessingError::from)?;
 
-        info!(?tx_hash, "Waiting for transaction confirmation");
+        info!(?tx_hash, "Transaction submitted, waiting for confirmation");
 
         match self.tx_service.get_transaction_status(tx_hash).await {
             Ok(Some(true)) => {
