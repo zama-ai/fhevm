@@ -11,7 +11,9 @@
     "test:e2e": "pnpm -r run test:e2e",
     "start": "pnpm --stream -r run start",
     "build": "pnpm --stream -r run build",
-    "lint": "pnpm --stream -r run lint"
+    "lint": "pnpm --stream -r run lint",
+    "prisma:generate": "pnpm --stream -r run prisma:generate",
+    "copy:generated": "pnpm --stream -r run copy:generated"
   },
   "keywords": [],
   "author": "",

@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common'
-import type { AppError, Result } from 'utils'
-import { fail, notFoundError, ok, Task, unknownError } from 'utils'
+import type { AppError } from 'utils'
+import { every, notFoundError, Task, unknownError } from 'utils'
 
 import { DApp, DAppProps } from '#dapps/domain/entities/dapp.js'
 import { DAppRepository } from '#dapps/domain/repositories/dapp.repository.js'
@@ -8,6 +8,7 @@ import { DAppRepository } from '#dapps/domain/repositories/dapp.repository.js'
 import { PrismaService } from '../prisma.service.js'
 import { DAppId } from '#dapps/domain/entities/value-objects.js'
 import { UserId } from '#users/domain/entities/value-objects.js'
+import { DAppStat, DAppStatProps } from '#dapps/domain/entities/dapp-stat.js'
 
 @Injectable()
 export class PrismaDAppRepository extends DAppRepository {
@@ -55,6 +56,19 @@ export class PrismaDAppRepository extends DAppRepository {
     }).chain(props => DApp.parse(props).async())
   }
 
+  findByAddress = (chainId: string, address: string): Task<DApp, AppError> => {
+    return new Task<unknown, AppError>((resolve, reject) => {
+      this.db.dapp
+        .findFirst({ where: { address } })
+        .then(data =>
+          data
+            ? resolve(data)
+            : reject(notFoundError(`No DApp found for ${chainId}/${address}`)),
+        )
+        .catch((error: unknown) => reject(unknownError(String(error))))
+    }).chain(props => DApp.parse(props).async())
+  }
+
   findOneByIdAndUserId = (id: DAppId, userId: UserId): Task<DApp, AppError> => {
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.dapp
@@ -83,21 +97,32 @@ export class PrismaDAppRepository extends DAppRepository {
         })
         .then(resolve)
         .catch((err: unknown) => reject(unknownError(String(err))))
-    }).chain(dapps =>
-      dapps
-        .map(DApp.parse)
-        .reduce(
-          (acc, dapp) => {
-            if (acc.isFail()) {
-              return acc
-            }
-            return dapp.isOk()
-              ? ok([...acc.value, dapp.value])
-              : (fail(dapp.error) as Result<DApp[], AppError>)
+    }).chain(dapps => every(dapps.map(DApp.parse)).async())
+  }
+
+  findAllStats = (id: DAppId): Task<DAppStat[], AppError> => {
+    return new Task<unknown[], AppError>((resolve, reject) => {
+      this.db.dappStat
+        .findMany({ where: { dappId: id.value } })
+        .then(resolve)
+        .catch((err: unknown) => {
+          this.logger.warn(`failed to run findAllStats for ${id.value}: ${err}`)
+          return reject(unknownError(String(err)))
+        })
+    }).chain(dappStats => every(dappStats.map(DAppStat.parse)).async())
+  }
+
+  createStat = (id: DAppId, props: DAppStatProps): Task<DAppStat, AppError> => {
+    return new Task<unknown, AppError>((resolve, reject) => {
+      this.db.dappStat
+        .create({
+          data: {
+            ...props,
+            dappId: id.value,
           },
-          ok([]) as Result<DApp[], AppError>,
-        )
-        .async(),
-    )
+        })
+        .then(resolve)
+        .catch((err: unknown) => reject(unknownError(String(err))))
+    }).chain(props => DAppStat.parse(props).async())
   }
 }

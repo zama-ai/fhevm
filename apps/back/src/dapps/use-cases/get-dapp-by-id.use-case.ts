@@ -3,7 +3,7 @@ import { Inject } from '@nestjs/common'
 import { AppError, Task, UnitOfWork, UseCase } from 'utils'
 import { DAppRepository } from '../domain/repositories/dapp.repository.js'
 import { DAppId } from '../domain/entities/value-objects.js'
-import { type DAppProps } from '../domain/entities/dapp.js'
+import type { DAppProps } from '../domain/entities/dapp.js'
 import { UserId } from '#users/domain/entities/value-objects.js'
 
 export class GetDappById

@@ -6,7 +6,7 @@ import {
   type UseCase,
   validationError,
 } from 'utils'
-import { DApp } from '../domain/entities/dapp.js'
+import { DApp, DAppProps } from '../domain/entities/dapp.js'
 import {
   APP_DEPLOYMENT_PRODUCER,
   AppDeploymentProducer,
@@ -28,7 +28,7 @@ interface Input {
   // address will be fetch from the dapp entity
 }
 
-export class DeployDApp implements UseCase<Input, DApp> {
+export class DeployDApp implements UseCase<Input, DAppProps> {
   logger = new Logger(DeployDApp.name)
   constructor(
     @Inject(UNIT_OF_WORK) private readonly uow: UnitOfWork,
@@ -37,7 +37,7 @@ export class DeployDApp implements UseCase<Input, DApp> {
     private readonly producer: AppDeploymentProducer,
     private readonly updateDappUC: UpdateDapp,
   ) {}
-  execute({ user, dappId }: Input): Task<DApp, AppError> {
+  execute({ user, dappId }: Input): Task<DAppProps, AppError> {
     this.logger.debug(`[${user.email}] deploying dapp: ${dappId}`)
 
     // check if the user can deploy by checking if the user belongs to the team that owns the dapp
@@ -56,7 +56,7 @@ export class DeployDApp implements UseCase<Input, DApp> {
                 ),
           )
           .chain(dapp =>
-            Task.all([
+            Task.all<AppError, string, DAppProps>([
               this.producer
                 .publish(
                   requested(

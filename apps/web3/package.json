@@ -9,7 +9,7 @@
   "scripts": {
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
-    "start": "nest start --watch",
+    "start": "pnpm run copy:generated && nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
@@ -18,7 +18,10 @@
     "test:cov": "vitest run --coverage",
     "test:debug": "vitest --inspect-brk --inspect --logHeapUsage --threads=false",
     "test:e2e": "vitest run --config ./vitest.e2e.config.mts",
-    "test:e2e:watch": "vitest --config ./vitest.e2e.config.mts"
+    "test:e2e:watch": "vitest --config ./vitest.e2e.config.mts",
+    "copy:generated": "cpx 'generated/**' 'dist/generated'",
+    "prisma:generate": "pnpx prisma generate",
+    "prestart": "pnpx prisma migrate dev"
   },
   "dependencies": {
     "@aws-sdk/client-sns": "^3.699.0",
@@ -27,7 +30,12 @@
     "@nestjs/config": "^3.3.0",
     "@nestjs/core": "^10.0.0",
     "@nestjs/platform-express": "^10.0.0",
+    "@prisma/client": "6.2.1",
+    "cpx": "^1.5.0",
+    "ethers": "^6.13.5",
     "messages": "workspace:*",
+    "nestjs-cls": "^4.5.0",
+    "prisma": "catalog:",
     "reflect-metadata": "^0.2.0",
     "rxjs": "^7.8.1",
     "sqs": "workspace:*",
@@ -35,14 +43,17 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@faker-js/faker": "^9.3.0",
     "@nestjs/cli": "^10.0.0",
     "@nestjs/schematics": "^10.0.0",
-    "@nestjs/testing": "^10.0.0",
+    "@nestjs/testing": "^10.4.10",
     "@types/express": "^5.0.0",
     "@types/node": "^20.3.1",
     "@types/supertest": "^6.0.0",
     "@typescript-eslint/eslint-plugin": "^8.16.0",
     "@typescript-eslint/parser": "^8.16.0",
+    "aws-sdk-client-mock": "^4.1.0",
+    "aws-sdk-client-mock-vitest": "^6.1.1",
     "dotenv": "^16.4.7",
     "eslint": "catalog:",
     "eslint-config-prettier": "^9.1.0",
@@ -57,9 +68,11 @@
     "typescript": "catalog:",
     "unplugin-swc": "catalog:",
     "vite-tsconfig-paths": "catalog:",
-    "vitest": "catalog:"
+    "vitest": "catalog:",
+    "vitest-mock-extended": "^2.0.2"
   },
   "imports": {
-    "#*": "./dist/*"
+    "#prisma/client": "./dist/generated/client",
+    "#*": "./dist/src/*"
   }
 }

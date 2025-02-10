@@ -10,6 +10,7 @@
     "target": "ES2022",
     "lib": ["ES2022"],
     "sourceMap": true,
+    "rootDir": ".",
     "outDir": "./dist",
     "baseUrl": "./",
     "incremental": true,
@@ -21,6 +22,7 @@
     "forceConsistentCasingInFileNames": false,
     "noFallthroughCasesInSwitch": false,
     "paths": {
+      "#prisma/client/*": ["generated/client/*"],
       "#*": ["src/*"],
       "#tests/*": ["test/*"]
     }

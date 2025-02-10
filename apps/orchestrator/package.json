@@ -20,8 +20,8 @@
     "test:debug": "vitest --inspect-brk --inspect --logHeapUsage --threads=false",
     "test:e2e": "vitest run --config ./vitest.e2e.config.mts",
     "test:e2e:watch": "vitest --config ./vitest.e2e.config.mts",
-    "generate": "prisma generate",
     "prestart": "pnpx prisma migrate dev",
+    "prisma:generate": "pnpx prisma generate",
     "copy:generated": "cpx 'generated/**' 'dist/generated'"
   },
   "dependencies": {
@@ -36,17 +36,23 @@
     "messages": "workspace:*",
     "reflect-metadata": "^0.2.0",
     "rxjs": "^7.8.1",
+    "utils": "workspace:*",
     "xstate": "^5.19.0"
   },
   "devDependencies": {
+    "@faker-js/faker": "^9.3.0",
     "@nestjs/cli": "^10.0.0",
     "@nestjs/schematics": "^10.0.0",
     "@nestjs/testing": "^10.0.0",
+    "@testcontainers/localstack": "^10.16.0",
+    "@testcontainers/postgresql": "^10.16.0",
     "@types/express": "^5.0.0",
     "@types/node": "^20.3.1",
     "@types/supertest": "^6.0.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
+    "aws-sdk-client-mock": "^4.1.0",
+    "aws-sdk-client-mock-vitest": "^6.1.1",
     "cpx": "^1.5.0",
     "dotenv": "^16.4.7",
     "eslint": "catalog:",
@@ -64,7 +70,8 @@
     "typescript": "catalog:",
     "unplugin-swc": "catalog:",
     "vite-tsconfig-paths": "catalog:",
-    "vitest": "catalog:"
+    "vitest": "catalog:",
+    "vitest-mock-extended": "^2.0.2"
   },
   "imports": {
     "#prisma/client/*": "./dist/generated/client/*",

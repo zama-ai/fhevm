@@ -1,4 +1,4 @@
-import { Inject, UseGuards } from '@nestjs/common'
+import { Logger, Inject, UseGuards } from '@nestjs/common'
 import {
   Args,
   Mutation,
@@ -13,7 +13,7 @@ import { UpdateDappInput } from '#dapps/infra/dto/inputs/update-dapp.input.js'
 import { CreateDapp } from '#dapps/use-cases/create-dapp.use-case.js'
 import { GetTeamById } from '#users/use-cases/get-team-by-id.use-case.js'
 import { UpdateDapp } from '#dapps/use-cases/update-dapp.use-case.js'
-import { DappType } from '#dapps/infra/types/dapp.type.js'
+import { DappType, StatsType } from '#dapps/infra/types/dapp.type.js'
 import { CurrentUser } from '#auth/infra/decorators/current-user.js'
 import { JwtAuthGuard } from '#auth/infra/guards/jwt-auth-guard.js'
 import { User, type UserProps } from '#users/domain/entities/user.js'
@@ -24,6 +24,9 @@ import { GetDappById } from '../use-cases/get-dapp-by-id.use-case.js'
 import { DAppId } from '../domain/entities/value-objects.js'
 import { TeamType } from '#users/infra/types/team.type.js'
 import { QueryDappInput } from './dto/inputs/query-dapp.input.js'
+import { GetDappStatsUseCase } from '#dapps/use-cases/get-dapp-stats.use-case.js'
+import { DAppStatProps } from '#dapps/domain/entities/dapp-stat.js'
+import { TeamProps } from '#users/domain/entities/team.js'
 import {
   SUBSCRIPTION_SERVICE,
   SubscriptionService,
@@ -33,12 +36,14 @@ import { AppUpdatesSubscription } from '#dapps/use-cases/app-updates-subscriptio
 
 @Resolver(() => DappType)
 export class DappsResolver {
+  private readonly logger = new Logger(DappsResolver.name)
   constructor(
     private readonly createDappUC: CreateDapp,
     private readonly updateDappUC: UpdateDapp,
     private readonly getDappByIdUC: GetDappById,
     private readonly getTeamByIdUC: GetTeamById,
     private readonly deployDappUC: DeployDApp,
+    private readonly getDappStatsUC: GetDappStatsUseCase,
     private readonly appUpdatesSubscriptionUC: AppUpdatesSubscription,
     @Inject(SUBSCRIPTION_SERVICE)
     private readonly subscriptions: SubscriptionService,
@@ -106,8 +111,17 @@ export class DappsResolver {
   }
 
   @ResolveField(() => TeamType, { name: 'team' })
-  async team(@Parent() dapp: DappType) {
+  async team(@Parent() dapp: DappType): Promise<TeamProps> {
     const { teamId } = dapp
     return this.getTeamByIdUC.execute(TeamId.from(teamId)).toPromise()
+  }
+
+  @ResolveField(() => [StatsType], { name: 'stats' })
+  async stats(@Parent() dapp: DappType): Promise<DAppStatProps[]> {
+    this.logger.debug(`getting stats for dappId=${dapp.id}`)
+    const result = await this.getDappStatsUC
+      .execute({ dappId: dapp.id })
+      .toPromise()
+    return result.stats
   }
 }

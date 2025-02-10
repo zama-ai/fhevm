@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common'
 import { Task } from 'utils'
 import type { AppError, UseCase } from 'utils'
 
-import { type TeamProps } from '#users/domain/entities/team.js'
+import type { TeamProps } from '#users/domain/entities/team.js'
 import { TeamRepository } from '../domain/repositories/team.repository.js'
 import { TeamId } from '../domain/entities/value-objects.js'
 

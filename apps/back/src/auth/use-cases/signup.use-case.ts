@@ -35,7 +35,7 @@ export class SignUp
     input: SignupInput,
   ): Task<{ user: UserProps; token: string }, AppError> {
     return this.uow.exec(
-      Task.all([
+      Task.all<AppError, Invitation, ValidatedPassword>([
         // Note: we check the invitation token and validate the password at
         // the same time. The password validation should be the fastest as it
         // doesn't require any asyncronous operation
@@ -50,7 +50,7 @@ export class SignUp
           // There are two solution:
           // 1. Create a transaction, so we should revert the user creation
           // 2. Just ignore any errors related to the following operation, using `tap`
-          Task.all([
+          Task.all<AppError, User, Team, Invitation>([
             this.createUser(invitation.email, password, input.name),
 
             this.createTeam(input.name),
@@ -59,7 +59,7 @@ export class SignUp
           ]),
         )
         .chain(([user, team]) =>
-          Task.all([
+          Task.all<AppError, Team, { user: UserProps; token: string }>([
             this.teamRepository.addUser(team.id, user.id),
 
             this.getPayload(user),

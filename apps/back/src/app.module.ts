@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config'
 
 import { SqsConsumerModule } from './infra/sqs-consumer/sqs-consumer.module.js'
 import { GraphQLModule } from './infra/graphql/graphql.module.js'
+import { SNSProducerModule } from './infra/sns-producer/sns-producer.module.js'
 
 import awsConfig from './config/aws.config.js'
 import dbConfig from './config/db.config.js'
@@ -17,6 +18,6 @@ export const configModule = ConfigModule.forRoot({
   load: [awsConfig, dbConfig, jwtConfig, redisConfig],
 })
 @Module({
-  imports: [configModule, GraphQLModule, SqsConsumerModule],
+  imports: [configModule, GraphQLModule, SqsConsumerModule, SNSProducerModule],
 })
 export class AppModule {}

@@ -10,11 +10,18 @@ import { SNSAppDeploymentProducer } from './adapter/sns-app-deployment.producer.
 import { DeployDApp } from '../use-cases/deploy-dapp.use-case.js'
 import { AppDeploymentEnded } from '../use-cases/app-deployment-ended.use-case.js'
 import { AppDeploymentRequested } from '#dapps/use-cases/app-deployment-requested.use-case.js'
+import { GetDappStatsUseCase } from '#dapps/use-cases/get-dapp-stats.use-case.js'
+import { SharedModule } from '#shared/shared.module.js'
 import { SubscriptionsModule } from '#subscriptions/infra/subscriptions.module.js'
 import { AppUpdatesSubscription } from '#dapps/use-cases/app-updates-subscription.use-case.js'
+import { StoreDAppStats } from '#dapps/use-cases/store-dapp-stats.use-case.js'
+import { PUBSUB } from '#constants.js'
+import { DAppRepository } from '#dapps/domain/repositories/dapp.repository.js'
+import { PubSub } from 'utils'
+import { back } from 'messages'
 
 @Module({
-  imports: [DatabaseModule, SubscriptionsModule],
+  imports: [DatabaseModule, SharedModule, SubscriptionsModule],
   providers: [
     {
       provide: APP_DEPLOYMENT_PRODUCER,
@@ -26,9 +33,16 @@ import { AppUpdatesSubscription } from '#dapps/use-cases/app-updates-subscriptio
     GetDappById,
     GetTeamById,
     DeployDApp,
+    GetDappStatsUseCase,
     AppDeploymentRequested,
     AppDeploymentEnded,
     AppUpdatesSubscription,
+    {
+      provide: StoreDAppStats,
+      inject: [PUBSUB, DAppRepository],
+      useFactory: (pubsub: PubSub<back.BackEvent>, repo: DAppRepository) =>
+        new StoreDAppStats(pubsub, repo),
+    },
   ],
   exports: [
     AppDeploymentRequested,

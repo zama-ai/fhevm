@@ -65,6 +65,48 @@ export class Task<A, E> {
   }
 
   /**
+   * Creates a new Task that resolves with the value of this Task if it resolves,
+   * otherwise resolves with the given default value.
+   *
+   * @param defaultValue - The value to resolve the new Task with if this Task rejects.
+   * @returns A new Task that resolves with the value of this Task or the given default value.
+   */
+  or(defaultValue: A): Task<A, E> {
+    return new Task(resolve => {
+      this.computation(resolve, () => resolve(defaultValue))
+    })
+  }
+
+  /**
+   * Creates a new Task that resolves with the value of this Task if it resolves,
+   * otherwise calls the given function with the error and resolves with its result.
+   *
+   * @param fn - A function that takes an error of type `E` and returns a value of type `A`.
+   * @returns A new Task that resolves with the value of this Task or the result of the given function.
+   */
+  orElse(fn: (error: E) => A): Task<A, E> {
+    return new Task(resolve => {
+      this.computation(resolve, error => resolve(fn(error)))
+    })
+  }
+
+  /**
+   * Creates a new Task that resolves with the value of this Task if it resolves,
+   * otherwise calls the given function with the error and resolves with the value of the Task it returns.
+   *
+   * @param fn - A function that takes an error of type `E` and returns a Task of type `A`.
+   * @returns A new Task that resolves with the value of this Task or the value of the Task returned by the given function.
+   */
+  orChain(fn: (error: E) => Task<A, E>): Task<A, E> {
+    return new Task((resolve, reject) => {
+      this.computation(
+        value => resolve(value),
+        error => fn(error).fork(resolve, reject),
+      )
+    })
+  }
+
+  /**
    * Executes the computation of the Task.
    *
    * @param resolve - A function to call with the value of type `A` if the Task resolves.
@@ -101,18 +143,81 @@ export class Task<A, E> {
    * @param tasks - An array of Task to be executed.
    * @returns a Task with the array of all resolved task values.
    */
-  static all<A1, E>(tasks: [Task<A1, E>]): Task<[A1], E>
-  static all<A1, A2, E>(tasks: [Task<A1, E>, Task<A2, E>]): Task<[A1, A2], E>
-  static all<A1, A2, A3, E>(
-    tasks: [Task<A1, E>, Task<A2, E>, Task<A3, E>],
-  ): Task<[A1, A2, A3], E>
-  static all<A1, A2, A3, A4, E>(
-    tasks: [Task<A1, E>, Task<A2, E>, Task<A3, E>, Task<A4, E>],
-  ): Task<[A1, A2, A3, A4], E>
-  static all<A1, A2, A3, A4, A5, E>(
-    tasks: [Task<A1, E>, Task<A2, E>, Task<A3, E>, Task<A4, E>, Task<A5, E>],
-  ): Task<[A1, A2, A3, A4, A5], E>
-  static all<E>(tasks: any[]): Task<any[], E> {
+  static all<
+    E,
+    A,
+    B,
+    T extends [Task<A, E>, Task<B, E>] = [Task<A, E>, Task<B, E>],
+  >(tasks: T): Task<[A, B], E>
+  static all<
+    E,
+    A,
+    B,
+    C,
+    T extends [Task<A, E>, Task<B, E>, Task<C, E>] = [
+      Task<A, E>,
+      Task<B, E>,
+      Task<C, E>,
+    ],
+  >(tasks: T): Task<[A, B, C], E>
+  static all<
+    E,
+    A,
+    B,
+    C,
+    D,
+    T extends [Task<A, E>, Task<B, E>, Task<C, E>, Task<D, E>] = [
+      Task<A, E>,
+      Task<B, E>,
+      Task<C, E>,
+      Task<D, E>,
+    ],
+  >(tasks: T): Task<[A, B, C, D], E>
+  static all<
+    E,
+    A,
+    B,
+    C,
+    D,
+    F,
+    T extends [Task<A, E>, Task<B, E>, Task<C, E>, Task<D, E>, Task<F, E>] = [
+      Task<A, E>,
+      Task<B, E>,
+      Task<C, E>,
+      Task<D, E>,
+      Task<F, E>,
+    ],
+  >(tasks: T): Task<[A, B, C, D, F], E>
+  static all<
+    E,
+    A,
+    B,
+    C,
+    D,
+    F,
+    G,
+    T extends [
+      Task<A, E>,
+      Task<B, E>,
+      Task<C, E>,
+      Task<D, E>,
+      Task<F, E>,
+      Task<G, E>,
+    ] = [
+      Task<A, E>,
+      Task<B, E>,
+      Task<C, E>,
+      Task<D, E>,
+      Task<F, E>,
+      Task<G, E>,
+    ],
+  >(tasks: T): Task<[A, B, C, D, F, G], E>
+  static all<E, A, T extends Task<A, E>[] = Task<A, E>[]>(
+    tasks: T,
+  ): Task<A[], E>
+  static all<E, T extends Task<any, E>[] = Task<any, E>[]>(
+    tasks: T,
+  ): Task<any[], E> {
     return new Task(function (resolve, reject) {
       // Note: I use `Promise.allSettled` to be sure all promises settle before
       // continuing
@@ -149,4 +254,24 @@ function isRejected<T>(p: PromiseSettledResult<T>): p is PromiseRejectedResult {
 interface Matchers<T, E, R1, R2 = R1> {
   ok(value: T): R1
   fail(error: E): R2
+}
+
+/**
+ * It executes the task, without throwing an error in case of failure.
+ *
+ * @param task Task to execute
+ * @returns A promise that resolves with the result of the task
+ */
+export function executeTask<A extends object | string | number, E>(
+  task: Task<A, E>,
+): Promise<
+  | { success: true; value: A; error: undefined }
+  | { success: false; value: undefined; error: E }
+> {
+  return new Promise(resolve => {
+    task.fork(
+      v => resolve({ success: true, value: v, error: undefined }),
+      e => resolve({ success: false, value: undefined, error: e }),
+    )
+  })
 }

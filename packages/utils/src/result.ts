@@ -9,7 +9,7 @@ export interface Ok<T, E> {
   /*** Retruns the value of the Result if it is successful, otherwise returns the provided default value. */
   unwrapOr(defaultValue: T): T
   /*** Returns the value of the Result if it is successful, otherwise calls the provided function and returns its result. */
-  unwrapOrElse(fn: () => T): T
+  unwrapOrElse(fn: (err: E) => T): T
   /*** Returns true if the Result is successful, false otherwise. */
   isOk(this: Result<T, E>): this is Ok<T, E>
   /*** Returns true if the Result is a failure, false otherwise. */
@@ -37,7 +37,7 @@ export interface Fail<T, E> {
   /*** Retruns the value of the Result if it is successful, otherwise returns the provided default value. */
   unwrapOr(defaultValue: T): T
   /*** Returns the value of the Result if it is successful, otherwise calls the provided function and returns its result. */
-  unwrapOrElse(fn: () => T): T
+  unwrapOrElse(fn: (err: E) => T): T
   /*** Returns true if the Result is successful, false otherwise. */
   isOk(this: Result<T, E>): this is Ok<T, E>
   /*** Returns true if the Result is a failure, false otherwise. */
@@ -80,7 +80,7 @@ export function isFail<T, E>(result: Result<T, E>): result is Fail<T, E> {
 }
 
 class OkImpl<T, E> implements Ok<T, E> {
-  _tag: 'Ok'
+  _tag = 'Ok' as const
   constructor(readonly value: T) {}
   unwrap(): T {
     return this.value
@@ -127,7 +127,7 @@ export function ok<T, E>(value: T): Ok<T, E> {
 }
 
 class FailImpl<T, E> implements Fail<T, E> {
-  _tag: 'Fail'
+  _tag = 'Fail' as const
   constructor(readonly error: E) {}
   unwrap<T>(): T {
     throw this.error
@@ -135,8 +135,8 @@ class FailImpl<T, E> implements Fail<T, E> {
   unwrapOr<T>(defaultValue: T): T {
     return defaultValue
   }
-  unwrapOrElse<T>(fn: () => T): T {
-    return fn()
+  unwrapOrElse<T>(fn: (err: E) => T): T {
+    return fn(this.error)
   }
   isOk(this: Result<T, E>): this is Ok<T, E> {
     return false
@@ -186,4 +186,14 @@ export function match<R1, R2, T, E>(matchers: Matchers<T, E, R1, R2>) {
       ? matchers.ok(result.value)
       : matchers.fail(result.error)
   }
+}
+
+export function every<T, E>(values: Result<T, E>[]): Result<T[], E> {
+  return values.reduce(
+    (acc, item) => {
+      if (acc.isFail()) return acc
+      return item.isFail() ? fail(item.error) : ok([...acc.value, item.value])
+    },
+    ok([]) as Result<T[], E>,
+  )
 }

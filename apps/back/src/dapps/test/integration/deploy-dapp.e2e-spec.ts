@@ -165,10 +165,9 @@ describe('deploy-dapp', () => {
         })
 
         test(`then the dapp status should be "${status}"`, async () => {
-          await vi.waitFor(async () => {
+          await vi.waitUntil(async () => {
             const size = await manager.getQueueSize()
-            expect(size).toBe(0)
-            return
+            return size === 0
           })
 
           const result = await manager.dapp.getDapp({

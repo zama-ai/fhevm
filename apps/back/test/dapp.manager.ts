@@ -1,6 +1,6 @@
 import { DAppStatus } from '#dapps/domain/entities/dapp.js'
 import { faker } from '@faker-js/faker'
-import gql from 'graphql-tag'
+import { gql } from 'graphql-tag'
 import request from 'supertest-graphql'
 import { GraphQlResponse, SetupManager } from './setup.manager.js'
 import { AuthManager } from './auth.manager.js'
@@ -20,6 +20,16 @@ export interface DeployDappResult {
   id: string
   status: DAppStatus
   name: string
+}
+
+export interface DAppStats {
+  id: string
+  stats: {
+    id: string
+    name: string
+    timestamp: Date
+    externalRef: string
+  }[]
 }
 
 export class DappManager {
@@ -124,6 +134,25 @@ export class DappManager {
       ? { success: true, data: { dapp: result.data.deployDapp } }
       : { success: false, errors: result.errors! }
   }
+
+  async getDappStats({
+    token,
+    dappId,
+  }: {
+    token: string
+    dappId: string
+  }): Promise<GraphQlResponse<DAppStats>> {
+    const result = await request<{ dapp: DAppStats }, { dappId: string }>(
+      this.httpServer,
+    )
+      .auth(token, { type: 'bearer' })
+      .query(GET_DAPP_STATS)
+      .variables({ dappId })
+
+    return result.data
+      ? { success: true, data: result.data.dapp }
+      : { success: false, errors: result.errors! }
+  }
 }
 
 const CREATE_DAPP = gql`
@@ -177,6 +206,20 @@ const DEPLOY_DAPP = gql`
       id
       name
       status
+    }
+  }
+`
+
+const GET_DAPP_STATS = gql`
+  query GetDappStats($dappId: ID!) {
+    dapp(input: { id: $dappId }) {
+      id
+      stats {
+        id
+        name
+        timestamp
+        externalRef
+      }
     }
   }
 `

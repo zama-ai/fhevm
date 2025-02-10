@@ -26,6 +26,21 @@ registerEnumType(DappStatus, {
   },
 })
 
+@ObjectType('Stats')
+export class StatsType {
+  @Field(() => ID, { nullable: false })
+  id: string
+
+  @Field({ nullable: false })
+  name: string
+
+  @Field({ nullable: false })
+  timestamp: number
+
+  @Field({ nullable: false })
+  externalRef: string
+}
+
 @ObjectType('Dapp')
 export class DappType {
   @Field(() => ID, { nullable: false })
@@ -57,4 +72,10 @@ export class DappType {
 
   @Field({ nullable: false })
   createdAt: number
+
+  @Field(() => [StatsType], {
+    nullable: false,
+    description: 'DApp usage statistics',
+  })
+  stats: StatsType[]
 }

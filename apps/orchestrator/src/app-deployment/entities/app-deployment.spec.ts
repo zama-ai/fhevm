@@ -97,7 +97,6 @@ describe('AppDeployment', () => {
 
       it('should ignore wrong identifier', () => {
         for (const key of ['applicationId', 'deploymentId']) {
-          console.log(`sending scDiscover with wrong ${key}`)
           const id = randomUUID()
           const messages = deployment.send(
             scDiscovered({

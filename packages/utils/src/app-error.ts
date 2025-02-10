@@ -3,8 +3,17 @@
 
 import { ZodError } from 'zod'
 
+const TAGS = [
+  'ValidationError',
+  'NotFoundError',
+  'UnauthorizedError',
+  'ForbiddenError',
+  'UnknownError',
+] as const
+type Tag = (typeof TAGS)[number]
+
 export type ValidationError = {
-  _tag: 'ValidationError'
+  _tag: Extract<Tag, 'ValidationError'>
   message: string
 }
 export function validationError(message: string): ValidationError {
@@ -12,7 +21,7 @@ export function validationError(message: string): ValidationError {
 }
 
 export type NotFoundError = {
-  _tag: 'NotFoundError'
+  _tag: Extract<Tag, 'NotFoundError'>
   message: string
 }
 export function notFoundError(message = 'Not Found'): NotFoundError {
@@ -20,7 +29,7 @@ export function notFoundError(message = 'Not Found'): NotFoundError {
 }
 
 export type UnauthorizedError = {
-  _tag: 'UnauthorizedError'
+  _tag: Extract<Tag, 'UnauthorizedError'>
   message: string
 }
 export function unauthorizedError(message = 'Unauthorized'): UnauthorizedError {
@@ -28,7 +37,7 @@ export function unauthorizedError(message = 'Unauthorized'): UnauthorizedError {
 }
 
 export type ForbiddenError = {
-  _tag: 'ForbiddenError'
+  _tag: Extract<Tag, 'ForbiddenError'>
   message: string
 }
 export function forbiddenError(message = 'Forbidden'): ForbiddenError {
@@ -36,11 +45,11 @@ export function forbiddenError(message = 'Forbidden'): ForbiddenError {
 }
 
 export type UnknownError = {
-  _tag: 'UnknowError'
+  _tag: Extract<Tag, 'UnknownError'>
   message: string
 }
 export function unknownError(message = 'Unknown Error'): UnknownError {
-  return { _tag: 'UnknowError', message }
+  return { _tag: 'UnknownError', message }
 }
 
 export type AppError =
@@ -61,4 +70,36 @@ export function fromZodError(error: ZodError): ValidationError {
   return validationError(
     error.errors.map(err => `${err.path}: ${err.message}`).join(', '),
   )
+}
+
+export function isAppError(error: unknown): error is AppError {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    '_tag' in error &&
+    typeof error._tag === 'string' &&
+    (TAGS as readonly string[]).includes(error._tag)
+  )
+}
+
+export function isValidationError(error: unknown): error is ValidationError {
+  return isAppError(error) && error._tag === 'ValidationError'
+}
+
+export function isNotFoundError(error: unknown): error is NotFoundError {
+  return isAppError(error) && error._tag === 'NotFoundError'
+}
+
+export function isUnauthorizedError(
+  error: unknown,
+): error is UnauthorizedError {
+  return isAppError(error) && error._tag === 'UnauthorizedError'
+}
+
+export function isForbiddenError(error: unknown): error is ForbiddenError {
+  return isAppError(error) && error._tag === 'ForbiddenError'
+}
+
+export function isUnknowError(error: unknown): error is UnknownError {
+  return isAppError(error) && error._tag === 'UnknownError'
 }

@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common'
 import type { AppError, UnitOfWork, UseCase } from 'utils'
 import { Task } from 'utils'
-import { DApp, DAppProps } from '../domain/entities/dapp.js'
+import { DAppProps } from '../domain/entities/dapp.js'
 import { DAppRepository } from '../domain/repositories/dapp.repository.js'
 import { type UserProps } from '#users/domain/entities/user.js'
 import { forbiddenError } from 'utils/dist/src/app-error.js'
@@ -22,14 +22,14 @@ interface Input {
 }
 
 @Injectable()
-export class UpdateDapp implements UseCase<Input, DApp> {
+export class UpdateDapp implements UseCase<Input, DAppProps> {
   constructor(
     @Inject(UNIT_OF_WORK) private readonly uow: UnitOfWork,
     private readonly dappRepository: DAppRepository,
     @Inject(SUBSCRIPTION_SERVICE)
     private readonly subscriptions: SubscriptionService,
   ) {}
-  execute({ dapp: { id, ...data }, user }: Input): Task<DApp, AppError> {
+  execute({ dapp: { id, ...data }, user }: Input): Task<DAppProps, AppError> {
     return this.uow.exec(
       this.dappRepository
         .findOneByIdAndUserId(id, UserId.from(user.id))
@@ -37,12 +37,13 @@ export class UpdateDapp implements UseCase<Input, DApp> {
           err._tag === 'NotFoundError' ? forbiddenError() : err,
         )
         .chain(() => this.dappRepository.update(id, data))
+        .map(dapp => dapp.toJSON())
         // TODO: use internal events here https://github.com/zama-zws/console/issues/120
         .tap(dapp => {
           this.subscriptions.publish<SubscriptionDappUpdatedPayload>(
             'dappUpdated',
             {
-              dappUpdated: dapp.toJSON(),
+              dappUpdated: dapp,
             },
           )
         }),

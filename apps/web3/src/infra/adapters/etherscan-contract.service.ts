@@ -1,9 +1,9 @@
-import { Address } from '#domain/entities/address.js'
 import { ContractService } from '#domain/services/contract.service.js'
 import { Task, AppError, unknownError, notFoundError } from 'utils'
 import { stringify } from 'querystring'
-import type { ChainId, EtherConfig } from '#config/ether.config.js'
+import type { EtherConfig } from '#config/ether.config.js'
 import { Logger } from '@nestjs/common'
+import { ChainId, Web3Address } from '#domain/entities/value-objects.js'
 
 type EtherScanResponse<T> =
   | { status: '0'; message: string; result: string | null }
@@ -33,8 +33,11 @@ export class EtherscanContractService implements ContractService {
   }
   getContractCreation = (
     chainId: string,
-    address: Address,
-  ): Task<{ contractAddress: Address; creatorAddress: Address }, AppError> => {
+    address: Web3Address,
+  ): Task<
+    { contractAddress: Web3Address; creatorAddress: Web3Address },
+    AppError
+  > => {
     this.logger.debug(`getContractCreation: ${chainId}/${address}`)
 
     // NOTE: should I check the chainId?
@@ -57,8 +60,12 @@ export class EtherscanContractService implements ContractService {
         .then(data =>
           data.status === '1'
             ? resolve({
-                contractAddress: Address.from(data.result[0].contractAddress),
-                creatorAddress: Address.from(data.result[0].contractCreator),
+                contractAddress: Web3Address.fromString(
+                  data.result[0].contractAddress,
+                ).unwrap(),
+                creatorAddress: Web3Address.fromString(
+                  data.result[0].contractCreator,
+                ).unwrap(),
               })
             : reject(notFoundError('Contract not found')),
         )
@@ -66,7 +73,7 @@ export class EtherscanContractService implements ContractService {
     )
   }
 
-  getAbi = (chainId: string, address: Address): Task<string, AppError> => {
+  getAbi = (chainId: string, address: Web3Address): Task<string, AppError> => {
     this.logger.debug(`getAbi: ${chainId}/${address}`)
 
     // Note: should I check the chainId?
