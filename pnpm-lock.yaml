@@ -38,7 +38,7 @@ importers:
         version: 1.0.12(hardhat@2.22.18(ts-node@10.9.2(@types/node@22.10.7)(typescript@5.7.3))(typescript@5.7.3))
       '@nomicfoundation/hardhat-toolbox':
         specifier: ^5.0.0
-        version: 5.0.0(8f8a72eed3155b28b5cb5e03683b5dae)
+        version: 5.0.0(7witvjkxsqbfqrjqhcx3wd7fd4)
       '@nomicfoundation/hardhat-verify':
         specifier: ^2.0.0
         version: 2.0.12(hardhat@2.22.18(ts-node@10.9.2(@types/node@22.10.7)(typescript@5.7.3))(typescript@5.7.3))
@@ -3341,7 +3341,7 @@ snapshots:
       ethereumjs-util: 7.1.5
       hardhat: 2.22.18(ts-node@10.9.2(@types/node@22.10.7)(typescript@5.7.3))(typescript@5.7.3)
 
-  '@nomicfoundation/hardhat-toolbox@5.0.0(8f8a72eed3155b28b5cb5e03683b5dae)':
+  '@nomicfoundation/hardhat-toolbox@5.0.0(7witvjkxsqbfqrjqhcx3wd7fd4)':
     dependencies:
       '@nomicfoundation/hardhat-chai-matchers': 2.0.8(@nomicfoundation/hardhat-ethers@3.0.8(ethers@6.13.5)(hardhat@2.22.18(ts-node@10.9.2(@types/node@22.10.7)(typescript@5.7.3))(typescript@5.7.3)))(chai@4.5.0)(ethers@6.13.5)(hardhat@2.22.18(ts-node@10.9.2(@types/node@22.10.7)(typescript@5.7.3))(typescript@5.7.3))
       '@nomicfoundation/hardhat-ethers': 3.0.8(ethers@6.13.5)(hardhat@2.22.18(ts-node@10.9.2(@types/node@22.10.7)(typescript@5.7.3))(typescript@5.7.3))

@@ -1,72 +1,170 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.28;
 
+import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import "./interfaces/IZKPoKManager.sol";
+import "./interfaces/IHttpz.sol";
 
-/// @title ZKPoKManager
-/// @dev Implementation of the IZKPoKManager for the ZKPoK verifications on the Gateway L2 roll-up.
-contract ZKPoKManager is IZKPoKManager {
-    /// @notice The address of the Payment Manager contract for service fees, burn and distribution
+/// @title ZKPoKManager smart contract
+/// @dev See {IZKPoKManager}
+contract ZKPoKManager is IZKPoKManager, EIP712 {
+    /// @notice The address of the HTTPZ contract for protocol state calls.
+    address internal immutable _HTTPZ;
+    /// @notice The address of the Payment Manager contract for service fees, burn and distribution.
     address internal immutable _PAYMENT_MANAGER;
+    /// @notice The counter used for the ZK Proof IDs returned in verification request events.
+    uint256 internal zkProofIdCounter;
+    /// @notice The mapping of ZK Proof IDs to their verification status.
+    mapping(uint256 zkProofId => bool isVerified) internal verifiedZKProofs;
+    /// @notice The mapping of ZK Proof IDs to their validated signatures.
+    mapping(uint256 zkProofId => mapping(bytes32 digest => bytes[] signatures)) internal zkProofSignatures;
+    /// @notice The mapping of ZK Proof IDs to their signers and their signing status.
+    mapping(uint256 zkProofId => mapping(address signer => bool hasSigned)) internal zkProofSigners;
+    /// @notice The mapping of ZK Proof IDs to their user address that requested the verification.
+    mapping(uint256 zkProofId => address userAddress) internal zkProofUserAddresses;
+    /// @notice The mapping of ZK Proof IDs to their contract address requested by the user.
+    mapping(uint256 zkProofId => address contractAddress) internal zkProofContractAddresses;
+    /// @notice The mapping of ZK Proof IDs to their contract chain ID requested by the user.
+    mapping(uint256 zkProofId => uint256 contractChainId) internal zkProofContractChainIds;
 
-    constructor(address paymentManager) {
+    /// @notice The typed data structure for the EIP712 signature validation during verification responses.
+    struct EIP712ResponseMessage {
+        /// @notice The Coprocessor's computed handles.
+        bytes32[] handles;
+        /// @notice The address of the user that has provided the input in the ZK Proof verification request.
+        address userAddress;
+        /// @notice The address of the dapp requiring the ZK Proof verification.
+        address contractAddress;
+        /// @notice The chainId of the contract requiring the ZK Proof verification.
+        uint256 contractChainId;
+    }
+
+    /// @notice The definition of the EIP712ResponseMessage structure typed data.
+    string private constant EIP712_RESPONSE_MESSAGE_TYPE =
+        "EIP712ResponseMessage(bytes32[] handles,address userAddress,address contractAddress,uint256 contractChainId)";
+    /// @notice The hash of the EIP712ResponseMessage structure typed data definition used for signature validation.
+    bytes32 private constant EIP712_RESPONSE_MESSAGE_TYPE_HASH = keccak256(bytes(EIP712_RESPONSE_MESSAGE_TYPE));
+
+    string private constant CONTRACT_NAME = "ZKPoKManager";
+    uint256 private constant MAJOR_VERSION = 0;
+    uint256 private constant MINOR_VERSION = 1;
+    uint256 private constant PATCH_VERSION = 0;
+
+    constructor(address httpz, address paymentManager) EIP712(CONTRACT_NAME, "1") {
+        _HTTPZ = httpz;
         _PAYMENT_MANAGER = paymentManager;
     }
 
     /// @dev See {IZKPoKManager-verifyProofRequest}.
     function verifyProofRequest(
-        uint256 chainId,
+        uint256 contractChainId,
         address contractAddress,
         address userAddress,
-        bytes calldata ctProofHandle
+        bytes calldata ciphertextProof
     ) public {
-        if (!_isNetworkRegistered(chainId)) {
+        // TODO: Enable the following HTTPZ contract call
+        // bool isNetworkRegistered = IHTTPZ(_HTTPZ).isNetwork(contractChainId);
+        bool isNetworkRegistered = true;
+        if (!isNetworkRegistered) {
             revert NetworkNotRegistered();
         }
-        _sendServiceFees();
-        uint256 zkProofId = _generateZKProofId();
-        emit VerifyProofRequest(zkProofId, chainId, contractAddress, userAddress, ctProofHandle);
+        // TODO(#52): Implement sending service fees to PaymentManager contract
+        uint256 zkProofId = zkProofIdCounter++;
+        /// @dev The following stored inputs are used during response calls for the EIP712 signature validation.
+        zkProofUserAddresses[zkProofId] = userAddress;
+        zkProofContractAddresses[zkProofId] = contractAddress;
+        zkProofContractChainIds[zkProofId] = contractChainId;
+        emit VerifyProofRequest(zkProofId, contractChainId, contractAddress, userAddress, ciphertextProof);
     }
 
     /// @dev See {IZKPoKManager-verifyProofResponse}.
     function verifyProofResponse(uint256 zkProofId, bytes32[] calldata handles, bytes calldata signature) public {
-        if (_isConsensusAgreed()) {
-            _burnAndDistributeFees();
-            bytes[] memory signatures = _getSignatures(zkProofId);
-            emit VerifyProofResponse(zkProofId, handles, signatures);
+        /// @dev Initialize the EIP712ResponseMessage structure for the signature validation.
+        EIP712ResponseMessage memory eip712ResponseMessage = EIP712ResponseMessage(
+            handles,
+            zkProofUserAddresses[zkProofId],
+            zkProofContractAddresses[zkProofId],
+            zkProofContractChainIds[zkProofId]
+        );
+        /// @dev Compute the digest of the EIP712ResponseMessage structure.
+        bytes32 digest = _hashEIP712ResponseMessage(eip712ResponseMessage);
+        /// @dev Recover the signer address from the signature and validate that is a Coprocessor.
+        _validateEIP712Signature(zkProofId, digest, signature);
+
+        bytes[] storage currentSignatures = zkProofSignatures[zkProofId][digest];
+        currentSignatures.push(signature);
+        if (!isProofVerified(zkProofId) && _isConsensusReached(currentSignatures.length)) {
+            // TODO(#52): Implement calling PaymentManager contract to burn and distribute fees
+            emit VerifyProofResponse(zkProofId, handles, currentSignatures);
+            verifiedZKProofs[zkProofId] = true;
         }
     }
 
-    /// @notice Generates an identifier for a ZKProof verification
-    function _generateZKProofId() internal pure returns (uint256) {
-        // TODO: Implement zkProofId generation
+    /// @notice Checks if a given ZK Proof is already verified.
+    function isProofVerified(uint256 zkProofId) public virtual returns (bool) {
+        return verifiedZKProofs[zkProofId];
     }
 
-    /// @notice Checks if the given chain ID is already registered
-    function _isNetworkRegistered(uint256 chainId) internal pure returns (bool) {
-        // TODO: Implement DomainManager contract call to check network is registered
-        return true;
+    /// @notice Returns the versions of the ZKPoKManager contract in SemVer format.
+    /// @dev This is conventionally used for upgrade features.
+    function getVersion() public pure virtual returns (string memory) {
+        return
+            string(
+                abi.encodePacked(
+                    CONTRACT_NAME,
+                    " v",
+                    Strings.toString(MAJOR_VERSION),
+                    ".",
+                    Strings.toString(MINOR_VERSION),
+                    ".",
+                    Strings.toString(PATCH_VERSION)
+                )
+            );
     }
 
-    /// @notice Checks if the consensus is reached
-    function _isConsensusAgreed() internal pure returns (bool) {
-        // TODO: Implement consensus logic
-        return true;
+    /// @notice Checks if the ZK Proof verification consensus is reached among the Coprocessors.
+    /// @dev This function calls the HTTPZ contract to retrieve the current Coprocessors.
+    /// @dev The consensus threshold is calculated as the simple majority of the total Coprocessors.
+    function _isConsensusReached(uint256 verifiedSignatures) internal pure returns (bool) {
+        // TODO: Enable the following HTTPZ contract call
+        // IHTTPZ.Coprocessor[] memory coprocessors = IHTTPZ(_HTTPZ).getCoprocessors();
+        uint8[4] memory coprocessors = [1, 2, 3, 4];
+        uint256 consensusThreshold = coprocessors.length / 2 + 1;
+        return verifiedSignatures >= consensusThreshold;
     }
 
-    /// @dev Service fees should be refunded if there is no consensus or response after N blocks
-    function _sendServiceFees() internal pure {
-        // TODO: Implement PaymentManager contract call to send service fees
+    /// @notice Validates the EIP712 signature for a given ZK Proof
+    /// @dev This function calls the HTTPZ contract to check that the signer address is a Coprocessor.
+    /// @dev It also checks that the signer has not already signed the ZK Proof.
+    function _validateEIP712Signature(uint256 zkProofId, bytes32 digest, bytes calldata signature) private {
+        address signer = ECDSA.recover(digest, signature);
+        // TODO: Enable the following HTTPZ contract call
+        // bool isCoprocessor = IHTTPZ(_HTTPZ).isCoprocessor(signer);
+        bool isCoprocessor = true;
+        if (!isCoprocessor) {
+            revert InvalidCoprocessorSigner(signer);
+        }
+        if (zkProofSigners[zkProofId][signer]) {
+            revert CoprocessorHasAlreadySigned(zkProofId, signer);
+        }
+        zkProofSigners[zkProofId][signer] = true;
     }
 
-    /// @notice Burns and distributes the ZKProof verification fees
-    function _burnAndDistributeFees() internal pure {
-        // TODO: Implement PaymentManager contract call to burn and distribute fees
-    }
-
-    /// @notice Aggregates the received ZKProof verification signatures
-    function _getSignatures(uint256 zkProofId) internal pure returns (bytes[] memory) {
-        // TODO: Implement signature aggregation logic
-        return new bytes[](0);
+    /// @notice Computes the digest of a given EIP712ResponseMessage structured data
+    function _hashEIP712ResponseMessage(EIP712ResponseMessage memory ctVerification) private view returns (bytes32) {
+        return
+            _hashTypedDataV4(
+                keccak256(
+                    abi.encode(
+                        EIP712_RESPONSE_MESSAGE_TYPE_HASH,
+                        keccak256(abi.encodePacked(ctVerification.handles)),
+                        ctVerification.userAddress,
+                        ctVerification.contractAddress,
+                        ctVerification.contractChainId
+                    )
+                )
+            );
     }
 }
