@@ -173,32 +173,12 @@ impl ArbitrumGatewayL2Handler {
 
         info!(?tx_hash, "Waiting for transaction confirmation");
 
-        // Wait for confirmation with retries
-        let mut retries = 5;
-        let mut receipt = None;
-        while retries > 0 {
-            tokio::time::sleep(Duration::from_secs(1)).await;
-
-            match self.tx_service.get_transaction_receipt(tx_hash).await {
-                Ok(Some(r)) => {
-                    receipt = Some(r);
-                    break;
-                }
-                Ok(None) => {
-                    info!(?tx_hash, retries, "Receipt not yet available, retrying...");
-                    retries -= 1;
-                }
-                Err(e) => {
-                    error!(?tx_hash, ?e, "Error getting receipt");
-                    return Err(EventProcessingError::from(e));
-                }
-            }
-        }
-
-        let receipt = receipt.ok_or_else(|| {
-            error!(?tx_hash, "Failed to get receipt after retries");
-            EventProcessingError::HandlerError("Transaction receipt not found after retries".into())
-        })?;
+        let receipt = self
+            .tx_service
+            .get_transaction_receipt(tx_hash)
+            .await
+            .map_err(EventProcessingError::from)?
+            .ok_or_else(|| EventProcessingError::HandlerError("Receipt not found".into()))?;
 
         // Log receipt details
         info!(
@@ -206,20 +186,12 @@ impl ArbitrumGatewayL2Handler {
             block_number = ?receipt.block_number,
             block_hash = ?receipt.block_hash,
             logs_count = receipt.inner.logs().len(),
-            "Receipt details"
+            "Got receipt with logs"
         );
 
-        if receipt.inner.logs().is_empty() {
-            error!(?tx_hash, "No logs found in receipt");
-            return Err(EventProcessingError::HandlerError(
-                "No logs in receipt".into(),
-            ));
-        }
-
-        // Continue with event parsing...
+        // Find and parse the event
         let target_topic = keccak256("PublicDecryptionRequest(uint256,uint256[])");
 
-        // Find matching log
         for log in receipt.inner.logs() {
             if let Some(first_topic) = log.topics().first() {
                 if *first_topic == target_topic {
@@ -229,7 +201,11 @@ impl ArbitrumGatewayL2Handler {
                     ) {
                         Ok(event) => {
                             let public_decryption_id = event.publicDecryptionId;
-                            info!(?tx_hash, ?public_decryption_id, "Found and decoded event");
+                            info!(
+                                ?tx_hash,
+                                ?public_decryption_id,
+                                "Found decryption ID from event"
+                            );
                             return Ok(public_decryption_id);
                         }
                         Err(e) => {
@@ -240,7 +216,6 @@ impl ArbitrumGatewayL2Handler {
             }
         }
 
-        error!(?tx_hash, "Event not found in logs");
         Err(EventProcessingError::HandlerError(
             "Event not found in logs".into(),
         ))
