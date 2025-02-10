@@ -1,12 +1,9 @@
 name: Dependency analysis
 
 on:
-  push:
+  pull_request:
     branches:
       - main
-      - aw/init-ci
-  pull_request:
-    branches: ['*']
 
 concurrency:
   group: deps-analysis-${{ github.ref }}
@@ -20,10 +17,9 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Rust setup
-        uses: actions-rust-lang/setup-rust-toolchain@11df97af8e8102fd60b60a77dfbf58d40cd843b8 # v1.10.1
+        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203 # v1
         with:
           toolchain: stable
-          cache: false
 
       - name: Install cargo-binstall
         uses: cargo-bins/cargo-binstall@84ca29d5c1719e79e23b6af147555a8f4dac79d6 # v1.10.14
