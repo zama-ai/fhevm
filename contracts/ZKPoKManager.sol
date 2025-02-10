@@ -5,7 +5,7 @@ import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import "./interfaces/IZKPoKManager.sol";
-import "./interfaces/IHttpz.sol";
+import "./HTTPZ.sol";
 
 /// @title ZKPoKManager smart contract
 /// @dev See {IZKPoKManager}
@@ -29,7 +29,7 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
     /// @notice The mapping of ZK Proof IDs to their contract chain ID requested by the user.
     mapping(uint256 zkProofId => uint256 contractChainId) internal zkProofContractChainIds;
 
-    /// @notice The typed data structure for the EIP712 signature validation during verification responses.
+    /// @notice The typed data structure for the EIP712 signature to validate in ZK Proof verification responses.
     struct EIP712ResponseMessage {
         /// @notice The Coprocessor's computed handles.
         bytes32[] handles;
@@ -63,9 +63,9 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
         address contractAddress,
         address userAddress,
         bytes calldata ciphertextProof
-    ) public {
+    ) public virtual {
         // TODO: Enable the following HTTPZ contract call
-        // bool isNetworkRegistered = IHTTPZ(_HTTPZ).isNetwork(contractChainId);
+        // bool isNetworkRegistered = HTTPZ.isNetwork(contractChainId);
         bool isNetworkRegistered = true;
         if (!isNetworkRegistered) {
             revert NetworkNotRegistered();
@@ -80,7 +80,11 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
     }
 
     /// @dev See {IZKPoKManager-verifyProofResponse}.
-    function verifyProofResponse(uint256 zkProofId, bytes32[] calldata handles, bytes calldata signature) public {
+    function verifyProofResponse(
+        uint256 zkProofId,
+        bytes32[] calldata handles,
+        bytes calldata signature
+    ) public virtual {
         /// @dev Initialize the EIP712ResponseMessage structure for the signature validation.
         EIP712ResponseMessage memory eip712ResponseMessage = EIP712ResponseMessage(
             handles,
@@ -102,8 +106,8 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
         }
     }
 
-    /// @notice Checks if a given ZK Proof is already verified.
-    function isProofVerified(uint256 zkProofId) public virtual returns (bool) {
+    /// @dev See {IZKPoKManager-isProofVerified}.
+    function isProofVerified(uint256 zkProofId) public view virtual returns (bool) {
         return verifiedZKProofs[zkProofId];
     }
 
@@ -124,24 +128,16 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
             );
     }
 
-    /// @notice Checks if the ZK Proof verification consensus is reached among the Coprocessors.
-    /// @dev This function calls the HTTPZ contract to retrieve the current Coprocessors.
-    /// @dev The consensus threshold is calculated as the simple majority of the total Coprocessors.
-    function _isConsensusReached(uint256 verifiedSignatures) internal pure returns (bool) {
-        // TODO: Enable the following HTTPZ contract call
-        // IHTTPZ.Coprocessor[] memory coprocessors = IHTTPZ(_HTTPZ).getCoprocessors();
-        uint8[4] memory coprocessors = [1, 2, 3, 4];
-        uint256 consensusThreshold = coprocessors.length / 2 + 1;
-        return verifiedSignatures >= consensusThreshold;
-    }
-
     /// @notice Validates the EIP712 signature for a given ZK Proof
     /// @dev This function calls the HTTPZ contract to check that the signer address is a Coprocessor.
     /// @dev It also checks that the signer has not already signed the ZK Proof.
-    function _validateEIP712Signature(uint256 zkProofId, bytes32 digest, bytes calldata signature) private {
+    /// @param zkProofId The ID of the ZK Proof
+    /// @param digest The hash of the EIP712ResponseMessage structure
+    /// @param signature The signature to be validated
+    function _validateEIP712Signature(uint256 zkProofId, bytes32 digest, bytes calldata signature) internal virtual {
         address signer = ECDSA.recover(digest, signature);
         // TODO: Enable the following HTTPZ contract call
-        // bool isCoprocessor = IHTTPZ(_HTTPZ).isCoprocessor(signer);
+        // bool isCoprocessor = HTTPZ.isCoprocessor(signer);
         bool isCoprocessor = true;
         if (!isCoprocessor) {
             revert InvalidCoprocessorSigner(signer);
@@ -152,8 +148,12 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
         zkProofSigners[zkProofId][signer] = true;
     }
 
-    /// @notice Computes the digest of a given EIP712ResponseMessage structured data
-    function _hashEIP712ResponseMessage(EIP712ResponseMessage memory ctVerification) private view returns (bytes32) {
+    /// @notice Computes the hash of a given EIP712ResponseMessage structured data
+    /// @param ctVerification The EIP712ResponseMessage structure
+    /// @return The hash of the EIP712ResponseMessage structure
+    function _hashEIP712ResponseMessage(
+        EIP712ResponseMessage memory ctVerification
+    ) internal view virtual returns (bytes32) {
         return
             _hashTypedDataV4(
                 keccak256(
@@ -166,5 +166,17 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
                     )
                 )
             );
+    }
+
+    /// @notice Checks if the ZK Proof verification consensus is reached among the Coprocessors.
+    /// @dev This function calls the HTTPZ contract to retrieve the current Coprocessors.
+    /// @dev The consensus threshold is calculated as the simple majority of the total Coprocessors.
+    /// @param verifiedSignaturesCount The number of signatures that have been verified for a ZK Proof
+    /// @return Whether the consensus for ZK Proof verification is reached
+    function _isConsensusReached(uint256 verifiedSignaturesCount) internal pure virtual returns (bool) {
+        // TODO: Enable the following HTTPZ contract call
+        // uint256 consensusThreshold = _HTTPZ.getCoprocessorsCount() / 2 + 1;
+        uint256 consensusThreshold = 4 / 2 + 1;
+        return verifiedSignaturesCount >= consensusThreshold;
     }
 }
