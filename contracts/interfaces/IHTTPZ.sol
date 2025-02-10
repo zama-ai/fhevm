@@ -289,4 +289,12 @@ interface IHTTPZ {
     /// @param chainId The chain ID to check
     /// @return True if the chain ID corresponds to a registered network, false otherwise
     function isNetwork(uint256 chainId) external view returns (bool);
+
+    /// @notice Get the number of KMS nodes
+    /// @return The number of KMS nodes
+    function getKmsNodesCount() external view returns (uint256);
+
+    /// @notice Get the number of coprocessors
+    /// @return The number of coprocessors
+    function getCoprocessorsCount() external view returns (uint256);
 }
