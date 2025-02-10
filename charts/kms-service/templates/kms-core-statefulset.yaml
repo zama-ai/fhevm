@@ -104,8 +104,18 @@ spec:
                      "cid" .Values.kmsCore.nitroEnclave.cid
                      "port" .Values.kmsCore.ports.peer
                 ) | indent 10 | trim }}
-        {{/* TODO add support for kmsCore.thresholdMode.peersList */}}
-        {{- range $i := $peersIDList }}
+        {{- if .Values.kmsCore.thresholdMode.peersList }}
+          {{- range .Values.kmsCore.thresholdMode.peersList }}
+        - {{ include "proxyFromEnclaveTcp"
+               (dict "name" (printf "enclave-peer-proxy-%d" (int .id))
+                     "image" $.Values.socat.image
+                     "vsockPort" (add $.Values.kmsCore.nitroEnclave.ports.peer .id)
+                     "address" .host
+                     "port" .port
+                ) | indent 10 | trim }}
+          {{- end }}
+        {{- else }}
+          {{- range $i := $peersIDList }}
         - {{ include "proxyFromEnclaveTcp"
                (dict "name" (printf "enclave-peer-proxy-%d" (int $i))
                      "image" $.Values.socat.image
@@ -113,6 +123,7 @@ spec:
                      "address" (printf "%s-%d" $kmsCoreName (int $i))
                      "port" $.Values.kmsCore.ports.peer
                 ) | indent 10 | trim }}
+          {{- end }}
         {{- end }}
         {{- end }}
         {{- end }}
