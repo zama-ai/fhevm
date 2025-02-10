@@ -110,8 +110,8 @@ spec:
                (dict "name" (printf "enclave-peer-proxy-%d" (int $i))
                      "image" $.Values.socat.image
                      "vsockPort" (add $.Values.kmsCore.nitroEnclave.ports.peer $i)
-                     "ipAddr" (printf "%s-%d" $kmsCoreName $i) | quote
-                     "ipPort" int $.Values.kmsCore.ports.peer
+                     "ipAddr" (printf "%s-%d" $kmsCoreName (int $i))
+                     "ipPort" $.Values.kmsCore.ports.peer
                 ) | indent 10 | trim }}
         {{- end }}
         {{- end }}
