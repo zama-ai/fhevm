@@ -61,7 +61,7 @@ contract HTTPZ is IHTTPZ, Ownable2Step, AccessControl {
     function initialize(
         ProtocolMetadata calldata initialProtocolMetadata,
         address[] calldata admins
-    ) external onlyOwner {
+    ) external virtual onlyOwner {
         protocolMetadata = initialProtocolMetadata;
 
         for (uint256 i = 0; i < admins.length; i++) {
@@ -72,7 +72,7 @@ contract HTTPZ is IHTTPZ, Ownable2Step, AccessControl {
     }
 
     /// @dev See {IHTTPZ-addKmsNodes}.
-    function addKmsNodes(KmsNode[] calldata initialKmsNodes) external onlyRole(ADMIN_ROLE) {
+    function addKmsNodes(KmsNode[] calldata initialKmsNodes) external virtual onlyRole(ADMIN_ROLE) {
         for (uint256 i = 0; i < initialKmsNodes.length; i++) {
             _grantRole(PENDING_KMS_NODE_ROLE, initialKmsNodes[i].connectorAddress);
             kmsNodes.push(initialKmsNodes[i]);
@@ -86,7 +86,7 @@ contract HTTPZ is IHTTPZ, Ownable2Step, AccessControl {
     function kmsNodeReady(
         bytes calldata signedNodes,
         address keychainDaAddress
-    ) external onlyRole(PENDING_KMS_NODE_ROLE) {
+    ) external virtual onlyRole(PENDING_KMS_NODE_ROLE) {
         _grantRole(KMS_NODE_ROLE, msg.sender);
 
         /// @dev A KMS node can only be ready once
@@ -103,7 +103,7 @@ contract HTTPZ is IHTTPZ, Ownable2Step, AccessControl {
     }
 
     /// @dev See {IHTTPZ-addCoprocessors}.
-    function addCoprocessors(Coprocessor[] calldata initialCoprocessors) external onlyRole(ADMIN_ROLE) {
+    function addCoprocessors(Coprocessor[] calldata initialCoprocessors) external virtual onlyRole(ADMIN_ROLE) {
         for (uint256 i = 0; i < initialCoprocessors.length; i++) {
             _grantRole(PENDING_COPROCESSOR_ROLE, initialCoprocessors[i].connectorAddress);
             coprocessors.push(initialCoprocessors[i]);
@@ -114,7 +114,7 @@ contract HTTPZ is IHTTPZ, Ownable2Step, AccessControl {
     }
 
     /// @dev See {IHTTPZ-coprocessorReady}.
-    function coprocessorReady(address coprocessorDaAddress) external onlyRole(PENDING_COPROCESSOR_ROLE) {
+    function coprocessorReady(address coprocessorDaAddress) external virtual onlyRole(PENDING_COPROCESSOR_ROLE) {
         _grantRole(COPROCESSOR_ROLE, msg.sender);
 
         /// @dev A coprocessor can only be ready once
@@ -130,7 +130,7 @@ contract HTTPZ is IHTTPZ, Ownable2Step, AccessControl {
     }
 
     /// @dev See {IHTTPZ-addNetwork}.
-    function addNetwork(Network calldata network) external onlyRole(ADMIN_ROLE) {
+    function addNetwork(Network calldata network) external virtual onlyRole(ADMIN_ROLE) {
         networks.push(network);
         _isNetworkRegistered[network.chainId] = true;
 
@@ -138,23 +138,33 @@ contract HTTPZ is IHTTPZ, Ownable2Step, AccessControl {
     }
 
     /// @dev See {IHTTPZ-isKmsNode}.
-    function isKmsNode(address kmsNodeAddress) external view returns (bool) {
+    function isKmsNode(address kmsNodeAddress) external view virtual returns (bool) {
         return hasRole(KMS_NODE_ROLE, kmsNodeAddress);
     }
 
     /// @dev See {IHTTPZ-isCoprocessor}.
-    function isCoprocessor(address coprocessorAddress) external view returns (bool) {
+    function isCoprocessor(address coprocessorAddress) external view virtual returns (bool) {
         return hasRole(COPROCESSOR_ROLE, coprocessorAddress);
     }
 
     /// @dev See {IHTTPZ-isNetwork}.
-    function isNetwork(uint256 chainId) external view returns (bool) {
+    function isNetwork(uint256 chainId) external view virtual returns (bool) {
         return _isNetworkRegistered[chainId];
+    }
+
+    /// @dev See {IHTTPZ-getKmsNodesCount}.
+    function getKmsNodesCount() external view virtual returns (uint256) {
+        return kmsNodes.length;
+    }
+
+    /// @dev See {IHTTPZ-getCoprocessorsCount}.
+    function getCoprocessorsCount() external view virtual returns (uint256) {
+        return coprocessors.length;
     }
 
     /// @notice Returns the versions of the HTTPZ contract in SemVer format.
     /// @dev This is conventionally used for upgrade features.
-    function getVersion() public pure returns (string memory) {
+    function getVersion() public pure virtual returns (string memory) {
         return
             string(
                 abi.encodePacked(
