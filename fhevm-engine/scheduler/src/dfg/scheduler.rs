@@ -105,7 +105,10 @@ impl<'a> Scheduler<'a> {
         for idx in 0..self.graph.node_count() {
             let sks = server_key.clone();
             let index = NodeIndex::new(idx);
-            let node = self.graph.node_weight_mut(index).unwrap();
+            let node = self
+                .graph
+                .node_weight_mut(index)
+                .ok_or(SchedulerError::DataflowGraphError)?;
             if Self::is_ready(node) {
                 let opcode = node.opcode;
                 let inputs: Result<Vec<SupportedFheCiphertexts>> = node
@@ -135,7 +138,10 @@ impl<'a> Scheduler<'a> {
                 for edge in self.edges.edges_directed(node_index, Direction::Outgoing) {
                     let sks = server_key.clone();
                     let child_index = edge.target();
-                    let child_node = self.graph.node_weight_mut(child_index).unwrap();
+                    let child_node = self
+                        .graph
+                        .node_weight_mut(child_index)
+                        .ok_or(SchedulerError::DataflowGraphError)?;
                     child_node.inputs[*edge.weight() as usize] =
                         DFGTaskInput::Value(output.0.clone());
                     if Self::is_ready(child_node) {
@@ -189,11 +195,16 @@ impl<'a> Scheduler<'a> {
         for idx in 0..execution_graph.node_count() {
             let sks = server_key.clone();
             let index = NodeIndex::new(idx);
-            let node = execution_graph.node_weight_mut(index).unwrap();
+            let node = execution_graph
+                .node_weight_mut(index)
+                .ok_or(SchedulerError::DataflowGraphError)?;
             if self.is_ready_task(node) {
                 let mut args = Vec::with_capacity(node.df_nodes.len());
                 for nidx in node.df_nodes.iter() {
-                    let n = self.graph.node_weight_mut(*nidx).unwrap();
+                    let n = self
+                        .graph
+                        .node_weight_mut(*nidx)
+                        .ok_or(SchedulerError::DataflowGraphError)?;
                     let opcode = n.opcode;
                     args.push((opcode, std::mem::take(&mut n.inputs), *nidx));
                 }
@@ -208,40 +219,45 @@ impl<'a> Scheduler<'a> {
         while let Some(result) = set.join_next().await {
             let mut result = result?;
             let task_index = result.1;
-            while let Some(o) = result.0.pop() {
-                let index = o.0;
-                let node_index = NodeIndex::new(index);
+            while let Some((node_index, node_result)) = result.0.pop() {
+                let node_index = NodeIndex::new(node_index);
                 // If this node result is an error, we can't satisfy
                 // any dependences with it, so skip - all dependences
                 // on this will remain unsatisfied and result in
                 // further errors.
-                if o.1.is_ok() {
+                if node_result.is_ok() {
                     // Satisfy deps from the executed computation in the DFG
                     for edge in self.edges.edges_directed(node_index, Direction::Outgoing) {
                         let child_index = edge.target();
-                        let child_node = self.graph.node_weight_mut(child_index).unwrap();
+                        let child_node = self
+                            .graph
+                            .node_weight_mut(child_index)
+                            .ok_or(SchedulerError::DataflowGraphError)?;
                         if !child_node.inputs.is_empty() {
                             // Here cannot be an error
                             child_node.inputs[*edge.weight() as usize] =
-                                DFGTaskInput::Value(o.1.as_ref().unwrap().0.clone());
+                                DFGTaskInput::Value(node_result.as_ref().unwrap().0.clone());
                         }
                     }
                 }
-                self.graph[node_index].result = Some(o.1);
+                self.graph[node_index].result = Some(node_result);
             }
             for edge in task_dependences.edges_directed(task_index, Direction::Outgoing) {
                 let sks = server_key.clone();
                 let dependent_task_index = edge.target();
                 let dependent_task = execution_graph
                     .node_weight_mut(dependent_task_index)
-                    .unwrap();
+                    .ok_or(SchedulerError::DataflowGraphError)?;
                 dependent_task
                     .dependence_counter
                     .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
                 if self.is_ready_task(dependent_task) {
                     let mut args = Vec::with_capacity(dependent_task.df_nodes.len());
                     for nidx in dependent_task.df_nodes.iter() {
-                        let n = self.graph.node_weight_mut(*nidx).unwrap();
+                        let n = self
+                            .graph
+                            .node_weight_mut(*nidx)
+                            .ok_or(SchedulerError::DataflowGraphError)?;
                         let opcode = n.opcode;
                         args.push((opcode, std::mem::take(&mut n.inputs), *nidx));
                     }
@@ -264,11 +280,16 @@ impl<'a> Scheduler<'a> {
         // Prime the scheduler with all nodes without dependences
         for idx in 0..execution_graph.node_count() {
             let index = NodeIndex::new(idx);
-            let node = execution_graph.node_weight_mut(index).unwrap();
+            let node = execution_graph
+                .node_weight_mut(index)
+                .ok_or(SchedulerError::DataflowGraphError)?;
             if self.is_ready_task(node) {
                 let mut args = Vec::with_capacity(node.df_nodes.len());
                 for nidx in node.df_nodes.iter() {
-                    let n = self.graph.node_weight_mut(*nidx).unwrap();
+                    let n = self
+                        .graph
+                        .node_weight_mut(*nidx)
+                        .ok_or(SchedulerError::DataflowGraphError)?;
                     let opcode = n.opcode;
                     args.push((opcode, std::mem::take(&mut n.inputs), *nidx));
                 }
