@@ -383,7 +383,7 @@ async fn tfhe_worker_cycle(
                     (Box<(dyn std::error::Error + Send + Sync)>, i32, Vec<u8>),
                 > = r
                     .as_mut()
-                    .map(|rok| (w, rok.1, std::mem::take(&mut rok.2)))
+                    .map(|rok| (w, rok.0, std::mem::take(&mut rok.1)))
                     .map_err(|rerr| {
                         (
                             CoprocessorError::SchedulerError(
