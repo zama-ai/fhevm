@@ -57,8 +57,10 @@ kmsCore:
     num_sessions_preproc: 2
   nitroEnclave:
     enabled: false
-    cpu: 6
-    memory: 20480
+    # Enclave CPU count
+    cpuCount: 6
+    # Enclave Memory in GiB
+    memoryGiB: 10
     cid: 20
     userId: 10003
     groupId: 10002

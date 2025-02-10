@@ -266,7 +266,7 @@ spec:
               {{- if .Values.kmsCore.nitroEnclave.enabled }}
               memory: 2Gi
               aws.ec2.nitro/nitro_enclaves: "1"
-              hugepages-1Gi: {{ .Values.kmsCore.nitroEnclave.memory }}Mi
+              hugepages-1Gi: {{ .Values.kmsCore.nitroEnclave.memoryGiB }}Gi
               {{- else }}
               memory: {{ .Values.kmsCore.resources.requests.memory }}
               cpu: {{ .Values.kmsCore.resources.requests.cpu }}
@@ -276,7 +276,7 @@ spec:
               {{- if .Values.kmsCore.nitroEnclave.enabled }}
               memory: 4Gi
               aws.ec2.nitro/nitro_enclaves: "1"
-              hugepages-1Gi: {{ .Values.kmsCore.nitroEnclave.memory }}Mi
+              hugepages-1Gi: {{ .Values.kmsCore.nitroEnclave.memoryGiB }}Gi
               {{- else }}
               memory: {{ .Values.kmsCore.resources.limits.memory }}
               {{- end }}
