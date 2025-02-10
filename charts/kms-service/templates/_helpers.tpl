@@ -76,14 +76,14 @@ args:
 {{/* takes a (dict "name" string
      	     	   "image" (dict "name" string "tag" string)
                    "vsockPort" int
-		   "ipAddr" string
-		   "ipPort" int) */}}
+		           "address" string
+		           "port" int) */}}
 {{- define "proxyFromEnclaveTcp" -}}
 {{- include "proxyFromEnclave"
       (dict "name" .name
             "image" .image
             "vsockPort" .vsockPort
-	    "to" (printf "TCP:%s:%d" .ipAddr (int .ipPort))) }}
+	    "to" (printf "TCP:%s:%d" .address (int .port))) }}
 {{- end -}}
 
 {{/* takes a (dict "name" string

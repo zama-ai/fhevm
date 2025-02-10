@@ -13,7 +13,7 @@ metadata:
 spec:
   replicas: {{ .Values.kmsPeers.count }}
   ordinals:
-    start: {{include "kmsPeersStartID" . }}
+    start: {{ include "kmsPeersStartID" . }}
   podManagementPolicy: Parallel
   updateStrategy:
     type: RollingUpdate
@@ -67,29 +67,29 @@ spec:
                (dict "name" "aws-imds-proxy"
                      "image" .Values.socat.image
                      "vsockPort" .Values.kmsCore.nitroEnclave.ports.imds
-                     "ipAddr" "169.254.169.254"
-                     "ipPort" 80
+                     "address" "169.254.169.254"
+                     "port" 80
                 ) | indent 10 | trim }}
         - {{ include "proxyFromEnclaveTcp"
                (dict "name" "aws-sts-proxy"
                      "image" .Values.socat.image
                      "vsockPort" .Values.kmsCore.nitroEnclave.ports.sts
-                     "ipAddr" (printf "sts.%s.amazonaws.com" .Values.kmsCore.aws.region)
-                     "ipPort" 443
+                     "address" (printf "sts.%s.amazonaws.com" .Values.kmsCore.aws.region)
+                     "port" 443
                 ) | indent 10 | trim }}
         - {{ include "proxyFromEnclaveTcp"
                (dict "name" "aws-s3-proxy"
                      "image" .Values.socat.image
                      "vsockPort" .Values.kmsCore.nitroEnclave.ports.s3
-                     "ipAddr" (printf "s3.%s.amazonaws.com" .Values.kmsCore.aws.region)
-                     "ipPort" 443
+                     "address" (printf "s3.%s.amazonaws.com" .Values.kmsCore.aws.region)
+                     "port" 443
                 ) | indent 10 | trim }}
         - {{ include "proxyFromEnclaveTcp"
                (dict "name" "aws-kms-proxy"
                      "image" .Values.socat.image
                      "vsockPort" .Values.kmsCore.nitroEnclave.ports.awskms
-                     "ipAddr" (printf "kms.%s.amazonaws.com" .Values.kmsCore.aws.region)
-                     "ipPort" 443
+                     "address" (printf "kms.%s.amazonaws.com" .Values.kmsCore.aws.region)
+                     "port" 443
                 ) | indent 10 | trim }}
         - {{ include "proxyToEnclaveTcp"
                (dict "name" "grpc-client-proxy"
@@ -110,8 +110,8 @@ spec:
                (dict "name" (printf "enclave-peer-proxy-%d" (int $i))
                      "image" $.Values.socat.image
                      "vsockPort" (add $.Values.kmsCore.nitroEnclave.ports.peer $i)
-                     "ipAddr" (printf "%s-%d" $kmsCoreName (int $i))
-                     "ipPort" $.Values.kmsCore.ports.peer
+                     "address" (printf "%s-%d" $kmsCoreName (int $i))
+                     "port" $.Values.kmsCore.ports.peer
                 ) | indent 10 | trim }}
         {{- end }}
         {{- end }}
