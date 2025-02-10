@@ -16,7 +16,7 @@ data:
     timeout_secs = {{ int .Values.kmsCore.resources.limits.grpcTimeout }}
     grpc_max_message_size = {{ int .Values.kmsCore.resources.limits.grpcMaxMessageSize }}
 
-    {{- if .Values.tracing.enabled -}}
+    {{- if .Values.tracing.enabled }}
     [tracing]
     service_name = {{ include "kmsCoreName" . | quote }}
     {{- if .Values.kmsCore.nitroEnclave.enabled }}
