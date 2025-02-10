@@ -1,4 +1,4 @@
-use tracing::info;
+use tracing::{debug, error, info};
 
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
@@ -32,7 +32,23 @@ pub async fn event_listener(
                             event_log,
                         },
                     );
-                    _ = orchestrator.dispatch_event(event).await; // TODO: Proper error handling and make it aync.
+                    debug!(
+                        file = file!(),
+                        line = line!(),
+                        event_id = ?id,
+                        event_type = ?std::any::type_name_of_val(&event.data),
+                        "Dispatching event"
+                    );
+
+                    // Dispatch with error logging
+                    if let Err(e) = orchestrator.dispatch_event(event).await {
+                        error!(
+                            file = file!(),
+                            line = line!(),
+                            error = %e,
+                            "Failed to dispatch event"
+                        );
+                    }
                 }
                 None => {
                     info!("Subscription stream ended");

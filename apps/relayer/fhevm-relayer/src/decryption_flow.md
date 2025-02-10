@@ -9,7 +9,6 @@ sequenceDiagram
     participant EH as ethereum_host_l1_handlers
     participant AGH as arbitrum_gw_l2_handler
     participant RL as rollup_listener
-    participant L2 as Arbitrum L2
 
     Note over L1,L2: Decryption Flow
     
