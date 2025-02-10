@@ -65,6 +65,7 @@ kmsCore:
     userId: 10003
     groupId: 10002
     ports:
+      env: 2000
       logger: 3000
       config: 4000
       tracing: 4317
@@ -95,6 +96,7 @@ kmsCore:
     client: 50100
     peer: 50001
     metrics: 9464
+  workdir: /root
   serviceMonitor:
     enabled: false
   # Important: this request limit is only for non-enclave workloads

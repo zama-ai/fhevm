@@ -58,6 +58,15 @@ spec:
             - mountPath: /var/lib/kms-core/config
               name: config-files
         - {{ include "proxyFromEnclave"
+               (dict "name" "enclave-env"
+                     "image" .Values.socat.image
+                     "vsockPort" .Values.kmsCore.nitroEnclave.ports.env
+                     "to" (printf "OPEN:%s/.env,rdonly" .Values.kmsCore.workdir)
+                ) | indent 10 | trim }}
+          volumeMounts:
+            - mountPath: {{ .Values.kmsCore.workdir }}
+              name: workdir
+        - {{ include "proxyFromEnclave"
                (dict "name" "enclave-tracing"
                      "image" .Values.socat.image
                      "vsockPort" .Values.kmsCore.nitroEnclave.ports.tracing
@@ -126,6 +135,30 @@ spec:
           {{- end }}
         {{- end }}
         {{- end }}
+        - image: {{ .Values.kmsCore.image.name }}:{{ .Values.kmsCore.image.tag }}
+          name: {{ include "kmsCoreName" . }}-load-enclave-env
+          command:
+            - /bin/sh
+          args:
+            - -c
+            - |
+              env > .env
+          env:
+            - name: KMS_CORE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['apps.kubernetes.io/pod-index']
+            - name: NO_COLOR
+              value: "true"
+            - name: RUN_MODE
+              value: {{ .Values.runMode }}
+            - name: RUST_LOG
+              value: {{ .Values.rustLog }}
+          {{- if .Values.kmsCore.envFrom.configmap.name }}
+          envFrom:
+            - configMapRef:
+                name: {{ .Values.kmsCore.envFrom.configmap.name }}
+          {{- end }}
         {{- end }}
         - image: {{ .Values.kmsCore.image.name }}:{{ .Values.kmsCore.image.tag }}
           name: {{ include "kmsCoreName" . }}-gen-keys
@@ -194,6 +227,7 @@ spec:
           args:
             - -c
             - |
+              nitro-cli describe-eif --eif-path enclave.eif
               nitro-cli run-enclave --config /var/lib/kms-core/config/enclave.json
               while true; do
                 nitro-cli describe-enclaves > /var/log/nitro_enclaves/status
@@ -238,7 +272,7 @@ spec:
                 name: {{ .Values.kmsCore.envFrom.configmap.name }}
           {{- end }}
           volumeMounts:
-            - mountPath: /root
+            - mountPath: {{ .Values.kmsCore.workdir }}
               name: workdir
             - mountPath: /var/lib/kms-core/config
               name: config-files
