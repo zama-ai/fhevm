@@ -27,7 +27,7 @@ describe(FheEventDetected, () => {
     }).compile()
   })
 
-  describe('when pubsub publishes an web3:fhe-event:detected event', () => {
+  describe(`when pubsub publishes an 'web3:fhe-event:detected' event`, () => {
     let pubsub: PubSub<back.BackEvent | web3.Web3Event>
     let handler: CalledWithMock<
       Task<void, AppError>,
@@ -58,7 +58,7 @@ describe(FheEventDetected, () => {
       task = pubsub.publish(event)
     })
 
-    test('then it publishes a back:dapp:stats-available event', async () => {
+    test(`then it publishes an 'back:dapp:stats-available' event`, async () => {
       await task.toPromise()
       expect(handler).toHaveBeenCalledOnce()
       const { type } = handler.mock.calls[0][0]
@@ -119,7 +119,7 @@ describe(FheEventDetected, () => {
         { correlationId: faker.string.uuid() },
       ),
     },
-  ])('when pubsub publishes $event.name', ({ event }) => {
+  ])('when pubsub publishes an $event.type event', ({ event }) => {
     let pubsub: PubSub<back.BackEvent | web3.Web3Event>
     let handler: CalledWithMock<
       Task<void, AppError>,

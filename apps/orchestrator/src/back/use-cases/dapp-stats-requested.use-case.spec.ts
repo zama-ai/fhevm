@@ -27,7 +27,7 @@ describe(DAppStatsRequested, () => {
     }).compile()
   })
 
-  describe('when pubsub publishes an back:dapp:stats-requested event', () => {
+  describe(`when pubsub publishes an 'back:dapp:stats-requested' event`, () => {
     let pubsub: PubSub<back.BackEvent | web3.Web3Event>
     let handler: CalledWithMock<
       Task<void, AppError>,
@@ -42,7 +42,7 @@ describe(DAppStatsRequested, () => {
         ISubscriber<back.BackEvent | web3.Web3Event>
       >().mockReturnValue(Task.of(void 0))
       pubsub.subscribe(
-        'back:dapp:stats-available',
+        'web3:fhe-event:requested',
         handler as ISubscriber<back.BackEvent | web3.Web3Event>,
       )
       event = back.dappStatsRequested(
@@ -55,11 +55,11 @@ describe(DAppStatsRequested, () => {
       task = pubsub.publish(event)
     })
 
-    test('then it publishes a web3:fhe-event:detected event', async () => {
+    test(`then it publishes a 'web3:fhe-event:requested' event`, async () => {
       await task.toPromise()
       expect(handler).toHaveBeenCalledOnce()
       const { type } = handler.mock.calls[0][0]
-      expect(type).toBe('web3:fhe-event:detected')
+      expect(type).toBe('web3:fhe-event:requested')
     })
 
     test('then it publishes the right payload', async () => {
@@ -112,7 +112,7 @@ describe(DAppStatsRequested, () => {
         { correlationId: faker.string.uuid() },
       ),
     },
-  ])('when pubsub publishes $event.name', ({ event }) => {
+  ])('when pubsub publishes an $event.type event', ({ event }) => {
     let pubsub: PubSub<back.BackEvent | web3.Web3Event>
     let handler: CalledWithMock<
       Task<void, AppError>,
@@ -126,7 +126,7 @@ describe(DAppStatsRequested, () => {
         ISubscriber<back.BackEvent | web3.Web3Event>
       >().mockReturnValue(Task.of(void 0))
       pubsub.subscribe(
-        'back:dapp:stats-available',
+        'back:dapp:stats-requested',
         handler as ISubscriber<back.BackEvent | web3.Web3Event>,
       )
       task = pubsub.publish(event)
