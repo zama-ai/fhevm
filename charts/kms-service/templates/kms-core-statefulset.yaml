@@ -102,7 +102,7 @@ spec:
                (dict "name" "grpc-peer-proxy"
                      "image" .Values.socat.image
                      "cid" .Values.kmsCore.nitroEnclave.cid
-                     "port" .Values.kmsCore.ports.peer
+                     "port" .Values.kmsCore.nitroEnclave.ports.peer
                 ) | indent 10 | trim }}
         {{- if .Values.kmsCore.thresholdMode.peersList }}
           {{- range .Values.kmsCore.thresholdMode.peersList }}
