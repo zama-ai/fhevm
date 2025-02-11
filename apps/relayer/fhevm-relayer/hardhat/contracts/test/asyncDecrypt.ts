@@ -155,7 +155,7 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
       console.log(txData);
       try {
         if (process.env.RUST_RELAYER === 'true') {
-          await new Promise((resolve) => setTimeout(resolve, 2000));
+          await new Promise((resolve) => setTimeout(resolve, 3000));
         } else {
           const tx = await relayer.sendTransaction(txData);
           await tx.wait();
