@@ -6,6 +6,10 @@ packages:
 catalog:
   typescript: "~5.6.2"
   eslint: "^9.13.0"
+  nestjs-pino: "^4.3.0"
+  pino: "^9.6.0"
+  pino-http: "^10.4.0"
+  pino-pretty: "^13.0.0"
   prettier: "^3.4.0"
   prisma: "^5.22.0"
   unplugin-swc: "^1.5.1"

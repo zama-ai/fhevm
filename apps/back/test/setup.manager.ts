@@ -9,6 +9,7 @@ import jwtConfig from '#config/jwt.config.js'
 import { inject } from 'vitest'
 import { randomUUID } from 'crypto'
 import { execSync } from 'child_process'
+import commonConfig from '#config/common.config.js'
 export type GraphQlResponse<T> =
   | {
       success: true
@@ -92,6 +93,7 @@ export class SetupManager {
         ConfigModule.forRoot({
           isGlobal: true,
           load: [
+            commonConfig,
             registerAs('aws', () => ({
               endpoint: awsEndpoint,
               queueUrl: this.queueUrl,
