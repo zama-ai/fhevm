@@ -19,14 +19,8 @@ use tracing::{debug, error, info};
 use uuid::Uuid;
 
 #[derive(Clone)]
-struct DecryptionResultData {
-    gateway_l2_request_id: String,
-}
-
-#[derive(Clone)]
 pub struct ArbitrumGatewayL2Handler {
     dispatcher: Arc<TokioEventDispatcher<RelayerEvent>>,
-    context_data: dashmap::DashMap<Uuid, DecryptionResultData>,
     tx_service: Arc<TransactionService>,
     tx_config: TxConfig,
     decryption_id_to_request_id: Arc<dashmap::DashMap<U256, Uuid>>,
@@ -40,7 +34,6 @@ impl ArbitrumGatewayL2Handler {
     ) -> Self {
         Self {
             dispatcher,
-            context_data: dashmap::DashMap::new(),
             tx_service,
             tx_config,
             decryption_id_to_request_id: Arc::new(dashmap::DashMap::new()),
