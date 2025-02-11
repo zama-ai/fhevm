@@ -1,11 +1,11 @@
 use crate::errors::EventProcessingError;
 use crate::ethereum_host_l1_handlers::DecryptionRequestData;
-use alloy::primitives::{Bytes, U256};
+use alloy::primitives::{keccak256, Bytes, Uint, U256};
 
-pub struct CallbackHandler;
+pub struct ComputeCalldata;
 
-impl CallbackHandler {
-    pub fn prepare_callback_data(
+impl ComputeCalldata {
+    pub fn callback_req(
         req: &DecryptionRequestData,
         decrypted_value: U256,
         signature_number: u8,
@@ -59,6 +59,28 @@ impl CallbackHandler {
             // Padding to 32 byte boundary
             let padding = vec![0u8; 32 - (65 % 32)];
             calldata.extend_from_slice(&padding);
+        }
+
+        Ok(Bytes::from(calldata))
+    }
+
+    pub fn decryption_req(handles: Vec<Uint<256, 4>>) -> Result<Bytes, EventProcessingError> {
+        let selector = &keccak256("publicDecryptionRequest(uint256[])")[..4];
+        // Encode the parameters properly following ABI encoding rules
+        let mut calldata = Vec::new();
+
+        // 1. Add function selector
+        calldata.extend_from_slice(selector);
+
+        // 2. Add offset to start of array (32 bytes from start of parameters)
+        calldata.extend_from_slice(&U256::from(32).to_be_bytes::<32>());
+
+        // 3. Add array length
+        calldata.extend_from_slice(&U256::from(handles.len()).to_be_bytes::<32>());
+
+        // 4. Add array elements
+        for handle in handles {
+            calldata.extend_from_slice(&handle.to_be_bytes::<32>());
         }
 
         Ok(Bytes::from(calldata))

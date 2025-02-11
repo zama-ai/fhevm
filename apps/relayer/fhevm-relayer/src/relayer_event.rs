@@ -39,10 +39,11 @@ impl Event for RelayerEvent {
         match &self.data {
             RelayerEventData::PubDecryptEventLogRcvdFromHostL1 { .. } => 0,
             RelayerEventData::DecryptRequestRcvd { .. } => 1,
-            RelayerEventData::DecryptResponseEventLogRcvdFromGwL2 { .. } => 2,
-            RelayerEventData::DecryptionResponseRcvdFromGwL2 { .. } => 3,
-            RelayerEventData::DecryptResponseSentToHostL1 { .. } => 4,
-            RelayerEventData::DecryptionFailed { .. } => 5,
+            RelayerEventData::DecryptionRequestSentToGwL2 { .. } => 2,
+            RelayerEventData::DecryptResponseEventLogRcvdFromGwL2 { .. } => 3,
+            RelayerEventData::DecryptionResponseRcvdFromGwL2 { .. } => 4,
+            RelayerEventData::DecryptResponseSentToHostL1 { .. } => 5,
+            RelayerEventData::DecryptionFailed { .. } => 6,
         }
     }
 
@@ -90,6 +91,10 @@ pub enum RelayerEventData {
         // For gateway l2 handler
         ct_handles: Vec<[u8; 32]>,
         operation: DecryptionType,
+    },
+
+    DecryptionRequestSentToGwL2 {
+        decryption_public_id: U256,
     },
 
     // Raw event log from gateway l2. Will be processed by gateway l2 handler.

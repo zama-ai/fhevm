@@ -8,5 +8,5 @@ pub mod bindings;
 pub use filter::ContractAndTopicsFilter;
 pub use host_l1::EthereumHostL1;
 pub use rollup_l2::RollupL2;
-pub use transaction_helper::callback_handler;
+pub use transaction_helper::transaction_calldata::ComputeCalldata;
 pub use utils::extract_event_signature;

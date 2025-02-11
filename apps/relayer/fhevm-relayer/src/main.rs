@@ -108,7 +108,9 @@ async fn main() -> eyre::Result<()> {
     // Event type: PubDecryptEventLogRcvdFromHostL1
     orchestrator.register_handler(0, Arc::clone(&host_l1_event_log_handler));
     // Event type: DecryptionResponseRcvdFromGwL2
-    orchestrator.register_handler(3, Arc::clone(&host_l1_event_log_handler));
+    orchestrator.register_handler(4, Arc::clone(&host_l1_event_log_handler));
+    // Event type: DecryptResponseSentToHostL1
+    orchestrator.register_handler(5, Arc::clone(&host_l1_event_log_handler));
 
     let gateway_l2_event_handler: Arc<dyn EventHandler<RelayerEvent>> = Arc::new(
         ArbitrumGatewayL2Handler::new(Arc::clone(&dispatcher), tx_service_rollup, tx_config),
@@ -116,9 +118,10 @@ async fn main() -> eyre::Result<()> {
 
     // Event type: DecryptRequestRcvd
     orchestrator.register_handler(1, Arc::clone(&gateway_l2_event_handler));
-
     // Event type: DecryptResponseEventLogRcvdFromGwL2
     orchestrator.register_handler(2, Arc::clone(&gateway_l2_event_handler));
+    // Event type: DecryptionRequestSentToGwL2
+    orchestrator.register_handler(3, Arc::clone(&gateway_l2_event_handler));
 
     // === Initialize Ethereum host L1 adapter
     let host_l1 = EthereumHostL1::new(&settings.networks.fhevm.ws_url)

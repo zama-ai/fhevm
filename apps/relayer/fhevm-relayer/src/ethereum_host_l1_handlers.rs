@@ -1,25 +1,23 @@
 use crate::{
     errors::{EventProcessingError, TransactionServiceError},
-    ethereum::{
-        bindings::{DecryptionOracle, DecyptionManager},
-        callback_handler::CallbackHandler,
-    },
+    ethereum::{bindings::DecryptionOracle, ComputeCalldata},
     orchestrator::{
         traits::{EventDispatcher, EventHandler},
         TokioEventDispatcher,
     },
     relayer_event::{DecryptedValue, DecryptionType, RelayerEvent, RelayerEventData},
     transaction::{TransactionService, TxConfig},
+    utils::{colorize_event_type, colorize_request_id},
 };
-use alloy::primitives::{keccak256, Address, FixedBytes, Uint};
+use alloy::primitives::{Address, FixedBytes, Uint};
 use alloy::rpc::types::Log;
 use async_trait::async_trait;
 use std::{sync::Arc, time::Duration};
 use tokio::task;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 use uuid::Uuid;
 
-use alloy::primitives::{Bytes, U256};
+use alloy::primitives::U256;
 use alloy_sol_types::SolEvent;
 
 #[derive(Debug, Clone)]
@@ -123,11 +121,16 @@ impl EthereumHostL1Handler {
         req: &DecryptionRequestData,
     ) -> Result<(), EventProcessingError> {
         let decrypted_value = U256::from(18446744073709551600u64);
-        let calldata = CallbackHandler::prepare_callback_data(req, decrypted_value, 4)?;
+        let calldata = ComputeCalldata::callback_req(req, decrypted_value, 4)?;
 
         info!(
-            calldata = ?hex::encode(&calldata),
+            calldata = %format!("0x{}...", hex::encode(&calldata[..20])),  // First 20 bytes with prefix
             "Submitting callback transaction"
+        );
+
+        debug!(
+            full_calldata = %format!("0x{}", hex::encode(&calldata)),
+            "Full callback transaction data"
         );
 
         let tx_hash = self
@@ -182,6 +185,11 @@ impl EthereumHostL1Handler {
 #[async_trait]
 impl EventHandler<RelayerEvent> for EthereumHostL1Handler {
     async fn handle_event(&self, event: RelayerEvent) {
+        info!(
+            event_type = %colorize_event_type(event.data.as_ref()),
+            request_id = %colorize_request_id(&event.request_id),
+            "Processing relayer event"
+        );
         match event.clone().data {
             RelayerEventData::PubDecryptEventLogRcvdFromHostL1 {
                 event_log: eth_event_log,

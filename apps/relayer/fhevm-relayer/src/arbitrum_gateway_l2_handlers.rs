@@ -1,19 +1,21 @@
 use crate::{
     errors::{EventProcessingError, TransactionServiceError},
-    ethereum::bindings::DecyptionManager,
+    ethereum::{bindings::DecyptionManager, ComputeCalldata},
     orchestrator::{
         traits::{EventDispatcher, EventHandler},
         TokioEventDispatcher,
     },
     relayer_event::{DecryptedValue, RelayerEvent, RelayerEventData},
     transaction::{TransactionService, TxConfig},
+    utils::{colorize_event_type, colorize_request_id},
 };
-use alloy::primitives::{hex, keccak256, Bytes, Uint, U256};
+use alloy::primitives::{hex, keccak256, Uint, U256};
+
 use alloy_sol_types::SolEvent;
 use async_trait::async_trait;
 use std::{sync::Arc, time::Duration};
 use tokio::task;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -45,40 +47,72 @@ impl ArbitrumGatewayL2Handler {
         }
     }
 
-    async fn mock_handle_decrypt_request_received(&self, event: RelayerEvent) {
-        // TODO: make a tx to Rollup
+    async fn mock_handle_decrypt_request_received(
+        &self,
+        event: RelayerEvent,
+        handles: Vec<[u8; 32]>,
+    ) {
+        let handles: Vec<Uint<256, 4>> = handles
+            .iter()
+            .map(|bytes| {
+                // big-endian is used
+                Uint::from_be_bytes(*bytes)
+            })
+            .collect();
 
-        let handles: Vec<Uint<256, 4>> = vec![U256::from(1), U256::from(2)];
-
-        // let next_event_data = RelayerEventData::DecryptionResponseRcvdFromGwL2 {
-        //     decrypted_value: DecryptedValue::PublicDecrypt {
-        //         plaintext: vec![1, 2, 3],
-        //         signatures: vec![vec![1, 2, 3]],
-        //     },
-        // };
         info!(
-            "Decryption request received. Making a tx to rollup: request_id: {:?}",
+            "Decryption request received. Making a tx to rollup: request_id: {:?} with handles {:?}",
             event.request_id,
+            handles
         );
 
         let self_clone = self.clone(); // Clone self since we need to move it to the task
+        let dispatcher = Arc::clone(&self.dispatcher);
+        let event_clone = event.clone();
 
-        // Spawn a blocking task for the async operation
+        // Spawn a blocking task to make a transaction to rollup
+        // From the receipt, the decryption_public_id is extracted
+        // this information is emitted through an event in DecryptionManager.sol contract
         task::spawn(async move {
             match self_clone.try_send_callback(handles).await {
                 Ok(decryption_public_id) => {
-                    // Store the mapping between decryption_public_id and original request_id
+                    // Store the mapping
                     self_clone
                         .decryption_id_to_request_id
                         .insert(decryption_public_id, event.request_id);
+
                     info!(
                         ?event.request_id,
                         ?decryption_public_id,
                         "Stored mapping between decryption ID and request ID"
                     );
+
+                    // Create and dispatch the new event
+                    let next_event = event_clone.derive_next_event(
+                        RelayerEventData::DecryptionRequestSentToGwL2 {
+                            decryption_public_id,
+                        },
+                    );
+
+                    if let Err(e) = dispatcher.dispatch_event(next_event).await {
+                        error!(?e, "Failed to dispatch DecryptRequestProcessed event");
+                    }
                 }
                 Err(e) => {
-                    error!(?e, "Failed to send callback transaction");
+                    error!(
+                        error = ?e,
+                        "Failed to send callback transaction"
+                    );
+
+                    // Emit an error event
+                    let error_event =
+                        event_clone.derive_next_event(RelayerEventData::DecryptionFailed {
+                            error: format!("Callback transaction failed: {}", e),
+                        });
+
+                    if let Err(e) = dispatcher.dispatch_event(error_event).await {
+                        error!(?e, "Failed to dispatch error event");
+                    }
                 }
             }
         });
@@ -150,19 +184,31 @@ impl ArbitrumGatewayL2Handler {
         }
     }
 
-    async fn noop_handle_decrypt_reponse_event_log(&self, event: RelayerEvent) {}
+    fn handle_decrypt_request_sent(&self, id: U256) {
+        info!(
+            "Transaction to rollup has been done, the associated public decryption id is {}",
+            id
+        );
+    }
+
+    async fn noop_handle_decrypt_reponse_event_log(&self, _event: RelayerEvent) {}
 
     async fn try_send_callback(
         &self,
         handles: Vec<Uint<256, 4>>,
     ) -> Result<Uint<256, 4>, EventProcessingError> {
-        let calldata = Self::prepare_callback_data(handles)?;
+        let calldata = ComputeCalldata::decryption_req(handles)?;
 
         let contract_address = hex!("2Fb4341027eb1d2aD8B5D9708187df8633cAFA92").into();
 
         info!(
-            calldata = ?hex::encode(&calldata),
+            calldata = %format!("0x{}...", hex::encode(&calldata[..20])),  // First 20 bytes with prefix
             "Submitting callback transaction"
+        );
+
+        debug!(
+            full_calldata = %format!("0x{}", hex::encode(&calldata)),
+            "Full callback transaction data"
         );
 
         let tx_hash = self
@@ -221,32 +267,6 @@ impl ArbitrumGatewayL2Handler {
         ))
     }
 
-    pub(crate) fn prepare_callback_data(
-        handles: Vec<Uint<256, 4>>,
-    ) -> Result<Bytes, EventProcessingError> {
-        let selector = &keccak256("publicDecryptionRequest(uint256[])")[..4];
-        // Encode the parameters properly following ABI encoding rules
-        let mut calldata = Vec::new();
-
-        // 1. Add function selector
-        calldata.extend_from_slice(selector);
-
-        // 2. Add offset to start of array (32 bytes from start of parameters)
-        calldata.extend_from_slice(&U256::from(32).to_be_bytes::<32>());
-
-        // 3. Add array length
-        calldata.extend_from_slice(&U256::from(handles.len()).to_be_bytes::<32>());
-
-        // 4. Add array elements
-        for handle in handles {
-            calldata.extend_from_slice(&handle.to_be_bytes::<32>());
-        }
-
-        println!("Full calldata: 0x{}", hex::encode(&calldata));
-
-        Ok(Bytes::from(calldata))
-    }
-
     async fn send_callback_transaction(
         &self,
         handles: Vec<Uint<256, 4>>,
@@ -278,15 +298,24 @@ impl ArbitrumGatewayL2Handler {
 #[async_trait]
 impl EventHandler<RelayerEvent> for ArbitrumGatewayL2Handler {
     async fn handle_event(&self, event: RelayerEvent) {
-        match event.clone().data {
-            RelayerEventData::DecryptRequestRcvd {
-                ct_handles,
-                operation,
-            } => {
-                self.mock_handle_decrypt_request_received(event).await;
+        info!(
+            event_type = %colorize_event_type(event.data.as_ref()),
+            request_id = %colorize_request_id(&event.request_id),
+            "Processing relayer event"
+        );
+        match event.data {
+            RelayerEventData::DecryptRequestRcvd { ref ct_handles, .. } => {
+                let handles = ct_handles.clone();
+                self.mock_handle_decrypt_request_received(event, handles)
+                    .await;
             }
-            RelayerEventData::DecryptResponseEventLogRcvdFromGwL2 { log: _ } => {
+            RelayerEventData::DecryptResponseEventLogRcvdFromGwL2 { .. } => {
                 self.handle_decrypt_reponse_event_log(event).await;
+            }
+            RelayerEventData::DecryptionRequestSentToGwL2 {
+                decryption_public_id,
+            } => {
+                self.handle_decrypt_request_sent(decryption_public_id);
             }
             _ => {
                 self.noop_handle_decrypt_reponse_event_log(event).await;
