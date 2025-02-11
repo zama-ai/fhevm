@@ -40,11 +40,15 @@ impl ArbitrumGatewayL2Handler {
         }
     }
 
-    async fn mock_handle_decrypt_request_received(
-        &self,
-        event: RelayerEvent,
-        handles: Vec<[u8; 32]>,
-    ) {
+    /// Prepare the decryption request transaction to gateway.
+    ///
+    /// From the receipt, the decryption_public_id is extracted.
+    ///
+    /// This information is emitted through an event in DecryptionManager.sol contract
+    ///
+    /// This information well be used to make the link between  the decryption request transaction
+    /// and the future decryption response.
+    async fn send_decryption_request_to_rollup(&self, event: RelayerEvent, handles: Vec<[u8; 32]>) {
         let handles: Vec<Uint<256, 4>> = handles
             .iter()
             .map(|bytes| {
@@ -64,8 +68,6 @@ impl ArbitrumGatewayL2Handler {
         let event_clone = event.clone();
 
         // Spawn a blocking task to make a transaction to rollup
-        // From the receipt, the decryption_public_id is extracted
-        // this information is emitted through an event in DecryptionManager.sol contract
         task::spawn(async move {
             match self_clone.try_send_callback(handles).await {
                 Ok(decryption_public_id) => {
@@ -111,6 +113,7 @@ impl ArbitrumGatewayL2Handler {
         });
     }
 
+    /// This methods extract
     fn extract_decryption_id_from_event(
         &self,
         event: &RelayerEvent,
@@ -132,6 +135,17 @@ impl ArbitrumGatewayL2Handler {
         ))
     }
 
+    /// The decryption response event contains the plaintext and the associated signatures.
+    ///
+    /// In order to link this response to the original decryption request catched by L1 listener, we
+    /// need to replace the future dispatched relayer event `DecryptionResponseRcvdFromGwL2` with the original
+    /// request id.
+    ///
+    /// To achieve it, we use the received decryption_public_id to retieve the original relayer event request id
+    /// using method `extract_decryption_id_from_event`
+    ///
+    /// Eventually, this relayer request id will be used in Ethereum handler to retrieve the contextual data which was stored
+    /// initially when the L1 decryption event was catched (with the contract caller, request id and selector).
     async fn handle_decrypt_reponse_event_log(&self, event: RelayerEvent) {
         info!(
             "Decryption response received. Trigger a tx to L1  {:?}",
@@ -299,8 +313,7 @@ impl EventHandler<RelayerEvent> for ArbitrumGatewayL2Handler {
         match event.data {
             RelayerEventData::DecryptRequestRcvd { ref ct_handles, .. } => {
                 let handles = ct_handles.clone();
-                self.mock_handle_decrypt_request_received(event, handles)
-                    .await;
+                self.send_decryption_request_to_rollup(event, handles).await;
             }
             RelayerEventData::DecryptResponseEventLogRcvdFromGwL2 { .. } => {
                 self.handle_decrypt_reponse_event_log(event).await;
