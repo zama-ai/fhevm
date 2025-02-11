@@ -18,6 +18,7 @@ const documents = {
     "\n  query GetDapp($dappId: ID!) {\n    dapp(input: { id: $dappId }) {\n      id\n      name\n      status\n    }\n  }\n": types.GetDappDocument,
     "\n  mutation SetDappAddress($id: ID!, $address: String!) {\n    updateDapp(input: { id: $id, address: $address }) {\n      id\n      name\n      address\n      status\n    }\n  }\n": types.SetDappAddressDocument,
     "\n  mutation DeployDapp($applicationId: String!) {\n    deployDapp(input: { dappId: $applicationId }) {\n      id\n      name\n      address\n      status\n    }\n  }\n": types.DeployDappDocument,
+    "\n  query GetDappDetails($dappId: ID!) {\n    dapp(input: { id: $dappId }) {\n      id\n      name\n      status\n      stats {\n        id\n        name\n        timestamp\n        externalRef\n      }\n    }\n  }\n": types.GetDappDetailsDocument,
     "\n  subscription DappUpdated($dappId: ID!) {\n    dappUpdated(input: { id: $dappId }) {\n      id\n      name\n      status\n    }\n  }\n": types.DappUpdatedDocument,
     "\n  query Preferences {\n    me {\n      id\n      email\n      name\n      teams {\n        id\n        name\n      }\n    }\n  }\n": types.PreferencesDocument,
     "\n  mutation ChangeUserName($id: ID!, $name: String!) {\n    updateUser(input: { id: $id, name: $name }) {\n      id\n      name\n    }\n  }\n": types.ChangeUserNameDocument,
@@ -57,6 +58,10 @@ export function graphql(source: "\n  mutation SetDappAddress($id: ID!, $address:
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(source: "\n  mutation DeployDapp($applicationId: String!) {\n    deployDapp(input: { dappId: $applicationId }) {\n      id\n      name\n      address\n      status\n    }\n  }\n"): (typeof documents)["\n  mutation DeployDapp($applicationId: String!) {\n    deployDapp(input: { dappId: $applicationId }) {\n      id\n      name\n      address\n      status\n    }\n  }\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  query GetDappDetails($dappId: ID!) {\n    dapp(input: { id: $dappId }) {\n      id\n      name\n      status\n      stats {\n        id\n        name\n        timestamp\n        externalRef\n      }\n    }\n  }\n"): (typeof documents)["\n  query GetDappDetails($dappId: ID!) {\n    dapp(input: { id: $dappId }) {\n      id\n      name\n      status\n      stats {\n        id\n        name\n        timestamp\n        externalRef\n      }\n    }\n  }\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
