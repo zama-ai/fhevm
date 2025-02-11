@@ -11,6 +11,7 @@ spec:
     matchLabels:
       app: kms-core
       app.kubernetes.io/name: {{ include "kmsCoreName" . }}
+      headless: "false"
   endpoints:
   - port: metrics
 {{- end -}}
