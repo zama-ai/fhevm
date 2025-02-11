@@ -12,7 +12,7 @@ spec:
   template:
     metadata:
       labels:
-        app: kms-sc-deploy
+        app: kms-core
         app.kubernetes.io/name: {{ include "kmsThresholdInitJobName" . }}
     spec:
       securityContext:
@@ -82,7 +82,7 @@ spec:
               echo "${kmsInitCount} peers to initialize"
               timeout 10 bin/kms-init --addresses
               {{- if .Values.kmsCore.thresholdMode.peersList -}}
-              {{ range $peer := .Values.kmsCore.thresholdMode.peersList }} {{ printf "http://%s:%d" $peer.host (int $peer.port) }}{{ end }}
+              {{ range $peer := .Values.kmsCore.thresholdMode.peersList }} {{ printf "http://%s:%d" $peer.host (int $.Values.kmsCore.ports.client) }}{{ end }}
               {{- else -}}
               {{ range $peerID := $peersIDList }} {{ printf "http://%s-%d:%d" $kmsCoreName $peerID (int $.Values.kmsCore.ports.client) }}{{ end }}
               {{- end }}
