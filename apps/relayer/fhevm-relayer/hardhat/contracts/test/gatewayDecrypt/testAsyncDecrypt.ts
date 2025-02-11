@@ -37,7 +37,7 @@ describe('TestAsyncDecrypt', function () {
     console.log('gas paid by user (request tx) : ', balanceBeforeU - balanceAfterU);
   });
 
-  it.only('test async decrypt bool', async function () {
+  it('test async decrypt bool', async function () {
     const balanceBeforeR = await ethers.provider.getBalance(this.relayerAddress);
     const balanceBeforeU = await ethers.provider.getBalance(this.signers.carol.address);
     const tx2 = await this.contract.connect(this.signers.carol).requestBool();
@@ -181,7 +181,7 @@ describe('TestAsyncDecrypt', function () {
     }
   });
 
-  it('test async decrypt uint64', async function () {
+  it.only('test async decrypt uint64', async function () {
     const tx2 = await this.contract.connect(this.signers.carol).requestUint64();
     await tx2.wait();
     await awaitAllDecryptionResults();
