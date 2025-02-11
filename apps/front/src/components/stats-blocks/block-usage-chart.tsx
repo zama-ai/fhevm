@@ -63,11 +63,7 @@ function Chart() {
   )
 }
 
-type OwnProps = {
-  totalUsage: number
-}
-
-export const BlockUsageChart = ({ totalUsage }: OwnProps) => {
+export const BlockUsageChart = () => {
   const textColor = 'gray.700'
   const [daily] = useState<number>(-1)
 
@@ -80,11 +76,11 @@ export const BlockUsageChart = ({ totalUsage }: OwnProps) => {
               <Box w="80px"></Box>
               {daily === -1 && (
                 <StatLabel overflow="hidden" textWrap="ellipsis">
-                  Total Usage
+                  Daily Usage
                 </StatLabel>
               )}
               <StatValueText color={textColor}>
-                {daily !== -1 ? daily : totalUsage}
+                {daily !== -1 ? daily.toString() : 223}
               </StatValueText>
 
               {daily !== -1 && (

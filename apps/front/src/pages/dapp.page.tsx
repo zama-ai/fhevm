@@ -8,10 +8,8 @@ import {
   GetDappDetailsQuery,
 } from '@/__generated__/graphql.js'
 
-import { BlockUsageChart } from '@/components/stats-blocks/block-usage-chart.js'
 import { DappStatus } from '@/components/dapp-status/dapp-status.js'
-import { BlockUaw } from '@/components/stats-blocks/block-uaw.js'
-import { BlockSparkline } from '@/components/stats-blocks/block-sparkline'
+import { BlockSimple } from '@/components/stats-blocks/block-simple'
 
 const GET_DAPP_DETAILS = graphql(`
   query GetDappDetails($dappId: ID!) {
@@ -55,7 +53,6 @@ export function DappPage() {
     throw Error(error.message)
   }
 
-  console.log({ data })
   return (
     <Box>
       {data ? (
@@ -75,15 +72,11 @@ export function DappPage() {
       {data && (
         <Stack direction="column" gap="5">
           <Stack direction="row" gap="5">
-            <BlockUsageChart totalUsage={data?.dapp.stats.length || 0} />
-            <BlockUaw
-              title="Unique Active Wallets"
-              amount={182}
-              percentage={12}
-              description="Since last month"
+            <BlockSimple
+              title="Total FHE Events"
+              amount={data?.dapp.stats.length || 0}
             />
           </Stack>
-          <BlockSparkline />
         </Stack>
       )}
     </Box>
