@@ -1,4 +1,5 @@
 import { AppModule, configModule } from '#app.module.js'
+import commonConfig from '#config/common.config.js'
 import dbConfig from '#config/db.config.js'
 import { PrismaClient } from '#prisma/client/index.js'
 import { SNSClient } from '@aws-sdk/client-sns'
@@ -127,6 +128,7 @@ export class SetupManager {
         ConfigModule.forRoot({
           isGlobal: true,
           load: [
+            commonConfig,
             registerAs('aws', () => ({
               endpoint: this.awsEndpoint,
               queueUrl: this.queueUrl,

@@ -5,6 +5,8 @@ import { SqsModule } from 'sqs'
 import awsConfig from './config/aws.config.js'
 import { SQSConsumer } from './infra/adapters/sqs.consumer.js'
 import { SNSClient } from '@aws-sdk/client-sns'
+import { LoggerModule } from 'nestjs-pino'
+import { randomUUID } from 'crypto'
 import ethersConfig, {
   EtherConfig,
   EtherConfigFactory,
@@ -14,6 +16,7 @@ import {
   FHE_EVENT_REPOSITORY,
   FHE_EVENT_SERVICE,
   MESSAGE_PRODUCER,
+  MS_NAME,
   PUBSUB,
 } from './constants.js'
 import { ContractService } from './domain/services/contract.service.js'
@@ -31,18 +34,42 @@ import { FheEventService } from './domain/services/fhe-event.service.js'
 import { FheEventRepository } from './domain/services/fhe-event.repository.js'
 import { PrismaFheEventRepository } from './infra/database/repositories/prisma-fhe-event.repository.js'
 import { web3 } from 'messages'
+import commonConfig from '#config/common.config.js'
 
 // Note: I need to override the default behavior of ConfigModule in the tests,
 // and, as we use a dynamic module, we need to store the current instance to
 // override it in the tests.
 export const configModule = ConfigModule.forRoot({
   isGlobal: true,
-  load: [awsConfig, fheConfig, ethersConfig],
+  load: [commonConfig, awsConfig, fheConfig, ethersConfig],
 })
 
 @Module({
   imports: [
     configModule,
+    LoggerModule.forRootAsync({
+      imports: [configModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => {
+        return {
+          pinoHttp: {
+            level: config.get('common.logLevel'),
+            customProps: () => ({ service: MS_NAME }),
+            genReqId: request =>
+              request.headers['x-correlation-id'] || randomUUID(),
+            transport:
+              config.get('common.nodeEnv') === 'development'
+                ? {
+                    target: 'pino-pretty',
+                    options: {
+                      singleLine: true,
+                    },
+                  }
+                : undefined,
+          },
+        }
+      },
+    }),
     DatabaseModule,
     SqsModule.registerAsync({
       inject: [ConfigService],
