@@ -6,6 +6,7 @@ metadata:
   labels:
     app: kms-core
     app.kubernetes.io/name: {{ $kmsCoreName }}
+    headless: "true"
   name: {{ $kmsCoreName }}
 spec:
   type: ClusterIP
@@ -19,9 +20,6 @@ spec:
       port: {{ .Values.kmsCore.ports.peer }}
       targetPort: {{ .Values.kmsCore.ports.peer }}
     {{- end }}
-    - name: metrics
-      port: {{ .Values.kmsCore.ports.metrics }}
-      targetPort: {{ .Values.kmsCore.ports.metrics }}
   selector:
     app: kms-core
     app.kubernetes.io/name: {{ $kmsCoreName }}
@@ -33,6 +31,7 @@ metadata:
   labels:
     app: kms-core
     app.kubernetes.io/name: {{ $kmsCoreName }}
+    headless: "false"
   name: {{ $kmsCoreName }}-{{ $coreId }}
 spec:
   type: ClusterIP
@@ -45,6 +44,9 @@ spec:
       port: {{ $.Values.kmsCore.ports.peer }}
       targetPort: {{ $.Values.kmsCore.ports.peer }}
     {{- end }}
+    - name: metrics
+      port: {{ $.Values.kmsCore.ports.metrics }}
+      targetPort: {{ $.Values.kmsCore.ports.metrics }}
   selector:
     app: kms-core
     app.kubernetes.io/name: {{ $kmsCoreName }}
