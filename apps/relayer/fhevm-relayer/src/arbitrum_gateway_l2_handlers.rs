@@ -193,7 +193,7 @@ impl ArbitrumGatewayL2Handler {
 
     async fn noop_handle_decrypt_reponse_event_log(&self, _event: RelayerEvent) {}
 
-    async fn try_send_callback(
+    async fn try_send_callback_inner(
         &self,
         handles: Vec<Uint<256, 4>>,
     ) -> Result<Uint<256, 4>, EventProcessingError> {
@@ -267,16 +267,16 @@ impl ArbitrumGatewayL2Handler {
         ))
     }
 
-    async fn send_callback_transaction(
+    async fn try_send_callback(
         &self,
         handles: Vec<Uint<256, 4>>,
-    ) -> Result<(), EventProcessingError> {
+    ) -> Result<Uint<256, 4>, EventProcessingError> {
         const MAX_RETRIES: u32 = 3;
         let mut attempt = 0;
 
         while attempt < MAX_RETRIES {
-            match self.try_send_callback(handles.clone()).await {
-                Ok(_) => return Ok(()),
+            match self.try_send_callback_inner(handles.clone()).await {
+                Ok(id) => return Ok(id),
                 Err(e) => {
                     if attempt < MAX_RETRIES - 1 {
                         error!(?e, attempt, "Transaction failed, retrying...");
