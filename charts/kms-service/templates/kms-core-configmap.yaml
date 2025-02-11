@@ -17,14 +17,22 @@ data:
     grpc_max_message_size = {{ int .Values.kmsCore.resources.limits.grpcMaxMessageSize }}
 
     {{- if .Values.tracing.enabled }}
-    [tracing]
-    service_name = {{ include "kmsCoreName" . | quote }}
+    [telemetry]
+    tracing_service_name = {{ include "kmsCoreName" . | quote }}
     {{- if .Values.kmsCore.nitroEnclave.enabled }}
     endpoint = "http://localhost:{{ .Values.kmsCore.nitroEnclave.ports.tracing }}"
     {{- else }}
-    endpoint = {{ .Values.tracing.endpoint | quote }}
+    tracing_endpoint = {{ .Values.tracing.endpoint | quote }}
     {{- end }}
-    metrics = { enabled = {{ .Values.tracing.metrics.enabled | default false }}, interval_sec = {{ .Values.tracing.metrics.interval_sec | default 20 }} }
+    tracing_otlp_timeout_ms = 10000
+    metrics_bind_address = "0.0.0.0:9646"
+
+    [telemetry.batch]
+    max_queue_size = 8192
+    max_export_batch_size = 2048
+    max_concurrent_exports = 4
+    scheduled_delay_ms = 500
+    export_timeout_ms = 5000
     {{- end }}
 
     [aws]
