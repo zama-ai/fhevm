@@ -32,7 +32,7 @@ run-httpz-mock:
 # Run Anvil node for gateway chain
 run-gateway-mock:
 	@echo "$(GREEN)Starting Anvil node for mock GATEWAY chain...$(RESET)"
-	@cd hardhat/contracts && source .env && anvil --block-time 0.1 --port 8757 --chain-id 654321 --accounts 15 --mnemonic $(MNEMONIC)
+	@cd hardhat/contracts && anvil --block-time 0.1 --port 8757 --chain-id 654321 --accounts 15 --mnemonic $(MNEMONIC)
 
 # Deploy HTTPZ smart contracts
 deploy-httpz-smart-contracts:
