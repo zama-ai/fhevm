@@ -159,21 +159,24 @@ where
 
     async fn execute(&self, db_pool: &Pool<Postgres>) -> anyhow::Result<bool> {
         let zkpok_manager = ZKPoKManager::new(self.zkpok_manager_address, &self.provider);
-        self.remove_proofs_by_retry_count(db_pool, self.database_conf.verify_proofs_max_retries)
-            .await?;
+        self.remove_proofs_by_retry_count(
+            db_pool,
+            self.database_conf.verify_proof_resp_max_retries,
+        )
+        .await?;
         let rows = sqlx::query!(
             "SELECT *
              FROM verify_proofs
              WHERE retry_count < $1
              ORDER BY zk_proof_id
              LIMIT $2",
-            self.database_conf.verify_proofs_max_retries as i64,
-            self.database_conf.verify_proofs_batch_limit as i64
+            self.database_conf.verify_proof_resp_max_retries as i64,
+            self.database_conf.verify_proof_resp_batch_limit as i64
         )
         .fetch_all(db_pool)
         .await?;
         let maybe_has_more_work =
-            rows.len() == self.database_conf.verify_proofs_batch_limit as usize;
+            rows.len() == self.database_conf.verify_proof_resp_batch_limit as usize;
         let mut join_set = JoinSet::new();
         for row in rows.into_iter() {
             if row.handles.is_empty() || row.handles.len() % 32 != 0 {

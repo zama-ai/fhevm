@@ -27,28 +27,28 @@ struct Conf {
     #[arg(short, long)]
     database_url: Option<String>,
 
-    #[arg(short, long, default_value = "16")]
+    #[arg(long, default_value = "10")]
     database_pool_size: u32,
 
-    #[arg(short, long, default_value = "5")]
+    #[arg(long, default_value = "5")]
     database_polling_interval_secs: u16,
 
-    #[arg(short, long, default_value = "verify_proofs")]
-    verify_proofs_database_channel: String,
+    #[arg(long, default_value = "verify_proof_responses")]
+    verify_proof_resp_database_channel: String,
 
     #[arg(short, long, default_value = "add_ciphertexts")]
     add_ciphertexts_database_channel: String,
 
-    #[arg(short, long, default_value = "64")]
-    verify_proofs_batch_limit: u32,
+    #[arg(long, default_value = "128")]
+    verify_proof_resp_batch_limit: u32,
 
-    #[arg(short, long, default_value = "10")]
-    verify_proofs_max_retries: u32,
+    #[arg(long, default_value = "15")]
+    verify_proof_resp_max_retries: u32,
 
-    #[arg(short, long, default_value = "1")]
+    #[arg(long, default_value = "1")]
     error_sleep_initial_secs: u16,
 
-    #[arg(short, long, default_value = "16")]
+    #[arg(long, default_value = "16")]
     error_sleep_max_secs: u16,
 }
 
@@ -90,11 +90,11 @@ async fn main() -> anyhow::Result<()> {
             db_url: database_url,
             db_pool_size: conf.database_pool_size,
 
-            verify_proofs_db_channel: conf.verify_proofs_database_channel,
+            verify_proof_resp_db_channel: conf.verify_proof_resp_database_channel,
             add_ciphertexts_db_channel: conf.add_ciphertexts_database_channel,
 
-            verify_proofs_batch_limit: conf.verify_proofs_batch_limit,
-            verify_proofs_max_retries: conf.verify_proofs_max_retries,
+            verify_proof_resp_batch_limit: conf.verify_proof_resp_batch_limit,
+            verify_proof_resp_max_retries: conf.verify_proof_resp_max_retries,
 
             db_polling_interval_secs: conf.database_polling_interval_secs,
 

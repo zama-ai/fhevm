@@ -11,9 +11,8 @@ use alloy_sol_types::SolEventInterface;
 
 use clap::Parser;
 
-use listener::contracts::{AclContract, TfheContract};
+use fhevm_listener::contracts::{AclContract, TfheContract};
 
-const DEFAULT_BLOCK: BlockNumberOrTag = BlockNumberOrTag::Latest;
 const DEFAULT_CATCHUP: u64 = 5;
 
 #[derive(Parser, Debug, Clone)]

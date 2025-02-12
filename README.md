@@ -108,6 +108,7 @@ More details on configuration can be found in the [documentation](https://docs.z
 - `docker-compose`
 - `rust`
 - `sqlx-cli` (install with `cargo install sqlx-cli`)
+- `anvil` (for testing, installation manual https://book.getfoundry.sh/getting-started/installation)
 
 #### Installation
 

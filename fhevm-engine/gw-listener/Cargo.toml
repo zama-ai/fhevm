@@ -1,0 +1,11 @@
+[package]
+name = "gw-listener"
+version = "0.6.1"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+# workspace dependencies
+alloy = { workspace = true }
+clap = { workspace = true }

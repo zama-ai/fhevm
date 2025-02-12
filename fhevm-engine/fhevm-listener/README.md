@@ -1,6 +1,6 @@
-# Listener
+# fhEVM-Listener
 
-The listener primary role is to observe the block chain execution and extend that execution off the chain.
+The fhevm-listener primary role is to observe the block chain execution and extend that execution off the chain.
 
 ## How
 

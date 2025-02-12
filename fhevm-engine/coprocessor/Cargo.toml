@@ -8,6 +8,7 @@ license.workspace = true
 
 [dependencies]
 # workspace dependencies
+alloy = { workspace = true }
 bincode = { workspace = true }
 clap = { workspace = true }
 prometheus = { workspace = true }
@@ -23,7 +24,6 @@ tracing-subscriber = { workspace = true }
 
 # crates.io dependencies
 actix-web = "4.9.0"
-alloy = { version = "0.3.2", features = ["eip712", "sol-types", "signer-local"] }
 bigdecimal = "0.4"
 hex = "0.4"
 itertools = "0.13.0"

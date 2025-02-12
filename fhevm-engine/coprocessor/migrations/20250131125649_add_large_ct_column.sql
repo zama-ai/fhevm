@@ -1,3 +1,1 @@
-ALTER TABLE ciphertexts 
-ADD COLUMN IF NOT EXISTS large_ct BYTEA,
-ADD COLUMN IF NOT EXISTS is_sent BOOLEAN NOT NULL DEFAULT FALSE;
+../../fhevm-db/migrations/20250131125649_add_large_ct_column.sql
