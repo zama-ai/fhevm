@@ -1,4 +1,4 @@
-#.PHONY: all setup run-hardhat deploy-fhevm-smart-contracts start-event-listener run-decrypt-test help
+#.PHONY: all setup run-hardhat deploy-fhevm-smart-contracts start-fhevm-relayer run-decrypt-test help
 -include hardhat/contracts/.env
 ifneq (,$(wildcard hardhat/contracts/.env))
     export $(shell cat hardhat/contracts/.env | sed 's/=.*//g')
@@ -21,7 +21,7 @@ setup-mock:
 	@echo "$(GREEN)Setup completed!$(RESET)"
 
 # Copy from local.yaml.example
-config-event-listener:
+config-fhevm-relayer:
 	@./setup-config.sh
 
 # Run Anvil node for httpz chain
@@ -45,7 +45,7 @@ deploy-gateway-smart-contracts:
 	@unset $$(cat hardhat/contracts/.env | sed 's/=.*//g') && cd hardhat/contracts && ./launch-gateway-local-coprocessor.sh
 
 # Start event listener
-start-event-listener:
+start-fhevm-relayer:
 	@echo "$(GREEN)Starting HTTPZ event listener...$(RESET)"
 	@cargo run --bin fhevm-relayer
 
@@ -69,8 +69,8 @@ help:
 	@echo '  ${YELLOW}make run-gateway-mock${RESET}                 - Start Anvil node for gateway chain'
 	@echo '  ${YELLOW}make deploy-httpz-smart-contracts${RESET} - Deploy HTTPZ smart contracts'
 	@echo '  ${YELLOW}make deploy-gateway-smart-contracts${RESET} - Deploy Gateway smart contracts'
-	@echo '  ${YELLOW}make config-event-listener${RESET}        - Configure HTTPZ event listener'
-	@echo '  ${YELLOW}make start-event-listener${RESET}        - Start HTTPZ event listener'
+	@echo '  ${YELLOW}make config-fhevm-relayer${RESET}        - Configure HTTPZ event listener'
+	@echo '  ${YELLOW}make start-fhevm-relayer${RESET}        - Start HTTPZ event listener'
 	@echo '  ${YELLOW}make run-test-decrypt${RESET}            - Run decryption tests'
 	@echo '  ${YELLOW}make run-test-erc20${RESET}            - Run erc20 tests'
 	@echo ''
@@ -80,8 +80,8 @@ help:
 	@echo '  3. ${WHITE}make run-gateway-mock${RESET}                 - Terminal 2'
 	@echo '  4. ${WHITE}make deploy-httpz-smart-contracts${RESET} - Terminal 3'
 	@echo '  5. ${WHITE}make deploy-gateway-smart-contracts${RESET} - Terminal 3'
-	@echo '  6. ${WHITE}make config-event-listener${RESET}        - Terminal 3'
-	@echo '  7. ${WHITE}make start-event-listener${RESET}        - Terminal 3'
+	@echo '  6. ${WHITE}make config-fhevm-relayer${RESET}        - Terminal 3'
+	@echo '  7. ${WHITE}make start-fhevm-relayer${RESET}        - Terminal 3'
 	@echo '  8. ${WHITE}make run-test-decrypt${RESET}            - Terminal 4'
 	@echo '  9. ${WHITE}make run-test-erc20${RESET}            - Terminal 4'
 	@echo ''

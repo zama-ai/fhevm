@@ -1,183 +1,272 @@
 # FHEVM Relayer
 
-A Rust-based event relayer designed for flexible blockchain event monitoring. It allows registration of any number of contracts and their associated events, whether monitoring a single contract event or multiple events across different contracts.
+A Rust-based relayer service that handles encrypted communications between FHEVM (Fully Homomorphic Encryption Virtual Machine) and L2 networks, with specific support for Arbitrum integration.
+A specialized Rust-based relayer service that acts as a bridge between fhEVM and gateway. It handles four core operation types:
 
-## Features
+- **Public Decryption (Blockchain Events)**: Processes on-chain decryption requests from **DecryptionOracle**
+- **User Decryption (HTTP)**: Handles user-specific decryption requests
+- **Inputs Verification (HTTP)**: Validates ZkPoK input
+- **Public Key Material Retrieval (HTTP)**: return public FHE keys and CRS (used for ZkPok)
 
-- **Contract and Event Registration**:
-  - Register multiple smart contracts for event monitoring
-  - Configure multiple events per contract
-  - Dynamic event processing system
-- **Built-in Examples**:
-  - DecryptionOracle contract and events
-  - TFHEExecutor contract and events
-- **Development Environment**:
-  - Hardhat node running in mock mode to trigger events with up-to-date fhEVM smart contracts
-  - Complete test environment for event simulation
+## Architecture
 
-## Prerequisites
+### Orchestrator
 
-- Rust 1.75 or higher
-- Node.js and npm
-- Cargo and its dependencies
+The orchestrator is the central event coordination system that manages the flow of events between different components of the relayer. It implements an event-driven architecture with the following key features:
+
+- **Event Dispatch System**:
+  - Manages registration and routing of events to appropriate handlers
+  - Supports both persistent handlers (long-lived) and one-time handlers (single-use)
+  - Uses event IDs and UUIDs for precise event routing and tracking
+
+- **Request Lifecycle Management**:
+  - Generates unique request IDs using UUID v1 with node-specific identification
+  - Maintains context and state across asynchronous event chains
+  - Ensures proper event sequencing and handler coordination
+
+The orchestrator works with four main traits:
+
+- `Event`: Defines the event interface (name, ID, request ID)
+- `EventDispatcher`: Handles the actual dispatch of events
+- `EventHandler`: Processes specific event types
+- `HandlerRegistry`: Manages handler registration and lookup
+
+### Core Features
+
+- Event-driven system with specialized handlers for L1 and gateway communications
+- Comprehensive transaction management with automatic retries and gas estimation
+- HTTP endpoint management for user operations
+- Smart contract integration with DecryptionOracle (L1), DecryptionManager (Gateway) or InputManager  (Gateway) ...
 
 ## Quick Start
 
-1.**First Time Setup**
+### Prerequisites
+
+- Rust 2021 edition
+- Make
+- Node.js and npm (for contract deployment + test)
+- Git
+- Anvil (to run run nodes)
+
+### Setup & Running
+
+Run the following commands in sequence (each in a separate terminal):
 
 ```bash
-# Initial setup of dependencies and configuration
-make setup-mock
-```
+# Terminal 1: Setup and run HTTPZ mock chain
+make setup-mock             # First time setup only
+make run-httpz-mock         # Keep running (L1)
 
-2.**Running the Environment**
+# Terminal 2: Run Gateway mock chain
+make run-gateway-mock       # Keep running (Gateway)
 
-You'll need several terminal windows to run the complete environment:
-
-Terminal 1 - Anvil Node HTTPZ chain:
-
-```bash
-make run-httpz-mock
-```
-
-<details>
-<summary>Typical output</summary>
-<br>
-
-```bash
-# Typical output
-Starting Hardhat node...
-Generating typings for: 30 artifacts in dir: types for target: ethers-v6
-Successfully generated 96 typings!
-Compiled 35 Solidity files successfully (evm target: cancun).
-Started HTTP and WebSocket JSON-RPC server at http://127.0.0.1:8746/
-
-Accounts
-========
-Account #0: 0xa5e1defb98EFe38EBb2D958CEe052410247F4c80 (10000 ETH)
-```
-
-</details>
-<br>
-
-Terminal 2 - Anvil Node HTTPZ chain:
-
-```bash
-make run-gateway-mock
-```
-
-Terminal 3 - HTTPZ Smart Contracts:
-
-```bash
+# Terminal 3: Deploy contracts and start listener
 make deploy-httpz-smart-contracts
-```
-
-<details>
-<summary>Typical output</summary>
-<br>
-
-```bash
-# Typical output
-ACL code set successfully at address: 0x74c085A069fafD4f264B5200847EdB1ade82B3C0
-TFHEExecutor code set successfully at address: 0x4e142887e3Dc6e414a9b260a1034D20C9B4Eb11F
-KMSVerifier code set successfully at address: 0xa3f4D50ebfea1237316b4377F0fff4831F2D1c46
-InputVerifier code set successfully at address: 0x59AAd6Dc3C909aeED1916937cC310fBfBB118c8C
-FHEGasLimit code set successfully at address: 0x2Ea4b09A56bF59437C99293aF54F8E39e11a68Ba
-DecryptionOracle code set successfully at address: 0x67aa98a03CC4559E1e98e7b4Ed071C35c40b588d
-KMS signer no0 (0x0971C80fF03B428fD2094dd5354600ab103201C5) was added to KMSVerifier contract
-```
-
-</details>
-<br>
-
-Terminal 3 - GATEWAY Smart Contracts:
-
-```bash
 make deploy-gateway-smart-contracts
+make config-fhevm-relayer
+make start-fhevm-relayer   # Keep running (fhevm-relayer)
+
+# Terminal 4: Run tests
+make run-test-decrypt # Use fhevm-relayer
+make run-test-erc20 # not yet
 ```
 
-Terminal 3 - Event Listener:
+### Detailed Setup Steps
 
-```bash
-make config-event-listener
-make start-event-listener
-```
+1. **Initial Setup** (one-time only)
+
+   ```bash
+   make setup-mock
+   ```
+  
+   This initializes your development environment.
+
+2. **Start HTTPZ Chain** (Terminal 1)
+
+   ```bash
+   make run-httpz-mock
+   ```
+
+   Launches Anvil node for the HTTPZ chain.
+
+3. **Start Gateway Chain** (Terminal 2)
+
+   ```bash
+   make run-gateway-mock
+   ```
+
+   Launches Anvil node for the Gateway chain.
+
+4. **Deploy Smart Contracts** (Terminal 3)
+
+   ```bash
+   make deploy-httpz-smart-contracts
+   make deploy-gateway-smart-contracts
+   ```
+
+   Deploys necessary contracts to both chains.
+
+5. **Configure and Start Event Listener** (Terminal 3)
+
+   ```bash
+   make config-fhevm-relayer
+   make start-fhevm-relayer
+   ```
+
+   Sets up and runs fhevm-relayer
+
+6. **Run Tests** (Terminal 4)
+
+   ```bash
+   make run-test-decrypt // using fhevm-relayer for public decryptions
+   make run-test-erc20 // without fhevm-relayer user decryption not implemented yet
+   ```
 
 <details>
-<summary>Typical output</summary>
-<br>
+  <summary>Typical output for decryption flow</summary>
+  <br>
 
 ```bash
-2025-01-28T10:59:06.140701Z  INFO Tracing initialized successfully level="info" format="pretty" show_file_line=false show_thread_ids=false
-2025-01-28T10:59:06.140736Z  INFO --- Real Event Handler ---
-2025-01-28T10:59:06.140750Z  INFO Initialized contract addresses decryption_oracle_address=0x67aa98a03cc4559e1e98e7b4ed071c35c40b588d tfhe_executor_address=0x4e142887e3dc6e414a9b260a1034d20c9b4eb11f settings.network.ws_url="ws://localhost:8746"
-2025-01-28T10:59:06.143241Z  INFO *** Registering event signature DecryptionRequest(uint256,uint256,uint256[],address,bytes4) for contract 0x67aa98a03CC4559E1e98e7b4Ed071C35c40b588d.
-2025-01-28T10:59:06.143284Z  INFO Topic -- keccack256(event_signature) = 0x2139fe1716d177355181c45bfba01280a9ce6d0a226dec18bb5808867a812179
-2025-01-28T10:59:06.143322Z  INFO *** Registering event signature FheAdd(address,uint256,uint256,bytes1,uint256) for contract 0x4e142887e3Dc6e414a9b260a1034D20C9B4Eb11F.
-2025-01-28T10:59:06.143344Z  INFO Topic -- keccack256(event_signature) = 0x9d4485ee9ce87c267c409bdb9b696a82a89c995903092b84553de8edc2592625
-2025-01-28T10:59:06.143405Z  INFO Subscribing to logs for contracts: [0x4e142887e3dc6e414a9b260a1034d20c9b4eb11f, 0x67aa98a03cc4559e1e98e7b4ed071c35c40b588d]
-2025-01-28T10:59:06.143428Z  INFO Connecting to Ethereum provider...
-2025-01-28T10:59:06.143445Z  INFO Subscribing to logs with filters: Filter { block_option: Range { from_block: Some(latest), to_block: None }, address: FilterSet({0x4e142887e3dc6e414a9b260a1034d20c9b4eb11f, 0x67aa98a03cc4559e1e98e7b4ed071c35c40b588d}), topics: [FilterSet({}), FilterSet({}), FilterSet({}), FilterSet({})] }
-
-
-```
-
+  ```console
+2025-02-12T15:30:50.976830Z  INFO Processing relayer event event_type=PubDecryptEventLogRcvdFromHostL1 request_id=571d3ba5-e956-11ef-800c-0123456789ab
+2025-02-12T15:30:50.976899Z  INFO Decryption event log received from listener: request_id: 571d3ba5-e956-11ef-800c-0123456789ab block number: Some(29284), ethereum_request_id: 0, selector 0x3e54e2de
+2025-02-12T15:30:50.976941Z  INFO Processing relayer event event_type=DecryptRequestRcvd request_id=571d3ba5-e956-11ef-800c-0123456789ab
+2025-02-12T15:30:50.976951Z  INFO Decryption request received. Making a tx to rollup: request_id: 571d3ba5-e956-11ef-800c-0123456789ab with handles [9782591621254435756272560011972023832184190840567705870600336194590147793]
+2025-02-12T15:30:50.976999Z  INFO Submitting transaction operation="decryption_request" calldata=0xe2a7b2f100000000000000000000000000000000...
+2025-02-12T15:30:50.992784Z  INFO rollup listener catches one event
+2025-02-12T15:30:50.992870Z  INFO Processing relayer event event_type=DecryptResponseEventLogRcvdFromGwL2 request_id=571faea4-e956-11ef-800d-0123456789ab
+2025-02-12T15:30:50.992883Z  INFO Decryption response received. Trigger a tx to L1  571faea4-e956-11ef-800d-0123456789ab
+2025-02-12T15:30:51.233501Z  INFO Transaction sent successfully tx_hash=0x62010cd124fc859a04182fe72b5a701ee681a3d7f5493b619540afe03e06c297
+2025-02-12T15:30:51.233528Z  INFO Transaction submitted, waiting for confirmation tx_hash=0x62010cd124fc859a04182fe72b5a701ee681a3d7f5493b619540afe03e06c297 operation="decryption_request"
+2025-02-12T15:30:51.234055Z  INFO Found decryption ID from event receipt.transaction_hash=0x62010cd124fc859a04182fe72b5a701ee681a3d7f5493b619540afe03e06c297 event.publicDecryptionId=1
+2025-02-12T15:30:51.234093Z  INFO Stored mapping between decryption ID and request ID event.request_id=571d3ba5-e956-11ef-800c-0123456789ab decryption_public_id=1
+2025-02-12T15:30:51.234130Z  INFO Processing relayer event event_type=DecryptionRequestSentToGwL2 request_id=571d3ba5-e956-11ef-800c-0123456789ab
+2025-02-12T15:30:51.234136Z  INFO Transaction to rollup has been done, the associated public decryption id is 1
+2025-02-12T15:30:52.994671Z  INFO Public decryption id from event public_decryption_id=1
+2025-02-12T15:30:52.994717Z  INFO Found original request ID for decryption response original_request_id=571d3ba5-e956-11ef-800c-0123456789ab decryption_public_id=1
+2025-02-12T15:30:52.994784Z  INFO Processing relayer event event_type=DecryptionResponseRcvdFromGwL2 request_id=571d3ba5-e956-11ef-800c-0123456789ab
+2025-02-12T15:30:52.994794Z  INFO Decryption response received: request_id: 571d3ba5-e956-11ef-800c-0123456789ab, value: PublicDecrypt { plaintext: [1, 2, 3], signatures: [[1, 2, 3]] }
+2025-02-12T15:30:52.994861Z  INFO Submitting transaction operation="decryption_response" calldata=0x3e54e2de00000000000000000000000000000000...
+2025-02-12T15:30:53.250600Z  INFO Transaction sent successfully tx_hash=0x4e5fc32e8bba27a33f7d16c32fa0cb43a2efa8a55c301b110b3d99189f12b041
+2025-02-12T15:30:53.250638Z  INFO Transaction submitted, waiting for confirmation tx_hash=0x4e5fc32e8bba27a33f7d16c32fa0cb43a2efa8a55c301b110b3d99189f12b041 operation="decryption_response"
+2025-02-12T15:30:53.251563Z  INFO Transaction confirmed successfully operation="decryption_response"
+2025-02-12T15:30:53.251641Z  INFO Processing relayer event event_type=DecryptResponseSentToHostL1 request_id=571d3ba5-e956-11ef-800c-0123456789ab
+2025-02-12T15:30:53.251665Z  INFO Transaction to fhevm has been done
+  ```
 </details>
-<br>
+  <br>
 
-Terminal 4 - Run decryption tests to catch decryption request event:
-
-```bash
-make run-test-decrypt
-# Typical output in event listener
-2025-01-28T10:21:49.664068Z  INFO process_event: Handling DecryptionRequest from new version decoded=DecryptionRequest { counter: 19, requestID: 0, cts:[54753640583190511018042259926215371455243830566367266991450347141893636229888], contractCaller: 0xc906e3984740ef4074b681e58cc3cc4c8c711aca, callbackSelector: 0x9e0e3e34 }
-```
-
-Terminal 4 - Run ERC20 tests to catch fheAdd operation event:
-
-```bash
-make run-test-erc20
-# Typical output
-2025-01-28T10:24:37.753928Z  INFO process_event: Handling FheAdd operation from TFHEEXECUTOR decoded=FheAdd { caller: 0x911e8e1ab0493dc560a140103d1602f97dd3ff69, lhs: 107401874415472830175299155205586690465179006273083689345192445555626185524480, rhs: 87057231334485285938770473502522971296808484164578472682141752521394961319168, scalarByte: 0x00, result: 111807925205481249489564805351607540661105016450482757129453165299987226952960 }
-
-```
-
-> **Important**: Ensure each component is fully started before starting the next one. The event listener must be running before executing the tests to ensure proper event capture and processing.
+   Executes the test suite.
 
 ## Project Structure
 
-```bash
-.
-├── artifacts/                 # Smart contract artifacts
-├── config/                    # Configuration files
-├── examples/                  # Usage examples
-├── src/
-│   ├── bin/                  # Binary executables
-│   ├── common/               # Shared utilities
-│   ├── config/               # Configuration handling
-│   ├── ethereum/             # Ethereum-specific code
-│   ├── event/                # Event processing
-│   ├── service/              # Core services
-│   └── main.rs               # Main application entry
+```console
+├── artifacts                    # Contract ABIs and artifacts
+│   ├── DecryptionManager.json
+│   ├── DecryptionOracle.json
+│   ├── GatewayContract.abi
+│   └── TFHEExecutor.json
+├── Cargo.lock
+├── Cargo.toml
+├── config                      # Configuration files
+│   ├── local.yaml
+│   └── local.yaml.example
+├── design-docs/                    # Architecture and design documentation
+├── hardhat
+│   └── contracts                   # Smart contract development and deployment scripts
+├── LICENSE
+├── Makefile
+├── README.md
+├── setup-config.sh
+├── src
+│   ├── arbitrum_gateway_l2_handlers.rs
+│   ├── config                     # Configuration management
+│   │   ├── mod.rs
+│   │   └── settings.rs
+│   ├── errors.rs
+│   ├── ethereum                  # Ethereum interaction layer
+│   │   ├── bindings.rs
+│   │   ├── filter.rs
+│   │   ├── host_l1.rs
+│   │   ├── mod.rs
+│   │   ├── rollup_l2.rs
+│   │   ├── transaction_helper
+│   │   └── utils.rs
+│   ├── ethereum_host_l1_handlers.rs
+│   ├── ethereum_listener.rs
+│   ├── lib.rs
+│   ├── main.rs
+│   ├── orchestrator             # Event orchestration
+│   │   ├── mod.rs
+│   │   ├── orchestrator.rs
+│   │   ├── tokio_event_dispatcher.rs
+│   │   └── traits.rs
+│   ├── relayer_event.rs
+│   ├── rollup_listener.rs
+│   ├── tests
+│   │   └── orchestrator_test.rs
+│   ├── transaction           # Transaction management
+│   │   ├── helper.rs
+│   │   ├── mod.rs
+│   │   ├── sender.rs
+│   │   └── service.rs
+│   └── utils.rs
 ```
+
+## Core Components
+
+### Event Handlers
+
+- `EthereumHostL1Handler`: Manages events from the Ethereum L1 chain
+- `ArbitrumGatewayL2Handler`: Handles L2-specific operations for Arbitrum
+- `DecryptionOracle`: Contract interface for decryption operations
+- `TFHEExecutor`: Executor for TFHE operations
+
+### Orchestration
+
+- Event-driven architecture with request/response pattern
+- UUID-based request tracking
+- Support for one-time and persistent event handlers
 
 ## Configuration
 
-The service can be configured using YAML files in the `config/` directory. Key configuration options include:
+The service uses a hierarchical configuration system:
+
+### Network Settings
 
 ```yaml
-network:
-  ws_url: "ws://localhost:8746" # WebSocket URL for Ethereum node
+networks:
+  fhevm:
+    ws_url: "wss://your-fhevm-node"
+    http_url: "https://your-fhevm-node"
+    chain_id: 12345
+    retry_delay: 5
+    max_reconnection_attempts: 3
+  rollup:  # Optional L2 configuration
+    ws_url: "wss://your-l2-node"
+    http_url: "https://your-l2-node"
+    chain_id: 654321
+```
 
+### Contract Addresses
+
+```yaml
 contracts:
   decryption_oracle_address: "0x..."
   tfhe_executor_address: "0x..."
+  decryption_manager_address: "0x..."
+```
 
-log:
-  level: "info"
-  format: "json"
-  show_file_line: false
-  show_thread_ids: false
+## Dependencies
+
+```toml
+[dependencies]
+alloy = { version = "0.9.2", features = ["full"] }
+alloy-sol-types = "0.8.18"
+dashmap = "6.1.0"
+eyre = "0.6.12"
+futures = "0.3.31"
+# ... [other dependencies as listed in Cargo.toml]
 ```
 
 ## Development
@@ -185,7 +274,7 @@ log:
 ### Building
 
 ```bash
-cargo build
+cargo build --release
 ```
 
 ### Testing
@@ -194,27 +283,26 @@ cargo build
 cargo test
 ```
 
-### Adding New Contracts
+### Logging
 
-1. Add contract ABI to `artifacts/`
-2. Create new event processor in `src/event/`
-3. Register contract and events in the registry
-4. Update configuration file with the new contract address
+Uses `tracing` for structured logging with configurable levels:
 
-### TODO
-
-- [ ] Define events also in configuration file instead of in providers.rs
-- [ ] Generate event processing code automatically from the new contract and events in the config file
-
-## Error Handling
-
-The project uses custom error types for better error handling:
-
-```rust
-#[derive(Error, Debug)]
-pub enum EventHandlerError {
-    #[error("ABI decode error: {0}")]
-    AbiError(#[from] alloy_sol_types::Error),
-    // ... other error types
-}
+```yaml
+log:
+  level: "info"  # trace, debug, info, warn, or error
+  format: "compact"  # compact, pretty, or json
+  show_file_line: true
+  show_thread_ids: true
 ```
+
+## License
+
+BSD-3-Clause-Clear
+
+## Contributing
+
+1. Fork the repository
+2. Create your feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a new Pull Request
