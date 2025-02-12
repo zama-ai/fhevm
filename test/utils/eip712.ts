@@ -1,3 +1,4 @@
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { ethers } from "hardhat";
 
 export interface EIP712Type {
@@ -13,7 +14,7 @@ export interface EIP712 {
     version: string;
   };
   message: {
-    [key: string]: string | string[] | number | number[];
+    [key: string]: string | string[] | number | number[] | Uint8Array;
   };
   primaryType: string;
   types: {
@@ -21,7 +22,8 @@ export interface EIP712 {
   };
 }
 
-export function createEIP712ResponseMessage(chainId: number, verifyingContract: string): EIP712 {
+// Create an EIP712 message for a ZKPoK response
+export function createEIP712ResponseZKPoK(chainId: number, verifyingContract: string): EIP712 {
   if (!ethers.isAddress(verifyingContract)) {
     throw new Error("Invalid verifying contract address.");
   }
@@ -33,25 +35,80 @@ export function createEIP712ResponseMessage(chainId: number, verifyingContract: 
         { name: "chainId", type: "uint256" },
         { name: "verifyingContract", type: "address" },
       ],
-      EIP712ResponseMessage: [
-        { name: "handles", type: "bytes32[]" },
+      EIP712ZKPoK: [
+        { name: "ctHandles", type: "bytes32[]" },
         { name: "userAddress", type: "address" },
         { name: "contractAddress", type: "address" },
         { name: "contractChainId", type: "uint256" },
       ],
     },
-    primaryType: "EIP712ResponseMessage",
+    primaryType: "EIP712ZKPoK",
     domain: {
-      name: "ZKPoK verification",
+      name: "ZKPoKManager",
       version: "1",
       chainId,
       verifyingContract,
     },
     message: {
-      handles: ["0x3132333435363738390000000000000000000000000000000000000000000000"],
+      ctHandles: ["0x3132333435363738390000000000000000000000000000000000000000000000"],
       userAddress: "0x4838B106FCe9647Bdf1E7877BF73cE8B0BAD5f97",
       contractAddress: "0x68d30f47F19c07bCCEf4Ac7FAE2Dc12FCa3e0dC9",
       contractChainId: "11155111",
     },
   };
+}
+
+// Get signatures from signers using the EIP712 message response for proof verification
+export async function getSignaturesZKPoK(eip712: EIP712, signers: HardhatEthersSigner[]): Promise<string[]> {
+  return Promise.all(
+    signers.map((signer) =>
+      signer.signTypedData(eip712.domain, { EIP712ZKPoK: eip712.types.EIP712ZKPoK }, eip712.message),
+    ),
+  );
+}
+
+// Create an EIP712 message for a public decryption response
+export function createEIP712ResponsePublicDecrypt(
+  chainId: number,
+  verifyingContract: string,
+  ctHandles: number[],
+  decryptedResult: Uint8Array,
+): EIP712 {
+  if (!ethers.isAddress(verifyingContract)) {
+    throw new Error("Invalid verifying contract address.");
+  }
+  return {
+    types: {
+      EIP712Domain: [
+        { name: "name", type: "string" },
+        { name: "version", type: "string" },
+        { name: "chainId", type: "uint256" },
+        { name: "verifyingContract", type: "address" },
+      ],
+      EIP712PublicDecrypt: [
+        { name: "ctHandles", type: "uint256[]" },
+        { name: "decryptedResult", type: "bytes" },
+      ],
+    },
+    primaryType: "EIP712PublicDecrypt",
+    domain: {
+      name: "DecryptionManager",
+      version: "1",
+      chainId,
+      verifyingContract,
+    },
+    message: {
+      ctHandles: ctHandles,
+      decryptedResult: decryptedResult,
+    },
+  };
+}
+
+// Get signatures from signers using the EIP712 message response for public decryption
+export async function getSignaturesPublicDecrypt(eip712: EIP712, signers: HardhatEthersSigner[]): Promise<string[]> {
+  return Promise.all(
+    signers.map((signer) =>
+      signer.signTypedData(eip712.domain, { EIP712PublicDecrypt: eip712.types.EIP712PublicDecrypt }, eip712.message),
+    ),
+  );
 }
