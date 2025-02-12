@@ -36,6 +36,9 @@ jobs:
         sudo apt-get install -y protobuf-compiler && \
         cargo install sqlx-cli
 
+    - name: Install foundry
+      uses: foundry-rs/foundry-toolchain@de808b1eea699e761c404bda44ba8f21aba30b2c
+
     - name: Cache cargo
       uses: actions/cache@6849a6489940f00c2f30c0fb92c6274307ccb58a # v4.1.2
       with:

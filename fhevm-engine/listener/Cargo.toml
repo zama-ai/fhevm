@@ -17,6 +17,6 @@ alloy-sol-types = "0.8"
 alloy-primitives = "0.8"
 alloy-provider = "0.11"
 clap = { workspace = true }
-futures-util = "=0.3"
+futures-util = { workspace = true }
 serde = { workspace = true }
 tokio = { workspace = true }

@@ -14,7 +14,9 @@ prometheus = { workspace = true }
 prost = { workspace = true }
 rayon = { workspace = true }
 sha3 = { workspace = true }
+sqlx = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 tonic = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
@@ -34,10 +36,8 @@ opentelemetry-semantic-conventions = "0.27.0"
 regex = "1.10.5"
 serde_json = "1.0"
 strum = { version = "0.26", features = ["derive"] }
-sqlx = { version = "0.7", features = ["runtime-tokio", "tls-rustls", "postgres", "uuid"] }
 tonic-health = "0.12"
 tonic-types = "0.12"
-tokio-util = "0.7"
 tonic-web = "0.12"
 rand = "0.8.5"
 

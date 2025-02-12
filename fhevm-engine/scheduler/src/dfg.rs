@@ -4,7 +4,7 @@ pub mod types;
 use crate::dfg::types::*;
 use anyhow::Result;
 use daggy::{petgraph::graph::node_index, Dag, NodeIndex};
-use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts};
+use fhevm_engine_common::types::Handle;
 use std::cell::RefCell;
 
 thread_local! {

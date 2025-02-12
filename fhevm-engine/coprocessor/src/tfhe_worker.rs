@@ -1,6 +1,6 @@
 use crate::types::CoprocessorError;
 use crate::{db_queries::populate_cache_with_tenant_keys, types::TfheTenantKeys};
-use fhevm_engine_common::types::{FhevmError, Handle, SupportedFheCiphertexts};
+use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts};
 use fhevm_engine_common::{tfhe_ops::current_ciphertext_version, types::SupportedFheOperations};
 use itertools::Itertools;
 use lazy_static::lazy_static;
@@ -10,7 +10,6 @@ use prometheus::{register_int_counter, IntCounter};
 use scheduler::dfg::types::SchedulerError;
 use scheduler::dfg::{scheduler::Scheduler, types::DFGTaskInput, DFGraph};
 use sqlx::{postgres::PgListener, query, Acquire};
-use std::borrow::Borrow;
 use std::{
     collections::{BTreeSet, HashMap},
     num::NonZeroUsize,
