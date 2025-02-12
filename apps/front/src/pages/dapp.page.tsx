@@ -2,21 +2,27 @@ import { gql, useQuery, useSubscription } from '@apollo/client'
 import { useParams } from 'react-router'
 import { Box, Heading, Skeleton, Stack } from '@chakra-ui/react'
 import { graphql } from '@/__generated__/gql.js'
+
 import {
   DappUpdatedSubscription,
-  GetDappQuery,
+  GetDappDetailsQuery,
 } from '@/__generated__/graphql.js'
-import { BlockUsageChart } from '@/components/stats-blocks/block-usage-chart.js'
-import { DappStatus } from '@/components/dapp-status/dapp-status.js'
-import { BlockUaw } from '@/components/stats-blocks/block-uaw.js'
-import { BlockSparkline } from '@/components/stats-blocks/block-sparkline'
 
-const GET_DAPP = graphql(`
-  query GetDapp($dappId: ID!) {
+import { DappStatus } from '@/components/dapp-status/dapp-status.js'
+import { BlockSimple } from '@/components/stats-blocks/block-simple'
+
+const GET_DAPP_DETAILS = graphql(`
+  query GetDappDetails($dappId: ID!) {
     dapp(input: { id: $dappId }) {
       id
       name
       status
+      stats {
+        id
+        name
+        timestamp
+        externalRef
+      }
     }
   }
 `)
@@ -27,13 +33,19 @@ const SUB_DAPP_UPDATED = gql(`
       id
       name
       status
+      stats {
+        id
+        name
+        timestamp
+        externalRef
+      }
     }
   }
 `)
 
 export function DappPage() {
   const { dappId } = useParams()
-  const { data, error } = useQuery<GetDappQuery>(GET_DAPP, {
+  const { data, error } = useQuery<GetDappDetailsQuery>(GET_DAPP_DETAILS, {
     variables: { dappId },
   })
   const { data: liveData } = useSubscription<DappUpdatedSubscription>(
@@ -63,18 +75,16 @@ export function DappPage() {
       ) : (
         <Skeleton height="5" my="5" width="30rem" />
       )}
-      <Stack direction="column" gap="5">
-        <Stack direction="row" gap="5">
-          <BlockUsageChart />
-          <BlockUaw
-            title="Unique Active Wallets"
-            amount={182}
-            percentage={12}
-            description="Since last month"
-          />
+      {data && (
+        <Stack direction="column" gap="5">
+          <Stack direction="row" gap="5">
+            <BlockSimple
+              title="Total FHE Events"
+              amount={data?.dapp.stats.length || 0}
+            />
+          </Stack>
         </Stack>
-        <BlockSparkline />
-      </Stack>
+      )}
     </Box>
   )
 }

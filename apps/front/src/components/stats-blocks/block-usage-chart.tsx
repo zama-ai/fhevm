@@ -80,7 +80,7 @@ export const BlockUsageChart = () => {
                 </StatLabel>
               )}
               <StatValueText color={textColor}>
-                {daily !== -1 ? daily : 223}
+                {daily !== -1 ? daily.toString() : 223}
               </StatValueText>
 
               {daily !== -1 && (

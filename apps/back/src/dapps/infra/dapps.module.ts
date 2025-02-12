@@ -15,10 +15,6 @@ import { SharedModule } from '#shared/shared.module.js'
 import { SubscriptionsModule } from '#subscriptions/infra/subscriptions.module.js'
 import { AppUpdatesSubscription } from '#dapps/use-cases/app-updates-subscription.use-case.js'
 import { StoreDAppStats } from '#dapps/use-cases/store-dapp-stats.use-case.js'
-import { PUBSUB } from '#constants.js'
-import { DAppRepository } from '#dapps/domain/repositories/dapp.repository.js'
-import { PubSub } from 'utils'
-import { back } from 'messages'
 
 @Module({
   imports: [DatabaseModule, SharedModule, SubscriptionsModule],
@@ -37,12 +33,7 @@ import { back } from 'messages'
     AppDeploymentRequested,
     AppDeploymentEnded,
     AppUpdatesSubscription,
-    {
-      provide: StoreDAppStats,
-      inject: [PUBSUB, DAppRepository],
-      useFactory: (pubsub: PubSub<back.BackEvent>, repo: DAppRepository) =>
-        new StoreDAppStats(pubsub, repo),
-    },
+    StoreDAppStats,
   ],
   exports: [
     AppDeploymentRequested,

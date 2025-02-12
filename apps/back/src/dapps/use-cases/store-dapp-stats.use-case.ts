@@ -1,7 +1,13 @@
+import { PUBSUB } from '#constants.js'
 import { DAppStat } from '#dapps/domain/entities/dapp-stat.js'
 import { DAppStatId } from '#dapps/domain/entities/value-objects.js'
 import { DAppRepository } from '#dapps/domain/repositories/dapp.repository.js'
-import { Logger } from '@nestjs/common'
+import { SubscriptionDappUpdatedPayload } from '#subscriptions/domain/entities/subscription.js'
+import {
+  SUBSCRIPTION_SERVICE,
+  SubscriptionService,
+} from '#subscriptions/domain/services/subscription.service.js'
+import { Inject, Injectable, Logger } from '@nestjs/common'
 import { back } from 'messages'
 import {
   AppError,
@@ -21,11 +27,15 @@ type Input = {
 }
 type Output = DAppStat
 
+@Injectable()
 export class StoreDAppStats implements UseCase<Input, Output> {
   logger = new Logger(StoreDAppStats.name)
   constructor(
+    @Inject(PUBSUB)
     private readonly pubsub: PubSub<back.BackEvent>,
     private readonly repo: DAppRepository,
+    @Inject(SUBSCRIPTION_SERVICE)
+    private readonly subscriptions: SubscriptionService,
   ) {
     this.pubsub.subscribe(
       'back:dapp:stats-available',
@@ -52,13 +62,22 @@ export class StoreDAppStats implements UseCase<Input, Output> {
 
   execute = (input: Input): Task<DAppStat, AppError> => {
     return this.repo.findByAddress(input.chainId, input.address).chain(dapp =>
-      this.repo.createStat(dapp.id, {
-        id: DAppStatId.random().value,
-        name: input.name,
-        timestamp: new Date(input.timestamp),
-        dappId: dapp.id.value,
-        externalRef: input.externalRef,
-      }),
+      this.repo
+        .createStat(dapp.id, {
+          id: DAppStatId.random().value,
+          name: input.name,
+          timestamp: new Date(input.timestamp),
+          dappId: dapp.id.value,
+          externalRef: input.externalRef,
+        })
+        .tap(() => {
+          this.subscriptions.publish<SubscriptionDappUpdatedPayload>(
+            'dappUpdated',
+            {
+              dappUpdated: dapp.toJSON(),
+            },
+          )
+        }),
     )
   }
 }
