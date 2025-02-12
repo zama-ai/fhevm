@@ -55,6 +55,7 @@ kmsCore:
     dec_capacity: 10000
     min_dec_cache: 6000
     num_sessions_preproc: 2
+    decryption_mode: "NoiseFloodSmall"
   nitroEnclave:
     enabled: false
     # Enclave CPU count
@@ -65,12 +66,12 @@ kmsCore:
     userId: 10003
     groupId: 10002
     ports:
-      env: 2000
       logger: 3000
       config: 4000
       tracing: 4317
       imds: 5000
       sts: 5500
+      token: 5600
       s3: 6000
       awskms: 7000
       peer: 50000
@@ -99,7 +100,7 @@ kmsCore:
   workdir: /root
   serviceMonitor:
     enabled: false
-  # Important: this request limit is only for non-enclave workloads
+  # Note: these requests/limits is only for non-enclave workloads, this will not be allocated to the kms-core process running in Nitro
   resources:
     requests: {}
       # memory: 1Gi
@@ -172,6 +173,7 @@ minio:
       - "mc anonymous set public provisioning/kms-public"
 
 rustLog: info
+debug: true
 
 podSecurityContext:
   # To set when the image will support non root user

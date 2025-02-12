@@ -28,7 +28,7 @@ data:
     {{- end }}
 
     [aws]
-    region = "{{ .Values.kmsCore.aws.region }}"
+    region = "${AWS_REGION}"
     {{- if .Values.minio.enabled }}
     s3_endpoint = "http://minio:9000"
     {{- else }}
@@ -40,28 +40,26 @@ data:
     {{- end }}
     {{- end }}
 
-    {{- if not .Values.kmsCore.envFrom.configmap.name }}
     [public_vault]
-    storage = {{ include "kmsPublicVaultStorage" . | quote }}
+    storage = "${KMS_CORE__PUBLIC_VAULT__STORAGE}"
 
     [private_vault]
-    storage = {{ include "kmsPrivateVaultStorage" . | quote }}
-    {{- if .Values.kmsCore.privateVault.awskms.enabled -}}
-    keychain = {{ .Values.kmsCore.privateVault.awskms.keychain }}
-    {{- end }}
-    {{- end }}
+    storage = "${KMS_CORE__PRIVATE_VAULT__STORAGE}"
+    keychain = "${KMS_CORE__PRIVATE_VAULT__KEYCHAIN}"
 
     {{ if .Values.kmsCore.thresholdMode.enabled -}}
     [threshold]
     listen_address = "0.0.0.0"
     listen_port = {{ int .Values.kmsCore.ports.peer }}
+
+    my_id = ${KMS_CORE__THRESHOLD__MY_ID}
+
     # Threshold is the number of corruptions that the protocol handles.
     threshold = 1
     dec_capacity = {{ int .Values.kmsCore.thresholdMode.dec_capacity }}
     min_dec_cache = {{ int .Values.kmsCore.thresholdMode.min_dec_cache }}
     num_sessions_preproc = {{ int .Values.kmsCore.thresholdMode.num_sessions_preproc }}
-
-    decryption_mode = "NoiseFloodSmall"
+    decryption_mode = {{ .Values.kmsCore.thresholdMode.decryption_mode | quote }}
 
     {{- if .Values.kmsCore.thresholdMode.peersList }}
     {{ range .Values.kmsCore.thresholdMode.peersList }}
