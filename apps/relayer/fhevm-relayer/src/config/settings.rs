@@ -3,12 +3,20 @@ use config::{Config, ConfigError, Environment, File};
 use serde::Deserialize;
 use std::env;
 
+/// Network configuration for blockchain connections.
+///
+/// This struct holds connection details for both L1 and L2 networks.
 #[derive(Debug, Deserialize, Clone)]
 pub struct NetworkConfig {
+    /// WebSocket endpoint URL
     pub ws_url: String,
+    /// HTTP endpoint URL
     pub http_url: String,
+    /// Network chain ID
     pub chain_id: u64,
+    /// Delay between retry attempts
     pub retry_delay: u64,
+    /// Maximum number of reconnection attempts
     pub max_reconnection_attempts: u32,
 }
 
@@ -62,10 +70,15 @@ impl NetworksConfig {
 
 #[derive(Debug, Deserialize)]
 pub struct TransactionConfig {
+    /// Environment variable name containing the private key
     pub private_key_env: String,
+    /// Optional gas limit for transactions
     pub gas_limit: Option<u64>,
+    /// Maximum priority fee for transactions
     pub max_priority_fee: Option<String>,
+    /// Transaction timeout in seconds
     pub timeout_secs: Option<u64>,
+    /// Required number of confirmations
     pub confirmations: Option<u64>,
 }
 
@@ -89,13 +102,22 @@ pub struct ContractConfig {
 }
 
 #[derive(Debug, Deserialize)]
+/// Top-level configuration structure.
+///
+/// Contains all configuration settings for the relayer service.
 pub struct Settings {
+    /// Current environment (development, production, etc.)
     pub environment: String,
+    /// Network configurations
     pub networks: NetworksConfig,
+    /// Transaction-related settings
     pub transaction: TransactionConfig,
+    /// Contract addresses
     pub contracts: ContractConfig,
+    /// Logging configuration
     pub log: LogConfig,
 }
+
 // Error type for application-specific configuration errors
 #[derive(thiserror::Error, Debug)]
 pub enum AppConfigError {

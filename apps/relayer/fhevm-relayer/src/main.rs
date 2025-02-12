@@ -1,3 +1,38 @@
+//! fhEVM Relayer
+//!
+//! This relayer service acts as a bridge between Ethereum L1 and a rollup L2 network,
+//! specifically handling FHE keys related operations. The service:
+//!
+//! 1. Listens for decryption events on Ethereum L1
+//! 2. Forwards requests to the L2 for processing
+//! 3. Receives responses from L2
+//! 4. Sends results back to L1
+//!
+//! # Architecture
+//!
+//! The system consists of several key components:
+//! - [`Orchestrator`]: Manages event flow and dispatch
+//! - [`EthereumHostL1Handler`]: Processes L1 events and responses
+//! - [`ArbitrumGatewayL2Handler`]: Manages L2 interaction
+//! - [`TransactionService`]: Handles blockchain transactions
+//!
+//! # Configuration
+//!
+//! The service is configured via:
+//! - Environment variables
+//! - Configuration files in the `config/` directory
+//! - Command-line arguments
+//!
+//! See [`Settings`] for detailed configuration options.
+//!
+//! # Event Flow
+//!
+//! ```text
+//! [Ethereum L1] → [L1 Listener] → [Orchestrator] → [L2 Handler]
+//!                                       ↓
+//! [Ethereum L1] ← [L1 Handler] ← [Orchestrator] ← [L2 Listener]
+//! ```
+
 use alloy::primitives::Address;
 use std::{str::FromStr, sync::Arc, time::Duration};
 use tracing::info;
@@ -18,6 +53,15 @@ use fhevm_relayer::{
     transaction::{TransactionService, TxConfig},
 };
 
+/// Main entry point for the FHE Event Relayer service.
+///
+/// This function performs the following initialization steps:
+/// 1. Loads and validates configuration
+/// 2. Initializes logging
+/// 3. Sets up transaction services for L1 and L2
+/// 4. Creates and configures event handlers
+/// 5. Starts event listeners
+/// 6. Waits for shutdown signal
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     // === Initialize settings
@@ -62,12 +106,13 @@ async fn main() -> eyre::Result<()> {
     .await
     .map_err(|e| eyre::eyre!("Failed to create transaction service: {}", e))?;
 
-    let tx_service_rollup_clone = tx_service_rollup.clone();
+    let tx_service_clone = tx_service.clone();
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(60));
         loop {
             interval.tick().await;
-            tx_service_rollup_clone.cleanup_pending().await;
+            tx_service_clone.cleanup_pending().await;
+            tx_service_clone.retry_pending().await; // Add retry attempts
         }
     });
 
@@ -159,7 +204,20 @@ async fn main() -> eyre::Result<()> {
     Ok(())
 }
 
-/// Initialize tracing based on configuration settings
+/// Initialize tracing based on configuration settings.
+///
+/// # Arguments
+/// * `log_config` - The [`LogConfig`] containing logging preferences
+///
+/// # Returns
+/// * `Ok(())` - If logging was successfully initialized
+/// * `Err(`[`eyre::Error`]`)` - If initialization failed
+///
+/// # Configuration Options
+/// - Log level (trace, debug, info, warn, error)
+/// - Log format (compact, pretty, json)
+/// - File and line number display
+/// - Thread ID display
 fn init_tracing(log_config: &LogConfig) -> eyre::Result<()> {
     let env_filter = match log_config.level.as_str() {
         "trace" => EnvFilter::new("trace"),

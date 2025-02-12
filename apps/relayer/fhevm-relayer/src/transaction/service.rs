@@ -14,14 +14,16 @@ pub struct TransactionService {
     pending_txs: Mutex<Vec<PendingTransaction>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct PendingTransaction {
     target: Address,
     calldata: Bytes,
     config: TxConfig,
     timestamp: Instant,
     attempts: u32,
+    max_attempts: u32,
 }
+
 impl TransactionService {
     pub async fn new(
         rpc_url: &str,
@@ -68,8 +70,14 @@ impl TransactionService {
             if existing_tx.target == target && existing_tx.calldata == calldata {
                 warn!(
                     target = ?target,
-                    "Similar transaction already pending, might want to wait"
+                    attempts = ?existing_tx.attempts,
+                    "Similar transaction already pending"
                 );
+                if existing_tx.attempts >= existing_tx.max_attempts {
+                    return Err(TransactionServiceError::Failed(
+                        "Max retry attempts reached".to_string(),
+                    ));
+                }
             }
         }
 
@@ -91,7 +99,8 @@ impl TransactionService {
             calldata,
             config,
             timestamp: Instant::now(),
-            attempts: 0,
+            attempts: 1,
+            max_attempts: 3, // Could be configurable
         });
 
         Ok(tx_hash)
@@ -119,19 +128,73 @@ impl TransactionService {
             .map_err(|e| TransactionServiceError::Failed(e.to_string()))
     }
 
-    // Periodic cleanup of stale pending transactions
     pub async fn cleanup_pending(&self) {
         let mut pending = self.pending_txs.lock().await;
         let now = Instant::now();
         pending.retain(|tx| {
             let age = now.duration_since(tx.timestamp);
-            if age > Duration::from_secs(300) {
-                // 5 minutes timeout
-                warn!(target = ?tx.target, "Removing stale pending transaction");
+
+            // Remove if too old or too many attempts
+            if age > Duration::from_secs(tx.config.timeout_secs.unwrap_or(300)) {
+                warn!(
+                    target = ?tx.target,
+                    age_secs = ?age.as_secs(),
+                    "Removing stale pending transaction"
+                );
+                false
+            } else if tx.attempts >= tx.max_attempts {
+                warn!(
+                    target = ?tx.target,
+                    attempts = ?tx.attempts,
+                    "Removing transaction that exceeded max attempts"
+                );
                 false
             } else {
                 true
             }
         });
+    }
+
+    pub async fn retry_pending(&self) {
+        let mut pending = self.pending_txs.lock().await;
+        let mut to_retry = Vec::new();
+
+        for tx in pending.iter() {
+            if tx.attempts < tx.max_attempts {
+                to_retry.push(tx.clone()); // This now clones the entire struct
+            }
+        }
+
+        // Update attempts count in the original transactions
+        for tx in pending.iter_mut() {
+            if tx.attempts < tx.max_attempts {
+                tx.attempts += 1;
+            }
+        }
+
+        // Retry transactions
+        for tx in to_retry {
+            match self
+                .manager
+                .send_transaction(tx.target, tx.calldata.clone(), Some(tx.config.clone()))
+                .await
+            {
+                Ok(_) => {
+                    info!(
+                        target = ?tx.target,
+                        attempts = ?tx.attempts,
+                        "Successfully retried transaction"
+                    );
+                }
+                Err(e) => {
+                    error!(
+                        ?e,
+                        target = ?tx.target,
+                        attempts = ?tx.attempts,
+                        "Failed to retry transaction"
+                    );
+                }
+            }
+        }
     }
 }
