@@ -1,20 +1,20 @@
 use crate::{
-    errors::{EventProcessingError, TransactionServiceError},
+    errors::EventProcessingError,
     ethereum::{bindings::DecryptionOracle, ComputeCalldata},
     orchestrator::{
         traits::{EventDispatcher, EventHandler},
         TokioEventDispatcher,
     },
     relayer_event::{DecryptedValue, DecryptionType, RelayerEvent, RelayerEventData},
-    transaction::{TransactionService, TxConfig},
+    transaction::{TransactionHelper, TransactionService, TxConfig},
     utils::{colorize_event_type, colorize_request_id},
 };
 use alloy::primitives::{Address, FixedBytes, Uint};
 use alloy::rpc::types::Log;
 use async_trait::async_trait;
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 use tokio::task;
-use tracing::{debug, error, info};
+use tracing::{error, info};
 use uuid::Uuid;
 
 use alloy::primitives::U256;
@@ -31,8 +31,7 @@ pub struct DecryptionRequestData {
 pub struct EthereumHostL1Handler {
     dispatcher: Arc<TokioEventDispatcher<RelayerEvent>>,
     context_data: dashmap::DashMap<Uuid, DecryptionRequestData>,
-    tx_service: Arc<TransactionService>,
-    tx_config: TxConfig,
+    tx_helper: Arc<TransactionHelper>,
 }
 
 impl EthereumHostL1Handler {
@@ -44,8 +43,7 @@ impl EthereumHostL1Handler {
         Self {
             dispatcher,
             context_data: dashmap::DashMap::new(),
-            tx_service,
-            tx_config,
+            tx_helper: Arc::new(TransactionHelper::new(tx_service, tx_config)),
         }
     }
 
@@ -89,7 +87,11 @@ impl EthereumHostL1Handler {
         _ = self.dispatcher.dispatch_event(next_event).await;
     }
 
-    async fn handle_decrypt_response(&self, event: RelayerEvent, decrypted_value: DecryptedValue) {
+    async fn send_decrypt_response_to_fhevm(
+        &self,
+        event: RelayerEvent,
+        decrypted_value: DecryptedValue,
+    ) {
         match self.context_data.get(&event.request_id) {
             Some(decrypted_request_data) => {
                 info!(
@@ -99,11 +101,16 @@ impl EthereumHostL1Handler {
                 // send the transaction using the request_id and callback selection from request data
                 let req_clone = decrypted_request_data.clone();
                 let self_clone = self.clone(); // Clone self since we need to move it to the task
+                let event_clone = event.clone();
 
-                // Spawn a blocking task for the async operation
                 task::spawn(async move {
-                    if let Err(e) = self_clone.try_send_callback(&req_clone).await {
-                        error!(?e, "Failed to send callback transaction");
+                    match self_clone.process_decryption_response(&req_clone).await {
+                        Ok(()) => {
+                            self_clone.handle_successful_request(event_clone).await;
+                        }
+                        Err(e) => {
+                            self_clone.handle_failed_request(event_clone, e).await;
+                        }
                     }
                 });
             }
@@ -120,69 +127,47 @@ impl EthereumHostL1Handler {
         }
     }
 
-    async fn try_send_callback_inner(
+    /// Handles a successful decryption response
+    async fn handle_successful_request(&self, event: RelayerEvent) {
+        // Store the mapping
+
+        // Create and dispatch the new event
+        let next_event = event.derive_next_event(RelayerEventData::DecryptResponseSentToHostL1);
+
+        if let Err(e) = self.dispatcher.dispatch_event(next_event).await {
+            error!(?e, "Failed to dispatch DecryptRequestProcessed event");
+        }
+    }
+
+    async fn handle_failed_request(&self, event: RelayerEvent, error: EventProcessingError) {
+        error!(
+            error = ?error,
+            "Failed to send callback transaction"
+        );
+
+        let error_event = event.derive_next_event(RelayerEventData::DecryptionFailed {
+            error: format!("Callback transaction failed: {}", error),
+        });
+
+        if let Err(e) = self.dispatcher.dispatch_event(error_event).await {
+            error!(?e, "Failed to dispatch error event");
+        }
+    }
+
+    async fn process_decryption_response(
         &self,
         req: &DecryptionRequestData,
     ) -> Result<(), EventProcessingError> {
         let decrypted_value = U256::from(18446744073709551600u64);
-        let calldata = ComputeCalldata::callback_req(req, decrypted_value, 4)?;
-
-        info!(
-            calldata = %format!("0x{}...", hex::encode(&calldata[..20])),  // First 20 bytes with prefix
-            "Submitting callback transaction"
-        );
-
-        debug!(
-            full_calldata = %format!("0x{}", hex::encode(&calldata)),
-            "Full callback transaction data"
-        );
-
-        let tx_hash = self
-            .tx_service
-            .submit_transaction(req.contract_caller, calldata, self.tx_config.clone())
+        self.tx_helper
+            .send_transaction_simple("decryption_response", req.contract_caller, || {
+                ComputeCalldata::callback_req(req, decrypted_value, 4)
+            })
             .await
-            .map_err(EventProcessingError::from)?;
-
-        info!(?tx_hash, "Transaction submitted, waiting for confirmation");
-
-        match self.tx_service.get_transaction_status(tx_hash).await {
-            Ok(Some(true)) => {
-                info!(?tx_hash, "Transaction confirmed");
-                Ok(())
-            }
-            Ok(Some(false)) => {
-                Err(TransactionServiceError::Failed("Transaction reverted".into()).into())
-            }
-            Ok(None) => Err(TransactionServiceError::Failed("Transaction not found".into()).into()),
-            Err(e) => Err(e.into()),
-        }
     }
 
-    async fn try_send_callback(
-        &self,
-        req: &DecryptionRequestData,
-    ) -> Result<(), EventProcessingError> {
-        const MAX_RETRIES: u32 = 3;
-        let mut attempt = 0;
-
-        while attempt < MAX_RETRIES {
-            match self.try_send_callback_inner(req).await {
-                Ok(_) => return Ok(()),
-                Err(e) => {
-                    if attempt < MAX_RETRIES - 1 {
-                        error!(?e, attempt, "Transaction failed, retrying...");
-                        tokio::time::sleep(Duration::from_secs(1 << attempt)).await;
-                        attempt += 1;
-                    } else {
-                        return Err(e);
-                    }
-                }
-            }
-        }
-
-        Err(EventProcessingError::HandlerError(
-            "Max retries exceeded".to_string(),
-        ))
+    fn handle_decrypt_response_sent(&self) {
+        info!("Transaction to fhevm has been done");
     }
 }
 
@@ -202,7 +187,11 @@ impl EventHandler<RelayerEvent> for EthereumHostL1Handler {
                     .await;
             }
             RelayerEventData::DecryptionResponseRcvdFromGwL2 { decrypted_value } => {
-                self.handle_decrypt_response(event, decrypted_value).await;
+                self.send_decrypt_response_to_fhevm(event, decrypted_value)
+                    .await;
+            }
+            RelayerEventData::DecryptResponseSentToHostL1 => {
+                self.handle_decrypt_response_sent();
             }
             _ => {
                 return;

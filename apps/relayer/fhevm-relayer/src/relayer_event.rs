@@ -112,11 +112,8 @@ pub enum RelayerEventData {
         decrypted_value: DecryptedValue,
     },
     // This event data could be used to update the dashboard.
-    DecryptResponseSentToHostL1 {
-        // For no handler, just status update.
-        tx_hash: DecryptedValue,
-        decrypted_value: DecryptedValue,
-    },
+    DecryptResponseSentToHostL1,
+    // For no handler, just status update.
     DecryptionFailed {
         // For no handler, just status updated.
         error: String,
