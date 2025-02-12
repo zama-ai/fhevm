@@ -33,6 +33,12 @@ const SUB_DAPP_UPDATED = gql(`
       id
       name
       status
+      stats {
+        id
+        name
+        timestamp
+        externalRef
+      }
     }
   }
 `)
