@@ -6,10 +6,14 @@ use crate::{
         TokioEventDispatcher,
     },
     relayer_event::{DecryptedValue, RelayerEvent, RelayerEventData},
-    transaction::{TransactionService, TxConfig},
+    transaction::{ReceiptProcessor, TransactionHelper, TransactionService, TxConfig},
     utils::{colorize_event_type, colorize_request_id},
 };
-use alloy::primitives::{hex, keccak256, Uint, U256};
+
+use alloy::{
+    primitives::{hex, keccak256, Address, Uint, U256},
+    rpc::types::TransactionReceipt,
+};
 
 use alloy_sol_types::SolEvent;
 use async_trait::async_trait;
@@ -18,12 +22,28 @@ use tokio::task;
 use tracing::{debug, error, info};
 use uuid::Uuid;
 
+const DECRYPTION_MANAGER_ADDRESS: Address = Address::new([
+    0x2F, 0xb4, 0x34, 0x10, 0x27, 0xeb, 0x1d, 0x2a, 0xD8, 0xB5, 0xD9, 0x70, 0x81, 0x87, 0xdf, 0x86,
+    0x33, 0xcA, 0xFA, 0x92,
+]);
+
+struct DecryptionRequestProcessor {
+    handler: Arc<ArbitrumGatewayL2Handler>,
+}
+
+impl ReceiptProcessor for DecryptionRequestProcessor {
+    type Output = U256;
+
+    fn process(&self, receipt: &TransactionReceipt) -> Result<Self::Output, EventProcessingError> {
+        self.handler.extract_decryption_id_from_receipt(receipt)
+    }
+}
+
 #[derive(Clone)]
 pub struct ArbitrumGatewayL2Handler {
     dispatcher: Arc<TokioEventDispatcher<RelayerEvent>>,
-    tx_service: Arc<TransactionService>,
-    tx_config: TxConfig,
     decryption_id_to_request_id: Arc<dashmap::DashMap<U256, Uuid>>,
+    tx_helper: Arc<TransactionHelper>,
 }
 
 impl ArbitrumGatewayL2Handler {
@@ -34,8 +54,7 @@ impl ArbitrumGatewayL2Handler {
     ) -> Self {
         Self {
             dispatcher,
-            tx_service,
-            tx_config,
+            tx_helper: Arc::new(TransactionHelper::new(tx_service, tx_config)),
             decryption_id_to_request_id: Arc::new(dashmap::DashMap::new()),
         }
     }
@@ -51,10 +70,7 @@ impl ArbitrumGatewayL2Handler {
     async fn send_decryption_request_to_rollup(&self, event: RelayerEvent, handles: Vec<[u8; 32]>) {
         let handles: Vec<Uint<256, 4>> = handles
             .iter()
-            .map(|bytes| {
-                // big-endian is used
-                Uint::from_be_bytes(*bytes)
-            })
+            .map(|bytes| Uint::from_be_bytes(*bytes))
             .collect();
 
         info!(
@@ -63,54 +79,60 @@ impl ArbitrumGatewayL2Handler {
             handles
         );
 
-        let self_clone = self.clone(); // Clone self since we need to move it to the task
-        let dispatcher = Arc::clone(&self.dispatcher);
+        let self_clone = self.clone();
         let event_clone = event.clone();
 
         // Spawn a blocking task to make a transaction to rollup
         task::spawn(async move {
-            match self_clone.try_send_callback(handles).await {
+            match self_clone.process_decryption_request(handles).await {
                 Ok(decryption_public_id) => {
-                    // Store the mapping
                     self_clone
-                        .decryption_id_to_request_id
-                        .insert(decryption_public_id, event.request_id);
-
-                    info!(
-                        ?event.request_id,
-                        ?decryption_public_id,
-                        "Stored mapping between decryption ID and request ID"
-                    );
-
-                    // Create and dispatch the new event
-                    let next_event = event_clone.derive_next_event(
-                        RelayerEventData::DecryptionRequestSentToGwL2 {
-                            decryption_public_id,
-                        },
-                    );
-
-                    if let Err(e) = dispatcher.dispatch_event(next_event).await {
-                        error!(?e, "Failed to dispatch DecryptRequestProcessed event");
-                    }
+                        .handle_successful_request(event_clone, decryption_public_id)
+                        .await;
                 }
                 Err(e) => {
-                    error!(
-                        error = ?e,
-                        "Failed to send callback transaction"
-                    );
-
-                    // Emit an error event
-                    let error_event =
-                        event_clone.derive_next_event(RelayerEventData::DecryptionFailed {
-                            error: format!("Callback transaction failed: {}", e),
-                        });
-
-                    if let Err(e) = dispatcher.dispatch_event(error_event).await {
-                        error!(?e, "Failed to dispatch error event");
-                    }
+                    self_clone.handle_failed_request(event_clone, e).await;
                 }
             }
         });
+    }
+
+    /// Handles a successful decryption request
+    async fn handle_successful_request(&self, event: RelayerEvent, decryption_public_id: U256) {
+        // Store the mapping
+        self.decryption_id_to_request_id
+            .insert(decryption_public_id, event.request_id);
+
+        info!(
+            ?event.request_id,
+            ?decryption_public_id,
+            "Stored mapping between decryption ID and request ID"
+        );
+
+        // Create and dispatch the new event
+        let next_event = event.derive_next_event(RelayerEventData::DecryptionRequestSentToGwL2 {
+            decryption_public_id,
+        });
+
+        if let Err(e) = self.dispatcher.dispatch_event(next_event).await {
+            error!(?e, "Failed to dispatch DecryptRequestProcessed event");
+        }
+    }
+
+    /// Handles a failed decryption request
+    async fn handle_failed_request(&self, event: RelayerEvent, error: EventProcessingError) {
+        error!(
+            error = ?error,
+            "Failed to send callback transaction"
+        );
+
+        let error_event = event.derive_next_event(RelayerEventData::DecryptionFailed {
+            error: format!("Callback transaction failed: {}", error),
+        });
+
+        if let Err(e) = self.dispatcher.dispatch_event(error_event).await {
+            error!(?e, "Failed to dispatch error event");
+        }
     }
 
     /// This methods extract
@@ -133,6 +155,37 @@ impl ArbitrumGatewayL2Handler {
         Err(EventProcessingError::HandlerError(
             "Failed to extract decryption ID from event".into(),
         ))
+    }
+
+    async fn process_decryption_response(&self, decryption_public_id: U256, event: RelayerEvent) {
+        if let Some(entry) = self.decryption_id_to_request_id.get(&decryption_public_id) {
+            let original_request_id = *entry.value();
+
+            info!(
+                ?original_request_id,
+                ?decryption_public_id,
+                "Found original request ID for decryption response"
+            );
+
+            let next_event_data = RelayerEventData::DecryptionResponseRcvdFromGwL2 {
+                decrypted_value: DecryptedValue::PublicDecrypt {
+                    plaintext: vec![1, 2, 3],        // Mock data
+                    signatures: vec![vec![1, 2, 3]], // Mock signatures
+                },
+            };
+
+            let next_event =
+                RelayerEvent::new(original_request_id, event.api_version, next_event_data);
+
+            if let Err(e) = self.dispatcher.dispatch_event(next_event).await {
+                error!(?e, "Failed to dispatch decryption response event");
+            }
+        } else {
+            error!(
+                ?decryption_public_id,
+                "No matching request ID found for decryption ID"
+            );
+        }
     }
 
     /// The decryption response event contains the plaintext and the associated signatures.
@@ -198,73 +251,32 @@ impl ArbitrumGatewayL2Handler {
         );
     }
 
-    async fn noop_handle_decrypt_reponse_event_log(&self, _event: RelayerEvent) {}
-
-    async fn try_send_callback_inner(
+    fn extract_decryption_id_from_receipt(
         &self,
-        handles: Vec<Uint<256, 4>>,
-    ) -> Result<Uint<256, 4>, EventProcessingError> {
-        let calldata = ComputeCalldata::decryption_req(handles)?;
-
-        let contract_address = hex!("2Fb4341027eb1d2aD8B5D9708187df8633cAFA92").into();
-
-        info!(
-            calldata = %format!("0x{}...", hex::encode(&calldata[..20])),  // First 20 bytes with prefix
-            "Submitting callback transaction"
-        );
-
-        debug!(
-            full_calldata = %format!("0x{}", hex::encode(&calldata)),
-            "Full callback transaction data"
-        );
-
-        let tx_hash = self
-            .tx_service
-            .submit_transaction(contract_address, calldata, self.tx_config.clone())
-            .await
-            .map_err(EventProcessingError::from)?;
-
-        info!(?tx_hash, "Waiting for transaction confirmation");
-
-        let receipt = self
-            .tx_service
-            .get_transaction_receipt(tx_hash)
-            .await
-            .map_err(EventProcessingError::from)?
-            .ok_or_else(|| EventProcessingError::HandlerError("Receipt not found".into()))?;
-
-        // Log receipt details
-        info!(
-            ?tx_hash,
-            block_number = ?receipt.block_number,
-            block_hash = ?receipt.block_hash,
-            logs_count = receipt.inner.logs().len(),
-            "Got receipt with logs"
-        );
-
-        // Find and parse the event
+        receipt: &TransactionReceipt,
+    ) -> Result<U256, EventProcessingError> {
         let target_topic = keccak256("PublicDecryptionRequest(uint256,uint256[])");
 
-        for log in receipt.inner.logs() {
+        for log in receipt.inner.logs().iter() {
             if let Some(first_topic) = log.topics().first() {
-                if *first_topic == target_topic {
-                    match DecyptionManager::PublicDecryptionRequest::decode_log_data(
-                        log.data(),
+                if first_topic == &target_topic {
+                    return match DecyptionManager::PublicDecryptionRequest::decode_log_data(
+                        &log.data(),
                         true,
                     ) {
                         Ok(event) => {
-                            let public_decryption_id = event.publicDecryptionId;
                             info!(
-                                ?tx_hash,
-                                ?public_decryption_id,
+                                ?receipt.transaction_hash,
+                                ?event.publicDecryptionId,
                                 "Found decryption ID from event"
                             );
-                            return Ok(public_decryption_id);
+                            Ok(event.publicDecryptionId)
                         }
                         Err(e) => {
-                            error!(?tx_hash, ?e, "Failed to decode event data");
+                            error!(?receipt.transaction_hash, ?e, "Failed to decode event data");
+                            Err(EventProcessingError::DecodingError(e))
                         }
-                    }
+                    };
                 }
             }
         }
@@ -274,31 +286,24 @@ impl ArbitrumGatewayL2Handler {
         ))
     }
 
-    async fn try_send_callback(
+    async fn noop_handle_decrypt_reponse_event_log(&self, _event: RelayerEvent) {}
+
+    async fn process_decryption_request(
         &self,
         handles: Vec<Uint<256, 4>>,
-    ) -> Result<Uint<256, 4>, EventProcessingError> {
-        const MAX_RETRIES: u32 = 3;
-        let mut attempt = 0;
+    ) -> Result<U256, EventProcessingError> {
+        let processor = DecryptionRequestProcessor {
+            handler: Arc::new(self.clone()),
+        };
 
-        while attempt < MAX_RETRIES {
-            match self.try_send_callback_inner(handles.clone()).await {
-                Ok(id) => return Ok(id),
-                Err(e) => {
-                    if attempt < MAX_RETRIES - 1 {
-                        error!(?e, attempt, "Transaction failed, retrying...");
-                        tokio::time::sleep(Duration::from_secs(1 << attempt)).await;
-                        attempt += 1;
-                    } else {
-                        return Err(e);
-                    }
-                }
-            }
-        }
-
-        Err(EventProcessingError::HandlerError(
-            "Max retries exceeded".to_string(),
-        ))
+        self.tx_helper
+            .send_transaction(
+                "decryption_request",
+                DECRYPTION_MANAGER_ADDRESS,
+                || ComputeCalldata::decryption_req(handles.clone()),
+                &processor,
+            )
+            .await
     }
 }
 

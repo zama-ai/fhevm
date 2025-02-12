@@ -49,6 +49,10 @@ impl EthereumHostL1Handler {
         }
     }
 
+    /// Entrypoint for decryption flow.
+    ///
+    /// From the decryption request event, we extract:
+    /// -
     async fn handle_public_decrypt_event_log(&self, event: RelayerEvent, eth_event_log: Log) {
         let next_event: RelayerEvent = match DecryptionOracle::DecryptionRequest::decode_log_data(
             eth_event_log.data(),
@@ -98,7 +102,7 @@ impl EthereumHostL1Handler {
 
                 // Spawn a blocking task for the async operation
                 task::spawn(async move {
-                    if let Err(e) = self_clone.send_callback_transaction(&req_clone).await {
+                    if let Err(e) = self_clone.try_send_callback(&req_clone).await {
                         error!(?e, "Failed to send callback transaction");
                     }
                 });
@@ -116,7 +120,7 @@ impl EthereumHostL1Handler {
         }
     }
 
-    async fn try_send_callback(
+    async fn try_send_callback_inner(
         &self,
         req: &DecryptionRequestData,
     ) -> Result<(), EventProcessingError> {
@@ -154,7 +158,7 @@ impl EthereumHostL1Handler {
         }
     }
 
-    async fn send_callback_transaction(
+    async fn try_send_callback(
         &self,
         req: &DecryptionRequestData,
     ) -> Result<(), EventProcessingError> {
@@ -162,7 +166,7 @@ impl EthereumHostL1Handler {
         let mut attempt = 0;
 
         while attempt < MAX_RETRIES {
-            match self.try_send_callback(req).await {
+            match self.try_send_callback_inner(req).await {
                 Ok(_) => return Ok(()),
                 Err(e) => {
                     if attempt < MAX_RETRIES - 1 {
@@ -198,7 +202,6 @@ impl EventHandler<RelayerEvent> for EthereumHostL1Handler {
                     .await;
             }
             RelayerEventData::DecryptionResponseRcvdFromGwL2 { decrypted_value } => {
-                info!("In ethereum_host_L1_handler, received  DecryptionResponseRcvdFromGwL2");
                 self.handle_decrypt_response(event, decrypted_value).await;
             }
             _ => {
