@@ -157,37 +157,6 @@ impl ArbitrumGatewayL2Handler {
         ))
     }
 
-    async fn process_decryption_response(&self, decryption_public_id: U256, event: RelayerEvent) {
-        if let Some(entry) = self.decryption_id_to_request_id.get(&decryption_public_id) {
-            let original_request_id = *entry.value();
-
-            info!(
-                ?original_request_id,
-                ?decryption_public_id,
-                "Found original request ID for decryption response"
-            );
-
-            let next_event_data = RelayerEventData::DecryptionResponseRcvdFromGwL2 {
-                decrypted_value: DecryptedValue::PublicDecrypt {
-                    plaintext: vec![1, 2, 3],        // Mock data
-                    signatures: vec![vec![1, 2, 3]], // Mock signatures
-                },
-            };
-
-            let next_event =
-                RelayerEvent::new(original_request_id, event.api_version, next_event_data);
-
-            if let Err(e) = self.dispatcher.dispatch_event(next_event).await {
-                error!(?e, "Failed to dispatch decryption response event");
-            }
-        } else {
-            error!(
-                ?decryption_public_id,
-                "No matching request ID found for decryption ID"
-            );
-        }
-    }
-
     /// The decryption response event contains the plaintext and the associated signatures.
     ///
     /// In order to link this response to the original decryption request catched by L1 listener, we
@@ -261,7 +230,7 @@ impl ArbitrumGatewayL2Handler {
             if let Some(first_topic) = log.topics().first() {
                 if first_topic == &target_topic {
                     return match DecyptionManager::PublicDecryptionRequest::decode_log_data(
-                        &log.data(),
+                        log.data(),
                         true,
                     ) {
                         Ok(event) => {
