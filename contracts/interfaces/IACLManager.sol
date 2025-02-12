@@ -47,7 +47,7 @@ interface IACLManager {
     function getUserCiphertexts(
         uint256 chainId,
         address userAddress,
-        IDecryptionManager.CiphertextContract[] calldata ctHandleContractPairs
+        IDecryptionManager.CtHandleContractPair[] calldata ctHandleContractPairs
     ) external view returns (CtHandleCiphertext128Pair[] calldata);
 
     /// @notice Returns the handles and PBS ciphertext pairs for the given ciphertext handles.

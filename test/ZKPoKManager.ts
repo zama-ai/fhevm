@@ -4,7 +4,7 @@ import { expect } from "chai";
 import hre from "hardhat";
 
 import { ZKPoKManager } from "../typechain-types";
-import { createEIP712ResponseMessage } from "./utils";
+import { createEIP712ResponseZKPoK, getSignaturesZKPoK } from "./utils/eip712";
 
 describe("ZKPoKManager", function () {
   async function deployZKPoKManagerFixture() {
@@ -68,22 +68,8 @@ describe("ZKPoKManager", function () {
       // Given
       const handles = [hre.ethers.encodeBytes32String("123456789"), hre.ethers.encodeBytes32String("987654321")];
       const zkpokManagerAddress = await zkpokManagerInstance.getAddress();
-      const eip712 = createEIP712ResponseMessage(hre.network.config.chainId!, zkpokManagerAddress);
-      const signature1 = await signers[0].signTypedData(
-        eip712.domain,
-        { EIP712ResponseMessage: eip712.types.EIP712ResponseMessage },
-        eip712.message,
-      );
-      const signature2 = await signers[1].signTypedData(
-        eip712.domain,
-        { EIP712ResponseMessage: eip712.types.EIP712ResponseMessage },
-        eip712.message,
-      );
-      const signature3 = await signers[2].signTypedData(
-        eip712.domain,
-        { EIP712ResponseMessage: eip712.types.EIP712ResponseMessage },
-        eip712.message,
-      );
+      const eip712Message = createEIP712ResponseZKPoK(hre.network.config.chainId!, zkpokManagerAddress);
+      const [signature1, signature2, signature3] = await getSignaturesZKPoK(eip712Message, signers.slice(0, 3));
 
       // When
       await zkpokManagerInstance.verifyProofResponse(zkProofId, handles, signature1);
@@ -100,12 +86,8 @@ describe("ZKPoKManager", function () {
       // Given
       const handles = [hre.ethers.encodeBytes32String("123456789")];
       const zkpokManagerAddress = await zkpokManagerInstance.getAddress();
-      const eip712 = createEIP712ResponseMessage(hre.network.config.chainId!, zkpokManagerAddress);
-      const signature1 = await signers[0].signTypedData(
-        eip712.domain,
-        { EIP712ResponseMessage: eip712.types.EIP712ResponseMessage },
-        eip712.message,
-      );
+      const eip712Message = createEIP712ResponseZKPoK(hre.network.config.chainId!, zkpokManagerAddress);
+      const [signature1] = await getSignaturesZKPoK(eip712Message, signers.slice(0, 1));
 
       // When
       await zkpokManagerInstance.verifyProofResponse(zkProofId, handles, signature1);

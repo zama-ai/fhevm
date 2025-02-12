@@ -40,7 +40,9 @@ describe("HTTPZ", function () {
       const admins = [signers[0].address, signers[1].address];
 
       // Check that someone else than the owner cannot initialize
-      await expect(httpz.connect(signers[1]).initialize(protocolMetadata, admins)).to.be.reverted;
+      await expect(httpz.connect(signers[0]).initialize(protocolMetadata, admins))
+        .to.be.revertedWithCustomError(httpz, "OwnableUnauthorizedAccount")
+        .withArgs(signers[0].address);
 
       // Initialize the protocol
       const tx = await httpz.connect(owner).initialize(protocolMetadata, admins);
@@ -75,26 +77,37 @@ describe("HTTPZ", function () {
       const keychainDaAddress1 = "0x1234567890abcdef1234567890abcdef12345678";
       const keychainDaAddress2 = "0xabcdef1234567890abcdef1234567890abcdef12";
 
+      // Define a user
+      const user = signers[2];
+
       // Check that someone else than the admin cannot add KMS nodes
-      await expect(httpz.addKmsNodes(kmsNodes)).to.be.reverted;
+      await expect(httpz.connect(user).addKmsNodes(kmsNodes))
+        .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
+        .withArgs(user.address, httpz.ADMIN_ROLE());
 
       // Add KMS nodes
       const addTx = await httpz.connect(admin).addKmsNodes(kmsNodes);
 
-      // Check that someone else than the connector cannot mark KMS node as ready
-      await expect(httpz.kmsNodeReady(signedNodes1, keychainDaAddress1)).to.be.reverted;
+      // Check init event
+      await expect(addTx).to.emit(httpz, "KmsNodesInit").withArgs([identity1, identity2]);
+
+      // Check that someone else than the pending KMS connector cannot mark a KMS node as ready
+      await expect(httpz.connect(user).kmsNodeReady(signedNodes1, keychainDaAddress1))
+        .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
+        .withArgs(user.address, httpz.PENDING_KMS_NODE_ROLE());
 
       // Mark KMS first node as ready
       await httpz.connect(connector1).kmsNodeReady(signedNodes1, keychainDaAddress1);
 
       // Check that a connector cannot mark KMS node as ready twice
-      await expect(httpz.connect(connector1).kmsNodeReady(signedNodes1, keychainDaAddress1)).to.be.reverted;
+      await expect(httpz.connect(connector1).kmsNodeReady(signedNodes1, keychainDaAddress1))
+        .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
+        .withArgs(connector1.address, httpz.PENDING_KMS_NODE_ROLE());
 
       // Mark second KMS node as ready (this should emit the KmsServiceReady event)
       const readyTx2 = await httpz.connect(connector2).kmsNodeReady(signedNodes2, keychainDaAddress2);
 
-      // Check events
-      await expect(addTx).to.emit(httpz, "KmsNodesInit").withArgs([identity1, identity2]);
+      // Check ready event
       await expect(readyTx2).to.emit(httpz, "KmsServiceReady").withArgs([identity1, identity2]);
 
       // Check that both KMS nodes are ready
@@ -126,26 +139,37 @@ describe("HTTPZ", function () {
       const coprocessorDaAddress1 = "0x1234567890abcdef1234567890abcdef12345678";
       const coprocessorDaAddress2 = "0xabcdef1234567890abcdef1234567890abcdef12";
 
+      // Define a user
+      const user = signers[2];
+
       // Check that someone else than the admin cannot add coprocessors
-      await expect(httpz.addCoprocessors(coprocessors)).to.be.reverted;
+      await expect(httpz.connect(user).addCoprocessors(coprocessors))
+        .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
+        .withArgs(user.address, httpz.ADMIN_ROLE());
 
       // Add coprocessors
       const addTx = await httpz.connect(admin).addCoprocessors(coprocessors);
 
+      // Check init event
+      await expect(addTx).to.emit(httpz, "CoprocessorsInit").withArgs([identity1, identity2]);
+
       // Check that someone else than the connector cannot mark coprocessor as ready
-      await expect(httpz.coprocessorReady(coprocessorDaAddress1)).to.be.reverted;
+      await expect(httpz.connect(user).coprocessorReady(coprocessorDaAddress1))
+        .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
+        .withArgs(user.address, httpz.PENDING_COPROCESSOR_ROLE());
 
       // Mark first coprocessor as ready
       await httpz.connect(connector1).coprocessorReady(coprocessorDaAddress1);
 
       // Check that a connector cannot mark coprocessor as ready twice
-      await expect(httpz.connect(connector1).coprocessorReady(coprocessorDaAddress1)).to.be.reverted;
+      await expect(httpz.connect(connector1).coprocessorReady(coprocessorDaAddress1))
+        .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
+        .withArgs(connector1.address, httpz.PENDING_COPROCESSOR_ROLE());
 
       // Mark second coprocessor as ready (this should emit the CoprocessorServiceReady event)
       const readyTx2 = await httpz.connect(connector2).coprocessorReady(coprocessorDaAddress2);
 
-      // Check events
-      await expect(addTx).to.emit(httpz, "CoprocessorsInit").withArgs([identity1, identity2]);
+      // Check ready event
       await expect(readyTx2).to.emit(httpz, "CoprocessorServiceReady").withArgs([identity1, identity2]);
 
       // Check that both coprocessors are ready
@@ -158,7 +182,7 @@ describe("HTTPZ", function () {
 
   describe("Networks", function () {
     it("Should add a network", async function () {
-      const { httpz, admin } = await loadFixture(deployInitHTTPZFixture);
+      const { httpz, admin, signers } = await loadFixture(deployInitHTTPZFixture);
 
       const chainId = 2025;
       const network = {
@@ -169,8 +193,13 @@ describe("HTTPZ", function () {
         website: "https://network.com",
       };
 
+      // Define a user
+      const user = signers[0];
+
       // Check that someone else than the admin cannot add a network
-      await expect(httpz.addNetwork(network)).to.be.reverted;
+      await expect(httpz.connect(user).addNetwork(network))
+        .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
+        .withArgs(user.address, httpz.ADMIN_ROLE());
 
       // Add network
       const tx = await httpz.connect(admin).addNetwork(network);
