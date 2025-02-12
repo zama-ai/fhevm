@@ -20,6 +20,10 @@ use uuid::Uuid;
 use alloy::primitives::U256;
 use alloy_sol_types::SolEvent;
 
+/// Contains the context data for a decryption request from Ethereum L1.
+///
+/// This data is stored when processing the initial request and is used
+/// when sending the decryption response back to fhEVM.
 #[derive(Debug, Clone)]
 pub struct DecryptionRequestData {
     pub host_l1_request_id: Uint<256, 4>,
@@ -47,10 +51,17 @@ impl EthereumHostL1Handler {
         }
     }
 
-    /// Entrypoint for decryption flow.
+    /// Entry point for the decryption flow. Processes Ethereum decryption request events.
     ///
-    /// From the decryption request event, we extract:
-    /// -
+    /// # Arguments
+    /// * `event` - The [`RelayerEvent`] containing the request context and ID
+    /// * `eth_event_log` - The raw [`Log`] containing the decryption request data from Ethereum
+    ///
+    /// # State Changes
+    /// Stores context in [`DecryptionRequestData`] mapped to the event's request ID:
+    /// - `host_l1_request_id`: Original Ethereum request ID
+    /// - `callback_selector`: Function selector for the callback
+    /// - `contract_caller`: [`Address`] of the contract that initiated the request
     async fn handle_public_decrypt_event_log(&self, event: RelayerEvent, eth_event_log: Log) {
         let next_event: RelayerEvent = match DecryptionOracle::DecryptionRequest::decode_log_data(
             eth_event_log.data(),
@@ -87,6 +98,25 @@ impl EthereumHostL1Handler {
         _ = self.dispatcher.dispatch_event(next_event).await;
     }
 
+    /// Processes a decryption response and sends it back to the FHEVM.
+    ///
+    /// This function performs the following:
+    /// 1. Retrieves the original request context using the request_id
+    /// 2. Spawns an async task to process the response
+    /// 3. Handles success/failure through respective handlers
+    ///
+    /// # Arguments
+    /// * `event` - The [`RelayerEvent`] containing the response context
+    /// * `decrypted_value` - The [`DecryptedValue`] containing the result and signatures
+    ///
+    /// # State Access
+    /// Retrieves [`DecryptionRequestData`] using the event's request ID to get callback information
+    ///
+    /// # Task Behavior
+    /// Spawns an async task that:
+    /// - Processes the decryption response
+    /// - Sends transaction to fhEVM with callback
+    /// - Handles success/failure cases
     async fn send_decrypt_response_to_fhevm(
         &self,
         event: RelayerEvent,
@@ -127,7 +157,13 @@ impl EthereumHostL1Handler {
         }
     }
 
-    /// Handles a successful decryption response
+    /// Handles a successful decryption request by dispatching a confirmation event.
+    ///
+    /// # Arguments
+    /// * `event` - The [`RelayerEvent`] to derive the confirmation event from
+    ///
+    /// # Events
+    /// Dispatches [`RelayerEventData::DecryptResponseSentToHostL1`]
     async fn handle_successful_request(&self, event: RelayerEvent) {
         // Store the mapping
 
@@ -139,6 +175,14 @@ impl EthereumHostL1Handler {
         }
     }
 
+    /// Handles a failed decryption request by creating and dispatching an error event.
+    ///
+    /// # Arguments
+    /// * `event` - The [`RelayerEvent`] that failed
+    /// * `error` - The [`EventProcessingError`] that caused the failure
+    ///
+    /// # Events
+    /// Dispatches [`RelayerEventData::DecryptionFailed`]
     async fn handle_failed_request(&self, event: RelayerEvent, error: EventProcessingError) {
         error!(
             error = ?error,
@@ -154,6 +198,14 @@ impl EthereumHostL1Handler {
         }
     }
 
+    /// Processes a decryption response by sending a callback transaction to FHEVM.
+    ///
+    /// # Arguments
+    /// * `req` - The [`DecryptionRequestData`] containing callback information and contract details
+    ///
+    /// # Returns
+    /// * `Ok(())` - If the callback transaction was successful
+    /// * `Err(`[`EventProcessingError`]`)` - If the transaction failed
     async fn process_decryption_response(
         &self,
         req: &DecryptionRequestData,

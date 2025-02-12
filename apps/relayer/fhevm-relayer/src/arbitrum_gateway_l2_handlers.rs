@@ -59,14 +59,23 @@ impl ArbitrumGatewayL2Handler {
         }
     }
 
-    /// Prepare the decryption request transaction to gateway.
+    /// Prepares and sends a decryption request transaction to the gateway.
     ///
-    /// From the receipt, the decryption_public_id is extracted.
+    /// This function performs the following:
+    /// 1. Converts the input handles to [`Uint<256, 4>`]
+    /// 2. Sends transaction to the [`DecyptionManager`] contract
+    /// 3. Extracts the `decryption_public_id` from the receipt
     ///
-    /// This information is emitted through an event in DecryptionManager.sol contract
+    /// # Arguments
+    /// * `event` - The [`RelayerEvent`] containing the request context and original request ID
+    /// * `handles` - Vector of 32-byte arrays representing the encrypted handles to be decrypted
     ///
-    /// This information well be used to make the link between  the decryption request transaction
-    /// and the future decryption response.
+    /// # State Changes
+    /// On success, stores mapping between `decryption_public_id` and the original request ID
+    ///
+    /// # Events
+    /// * Success: [`RelayerEventData::DecryptionRequestSentToGwL2`]
+    /// * Failure: [`RelayerEventData::DecryptionFailed`]
     async fn send_decryption_request_to_rollup(&self, event: RelayerEvent, handles: Vec<[u8; 32]>) {
         let handles: Vec<Uint<256, 4>> = handles
             .iter()
@@ -97,7 +106,17 @@ impl ArbitrumGatewayL2Handler {
         });
     }
 
-    /// Handles a successful decryption request
+    /// Processes a successful decryption request.
+    ///
+    /// # Arguments
+    /// * `event` - The original [`RelayerEvent`] containing request information
+    /// * `decryption_public_id` - The [`U256`] ID received from the decryption request
+    ///
+    /// # State Changes
+    /// Stores mapping in `decryption_id_to_request_id`
+    ///
+    /// # Events
+    /// Dispatches [`RelayerEventData::DecryptionRequestSentToGwL2`]
     async fn handle_successful_request(&self, event: RelayerEvent, decryption_public_id: U256) {
         // Store the mapping
         self.decryption_id_to_request_id
@@ -119,7 +138,14 @@ impl ArbitrumGatewayL2Handler {
         }
     }
 
-    /// Handles a failed decryption request
+    /// Handles a failed decryption request.
+    ///
+    /// # Arguments
+    /// * `event` - The [`RelayerEvent`] that failed
+    /// * `error` - The [`EventProcessingError`] that caused the failure
+    ///
+    /// # Events
+    /// Dispatches [`RelayerEventData::DecryptionFailed`]
     async fn handle_failed_request(&self, event: RelayerEvent, error: EventProcessingError) {
         error!(
             error = ?error,
@@ -135,7 +161,14 @@ impl ArbitrumGatewayL2Handler {
         }
     }
 
-    /// This methods extract
+    /// Extracts decryption ID from event logs.
+    ///
+    /// # Arguments
+    /// * `event` - The [`RelayerEvent`] containing the [`DecryptResponseEventLogRcvdFromGwL2`]
+    ///
+    /// # Returns
+    /// * `Ok(`[`U256`]`)` - The extracted decryption ID
+    /// * `Err(`[`EventProcessingError`]`)` - If decoding fails or event type is incorrect
     fn extract_decryption_id_from_event(
         &self,
         event: &RelayerEvent,
@@ -157,17 +190,21 @@ impl ArbitrumGatewayL2Handler {
         ))
     }
 
-    /// The decryption response event contains the plaintext and the associated signatures.
+    /// Processes decryption response events.
     ///
-    /// In order to link this response to the original decryption request catched by L1 listener, we
-    /// need to replace the future dispatched relayer event `DecryptionResponseRcvdFromGwL2` with the original
-    /// request id.
+    /// This function:
+    /// 1. Extracts `decryption_public_id` from the event
+    /// 2. Retrieves original request ID using the `decryption_public_id`
+    /// 3. Creates and dispatches response event with mock data
     ///
-    /// To achieve it, we use the received decryption_public_id to retieve the original relayer event request id
-    /// using method `extract_decryption_id_from_event`
+    /// # Arguments
+    /// * `event` - The [`RelayerEvent`] containing the response data
     ///
-    /// Eventually, this relayer request id will be used in Ethereum handler to retrieve the contextual data which was stored
-    /// initially when the L1 decryption event was catched (with the contract caller, request id and selector).
+    /// # State Access
+    /// Reads from `decryption_id_to_request_id` mapping
+    ///
+    /// # Events
+    /// Dispatches [`RelayerEventData::DecryptionResponseRcvdFromGwL2`]
     async fn handle_decrypt_reponse_event_log(&self, event: RelayerEvent) {
         info!(
             "Decryption response received. Trigger a tx to L1  {:?}",
@@ -213,6 +250,16 @@ impl ArbitrumGatewayL2Handler {
         }
     }
 
+    /// Extracts the decryption ID from a transaction receipt.
+    ///
+    /// Searches for the [`PublicDecryptionRequest`] event in the logs and decodes it.
+    ///
+    /// # Arguments
+    /// * `receipt` - The [`TransactionReceipt`] to process
+    ///
+    /// # Returns
+    /// * `Ok(`[`U256`]`)` - The extracted decryption ID
+    /// * `Err(`[`EventProcessingError`]`)` - If event is not found or decoding fails
     fn handle_decrypt_request_sent(&self, id: U256) {
         info!(
             "Transaction to rollup has been done, the associated public decryption id is {}",
@@ -257,6 +304,17 @@ impl ArbitrumGatewayL2Handler {
 
     async fn noop_handle_decrypt_reponse_event_log(&self, _event: RelayerEvent) {}
 
+    /// Processes a decryption request by sending it to the L2 contract.
+    ///
+    /// Uses [`TransactionHelper`] with [`DecryptionRequestProcessor`] to send
+    /// and process the transaction.
+    ///
+    /// # Arguments
+    /// * `handles` - Vector of [`Uint<256, 4>`] representing the decryption handles
+    ///
+    /// # Returns
+    /// * `Ok(`[`U256`]`)` - The decryption ID from the transaction
+    /// * `Err(`[`EventProcessingError`]`)` - If the transaction fails
     async fn process_decryption_request(
         &self,
         handles: Vec<Uint<256, 4>>,
