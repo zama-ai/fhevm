@@ -3,8 +3,8 @@ use crate::transaction::{TransactionService, TxConfig};
 use alloy::primitives::{Address, Bytes};
 use alloy::rpc::types::TransactionReceipt;
 use std::sync::Arc;
-use std::time::Duration;
-use tracing::{error, info};
+
+use tracing::info;
 
 pub trait ReceiptProcessor {
     type Output;
@@ -48,37 +48,13 @@ impl TransactionHelper {
         F: Fn() -> Result<Bytes, EventProcessingError>,
         P: ReceiptProcessor,
     {
-        const MAX_RETRIES: u32 = 3;
-        let mut attempt = 0;
+        // Single attempt using service's retry mechanism
+        let receipt = self
+            .try_send_transaction(operation_name, target, &prepare_calldata)
+            .await?;
 
-        while attempt < MAX_RETRIES {
-            match self
-                .try_send_transaction(operation_name, target, &prepare_calldata)
-                .await
-            {
-                Ok(receipt) => {
-                    return receipt_processor.process(&receipt);
-                }
-                Err(e) => {
-                    if attempt < MAX_RETRIES - 1 {
-                        error!(
-                            ?e,
-                            attempt,
-                            operation = operation_name,
-                            "Transaction failed, retrying..."
-                        );
-                        tokio::time::sleep(Duration::from_secs(1 << attempt)).await;
-                        attempt += 1;
-                    } else {
-                        return Err(e);
-                    }
-                }
-            }
-        }
-
-        Err(EventProcessingError::HandlerError(
-            "Max retries exceeded".to_string(),
-        ))
+        // Process receipt
+        receipt_processor.process(&receipt)
     }
 
     /// Send a simple transaction without receipt processing
@@ -91,41 +67,22 @@ impl TransactionHelper {
     where
         F: Fn() -> Result<Bytes, EventProcessingError>,
     {
-        const MAX_RETRIES: u32 = 3;
-        let mut attempt = 0;
+        let calldata = prepare_calldata()?;
 
-        while attempt < MAX_RETRIES {
-            match self
-                .try_send_transaction(operation_name, target, &prepare_calldata)
-                .await
-            {
-                Ok(_) => {
-                    info!(
-                        operation = operation_name,
-                        "Transaction confirmed successfully"
-                    );
-                    return Ok(());
-                }
-                Err(e) => {
-                    if attempt < MAX_RETRIES - 1 {
-                        error!(
-                            ?e,
-                            attempt,
-                            operation = operation_name,
-                            "Transaction failed, retrying..."
-                        );
-                        tokio::time::sleep(Duration::from_secs(1 << attempt)).await;
-                        attempt += 1;
-                    } else {
-                        return Err(e);
-                    }
-                }
-            }
-        }
+        let tx_hash = self
+            .tx_service
+            .submit_transaction(target, calldata, self.tx_config.clone())
+            .await
+            .map_err(EventProcessingError::from)?;
 
-        Err(EventProcessingError::HandlerError(
-            "Max retries exceeded".to_string(),
-        ))
+        // Log success but don't wait for receipt
+        info!(
+            operation = operation_name,
+            ?tx_hash,
+            "Transaction submitted"
+        );
+
+        Ok(())
     }
 
     async fn try_send_transaction<F>(
@@ -145,6 +102,7 @@ impl TransactionHelper {
             "Submitting transaction"
         );
 
+        // Submit transaction using service
         let tx_hash = self
             .tx_service
             .submit_transaction(target, calldata, self.tx_config.clone())
@@ -157,6 +115,7 @@ impl TransactionHelper {
             "Transaction submitted, waiting for confirmation"
         );
 
+        // Wait for receipt
         let receipt = self
             .tx_service
             .get_transaction_receipt(tx_hash)
@@ -166,6 +125,7 @@ impl TransactionHelper {
                 TransactionServiceError::Failed("Transaction receipt not found".into())
             })?;
 
+        // Check transaction status
         if !receipt.status() {
             return Err(TransactionServiceError::Failed("Transaction reverted".into()).into());
         }

@@ -34,7 +34,7 @@
 //! ```
 
 use alloy::primitives::Address;
-use std::{str::FromStr, sync::Arc, time::Duration};
+use std::{str::FromStr, sync::Arc};
 use tracing::info;
 use tracing_subscriber::{fmt::SubscriberBuilder, EnvFilter};
 
@@ -83,14 +83,7 @@ async fn main() -> eyre::Result<()> {
     .await
     .map_err(|e| eyre::eyre!("Failed to create transaction service: {}", e))?;
 
-    let tx_service_clone = tx_service.clone();
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(60));
-        loop {
-            interval.tick().await;
-            tx_service_clone.cleanup_pending().await;
-        }
-    });
+    tx_service.clone().spawn_maintenance_tasks();
 
     let rollup_settings = settings
         .get_network("rollup")
@@ -106,15 +99,7 @@ async fn main() -> eyre::Result<()> {
     .await
     .map_err(|e| eyre::eyre!("Failed to create transaction service: {}", e))?;
 
-    let tx_service_clone = tx_service.clone();
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(60));
-        loop {
-            interval.tick().await;
-            tx_service_clone.cleanup_pending().await;
-            tx_service_clone.retry_pending().await; // Add retry attempts
-        }
-    });
+    tx_service_rollup.clone().spawn_maintenance_tasks();
 
     info!("Starting FHE Event Handler");
 

@@ -80,6 +80,9 @@ pub struct TransactionConfig {
     pub timeout_secs: Option<u64>,
     /// Required number of confirmations
     pub confirmations: Option<u64>,
+    /// Retry configuration
+    #[serde(default)]
+    pub retry: RetrySettings,
 }
 
 impl TransactionConfig {
@@ -90,6 +93,36 @@ impl TransactionConfig {
                 .map(Some)
                 .map_err(|e| AppConfigError::Config(config::ConfigError::Foreign(Box::new(e)))),
             None => Ok(None),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RetrySettings {
+    #[serde(default = "default_max_attempts")]
+    pub max_attempts: u32,
+    #[serde(default = "default_base_delay")]
+    pub base_delay_secs: u64,
+    #[serde(default = "default_max_delay")]
+    pub max_delay_secs: u64,
+}
+
+fn default_max_attempts() -> u32 {
+    3
+}
+fn default_base_delay() -> u64 {
+    2
+}
+fn default_max_delay() -> u64 {
+    60
+}
+
+impl Default for RetrySettings {
+    fn default() -> Self {
+        Self {
+            max_attempts: default_max_attempts(),
+            base_delay_secs: default_base_delay(),
+            max_delay_secs: default_max_delay(),
         }
     }
 }

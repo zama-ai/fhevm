@@ -14,7 +14,37 @@ use thiserror::Error;
 use tokio::time::timeout;
 use tracing::{error, info};
 
-use crate::{config::settings::TransactionConfig, errors::TransactionServiceError};
+use crate::{
+    config::settings::{RetrySettings, TransactionConfig},
+    errors::TransactionServiceError,
+};
+
+#[derive(Debug, Clone)]
+pub struct RetryConfig {
+    pub max_attempts: u32,
+    pub base_delay: Duration,
+    pub max_delay: Duration,
+}
+
+impl Default for RetryConfig {
+    fn default() -> Self {
+        Self {
+            max_attempts: 3,
+            base_delay: Duration::from_secs(1),
+            max_delay: Duration::from_secs(60),
+        }
+    }
+}
+
+impl From<RetrySettings> for RetryConfig {
+    fn from(settings: RetrySettings) -> Self {
+        RetryConfig {
+            max_attempts: settings.max_attempts,
+            base_delay: Duration::from_secs(settings.base_delay_secs),
+            max_delay: Duration::from_secs(settings.max_delay_secs),
+        }
+    }
+}
 
 #[derive(Error, Debug)]
 pub enum TransactionError {
@@ -46,6 +76,7 @@ impl From<TransactionConfig> for TxConfig {
             nonce: None, // Let the manager handle nonce
             confirmations: config.confirmations,
             timeout_secs: config.timeout_secs,
+            retry_config: Some(RetryConfig::from(config.retry)),
         }
     }
 }
@@ -58,6 +89,7 @@ pub struct TxConfig {
     pub nonce: Option<u64>,
     pub confirmations: Option<u64>,
     pub timeout_secs: Option<u64>,
+    pub retry_config: Option<RetryConfig>,
 }
 
 impl Default for TxConfig {
@@ -69,6 +101,7 @@ impl Default for TxConfig {
             nonce: None,
             confirmations: Some(1),
             timeout_secs: Some(60),
+            retry_config: Some(RetryConfig::default()),
         }
     }
 }
