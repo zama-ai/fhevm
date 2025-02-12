@@ -1,5 +1,5 @@
 use crate::{
-    errors::{EventProcessingError, TransactionServiceError},
+    errors::EventProcessingError,
     ethereum::{bindings::DecyptionManager, ComputeCalldata},
     orchestrator::{
         traits::{EventDispatcher, EventHandler},
@@ -11,7 +11,7 @@ use crate::{
 };
 
 use alloy::{
-    primitives::{hex, keccak256, Address, Uint, U256},
+    primitives::{keccak256, Address, Uint, U256},
     rpc::types::TransactionReceipt,
 };
 
@@ -19,7 +19,7 @@ use alloy_sol_types::SolEvent;
 use async_trait::async_trait;
 use std::{sync::Arc, time::Duration};
 use tokio::task;
-use tracing::{debug, error, info};
+use tracing::{error, info};
 use uuid::Uuid;
 
 const DECRYPTION_MANAGER_ADDRESS: Address = Address::new([
