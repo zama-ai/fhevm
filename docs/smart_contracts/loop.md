@@ -1,4 +1,4 @@
-# If sentances
+# If sentences
 
 This document explains how to handle loops when working with Fully Homomorphic Encryption (FHE), specifically when a loop break is based on an encrypted condition.
 
@@ -33,7 +33,7 @@ for (uint32 i = 0; i < 10; i++) {
 
 In this snippet, we perform 10 iterations, adding 4 to `x` in each iteration as long as the iteration count is less than `maxValue`. If the iteration count exceeds `maxValue`, we add 0 instead for the remaining iterations because we can't break the loop.
 
-## Best practises
+## Best practices
 
 ### Obfuscate branching
 
@@ -43,7 +43,7 @@ However, this is sometimes not enough. Enhancing the privacy of smart contracts 
 
 For example, if implementing a simple AMM for two encrypted ERC20 tokens based on a linear constant function, it is recommended to not only hide the amounts being swapped, but also the token which is swapped in a pair.
 
-✅ Here is a very simplified example implementations, we suppose here that the rate between tokenA and tokenB is constant and equals to 1:
+✅ Here is a very simplified example implementation, we suppose here that the rate between tokenA and tokenB is constant and equals to 1:
 
 ```solidity
 // typically either encryptedAmountAIn or encryptedAmountBIn is an encrypted null value

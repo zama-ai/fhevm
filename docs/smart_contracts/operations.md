@@ -130,7 +130,7 @@ Despite both leading to the same encrypted result!
 
 TFHE arithmetic operators can overflow. Do not forget to take into account such a possibility when implementing fhEVM smart contracts.
 
-❌ For example, if you wanted to create a mint function for an encrypted ERC20 tokens with an encrypted `totalSupply` state variable, this code is vulnerable to overflows:
+❌ For example, if you wanted to create a mint function for an encrypted ERC20 token with an encrypted `totalSupply` state variable, this code is vulnerable to overflows:
 
 ```solidity
 function mint(einput encryptedAmount, bytes calldata inputProof) public {

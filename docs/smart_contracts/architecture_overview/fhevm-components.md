@@ -1,6 +1,6 @@
 # fhEVM components
 
-This document gives an detail explanantion of each components of fhEVM and illustrate how they work together to perform compuations.&#x20;
+This document gives a detailed explanantion of each component of fhEVM and illustrate how they work together to perform computations.&#x20;
 
 ## Overview
 

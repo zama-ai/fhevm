@@ -56,7 +56,7 @@ function randomBoundedNumber(uint16 upperBound) public returns (euint16) {
 
 ## **Random encrypted bytes**
 
-For generating larger random values, you can use encrypted bytes. These are ideal for scenarios requiring high-precision or high-entropy data.
+To generate larger random values, you can use encrypted bytes. These are ideal for scenarios requiring high-precision or high-entropy data.
 
 ```solidity
 // Generate random encrypted bytes

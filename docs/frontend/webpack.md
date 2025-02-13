@@ -8,7 +8,7 @@ This document provides solutions for common Webpack errors encountered during th
 
 **Cause:** In the codebase, there is a `new URL('tfhe_bg.wasm')` which triggers a resolve by Webpack.
 
-**Possible sultions:** You can add a fallback for this file by adding a resolve configuration in your `webpack.config.js`:
+**Possible solutions:** You can add a fallback for this file by adding a resolve configuration in your `webpack.config.js`:
 
 ```javascript
 resolve: {
@@ -24,7 +24,7 @@ resolve: {
 
 **Cause:** This error occurs when the Node.js `Buffer` object is used in a browser environment where it is not natively available.
 
-**Possible sultions:** To resolve this issue, you need to provide browser-compatible fallbacks for Node.js core modules. Install the necessary browserified npm packages and configure Webpack to use these fallbacks.
+**Possible solutions:** To resolve this issue, you need to provide browser-compatible fallbacks for Node.js core modules. Install the necessary browserified npm packages and configure Webpack to use these fallbacks.
 
 ```javascript
 resolve: {

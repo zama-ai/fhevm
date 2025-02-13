@@ -3,7 +3,7 @@
 This document introduces the concept of encrypted inputs in the fhEVM, explaining their role, structure, validation process, and how developers can integrate them into smart contracts and applications.
 
 {% hint style="info" %}
-Understanding how encryption, decryption and reencryption works is a prerequisit before implementation, see [Encryption, Decryption, Re-encryption, and Computation](d_re_ecrypt_compute.md)
+Understanding how encryption, decryption and reencryption works is a prerequisite before implementation, see [Encryption, Decryption, Re-encryption, and Computation](d_re_ecrypt_compute.md)
 {% endhint %}
 
 Encrypted inputs are a core feature of fhEVM, enabling users to push encrypted data onto the blockchain while ensuring data confidentiality and integrity.
