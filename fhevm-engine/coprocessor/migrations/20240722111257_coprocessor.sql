@@ -1,1 +1,0 @@
-../../fhevm-db/migrations/20240722111257_coprocessor.sql

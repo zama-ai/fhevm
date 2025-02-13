@@ -1,1 +1,0 @@
-../../fhevm-db/migrations/20250207092623_verify_proofs.sql
