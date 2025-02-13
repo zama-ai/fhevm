@@ -1,6 +1,7 @@
 import { IntegrationManager } from '#tests/integration.manager.js'
 import { faker } from '@faker-js/faker'
 import { back } from 'messages'
+import { LOCAL_FHEVM_CHAIN_ID } from 'utils'
 import {
   afterAll,
   afterEach,
@@ -62,7 +63,7 @@ describe('store dapp stats', () => {
           JSON.stringify(
             back.dappStatsAvailable(
               {
-                chainId: '12345',
+                chainId: LOCAL_FHEVM_CHAIN_ID,
                 address,
                 name: 'FheAdd',
                 timestamp: faker.date.past().toISOString(),

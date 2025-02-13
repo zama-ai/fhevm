@@ -1,6 +1,6 @@
-import { SEPOLIA_CHAIN_ID } from '#constants.js'
 import { ChainId } from '#domain/entities/value-objects.js'
 import { registerAs } from '@nestjs/config'
+import { SEPOLIA_CHAIN_ID } from 'utils'
 
 export type EtherProvider = 'Etherscan'
 

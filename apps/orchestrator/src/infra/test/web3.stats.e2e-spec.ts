@@ -2,6 +2,7 @@ import { MS_NAME } from '#constants.js'
 import { faker } from '@faker-js/faker'
 import { back, web3 } from 'messages'
 import { IntegrationManager } from 'test/integration.manager.js'
+import { LOCAL_FHEVM_CHAIN_ID } from 'utils'
 import {
   afterAll,
   afterEach,
@@ -35,7 +36,7 @@ describe('web3 dapp stats', () => {
       correlationId = faker.string.uuid()
       const message = web3.fheRequested(
         {
-          chainId: '12345',
+          chainId: LOCAL_FHEVM_CHAIN_ID,
           address: faker.string.hexadecimal({ length: 40 }),
         },
         { correlationId },

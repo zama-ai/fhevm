@@ -23,6 +23,7 @@ export {
   unknownError,
   validationError,
 } from './app-error.js'
+export * from './chains.js'
 export { Entity } from './entity.js'
 export { isNone, isSome, none, some } from './option.js'
 export { PubSub } from './pubsub.js'
