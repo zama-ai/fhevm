@@ -246,6 +246,44 @@ impl TransactionManager {
         }
     }
 
+    pub async fn deploy_contract(&self, bytecode: Bytes, config: Option<TxConfig>) -> Result<B256> {
+        let config = config.unwrap_or_default();
+
+        let request = TransactionRequest::default()
+            .with_from(self.sender_address())
+            .with_input(bytecode)
+            .with_value(config.value.unwrap_or_default());
+
+        let timeout_duration = Duration::from_secs(config.timeout_secs.unwrap_or(60));
+
+        // Send and watch for the transaction
+        let result = timeout(
+            timeout_duration,
+            self.provider.send_transaction(request).await?.watch(),
+        )
+        .await;
+
+        match result {
+            Ok(tx_hash) => {
+                let tx_hash =
+                    tx_hash.map_err(|e| TransactionError::TransactionFailed(e.to_string()))?;
+
+                info!(
+                    ?tx_hash,
+                    "Contract deployment transaction sent successfully"
+                );
+                Ok(tx_hash)
+            }
+            Err(_) => {
+                error!(
+                    timeout_secs = ?timeout_duration.as_secs(),
+                    "Contract deployment timed out"
+                );
+                Err(TransactionError::TransactionTimeout(timeout_duration.as_secs()).into())
+            }
+        }
+    }
+
     pub fn encode_function_call(selector: [u8; 4], params: Vec<Vec<u8>>) -> Bytes {
         let mut calldata = Vec::with_capacity(4 + params.len() * 32);
         calldata.extend_from_slice(&selector);
@@ -271,6 +309,12 @@ impl TransactionManager {
 
         Ok(receipt.status())
     }
+
+    pub async fn verify_contract_code(&self, address: Address) -> Result<Bytes> {
+        let code = self.provider.get_code_at(address).await?;
+        println!("Deployed bytecode: 0x{}", hex::encode(&code));
+        Ok(code)
+    }
 }
 
 #[cfg(test)]
@@ -278,80 +322,116 @@ mod tests {
     use super::*;
     use alloy::primitives::{hex, keccak256, U256};
 
-    const INCREMENT_SELECTOR: [u8; 4] = [0xd0, 0x9d, 0xe0, 0x8a];
-    const GET_COUNT_SELECTOR: [u8; 4] = [0xa8, 0x7d, 0x94, 0x2c];
-    use crate::ethereum::bindings::DecyptionManager;
-
     #[tokio::test]
-    async fn test_counter_contract() -> Result<()> {
-        // Test private key (default )
+    /// For this test having a running node is MANDATORY
+    /// url: http://localhost:8756
+    /// chain_id: 123456
+    /// The wallet associated to this private key should have fund:
+    /// 7136d8dc72f873124f4eded25f3525a20f6cee4296564c76b44f1d582c57640f
+    async fn test_counter_contract() {
+        // Test private key (default)
         let private_key = std::env::var("TEST_PRIVATE_KEY").unwrap_or_else(|_| {
             "7136d8dc72f873124f4eded25f3525a20f6cee4296564c76b44f1d582c57640f".to_string()
         });
 
         println!("Setting up manager with test private key...");
-        let manager = TransactionManager::new("http://localhost:8756", &private_key, 12345).await?;
+        let manager = TransactionManager::new("http://localhost:8756", &private_key, 123456)
+            .await
+            .expect("Failed to create transaction manager");
 
         println!("Using address: {:?}", manager.sender_address());
 
-        // let counter_contract_bytecode = hex::decode("0x6080604052348015600e575f80fd5b505f80819055506102fc806100225f395ff3fe608060405234801561000f575f80fd5b506004361061003f575f3560e01c80632baeceb714610043578063a87d942c1461004d578063d09de08a1461006b575b5f80fd5b61004b610075565b005b61005561010a565b604051610062919061017c565b60405180910390f35b610073610112565b005b5f8054116100b8576040517f08c379a00000000000000000000000000000000000000000000000000000000081526004016100af90610215565b60405180910390fd5b60015f808282546100c99190610260565b925050819055507f0ef4482aceb854636f33f9cd319f9e1cd6fe3aa2e60523f3583c287b893824455f54604051610100919061017c565b60405180910390a1565b5f8054905090565b60015f808282546101239190610293565b925050819055507f0ef4482aceb854636f33f9cd319f9e1cd6fe3aa2e60523f3583c287b893824455f5460405161015a919061017c565b60405180910390a1565b5f819050919050565b61017681610164565b82525050565b5f60208201905061018f5f83018461016d565b92915050565b5f82825260208201905092915050565b7f436f756e7465723a20636f756e742063616e6e6f74206265206e6567617469765f8201527f6500000000000000000000000000000000000000000000000000000000000000602082015250565b5f6101ff602183610195565b915061020a826101a5565b604082019050919050565b5f6020820190508181035f83015261022c816101f3565b9050919050565b7f4e487b71000000000000000000000000000000000000000000000000000000005f52601160045260245ffd5b5f61026a82610164565b915061027583610164565b925082820390508181111561028d5761028c610233565b5b92915050565b5f61029d82610164565b91506102a883610164565b92508282019050808211156102c0576102bf610233565b5b9291505056fea26469706673582212208b12750c7f9f58edb6802284393e24cd61899134d8bc4ae2979ca244e989dbc464736f6c634300081a0033").unwrap();
-        // let deploy_calldata =
-        //     TransactionManager::encode_function_call([0u8; 4], vec![counter_contract_bytecode]);
+        // Calculate function selectors
+        let increment_selector: [u8; 4] = keccak256("increment()")[..4].try_into().unwrap();
+        let get_count_selector: [u8; 4] = keccak256("getCount()")[..4].try_into().unwrap();
 
-        // let estimated_gas = manager
-        //     .estimate_gas(Address::default(), deploy_calldata.clone(), None)
-        //     .await?;
+        println!("Increment selector: 0x{}", hex::encode(increment_selector));
+        println!("GetCount selector: 0x{}", hex::encode(get_count_selector));
 
-        // let config = TxConfig {
-        //     gas_limit: Some(estimated_gas),
-        //     ..Default::default()
-        // };
+        // Deployment bytecode
+        let bytecode_str = "6080604052348015600e575f80fd5b505f80819055506102fc806100225f395ff3fe608060405234801561000f575f80fd5b506004361061003f575f3560e01c80632baeceb714610043578063a87d942c1461004d578063d09de08a1461006b575b5f80fd5b61004b610075565b005b61005561010a565b604051610062919061017c565b60405180910390f35b610073610112565b005b5f8054116100b8576040517f08c379a00000000000000000000000000000000000000000000000000000000081526004016100af90610215565b60405180910390fd5b60015f808282546100c99190610260565b925050819055507f0ef4482aceb854636f33f9cd319f9e1cd6fe3aa2e60523f3583c287b893824455f54604051610100919061017c565b60405180910390a1565b5f8054905090565b60015f808282546101239190610293565b925050819055507f0ef4482aceb854636f33f9cd319f9e1cd6fe3aa2e60523f3583c287b893824455f5460405161015a919061017c565b60405180910390a1565b5f819050919050565b61017681610164565b82525050565b5f60208201905061018f5f83018461016d565b92915050565b5f82825260208201905092915050565b7f436f756e7465723a20636f756e742063616e6e6f74206265206e6567617469765f8201527f6500000000000000000000000000000000000000000000000000000000000000602082015250565b5f6101ff602183610195565b915061020a826101a5565b604082019050919050565b5f6020820190508181035f83015261022c816101f3565b9050919050565b7f4e487b71000000000000000000000000000000000000000000000000000000005f52601160045260245ffd5b5f61026a82610164565b915061027583610164565b925082820390508181111561028d5761028c610233565b5b92915050565b5f61029d82610164565b91506102a883610164565b92508282019050808211156102c0576102bf610233565b5b9291505056fea26469706673582212208b12750c7f9f58edb6802284393e24cd61899134d8bc4ae2979ca244e989dbc464736f6c634300081a0033";
+        let contract_bytecode =
+            hex::decode(bytecode_str.trim_start_matches("0x")).expect("Failed to decode bytecode");
 
-        // let tx_hash = manager
-        //     .send_transaction(Address::default(), deploy_calldata, Some(config))
-        //     .await?;
+        println!("Bytecode length: {}", contract_bytecode.len());
 
-        // let success = manager.wait_for_confirmation(tx_hash, 1).await?;
-        // assert!(success, "Contract deployment failed");
+        // Deploy contract
+        let estimated_gas = manager
+            .estimate_gas(
+                Address::default(),
+                Bytes::from(contract_bytecode.clone()),
+                None,
+            )
+            .await
+            .expect("Failed to estimate gas");
 
-        // let receipt = manager
-        //     .provider
-        //     .get_transaction_receipt(tx_hash)
-        //     .await?
-        //     .ok_or(eyre::eyre!("Transaction receipt not found"))?;
+        println!("Estimated deployment gas: {}", estimated_gas);
 
-        // println!("Transaction receipt: {:?}", receipt);
+        let config = TxConfig {
+            gas_limit: Some((estimated_gas as f64 * 1.2) as u64), // 20% buffer
+            max_priority_fee: Some(2_000_000_000),
+            timeout_secs: Some(60),
+            ..Default::default()
+        };
 
-        // let contract_address = receipt
-        //     .contract_address
-        //     .ok_or_else(|| eyre::eyre!("Contract address not found in the transaction receipt"))?;
+        // Deploy contract
+        let tx_hash = manager
+            .deploy_contract(Bytes::from(contract_bytecode), Some(config))
+            .await
+            .expect("Failed to deploy contract");
 
-        // Contract address - modify this to match your deployed contract
-        let contract_address = hex!("74c085A069fafD4f264B5200847EdB1ade82B3C0").into();
-        println!("Contract address: {:?}", contract_address);
+        println!("Deployment transaction hash: 0x{}", hex::encode(tx_hash));
 
-        // Get current count
+        let receipt = manager
+            .provider
+            .get_transaction_receipt(tx_hash)
+            .await
+            .expect("Failed to get receipt")
+            .expect("Receipt not found");
+
+        println!("Deployment receipt status: {:?}", receipt.status());
+        println!("Gas used: {}", receipt.gas_used);
+
+        let contract_address = receipt
+            .contract_address
+            .expect("Contract address not found in receipt");
+
+        println!("Contract deployed at: {:?}", contract_address);
+
+        // Verify contract code
+        tokio::time::sleep(Duration::from_secs(2)).await; // Give node time to process
+        let code = manager
+            .provider
+            .get_code_at(contract_address)
+            .await
+            .expect("Failed to get code");
+
+        println!("Deployed bytecode length: {}", code.len());
+        assert!(!code.is_empty(), "Contract code should not be empty");
+
+        // Get initial count
         let get_count_calldata =
-            TransactionManager::encode_function_call(GET_COUNT_SELECTOR, vec![]);
-
-        println!("Calling view function to get current count...");
+            TransactionManager::encode_function_call(get_count_selector, vec![]);
+        println!("Calling view function to get initial count...");
         let count_bytes = manager
             .call_view(contract_address, get_count_calldata.clone())
-            .await?;
+            .await
+            .expect("Failed to get count");
 
-        let count = U256::from_be_slice(count_bytes.as_ref());
-        println!("Current count: {}", count);
+        let initial_count = U256::from_be_slice(count_bytes.as_ref());
+        println!("Initial count: {}", initial_count);
 
-        // Increment with gas estimation
+        // Increment count
         let increment_calldata =
-            TransactionManager::encode_function_call(INCREMENT_SELECTOR, vec![]);
+            TransactionManager::encode_function_call(increment_selector, vec![]);
 
         println!("Estimating gas for increment...");
         let estimated_gas = manager
             .estimate_gas(contract_address, increment_calldata.clone(), None)
-            .await?;
+            .await
+            .expect("Failed to estimate gas");
 
-        println!("Estimated gas: {}", estimated_gas);
+        println!("Estimated gas for increment: {}", estimated_gas);
 
         let config = TxConfig {
             gas_limit: Some(estimated_gas),
@@ -364,27 +444,37 @@ mod tests {
         println!("Sending increment transaction...");
         let tx_hash = manager
             .send_transaction(contract_address, increment_calldata, Some(config))
-            .await?;
+            .await
+            .expect("Failed to send increment transaction");
 
-        println!("Transaction sent! Hash: 0x{}", hex::encode(tx_hash));
+        println!("Increment transaction hash: 0x{}", hex::encode(tx_hash));
 
-        // Wait for confirmation
-        println!("Waiting for confirmation...");
-        let success = manager.wait_for_confirmation(tx_hash, 1).await?;
-        assert!(success, "Transaction failed");
-        println!("Transaction confirmed successfully!");
+        // Wait for confirmation and check receipt
+        let receipt = manager
+            .provider
+            .get_transaction_receipt(tx_hash)
+            .await
+            .expect("Failed to get receipt")
+            .expect("Receipt not found");
 
-        // Verify increment
-        println!("Verifying new count...");
+        println!("Increment transaction status: {:?}", receipt.status());
+        assert!(receipt.status(), "Increment transaction failed");
+
+        // Get updated count
+        println!("Getting updated count...");
         let new_count_bytes = manager
             .call_view(contract_address, get_count_calldata)
-            .await?;
+            .await
+            .expect("Failed to get new count");
 
         let new_count = U256::from_be_slice(new_count_bytes.as_ref());
         println!("New count: {}", new_count);
-        assert!(new_count > count, "Count should have increased");
 
-        Ok(())
+        assert_eq!(
+            new_count,
+            initial_count + U256::from(1),
+            "Count should have increased by 1"
+        );
     }
 
     #[test]

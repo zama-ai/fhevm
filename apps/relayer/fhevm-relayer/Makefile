@@ -59,6 +59,36 @@ run-test-erc20:
 	@echo "$(GREEN)Running decrypt tests...$(RESET)"
 	@unset $$(cat hardhat/contracts/.env | sed 's/=.*//g') && cd hardhat/contracts && RUST_RELAYER=true npx hardhat test test/encryptedERC20/EncryptedERC20.ts --network localCoprocessorL1
 
+
+# Run CI test
+# We need to run anvil nodes first
+# Store PID file
+PID_FILE_1 := .anvil1.pid
+PID_FILE_2 := .anvil2.pid
+
+.PHONY: test
+test:
+	@cd hardhat/contracts && cp .env.example .env
+	@echo "Starting Anvil nodes..."
+	@cd hardhat/contracts && anvil --block-time 0.1 --port 8756 --chain-id 123456 --accounts 15 --mnemonic $(MNEMONIC) > /dev/null 2>&1 & echo $$! > $(PID_FILE_1)
+	@cd hardhat/contracts && anvil --block-time 0.1 --port 8757 --chain-id 654321 --accounts 15 --mnemonic $(MNEMONIC) > /dev/null 2>&1 & echo $$! > $(PID_FILE_2)
+	@echo "Waiting for Anvil nodes to start..." && sleep 2
+	@cargo test || (make stop-anvil && exit 1)
+	@make stop-anvil
+
+.PHONY: stop-anvil
+stop-anvil:
+	@if [ -f $(PID_FILE_1) ]; then \
+		kill `cat $(PID_FILE_1)` || true; \
+		rm $(PID_FILE_1); \
+		echo "Stopped Anvil node 1"; \
+	fi
+	@if [ -f $(PID_FILE_2) ]; then \
+		kill `cat $(PID_FILE_2)` || true; \
+		rm $(PID_FILE_2); \
+		echo "Stopped Anvil node 2"; \
+	fi
+
 # Help message
 help:
 	@echo ''

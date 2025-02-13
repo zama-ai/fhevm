@@ -25,3 +25,7 @@ config/local.yaml
 
 # Advisory db and lock file
 Advisory-db*
+
+# Test
+.anvil1.pid
+.anvil2.pid
