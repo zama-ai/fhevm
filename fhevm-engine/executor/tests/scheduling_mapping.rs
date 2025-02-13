@@ -8,7 +8,7 @@ use executor::server::executor::{sync_input::Input, SyncInput};
 use fhevm_engine_common::types::{SupportedFheCiphertexts, HANDLE_LEN};
 use std::time::SystemTime;
 use tfhe::prelude::CiphertextList;
-use tfhe::zk::ZkComputeLoad;
+use tfhe::zk::{CompactPkeCrs, ZkComputeLoad};
 use tfhe::ProvenCompactCiphertextList;
 use utils::get_test;
 mod utils;
@@ -35,48 +35,71 @@ async fn schedule_multi_erc20() {
         .await
         .unwrap()
         .max_decoding_message_size(usize::MAX);
-    let mut builder = ProvenCompactCiphertextList::builder(&test.keys.compact_public_key);
-    let list = builder
-        .push(100_u64) // Balance source
-        .push(10_u64) // Transfer amount
-        .push(20_u64) // Balance destination
-        .push(0_u64) // 0
-        .build_with_proof_packed(&test.keys.public_params, &[], ZkComputeLoad::Proof)
-        .unwrap();
-    let expander = list.expand_without_verification().unwrap();
-    let bals = SupportedFheCiphertexts::FheUint64(expander.get(0).unwrap().unwrap());
-    let bals = test.compress(bals);
-    let trxa = SupportedFheCiphertexts::FheUint64(expander.get(1).unwrap().unwrap());
-    let trxa = test.compress(trxa);
-    let bald = SupportedFheCiphertexts::FheUint64(expander.get(2).unwrap().unwrap());
-    let bald = test.compress(bald);
-    let zero = SupportedFheCiphertexts::FheUint64(expander.get(3).unwrap().unwrap());
-    let zero = test.compress(zero);
-    let handle_bals = test.ciphertext_handle(&bals, 5);
-    let sync_input_bals = SyncInput {
-        input: Some(Input::Handle(handle_bals.clone())),
-    };
-    let handle_trxa = test.ciphertext_handle(&trxa, 5);
-    let sync_input_trxa = SyncInput {
-        input: Some(Input::Handle(handle_trxa.clone())),
-    };
-    let handle_bald = test.ciphertext_handle(&bald, 5);
-    let sync_input_bald = SyncInput {
-        input: Some(Input::Handle(handle_bald.clone())),
-    };
-    let handle_zero = test.ciphertext_handle(&zero, 5);
-    let sync_input_zero = SyncInput {
-        input: Some(Input::Handle(handle_zero.clone())),
-    };
-
-    let mut computed_handles = vec![];
-    for i in 0..=(num_samples * 4 - 1) as u32 {
-        let input = Some(Input::Handle(get_handle(i)));
-        computed_handles.push(SyncInput { input });
-    }
-
     let mut computations = vec![];
+    let mut compressed_ciphertexts = vec![];
+
     for i in 0..=(num_samples - 1) as u32 {
+        let mut builder = ProvenCompactCiphertextList::builder(&test.keys.compact_public_key);
+        let list = builder
+            .push(100_u64) // Balance source
+            .push(10_u64) // Transfer amount
+            .push(20_u64) // Balance destination
+            .push(0_u64) // 0
+            .build_with_proof_packed(
+                &test.keys.public_params,
+                &[],
+                tfhe::zk::ZkComputeLoad::Proof,
+            )
+            .unwrap();
+        let expander = list.expand_without_verification().unwrap();
+        let bals = SupportedFheCiphertexts::FheUint64(expander.get(0).unwrap().unwrap());
+        let bals = test.compress(bals);
+        let trxa = SupportedFheCiphertexts::FheUint64(expander.get(1).unwrap().unwrap());
+        let trxa = test.compress(trxa);
+        let bald = SupportedFheCiphertexts::FheUint64(expander.get(2).unwrap().unwrap());
+        let bald = test.compress(bald);
+        let zero = SupportedFheCiphertexts::FheUint64(expander.get(3).unwrap().unwrap());
+        let zero = test.compress(zero);
+        let handle_bals = test.ciphertext_handle(&bals, 5);
+        let sync_input_bals = SyncInput {
+            input: Some(Input::Handle(handle_bals.clone())),
+        };
+        let handle_trxa = test.ciphertext_handle(&trxa, 5);
+        let sync_input_trxa = SyncInput {
+            input: Some(Input::Handle(handle_trxa.clone())),
+        };
+        let handle_bald = test.ciphertext_handle(&bald, 5);
+        let sync_input_bald = SyncInput {
+            input: Some(Input::Handle(handle_bald.clone())),
+        };
+        let handle_zero = test.ciphertext_handle(&zero, 5);
+        let sync_input_zero = SyncInput {
+            input: Some(Input::Handle(handle_zero.clone())),
+        };
+
+        compressed_ciphertexts.push(CompressedCiphertext {
+            handle: handle_bals,
+            serialization: bals,
+        });
+        compressed_ciphertexts.push(CompressedCiphertext {
+            handle: handle_trxa,
+            serialization: trxa,
+        });
+        compressed_ciphertexts.push(CompressedCiphertext {
+            handle: handle_bald,
+            serialization: bald,
+        });
+        compressed_ciphertexts.push(CompressedCiphertext {
+            handle: handle_zero,
+            serialization: zero,
+        });
+
+        let mut computed_handles = vec![];
+        for i in 0..=(num_samples * 4 - 1) as u32 {
+            let input = Some(Input::Handle(get_handle(i)));
+            computed_handles.push(SyncInput { input });
+        }
+
         computations.push(SyncComputation {
             operation: FheOperation::FheLe.into(),
             result_handles: vec![get_handle(i * 4)],
@@ -111,24 +134,7 @@ async fn schedule_multi_erc20() {
     let req = SyncComputeRequest {
         computations,
         compact_ciphertext_lists: vec![],
-        compressed_ciphertexts: vec![
-            CompressedCiphertext {
-                handle: handle_bals,
-                serialization: bals,
-            },
-            CompressedCiphertext {
-                handle: handle_trxa,
-                serialization: trxa,
-            },
-            CompressedCiphertext {
-                handle: handle_bald,
-                serialization: bald,
-            },
-            CompressedCiphertext {
-                handle: handle_zero,
-                serialization: zero,
-            },
-        ],
+        compressed_ciphertexts,
     };
     let now = SystemTime::now();
     let response = client.sync_compute(req).await.unwrap();

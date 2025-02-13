@@ -5,11 +5,6 @@ use crate::dfg::types::*;
 use anyhow::Result;
 use daggy::{petgraph::graph::node_index, Dag, NodeIndex};
 use fhevm_engine_common::types::Handle;
-use std::cell::RefCell;
-
-thread_local! {
-    pub static THREAD_POOL: RefCell<Option<rayon::ThreadPool>> = const {RefCell::new(None)};
-}
 
 pub struct OpNode {
     opcode: i32,

@@ -16,3 +16,6 @@ hex = "0.4"
 serde_json = "1.0" 
 testcontainers = "0.23"
 anyhow = "1.0"
+
+[features]
+gpu = []

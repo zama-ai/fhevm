@@ -96,7 +96,13 @@ where
         let public_params_key: Vec<u8> = row.try_get("public_params")?;
 
         // Deserialize binary keys properly
+        #[cfg(not(feature = "gpu"))]
         let sks: tfhe::ServerKey = safe_deserialize_key(&sks_key)?;
+        #[cfg(feature = "gpu")]
+        let sks = {
+            let csks: tfhe::CompressedServerKey = safe_deserialize_key(&sks_key)?;
+            csks.decompress()
+        };
         let pks: tfhe::CompactPublicKey = safe_deserialize_key(&pks_key)?;
         let public_params: tfhe::zk::CompactPkeCrs = safe_deserialize_key(&public_params_key)?;
 

@@ -8,7 +8,7 @@ use executor::server::executor::{sync_input::Input, SyncInput};
 use fhevm_engine_common::types::{SupportedFheCiphertexts, HANDLE_LEN};
 use fhevm_engine_common::utils::safe_serialize;
 use tfhe::prelude::CiphertextList;
-use tfhe::zk::ZkComputeLoad;
+use tfhe::zk::{CompactPkeCrs, ZkComputeLoad};
 use tfhe::ProvenCompactCiphertextList;
 use utils::get_test;
 
@@ -25,7 +25,11 @@ async fn get_input_ciphertext() {
     let list = safe_serialize(
         &builder
             .push(10_u8)
-            .build_with_proof_packed(&test.keys.public_params, &[], ZkComputeLoad::Proof)
+            .build_with_proof_packed(
+                &test.keys.public_params,
+                &[],
+                tfhe::zk::ZkComputeLoad::Proof,
+            )
             .unwrap(),
     );
     // TODO: tests for all types and avoiding passing in 2 as an identifier for FheUint8.
@@ -70,7 +74,11 @@ async fn compute_on_two_serialized_ciphertexts() {
     let list = &builder
         .push(10_u16)
         .push(11_u16)
-        .build_with_proof_packed(&test.keys.public_params, &[], ZkComputeLoad::Proof)
+        .build_with_proof_packed(
+            &test.keys.public_params,
+            &[],
+            tfhe::zk::ZkComputeLoad::Proof,
+        )
         .unwrap();
     let expander = list.expand_without_verification().unwrap();
     let ct1 = SupportedFheCiphertexts::FheUint16(expander.get(0).unwrap().unwrap());
@@ -139,13 +147,21 @@ async fn compute_on_compact_and_serialized_ciphertexts() {
     let compact_list = safe_serialize(
         &builder_input
             .push(10_u16)
-            .build_with_proof_packed(&test.keys.public_params, &[], ZkComputeLoad::Proof)
+            .build_with_proof_packed(
+                &test.keys.public_params,
+                &[],
+                tfhe::zk::ZkComputeLoad::Proof,
+            )
             .unwrap(),
     );
     let mut builder_cts = ProvenCompactCiphertextList::builder(&test.keys.compact_public_key);
     let list = builder_cts
         .push(11_u16)
-        .build_with_proof_packed(&test.keys.public_params, &[], ZkComputeLoad::Proof)
+        .build_with_proof_packed(
+            &test.keys.public_params,
+            &[],
+            tfhe::zk::ZkComputeLoad::Proof,
+        )
         .unwrap();
     let expander = list.expand_without_verification().unwrap();
     let ct1 = SupportedFheCiphertexts::FheUint16(expander.get(0).unwrap().unwrap());
@@ -206,7 +222,11 @@ async fn compute_on_result_ciphertext() {
     let list = builder
         .push(10_u16)
         .push(11_u16)
-        .build_with_proof_packed(&test.keys.public_params, &[], ZkComputeLoad::Proof)
+        .build_with_proof_packed(
+            &test.keys.public_params,
+            &[],
+            tfhe::zk::ZkComputeLoad::Proof,
+        )
         .unwrap();
     let expander = list.expand_without_verification().unwrap();
     let ct1 = SupportedFheCiphertexts::FheUint16(expander.get(0).unwrap().unwrap());
@@ -317,7 +337,10 @@ async fn trivial_encryption_scalar_less_than_32_bytes() {
                     s => panic!("unexpected result: {}", s),
                 }
             }
-            _ => panic!("unexpected amount of result ciphertexts returned: {}", cts.ciphertexts.len()),
+            _ => panic!(
+                "unexpected amount of result ciphertexts returned: {}",
+                cts.ciphertexts.len()
+            ),
         },
         Resp::Error(e) => panic!("error response: {}", e),
     }

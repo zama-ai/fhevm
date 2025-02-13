@@ -29,6 +29,7 @@ strum = { version = "0.26", features = ["derive"] }
 
 [features]
 nightly-avx512 = ["tfhe/nightly-avx512"]
+gpu = ["tfhe/gpu"]
 
 [build-dependencies]
 tonic-build = "0.12"

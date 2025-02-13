@@ -202,18 +202,25 @@ pub struct DecryptionResult {
 }
 
 pub async fn setup_test_user(pool: &sqlx::PgPool) -> Result<(), Box<dyn std::error::Error>> {
-    let sks = tokio::fs::read("../fhevm-keys/sks")
-        .await
-        .expect("can't read sks key");
-    let pks = tokio::fs::read("../fhevm-keys/pks")
-        .await
-        .expect("can't read pks key");
-    let cks = tokio::fs::read("../fhevm-keys/cks")
-        .await
-        .expect("can't read cks key");
-    let public_params = tokio::fs::read("../fhevm-keys/pp")
-        .await
-        .expect("can't read public params");
+    let (sks, cks, pks, pp) = if !cfg!(feature = "gpu") {
+        (
+            "../fhevm-keys/sks",
+            "../fhevm-keys/cks",
+            "../fhevm-keys/pks",
+            "../fhevm-keys/pp",
+        )
+    } else {
+        (
+            "../fhevm-keys/gpu-csks",
+            "../fhevm-keys/gpu-cks",
+            "../fhevm-keys/gpu-pks",
+            "../fhevm-keys/gpu-pp",
+        )
+    };
+    let sks = tokio::fs::read(sks).await.expect("can't read sks key");
+    let pks = tokio::fs::read(pks).await.expect("can't read pks key");
+    let cks = tokio::fs::read(cks).await.expect("can't read cks key");
+    let public_params = tokio::fs::read(pp).await.expect("can't read public params");
     sqlx::query!(
         "
             INSERT INTO tenants(tenant_api_key, chain_id, acl_contract_address, verifying_contract_address, pks_key, sks_key, public_params, cks_key)
@@ -254,7 +261,6 @@ pub async fn decrypt_ciphertexts(
     )
     .fetch_all(pool)
     .await?;
-
     if keys.is_empty() || keys[0].cks_key.is_none() {
         panic!("tenant keys not found");
     }
@@ -263,9 +269,6 @@ pub async fn decrypt_ciphertexts(
     for (idx, h) in input.iter().enumerate() {
         ct_indexes.insert(h.as_slice(), idx);
     }
-
-    assert_eq!(keys.len(), 1);
-
     let cts = sqlx::query!(
         "
             SELECT ciphertext, ciphertext_type, handle
@@ -280,16 +283,23 @@ pub async fn decrypt_ciphertexts(
     )
     .fetch_all(pool)
     .await?;
-
     if cts.is_empty() {
         panic!("ciphertext not found");
     }
 
+    assert_eq!(keys.len(), 1);
     let keys = keys.pop().unwrap();
 
     let mut values = tokio::task::spawn_blocking(move || {
-        let client_key: tfhe::ClientKey = safe_deserialize(&keys.cks_key.clone().unwrap()).unwrap();
+        let cks = keys.cks_key.clone().unwrap();
+        let client_key: tfhe::ClientKey = safe_deserialize(&cks).unwrap();
+        #[cfg(not(feature = "gpu"))]
         let sks: tfhe::ServerKey = safe_deserialize_key(&keys.sks_key).unwrap();
+        #[cfg(feature = "gpu")]
+        let sks = {
+            let csks: tfhe::CompressedServerKey = safe_deserialize_key(&keys.sks_key).unwrap();
+            csks.decompress()
+        };
         tfhe::set_server_key(sks);
 
         let mut decrypted: Vec<(Vec<u8>, DecryptionResult)> = Vec::with_capacity(cts.len());

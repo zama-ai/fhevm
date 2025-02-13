@@ -3,9 +3,7 @@ use std::error::Error;
 use std::num::NonZeroUsize;
 use std::str::FromStr;
 
-use crate::db_queries::{
-    check_if_api_key_is_valid, fetch_tenant_server_key,
-};
+use crate::db_queries::{check_if_api_key_is_valid, fetch_tenant_server_key};
 use crate::server::coprocessor::GenericResponse;
 use crate::types::{CoprocessorError, TfheTenantKeys};
 use crate::utils::sort_computations_by_dependencies;
@@ -23,7 +21,6 @@ use fhevm_engine_common::tfhe_ops::{
     try_expand_ciphertext_list, validate_fhe_type,
 };
 use fhevm_engine_common::types::{FhevmError, SupportedFheCiphertexts, SupportedFheOperations};
-use fhevm_engine_common::utils::safe_deserialize_key;
 use lazy_static::lazy_static;
 use opentelemetry::global::{BoxedSpan, BoxedTracer};
 use opentelemetry::trace::{Span, TraceContextExt, Tracer};
@@ -663,12 +660,8 @@ impl CoprocessorService {
 
             // check before we insert computation that it has
             // to succeed according to the type system
-            check_fhe_operand_types(
-                comp.operation,
-                &this_comp_inputs,
-                &is_scalar_op_vec,
-            )
-            .map_err(|e| CoprocessorError::FhevmError(e))?;
+            check_fhe_operand_types(comp.operation, &this_comp_inputs, &is_scalar_op_vec)
+                .map_err(|e| CoprocessorError::FhevmError(e))?;
 
             computations_inputs.push(this_comp_inputs);
             are_comps_scalar.push(is_computation_scalar);
@@ -752,29 +745,20 @@ impl CoprocessorService {
         }
 
         let mut span = tracer.child_span("db_query_server_key");
-        let mut sks = sqlx::query!(
-            "
-                SELECT sks_key
-                FROM tenants
-                WHERE tenant_id = $1
-            ",
-            tenant_id
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(Into::<CoprocessorError>::into)?;
+        let fetch_key_response = {
+            fetch_tenant_server_key(tenant_id, &self.pool, &self.tenant_key_cache)
+                .await
+                .map_err(|e| tonic::Status::from_error(e))?
+        };
+        let server_key = fetch_key_response.server_key;
         span.end();
 
-        assert_eq!(sks.len(), 1);
-
-        let sks = sks.pop().unwrap();
         let cloned = req.values.clone();
         let inner_tracer = tracer.clone();
         let mut outer_span = tracer.child_span("blocking_trivial_encrypt");
         let out_cts = tokio::task::spawn_blocking(move || {
-            let mut span = inner_tracer.child_span("deserialize_and_set_sks");
-            let server_key: tfhe::ServerKey = safe_deserialize_key(&sks.sks_key).unwrap();
-            tfhe::set_server_key(server_key);
+            let mut span = inner_tracer.child_span("set_sks");
+            tfhe::set_server_key(server_key.clone());
             span.end();
 
             // single threaded implementation, we can optimize later

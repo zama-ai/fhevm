@@ -79,7 +79,8 @@ async fn test_fhe_inputs() -> Result<(), Box<dyn std::error::Error>> {
     let resp = resp.get_ref();
     assert_eq!(resp.upload_responses.len(), 1);
     for resp in &resp.upload_responses {
-        println!(r#"response
+        println!(
+            r#"response
         acl address:      {}
         contract address: {}
         hash:             0x{}
@@ -94,7 +95,10 @@ async fn test_fhe_inputs() -> Result<(), Box<dyn std::error::Error>> {
             resp.user_address,
             resp.signer_address,
             hex::encode(&resp.eip712_signature),
-            resp.input_handles.iter().map(|i| hex::encode(&i.handle)).collect::<Vec<_>>()
+            resp.input_handles
+                .iter()
+                .map(|i| hex::encode(&i.handle))
+                .collect::<Vec<_>>()
         );
     }
 

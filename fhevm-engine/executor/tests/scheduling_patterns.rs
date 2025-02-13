@@ -8,7 +8,7 @@ use executor::server::executor::{sync_input::Input, SyncInput};
 use executor::server::SyncComputeError;
 use fhevm_engine_common::types::{SupportedFheCiphertexts, HANDLE_LEN};
 use tfhe::prelude::CiphertextList;
-use tfhe::zk::ZkComputeLoad;
+use tfhe::zk::{CompactPkeCrs, ZkComputeLoad};
 use tfhe::ProvenCompactCiphertextList;
 use utils::get_test;
 
@@ -80,7 +80,11 @@ async fn schedule_dependent_computations() {
         .push(7_u16)
         .push(11_u16)
         .push(13_u16)
-        .build_with_proof_packed(&test.keys.public_params, &[], ZkComputeLoad::Proof)
+        .build_with_proof_packed(
+            &test.keys.public_params,
+            &[],
+            tfhe::zk::ZkComputeLoad::Proof,
+        )
         .unwrap();
     let expander = list.expand_without_verification().unwrap();
     let ct1 = SupportedFheCiphertexts::FheUint16(expander.get(0).unwrap().unwrap());
@@ -267,7 +271,11 @@ async fn schedule_y_patterns() {
         .push(3_u16)
         .push(4_u16)
         .push(5_u16)
-        .build_with_proof_packed(&test.keys.public_params, &[], ZkComputeLoad::Proof)
+        .build_with_proof_packed(
+            &CompactPkeCrs::from((*test.keys.public_params).clone()),
+            &[],
+            ZkComputeLoad::Proof,
+        )
         .unwrap();
     let expander = list.expand_without_verification().unwrap();
     let ct1 = SupportedFheCiphertexts::FheUint16(expander.get(0).unwrap().unwrap());
@@ -561,7 +569,11 @@ async fn schedule_diamond_reduction_dependence_pattern() {
         .push(3_u16)
         .push(4_u16)
         .push(5_u16)
-        .build_with_proof_packed(&test.keys.public_params, &[], ZkComputeLoad::Proof)
+        .build_with_proof_packed(
+            &test.keys.public_params,
+            &[],
+            tfhe::zk::ZkComputeLoad::Proof,
+        )
         .unwrap();
     let expander = list.expand_without_verification().unwrap();
     let ct1 = SupportedFheCiphertexts::FheUint16(expander.get(0).unwrap().unwrap());

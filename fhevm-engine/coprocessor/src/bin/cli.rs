@@ -20,7 +20,7 @@ pub enum Args {
         /// PKS file path
         #[arg(long)]
         pks_file: String,
-        /// SKS file path
+        /// SKS file path (compressed SKS if GPU)
         #[arg(long)]
         sks_file: String,
         /// Public params file path
@@ -208,7 +208,7 @@ fn insert_tenant(
     let db_url =
         std::env::var("DATABASE_URL").expect("DATABASE_URL environment variable is undefined");
     let pks_file = std::fs::read(&pks_file).expect("Can't read pks file");
-    let sks_file = std::fs::read(&sks_file).expect("Can't read pks file");
+    let sks_file = std::fs::read(&sks_file).expect("Can't read sks file (or csks if GPU)");
     let public_params_file =
         std::fs::read(&public_params_file).expect("Can't read public params file");
     let _ = alloy::primitives::Address::from_str(&acl_contract_address)

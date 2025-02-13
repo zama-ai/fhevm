@@ -113,18 +113,25 @@ pub async fn wait_for_ciphertext(
 }
 
 pub async fn setup_test_user(pool: &sqlx::PgPool) -> Result<(), Box<dyn std::error::Error>> {
-    let sks = tokio::fs::read("../fhevm-keys/sks")
-        .await
-        .expect("can't read sks key");
-    let pks = tokio::fs::read("../fhevm-keys/pks")
-        .await
-        .expect("can't read pks key");
-    let cks = tokio::fs::read("../fhevm-keys/cks")
-        .await
-        .expect("can't read cks key");
-    let public_params = tokio::fs::read("../fhevm-keys/pp")
-        .await
-        .expect("can't read public params");
+    let (sks, cks, pks, pp) = if !cfg!(feature = "gpu") {
+        (
+            "../fhevm-keys/sks",
+            "../fhevm-keys/cks",
+            "../fhevm-keys/pks",
+            "../fhevm-keys/pp",
+        )
+    } else {
+        (
+            "../fhevm-keys/gpu-csks",
+            "../fhevm-keys/gpu-cks",
+            "../fhevm-keys/gpu-pks",
+            "../fhevm-keys/gpu-pp",
+        )
+    };
+    let sks = tokio::fs::read(sks).await.expect("can't read sks key");
+    let pks = tokio::fs::read(pks).await.expect("can't read pks key");
+    let cks = tokio::fs::read(cks).await.expect("can't read cks key");
+    let public_params = tokio::fs::read(pp).await.expect("can't read public params");
 
     let sns_sk_oid = upload_large_object(pool, "../fhevm-keys/sns_sk").await?;
     let sns_pk_oid = upload_large_object(pool, "../fhevm-keys/sns_pk").await?;

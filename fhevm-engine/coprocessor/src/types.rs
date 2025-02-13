@@ -192,6 +192,10 @@ pub struct TfheTenantKeys {
     pub verifying_contract_address: String,
     pub acl_contract_address: String,
     pub sks: tfhe::ServerKey,
+    #[cfg(feature = "gpu")]
+    pub csks: tfhe::CompressedServerKey,
+    #[cfg(feature = "gpu")]
+    pub gpu_sks: tfhe::CudaServerKey,
 
     // only used in tests, that's why we put dead_code
     #[allow(dead_code)]

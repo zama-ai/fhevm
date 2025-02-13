@@ -48,6 +48,7 @@ scheduler = { path = "../scheduler" }
 
 [features]
 nightly-avx512 = ["tfhe/nightly-avx512"]
+gpu = ["tfhe/gpu", "scheduler/gpu", "fhevm-engine-common/gpu"]
 
 [dev-dependencies]
 testcontainers = "0.21"

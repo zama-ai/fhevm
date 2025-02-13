@@ -362,8 +362,13 @@ async fn tfhe_worker_cycle(
 
                 // Schedule computations in parallel as dependences allow
                 tfhe::set_server_key(keys.sks.clone());
-                let mut sched = Scheduler::new(&mut graph.graph, args.coprocessor_fhe_threads);
-                sched.schedule(keys.sks.clone()).await?;
+                let mut sched = Scheduler::new(
+                    &mut graph.graph,
+                    keys.sks.clone(),
+                    #[cfg(feature = "gpu")]
+                    keys.gpu_sks.clone(),
+                );
+                sched.schedule().await?;
             }
             // Extract the results from the graph
             let mut res = graph.get_results();

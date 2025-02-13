@@ -126,6 +126,12 @@ jobs:
             cuda: "12.2"
             gcc: 11 
     steps:
+      - name: Install git LFS
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git-lfs
+          git lfs install
+
       - name: Checkout fhevm-backend
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
         with:
@@ -150,7 +156,11 @@ jobs:
 
       - name: Install cargo dependencies
         run: |
-          sudo apt-get install -y protobuf-compiler && \
+          sudo apt-get install -y protobuf-compiler cmake pkg-config libssl-dev \
+                                  libclang-dev docker-compose-v2 docker.io acl
+          sudo usermod -aG docker $USER
+          newgrp docker
+          sudo setfacl --modify user:$USER:rw /var/run/docker.sock
           cargo install sqlx-cli
 
       - name: Install foundry
@@ -172,8 +182,7 @@ jobs:
 
       - name: Run tests on GPU
         run: |
-          date
-          #DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor cargo test --release --features=gpu -- --test-threads=1
+          DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor cargo test --release --features=gpu -- --test-threads=1
         working-directory: fhevm-engine
 
 
