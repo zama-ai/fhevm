@@ -66,28 +66,33 @@ run-test-erc20:
 PID_FILE_1 := .anvil1.pid
 PID_FILE_2 := .anvil2.pid
 
+# Escape the mnemonic phrase
+ESCAPED_MNEMONIC := $(shell echo "$(MNEMONIC)" | sed 's/"/\\"/g')
+
 .PHONY: test
 test:
+	@echo "Starting test process..."
 	@cd hardhat/contracts && cp .env.example .env
-	@echo "Starting Anvil nodes..."
-	@cd hardhat/contracts && anvil --block-time 0.1 --port 8756 --chain-id 123456 --accounts 15 --mnemonic $(MNEMONIC) > /dev/null 2>&1 & echo $$! > $(PID_FILE_1)
-	@cd hardhat/contracts && anvil --block-time 0.1 --port 8757 --chain-id 654321 --accounts 15 --mnemonic $(MNEMONIC) > /dev/null 2>&1 & echo $$! > $(PID_FILE_2)
+	@echo "Starting first Anvil node on port 8756..."
+	@cd hardhat/contracts && anvil --block-time 0.1 --port 8756 --chain-id 123456 --accounts 15 --mnemonic "$(ESCAPED_MNEMONIC)" > /dev/null 2>&1 & echo $$! > $(PID_FILE_1)
+	@echo "Starting second Anvil node on port 8757..."
+	@cd hardhat/contracts && anvil --block-time 0.1 --port 8757 --chain-id 654321 --accounts 15 --mnemonic "$(ESCAPED_MNEMONIC)" > /dev/null 2>&1 & echo $$! > $(PID_FILE_2)
 	@echo "Waiting for Anvil nodes to start..." && sleep 2
 	@cargo test || (make stop-anvil && exit 1)
 	@make stop-anvil
 
 .PHONY: stop-anvil
 stop-anvil:
-	@if [ -f $(PID_FILE_1) ]; then \
-		kill `cat $(PID_FILE_1)` || true; \
-		rm $(PID_FILE_1); \
-		echo "Stopped Anvil node 1"; \
-	fi
-	@if [ -f $(PID_FILE_2) ]; then \
-		kill `cat $(PID_FILE_2)` || true; \
-		rm $(PID_FILE_2); \
-		echo "Stopped Anvil node 2"; \
-	fi
+	@echo "Stopping Anvil nodes..."
+	@for port in 8756 8757; do \
+		pids=$$(lsof -ti:$$port); \
+		if [ ! -z "$$pids" ]; then \
+			echo "Killing processes on port $$port: $$pids"; \
+			kill -9 $$pids; \
+		fi \
+	done
+	@rm -f $(PID_FILE_1) $(PID_FILE_2)
+	@echo "Anvil nodes stopped"
 
 # Help message
 help:
