@@ -1,0 +1,41 @@
+name: "Gateway Layer2 sc Docker Image"
+
+on:
+  push:
+    branches:
+      - main
+      - aw/docker
+  release:
+    types:
+      - published
+
+concurrency:
+  group: gateway-sc-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  docker-sc-bundle:
+    uses: ./.github/workflows/common-docker.yml
+    permissions:
+      contents: "read"
+      id-token: "write"
+      packages: "write"
+    with:
+      working-directory: "."
+      push_image: true
+      image-name: "gateway-l2/sc-bundle"
+      docker-file: "Dockerfile"
+      arm-build: true
+
+    secrets:
+      BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+      GRAVITON_BUILDER_SSH_PRIVATE_KEY: ${{ secrets.GRAVITON_BUILDER_SSH_PRIVATE_KEY }}
+
+  done:
+    runs-on: ubuntu-latest
+    name: Pipeline Done
+    steps:
+      - name: Success
+        run: echo Pipeline Done
+    needs:
+      - docker-sc-bundle
