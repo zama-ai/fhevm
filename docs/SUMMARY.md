@@ -24,7 +24,7 @@
 - [FhEVM contracts](smart_contracts/contracts.md)
 - [Supported types](smart_contracts/types.md)
 - [Operations on encrypted types](smart_contracts/operations.md)
-- [Access Controxl List](smart_contracts/acl/README.md)
+- [Access Control List](smart_contracts/acl/README.md)
   - [ACL examples](smart_contracts/acl/acl_examples.md)
 - [Encrypted Inputs](smart_contracts/inputs.md)
 - [Decryption](smart_contracts/decryption/README.md)
