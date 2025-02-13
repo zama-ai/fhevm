@@ -30,6 +30,14 @@ if [[ -z "$DATABASE_URL" || -z "$TENANT_API_KEY" || -z "$ACL_CONTRACT_ADDRESS" |
     echo "Error: One or more required environment variables are missing."; exit 1;
 fi
 
+# Check if tenant already exists
+TENANT_EXISTS=$(psql "$DATABASE_URL" -tAc "SELECT 1 FROM tenants WHERE tenant_api_key = '$TENANT_API_KEY'")
+
+if [ "$TENANT_EXISTS" = "1" ]; then
+    echo "Tenant with API key $TENANT_API_KEY already exists. Skipping insertion."
+    exit 0
+fi
+
 TMP_CSV="/tmp/tenant_data.csv"
 echo "tenant_api_key,chain_id,acl_contract_address,verifying_contract_address,pks_key,sks_key,public_params" > $TMP_CSV
 

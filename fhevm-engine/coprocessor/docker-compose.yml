@@ -19,17 +19,32 @@ services:
       - db:/var/lib/postgresql/data
 
   migration:
-      container_name: migration
-      image: ghcr.io/zama-ai/fhevm-db-migration:v0.6.0
-      environment:
-        DATABASE_URL: postgresql://postgres:postgres@db:5432/coprocessor
-      depends_on:
-        db:
-          condition: service_healthy
+    container_name: db-migration
+    build:
+      context: ../../.
+      dockerfile: fhevm-engine/fhevm-db/Dockerfile
+      tags:
+      - "fhevm-db-migration:v0.7.0-local"
+    image: fhevm-db-migration:v0.7.0-local
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/coprocessor
+      TENANT_API_KEY: "a1503fb6-d79b-4e9e-826d-44cf262f3e05"
+      ACL_CONTRACT_ADDRESS: "0x339EcE85B9E11a3A3AA557582784a15d7F82AAf2"
+      INPUT_VERIFIER_ADDRESS: "0x69dE3158643e738a0724418b21a35FAA20CBb1c5"
+    volumes:
+      - ../fhevm-keys:/fhevm-keys
+    depends_on:
+      db:
+        condition: service_healthy
 
   coprocessor:
     container_name: coprocessor
-    image: ghcr.io/zama-ai/fhevm-coprocessor:v0.6.0
+    build:
+      context: ../../.
+      dockerfile: fhevm-engine/coprocessor/Dockerfile
+      tags:
+        - "fhevm-coprocessor:v0.7.0-local"
+    image: fhevm-coprocessor:v0.7.0-local
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/coprocessor
     ports:
@@ -47,20 +62,40 @@ services:
 
   geth:
     container_name: geth
-    image: ghcr.io/zama-ai/go-ethereum-coprocessor-dev:v0.1.1
-    environment:
-      FHEVM_COPROCESSOR_API_KEY: a1503fb6-d79b-4e9e-826d-44cf262f3e05
-      FHEVM_COPROCESSOR_URL: coprocessor:50051
-      COPROCESSOR_CONTRACT_ADDRESS: 0x6819e3aDc437fAf9D533490eD3a7552493fCE3B1
-      ACL_CONTRACT_ADDRESS: 0x339EcE85B9E11a3A3AA557582784a15d7F82AAf2
-    volumes:
-      - ./geth:/geth
+    image: ethereum/client-go:v1.15.0
+    restart: unless-stopped
     ports:
-      - '8745:8545'
-    depends_on:
-      coprocessor:
-        condition: service_started
+      - "8545:8545"
+      - "8546:8546"
+    volumes:
+      - geth-data:/root/.ethereum
+    command:
+      # Sync configuration
+      - --syncmode=snap
+      - --nodiscover
+      # HTTP configuration
+      - --http
+      - --http.addr=0.0.0.0
+      - --http.port=8545
+      - --http.api=eth,net,web3
+      - --http.corsdomain=*
+      - --http.vhosts=*
+      # WebSocket configuration
+      - --ws
+      - --ws.addr=0.0.0.0
+      - --ws.port=8546
+      - --ws.api=eth,net,web3
+      - --ws.origins=*
+      # Performance & security
+      - --cache=1024
+      - --rpc.allow-unprotected-txs
+      - --txlookuplimit=0
+    healthcheck:
+      test: ["CMD", "geth", "attach", "http://localhost:8545", "--exec", "eth.blockNumber"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 volumes:
   db:
-    driver: local
+  geth-data:
