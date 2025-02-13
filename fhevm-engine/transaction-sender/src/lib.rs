@@ -1,7 +1,7 @@
 mod ops;
 mod transaction_sender;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ConfigSettings {
     pub db_url: String,
     pub db_pool_size: u32,

@@ -11,6 +11,7 @@ alloy = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
 futures-util = { workspace = true }
+rand = { workspace = true }
 sqlx = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
@@ -23,3 +24,7 @@ async-trait = "0.1.86"
 [build-dependencies]
 # crates.io dependencies
 foundry-compilers = { version = "0.13.0", features = ["svm-solc"] }
+
+[dev-dependencies]
+# crates.io dependencies
+serial_test = "3.2.0"

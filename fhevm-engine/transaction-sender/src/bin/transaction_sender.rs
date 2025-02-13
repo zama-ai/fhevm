@@ -67,6 +67,7 @@ fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt().json().with_level(true).init();
     let conf = Conf::parse();
     let signer = PrivateKeySigner::from_str(conf.private_key.trim())?;
     let wallet = EthereumWallet::new(signer.clone());
@@ -101,6 +102,7 @@ async fn main() -> anyhow::Result<()> {
             error_sleep_initial_secs: conf.error_sleep_initial_secs,
             error_sleep_max_secs: conf.error_sleep_max_secs,
         },
+        None,
     );
     install_signal_handlers(cancel_token)?;
     sender.run().await

@@ -13,6 +13,7 @@ bincode = { workspace = true }
 clap = { workspace = true }
 prometheus = { workspace = true }
 prost = { workspace = true }
+rand = { workspace = true }
 rayon = { workspace = true }
 sha3 = { workspace = true }
 sqlx = { workspace = true }
@@ -39,7 +40,6 @@ strum = { version = "0.26", features = ["derive"] }
 tonic-health = "0.12"
 tonic-types = "0.12"
 tonic-web = "0.12"
-rand = "0.8.5"
 
 # local dependencies
 fhevm-engine-common = { path = "../fhevm-engine-common" }

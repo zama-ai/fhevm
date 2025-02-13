@@ -3,8 +3,10 @@ CREATE TABLE IF NOT EXISTS verify_proofs (
     chain_id INTEGER NOT NULL CHECK(chain_id >= 0),
     contract_address TEXT NOT NULL,
     user_address TEXT NOT NULL,
+    input BYTEA,
     handles BYTEA NOT NULL,
-    retry_count INTEGER NOT NULL DEFAULT 0
+    retry_count INTEGER NOT NULL DEFAULT 0,
+    verified BOOLEAN NOT NULL DEFAULT false
 );
 
-CREATE INDEX IF NOT EXISTS idx_verify_proofs_retry_count ON verify_proofs(retry_count);
+CREATE INDEX IF NOT EXISTS idx_verify_proofs_verified_retry ON verify_proofs(verified, retry_count, zk_proof_id);

@@ -12,5 +12,5 @@ where
     async fn execute(&self, db_pool: &Pool<Postgres>) -> anyhow::Result<bool>;
 }
 
-pub(crate) mod add_ciphertexts;
-pub(crate) mod verify_proofs;
+pub(crate) mod add_ciphertext;
+pub(crate) mod verify_proof;

@@ -9,6 +9,7 @@ license.workspace = true
 # workspace dependencies
 anyhow = { workspace = true }
 bincode = { workspace = true }
+rand = { workspace = true }
 serde = { workspace = true }
 sha3 = { workspace = true }
 tfhe = { workspace = true }
@@ -18,7 +19,6 @@ tonic  = { workspace = true }
 # crates.io dependencies
 bigdecimal = "0.4.5"
 hex = "0.4"
-rand = "0.8.5"
 paste = "1.0.15"
 rand_chacha = "0.3.1"
 strum = { version = "0.26", features = ["derive"] }

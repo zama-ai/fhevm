@@ -11,12 +11,12 @@ sol!(
 );
 
 #[derive(Clone)]
-pub struct AddCiphertextsOperation<P: Provider<Ethereum> + Clone + 'static> {
+pub struct AddCiphertextOperation<P: Provider<Ethereum> + Clone + 'static> {
     ciphertext_storage_address: Address,
     provider: Arc<P>,
 }
 
-impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextsOperation<P> {
+impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
     pub fn new(ciphertext_storage_address: Address, provider: Arc<P>) -> Self {
         Self {
             ciphertext_storage_address,
@@ -26,7 +26,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextsOperation<P> {
 }
 
 #[async_trait]
-impl<P> TransactionOperation<P> for AddCiphertextsOperation<P>
+impl<P> TransactionOperation<P> for AddCiphertextOperation<P>
 where
     P: alloy::providers::Provider<Ethereum> + Clone + 'static,
 {

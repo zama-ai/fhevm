@@ -16,10 +16,11 @@ daggy = "0.8.0"
 futures-util = "0.3.31"
 prometheus = "0.13.4"
 prost = "0.13"
+rand = "0.9.0"
 rayon = "1.10.0"
 serde = "1.0.210"
 sha3 = "0.10.8"
-sqlx = { version = "0.7", features = ["runtime-tokio", "tls-rustls", "time", "postgres", "uuid"] }
+sqlx = { version = "0.8.3", features = ["runtime-tokio", "tls-rustls", "time", "postgres", "uuid"] }
 tfhe = { version = "0.10.0", features = ["boolean", "shortint", "integer", "zk-pok", "experimental-force_fft_algo_dif4"] }
 tokio = { version = "1.38.0", features = ["full"] }
 tokio-util = "0.7"
