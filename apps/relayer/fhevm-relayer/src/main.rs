@@ -83,7 +83,7 @@ async fn main() -> eyre::Result<()> {
     .await
     .map_err(|e| eyre::eyre!("Failed to create transaction service: {}", e))?;
 
-    tx_service.clone().spawn_maintenance_tasks();
+    Arc::clone(&tx_service).spawn_maintenance_tasks();
 
     let rollup_settings = settings
         .get_network("rollup")
@@ -99,7 +99,7 @@ async fn main() -> eyre::Result<()> {
     .await
     .map_err(|e| eyre::eyre!("Failed to create transaction service: {}", e))?;
 
-    tx_service_rollup.clone().spawn_maintenance_tasks();
+    Arc::clone(&tx_service_rollup).spawn_maintenance_tasks();
 
     info!("Starting FHE Event Handler");
 

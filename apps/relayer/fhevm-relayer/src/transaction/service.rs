@@ -5,66 +5,174 @@ use alloy::{
 use dashmap::DashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use super::sender::{RetryConfig, TransactionManager, TxConfig};
 use crate::errors::TransactionServiceError;
 
+/// Represents the current state of a transaction
 #[derive(Debug, Clone, PartialEq)]
-pub enum TransactionStatus {
-    Pending,
+pub enum TransactionState {
+    /// Transaction is waiting to be retried
+    WaitingRetry {
+        attempts: u32,
+        last_attempt: Instant,
+    },
+    /// Transaction has been sent and is pending confirmation
+    Pending {
+        hash: B256,
+        attempts: u32,
+        last_attempt: Instant,
+    },
+    /// Transaction has been confirmed
     Confirmed,
+    /// Transaction has failed permanently
     Failed { reason: String },
 }
 
+/// Records all information about a transaction
 #[derive(Debug, Clone)]
-struct PendingTransaction {
+struct TransactionRecord {
+    /// Target contract address
     target: Address,
+    /// Transaction calldata
     calldata: Bytes,
+    /// Transaction configuration
     config: TxConfig,
+    /// When the transaction was first submitted
     timestamp: Instant,
-    attempts: u32,
-    status: TransactionStatus,
-    hash: Option<B256>,
-    last_attempt: Instant,
-    retry_config: RetryConfig,
-    request_id: Uuid,
+    /// Current state of the transaction
+    state: TransactionState,
 }
 
-impl PendingTransaction {
-    fn should_retry(&self, current_time: Instant) -> bool {
-        if self.attempts >= self.retry_config.max_attempts {
-            return false;
-        }
-
-        let delay = self
-            .retry_config
-            .base_delay
-            .mul_f64(1.5f64.powi(self.attempts as i32))
-            .min(self.retry_config.max_delay);
-
-        current_time.duration_since(self.last_attempt) >= delay
-    }
-}
-
+/// Main service for managing transactions
 #[derive(Clone, Debug)]
 pub struct TransactionService {
+    /// Transaction manager for interacting with the blockchain
     manager: Arc<TransactionManager>,
-    pending_txs: Arc<DashMap<B256, PendingTransaction>>,
-    retry_queue: Arc<DashMap<Uuid, PendingTransaction>>,
+    /// Single source of truth for all transaction states
+    transactions: Arc<DashMap<Uuid, TransactionRecord>>,
 }
 
 impl TransactionService {
-    fn generate_request_id() -> Uuid {
-        let ctx = uuid::v1::Context::new(0);
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("Time went backwards");
-        let ts = uuid::v1::Timestamp::from_unix(&ctx, now.as_secs(), now.subsec_nanos());
-        let node_id = [0x01, 0x23, 0x45, 0x67, 0x89, 0xab];
-        Uuid::new_v1(ts, &node_id).expect("Failed to generate UUID")
+    const PENDING_TIMEOUT: Duration = Duration::from_secs(600); // 10 minutes
+
+    fn check_pending_timeout(&self, record: &TransactionRecord, now: Instant) -> bool {
+        if let TransactionState::Pending { last_attempt, .. } = record.state {
+            return now.duration_since(last_attempt) > Self::PENDING_TIMEOUT;
+        }
+        false
     }
+
+    async fn handle_pending_transaction(
+        &self,
+        request_id: Uuid,
+        record: &TransactionRecord,
+        now: Instant,
+    ) -> Option<TransactionState> {
+        match &record.state {
+            TransactionState::Pending { hash, attempts, .. } => {
+                // First check timeout
+                if self.check_pending_timeout(record, now) {
+                    info!(
+                        ?request_id,
+                        ?hash,
+                        elapsed = ?now.duration_since(record.timestamp).as_secs(),
+                        "Transaction timed out, moving back to retry queue"
+                    );
+
+                    // Move back to retry queue
+                    return Some(TransactionState::WaitingRetry {
+                        attempts: *attempts,
+                        last_attempt: now,
+                    });
+                }
+
+                // If not timed out, check confirmation
+                match self.manager.wait_for_confirmation(*hash, 1).await {
+                    Ok(true) => Some(TransactionState::Confirmed),
+                    Ok(false) => Some(TransactionState::Failed {
+                        reason: "Transaction reverted".into(),
+                    }),
+                    Err(_) => None, // Keep current state
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// Logs state transitions for monitoring and debugging
+    fn log_state_transition(
+        &self,
+        request_id: &Uuid,
+        old_state: &TransactionState,
+        new_state: &TransactionState,
+    ) {
+        match (old_state, new_state) {
+            (
+                TransactionState::WaitingRetry { attempts, .. },
+                TransactionState::Pending {
+                    hash,
+                    attempts: new_attempts,
+                    ..
+                },
+            ) => {
+                info!(
+                    ?request_id,
+                    ?hash,
+                    old_attempts = ?attempts,
+                    new_attempts = ?new_attempts,
+                    "Transaction moved from WaitingRetry to Pending"
+                );
+            }
+            (TransactionState::Pending { hash, attempts, .. }, TransactionState::Confirmed) => {
+                info!(
+                    ?request_id,
+                    ?hash,
+                    ?attempts,
+                    "Transaction confirmed successfully"
+                );
+            }
+            (
+                TransactionState::Pending { hash, attempts, .. },
+                TransactionState::Failed { reason },
+            ) => {
+                error!(?request_id, ?hash, ?attempts, ?reason, "Transaction failed");
+            }
+            (
+                TransactionState::Pending { hash, attempts, .. },
+                TransactionState::WaitingRetry {
+                    attempts: new_attempts,
+                    ..
+                },
+            ) => {
+                warn!(
+                    ?request_id,
+                    ?hash,
+                    old_attempts = ?attempts,
+                    new_attempts = ?new_attempts,
+                    "Transaction needs retry"
+                );
+            }
+            (
+                TransactionState::WaitingRetry { attempts, .. },
+                TransactionState::Failed { reason },
+            ) => {
+                error!(
+                    ?request_id,
+                    ?attempts,
+                    ?reason,
+                    "Transaction failed after max retries"
+                );
+            }
+            _ => {
+                debug!(?request_id, ?old_state, ?new_state, "State transition");
+            }
+        }
+    }
+
+    /// Creates a new instance of TransactionService
     pub async fn new(
         rpc_url: &str,
         private_key_env: &str,
@@ -87,17 +195,28 @@ impl TransactionService {
                 "7136d8dc72f873124f4eded25f3525a20f6cee4296564c76b44f1d582c57640f".to_string()
             }
         };
+
         let manager = TransactionManager::new(rpc_url, &private_key, chain_id)
             .await
             .map_err(|e| TransactionServiceError::Failed(e.to_string()))?;
 
         Ok(Arc::new(Self {
             manager: Arc::new(manager),
-            pending_txs: Arc::new(DashMap::new()),
-            retry_queue: Arc::new(DashMap::new()),
+            transactions: Arc::new(DashMap::new()),
         }))
     }
 
+    fn generate_request_id() -> Uuid {
+        let ctx = uuid::v1::Context::new(0);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("Time went backwards");
+        let ts = uuid::v1::Timestamp::from_unix(&ctx, now.as_secs(), now.subsec_nanos());
+        let node_id = [0x01, 0x23, 0x45, 0x67, 0x89, 0xab];
+        Uuid::new_v1(ts, &node_id).expect("Failed to generate UUID")
+    }
+
+    /// Submits a new transaction
     pub async fn submit_transaction(
         self: &Arc<Self>,
         target: Address,
@@ -107,40 +226,253 @@ impl TransactionService {
         let request_id = Self::generate_request_id();
         let now = Instant::now();
 
-        let pending_tx = PendingTransaction {
+        info!(
+            ?request_id,
+            ?target,
+            calldata_size = calldata.len(),
+            "Submitting new transaction"
+        );
+
+        let record = TransactionRecord {
             target,
             calldata: calldata.clone(),
             config: config.clone(),
             timestamp: now,
-            attempts: 0,
-            status: TransactionStatus::Pending,
-            hash: None,
-            last_attempt: now,
-            retry_config: config.retry_config.as_ref().cloned().unwrap_or_default(),
-            request_id,
+            state: TransactionState::WaitingRetry {
+                attempts: 0,
+                last_attempt: now,
+            },
         };
 
-        match self
-            .manager
-            .send_transaction(target, calldata, Some(config))
-            .await
-        {
-            Ok(tx_hash) => {
-                let mut tx = pending_tx;
-                tx.hash = Some(tx_hash);
-                tx.attempts = 1;
-                self.pending_txs.insert(tx_hash, tx);
-                Ok(tx_hash)
+        self.transactions.insert(request_id, record);
+
+        match self.try_send_transaction(request_id).await {
+            Ok(hash) => {
+                info!(?request_id, ?hash, "Transaction submitted successfully");
+                Ok(hash)
             }
             Err(e) => {
-                let mut tx = pending_tx;
-                tx.attempts = 1;
-                self.retry_queue.insert(request_id, tx);
-                Err(TransactionServiceError::Failed(e.to_string()))
+                warn!(
+                    ?request_id,
+                    ?e,
+                    "Initial transaction submission failed, will retry"
+                );
+                Err(e)
             }
         }
     }
 
+    /// Attempts to send a transaction
+    async fn try_send_transaction(
+        &self,
+        request_id: Uuid,
+    ) -> Result<B256, TransactionServiceError> {
+        // Get a snapshot of the record first
+        let record = self
+            .transactions
+            .get(&request_id)
+            .ok_or_else(|| TransactionServiceError::Failed("Transaction record not found".into()))?
+            .clone();
+
+        let hash = self
+            .manager
+            .send_transaction(
+                record.target,
+                record.calldata.clone(),
+                Some(record.config.clone()),
+            )
+            .await?;
+
+        // Update state in a separate, shorter critical section
+        self.transactions.entry(request_id).and_modify(|record| {
+            let old_state = record.state.clone();
+            let new_state = TransactionState::Pending {
+                hash,
+                attempts: match old_state {
+                    TransactionState::WaitingRetry { attempts, .. } => attempts + 1,
+                    _ => 1,
+                },
+                last_attempt: Instant::now(),
+            };
+            self.log_state_transition(&request_id, &old_state, &new_state);
+            record.state = new_state;
+        });
+
+        Ok(hash)
+    }
+
+    /// Maintains transaction states and handles retries
+    pub async fn maintain_transactions(&self) -> Result<(), TransactionServiceError> {
+        let now = Instant::now();
+        let total_transactions = self.transactions.len();
+
+        debug!(total_transactions, "Starting transaction maintenance cycle");
+
+        let mut to_update = Vec::new();
+        let mut to_process = Vec::new();
+
+        // Collect all transactions that need processing
+        {
+            let entries: Vec<_> = self
+                .transactions
+                .iter()
+                .map(|r| (*r.key(), r.value().clone()))
+                .collect();
+
+            for (request_id, record) in entries {
+                match &record.state {
+                    TransactionState::Pending { .. } => {
+                        if let Some(new_state) = self
+                            .handle_pending_transaction(request_id, &record, now)
+                            .await
+                        {
+                            to_update.push((request_id, new_state));
+                        }
+                    }
+                    TransactionState::WaitingRetry {
+                        attempts,
+                        last_attempt,
+                    } => {
+                        if self.should_retry(&record.config, *attempts, *last_attempt, now) {
+                            to_process.push(request_id);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Apply updates
+        for (request_id, new_state) in to_update {
+            if let Some(mut record) = self.transactions.get_mut(&request_id) {
+                let old_state = record.state.clone();
+                self.log_state_transition(&request_id, &old_state, &new_state);
+                record.state = new_state;
+            }
+        }
+
+        // Process retries
+        for request_id in to_process {
+            if let Err(e) = self.try_send_transaction(request_id).await {
+                error!(?request_id, ?e, "Retry attempt failed");
+                self.handle_retry_failure(request_id).await;
+            }
+        }
+
+        self.cleanup_old_transactions(now);
+        Ok(())
+    }
+
+    async fn handle_retry_failure(&self, request_id: Uuid) {
+        // Get the current record
+        if let Some(mut record) = self.transactions.get_mut(&request_id) {
+            let default_config = RetryConfig::default();
+            let retry_config = record
+                .config
+                .retry_config
+                .as_ref()
+                .unwrap_or(&default_config);
+
+            match record.state {
+                TransactionState::WaitingRetry { attempts, .. } => {
+                    let old_state = record.state.clone();
+
+                    // Check if we've hit max retries
+                    if attempts >= retry_config.max_attempts {
+                        let new_state = TransactionState::Failed {
+                            reason: "Max retry attempts exceeded".into(),
+                        };
+                        self.log_state_transition(&request_id, &old_state, &new_state);
+                        record.state = new_state;
+                    } else {
+                        // Update the attempts count and last_attempt time
+                        let new_state = TransactionState::WaitingRetry {
+                            attempts: attempts + 1,
+                            last_attempt: Instant::now(),
+                        };
+                        self.log_state_transition(&request_id, &old_state, &new_state);
+                        record.state = new_state;
+                    }
+                }
+                _ => {
+                    // This shouldn't happen, but log it if it does
+                    warn!(
+                        ?request_id,
+                        state = ?record.state,
+                        "Unexpected state in handle_retry_failure"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Determines if a transaction should be retried
+    fn should_retry(
+        &self,
+        config: &TxConfig,
+        attempts: u32,
+        last_attempt: Instant,
+        now: Instant,
+    ) -> bool {
+        let default_config = RetryConfig::default();
+        let retry_config = config.retry_config.as_ref().unwrap_or(&default_config);
+
+        if attempts >= retry_config.max_attempts {
+            debug!(
+                ?attempts,
+                max_attempts = ?retry_config.max_attempts,
+                "Max retry attempts exceeded"
+            );
+            return false;
+        }
+
+        let delay = retry_config
+            .base_delay
+            .mul_f64(1.5f64.powi(attempts as i32))
+            .min(retry_config.max_delay);
+
+        now.duration_since(last_attempt) >= delay
+    }
+
+    /// Cleans up old transactions that are no longer needed
+    fn cleanup_old_transactions(&self, now: Instant) {
+        const CLEANUP_THRESHOLD: Duration = Duration::from_secs(3600); // 1 hour
+
+        // Collect records to remove first
+        let to_remove: Vec<_> = self
+            .transactions
+            .iter()
+            .filter_map(|entry| {
+                let request_id = *entry.key();
+                let record = entry.value();
+
+                match record.state {
+                    TransactionState::Confirmed | TransactionState::Failed { .. } => {
+                        if now.duration_since(record.timestamp) > CLEANUP_THRESHOLD {
+                            Some(request_id)
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                }
+            })
+            .collect();
+
+        // Remove in separate, short operations
+        for request_id in to_remove {
+            if let Some((_, record)) = self.transactions.remove(&request_id) {
+                debug!(
+                    ?request_id,
+                    state = ?record.state,
+                    age = ?now.duration_since(record.timestamp).as_secs(),
+                    "Cleaned up old transaction"
+                );
+            }
+        }
+    }
+
+    /// Gets a transaction receipt
     pub async fn get_transaction_receipt(
         &self,
         hash: B256,
@@ -152,134 +484,15 @@ impl TransactionService {
             .map_err(|e| TransactionServiceError::Failed(e.to_string()))
     }
 
-    pub async fn maintain_pending_transactions(&self) -> Result<(), TransactionServiceError> {
-        let mut to_process = Vec::new();
-
-        // First, collect all transactions we need to process
-        // This reduces the time we hold locks
-        {
-            for entry in self.pending_txs.iter() {
-                let hash = *entry.key();
-                let tx = entry.value().clone();
-                if tx.status == TransactionStatus::Pending {
-                    to_process.push((hash, tx));
-                }
-            }
-        }
-
-        // Process transactions without holding the iterator lock
-        for (hash, tx) in to_process {
-            let new_status = if Instant::now().duration_since(tx.timestamp)
-                > Duration::from_secs(tx.config.timeout_secs.unwrap_or(300))
-            {
-                Some(TransactionStatus::Failed {
-                    reason: "Transaction timeout exceeded".into(),
-                })
-            } else {
-                match self.manager.wait_for_confirmation(hash, 1).await {
-                    Ok(true) => Some(TransactionStatus::Confirmed),
-                    Ok(false) => Some(TransactionStatus::Failed {
-                        reason: "Transaction failed on-chain".into(),
-                    }),
-                    Err(e) => {
-                        warn!(?hash, ?e, "Failed to check transaction status");
-                        None
-                    }
-                }
-            };
-
-            // Only update if we have a new status
-            if let Some(status) = new_status {
-                if let Some(mut tx_entry) = self.pending_txs.get_mut(&hash) {
-                    tx_entry.status = status.clone();
-                }
-
-                // If failed and can retry, move to retry queue
-                if matches!(status, TransactionStatus::Failed { .. })
-                    && tx.attempts < tx.retry_config.max_attempts
-                {
-                    self.pending_txs.remove(&hash);
-                    self.retry_queue.insert(tx.request_id, tx);
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    pub async fn maintain_retry_queue(&self) -> Result<(), TransactionServiceError> {
-        let now = Instant::now();
-        let mut to_retry = Vec::new();
-
-        // Collect transactions that need retry
-        {
-            for entry in self.retry_queue.iter() {
-                let request_id = *entry.key();
-                let tx = entry.value().clone();
-                if tx.should_retry(now) {
-                    to_retry.push((request_id, tx));
-                }
-            }
-        }
-
-        // Process retries without holding the iterator lock
-        for (request_id, tx) in to_retry {
-            match self
-                .manager
-                .send_transaction(tx.target, tx.calldata.clone(), Some(tx.config.clone()))
-                .await
-            {
-                Ok(tx_hash) => {
-                    let mut new_tx = tx.clone();
-                    new_tx.status = TransactionStatus::Pending;
-                    new_tx.hash = Some(tx_hash);
-                    new_tx.attempts += 1;
-                    new_tx.last_attempt = now;
-
-                    // Atomic operations: remove from retry queue and add to pending
-                    self.retry_queue.remove(&request_id);
-                    self.pending_txs.insert(tx_hash, new_tx);
-
-                    info!(
-                        ?tx_hash,
-                        attempts = ?tx.attempts,
-                        "Retry successful, moving to pending"
-                    );
-                }
-                Err(e) => {
-                    if tx.attempts >= tx.retry_config.max_attempts {
-                        self.retry_queue.remove(&request_id);
-                    }
-                    error!(?e, ?request_id, "Retry attempt failed");
-                }
-            }
-        }
-
-        Ok(())
-    }
-
+    /// Spawns maintenance tasks
     pub fn spawn_maintenance_tasks(self: Arc<Self>) {
-        // Spawn pending transactions maintenance task
-        let service_clone = self.clone();
+        // Spawn maintenance task
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(5));
+            let mut interval = tokio::time::interval(Duration::from_secs(15));
             loop {
                 interval.tick().await;
-                if let Err(e) = service_clone.maintain_pending_transactions().await {
-                    error!("Error in maintain_pending_transactions: {}", e);
-                    tokio::time::sleep(Duration::from_secs(10)).await;
-                }
-            }
-        });
-
-        // Spawn retry queue maintenance task
-        let service_clone = self.clone();
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(30));
-            loop {
-                interval.tick().await;
-                if let Err(e) = service_clone.maintain_retry_queue().await {
-                    error!("Error in maintain_retry_queue: {}", e);
+                if let Err(e) = self.maintain_transactions().await {
+                    error!(error = %e, "Error in maintain_transactions");
                     tokio::time::sleep(Duration::from_secs(30)).await;
                 }
             }
