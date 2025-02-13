@@ -117,9 +117,10 @@ $ cd fhevm-engine/coprocessor
 $ cargo install --path .
 ```
 
-#### Configuration
+#### Services Configuration
 
-```
+##### coprocessor
+```bash
 $ coprocessor --help
 Usage: coprocessor [OPTIONS]
 
@@ -156,6 +157,149 @@ Options:
           Postgres database url. If unspecified DATABASE_URL environment variable is used
       --coprocessor-private-key <COPROCESSOR_PRIVATE_KEY>
           Coprocessor private key file path. Private key is in plain text 0x1234.. format [default: ./coprocessor.key]
+```
+
+```bash
+$ cli --help
+Usage: cli <COMMAND>
+
+Commands:
+  insert-tenant  Inserts tenant into specified database
+  smoke-test     Coprocessor smoke test
+  help           Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help     Print help
+  -V, --version  Print version
+```
+
+##### fhevm-listener
+```bash
+# this service will be renamed fhevm_listener
+$ listen --help
+Usage: listen [OPTIONS]
+
+Options:
+      --url <URL>                                      [default: ws://0.0.0.0:8746]
+      --ignore-tfhe-events                             
+      --ignore-acl-events                              
+      --acl-contract-address <ACL_CONTRACT_ADDRESS>    
+      --tfhe-contract-address <TFHE_CONTRACT_ADDRESS>  
+      --database-url <DATABASE_URL>                    
+      --start-at-block <START_AT_BLOCK>                Can be negative from last block
+      --end-at-block <END_AT_BLOCK>                    
+  -h, --help                                           Print help
+  -V, --version                                        Print version
+```
+
+##### gw-listener
+```bash
+$ gw_listener --help
+Usage: gw_listener [OPTIONS] --gw-url <GW_URL> --zkpok-manager-address <ZKPOK_MANAGER_ADDRESS>
+
+Options:
+      --database-url <DATABASE_URL>                          
+      --database-pool-size <DATABASE_POOL_SIZE>              [default: 16]
+      --gw-url <GW_URL>                                      
+  -z, --zkpok-manager-address <ZKPOK_MANAGER_ADDRESS>        
+      --error-sleep-initial-secs <ERROR_SLEEP_INITIAL_SECS>  [default: 1]
+      --error-sleep-max-secs <ERROR_SLEEP_MAX_SECS>          [default: 10]
+  -h, --help                                                 Print help
+  -V, --version                                              Print version
+```
+
+##### sns-worker
+```bash
+$ sns_worker --help
+Usage: sns_worker [OPTIONS] --pg-listen-channel <PG_LISTEN_CHANNEL> --pg-notify-channel <PG_NOTIFY_CHANNEL>
+
+Options:
+      --work-items-batch-size <WORK_ITEMS_BATCH_SIZE>
+          Work items batch size [default: 4]
+      --pg-listen-channel <PG_LISTEN_CHANNEL>
+          NOTIFY/LISTEN channel for database that the worker listen to
+      --pg-notify-channel <PG_NOTIFY_CHANNEL>
+          NOTIFY/LISTEN channel for database that the worker notify to
+      --pg-polling-interval <PG_POLLING_INTERVAL>
+          Polling interval in seconds [default: 60]
+      --pg-pool-connections <PG_POOL_CONNECTIONS>
+          Postgres pool connections [default: 10]
+      --database-url <DATABASE_URL>
+          Postgres database url. If unspecified DATABASE_URL environment variable is used
+      --keys-file-path <KEYS_FILE_PATH>
+          KeySet file. If unspecified the the keys are read from the database (not implemented)
+      --service-name <SERVICE_NAME>
+          sns-executor service name in OTLP traces (not implemented) [default: sns-executor]
+  -h, --help
+          Print help
+  -V, --version
+          Print version
+```
+
+##### zkproof-worker
+
+```bash
+$ zkproof_worker --help
+Usage: zkproof_worker [OPTIONS]
+
+Options:
+  -d, --database-url <DATABASE_URL>
+          
+      --database-pool-size <DATABASE_POOL_SIZE>
+          [default: 10]
+      --database-polling-interval-secs <DATABASE_POLLING_INTERVAL_SECS>
+          [default: 5]
+  -v, --verify-proof-req-database-channel <VERIFY_PROOF_REQ_DATABASE_CHANNEL>
+          [default: verify_proof_resquests]
+  -t, --tokio-blocking-threads <TOKIO_BLOCKING_THREADS>
+          [default: 16]
+      --error-sleep-initial-secs <ERROR_SLEEP_INITIAL_SECS>
+          [default: 1]
+      --error-sleep-max-secs <ERROR_SLEEP_MAX_SECS>
+          [default: 10]
+  -h, --help
+          Print help
+  -V, --version
+          Print version
+```
+
+##### transaction-sender
+
+```bash
+$ transaction_sender --help
+Usage: transaction_sender [OPTIONS] --zkpok-manager-address <ZKPOK_MANAGER_ADDRESS> --ciphertext-storage-address <CIPHERTEXT_STORAGE_ADDRESS> --gateway-url <GATEWAY_URL> --private-key <PRIVATE_KEY>
+
+Options:
+  -z, --zkpok-manager-address <ZKPOK_MANAGER_ADDRESS>
+          
+  -c, --ciphertext-storage-address <CIPHERTEXT_STORAGE_ADDRESS>
+          
+  -g, --gateway-url <GATEWAY_URL>
+          
+  -p, --private-key <PRIVATE_KEY>
+          
+  -d, --database-url <DATABASE_URL>
+          
+      --database-pool-size <DATABASE_POOL_SIZE>
+          [default: 10]
+      --database-polling-interval-secs <DATABASE_POLLING_INTERVAL_SECS>
+          [default: 5]
+      --verify-proof-resp-database-channel <VERIFY_PROOF_RESP_DATABASE_CHANNEL>
+          [default: verify_proof_responses]
+  -a, --add-ciphertexts-database-channel <ADD_CIPHERTEXTS_DATABASE_CHANNEL>
+          [default: add_ciphertexts]
+      --verify-proof-resp-batch-limit <VERIFY_PROOF_RESP_BATCH_LIMIT>
+          [default: 128]
+      --verify-proof-resp-max-retries <VERIFY_PROOF_RESP_MAX_RETRIES>
+          [default: 15]
+      --error-sleep-initial-secs <ERROR_SLEEP_INITIAL_SECS>
+          [default: 1]
+      --error-sleep-max-secs <ERROR_SLEEP_MAX_SECS>
+          [default: 16]
+  -h, --help
+          Print help
+  -V, --version
+          Print version
 ```
 
 More details on configuration can be found in the [documentation](https://docs.zama.ai/fhevm-backend/getting-started/fhevm/fhevm-coprocessor/configuration).

@@ -4,11 +4,11 @@ on:
   push:
     branches:
       - main
+      - aw/docker-coprocessor
     paths:
       - .github/workflows/fhevm-coprocessor.yml
       - .github/workflows/common-docker.yml
-      - fhevm-engine/coprocessor/**
-      - fhevm-engine/.sqlx
+      - fhevm-engine/**
       - proto/**
   release:
     types:

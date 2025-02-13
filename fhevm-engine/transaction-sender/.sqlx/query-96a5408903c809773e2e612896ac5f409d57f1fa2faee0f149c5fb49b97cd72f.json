@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM verify_proofs WHERE retry_count >= $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "96a5408903c809773e2e612896ac5f409d57f1fa2faee0f149c5fb49b97cd72f"
+}

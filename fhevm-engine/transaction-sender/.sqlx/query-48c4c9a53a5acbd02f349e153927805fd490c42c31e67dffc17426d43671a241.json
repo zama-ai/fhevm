@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT *\n             FROM verify_proofs\n             WHERE retry_count < $1\n             ORDER BY zk_proof_id\n             LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "zk_proof_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "chain_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "contract_address",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "user_address",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "handles",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 5,
+        "name": "retry_count",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "48c4c9a53a5acbd02f349e153927805fd490c42c31e67dffc17426d43671a241"
+}

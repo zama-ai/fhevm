@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": " \n        SELECT a.*, c.ciphertext\n        FROM pbs_computations a\n        JOIN ciphertexts c \n        ON a.handle = c.handle          -- fetch handles inserted into the ciphertexts table\n        WHERE c.ciphertext IS NOT NULL  -- filter out tasks with no computed ciphertext64\n        AND a.is_completed = FALSE      -- filter out completed tasks\n        ORDER BY a.created_at           -- quickly find uncompleted tasks\n        FOR UPDATE SKIP LOCKED\n        LIMIT $1;\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "tenant_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "handle",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 3,
+        "name": "completed_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 4,
+        "name": "is_completed",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "ciphertext",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "308d4b2a7fbd29343e4eb9ce5d98485c826f3a16162f17252e2c7feabcb347f7"
+}

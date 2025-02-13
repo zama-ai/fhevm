@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                UPDATE pbs_computations\n                SET is_completed = TRUE, completed_at = NOW()\n                WHERE handle = $1;",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "280922cbaa3f2c2c2893da7bc015793f752df19c8940cbc2d26c788cae901d95"
+}
