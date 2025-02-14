@@ -16,6 +16,7 @@ import {
   Task,
   UseCase,
   isNotFoundError,
+  isDuplicatedError,
 } from 'utils'
 
 type Input = {
@@ -56,6 +57,9 @@ export class StoreDAppStats implements UseCase<Input, Output> {
             isNotFoundError(err)
               ? Task.of<void, AppError>(void 0)
               : Task.reject<void, AppError>(err),
+          )
+          .orChain(err =>
+            isDuplicatedError(err) ? Task.of(void 0) : Task.reject(err),
           )
       : Task.of(void 0)
   }

@@ -27,7 +27,7 @@ export class PrismaService implements OnModuleInit {
 
   private get client(): PrismaClient {
     const tx = this.cls.get('transaction') as PrismaClient
-    this.logger.debug(`in a trasaction? ${typeof tx !== 'undefined'}`)
+    this.logger.verbose(`in a trasaction? ${typeof tx !== 'undefined'}`)
     return tx ?? this.prisma
   }
 

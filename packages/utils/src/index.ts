@@ -1,5 +1,7 @@
 export type {
   AppError,
+  DuplicatedError,
+  ForbiddenError,
   NotFoundError,
   UnauthorizedError,
   UnknownError,
@@ -13,11 +15,13 @@ export type { UnitOfWork } from './unit-of-work.js'
 
 export {
   isAppError,
+  isDuplicatedError,
   isForbiddenError,
   isNotFoundError,
   isUnauthorizedError,
   isUnknowError,
   isValidationError,
+  duplicatedError,
   notFoundError,
   unauthorizedError,
   unknownError,

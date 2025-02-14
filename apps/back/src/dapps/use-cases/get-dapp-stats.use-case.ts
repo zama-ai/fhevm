@@ -50,6 +50,9 @@ export class GetDappStatsUseCase implements UseCase<Input, Output> {
               this.logger.debug(
                 `publishing dappStatsRequested for dappId=${dappId}`,
               )
+              this.logger.verbose(
+                `publishing dappStatsRequested for dappId=${dappId} on chain ${LOCAL_FHEVM_CHAIN_ID}`,
+              )
               return this.pubsub
                 .publish(
                   back.dappStatsRequested(

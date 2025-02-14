@@ -1,6 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common'
 import type { AppError } from 'utils'
-import { every, notFoundError, Task, unknownError } from 'utils'
+import {
+  duplicatedError,
+  every,
+  notFoundError,
+  Task,
+  unknownError,
+} from 'utils'
 
 import { DApp, DAppProps } from '#dapps/domain/entities/dapp.js'
 import { DAppRepository } from '#dapps/domain/repositories/dapp.repository.js'
@@ -88,6 +94,7 @@ export class PrismaDAppRepository extends DAppRepository {
         .catch((err: unknown) => reject(unknownError(String(err))))
     }).chain(props => DApp.parse(props).async())
   }
+
   findAllByTeamId = (teamId: string): Task<DApp[], AppError> => {
     return new Task<unknown[], AppError>((resolve, reject) => {
       this.db.dapp
@@ -114,15 +121,35 @@ export class PrismaDAppRepository extends DAppRepository {
 
   createStat = (id: DAppId, props: DAppStatProps): Task<DAppStat, AppError> => {
     return new Task<unknown, AppError>((resolve, reject) => {
+      this.logger.verbose(`searching for existing stat: ${props.externalRef}`)
       this.db.dappStat
-        .create({
-          data: {
-            ...props,
-            dappId: id.value,
-          },
+        .findFirst({ where: { externalRef: props.externalRef } })
+        .then(stat => {
+          this.logger.verbose(`stat found: ${JSON.stringify(stat)}`)
+          return stat
+            ? reject(duplicatedError(`${props.externalRef} already exists`))
+            : resolve(null)
         })
-        .then(resolve)
         .catch((err: unknown) => reject(unknownError(String(err))))
-    }).chain(props => DAppStat.parse(props).async())
+    })
+      .chain(
+        () =>
+          new Task((resolve, reject) => {
+            this.logger.verbose(`creating stat: ${JSON.stringify(props)}`)
+            this.db.dappStat
+              .create({
+                data: {
+                  ...props,
+                  dappId: id.value,
+                },
+              })
+              .then(resolve)
+              .catch((err: unknown) => reject(unknownError(String(err))))
+          }),
+      )
+      .chain(props => {
+        this.logger.verbose(`parsing stat: ${JSON.stringify(props)}`)
+        return DAppStat.parse(props).async()
+      })
   }
 }

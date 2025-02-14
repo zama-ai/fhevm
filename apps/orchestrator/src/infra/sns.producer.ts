@@ -27,7 +27,7 @@ export class SnsProducer {
   readonly sendMessage = (
     message: back.BackEvent | web3.Web3Event,
   ): Task<void, AppError> => {
-    this.logger.log(`🚀 publishing: ${message.type}`)
+    this.logger.debug(`🚀 publishing: ${message.type}`)
     return new Task((resolve, reject) => {
       this.client
         .send(
@@ -40,7 +40,7 @@ export class SnsProducer {
           }),
         )
         .then(result => {
-          this.logger.debug(
+          this.logger.verbose(
             `✅ PublishCommand status code: ${result.$metadata?.httpStatusCode}`,
           )
           resolve()
@@ -60,11 +60,11 @@ export class SnsProducer {
     switch (event.type) {
       case 'web3:fhe-event:requested':
       case 'back:dapp:stats-available':
-        this.logger.log(`publishing ${event.type}`)
+        this.logger.debug(`publishing ${event.type}`)
         return this.sendMessage(event)
 
       default:
-        this.logger.log(`⛔️ no handler for ${event.type}`)
+        this.logger.debug(`⛔️ no handler for ${event.type}`)
         return Task.of<void, AppError>(void 0).tap(() => {})
     }
   }
