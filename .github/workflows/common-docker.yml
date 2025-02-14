@@ -139,7 +139,9 @@ jobs:
           pull: false
           provenance: false
           sbom: false
-          tags: ghcr.io/zama-ai/${{ inputs.image-name }}:${{env.DOCKER_TAG_IMAGE }},ghcr.io/zama-ai/${{ inputs.image-name }}:latest
+          tags:
+            ghcr.io/zama-ai/${{ inputs.image-name }}:${{env.DOCKER_TAG_IMAGE }},ghcr.io/zama-ai/${{ inputs.image-name
+            }}:latest
           cache-from: ${{ inputs.cache-from }}
           cache-to: ${{ inputs.cache-to }}
 
@@ -171,7 +173,9 @@ jobs:
           pull: false
           provenance: false
           sbom: false
-          tags: ghcr.io/zama-ai/${{ inputs.image-dev-name }}:${{env.DOCKER_TAG_IMAGE}},ghcr.io/zama-ai/${{ inputs.image-dev-name }}:latest
+          tags:
+            ghcr.io/zama-ai/${{ inputs.image-dev-name }}:${{env.DOCKER_TAG_IMAGE}},ghcr.io/zama-ai/${{
+            inputs.image-dev-name }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
           labels: ${{ steps.meta.outputs.labels }}

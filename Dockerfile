@@ -12,9 +12,6 @@ RUN npm install -g pnpm@6.14.5 && \
     pnpm store prune
 
 # Copy the application files
-# TODO: This is a temporary solution, we should only copy the necessary files
-# COPY ./.env.example.deployment ./*.sh ./*.ts ./tsconfig.json ./
-# COPY ./contracts ./contracts/
-# COPY ./tasks ./tasks/
-
-COPY . .
+COPY ./.env.example.deployment ./launch-local-gateway-layer2.sh ./hardhat.config.ts ./tsconfig.json ./
+COPY ./contracts ./contracts/
+COPY ./tasks ./tasks/

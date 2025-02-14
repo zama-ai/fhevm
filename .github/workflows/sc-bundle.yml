@@ -1,4 +1,4 @@
-name: "Gateway Layer2 sc Docker Image"
+name: "Gateway Layer 2 sc Docker Image"
 
 on:
   push:
