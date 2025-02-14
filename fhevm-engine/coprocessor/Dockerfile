@@ -22,23 +22,23 @@ FROM debian:bullseye-slim
 
 COPY --from=build /app/fhevm-engine/target/release/coprocessor /usr/local/bin/coprocessor
 COPY --from=build /app/fhevm-engine/target/release/cli /usr/local/bin/cli
-# This binary will be renamed to fhevm_listener
-COPY --from=build /app/fhevm-engine/target/release/listen /usr/local/bin/listen
+COPY --from=build /app/fhevm-engine/target/release/fhevm_listener /usr/local/bin/fhevm_listener
 COPY --from=build /app/fhevm-engine/target/release/gw_listener /usr/local/bin/gw_listener
 COPY --from=build /app/fhevm-engine/target/release/zkproof_worker /usr/local/bin/zkproof_worker
 COPY --from=build /app/fhevm-engine/target/release/sns_worker /usr/local/bin/sns_worker
 COPY --from=build /app/fhevm-engine/target/release/transaction_sender /usr/local/bin/transaction_sender
 
-RUN groupadd -r zama && useradd -r -g zama zama && \
+RUN groupadd -g 10001 zama && \
+     useradd -u 10000 -g zama zama && \
     chown -R zama:zama /usr/local/bin && \
     chmod 500 /usr/local/bin/coprocessor && \
     chmod 500 /usr/local/bin/cli && \
-    chmod 500 /usr/local/bin/listen && \
+    chmod 500 /usr/local/bin/fhevm_listener && \
     chmod 500 /usr/local/bin/gw_listener && \
     chmod 500 /usr/local/bin/zkproof_worker && \
     chmod 500 /usr/local/bin/sns_worker && \
     chmod 500 /usr/local/bin/transaction_sender
 
-USER zama
+USER zama:zama
 
-CMD ["/usr/local/bin/coprocessor --help"]
+CMD ["/usr/local/bin/coprocessor"]
