@@ -30,7 +30,7 @@ describe("DecryptionManager", function () {
       const user = signers[0];
 
       // Create 3 dummy ciphertext handles
-      const ciphertextHandles = [1, 2, 3];
+      const ctHandles = [1, 2, 3];
 
       // Create a dummy decrypted result
       const decryptedResult = hre.ethers.randomBytes(32);
@@ -40,7 +40,7 @@ describe("DecryptionManager", function () {
       const eip712Message = createEIP712ResponsePublicDecrypt(
         hre.network.config.chainId!,
         decryptionManagerAddress,
-        ciphertextHandles,
+        ctHandles,
         decryptedResult,
       );
 
@@ -54,7 +54,7 @@ describe("DecryptionManager", function () {
       const publicDecryptionId = 1;
 
       // Request public decryption (any user can do so)
-      const requestTx = await decryptionManager.connect(user).publicDecryptionRequest(ciphertextHandles);
+      const requestTx = await decryptionManager.connect(user).publicDecryptionRequest(ctHandles);
 
       // TODO: Check the arguments once the ACLManager is implemented
       // Check request event
