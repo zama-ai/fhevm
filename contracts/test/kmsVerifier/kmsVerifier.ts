@@ -87,30 +87,6 @@ describe('KMSVerifier', function () {
       );
       inputAlice.addBytes256(bigIntToBytes256(18446744073709550032n));
 
-      process.env.NUM_KMS_SIGNERS = '1';
-      const encryptedAmount2 = await inputAlice.encrypt();
-      await expect(contract2.requestMixedBytes256(encryptedAmount2.handles[0], encryptedAmount2.inputProof))
-        .to.revertedWithCustomError(kmsVerifier, 'KMSSignatureThresholdNotReached')
-        .withArgs(1n); // should revert because now we are below the threshold! (we receive only 1 signature but threshold is 2)
-
-      if (process.env.IS_COPROCESSOR === 'true') {
-        // different format of inputProof for native
-        const cheatInputProof = encryptedAmount2.inputProof + encryptedAmount2.inputProof.slice(-130); // trying to cheat by repeating the first kms signer signature
-        const cheat = cheatInputProof.slice(0, 5) + '2' + cheatInputProof.slice(6);
-
-        // It should be reverted by InputVerifier with custom error 'SignerIsNotCoprocessor'.
-        // It should fail because in this case the InputVerifier received only one KMS signature (instead of at least 2).
-
-        const orig = dotenv.parse(fs.readFileSync('addresses/.env.inputverifier')).INPUT_VERIFIER_CONTRACT_ADDRESS;
-        const inputVerifier = (
-          await ethers.getContractFactory('contracts/InputVerifier.coprocessor.sol:InputVerifier')
-        ).attach(orig);
-        await expect(contract2.requestMixedBytes256(encryptedAmount2.handles[0], cheat)).to.revertedWithCustomError(
-          inputVerifier,
-          'KMSNumberSignaturesInsufficient',
-        );
-      }
-      process.env.NUM_KMS_SIGNERS = '4';
       const encryptedAmount = await inputAlice.encrypt();
       const tx6bis = await contract2.requestMixedBytes256(encryptedAmount.handles[0], encryptedAmount.inputProof);
       await tx6bis.wait();

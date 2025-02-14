@@ -184,22 +184,18 @@ async function computeDecryptSignatures(
 }
 
 async function kmsSign(handlesList: bigint[], decryptedResult: string, kmsSigner: Wallet) {
-  const kmsAdd = dotenv.parse(fs.readFileSync('addresses/.env.kmsverifier')).KMS_VERIFIER_CONTRACT_ADDRESS;
-  const chainId = (await ethers.provider.getNetwork()).chainId;
+  const decManAdd = dotenv.parse(fs.readFileSync('addressesL2/.env.decryptionmanager')).DECRYPTION_MANAGER_ADDRESS;
+  const chainId = dotenv.parse(fs.readFileSync('.env')).CHAIN_ID_GATEWAY;
 
   const domain = {
-    name: 'KMSVerifier',
+    name: 'DecryptionManager',
     version: '1',
     chainId: chainId,
-    verifyingContract: kmsAdd,
+    verifyingContract: decManAdd,
   };
 
   const types = {
-    DecryptionResult: [
-      {
-        name: 'aclAddress',
-        type: 'address',
-      },
+    PublicDecryptionResult: [
       {
         name: 'handlesList',
         type: 'uint256[]',
@@ -211,7 +207,6 @@ async function kmsSign(handlesList: bigint[], decryptedResult: string, kmsSigner
     ],
   };
   const message = {
-    aclAddress: aclAdd,
     handlesList: handlesList,
     decryptedResult: decryptedResult,
   };

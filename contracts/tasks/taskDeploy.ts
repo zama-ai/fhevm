@@ -111,7 +111,13 @@ task('task:deployKMSVerifier')
     const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.kmsverifier'));
     const proxyAddress = parsedEnv.KMS_VERIFIER_CONTRACT_ADDRESS;
     const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
-    await upgrades.upgradeProxy(proxy, newImplem, { call: { fn: 'reinitialize' } });
+    const parsedEnv2 = dotenv.parse(fs.readFileSync('addressesL2/.env.decryptionmanager'));
+    const verifyingContractSource = parsedEnv2.DECRYPTION_MANAGER_ADDRESS;
+    const parsedEnv3 = dotenv.parse(fs.readFileSync('.env'));
+    const chainIDSource = +parsedEnv3.CHAIN_ID_GATEWAY;
+    await upgrades.upgradeProxy(proxy, newImplem, {
+      call: { fn: 'reinitialize', args: [verifyingContractSource, chainIDSource] },
+    });
     console.log('KMSVerifier code set successfully at address:', proxyAddress);
   });
 

@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import {EIP712Upgradeable} from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
+import {EIP712UpgradeableCrossChain} from "./EIP712UpgradeableCrossChain.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
@@ -13,7 +13,7 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
  *          signature verification functions.
  * @dev     The contract uses OpenZeppelin's EIP712Upgradeable for cryptographic operations and is deployed using an UUPS proxy.
  */
-contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradeable {
+contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712UpgradeableCrossChain {
     /// @notice Returned if the KMS signer to add is already a signer.
     error KMSAlreadySigner();
 
@@ -46,12 +46,10 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
     event SignerRemoved(address indexed signer);
 
     /**
-     * @param aclAddress        ACL address.
      * @param handlesList       List of handles.
      * @param decryptedResult   Decrypted result.
      */
-    struct DecryptionResult {
-        address aclAddress;
+    struct PublicDecryptionResult {
         uint256[] handlesList;
         bytes decryptedResult;
     }
@@ -67,24 +65,20 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
         bytes32 hashOfCiphertext;
         address userAddress;
         address contractAddress;
-    }
-
-    /// @notice Ciphertext verification type.
-    string public constant CIPHERTEXT_VERIFICATION_KMS_TYPE =
-        "CiphertextVerificationForKMS(address aclAddress,bytes32 hashOfCiphertext,address userAddress,address contractAddress)";
-
-    /// @notice Ciphertext verification typehash.
-    bytes32 public constant CIPHERTEXT_VERIFICATION_KMS_TYPEHASH = keccak256(bytes(CIPHERTEXT_VERIFICATION_KMS_TYPE));
+    } // TODO: to remove once input mechanism will be updated
 
     /// @notice Decryption result type.
     string public constant DECRYPTION_RESULT_TYPE =
-        "DecryptionResult(address aclAddress,uint256[] handlesList,bytes decryptedResult)";
+        "PublicDecryptionResult(uint256[] handlesList,bytes decryptedResult)";
 
     /// @notice Decryption result typehash.
     bytes32 public constant DECRYPTION_RESULT_TYPEHASH = keccak256(bytes(DECRYPTION_RESULT_TYPE));
 
     /// @notice Name of the contract.
     string private constant CONTRACT_NAME = "KMSVerifier";
+
+    /// @notice Name of the source contract for which original EIP712 was destinated.
+    string private constant CONTRACT_NAME_SOURCE = "DecryptionManager";
 
     /// @notice Major version of the contract.
     uint256 private constant MAJOR_VERSION = 0;
@@ -114,8 +108,8 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
     /**
      * @notice  Re-initializes the contract.
      */
-    function reinitialize() public reinitializer(2) {
-        __EIP712_init(CONTRACT_NAME, "1");
+    function reinitialize(address verifyingContractSource, uint64 chainIDSource) public reinitializer(2) {
+        __EIP712_init(CONTRACT_NAME_SOURCE, "1", verifyingContractSource, chainIDSource);
     }
 
     /**
@@ -174,31 +168,15 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
      * @return isVerified       true if enough provided signatures are valid, false otherwise.
      */
     function verifyDecryptionEIP712KMSSignatures(
-        address aclAddress,
+        address /*aclAddress*/,
         uint256[] memory handlesList,
         bytes memory decryptedResult,
         bytes[] memory signatures
     ) public virtual returns (bool) {
-        DecryptionResult memory decRes;
-        decRes.aclAddress = aclAddress;
+        PublicDecryptionResult memory decRes;
         decRes.handlesList = handlesList;
         decRes.decryptedResult = decryptedResult;
         bytes32 digest = _hashDecryptionResult(decRes);
-        return _verifySignaturesDigest(digest, signatures);
-    }
-
-    /**
-     * @notice               Verifies multiple signatures for a given CiphertextVerificationForKMS (user inputs).
-     * @dev                  Calls verifySignaturesDigest internally.
-     * @param cv             The CiphertextVerificationForKMS struct for encrypted user inputs.
-     * @param signatures     An array of signatures to verify.
-     * @return isVerified    true if enough provided signatures are valid, false otherwise.
-     */
-    function verifyInputEIP712KMSSignatures(
-        CiphertextVerificationForKMS memory cv,
-        bytes[] memory signatures
-    ) public virtual returns (bool) {
-        bytes32 digest = _hashCiphertextVerificationForKMS(cv);
         return _verifySignaturesDigest(digest, signatures);
     }
 
@@ -336,39 +314,16 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
 
     /**
-     * @notice                  Hashes the ciphertext verification.
-     * @param CVkms             CiphertextVerification for KMS.
-     * @return hashTypedData    Hash typed data.
-     */
-    function _hashCiphertextVerificationForKMS(
-        CiphertextVerificationForKMS memory CVkms
-    ) internal view virtual returns (bytes32) {
-        return
-            _hashTypedDataV4(
-                keccak256(
-                    abi.encode(
-                        CIPHERTEXT_VERIFICATION_KMS_TYPEHASH,
-                        CVkms.aclAddress,
-                        CVkms.hashOfCiphertext,
-                        CVkms.userAddress,
-                        CVkms.contractAddress
-                    )
-                )
-            );
-    }
-
-    /**
      * @notice                  Hashes the decryption result.
      * @param decRes            Decryption result.
      * @return hashTypedData    Hash typed data.
      */
-    function _hashDecryptionResult(DecryptionResult memory decRes) internal view virtual returns (bytes32) {
+    function _hashDecryptionResult(PublicDecryptionResult memory decRes) internal view virtual returns (bytes32) {
         return
             _hashTypedDataV4(
                 keccak256(
                     abi.encode(
                         DECRYPTION_RESULT_TYPEHASH,
-                        decRes.aclAddress,
                         keccak256(abi.encodePacked(decRes.handlesList)),
                         keccak256(decRes.decryptedResult)
                     )
