@@ -40,7 +40,7 @@ The KMSVerifier contract is also responsible for checking the signatures of KMS 
 
 ## InputVerifier Contract
 
-This is the only contract which implementation differs between fhEVM-coprocessor and fhEVM-native. For coprocessor, we use [InputVerifier.coprocessor.sol](../../../contracts/contracts/InputVerifier.coprocessor.sol), while for native we use [InputVerifier.native.sol](../../../contracts/contracts/InputVerifier.native.sol).
+This is the only contract which implementation differs between fhEVM-coprocessor and fhEVM-native. For coprocessor, we use [InputVerifier.coprocessor.sol](../../../contracts/contracts/InputVerifier.coprocessor.sol), while for native we use InputVerifier.native.sol.
 
 The native InputVerifier contract just forwards the user input handles with the KMS signers' signatures from TFHEExecutor (when the verifyCiphertext function is called, to insert user inputs) to the KMSVerifier contract, by calling its `verifyInputEIP712KMSSignatures` function.
 

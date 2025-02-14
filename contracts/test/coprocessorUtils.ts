@@ -221,7 +221,7 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
     case 'TrivialEncryptBytes':
       clearText = event.args[1];
       handle = ethers.toBeHex(event.args[3], 32);
-      insertSQL(handle, clearText);
+      insertSQL(handle, BigInt(clearText));
       break;
 
     case 'FheAdd':
