@@ -50,6 +50,7 @@ spec:
             - |
               {{- /* Fallback to helm defined values if the environment variable is unset */}}
               AWS_REGION="${AWS_REGION:={{ .Values.kmsCore.aws.region }}}"
+              AWS_ROLE_ARN="${AWS_ROLE_ARN:={{ .Values.kmsCore.aws.roleArn }}}"
               KMS_CORE__PUBLIC_VAULT__STORAGE="${KMS_CORE__PUBLIC_VAULT__STORAGE:={{ include "kmsPublicVaultStorage" . }}}"
               KMS_CORE__PRIVATE_VAULT__STORAGE="${KMS_CORE__PRIVATE_VAULT__STORAGE:={{ include "kmsPrivateVaultStorage" . }}}"
               {{- if .Values.kmsCore.privateVault.awskms.enabled -}}
@@ -89,17 +90,13 @@ spec:
             - mountPath: {{ .Values.kmsCore.workdir }}
               name: workdir
         {{- if .Values.kmsCore.nitroEnclave.enabled }}
-        ## temp
-        - command:
-            - cat
-          args:
-            - kms-server.toml
-          image: alpine:latest
-          name: tmp-test
-          workingDir: {{ .Values.kmsCore.workdir }}
-          volumeMounts:
-            - mountPath: {{ .Values.kmsCore.workdir }}
-              name: workdir
+        {{- /* Init Enclave Web Identity TOken Socket */}}
+        - {{ include "proxyFromEnclave"
+               (dict "name" "enclave-web-identity-token"
+                     "image" .Values.socat.image
+                     "vsockPort" .Values.kmsCore.nitroEnclave.ports.webidentitytoken
+          "to" "OPEN:/var/run/secrets/eks.amazonaws.com/serviceaccount/token,rdonly"
+          ) | indent 10 | trim }}
         ##
         {{- /* Init Enclave Config Socket */}}
         - {{ include "proxyFromEnclave"

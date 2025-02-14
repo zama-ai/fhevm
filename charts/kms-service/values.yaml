@@ -71,10 +71,10 @@ kmsCore:
       tracing: 4317
       imds: 5000
       sts: 5500
-      token: 5600
       s3: 6000
       awskms: 7000
       peer: 50000
+      webidentitytoken: 4100
   publicVault:
     s3:
       enabled: true
@@ -89,6 +89,7 @@ kmsCore:
       enabled: false
       keychain: awskms://symm/00000000-0000-0000-0000-000000000000
   aws:
+    roleArn:
     region: eu-west-1
   storage:
     # storageClassName: gp3
@@ -96,7 +97,7 @@ kmsCore:
   ports:
     client: 50100
     peer: 50001
-    metrics: 9464
+    metrics: 9646
   workdir: /root
   serviceMonitor:
     enabled: false
@@ -130,6 +131,7 @@ kmsSimulator:
     secret:
       name: kms-connector-keys
       key: connector-1.mnemonic
+
 grpcHealthProbe:
   image:
     name: ghcr.io/zama-ai/kube-utils
@@ -144,9 +146,7 @@ redis:
 tracing:
   enabled: false
   endpoint: "http://otel-deployment-opentelemetry-collector.observability.svc.cluster.local:4317"
-  metrics:
-    enabled: false
-    interval_sec: 20
+  otlp_timeout_ms: 10000
 
 socat:
   image:
