@@ -1,4 +1,5 @@
 use crate::orchestrator::traits::Event;
+use alloy::primitives::Address;
 use alloy::{primitives::U256, rpc::types::Log};
 use std::fmt::Display;
 use strum_macros::{AsRefStr, Display};
@@ -44,6 +45,10 @@ impl Event for RelayerEvent {
             RelayerEventData::DecryptionResponseRcvdFromGwL2 { .. } => 4,
             RelayerEventData::DecryptResponseSentToHostL1 { .. } => 5,
             RelayerEventData::DecryptionFailed { .. } => 6,
+            RelayerEventData::Input(input_event) => match input_event {
+                InputEventData::ReqFromUser { .. } => 7,
+                InputEventData::RespFromGwL2 { .. } => 8,
+            },
         }
     }
 
@@ -118,6 +123,8 @@ pub enum RelayerEventData {
         // For no handler, just status updated.
         error: String,
     },
+
+    Input(InputEventData),
 }
 
 #[derive(Clone, Debug, Display)]
@@ -134,6 +141,21 @@ pub enum DecryptedValue {
     },
     UserDecrypt {
         user_encrypted_plaintext_shares: Vec<Vec<u8>>,
+        signatures: Vec<Vec<u8>>,
+    },
+}
+
+#[derive(Clone, Debug)]
+pub enum InputEventData {
+    ReqFromUser {
+        contract_chain_id: U256,
+        contract_address: Address,
+        user_address: Address,
+        ciphertext_proofhandles: Vec<[u8; 32]>,
+        zkpok: Vec<u8>,
+    },
+    RespFromGwL2 {
+        handles: Vec<[u8; 32]>,
         signatures: Vec<Vec<u8>>,
     },
 }
