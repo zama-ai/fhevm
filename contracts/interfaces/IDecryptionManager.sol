@@ -13,7 +13,7 @@ interface IDecryptionManager {
     /// @notice expected to be allowed to decrypt this ciphertext
     struct CtHandleContractPair {
         /// @notice The handle of the ciphertext
-        uint256 ciphertextHandle;
+        uint256 ctHandle;
         /// @notice The address of the contract
         address contractAddress;
     }
@@ -63,8 +63,8 @@ interface IDecryptionManager {
 
     /// @notice Requests an public decryption
     /// @dev This function can be called by a user or relayer
-    /// @param ciphertextHandles The handles of the ciphertexts to decrypt
-    function publicDecryptionRequest(uint256[] calldata ciphertextHandles) external;
+    /// @param ctHandles The handles of the ciphertexts to decrypt
+    function publicDecryptionRequest(uint256[] calldata ctHandles) external;
 
     /// @notice Responds to an public decryption request
     /// @dev This function can only be called by the KMS Connectors
