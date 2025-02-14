@@ -174,10 +174,10 @@ Options:
 ```
 
 ##### fhevm-listener
+
 ```bash
-# this service will be renamed fhevm_listener
-$ listen --help
-Usage: listen [OPTIONS]
+$ fhevm_listener --help
+Usage: fhevm_listener [OPTIONS]
 
 Options:
       --url <URL>                                      [default: ws://0.0.0.0:8746]

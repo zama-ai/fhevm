@@ -5,7 +5,7 @@ edition = "2021"
 
 [[bin]]
 path = "src/bin/main.rs"
-name = "listen"
+name = "fhevm_listener"
 test = false
 bench = false
 

@@ -1,6 +1,11 @@
 name: "fhEVM smart contracts Docker Image"
 
 on:
+  pull_request:
+    paths:
+      - .github/workflows/fhevm-smart-contracts.yml
+      - .github/workflows/common-docker.yml
+      - contracts/**
   push:
     branches:
       - main

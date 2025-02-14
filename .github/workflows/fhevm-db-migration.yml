@@ -1,6 +1,11 @@
 name: "fhEVM DB migration Docker Image"
 
 on:
+  pull_request:
+    paths:
+      - .github/workflows/fhevm-coprocessor.yml
+      - .github/workflows/common-docker.yml
+      - fhevm-engine/fhevm-db/**
   push:
     branches:
       - main
