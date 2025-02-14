@@ -6,15 +6,22 @@ export async function deployInitKmsHTTPZFixture() {
   const n = 4;
 
   // Get signers
-  const allSigners = await hre.ethers.getSigners();
-  const [owner, admin] = allSigners;
-  const kmsSigners = allSigners.slice(2, n + 2);
+  const signers = await hre.ethers.getSigners();
+  const [owner, admin] = signers.splice(0, 2);
+  const kmsSigners = signers.splice(0, n);
+  const coprocessorSigners = signers.splice(0, n);
 
   // Create dummy KMS nodes with the signers' addresses
   const kmsNodes = kmsSigners.map((kmsNode) => ({
     connectorAddress: kmsNode.address,
     identity: hre.ethers.randomBytes(32),
     ipAddress: "127.0.0.1",
+  }));
+
+  // Create dummy Coprocessors with the signers' addresses
+  const coprocessors = coprocessorSigners.map((coprocessorSigner) => ({
+    connectorAddress: coprocessorSigner.address,
+    identity: hre.ethers.randomBytes(32),
   }));
 
   const HTTPZ = await hre.ethers.getContractFactory("HTTPZ", owner);
@@ -27,14 +34,17 @@ export async function deployInitKmsHTTPZFixture() {
   // Add the KMS nodes
   await httpz.connect(admin).addKmsNodes(kmsNodes);
 
+  // Add the Coprocessor
+  await httpz.connect(admin).addCoprocessors(coprocessors);
+
   // Mark all KMS nodes as ready
   for (let i = 0; i < n; i++) {
     await httpz
       .connect(kmsSigners[i])
       .kmsNodeReady(hre.ethers.randomBytes(32), "0x1234567890abcdef1234567890abcdef12345678");
+
+    await httpz.connect(coprocessorSigners[i]).coprocessorReady("0x1234567890abcdef1234567890abcdef12345678");
   }
 
-  // The first signer is the owner, the second is the admin, the next n are the KMS nodes
-  const signers = allSigners.slice(n + 2);
-  return { httpz, owner, admin, kmsSigners, signers };
+  return { httpz, owner, admin, kmsSigners, coprocessorSigners, signers };
 }

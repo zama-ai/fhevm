@@ -17,13 +17,13 @@ interface IZKPoKManager {
     /// @param contractChainId The chainId of the contract requiring the ZK Proof verification
     /// @param contractAddress The address of the dapp requiring the ZK Proof verification
     /// @param userAddress The address of the user providing the input
-    /// @param ciphertextProof The ciphertext and proof to be verified
+    /// @param ciphertextWithZKProof The combination of the ciphertext (plain text signed with user PK) and the ZK Proof
     event VerifyProofRequest(
         uint256 indexed zkProofId,
         uint256 indexed contractChainId,
         address contractAddress,
         address userAddress,
-        bytes ciphertextProof
+        bytes ciphertextWithZKProof
     );
 
     /// @notice Emitted once a ZK Proof verification is completed
@@ -34,7 +34,8 @@ interface IZKPoKManager {
     event VerifyProofResponse(uint256 indexed zkProofId, bytes32[] handles, bytes[] signatures);
 
     /// @notice Error indicating that a given chain ID is not registered
-    error NetworkNotRegistered();
+    /// @param chainId The chainId of the blockchain that is not registered
+    error NetworkNotRegistered(uint256 chainId);
 
     /// @notice Error indicating that the signer is not a valid Coprocessor
     /// @param signer The address of the invalid coprocessor signer
@@ -50,12 +51,12 @@ interface IZKPoKManager {
     /// @param contractChainId The chainId of the blockchain the contract belongs to
     /// @param contractAddress The address of the dapp the input is used for
     /// @param userAddress The address of the user providing the input
-    /// @param ciphertextProof The ciphertext and proof to be verified
+    /// @param ciphertextWithZKProof The combination of the ciphertext (plain text signed with user PK) and the ZK Proof
     function verifyProofRequest(
         uint256 contractChainId,
         address contractAddress,
         address userAddress,
-        bytes calldata ciphertextProof
+        bytes calldata ciphertextWithZKProof
     ) external;
 
     /// @notice Responds to a ZK Proof verification request

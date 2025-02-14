@@ -5,17 +5,17 @@ import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import "./interfaces/IZKPoKManager.sol";
-import "./HTTPZ.sol";
+import "./interfaces/IHTTPZ.sol";
 
 /// @title ZKPoKManager smart contract
 /// @dev See {IZKPoKManager}
 contract ZKPoKManager is IZKPoKManager, EIP712 {
     /// @notice The typed data structure for the EIP712 signature to validate in ZK Proof verification responses.
     /// @dev The name of this struct is not relevant for the signature validation, only the one defined
-    /// @dev ZK_PROOF_VERIFICATION_RESULT_TYPE is, but we keep it the same for clarity.
+    /// @dev EIP712_ZKPOK_TYPE is, but we keep it the same for clarity.
     struct EIP712ZKPoK {
         /// @notice The Coprocessor's computed handles.
-        bytes32[] ctHandles;
+        bytes32[] handles;
         /// @notice The address of the user that has provided the input in the ZK Proof verification request.
         address userAddress;
         /// @notice The address of the dapp requiring the ZK Proof verification.
@@ -25,7 +25,7 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
     }
 
     /// @notice The address of the HTTPZ contract for protocol state calls.
-    address internal immutable _HTTPZ;
+    IHTTPZ internal immutable _HTTPZ;
 
     /// @notice The address of the Payment Manager contract for service fees, burn and distribution.
     address internal immutable _PAYMENT_MANAGER;
@@ -53,7 +53,7 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
 
     /// @notice The definition of the EIP712ZKPoK structure typed data.
     string private constant EIP712_ZKPOK_TYPE =
-        "EIP712ZKPoK(bytes32[] ctHandles,address userAddress,address contractAddress,uint256 contractChainId)";
+        "EIP712ZKPoK(bytes32[] handles,address userAddress,address contractAddress,uint256 contractChainId)";
 
     /// @notice The hash of the EIP712ZKPoK structure typed data definition used for signature validation.
     bytes32 private constant EIP712_ZKPOK_TYPE_HASH = keccak256(bytes(EIP712_ZKPOK_TYPE));
@@ -63,7 +63,7 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
     uint256 private constant MINOR_VERSION = 1;
     uint256 private constant PATCH_VERSION = 0;
 
-    constructor(address httpz, address paymentManager) EIP712(CONTRACT_NAME, "1") {
+    constructor(IHTTPZ httpz, address paymentManager) EIP712(CONTRACT_NAME, "1") {
         _HTTPZ = httpz;
         _PAYMENT_MANAGER = paymentManager;
     }
@@ -73,13 +73,11 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
         uint256 contractChainId,
         address contractAddress,
         address userAddress,
-        bytes calldata ciphertextProof
+        bytes calldata ciphertextWithZKProof
     ) public virtual {
-        // TODO: Enable the following HTTPZ contract call
-        // bool isNetworkRegistered = HTTPZ.isNetwork(contractChainId);
-        bool isNetworkRegistered = true;
+        bool isNetworkRegistered = _HTTPZ.isNetwork(contractChainId);
         if (!isNetworkRegistered) {
-            revert NetworkNotRegistered();
+            revert NetworkNotRegistered(contractChainId);
         }
 
         // TODO(#52): Implement sending service fees to PaymentManager contract
@@ -91,7 +89,7 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
         zkProofContractAddresses[zkProofId] = contractAddress;
         zkProofContractChainIds[zkProofId] = contractChainId;
 
-        emit VerifyProofRequest(zkProofId, contractChainId, contractAddress, userAddress, ciphertextProof);
+        emit VerifyProofRequest(zkProofId, contractChainId, contractAddress, userAddress, ciphertextWithZKProof);
     }
 
     /// @dev See {IZKPoKManager-verifyProofResponse}.
@@ -158,10 +156,7 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
     /// @param signature The signature to be validated
     function _validateEIP712Signature(uint256 zkProofId, bytes32 digest, bytes calldata signature) internal virtual {
         address signer = ECDSA.recover(digest, signature);
-
-        // TODO: Enable the following HTTPZ contract call
-        // bool isCoprocessor = HTTPZ.isCoprocessor(signer);
-        bool isCoprocessor = true;
+        bool isCoprocessor = _HTTPZ.isCoprocessor(signer);
         if (!isCoprocessor) {
             revert InvalidCoprocessorSigner(signer);
         }
@@ -182,7 +177,7 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
                 keccak256(
                     abi.encode(
                         EIP712_ZKPOK_TYPE_HASH,
-                        keccak256(abi.encodePacked(ctVerification.ctHandles)),
+                        keccak256(abi.encodePacked(ctVerification.handles)),
                         ctVerification.userAddress,
                         ctVerification.contractAddress,
                         ctVerification.contractChainId
@@ -196,10 +191,9 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
     /// @dev The consensus threshold is calculated as the simple majority of the total Coprocessors.
     /// @param verifiedSignaturesCount The number of signatures that have been verified for a ZK Proof
     /// @return Whether the consensus for ZK Proof verification is reached
-    function _isConsensusReached(uint256 verifiedSignaturesCount) internal pure virtual returns (bool) {
-        // TODO: Enable the following HTTPZ contract call
-        // uint256 consensusThreshold = _HTTPZ.getCoprocessorsCount() / 2 + 1;
-        uint256 consensusThreshold = 4 / 2 + 1;
+    function _isConsensusReached(uint256 verifiedSignaturesCount) internal view virtual returns (bool) {
+        uint256 coprocessorsCount = _HTTPZ.getCoprocessorsCount();
+        uint256 consensusThreshold = coprocessorsCount / 2 + 1;
         return verifiedSignaturesCount >= consensusThreshold;
     }
 }
