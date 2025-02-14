@@ -14,7 +14,7 @@ export interface EIP712 {
     version: string;
   };
   message: {
-    [key: string]: string | string[] | number | number[] | Uint8Array;
+    [key: string]: string | string[] | number | number[] | Uint8Array | Uint8Array[];
   };
   primaryType: string;
   types: {
@@ -23,7 +23,14 @@ export interface EIP712 {
 }
 
 // Create an EIP712 message for a ZKPoK response
-export function createEIP712ResponseZKPoK(chainId: number, verifyingContract: string): EIP712 {
+export function createEIP712ResponseZKPoK(
+  chainId: number,
+  verifyingContract: string,
+  handles: Uint8Array<ArrayBufferLike>[],
+  userAddress: string,
+  contractAddress: string,
+  contractChainId: string,
+): EIP712 {
   if (!ethers.isAddress(verifyingContract)) {
     throw new Error("Invalid verifying contract address.");
   }
@@ -36,7 +43,7 @@ export function createEIP712ResponseZKPoK(chainId: number, verifyingContract: st
         { name: "verifyingContract", type: "address" },
       ],
       EIP712ZKPoK: [
-        { name: "ctHandles", type: "bytes32[]" },
+        { name: "handles", type: "bytes32[]" },
         { name: "userAddress", type: "address" },
         { name: "contractAddress", type: "address" },
         { name: "contractChainId", type: "uint256" },
@@ -50,10 +57,10 @@ export function createEIP712ResponseZKPoK(chainId: number, verifyingContract: st
       verifyingContract,
     },
     message: {
-      ctHandles: ["0x3132333435363738390000000000000000000000000000000000000000000000"],
-      userAddress: "0x4838B106FCe9647Bdf1E7877BF73cE8B0BAD5f97",
-      contractAddress: "0x68d30f47F19c07bCCEf4Ac7FAE2Dc12FCa3e0dC9",
-      contractChainId: "11155111",
+      handles,
+      userAddress,
+      contractAddress,
+      contractChainId,
     },
   };
 }
