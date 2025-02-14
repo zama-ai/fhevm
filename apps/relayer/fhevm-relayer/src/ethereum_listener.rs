@@ -28,7 +28,7 @@ pub async fn event_listener(
                             category: relayer_event::ApiCategory::PRODUCTION,
                             number: 1,
                         },
-                        relayer_event::RelayerEventData::PubDecryptEventLogRcvdFromHostL1  {
+                        relayer_event::RelayerEventData::EventLogFromHostL1  {
                             event_log,
                         },
                     );

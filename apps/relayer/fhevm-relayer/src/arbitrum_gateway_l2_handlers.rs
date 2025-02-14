@@ -173,7 +173,7 @@ impl ArbitrumGatewayL2Handler {
         &self,
         event: &RelayerEvent,
     ) -> Result<U256, EventProcessingError> {
-        if let RelayerEventData::DecryptResponseEventLogRcvdFromGwL2 { log } = &event.data {
+        if let RelayerEventData::EventLogFromGwL2 { log } = &event.data {
             match DecyptionManager::PublicDecryptionRequest::decode_log_data(log.data(), true) {
                 Ok(event) => {
                     let public_decryption_id = event.publicDecryptionId;
@@ -347,7 +347,7 @@ impl EventHandler<RelayerEvent> for ArbitrumGatewayL2Handler {
                 let handles = ct_handles.clone();
                 self.send_decryption_request_to_rollup(event, handles).await;
             }
-            RelayerEventData::DecryptResponseEventLogRcvdFromGwL2 { .. } => {
+            RelayerEventData::EventLogFromGwL2 { .. } => {
                 self.handle_decrypt_reponse_event_log(event).await;
             }
             RelayerEventData::DecryptionRequestSentToGwL2 {

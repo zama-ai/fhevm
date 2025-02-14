@@ -37,10 +37,10 @@ impl Event for RelayerEvent {
     //TODO: Replace boiler plate with macro based code.
     fn event_id(&self) -> u8 {
         match &self.data {
-            RelayerEventData::PubDecryptEventLogRcvdFromHostL1 { .. } => 0,
+            RelayerEventData::EventLogFromHostL1 { .. } => 0,
             RelayerEventData::DecryptRequestRcvd { .. } => 1,
             RelayerEventData::DecryptionRequestSentToGwL2 { .. } => 2,
-            RelayerEventData::DecryptResponseEventLogRcvdFromGwL2 { .. } => 3,
+            RelayerEventData::EventLogFromGwL2 { .. } => 3,
             RelayerEventData::DecryptionResponseRcvdFromGwL2 { .. } => 4,
             RelayerEventData::DecryptResponseSentToHostL1 { .. } => 5,
             RelayerEventData::DecryptionFailed { .. } => 6,
@@ -75,7 +75,7 @@ pub enum RelayerEventData {
     // Raw event log from ethereum. Handler will check event type, decode the
     // event, store ethereum related contextual data and dispatch a decryption
     // request event.
-    PubDecryptEventLogRcvdFromHostL1 {
+    EventLogFromHostL1 {
         // For ethereum handler
         // TODO: Make relayer event generic of this log type, to make it blockchain agnostic.
         event_log: Log,
@@ -103,7 +103,7 @@ pub enum RelayerEventData {
     // data store of the handler. if not, drops the request (not meant for this
     // relayer instance). if found, creates the next event with the original
     // orchestrator request id retreived from contextual data store.
-    DecryptResponseEventLogRcvdFromGwL2 {
+    EventLogFromGwL2 {
         // For gateway l2 handler
         log: Log,
     },

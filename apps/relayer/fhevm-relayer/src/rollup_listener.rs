@@ -30,7 +30,7 @@ pub async fn event_listener_rollup(
                             category: relayer_event::ApiCategory::PRODUCTION,
                             number: 1,
                         },
-                        relayer_event::RelayerEventData::DecryptResponseEventLogRcvdFromGwL2  {
+                        relayer_event::RelayerEventData::EventLogFromGwL2  {
                             log:event_log,
                         },
                     );

@@ -232,7 +232,7 @@ impl EventHandler<RelayerEvent> for EthereumHostL1Handler {
             "Processing relayer event"
         );
         match event.clone().data {
-            RelayerEventData::PubDecryptEventLogRcvdFromHostL1 {
+            RelayerEventData::EventLogFromHostL1 {
                 event_log: eth_event_log,
             } => {
                 self.handle_public_decrypt_event_log(event, eth_event_log)
