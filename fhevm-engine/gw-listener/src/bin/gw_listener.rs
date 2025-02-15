@@ -1,4 +1,4 @@
-use alloy::primitives::Address;
+use alloy::{primitives::Address, transports::http::reqwest::Url};
 use clap::Parser;
 
 #[derive(Parser, Debug, Clone)]
@@ -11,7 +11,7 @@ struct Conf {
     database_pool_size: u32,
 
     #[arg(long)]
-    gw_url: String,
+    gw_url: Url,
 
     #[arg(short, long)]
     zkpok_manager_address: Address,

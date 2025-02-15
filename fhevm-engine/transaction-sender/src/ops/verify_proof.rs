@@ -75,11 +75,18 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
         &self,
         db_pool: &Pool<Postgres>,
         zk_proof_id: i64,
+        error: &str,
     ) -> anyhow::Result<()> {
         debug!(target: VERIFY_PROOFS_TARGET, "Updating retry count of proof with id {}", zk_proof_id);
         sqlx::query!(
-            "UPDATE verify_proofs SET retry_count = retry_count + 1 WHERE zk_proof_id = $1",
-            zk_proof_id
+            "UPDATE verify_proofs
+            SET
+                retry_count = retry_count + 1,
+                last_error = $2,
+                last_retry_at = NOW()
+            WHERE zk_proof_id = $1",
+            zk_proof_id,
+            error
         )
         .execute(db_pool)
         .await?;
@@ -121,7 +128,7 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
                     self.remove_proof_by_id(&db_pool, txn_request.0).await?;
                     return Ok(());
                 } else {
-                    self.update_retry_count_by_proof_id(&db_pool, txn_request.0)
+                    self.update_retry_count_by_proof_id(&db_pool, txn_request.0, &e.to_string())
                         .await?;
                     return Err(anyhow::Error::new(e));
                 }
@@ -137,7 +144,7 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
             Ok(receipt) => receipt,
             Err(e) => {
                 error!(target: VERIFY_PROOFS_TARGET, "Getting receipt failed with error: {}", e);
-                self.update_retry_count_by_proof_id(&db_pool, txn_request.0)
+                self.update_retry_count_by_proof_id(&db_pool, txn_request.0, &e.to_string())
                     .await?;
                 return Err(anyhow::Error::new(e));
             }
@@ -149,7 +156,7 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
         } else {
             error!(target: VERIFY_PROOFS_TARGET, "Transaction {} failed with status {}", 
                 receipt.transaction_hash, receipt.status());
-            self.update_retry_count_by_proof_id(&db_pool, txn_request.0)
+            self.update_retry_count_by_proof_id(&db_pool, txn_request.0, "receipt status = false")
                 .await?;
             return Err(anyhow::anyhow!(
                 "Transaction {} failed with status {}",
@@ -172,13 +179,15 @@ where
 
     async fn execute(&self, db_pool: &Pool<Postgres>) -> anyhow::Result<bool> {
         let zkpok_manager = ZKPoKManager::new(self.zkpok_manager_address, &self.provider);
-        self.remove_proofs_by_retry_count(
-            db_pool,
-            self.database_conf.verify_proof_resp_max_retries,
-        )
-        .await?;
+        if self.database_conf.verify_proof_remove_after_max_retries {
+            self.remove_proofs_by_retry_count(
+                db_pool,
+                self.database_conf.verify_proof_resp_max_retries,
+            )
+            .await?;
+        }
         let rows = sqlx::query!(
-            "SELECT *
+            "SELECT zk_proof_id, chain_id, contract_address, user_address, handles
              FROM verify_proofs
              WHERE verified = true AND retry_count < $1
              ORDER BY zk_proof_id
@@ -193,13 +202,15 @@ where
             rows.len() == self.database_conf.verify_proof_resp_batch_limit as usize;
         let mut join_set = JoinSet::new();
         for row in rows.into_iter() {
-            if row.handles.is_empty() || row.handles.len() % 32 != 0 {
-                error!(target: VERIFY_PROOFS_TARGET, "Bad handles field, len {} is 0 or not divisible by 32", row.handles.len());
+            let handles = row
+                .handles
+                .ok_or(anyhow::anyhow!("handles field is None"))?;
+            if handles.is_empty() || handles.len() % 32 != 0 {
+                error!(target: VERIFY_PROOFS_TARGET, "Bad handles field, len {} is 0 or not divisible by 32", handles.len());
                 self.remove_proof_by_id(db_pool, row.zk_proof_id).await?;
                 continue;
             }
-            let handles: Vec<FixedBytes<32>> = row
-                .handles
+            let handles: Vec<FixedBytes<32>> = handles
                 .chunks(32)
                 .map(|chunk| {
                     let array: [u8; 32] = chunk.try_into().expect("chunk size must be 32");

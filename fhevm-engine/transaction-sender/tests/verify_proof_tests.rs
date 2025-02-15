@@ -349,3 +349,148 @@ async fn verify_proof_response_other_reversal_receipt() -> anyhow::Result<()> {
         .await?;
     Ok(())
 }
+
+#[tokio::test]
+#[serial(db)]
+async fn verify_proof_max_retries_remove_entry() -> anyhow::Result<()> {
+    let mut env = TestEnvironment::new().await?;
+    env.conf.verify_proof_remove_after_max_retries = true;
+    env.conf.verify_proof_resp_max_retries = 2;
+
+    let provider = Arc::new(ProviderBuilder::new().on_anvil_with_wallet());
+    let zkpok_manager = ZKPoKManager::deploy(&provider, false, true).await?;
+    let ciphertext_storage = CiphertextStorage::deploy(&provider).await?;
+    let txn_sender = TransactionSender::new(
+        &zkpok_manager.address(),
+        &ciphertext_storage.address(),
+        env.signer.clone(),
+        provider.clone(),
+        env.cancel_token.clone(),
+        env.conf.clone(),
+        None,
+    );
+
+    let proof_id: u32 = random();
+
+    let run_handle = tokio::spawn(async move { txn_sender.run().await });
+
+    // Insert a proof into the database.
+    sqlx::query!(
+        "INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
+         VALUES ($1, $2, $3, $4, $5, true)",
+        proof_id as i64,
+        42,
+        env.signer.address().to_string(),
+        env.signer.address().to_string(),
+        &[1u8; 64],
+    )
+    .execute(&env.db_pool)
+    .await?;
+
+    // Notify the sender to process the proof.
+    sqlx::query!(
+        "SELECT pg_notify($1, '')",
+        env.conf.verify_proof_resp_db_channel
+    )
+    .execute(&env.db_pool)
+    .await?;
+
+    // Make sure the proof is removed from the database.
+    loop {
+        let rows = sqlx::query!(
+            "SELECT *
+             FROM verify_proofs
+             WHERE zk_proof_id = $1",
+            proof_id as i64,
+        )
+        .fetch_all(&env.db_pool)
+        .await?;
+        if rows.is_empty() {
+            break;
+        }
+        sleep(Duration::from_millis(500)).await;
+    }
+
+    env.cancel_token.cancel();
+    run_handle.await??;
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn verify_proof_max_retries_do_not_remove_entry() -> anyhow::Result<()> {
+    let mut env = TestEnvironment::new().await?;
+    env.conf.verify_proof_remove_after_max_retries = false;
+    env.conf.verify_proof_resp_max_retries = 2;
+
+    let provider = Arc::new(ProviderBuilder::new().on_anvil_with_wallet());
+    let zkpok_manager = ZKPoKManager::deploy(&provider, false, true).await?;
+    let ciphertext_storage = CiphertextStorage::deploy(&provider).await?;
+    let txn_sender = TransactionSender::new(
+        &zkpok_manager.address(),
+        &ciphertext_storage.address(),
+        env.signer.clone(),
+        provider.clone(),
+        env.cancel_token.clone(),
+        env.conf.clone(),
+        None,
+    );
+
+    let proof_id: u32 = random();
+
+    let run_handle = tokio::spawn(async move { txn_sender.run().await });
+
+    // Insert a proof into the database.
+    sqlx::query!(
+        "INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
+         VALUES ($1, $2, $3, $4, $5, true)",
+        proof_id as i64,
+        42,
+        env.signer.address().to_string(),
+        env.signer.address().to_string(),
+        &[1u8; 64],
+    )
+    .execute(&env.db_pool)
+    .await?;
+
+    // Notify the sender to process the proof.
+    sqlx::query!(
+        "SELECT pg_notify($1, '')",
+        env.conf.verify_proof_resp_db_channel
+    )
+    .execute(&env.db_pool)
+    .await?;
+
+    // Wait until retry_count = 2.
+    loop {
+        let rows = sqlx::query!(
+            "SELECT *
+             FROM verify_proofs
+             WHERE zk_proof_id = $1 AND retry_count = 2 AND verified = true",
+            proof_id as i64,
+        )
+        .fetch_all(&env.db_pool)
+        .await?;
+        if rows.len() > 0 {
+            break;
+        }
+        sleep(Duration::from_millis(500)).await;
+    }
+
+    // Stop the transaction sender.
+    env.cancel_token.cancel();
+    run_handle.await??;
+
+    // Make sure the entry is not removed.
+    let rows = sqlx::query!(
+        "SELECT *
+         FROM verify_proofs
+         WHERE zk_proof_id = $1 AND retry_count = 2 AND verified = true",
+        proof_id as i64,
+    )
+    .fetch_all(&env.db_pool)
+    .await?;
+    assert_eq!(rows.len(), 1);
+
+    Ok(())
+}

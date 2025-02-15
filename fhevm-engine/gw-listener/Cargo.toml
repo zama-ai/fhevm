@@ -8,4 +8,16 @@ license.workspace = true
 [dependencies]
 # workspace dependencies
 alloy = { workspace = true }
+anyhow = { workspace = true }
 clap = { workspace = true }
+sqlx = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[build-dependencies]
+foundry-compilers = { version = "0.13.0", features = ["svm-solc"] }
+
+[dev-dependencies]
+serial_test = "3.2.0"

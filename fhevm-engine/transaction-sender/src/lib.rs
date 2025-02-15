@@ -11,6 +11,7 @@ pub struct ConfigSettings {
 
     pub verify_proof_resp_batch_limit: u32,
     pub verify_proof_resp_max_retries: u32,
+    pub verify_proof_remove_after_max_retries: bool,
 
     pub db_polling_interval_secs: u16,
 
@@ -27,6 +28,7 @@ impl Default for ConfigSettings {
             add_ciphertexts_db_channel: "add_ciphertexts".to_owned(),
             verify_proof_resp_batch_limit: 128,
             verify_proof_resp_max_retries: 15,
+            verify_proof_remove_after_max_retries: true,
             db_polling_interval_secs: 5,
             error_sleep_initial_secs: 1,
             error_sleep_max_secs: 16,

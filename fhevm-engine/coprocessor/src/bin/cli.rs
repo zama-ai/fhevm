@@ -1,7 +1,13 @@
 use std::str::FromStr;
 
 use clap::Parser;
-use coprocessor::server::{common::FheOperation, coprocessor::{fhevm_coprocessor_client::FhevmCoprocessorClient, AsyncComputation, AsyncComputationInput, AsyncComputeRequest, GetCiphertextBatch, TrivialEncryptBatch, TrivialEncryptRequestSingle}};
+use coprocessor::server::{
+    common::FheOperation,
+    coprocessor::{
+        fhevm_coprocessor_client::FhevmCoprocessorClient, AsyncComputation, AsyncComputationInput,
+        AsyncComputeRequest, GetCiphertextBatch, TrivialEncryptBatch, TrivialEncryptRequestSingle,
+    },
+};
 use rand::Rng;
 use sqlx::types::Uuid;
 use tonic::metadata::MetadataValue;
@@ -47,12 +53,31 @@ pub enum Args {
 fn main() {
     let args = Args::parse();
     match args {
-        Args::InsertTenant { pks_file, sks_file, public_params_file, tenant_api_key, acl_contract_address, verifying_contract_address, chain_id } => {
-            insert_tenant(pks_file, sks_file, public_params_file, tenant_api_key, acl_contract_address, verifying_contract_address, chain_id);
-        },
-        Args::SmokeTest { tenant_api_key, coprocessor_url } => {
+        Args::InsertTenant {
+            pks_file,
+            sks_file,
+            public_params_file,
+            tenant_api_key,
+            acl_contract_address,
+            verifying_contract_address,
+            chain_id,
+        } => {
+            insert_tenant(
+                pks_file,
+                sks_file,
+                public_params_file,
+                tenant_api_key,
+                acl_contract_address,
+                verifying_contract_address,
+                chain_id,
+            );
+        }
+        Args::SmokeTest {
+            tenant_api_key,
+            coprocessor_url,
+        } => {
             smoke_test(tenant_api_key, coprocessor_url);
-        },
+        }
     }
 }
 
@@ -66,11 +91,11 @@ fn smoke_test(tenant_api_key: String, coprocessor_url: String) {
                 .await.expect("Can't connect to coprocessor server");
 
             let api_key_header = format!("bearer {}", tenant_api_key);
-            let handle_a = rand::thread_rng().gen::<u64>().to_be_bytes().to_vec();
-            let handle_b = rand::thread_rng().gen::<u64>().to_be_bytes().to_vec();
-            let output_handle = rand::thread_rng().gen::<u64>().to_be_bytes().to_vec();
-            let num_a = rand::thread_rng().gen::<u32>().to_be_bytes().to_vec();
-            let num_b = rand::thread_rng().gen::<u32>().to_be_bytes().to_vec();
+            let handle_a = rand::rng().random::<u64>().to_be_bytes().to_vec();
+            let handle_b = rand::rng().random::<u64>().to_be_bytes().to_vec();
+            let output_handle = rand::rng().random::<u64>().to_be_bytes().to_vec();
+            let num_a = rand::rng().random::<u32>().to_be_bytes().to_vec();
+            let num_b = rand::rng().random::<u32>().to_be_bytes().to_vec();
 
             println!(
                 "Trivially encrypting numbers 0x{} and 0x{} with handles 0x{} and 0x{}",
@@ -171,15 +196,21 @@ fn smoke_test(tenant_api_key: String, coprocessor_url: String) {
         });
 }
 
-fn insert_tenant(pks_file: String, sks_file: String, public_params_file: String, tenant_api_key: String, acl_contract_address: String, verifying_contract_address: String, chain_id: u32) {
-    let db_url = std::env::var("DATABASE_URL")
-        .expect("DATABASE_URL environment variable is undefined");
-    let pks_file = std::fs::read(&pks_file)
-        .expect("Can't read pks file");
-    let sks_file = std::fs::read(&sks_file)
-        .expect("Can't read pks file");
-    let public_params_file = std::fs::read(&public_params_file)
-        .expect("Can't read public params file");
+fn insert_tenant(
+    pks_file: String,
+    sks_file: String,
+    public_params_file: String,
+    tenant_api_key: String,
+    acl_contract_address: String,
+    verifying_contract_address: String,
+    chain_id: u32,
+) {
+    let db_url =
+        std::env::var("DATABASE_URL").expect("DATABASE_URL environment variable is undefined");
+    let pks_file = std::fs::read(&pks_file).expect("Can't read pks file");
+    let sks_file = std::fs::read(&sks_file).expect("Can't read pks file");
+    let public_params_file =
+        std::fs::read(&public_params_file).expect("Can't read public params file");
     let _ = alloy::primitives::Address::from_str(&acl_contract_address)
         .expect("Can't parse acl contract adddress");
     let _ = alloy::primitives::Address::from_str(&verifying_contract_address)
@@ -194,8 +225,8 @@ fn insert_tenant(pks_file: String, sks_file: String, public_params_file: String,
             let pool = sqlx::postgres::PgPoolOptions::new()
                 .max_connections(1)
                 .connect(&db_url)
-                .await.expect("Can't connect to postgres instance");
-
+                .await
+                .expect("Can't connect to postgres instance");
 
             sqlx::query!(
                 "
