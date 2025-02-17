@@ -1,0 +1,7 @@
+# Zama codeowners rules
+
+# All pull request should be reviewed by at least one of the members of httpz-devs
+*    @zama-ai/httpz-devs
+
+# All CI pull request should be reviewed by at least one of the members of httpz-devops
+.github/workflows/*	@zama-ai/httpz-devops
