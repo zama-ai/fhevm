@@ -3130,10 +3130,13 @@ dependencies = [
  "alloy-provider",
  "alloy-rpc-types",
  "alloy-sol-types",
+ "anyhow",
  "clap",
  "fhevm-engine-common",
+ "foundry-compilers",
  "futures-util",
  "serde",
+ "serial_test",
  "sqlx",
  "tokio",
 ]

@@ -18,6 +18,7 @@ type CoprocessorApiKey = Uuid;
 type FheOperation = i32;
 pub type Handle = Uint<256, 4>;
 pub type TenantId = i32;
+pub type ChainId = u64;
 pub type ToType = FixedBytes<1>;
 pub type ScalarByte = FixedBytes<1>;
 
@@ -43,12 +44,14 @@ pub struct Database {
     url: String,
     pool: sqlx::Pool<Postgres>,
     tenant_id: TenantId,
+    chain_id: ChainId,
 }
 
 impl Database {
     pub async fn new(
         url: &str,
         coprocessor_api_key: &CoprocessorApiKey,
+        chain_id: ChainId,
     ) -> Self {
         let pool = Self::new_pool(url).await;
         let tenant_id =
@@ -56,6 +59,7 @@ impl Database {
         Database {
             url: url.into(),
             tenant_id,
+            chain_id,
             pool,
         }
     }
@@ -285,6 +289,61 @@ impl Database {
             | E::Upgraded(_)
             | E::VerifyCiphertext(_)
             => Ok(()),
+        }
+    }
+
+    pub async fn mark_prev_block_as_valid(
+        &mut self,
+        opt_event: &Option<alloy_rpc_types::Log>,
+        opt_prev_event: &Option<alloy_rpc_types::Log>,
+    ) {
+        let Some(prev_event) = opt_prev_event else {
+            return;
+        };
+        let Some(event) = opt_event else {
+            return;
+        };
+        if prev_event.block_number == event.block_number {
+            return;
+        }
+        let prev_event = if prev_event.block_number < event.block_number {
+            event
+        } else {
+            prev_event
+        };
+        let Some(block_number) = prev_event.block_number else {
+            return;
+        };
+        let Some(block_hash) = prev_event.block_hash else {
+            return;
+        };
+        let _ = sqlx::query!(
+            r#"
+            INSERT INTO blocks_valid (chain_id, block_hash, block_number, listener_tfhe)
+            VALUES ($1, $2, $3, true)
+            ON CONFLICT (chain_id, block_hash) DO UPDATE SET listener_tfhe = true;
+            "#,
+            self.chain_id as i64,
+            block_hash.to_vec(),
+            block_number as i64,
+        )
+        .execute(&self.pool)
+        .await;
+    }
+
+    pub async fn read_last_valid_block(&mut self) -> Option<i64> {
+        let query = || {
+            sqlx::query!(
+                r#"
+            SELECT block_number FROM blocks_valid WHERE chain_id = $1 ORDER BY block_number DESC LIMIT 1;
+            "#,
+                self.chain_id as i64,
+            )
+            .fetch_one(&self.pool)
+        };
+        match query().await {
+            Ok(record) => Some(record.block_number),
+            Err(_err) => None, // table could be empty
         }
     }
 

@@ -248,7 +248,8 @@ fn next_handle() -> Handle {
 async fn listener_event_to_db(app: &TestInstance) -> ListenerDatabase {
     let coprocessor_api_key = sqlx::types::Uuid::parse_str(default_api_key()).unwrap();
     let url = app.db_url().to_string();
-    ListenerDatabase::new(&url, &coprocessor_api_key).await
+    let chain_id = 0;
+    ListenerDatabase::new(&url, &coprocessor_api_key, chain_id).await
 }
 
 #[tokio::test]
