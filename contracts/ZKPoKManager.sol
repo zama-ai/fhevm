@@ -118,6 +118,7 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
 
         /// @dev Only send the event if consensus has not been reached in a previous response call
         /// @dev and the consensus is reached in the current response call.
+        /// @dev This means a "late" response will not be reverted, just ignored
         if (!isProofVerified(zkProofId) && _isConsensusReached(currentSignatures.length)) {
             // TODO(#52): Implement calling PaymentManager contract to burn and distribute fees
             verifiedZKProofs[zkProofId] = true;
