@@ -117,6 +117,7 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
 
         /// @dev Only send the event if consensus has not been reached in a previous response call
         /// @dev and the consensus is reached in the current response call.
+        /// @dev This means a "late" response will not be reverted, just ignored
         if (!publicDecryptionDone[publicDecryptionId] && _isConsensusReachedPublic(verifiedSignaturesArray.length)) {
             publicDecryptionDone[publicDecryptionId] = true;
 
@@ -228,7 +229,9 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
     /// @param verifiedSignaturesCount The number of signatures that have been verified for a public decryption
     /// @return Whether the consensus for public decryption is reached
     function _isConsensusReachedPublic(uint256 verifiedSignaturesCount) internal view virtual returns (bool) {
-        uint256 consensusThreshold = _HTTPZ.getKmsNodesCount() / 2 + 1;
+        // TODO: Change this to use threshold value instead:
+        // https://github.com/zama-ai/gateway-l2/issues/63
+        uint256 consensusThreshold = (_HTTPZ.getKmsNodesCount() - 1) / 3 + 1;
         return verifiedSignaturesCount >= consensusThreshold;
     }
 }

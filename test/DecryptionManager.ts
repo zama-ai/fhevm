@@ -2,12 +2,12 @@ import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { expect } from "chai";
 import hre, { ethers } from "hardhat";
 
-import { deployInitKmsHTTPZFixture } from "./utils/deploys";
+import { deployHTTPZFixture } from "./utils/deploys";
 import { createEIP712ResponsePublicDecrypt, getSignaturesPublicDecrypt } from "./utils/eip712";
 
 describe("DecryptionManager", function () {
   async function deployDecryptionManagerFixture() {
-    const { httpz, owner, admin, kmsSigners, signers } = await loadFixture(deployInitKmsHTTPZFixture);
+    const { httpz, owner, admin, user, kmsSigners, signers } = await loadFixture(deployHTTPZFixture);
 
     const DecryptionManager = await hre.ethers.getContractFactory("DecryptionManager", owner);
 
@@ -19,15 +19,12 @@ describe("DecryptionManager", function () {
       "0x1234567890abcdef1234567890abcdef12345678",
     );
 
-    return { decryptionManager, owner, admin, kmsSigners, signers };
+    return { decryptionManager, owner, admin, user, kmsSigners, signers };
   }
 
   describe("Public Decryption", function () {
     it("Should request and respond to public decryption", async function () {
-      const { decryptionManager, kmsSigners, signers } = await loadFixture(deployDecryptionManagerFixture);
-
-      // Define a user
-      const user = signers[0];
+      const { decryptionManager, kmsSigners, user } = await loadFixture(deployDecryptionManagerFixture);
 
       // Create 3 dummy ciphertext handles
       const ctHandles = [1, 2, 3];
@@ -71,35 +68,13 @@ describe("DecryptionManager", function () {
         .to.be.revertedWithCustomError(decryptionManager, "InvalidKmsSigner")
         .withArgs(user.address);
 
-      // Trigger 4 public decryption responses, one for each KMS node
-      await decryptionManager
+      // Trigger a public decryption response with the first KMS node
+      const responseTx1 = await decryptionManager
         .connect(kmsSigners[0])
         .publicDecryptionResponse(publicDecryptionId, decryptedResult, signature1);
 
-      await decryptionManager
-        .connect(kmsSigners[1])
-        .publicDecryptionResponse(publicDecryptionId, decryptedResult, signature2);
-
-      const responseTx3 = await decryptionManager
-        .connect(kmsSigners[2])
-        .publicDecryptionResponse(publicDecryptionId, decryptedResult, signature3);
-
-      // Check response event: it should only contain 3 valid signatures
-      await expect(responseTx3)
-        .to.emit(decryptionManager, "PublicDecryptionResponse")
-        .withArgs(publicDecryptionId, decryptedResult, [signature1, signature2, signature3]);
-
-      // Check that the public decryption is done
-      const isPublicDecryptionDone = await decryptionManager.connect(user).isPublicDecryptionDone(publicDecryptionId);
-      expect(isPublicDecryptionDone).to.be.true;
-
-      // The 4th response should be ignored and not emit an event
-      const responseTx4 = await decryptionManager
-        .connect(kmsSigners[3])
-        .publicDecryptionResponse(publicDecryptionId, decryptedResult, signature4);
-
-      // Check that the the 4th response does not emit an event
-      await expect(responseTx4).to.not.emit(decryptionManager, "PublicDecryptionResponse");
+      // Check that the the first response does not emit an event
+      await expect(responseTx1).to.not.emit(decryptionManager, "PublicDecryptionResponse");
 
       // Check that a KMS node cannot sign several times for the same public decryption
       await expect(
@@ -109,6 +84,34 @@ describe("DecryptionManager", function () {
       )
         .to.be.revertedWithCustomError(decryptionManager, "KmsSignerAlreadySigned")
         .withArgs(publicDecryptionId, kmsSigners[0].address);
+
+      // Trigger a second public decryption response with the second KMS node, which should reach
+      // consensus (4 / 3 + 1 = 2) and thus emit an event
+      const responseTx2 = await decryptionManager
+        .connect(kmsSigners[1])
+        .publicDecryptionResponse(publicDecryptionId, decryptedResult, signature2);
+
+      // Check response event: it should only contain 2 valid signatures
+      await expect(responseTx2)
+        .to.emit(decryptionManager, "PublicDecryptionResponse")
+        .withArgs(publicDecryptionId, decryptedResult, [signature1, signature2]);
+
+      // Check that the public decryption is done
+      const isPublicDecryptionDone = await decryptionManager.connect(user).isPublicDecryptionDone(publicDecryptionId);
+      expect(isPublicDecryptionDone).to.be.true;
+
+      // The 3rd and 4th responses should be ignored (not reverted) and not emit an event
+      const responseTx3 = await decryptionManager
+        .connect(kmsSigners[2])
+        .publicDecryptionResponse(publicDecryptionId, decryptedResult, signature3);
+
+      const responseTx4 = await decryptionManager
+        .connect(kmsSigners[3])
+        .publicDecryptionResponse(publicDecryptionId, decryptedResult, signature4);
+
+      // Check that the 3rd and 4th responses do not emit an event
+      await expect(responseTx3).to.not.emit(decryptionManager, "PublicDecryptionResponse");
+      await expect(responseTx4).to.not.emit(decryptionManager, "PublicDecryptionResponse");
     });
   });
 });
