@@ -4,11 +4,11 @@ import { expect } from "chai";
 import hre from "hardhat";
 
 import { ZKPoKManager } from "../typechain-types";
-import { createEIP712ResponseZKPoK, deployInitKmsHTTPZFixture, getSignaturesZKPoK } from "./utils";
+import { createEIP712ResponseZKPoK, deployHTTPZFixture, getSignaturesZKPoK } from "./utils";
 
 describe("ZKPoKManager", function () {
   async function deployZKPoKManagerFixture() {
-    const { httpz, coprocessorSigners, admin, signers } = await deployInitKmsHTTPZFixture();
+    const { httpz, coprocessorSigners, admin, signers } = await deployHTTPZFixture();
     const ZKPoKManagerContract = await hre.ethers.getContractFactory("ZKPoKManager");
     const zkpokManager = await ZKPoKManagerContract.deploy(httpz, "0xDA9FeD390f02F559E62240a112aBd2FAe06DCdB5");
     return { httpz, zkpokManager, coprocessorSigners, admin, signers };
@@ -97,23 +97,19 @@ describe("ZKPoKManager", function () {
         contractAddress,
         contractChainId,
       );
-      const [signature1, signature2, signature3, signature4] = await getSignaturesZKPoK(
-        eip712Message,
-        coprocessorSigners,
-      );
+      const [signature1, signature2, signature3] = await getSignaturesZKPoK(eip712Message, coprocessorSigners);
 
       // When
-      await zkpokManager.connect(coprocessorSigners[0]).verifyProofResponse(zkProofId, handles, signature1);
-      await zkpokManager.connect(coprocessorSigners[1]).verifyProofResponse(zkProofId, handles, signature2);
-      let txResponse = zkpokManager.connect(coprocessorSigners[2]).verifyProofResponse(zkProofId, handles, signature3);
+      await zkpokManager.connect(coprocessorSigners[1]).verifyProofResponse(zkProofId, handles, signature1);
+      let txResponse = zkpokManager.connect(coprocessorSigners[2]).verifyProofResponse(zkProofId, handles, signature2);
       let lateTxResponse = zkpokManager
         .connect(coprocessorSigners[2])
-        .verifyProofResponse(zkProofId, handles, signature4);
+        .verifyProofResponse(zkProofId, handles, signature3);
 
       // Then
       await expect(txResponse)
         .to.emit(zkpokManager, "VerifyProofResponse")
-        .withArgs(zkProofId, handles, [signature1, signature2, signature3]);
+        .withArgs(zkProofId, handles, [signature1, signature2]);
       await expect(lateTxResponse).to.not.emit(zkpokManager, "VerifyProofResponse");
     });
 
