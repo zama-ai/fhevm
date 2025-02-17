@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import "./IACLManager.sol";
+import "../shared/Structs.sol";
 
 /// @title An interface for the decryption manager
 /// @notice The decryption manager is responsible for decrypting ciphertext using a KMS
@@ -24,7 +25,7 @@ interface IDecryptionManager {
     /// @param ctHandleCiphertext128Pairs The handles and 128-PBS ciphertexts of the ciphertexts to decrypt
     event PublicDecryptionRequest(
         uint256 indexed publicDecryptionId,
-        IACLManager.CtHandleCiphertext128Pair[] ctHandleCiphertext128Pairs
+        CtHandleCiphertext128Pair[] ctHandleCiphertext128Pairs
     );
 
     /// @notice Emitted when an public decryption response is made
