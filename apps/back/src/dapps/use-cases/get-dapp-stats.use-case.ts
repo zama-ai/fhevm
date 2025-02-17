@@ -6,7 +6,14 @@ import { DAppRepository } from '#dapps/domain/repositories/dapp.repository.js'
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { randomUUID } from 'crypto'
 import { back } from 'messages'
-import { AppError, PubSub, Task, UseCase, validationError } from 'utils'
+import {
+  AppError,
+  LOCAL_FHEVM_CHAIN_ID,
+  PubSub,
+  Task,
+  UseCase,
+  validationError,
+} from 'utils'
 
 type Input = {
   dappId: string
@@ -43,12 +50,15 @@ export class GetDappStatsUseCase implements UseCase<Input, Output> {
               this.logger.debug(
                 `publishing dappStatsRequested for dappId=${dappId}`,
               )
+              this.logger.verbose(
+                `publishing dappStatsRequested for dappId=${dappId} on chain ${LOCAL_FHEVM_CHAIN_ID}`,
+              )
               return this.pubsub
                 .publish(
                   back.dappStatsRequested(
                     {
                       // Note: We should store the chainId in the DApp entity
-                      chainId: '12345',
+                      chainId: LOCAL_FHEVM_CHAIN_ID,
                       address: dapp.address!,
                     },
                     {

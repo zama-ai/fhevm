@@ -1,5 +1,7 @@
 export type {
   AppError,
+  DuplicatedError,
+  ForbiddenError,
   NotFoundError,
   UnauthorizedError,
   UnknownError,
@@ -13,16 +15,19 @@ export type { UnitOfWork } from './unit-of-work.js'
 
 export {
   isAppError,
+  isDuplicatedError,
   isForbiddenError,
   isNotFoundError,
   isUnauthorizedError,
   isUnknowError,
   isValidationError,
+  duplicatedError,
   notFoundError,
   unauthorizedError,
   unknownError,
   validationError,
 } from './app-error.js'
+export * from './chains.js'
 export { Entity } from './entity.js'
 export { isNone, isSome, none, some } from './option.js'
 export { PubSub } from './pubsub.js'

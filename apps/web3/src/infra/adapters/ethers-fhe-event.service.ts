@@ -14,10 +14,14 @@ import { Block } from 'ethers'
 
 @Injectable()
 export class EthersFheEventService implements FheEventService {
+  logger = new Logger(EthersFheEventService.name)
   #implementations = new Map<string, EthersFheEventServiceImpl>()
 
   constructor(private readonly config: Map<string, FheConfig>) {}
   fetchEvents(chainId: ChainId, fromBlock: number): Task<FheEvent[], AppError> {
+    this.logger.debug(
+      `fetch events for chainId ${chainId.value} from block ${fromBlock}`,
+    )
     if (!this.#implementations.has(chainId.value)) {
       const config = this.config.get(chainId.value)
       if (!config) {

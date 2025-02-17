@@ -5,7 +5,3 @@ export const PUBSUB = Symbol('PubSub')
 export const MS_NAME = 'web3'
 export const FHE_EVENT_REPOSITORY = Symbol('FheEventRepository')
 export const FHE_EVENT_SERVICE = Symbol('FheEventService')
-
-// Chain IDs
-export const LOCAL_CHAIN_ID = '12345'
-export const SEPOLIA_CHAIN_ID = '11155111'

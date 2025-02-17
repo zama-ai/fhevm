@@ -2,7 +2,7 @@ import { Test } from '@nestjs/testing'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 import { SnsProducer } from './sns.producer.js'
 import { MS_NAME, PUBSUB } from '#constants.js'
-import { PubSub } from 'utils'
+import { LOCAL_FHEVM_CHAIN_ID, PubSub } from 'utils'
 import { configModule } from '#app.module.js'
 import { back, web3 } from 'messages'
 import { faker } from '@faker-js/faker'
@@ -33,7 +33,7 @@ describe('SnsProducer', () => {
     let event: back.BackEvent
 
     beforeEach(async () => {
-      client.on(PublishCommand).resolves({ MessageId: '12345' })
+      client.on(PublishCommand).resolves({ MessageId: LOCAL_FHEVM_CHAIN_ID })
       event = back.dappStatsRequested(
         {
           chainId: faker.string.numeric(5),
@@ -70,7 +70,7 @@ describe('SnsProducer', () => {
 
   describe.skip('when pubsub pubslish an event', () => {
     beforeEach(() => {
-      client.on(PublishCommand).resolves({ MessageId: '12345' })
+      client.on(PublishCommand).resolves({ MessageId: LOCAL_FHEVM_CHAIN_ID })
     })
 
     test.each([

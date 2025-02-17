@@ -12,6 +12,7 @@ import {
 } from 'vitest'
 import { faker } from '@faker-js/faker'
 import { MS_NAME } from '#constants.js'
+import { LOCAL_FHEVM_CHAIN_ID } from 'utils'
 
 describe('back dapp stats', () => {
   const manager = new IntegrationManager()
@@ -36,7 +37,7 @@ describe('back dapp stats', () => {
         correlationId = faker.string.uuid()
         const message = back.dappStatsRequested(
           {
-            chainId: '12345',
+            chainId: LOCAL_FHEVM_CHAIN_ID,
             address: faker.string.hexadecimal({ length: 40 }),
           },
           { correlationId },
@@ -82,7 +83,7 @@ describe('back dapp stats', () => {
         correlationId = faker.string.uuid()
         const message = back.dappStatsAvailable(
           {
-            chainId: '12345',
+            chainId: LOCAL_FHEVM_CHAIN_ID,
             address: faker.string.hexadecimal({ length: 40 }),
             name: 'FheAdd',
             timestamp: faker.date.past().toISOString(),

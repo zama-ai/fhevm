@@ -9,6 +9,7 @@ const TAGS = [
   'UnauthorizedError',
   'ForbiddenError',
   'UnknownError',
+  'DuplicatedError',
 ] as const
 type Tag = (typeof TAGS)[number]
 
@@ -52,12 +53,22 @@ export function unknownError(message = 'Unknown Error'): UnknownError {
   return { _tag: 'UnknownError', message }
 }
 
+export type DuplicatedError = {
+  _tag: Extract<Tag, 'DuplicatedError'>
+  message: string
+}
+
+export function duplicatedError(message: string): DuplicatedError {
+  return { _tag: 'DuplicatedError', message }
+}
+
 export type AppError =
   | ValidationError
   | NotFoundError
   | UnauthorizedError
   | ForbiddenError
   | UnknownError
+  | DuplicatedError
 
 /**
  * Transforms a ZodError into a ValidationError.
@@ -102,4 +113,8 @@ export function isForbiddenError(error: unknown): error is ForbiddenError {
 
 export function isUnknowError(error: unknown): error is UnknownError {
   return isAppError(error) && error._tag === 'UnknownError'
+}
+
+export function isDuplicatedError(error: unknown): error is DuplicatedError {
+  return isAppError(error) && error._tag === 'DuplicatedError'
 }

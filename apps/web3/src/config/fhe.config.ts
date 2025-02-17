@@ -1,6 +1,6 @@
 import { ChainId, Web3Address } from '#domain/entities/value-objects.js'
-import { LOCAL_CHAIN_ID } from '#constants.js'
 import { registerAs } from '@nestjs/config'
+import { LOCAL_FHEVM_CHAIN_ID } from 'utils'
 
 export default registerAs('fhe', () => {
   return {
@@ -15,12 +15,12 @@ export interface FheConfig {
 }
 
 const configs: Record<string, () => FheConfig> = {
-  [LOCAL_CHAIN_ID]: () => ({
-    chainId: ChainId.fromString(LOCAL_CHAIN_ID).unwrap(),
+  [LOCAL_FHEVM_CHAIN_ID]: () => ({
+    chainId: ChainId.fromString(LOCAL_FHEVM_CHAIN_ID).unwrap(),
     contractAddress: Web3Address.fromString(
       process.env.LOCAL_TFHE_EXECUTOR_CONTRACT_ADDRESS!,
     ).unwrap(),
-    providerUrl: 'ws://localhost:8746',
+    providerUrl: 'ws://localhost:8756',
   }),
 }
 
