@@ -84,8 +84,9 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
 
         // TODO: Get the 128-PBS ciphertexts from the ACLManager contract instead
         // bytes[] memory ciphertext128s = _ACL_MANAGER.getCiphertexts(ctHandles);
-        IACLManager.CtHandleCiphertext128Pair[]
-            memory ctHandleCiphertext128Pairs = new IACLManager.CtHandleCiphertext128Pair[](ctHandles.length);
+        CtHandleCiphertext128Pair[] memory ctHandleCiphertext128Pairs = new CtHandleCiphertext128Pair[](
+            ctHandles.length
+        );
 
         // TODO: Implement sending service fees to PaymentManager contract
 
