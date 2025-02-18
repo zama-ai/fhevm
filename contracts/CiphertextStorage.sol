@@ -65,27 +65,33 @@ contract CiphertextStorage is ICiphertextStorage {
         bytes calldata ciphertext64,
         bytes calldata ciphertext128
     ) public {
-        // TODO: Implement the HTTPZ.isCoprocessor(msg.sender) contract call
-        bool isCoprocessor = true;
+        bool isCoprocessor = _HTTPZ.isCoprocessor(msg.sender);
         if (!isCoprocessor) {
             revert InvalidCoprocessorSender(msg.sender);
         }
-        // TODO: Implement the HTTPZ.isCurrentKeyId(keyId) contract call
-        bool isCurrentKeyId = true;
+        /// @dev Check if the received key ID is the latest activated.
+        // TODO: Revisit the following line accordingly with key lifecycles issue /gateway-l2/issues/90
+        bool isCurrentKeyId = _HTTPZ.isCurrentKeyId(keyId);
         if (!isCurrentKeyId) {
             revert InvalidCurrentKeyId(keyId);
         }
+        /// @dev Check if the Coprocessor has already added the ciphertext.
         if (_ctHandleSenders[ctHandle][msg.sender]) {
             revert CoprocessorHasAlreadyAdded(msg.sender);
         }
         _ctHandleCounters[ctHandle]++;
         _ctHandleSenders[ctHandle][msg.sender] = true;
+
+        /// @dev Only send the event if consensus has not been reached in a previous call
+        /// @dev and the consensus is reached in the current call.
+        /// @dev This means a "late" allow will not be reverted, just ignored
         if (!hasCiphertext(ctHandle) && _isConsensusReached(ctHandle)) {
             _ciphertext64s[ctHandle] = ciphertext64;
             _ciphertext128s[ctHandle] = ciphertext128;
             _keyIds[ctHandle] = keyId;
             _chainIds[ctHandle] = chainId;
             _storedCiphertexts[ctHandle] = true;
+
             emit AddCiphertext(ctHandle);
         }
     }
@@ -111,8 +117,7 @@ contract CiphertextStorage is ICiphertextStorage {
     /// @dev This function calls the HTTPZ contract to retrieve the current Coprocessors.
     /// @dev The consensus threshold is calculated as the simple majority of the total Coprocessors.
     function _isConsensusReached(uint256 ctHandle) internal view returns (bool) {
-        // TODO: Implement the HTTPZ.getCoprocessorsCount() contract call
-        uint256 coprocessorsCount = 4;
+        uint256 coprocessorsCount = _HTTPZ.getCoprocessorsCount();
         uint256 consensusThreshold = coprocessorsCount / 2 + 1;
         return _ctHandleCounters[ctHandle] >= consensusThreshold;
     }

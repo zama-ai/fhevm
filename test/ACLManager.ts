@@ -7,9 +7,9 @@ import { ACLManager } from "../typechain-types";
 import { deployHTTPZFixture } from "./utils";
 
 describe("ACLManager", function () {
+  const keyId = 0; // Using exceptional first key (currentKeyId == 0). See {HTTPZ-activateKeyRequest}
   const ctHandle = 123;
-  const keyId = 456;
-  const chainId = 789;
+  const chainId = 456;
   const ciphertext128 = "0x02";
 
   let aclManager: ACLManager;
