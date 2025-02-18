@@ -48,12 +48,12 @@ contract CiphertextStorage is ICiphertextStorage {
     /// @notice See {ICiphertextStorage-getCiphertexts}.
     function getCiphertexts(
         uint256[] calldata ctHandles
-    ) public view returns (CtHandleCiphertext128Pair[] memory ctHandleCiphertext128Pairs) {
-        ctHandleCiphertext128Pairs = new CtHandleCiphertext128Pair[](ctHandles.length);
+    ) public view returns (CiphertextMaterial[] memory ctMaterials) {
+        ctMaterials = new CiphertextMaterial[](ctHandles.length);
         for (uint256 i = 0; i < ctHandles.length; i++) {
-            ctHandleCiphertext128Pairs[i] = CtHandleCiphertext128Pair(ctHandles[i], _ciphertext128s[ctHandles[i]]);
+            ctMaterials[i] = CiphertextMaterial(ctHandles[i], _keyIds[ctHandles[i]], _ciphertext128s[ctHandles[i]]);
         }
-        return ctHandleCiphertext128Pairs;
+        return ctMaterials;
     }
 
     /// @notice See {ICiphertextStorage-addCiphertext}.

@@ -84,13 +84,11 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
 
         // TODO: Get the 128-PBS ciphertexts from the ACLManager contract instead
         // bytes[] memory ciphertext128s = _ACL_MANAGER.getCiphertexts(ctHandles);
-        CtHandleCiphertext128Pair[] memory ctHandleCiphertext128Pairs = new CtHandleCiphertext128Pair[](
-            ctHandles.length
-        );
+        CiphertextMaterial[] memory ctMaterials = new CiphertextMaterial[](ctHandles.length);
 
         // TODO: Implement sending service fees to PaymentManager contract
 
-        emit PublicDecryptionRequest(publicDecryptionId, ctHandleCiphertext128Pairs);
+        emit PublicDecryptionRequest(publicDecryptionId, ctMaterials);
     }
 
     /// @dev See {IDecryptionManager-publicDecryptionResponse}.

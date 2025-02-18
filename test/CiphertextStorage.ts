@@ -90,7 +90,7 @@ describe("CiphertextStorage", function () {
       const result = await ciphertextStorageInstance.getCiphertexts([ctHandle]);
 
       // Then
-      expect(result).to.be.deep.eq([[ctHandle, ciphertext128]]);
+      expect(result).to.be.deep.eq([[ctHandle, keyId, ciphertext128]]);
     });
   });
 

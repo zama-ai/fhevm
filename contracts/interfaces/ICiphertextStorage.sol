@@ -30,10 +30,10 @@ interface ICiphertextStorage {
 
     /// @notice Retrieves the list of 128-PBS ciphertexts for the given handles.
     /// @param ctHandles The list of handles of the ciphertexts to retrieve.
-    /// @return ctHandleCiphertext128Pairs The list of 128-PBS ciphertexts and its handles.
+    /// @return ctMaterials The list of 128-PBS ciphertexts, its handles and its key IDs.
     function getCiphertexts(
         uint256[] calldata ctHandles
-    ) external view returns (CtHandleCiphertext128Pair[] memory ctHandleCiphertext128Pairs);
+    ) external view returns (CiphertextMaterial[] memory ctMaterials);
 
     /// @notice Adds a new ciphertext to the storage.
     /// @param ctHandle The handle of the storing ciphertext.

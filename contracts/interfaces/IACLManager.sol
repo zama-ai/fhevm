@@ -76,14 +76,12 @@ interface IACLManager {
     function getUserCiphertexts(
         address userAddress,
         IDecryptionManager.CtHandleContractPair[] calldata ctHandleContractPairs
-    ) external view returns (CtHandleCiphertext128Pair[] calldata);
+    ) external view returns (CiphertextMaterial[] calldata);
 
     /// @notice Returns the handles and PBS ciphertext pairs for the given ciphertext handles.
     /// @param ctHandles The ciphertext handles to retrieve if public decryption is allowed.
     /// @return A list of handle and PBS ciphertext pairs for the given ciphertext handles.
-    function getPublicCiphertexts(
-        uint256[] calldata ctHandles
-    ) external view returns (CtHandleCiphertext128Pair[] calldata);
+    function getPublicCiphertexts(uint256[] calldata ctHandles) external view returns (CiphertextMaterial[] calldata);
 
     /// @notice Indicates if the decryption access to the given delegatee is already delegated.
     /// @param chainId The chainId of the blockchain the allowed contracts addresses belongs to.
