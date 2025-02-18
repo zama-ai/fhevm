@@ -10,7 +10,7 @@ import "../shared/Structs.sol";
  */
 interface ICiphertextStorage {
     /// @notice Emitted when a ciphertext storing consensus is reached.
-    event AddCiphertext(uint256 ctHandle);
+    event AddCiphertext(uint256 indexed ctHandle);
 
     /// @notice Error indicating that the given keyId is outdated.
     error InvalidCurrentKeyId(uint256 keyId);
