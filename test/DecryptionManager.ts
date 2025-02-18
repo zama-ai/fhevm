@@ -56,7 +56,7 @@ describe("DecryptionManager", function () {
       // TODO: Check the arguments once the ACLManager is implemented
       // Check request event
       await expect(requestTx).to.emit(decryptionManager, "PublicDecryptionRequest");
-      // .withArgs(publicDecryptionId, ctHandleCiphertext128Pairs);
+      // .withArgs(publicDecryptionId, ctMaterials);
 
       const [userSignature] = await getSignaturesPublicDecrypt(eip712Message, [user]);
 

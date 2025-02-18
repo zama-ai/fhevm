@@ -216,7 +216,7 @@ describe("ACLManager", function () {
         .getUserCiphertexts(allowedUserAddress, ctHandleContractPairs);
 
       // Then
-      expect(txResponse).to.deep.equal([[ctHandle, ciphertext128]]);
+      expect(txResponse).to.deep.equal([[ctHandle, keyId, ciphertext128]]);
     });
 
     it("Should revert with UserDecryptNotAllowed", async function () {
@@ -278,7 +278,7 @@ describe("ACLManager", function () {
       const txResponse = await aclManager.connect(coprocessorSigners[0]).getPublicCiphertexts([ctHandle]);
 
       // Then
-      expect(txResponse).to.deep.equal([[ctHandle, ciphertext128]]);
+      expect(txResponse).to.deep.equal([[ctHandle, keyId, ciphertext128]]);
     });
 
     it("Should revert with PublicDecryptNotAllowed", async function () {
