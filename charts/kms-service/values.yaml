@@ -59,6 +59,7 @@ kmsCore:
     decryption_mode: "NoiseFloodSmall"
   nitroEnclave:
     enabled: false
+    debug: true
     # Enclave CPU count
     cpuCount: 6
     # Enclave Memory in GiB
@@ -170,7 +171,6 @@ minio:
       - "mc anonymous set public provisioning/kms-public"
 
 rustLog: info
-debug: true
 
 podSecurityContext:
   # To set when the image will support non root user
