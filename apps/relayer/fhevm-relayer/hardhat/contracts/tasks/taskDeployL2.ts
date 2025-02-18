@@ -4,6 +4,32 @@ import { task } from 'hardhat/config';
 import type { TaskArguments } from 'hardhat/types';
 import path from 'path';
 
+function writeEnvFile(envFilePath: string, solFilePath: string, content: string): void {
+  try {
+    fs.writeFileSync(envFilePath, content, { flag: "w" });
+    console.log(`Content written to ${envFilePath} successfully!`);
+  } catch (err) {
+    console.error(`Failed to write to ${envFilePath}:`, err);
+  }
+
+    const solidityTemplate = `// SPDX-License-Identifier: BSD-3-Clause-Clear
+
+pragma solidity ^0.8.24;
+
+address constant ${content};
+`;
+
+    try {
+      fs.writeFileSync(solFilePath, solidityTemplate, {
+        encoding: 'utf8',
+        flag: 'w',
+      });
+      console.log(`${solFilePath} file has been generated successfully.`);
+    } catch (error) {
+      console.error(`Failed to write ${solFilePath}`, error);
+    }
+}
+
 task('task:deployDecryptionManager')
   .addParam('privateKey', 'The deployer private key')
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
@@ -13,68 +39,61 @@ task('task:deployDecryptionManager')
     await decryptionManager.waitForDeployment();
     const decryptionManagerAddress = await decryptionManager.getAddress();
 
-    const envFilePath = path.join(__dirname, '../addressesL2/.env.decryptionmanager');
+    const envFilePath = path.join(__dirname, '../addressesL2/.env.decryption_manager');
+    const solFilePath = path.join(__dirname, '../addressesL2/DecryptionManagerAddress.sol');
     const content = `DECRYPTION_MANAGER_ADDRESS=${decryptionManagerAddress}`;
-    try {
-      fs.writeFileSync(envFilePath, content, { flag: 'w' });
-      console.log('decryptionManagerAddress written to addressesL2/.env.decryptionmanager successfully!');
-    } catch (err) {
-      console.error('Failed to write to addressesL2/.env.decryptionmanager:', err);
-    }
-
-    const solidityTemplate = `// SPDX-License-Identifier: BSD-3-Clause-Clear
-
-pragma solidity ^0.8.24;
-
-address constant DECRYPTION_MANAGER_ADDRESS = ${taskArguments.address};
-`;
-
-    try {
-      fs.writeFileSync('./addressesL2/DecryptionManagerAddress.sol', solidityTemplate, {
-        encoding: 'utf8',
-        flag: 'w',
-      });
-      console.log('addressesL2/DecryptionManagerAddress.sol file has been generated successfully.');
-    } catch (error) {
-      console.error('Failed to write addressesL2/DecryptionManagerAddress.sol', error);
-    }
+    writeEnvFile(envFilePath, solFilePath, content);
   });
 
-
-  task('task:deployZkPoKManager')
-  .addParam('privateKey', 'The deployer private key')
-  .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
+// Deploy the HTTPZ contract
+task("task:deployHttpz")
+  .addParam("privateKey", "The deployer private key")
+  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
     const deployer = new ethers.Wallet(taskArguments.privateKey).connect(ethers.provider);
-    const zkpokManagerFactory = await ethers.getContractFactory('ZkPoKManager', deployer);
-    const zkpokManager = await zkpokManagerFactory.deploy();
+    const HTTPZ = await ethers.getContractFactory("HTTPZ", deployer);
+    const httpz = await HTTPZ.deploy();
+
+    // Wait for the deployment to be confirmed
+    await httpz.waitForDeployment();
+
+    const httpzAddress = await httpz.getAddress();
+
+    console.log("HTTPZ contract deployed to:", httpzAddress);
+
+    // Save the HTTPZ address to the .env.httpz file
+    const envFilePath = path.join(__dirname, "../addressesL2/.env.httpz");
+    const solFilePath = path.join(__dirname, "../addressesL2/HttpzAddress.sol");
+    const content = `HTTPZ_ADDRESS=${httpzAddress}`;
+    writeEnvFile(envFilePath, solFilePath, content);
+  });
+
+// Deploy the ZKPoKManager contract
+task("task:deployZkPoKManager")
+  .addParam("privateKey", "The deployer private key")
+  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    const parsedEnvHttpz = dotenv.parse(fs.readFileSync("addressesL2/.env.httpz"));
+    const httpzAddress = parsedEnvHttpz.HTTPZ_ADDRESS;
+
+    const dummyPaymentManagerAddress = "0x0000000000000000000000000000000000000000";
+
+    const deployer = new ethers.Wallet(taskArguments.privateKey).connect(ethers.provider);
+
+    // Deploy ZKPoKManager contract
+    const ZKPoKManager = await ethers.getContractFactory("ZKPoKManager", deployer);
+    const zkpokManager = await ZKPoKManager.deploy(httpzAddress, dummyPaymentManagerAddress);
+
+    // Wait for the deployment to be confirmed
     await zkpokManager.waitForDeployment();
+
     const zkpokManagerAddress = await zkpokManager.getAddress();
 
-    const envFilePath = path.join(__dirname, '../addressesL2/.env.zkpoknmanager');
+    console.log("ZKPoKManager contract deployed to:", zkpokManagerAddress);
+
+    // Save the ZKPoKManager address to the .env.zkpok_manager file
+    const envFilePath = path.join(__dirname, "../addressesL2/.env.zkpok_manager");
+    const solFilePath = path.join(__dirname, "../addressesL2/ZkpokManagerAddress.sol");
     const content = `ZKPOK_MANAGER_ADDRESS=${zkpokManagerAddress}`;
-    try {
-      fs.writeFileSync(envFilePath, content, { flag: 'w' });
-      console.log('zkpokManagerAddress written to addressesL2/.env.zkpoknmanager successfully!');
-    } catch (err) {
-      console.error('Failed to write to addressesL2/.env.zkpoknmanager:', err);
-    }
-
-    const solidityTemplate = `// SPDX-License-Identifier: BSD-3-Clause-Clear
-
-pragma solidity ^0.8.24;
-
-address constant ZKPOK_MANAGER_ADDRESS = ${taskArguments.address};
-`;
-
-    try {
-      fs.writeFileSync('./addressesL2/ZkpokManagerAddress.sol', solidityTemplate, {
-        encoding: 'utf8',
-        flag: 'w',
-      });
-      console.log('addressesL2/ZkpokManagerAddress.sol file has been generated successfully.');
-    } catch (error) {
-      console.error('Failed to write addressesL2/ZkpokManagerAddress.sol', error);
-    }
+    writeEnvFile(envFilePath, solFilePath, content);
   });
 
 task('task:addSignersL2')
@@ -88,7 +107,7 @@ task('task:addSignersL2')
   )
   .addOptionalParam(
     'customDecryptionManagerAddress',
-    'Use a custom address for the DecryptionManager contract instead of the default one - ie stored inside .env.decryptionmanager',
+    'Use a custom address for the DecryptionManager contract instead of the default one - ie stored inside .env.decryption_manager',
   )
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
     const deployer = new ethers.Wallet(taskArguments.privateKey).connect(ethers.provider);
@@ -98,7 +117,7 @@ task('task:addSignersL2')
       decryptionManagerAdd = taskArguments.customDecryptionManagerAddress;
     } else {
       decryptionManagerAdd = dotenv.parse(
-        fs.readFileSync('addressesL2/.env.decryptionmanager'),
+        fs.readFileSync('addressesL2/.env.decryption_manager'),
       ).DECRYPTION_MANAGER_ADDRESS;
     }
     const decryptionManager = await factory.attach(decryptionManagerAdd);

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
-import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import "./interfaces/IZKPoKManager.sol";
 import "./interfaces/IHTTPZ.sol";
 
@@ -75,10 +75,11 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
         address userAddress,
         bytes calldata ciphertextWithZKProof
     ) public virtual {
-        bool isNetworkRegistered = _HTTPZ.isNetwork(contractChainId);
-        if (!isNetworkRegistered) {
-            revert NetworkNotRegistered(contractChainId);
-        }
+        // TODO: Skip call to HTTPZ for testing end-to-end flow
+        // bool isNetworkRegistered = _HTTPZ.isNetwork(contractChainId);
+        // if (!isNetworkRegistered) {
+        //     revert NetworkNotRegistered(contractChainId);
+        // }
 
         // TODO(#52): Implement sending service fees to PaymentManager contract
 

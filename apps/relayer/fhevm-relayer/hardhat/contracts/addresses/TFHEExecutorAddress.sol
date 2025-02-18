@@ -2,4 +2,4 @@
 
 pragma solidity ^0.8.24;
 
-address constant tfheExecutorAdd = 0xFd2197f8e44c86e3443A8f57A69B2d8c80353966;
+address constant tfheExecutorAdd = 0x12B064FB845C1cc05e9493856a1D637a73e944bE;
