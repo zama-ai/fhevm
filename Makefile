@@ -6,3 +6,9 @@ tests:
 
 get-accounts:
 	pnpm exec hardhat get-accounts --num-accounts 15
+
+deploy:
+	./launch-local-gateway-layer2.sh
+
+deploy-init:
+	./launch-init-local-gateway-layer2.sh
