@@ -41,7 +41,8 @@ spec:
       serviceAccountName: {{ .Values.kmsCore.serviceAccountName }}
       subdomain: {{ include "kmsCoreName" . }}
       initContainers:
-        - image: {{ .Values.socat.image.name }}:{{ .Values.socat.image.tag }}
+        - image: {{ .Values.kubeUtils.image.name }}:{{ .Values.kubeUtils.image.tag }}
+          imagePullPolicy: Always
           name: kms-service-init-load-env
           command:
             - /bin/sh
@@ -56,8 +57,6 @@ spec:
               {{- if .Values.kmsCore.privateVault.awskms.enabled -}}
               KMS_CORE__PRIVATE_VAULT__KEYCHAIN="${KMS_CORE__PRIVATE_VAULT__KEYCHAIN:={{ .Values.kmsCore.privateVault.awskms.keychain }}"
               {{- end }}
-              # Install envsubst
-              apk add --update gettext
               envsubst < /var/lib/kms-core/config/kms-server.toml > kms-server.toml
               {{- if .Values.debug }}
               echo "### BEGIN - env ###"
@@ -93,7 +92,7 @@ spec:
         {{- /* Init Enclave Web Identity TOken Socket */}}
         - {{ include "proxyFromEnclave"
                (dict "name" "enclave-web-identity-token"
-                     "image" .Values.socat.image
+                     "image" .Values.kubeUtils.image
                      "vsockPort" .Values.kmsCore.nitroEnclave.ports.webidentitytoken
           "to" "OPEN:/var/run/secrets/eks.amazonaws.com/serviceaccount/token,rdonly"
           ) | indent 10 | trim }}
@@ -101,7 +100,7 @@ spec:
         {{- /* Init Enclave Config Socket */}}
         - {{ include "proxyFromEnclave"
                (dict "name" "enclave-config"
-                     "image" .Values.socat.image
+                     "image" .Values.kubeUtils.image
                      "vsockPort" .Values.kmsCore.nitroEnclave.ports.config
                      "to" (printf "OPEN:kms-server.toml,rdonly")
                 ) | indent 10 | trim }}
@@ -112,21 +111,21 @@ spec:
         {{- /* Init Enclave Logger Socket */}}
         - {{ include "proxyFromEnclave"
                (dict "name" "kms-service-enclave-logger"
-                     "image" .Values.socat.image
+                     "image" .Values.kubeUtils.image
                      "vsockPort" .Values.kmsCore.nitroEnclave.ports.logger
                      "to" "STDOUT"
                ) | indent 10 | trim }}
         {{- /* Init Enclave Tracing Socket */}}
         - {{ include "proxyFromEnclave"
                (dict "name" "kms-service-enclave-tracing"
-                     "image" .Values.socat.image
+                     "image" .Values.kubeUtils.image
                      "vsockPort" .Values.kmsCore.nitroEnclave.ports.tracing
                      "to" (printf "TCP:%s" (urlParse .Values.tracing.endpoint).host)
                 ) | indent 10 | trim }}
         {{- /* Init AWS IMDS Proxy Socket */}}
         - {{ include "proxyFromEnclaveTcp"
                (dict "name" "aws-imds-proxy"
-                     "image" .Values.socat.image
+                     "image" .Values.kubeUtils.image
                      "vsockPort" .Values.kmsCore.nitroEnclave.ports.imds
                      "address" "169.254.169.254"
                      "port" 80
@@ -134,7 +133,7 @@ spec:
         {{- /* Init AWS STS Proxy Socket */}}
         - {{ include "proxyFromEnclaveTcp"
                (dict "name" "aws-sts-proxy"
-                     "image" .Values.socat.image
+                     "image" .Values.kubeUtils.image
                      "vsockPort" .Values.kmsCore.nitroEnclave.ports.sts
                      "address" (printf "sts.%s.amazonaws.com" .Values.kmsCore.aws.region)
                      "port" 443
@@ -142,7 +141,7 @@ spec:
         {{- /* Init AWS S3 Proxy Socket */}}
         - {{ include "proxyFromEnclaveTcp"
                (dict "name" "aws-s3-proxy"
-                     "image" .Values.socat.image
+                     "image" .Values.kubeUtils.image
                      "vsockPort" .Values.kmsCore.nitroEnclave.ports.s3
                      "address" (printf "s3.%s.amazonaws.com" .Values.kmsCore.aws.region)
                      "port" 443
@@ -150,7 +149,7 @@ spec:
         {{- /* Init AWS KMS Proxy Socket */}}
         - {{ include "proxyFromEnclaveTcp"
                (dict "name" "aws-kms-proxy"
-                     "image" .Values.socat.image
+                     "image" .Values.kubeUtils.image
                      "vsockPort" .Values.kmsCore.nitroEnclave.ports.awskms
                      "address" (printf "kms.%s.amazonaws.com" .Values.kmsCore.aws.region)
                      "port" 443
@@ -158,7 +157,7 @@ spec:
         {{- /* Init GRPC CLient Proxy Socket */}}
         - {{ include "proxyToEnclaveTcp"
                (dict "name" "grpc-client-proxy"
-                     "image" .Values.socat.image
+                     "image" .Values.kubeUtils.image
                      "cid" .Values.kmsCore.nitroEnclave.cid
                      "port" .Values.kmsCore.ports.client
                 ) | indent 10 | trim }}
@@ -166,7 +165,7 @@ spec:
         {{- /* Init GRPC Local Peer Proxy Socket */}}
         - {{ include "proxyToEnclaveTcp"
                (dict "name" "grpc-peer-proxy"
-                     "image" .Values.socat.image
+                     "image" .Values.kubeUtils.image
                      "cid" .Values.kmsCore.nitroEnclave.cid
                      "port" .Values.kmsCore.nitroEnclave.ports.peer
                 ) | indent 10 | trim }}
@@ -175,7 +174,7 @@ spec:
           {{- range .Values.kmsCore.thresholdMode.peersList }}
         - {{ include "proxyFromEnclaveTcp"
                (dict "name" (printf "enclave-peer-proxy-%d" (int .id))
-                     "image" $.Values.socat.image
+                     "image" $.Values.kubeUtils.image
                      "vsockPort" (add $.Values.kmsCore.nitroEnclave.ports.peer .id)
                      "address" .host
                      "port" .port
@@ -185,7 +184,7 @@ spec:
           {{- range $i := $peersIDList }}
         - {{ include "proxyFromEnclaveTcp"
                (dict "name" (printf "enclave-peer-proxy-%d" (int $i))
-                     "image" $.Values.socat.image
+                     "image" $.Values.kubeUtils.image
                      "vsockPort" (add $.Values.kmsCore.nitroEnclave.ports.peer $i)
                      "address" (printf "%s-%d" $kmsCoreName (int $i))
                      "port" $.Values.kmsCore.ports.peer

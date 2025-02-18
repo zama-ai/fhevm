@@ -132,7 +132,7 @@ kmsSimulator:
       name: kms-connector-keys
       key: connector-1.mnemonic
 
-grpcHealthProbe:
+kubeUtils:
   image:
     name: ghcr.io/zama-ai/kube-utils
     tag: 0.2.0
@@ -147,11 +147,6 @@ tracing:
   enabled: false
   endpoint: "http://otel-deployment-opentelemetry-collector.observability.svc.cluster.local:4317"
   otlp_timeout_ms: 10000
-
-socat:
-  image:
-    name: alpine/socat
-    tag: latest
 
 minio:
   enabled: false

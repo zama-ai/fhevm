@@ -53,6 +53,7 @@ file:///keys
 {{- define "socatContainer" -}}
 name: {{ .name }}
 image: {{ .image.name }}:{{ .image.tag }}
+imagePullPolicy: Always
 restartPolicy: Always
 command:
   - socat
@@ -74,7 +75,7 @@ args:
 {{- end -}}
 
 {{/* takes a (dict "name" string
-     	     	   "image" (dict "name" string "tag" string)
+                   "image" (dict "name" string "tag" string)
                    "vsockPort" int
 		           "address" string
 		           "port" int) */}}
