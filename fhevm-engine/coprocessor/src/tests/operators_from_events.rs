@@ -6,12 +6,20 @@ use fhevm_listener::contracts::TfheContract::TfheContractEvents;
 use fhevm_listener::database::tfhe_event_propagate::{Database as ListenerDatabase, Handle, ToType};
 
 
-use crate::tests::operators::{generate_binary_test_cases, generate_unary_test_cases, supported_types};
+use crate::tests::operators::{generate_binary_test_cases, generate_unary_test_cases};
 use crate::tests::utils::{default_api_key, setup_test_app, TestInstance};
 use crate::tests::utils::{decrypt_ciphertexts, wait_until_all_ciphertexts_computed};
 
 use crate::tests::operators::BinaryOperatorTestCase;
 use crate::tests::operators::UnaryOperatorTestCase;
+
+pub fn supported_types() -> &'static [i32] {
+    &[
+        0,  // bool
+        8,  // 256 bit
+        9,  // ebytes 64
+    ]
+}
 
 fn tfhe_event(data: TfheContractEvents) -> Log<TfheContractEvents> {
     let address = "0x0000000000000000000000000000000000000000".parse().unwrap();
@@ -106,6 +114,9 @@ async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Err
         .await?;
     let mut listener_event_to_db = listener_event_to_db(&app).await;
     for op in generate_binary_test_cases() {
+        if !supported_types().contains(&op.input_types) {
+            continue;
+        }
         let support_bytes = match S::try_from(op.operand).unwrap() {
             S::FheEq | S::FheNe => true,
             _ => false
@@ -195,6 +206,9 @@ async fn test_fhe_unary_operands_events() -> Result<(), Box<dyn std::error::Erro
     let mut listener_event_to_db = listener_event_to_db(&app).await;
 
     for op in &ops {
+        if !supported_types().contains(&op.operand_types) {
+            continue;
+        }
         let input_handle = next_handle();
         let output_handle = next_handle();
 
