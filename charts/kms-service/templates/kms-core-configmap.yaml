@@ -89,7 +89,7 @@ data:
     [telemetry]
     tracing_service_name = {{ include "kmsCoreName" . | quote }}
     {{- if .Values.kmsCore.nitroEnclave.enabled }}
-    endpoint = "http://localhost:{{ .Values.kmsCore.nitroEnclave.ports.tracing }}"
+    tracing_endpoint = "http://localhost:{{ .Values.kmsCore.nitroEnclave.ports.tracing }}"
     {{- else }}
     tracing_endpoint = {{ .Values.tracing.endpoint | quote }}
     {{- end }}
