@@ -40,6 +40,17 @@ sol!(
     "./artifacts/DecryptionManager.json"
 );
 
+// ZKPoK Manager (Rollup)
+
+sol!(
+    #[allow(missing_docs)]
+    #[sol(rpc)]
+    #[derive(Debug, serde::Serialize, serde::Deserialize)]
+    ZKPoKManager,
+    "./artifacts/ZKPoKManager.json"
+);
+
+
 // Define the Transfer event structure using alloy_sol_types
 sol! {
     #[derive(Debug)]
