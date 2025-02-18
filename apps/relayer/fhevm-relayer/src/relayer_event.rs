@@ -5,7 +5,7 @@ use std::fmt::Display;
 use strum_macros::Display;
 use uuid::Uuid;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct RelayerEvent {
     pub request_id: Uuid,
     pub api_version: ApiVersion,
@@ -59,7 +59,7 @@ impl Event for RelayerEvent {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ApiVersion {
     pub category: ApiCategory,
     pub number: u8,
@@ -77,7 +77,7 @@ pub enum ApiCategory {
     EXPERIMENTAL,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum RelayerEventData {
     // Raw event log from ethereum. Handler will check event type, decode the
     // event, store ethereum related contextual data and dispatch a decryption
