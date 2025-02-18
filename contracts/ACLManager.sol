@@ -169,7 +169,7 @@ contract ACLManager is IACLManager {
     function getUserCiphertexts(
         address userAddress,
         IDecryptionManager.CtHandleContractPair[] calldata ctHandleContractPairs
-    ) public view virtual override returns (CtHandleCiphertext128Pair[] memory) {
+    ) public view virtual override returns (CiphertextMaterial[] memory) {
         if (ctHandleContractPairs.length > _MAX_CONTRACTS_INPUT) {
             revert TooManyContractsRequested(_MAX_CONTRACTS_INPUT, ctHandleContractPairs.length);
         }
@@ -193,7 +193,7 @@ contract ACLManager is IACLManager {
     /// @dev See {IACLManager-getPublicCiphertexts}.
     function getPublicCiphertexts(
         uint256[] calldata ctHandles
-    ) public view virtual override returns (CtHandleCiphertext128Pair[] memory) {
+    ) public view virtual override returns (CiphertextMaterial[] memory) {
         /// @dev Iterate over the ctHandles to check if the public decryption is allowed.
         for (uint256 i = 0; i < ctHandles.length; i++) {
             if (!allowedPublicDecrypts[ctHandles[i]]) {
