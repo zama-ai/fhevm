@@ -1,6 +1,5 @@
 import { Test } from '@nestjs/testing'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
-import { SnsProducer } from './sns.producer.js'
 import { MS_NAME, PUBSUB } from '#constants.js'
 import { LOCAL_FHEVM_CHAIN_ID, PubSub } from 'utils'
 import { configModule } from '#app.module.js'
@@ -8,20 +7,21 @@ import { back, web3 } from 'messages'
 import { faker } from '@faker-js/faker'
 import { PublishCommand, SNSClient } from '@aws-sdk/client-sns'
 import { mockClient } from 'aws-sdk-client-mock'
+import { SNSProducer } from './sns.producer.js'
 
 const client = mockClient(SNSClient)
 
 describe('SnsProducer', () => {
-  let producer: SnsProducer
+  let producer: SNSProducer
   let pubsub: PubSub<back.BackEvent | web3.Web3Event>
 
   beforeEach(async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [configModule],
-      providers: [SnsProducer, { provide: PUBSUB, useValue: new PubSub() }],
+      providers: [SNSProducer, { provide: PUBSUB, useValue: new PubSub() }],
     }).compile()
 
-    producer = moduleRef.get(SnsProducer)
+    producer = moduleRef.get(SNSProducer)
     pubsub = moduleRef.get(PUBSUB)
   })
 
@@ -43,7 +43,7 @@ describe('SnsProducer', () => {
           correlationId: faker.string.uuid(),
         },
       )
-      await producer.sendMessage(event).toPromise()
+      await producer.publish(event).toPromise()
     })
 
     test('then it publishes a message successfully', () => {
