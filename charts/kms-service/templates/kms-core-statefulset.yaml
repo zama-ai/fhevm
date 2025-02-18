@@ -167,7 +167,7 @@ spec:
                (dict "name" "grpc-peer-proxy"
                      "image" .Values.kubeUtils.image
                      "cid" .Values.kmsCore.nitroEnclave.cid
-                     "port" .Values.kmsCore.nitroEnclave.ports.peer
+                     "port" .Values.kmsCore.ports.peer
                 ) | indent 10 | trim }}
         {{- /* Init GRPC External Peers Proxy Sockets */}}
         {{- if .Values.kmsCore.thresholdMode.peersList }}
