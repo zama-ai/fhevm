@@ -36,6 +36,7 @@ kmsCore:
   image:
     name: ghcr.io/zama-ai/kms-service
     tag: latest
+    pullPolicy: Always
   serviceAccountName:
   envFrom:
     configmap:
@@ -136,6 +137,7 @@ kubeUtils:
   image:
     name: ghcr.io/zama-ai/kube-utils
     tag: 0.2.0
+    pullPolicy: Always
 
 runMode: dev
 

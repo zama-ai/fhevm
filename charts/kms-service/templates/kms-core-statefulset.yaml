@@ -42,7 +42,7 @@ spec:
       subdomain: {{ include "kmsCoreName" . }}
       initContainers:
         - image: {{ .Values.kubeUtils.image.name }}:{{ .Values.kubeUtils.image.tag }}
-          imagePullPolicy: Always
+          imagePullPolicy: {{ .Values.kubeUtils.image.pullPolicy }}
           name: kms-service-init-load-env
           command:
             - /bin/sh
@@ -254,7 +254,7 @@ spec:
         {{- end }}
       containers:
         - image: {{ .Values.kmsCore.image.name }}:{{ .Values.kmsCore.image.tag }}
-          imagePullPolicy: Always
+          imagePullPolicy: {{ .Values.kmsCore.image.pullPolicy }}
           {{- if .Values.kmsCore.nitroEnclave.enabled }}
           name: kms-service-enclave
           command:

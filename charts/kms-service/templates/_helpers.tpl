@@ -53,7 +53,7 @@ file:///keys
 {{- define "socatContainer" -}}
 name: {{ .name }}
 image: {{ .image.name }}:{{ .image.tag }}
-imagePullPolicy: Always
+imagePullPolicy: {{ .image.pullPolicy }}
 restartPolicy: Always
 command:
   - socat
