@@ -1,10 +1,10 @@
 name: "Gateway Layer 2 sc Docker Image"
 
 on:
+  pull_request:
   push:
     branches:
       - main
-      - aw/docker
   release:
     types:
       - published
