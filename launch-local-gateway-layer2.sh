@@ -1,9 +1,12 @@
 #!/bin/bash
-npx hardhat clean
+pnpm exec hardhat clean
 
-npx hardhat compile
+pnpm exec hardhat compile
 
 DEPLOYER_PRIVATE_KEY=$(grep DEPLOYER_PRIVATE_KEY .env | cut -d '"' -f 2)
 
-# Deploy contracts
-npx hardhat task:deployContracts --deployer-private-key "$DEPLOYER_PRIVATE_KEY"
+# Deploy HTTPZ contract
+pnpm exec hardhat task:deployHttpz --deployer-private-key "$DEPLOYER_PRIVATE_KEY" --network localGatewayL2
+
+# Deploy ZKPoKManager contract
+pnpm exec hardhat task:deployZkpokManager --deployer-private-key "$DEPLOYER_PRIVATE_KEY" --network localGatewayL2

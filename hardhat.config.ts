@@ -36,7 +36,7 @@ const config: HardhatUserConfig = {
         path: "m/44'/60'/0'/0",
       },
       chainId: localGatewayL2ChainId,
-      url: `http://localhost:8545`,
+      url: `http://127.0.0.1:8546`,
     },
   },
   solidity: "0.8.28",
