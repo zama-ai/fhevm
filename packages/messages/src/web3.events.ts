@@ -25,7 +25,9 @@ function genSchema<Key extends EventTypes, Payload extends z.ZodRawShape>(
 
 const schemas = [
   genSchema('contract:validation:requested', {}),
-  genSchema('contract:validation:success', {}),
+  genSchema('contract:validation:success', {
+    owner: web3Address.optional(),
+  }),
   genSchema('contract:validation:failure', {
     reason: z.string().optional(),
   }),

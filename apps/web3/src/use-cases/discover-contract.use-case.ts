@@ -1,75 +1,67 @@
 import { Logger } from '@nestjs/common'
-import {
-  AppDeploymentCommand,
-  discoverSC,
-  scDiscovered,
-  scDiscoveryFailed,
-} from 'messages'
+import { web3 } from 'messages'
 import { ContractService } from '#domain/services/contract.service.js'
-import { MessageProducer } from '#domain/services/message.producer.js'
-import { AppError, Task, UseCase } from 'utils'
+import type { AppError, IPubSub, ISubscriber, UseCase } from 'utils'
+import { Task } from 'utils'
 import { Web3Address } from '#domain/entities/value-objects.js'
 
 type Input = Extract<
-  AppDeploymentCommand,
-  { type: 'app-deployment.discover-sc' }
+  web3.Web3Event,
+  { type: 'web3:contract:validation:requested' }
 >
-
-// TODO: we should move this parameter to the cain level
-const MAX_RETRY = 5
-const RETRY_DELAY_RATIO = 2
 
 export class DiscoverContract implements UseCase<Input, void> {
   logger = new Logger(DiscoverContract.name)
 
   constructor(
+    private readonly pubsub: IPubSub<web3.Web3Event>,
     private readonly service: ContractService,
-    private readonly producer: MessageProducer,
-  ) {}
+  ) {
+    this.pubsub.subscribe(
+      'web3:contract:validation:requested',
+      this.handleEvent,
+    )
+  }
 
-  execute({
-    payload: { chainId, address, ...payload },
+  private handleEvent: ISubscriber<web3.Web3Event> = event => {
+    return event.type === 'web3:contract:validation:requested'
+      ? this.execute(event)
+      : Task.of<void, AppError>(void 0)
+  }
+
+  execute = ({
+    payload: { chainId, address },
     meta,
-  }: Input): Task<void, AppError> {
+  }: Input): Task<void, AppError> => {
     return Web3Address.fromString(address)
-      .asyncChain(address => this.service.getContractCreation(chainId, address))
-      .chain(data =>
-        this.producer.produce(
-          scDiscovered(
-            {
-              ...payload,
-              contractAddress: data.contractAddress.value,
-              creatorAddress: data.creatorAddress.value,
-            },
-            meta,
-          ),
-        ),
+      .asyncChain(address => this.service.isSmartContract(chainId, address))
+      .chain<
+        | { isSmartContract: true; owner: Web3Address | undefined }
+        | { isSmartContract: false; owner?: never }
+      >(isSmartContract =>
+        isSmartContract
+          ? this.service
+              .getOwner(chainId, Web3Address.fromString(address).unwrap())
+              .map(owner => ({
+                isSmartContract,
+                owner: owner.isSome() ? owner.value : undefined,
+              }))
+          : Task.of({ isSmartContract }),
       )
-      .match({
-        ok: message => {
-          this.logger.debug(message)
-        },
-        fail: err => {
-          this.logger.warn(
-            `Failed to verify ${address} on chain ${chainId}: ${JSON.stringify(err)}`,
-          )
-
-          const retry = Number(meta?.retry ?? 0)
-          const delay = Number(meta?.retry ?? 60)
-
-          this.producer.produce(
-            retry >= MAX_RETRY
-              ? discoverSC(
-                  { ...payload, address, chainId },
-                  {
-                    ...meta,
-                    retry: retry + 1,
-                    delay: delay * RETRY_DELAY_RATIO,
-                  },
+      .chain(data =>
+        this.pubsub
+          .publish(
+            data.isSmartContract
+              ? web3.contractValidationSuccess(
+                  { chainId, address, owner: data.owner?.value },
+                  meta,
                 )
-              : scDiscoveryFailed(payload, meta),
+              : web3.contractValidationFailure(
+                  { chainId, address, reason: 'Not a smart contract' },
+                  meta,
+                ),
           )
-        },
-      })
+          .map(() => void 0),
+      )
   }
 }

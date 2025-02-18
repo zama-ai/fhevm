@@ -1,5 +1,12 @@
 import { ContractService } from '#domain/services/contract.service.js'
-import { Task, AppError, unknownError, notFoundError } from 'utils'
+import {
+  Task,
+  AppError,
+  unknownError,
+  notFoundError,
+  Option,
+  some,
+} from 'utils'
 import { stringify } from 'querystring'
 import type { EtherConfig } from '#config/ether.config.js'
 import { Logger } from '@nestjs/common'
@@ -31,13 +38,42 @@ export class EtherscanContractService implements ContractService {
     this.rpcEndpoint = rpcEndpoint
     this.apiKey = apiKey
   }
-  getContractCreation = (
+
+  isSmartContract = (
     chainId: string,
     address: Web3Address,
-  ): Task<
-    { contractAddress: Web3Address; creatorAddress: Web3Address },
-    AppError
-  > => {
+  ): Task<boolean, AppError> => {
+    return new Task((resolve, reject) => {
+      this.logger.debug(`isSmartContract: ${chainId}/${address}`)
+      const params = stringify({
+        module: 'proxy',
+        action: 'eth_getCode',
+        address: address.value,
+        apiKey: this.apiKey,
+      })
+      const url = [this.apiEndpoint, params].join('?')
+      fetch(url, { method: 'GET' })
+        .then(
+          res => res.json() as Promise<EtherScanResponse<{ result: string }>>,
+        )
+        .then(data =>
+          data.status === '1'
+            ? resolve(
+                data.result.result !== '0x' && data.result.result !== '0x0',
+              )
+            : reject(notFoundError('Contract not found')),
+        )
+        .catch((err: unknown) => {
+          this.logger.warn(`failed to fetch eth_getCode: ${err}`)
+          reject(unknownError(String(err)))
+        })
+    })
+  }
+
+  getOwner = (
+    chainId: string,
+    address: Web3Address,
+  ): Task<Option<Web3Address>, AppError> => {
     this.logger.debug(`getContractCreation: ${chainId}/${address}`)
 
     // NOTE: should I check the chainId?
@@ -59,14 +95,13 @@ export class EtherscanContractService implements ContractService {
         )
         .then(data =>
           data.status === '1'
-            ? resolve({
-                contractAddress: Web3Address.fromString(
-                  data.result[0].contractAddress,
-                ).unwrap(),
-                creatorAddress: Web3Address.fromString(
-                  data.result[0].contractCreator,
-                ).unwrap(),
-              })
+            ? resolve(
+                some(
+                  Web3Address.fromString(
+                    data.result[0].contractAddress,
+                  ).unwrap(),
+                ),
+              )
             : reject(notFoundError('Contract not found')),
         )
         .catch((err: unknown) => reject(unknownError(String(err)))),

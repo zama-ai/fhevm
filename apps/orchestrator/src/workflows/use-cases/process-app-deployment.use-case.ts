@@ -4,7 +4,7 @@ import { AppError, IPubSub, ISubscriber, Task, UseCase } from 'utils'
 import { back, web3 } from 'messages'
 import {
   type AppDeploymentEvents,
-  EVENT_TYPES,
+  isAppDeploymentEvent,
 } from '#workflows/entities/app-deployment.js'
 import { EventProducer } from '#workflows/interfaces/event.producer.js'
 
@@ -22,7 +22,7 @@ export class ProcessAppDeployment
   }
 
   private handleEvent: ISubscriber<back.BackEvent | web3.Web3Event> = event => {
-    return EVENT_TYPES.includes(event.type)
+    return isAppDeploymentEvent(event)
       ? this.execute(event)
       : Task.of<void, AppError>(void 0)
   }

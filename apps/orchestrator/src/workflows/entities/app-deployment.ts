@@ -1,15 +1,14 @@
 import { Actor, assign, createActor, setup, Snapshot } from 'xstate'
 import { back, web3 } from 'messages'
 
-export const EVENT_TYPES: (back.BackEvent['type'] | web3.Web3Event['type'])[] =
-  [
-    'back:dapp:created',
-    'back:dapp:confirmed',
-    'back:dapp:failed',
-    'web3:contract:validation:requested',
-    'web3:contract:validation:success',
-    'web3:contract:validation:failure',
-  ] as const
+export const EVENT_TYPES = [
+  'back:dapp:created',
+  'back:dapp:confirmed',
+  'back:dapp:failed',
+  'web3:contract:validation:requested',
+  'web3:contract:validation:success',
+  'web3:contract:validation:failure',
+] as const
 
 export type AppDeploymentEvents = Extract<
   back.BackEvent | web3.Web3Event,
@@ -17,6 +16,12 @@ export type AppDeploymentEvents = Extract<
     type: (typeof EVENT_TYPES)[number]
   }
 >
+
+export function isAppDeploymentEvent(
+  event: back.BackEvent | web3.Web3Event,
+): event is AppDeploymentEvents {
+  return event.type in EVENT_TYPES
+}
 
 type Context = {
   dAppId: string
