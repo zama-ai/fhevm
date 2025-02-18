@@ -24,6 +24,16 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
         uint256 contractChainId;
     }
 
+    /// @notice The stored structure for the received ZK Proof verification request inputs.
+    struct ZKProofInput {
+        /// @notice The chain ID of the contract address.
+        uint256 contractChainId;
+        /// @notice The contract address that verification is requested for.
+        address contractAddress;
+        /// @notice The user address that requested the verification.
+        address userAddress;
+    }
+
     /// @notice The address of the HTTPZ contract for protocol state calls.
     IHTTPZ internal immutable _HTTPZ;
 
@@ -42,14 +52,8 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
     /// @notice The mapping of ZK Proof IDs to their signers and their signing status.
     mapping(uint256 zkProofId => mapping(address signer => bool hasSigned)) internal zkProofSigners;
 
-    /// @notice The mapping of ZK Proof IDs to their user address that requested the verification.
-    mapping(uint256 zkProofId => address userAddress) internal zkProofUserAddresses;
-
-    /// @notice The mapping of ZK Proof IDs to their contract address requested by the user.
-    mapping(uint256 zkProofId => address contractAddress) internal zkProofContractAddresses;
-
-    /// @notice The mapping of ZK Proof IDs to their contract chain ID requested by the user.
-    mapping(uint256 zkProofId => uint256 contractChainId) internal zkProofContractChainIds;
+    /// @notice The mapping of ZK Proof IDs to their inputs received on verification requests.
+    mapping(uint256 zkProofId => ZKProofInput zkProofInput) internal _zkProofInputs;
 
     /// @notice The definition of the EIP712ZKPoK structure typed data.
     string private constant EIP712_ZKPOK_TYPE =
@@ -85,9 +89,7 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
         uint256 zkProofId = zkProofIdCounter++;
 
         /// @dev The following stored inputs are used during response calls for the EIP712 signature validation.
-        zkProofUserAddresses[zkProofId] = userAddress;
-        zkProofContractAddresses[zkProofId] = contractAddress;
-        zkProofContractChainIds[zkProofId] = contractChainId;
+        _zkProofInputs[zkProofId] = ZKProofInput(contractChainId, contractAddress, userAddress);
 
         emit VerifyProofRequest(zkProofId, contractChainId, contractAddress, userAddress, ciphertextWithZKProof);
     }
@@ -98,12 +100,15 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
         bytes32[] calldata handles,
         bytes calldata signature
     ) public virtual {
+        /// @dev Retrieve stored ZK Proof verification request inputs.
+        ZKProofInput memory zkProofInput = _zkProofInputs[zkProofId];
+
         /// @dev Initialize the EIP712ZKPoK structure for the signature validation.
         EIP712ZKPoK memory eip712ZKPoK = EIP712ZKPoK(
             handles,
-            zkProofUserAddresses[zkProofId],
-            zkProofContractAddresses[zkProofId],
-            zkProofContractChainIds[zkProofId]
+            zkProofInput.userAddress,
+            zkProofInput.contractAddress,
+            zkProofInput.contractChainId
         );
 
         /// @dev Compute the digest of the EIP712ZKPoK structure.
@@ -112,9 +117,8 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
         /// @dev Recover the signer address from the signature and validate that is a Coprocessor.
         _validateEIP712Signature(zkProofId, digest, signature);
 
-        zkProofSignatures[zkProofId][digest].push(signature);
-
-        bytes[] memory currentSignatures = zkProofSignatures[zkProofId][digest];
+        bytes[] storage currentSignatures = zkProofSignatures[zkProofId][digest];
+        currentSignatures.push(signature);
 
         /// @dev Only send the event if consensus has not been reached in a previous response call
         /// @dev and the consensus is reached in the current response call.
