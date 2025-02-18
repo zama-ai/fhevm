@@ -1,0 +1,43 @@
+name: fhevm-layer2
+
+services:
+  anvil-node:
+    container_name: anvil-node
+    image: ghcr.io/foundry-rs/foundry:stable
+    env_file:
+      - ./.env.example.deployment
+    entrypoint:
+      [
+        "anvil",
+        "--block-time",
+        "0.1",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8546",
+        "--chain-id",
+        "54321",
+        "--accounts",
+        "15",
+        "--mnemonic",
+        "${MNEMONIC}",
+      ]
+    ports:
+      - "8546:8546"
+    volumes:
+      - .:/anvil
+
+  sc-deploy:
+    container_name: layer2-sc-deploy
+    image: ghcr.io/zama-ai/gateway-l2/sc-bundle:b479cf8
+    volumes:
+      - ./.env.example.deployment:/app/.env
+    entrypoint: ["/app/launch-staging-gateway-layer2.sh"]
+
+  sc-deploy-debug:
+    container_name: sc-deploy-debug
+    image: ghcr.io/zama-ai/gateway-l2/sc-bundle:b479cf8
+    volumes:
+      - ./.env.example.deployment:/app/.env
+    entrypoint: ["/bin/bash"]
+    command: ["-c", "tail -f /dev/null"]

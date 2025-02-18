@@ -13,10 +13,17 @@ const NUM_ACCOUNTS = 15;
 
 const localGatewayL2ChainId = 123456;
 
+const stagingChainId = 54321;
+
 // If the mnemonic is not set, use a default one
 let mnemonic: string | undefined = process.env.MNEMONIC;
 if (!mnemonic) {
   mnemonic = "adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer";
+}
+
+let rpcUrl: string | undefined = process.env.RPC_URL;
+if (!rpcUrl) {
+  rpcUrl = "http://127.0.0.1:8757";
 }
 
 const config: HardhatUserConfig = {
@@ -37,6 +44,15 @@ const config: HardhatUserConfig = {
       },
       chainId: localGatewayL2ChainId,
       url: `http://127.0.0.1:8546`,
+    },
+    staging: {
+      accounts: {
+        count: NUM_ACCOUNTS,
+        mnemonic,
+        path: "m/44'/60'/0'/0",
+      },
+      chainId: stagingChainId,
+      url: rpcUrl,
     },
   },
   solidity: "0.8.28",
