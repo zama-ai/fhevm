@@ -73,8 +73,8 @@ kmsCore:
       sts: 5500
       s3: 6000
       awskms: 7000
-      peer: 50000
       webidentitytoken: 4100
+      peer: 10000
   publicVault:
     s3:
       enabled: true
