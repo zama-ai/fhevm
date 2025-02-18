@@ -40,6 +40,43 @@ address constant DECRYPTION_MANAGER_ADDRESS = ${taskArguments.address};
     }
   });
 
+
+  task('task:deployZkPoKManager')
+  .addParam('privateKey', 'The deployer private key')
+  .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
+    const deployer = new ethers.Wallet(taskArguments.privateKey).connect(ethers.provider);
+    const zkpokManagerFactory = await ethers.getContractFactory('ZkPoKManager', deployer);
+    const zkpokManager = await zkpokManagerFactory.deploy();
+    await zkpokManager.waitForDeployment();
+    const zkpokManagerAddress = await zkpokManager.getAddress();
+
+    const envFilePath = path.join(__dirname, '../addressesL2/.env.zkpoknmanager');
+    const content = `ZKPOK_MANAGER_ADDRESS=${zkpokManagerAddress}`;
+    try {
+      fs.writeFileSync(envFilePath, content, { flag: 'w' });
+      console.log('zkpokManagerAddress written to addressesL2/.env.zkpoknmanager successfully!');
+    } catch (err) {
+      console.error('Failed to write to addressesL2/.env.zkpoknmanager:', err);
+    }
+
+    const solidityTemplate = `// SPDX-License-Identifier: BSD-3-Clause-Clear
+
+pragma solidity ^0.8.24;
+
+address constant ZKPOK_MANAGER_ADDRESS = ${taskArguments.address};
+`;
+
+    try {
+      fs.writeFileSync('./addressesL2/ZkpokManagerAddress.sol', solidityTemplate, {
+        encoding: 'utf8',
+        flag: 'w',
+      });
+      console.log('addressesL2/ZkpokManagerAddress.sol file has been generated successfully.');
+    } catch (error) {
+      console.error('Failed to write addressesL2/ZkpokManagerAddress.sol', error);
+    }
+  });
+
 task('task:addSignersL2')
   .addParam('privateKey', 'The deployer private key')
   .addParam('numSigners', 'Number of KMS signers to add')

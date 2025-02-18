@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-struct CiphertextContract {
-    uint256 ciphertextHandle;
-    address contractAddress;
-}
+import "./IACLManager.sol";
 
 /// @title An interface for the decryption manager
 /// @notice The decryption manager is responsible for decrypting ciphertext using a KMS
@@ -12,11 +9,23 @@ struct CiphertextContract {
 /// @dev Request functions are callable by any user or the relayer
 /// @dev Response functions are only callable by the KMS Connectors
 interface IDecryptionManager {
+    /// @notice A struct that contains a ciphertext handle and a contract address that is
+    /// @notice expected to be allowed to decrypt this ciphertext
+    struct CtHandleContractPair {
+        /// @notice The handle of the ciphertext
+        uint256 ctHandle;
+        /// @notice The address of the contract
+        address contractAddress;
+    }
+
     /// @notice Emitted when an public decryption request is made
     /// @dev This event is meant to be listened by the KMS Connectors
     /// @param publicDecryptionId The public decryption request's unique ID
-    /// @param ciphertextHandles The handles of the ciphertexts to decrypt
-    event PublicDecryptionRequest(uint256 indexed publicDecryptionId, uint256[] ciphertextHandles);
+    /// @param ctHandleCiphertext128Pairs The handles and 128-PBS ciphertexts of the ciphertexts to decrypt
+    event PublicDecryptionRequest(
+        uint256 indexed publicDecryptionId,
+        IACLManager.CtHandleCiphertext128Pair[] ctHandleCiphertext128Pairs
+    );
 
     /// @notice Emitted when an public decryption response is made
     /// @dev This event is meant to be listened by a user or relayer
@@ -28,11 +37,11 @@ interface IDecryptionManager {
     /// @notice Emitted when a user decryption request is made
     /// @dev This event is meant to be listened by the KMS Connectors
     /// @param userDecryptionId The user decryption request's unique ID
-    /// @param ciphertextContracts The ciphertexts and their associated contract addresses to decrypt
+    /// @param ctHandleContractPairs The ciphertexts to decrypt for associated contracts
     /// @param userAddress The user's address
     event UserDecryptionRequest(
         uint256 indexed userDecryptionId,
-        CiphertextContract[] ciphertextContracts,
+        CtHandleContractPair[] ctHandleContractPairs,
         address userAddress
     );
 
@@ -43,10 +52,19 @@ interface IDecryptionManager {
     /// @param signatures The signatures of all the KMS Connectors that responded
     event UserDecryptionResponse(uint256 indexed userDecryptionId, bytes decryptedResult, bytes[] signatures);
 
+    /// @notice Error indicating that the KMS Connector is not a valid signer
+    /// @param invalidSigner The address of the invalid signer
+    error InvalidKmsSigner(address invalidSigner);
+
+    /// @notice Error indicating that the KMS Connector has already signed its public decryption response
+    /// @param publicDecryptionId The public decryption request's unique ID associated with the response
+    /// @param signer The address of the KMS Connector signer that has already signed
+    error KmsSignerAlreadySigned(uint256 publicDecryptionId, address signer);
+
     /// @notice Requests an public decryption
     /// @dev This function can be called by a user or relayer
-    /// @param ciphertextHandles The handles of the ciphertexts to decrypt
-    function publicDecryptionRequest(uint256[] calldata ciphertextHandles) external;
+    /// @param ctHandles The handles of the ciphertexts to decrypt
+    function publicDecryptionRequest(uint256[] calldata ctHandles) external;
 
     /// @notice Responds to an public decryption request
     /// @dev This function can only be called by the KMS Connectors
@@ -61,14 +79,14 @@ interface IDecryptionManager {
 
     /// @notice Requests a user decryption
     /// @dev This function can be called by a user or relayer
-    /// @param ciphertextContracts The ciphertexts and their associated contract addresses to decrypt
+    /// @param ctHandleContractPairs The ciphertexts to decrypt for associated contracts
     /// @param userAddress The user's address
     /// @param publicKey The public key
     /// @param eip712ChainId The chain ID of the EIP712 signature
     /// @param eip712Contracts The EIP712 contracts found in the message
     /// @param eip712Signature The EIP712 signature to verify
     function userDecryptionRequest(
-        CiphertextContract[] calldata ciphertextContracts,
+        CtHandleContractPair[] calldata ctHandleContractPairs,
         address userAddress,
         bytes calldata publicKey,
         uint256 eip712ChainId,
@@ -86,4 +104,8 @@ interface IDecryptionManager {
         bytes calldata decryptedResult,
         bytes calldata signature
     ) external;
+
+    /// @notice Returns whether a public decryption is done
+    /// @param publicDecryptionId The public decryption request's unique ID
+    function isPublicDecryptionDone(uint256 publicDecryptionId) external view returns (bool);
 }
