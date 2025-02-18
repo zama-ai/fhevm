@@ -1,0 +1,103 @@
+# TODO: create custom foundry image with our tooling added (make, curl, ...)
+# TODO: add appropriate curl healthcheck calls to foundry websocket on running nodes
+
+name: "mock"
+services:
+  httpz:
+    image: ghcr.io/foundry-rs/foundry:latest
+    restart: no # always
+    ports:
+      - '8756:8756'
+    entrypoint: >
+      /bin/sh -c "
+      apt update -y &&
+      apt install make curl -y &&
+      make run-httpz-compose-mock &&
+      exit 0
+      "
+    working_dir: /app
+    volumes: 
+      - ./:/app
+
+  gateway:
+    image: ghcr.io/foundry-rs/foundry:latest
+    restart: no
+    ports:
+      - '8757:8757'
+    entrypoint: >
+      /bin/sh -c "
+      apt update -y &&
+      apt install make curl -y &&
+      make run-gateway-compose-mock &&
+      exit 0
+      "
+    working_dir: /app
+    volumes: 
+      - ./:/app
+
+  # Gateway Smart contract deployment gateway-sc:
+  gateway-sc:
+    image: ghcr.io/foundry-rs/foundry:latest
+    restart: "no"
+    working_dir: /app
+    environment:
+      - HOME=/home
+      - NVM_DIR=/home/.nvm
+    volumes: 
+      - ./:/app
+    entrypoint: >
+      /bin/sh -c "
+      sleep 5 &&
+      apt update -y &&
+      apt install make curl -y &&
+      curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash &&
+      \. "/home/.nvm/nvm.sh" &&
+      nvm install 22 &&
+      make deploy-gateway-compose-smart-contracts &&
+      touch /tmp/done &&
+      sleep 65 &&
+      exit 0
+      "
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/done"]
+      interval: 3s
+      timeout: 1s
+      retries: 300
+      start_period: 20s
+    depends_on:
+      gateway:
+        condition: service_started
+  # HTTPZ Smart contract deployment gateway-sc:
+  httpz-sc:
+    image: ghcr.io/foundry-rs/foundry:latest
+    restart: "no"
+    working_dir: /app
+    environment:
+      - HOME=/home
+      - NVM_DIR=/home/.nvm
+    volumes: 
+      - ./:/app
+    entrypoint: >
+      /bin/sh -c "
+      sleep 5 &&
+      apt update -y &&
+      apt install make curl -y &&
+      curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash &&
+      \. "/home/.nvm/nvm.sh" &&
+      nvm install 22 &&
+      make deploy-httpz-compose-smart-contracts &&
+      touch /tmp/done &&
+      sleep 65 &&
+      exit 0
+      "
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/done"]
+      interval: 3s
+      timeout: 1s
+      retries: 300
+      start_period: 20s
+    depends_on:
+      httpz:
+        condition: service_started
+      gateway-sc:
+        condition: service_healthy

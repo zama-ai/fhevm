@@ -88,6 +88,8 @@ const chainIds = {
   mainnet: 1,
   localCoprocessorL1: 123456,
   localCoprocessorL2: 654321,
+  composeCoprocessorL1: 123456,
+  composeCoprocessorL2: 654321,
 };
 
 function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
@@ -107,6 +109,12 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
       break;
     case 'localCoprocessorL2':
       jsonRpcUrl = 'http://localhost:8757';
+      break;
+    case 'composeCoprocessorL1':
+      jsonRpcUrl = 'http://mock-httpz-1:8756';
+      break;
+    case 'composeCoprocessorL2':
+      jsonRpcUrl = 'http://mock-gateway-1:8757';
       break;
     default:
       throw new Error(`unsupported chain: ${chain}`);
@@ -150,6 +158,8 @@ const config: HardhatUserConfig = {
     localCoprocessor: getChainConfig('localCoprocessor'),
     localCoprocessorL1: getChainConfig('localCoprocessorL1'),
     localCoprocessorL2: getChainConfig('localCoprocessorL2'),
+    composeCoprocessorL1: getChainConfig('composeCoprocessorL1'),
+    composeCoprocessorL2: getChainConfig('composeCoprocessorL2'),
   },
   paths: {
     artifacts: './artifacts',
