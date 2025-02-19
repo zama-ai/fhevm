@@ -314,6 +314,7 @@ spec:
             - configMapRef:
                 name: {{ .Values.kmsCore.envFrom.configmap.name }}
           {{- end }}
+          workingDir: {{ .Values.kmsCore.workdir }}
           volumeMounts:
             - mountPath: {{ .Values.kmsCore.workdir }}
               name: workdir
