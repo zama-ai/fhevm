@@ -42,6 +42,7 @@ use uuid::Uuid;
 use fhevm_relayer::{
     arbitrum_gateway_l2_handlers::ArbitrumGatewayL2Handler,
     config::settings::{LogConfig, Settings},
+    errors::EventProcessingError,
     ethereum::{ContractAndTopicsFilter, EthereumHostL1, RollupL2},
     ethereum_host_l1_handlers::EthereumHostL1Handler,
     ethereum_listener::event_listener,
@@ -221,7 +222,9 @@ async fn main() -> eyre::Result<()> {
     let ts = uuid::v1::Timestamp::from_unix(&ctx, now.as_secs(), now.subsec_nanos());
     let node_id = [0x01, 0x23, 0x45, 0x67, 0x89, 0xab];
 
-    let request_id = Uuid::new_v1(ts, &node_id);
+    let request_id = Uuid::new_v1(ts, &node_id).map_err(|e| {
+        EventProcessingError::HandlerError(format!("Failed to generate UUID: {}", e))
+    })?;
 
     let test_request = RelayerEvent::new(
         request_id,
