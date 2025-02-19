@@ -31,7 +31,7 @@ spec:
             - name: S3_ENDPOINT
               value: "{{ if .Values.minio.enabled }}http://minio:9000/{{ .Values.kmsCore.publicVault.s3.bucket }}{{ else }}https://{{ .Values.kmsCore.publicVault.s3.bucket }}.s3.{{ .Values.kmsCore.aws.region }}.amazonaws.com{{ end }}/{{ .Values.kmsCore.publicVault.s3.path }}"
             - name: OBJECT_FOLDER_LIST
-              value: '{{ if .Values.kmsCore.thresholdMode.enabled }}{{ range $i := .Values.kmsCore.thresholdMode.peersList }}"PUB-p{{ $i }}",{{ end }}{{ else }}"PUB"{{ end }}'
+              value: '{{ if .Values.kmsCore.thresholdMode.enabled }}{{ range $i, $peer := .Values.kmsCore.thresholdMode.peersList }}"PUB-p{{ $peer.id }}",{{ end }}{{ else }}"PUB"{{ end }}'
             - name: CORE_ADDRESSES
               value: '{{ range $i, $peer := .Values.kmsCore.thresholdMode.peersList }}"http://{{ $peer.host }}:{{ $.Values.kmsCore.ports.client }}",{{ end }}'
             - name: NUM_MAJORITY
