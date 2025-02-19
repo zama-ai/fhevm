@@ -33,22 +33,25 @@
 //! [Ethereum L1] ← [L1 Handler] ← [Orchestrator] ← [L2 Listener]
 //! ```
 
-use alloy::primitives::Address;
-use std::{str::FromStr, sync::Arc};
+use alloy::primitives::{Address, U256};
+use std::{str::FromStr, sync::Arc, time::Duration};
 use tracing::info;
 use tracing_subscriber::{fmt::SubscriberBuilder, EnvFilter};
+use uuid::Uuid;
 
 use fhevm_relayer::{
     arbitrum_gateway_l2_handlers::ArbitrumGatewayL2Handler,
     config::settings::{LogConfig, Settings},
+    errors::EventProcessingError,
     ethereum::{ContractAndTopicsFilter, EthereumHostL1, RollupL2},
     ethereum_host_l1_handlers::EthereumHostL1Handler,
     ethereum_listener::event_listener,
+    input_handlers::ArbitrumGatewayL2InputHandler,
     orchestrator::{
-        traits::{EventHandler, HandlerRegistry},
+        traits::{EventDispatcher, EventHandler, HandlerRegistry},
         Orchestrator, TokioEventDispatcher,
     },
-    relayer_event::RelayerEvent,
+    relayer_event::{ApiCategory, ApiVersion, InputEventData, RelayerEvent, RelayerEventData},
     rollup_listener::event_listener_rollup,
     transaction::{TransactionService, TxConfig},
 };
@@ -114,6 +117,10 @@ async fn main() -> eyre::Result<()> {
         Address::from_str(&settings.contracts.decryption_manager_address)
             .map_err(|_| eyre::eyre!("Invalid TFHE executor address"))?;
 
+    // Update the L2 filter to include the ZKPoK contract
+    let zkpok_manager_address = Address::from_str(&settings.contracts.zkpok_manager_address)
+        .map_err(|_| eyre::eyre!("Invalid ZKPoK manager address"))?;
+
     info!(
         ?decryption_oracle_address,
         ?tfhe_executor_address,
@@ -134,6 +141,24 @@ async fn main() -> eyre::Result<()> {
             tx_service.clone(),
             tx_config.clone(),
         ));
+
+    // Create input handler
+    let input_handler: Arc<dyn EventHandler<RelayerEvent>> =
+        Arc::new(ArbitrumGatewayL2InputHandler::new(
+            Arc::clone(&dispatcher),
+            tx_service_rollup.clone(),
+            tx_config.clone(),
+        ));
+
+    // Register input event handlers
+    // Event type: InputEventData::ReqFromUser
+    orchestrator.register_handler(7, Arc::clone(&input_handler));
+    // Event type: InputEventData::RequestSentToGwL2
+    orchestrator.register_handler(8, Arc::clone(&input_handler));
+    // Event type: InputEventData::RespFromGwL2
+    orchestrator.register_handler(9, Arc::clone(&input_handler));
+    // Event type: InputEventData::EventLogFromGwL2
+    orchestrator.register_handler(10, Arc::clone(&input_handler));
 
     // Event type: PubDecryptEventLogRcvdFromHostL1
     orchestrator.register_handler(0, Arc::clone(&host_l1_event_log_handler));
@@ -176,12 +201,49 @@ async fn main() -> eyre::Result<()> {
 
     // === Create a subscription for events and spawn a listener to listen for events from the subcription.
     // TODO: Pass the event_dispatcher to the event_listener
-    let filter_rollup = ContractAndTopicsFilter::new(vec![decryption_manager_address], vec![]);
+    let filter_rollup = ContractAndTopicsFilter::new(
+        vec![decryption_manager_address, zkpok_manager_address],
+        vec![],
+    );
     let subscription_rollup = rollup_l2.new_subscription(filter_rollup, None).await?;
     tokio::spawn(event_listener_rollup(
         subscription_rollup,
         Arc::clone(&orchestrator),
     ));
+
+    tokio::time::sleep(Duration::from_secs(4)).await;
+
+    let ctx = uuid::v1::Context::new(0);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("Time went backwards");
+    let ts = uuid::v1::Timestamp::from_unix(&ctx, now.as_secs(), now.subsec_nanos());
+    let node_id = [0x01, 0x23, 0x45, 0x67, 0x89, 0xab];
+
+    let request_id = Uuid::new_v1(ts, &node_id).map_err(|e| {
+        EventProcessingError::HandlerError(format!("Failed to generate UUID: {}", e))
+    })?;
+
+    let test_request = RelayerEvent::new(
+        request_id,
+        ApiVersion {
+            category: ApiCategory::PRODUCTION,
+            number: 1,
+        },
+        RelayerEventData::Input(InputEventData::ReqFromUser {
+            contract_chain_id: U256::from(1), // Example chain ID
+            contract_address: Address::from_str("0x1234567890123456789012345678901234567890")
+                .unwrap(),
+            user_address: Address::from_str("0x2345678901234567890123456789012345678901").unwrap(),
+            zkpok: vec![1, 2, 3], // Example proof
+        }),
+    );
+
+    // Dispatch the test event
+    dispatcher
+        .dispatch_event(test_request)
+        .await
+        .map_err(|e| eyre::eyre!("Failed to dispatch test request: {}", e))?;
 
     // === Wait for ctrl + c signal to stop the application
     tokio::signal::ctrl_c().await?;
