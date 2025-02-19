@@ -46,7 +46,7 @@ impl RollupL2 {
             .await
             .map_err(Error::Transport)?;
 
-        info!("Subscription successful to Rollup L1. Listening for logs...");
+        info!("Subscription successful to Rollup L2 aka Gateway. Listening for logs...");
         let stream = sub.into_stream();
         Ok(stream)
     }

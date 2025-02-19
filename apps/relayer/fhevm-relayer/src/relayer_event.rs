@@ -2,7 +2,7 @@ use crate::orchestrator::traits::Event;
 use alloy::primitives::Address;
 use alloy::{primitives::U256, rpc::types::Log};
 use std::fmt::Display;
-use strum_macros::{AsRefStr, Display};
+use strum_macros::Display;
 use uuid::Uuid;
 
 #[derive(Clone)]
