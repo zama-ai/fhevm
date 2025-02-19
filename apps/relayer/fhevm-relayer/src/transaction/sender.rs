@@ -12,7 +12,7 @@ use std::fmt;
 use std::{sync::Arc, time::Duration};
 use thiserror::Error;
 use tokio::time::timeout;
-use tracing::{error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::{
     config::settings::{RetrySettings, TransactionConfig},
@@ -205,6 +205,72 @@ impl TransactionManager {
         Ok(result)
     }
 
+    /// Debug a transaction using Anvil's tracing features
+    pub async fn debug_transaction_call(
+        &self,
+        target: Address,
+        calldata: &Bytes,
+        config: &TxConfig,
+    ) -> Result<(), TransactionError> {
+        println!("\n🔍 Enhanced Debug Information:");
+
+        // Decode function selector
+        if calldata.len() >= 4 {
+            let selector = &calldata[..4];
+            println!("Function selector: 0x{}", hex::encode(selector));
+
+            // Print parameter data in chunks
+            if calldata.len() > 4 {
+                println!("\nParameters (in 32-byte chunks):");
+                for (i, chunk) in calldata[4..].chunks(32).enumerate() {
+                    println!("Param {}: 0x{}", i, hex::encode(chunk));
+
+                    // Try to interpret the parameter
+                    if chunk.len() == 32 {
+                        // Try as uint256
+                        let as_uint = U256::from_be_bytes::<32>(chunk.try_into().unwrap());
+                        println!("  As uint: {}", as_uint);
+
+                        // Try as address if starts with zeros
+                        if chunk[..12].iter().all(|&x| x == 0) {
+                            let addr = Address::from_slice(&chunk[12..]);
+                            println!("  As address: {:#x}", addr);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Try the call
+        let request = TransactionRequest::default()
+            .with_from(self.sender_address())
+            .with_to(target)
+            .with_input(calldata.clone())
+            .with_value(config.value.unwrap_or_default());
+
+        match self.provider.call(&request).await {
+            Ok(_) => {
+                debug!("\n✅ Call simulation succeeded");
+                Ok(())
+            }
+            Err(e) => {
+                debug!("\n❌ Call simulation failed:");
+                debug!("Target: {:#x}", target);
+                debug!("From: {:#x}", self.sender_address());
+                debug!("Value: {:#x}", config.value.unwrap_or_default());
+
+                // More detailed error analysis
+                debug!("\nError Analysis:");
+                debug!("Type: Contract Revert");
+                debug!("Code: 3 (Standard EVM revert)");
+
+                debug!("\nFull error: {:#?}", e);
+
+                Err(TransactionError::TransactionFailed(e.to_string()))
+            }
+        }
+    }
+
     pub async fn send_transaction(
         &self,
         target: Address,
@@ -212,6 +278,26 @@ impl TransactionManager {
         config: Option<TxConfig>,
     ) -> Result<B256> {
         let config = config.unwrap_or_default();
+
+        // Only run debug if log level is Debug or lower
+        if tracing::enabled!(tracing::Level::DEBUG) {
+            debug!("Starting detailed transaction debug...");
+            if let Err(e) = self
+                .debug_transaction_call(target, &calldata, &config)
+                .await
+            {
+                warn!("Debug simulation failed: {}", e);
+            }
+        }
+
+        // Check if contract exists
+        let code = self.provider.get_code_at(target).await.map_err(|e| {
+            TransactionError::TransactionFailed(format!("Failed to check contract code: {}", e))
+        })?;
+
+        if code.is_empty() {
+            error!("⚠️  Warning: No code at target address!");
+        }
 
         let request = TransactionRequest::default()
             .with_from(self.sender_address())
