@@ -74,6 +74,12 @@ run-test-decrypt:
 	@echo "$(GREEN)Running decrypt tests...$(RESET)"
 	@unset $$(cat hardhat/contracts/.env | sed 's/=.*//g') && cd hardhat/contracts && npx hardhat compile && npx hardhat compile:specific --contract decryptionOracle && RUST_RELAYER=true npx hardhat test test/gatewayDecrypt/* --network localCoprocessorL1
 
+
+run-test-input-proof:
+	@curl -X POST http://127.0.0.1:3000/input-proof \
+		-H "Content-Type: application/json" \
+		-d '{"contractChainId": "123456", "contractAddress": "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d", "userAddress": "0x12B064FB845C1cc05e9493856a1D637a73e944bE", "ciphertextWithZkpok": "abcdef"}'
+
 # Run ERC20 tests
 run-test-erc20:
 	@echo "$(GREEN)Running decrypt tests...$(RESET)"
@@ -128,6 +134,7 @@ help:
 	@echo '  ${YELLOW}make start-fhevm-relayer${RESET}        - Start HTTPZ event listener'
 	@echo '  ${YELLOW}make run-test-decrypt${RESET}            - Run decryption tests'
 	@echo '  ${YELLOW}make run-test-erc20${RESET}            - Run erc20 tests'
+	@echo '  ${YELLOW}make run-test-input-proof${RESET}            - Run input proof tests'
 	@echo ''
 	@echo 'Run sequence:'
 	@echo '  1. ${WHITE}make setup-mock${RESET}                        - First time only'
@@ -139,4 +146,6 @@ help:
 	@echo '  7. ${WHITE}make start-fhevm-relayer${RESET}        - Terminal 3'
 	@echo '  8. ${WHITE}make run-test-decrypt${RESET}            - Terminal 4'
 	@echo '  9. ${WHITE}make run-test-erc20${RESET}            - Terminal 4'
+	@echo '  10.${WHITE}make run-test-input-proof${RESET}            - Run input proof tests'
+
 	@echo ''
