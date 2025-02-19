@@ -33,11 +33,11 @@ spec:
             - name: OBJECT_FOLDER_LIST
               value: '{{ if .Values.kmsCore.thresholdMode.enabled }}{{ range $i := $peersIDList }}"PUB-p{{ $i }}",{{ end }}{{ else }}"PUB"{{ end }}'
             - name: CORE_ADDRESSES
-              value: '{{ range $i := $peersIDList }}"http://{{ .host }}:{{ .Values.kmsCore.ports.client | 50100 }}",{{ end }}'
+              value: {{ range $i := $peersIDList }}"http://{{ .host }}:{{ .Values.kmsCore.ports.client | 50100 }}",{{ end }}
             - name: NUM_MAJORITY
-              value: '{{ .Values.kmsCore.num_majority | int | quote }}'
+              value: '{{ .Values.kmsCoreClient.num_majority | int | quote }}'
             - name: NUM_RECONSTRUCT
-              value: '{{ .Values.kmsCore.num_reconstruct | int | quote }}'
+              value: '{{ .Values.kmsCoreClient.num_reconstruct | int | quote }}'
             - name: DECRYPTION_MODE
               value: '{{ .Values.kmsCoreClient.decryption_mode | quote }}'
           volumeMounts:
