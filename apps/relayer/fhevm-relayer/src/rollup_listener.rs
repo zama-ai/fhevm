@@ -1,12 +1,23 @@
+use alloy_sol_types::SolEvent;
 use tracing::{error, info};
 
+use crate::ethereum::bindings::{DecyptionManager, ZKPoKManager};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
+use crate::relayer_event::InputEventData;
 use crate::relayer_event::{self, RelayerEvent};
+use alloy::hex;
+use alloy::primitives::FixedBytes;
 use alloy::rpc::types::Log;
 use futures_util::StreamExt;
 use std::sync::Arc;
 
+// Define event topics as constants
+const PROOF_VERIFICATION_TOPIC: alloy::primitives::FixedBytes<32> =
+    ZKPoKManager::VerifyProofRequest::SIGNATURE_HASH;
+
+const DECRYPTION_RESPONSE_TOPIC: alloy::primitives::FixedBytes<32> =
+    DecyptionManager::PublicDecryptionRequest::SIGNATURE_HASH;
 pub async fn event_listener_rollup(
     mut subscription: alloy::pubsub::SubscriptionStream<Log>,
     orchestrator: Arc<
@@ -20,25 +31,52 @@ pub async fn event_listener_rollup(
         tokio::select! {
             event = subscription.next() => match event {
                 Some(event_log) => {
-
-                    info!("rollup listener catches one event");
+                    info!("rollup listener catches one event with topic {:?}", event_log.topic0());
 
                     let id = orchestrator.new_request_id();
+
+                    // Determine event type based on topic
+                    let event_data = if let Some(topic0) = event_log.topic0() {
+                        // Convert B256 to FixedBytes<32>
+                        let topic_bytes = FixedBytes::<32>::from_slice(topic0.as_slice());
+
+                        match topic_bytes {
+                            PROOF_VERIFICATION_TOPIC => {
+                                info!("Received Proof Verification event");
+                                relayer_event::RelayerEventData::Input(
+                                    InputEventData::EventLogFromGwL2 {
+                                        log: event_log
+                                    }
+                                )
+                            },
+                            DECRYPTION_RESPONSE_TOPIC => {
+                                info!("Received Decryption Response event");
+                                relayer_event::RelayerEventData::EventLogFromGwL2 {
+                                    log: event_log
+                                }
+                            },
+                            _ => {
+                                info!("Unknown event topic: 0x{}", hex::encode(topic0));
+                                continue; // Skip unknown events
+                            }
+                        }
+                    } else {
+                        error!("Event log missing topic0");
+                        continue;
+                    };
+
                     let event = RelayerEvent::new(
                         id,
                         relayer_event::ApiVersion {
                             category: relayer_event::ApiCategory::PRODUCTION,
                             number: 1,
                         },
-                        relayer_event::RelayerEventData::EventLogFromGwL2  {
-                            log:event_log,
-                        },
+                        event_data,
                     );
+
                     orchestrator.dispatch_event(event).await.unwrap_or_else(|e| {
                         error!("Failed to dispatch event: {e}");
                     });
-
-
                 }
                 None => {
                     info!("Subscription stream ended");
