@@ -318,8 +318,6 @@ spec:
           volumeMounts:
             - mountPath: {{ .Values.kmsCore.workdir }}
               name: workdir
-            - mountPath: /var/lib/kms-core/config
-              name: config-files
             {{- if not .Values.kmsCore.privateVault.s3.enabled }}
             - mountPath: /keys
               name: keys
