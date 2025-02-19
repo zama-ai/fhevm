@@ -47,7 +47,9 @@ impl Event for RelayerEvent {
             RelayerEventData::DecryptionFailed { .. } => 6,
             RelayerEventData::Input(input_event) => match input_event {
                 InputEventData::ReqFromUser { .. } => 7,
-                InputEventData::RespFromGwL2 { .. } => 8,
+                InputEventData::RequestSentToGwL2 { .. } => 8,
+                InputEventData::RespFromGwL2 { .. } => 9,
+                InputEventData::EventLogFromGwL2 { .. } => 10,
             },
         }
     }
@@ -75,7 +77,7 @@ pub enum ApiCategory {
     EXPERIMENTAL,
 }
 
-#[derive(Clone, AsRefStr)]
+#[derive(Clone)]
 pub enum RelayerEventData {
     // Raw event log from ethereum. Handler will check event type, decode the
     // event, store ethereum related contextual data and dispatch a decryption
@@ -127,6 +129,23 @@ pub enum RelayerEventData {
     Input(InputEventData),
 }
 
+impl AsRef<str> for RelayerEventData {
+    fn as_ref(&self) -> &str {
+        match self {
+            RelayerEventData::EventLogFromHostL1 { .. } => "EventLogFromHostL1",
+            RelayerEventData::DecryptRequestRcvd { .. } => "DecryptRequestRcvd",
+            RelayerEventData::DecryptionRequestSentToGwL2 { .. } => "DecryptionRequestSentToGwL2",
+            RelayerEventData::EventLogFromGwL2 { .. } => "EventLogFromGwL2",
+            RelayerEventData::DecryptionResponseRcvdFromGwL2 { .. } => {
+                "DecryptionResponseRcvdFromGwL2"
+            }
+            RelayerEventData::DecryptResponseSentToHostL1 => "DecryptResponseSentToHostL1",
+            RelayerEventData::DecryptionFailed { .. } => "DecryptionFailed",
+            RelayerEventData::Input(input_event) => input_event.event_name(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Display)]
 pub enum DecryptionType {
     PublicDecrypt,
@@ -151,11 +170,27 @@ pub enum InputEventData {
         contract_chain_id: U256,
         contract_address: Address,
         user_address: Address,
-        ciphertext_proofhandles: Vec<[u8; 32]>,
         zkpok: Vec<u8>,
     },
     RespFromGwL2 {
         handles: Vec<[u8; 32]>,
         signatures: Vec<Vec<u8>>,
     },
+    RequestSentToGwL2 {
+        zkpok_public_id: U256,
+    },
+    EventLogFromGwL2 {
+        log: Log,
+    },
+}
+
+impl InputEventData {
+    pub fn event_name(&self) -> &'static str {
+        match self {
+            InputEventData::ReqFromUser { .. } => "Input::ReqFromUser",
+            InputEventData::RespFromGwL2 { .. } => "Input::RespFromGwL2",
+            InputEventData::RequestSentToGwL2 { .. } => "Input::RequestSentToGwL2",
+            InputEventData::EventLogFromGwL2 { .. } => "Input::EventLogFromGwL2",
+        }
+    }
 }
