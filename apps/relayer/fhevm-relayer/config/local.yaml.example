@@ -34,6 +34,7 @@ contracts:
   decryption_oracle_address: "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d"
   tfhe_executor_address: "0x12B064FB845C1cc05e9493856a1D637a73e944bE"
   decryption_manager_address: "0x2Fb4341027eb1d2aD8B5D9708187df8633cAFA92"
+  zkpok_manager_address: "0x12B064FB845C1cc05e9493856a1D637a73e944bE"
 
 log:
   # Set log level for development
