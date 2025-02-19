@@ -45,12 +45,12 @@ kmsCore:
     enabled: false
     # If left unset, the chart will generate the list automatically based on pod replicas of the statefulset
     peersList:
-#      - id: 1
-#        host: kms-service-core-1
-#        port: 50001
-#      - id: 2
-#        host: kms-service-core-2
-#        port: 50001
+     - id: 1
+       host: kms-service-core-1
+       port: 50001
+     - id: 2
+       host: kms-service-core-2
+       port: 50001
     initializationScript:
       enabled: false
     dec_capacity: 10000
@@ -120,7 +120,7 @@ mtls:
   enabled: false
 
 kmsCoreClient:
-  enabled: false
+  enabled: true
   image:
     name: ghcr.io/zama-ai/kms-core-client
     tag: latest
