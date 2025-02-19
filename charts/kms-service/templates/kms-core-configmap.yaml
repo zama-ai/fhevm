@@ -35,7 +35,9 @@ data:
 
     [private_vault]
     storage = "${KMS_CORE__PRIVATE_VAULT__STORAGE}"
+    {{- if .Values.kmsCore.nitroEnclave.enabled }}
     keychain = "${KMS_CORE__PRIVATE_VAULT__KEYCHAIN}"
+    {{- end }}
 
     {{ if .Values.kmsCore.thresholdMode.enabled -}}
     [threshold]
