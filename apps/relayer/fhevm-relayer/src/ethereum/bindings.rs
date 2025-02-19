@@ -40,7 +40,7 @@ sol!(
     "./artifacts/DecryptionManager.json"
 );
 
-// ZKPoK Manager (Rollup)
+// ZKPoK  Manager (Rollup)
 
 sol!(
     #[allow(missing_docs)]

@@ -1,6 +1,7 @@
 use crate::errors::EventProcessingError;
 use crate::ethereum_host_l1_handlers::DecryptionRequestData;
-use alloy::primitives::{keccak256, Bytes, Uint, U256};
+use alloy::primitives::{keccak256, Address, Bytes, Uint, U256};
+use tracing::{debug, info};
 
 pub struct ComputeCalldata;
 
@@ -82,6 +83,80 @@ impl ComputeCalldata {
         for handle in handles {
             calldata.extend_from_slice(&handle.to_be_bytes::<32>());
         }
+
+        Ok(Bytes::from(calldata))
+    }
+
+    /// Computes calldata for verifyProofRequest function
+    ///
+    /// # Arguments
+    /// * `contract_chain_id` - Chain ID where the contract is deployed
+    /// * `contract_address` - Address of the contract
+    /// * `user_address` - Address of the user
+    /// * `ciphertext_with_zkproof` - Combined ciphertext and ZK proof data
+    pub fn verify_proof_req(
+        contract_chain_id: U256,
+        contract_address: Address,
+        user_address: Address,
+        ciphertext_with_zkproof: Vec<u8>,
+    ) -> Result<Bytes, EventProcessingError> {
+        let mut calldata = Vec::new();
+
+        // Function selector for verifyProofRequest(uint256,address,address,bytes)
+        let selector = &keccak256("verifyProofRequest(uint256,address,address,bytes)")[..4];
+        info!(
+            "Selector for VerifyProofRequest: 0x{}",
+            hex::encode(selector)
+        );
+        calldata.extend_from_slice(selector);
+
+        // Encode contract_chain_id (uint256)
+        calldata.extend_from_slice(&contract_chain_id.to_be_bytes::<32>());
+
+        // Encode contract_address (address) - pad to 32 bytes
+        let mut padded_contract = [0u8; 32];
+        padded_contract[12..].copy_from_slice(contract_address.as_ref());
+        calldata.extend_from_slice(&padded_contract);
+
+        // Encode user_address (address) - pad to 32 bytes
+        let mut padded_user = [0u8; 32];
+        padded_user[12..].copy_from_slice(user_address.as_ref());
+        calldata.extend_from_slice(&padded_user);
+
+        // Encode dynamic bytes offset (pointing to ciphertext_with_zkproof)
+        // Should be 128 (4 + 3*32) for selector + 3 fixed params
+        calldata.extend_from_slice(&U256::from(128).to_be_bytes::<32>());
+
+        // Encode ciphertext_with_zkproof length
+        calldata.extend_from_slice(&U256::from(ciphertext_with_zkproof.len()).to_be_bytes::<32>());
+
+        // Encode ciphertext_with_zkproof data
+        calldata.extend_from_slice(&ciphertext_with_zkproof);
+
+        // Pad to 32 byte boundary if needed
+        if ciphertext_with_zkproof.len() % 32 != 0 {
+            let padding = vec![0u8; 32 - (ciphertext_with_zkproof.len() % 32)];
+            calldata.extend_from_slice(&padding);
+        }
+
+        // Debug log the calldata
+        debug!(
+            "Calldata: \n\
+             Selector: 0x{}\n\
+             ChainID: 0x{}\n\
+             Contract: 0x{}\n\
+             User: 0x{}\n\
+             Offset: 0x{}\n\
+             Length: 0x{}\n\
+             Data: 0x{}",
+            hex::encode(&calldata[..4]),
+            hex::encode(&calldata[4..36]),
+            hex::encode(&calldata[36..68]),
+            hex::encode(&calldata[68..100]),
+            hex::encode(&calldata[100..132]),
+            hex::encode(&calldata[132..164]),
+            hex::encode(&calldata[164..])
+        );
 
         Ok(Bytes::from(calldata))
     }
