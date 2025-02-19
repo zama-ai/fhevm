@@ -33,27 +33,24 @@
 //! [Ethereum L1] ← [L1 Handler] ← [Orchestrator] ← [L2 Listener]
 //! ```
 
-use alloy::primitives::{Address, Bytes, U256};
-use std::{str::FromStr, sync::Arc, time::Duration};
+use alloy::primitives::Address;
+use std::{str::FromStr, sync::Arc};
 use tracing::info;
 use tracing_subscriber::{fmt::SubscriberBuilder, EnvFilter};
-use uuid::Uuid;
 
 use fhevm_relayer::{
     arbitrum_gateway_l2_handlers::ArbitrumGatewayL2Handler,
     config::settings::{LogConfig, Settings},
-    errors::EventProcessingError,
     ethereum::{ContractAndTopicsFilter, EthereumHostL1, RollupL2},
     ethereum_host_l1_handlers::EthereumHostL1Handler,
     ethereum_listener::event_listener,
+    http_server::run_http_server,
     input_handlers::ArbitrumGatewayL2InputHandler,
     orchestrator::{
-        traits::{EventDispatcher, EventHandler, HandlerRegistry},
+        traits::{EventHandler, HandlerRegistry},
         Orchestrator, TokioEventDispatcher,
     },
-    relayer_event::{
-        ApiCategory, ApiVersion, InputEventData, InputProofRequest, RelayerEvent, RelayerEventData,
-    },
+    relayer_event::RelayerEvent,
     rollup_listener::event_listener_rollup,
     transaction::{TransactionService, TxConfig},
 };
@@ -213,40 +210,7 @@ async fn main() -> eyre::Result<()> {
         Arc::clone(&orchestrator),
     ));
 
-    tokio::time::sleep(Duration::from_secs(4)).await;
-
-    let ctx = uuid::v1::Context::new(0);
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .expect("Time went backwards");
-    let ts = uuid::v1::Timestamp::from_unix(&ctx, now.as_secs(), now.subsec_nanos());
-    let node_id = [0x01, 0x23, 0x45, 0x67, 0x89, 0xab];
-
-    let request_id = Uuid::new_v1(ts, &node_id).map_err(|e| {
-        EventProcessingError::HandlerError(format!("Failed to generate UUID: {}", e))
-    })?;
-
-    let test_request = RelayerEvent::new(
-        request_id,
-        ApiVersion {
-            category: ApiCategory::PRODUCTION,
-            number: 1,
-        },
-        RelayerEventData::Input(InputEventData::ReqFromUser {
-            input_proof_request: InputProofRequest::new(
-                U256::from(1),
-                Address::from_str("0x1234567890123456789012345678901234567890").unwrap(),
-                Address::from_str("0x2345678901234567890123456789012345678901").unwrap(),
-                Bytes::from(vec![1, 2, 3]),
-            ),
-        }),
-    );
-
-    // Dispatch the test event
-    dispatcher
-        .dispatch_event(test_request)
-        .await
-        .map_err(|e| eyre::eyre!("Failed to dispatch test request: {}", e))?;
+    tokio::spawn(run_http_server(Arc::clone(&orchestrator)));
 
     // === Wait for ctrl + c signal to stop the application
     tokio::signal::ctrl_c().await?;
