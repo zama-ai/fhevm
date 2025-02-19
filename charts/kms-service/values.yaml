@@ -126,6 +126,7 @@ kmsCoreClient:
     tag: latest
   num_majority: 2
   num_reconstruct: 3
+  decryption_mode: "NoiseFloodSmall"
   nodeSelector:
   affinity:
   tolerations:

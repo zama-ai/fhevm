@@ -32,6 +32,14 @@ spec:
               value: "{{ if .Values.minio.enabled }}http://minio:9000/{{ .Values.kmsCore.publicVault.s3.bucket }}{{ else }}https://{{ .Values.kmsCore.publicVault.s3.bucket }}.s3.{{ .Values.kmsCore.aws.region }}.amazonaws.com{{ end }}/{{ .Values.kmsCore.publicVault.s3.path }}"
             - name: OBJECT_FOLDER_LIST
               value: '{{ if .Values.kmsCore.thresholdMode.enabled }}{{ range $i := $peersIDList }}"PUB-p{{ $i }}",{{ end }}{{ else }}"PUB"{{ end }}'
+            - name: CORE_ADDRESSES
+              value: '{{ range $i := $peersIDList }}"http://{{ .host }}:{{ .Values.kmsCore.ports.client | 50100 }}",{{ end }}'
+            - name: NUM_MAJORITY
+              value: '{{ .Values.kmsCore.num_majority | int | quote }}'
+            - name: NUM_RECONSTRUCT
+              value: '{{ .Values.kmsCore.num_reconstruct | int | quote }}'
+            - name: DECRYPTION_MODE
+              value: '{{ .Values.kmsCoreClient.decryption_mode | quote }}'
           volumeMounts:
             - mountPath: /app/load-kms-core-client-config.sh
               subPath: load-kms-core-client-config.sh
