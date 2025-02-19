@@ -1,5 +1,5 @@
 -- CreateEnum
-CREATE TYPE "DappStatus" AS ENUM ('DRAFT', 'DEPLOYING', 'LIVE', 'ARCHIVED', 'DELETED');
+CREATE TYPE "DappStatus" AS ENUM ('DRAFT', 'DEPLOYING', 'LIVE', 'FAILED', 'ARCHIVED', 'DELETED');
 
 -- CreateTable
 CREATE TABLE "Dapp" (

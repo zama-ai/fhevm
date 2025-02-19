@@ -57,6 +57,7 @@ export class GetDappStatsUseCase implements UseCase<Input, Output> {
                 .publish(
                   back.dappStatsRequested(
                     {
+                      dAppId: dappId.value,
                       // Note: We should store the chainId in the DApp entity
                       chainId: LOCAL_FHEVM_CHAIN_ID,
                       address: dapp.address!,

@@ -1,10 +1,7 @@
-import { AppDeploymentEnded } from '#dapps/use-cases/app-deployment-ended.use-case.js'
-import { AppDeploymentRequested } from '#dapps/use-cases/app-deployment-requested.use-case.js'
 import type { Message } from '@aws-sdk/client-sqs'
 import { Inject, Injectable, Logger } from '@nestjs/common'
-import { back, isAppDeploymentEvent } from 'messages'
+import { back } from 'messages'
 import { SqsMessageHandler } from 'sqs'
-import { ScDiscovered } from './use-cases/sc-discovered.use-case.js'
 import { MS_NAME, PUBSUB } from '#constants.js'
 import { isAppError, PubSub } from 'utils'
 
@@ -14,9 +11,6 @@ export class SQSConsumer {
 
   constructor(
     @Inject(PUBSUB) private readonly pubsub: PubSub<back.BackEvent>,
-    private readonly appDeploymentRequestedUC: AppDeploymentRequested,
-    private readonly appDeploymentEndedUC: AppDeploymentEnded,
-    private readonly scDiscovered: ScDiscovered,
   ) {}
 
   @SqsMessageHandler('back', false)
@@ -37,30 +31,6 @@ export class SQSConsumer {
           }
           this.logger.debug(`🚀 Publishing ${data.type} to internal queue`)
           await this.pubsub.publish(data).toPromise()
-        } else if (isAppDeploymentEvent(data)) {
-          switch (data.type) {
-            case 'app-deployment.sc-discovered':
-            case 'app-deployment.sc-discovery-failed':
-              this.scDiscovered.execute(data).fork(
-                () => this.logger.debug(`${data.type} handled`),
-                err => {
-                  this.logger.log(`${data.type} failed: ${err.message}`)
-                  throw err
-                },
-              )
-              break
-            case 'app-deployment.requested':
-              await this.appDeploymentRequestedUC
-                .execute({ event: data })
-                .toPromise()
-              break
-            case 'app-deployment.completed':
-            case 'app-deployment.failed':
-              await this.appDeploymentEndedUC
-                .execute({ event: data })
-                .toPromise()
-              break
-          }
         } else {
           this.logger.log(`❌ unhandled message: ${(data as any).type}`)
         }

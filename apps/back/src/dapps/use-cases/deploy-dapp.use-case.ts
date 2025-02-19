@@ -1,24 +1,22 @@
 import { type UserProps } from '#users/domain/entities/user.js'
 import {
   type AppError,
+  IPubSub,
+  SEPOLIA_CHAIN_ID,
   Task,
   UnitOfWork,
   type UseCase,
   validationError,
 } from 'utils'
 import { DApp, DAppProps } from '../domain/entities/dapp.js'
-import {
-  APP_DEPLOYMENT_PRODUCER,
-  AppDeploymentProducer,
-} from '../domain/services/app-deployment.producer.js'
 import { DAppRepository } from '../domain/repositories/dapp.repository.js'
-import { UNIT_OF_WORK } from '#constants.js'
+import { PUBSUB, UNIT_OF_WORK } from '#constants.js'
 import { Inject, Logger } from '@nestjs/common'
 import { UpdateDapp } from './update-dapp.use-case.js'
-import { requested } from 'messages'
 import { randomUUID } from 'crypto'
 import { DAppId } from '../domain/entities/value-objects.js'
 import { UserId } from '#users/domain/entities/value-objects.js'
+import { back } from 'messages'
 
 interface Input {
   user: UserProps // to check if they can deploy
@@ -33,8 +31,8 @@ export class DeployDApp implements UseCase<Input, DAppProps> {
   constructor(
     @Inject(UNIT_OF_WORK) private readonly uow: UnitOfWork,
     private readonly dappRepository: DAppRepository,
-    @Inject(APP_DEPLOYMENT_PRODUCER)
-    private readonly producer: AppDeploymentProducer,
+    @Inject(PUBSUB)
+    private readonly pubsub: IPubSub<back.BackEvent>,
     private readonly updateDappUC: UpdateDapp,
   ) {}
   execute({ user, dappId }: Input): Task<DAppProps, AppError> {
@@ -56,21 +54,24 @@ export class DeployDApp implements UseCase<Input, DAppProps> {
                 ),
           )
           .chain(dapp =>
-            Task.all<AppError, string, DAppProps>([
-              this.producer
+            Task.all<AppError, void, DAppProps>([
+              this.pubsub
                 .publish(
-                  requested(
+                  back.dappValidationRequested(
                     {
-                      applicationId: dappId.value,
-                      deploymentId: randomUUID(),
+                      dAppId: dappId.value,
+                      chainId: SEPOLIA_CHAIN_ID, // change it
                       address: dapp.address!,
-                      // TODO: move it into a constants file
-                      chainId: '11155111', // sepolia
                     },
-                    { correlationId: randomUUID(), userId: user.id },
+                    {
+                      correlationId: randomUUID(),
+                      userId: user.id, // NOTE: do we still need it?
+                    },
                   ),
                 )
                 .tap(r => this.logger.debug(`requested: ${r}`)),
+              // Note: the `AppDeployment` use case will update the dapp status too
+              // should we remove from this point?
               this.updateDappUC
                 .execute({
                   dapp: {

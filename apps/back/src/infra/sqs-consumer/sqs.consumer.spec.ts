@@ -5,9 +5,6 @@ import { PUBSUB } from '#constants.js'
 import { mock, MockProxy } from 'vitest-mock-extended'
 import { Task, unknownError, type IPubSub } from 'utils'
 import { back } from 'messages'
-import { AppDeploymentRequested } from '#dapps/use-cases/app-deployment-requested.use-case.js'
-import { AppDeploymentEnded } from '#dapps/use-cases/app-deployment-ended.use-case.js'
-import { ScDiscovered } from './use-cases/sc-discovered.use-case.js'
 import { faker } from '@faker-js/faker'
 import { Message } from '@aws-sdk/client-sqs'
 
@@ -24,18 +21,6 @@ describe('SqsConsumer', () => {
           {
             provide: PUBSUB,
             useValue: pubsub,
-          },
-          {
-            provide: AppDeploymentRequested,
-            useValue: mock<AppDeploymentRequested>(),
-          },
-          {
-            provide: AppDeploymentEnded,
-            useValue: mock<AppDeploymentEnded>,
-          },
-          {
-            provide: ScDiscovered,
-            useValue: mock<ScDiscovered>(),
           },
         ],
       }).compile()
@@ -55,6 +40,7 @@ describe('SqsConsumer', () => {
           event = {
             type: 'back:dapp:stats-requested',
             payload: {
+              dAppId: faker.string.uuid(),
               chainId: faker.string.numeric(5),
               address: faker.string.hexadecimal({ length: 40 }),
             },
