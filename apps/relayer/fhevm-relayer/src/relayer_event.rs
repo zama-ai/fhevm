@@ -1,5 +1,5 @@
 use crate::orchestrator::traits::Event;
-use alloy::primitives::Address;
+use alloy::primitives::{Address, Bytes, FixedBytes};
 use alloy::{primitives::U256, rpc::types::Log};
 use std::fmt::Display;
 use strum_macros::Display;
@@ -170,11 +170,11 @@ pub enum InputEventData {
         contract_chain_id: U256,
         contract_address: Address,
         user_address: Address,
-        zkpok: Vec<u8>,
+        zkpok: Bytes,
     },
     RespFromGwL2 {
-        handles: Vec<[u8; 32]>,
-        signatures: Vec<Vec<u8>>,
+        handles: Vec<FixedBytes<32>>,
+        signatures: Vec<Bytes>,
     },
     RequestSentToGwL2 {
         zkpok_public_id: U256,

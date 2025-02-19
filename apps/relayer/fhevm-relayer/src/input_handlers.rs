@@ -11,7 +11,7 @@ use crate::{
 };
 
 use alloy::{
-    primitives::{keccak256, Address, U256},
+    primitives::{keccak256, Address, Bytes, FixedBytes, U256},
     rpc::types::TransactionReceipt,
 };
 
@@ -230,7 +230,7 @@ impl ArbitrumGatewayL2InputHandler {
         contract_chain_id: U256,
         contract_address: Address,
         user_address: Address,
-        zkpok: Vec<u8>,
+        zkpok: Bytes,
     ) -> Result<U256, EventProcessingError> {
         let processor = InputRequestProcessor {
             handler: Arc::new(self.clone()),
@@ -296,10 +296,10 @@ impl ArbitrumGatewayL2InputHandler {
                 let next_event_data: RelayerEventData =
                     RelayerEventData::Input(InputEventData::RespFromGwL2 {
                         handles: vec![
-                            [1u8; 32], // First handle filled with 1's
-                            [2u8; 32], // Second handle filled with 2's
+                            FixedBytes::repeat_byte(1u8), // First handle filled with 1's
+                            FixedBytes::repeat_byte(2u8), // Second handle filled with 2's
                         ],
-                        signatures: vec![vec![1, 2, 3]],
+                        signatures: vec![Bytes::from(vec![1, 2, 3])],
                     });
 
                 // Now we can use original_request_id directly

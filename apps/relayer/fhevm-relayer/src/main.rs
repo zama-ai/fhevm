@@ -33,7 +33,7 @@
 //! [Ethereum L1] ← [L1 Handler] ← [Orchestrator] ← [L2 Listener]
 //! ```
 
-use alloy::primitives::{Address, U256};
+use alloy::primitives::{Address, Bytes, U256};
 use std::{str::FromStr, sync::Arc, time::Duration};
 use tracing::info;
 use tracing_subscriber::{fmt::SubscriberBuilder, EnvFilter};
@@ -232,7 +232,7 @@ async fn main() -> eyre::Result<()> {
             contract_address: Address::from_str("0x1234567890123456789012345678901234567890")
                 .unwrap(),
             user_address: Address::from_str("0x2345678901234567890123456789012345678901").unwrap(),
-            zkpok: vec![1, 2, 3], // Example proof
+            zkpok: Bytes::from(vec![1, 2, 3]), // Example proof
         }),
     );
 

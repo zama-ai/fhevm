@@ -98,7 +98,7 @@ impl ComputeCalldata {
         contract_chain_id: U256,
         contract_address: Address,
         user_address: Address,
-        ciphertext_with_zkproof: Vec<u8>,
+        ciphertext_with_zkproof: Bytes,
     ) -> Result<Bytes, EventProcessingError> {
         let mut calldata = Vec::new();
 
