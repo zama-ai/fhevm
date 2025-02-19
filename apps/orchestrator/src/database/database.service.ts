@@ -7,10 +7,10 @@ import { PrismaClient } from '#prisma/client/index.js'
 
 @Injectable()
 export class DatabaseService implements OnModuleInit {
-  #client = new PrismaClient()
+  constructor(private readonly prisma: PrismaClient) {}
 
   async onModuleInit() {
-    await this.#client.$connect()
+    await this.prisma.$connect()
   }
 
   async enableShutdownHooks(app: INestApplication) {
@@ -20,6 +20,6 @@ export class DatabaseService implements OnModuleInit {
   }
 
   get snapshot() {
-    return this.#client.snapshot
+    return this.prisma.snapshot
   }
 }

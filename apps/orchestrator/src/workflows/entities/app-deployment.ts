@@ -26,7 +26,7 @@ export type AppDeploymentEvents = Extract<
 export function isAppDeploymentEvent(
   event: back.BackEvent | web3.Web3Event,
 ): event is AppDeploymentEvents {
-  return event.type in EVENT_TYPES
+  return (EVENT_TYPES as readonly string[]).includes(event.type)
 }
 
 type Context = {
