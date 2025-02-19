@@ -120,7 +120,7 @@ mtls:
   enabled: false
 
 kmsCoreClient:
-  enabled: true
+  enabled: false
   image:
     name: ghcr.io/zama-ai/kms-core-client
     tag: latest
