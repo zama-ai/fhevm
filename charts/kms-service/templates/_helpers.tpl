@@ -119,7 +119,7 @@ args:
 {{- default $kmsCoreNameDefault .Values.kmsCore.nameOverride | trunc 52 | trimSuffix "-" -}}
 {{- end -}}
 
-{{- define "kmsSimulatorName" -}}
-{{- $kmsCoreNameDefault := printf "%s-%s" .Release.Name "simulator" }}
+{{- define "kmsCoreClientName" -}}
+{{- $kmsCoreNameDefault := printf "%s-%s" .Release.Name "kms-core-client" }}
 {{- default $kmsCoreNameDefault .Values.kmsCore.nameOverride | trunc 52 | trimSuffix "-" -}}
 {{- end -}}

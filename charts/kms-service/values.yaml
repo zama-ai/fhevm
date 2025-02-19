@@ -119,20 +119,16 @@ kmsCore:
 mtls:
   enabled: false
 
-kmsSimulator:
+kmsCoreClient:
   enabled: false
   image:
-    name: ghcr.io/zama-ai/kms-blockchain-simulator
+    name: ghcr.io/zama-ai/kms-core-client
     tag: latest
-  contractAddress:
-    configmap:
-      name: kms-sc-deploy-kms-sc-addresses
-      ascAddressKey: DEBUG_ASC_ETHEREUM_ADDRESS
-      cscAddressKey: CSC_ADDRESS
-  wallet:
-    secret:
-      name: kms-connector-keys
-      key: connector-1.mnemonic
+  num_majority: 2
+  num_reconstruct: 3
+  nodeSelector:
+  affinity:
+  tolerations:
 
 kubeUtils:
   image:

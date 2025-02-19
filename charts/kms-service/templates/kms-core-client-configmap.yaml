@@ -1,0 +1,25 @@
+{{- if .Values.kmsCoreClient.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    app: kms-core-client
+  name: {{ include "kmsCoreClientName" . }}-config
+data:
+  load-kms-core-client-config.sh: |
+    #!/bin/sh
+    set -e
+    echo "loading configuration from env vars into the config.toml file"
+    cat <<EOF >>config.toml
+    s3_endpoint = "${S3_ENDPOINT}"
+    object_folder = [${OBJECT_FOLDER_LIST}]
+    {{ range .Values.kmsCore.thresholdMode.peersList }}
+    core_addresses = ["{{ .host }}:{{ .Values.kmsCore.ports.client }}"]
+    {{- end }}
+    num_majority = {{ .Values.kmsCoreClient.num_majority }}
+    num_reconstruct = {{ .Values.kmsCoreClient.num_reconstruct }}
+    decryption_mode = "NoiseFloodSmall"
+    EOF
+    # Keep the pod running
+    tail -f /dev/null
+{{- end -}}
