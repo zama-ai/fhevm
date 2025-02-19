@@ -288,7 +288,7 @@ spec:
               echo 'aws_access_key_id = ${AWS_ACCESS_KEY_ID}' >> ~/.aws/credentials
               echo 'aws_secret_access_key = ${AWS_SECRET_ACCESS_KEY}' >> ~/.aws/credentials
               {{- end }}
-              kms-server --config-file=/var/lib/kms-core/config/kms-server.toml
+              kms-server --config-file=kms-server.toml
           {{- end }}
           env:
             {{- if .Values.kmsCore.thresholdMode.enabled }}
@@ -314,6 +314,7 @@ spec:
             - configMapRef:
                 name: {{ .Values.kmsCore.envFrom.configmap.name }}
           {{- end }}
+          workingDir: {{ .Values.kmsCore.workdir }}
           volumeMounts:
             - mountPath: {{ .Values.kmsCore.workdir }}
               name: workdir
