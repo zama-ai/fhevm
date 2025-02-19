@@ -37,7 +37,7 @@ WHERE tenant_id = 1;
 # Run a single instance of the worker
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor \
 cargo run --release -- \
---tenant-id 1 \
+--tenant-api-key "a1503fb6-d79b-4e9e-826d-44cf262f3e05" \
 --pg-listen-channel "event_pbs_new_work" \
 --pg-notify-channel "event_pbs_computed" \
 ```

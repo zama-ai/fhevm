@@ -36,7 +36,7 @@ async fn main() {
     tracing_subscriber::fmt().json().with_level(true).init();
 
     let conf = sns_executor::Config {
-        tenant_id: args.tenant_id as i32,
+        tenant_api_key: args.tenant_api_key,
         db: DBConfig {
             url: db_url,
             listen_channel: args.pg_listen_channel,

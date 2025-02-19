@@ -3,9 +3,9 @@ use clap::{command, Parser};
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
 pub struct Args {
-    /// Tenant ID
-    #[arg(long, default_value_t = 4)]
-    pub tenant_id: u32,
+    /// Tenant API key
+    #[arg(long)]
+    pub tenant_api_key: String,
 
     /// Work items batch size
     #[arg(long, default_value_t = 4)]

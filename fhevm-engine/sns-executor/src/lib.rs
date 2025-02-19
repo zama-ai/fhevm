@@ -29,7 +29,7 @@ pub struct DBConfig {
 }
 
 pub struct Config {
-    pub tenant_id: i32,
+    pub tenant_api_key: String,
     pub db: DBConfig,
 }
 

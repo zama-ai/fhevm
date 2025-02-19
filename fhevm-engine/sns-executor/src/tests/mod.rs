@@ -11,7 +11,7 @@ use test_harness::instance::DBInstance;
 use tokio::{sync::broadcast, time::sleep};
 
 const LISTEN_CHANNEL: &str = "sns_worker_chan";
-const TENANT_ID: i32 = 1;
+const TENANT_API_KEY: &str = "a1503fb6-d79b-4e9e-826d-44cf262f3e05";
 
 #[tokio::test]
 #[ignore = "requires valid SnS keys in CI"]
@@ -61,8 +61,11 @@ async fn test_decryptable(
         insert_into_pbs_computations(pool, handle).await?;
         insert_ciphertext64(pool, handle, ciphertext).await?;
     }
+
+    let tenant_id = get_tenant_id_from_db(pool, TENANT_API_KEY).await;
+
     // wait until ciphertext.large_ct is not NULL
-    let data = test_harness::db_utils::wait_for_ciphertext(pool, TENANT_ID, handle, 10).await?;
+    let data = test_harness::db_utils::wait_for_ciphertext(pool, tenant_id, handle, 10).await?;
 
     // deserialize ciphertext128
     let ciphertext128: Vec<tfhe::core_crypto::prelude::LweCiphertext<Vec<u128>>> =
@@ -87,7 +90,7 @@ async fn setup() -> anyhow::Result<(
         .expect("valid db instance");
 
     let conf = Config {
-        tenant_id: TENANT_ID,
+        tenant_api_key: TENANT_API_KEY.to_string(),
         db: DBConfig {
             url: test_instance.db_url().to_owned(),
             listen_channel: LISTEN_CHANNEL.to_string(),
@@ -105,7 +108,7 @@ async fn setup() -> anyhow::Result<(
 
     let (tx, rx) = broadcast::channel(1);
     let cancel_chan = Arc::new(tx);
-    let sns_client_keys = read_sns_sk_from_lo(&pool, TENANT_ID).await?;
+    let sns_client_keys = read_sns_sk_from_lo(&pool, &TENANT_API_KEY.to_owned()).await?;
     tokio::spawn(async move {
         crate::run(None, &conf, cancel_chan.subscribe())
             .await
@@ -154,12 +157,23 @@ fn read_test_file(filename: &str) -> TestFile {
     bincode::deserialize(&buffer).expect("Failed to deserialize")
 }
 
+async fn get_tenant_id_from_db(pool: &sqlx::PgPool, tenant_api_key: &str) -> i32 {
+    let tenant_id: i32 = sqlx::query_scalar("SELECT id FROM tenants WHERE tenant_api_key = $1")
+        .bind(tenant_api_key)
+        .fetch_one(pool)
+        .await
+        .expect("tenant_id");
+
+    tenant_id
+}
+
 async fn insert_ciphertext64(
     pool: &sqlx::PgPool,
     handle: &Vec<u8>,
     ciphertext: &Vec<u8>,
 ) -> anyhow::Result<()> {
-    test_harness::db_utils::insert_ciphertext64(pool, TENANT_ID, handle, ciphertext).await?;
+    let tenant_id = get_tenant_id_from_db(pool, TENANT_API_KEY).await;
+    test_harness::db_utils::insert_ciphertext64(pool, tenant_id, handle, ciphertext).await?;
 
     // Notify sns_worker
     sqlx::query("SELECT pg_notify($1, '')")
@@ -174,7 +188,8 @@ async fn insert_into_pbs_computations(
     pool: &sqlx::PgPool,
     handle: &Vec<u8>,
 ) -> Result<(), anyhow::Error> {
-    test_harness::db_utils::insert_into_pbs_computations(pool, TENANT_ID, handle).await?;
+    let tenant_id = get_tenant_id_from_db(pool, TENANT_API_KEY).await;
+    test_harness::db_utils::insert_into_pbs_computations(pool, tenant_id, handle).await?;
 
     // Notify sns_worker
     sqlx::query("SELECT pg_notify($1, '')")

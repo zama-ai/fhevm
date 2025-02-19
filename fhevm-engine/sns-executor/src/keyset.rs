@@ -10,11 +10,14 @@ use crate::switch_and_squash::{SnsClientKey, SwitchAndSquashKey};
 use crate::{ExecutionError, KeySet};
 
 /// Retrieve the keyset from the database
-pub(crate) async fn fetch_keyset(pool: &PgPool, tenant_id: i32) -> Result<KeySet, ExecutionError> {
+pub(crate) async fn fetch_keyset(
+    pool: &PgPool,
+    tenant_api_key: &String,
+) -> Result<KeySet, ExecutionError> {
     let (server_key, sns_key, sns_secret_key) = join!(
-        read_sks_key(pool, tenant_id),
-        read_sns_pk_from_lo(pool, tenant_id),
-        read_sns_sk_from_lo(pool, tenant_id)
+        read_sks_key(pool, tenant_api_key),
+        read_sns_pk_from_lo(pool, tenant_api_key),
+        read_sns_sk_from_lo(pool, tenant_api_key)
     );
 
     let server_key = server_key?;
@@ -31,8 +34,11 @@ pub(crate) async fn fetch_keyset(pool: &PgPool, tenant_id: i32) -> Result<KeySet
 }
 
 /// Retrieve the SwitchAndSquashKey from the large object table
-async fn read_sns_pk_from_lo(pool: &PgPool, tenant_id: i32) -> anyhow::Result<SwitchAndSquashKey> {
-    let bytes = read_keys_from_lo(pool, tenant_id, "sns_pk").await?;
+async fn read_sns_pk_from_lo(
+    pool: &PgPool,
+    tenant_api_key: &String,
+) -> anyhow::Result<SwitchAndSquashKey> {
+    let bytes = read_keys_from_lo(pool, tenant_api_key, "sns_pk").await?;
     info!(target: "sns", "Retrieved sns_pk bytes length: {:?}", bytes.len());
     let sns_pk: SwitchAndSquashKey = bincode::deserialize(&bytes)?;
     anyhow::Ok(sns_pk)
@@ -43,9 +49,9 @@ async fn read_sns_pk_from_lo(pool: &PgPool, tenant_id: i32) -> anyhow::Result<Sw
 /// SnsClientKey is supposed to be used only for testing purposes
 pub async fn read_sns_sk_from_lo(
     pool: &PgPool,
-    tenant_id: i32,
+    tenant_api_key: &String,
 ) -> anyhow::Result<Option<SnsClientKey>> {
-    let bytes = read_keys_from_lo(pool, tenant_id, "sns_sk")
+    let bytes = read_keys_from_lo(pool, tenant_api_key, "sns_sk")
         .await
         .map_or(vec![], |b| b);
 
@@ -61,16 +67,19 @@ pub async fn read_sns_sk_from_lo(
 /// Retrieve the keys from the large object saved with OID in tenant table
 async fn read_keys_from_lo(
     pool: &PgPool,
-    tenant_id: i32,
+    tenant_api_key: &String,
     keys_column_name: &str,
 ) -> anyhow::Result<Vec<u8>> {
     // Query the sns_pk column for the given tenant ID
     let query = format!(
-        "SELECT {} FROM tenants WHERE tenant_id = $1",
+        "SELECT {} FROM tenants WHERE tenant_api_key = $1::uuid",
         keys_column_name
     );
 
-    let row: PgRow = sqlx::query(&query).bind(tenant_id).fetch_one(pool).await?;
+    let row: PgRow = sqlx::query(&query)
+        .bind(tenant_api_key)
+        .fetch_one(pool)
+        .await?;
     let oid: Oid = row.try_get(0)?;
 
     info!(target: "sns", "Retrieved oid: {:?}", oid);
@@ -85,15 +94,18 @@ async fn read_keys_from_lo(
 }
 
 /// Retrieve the ServerKey from the tenants table
-pub async fn read_sks_key(pool: &PgPool, tenant_id: i32) -> anyhow::Result<tfhe::ServerKey> {
+pub async fn read_sks_key(
+    pool: &PgPool,
+    tenant_api_key: &String,
+) -> anyhow::Result<tfhe::ServerKey> {
     let sks = sqlx::query(
         "
             SELECT sks_key
             FROM tenants
-            WHERE tenant_id = $1
+            WHERE tenant_api_key = $1::uuid
         ",
     )
-    .bind(tenant_id)
+    .bind(tenant_api_key)
     .fetch_one(pool)
     .await?;
 

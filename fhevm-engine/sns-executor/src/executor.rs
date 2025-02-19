@@ -32,7 +32,7 @@ pub(crate) async fn run_loop(
     conf: &Config,
     mut cancel_chan: broadcast::Receiver<()>,
 ) -> Result<(), ExecutionError> {
-    let tenant_id = conf.tenant_id;
+    let tenant_api_key = &conf.tenant_api_key;
     let conf = &conf.db;
 
     let pool = sqlx::postgres::PgPoolOptions::new()
@@ -46,7 +46,7 @@ pub(crate) async fn run_loop(
 
     let keys: KeySet = match keys {
         Some(keys) => keys,
-        None => fetch_keyset(&pool, tenant_id).await?,
+        None => fetch_keyset(&pool, tenant_api_key).await?,
     };
 
     loop {
