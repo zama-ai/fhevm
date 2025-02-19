@@ -1,14 +1,14 @@
-# SnS executor 
+# Switch-and-Squash executor
 
 ## Description
 
-### Library crate (sns-executor)
+### Library crate
 
-Executes a loop that:  
-- Retrieves `(handle, compressed_ct)` pairs from PG table.ciphertexts marked as `allowed`.  
-- Computes `large_ct` using the SnS algorithm.  
-- Updates the `large_ct` column corresponding to the specified handle.  
-- Sends a signal indicating the availability of newly computed `large_ct`.
+Upon receiving a notification, it mainly does the following steps:
+- Fetches `(handle, compressed_ct)` pairs from `pbs_computations` and `ciphertexts` tables.
+- Computes `large_ct` using the Switch-and-Squash algorithm.
+- Updates the `large_ct` column in the `ciphertexts` table for the corresponding handle.
+- Emits an event indicating the availability of the computed `large_ct`.
 
 #### Features
 **decrypt_128** - Decrypt each `large_ct` and print it as a plaintext (for testing purposes only).
@@ -18,12 +18,45 @@ Executes a loop that:
 Runs sns-executor. See also `src/bin/utils/daemon_cli.rs`
 
  
-## How to run a sns-worker
+## Running a SnS Worker
 
+### The SnS key can be retrieved from the Large Objects table (pg_largeobject). Before running a worker, the sns_pk should be imported into tenants tables as shown below. If tenants table is not in use, then keys can be passed with CLI param --keys_file_path
+```sql
+-- Example query to import sns_pk from fhevm-keys/sns_pk
+-- Import the sns_pk into the Large Object storage
+sns_pk_loid := lo_import('../fhevm-keys/sns_pk');
+
+-- Update the tenants table with the new Large Object OID
+UPDATE tenants
+SET sns_pk = sns_pk_loid
+WHERE tenant_id = 1;
 ```
+
+### Multiple workers can be launched independently to perform 128-PBS computations.
+```bash
+# Run a single instance of the worker
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor \
 cargo run --release -- \
---pg-listen-channel "allowed_handles" \
---pg-notify-channel "computed_handles" \
---keys-file-path "./default_keys.bin"
+--tenant-id 1 \
+--pg-listen-channel "event_pbs_new_work" \
+--pg-notify-channel "event_pbs_computed" \
 ```
+
+## Testing
+
+- Using `Postgres` docker image
+```bash
+# Run Postgres as image, execute migrations and populate the DB instance with keys from fhevm-keys
+cargo test --release -- --nocapture
+```
+
+- Using localhost DB
+
+```bash
+# Use COPROCESSOR_TEST_LOCALHOST_RESET to execute migrations once
+COPROCESSOR_TEST_LOCALHOST_RESET=1  cargo test --release -- --nocapture
+
+# Then, on every run
+COPROCESSOR_TEST_LOCALHOST=1  cargo test --release
+```
+

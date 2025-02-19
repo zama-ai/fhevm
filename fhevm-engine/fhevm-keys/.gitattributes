@@ -2,3 +2,5 @@ cks filter=lfs diff=lfs merge=lfs -text
 pks filter=lfs diff=lfs merge=lfs -text
 sks filter=lfs diff=lfs merge=lfs -text
 pp filter=lfs diff=lfs merge=lfs -text
+sns_pk filter=lfs diff=lfs merge=lfs -text
+sns_sk filter=lfs diff=lfs merge=lfs -text

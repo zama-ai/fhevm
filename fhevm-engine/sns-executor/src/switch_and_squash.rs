@@ -25,7 +25,7 @@ use tfhe::integer::ciphertext::BaseRadixCiphertext;
 
 use tfhe::shortint::ClassicPBSParameters;
 
-#[cfg(feature = "decrypt_128")]
+#[cfg(feature = "test_decrypt_128")]
 use {
     num_traits::{AsPrimitive, ConstZero},
     std::num::Wrapping,
@@ -33,7 +33,7 @@ use {
     tfhe::integer::block_decomposition::BlockRecomposer,
 };
 
-#[cfg(feature = "decrypt_128")]
+#[cfg(feature = "test_decrypt_128")]
 pub type Z128 = Wrapping<u128>;
 
 pub type Ciphertext64 = BaseRadixCiphertext<tfhe::shortint::Ciphertext>;
@@ -285,7 +285,7 @@ impl SnsClientKey {
         }
     }
 
-    #[cfg(feature = "decrypt_128")]
+    #[cfg(feature = "test_decrypt_128")]
     pub fn decrypt_128(&self, ct: &Ciphertext128) -> u128 {
         if ct.is_empty() {
             return 0;
@@ -306,7 +306,7 @@ impl SnsClientKey {
         recomposer.value()
     }
 
-    #[cfg(feature = "decrypt_128")]
+    #[cfg(feature = "test_decrypt_128")]
     pub(crate) fn decrypt_block_128(&self, ct: &Ciphertext128Block) -> Z128 {
         let total_bits = self.params.total_block_bits() as usize;
         let raw_plaintext = decrypt_lwe_ciphertext(&self.key, ct);
@@ -314,7 +314,7 @@ impl SnsClientKey {
     }
 }
 
-#[cfg(feature = "decrypt_128")]
+#[cfg(feature = "test_decrypt_128")]
 // Map a raw, decrypted message to its real value by dividing by the appropriate shift, delta, assuming padding
 pub(crate) fn from_expanded_msg<Scalar: UnsignedInteger + AsPrimitive<u128>>(
     raw_plaintext: Scalar,

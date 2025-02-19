@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT large_ct FROM ciphertexts WHERE tenant_id = $1 AND handle = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "large_ct",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "21bf9dbe442c6e646ed962fa63c4e2a46f24315efacc1ec11cf29282b7ebcbf4"
+}

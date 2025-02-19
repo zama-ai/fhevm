@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
-members = ["coprocessor", "executor", "fhevm-engine-common", "fhevm-listener", "gw-listener", "sns-executor", "transaction-sender", "zkproof-worker"]
+members = ["coprocessor", "executor", "fhevm-engine-common", "fhevm-listener", 
+            "gw-listener", "sns-executor", "transaction-sender", "zkproof-worker", "test-harness"]
 
 [workspace.package]
 authors = ["Zama"]
