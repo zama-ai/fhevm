@@ -167,14 +167,10 @@ pub enum DecryptedValue {
 #[derive(Clone, Debug)]
 pub enum InputEventData {
     ReqFromUser {
-        contract_chain_id: U256,
-        contract_address: Address,
-        user_address: Address,
-        zkpok: Bytes,
+        input_proof_request: InputProofRequest,
     },
     RespFromGwL2 {
-        handles: Vec<FixedBytes<32>>,
-        signatures: Vec<Bytes>,
+        input_proof_response: InputProofResponse,
     },
     RequestSentToGwL2 {
         zkpok_public_id: U256,
@@ -182,6 +178,45 @@ pub enum InputEventData {
     EventLogFromGwL2 {
         log: Log,
     },
+}
+
+#[derive(Clone, Debug)]
+pub struct InputProofRequest {
+    pub contract_chain_id: U256,
+    pub contract_address: Address,
+    pub user_address: Address,
+    pub ciphetext_with_zk_proof: Bytes,
+}
+
+impl InputProofRequest {
+    pub fn new(
+        contract_chain_id: U256,
+        contract_address: Address,
+        user_address: Address,
+        ciphetext_with_zk_proof: Bytes,
+    ) -> InputProofRequest {
+        InputProofRequest {
+            contract_chain_id,
+            contract_address,
+            user_address,
+            ciphetext_with_zk_proof,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct InputProofResponse {
+    pub handles: Vec<FixedBytes<32>>,
+    pub signatures: Vec<Bytes>,
+}
+
+impl InputProofResponse {
+    pub fn new(handles: Vec<FixedBytes<32>>, signatures: Vec<Bytes>) -> InputProofResponse {
+        InputProofResponse {
+            handles,
+            signatures,
+        }
+    }
 }
 
 impl InputEventData {

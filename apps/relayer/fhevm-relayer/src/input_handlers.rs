@@ -5,7 +5,7 @@ use crate::{
         traits::{EventDispatcher, EventHandler},
         TokioEventDispatcher,
     },
-    relayer_event::{InputEventData, RelayerEvent, RelayerEventData},
+    relayer_event::{InputEventData, InputProofResponse, RelayerEvent, RelayerEventData},
     transaction::{ReceiptProcessor, TransactionHelper, TransactionService, TxConfig},
     utils::{colorize_event_type, colorize_request_id},
 };
@@ -72,15 +72,12 @@ impl ArbitrumGatewayL2InputHandler {
     /// On success, stores mapping between zkpok_id and request_id in zkpok_id_to_request_id
     async fn send_input_request_to_rollup(&self, event: RelayerEvent, req_data: InputEventData) {
         if let InputEventData::ReqFromUser {
-            contract_chain_id,
-            contract_address,
-            user_address,
-            zkpok,
+            input_proof_request,
         } = req_data
         {
             info!(
                 "Input request received. Making tx to rollup: request_id: {:?}, contract: {:?}, user: {:?}",
-                event.request_id, contract_address, user_address
+                event.request_id, input_proof_request. contract_address, input_proof_request.user_address
             );
 
             let self_clone = self.clone();
@@ -88,7 +85,12 @@ impl ArbitrumGatewayL2InputHandler {
 
             tokio::spawn(async move {
                 match self_clone
-                    .process_input_request(contract_chain_id, contract_address, user_address, zkpok)
+                    .process_input_request(
+                        input_proof_request.contract_chain_id,
+                        input_proof_request.contract_address,
+                        input_proof_request.user_address,
+                        input_proof_request.ciphetext_with_zk_proof,
+                    )
                     .await
                 {
                     Ok(zkpok_id) => {
@@ -295,11 +297,13 @@ impl ArbitrumGatewayL2InputHandler {
 
                 let next_event_data: RelayerEventData =
                     RelayerEventData::Input(InputEventData::RespFromGwL2 {
-                        handles: vec![
-                            FixedBytes::repeat_byte(1u8), // First handle filled with 1's
-                            FixedBytes::repeat_byte(2u8), // Second handle filled with 2's
-                        ],
-                        signatures: vec![Bytes::from(vec![1, 2, 3])],
+                        input_proof_response: InputProofResponse::new(
+                            vec![
+                                FixedBytes::repeat_byte(1u8), // First handle filled with 1's
+                                FixedBytes::repeat_byte(2u8), // Second handle filled with 2's
+                            ],
+                            vec![Bytes::from(vec![1, 2, 3])],
+                        ),
                     });
 
                 // Now we can use original_request_id directly
@@ -357,17 +361,11 @@ impl EventHandler<RelayerEvent> for ArbitrumGatewayL2InputHandler {
             RelayerEventData::Input(input_event) => {
                 match input_event {
                     InputEventData::ReqFromUser {
-                        contract_chain_id,
-                        contract_address,
-                        user_address,
-                        zkpok,
+                        input_proof_request,
                     } => {
                         // Create a new InputEventData with cloned values
                         let req_data = InputEventData::ReqFromUser {
-                            contract_chain_id: *contract_chain_id,
-                            contract_address: *contract_address,
-                            user_address: *user_address,
-                            zkpok: zkpok.clone(),
+                            input_proof_request: input_proof_request.clone(),
                         };
                         self.send_input_request_to_rollup(event, req_data).await;
                     }
@@ -378,12 +376,11 @@ impl EventHandler<RelayerEvent> for ArbitrumGatewayL2InputHandler {
                         );
                     }
                     InputEventData::RespFromGwL2 {
-                        handles,
-                        signatures,
+                        input_proof_response,
                     } => {
                         info!(
-                            handles_count = handles.len(),
-                            signatures_count = signatures.len(),
+                            handles_count = input_proof_response.handles.len(),
+                            signatures_count = input_proof_response.signatures.len(),
                             "Received L2 response, ready for HTTP handler"
                         );
                     }

@@ -50,7 +50,9 @@ use fhevm_relayer::{
         traits::{EventDispatcher, EventHandler, HandlerRegistry},
         Orchestrator, TokioEventDispatcher,
     },
-    relayer_event::{ApiCategory, ApiVersion, InputEventData, RelayerEvent, RelayerEventData},
+    relayer_event::{
+        ApiCategory, ApiVersion, InputEventData, InputProofRequest, RelayerEvent, RelayerEventData,
+    },
     rollup_listener::event_listener_rollup,
     transaction::{TransactionService, TxConfig},
 };
@@ -228,11 +230,12 @@ async fn main() -> eyre::Result<()> {
             number: 1,
         },
         RelayerEventData::Input(InputEventData::ReqFromUser {
-            contract_chain_id: U256::from(1), // Example chain ID
-            contract_address: Address::from_str("0x1234567890123456789012345678901234567890")
-                .unwrap(),
-            user_address: Address::from_str("0x2345678901234567890123456789012345678901").unwrap(),
-            zkpok: Bytes::from(vec![1, 2, 3]), // Example proof
+            input_proof_request: InputProofRequest::new(
+                U256::from(1),
+                Address::from_str("0x1234567890123456789012345678901234567890").unwrap(),
+                Address::from_str("0x2345678901234567890123456789012345678901").unwrap(),
+                Bytes::from(vec![1, 2, 3]),
+            ),
         }),
     );
 
