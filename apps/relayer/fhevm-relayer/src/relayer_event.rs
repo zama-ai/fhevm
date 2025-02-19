@@ -1,7 +1,9 @@
+use crate::input_http_listener::{InputProofRequestJson, InputProofResponseJson};
 use crate::orchestrator::traits::Event;
 use alloy::primitives::{Address, Bytes, FixedBytes};
 use alloy::{primitives::U256, rpc::types::Log};
 use std::fmt::Display;
+use std::str::FromStr;
 use strum_macros::Display;
 use uuid::Uuid;
 
@@ -227,5 +229,116 @@ impl InputEventData {
             InputEventData::RequestSentToGwL2 { .. } => "Input::RequestSentToGwL2",
             InputEventData::EventLogFromGwL2 { .. } => "Input::EventLogFromGwL2",
         }
+    }
+}
+
+impl TryFrom<InputProofRequestJson> for InputProofRequest {
+    type Error = String;
+
+    fn try_from(json: InputProofRequestJson) -> Result<Self, Self::Error> {
+        let contract_chain_id = U256::from_str_radix(&json.contractChainId, 16)
+            .map_err(|e| format!("Error parsing contractChainId: {}", e))?;
+
+        let contract_address = Address::from_str(&json.contractAddress)
+            .map_err(|e| format!("Error parsing contractAddress: {:?}", e))?;
+
+        let user_address = Address::from_str(&json.userAddress)
+            .map_err(|e| format!("Error parsing userAddress: {:?}", e))?;
+
+        // Convert ciphertext_with_zk_proof.
+        // This field is assumed to be a hex string without a "0x" prefix.
+        let proof_bytes = hex::decode(&json.ciphertextWithZkpok)
+            .map_err(|e| format!("Error decoding ciphertextWithZkpok: {}", e))?;
+        let ciphetext_with_zk_proof = Bytes::from(proof_bytes);
+
+        Ok(InputProofRequest {
+            contract_chain_id,
+            contract_address,
+            user_address,
+            ciphetext_with_zk_proof,
+        })
+    }
+}
+
+impl TryFrom<InputProofResponse> for InputProofResponseJson {
+    type Error = String;
+
+    fn try_from(response: InputProofResponse) -> Result<Self, Self::Error> {
+        Ok(InputProofResponseJson {
+            handles: response
+                .handles
+                .into_iter()
+                .map(|handle| format!("{:#x}", handle))
+                .collect(),
+            signatures: response
+                .signatures
+                .into_iter()
+                .map(|sig| format!("{:#x}", sig))
+                .collect(),
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::convert::{TryFrom, TryInto};
+    use std::str::FromStr;
+
+    // Define constants for the test strings.
+    const CHAIN_ID: &str = "123456";
+    const CONTRACT_ADDRESS: &str = "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d";
+    const USER_ADDRESS: &str = "0x12B064FB845C1cc05e9493856a1D637a73e944bE";
+    const CIPHERTEXT: &str =
+        "12B06C1cc05e9493856a1D637a74FAb30999D17FAAB8c95B2eCD500cFeFc8f658f15dB8453e944bE";
+
+    #[test]
+    fn test_input_proof_request_conversion() -> Result<(), Box<dyn std::error::Error>> {
+        let json = InputProofRequestJson {
+            contractChainId: CHAIN_ID.to_string(),
+            contractAddress: CONTRACT_ADDRESS.to_string(),
+            userAddress: USER_ADDRESS.to_string(),
+            ciphertextWithZkpok: CIPHERTEXT.to_string(),
+        };
+
+        let request = InputProofRequest::try_from(json)?;
+
+        assert_eq!(
+            request.contract_chain_id,
+            U256::from_str_radix(CHAIN_ID, 16)?
+        );
+        assert_eq!(
+            request.contract_address,
+            Address::from_str(CONTRACT_ADDRESS)?
+        );
+        assert_eq!(request.user_address, Address::from_str(USER_ADDRESS)?);
+
+        let expected_bytes = hex::decode(CIPHERTEXT)?;
+        assert_eq!(request.ciphetext_with_zk_proof, Bytes::from(expected_bytes));
+
+        Ok(())
+    }
+
+    const FIXED_BYTE_VALUE: u8 = 0x11;
+    const SIGNATURE_BYTE_VALUE: u8 = 0x22;
+
+    #[test]
+    fn test_input_proof_response_conversion() {
+        let fixed = FixedBytes::<32>::from([FIXED_BYTE_VALUE; 32]);
+        let signature = Bytes::from(vec![SIGNATURE_BYTE_VALUE; 32]);
+
+        let response = InputProofResponse {
+            handles: vec![fixed],
+            signatures: vec![signature],
+        };
+
+        let json: InputProofResponseJson = response.try_into().unwrap();
+
+        // Using alloy's formatting we expect a 0x‑prefixed hex string.
+        let expected_handle = format!("{:#x}", FixedBytes::<32>::from([FIXED_BYTE_VALUE; 32]));
+        let expected_signature = format!("{:#x}", Bytes::from(vec![SIGNATURE_BYTE_VALUE; 32]));
+
+        assert_eq!(json.handles, vec![expected_handle.clone()]);
+        assert_eq!(json.signatures, vec![expected_signature]);
     }
 }
