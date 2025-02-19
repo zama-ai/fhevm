@@ -41,6 +41,7 @@ describe('SqsConsumer', () => {
           event = {
             type: 'back:dapp:stats-requested',
             payload: {
+              dAppId: faker.string.uuid(),
               chainId: faker.string.numeric(5),
               address: faker.string.hexadecimal({ length: 40 }),
             },

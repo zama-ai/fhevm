@@ -3,8 +3,9 @@ import { chainId, meta, Meta, web3Address } from './shared.js'
 
 type EventTypes =
   | 'dapp:created'
-  | 'dapp:confirmed'
-  | 'dapp:failed'
+  | 'dapp:validation:requested'
+  | 'dapp:validation:confirmed'
+  | 'dapp:validation:failed'
   | 'dapp:stats-requested'
   | 'dapp:stats-available'
 
@@ -15,23 +16,35 @@ function genSchema<Key extends EventTypes, Payload extends z.ZodRawShape>(
   const type = `back:${key}` as `back:${Key}`
   return z.object({
     type: z.literal(type),
-    payload: z.object({
-      chainId,
-      address: web3Address,
-      ...payload,
-    }),
+    payload: z.object(payload),
   })
 }
 
 const schemas = [
   genSchema('dapp:created', { dAppId: z.string() }),
-  genSchema('dapp:confirmed', { dAppId: z.string() }),
-  genSchema('dapp:failed', {
+  genSchema('dapp:validation:requested', {
+    dAppId: z.string(),
+    chainId: chainId,
+    address: web3Address,
+  }),
+  genSchema('dapp:validation:confirmed', {
+    dAppId: z.string(),
+    owner: web3Address.optional(),
+  }),
+  genSchema('dapp:validation:failed', {
     dAppId: z.string(),
     reason: z.string(),
   }),
-  genSchema('dapp:stats-requested', {}),
+  genSchema('dapp:stats-requested', {
+    dAppId: z.string(),
+    chainId: chainId,
+    address: web3Address,
+  }),
+  // Note: in case we detectet an event on the blockchain, we cannot
+  // retrieve the dAppId from the event.
   genSchema('dapp:stats-available', {
+    chainId: chainId,
+    address: web3Address,
     name: z.string(),
     timestamp: z.string().datetime(),
     externalRef: z.string(),
@@ -68,8 +81,9 @@ function factory<
 }
 
 export const dappCreated = factory('dapp:created')
-export const dappConfirmed = factory('dapp:confirmed')
-export const dappFailed = factory('dapp:failed')
+export const dappValidationRequested = factory('dapp:validation:requested')
+export const dappValidationConfirmed = factory('dapp:validation:confirmed')
+export const dappValidationFailed = factory('dapp:validation:failed')
 export const dappStatsRequested = factory('dapp:stats-requested')
 export const dappStatsAvailable = factory('dapp:stats-available')
 

@@ -1,10 +1,16 @@
 import { Actor, assign, createActor, setup, Snapshot } from 'xstate'
 import { back, web3 } from 'messages'
 
+export interface AppDeploymentProps {
+  dAppId: string
+  chainId: string
+  address: string
+}
+
 export const EVENT_TYPES = [
-  'back:dapp:created',
-  'back:dapp:confirmed',
-  'back:dapp:failed',
+  'back:dapp:validation:requested',
+  'back:dapp:validation:confirmed',
+  'back:dapp:validation:failed',
   'web3:contract:validation:requested',
   'web3:contract:validation:success',
   'web3:contract:validation:failure',
@@ -33,10 +39,11 @@ type Context = {
 type AppDeploymentMachine = ReturnType<typeof factory>
 
 function factory({
+  dAppId,
   chainId,
   address,
   notifyMessage,
-}: Pick<Context, 'chainId' | 'address'> & {
+}: Pick<Context, 'dAppId' | 'chainId' | 'address'> & {
   notifyMessage: (message: AppDeploymentEvents) => void
 }) {
   return setup({
@@ -46,18 +53,20 @@ function factory({
     },
     guards: {
       isValid: ({ context, event }) =>
-        context.chainId === event.payload.chainId &&
-        context.address === event.payload.address,
+        back.isBackEvent(event)
+          ? context.dAppId === event.payload.dAppId
+          : context.chainId === event.payload.chainId &&
+            context.address === event.payload.address,
     },
   }).createMachine({
     /** @xstate-layout N4IgpgJg5mDOIC5QEMAOqAiZUBsD2AngLZgB2ALgHQCSEOYAxGqgLQTb7FlUBOYAjgFc45SAG0ADAF1EoVHlgBLcorylZIAB6IAjACYAbJQkmTAZj2WArGasGAHABoQBRPZ2UALAE5f3wwDsBhIB-gEAvuHOzFi4hCQUlBiKsADGeABuYDyKpFBM6Gwc8dyUaWwp6Vl8EJIySCDySipqGtoIVt4SlAEBEvZWEp4SVno6Vk4ubvZe9gbBVjreATpDBnqR0eixnAlUAMJqAGaKPES5+cxFcVyJ5emkJ2fi0hpNyqrqDe2rVgGUYz0yx0fXWXUmrgQ9hmnjmCyWKzWGyiIBixVuVAASmAoClRDk8gVWOwbnsyqkWHxcbB8S96nIFB9Wt9dD5ut4dJ55rYzPYTHoAs5IfY9MZTBIDN4fJ4BYZIijSHh2PAGmjSdw3oyWl9QO0WAYhYh9WLTGZPEsDGZvLzPJtUdt0WTaPRNc1Pm1EDLDQhVp4eoY7PNPFaDJ5Rna1btSsk0plshdXUydVpPeNKGYQSLYQK+RJvAapj6hv6DIHQyGw2YIw71YlDo9Tuc8ontR6EF12Tp7LZ8zorYNPN7fSWy8H82HkVtMI7StjqfiEw13q2WT6zd0AubBr1N6E9IPC8OAgH5uXx+GUZGSokAIKpFRZFvu1eZmZmM29ANWGUiocSMxeEEBg6CBiLvhm8rhEAA */
     id: 'appDeployment',
-    context: { dAppId: '', chainId, address, messages: [] },
+    context: { dAppId, chainId, address, messages: [] },
     initial: 'Idle',
     states: {
       Idle: {
         on: {
-          'back:dapp:created': {
+          'back:dapp:validation:requested': {
             target: 'Confirming',
             actions: [
               assign(
@@ -92,10 +101,8 @@ function factory({
             guard: 'isValid',
             target: 'Completed',
             actions: [
-              ({ context: { dAppId, chainId, address }, event: { meta } }) =>
-                notifyMessage(
-                  back.dappConfirmed({ dAppId, chainId, address }, meta),
-                ),
+              ({ context: { dAppId }, event: { meta } }) =>
+                notifyMessage(back.dappValidationConfirmed({ dAppId }, meta)),
             ],
           },
           'web3:contract:validation:failure': {
@@ -103,18 +110,16 @@ function factory({
             target: 'Completed',
             actions: [
               ({
-                context: { dAppId, chainId, address },
+                context: { dAppId },
                 event: {
                   payload: { reason },
                   meta,
                 },
               }) =>
                 notifyMessage(
-                  back.dappFailed(
+                  back.dappValidationFailed(
                     {
                       dAppId,
-                      chainId,
-                      address,
                       reason: reason || 'Failed to check smart contract',
                     },
                     meta,
@@ -134,11 +139,12 @@ export class AppDeployment {
   #actor: Actor<AppDeploymentMachine>
 
   constructor(
-    { chainId, address }: { chainId: string; address: string },
+    { dAppId, chainId, address }: AppDeploymentProps,
     snapshot?: string,
   ) {
     this.#actor = createActor(
       factory({
+        dAppId,
         chainId,
         address,
         notifyMessage: this.notifyMessage,
@@ -165,6 +171,10 @@ export class AppDeployment {
 
   get status() {
     return this.#actor.getSnapshot().value
+  }
+
+  get dAppId() {
+    return this.#actor.getSnapshot().context.dAppId
   }
 
   get chainId() {

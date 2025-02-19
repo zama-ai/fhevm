@@ -15,7 +15,7 @@ describe('AppDeployment', () => {
   beforeEach(() => {
     dAppId = faker.string.uuid()
     correlationId = faker.string.uuid()
-    deployment = new AppDeployment({ chainId, address })
+    deployment = new AppDeployment({ dAppId, chainId, address })
   })
 
   describe('when idle', () => {
@@ -23,11 +23,14 @@ describe('AppDeployment', () => {
       expect(deployment.status).toBe('Idle')
     })
 
-    describe(`on 'back:dapp:created`, () => {
+    describe(`on 'back:dapp:validation:requested`, () => {
       let messages: AppDeploymentEvents[]
       beforeEach(() => {
         messages = deployment.send(
-          back.dappCreated({ chainId, address, dAppId }, { correlationId }),
+          back.dappValidationRequested(
+            { chainId, address, dAppId },
+            { correlationId },
+          ),
         )
       })
 
@@ -45,7 +48,10 @@ describe('AppDeployment', () => {
   describe('when confirming', () => {
     beforeEach(() => {
       deployment.send(
-        back.dappCreated({ dAppId, address, chainId }, { correlationId }),
+        back.dappValidationRequested(
+          { dAppId, address, chainId },
+          { correlationId },
+        ),
       )
       expect(deployment.status).toBe('Confirming')
     })
@@ -63,9 +69,14 @@ describe('AppDeployment', () => {
           ),
         )
       })
-      it(`should publish 'back:dapp:confirmed'`, () => {
+      it(`should publish a 'back:dapp:validation:confirmed' event`, () => {
         expect(messages.length).toBe(1)
-        expect(messages[0].payload).toEqual({ dAppId, address, chainId })
+        expect(messages[0].type).toBe('back:dapp:validation:confirmed')
+      })
+
+      it(`should propagate the right dAppId`, () => {
+        expect(messages.length).toBe(1)
+        expect((messages[0].payload as any).dAppId).toBe(dAppId)
       })
 
       it('should propagate metadata', () => {
@@ -92,14 +103,14 @@ describe('AppDeployment', () => {
         )
       })
 
-      it(`should publish 'back:dapp:failed'`, () => {
+      it(`should publish a 'back:dapp:validation:failed' event`, () => {
         expect(messages.length).toBe(1)
-        expect(messages[0].payload).toEqual({
-          dAppId,
-          address,
-          chainId,
-          reason,
-        })
+        expect(messages[0].type).toBe('back:dapp:validation:failed')
+      })
+
+      it('should return the right dAppId', () => {
+        expect(messages.length).toBe(1)
+        expect((messages[0].payload as any).dAppId).toBe(dAppId)
       })
 
       it('should propagate metadata', () => {

@@ -17,8 +17,9 @@ datasource db {
 }
 
 model Snapshot {
-  id         String   @id
-  content    String
-  created_at DateTime @default(now())
-  updated_at DateTime @updatedAt
+  id           String   @id
+  secondaryKey String   @unique
+  content      String
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
 }
