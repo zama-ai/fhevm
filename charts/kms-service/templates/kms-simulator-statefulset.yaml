@@ -67,15 +67,15 @@ spec:
             items:
               - key: load-simulator-config.sh
                 path: load-simulator-config.sh
-      {{- with .Values.nodeSelector }}
+      {{- with .Values.kmsSimulator.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.affinity }}
+      {{- with .Values.kmsSimulator.affinity }}
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.tolerations }}
+      {{- with .Values.kmsSimulator.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}

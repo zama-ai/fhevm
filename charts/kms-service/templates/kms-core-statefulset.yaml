@@ -13,7 +13,7 @@ metadata:
 spec:
   replicas: {{ .Values.kmsPeers.count }}
   ordinals:
-    start: {{include "kmsPeersStartID" . }}
+    start: {{ include "kmsPeersStartID" . }}
   podManagementPolicy: Parallel
   updateStrategy:
     type: RollingUpdate
@@ -41,83 +41,161 @@ spec:
       serviceAccountName: {{ .Values.kmsCore.serviceAccountName }}
       subdomain: {{ include "kmsCoreName" . }}
       initContainers:
-        {{- if .Values.kmsCore.nitroEnclave.enabled }}
-        - {{ include "proxyFromEnclave"
-               (dict "name" "enclave-logger"
-                     "image" .Values.socat.image
-                     "vsockPort" .Values.kmsCore.nitroEnclave.ports.logger
-                     "to" "STDOUT"
-               ) | indent 10 | trim }}
-        - {{ include "proxyFromEnclave"
-               (dict "name" "enclave-config"
-                     "image" .Values.socat.image
-                     "vsockPort" .Values.kmsCore.nitroEnclave.ports.config
-                     "to" "OPEN:/var/lib/kms-core/config/kms-server.toml,rdonly"
-                ) | indent 10 | trim }}
+        - image: {{ .Values.kubeUtils.image.name }}:{{ .Values.kubeUtils.image.tag }}
+          imagePullPolicy: {{ .Values.kubeUtils.image.pullPolicy }}
+          name: kms-service-init-load-env
+          command:
+            - /bin/sh
+          args:
+            - -c
+            - |
+              {{- /* Fallback to helm defined values if the environment variable is unset */}}
+              AWS_REGION="${AWS_REGION:={{ .Values.kmsCore.aws.region }}}"
+              AWS_ROLE_ARN="${AWS_ROLE_ARN:={{ .Values.kmsCore.aws.roleArn }}}"
+              KMS_CORE__PUBLIC_VAULT__STORAGE="${KMS_CORE__PUBLIC_VAULT__STORAGE:={{ include "kmsPublicVaultStorage" . }}}"
+              KMS_CORE__PRIVATE_VAULT__STORAGE="${KMS_CORE__PRIVATE_VAULT__STORAGE:={{ include "kmsPrivateVaultStorage" . }}}"
+              {{- if .Values.kmsCore.privateVault.awskms.enabled -}}
+              KMS_CORE__PRIVATE_VAULT__KEYCHAIN="${KMS_CORE__PRIVATE_VAULT__KEYCHAIN:={{ .Values.kmsCore.privateVault.awskms.keychain }}"
+              {{- end }}
+              envsubst < /var/lib/kms-core/config/kms-server.toml > kms-server.toml
+              {{- if .Values.kmsCore.nitroEnclave.debug }}
+              echo "### BEGIN - env ###"
+              env
+              echo "### END - env ###"
+              echo "### BEGIN - kms-server.toml ###"
+              cat kms-server.toml
+              echo "### END - kms-server.toml ###"
+              {{- end }}
+          env:
+            - name: KMS_CORE__THRESHOLD__MY_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['apps.kubernetes.io/pod-index']
+            - name: NO_COLOR
+              value: "true"
+            - name: RUN_MODE
+              value: {{ .Values.runMode }}
+            - name: RUST_LOG
+              value: {{ .Values.rustLog }}
+          {{- if .Values.kmsCore.envFrom.configmap.name }}
+          envFrom:
+            - configMapRef:
+                name: {{ .Values.kmsCore.envFrom.configmap.name }}
+          {{- end }}
+          workingDir: {{ .Values.kmsCore.workdir }}
           volumeMounts:
             - mountPath: /var/lib/kms-core/config
               name: config-files
+            - mountPath: {{ .Values.kmsCore.workdir }}
+              name: workdir
+        {{- if .Values.kmsCore.nitroEnclave.enabled }}
+        {{- /* Init Enclave Web Identity TOken Socket */}}
         - {{ include "proxyFromEnclave"
-               (dict "name" "enclave-tracing"
-                     "image" .Values.socat.image
+               (dict "name" "enclave-web-identity-token"
+                     "image" .Values.kubeUtils.image
+                     "vsockPort" .Values.kmsCore.nitroEnclave.ports.webidentitytoken
+          "to" "OPEN:/var/run/secrets/eks.amazonaws.com/serviceaccount/token,rdonly"
+          ) | indent 10 | trim }}
+        ##
+        {{- /* Init Enclave Config Socket */}}
+        - {{ include "proxyFromEnclave"
+               (dict "name" "enclave-config"
+                     "image" .Values.kubeUtils.image
+                     "vsockPort" .Values.kmsCore.nitroEnclave.ports.config
+                     "to" (printf "OPEN:kms-server.toml,rdonly")
+                ) | indent 10 | trim }}
+          workingDir: {{ .Values.kmsCore.workdir }}
+          volumeMounts:
+            - mountPath: {{ .Values.kmsCore.workdir }}
+              name: workdir
+        {{- /* Init Enclave Logger Socket */}}
+        - {{ include "proxyFromEnclave"
+               (dict "name" "kms-service-enclave-logger"
+                     "image" .Values.kubeUtils.image
+                     "vsockPort" .Values.kmsCore.nitroEnclave.ports.logger
+                     "to" "STDOUT"
+               ) | indent 10 | trim }}
+        {{- /* Init Enclave Tracing Socket */}}
+        - {{ include "proxyFromEnclave"
+               (dict "name" "kms-service-enclave-tracing"
+                     "image" .Values.kubeUtils.image
                      "vsockPort" .Values.kmsCore.nitroEnclave.ports.tracing
                      "to" (printf "TCP:%s" (urlParse .Values.tracing.endpoint).host)
                 ) | indent 10 | trim }}
+        {{- /* Init AWS IMDS Proxy Socket */}}
         - {{ include "proxyFromEnclaveTcp"
                (dict "name" "aws-imds-proxy"
-                     "image" .Values.socat.image
+                     "image" .Values.kubeUtils.image
                      "vsockPort" .Values.kmsCore.nitroEnclave.ports.imds
-                     "ipAddr" "169.254.169.254"
-                     "ipPort" 80
+                     "address" "169.254.169.254"
+                     "port" 80
                 ) | indent 10 | trim }}
+        {{- /* Init AWS STS Proxy Socket */}}
         - {{ include "proxyFromEnclaveTcp"
                (dict "name" "aws-sts-proxy"
-                     "image" .Values.socat.image
+                     "image" .Values.kubeUtils.image
                      "vsockPort" .Values.kmsCore.nitroEnclave.ports.sts
-                     "ipAddr" (printf "sts.%s.amazonaws.com" .Values.kmsCore.aws.region)
-                     "ipPort" 443
+                     "address" (printf "sts.%s.amazonaws.com" .Values.kmsCore.aws.region)
+                     "port" 443
                 ) | indent 10 | trim }}
+        {{- /* Init AWS S3 Proxy Socket */}}
         - {{ include "proxyFromEnclaveTcp"
                (dict "name" "aws-s3-proxy"
-                     "image" .Values.socat.image
+                     "image" .Values.kubeUtils.image
                      "vsockPort" .Values.kmsCore.nitroEnclave.ports.s3
-                     "ipAddr" (printf "s3.%s.amazonaws.com" .Values.kmsCore.aws.region)
-                     "ipPort" 443
+                     "address" (printf "s3.%s.amazonaws.com" .Values.kmsCore.aws.region)
+                     "port" 443
                 ) | indent 10 | trim }}
+        {{- /* Init AWS KMS Proxy Socket */}}
         - {{ include "proxyFromEnclaveTcp"
                (dict "name" "aws-kms-proxy"
-                     "image" .Values.socat.image
+                     "image" .Values.kubeUtils.image
                      "vsockPort" .Values.kmsCore.nitroEnclave.ports.awskms
-                     "ipAddr" (printf "kms.%s.amazonaws.com" .Values.kmsCore.aws.region)
-                     "ipPort" 443
+                     "address" (printf "kms.%s.amazonaws.com" .Values.kmsCore.aws.region)
+                     "port" 443
                 ) | indent 10 | trim }}
+        {{- /* Init GRPC CLient Proxy Socket */}}
         - {{ include "proxyToEnclaveTcp"
                (dict "name" "grpc-client-proxy"
-                     "image" .Values.socat.image
+                     "image" .Values.kubeUtils.image
                      "cid" .Values.kmsCore.nitroEnclave.cid
                      "port" .Values.kmsCore.ports.client
                 ) | indent 10 | trim }}
         {{- if .Values.kmsCore.thresholdMode.enabled }}
+        {{- /* Init GRPC Local Peer Proxy Socket */}}
         - {{ include "proxyToEnclaveTcp"
                (dict "name" "grpc-peer-proxy"
-                     "image" .Values.socat.image
+                     "image" .Values.kubeUtils.image
                      "cid" .Values.kmsCore.nitroEnclave.cid
                      "port" .Values.kmsCore.ports.peer
                 ) | indent 10 | trim }}
-        {{/* TODO add support for kmsCore.thresholdMode.peersList */}}
-        {{- range $i := $peersIDList }}
+        {{- /* Init GRPC External Peers Proxy Sockets */}}
+        {{- if .Values.kmsCore.thresholdMode.peersList }}
+          {{- range .Values.kmsCore.thresholdMode.peersList }}
+        - {{ include "proxyFromEnclaveTcp"
+               (dict "name" (printf "enclave-peer-proxy-%d" (int .id))
+                     "image" $.Values.kubeUtils.image
+                     "vsockPort" (add $.Values.kmsCore.nitroEnclave.ports.peer .id)
+                     "address" .host
+                     "port" .port
+                ) | indent 10 | trim }}
+          {{- end }}
+        {{- else }}
+          {{- range $i := $peersIDList }}
         - {{ include "proxyFromEnclaveTcp"
                (dict "name" (printf "enclave-peer-proxy-%d" (int $i))
-                     "image" $.Values.socat.image
+                     "image" $.Values.kubeUtils.image
                      "vsockPort" (add $.Values.kmsCore.nitroEnclave.ports.peer $i)
-                     "ipAddr" (printf "%s-%d" $kmsCoreName $i) | quote
-                     "ipPort" int $.Values.kmsCore.ports.peer
+                     "address" (printf "%s-%d" $kmsCoreName (int $i))
+                     "port" $.Values.kmsCore.ports.peer
                 ) | indent 10 | trim }}
+          {{- end }}
         {{- end }}
         {{- end }}
-        {{- end }}
+        {{- else }}
+        {{- /* Generate init keys for non-enclave kms-core service */}}
         - image: {{ .Values.kmsCore.image.name }}:{{ .Values.kmsCore.image.tag }}
-          name: {{ include "kmsCoreName" . }}-gen-keys
+          name: kms-service-init-gen-keys
           command:
             - /bin/sh
           args:
@@ -135,12 +213,12 @@ spec:
               {{- end }}
               {{ include "kmsCoreMode" . }} \
               {{- if .Values.kmsCore.thresholdMode.enabled }}
-              --signing-key-party-id ${KMS_CORE_ID}
+              --signing-key-party-id ${KMS_CORE__THRESHOLD__MY_ID}
               {{- else }}
               --write-privkey
               {{- end }}
           env:
-            - name: KMS_CORE_ID
+            - name: KMS_CORE__THRESHOLD__MY_ID
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.labels['apps.kubernetes.io/pod-index']
@@ -173,22 +251,32 @@ spec:
             limits:
               memory: {{ .Values.kmsCore.resources.limits.memory }}
               ephemeral-storage: {{ .Values.kmsCore.resources.limits.ephemeralStorage }}
+        {{- end }}
       containers:
         - image: {{ .Values.kmsCore.image.name }}:{{ .Values.kmsCore.image.tag }}
-          name: {{ include "kmsCoreName" . }}
-          imagePullPolicy: Always
+          imagePullPolicy: {{ .Values.kmsCore.image.pullPolicy }}
           {{- if .Values.kmsCore.nitroEnclave.enabled }}
+          name: kms-service-enclave
           command:
             - /bin/sh
           args:
             - -c
             - |
+              {{- if .Values.kmsCore.nitroEnclave.debug }}
+              echo "### BEGIN - enclave.json ###"
+              cat /var/lib/kms-core/config/enclave.json
+              echo "### END - enclave.json ###"
+              echo "### BEGIN - describe-eif ###"
+              nitro-cli describe-eif --eif-path enclave.eif
+              echo "### END - describe-eif ###"
+              {{- end }}
               nitro-cli run-enclave --config /var/lib/kms-core/config/enclave.json
               while true; do
                 nitro-cli describe-enclaves > /var/log/nitro_enclaves/status
                 sleep 60
               done
           {{- else }}
+          name: kms-service
           command:
             - /bin/sh
           args:
@@ -200,7 +288,7 @@ spec:
               echo 'aws_access_key_id = ${AWS_ACCESS_KEY_ID}' >> ~/.aws/credentials
               echo 'aws_secret_access_key = ${AWS_SECRET_ACCESS_KEY}' >> ~/.aws/credentials
               {{- end }}
-              kms-server --config-file=/var/lib/kms-core/config/kms-server.toml
+              kms-server --config-file=kms-server.toml
           {{- end }}
           env:
             {{- if .Values.kmsCore.thresholdMode.enabled }}
@@ -227,7 +315,7 @@ spec:
                 name: {{ .Values.kmsCore.envFrom.configmap.name }}
           {{- end }}
           volumeMounts:
-            - mountPath: /root
+            - mountPath: {{ .Values.kmsCore.workdir }}
               name: workdir
             - mountPath: /var/lib/kms-core/config
               name: config-files
@@ -255,7 +343,7 @@ spec:
               {{- if .Values.kmsCore.nitroEnclave.enabled }}
               memory: 2Gi
               aws.ec2.nitro/nitro_enclaves: "1"
-              hugepages-1Gi: {{ .Values.kmsCore.nitroEnclave.memory }}Mi
+              hugepages-1Gi: {{ .Values.kmsCore.nitroEnclave.memoryGiB }}Gi
               {{- else }}
               memory: {{ .Values.kmsCore.resources.requests.memory }}
               cpu: {{ .Values.kmsCore.resources.requests.cpu }}
@@ -265,7 +353,7 @@ spec:
               {{- if .Values.kmsCore.nitroEnclave.enabled }}
               memory: 4Gi
               aws.ec2.nitro/nitro_enclaves: "1"
-              hugepages-1Gi: {{ .Values.kmsCore.nitroEnclave.memory }}Mi
+              hugepages-1Gi: {{ .Values.kmsCore.nitroEnclave.memoryGiB }}Gi
               {{- else }}
               memory: {{ .Values.kmsCore.resources.limits.memory }}
               {{- end }}
@@ -296,7 +384,7 @@ spec:
         - name: config-files
           configMap:
             name: {{ include "kmsCoreName" . }}-config
-            defaultMode: 0444
+            defaultMode: 0664
         {{- if .Values.kmsCore.nitroEnclave.enabled }}
         - name: hugepage
           emptyDir:

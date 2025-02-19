@@ -36,6 +36,7 @@ kmsCore:
   image:
     name: ghcr.io/zama-ai/kms-service
     tag: latest
+    pullPolicy: Always
   serviceAccountName:
   envFrom:
     configmap:
@@ -55,10 +56,14 @@ kmsCore:
     dec_capacity: 10000
     min_dec_cache: 6000
     num_sessions_preproc: 2
+    decryption_mode: "NoiseFloodSmall"
   nitroEnclave:
     enabled: false
-    cpu: 6
-    memory: 20480
+    debug: true
+    # Enclave CPU count
+    cpuCount: 6
+    # Enclave Memory in GiB
+    memoryGiB: 10
     cid: 20
     userId: 10003
     groupId: 10002
@@ -70,7 +75,8 @@ kmsCore:
       sts: 5500
       s3: 6000
       awskms: 7000
-      peer: 50000
+      webidentitytoken: 4100
+      peer: 10000
   publicVault:
     s3:
       enabled: true
@@ -85,6 +91,7 @@ kmsCore:
       enabled: false
       keychain: awskms://symm/00000000-0000-0000-0000-000000000000
   aws:
+    roleArn:
     region: eu-west-1
   storage:
     # storageClassName: gp3
@@ -92,13 +99,15 @@ kmsCore:
   ports:
     client: 50100
     peer: 50001
-    metrics: 9464
+    metrics: 9646
+  workdir: /root
   serviceMonitor:
     enabled: false
+  # Note: these requests/limits is only for non-enclave workloads, this will not be allocated to the kms-core process running in Nitro
   resources:
     requests: {}
-      # memory: 28Gi
-      # cpu: 6
+      # memory: 1Gi
+      # cpu: 1
     limits:
       # memory: 30Gi
       ephemeralStorage: 1Gi
@@ -125,10 +134,11 @@ kmsSimulator:
       name: kms-connector-keys
       key: connector-1.mnemonic
 
-grpcHealthProbe:
+kubeUtils:
   image:
     name: ghcr.io/zama-ai/kube-utils
     tag: 0.2.0
+    pullPolicy: Always
 
 runMode: dev
 
@@ -139,14 +149,7 @@ redis:
 tracing:
   enabled: false
   endpoint: "http://otel-deployment-opentelemetry-collector.observability.svc.cluster.local:4317"
-  metrics:
-    enabled: false
-    interval_sec: 20
-
-socat:
-  image:
-    name: alpine/socat
-    tag: latest
+  otlp_timeout_ms: 10000
 
 minio:
   enabled: false

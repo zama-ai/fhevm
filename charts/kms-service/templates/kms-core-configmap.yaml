@@ -16,11 +16,80 @@ data:
     timeout_secs = {{ int .Values.kmsCore.resources.limits.grpcTimeout }}
     grpc_max_message_size = {{ int .Values.kmsCore.resources.limits.grpcMaxMessageSize }}
 
+    [aws]
+    region = "${AWS_REGION}"
+    role_arn = "${AWS_ROLE_ARN}"
+    {{- if .Values.minio.enabled }}
+    s3_endpoint = "http://minio:9000"
+    {{- else }}
+    {{- if .Values.kmsCore.nitroEnclave.enabled }}
+    imds_endpoint = "http://localhost:{{ .Values.kmsCore.nitroEnclave.ports.imds }}"
+    sts_endpoint = "https://localhost:{{ .Values.kmsCore.nitroEnclave.ports.sts }}"
+    s3_endpoint = "https://localhost:{{ .Values.kmsCore.nitroEnclave.ports.s3 }}"
+    awskms_endpoint = "https://localhost:{{ .Values.kmsCore.nitroEnclave.ports.awskms }}"
+    {{- end }}
+    {{- end }}
+
+    [public_vault]
+    storage = "${KMS_CORE__PUBLIC_VAULT__STORAGE}"
+
+    [private_vault]
+    storage = "${KMS_CORE__PRIVATE_VAULT__STORAGE}"
+    keychain = "${KMS_CORE__PRIVATE_VAULT__KEYCHAIN}"
+
+    {{ if .Values.kmsCore.thresholdMode.enabled -}}
+    [threshold]
+    listen_address = "0.0.0.0"
+    listen_port = {{ int .Values.kmsCore.ports.peer }}
+
+    my_id = ${KMS_CORE__THRESHOLD__MY_ID}
+
+    # Threshold is the number of corruptions that the protocol handles.
+    threshold = 1
+    dec_capacity = {{ int .Values.kmsCore.thresholdMode.dec_capacity }}
+    min_dec_cache = {{ int .Values.kmsCore.thresholdMode.min_dec_cache }}
+    num_sessions_preproc = {{ int .Values.kmsCore.thresholdMode.num_sessions_preproc }}
+    decryption_mode = {{ .Values.kmsCore.thresholdMode.decryption_mode | quote }}
+
+    {{- if .Values.kmsCore.thresholdMode.peersList }}
+    {{ range .Values.kmsCore.thresholdMode.peersList }}
+    [[threshold.peers]]
+    party_id = {{ int .id }}
+    {{- if $.Values.kmsCore.nitroEnclave.enabled }}
+    address = "localhost"
+    port = {{ add $.Values.kmsCore.nitroEnclave.ports.peer .id }}
+    {{- else }}
+    address = {{ .host | quote }}
+    port = {{ int .port }}
+    {{- end }}
+    {{- end }}
+    {{- end }}
+
+    {{- if not .Values.kmsCore.thresholdMode.peersList }}
+    {{ range $i := $peersIDList }}
+    [[threshold.peers]]
+    party_id = {{ int $i }}
+    {{- if $.Values.kmsCore.nitroEnclave.enabled }}
+    address = "localhost"
+    port = {{ add $.Values.kmsCore.nitroEnclave.ports.peer $i }}
+    {{ else }}
+    address = {{ (printf "%s-%d" $kmsCoreName $i) | quote }}
+    port = {{ int $.Values.kmsCore.ports.peer }}
+    {{- end }}
+    {{- end }}
+    {{- end }}
+
+    {{- if .Values.redis.enabled -}}
+    [threshold.preproc_redis]
+    host = {{ .Values.redis.host | quote }}
+    {{- end }}
+    {{- end }}
+
     {{- if .Values.tracing.enabled }}
     [telemetry]
     tracing_service_name = {{ include "kmsCoreName" . | quote }}
     {{- if .Values.kmsCore.nitroEnclave.enabled }}
-    endpoint = "http://localhost:{{ .Values.kmsCore.nitroEnclave.ports.tracing }}"
+    tracing_endpoint = "http://localhost:{{ .Values.kmsCore.nitroEnclave.ports.tracing }}"
     {{- else }}
     tracing_endpoint = {{ .Values.tracing.endpoint | quote }}
     {{- end }}
@@ -35,73 +104,11 @@ data:
     export_timeout_ms = 5000
     {{- end }}
 
-    [aws]
-    region = "{{ .Values.kmsCore.aws.region }}"
-    {{- if .Values.minio.enabled }}
-    s3_endpoint = "http://minio:9000"
-    {{- else }}
-    {{- if .Values.kmsCore.nitroEnclave.enabled }}
-    imds_endpoint = "http://localhost:{{ .Values.kmsCore.nitroEnclave.ports.imds }}"
-    sts_endpoint = "http://localhost:{{ .Values.kmsCore.nitroEnclave.ports.sts }}"
-    s3_endpoint = "https://localhost:{{ .Values.kmsCore.nitroEnclave.ports.s3 }}"
-    awskms_endpoint = "https://localhost:{{ .Values.kmsCore.nitroEnclave.ports.awskms }}"
-    {{- end }}
-    {{- end }}
-
-    {{- if not .Values.kmsCore.envFrom.configmap.name }}
-    [public_vault]
-    storage = {{ include "kmsPublicVaultStorage" . | quote }}
-
-    [private_vault]
-    storage = {{ include "kmsPrivateVaultStorage" . | quote }}
-    {{- if .Values.kmsCore.privateVault.awskms.enabled -}}
-    keychain = {{ .Values.kmsCore.privateVault.awskms.keychain }}
-    {{- end }}
-    {{- end }}
-
-    {{ if .Values.kmsCore.thresholdMode.enabled -}}
-    [threshold]
-    listen_address = "0.0.0.0"
-    listen_port = {{ int .Values.kmsCore.ports.peer }}
-    # Threshold is the number of corruptions that the protocol handles.
-    threshold = 1
-    dec_capacity = {{ int .Values.kmsCore.thresholdMode.dec_capacity }}
-    min_dec_cache = {{ int .Values.kmsCore.thresholdMode.min_dec_cache }}
-    num_sessions_preproc = {{ int .Values.kmsCore.thresholdMode.num_sessions_preproc }}
-
-    decryption_mode = "NoiseFloodSmall"
-
-    {{- if .Values.kmsCore.thresholdMode.peersList }}
-    {{ range .Values.kmsCore.thresholdMode.peersList }}
-    [[threshold.peers]]
-    party_id = {{ int .id }}
-    address = {{ .host | quote }}
-    port = {{ int .port }}
-    {{ end }}
-    {{- else }}
-    {{- range $i := $peersIDList }}
-    [[threshold.peers]]
-    party_id = {{ int $i }}
-    {{- if $.Values.kmsCore.nitroEnclave.enabled }}
-    address = "localhost"
-    port = {{ add $.Values.kmsCore.nitroEnclave.ports.peer .party_id }}
-    {{ else }}
-    address = {{ (printf "%s-%d" $kmsCoreName $i) | quote }}
-    port = {{ int $.Values.kmsCore.ports.peer }}
-    {{ end }}
-    {{- end }}
-    {{- end }}
-
-    {{- if .Values.redis.enabled -}}
-    [threshold.preproc_redis]
-    host = {{ .Values.redis.host | quote }}
-    {{- end }}
-    {{- end }}
     {{- if .Values.kmsCore.nitroEnclave.enabled }}
   enclave.json: |
     {
-      "cpu_count": {{ int .Values.kmsCore.nitroEnclave.cpu }},
-      "memory_mib": {{ int .Values.kmsCore.nitroEnclave.memory }},
+      "cpu_count": {{ int .Values.kmsCore.nitroEnclave.cpuCount }},
+      "memory_mib": {{ mulf 1024 (int .Values.kmsCore.nitroEnclave.memoryGiB) }},
       "enclave_cid": {{ int .Values.kmsCore.nitroEnclave.cid }},
       "eif_path": "/app/kms/core/service/enclave.eif"
     }
