@@ -26,5 +26,5 @@ config = "0.15.6"
 anyhow = "1.0.44"
 async-trait = "0.1.51"
 strum_macros = "0.21.0"
-uuid = { version = "1", features = ["serde"] }
+uuid = { version = "1", features = ["serde", "v1", "v4"] }
 reqwest = "0.12.12"
