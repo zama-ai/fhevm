@@ -4,7 +4,7 @@ import { expect } from "chai";
 import hre from "hardhat";
 
 import { CiphertextStorage } from "../typechain-types";
-import { deployHTTPZFixture } from "./utils";
+import { deployKeyManagerFixture } from "./utils";
 
 describe("CiphertextStorage", function () {
   const ctHandle = "0x01";
@@ -17,9 +17,9 @@ describe("CiphertextStorage", function () {
   let coprocessorSigners: HardhatEthersSigner[];
 
   async function deployCiphertextStorageFixture() {
-    const { httpz, coprocessorSigners, signers } = await loadFixture(deployHTTPZFixture);
+    const { httpz, keyManager, coprocessorSigners, signers } = await loadFixture(deployKeyManagerFixture);
     const CiphertextStorageContract = await hre.ethers.getContractFactory("CiphertextStorage");
-    const ciphertextStorage = await CiphertextStorageContract.deploy(httpz);
+    const ciphertextStorage = await CiphertextStorageContract.deploy(httpz, keyManager);
 
     // Setup the ciphertext storage state with a ciphertext used during tests
     for (let signer of coprocessorSigners) {

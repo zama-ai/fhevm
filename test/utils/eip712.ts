@@ -26,7 +26,7 @@ export interface EIP712 {
 export function createEIP712ResponseZKPoK(
   chainId: number,
   verifyingContract: string,
-  handles: Uint8Array<ArrayBufferLike>[],
+  handles: Uint8Array[],
   userAddress: string,
   contractAddress: string,
   contractChainId: string,
