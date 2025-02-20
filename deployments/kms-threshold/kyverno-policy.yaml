@@ -1,0 +1,44 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: kms-threshold-staging-mutate-pod
+spec:
+  validationFailureAction: Audit
+  rules:
+    - name: replace-service-account-name
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              names:
+                - "kms-threshold-staging-*"
+          - resources:
+              kinds:
+                - Namespace
+              names:
+                - "kms-threshold-staging"
+      mutate:
+        patchStrategicMerge:
+          spec:
+           serviceAccountName: "{{request.object.metadata.name}}"
+
+    - name: replace-configmap-name
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              names:
+                - "kms-threshold-staging-*"
+          - resources:
+              kinds:
+                - Namespace
+              names:
+                - "kms-threshold-staging"
+      mutate:
+        patchStrategicMerge:
+          spec:
+           envFrom:
+            - configMapRef:
+                name: "{{request.object.metadata.name}}"
