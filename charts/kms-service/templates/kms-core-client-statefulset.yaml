@@ -4,7 +4,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   labels:
-    app: kms-service
+    app: kms-core
     app.kubernetes.io/name: {{ include "kmsCoreClientName" . }}
   name: {{ include "kmsCoreClientName" . }}
 spec:
@@ -15,7 +15,7 @@ spec:
   template:
     metadata:
       labels:
-        app: kms-service
+        app: kms-core
         app.kubernetes.io/name: {{ include "kmsCoreClientName" . }}
     spec:
       securityContext:
