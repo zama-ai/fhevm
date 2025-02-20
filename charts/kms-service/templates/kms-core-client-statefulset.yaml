@@ -27,17 +27,20 @@ spec:
             - /app/load-core-client-config.sh
           env:
             - name: CORE_CLIENT__S3_ENDPOINT
-              value: "{{ if .Values.minio.enabled }}http://minio:9000/{{ .Values.kmsCore.publicVault.s3.bucket }}{{ else }}https://zama-zws-dev-kms-party-kms-threshold-staging-fwz7w.s3.{{ .Values.kmsCore.aws.region }}.amazonaws.com{{ end }}/{{ .Values.kmsCore.publicVault.s3.path }}"
+              value: "{{ if .Values.minio.enabled }}http://minio:9000/{{ .Values.kmsCore.publicVault.s3.bucket }}{{ else }}trunc -5 ${KMS_CORE__PUBLIC_VAULT__STORAGE}.s3.{{ .Values.kmsCore.aws.region }}.amazonaws.com{{ end }}/{{ .Values.kmsCore.publicVault.s3.path }}"
             - name: CORE_CLIENT__OBJECT_FOLDER
               value: '[{{ if .Values.kmsCore.thresholdMode.enabled }}{{ range $i, $peer := .Values.kmsCore.thresholdMode.peersList }}{{- if $i -}},{{ end }}"PUB-p{{-  $peer.id  -}}"{{- end }}{{ else }}"PUB"{{ end }}]'
             - name: CORE_CLIENT__CORE_ADDRESSES
               value: '[{{ range $i, $peer := .Values.kmsCore.thresholdMode.peersList }}{{- if $i -}},{{ end }}"http://{{-  $peer.host }}:{{-  $.Values.kmsCore.ports.client  -}}"{{- end }}]'
             - name: CORE_CLIENT__NUM_MAJORITY
-              value: '{{ .Values.kmsCoreClient.num_majority | int | quote }}'
+              value: '{{ .Values.kmsCoreClient.num_majority | int }}'
             - name: CORE_CLIENT__NUM_RECONSTRUCT
-              value: '{{ .Values.kmsCoreClient.num_reconstruct | int | quote }}'
+              value: '{{ .Values.kmsCoreClient.num_reconstruct | int }}'
             - name: CORE_CLIENT__DECRYPTION_MODE
               value: '{{ .Values.kmsCoreClient.decryption_mode | quote }}'
+          envFrom:
+            - configMapRef:
+                name: {{ include "kmsCoreName" . }}-1
           volumeMounts:
             - mountPath: /app/load-core-client-config.sh
               subPath: load-core-client-config.sh
