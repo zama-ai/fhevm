@@ -420,16 +420,22 @@ contract KeyManager is IKeyManager, Ownable2Step {
         return keyId == currentKeyId;
     }
 
-    function _isKmsConsensusReached(uint256 verifiedSignaturesCount) internal view virtual returns (bool) {
-        // TODO: Change this to use threshold value instead:
-        // https://github.com/zama-ai/gateway-l2/issues/63
-        uint256 consensusThreshold = (_HTTPZ.getKmsNodesCount() - 1) / 3 + 1;
-        return verifiedSignaturesCount >= consensusThreshold;
+    /// @notice Checks if the consensus is reached among the KMS nodes.
+    /// @dev This function calls the HTTPZ contract to retrieve the consensus threshold.
+    /// @param kmsCounter The number of KMS nodes that agreed
+    /// @return Whether the consensus is reached
+    function _isKmsConsensusReached(uint256 kmsCounter) internal view virtual returns (bool) {
+        uint256 consensusThreshold = _HTTPZ.getKmsMajorityThreshold();
+        return kmsCounter >= consensusThreshold;
     }
 
-    function _isCoprocessorConsensusReached(uint256 verifiedSignaturesCount) internal view virtual returns (bool) {
-        uint256 consensusThreshold = _HTTPZ.getCoprocessorsCount() / 2 + 1;
-        return verifiedSignaturesCount >= consensusThreshold;
+    /// @notice Checks if the consensus is reached among the Coprocessors.
+    /// @dev This function calls the HTTPZ contract to retrieve the consensus threshold.
+    /// @param coprocessorCounter The number of coprocessors that agreed
+    /// @return Whether the consensus is reached
+    function _isCoprocessorConsensusReached(uint256 coprocessorCounter) internal view virtual returns (bool) {
+        uint256 consensusThreshold = _HTTPZ.getCoprocessorMajorityThreshold();
+        return coprocessorCounter >= consensusThreshold;
     }
 
     /// @notice Returns the versions of the KeyManager contract in SemVer format.

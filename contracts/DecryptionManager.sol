@@ -221,16 +221,12 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
         return _HTTPZ.isKmsNode(signer);
     }
 
-    /// @notice Checks if the consensus for public decryption is reached among the KMS signers.
-    /// @dev This function calls the HTTPZ contract to retrieve the current number of KMS nodes.
-    /// @dev The consensus threshold is based on the fact that KMS nodes are expected to return the same
-    /// @dev result message.
-    /// @param verifiedSignaturesCount The number of signatures that have been verified for a public decryption
-    /// @return Whether the consensus for public decryption is reached
-    function _isConsensusReachedPublic(uint256 verifiedSignaturesCount) internal view virtual returns (bool) {
-        // TODO: Change this to use threshold value instead:
-        // https://github.com/zama-ai/gateway-l2/issues/63
-        uint256 consensusThreshold = (_HTTPZ.getKmsNodesCount() - 1) / 3 + 1;
-        return verifiedSignaturesCount >= consensusThreshold;
+    /// @notice Checks if the consensus is reached among the KMS nodes.
+    /// @dev This function calls the HTTPZ contract to retrieve the consensus threshold.
+    /// @param kmsCounter The number of KMS nodes that agreed
+    /// @return Whether the consensus is reached
+    function _isConsensusReachedPublic(uint256 kmsCounter) internal view virtual returns (bool) {
+        uint256 consensusThreshold = _HTTPZ.getKmsMajorityThreshold();
+        return kmsCounter >= consensusThreshold;
     }
 }

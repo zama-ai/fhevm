@@ -6,8 +6,12 @@ import "@openzeppelin/contracts/access/Ownable2Step.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 
-/// @title HTTPZ contract
-/// @dev See {IHTTPZ}.
+/**
+ * @title HTTPZ contract
+ * @dev See {IHTTPZ}.
+ * @dev Add/remove methods will be added in the future for admins, KMS nodes, coprocessors and networks.
+ * @dev See https://github.com/zama-ai/gateway-l2/issues/98 for more details.
+ */
 contract HTTPZ is IHTTPZ, Ownable2Step, AccessControl {
     /// @notice The protocol's metadata
     ProtocolMetadata public protocolMetadata;
@@ -19,34 +23,15 @@ contract HTTPZ is IHTTPZ, Ownable2Step, AccessControl {
 
     /// @notice The KMS nodes' metadata
     KmsNode[] public kmsNodes;
-    /// @notice The KMS nodes' identities (public signature keys)
-    bytes[] public kmsNodeIdentities;
-    /// @notice The KMS nodes' signed nodes
-    mapping(address kmsNodeConnector => bytes signedNodes) public kmsNodeSignedNodes;
-    /// @notice The keychain DA addresses (one per KMS node)
-    mapping(address kmsNodeConnector => address keychainDaAddress) public keychainDaAddresses;
-    /// @notice The number of KMS nodes that are marked as ready
-    uint256 private _kmsNodeReadyCounter;
-    /// @notice Whether the KMS service is ready (all KMS nodes have been added and marked as ready)
-    bool private _kmsServiceReady;
-    /// @notice The pending KMS node role. Only pending KMS nodes can mark KMS nodes as ready
-    bytes32 public constant PENDING_KMS_NODE_ROLE = keccak256("PENDING_KMS_NODE_ROLE");
+    /// @notice The KMS' threshold to consider for majority vote or reconstruction. For a set ot `n`
+    /// @notice KMS nodes, the threshold `t` must verify `3t < n`.
+    uint256 public kmsThreshold;
     /// @notice The KMS node role. For example, only KMS nodes can send response transactions during
     /// @notice public material generation (in Key Manager) or decryption (in Decryption Manager).
     bytes32 public constant KMS_NODE_ROLE = keccak256("KMS_NODE_ROLE");
 
     /// @notice The coprocessors' metadata
     Coprocessor[] public coprocessors;
-    /// @notice The coprocessors' identities (public signature keys)
-    bytes[] public coprocessorIdentities;
-    /// @notice The coprocessor DA addresses (one per coprocessor)
-    mapping(address coprocessorConnector => address coprocessorDaAddress) public coprocessorDaAddresses;
-    /// @notice The number of coprocessors that are marked as ready
-    uint256 private _coprocessorReadyCounter;
-    /// @notice Whether the the coprocessor service is ready (all coprocessors have been added and marked as ready)
-    bool private _coprocessorServiceReady;
-    /// @notice The pending coprocessor role. Only pending coprocessors can mark coprocessors as ready
-    bytes32 public constant PENDING_COPROCESSOR_ROLE = keccak256("PENDING_COPROCESSOR_ROLE");
     /// @notice The coprocessor role. For example, only coprocessors can send response transactions
     /// @notice during key activation (in Key Manager) or ZK Proof verification (in ZKPoK Manager).
     bytes32 public constant COPROCESSOR_ROLE = keccak256("COPROCESSOR_ROLE");
@@ -64,96 +49,45 @@ contract HTTPZ is IHTTPZ, Ownable2Step, AccessControl {
 
     constructor() Ownable(msg.sender) {}
 
-    /// @dev Modifier to check if the KMS service is ready
-    modifier kmsServiceReady() {
-        if (!_kmsServiceReady) {
-            revert KmsNodesNotSet();
-        }
-        _;
-    }
-    /// @dev Modifier to check if the coprocessor service is ready
-    modifier coprocessorServiceReady() {
-        if (!_coprocessorServiceReady) {
-            revert CoprocessorsNotSet();
-        }
-        _;
-    }
-
     /// @dev See {IHTTPZ-initialize}.
     function initialize(
-        ProtocolMetadata calldata initialProtocolMetadata,
-        address[] calldata admins
+        ProtocolMetadata calldata initialMetadata,
+        address[] calldata initialAdmins,
+        uint256 initialKmsThreshold,
+        KmsNode[] calldata initialKmsNodes,
+        Coprocessor[] calldata initialCoprocessors
     ) external virtual onlyOwner {
-        protocolMetadata = initialProtocolMetadata;
+        protocolMetadata = initialMetadata;
 
-        for (uint256 i = 0; i < admins.length; i++) {
-            _grantRole(ADMIN_ROLE, admins[i]);
+        /// @dev Register the admins
+        for (uint256 i = 0; i < initialAdmins.length; i++) {
+            _grantRole(ADMIN_ROLE, initialAdmins[i]);
         }
 
-        emit Initialization(protocolMetadata, admins);
-    }
+        uint256 nParties = initialKmsNodes.length;
 
-    /// @dev See {IHTTPZ-addKmsNodes}.
-    function addKmsNodes(KmsNode[] calldata initialKmsNodes) external virtual onlyRole(ADMIN_ROLE) {
-        for (uint256 i = 0; i < initialKmsNodes.length; i++) {
-            _grantRole(PENDING_KMS_NODE_ROLE, initialKmsNodes[i].connectorAddress);
+        /// @dev Check that this KMS node's threshold is valid. For a set ot `n` KMS nodes, the
+        /// @dev threshold `t` must verify `3t < n`.
+        if (3 * initialKmsThreshold >= nParties) {
+            revert KmsThresholdTooHigh(initialKmsThreshold, nParties);
+        }
 
+        /// @dev Set the KMS threshold.
+        kmsThreshold = initialKmsThreshold;
+
+        /// @dev Register the KMS nodes
+        for (uint256 i = 0; i < nParties; i++) {
+            _grantRole(KMS_NODE_ROLE, initialKmsNodes[i].connectorAddress);
             kmsNodes.push(initialKmsNodes[i]);
-            kmsNodeIdentities.push(initialKmsNodes[i].identity);
         }
 
-        emit KmsNodesInit(kmsNodeIdentities);
-    }
-
-    /// @dev See {IHTTPZ-kmsNodeReady}.
-    function kmsNodeReady(
-        bytes calldata signedNodes,
-        address keychainDaAddress
-    ) external virtual onlyRole(PENDING_KMS_NODE_ROLE) {
-        _grantRole(KMS_NODE_ROLE, msg.sender);
-
-        /// @dev A KMS node can only be ready once
-        _revokeRole(PENDING_KMS_NODE_ROLE, msg.sender);
-
-        kmsNodeSignedNodes[msg.sender] = signedNodes;
-        keychainDaAddresses[msg.sender] = keychainDaAddress;
-        _kmsNodeReadyCounter++;
-
-        /// @dev Emit the event when all KMS nodes are ready
-        if (_kmsNodeReadyCounter == kmsNodes.length) {
-            _kmsServiceReady = true;
-
-            emit KmsServiceReady(kmsNodeIdentities);
-        }
-    }
-
-    /// @dev See {IHTTPZ-addCoprocessors}.
-    function addCoprocessors(Coprocessor[] calldata initialCoprocessors) external virtual onlyRole(ADMIN_ROLE) {
+        /// @dev Register the coprocessors
         for (uint256 i = 0; i < initialCoprocessors.length; i++) {
-            _grantRole(PENDING_COPROCESSOR_ROLE, initialCoprocessors[i].connectorAddress);
+            _grantRole(COPROCESSOR_ROLE, initialCoprocessors[i].connectorAddress);
             coprocessors.push(initialCoprocessors[i]);
-            coprocessorIdentities.push(initialCoprocessors[i].identity);
         }
 
-        emit CoprocessorsInit(coprocessorIdentities);
-    }
-
-    /// @dev See {IHTTPZ-coprocessorReady}.
-    function coprocessorReady(address coprocessorDaAddress) external virtual onlyRole(PENDING_COPROCESSOR_ROLE) {
-        _grantRole(COPROCESSOR_ROLE, msg.sender);
-
-        /// @dev A coprocessor can only be ready once
-        _revokeRole(PENDING_COPROCESSOR_ROLE, msg.sender);
-
-        coprocessorDaAddresses[msg.sender] = coprocessorDaAddress;
-        _coprocessorReadyCounter++;
-
-        /// @dev Emit the event when all coprocessors are ready
-        if (_coprocessorReadyCounter == coprocessors.length) {
-            _coprocessorServiceReady = true;
-
-            emit CoprocessorServiceReady(coprocessorIdentities);
-        }
+        emit Initialization(initialMetadata, initialAdmins, initialKmsThreshold, initialKmsNodes, initialCoprocessors);
     }
 
     /// @dev See {IHTTPZ-addNetwork}.
@@ -162,6 +96,16 @@ contract HTTPZ is IHTTPZ, Ownable2Step, AccessControl {
         _isNetworkRegistered[network.chainId] = true;
 
         emit AddNetwork(network.chainId);
+    }
+
+    /// @dev See {IHTTPZ-updateKmsThreshold}.
+    function updateKmsThreshold(uint256 newKmsThreshold) external virtual onlyRole(ADMIN_ROLE) {
+        if (3 * newKmsThreshold >= kmsNodes.length) {
+            revert KmsThresholdTooHigh(newKmsThreshold, kmsNodes.length);
+        }
+
+        kmsThreshold = newKmsThreshold;
+        emit UpdateKmsThreshold(newKmsThreshold);
     }
 
     /// @dev See {IHTTPZ-isAdmin}.
@@ -184,14 +128,19 @@ contract HTTPZ is IHTTPZ, Ownable2Step, AccessControl {
         return _isNetworkRegistered[chainId];
     }
 
-    /// @dev See {IHTTPZ-getKmsNodesCount}.
-    function getKmsNodesCount() external view virtual returns (uint256) {
-        return kmsNodes.length;
+    /// @dev See {IHTTPZ-getKmsMajorityThreshold}.
+    function getKmsMajorityThreshold() external view virtual returns (uint256) {
+        return kmsThreshold + 1;
     }
 
-    /// @dev See {IHTTPZ-getCoprocessorsCount}.
-    function getCoprocessorsCount() external view virtual returns (uint256) {
-        return coprocessors.length;
+    /// @dev See {IHTTPZ-getKmsReconstructionThreshold}.
+    function getKmsReconstructionThreshold() external view virtual returns (uint256) {
+        return 2 * kmsThreshold + 1;
+    }
+
+    /// @dev See {IHTTPZ-getCoprocessorMajorityThreshold}.
+    function getCoprocessorMajorityThreshold() external view virtual returns (uint256) {
+        return coprocessors.length / 2 + 1;
     }
 
     /// @notice Returns the versions of the HTTPZ contract in SemVer format.

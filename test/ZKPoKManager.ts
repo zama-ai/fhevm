@@ -8,10 +8,10 @@ import { createEIP712ResponseZKPoK, deployHTTPZFixture, getSignaturesZKPoK } fro
 
 describe("ZKPoKManager", function () {
   async function deployZKPoKManagerFixture() {
-    const { httpz, coprocessorSigners, admin, signers } = await deployHTTPZFixture();
+    const { httpz, coprocessorSigners, admins, signers } = await deployHTTPZFixture();
     const ZKPoKManagerContract = await hre.ethers.getContractFactory("ZKPoKManager");
     const zkpokManager = await ZKPoKManagerContract.deploy(httpz, "0xDA9FeD390f02F559E62240a112aBd2FAe06DCdB5");
-    return { httpz, zkpokManager, coprocessorSigners, admin, signers };
+    return { httpz, zkpokManager, coprocessorSigners, admins, signers };
   }
 
   describe("Verify proof request", async function () {
@@ -20,7 +20,7 @@ describe("ZKPoKManager", function () {
     let zkpokManager: ZKPoKManager;
     before(async function () {
       const fixture = await loadFixture(deployZKPoKManagerFixture);
-      await fixture.httpz.connect(fixture.admin).addNetwork({
+      await fixture.httpz.connect(fixture.admins[0]).addNetwork({
         chainId: contractChainId,
         httpzLibrary: hre.ethers.Wallet.createRandom().address,
         acl: hre.ethers.Wallet.createRandom().address,
@@ -71,7 +71,7 @@ describe("ZKPoKManager", function () {
 
     beforeEach(async function () {
       const fixture = await loadFixture(deployZKPoKManagerFixture);
-      await fixture.httpz.connect(fixture.admin).addNetwork({
+      await fixture.httpz.connect(fixture.admins[0]).addNetwork({
         chainId: contractChainId,
         httpzLibrary: hre.ethers.Wallet.createRandom().address,
         acl: hre.ethers.Wallet.createRandom().address,

@@ -90,7 +90,7 @@ contract CiphertextStorage is ICiphertextStorage {
         /// @dev Only send the event if consensus has not been reached in a previous call
         /// @dev and the consensus is reached in the current call.
         /// @dev This means a "late" allow will not be reverted, just ignored
-        if (!hasCiphertext(ctHandle) && _isConsensusReached(ctHandle)) {
+        if (!hasCiphertext(ctHandle) && _isConsensusReached(_ctHandleCounters[ctHandle])) {
             _ciphertext64s[ctHandle] = ciphertext64;
             _ciphertext128s[ctHandle] = ciphertext128;
             _keyIds[ctHandle] = keyId;
@@ -118,12 +118,12 @@ contract CiphertextStorage is ICiphertextStorage {
             );
     }
 
-    /// @notice Checks if the Ciphertext storing consensus is reached among the Coprocessors.
-    /// @dev This function calls the HTTPZ contract to retrieve the current Coprocessors.
-    /// @dev The consensus threshold is calculated as the simple majority of the total Coprocessors.
-    function _isConsensusReached(uint256 ctHandle) internal view returns (bool) {
-        uint256 coprocessorsCount = _HTTPZ.getCoprocessorsCount();
-        uint256 consensusThreshold = coprocessorsCount / 2 + 1;
-        return _ctHandleCounters[ctHandle] >= consensusThreshold;
+    /// @notice Checks if the consensus is reached among the Coprocessors.
+    /// @dev This function calls the HTTPZ contract to retrieve the consensus threshold.
+    /// @param coprocessorCounter The number of coprocessors that agreed
+    /// @return Whether the consensus is reached
+    function _isConsensusReached(uint256 coprocessorCounter) internal view virtual returns (bool) {
+        uint256 consensusThreshold = _HTTPZ.getCoprocessorMajorityThreshold();
+        return coprocessorCounter >= consensusThreshold;
     }
 }

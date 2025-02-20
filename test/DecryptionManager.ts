@@ -7,7 +7,7 @@ import { createEIP712ResponsePublicDecrypt, getSignaturesPublicDecrypt } from ".
 
 describe("DecryptionManager", function () {
   async function deployDecryptionManagerFixture() {
-    const { httpz, owner, admin, user, kmsSigners, signers } = await loadFixture(deployHTTPZFixture);
+    const { httpz, owner, admins, user, kmsSigners, signers } = await loadFixture(deployHTTPZFixture);
 
     const DecryptionManager = await hre.ethers.getContractFactory("DecryptionManager", owner);
 
@@ -19,7 +19,7 @@ describe("DecryptionManager", function () {
       "0x1234567890abcdef1234567890abcdef12345678",
     );
 
-    return { decryptionManager, owner, admin, user, kmsSigners, signers };
+    return { decryptionManager, owner, admins, user, kmsSigners, signers };
   }
 
   describe("Public Decryption", function () {

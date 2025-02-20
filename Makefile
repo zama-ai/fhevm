@@ -1,7 +1,12 @@
 prettier:
 	pnpm exec prettier . --write
 
-tests:
+compile:
+	pnpm exec hardhat compile
+
+# Define it as a phony target to avoid conflicts with the test directory
+.PHONY: test
+test:
 	pnpm exec hardhat test
 
 get-accounts:
