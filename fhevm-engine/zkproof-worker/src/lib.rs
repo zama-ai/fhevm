@@ -2,6 +2,7 @@ pub mod verifier;
 use std::io;
 
 use aws_sdk_s3::{error::SdkError, operation::get_object::GetObjectError};
+use fhevm_engine_common::types::FhevmError;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -29,6 +30,9 @@ pub enum ExecutionError {
 
     #[error("Invalid Proof: {0}")]
     InvalidProof(i64),
+
+    #[error("TBD")]
+    FaildFhevm(#[from] FhevmError),
 }
 
 #[cfg(test)]

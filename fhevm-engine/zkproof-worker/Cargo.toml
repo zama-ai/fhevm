@@ -1,6 +1,6 @@
 [package]
 name = "zkproof-worker"
-version = "0.1.0"
+version = "0.6.1"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -21,10 +21,10 @@ rand = {workspace = true}
 alloy-primitives = "0.8.21"
 aws-config = "1.1"       
 aws-sdk-s3 = "1.10"       
-alloy-signer-local = "0.3.6"
-alloy-signer = "0.3.6"
-k256 = "0.13"
-aes-prng = "0.2.1"
+sha3 = "0.10.8"
+
+# local dependencies
+fhevm-engine-common = { path = "../fhevm-engine-common" }
 
 # crates.io dependencies
 [features]

@@ -1,11 +1,10 @@
-use aes_prng::AesRng; // Temp
-use alloy_primitives::FixedBytes;
-use alloy_signer::{Signature, SignerSync};
-use alloy_signer_local::PrivateKeySigner;
-use k256::ecdsa::{SigningKey, VerifyingKey};
-use k256::elliptic_curve::rand_core::SeedableRng;
+use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, extract_ct_list};
+use fhevm_engine_common::types::{FhevmError, SupportedFheCiphertexts};
+
+use sha3::Digest;
+use sha3::Keccak256;
 use sqlx::{postgres::PgListener, PgPool, Row};
-use std::char::from_u32_unchecked;
+
 use std::str::FromStr;
 
 use crate::ExecutionError;
@@ -14,7 +13,7 @@ use aws_sdk_s3::Client;
 use tfhe::safe_serialization::safe_deserialize;
 
 use tfhe::zk::CompactPkeCrs;
-use tfhe::{CompactPublicKey, ProvenCompactCiphertextList};
+use tfhe::{set_server_key, CompactPublicKey};
 use tokio::io::AsyncReadExt;
 
 use tokio::{select, time::Duration};
@@ -42,7 +41,6 @@ pub async fn execute_verify_proofs_loop(conf: &Config) -> Result<(), ExecutionEr
     listener.listen(&conf.listen_database_channel).await?;
 
     // Fetch CRS
-    // TODO: Should we retrieve S3 bucket info from the tenants table for a specific tenant API key?
     let crs = download_crs(&conf.crs_bucket_name, &conf.crs_object_key).await?;
     let compact_pubkey = fetch_compact_pubkey()?;
 
@@ -70,7 +68,7 @@ async fn execute_verify_proof_routine(
 ) -> Result<(), ExecutionError> {
     let mut txn: sqlx::Transaction<'_, sqlx::Postgres> = pool.begin().await?;
     if let Ok(row) = sqlx::query(
-        "SELECT zk_proof_id, input, handles, chain_id, contract_address, user_address
+        "SELECT zk_proof_id, input, chain_id, contract_address, user_address
             FROM verify_proofs
             WHERE verified = false AND retry_count < 5
             ORDER BY zk_proof_id ASC
@@ -81,39 +79,31 @@ async fn execute_verify_proof_routine(
     {
         let zk_proof_id: i64 = row.get("zk_proof_id");
         let input: Vec<u8> = row.get("input");
-        let handles: Vec<u8> = row.get("handles");
         let chain_id: i32 = row.get("chain_id");
         let contract_address = row.get("contract_address");
         let user_address = row.get("user_address");
 
-        let md = AuxiliaryData::new(contract_address, user_address, chain_id);
-        match verify_proof_and_sign(zk_proof_id, crs, compact_pubkey, &md, &input, &handles).await {
-            Ok(_signature) => {
-                // TODO: Should we store the signature in the database for this zk_proof_id?
+        let md: AuxiliaryData = AuxiliaryData::new(contract_address, user_address, chain_id);
+        match verify_proof_and_sign(crs, compact_pubkey, &md, &input).await {
+            Ok(handles) => {
+                let handles_bytes = handles.iter().fold(Vec::new(), |mut acc, h| {
+                    acc.extend_from_slice(h.as_ref());
+                    acc
+                });
 
-                // Mark as verified
+                // Mark as verified and set handles
                 sqlx::query(
-                    "UPDATE verify_proofs SET verified = true, is_valid = true, verified_at = NOW()
+                    "UPDATE verify_proofs SET handles = $2, verified = true, is_valid = true, verified_at = NOW()
                     WHERE zk_proof_id = $1",
                 )
                 .bind(zk_proof_id)
-                .execute(&mut *txn)
-                .await?;
-            }
-            Err(ExecutionError::InvalidProof(_)) => {
-                // TODO: Should we mark the proof as invalid in the database?
-                sqlx::query(
-                    "UPDATE verify_proofs SET verified = true, is_valid = false, verified_at = NOW()
-                    WHERE zk_proof_id = $1",
-                )
-                .bind(zk_proof_id)
+                .bind(handles_bytes)
                 .execute(&mut *txn)
                 .await?;
             }
             Err(_) => {
-                // Increment retry count and log error
                 sqlx::query(
-                    "UPDATE verify_proofs SET retry_count = retry_count + 1, last_retry_at = NOW()
+                    "UPDATE verify_proofs SET verified = true, is_valid = false, verified_at = NOW()
                     WHERE zk_proof_id = $1",
                 )
                 .bind(zk_proof_id)
@@ -135,51 +125,50 @@ async fn execute_verify_proof_routine(
 }
 
 pub(crate) async fn verify_proof_and_sign(
-    proof_id: i64,
     crs: &CompactPkeCrs,
     public_key: &CompactPublicKey,
     md: &AuxiliaryData,
     raw_ct: &[u8],
-    handles: &[u8],
-) -> Result<Vec<u8>, ExecutionError> {
-    let md_bytes = md.assemble();
+) -> Result<Vec<Vec<u8>>, ExecutionError> {
+    let cts: Vec<SupportedFheCiphertexts> =
+        try_verify_and_expand_ciphertext_list(raw_ct, crs, public_key, md)?;
 
-    // TODO: is the input bytes a valid ProvenCompactCiphertextList?
-    let mut cursor = std::io::Cursor::new(raw_ct);
-    let proven_ct: ProvenCompactCiphertextList = safe_deserialize(&mut cursor, SAFE_SER_SIZE_LIMIT)
-        .map_err(ExecutionError::InvalidCiphertextBytes)?;
+    // TODO: set_server_key(self.keys.server_key.clone());
+    let handles = cts
+        .iter()
+        .map(|ct: &SupportedFheCiphertexts| {
+            ciphertext_handle(&ct.compress().1, ct.type_num() as u8) // TODO: double check
+        })
+        .collect();
 
-    if proven_ct.verify(crs, public_key, &md_bytes).is_invalid() {
-        return Err(ExecutionError::InvalidProof(proof_id));
-    }
-
-    // TODO: How to extract ciphertexts from packed ciphertexts according to data types embedded in packed ciphertexts?
-    // proven_ct.iter() mut rand::rng::<i32>()
-    let mut rng = AesRng::seed_from_u64(12); // TODO: read from external file
-    let sk = SigningKey::random(&mut rng);
-
-    compute_signature(sk, &proven_ct, handles)
+    Ok(handles)
 }
 
-pub(crate) fn compute_signature(
-    sk: k256::ecdsa::SigningKey,
-    _proven_ct: &ProvenCompactCiphertextList,
-    _handles: &[u8],
-) -> Result<Vec<u8>, ExecutionError> {
-    let signer = PrivateKeySigner::from_signing_key(sk.clone());
-    let signer_address = signer.address();
+fn try_verify_and_expand_ciphertext_list(
+    raw_ct: &[u8],
+    crs: &CompactPkeCrs,
+    public_key: &CompactPublicKey,
+    md: &AuxiliaryData,
+) -> Result<Vec<SupportedFheCiphertexts>, ExecutionError> {
+    let md_bytes = md.assemble();
 
-    info!("Signer address: {}", signer_address);
-    let message_hash: FixedBytes<32> = FixedBytes::<32>::default(); // TODO: How to hash the message?
+    let mut cursor = std::io::Cursor::new(raw_ct);
+    let the_list: tfhe::ProvenCompactCiphertextList =
+        safe_deserialize(&mut cursor, SAFE_SER_SIZE_LIMIT)
+            .map_err(ExecutionError::InvalidCiphertextBytes)?;
 
-    // Sign the hash synchronously with the wallet.
-    let signature = signer
-        .sign_hash_sync(&message_hash)
-        .unwrap()
-        .as_bytes()
-        .to_vec();
+    let expanded = the_list
+        .verify_and_expand(crs, public_key, &md_bytes)
+        .map_err(FhevmError::CiphertextExpansionError)?;
 
-    Ok(signature)
+    Ok(extract_ct_list(&expanded)?)
+}
+
+pub fn ciphertext_handle(ciphertext: &[u8], ct_type: u8) -> Vec<u8> {
+    let mut handle: Vec<u8> = Keccak256::digest(ciphertext).to_vec();
+    handle[30] = ct_type;
+    handle[31] = current_ciphertext_version() as u8;
+    handle
 }
 
 /// Retrieves the CRS from an S3 bucket
