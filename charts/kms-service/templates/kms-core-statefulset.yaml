@@ -9,6 +9,7 @@ metadata:
     app.kubernetes.io/name: {{ include "kmsCoreName" . }}
   annotations:
     checksum/config: {{ include (print $.Template.BasePath "/kms-core-configmap.yaml") . | sha256sum }}
+    vpc.amazonaws.com/disable-pod-eni: "true"
   name: {{ include "kmsCoreName" . }}
 spec:
   replicas: {{ .Values.kmsPeers.count }}
@@ -30,6 +31,7 @@ spec:
         app.kubernetes.io/name: {{ include "kmsCoreName" . }}
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/kms-core-configmap.yaml") . | sha256sum }}
+        vpc.amazonaws.com/disable-pod-eni: "true"
     spec:
     {{- if .Values.kmsCore.nitroEnclave.enabled }}
       securityContext:
