@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, test } from 'vitest'
 import { mock, MockProxy } from 'vitest-mock-extended'
 import { SQSConsumer } from './sqs.consumer.js'
 import { Test } from '@nestjs/testing'
-import { PUBSUB } from '#constants.js'
+import { MS_NAME, PUBSUB } from '#constants.js'
 import { faker } from '@faker-js/faker'
 import { Message } from '@aws-sdk/client-sqs'
 
@@ -57,7 +57,13 @@ describe('SqsConsumer', () => {
 
           await consumer.handleMessage(message)
           if (forward) {
-            expect(pubsub.publish).toBeCalledWith(event)
+            expect(pubsub.publish).toBeCalledWith({
+              ...event,
+              meta: {
+                ...event.meta,
+                [`${MS_NAME}-dir`]: 'in',
+              },
+            })
           } else {
             expect(pubsub.publish).not.toBeCalled()
           }
@@ -68,11 +74,14 @@ describe('SqsConsumer', () => {
             pubsub.publish.mockReturnValue(
               Task.reject(unknownError('Mocked error')),
             )
+            const messageId = faker.string.uuid()
             const message = encodeMessage(event)
+            message.MessageId = messageId
 
-            await expect(consumer.handleMessage(message)).rejects.toThrow(
-              'Mocked error',
-            )
+            const result = await consumer.handleMessage(message)
+            expect(result).toEqual({
+              batchItemFailures: [{ itemIdentifier: messageId }],
+            })
           })
         }
       },

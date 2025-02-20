@@ -10,6 +10,8 @@ import { inject } from 'vitest'
 import { randomUUID } from 'crypto'
 import { execSync } from 'child_process'
 import commonConfig from '#config/common.config.js'
+import { SNSClient } from '@aws-sdk/client-sns'
+import { SQSClient } from '@aws-sdk/client-sqs'
 export type GraphQlResponse<T> =
   | {
       success: true
@@ -47,43 +49,61 @@ export class SetupManager {
     })
   }
 
-  private async startAws(awsEndpoint: string) {
+  private async execSync(command: string) {
+    await execSync(command, {
+      env: { PATH: process.env.PATH, AWS_DEFAULT_REGION: this.awsRegion },
+    })
+  }
+
+  private async aws(command: string) {
+    return await this.execSync(
+      `aws --endpoint-url ${this.awsEndpoint} ${command}`,
+    )
+  }
+  private async createTopic(topicName: string) {
+    await this.aws(
+      `sns create-topic --region ${this.awsRegion} --name ${topicName} --attributes "FifoTopic=false,ContentBasedDeduplication=true"`,
+    )
+  }
+  private async createQueue(queueName: string) {
+    await this.aws(
+      `sqs create-queue --region ${this.awsRegion} --queue-name ${queueName}`,
+    )
+  }
+
+  private async deleteQueue(queueUrl: string) {
+    await this.aws(
+      `sqs delete-queue --region ${this.awsRegion} --queue-url ${queueUrl}`,
+    )
+  }
+
+  private async subscribeToTopic(queueArn: string) {
+    await this.aws(
+      `sns subscribe --region ${this.awsRegion} --topic-arn ${this.topicArn} --protocol sqs --notification-endpoint ${queueArn}`,
+    )
+  }
+
+  private async startAws() {
     const id = randomUUID()
     // Generate a random topic name
     this.#topicName = `back-test-topic-${id}`
-
-    await execSync(
-      `aws --endpoint-url ${awsEndpoint} sns create-topic --region ${this.awsRegion} --name ${this.topicName} --attributes "FifoTopic=false,ContentBasedDeduplication=true"`,
-      {
-        env: { PATH: process.env.PATH },
-      },
-    )
-
-    // Generate a random queue name
     this.#queueName = `back-test-queue-${id}`
-    await execSync(
-      `aws --endpoint-url ${awsEndpoint} sqs create-queue --region ${this.awsRegion} --queue-name ${this.#queueName}`,
-      { env: { PATH: process.env.PATH, AWS_DEFAULT_REGION: this.awsRegion } },
-    )
-
-    // Generate a random log queue name
     this.#logQueueName = `back-test-log-queue-${id}`
-    await execSync(
-      `aws --endpoint-url ${awsEndpoint} sqs create-queue --region ${this.awsRegion} --queue-name ${this.#logQueueName}`,
-      { env: { PATH: process.env.PATH, AWS_DEFAULT_REGION: this.awsRegion } },
-    )
 
-    await execSync(
-      `aws --endpoint-url ${awsEndpoint} sns subscribe --region ${this.awsRegion} --topic-arn ${this.topicArn} --protocol sqs --notification-endpoint ${this.logQueueArn}`,
-      { env: { PATH: process.env.PATH, AWS_DEFAULT_REGION: this.awsRegion } },
-    )
+    await this.createTopic(this.topicName)
+
+    await this.createQueue(this.#queueName)
+    await this.subscribeToTopic(this.queueArn)
+
+    await this.createQueue(this.#logQueueName)
+    await this.subscribeToTopic(this.logQueueArn)
   }
 
   async beforeAll() {
     const awsEndpoint = this.awsEndpoint
 
     // Start services
-    await Promise.all([this.startAws(awsEndpoint), this.startPostgres()])
+    await Promise.all([this.startAws(), this.startPostgres()])
 
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
@@ -170,5 +190,33 @@ export class SetupManager {
 
   get redisConnection(): { host: string; port: number } {
     return inject('redisConnection')
+  }
+
+  #sns: SNSClient | undefined
+  get sns(): SNSClient {
+    if (!this.#sns) {
+      this.#sns = new SNSClient({
+        endpoint: this.awsEndpoint,
+        region: this.awsRegion,
+      })
+    }
+    return this.#sns
+  }
+
+  #sqs: SQSClient | undefined
+  get sqs(): SQSClient {
+    if (!this.#sqs) {
+      this.#sqs = new SQSClient({
+        endpoint: this.queueUrl,
+        region: this.awsRegion,
+      })
+    }
+    return this.#sqs
+  }
+
+  private async purgeLogQueue() {
+    await this.deleteQueue(this.logQueueUrl)
+    await this.createQueue(this.#logQueueName)
+    await this.subscribeToTopic(this.logQueueArn)
   }
 }

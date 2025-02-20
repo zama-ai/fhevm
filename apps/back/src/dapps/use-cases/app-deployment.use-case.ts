@@ -1,6 +1,6 @@
 import { back } from 'messages'
 import type { AppError, IPubSub, ISubscriber, UnitOfWork, UseCase } from 'utils'
-import { isAppError, Task } from 'utils'
+import { Task } from 'utils'
 import { DAppRepository } from '../domain/repositories/dapp.repository.js'
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { PUBSUB, UNIT_OF_WORK } from '#constants.js'
@@ -49,9 +49,6 @@ export class AppDeployment implements UseCase<Input, void> {
           ok: dapp =>
             this.logger.debug(`updated dapp: ${dapp.id.value}/${dapp.status}`),
           fail: error => {
-            console.log(
-              `failed to update: ${isAppError(error) ? `${error._tag}/${error.message}` : error}`,
-            )
             this.logger.error(`failed to update: ${error}`)
           },
         }),

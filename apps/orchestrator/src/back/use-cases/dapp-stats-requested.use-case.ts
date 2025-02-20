@@ -1,3 +1,4 @@
+import { MS_NAME } from '#constants.js'
 import { back, web3 } from 'messages'
 import { AppError, ISubscriber, PubSub, Task, UseCase } from 'utils'
 
@@ -31,7 +32,11 @@ export class DAppStatsRequested implements UseCase<Input, void> {
           chainId: payload.chainId,
           address: payload.address,
         },
-        meta,
+        {
+          ...meta,
+          // Note: I need to override the message otherwise is stopped
+          [`${MS_NAME}-dir`]: 'out',
+        },
       ),
     )
   }
