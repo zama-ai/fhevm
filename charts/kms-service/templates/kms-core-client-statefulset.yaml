@@ -17,8 +17,6 @@ spec:
       labels:
         app: kms-core-client
         app.kubernetes.io/name: {{ include "kmsCoreClientName" . }}
-      annotations:
-        checksum/config: {{ include (print $.Template.BasePath "/kms-core-client-configmap.yaml") . | sha256sum }}
     spec:
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
