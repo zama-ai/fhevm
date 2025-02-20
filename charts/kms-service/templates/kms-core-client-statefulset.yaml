@@ -27,21 +27,21 @@ spec:
             - /app/load-core-client-config.sh
           env:
             {{ if .Values.minio.enabled }}
-            - name: CORE_CLIENT__S3_ENDPOINT
+            - name: S3_ENDPOINT
               value: "http://minio:9000/{{ .Values.kmsCore.publicVault.s3.bucket }}/{{ .Values.kmsCore.publicVault.s3.path }}"
             {{ else }}
-            - name: CORE_CLIENT__S3_ENDPOINT
+            - name: S3_ENDPOINT
               value: "https://$(echo $KMS_CORE__PUBLIC_VAULT__STORAGE | cut -c6- | rev | cut -c2- | rev).s3.{{ .Values.kmsCore.aws.region }}.amazonaws.com/{{ .Values.kmsCore.publicVault.s3.path }}"
             {{ end }}
-            - name: CORE_CLIENT__OBJECT_FOLDER
+            - name: OBJECT_FOLDER
               value: '[{{ if .Values.kmsCore.thresholdMode.enabled }}{{ range $i, $peer := .Values.kmsCore.thresholdMode.peersList }}{{- if $i -}},{{ end }}"PUB-p{{-  $peer.id  -}}"{{- end }}{{ else }}"PUB"{{ end }}]'
-            - name: CORE_CLIENT__CORE_ADDRESSES
+            - name: CORE_ADDRESSES
               value: '[{{ range $i, $peer := .Values.kmsCore.thresholdMode.peersList }}{{- if $i -}},{{ end }}"http://{{-  $peer.host }}:{{-  $.Values.kmsCore.ports.client  -}}"{{- end }}]'
-            - name: CORE_CLIENT__NUM_MAJORITY
+            - name: NUM_MAJORITY
               value: '{{ .Values.kmsCoreClient.num_majority | int }}'
-            - name: CORE_CLIENT__NUM_RECONSTRUCT
+            - name: NUM_RECONSTRUCT
               value: '{{ .Values.kmsCoreClient.num_reconstruct | int }}'
-            - name: CORE_CLIENT__DECRYPTION_MODE
+            - name: DECRYPTION_MODE
               value: '{{ .Values.kmsCoreClient.decryption_mode | quote }}'
           envFrom:
             - configMapRef:

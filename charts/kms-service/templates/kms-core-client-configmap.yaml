@@ -10,19 +10,19 @@ data:
     #!/bin/sh
     set -e
     echo "loading configuration from env vars into the config.toml file"
-    
+
     # Process the S3 endpoint if it contains a variable
-    if echo "$CORE_CLIENT__S3_ENDPOINT" | grep -q '\$'; then
-        CORE_CLIENT__S3_ENDPOINT=$(eval echo "$CORE_CLIENT__S3_ENDPOINT")
+    if echo "$S3_ENDPOINT" | grep -q '\$'; then
+        S3_ENDPOINT=$(eval echo "$S3_ENDPOINT")
     fi
-    
+
     cat <<EOF >>config.toml
-    s3_endpoint="${CORE_CLIENT__S3_ENDPOINT}"
-    object_folder=${CORE_CLIENT__OBJECT_FOLDER}
-    core_addresses=${CORE_CLIENT__CORE_ADDRESSES}
-    num_majority=${CORE_CLIENT__NUM_MAJORITY}
-    num_reconstruct=${CORE_CLIENT__NUM_RECONSTRUCT}
-    decryption_mode=${CORE_CLIENT__DECRYPTION_MODE}
+    s3_endpoint="${S3_ENDPOINT}"
+    object_folder=${OBJECT_FOLDER}
+    core_addresses=${CORE_ADDRESSES}
+    num_majority=${NUM_MAJORITY}
+    num_reconstruct=${NUM_RECONSTRUCT}
+    decryption_mode=${DECRYPTION_MODE}
     EOF
     # Keep the pod running
     tail -f /dev/null
