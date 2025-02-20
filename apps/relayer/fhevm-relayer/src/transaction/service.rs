@@ -213,7 +213,7 @@ impl TransactionService {
             .expect("Time went backwards");
         let ts = uuid::v1::Timestamp::from_unix(&ctx, now.as_secs(), now.subsec_nanos());
         let node_id = [0x01, 0x23, 0x45, 0x67, 0x89, 0xab];
-        Uuid::new_v1(ts, &node_id).expect("Failed to generate UUID")
+        Uuid::new_v1(ts, &node_id)
     }
 
     /// Submits a new transaction

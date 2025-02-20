@@ -15,7 +15,7 @@ pub struct Orchestrator<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> {
 }
 
 impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> Orchestrator<D, E> {
-    pub fn new(event_dispatcher: Arc<D>, node_id: &[u8]) -> Arc<Self> {
+    pub fn new(event_dispatcher: Arc<D>, node_id: &[u8; 6]) -> Arc<Self> {
         Arc::new(Self {
             uuid_generator: Arc::new(UuidGenerator::new(
                 node_id,
@@ -71,20 +71,20 @@ struct UuidGenerator {
 
     // Node ID uniquely identifies this node for UUID generation and should be
     // unique for each instance or process of the application.
-    node_id: Vec<u8>,
+    node_id: [u8; 6],
 }
 
 impl UuidGenerator {
-    pub fn new(node_id: &[u8], context_initial_value: u16) -> Self {
+    pub fn new(node_id: &[u8; 6], context_initial_value: u16) -> Self {
         Self {
             context: Context::new(context_initial_value),
-            node_id: node_id.to_vec(),
+            node_id: *node_id,
         }
     }
 
     pub fn generate_id(&self) -> Uuid {
         let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
         let ts = Timestamp::from_unix(&self.context, now.as_secs(), now.subsec_nanos());
-        Uuid::new_v1(ts, &self.node_id).unwrap()
+        Uuid::new_v1(ts, &self.node_id)
     }
 }
