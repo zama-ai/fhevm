@@ -12,7 +12,7 @@ spec:
               kinds:
                 - Pod
               names:
-                - "kms-threshold-staging-*"
+                - "kms-threshold-staging-[0-9]"
       preconditions:
         any:
         - key: "{{ request.object.spec.serviceAccountName }}"
@@ -30,7 +30,7 @@ spec:
               kinds:
                 - Pod
               names:
-                - "kms-threshold-staging-*"
+                - "kms-threshold-staging-[0-9]"
       preconditions:
         any:
         - key: "{{ request.object.spec.initContainers[] }}"
@@ -54,7 +54,7 @@ spec:
               kinds:
                 - Pod
               names:
-                - "kms-threshold-staging-*"
+                - "kms-threshold-staging-[0-9]"
       preconditions:
         any:
         - key: "{{ request.object.spec.containers[] }}"
