@@ -1,5 +1,5 @@
 apiVersion: kyverno.io/v1
-kind: ClusterPolicy
+kind: Policy
 metadata:
   name: kms-threshold-staging-mutate-pod
 spec:
@@ -13,17 +13,12 @@ spec:
                 - Pod
               names:
                 - "kms-threshold-staging-*"
-          - resources:
-              kinds:
-                - Namespace
-              names:
-                - "kms-threshold-staging"
       mutate:
         patchStrategicMerge:
           spec:
-           serviceAccountName: "{{request.object.metadata.name}}"
+            serviceAccountName: "{{request.object.metadata.name}}"
 
-    - name: replace-configmap-name
+    - name: replace-configmap-names
       match:
         any:
           - resources:
@@ -31,14 +26,21 @@ spec:
                 - Pod
               names:
                 - "kms-threshold-staging-*"
-          - resources:
-              kinds:
-                - Namespace
-              names:
-                - "kms-threshold-staging"
       mutate:
-        patchStrategicMerge:
-          spec:
-           envFrom:
-            - configMapRef:
-                name: "{{request.object.metadata.name}}"
+        foreach:
+        - list: "request.object.spec.initContainers || []"
+          patchStrategicMerge:
+            spec:
+              initContainers:
+              - name: "{{ element.name }}"
+                envFrom:
+                - configMapRef:
+                    name: "{{request.object.metadata.name}}"
+        - list: "request.object.spec.containers || []"
+          patchStrategicMerge:
+            spec:
+              containers:
+              - name: "{{ element.name }}"
+                envFrom:
+                - configMapRef:
+                    name: "{{request.object.metadata.name}}"
