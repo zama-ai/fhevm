@@ -1,0 +1,35 @@
+{{- if .Values.config.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-init-config
+data:
+  create-secrets.sh: |
+    #!/bin/sh
+    set -e
+    API_KEY_SECRET_NAME="{{ .Values.config.apiKey.secret.name }}"
+    API_KEY_SECRET_KEY="{{ .Values.config.apiKey.secret.key }}"
+    if ! kubectl get secret ${API_KEY_SECRET_NAME}; then
+      COPROCESSOR_API_KEY_VALUE=$(uuidgen)
+      kubectl create secret generic ${API_KEY_SECRET_NAME} --from-literal ${API_KEY_SECRET_KEY}=${COPROCESSOR_API_KEY_VALUE}
+    else
+      echo "skipping: secret ${API_KEY_SECRET_NAME} already exists" 2>&1
+    fi
+    apk update && apk add openssl
+    COPROCESSOR_KEY_SECRET_NAME="{{ .Values.config.coprocessorKey.secret.name }}"
+    COPROCESSOR_KEY_SECRET_KEY="{{ .Values.config.coprocessorKey.secret.key }}"
+    if ! kubectl get secret ${COPROCESSOR_KEY_SECRET_NAME}; then
+      COPROCESSOR_KEY_VALUE=$(openssl rand -hex 32 | sed 's/^/0x/')
+      kubectl create secret generic ${COPROCESSOR_KEY_SECRET_NAME} --from-literal ${COPROCESSOR_KEY_SECRET_KEY}=${COPROCESSOR_KEY_VALUE}
+    else
+      echo "skipping: secret ${COPROCESSOR_KEY_SECRET_NAME} already exists" 2>&1
+    fi
+    DATABASE_SECRET_NAME="{{ .Values.config.database.secret.name }}"
+    DATABASE_SECRET_KEY="{{ .Values.config.database.secret.key }}"
+    if ! kubectl get secret ${DATABASE_SECRET_NAME}; then
+      DATABASE_SECRET_VALUE="{{ .Values.config.database.secret.value }}"
+      kubectl create secret generic ${DATABASE_SECRET_NAME} --from-literal ${DATABASE_SECRET_KEY}=${DATABASE_SECRET_VALUE}
+    else
+      echo "skipping: secret ${DATABASE_SECRET_NAME} already exists" 2>&1
+    fi
+{{- end }}

@@ -1,0 +1,31 @@
+repositories:
+  - name: bitnami
+    url: https://charts.bitnami.com/bitnami
+
+releases:
+  ## S3 - MINIO
+  - name: minio
+    namespace: fhevm
+    chart: bitnami/minio
+    version: 15.0.3
+    values:
+      - minio-values.yaml
+
+  # FHEVM postgresql    
+  - name: fhevm-postgresql
+    namespace: fhevm
+    chart: bitnami/postgresql
+    version: 13.0.0
+    values:
+      - postgresql-values.yaml
+
+  # FHEVM coprocessor
+  - name: fhevm-coprocessor
+    namespace: fhevm
+    chart: "../../charts/fhevm-coprocessor"
+    values:
+      - coprocessor-values.yaml
+    needs:
+      - fhevm-postgresql
+      - minio
+

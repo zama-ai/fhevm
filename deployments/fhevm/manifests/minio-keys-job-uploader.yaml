@@ -1,0 +1,89 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-keys-uploader
+  namespace: fhevm
+spec:
+  template:
+    spec:
+      # # Temporarily used to simulate KMS
+      # # this is a hack to copy files from local filesystem to pvc
+      # # POD=$(kubectl get pod -n fhevm -l job-name=minio-keys-uploader -o jsonpath='{.items[0].metadata.name}')
+      # # kubectl cp fhevm-keys/sks fhevm/$POD:/keys/sks -c init-keys
+      # initContainers:
+      # - name: init-keys
+      #   image: busybox
+      #   command: ['sh', '-c', 'sleep 3600']
+      #   volumeMounts:
+      #   - name: keys-storage
+      #     mountPath: /keys
+      containers:
+      - name: keys-uploader
+        image: debian:stable-slim
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            set -e
+            apt update && apt install -y wget
+
+            MINIO_URL="http://minio:9000"
+            AWS_ACCESS_KEY_ID="fhevm-access-key"
+            AWS_SECRET_ACCESS_KEY="fhevm-access-secret-key"
+            BUCKET_NAME="kms-public"
+            TARGET_PATHS=(PublicKey ServerKey CRS)
+            FILES_DIR="/keys"
+            FILES=(pks sks pp)
+
+            wget https://dl.min.io/client/mc/release/linux-amd64/mc -O /usr/local/bin/mc
+            chmod +x /usr/local/bin/mc
+
+            mc alias set minio "$MINIO_URL" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY"
+
+            for i in "${!FILES[@]}"; do
+              file="${FILES[$i]}"
+              target="${TARGET_PATHS[$i]}"
+              if [ ! -f "$FILES_DIR/$file" ]; then
+                echo "Error: File $file not found"
+                exit 1
+              fi
+              HASH=$(sha256sum "$FILES_DIR/$file" | awk '{print $1}')
+              DEST_PATH="minio/${BUCKET_NAME}/kms/PUB/${target}/$HASH"
+               # Copy with file preservation and checksum
+              if ! mc cp \
+                --attr "Content-Type=application/octet-stream" \
+                --preserve \
+                --checksum SHA256 \
+                "$FILES_DIR/$file" \
+                "$DEST_PATH"; then
+                echo "Error: Failed to upload $file"
+                exit 1
+              fi
+              
+              # Verify upload
+              if ! mc ls "$DEST_PATH"; then
+                echo "Error: Failed to verify upload"
+                exit 1
+              fi
+              
+              echo "Successfully uploaded $file to $DEST_PATH"
+            done 
+        volumeMounts:
+        - name: keys-storage
+          mountPath: /keys
+      restartPolicy: Never
+      volumes:
+      - name: keys-storage
+        persistentVolumeClaim:
+          claimName: keys-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: keys-pvc
+  namespace: fhevm
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi

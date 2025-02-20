@@ -1,0 +1,22 @@
+{{- if .Values.server.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: coprocessor-server
+    app.kubernetes.io/name: {{ include "serverName" . }}
+  name: {{ include "serverName" . }}
+spec:
+  clusterIP: None
+  ports:
+    - name: rpc
+      port: {{ .Values.server.ports.rpc }}
+      targetPort: {{ .Values.server.ports.rpc }}
+    - name: metrics
+      port: {{ .Values.server.ports.metrics }}
+      targetPort: {{ .Values.server.ports.metrics }}
+  selector:
+    app: coprocessor-server
+    app.kubernetes.io/name: {{ include "serverName" . }}
+  type: ClusterIP
+{{- end }}
