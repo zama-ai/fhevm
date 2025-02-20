@@ -141,6 +141,7 @@ task("task:initHttpz")
   .addParam("adminPrivateKey", "The admin private key")
   .addParam("protocolMetadata", "The protocol metadata")
   .addParam("adminAddresses", "The admin addresses")
+  .addParam("kmsThreshold", "The KMS threshold")
   .addParam("kmsNodes", "The KMS nodes")
   .addParam("coprocessors", "The coprocessors")
   .addParam("layer1Network", "The L1 network")
@@ -158,30 +159,21 @@ task("task:initHttpz")
     const metadata = JSON.parse(taskArguments.protocolMetadata);
     // Parse the admin addresses
     const adminAddresses = JSON.parse(taskArguments.adminAddresses);
+    // Parse the KMS nodes
+    const kmsNodes = JSON.parse(taskArguments.kmsNodes);
+    // Parse the coprocessors
+    const coprocessors = JSON.parse(taskArguments.coprocessors);
 
     // Initialize the HTTPZ contract
-    const initializeTx = await httpz.connect(deployer).initialize(metadata, adminAddresses);
+    const initializeTx = await httpz
+      .connect(deployer)
+      .initialize(metadata, adminAddresses, taskArguments.kmsThreshold, kmsNodes, coprocessors);
     await initializeTx.wait();
     console.log("HTTPZ contract initialized successfully!");
     console.log("Protocol metadata:", metadata);
     console.log("Admin addresses:", adminAddresses, "\n");
-
-    // Parse the KMS nodes
-    const kmsNodes = JSON.parse(taskArguments.kmsNodes);
-
-    // Add the KMS nodes
-    // Note: KMS nodes need to be up and running in order to be added in the HTTPZ contract.
-    // Here we only send a request, we don't check for a response
-    await httpz.connect(admin).addKmsNodes(kmsNodes);
-    console.log("Adding KMS nodes:", kmsNodes, "\n");
-
-    // Parse the coprocessors
-    const coprocessors = JSON.parse(taskArguments.coprocessors);
-
-    // Add the coprocessors
-    // Note: Coprocessors need to be up and running in order to be added in the HTTPZ contract.
-    // Here we only send a request, we don't check for a response
-    await httpz.connect(admin).addCoprocessors(coprocessors);
+    console.log("KMS threshold:", taskArguments.kmsThreshold, "\n");
+    console.log("KMS nodes:", kmsNodes, "\n");
     console.log("Adding coprocessors:", coprocessors, "\n");
 
     // Parse the L1 network

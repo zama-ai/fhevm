@@ -231,12 +231,12 @@ contract ACLManager is IACLManager {
         return _delegatedAccounts[delegator][delegatee][chainId][delegationDigest];
     }
 
-    /// @notice Checks if the given confirmation count reach the consensus among the Coprocessors.
-    /// @dev This function calls the HTTPZ contract to retrieve the current Coprocessors.
-    /// @dev The consensus threshold is calculated as the simple majority of the total Coprocessors.
-    function _isConsensusReached(uint8 confirmCount) internal view returns (bool) {
-        uint256 coprocessorsCount = _HTTPZ.getCoprocessorsCount();
-        uint256 consensusThreshold = coprocessorsCount / 2 + 1;
-        return confirmCount >= consensusThreshold;
+    /// @notice Checks if the consensus is reached among the Coprocessors.
+    /// @dev This function calls the HTTPZ contract to retrieve the consensus threshold.
+    /// @param coprocessorCounter The number of coprocessors that agreed
+    /// @return Whether the consensus is reached
+    function _isConsensusReached(uint8 coprocessorCounter) internal view virtual returns (bool) {
+        uint256 consensusThreshold = _HTTPZ.getCoprocessorMajorityThreshold();
+        return coprocessorCounter >= consensusThreshold;
     }
 }

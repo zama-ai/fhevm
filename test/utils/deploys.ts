@@ -4,8 +4,14 @@ import hre from "hardhat";
 /// @dev Deploy the HTTPZ contract, initialize the protocol, add KMS nodes and coprocessors
 export async function deployHTTPZFixture() {
   // Define the number of KMS nodes and coprocessors
+  const kmsThreshold = 1;
   const nKmsNodes = 4;
   const nCoprocessors = 3;
+
+  // Check that the KMS threshold is valid
+  if (3 * kmsThreshold >= nKmsNodes) {
+    throw new Error("Invalid KMS threshold: 3 * kmsThreshold must be less than the number of KMS nodes");
+  }
 
   // Get signers
   // - the owner owns the HTTPZ contract and can initialize the protocol, update FHE params
@@ -13,6 +19,7 @@ export async function deployHTTPZFixture() {
   // - the user has no particular rights and is mostly used to check roles are properly set
   const signers = await hre.ethers.getSigners();
   const [owner, admin, user] = signers.splice(0, 3);
+  const admins = [admin];
 
   const kmsSigners = signers.splice(0, nKmsNodes);
   const coprocessorSigners = signers.splice(0, nCoprocessors);
@@ -22,12 +29,15 @@ export async function deployHTTPZFixture() {
     connectorAddress: kmsNode.address,
     identity: hre.ethers.randomBytes(32),
     ipAddress: "127.0.0.1",
+    signedNodes: [hre.ethers.randomBytes(32)],
+    daAddress: "0x1234567890abcdef1234567890abcdef12345678",
   }));
 
   // Create dummy Coprocessors with the signers' addresses
   const coprocessors = coprocessorSigners.map((coprocessorSigner) => ({
     connectorAddress: coprocessorSigner.address,
     identity: hre.ethers.randomBytes(32),
+    daAddress: "0x1234567890abcdef1234567890abcdef12345678",
   }));
 
   const HTTPZ = await hre.ethers.getContractFactory("HTTPZ", owner);
@@ -35,32 +45,25 @@ export async function deployHTTPZFixture() {
 
   // Initialize a dummy protocol
   const protocolMetadata = { name: "Protocol", website: "https://protocol.com" };
-  await httpz.connect(owner).initialize(protocolMetadata, [admin.address]);
+  await httpz.connect(owner).initialize(protocolMetadata, admins, kmsThreshold, kmsNodes, coprocessors);
 
-  // Add the KMS nodes
-  await httpz.connect(admin).addKmsNodes(kmsNodes);
+  const network = {
+    chainId: 2025,
+    httpzLibrary: "0x1234567890abcdef1234567890abcdef12345678",
+    acl: "0xabcdef1234567890abcdef1234567890abcdef12",
+    name: "Network",
+    website: "https://network.com",
+  };
 
-  // Mark all KMS nodes as ready, and provide a dummy keychain DA address for each
-  for (let i = 0; i < nKmsNodes; i++) {
-    await httpz
-      .connect(kmsSigners[i])
-      .kmsNodeReady(hre.ethers.randomBytes(32), "0x1234567890abcdef1234567890abcdef12345678");
-  }
+  // Add network
+  await httpz.connect(admin).addNetwork(network);
 
-  // Add the coprocessors
-  await httpz.connect(admin).addCoprocessors(coprocessors);
-
-  // Mark all coprocessors as ready, and provide a dummy coprocessor DA address for each
-  for (let i = 0; i < nCoprocessors; i++) {
-    await httpz.connect(coprocessorSigners[i]).coprocessorReady("0x1234567890abcdef1234567890abcdef12345678");
-  }
-
-  return { httpz, owner, admin, user, kmsSigners, coprocessorSigners, signers };
+  return { httpz, owner, admins, user, kmsSigners, coprocessorSigners, signers, kmsNodes, coprocessors, network };
 }
 
 /// @dev Deploy the KeyManager contract
 export async function deployKeyManagerFixture() {
-  const { httpz, owner, admin, user, kmsSigners, coprocessorSigners, signers } = await loadFixture(deployHTTPZFixture);
+  const { httpz, owner, admins, user, kmsSigners, coprocessorSigners, signers } = await loadFixture(deployHTTPZFixture);
 
   const KeyManager = await hre.ethers.getContractFactory("KeyManager", owner);
   const keyManager = await KeyManager.deploy(httpz);
@@ -69,12 +72,12 @@ export async function deployKeyManagerFixture() {
   const fheParams = { dummy: "dummy" };
   await keyManager.connect(owner).setFheParams(fheParams);
 
-  return { httpz, keyManager, owner, admin, user, kmsSigners, coprocessorSigners, signers, fheParams };
+  return { httpz, keyManager, owner, admins, user, kmsSigners, coprocessorSigners, signers, fheParams };
 }
 
 /// @dev Deploy the CiphertextStorage contract
 export async function deployCiphertextStorageFixture() {
-  const { httpz, keyManager, owner, admin, user, kmsSigners, coprocessorSigners, signers, fheParams } =
+  const { httpz, keyManager, owner, admins, user, kmsSigners, coprocessorSigners, signers, fheParams } =
     await loadFixture(deployKeyManagerFixture);
 
   const CiphertextStorage = await hre.ethers.getContractFactory("CiphertextStorage", owner);
@@ -85,7 +88,7 @@ export async function deployCiphertextStorageFixture() {
     keyManager,
     ciphertextStorage,
     owner,
-    admin,
+    admins,
     user,
     kmsSigners,
     coprocessorSigners,

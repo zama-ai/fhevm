@@ -191,14 +191,12 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
             );
     }
 
-    /// @notice Checks if the ZK Proof verification consensus is reached among the Coprocessors.
-    /// @dev This function calls the HTTPZ contract to retrieve the current Coprocessors.
-    /// @dev The consensus threshold is calculated as the simple majority of the total Coprocessors.
-    /// @param verifiedSignaturesCount The number of signatures that have been verified for a ZK Proof
-    /// @return Whether the consensus for ZK Proof verification is reached
-    function _isConsensusReached(uint256 verifiedSignaturesCount) internal view virtual returns (bool) {
-        uint256 coprocessorsCount = _HTTPZ.getCoprocessorsCount();
-        uint256 consensusThreshold = coprocessorsCount / 2 + 1;
-        return verifiedSignaturesCount >= consensusThreshold;
+    /// @notice Checks if the consensus is reached among the Coprocessors.
+    /// @dev This function calls the HTTPZ contract to retrieve the consensus threshold.
+    /// @param coprocessorCounter The number of coprocessors that agreed
+    /// @return Whether the consensus is reached
+    function _isConsensusReached(uint256 coprocessorCounter) internal view virtual returns (bool) {
+        uint256 consensusThreshold = _HTTPZ.getCoprocessorMajorityThreshold();
+        return coprocessorCounter >= consensusThreshold;
     }
 }
