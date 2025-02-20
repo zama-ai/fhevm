@@ -234,11 +234,6 @@ spec:
               value: {{ .Values.runMode }}
             - name: RUST_LOG
               value: {{ .Values.rustLog }}
-          {{- if .Values.kmsCore.envFrom.configmap.name }}
-          envFrom:
-            - configMapRef:
-                name: {{ .Values.kmsCore.envFrom.configmap.name }}
-          {{- end }}
           {{- if not .Values.kmsCore.privateVault.s3.enabled }}
           volumeMounts:
             - mountPath: /keys
@@ -309,11 +304,6 @@ spec:
             - name: AWS_SECRET_ACCESS_KEY
               value: {{ (index .Values.minio.provisioning.users 0).password}}
             {{- end }}
-          {{- if .Values.kmsCore.envFrom.configmap.name }}
-          envFrom:
-            - configMapRef:
-                name: {{ .Values.kmsCore.envFrom.configmap.name }}
-          {{- end }}
           workingDir: {{ .Values.kmsCore.workdir }}
           volumeMounts:
             - mountPath: {{ .Values.kmsCore.workdir }}
