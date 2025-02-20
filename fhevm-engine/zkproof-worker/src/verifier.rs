@@ -1,4 +1,11 @@
+use aes_prng::AesRng; // Temp
+use alloy_primitives::FixedBytes;
+use alloy_signer::{Signature, SignerSync};
+use alloy_signer_local::PrivateKeySigner;
+use k256::ecdsa::{SigningKey, VerifyingKey};
+use k256::elliptic_curve::rand_core::SeedableRng;
 use sqlx::{postgres::PgListener, PgPool, Row};
+use std::char::from_u32_unchecked;
 use std::str::FromStr;
 
 use crate::ExecutionError;
@@ -11,7 +18,7 @@ use tfhe::{CompactPublicKey, ProvenCompactCiphertextList};
 use tokio::io::AsyncReadExt;
 
 use tokio::{select, time::Duration};
-use tracing::debug;
+use tracing::{debug, info};
 
 pub const SAFE_SER_SIZE_LIMIT: u64 = 1024 * 1024 * 1024 * 2;
 
@@ -79,7 +86,7 @@ async fn execute_verify_proof_routine(
         let contract_address = row.get("contract_address");
         let user_address = row.get("user_address");
 
-        let md = Metadata::new(contract_address, user_address, chain_id);
+        let md = AuxiliaryData::new(contract_address, user_address, chain_id);
         match verify_proof_and_sign(zk_proof_id, crs, compact_pubkey, &md, &input, &handles).await {
             Ok(_signature) => {
                 // TODO: Should we store the signature in the database for this zk_proof_id?
@@ -131,33 +138,48 @@ pub(crate) async fn verify_proof_and_sign(
     proof_id: i64,
     crs: &CompactPkeCrs,
     public_key: &CompactPublicKey,
-    md: &Metadata,
-    input_bytes: &[u8],
+    md: &AuxiliaryData,
+    raw_ct: &[u8],
     handles: &[u8],
 ) -> Result<Vec<u8>, ExecutionError> {
     let md_bytes = md.assemble();
 
     // TODO: is the input bytes a valid ProvenCompactCiphertextList?
-    let mut cursor = std::io::Cursor::new(input_bytes);
+    let mut cursor = std::io::Cursor::new(raw_ct);
     let proven_ct: ProvenCompactCiphertextList = safe_deserialize(&mut cursor, SAFE_SER_SIZE_LIMIT)
-        .map_err(ExecutionError::InvalidInputBytes)?;
+        .map_err(ExecutionError::InvalidCiphertextBytes)?;
 
     if proven_ct.verify(crs, public_key, &md_bytes).is_invalid() {
         return Err(ExecutionError::InvalidProof(proof_id));
     }
 
     // TODO: How to extract ciphertexts from packed ciphertexts according to data types embedded in packed ciphertexts?
-    // proven_ct.iter()
+    // proven_ct.iter() mut rand::rng::<i32>()
+    let mut rng = AesRng::seed_from_u64(12); // TODO: read from external file
+    let sk = SigningKey::random(&mut rng);
 
-    compute_signature(&proven_ct, handles)
+    compute_signature(sk, &proven_ct, handles)
 }
 
 pub(crate) fn compute_signature(
+    sk: k256::ecdsa::SigningKey,
     _proven_ct: &ProvenCompactCiphertextList,
     _handles: &[u8],
 ) -> Result<Vec<u8>, ExecutionError> {
-    // TODO: Implement signature computation
-    Ok(vec![])
+    let signer = PrivateKeySigner::from_signing_key(sk.clone());
+    let signer_address = signer.address();
+
+    info!("Signer address: {}", signer_address);
+    let message_hash: FixedBytes<32> = FixedBytes::<32>::default(); // TODO: How to hash the message?
+
+    // Sign the hash synchronously with the wallet.
+    let signature = signer
+        .sign_hash_sync(&message_hash)
+        .unwrap()
+        .as_bytes()
+        .to_vec();
+
+    Ok(signature)
 }
 
 /// Retrieves the CRS from an S3 bucket
@@ -196,13 +218,13 @@ pub async fn download_s3_binary(
     Ok(buffer)
 }
 
-pub(crate) struct Metadata {
+pub(crate) struct AuxiliaryData {
     chain_id: i32,
     user_address: String,
     contract_address: String,
 }
 
-impl Metadata {
+impl AuxiliaryData {
     pub fn new(contract_address: String, user_address: String, chain_id: i32) -> Self {
         Self {
             contract_address,
@@ -239,7 +261,7 @@ pub fn fetch_compact_pubkey() -> Result<CompactPublicKey, ExecutionError> {
 
     let mut cursor = std::io::Cursor::new(bytes);
     let pks: tfhe::CompactPublicKey = safe_deserialize(&mut cursor, SAFE_SER_SIZE_LIMIT)
-        .map_err(ExecutionError::InvalidInputBytes)?;
+        .map_err(ExecutionError::InvalidPkBytes)?;
 
     Ok(pks)
 }

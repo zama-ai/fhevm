@@ -21,7 +21,10 @@ rand = {workspace = true}
 alloy-primitives = "0.8.21"
 aws-config = "1.1"       
 aws-sdk-s3 = "1.10"       
-
+alloy-signer-local = "0.3.6"
+alloy-signer = "0.3.6"
+k256 = "0.13"
+aes-prng = "0.2.1"
 
 # crates.io dependencies
 [features]

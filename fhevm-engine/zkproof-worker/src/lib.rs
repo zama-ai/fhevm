@@ -21,8 +21,11 @@ pub enum ExecutionError {
     #[error("Invalid CRS bytes {0}")]
     InvalidCrsBytes(String),
 
-    #[error("Invalid Input bytes {0}")]
-    InvalidInputBytes(String),
+    #[error("Invalid Ciphertext bytes {0}")]
+    InvalidCiphertextBytes(String),
+
+    #[error("Invalid Compact Public key bytes {0}")]
+    InvalidPkBytes(String),
 
     #[error("Invalid Proof: {0}")]
     InvalidProof(i64),
@@ -32,6 +35,11 @@ pub enum ExecutionError {
 mod tests {
     #[tokio::test]
     async fn test_verify_proofs() {
-        //crate::verifier::verify_proof(&[], &[]).await.unwrap();
+        // TODO: How to fetch an example CRS, Pk and proof to automate this test?
+        /*
+        if let Err(e) = execute_verify_proof_routine(&pool, &crs, &compact_pubkey).await {
+            debug!(target: "worker", "Error executing verify_proof_routine: {:?}", e);
+        }
+         */
     }
 }
