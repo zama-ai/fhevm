@@ -314,11 +314,10 @@ spec:
             - configMapRef:
                 name: {{ .Values.kmsCore.envFrom.configmap.name }}
           {{- end }}
+          workingDir: {{ .Values.kmsCore.workdir }}
           volumeMounts:
             - mountPath: {{ .Values.kmsCore.workdir }}
               name: workdir
-            - mountPath: /var/lib/kms-core/config
-              name: config-files
             {{- if not .Values.kmsCore.privateVault.s3.enabled }}
             - mountPath: /keys
               name: keys
