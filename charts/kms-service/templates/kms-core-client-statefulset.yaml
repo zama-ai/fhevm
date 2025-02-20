@@ -27,9 +27,9 @@ spec:
             - name: CORE_CLIENT__S3_ENDPOINT
               value: "{{ if .Values.minio.enabled }}http://minio:9000/{{ .Values.kmsCore.publicVault.s3.bucket }}{{ else }}https://zama-zws-dev-kms-party-kms-threshold-staging-fwz7w.s3.{{ .Values.kmsCore.aws.region }}.amazonaws.com{{ end }}/{{ .Values.kmsCore.publicVault.s3.path }}"
             - name: CORE_CLIENT__OBJECT_FOLDER
-              value: '[{{ if .Values.kmsCore.thresholdMode.enabled }}{{ range $i, $peer := .Values.kmsCore.thresholdMode.peersList }}{{- if $i -}},{{ end }}{{-  printf "PUB-p%s" $peer.id  -}}{{- end }}{{ else }}"PUB"{{ end }}]'
+              value: '[{{ if .Values.kmsCore.thresholdMode.enabled }}{{ range $i, $peer := .Values.kmsCore.thresholdMode.peersList }}{{- if $i -}},{{ end }}"PUB-p{{-  $peer.id  -}}{{- end }}"{{ else }}"PUB"{{ end }}]'
             - name: CORE_CLIENT__CORE_ADDRESSES
-              value: '[{{ range $i, $peer := .Values.kmsCore.thresholdMode.peersList }}{{- if $i -}},{{ end }}{{-  printf "http://%s:%s" $peer.host $.Values.kmsCore.ports.client  -}}{{- end }}]'
+              value: '["{{ range $i, $peer := .Values.kmsCore.thresholdMode.peersList }}{{- if $i -}},{{ end }}"http://{{-  $peer.host }}:{{-  $.Values.kmsCore.ports.client  -}}"{{- end }}"]'
             - name: CORE_CLIENT__NUM_MAJORITY
               value: '{{ .Values.kmsCoreClient.num_majority | int | quote }}'
             - name: CORE_CLIENT__NUM_RECONSTRUCT
