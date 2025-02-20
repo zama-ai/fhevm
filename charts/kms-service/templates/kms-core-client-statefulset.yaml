@@ -23,11 +23,7 @@ spec:
       containers:
         - name: kms-core-client
           image: {{ .Values.kmsCoreClient.image.name }}:{{ .Values.kmsCoreClient.image.tag }}
-          command: ["/bin/sh"]
-          args:
-            - -c
-            - |
-              kms-core-client
+          command: ["/bin/sh", "-c", "sleep infinity"]
           env:
             - name: CORE_CLIENT__S3_ENDPOINT
               value: "{{ if .Values.minio.enabled }}http://minio:9000/{{ .Values.kmsCore.publicVault.s3.bucket }}{{ else }}https://zama-zws-dev-kms-party-kms-threshold-staging-fwz7w.s3.{{ .Values.kmsCore.aws.region }}.amazonaws.com{{ end }}/{{ .Values.kmsCore.publicVault.s3.path }}"
