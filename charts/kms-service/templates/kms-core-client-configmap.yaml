@@ -10,7 +10,7 @@ data:
     #!/bin/sh
     set -e
     echo "loading configuration from env vars into the config.toml file"
-    cat <<EOF >>./kms-core-client/config.toml
+    cat <<EOF >>config.toml
     s3_endpoint = $S3_ENDPOINT
     object_folder = $OBJECT_FOLDER
     core_addresses = $CORE_ADDRESSES
