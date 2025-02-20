@@ -3,6 +3,9 @@ apiVersion: kyverno.io/v1
 kind: Policy
 metadata:
   name: {{ include "kmsCoreName" . }}-mutate-pod
+  annotations:
+    "helm.sh/hook": "pre-install"
+    "helm.sh/hook-weight": "1"
 spec:
   validationFailureAction: Audit
   rules:
