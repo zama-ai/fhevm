@@ -1,6 +1,6 @@
 [package]
 name = "zkproof-worker"
-version = "0.6.1"
+version = "0.1.0"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,12 +9,24 @@ license.workspace = true
 # workspace dependencies
 clap = { workspace = true }
 tfhe = { workspace = true }
+sqlx = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }  
+tokio-util = { workspace = true }
+bincode = { workspace = true }
+thiserror = { version = "2.0" }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+rand = {workspace = true}
+alloy-primitives = "0.8.21"
+aws-config = "1.1"       
+aws-sdk-s3 = "1.10"       
+
 
 # crates.io dependencies
-
-
-# arch-specific dependencies
-
-
 [features]
 nightly-avx512 = ["tfhe/nightly-avx512"]
+
+[[bin]]
+name = "sns_worker"
+path = "src/bin/zkproof_worker.rs"
