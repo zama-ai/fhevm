@@ -186,3 +186,6 @@ podSecurityContext:
 podSecurityContextForEnclave:
   fsGroup: 1001     # Keep this as 1001 to match device group
   supplementalGroups: [1001]  # Add device group as supplemental
+
+kyverno:
+  enabled: false
