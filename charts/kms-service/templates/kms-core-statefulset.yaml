@@ -234,11 +234,13 @@ spec:
               value: {{ .Values.runMode }}
             - name: RUST_LOG
               value: {{ .Values.rustLog }}
-          {{- if not .Values.kmsCore.privateVault.s3.enabled }}
           volumeMounts:
+            {{- if not .Values.kmsCore.privateVault.s3.enabled }}
             - mountPath: /keys
               name: keys
-          {{- end }}
+            {{- end }}
+            - mountPath: /var/lib/kms-core/config
+              name: config-files
           resources:
             requests:
               memory: {{ .Values.kmsCore.resources.requests.memory }}
