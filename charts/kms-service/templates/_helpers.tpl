@@ -10,7 +10,7 @@
 
 {{- define "kmsCoreClientName" -}}
 {{- $kmsCoreClientNameDefault := printf "%s-%s" .Release.Name "kms-core-client" }}
-{{- default $kmsCoreClientNameDefault .Values.kmsCore.nameOverride | trunc 52 | trimSuffix "-" -}}
+{{- default $kmsCoreClientNameDefault .Values.kmsCoreClient.nameOverride | trunc 52 | trimSuffix "-" -}}
 {{- end -}}
 
 {{- define "kmsCoreAddress" -}}
