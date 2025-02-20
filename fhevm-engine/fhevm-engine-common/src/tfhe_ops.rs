@@ -1,9 +1,6 @@
 use crate::{
     keys::FhevmKeys,
-    types::{
-        FheOperationType, FhevmError, SupportedFheCiphertexts,
-        SupportedFheOperations,
-    },
+    types::{FheOperationType, FhevmError, SupportedFheCiphertexts, SupportedFheOperations},
     utils::{safe_deserialize, safe_deserialize_conformant},
 };
 use tfhe::{
@@ -16,8 +13,9 @@ use tfhe::{
         RotateLeft, RotateRight,
     },
     zk::CompactPkeCrs,
-    FheBool, FheUint1024, FheUint128, FheUint16, FheUint160, FheUint2, FheUint2048, FheUint256,
-    FheUint32, FheUint4, FheUint512, FheUint64, FheUint8, Seed,
+    CompactCiphertextList, CompactCiphertextListExpander, FheBool, FheUint1024, FheUint128,
+    FheUint16, FheUint160, FheUint2, FheUint2048, FheUint256, FheUint32, FheUint4, FheUint512,
+    FheUint64, FheUint8, Seed,
 };
 
 pub fn deserialize_fhe_ciphertext(
@@ -273,8 +271,6 @@ pub fn try_expand_ciphertext_list(
     input_ciphertext: &[u8],
     public_params: &CompactPkeCrs,
 ) -> Result<Vec<SupportedFheCiphertexts>, FhevmError> {
-    let mut res = Vec::new();
-
     let pk_params = FhevmKeys::new_config()
         .public_key_encryption_parameters()
         .map_err(|_| FhevmError::MissingTfheRsData)?;
@@ -290,6 +286,13 @@ pub fn try_expand_ciphertext_list(
         .expand_without_verification()
         .map_err(|e| FhevmError::CiphertextExpansionError(e))?;
 
+    extract_ct_list(&expanded)
+}
+
+pub fn extract_ct_list(
+    expanded: &CompactCiphertextListExpander,
+) -> Result<Vec<SupportedFheCiphertexts>, FhevmError> {
+    let mut res = Vec::new();
     for idx in 0..expanded.len() {
         let Some(data_kind) = expanded.get_kind_of(idx) else {
             panic!("we're itering over what ciphertext told us how many ciphertexts are there, it must exist")
