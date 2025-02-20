@@ -2961,6 +2961,7 @@ dependencies = [
  "anyhow",
  "clap",
  "foundry-compilers",
+ "futures-util",
  "serial_test",
  "sqlx",
  "tokio",

@@ -1,6 +1,7 @@
 use alloy::{
     network::Ethereum, primitives::Address, providers::Provider, signers::local::PrivateKeySigner,
 };
+use futures_util::FutureExt;
 use sqlx::postgres::PgListener;
 use std::{sync::Arc, time::Duration};
 use tokio::task::JoinSet;
@@ -14,28 +15,30 @@ pub struct TransactionSender<P: Provider<Ethereum> + Clone + 'static> {
     cancel_token: CancellationToken,
     conf: ConfigSettings,
     operations: Vec<Arc<dyn ops::TransactionOperation<P>>>,
+    zkpok_manager_address: Address,
+    ciphertext_storage_address: Address,
 }
 
 impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
     pub fn new(
-        zkpok_manager_address: &Address,
-        ciphertext_storage_address: &Address,
+        zkpok_manager_address: Address,
+        ciphertext_storage_address: Address,
         signer: PrivateKeySigner,
-        provider: Arc<P>,
+        provider: P,
         cancel_token: CancellationToken,
         conf: ConfigSettings,
-        gas: Option<u64>
+        gas: Option<u64>,
     ) -> Self {
         let operations: Vec<Arc<dyn ops::TransactionOperation<P>>> = vec![
             Arc::new(ops::verify_proof::VerifyProofOperation::new(
-                *zkpok_manager_address,
+                zkpok_manager_address,
                 provider.clone(),
                 signer.clone(),
                 conf.clone(),
-                gas
+                gas,
             )),
             Arc::new(ops::add_ciphertext::AddCiphertextOperation::new(
-                *ciphertext_storage_address,
+                ciphertext_storage_address,
                 provider.clone(),
             )),
         ];
@@ -43,15 +46,18 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
             cancel_token,
             conf,
             operations,
+            zkpok_manager_address,
+            ciphertext_storage_address,
         }
     }
 
     pub async fn run(&self) -> anyhow::Result<()> {
-        info!(target: TXN_SENDER_TARGET, "Starting transaction sender with: {:?}", self.conf);
+        info!(target: TXN_SENDER_TARGET, "Starting Transaction Sender with: {:?}, ZKPoKManager: {}, CiphertextStorage: {}",
+            self.conf, self.zkpok_manager_address, self.ciphertext_storage_address);
 
         let db_pool = sqlx::postgres::PgPoolOptions::new()
-            .max_connections(self.conf.db_pool_size)
-            .connect(&self.conf.db_url)
+            .max_connections(self.conf.database_pool_size)
+            .connect(&self.conf.database_url)
             .await?;
         let mut join_set = JoinSet::new();
 
@@ -69,7 +75,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
                     listener.listen(&op_channel).await?;
                     loop {
                         if token.is_cancelled() {
-                            info!(target: TXN_SENDER_TARGET, "Operation {} cancelling", op_channel);
+                            info!(target: TXN_SENDER_TARGET, "Operation {} stopping", op_channel);
                             break;
                         }
 
@@ -87,15 +93,17 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
                                 continue;
                             }
                             Ok(false) => {
+
                                 // Maybe no more work to do, go and wait for the next notification.
                                 sender.reset_sleep_duration(&mut sleep_duration);
 
+                                let listener = listener.try_recv().fuse();
                                 tokio::select! {
                                     _ = token.cancelled() => {
-                                        info!(target: TXN_SENDER_TARGET, "Operation {} cancelling", op_channel);
+                                        info!(target: TXN_SENDER_TARGET, "Operation {} stopping", op_channel);
                                         break;
                                     }
-                                    notif = listener.try_recv() => {
+                                    notif = listener => {
                                         match notif {
                                             Ok(Some(_)) => {
                                                 debug!(target: TXN_SENDER_TARGET,

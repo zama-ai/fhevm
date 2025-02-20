@@ -2,7 +2,6 @@ use super::TransactionOperation;
 use alloy::{network::Ethereum, primitives::Address, providers::Provider, sol};
 use async_trait::async_trait;
 use sqlx::{Pool, Postgres};
-use std::sync::Arc;
 
 sol!(
     #[sol(rpc)]
@@ -13,11 +12,11 @@ sol!(
 #[derive(Clone)]
 pub struct AddCiphertextOperation<P: Provider<Ethereum> + Clone + 'static> {
     ciphertext_storage_address: Address,
-    provider: Arc<P>,
+    provider: P,
 }
 
 impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
-    pub fn new(ciphertext_storage_address: Address, provider: Arc<P>) -> Self {
+    pub fn new(ciphertext_storage_address: Address, provider: P) -> Self {
         Self {
             ciphertext_storage_address,
             provider,

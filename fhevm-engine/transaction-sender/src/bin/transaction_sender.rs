@@ -1,4 +1,4 @@
-use std::{str::FromStr, sync::Arc};
+use std::str::FromStr;
 
 use alloy::{
     network::EthereumWallet, primitives::Address, providers::ProviderBuilder,
@@ -74,25 +74,23 @@ async fn main() -> anyhow::Result<()> {
     let conf = Conf::parse();
     let signer = PrivateKeySigner::from_str(conf.private_key.trim())?;
     let wallet = EthereumWallet::new(signer.clone());
-    let provider = Arc::new(
-        ProviderBuilder::new()
-            .wallet(wallet.clone())
-            .on_http(conf.gateway_url.clone()),
-    );
+    let provider = ProviderBuilder::new()
+        .wallet(wallet.clone())
+        .on_http(conf.gateway_url.clone());
     let database_url = conf
         .database_url
         .clone()
         .unwrap_or_else(|| std::env::var("DATABASE_URL").expect("DATABASE_URL is undefined"));
     let cancel_token = CancellationToken::new();
     let sender = TransactionSender::new(
-        &conf.zkpok_manager_address,
-        &conf.ciphertext_storage_address,
+        conf.zkpok_manager_address,
+        conf.ciphertext_storage_address,
         signer,
         provider,
         cancel_token.clone(),
         ConfigSettings {
-            db_url: database_url,
-            db_pool_size: conf.database_pool_size,
+            database_url,
+            database_pool_size: conf.database_pool_size,
 
             verify_proof_resp_db_channel: conf.verify_proof_resp_database_channel,
             add_ciphertexts_db_channel: conf.add_ciphertexts_database_channel,

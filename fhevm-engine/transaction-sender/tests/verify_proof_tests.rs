@@ -30,8 +30,8 @@ async fn verify_proof_response_success() -> anyhow::Result<()> {
     let zkpok_manager = ZKPoKManager::deploy(&provider, false, false).await?;
     let ciphertext_storage = CiphertextStorage::deploy(&provider).await?;
     let txn_sender = TransactionSender::new(
-        &zkpok_manager.address(),
-        &ciphertext_storage.address(),
+        *zkpok_manager.address(),
+        *ciphertext_storage.address(),
         env.signer.clone(),
         provider.clone(),
         env.cancel_token.clone(),
@@ -60,22 +60,18 @@ async fn verify_proof_response_success() -> anyhow::Result<()> {
             .unwrap()
     });
 
-    // Insert a proof into the database.
+    // Insert a proof into the database and notify the sender.
     sqlx::query!(
-        "INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
-         VALUES ($1, $2, $3, $4, $5, true)",
+        "WITH ins AS (
+            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
+            VALUES ($1, $2, $3, $4, $5, true)
+        )
+        SELECT pg_notify($6, '')",
         proof_id as i64,
         42,
-        env.signer.address().to_string(),
-        env.signer.address().to_string(),
+        env.contract_address.to_string(),
+        env.user_address.to_string(),
         &[1u8; 64],
-    )
-    .execute(&env.db_pool)
-    .await?;
-
-    // Notify the sender to process the proof.
-    sqlx::query!(
-        "SELECT pg_notify($1, '')",
         env.conf.verify_proof_resp_db_channel
     )
     .execute(&env.db_pool)
@@ -93,8 +89,8 @@ async fn verify_proof_response_success() -> anyhow::Result<()> {
     };
     let signing_hash = VerifyProofSignatureData {
         handles: expected_handles.clone(),
-        userAddress: env.signer.address(),
-        contractAddress: env.signer.address(),
+        userAddress: env.user_address,
+        contractAddress: env.contract_address,
         chainId: U256::from(42),
     }
     .eip712_signing_hash(&domain);
@@ -134,8 +130,8 @@ async fn verify_proof_response_reversal_already_signed() -> anyhow::Result<()> {
     let zkpok_manager = ZKPoKManager::deploy(&provider, true, false).await?;
     let ciphertext_storage = CiphertextStorage::deploy(&provider).await?;
     let txn_sender = TransactionSender::new(
-        &zkpok_manager.address(),
-        &ciphertext_storage.address(),
+        *zkpok_manager.address(),
+        *ciphertext_storage.address(),
         env.signer.clone(),
         provider.clone(),
         env.cancel_token.clone(),
@@ -152,22 +148,18 @@ async fn verify_proof_response_reversal_already_signed() -> anyhow::Result<()> {
         .get_transaction_count(provider.default_signer_address())
         .await?;
 
-    // Insert a proof into the database.
+    // Insert a proof into the database and notify the sender.
     sqlx::query!(
-        "INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
-         VALUES ($1, $2, $3, $4, $5, true)",
+        "WITH ins AS (
+            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
+            VALUES ($1, $2, $3, $4, $5, true)
+        )
+        SELECT pg_notify($6, '')",
         proof_id as i64,
         42,
-        env.signer.address().to_string(),
-        env.signer.address().to_string(),
+        env.contract_address.to_string(),
+        env.user_address.to_string(),
         &[1u8; 64],
-    )
-    .execute(&env.db_pool)
-    .await?;
-
-    // Notify the sender to process the proof.
-    sqlx::query!(
-        "SELECT pg_notify($1, '')",
         env.conf.verify_proof_resp_db_channel
     )
     .execute(&env.db_pool)
@@ -211,8 +203,8 @@ async fn verify_proof_response_other_reversal_gas_estimation() -> anyhow::Result
     let zkpok_manager = ZKPoKManager::deploy(&provider, false, true).await?;
     let ciphertext_storage = CiphertextStorage::deploy(&provider).await?;
     let txn_sender = TransactionSender::new(
-        &zkpok_manager.address(),
-        &ciphertext_storage.address(),
+        *zkpok_manager.address(),
+        *ciphertext_storage.address(),
         env.signer.clone(),
         provider.clone(),
         env.cancel_token.clone(),
@@ -224,22 +216,18 @@ async fn verify_proof_response_other_reversal_gas_estimation() -> anyhow::Result
 
     let run_handle = tokio::spawn(async move { txn_sender.run().await });
 
-    // Insert a proof into the database.
+    // Insert a proof into the database and notify the sender.
     sqlx::query!(
-        "INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
-         VALUES ($1, $2, $3, $4, $5, true)",
+        "WITH ins AS (
+            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
+            VALUES ($1, $2, $3, $4, $5, true)
+        )
+        SELECT pg_notify($6, '')",
         proof_id as i64,
         42,
-        env.signer.address().to_string(),
-        env.signer.address().to_string(),
+        env.contract_address.to_string(),
+        env.user_address.to_string(),
         &[1u8; 64],
-    )
-    .execute(&env.db_pool)
-    .await?;
-
-    // Notify the sender to process the proof.
-    sqlx::query!(
-        "SELECT pg_notify($1, '')",
         env.conf.verify_proof_resp_db_channel
     )
     .execute(&env.db_pool)
@@ -285,8 +273,8 @@ async fn verify_proof_response_other_reversal_receipt() -> anyhow::Result<()> {
     let ciphertext_storage = CiphertextStorage::deploy(&provider).await?;
     // Create the sender with a gas limit such that no gas estimation is done, forcing failure at receipt (after the txn has been sent).
     let txn_sender = TransactionSender::new(
-        &zkpok_manager.address(),
-        &ciphertext_storage.address(),
+        *zkpok_manager.address(),
+        *ciphertext_storage.address(),
         env.signer.clone(),
         provider.clone(),
         env.cancel_token.clone(),
@@ -298,22 +286,18 @@ async fn verify_proof_response_other_reversal_receipt() -> anyhow::Result<()> {
 
     let run_handle = tokio::spawn(async move { txn_sender.run().await });
 
-    // Insert a proof into the database.
+    // Insert a proof into the database and notify the sender.
     sqlx::query!(
-        "INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
-         VALUES ($1, $2, $3, $4, $5, true)",
+        "WITH ins AS (
+            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
+            VALUES ($1, $2, $3, $4, $5, true)
+        )
+        SELECT pg_notify($6, '')",
         proof_id as i64,
         42,
-        env.signer.address().to_string(),
-        env.signer.address().to_string(),
+        env.contract_address.to_string(),
+        env.user_address.to_string(),
         &[1u8; 64],
-    )
-    .execute(&env.db_pool)
-    .await?;
-
-    // Notify the sender to process the proof.
-    sqlx::query!(
-        "SELECT pg_notify($1, '')",
         env.conf.verify_proof_resp_db_channel
     )
     .execute(&env.db_pool)
@@ -361,8 +345,8 @@ async fn verify_proof_max_retries_remove_entry() -> anyhow::Result<()> {
     let zkpok_manager = ZKPoKManager::deploy(&provider, false, true).await?;
     let ciphertext_storage = CiphertextStorage::deploy(&provider).await?;
     let txn_sender = TransactionSender::new(
-        &zkpok_manager.address(),
-        &ciphertext_storage.address(),
+        *zkpok_manager.address(),
+        *ciphertext_storage.address(),
         env.signer.clone(),
         provider.clone(),
         env.cancel_token.clone(),
@@ -374,22 +358,18 @@ async fn verify_proof_max_retries_remove_entry() -> anyhow::Result<()> {
 
     let run_handle = tokio::spawn(async move { txn_sender.run().await });
 
-    // Insert a proof into the database.
+    // Insert a proof into the database and notify the sender.
     sqlx::query!(
-        "INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
-         VALUES ($1, $2, $3, $4, $5, true)",
+        "WITH ins AS (
+            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
+            VALUES ($1, $2, $3, $4, $5, true)
+        )
+        SELECT pg_notify($6, '')",
         proof_id as i64,
         42,
-        env.signer.address().to_string(),
-        env.signer.address().to_string(),
+        env.contract_address.to_string(),
+        env.user_address.to_string(),
         &[1u8; 64],
-    )
-    .execute(&env.db_pool)
-    .await?;
-
-    // Notify the sender to process the proof.
-    sqlx::query!(
-        "SELECT pg_notify($1, '')",
         env.conf.verify_proof_resp_db_channel
     )
     .execute(&env.db_pool)
@@ -427,8 +407,8 @@ async fn verify_proof_max_retries_do_not_remove_entry() -> anyhow::Result<()> {
     let zkpok_manager = ZKPoKManager::deploy(&provider, false, true).await?;
     let ciphertext_storage = CiphertextStorage::deploy(&provider).await?;
     let txn_sender = TransactionSender::new(
-        &zkpok_manager.address(),
-        &ciphertext_storage.address(),
+        *zkpok_manager.address(),
+        *ciphertext_storage.address(),
         env.signer.clone(),
         provider.clone(),
         env.cancel_token.clone(),
@@ -440,22 +420,18 @@ async fn verify_proof_max_retries_do_not_remove_entry() -> anyhow::Result<()> {
 
     let run_handle = tokio::spawn(async move { txn_sender.run().await });
 
-    // Insert a proof into the database.
+    // Insert a proof into the database and notify the sender.
     sqlx::query!(
-        "INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
-         VALUES ($1, $2, $3, $4, $5, true)",
+        "WITH ins AS (
+            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
+            VALUES ($1, $2, $3, $4, $5, true)
+        )
+        SELECT pg_notify($6, '')",
         proof_id as i64,
         42,
-        env.signer.address().to_string(),
-        env.signer.address().to_string(),
+        env.contract_address.to_string(),
+        env.user_address.to_string(),
         &[1u8; 64],
-    )
-    .execute(&env.db_pool)
-    .await?;
-
-    // Notify the sender to process the proof.
-    sqlx::query!(
-        "SELECT pg_notify($1, '')",
         env.conf.verify_proof_resp_db_channel
     )
     .execute(&env.db_pool)

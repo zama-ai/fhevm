@@ -10,6 +10,9 @@ struct Conf {
     #[arg(long, default_value = "16")]
     database_pool_size: u32,
 
+    #[arg(long, default_value = "verify_proof_requests")]
+    verify_proof_req_database_channel: String,
+
     #[arg(long)]
     gw_url: Url,
 

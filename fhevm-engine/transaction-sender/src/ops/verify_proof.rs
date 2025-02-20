@@ -33,7 +33,7 @@ sol!(
 #[derive(Clone)]
 pub(crate) struct VerifyProofOperation<P: Provider<Ethereum> + Clone + 'static> {
     zkpok_manager_address: Address,
-    provider: std::sync::Arc<P>,
+    provider: P,
     signer: PrivateKeySigner,
     database_conf: crate::ConfigSettings,
     gas: Option<u64>,
@@ -42,7 +42,7 @@ pub(crate) struct VerifyProofOperation<P: Provider<Ethereum> + Clone + 'static> 
 impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOperation<P> {
     pub(crate) fn new(
         zkpok_manager_address: Address,
-        provider: std::sync::Arc<P>,
+        provider: P,
         signer: PrivateKeySigner,
         database_conf: crate::ConfigSettings,
         gas: Option<u64>,
@@ -111,7 +111,7 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
     async fn process_proof(
         &self,
         db_pool: Pool<Postgres>,
-        provider: std::sync::Arc<P>,
+        provider: P,
         txn_request: (i64, impl Into<TransactionRequest>),
     ) -> anyhow::Result<()> {
         info!(target: VERIFY_PROOFS_TARGET, "Processing proof with proof id {}", txn_request.0);

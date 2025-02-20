@@ -10,6 +10,7 @@ license.workspace = true
 alloy = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
+futures-util = { workspace = true }
 sqlx = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }

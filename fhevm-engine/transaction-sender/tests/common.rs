@@ -1,4 +1,4 @@
-use alloy::{signers::local::PrivateKeySigner, sol};
+use alloy::{primitives::Address, signers::local::PrivateKeySigner, sol};
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use tokio_util::sync::CancellationToken;
 use tracing::Level;
@@ -21,6 +21,8 @@ pub struct TestEnvironment {
     pub conf: ConfigSettings,
     pub cancel_token: CancellationToken,
     pub db_pool: Pool<Postgres>,
+    pub contract_address: Address,
+    pub user_address: Address,
 }
 
 impl TestEnvironment {
@@ -36,7 +38,7 @@ impl TestEnvironment {
 
         let db_pool = PgPoolOptions::new()
             .max_connections(1)
-            .connect(&conf.db_url)
+            .connect(&conf.database_url)
             .await?;
 
         // Delete all proofs from the database.
@@ -49,6 +51,8 @@ impl TestEnvironment {
             conf: conf,
             cancel_token: CancellationToken::new(),
             db_pool,
+            contract_address: PrivateKeySigner::random().address(),
+            user_address: PrivateKeySigner::random().address(),
         })
     }
 }

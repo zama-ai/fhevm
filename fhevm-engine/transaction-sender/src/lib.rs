@@ -3,8 +3,8 @@ mod transaction_sender;
 
 #[derive(Clone, Debug)]
 pub struct ConfigSettings {
-    pub db_url: String,
-    pub db_pool_size: u32,
+    pub database_url: String,
+    pub database_pool_size: u32,
 
     pub verify_proof_resp_db_channel: String,
     pub add_ciphertexts_db_channel: String,
@@ -22,9 +22,10 @@ pub struct ConfigSettings {
 impl Default for ConfigSettings {
     fn default() -> Self {
         Self {
-            db_url: std::env::var("DATABASE_URL").expect("DATABASE_URL is undefined"),
-            db_pool_size: 10,
-            verify_proof_resp_db_channel: "verify_proofs".to_owned(),
+            database_url: std::env::var("DATABASE_URL")
+                .unwrap_or("postgres://postgres:postgres@localhost/coprocessor".to_owned()),
+            database_pool_size: 10,
+            verify_proof_resp_db_channel: "verify_proof_responses".to_owned(),
             add_ciphertexts_db_channel: "add_ciphertexts".to_owned(),
             verify_proof_resp_batch_limit: 128,
             verify_proof_resp_max_retries: 15,
