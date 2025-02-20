@@ -13,12 +13,17 @@ spec:
                 - Pod
               names:
                 - "kms-threshold-staging-*"
+      preconditions:
+        any:
+        - key: "{{ request.object.spec.serviceAccountName }}"
+          operator: NotEquals
+          value: ""
       mutate:
         patchStrategicMerge:
           spec:
             serviceAccountName: "{{request.object.metadata.name}}"
 
-    - name: replace-configmap-names
+    - name: replace-configmap-names-init
       match:
         any:
           - resources:
@@ -26,9 +31,15 @@ spec:
                 - Pod
               names:
                 - "kms-threshold-staging-*"
+                - "kms-threshold-staging-core-client-*"
+      preconditions:
+        any:
+        - key: "{{ request.object.spec.initContainers[] }}"
+          operator: NotEquals
+          value: []
       mutate:
         foreach:
-        - list: "request.object.spec.initContainers || []"
+        - list: "request.object.spec.initContainers"
           patchStrategicMerge:
             spec:
               initContainers:
@@ -36,7 +47,24 @@ spec:
                 envFrom:
                 - configMapRef:
                     name: "{{request.object.metadata.name}}"
-        - list: "request.object.spec.containers || []"
+
+    - name: replace-configmap-names-containers
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              names:
+                - "kms-threshold-staging-*"
+                - "kms-threshold-staging-core-client-*"
+      preconditions:
+        any:
+        - key: "{{ request.object.spec.containers[] }}"
+          operator: NotEquals
+          value: []
+      mutate:
+        foreach:
+        - list: "request.object.spec.containers"
           patchStrategicMerge:
             spec:
               containers:
