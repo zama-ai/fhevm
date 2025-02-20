@@ -25,35 +25,24 @@ spec:
       containers:
         - name: kms-core-client
           image: {{ .Values.kmsCoreClient.image.name }}:{{ .Values.kmsCoreClient.image.tag }}
-          command:
-            - /app/load-kms-core-client-config.sh
           env:
-            - name: S3_ENDPOINT
-              value: "{{ if .Values.minio.enabled }}http://minio:9000/{{ .Values.kmsCore.publicVault.s3.bucket }}{{ else }}https://{{ .Values.kmsCore.publicVault.s3.bucket }}.s3.{{ .Values.kmsCore.aws.region }}.amazonaws.com{{ end }}/{{ .Values.kmsCore.publicVault.s3.path }}"
-            - name: OBJECT_FOLDER_LIST
+            - name: CORE_CLIENT__S3_ENDPOINT
+              value: "{{ if .Values.minio.enabled }}http://minio:9000/{{ .Values.kmsCore.publicVault.s3.bucket }}{{ else }}$(KMS_CORE__PUBLIC_VAULT__STORAGE).s3.{{ .Values.kmsCore.aws.region }}.amazonaws.com{{ end }}/{{ .Values.kmsCore.publicVault.s3.path }}"
+            - name: CORE_CLIENT__OBJECT_FOLDER
               value: '{{ if .Values.kmsCore.thresholdMode.enabled }}{{ range $i, $peer := .Values.kmsCore.thresholdMode.peersList }}"PUB-p{{ $peer.id }}",{{ end }}{{ else }}"PUB"{{ end }}'
-            - name: CORE_ADDRESSES
+            - name: CORE_CLIENT__CORE_ADDRESSES
               value: '{{ range $i, $peer := .Values.kmsCore.thresholdMode.peersList }}"http://{{ $peer.host }}:{{ $.Values.kmsCore.ports.client }}",{{ end }}'
-            - name: NUM_MAJORITY
+            - name: CORE_CLIENT__NUM_MAJORITY
               value: '{{ .Values.kmsCoreClient.num_majority | int | quote }}'
-            - name: NUM_RECONSTRUCT
+            - name: CORE_CLIENT__NUM_RECONSTRUCT
               value: '{{ .Values.kmsCoreClient.num_reconstruct | int | quote }}'
-            - name: DECRYPTION_MODE
+            - name: CORE_CLIENT__DECRYPTION_MODE
               value: '{{ .Values.kmsCoreClient.decryption_mode | quote }}'
-          volumeMounts:
-            - mountPath: /app/load-kms-core-client-config.sh
-              subPath: load-kms-core-client-config.sh
-              name: config
+          envFrom:
+            - configMapRef:
+                name: {{ .Values.kmsCore.envFrom.configmap.name }}
       imagePullSecrets:
         - name: registry-credentials
-      volumes:
-        - name: config
-          configMap:
-            name: {{ include "kmsCoreClientName" . }}-config
-            defaultMode: 0777
-            items:
-              - key: load-kms-core-client-config.sh
-                path: load-kms-core-client-config.sh
       {{- with .Values.kmsCoreClient.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
