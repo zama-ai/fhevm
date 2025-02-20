@@ -4,7 +4,7 @@ import { expect } from "chai";
 import hre from "hardhat";
 
 import { ACLManager } from "../typechain-types";
-import { deployHTTPZFixture } from "./utils";
+import { deployCiphertextStorageFixture } from "./utils";
 
 describe("ACLManager", function () {
   const keyId = 0; // Using exceptional first key (currentKeyId == 0). See {HTTPZ-activateKeyRequest}
@@ -17,10 +17,8 @@ describe("ACLManager", function () {
   let fakeSigner: HardhatEthersSigner;
 
   async function deployACLManagerFixture() {
-    const { httpz, coprocessorSigners, signers } = await deployHTTPZFixture();
+    const { httpz, ciphertextStorage, coprocessorSigners, signers } = await deployCiphertextStorageFixture();
     const ACLManager = await hre.ethers.getContractFactory("ACLManager");
-    const CiphertextStorage = await hre.ethers.getContractFactory("CiphertextStorage");
-    const ciphertextStorage = await CiphertextStorage.deploy(httpz);
     const aclManager = await ACLManager.deploy(httpz, ciphertextStorage);
 
     // Add the ciphertext to the CiphertextStorage contract state which will be used during the tests

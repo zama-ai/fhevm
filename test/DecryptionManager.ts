@@ -1,6 +1,6 @@
 import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { expect } from "chai";
-import hre, { ethers } from "hardhat";
+import hre from "hardhat";
 
 import { deployHTTPZFixture } from "./utils/deploys";
 import { createEIP712ResponsePublicDecrypt, getSignaturesPublicDecrypt } from "./utils/eip712";

@@ -57,3 +57,39 @@ export async function deployHTTPZFixture() {
 
   return { httpz, owner, admin, user, kmsSigners, coprocessorSigners, signers };
 }
+
+/// @dev Deploy the KeyManager contract
+export async function deployKeyManagerFixture() {
+  const { httpz, owner, admin, user, kmsSigners, coprocessorSigners, signers } = await loadFixture(deployHTTPZFixture);
+
+  const KeyManager = await hre.ethers.getContractFactory("KeyManager", owner);
+  const keyManager = await KeyManager.deploy(httpz);
+
+  // Set the FHE params
+  const fheParams = { dummy: "dummy" };
+  await keyManager.connect(owner).setFheParams(fheParams);
+
+  return { httpz, keyManager, owner, admin, user, kmsSigners, coprocessorSigners, signers, fheParams };
+}
+
+/// @dev Deploy the CiphertextStorage contract
+export async function deployCiphertextStorageFixture() {
+  const { httpz, keyManager, owner, admin, user, kmsSigners, coprocessorSigners, signers, fheParams } =
+    await loadFixture(deployKeyManagerFixture);
+
+  const CiphertextStorage = await hre.ethers.getContractFactory("CiphertextStorage", owner);
+  const ciphertextStorage = await CiphertextStorage.deploy(httpz, keyManager);
+
+  return {
+    httpz,
+    keyManager,
+    ciphertextStorage,
+    owner,
+    admin,
+    user,
+    kmsSigners,
+    coprocessorSigners,
+    signers,
+    fheParams,
+  };
+}

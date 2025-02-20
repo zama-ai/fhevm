@@ -3,12 +3,16 @@ pragma solidity ^0.8.28;
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import "./interfaces/ICiphertextStorage.sol";
 import "./interfaces/IHTTPZ.sol";
+import "./interfaces/IKeyManager.sol";
 
 /// @title CiphertextStorage smart contract
 /// @dev See {ICiphertextStorage}.
 contract CiphertextStorage is ICiphertextStorage {
-    /// @notice The address of the HTTPZ contract for protocol state calls.
+    /// @notice The address of the HTTPZ contract, used for fetching information about coprocessors.
     IHTTPZ internal immutable _HTTPZ;
+
+    /// @notice The address of the KeyManager contract, used for fetching information about the current key.
+    IKeyManager internal immutable _KEY_MANAGER;
 
     /// @notice The normal (64-bit) ciphertexts tied to the ciphertext handle.
     mapping(uint256 ctHandle => bytes ciphertext64) internal _ciphertext64s;
@@ -31,8 +35,9 @@ contract CiphertextStorage is ICiphertextStorage {
     uint256 private constant MINOR_VERSION = 1;
     uint256 private constant PATCH_VERSION = 0;
 
-    constructor(IHTTPZ httpz) {
+    constructor(IHTTPZ httpz, IKeyManager keyManager) {
         _HTTPZ = httpz;
+        _KEY_MANAGER = keyManager;
     }
 
     /// @notice See {ICiphertextStorage-hasCiphertext}.
@@ -71,7 +76,7 @@ contract CiphertextStorage is ICiphertextStorage {
         }
         /// @dev Check if the received key ID is the latest activated.
         // TODO: Revisit the following line accordingly with key lifecycles issue /gateway-l2/issues/90
-        bool isCurrentKeyId = _HTTPZ.isCurrentKeyId(keyId);
+        bool isCurrentKeyId = _KEY_MANAGER.isCurrentKeyId(keyId);
         if (!isCurrentKeyId) {
             revert InvalidCurrentKeyId(keyId);
         }
