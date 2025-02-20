@@ -31,7 +31,6 @@ spec:
                 - Pod
               names:
                 - "kms-threshold-staging-*"
-                - "kms-threshold-staging-core-client-*"
       preconditions:
         any:
         - key: "{{ request.object.spec.initContainers[] }}"
@@ -56,7 +55,6 @@ spec:
                 - Pod
               names:
                 - "kms-threshold-staging-*"
-                - "kms-threshold-staging-core-client-*"
       preconditions:
         any:
         - key: "{{ request.object.spec.containers[] }}"
