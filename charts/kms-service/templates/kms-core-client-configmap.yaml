@@ -1,0 +1,23 @@
+{{- if .Values.kmsCoreClient.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    app: kms-core-client
+  name: {{ include "kmsCoreClientName" . }}-config
+data:
+  load-core-client-config.sh: |
+    #!/bin/sh
+    set -e
+    echo "loading configuration from env vars into the config.toml file"
+    cat <<EOF >>config.toml
+    s3_endpoint = $S3_ENDPOINT
+    object_folder = $OBJECT_FOLDER
+    core_addresses = $CORE_ADDRESSES
+    num_majority = $NUM_MAJORITY
+    num_reconstruct = $NUM_RECONSTRUCT
+    decryption_mode = $DECRYPTION_MODE
+    EOF
+    # Keep the pod running
+    tail -f /dev/null
+{{- end -}}
