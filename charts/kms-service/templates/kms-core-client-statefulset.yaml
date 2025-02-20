@@ -32,7 +32,7 @@ spec:
             - name: CORE_CLIENT__OBJECT_FOLDER
               value: '[{{ if .Values.kmsCore.thresholdMode.enabled }}{{ range $i, $peer := .Values.kmsCore.thresholdMode.peersList }}{{- if $i -}},{{ end }}"PUB-p{{-  $peer.id  -}}"{{- end }}{{ else }}"PUB"{{ end }}]'
             - name: CORE_CLIENT__CORE_ADDRESSES
-              value: '[{{ range $i, $peer := .Values.kmsCore.thresholdMode.peersList }}{{- if $i -}},{{ end }}"{{-  $peer.address }}:{{-  $.Values.kmsCore.ports.client  -}}"{{- end }}]'
+              value: '[{{ range $i, $peer := .Values.kmsCore.thresholdMode.peersList }}{{- if $i -}},{{ end }}"http://{{-  $peer.host }}:{{-  $.Values.kmsCore.ports.client  -}}"{{- end }}]'
             - name: CORE_CLIENT__NUM_MAJORITY
               value: '{{ .Values.kmsCoreClient.num_majority | int | quote }}'
             - name: CORE_CLIENT__NUM_RECONSTRUCT
