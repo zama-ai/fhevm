@@ -6,11 +6,12 @@ import { Injectable, Logger } from '@nestjs/common'
 import { Log, WebSocketProvider } from 'ethers'
 import { Contract } from 'ethers'
 import { JsonRpcProvider } from 'ethers'
-import { Provider } from 'ethers'
 import { Task, AppError, unknownError } from 'utils'
 import { THFEExecutor } from './assets/THFEExecutor.js'
 import { EventLog } from 'ethers'
 import { Block } from 'ethers'
+import { Provider } from 'ethers'
+import { EventEmitter } from 'stream'
 
 @Injectable()
 export class EthersFheEventService implements FheEventService {
@@ -47,30 +48,75 @@ function isWebSocket(url: string) {
 class EthersFheEventServiceImpl implements FheEventService {
   private readonly logger = new Logger(EthersFheEventServiceImpl.name)
   constructor(private readonly config: FheConfig) {}
+
+  private getProvider(providerUrl: string): Task<Provider, AppError> {
+    if (isWebSocket(providerUrl)) {
+      return new Task((resolve, reject) => {
+        this.logger.verbose(
+          `initializing a WebSocketProvider for ${providerUrl}`,
+        )
+        const provider = new WebSocketProvider(providerUrl)
+        ;(provider.websocket as unknown as EventEmitter)
+          .once('open', () => {
+            this.logger.verbose(`successfully created a WebSocketProvider`)
+            resolve(provider)
+          })
+          .once('error', error => {
+            this.logger.warn(`failed to create WebSocket provider: ${error}`)
+            reject(unknownError(`failed to create provider for ${providerUrl}`))
+          })
+      })
+    } else {
+      return new Task((resolve, reject) => {
+        const provider = new JsonRpcProvider(providerUrl)
+        provider
+          ._detectNetwork()
+          .then(() => {
+            resolve(provider)
+          })
+          .catch(error => {
+            this.logger.warn(`failed to create JSON RPC provider: ${error}`)
+            reject(unknownError(`failed to create provider for ${providerUrl}`))
+          })
+      })
+    }
+  }
+
   fetchEvents(chainId: ChainId, fromBlock: number): Task<FheEvent[], AppError> {
     this.logger.debug(
       `fetch events for chainId ${chainId.value} from block ${fromBlock}`,
     )
-    const provider: Provider = isWebSocket(this.config.providerUrl)
-      ? new WebSocketProvider(this.config.providerUrl)
-      : new JsonRpcProvider(this.config.providerUrl)
 
-    const contract = new Contract(
-      this.config.contractAddress.value,
-      THFEExecutor.abi,
-      provider,
-    )
-
-    return new Task<(EventLog | Log)[], AppError>((resolve, reject) =>
-      contract
-        .queryFilter('*', fromBlock, 'latest')
-        .then(resolve)
-        .catch(error => reject(unknownError(String(error)))),
-    )
-      .tap(logs => {
+    return this.getProvider(this.config.providerUrl)
+      .chain(
+        provider =>
+          new Task<
+            {
+              logs: (EventLog | Log)[]
+              provider: Provider
+              contract: Contract
+            },
+            AppError
+          >((resolve, reject) => {
+            this.logger.verbose(`filtering event from block ${fromBlock}`)
+            const contract = new Contract(
+              this.config.contractAddress.value,
+              THFEExecutor.abi,
+              provider,
+            )
+            return contract
+              .queryFilter('*', fromBlock, 'latest')
+              .then(logs => resolve({ provider, contract, logs }))
+              .catch(error => {
+                this.logger.warn(`failed to query events: ${error}`)
+                reject(unknownError(String(error)))
+              })
+          }),
+      )
+      .tap(({ logs }) => {
         this.logger.debug(`found #${logs.length} logs`)
       })
-      .chain(logs =>
+      .chain(({ provider, contract, logs }) =>
         Task.all<AppError, { blockNumber: number; block: Block | null }>(
           Array.from(
             logs
@@ -83,7 +129,10 @@ class EthersFheEventServiceImpl implements FheEventService {
                   provider
                     .getBlock(blockNumber)
                     .then(block => resolve({ blockNumber, block }))
-                    .catch(error => reject(unknownError(String(error)))),
+                    .catch(error => {
+                      this.logger.warn(`failed to get block ${blockNumber}`)
+                      reject(unknownError(String(error)))
+                    }),
               ),
           ),
         )
@@ -102,9 +151,11 @@ class EthersFheEventServiceImpl implements FheEventService {
                   )
                   const parsed = contract.interface.parseLog(log)
                   const block = map.get(log.blockNumber)
+
                   this.logger.verbose(
                     `parsed: ${JSON.stringify(parsed, (_, v) => (typeof v === 'bigint' ? v.toString() : v))}`,
                   )
+
                   return FheEvent.parse({
                     chainId: chainId.value,
                     id: `${log.transactionHash}/${log.index}`,

@@ -34,9 +34,14 @@ export class SnsProducer {
    * @param message - The message to publish
    */
   sendMessage: ISubscriber<web3.Web3Event> = event => {
+    if (event.meta[`${MS_NAME}-dir`] === 'in') {
+      this.logger.verbose(`stopping incoming event ${event.type}`)
+      return Task.of(void 0)
+    }
+
     this.logger.debug(`sendMessage: ${JSON.stringify(event)}`)
+
     return new Task((resolve, reject) =>
-      // Note: think a better way to resend failed messages
       this.#sns
         .send(
           new PublishCommand({

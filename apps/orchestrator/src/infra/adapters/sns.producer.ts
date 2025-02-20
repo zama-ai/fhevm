@@ -59,15 +59,12 @@ export class SNSProducer implements EventProducer {
   handleEvent: ISubscriber<back.BackEvent | web3.Web3Event> = (
     event: back.BackEvent | web3.Web3Event,
   ): Task<void, AppError> => {
-    switch (event.type) {
-      case 'web3:fhe-event:requested':
-      case 'back:dapp:stats-available':
-        this.logger.debug(`publishing ${event.type}`)
-        return this.publish(event)
-
-      default:
-        this.logger.debug(`⛔️ no handler for ${event.type}`)
-        return Task.of<void, AppError>(void 0).tap(() => {})
+    if (event.meta[`${MS_NAME}-dir`] === 'in') {
+      this.logger.verbose(`stopping incoming event ${event.type}`)
+      return Task.of(void 0)
     }
+
+    this.logger.debug(`publishing ${event.type}`)
+    return this.publish(event)
   }
 }

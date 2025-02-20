@@ -15,6 +15,8 @@ export class SQSConsumer {
 
   @SqsMessageHandler('orchestrator')
   public async handleMessage(message: Message) {
+    const batchItemFailures: { itemIdentifier: string | undefined }[] = []
+
     if (message.Body) {
       const body = JSON.parse(message.Body)
       const data = JSON.parse(body.Message)
@@ -28,12 +30,14 @@ export class SQSConsumer {
             | undefined = body.MessageAttributes
           if (messageAttributes?.Sender?.Value === (MS_NAME as string)) {
             this.logger.debug(`⛔️ stopping ${data.type} propagation`)
-            return
+            return { batchItemFailures }
           }
 
           this.logger.debug(
             `📬 publishing event ${data.type} on the internal queue`,
           )
+          // Note: add a meta field to brand it as an incoming message
+          data.meta[`${MS_NAME}-dir`] = 'in'
           await this.pubsub.publish(data).toPromise()
         } else {
           this.logger.debug(`❌ unhandled message ${(data as any).type}`)
@@ -43,8 +47,12 @@ export class SQSConsumer {
         // Note: I need to throw the error here so that the message
         // is kept in the queue and, after a while, it will be moved to
         // the dead letter queue
-        throw error
+        this.logger.verbose(
+          `pushing { itemIdentifier: ${message.MessageId} } into batchItemFailures`,
+        )
+        batchItemFailures.push({ itemIdentifier: message.MessageId })
       }
     }
+    return { batchItemFailures }
   }
 }
