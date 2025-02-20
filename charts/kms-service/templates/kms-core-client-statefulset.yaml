@@ -1,10 +1,10 @@
 {{- if .Values.kmsCoreClient.enabled -}}
-{{- $peersIDList := untilStep (default 1 .Values.kmsPeers.id | int) (.Values.kmsPeers.count | add1 | int) 1  }}
+# {{- $peersIDList := untilStep (default 1 .Values.kmsPeers.id | int) (.Values.kmsPeers.count | add1 | int) 1  }}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   labels:
-    app: kms-core
+    app: kms-core-client
     app.kubernetes.io/name: {{ include "kmsCoreClientName" . }}
   name: {{ include "kmsCoreClientName" . }}
 spec:
@@ -15,7 +15,7 @@ spec:
   template:
     metadata:
       labels:
-        app: kms-core
+        app: kms-core-client
         app.kubernetes.io/name: {{ include "kmsCoreClientName" . }}
     spec:
       securityContext:
