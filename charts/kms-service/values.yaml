@@ -45,12 +45,12 @@ kmsCore:
     enabled: false
     # If left unset, the chart will generate the list automatically based on pod replicas of the statefulset
     peersList:
-#      - id: 1
-#        host: kms-service-core-1
-#        port: 50001
-#      - id: 2
-#        host: kms-service-core-2
-#        port: 50001
+    #  - id: 1
+    #    host: kms-service-core-1
+    #    port: 50001
+    #  - id: 2
+    #    host: kms-service-core-2
+    #    port: 50001
     initializationScript:
       enabled: false
     dec_capacity: 10000
@@ -119,20 +119,18 @@ kmsCore:
 mtls:
   enabled: false
 
-kmsSimulator:
+kmsCoreClient:
   enabled: false
+  nameOverride:
   image:
-    name: ghcr.io/zama-ai/kms-blockchain-simulator
+    name: ghcr.io/zama-ai/kms-core-client
     tag: latest
-  contractAddress:
-    configmap:
-      name: kms-sc-deploy-kms-sc-addresses
-      ascAddressKey: DEBUG_ASC_ETHEREUM_ADDRESS
-      cscAddressKey: CSC_ADDRESS
-  wallet:
-    secret:
-      name: kms-connector-keys
-      key: connector-1.mnemonic
+  num_majority: 2
+  num_reconstruct: 3
+  decryption_mode: "NoiseFloodSmall"
+  nodeSelector:
+  affinity:
+  tolerations:
 
 kubeUtils:
   image:
@@ -188,3 +186,6 @@ podSecurityContext:
 podSecurityContextForEnclave:
   fsGroup: 1001     # Keep this as 1001 to match device group
   supplementalGroups: [1001]  # Add device group as supplemental
+
+kyverno:
+  enabled: false

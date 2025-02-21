@@ -35,14 +35,16 @@ data:
 
     [private_vault]
     storage = "${KMS_CORE__PRIVATE_VAULT__STORAGE}"
+    {{- if .Values.kmsCore.nitroEnclave.enabled }}
     keychain = "${KMS_CORE__PRIVATE_VAULT__KEYCHAIN}"
+    {{- end }}
 
     {{ if .Values.kmsCore.thresholdMode.enabled -}}
     [threshold]
     listen_address = "0.0.0.0"
     listen_port = {{ int .Values.kmsCore.ports.peer }}
 
-    my_id = ${KMS_CORE__THRESHOLD__MY_ID}
+    my_id = "${KMS_CORE__THRESHOLD__MY_ID}"
 
     # Threshold is the number of corruptions that the protocol handles.
     threshold = 1

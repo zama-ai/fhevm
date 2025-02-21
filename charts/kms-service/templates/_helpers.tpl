@@ -8,6 +8,11 @@
 {{- default $kmsCoreNameDefault .Values.kmsCore.nameOverride | trunc 52 | trimSuffix "-" -}}
 {{- end -}}
 
+{{- define "kmsCoreClientName" -}}
+{{- $kmsCoreClientNameDefault := printf "%s-%s" .Release.Name "kms-core-client" }}
+{{- default $kmsCoreClientNameDefault .Values.kmsCoreClient.nameOverride | trunc 52 | trimSuffix "-" -}}
+{{- end -}}
+
 {{- define "kmsCoreAddress" -}}
 {{- $kmsCoreAddressDefault := print "" -}}
 {{- if .Values.mtls.enabled -}}
@@ -116,10 +121,5 @@ args:
 
 {{- define "kmsThresholdInitJobName" -}}
 {{- $kmsCoreNameDefault := printf "%s-%s" .Release.Name "threshold-init" }}
-{{- default $kmsCoreNameDefault .Values.kmsCore.nameOverride | trunc 52 | trimSuffix "-" -}}
-{{- end -}}
-
-{{- define "kmsSimulatorName" -}}
-{{- $kmsCoreNameDefault := printf "%s-%s" .Release.Name "simulator" }}
 {{- default $kmsCoreNameDefault .Values.kmsCore.nameOverride | trunc 52 | trimSuffix "-" -}}
 {{- end -}}

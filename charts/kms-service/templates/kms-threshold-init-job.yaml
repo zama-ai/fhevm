@@ -12,7 +12,7 @@ spec:
   template:
     metadata:
       labels:
-        app: kms-core
+        app: kms-threshold-init-job
         app.kubernetes.io/name: {{ include "kmsThresholdInitJobName" . }}
     spec:
       securityContext:
