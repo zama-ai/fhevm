@@ -35,7 +35,7 @@ spec:
       mutate:
         patchStrategicMerge:
           spec:
-            serviceAccountName: "{{`{{ request.object.metadata.generateName | default request.object.metadata.name }}`}}"
+            serviceAccountName: "{{`{{ coalesce request.object.metadata.generateName request.object.metadata.name }}`}}"
 
     - name: replace-configmap-names-init
       match:
@@ -67,7 +67,7 @@ spec:
               - name: "{{`{{ element.name }}`}}"
                 envFrom:
                 - configMapRef:
-                    name: "{{`{{ request.object.metadata.generateName | default request.object.metadata.name }}`}}"
+                    name: "{{`{{ coalesce request.object.metadata.generateName request.object.metadata.name }}`}}"
 
     - name: replace-configmap-names-containers
       match:
@@ -99,5 +99,5 @@ spec:
               - name: "{{`{{ element.name }}`}}"
                 envFrom:
                 - configMapRef:
-                    name: "{{`{{ request.object.metadata.generateName | default request.object.metadata.name }}`}}"
+                    name: "{{`{{ coalesce request.object.metadata.generateName request.object.metadata.name }}`}}"
 {{- end -}}
