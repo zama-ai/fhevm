@@ -19,6 +19,35 @@ releases:
     values:
       - postgresql-values.yaml
 
+  # FHEVM layer1-node
+  - name: layer1
+    namespace: fhevm
+    chart: "../../charts/anvil-node"
+    values:
+      - layer1-node-values.yaml
+
+  - name: layer1-sc
+    namespace: fhevm
+    chart: "../../charts/fhevm-sc-deploy"
+    values:
+      - layer1-sc-deploy-values.yaml
+    needs:
+      - layer1
+
+  - name: layer2
+    namespace: fhevm
+    chart: "../../charts/anvil-node"
+    values:
+      - layer2-node-values.yaml
+
+  - name: layer2-sc
+    namespace: fhevm
+    chart: "../../charts/fhevm-sc-deploy"
+    values:
+      - layer2-sc-deploy-values.yaml
+    needs:
+      - layer2
+
   # FHEVM coprocessor
   - name: fhevm-coprocessor
     namespace: fhevm
@@ -28,16 +57,3 @@ releases:
     needs:
       - fhevm-postgresql
       - minio
-
-  # FHEVM layer1-node
-  - name: layer1
-    namespace: fhevm
-    chart: "../../charts/anvil-node"
-    values:
-      - layer1-node-values.yaml
-
-  - name: layer2
-    namespace: fhevm
-    chart: "../../charts/anvil-node"
-    values:
-      - layer2-node-values.yaml

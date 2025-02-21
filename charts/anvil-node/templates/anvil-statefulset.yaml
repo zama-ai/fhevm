@@ -1,8 +1,9 @@
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: {{ .Release.Name }}-anvil-node
 spec:
+  serviceName: {{ .Release.Name }}-anvil-node
   replicas: 1
   selector:
     matchLabels:
@@ -34,3 +35,14 @@ spec:
             - "$(MNEMONIC)"
           ports:
             - containerPort: {{ .Values.port }}
+          volumeMounts:
+          - name: anvil-chain-data
+            mountPath: /home/foundry/.foundry/anvil
+  volumeClaimTemplates:
+  - metadata:
+      name: anvil-chain-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: {{ .Values.storage.size }}

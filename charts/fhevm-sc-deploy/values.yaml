@@ -1,0 +1,15 @@
+scDeploy:
+  enabled: false
+  image:
+    name: ghcr.io/zama-ai/gateway-l2/sc-bundle
+    tag: b479cf8
+  configmapName: "layer2-sc-addresses"
+  env:
+    - name: MNEMONIC
+      value: "coyote sketch defense hover finger envelope celery urge panther venue verb cheese"
+    - name: DEPLOYER_ADDRESS
+      value: "0xCf28E90D4A6dB23c34E1881aEF5fd9fF2e478634"
+    - name: DEPLOYER_PRIVATE_KEY
+      value: "0xe746bc71f6bee141a954e6a49bc9384d334e393a7ea1e70b50241cb2e78e9e4c"
+    - name: RPC_URL
+      value: "http://layer2-node:8546"

@@ -1,0 +1,64 @@
+{{- if .Values.scDeploy.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    app: fhevm-sc-deploy
+    app.kubernetes.io/name: {{ .Release.Name }}-config
+  name: {{ .Release.Name }}-config
+data:
+  .env: |
+    {{- range .Values.scDeploy.env }}
+    export {{ .name }}="{{ .value }}"
+    {{- end }}
+
+  deploy-contracts.sh: |
+    #!/bin/bash
+    set -eo pipefail
+    create_configmap() {
+      configmap_name="${1}"
+      if [[ -z "$configmap_name" ]]; then
+        echo "error: you must supply a configmap name" 1>&2
+        exit 1
+      fi
+      if ! kubectl get configmap ${configmap_name}; then
+        kubectl create configmap ${configmap_name}
+      else
+        echo "skipping: configmap ${configmap_name} already exists" 2>&1
+      fi
+    }
+    add_key_to_configmap() {
+      configmap_name="${1}"
+      name="${2}"
+      value="${3}"
+      if [[ -z "$configmap_name" ]]; then
+        echo "error: you must supply a configmap name" 1>&2
+        exit 1
+      fi
+      if [[ -z "$name" ]]; then
+        echo "error: you must supply an item name" 1>&2
+        exit 1
+      fi
+      if [[ -z "$value" ]]; then
+        echo "error: you must supply an item value" 1>&2
+        exit 1
+      fi
+      kubectl patch configmap "${configmap_name}" -p="{\"data\": {\"${name}\": \"${value}\"}}"
+    }
+    CONFIGMAP_NAME="{{ .Values.scDeploy.configmapName }}"
+    apt update && apt install kubernetes-client -y
+    echo "creating kubernetes configmap for smart contract configuration outputs"
+    create_configmap "${CONFIGMAP_NAME}"
+  
+    # Pre-deploy commands
+    {{- range .Values.scDeploy.deployCommands }}
+    {{ . }}
+    {{- end }}
+    echo "L2 smart contracts deployed successfully"
+
+    # Post-deploy commands
+    {{- range .Values.scDeploy.postDeployCommands }}
+    {{ . }}
+    {{- end }}
+    echo "${CONFIGMAP_NAME} configmap updated successfully"
+{{- end -}}

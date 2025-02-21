@@ -12,3 +12,6 @@ network:
   mnemonic: "adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer"
 
 port: 8545
+
+storage:
+  size: 5Gi

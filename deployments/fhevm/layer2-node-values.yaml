@@ -10,3 +10,6 @@ network:
   mnemonic: "coyote sketch defense hover finger envelope celery urge panther venue verb cheese"
 
 port: 8546
+
+storage:
+  size: 5Gi
