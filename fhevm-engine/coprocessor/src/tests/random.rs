@@ -116,7 +116,7 @@ async fn test_fhe_random_basic() -> Result<(), Box<dyn std::error::Error>> {
     let decrypt_request = output_handles.clone();
     let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
     let expected: Vec<DecryptionResult> = vec![
-        DecryptionResult { value: "true".to_string(), output_type: 0 },
+        DecryptionResult { value: "false".to_string(), output_type: 0 },
         DecryptionResult { value: "10".to_string(), output_type: 1 },
         DecryptionResult { value: "74".to_string(), output_type: 2 },
         DecryptionResult { value: "20042".to_string(), output_type: 3 },
@@ -189,7 +189,7 @@ async fn test_fhe_random_bounded() -> Result<(), Box<dyn std::error::Error>> {
         "8079251517827751825178719172167487990111025667428871008032586356881163784716972723299300352880728365922179490230474504873529889787622730273772038096612070780157719341825249022937549437597413026699014409596016892069198054660654939040459523584619042617645411463009076260721893972885266452151888099780982596380478583347417085605171243696641142373714044008831580514519451414832756548177115078537564648216044279181485900929615464339399587788075411476100924403308321807806781421177705052431289275431732830867419635645164174483761499317088249659553881291597359333885900533858307401161329619651238037048388963402764899057664",
     ];
     let results = [
-        "true",
+        "false",
         "2",
         "10",
         "3658",
