@@ -16,30 +16,20 @@ spec:
           - resources:
               kinds:
                 - Pod
-              selector:
-                matchExpressions:
-                  - key: app
-                    operator: In
-                    values:
-                      - kms-core
-                      - kms-core-client
-      exclude:
-        any:
-          - resources:
-              kinds:
-                - Pod
-              selector:
-                matchLabels:
-                  app: kms-threshold-init-job
+              names:
+                - "{{ include "kmsCoreName" . }}-*"
       preconditions:
         all:
+        - key: "{{`{{ request.object.metadata.labels.job-name }}`}}"
+          operator: NotEquals
+          value: "kms-threshold-init-job"
         - key: "{{`{{ request.object.spec.serviceAccountName }}`}}"
           operator: NotEquals
           value: ""
       mutate:
         patchStrategicMerge:
           spec:
-            serviceAccountName: "{{`{{ if request.object.metadata.generateName }}{{request.object.metadata.generateName}}{{else}}{{request.object.metadata.name}}{{end}}`}}"
+            serviceAccountName: "{{`{{request.object.metadata.name}}`}}"
 
     - name: replace-configmap-names-init
       match:
@@ -47,21 +37,13 @@ spec:
           - resources:
               kinds:
                 - Pod
-              selector:
-                matchExpressions:
-                  - key: app
-                    operator: In
-                    values:
-                      - kms-core
-                      - kms-core-client
-      exclude:
-        any:
-          - resources:
-              kinds:
-                - Pod
-              selector:
-                matchLabels:
-                  app: kms-threshold-init-job
+              names:
+                - "{{ include "kmsCoreName" . }}-*"
+      preconditions:
+        all:
+        - key: "{{`{{ request.object.metadata.labels.job-name }}`}}"
+          operator: NotEquals
+          value: "kms-threshold-init-job"
       mutate:
         foreach:
         - list: "request.object.spec.initContainers"
@@ -71,7 +53,7 @@ spec:
               - name: "{{`{{ element.name }}`}}"
                 envFrom:
                 - configMapRef:
-                    name: "{{`{{ if request.object.metadata.generateName }}{{request.object.metadata.generateName}}{{else}}{{request.object.metadata.name}}{{end}}`}}"
+                    name: "{{`{{request.object.metadata.name}}`}}"
 
     - name: replace-configmap-names-containers
       match:
@@ -79,21 +61,13 @@ spec:
           - resources:
               kinds:
                 - Pod
-              selector:
-                matchExpressions:
-                  - key: app
-                    operator: In
-                    values:
-                      - kms-core
-                      - kms-core-client
-      exclude:
-        any:
-          - resources:
-              kinds:
-                - Pod
-              selector:
-                matchLabels:
-                  app: kms-threshold-init-job
+              names:
+                - "{{ include "kmsCoreName" . }}-*"
+      preconditions:
+        all:
+        - key: "{{`{{ request.object.metadata.labels.job-name }}`}}"
+          operator: NotEquals
+          value: "kms-threshold-init-job"
       mutate:
         foreach:
         - list: "request.object.spec.containers"
@@ -103,5 +77,5 @@ spec:
               - name: "{{`{{ element.name }}`}}"
                 envFrom:
                 - configMapRef:
-                    name: "{{`{{ if request.object.metadata.generateName }}{{request.object.metadata.generateName}}{{else}}{{request.object.metadata.name}}{{end}}`}}"
+                    name: "{{`{{request.object.metadata.name}}`}}"
 {{- end -}}
