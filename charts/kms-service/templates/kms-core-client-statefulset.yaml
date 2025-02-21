@@ -43,9 +43,11 @@ spec:
               value: '{{ .Values.kmsCoreClient.num_reconstruct | int }}'
             - name: DECRYPTION_MODE
               value: '{{ .Values.kmsCoreClient.decryption_mode | quote }}'
+          {{- if not .Values.minio.enabled }}
           envFrom:
             - configMapRef:
                 name: {{ include "kmsCoreName" . }}-1
+          {{- end }}
           volumeMounts:
             - mountPath: /app/load-core-client-config.sh
               subPath: load-core-client-config.sh
