@@ -8,20 +8,20 @@ kmsConnector:
   enabled: true
   nameOverride:
   image:
-    name: ghcr.io/zama-ai/kms-blockchain-connector
-    tag: v0.8.1
-  storage:
-    # storageClassName: gp3
-    capacity: 5Gi
-  catchUpNumBlocks: 100000
+    name: ghcr.io/zama-ai/kms-connector
+    tag: latest
+  config:
+    chainId: 1337
+    gatewayL2RpcUrl: "ws://localhost:8757"
+    channelSize: "1000"
   contractAddress:
     configmap:
       name: kms-sc-deploy-kms-sc-addresses
-      ascAddressKey: DEBUG_ASC_ETHEREUM_ADDRESS
-      cscAddressKey: CSC_ADDRESS
-  blockchainGrpcUrl: "http://kms-blockchain-rpc:9090"
-  blockchainRpcUrl: "http://kms-blockchain-rpc:26657"
-  kvStoreUrl: "http://kms-blockchain-kv-store:8088"
+      httpzAddressKey: HTTPZ_CONTRACT_ADDRESS
+      decryptionManagerAddressKey: DECRYPTION_MANAGER_CONTRACT_ADDRESS
+  storage:
+    # storageClassName: gp3
+    capacity: 5Gi
   wallet:
     secret:
       name: kms-connector-keys
