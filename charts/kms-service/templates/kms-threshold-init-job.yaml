@@ -7,15 +7,13 @@ metadata:
   labels:
     app: kms-threshold-init-job
     app.kubernetes.io/name: {{ include "kmsThresholdInitJobName" . }}
-    jobName: kms-threshold-init-job
   name: {{ include "kmsThresholdInitJobName" . }}
 spec:
   template:
     metadata:
       labels:
-        app: kms-core
+        app: kms-threshold-init-job
         app.kubernetes.io/name: {{ include "kmsThresholdInitJobName" . }}
-        jobName: kms-threshold-init-job
     spec:
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
