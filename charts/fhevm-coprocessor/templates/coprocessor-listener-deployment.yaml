@@ -1,0 +1,34 @@
+{{- if .Values.listener.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: coprocessor-listener
+    app.kubernetes.io/name: {{ include "listenerName" . }}
+  name: {{ include "listenerName" . }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: coprocessor-listener
+  template:
+    metadata:
+      labels:
+        app: coprocessor-listener
+        app.kubernetes.io/name: {{ include "listenerName" . }}
+    spec:
+      restartPolicy: Always
+      containers:
+        - name: coprocessor-listener
+          image: {{ .Values.listener.image.name }}:{{ .Values.listener.image.tag }}
+          command: ["fhevm_listener"]
+          args:
+{{ toYaml .Values.listener.args | nindent 12 }}
+          env:
+{{ toYaml .Values.listener.env | nindent 12 }}
+          ports:
+            {{- range $portName, $portValue := .Values.listener.ports }}
+            - name: {{ $portName }}
+              containerPort: {{ $portValue }}
+            {{- end }}
+{{- end -}}

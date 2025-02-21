@@ -1,0 +1,81 @@
+config:
+  enabled: true
+  coprocessorKey:
+    secret:
+      name: coprocessor-key
+      key: coprocessor.hex
+  apiKey:
+    secret: 
+      name: coprocessor-api-key
+      key: coprocessor-api-key
+  database:
+    secret:
+      name: coprocessor-db-url
+      key: coprocessor-db-url
+      value: "postgresql://postgres:postgres@fhevm-postgresql:5432/coprocessor"
+
+dbMigration:
+  enabled: true
+  image:
+    name: ghcr.io/zama-ai/fhevm-db-migration 
+    tag: v0.7.0-rc0
+  env:
+    - name: DATABASE_URL
+      valueFrom:
+        secretKeyRef:
+          name: coprocessor-db-url
+          key: coprocessor-db-url
+    - name: TENANT_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: coprocessor-api-key
+          key: coprocessor-api-key
+    - name: ACL_CONTRACT_ADDRESS
+      value: "0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c"
+    - name: INPUT_VERIFIER_ADDRESS
+      value: "0xa1880e99d86F081E8D3868A8C4732C8f65dfdB11"
+  insertInitContainer:
+    pksURL: http://minio:9000/kms-public/kms/PUB/PublicKey/d74037feb1394aec0eb724afc4a690e16a0203eb1dc868de08179f2e4828f335
+    sksURL: http://minio:9000/kms-public/kms/PUB/ServerKey/812b602c11693dda4bfa68db78269849972b6f1920a725a98fc78cf619a6ab5f
+    publicParamsURL: http://minio:9000/kms-public/kms/PUB/CRS/e4e3f0deef6492bde2fac3f2c698112ace878d4a3656b272197ed332391c48fa
+
+server:
+  enabled: true
+  nameOverride:
+  image:
+    name: ghcr.io/zama-ai/fhevm-coprocessor
+    tag: v0.7.0-rc0
+  replicas: 1
+  env:
+    - name: DATABASE_URL
+      valueFrom:
+        secretKeyRef:
+          name: coprocessor-db-url
+          key: coprocessor-db-url
+  args:
+    - --run-server
+    - --server-addr=0.0.0.0:50052
+    - --coprocessor-private-key=/accounts/coprocessor.hex
+
+listener:
+  enabled: true
+  nameOverride:
+  image:
+    name: ghcr.io/zama-ai/fhevm-coprocessor
+    tag: b826fbf
+  replicas: 1
+  env:
+    - name: DATABASE_URL
+      valueFrom:
+        secretKeyRef:
+          name: coprocessor-db-url
+          key: coprocessor-db-url
+    - name: TENANT_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: coprocessor-api-key
+          key: coprocessor-api-key
+  args:
+    - --database-url=$(DATABASE_URL)
+    - --coprocessor-api-key=$(TENANT_API_KEY)
+    - --url=ws://layer1-node:8545
