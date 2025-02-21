@@ -1,7 +1,6 @@
 pub mod verifier;
 use std::io;
 
-use aws_sdk_s3::{error::SdkError, operation::get_object::GetObjectError};
 use fhevm_engine_common::types::FhevmError;
 use thiserror::Error;
 
@@ -15,9 +14,6 @@ pub enum ExecutionError {
 
     #[error("IO error: {0}")]
     IOError(#[from] io::Error),
-
-    #[error("S3 error: {0}")]
-    SdkError(#[from] SdkError<GetObjectError>),
 
     #[error("Invalid CRS bytes {0}")]
     InvalidCrsBytes(String),
@@ -33,6 +29,9 @@ pub enum ExecutionError {
 
     #[error("TBD")]
     FaildFhevm(#[from] FhevmError),
+
+    #[error("Server keys not found {0}")]
+    ServerKeysNotFound(String),
 }
 
 #[cfg(test)]

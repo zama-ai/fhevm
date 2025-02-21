@@ -1,22 +1,22 @@
-use alloy_primitives::{Address, U256};
-use aws_config::imds::client::error;
+use fhevm_engine_common::tenant_keys::TfheTenantKeys;
+use fhevm_engine_common::tenant_keys::{self, FetchTenantKeyResult};
 use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, extract_ct_list};
-use fhevm_engine_common::types::{FhevmError, SupportedFheCiphertexts};
+use fhevm_engine_common::types::SupportedFheCiphertexts;
 
+use lru::LruCache;
 use sha3::Digest;
 use sha3::Keccak256;
 use sqlx::{postgres::PgListener, PgPool, Row};
-
+use std::num::NonZero;
 use std::str::FromStr;
+use tokio::sync::RwLock;
 
 use crate::ExecutionError;
 use anyhow::Result;
-use aws_sdk_s3::Client;
 use tfhe::safe_serialization::safe_deserialize;
 
-use tfhe::zk::CompactPkeCrs;
-use tfhe::{set_server_key, CompactPublicKey};
-use tokio::io::AsyncReadExt;
+use std::sync::Arc;
+use tfhe::set_server_key;
 
 use tokio::{select, time::Duration};
 use tracing::{debug, error};
@@ -27,9 +27,6 @@ pub const SAFE_SER_SIZE_LIMIT: u64 = 1024 * 1024 * 1024 * 2;
 pub struct Config {
     database_url: String,
     listen_database_channel: String,
-
-    crs_bucket_name: String,
-    crs_object_key: String,
 }
 
 /// Executes the main loop for handling verify_proofs requests inserted in the database
@@ -42,12 +39,13 @@ pub async fn execute_verify_proofs_loop(conf: &Config) -> Result<(), ExecutionEr
     let mut listener = PgListener::connect_with(&pool).await?;
     listener.listen(&conf.listen_database_channel).await?;
 
-    // Fetch CRS
-    let crs = download_crs(&conf.crs_bucket_name, &conf.crs_object_key).await?;
-    let compact_pubkey = fetch_compact_pubkey()?;
+    let tenant_key_cache = Arc::new(RwLock::new(LruCache::new(NonZero::new(100).unwrap())));
+    tenant_keys::fetch_tenant_server_key(1, &pool, &tenant_key_cache)
+        .await
+        .map_err(|err| ExecutionError::ServerKeysNotFound(err.to_string()))?;
 
     loop {
-        if let Err(e) = execute_verify_proof_routine(&pool, &crs, &compact_pubkey).await {
+        if let Err(e) = execute_verify_proof_routine(&pool, &tenant_key_cache).await {
             debug!(target: "worker", "Error executing verify_proof_routine: {:?}", e);
         }
 
@@ -65,8 +63,7 @@ pub async fn execute_verify_proofs_loop(conf: &Config) -> Result<(), ExecutionEr
 /// Fetch, verify a single proof and then compute signature
 async fn execute_verify_proof_routine(
     pool: &PgPool,
-    crs: &CompactPkeCrs,
-    compact_pubkey: &CompactPublicKey,
+    tenant_key_cache: &Arc<RwLock<LruCache<i32, TfheTenantKeys>>>,
 ) -> Result<(), ExecutionError> {
     let mut txn: sqlx::Transaction<'_, sqlx::Postgres> = pool.begin().await?;
     if let Ok(row) = sqlx::query(
@@ -85,15 +82,21 @@ async fn execute_verify_proof_routine(
         let contract_address = row.get("contract_address");
         let user_address = row.get("user_address");
 
-        let md: AuxiliaryData = AuxiliaryData {
+        // TODO: fetch tenant keys by tenant id
+        let keys = tenant_keys::fetch_tenant_server_key(chain_id, pool, tenant_key_cache)
+            .await
+            .map_err(|err| ExecutionError::ServerKeysNotFound(err.to_string()))?;
+
+        let aux_data: AuxiliaryData = AuxiliaryData {
             contract_address,
             user_address,
             chain_id,
+            acl_contract_address: keys.acl_contract_address.clone(),
         };
 
         let mut verified = false;
         let mut handles_bytes = vec![];
-        match verify_proof_and_sign(request_id, crs, compact_pubkey, &md, &input).await {
+        match verify_proof_and_sign(request_id, &keys, &aux_data, &input).await {
             Ok(handles) => {
                 handles_bytes = handles.iter().fold(Vec::new(), |mut acc, h| {
                     acc.extend_from_slice(h.as_ref());
@@ -131,21 +134,23 @@ async fn execute_verify_proof_routine(
 
 pub(crate) async fn verify_proof_and_sign(
     request_id: i64,
-    crs: &CompactPkeCrs,
-    public_key: &CompactPublicKey,
+    keys: &FetchTenantKeyResult,
     aux_data: &AuxiliaryData,
     raw_ct: &[u8],
 ) -> Result<Vec<Vec<u8>>, ExecutionError> {
     let cts: Vec<SupportedFheCiphertexts> =
-        try_verify_and_expand_ciphertext_list(request_id, raw_ct, crs, public_key, aux_data)?;
+        try_verify_and_expand_ciphertext_list(request_id, raw_ct, keys, aux_data)?;
 
-    // TODO: set_server_key(self.keys.server_key.clone());
+    set_server_key(keys.server_key.clone());
     let handles = cts
         .iter()
-        .map(|ct: &SupportedFheCiphertexts| {
-            ciphertext_handle(&ct.compress().1, ct.type_num() as u8) // TODO: double check
+        .enumerate()
+        .map(|(idx, ct)| {
+            ciphertext_handle(&ct.compress().1, idx as u8, ct.type_num() as u8, aux_data)
         })
         .collect();
+
+    // TODO: Insert ciphertexts into the database
 
     Ok(handles)
 }
@@ -153,8 +158,7 @@ pub(crate) async fn verify_proof_and_sign(
 fn try_verify_and_expand_ciphertext_list(
     request_id: i64,
     raw_ct: &[u8],
-    crs: &CompactPkeCrs,
-    public_key: &CompactPublicKey,
+    keys: &FetchTenantKeyResult,
     aux_data: &AuxiliaryData,
 ) -> Result<Vec<SupportedFheCiphertexts>, ExecutionError> {
     let aux_data_bytes = aux_data.assemble();
@@ -164,60 +168,44 @@ fn try_verify_and_expand_ciphertext_list(
         safe_deserialize(&mut cursor, SAFE_SER_SIZE_LIMIT)
             .map_err(ExecutionError::InvalidCiphertextBytes)?;
 
-    let expanded = the_list
-        .verify_and_expand(crs, public_key, &aux_data_bytes)
+    let expanded: tfhe::CompactCiphertextListExpander = the_list
+        .verify_and_expand(&keys.public_params, &keys.pks, &aux_data_bytes)
         .map_err(|_| ExecutionError::InvalidProof(request_id))?;
 
     Ok(extract_ct_list(&expanded)?)
 }
 
-pub fn ciphertext_handle(ciphertext: &[u8], ct_type: u8) -> Vec<u8> {
-    let mut handle: Vec<u8> = Keccak256::digest(ciphertext).to_vec();
+/// Computes the handle for a ciphertext
+/// handle = hash(individual ciphertext, zkpok, type, user_address, contract_address, keyID, chain id)
+fn ciphertext_handle(
+    compress_ct: &[u8],
+    ct_idx: u8,
+    ct_type: u8,
+    aux_data: &AuxiliaryData,
+) -> Vec<u8> {
+    let mut handle_hash = Keccak256::new();
+    handle_hash.update(compress_ct); // individual ciphertext
+    handle_hash.update(aux_data.user_address.as_bytes());
+    handle_hash.update(aux_data.contract_address.as_bytes());
+    handle_hash.update([ct_idx]);
+    // handle_hash.update(acl_contract_address.as_slice());
+    // TODO: handle_hash.update(&chain_id_be);
+    let mut handle = handle_hash.finalize().to_vec();
+    assert_eq!(handle.len(), 32);
+    // idx cast to u8 must succeed because we don't allow
+    // more handles than u8 size
+    handle[29] = ct_idx;
     handle[30] = ct_type;
     handle[31] = current_ciphertext_version() as u8;
-    handle
-}
 
-/// Retrieves the CRS from an S3 bucket
-async fn download_crs(
-    bucket_name: &str,
-    object_key: &str,
-) -> Result<CompactPkeCrs, ExecutionError> {
-    let bytes = download_s3_binary(bucket_name, object_key).await?;
-    let mut cursor = std::io::Cursor::new(bytes);
-    let crs: CompactPkeCrs = safe_deserialize(&mut cursor, SAFE_SER_SIZE_LIMIT)
-        .map_err(ExecutionError::InvalidCrsBytes)?;
-    Ok(crs)
-}
-
-/// Downloads a binary file from an S3 bucket and returns it as a Vec<u8>
-pub async fn download_s3_binary(
-    bucket_name: &str,
-    object_key: &str,
-) -> Result<Vec<u8>, ExecutionError> {
-    let config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
-    let s3_client = Client::new(&config);
-
-    // Fetch the object from S3
-    let resp = s3_client
-        .get_object()
-        .bucket(bucket_name)
-        .key(object_key)
-        .send()
-        .await?;
-
-    // Read the binary data into a buffer
-    let mut stream = resp.body.into_async_read();
-    let mut buffer = Vec::new();
-    stream.read_to_end(&mut buffer).await?;
-
-    Ok(buffer)
+    handle.to_vec()
 }
 
 pub(crate) struct AuxiliaryData {
     chain_id: i32,
     user_address: String,
     contract_address: String,
+    acl_contract_address: String,
 }
 
 impl AuxiliaryData {
@@ -228,7 +216,7 @@ impl AuxiliaryData {
         let contract_address = alloy_primitives::Address::from_str(&self.user_address).unwrap();
         let client_address = alloy_primitives::Address::from_str(&self.contract_address).unwrap();
         let chain_id = alloy_primitives::U256::from(self.chain_id).to_owned();
-        // TODO: ACL_ADDRESS from Tenants table
+        // TODO: acl_contract_address
 
         let mut metadata = [0_u8; 92];
         let contract_bytes = contract_address.into_array();
@@ -242,15 +230,4 @@ impl AuxiliaryData {
         // TODO: How to build metadata for the proof?
         metadata
     }
-}
-
-pub fn fetch_compact_pubkey() -> Result<CompactPublicKey, ExecutionError> {
-    // TODO: Should we fetch pks bytes (compact public key) from `tenants` table?
-    let bytes = vec![]; // Fetch from database
-
-    let mut cursor = std::io::Cursor::new(bytes);
-    let pks: tfhe::CompactPublicKey = safe_deserialize(&mut cursor, SAFE_SER_SIZE_LIMIT)
-        .map_err(ExecutionError::InvalidPkBytes)?;
-
-    Ok(pks)
 }

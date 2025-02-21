@@ -18,10 +18,9 @@ thiserror = { version = "2.0" }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 rand = {workspace = true}
-alloy-primitives = "0.8.21"
-aws-config = "1.1"       
-aws-sdk-s3 = "1.10"       
+alloy-primitives = "0.8.21"   
 sha3 = "0.10.8"
+lru = "0.12.0"
 
 # local dependencies
 fhevm-engine-common = { path = "../fhevm-engine-common" }
@@ -31,5 +30,5 @@ fhevm-engine-common = { path = "../fhevm-engine-common" }
 nightly-avx512 = ["tfhe/nightly-avx512"]
 
 [[bin]]
-name = "sns_worker"
+name = "zkproof_worker"
 path = "src/bin/zkproof_worker.rs"
