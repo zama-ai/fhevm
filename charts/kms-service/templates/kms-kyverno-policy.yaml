@@ -17,12 +17,8 @@ spec:
               kinds:
                 - Pod
               selector:
-                matchExpressions:
-                  - key: app
-                    operator: In
-                    values:
-                      - kms-core
-                      - kms-core-client
+                matchLabels:
+                  app: kms-core
       exclude:
         any:
           - resources:
