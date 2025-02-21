@@ -14,6 +14,7 @@ spec:
       labels:
         app: kms-core
         app.kubernetes.io/name: {{ include "kmsThresholdInitJobName" . }}
+        job-name: {{ include "kmsCoreName" . }}-threshold-init
     spec:
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
@@ -50,7 +51,7 @@ spec:
               for peerID in "${peersIDList[@]}"; do
                 while true
                   do
-                  /bin/grpc_health_probe -addr={{ printf "%s-${peerID}:%d" $kmsCoreName (int .Values.kmsCore.ports.client) | quote }}
+                  /bin/grpc_health_probe -addr={{ printf "%s-%d:%d" $kmsCoreName (int $peerID) (int .Values.kmsCore.ports.client) | quote }}
                   healthStatus=$?
                   {{- /* Checking grpc-health-probe response codes, see https://github.com/grpc-ecosystem/grpc-health-probe?tab=readme-ov-file#exit-codes*/}}
                   if [ ${healthStatus} -eq 0 ]; then
