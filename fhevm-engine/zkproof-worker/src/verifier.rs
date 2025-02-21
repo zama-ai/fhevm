@@ -1,4 +1,5 @@
 use alloy_primitives::{Address, U256};
+use aws_config::imds::client::error;
 use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, extract_ct_list};
 use fhevm_engine_common::types::{FhevmError, SupportedFheCiphertexts};
 
@@ -18,7 +19,7 @@ use tfhe::{set_server_key, CompactPublicKey};
 use tokio::io::AsyncReadExt;
 
 use tokio::{select, time::Duration};
-use tracing::{debug, info};
+use tracing::{debug, error};
 
 pub const SAFE_SER_SIZE_LIMIT: u64 = 1024 * 1024 * 1024 * 2;
 
@@ -71,7 +72,7 @@ async fn execute_verify_proof_routine(
     if let Ok(row) = sqlx::query(
         "SELECT zk_proof_id, input, chain_id, contract_address, user_address
             FROM verify_proofs
-            WHERE verified = false AND retry_count < 5
+            WHERE verified = NULL
             ORDER BY zk_proof_id ASC
             LIMIT 1 FOR UPDATE SKIP LOCKED",
     )
@@ -90,33 +91,31 @@ async fn execute_verify_proof_routine(
             chain_id,
         };
 
+        let mut verified = false;
+        let mut handles_bytes = vec![];
         match verify_proof_and_sign(request_id, crs, compact_pubkey, &md, &input).await {
             Ok(handles) => {
-                let handles_bytes = handles.iter().fold(Vec::new(), |mut acc, h| {
+                handles_bytes = handles.iter().fold(Vec::new(), |mut acc, h| {
                     acc.extend_from_slice(h.as_ref());
                     acc
                 });
-
-                // Mark as verified and set handles
-                sqlx::query(
-                    "UPDATE verify_proofs SET handles = $2, verified = true, is_valid = true, verified_at = NOW()
-                    WHERE zk_proof_id = $1",
-                )
-                .bind(request_id)
-                .bind(handles_bytes)
-                .execute(&mut *txn)
-                .await?;
+                verified = true;
             }
-            Err(_) => {
-                sqlx::query(
-                    "UPDATE verify_proofs SET verified = true, is_valid = false, verified_at = NOW()
-                    WHERE zk_proof_id = $1",
-                )
-                .bind(request_id)
-                .execute(&mut *txn)
-                .await?;
+            Err(err) => {
+                error!("Failed to verify proof: {}, err: {}", request_id, err);
             }
         }
+
+        // Mark as verified and set handles
+        sqlx::query(
+            "UPDATE verify_proofs SET handles = $1, verified = $2, verified_at = NOW()
+            WHERE zk_proof_id = $3",
+        )
+        .bind(handles_bytes)
+        .bind(verified)
+        .bind(request_id)
+        .execute(&mut *txn)
+        .await?;
 
         // Notify verify_proof_responses
         sqlx::query("SELECT pg_notify($1, '')")
