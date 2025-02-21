@@ -3504,8 +3504,7 @@ pub fn generate_random_number(
 ) -> SupportedFheCiphertexts {
     match the_type {
         0 => {
-            let num = FheUint2::generate_oblivious_pseudo_random_bounded(Seed(seed), 1);
-            SupportedFheCiphertexts::FheBool(num.gt(0))
+            SupportedFheCiphertexts::FheBool(FheBool::generate_oblivious_pseudo_random(Seed(seed)))
         }
         1 => {
             let bit_count = 4;
