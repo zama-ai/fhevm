@@ -20,9 +20,9 @@ spec:
                 - "{{ include "kmsCoreName" . }}-*"
       preconditions:
         all:
-        - key: "{{`{{ request.object.metadata.labels.job-name }}`}}"
+        - key: "{{`{{ request.object.metadata.labels.app }}`}}"
           operator: NotEquals
-          value: "{{ include "kmsCoreName" . }}-threshold-init"
+          value: "kms-threshold-init-job"
         - key: "{{`{{ request.object.spec.serviceAccountName }}`}}"
           operator: NotEquals
           value: ""
@@ -41,9 +41,9 @@ spec:
                 - "{{ include "kmsCoreName" . }}-*"
       preconditions:
         all:
-        - key: "{{`{{ request.object.metadata.labels.job-name }}`}}"
+        - key: "{{`{{ request.object.metadata.labels.app }}`}}"
           operator: NotEquals
-          value: "{{ include "kmsCoreName" . }}-threshold-init"
+          value: "kms-threshold-init-job"
       mutate:
         foreach:
         - list: "request.object.spec.initContainers"
@@ -65,9 +65,9 @@ spec:
                 - "{{ include "kmsCoreName" . }}-*"
       preconditions:
         all:
-        - key: "{{`{{ request.object.metadata.labels.job-name }}`}}"
+        - key: "{{`{{ request.object.metadata.labels.app }}`}}"
           operator: NotEquals
-          value: "{{ include "kmsCoreName" . }}-threshold-init"
+          value: "kms-threshold-init-job"
       mutate:
         foreach:
         - list: "request.object.spec.containers"

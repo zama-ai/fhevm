@@ -19,14 +19,14 @@ spec:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       initContainers:
         - name: check-kms-cores
-          image: {{ .Values.grpcHealthProbe.image.name }}:{{ .Values.grpcHealthProbe.image.tag }}
+          image: {{ .Values.kubeUtils.image.name }}:{{ .Values.kubeUtils.image.tag }}
           command: ["/bin/bash", "-c"]
           args:
             - |
               echo "starting init process for kms-cores to be ready to be initialized"
               kmsInitCount=0
               {{- if .Values.kmsCore.thresholdMode.peersList }}
-              peerAddresses=({{ range $peer := .Values.kmsCore.thresholdMode.peersList }}{{ printf "%s:%d" $peer.host (int $peer.port) | quote }} {{ end }})
+              peerAddresses=({{ range $peer := .Values.kmsCore.thresholdMode.peersList }}{{ printf "%s:%d" $peer.host (int $.Values.kmsCore.ports.client) | quote }} {{ end }})
               for peerAddress in "${peerAddresses[@]}"; do
                 while true
                   do
