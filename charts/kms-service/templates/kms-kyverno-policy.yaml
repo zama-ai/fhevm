@@ -17,8 +17,12 @@ spec:
               kinds:
                 - Pod
               selector:
-                matchLabels:
-                  app: kms-core
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                      - kms-core
+                      - kms-core-client
       exclude:
         any:
           - resources:
@@ -35,7 +39,7 @@ spec:
       mutate:
         patchStrategicMerge:
           spec:
-            serviceAccountName: "{{`{{ coalesce request.object.metadata.generateName request.object.metadata.name }}`}}"
+            serviceAccountName: "{{`{{ if request.object.metadata.generateName }}{{request.object.metadata.generateName}}{{else}}{{request.object.metadata.name}}{{end}}`}}"
 
     - name: replace-configmap-names-init
       match:
@@ -67,7 +71,7 @@ spec:
               - name: "{{`{{ element.name }}`}}"
                 envFrom:
                 - configMapRef:
-                    name: "{{`{{ coalesce request.object.metadata.generateName request.object.metadata.name }}`}}"
+                    name: "{{`{{ if request.object.metadata.generateName }}{{request.object.metadata.generateName}}{{else}}{{request.object.metadata.name}}{{end}}`}}"
 
     - name: replace-configmap-names-containers
       match:
@@ -99,5 +103,5 @@ spec:
               - name: "{{`{{ element.name }}`}}"
                 envFrom:
                 - configMapRef:
-                    name: "{{`{{ coalesce request.object.metadata.generateName request.object.metadata.name }}`}}"
+                    name: "{{`{{ if request.object.metadata.generateName }}{{request.object.metadata.generateName}}{{else}}{{request.object.metadata.name}}{{end}}`}}"
 {{- end -}}
