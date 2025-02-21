@@ -15,6 +15,9 @@ sha3 = { workspace = true }
 tfhe = { workspace = true }
 prost = { workspace = true }
 tonic  = { workspace = true }
+sqlx = {workspace = true}
+tokio = { workspace = true }
+lru = "0.12.3"
 
 # crates.io dependencies
 bigdecimal = "0.4.5"
