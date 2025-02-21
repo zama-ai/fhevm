@@ -20,6 +20,12 @@ RUN cargo fetch && \
 # Stage 2: Final image
 FROM debian:bullseye-slim
 
+# Install dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates && \
+    update-ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
 COPY --from=build /app/fhevm-engine/target/release/coprocessor /usr/local/bin/coprocessor
 COPY --from=build /app/fhevm-engine/target/release/cli /usr/local/bin/cli
 COPY --from=build /app/fhevm-engine/target/release/fhevm_listener /usr/local/bin/fhevm_listener
