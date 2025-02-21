@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS verify_proofs (
     input BYTEA,
     handles BYTEA,
     retry_count INTEGER NOT NULL DEFAULT 0,
-    verified BOOLEAN NOT NULL DEFAULT false,
+    verified BOOLEAN DEFAULT NULL,
     last_error TEXT,
     verified_at TIMESTAMPTZ,
     last_retry_at TIMESTAMPTZ,
