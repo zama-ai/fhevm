@@ -60,7 +60,7 @@ The **fhevm-contracts** is a Solidity library designed for developers to easily 
 - **Extensions**: Additional features and utilities that can be added to base contracts
 - **Testing utilities**: Tools to help test FHE-enabled smart contracts
 
-See more details in [the fhEVM-contracts documentation](../../smart_contracts/contracts.md).
+See more details in [the fhEVM-contracts documentation](../../../smart_contracts/contracts.md).
 {% endhint %}
 
 The `fhevm-contracts` library includes the `ConfidentialERC20Mintable` contract, which is an extention of `ConfidentialERC20` with minting capabilities, providing:

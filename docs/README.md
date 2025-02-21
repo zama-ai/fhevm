@@ -21,17 +21,26 @@ layout:
 
 Learn the basics of fhEVM, set it up, and make it run with ease.
 
-<table data-view="cards"><thead><tr><th></th><th></th><th data-hidden data-card-cover data-type="files"></th><th data-hidden data-card-target data-type="content-ref"></th></tr></thead><tbody><tr><td><strong>Overview</strong></td><td>Understand the basic concepts of fhEVM library.</td><td><a href=".gitbook/assets/start1.png">start1.png</a></td><td><a href="getting_started/overview.md">key_concepts.md</a></td></tr><tr><td><strong>Quick start</strong></td><td>Deploy your first fhEVM smart contract.</td><td><a href=".gitbook/assets/start4.png">start4.png</a></td><td><a href="getting_started/quick_start/overview.md">quick_start.md</a></td></tr><tr><td><strong>Get started with Hardhat</strong></td><td>Learn how to deploy and write confidential smart contracts with Hardhat</td><td><a href=".gitbook/assets/start5.png">start5.png</a></td><td><a href="tutorials/hardhat.md">hardhat.md</a></td></tr></tbody></table>
+<table data-view="cards"><thead><tr><th></th><th></th><th data-hidden data-card-cover data-type="files"></th><th data-hidden data-card-target data-type="content-ref"></th></tr></thead><tbody><tr><td><strong>Overview</strong></td><td>Explore the suite of fhEVM protocol.</td><td><a href=".gitbook/assets/start1.png">start1.png</a></td><td><a href="getting-started/overview.md">overview.md</a></td></tr><tr><td><strong>Quick start with Remix</strong></td><td>Learn and prototype in the in-browser IDE.</td><td><a href=".gitbook/assets/start4.png">start4.png</a></td><td><a href="getting-started/overview-1/overview.md">overview.md</a></td></tr><tr><td><strong>Get started with Hardhat</strong></td><td>Develop in production-ready envrionment.</td><td><a href=".gitbook/assets/start5.png">start5.png</a></td><td><a href="./getting-started/overview-1/hardhat/README.md">hardhat.md</a></td></tr></tbody></table>
 
 ## Develop a fhEVM smart contract
 
 Start developing fhEVM smart contracts in Solidity by exploring its core features, discovering essential guides, and learning more with user-friendly tutorials.
 
-<table data-view="cards"><thead><tr><th></th><th></th><th></th><th data-hidden data-card-cover data-type="files"></th></tr></thead><tbody><tr><td><strong>Fundamentals</strong></td><td>Explore core features.</td><td><ul><li><a href="tutorials/hardhat.md">Write contract with Hardhat</a></li><li><a href="smart_contracts/types.md">Use encrypted types</a></li></ul></td><td><a href=".gitbook/assets/build1.png">build1.png</a></td></tr><tr><td><strong>Guides</strong></td><td>Learn more about fhEVM implementation.</td><td><ul><li><a href="./frontend/webapp.md">Frontend</a></li></ul></td><td><a href=".gitbook/assets/build2.png">build2.png</a></td></tr><tr><td><strong>Tutorials</strong></td><td>Build quickly with tutorials.</td><td><ul><li><a href="tutorials/see-all-tutorials.md">See all tutorials</a></li></ul></td><td><a href=".gitbook/assets/build3.png">build3.png</a></td></tr></tbody></table>
+<table data-view="cards"><thead><tr><th></th><th></th><th></th><th data-hidden data-card-cover data-type="files"></th></tr></thead><tbody><tr><td><strong>Smart contract</strong></td><td>Learn core Solidity library.</td><td><ul><li><a href="smart_contracts/key_concepts.md">Key features</a></li><li><a href="smart_contracts/types.md">Use encrypted types</a></li></ul></td><td><a href=".gitbook/assets/build1.png">build1.png</a></td></tr><tr><td><strong>Frontend</strong></td><td>Write a dAPP frontend.</td><td><ul><li><a href="frontend/setup.md">Set up</a></li><li><a href="frontend/webapp.md">Build a web application</a></li></ul></td><td><a href=".gitbook/assets/build2.png">build2.png</a></td></tr><tr><td><strong>Tutorials</strong></td><td>Build quickly with tutorials.</td><td><ul><li><a href="tutorials/see-all-tutorials.md">See all tutorials</a></li></ul></td><td><a href=".gitbook/assets/build3.png">build3.png</a></td></tr></tbody></table>
 
 ## Explore more
 
 Access to additional resources and join the Zama community.
+
+### Explanations
+
+Explore the technical architecture of the fhEVM protocol and the underlying cryptographic principles that power it.
+
+- [Architecture overview](smart_contracts/architecture_overview.md)
+- [FHE on blockchain](smart_contracts/architecture_overview/fhe-on-blockchain.md)
+- [fhEVM components](smart_contracts/architecture_overview/fhevm-components.md)
+- [Encryption, decryption re-encryption and computation](smart_contracts/d_re_ecrypt_compute.md)
 
 ### References
 

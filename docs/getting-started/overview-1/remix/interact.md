@@ -20,7 +20,7 @@ To perform transactions directly in Remix, your contract needs to be connected t
 4. Paste the contract address into the **"At address"** field under the **Deploy** section.
 5. Click **At address**.
 
-If the address was entered correctly, the `MyConfidentialERC20.sol` contract will be displayed in the "**Deployed Contract**" inside the **Zama Plugin**. &#x20;
+If the address was entered correctly, the `MyConfidentialERC20.sol` contract will be displayed in the "**Deployed Contract**" inside the **Zama Plugin**.
 
 {% embed url="https://scribehow.com/embed/Load_MyConfidentialERC20_Contract_in_Remix__tJ1PmbA4TuGQ2fj6kMdMtQ?removeLogo=true&skipIntro=true" %}
 
@@ -40,7 +40,7 @@ From here, you can mint confidential ERC20 token to your account:
 2. Inside **Zama Plugin,** click to expand the **mint** function of your contract.
 3. Enter your wallet address and the amount of tokens to mint (e.g., `1000`).
 4. Click `Submit`.
-5. Confirm the transaction in **MetaMask**.&#x20;
+5. Confirm the transaction in **MetaMask**.
 
 Once sccussful, you should see the message in the terminal.
 
@@ -111,7 +111,7 @@ Always re-encrypt to validate ciphertext transformations and confirm operations.
 To continue your journey and deepen your knowledge, explore the resources below.
 
 - [**Read the Whitepaper**](https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper-v2.pdf): Understand the core technology behind fhEVM, including its cryptographic foundations and use cases.
-- [**See more demos and tutorials**](../../tutorials/see-all-tutorials.md): Expand your skills with hands-on demos and tutorials crafted to guide you through various real-world scenarios.
+- [**See more demos and tutorials**](../../../tutorials/see-all-tutorials.md): Expand your skills with hands-on demos and tutorials crafted to guide you through various real-world scenarios.
 - [**Try out AI coding assistant**](https://chatgpt.com/g/g-67518aee3c708191b9f08d077a7d6fa1-zama-solidity-developer): If you have a chatGPT plus account, try out our custom ChatGPT model tailored for Solidity and fhEVM developers.
 
 ### 2. Tools

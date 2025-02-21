@@ -1,20 +1,27 @@
 # Table of contents
 
 - [Welcome to fhEVM](README.md)
-- [Whitepaper](https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper-v2.pdf)
+- [White paper](https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper-v2.pdf)
 
 ## Getting Started
 
-- [Overview](getting_started/overview.md)
-- [Quick start](getting_started/quick_start/overview.md)
-  - [1. Setting up Remix](getting_started/quick_start/remix.md)
-  - [2. Connect your wallet to Remix](getting_started/quick_start/connect_wallet.md)
-  - [3. Deploying ConfidentialERC20](getting_started/quick_start/deploying_cerc20.md)
-  - [4. Interacting with the contract](getting_started/quick_start/interact.md)
+- [Overview](getting-started/overview.md)
+- [Quick Start](getting-started/overview-1/overview.md)
+  - [Remix](getting-started/overview-1/remix/README.md)
+    - [1. Setting up Remix](getting-started/overview-1/remix/remix.md)
+    - [2. Connect your wallet to Remix](getting-started/overview-1/remix/connect_wallet.md)
+    - [3. Deploying ConfidentialERC20](getting-started/overview-1/remix/deploying_cerc20.md)
+    - [4. Interacting with the contract](getting-started/overview-1/remix/interact.md)
+  - [Hardhat](getting-started/overview-1/hardhat/README.md)
+    - [Prerequisites](getting-started/overview-1/hardhat/prerequisites.md)
+    - [1. Setting up Hardhat](getting-started/overview-1/hardhat/1.-setting-up-hardhat.md)
+    - [2. Writing contracts](getting-started/overview-1/hardhat/2.-writing-contracts.md)
+    - [3. Testing in mocked mode](getting-started/overview-1/hardhat/3.-testing-in-mocked-mode.md)
+    - [4. Deploying the contract](getting-started/overview-1/hardhat/4.-deploying-the-contract.md)
+    - [5. Interacting with the contract](getting-started/overview-1/hardhat/5.-interacting-with-the-contract.md)
 
 ## Tutorials
 
-- [Tutorial: Setting up Hardhat](tutorials/hardhat.md)
 - [See all tutorials](tutorials/see-all-tutorials.md)
 
 ## Smart contract
@@ -31,7 +38,7 @@
   - [Decryption](smart_contracts/decryption/decrypt.md)
   - [Decryption in depth](smart_contracts/decryption/decrypt_details.md)
   - [Re-encryption](smart_contracts/decryption/reencryption.md)
-- [If sentances](smart_contracts/loop.md)
+- [If sentences](smart_contracts/loop.md)
 - [Branching in FHE](smart_contracts/conditions.md)
 - [AsEbool, asEuintXX, asEaddress and asEbytesXX operations](smart_contracts/asEXXoperators.md)
 - [Generate random numbers](smart_contracts/random.md)
