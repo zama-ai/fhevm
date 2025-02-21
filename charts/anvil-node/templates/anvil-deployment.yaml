@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-anvil-node
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-anvil-node
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-anvil-node
+    spec:
+      containers:
+        - name: anvil-node
+          image: {{ .Values.image.name }}:{{ .Values.image.tag }}
+          command: ["anvil"]
+          env:
+            - name: MNEMONIC
+              value: {{ .Values.network.mnemonic }}
+          args:
+            - "--block-time"
+            - "{{ .Values.network.blockTime }}"
+            - "--host"
+            - "{{ .Values.network.host }}"
+            - "--port"
+            - "{{ .Values.port }}"
+            - "--chain-id"
+            - "{{ .Values.network.chainId }}"
+            - "--accounts"
+            - "{{ .Values.network.accounts }}"
+            - "--mnemonic"
+            - "$(MNEMONIC)"
+          ports:
+            - containerPort: {{ .Values.port }}

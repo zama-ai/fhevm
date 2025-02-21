@@ -1,0 +1,12 @@
+image:
+  name: ghcr.io/foundry-rs/foundry
+  tag: stable
+
+network:
+  blockTime: 0.1
+  host: 0.0.0.0
+  chainId: 54321
+  accounts: 15
+  mnemonic: "coyote sketch defense hover finger envelope celery urge panther venue verb cheese"
+
+port: 8546

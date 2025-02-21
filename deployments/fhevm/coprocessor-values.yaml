@@ -78,4 +78,4 @@ listener:
   args:
     - --database-url=$(DATABASE_URL)
     - --coprocessor-api-key=$(TENANT_API_KEY)
-    - --url=ws://layer1-node:8545
+    - --url=ws://layer1-anvil-node:8545

@@ -29,3 +29,15 @@ releases:
       - fhevm-postgresql
       - minio
 
+  # FHEVM layer1-node
+  - name: layer1
+    namespace: fhevm
+    chart: "../../charts/anvil-node"
+    values:
+      - layer1-node-values.yaml
+
+  - name: layer2
+    namespace: fhevm
+    chart: "../../charts/anvil-node"
+    values:
+      - layer2-node-values.yaml
