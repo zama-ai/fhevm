@@ -1,3 +1,4 @@
+use alloy_primitives::{Address, U256};
 use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, extract_ct_list};
 use fhevm_engine_common::types::{FhevmError, SupportedFheCiphertexts};
 
@@ -53,7 +54,7 @@ pub async fn execute_verify_proofs_loop(conf: &Config) -> Result<(), ExecutionEr
             _ = listener.try_recv() => {
                 debug!(target: "worker", "Received notification");
             },
-            _ = tokio::time::sleep(Duration::from_secs(2)) => {
+            _ = tokio::time::sleep(Duration::from_secs(10)) => {
                 debug!(target: "worker", "Polling timeout, rechecking for tasks");
             }
         }
@@ -77,14 +78,19 @@ async fn execute_verify_proof_routine(
     .fetch_one(&mut *txn)
     .await
     {
-        let zk_proof_id: i64 = row.get("zk_proof_id");
+        let request_id: i64 = row.get("zk_proof_id");
         let input: Vec<u8> = row.get("input");
         let chain_id: i32 = row.get("chain_id");
         let contract_address = row.get("contract_address");
         let user_address = row.get("user_address");
 
-        let md: AuxiliaryData = AuxiliaryData::new(contract_address, user_address, chain_id);
-        match verify_proof_and_sign(crs, compact_pubkey, &md, &input).await {
+        let md: AuxiliaryData = AuxiliaryData {
+            contract_address,
+            user_address,
+            chain_id,
+        };
+
+        match verify_proof_and_sign(request_id, crs, compact_pubkey, &md, &input).await {
             Ok(handles) => {
                 let handles_bytes = handles.iter().fold(Vec::new(), |mut acc, h| {
                     acc.extend_from_slice(h.as_ref());
@@ -96,7 +102,7 @@ async fn execute_verify_proof_routine(
                     "UPDATE verify_proofs SET handles = $2, verified = true, is_valid = true, verified_at = NOW()
                     WHERE zk_proof_id = $1",
                 )
-                .bind(zk_proof_id)
+                .bind(request_id)
                 .bind(handles_bytes)
                 .execute(&mut *txn)
                 .await?;
@@ -106,7 +112,7 @@ async fn execute_verify_proof_routine(
                     "UPDATE verify_proofs SET verified = true, is_valid = false, verified_at = NOW()
                     WHERE zk_proof_id = $1",
                 )
-                .bind(zk_proof_id)
+                .bind(request_id)
                 .execute(&mut *txn)
                 .await?;
             }
@@ -125,13 +131,14 @@ async fn execute_verify_proof_routine(
 }
 
 pub(crate) async fn verify_proof_and_sign(
+    request_id: i64,
     crs: &CompactPkeCrs,
     public_key: &CompactPublicKey,
-    md: &AuxiliaryData,
+    aux_data: &AuxiliaryData,
     raw_ct: &[u8],
 ) -> Result<Vec<Vec<u8>>, ExecutionError> {
     let cts: Vec<SupportedFheCiphertexts> =
-        try_verify_and_expand_ciphertext_list(raw_ct, crs, public_key, md)?;
+        try_verify_and_expand_ciphertext_list(request_id, raw_ct, crs, public_key, aux_data)?;
 
     // TODO: set_server_key(self.keys.server_key.clone());
     let handles = cts
@@ -145,12 +152,13 @@ pub(crate) async fn verify_proof_and_sign(
 }
 
 fn try_verify_and_expand_ciphertext_list(
+    request_id: i64,
     raw_ct: &[u8],
     crs: &CompactPkeCrs,
     public_key: &CompactPublicKey,
-    md: &AuxiliaryData,
+    aux_data: &AuxiliaryData,
 ) -> Result<Vec<SupportedFheCiphertexts>, ExecutionError> {
-    let md_bytes = md.assemble();
+    let aux_data_bytes = aux_data.assemble();
 
     let mut cursor = std::io::Cursor::new(raw_ct);
     let the_list: tfhe::ProvenCompactCiphertextList =
@@ -158,8 +166,8 @@ fn try_verify_and_expand_ciphertext_list(
             .map_err(ExecutionError::InvalidCiphertextBytes)?;
 
     let expanded = the_list
-        .verify_and_expand(crs, public_key, &md_bytes)
-        .map_err(FhevmError::CiphertextExpansionError)?;
+        .verify_and_expand(crs, public_key, &aux_data_bytes)
+        .map_err(|_| ExecutionError::InvalidProof(request_id))?;
 
     Ok(extract_ct_list(&expanded)?)
 }
@@ -214,14 +222,6 @@ pub(crate) struct AuxiliaryData {
 }
 
 impl AuxiliaryData {
-    pub fn new(contract_address: String, user_address: String, chain_id: i32) -> Self {
-        Self {
-            contract_address,
-            user_address,
-            chain_id,
-        }
-    }
-
     /// creates the metadata (auxiliary data) for proving/verifying the input ZKPs from the individual inputs
     ///
     /// metadata is `contract_addr || user_addr  || chain_id` i.e. 92 bytes since chain ID is encoded as a 32 byte big endian integer
@@ -229,6 +229,7 @@ impl AuxiliaryData {
         let contract_address = alloy_primitives::Address::from_str(&self.user_address).unwrap();
         let client_address = alloy_primitives::Address::from_str(&self.contract_address).unwrap();
         let chain_id = alloy_primitives::U256::from(self.chain_id).to_owned();
+        // TODO: ACL_ADDRESS from Tenants table
 
         let mut metadata = [0_u8; 92];
         let contract_bytes = contract_address.into_array();
