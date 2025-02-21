@@ -22,19 +22,19 @@ kmsCore:
     enabled: true
     initializationScript:
       enabled: true
-    peersList:
-      - id: 1
-        host: kms-threshold-staging-1
-        port: 50001
-      - id: 2
-        host: kms-threshold-staging-2
-        port: 50001
-      - id: 3
-        host: kms-threshold-staging-3
-        port: 50001
-      - id: 4
-        host: kms-threshold-staging-4
-        port: 50001
+#    peersList:
+#      - id: 1
+#        host: kms-threshold-staging-1
+#        port: 50001
+#      - id: 2
+#        host: kms-threshold-staging-2
+#        port: 50001
+#      - id: 3
+#        host: kms-threshold-staging-3
+#        port: 50001
+#      - id: 4
+#        host: kms-threshold-staging-4
+#        port: 50001
   aws:
     region: eu-west-1
   storage:
