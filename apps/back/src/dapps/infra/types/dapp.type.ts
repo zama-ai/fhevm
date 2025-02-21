@@ -81,3 +81,12 @@ export class DappType {
   })
   stats: StatsType[]
 }
+
+@ObjectType('ValidateAddress')
+export class ValidateAddress {
+  @Field({ nullable: false })
+  check: boolean
+
+  @Field({ nullable: true })
+  message?: string
+}

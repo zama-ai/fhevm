@@ -267,7 +267,7 @@ export class Task<A, E> {
     })
   }
 
-  static timeout(seconds: number): Task<void, AppError> {
+  static timeout<T>(seconds: number): Task<T, AppError> {
     if (seconds < 0) {
       return Task.reject(validationError('seconds should be greater then 0'))
     }

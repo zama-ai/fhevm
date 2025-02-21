@@ -1,5 +1,5 @@
 import { faker } from '@faker-js/faker'
-import { describe, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { Task } from './task.js'
 
 describe('Task', () => {
@@ -312,6 +312,14 @@ describe('Task', () => {
   })
 
   describe('timeout', () => {
+    beforeEach(() => {
+      vi.useFakeTimers()
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
     test('should fail if seconds is negative', async () => {
       await expect(Task.timeout(-1).toPromise()).rejects.toThrowError(
         expect.objectContaining({
@@ -321,7 +329,9 @@ describe('Task', () => {
     })
 
     test('should timeout', async () => {
-      await expect(Task.timeout(0).toPromise()).rejects.toThrowError(
+      const p = Task.timeout(10).toPromise()
+      vi.advanceTimersByTime(10_000)
+      await expect(p).rejects.toThrowError(
         expect.objectContaining({
           _tag: 'TimeoutError',
         }),

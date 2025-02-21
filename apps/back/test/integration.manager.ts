@@ -95,4 +95,8 @@ export class IntegrationManager {
 
     return result.Messages?.[0].Body
   }
+
+  get prismaClient() {
+    return this.setup.prismaClient
+  }
 }
