@@ -22,6 +22,7 @@ use tokio::{select, time::Duration};
 use tracing::{debug, error};
 
 pub const SAFE_SER_SIZE_LIMIT: u64 = 1024 * 1024 * 1024 * 2;
+const MAX_CACHED_TENANT_KEYS: usize = 100;
 
 #[derive(Default)]
 pub struct Config {
@@ -39,10 +40,9 @@ pub async fn execute_verify_proofs_loop(conf: &Config) -> Result<(), ExecutionEr
     let mut listener = PgListener::connect_with(&pool).await?;
     listener.listen(&conf.listen_database_channel).await?;
 
-    let tenant_key_cache = Arc::new(RwLock::new(LruCache::new(NonZero::new(100).unwrap())));
-    tenant_keys::fetch_tenant_server_key(1, &pool, &tenant_key_cache)
-        .await
-        .map_err(|err| ExecutionError::ServerKeysNotFound(err.to_string()))?;
+    let tenant_key_cache = Arc::new(RwLock::new(LruCache::new(
+        NonZero::new(MAX_CACHED_TENANT_KEYS).unwrap(),
+    )));
 
     loop {
         if let Err(e) = execute_verify_proof_routine(&pool, &tenant_key_cache).await {
