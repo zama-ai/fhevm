@@ -969,6 +969,9 @@ importers:
         specifier: ^3.23.8
         version: 3.24.2
     devDependencies:
+      '@faker-js/faker':
+        specifier: ^9.3.0
+        version: 9.5.0
       '@nestjs/cli':
         specifier: ^10.0.0
         version: 10.4.9(@swc/core@1.10.18(@swc/helpers@0.5.15))

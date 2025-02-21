@@ -10,6 +10,7 @@ const TAGS = [
   'ForbiddenError',
   'UnknownError',
   'DuplicatedError',
+  'TimeoutError',
 ] as const
 type Tag = (typeof TAGS)[number]
 
@@ -62,6 +63,15 @@ export function duplicatedError(message: string): DuplicatedError {
   return { _tag: 'DuplicatedError', message }
 }
 
+export type TimeoutError = {
+  _tag: Extract<Tag, 'TimeoutError'>
+  message: string
+}
+
+export function timeoutError(message = 'Timeout'): TimeoutError {
+  return { _tag: 'TimeoutError', message }
+}
+
 export type AppError =
   | ValidationError
   | NotFoundError
@@ -69,6 +79,7 @@ export type AppError =
   | ForbiddenError
   | UnknownError
   | DuplicatedError
+  | TimeoutError
 
 /**
  * Transforms a ZodError into a ValidationError.
@@ -117,4 +128,8 @@ export function isUnknowError(error: unknown): error is UnknownError {
 
 export function isDuplicatedError(error: unknown): error is DuplicatedError {
   return isAppError(error) && error._tag === 'DuplicatedError'
+}
+
+export function isTimeoutError(error: unknown): error is TimeoutError {
+  return isAppError(error) && error._tag === 'TimeoutError'
 }

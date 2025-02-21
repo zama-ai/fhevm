@@ -1,3 +1,5 @@
+import { AppError, timeoutError, validationError } from './app-error.js'
+
 /**
  * Task can either resolve with a value of type `A`
  * or reject with an error of type `E`.
@@ -228,6 +230,51 @@ export class Task<A, E> {
             : resolve(promises.filter(isFullfilled).map(p => p.value)),
         )
         .catch(reject)
+    })
+  }
+
+  /**
+   * Creates a Task that runs all the nested task, and return the first to complete.
+   *
+   * @param tasks - An array of Task to be executed.
+   * @returns a Task with the array of all resolved task values.
+   */
+  static race<
+    E,
+    A,
+    B,
+    T extends [Task<A, E>, Task<B, E>] = [Task<A, E>, Task<B, E>],
+  >(tasks: T): Task<A | B, E>
+  static race<
+    E,
+    A,
+    B,
+    C,
+    T extends [Task<A, E>, Task<B, E>, Task<C, E>] = [
+      Task<A, E>,
+      Task<B, E>,
+      Task<C, E>,
+    ],
+  >(tasks: T): Task<A | B | C, E>
+  static race<E, A, T extends Task<A, E>[] = Task<A, E>[]>(tasks: T): Task<A, E>
+  static race<E, T extends Task<any, E>[] = Task<any, E>[]>(
+    tasks: T,
+  ): Task<any, E> {
+    return new Task(function (resolve, reject) {
+      Promise.race(tasks.map(t => t.toPromise()))
+        .then(resolve)
+        .catch(reject)
+    })
+  }
+
+  static timeout(seconds: number): Task<void, AppError> {
+    if (seconds < 0) {
+      return Task.reject(validationError('seconds should be greater then 0'))
+    }
+    return new Task((_resolve, reject) => {
+      setTimeout(function () {
+        reject(timeoutError())
+      }, seconds * 1000)
     })
   }
 
