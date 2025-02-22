@@ -94,7 +94,7 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
     }
 
     /// @dev See {IZKPoKManager-verifyProofResponse}.
-    function verifyProofResponse(
+   function verifyProofResponse(
         uint256 zkProofId,
         bytes32[] calldata handles,
         bytes calldata signature
@@ -110,22 +110,24 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
         /// @dev Compute the digest of the EIP712ZKPoK structure.
         bytes32 digest = _hashEIP712ZKPoK(eip712ZKPoK);
 
-        /// @dev Recover the signer address from the signature and validate that is a Coprocessor.
-        _validateEIP712Signature(zkProofId, digest, signature);
+        /// @dev Recover the signer addres s from the signature and validate that is a Coprocessor.
+        // _validateEIP712Signature(zkProofId, digest, signature);
 
-        zkProofSignatures[zkProofId][digest].push(signature);
+        bytes[] storage currentSignatures = zkProofSignatures[zkProofId][digest];
+        currentSignatures.push(signature);
 
-        bytes[] memory currentSignatures = zkProofSignatures[zkProofId][digest];
+        // zkProofSignatures[zkProofId][digest].push(signature);
+        emit VerifyProofResponse(zkProofId, handles, currentSignatures);
 
         /// @dev Only send the event if consensus has not been reached in a previous response call
         /// @dev and the consensus is reached in the current response call.
         /// @dev This means a "late" response will not be reverted, just ignored
-        if (!isProofVerified(zkProofId) && _isConsensusReached(currentSignatures.length)) {
-            // TODO(#52): Implement calling PaymentManager contract to burn and distribute fees
-            verifiedZKProofs[zkProofId] = true;
+        // if (!isProofVerified(zkProofId) && _isConsensusReached(currentSignatures.length)) {
+        //     // TODO(#52): Implement calling PaymentManager contract to burn and distribute fees
+        //     verifiedZKProofs[zkProofId] = true;
 
-            emit VerifyProofResponse(zkProofId, handles, currentSignatures);
-        }
+        //     emit VerifyProofResponse(zkProofId, handles, currentSignatures);
+        // }
     }
 
     /// @dev See {IZKPoKManager-isProofVerified}.

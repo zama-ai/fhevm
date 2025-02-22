@@ -11,7 +11,7 @@ use crate::{
 };
 
 use alloy::{
-    primitives::{keccak256, Address, Bytes, FixedBytes, U256},
+    primitives::{keccak256, Address, Bytes, U256},
     rpc::types::TransactionReceipt,
 };
 
@@ -277,43 +277,66 @@ impl ArbitrumGatewayL2InputHandler {
             event.request_id,
         );
 
-        // Artificial sleep for this mock, normally the decryption Response is taking more time
-        // Here we took the decryptionRequest Event as trigger, will change when real behavior will be implemented
-        // on rollup side
-        // TODO think about this getter
+        if let RelayerEventData::Input(InputEventData::EventLogResponseFromGwL2 { log }) =
+            &event.data
+        {
+            // Log the raw data for debugging
+            debug!(
+                topics = ?log.topics().iter().map(hex::encode).collect::<Vec<_>>(),
+                "Processing log data for input response"
+            );
 
-        tokio::time::sleep(Duration::from_secs(2)).await;
+            match ZKPoKManager::VerifyProofResponse::decode_log_data(log.data(), true) {
+                Ok(request_event) => {
+                    info!(
+                        zkpok_id = ?request_event.zkProofId,
+                        handles = ?request_event.handles,
+                        signatures = ?request_event.signatures,
+                        "Processing InputResponse event"
+                    );
 
-        if let Ok(zkpok_id) = self.extract_zkpok_id_from_event(&event) {
-            // Use get_key_value to get both key and value, or use remove if you want to clean up
-            if let Some(entry) = self.zkpok_id_to_request_id.get(&zkpok_id) {
-                let original_request_id = *entry.value(); // Dereference the Ref<Uuid>
+                    // Use get_key_value to get both key and value, or use remove if you want to clean up
+                    if let Some(entry) = self.zkpok_id_to_request_id.get(&request_event.zkProofId) {
+                        let original_request_id = *entry.value(); // Dereference the Ref<Uuid>
 
-                info!(
-                    ?original_request_id,
-                    ?zkpok_id,
-                    "Found original request ID for decryption response"
-                );
+                        info!(
+                            ?original_request_id,
+                            ?request_event.zkProofId,
+                            "Found original request ID for input response"
+                        );
 
-                let next_event_data: RelayerEventData =
-                    RelayerEventData::Input(InputEventData::RespFromGwL2 {
-                        input_proof_response: InputProofResponse::new(
-                            vec![
-                                FixedBytes::repeat_byte(1u8), // First handle filled with 1's
-                                FixedBytes::repeat_byte(2u8), // Second handle filled with 2's
-                            ],
-                            vec![Bytes::from(vec![1, 2, 3])],
-                        ),
-                    });
+                        let next_event_data: RelayerEventData =
+                            RelayerEventData::Input(InputEventData::RespFromGwL2 {
+                                input_proof_response: InputProofResponse {
+                                    handles: request_event.handles,
+                                    signatures: request_event.signatures,
+                                },
+                            });
 
-                // Now we can use original_request_id directly
-                let next_event =
-                    RelayerEvent::new(original_request_id, event.api_version, next_event_data);
+                        // Now we can use original_request_id directly
+                        let next_event = RelayerEvent::new(
+                            original_request_id,
+                            event.api_version,
+                            next_event_data,
+                        );
 
-                let _ = self.dispatcher.dispatch_event(next_event).await;
-            } else {
-                error!(?zkpok_id, "No matching request ID found for decryption ID");
+                        let _ = self.dispatcher.dispatch_event(next_event).await;
+                    } else {
+                        error!(?request_event.zkProofId, "No matching request ID found for zkproof ID");
+                    }
+
+                    // Ok(())
+                }
+                Err(e) => {
+                    error!(?e, "Failed to decode InputRequest event");
+                    // Err(EventProcessingError::DecodingError(e))
+                }
             }
+        } else {
+            error!("Invalid event type received");
+            // Err(EventProcessingError::HandlerError(
+            //     "Invalid event type received".into(),
+            // ))
         }
     }
 
@@ -384,7 +407,7 @@ impl EventHandler<RelayerEvent> for ArbitrumGatewayL2InputHandler {
                             "Received L2 response, ready for HTTP handler"
                         );
                     }
-                    InputEventData::EventLogFromGwL2 { .. } => {
+                    InputEventData::EventLogResponseFromGwL2 { .. } => {
                         info!("Received input event log from Gateway L2");
                         self.handle_input_reponse_event_log(event).await;
                     }

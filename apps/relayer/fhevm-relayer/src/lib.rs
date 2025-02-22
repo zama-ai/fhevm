@@ -13,6 +13,8 @@ pub mod ethereum_listener;
 pub mod http_server;
 pub mod input_handlers;
 pub mod input_http_listener;
+// Only for testing
+pub mod kms_connector_handler;
 pub mod relayer_event;
 pub mod rollup_listener;
 

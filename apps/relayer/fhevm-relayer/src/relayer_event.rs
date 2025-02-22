@@ -51,7 +51,10 @@ impl Event for RelayerEvent {
                 InputEventData::ReqFromUser { .. } => 7,
                 InputEventData::RequestSentToGwL2 { .. } => 8,
                 InputEventData::RespFromGwL2 { .. } => 9,
-                InputEventData::EventLogFromGwL2 { .. } => 10,
+                InputEventData::EventLogResponseFromGwL2 { .. } => 10,
+            },
+            RelayerEventData::KmsInput(input_event) => match input_event {
+                KmsInputEventData::EventLogRequestFromGwL2 { .. } => 11,
             },
         }
     }
@@ -129,6 +132,7 @@ pub enum RelayerEventData {
     },
 
     Input(InputEventData),
+    KmsInput(KmsInputEventData),
 }
 
 impl AsRef<str> for RelayerEventData {
@@ -144,6 +148,7 @@ impl AsRef<str> for RelayerEventData {
             RelayerEventData::DecryptResponseSentToHostL1 => "DecryptResponseSentToHostL1",
             RelayerEventData::DecryptionFailed { .. } => "DecryptionFailed",
             RelayerEventData::Input(input_event) => input_event.event_name(),
+            RelayerEventData::KmsInput(input_event) => input_event.event_name(),
         }
     }
 }
@@ -221,13 +226,30 @@ impl InputProofResponse {
     }
 }
 
+
+
 impl InputEventData {
     pub fn event_name(&self) -> &'static str {
         match self {
             InputEventData::ReqFromUser { .. } => "Input::ReqFromUser",
             InputEventData::RespFromGwL2 { .. } => "Input::RespFromGwL2",
             InputEventData::RequestSentToGwL2 { .. } => "Input::RequestSentToGwL2",
-            InputEventData::EventLogFromGwL2 { .. } => "Input::EventLogFromGwL2",
+            InputEventData::EventLogResponseFromGwL2 { .. } => "Input::EventLogResponseFromGwL2",
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum KmsInputEventData {
+    EventLogRequestFromGwL2 { log: Log },
+}
+
+impl KmsInputEventData {
+    pub fn event_name(&self) -> &'static str {
+        match self {
+            KmsInputEventData::EventLogRequestFromGwL2 { .. } => {
+                "KmsInput::EventLogRequestFromGwL2"
+            }
         }
     }
 }

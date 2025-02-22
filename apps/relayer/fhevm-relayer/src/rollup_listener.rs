@@ -4,8 +4,8 @@ use tracing::{error, info};
 use crate::ethereum::bindings::{DecyptionManager, ZKPoKManager};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
-use crate::relayer_event::InputEventData;
 use crate::relayer_event::{self, RelayerEvent};
+use crate::relayer_event::{InputEventData, KmsInputEventData};
 use alloy::hex;
 use alloy::primitives::FixedBytes;
 use alloy::rpc::types::Log;
@@ -13,11 +13,15 @@ use futures_util::StreamExt;
 use std::sync::Arc;
 
 // Define event topics as constants
-const PROOF_VERIFICATION_TOPIC: alloy::primitives::FixedBytes<32> =
+const PROOF_VERIFICATION_REQUEST_TOPIC: alloy::primitives::FixedBytes<32> =
     ZKPoKManager::VerifyProofRequest::SIGNATURE_HASH;
+
+const PROOF_VERIFICATION_RESPONSE_TOPIC: alloy::primitives::FixedBytes<32> =
+    ZKPoKManager::VerifyProofResponse::SIGNATURE_HASH;
 
 const DECRYPTION_RESPONSE_TOPIC: alloy::primitives::FixedBytes<32> =
     DecyptionManager::PublicDecryptionRequest::SIGNATURE_HASH;
+
 pub async fn event_listener_rollup(
     mut subscription: alloy::pubsub::SubscriptionStream<Log>,
     orchestrator: Arc<
@@ -41,10 +45,18 @@ pub async fn event_listener_rollup(
                         let topic_bytes = FixedBytes::<32>::from_slice(topic0.as_slice());
 
                         match topic_bytes {
-                            PROOF_VERIFICATION_TOPIC => {
-                                info!("Received Proof Verification event");
-                                relayer_event::RelayerEventData::Input(
-                                    InputEventData::EventLogFromGwL2 {
+                            PROOF_VERIFICATION_REQUEST_TOPIC => {
+                                info!("Received Proof Verification request event");
+                                relayer_event::RelayerEventData::KmsInput(
+                                KmsInputEventData::EventLogRequestFromGwL2  {
+                                    log: event_log
+                                }
+                            )
+                        },
+                        PROOF_VERIFICATION_RESPONSE_TOPIC => {
+                            info!("Received Proof Verification response event");
+                            relayer_event::RelayerEventData::Input(
+                                    InputEventData::EventLogResponseFromGwL2   {
                                         log: event_log
                                     }
                                 )

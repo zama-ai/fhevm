@@ -141,9 +141,18 @@ async fn main() -> eyre::Result<()> {
             tx_config.clone(),
         ));
 
-    // Create input handler
+    // Create input handler for L2
+    // This handler will make a transaction to the L2 network
+    // to request input verification and listen for the response
     let input_handler: Arc<dyn EventHandler<RelayerEvent>> =
         Arc::new(ArbitrumGatewayL2InputHandler::new(
+            Arc::clone(&dispatcher),
+            tx_service_rollup.clone(),
+            tx_config.clone(),
+        ));
+
+    let kms_connector_handler: Arc<dyn EventHandler<RelayerEvent>> =
+        Arc::new(KmsConnectorHandler::new(
             Arc::clone(&dispatcher),
             tx_service_rollup.clone(),
             tx_config.clone(),
