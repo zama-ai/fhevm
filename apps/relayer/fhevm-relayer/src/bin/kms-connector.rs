@@ -39,19 +39,15 @@ use tracing::info;
 use tracing_subscriber::{fmt::SubscriberBuilder, EnvFilter};
 
 use fhevm_relayer::{
-    arbitrum_gateway_l2_handlers::ArbitrumGatewayL2Handler,
     config::settings::{LogConfig, Settings},
-    ethereum::{ContractAndTopicsFilter, EthereumHostL1, RollupL2},
-    ethereum_host_l1_handlers::EthereumHostL1Handler,
-    ethereum_listener::event_listener,
-    http_server::run_http_server,
-    input_handlers::ArbitrumGatewayL2InputHandler,
+    ethereum::{ContractAndTopicsFilter, RollupL2},
+    kms_connector_handler::KmsConnectorHandler,
+    kms_connector_relayer_event::KmsRelayerEvent,
+    kms_rollup_listener::event_listener_rollup,
     orchestrator::{
         traits::{EventHandler, HandlerRegistry},
         Orchestrator, TokioEventDispatcher,
     },
-    relayer_event::RelayerEvent,
-    rollup_listener::event_listener_rollup,
     transaction::{TransactionService, TxConfig},
 };
 
@@ -76,17 +72,6 @@ async fn main() -> eyre::Result<()> {
         .validate_addresses()
         .map_err(|e| eyre::eyre!("Configuration validation failed: {}", e))?;
 
-    // Prepare tx service for L1
-    let tx_service = TransactionService::new(
-        &settings.networks.fhevm.http_url,
-        &settings.transaction.private_key_env,
-        settings.networks.fhevm.chain_id,
-    )
-    .await
-    .map_err(|e| eyre::eyre!("Failed to create transaction service: {}", e))?;
-
-    Arc::clone(&tx_service).spawn_maintenance_tasks();
-
     let rollup_settings = settings
         .get_network("rollup")
         .cloned()
@@ -103,96 +88,44 @@ async fn main() -> eyre::Result<()> {
 
     Arc::clone(&tx_service_rollup).spawn_maintenance_tasks();
 
-    info!("Starting FHE Event Handler");
-
-    let decryption_oracle_address =
-        Address::from_str(&settings.contracts.decryption_oracle_address)
-            .map_err(|_| eyre::eyre!("Invalid decryption oracle address"))?;
-
-    let tfhe_executor_address = Address::from_str(&settings.contracts.tfhe_executor_address)
-        .map_err(|_| eyre::eyre!("Invalid TFHE executor address"))?;
+    info!("Starting KMS Connector FHE Event Handler");
 
     let decryption_manager_address =
         Address::from_str(&settings.contracts.decryption_manager_address)
-            .map_err(|_| eyre::eyre!("Invalid TFHE executor address"))?;
+            .map_err(|_| eyre::eyre!("Invalid decryption manager address"))?;
 
     // Update the L2 filter to include the ZKPoK contract
     let zkpok_manager_address = Address::from_str(&settings.contracts.zkpok_manager_address)
         .map_err(|_| eyre::eyre!("Invalid ZKPoK manager address"))?;
 
     info!(
-        ?decryption_oracle_address,
-        ?tfhe_executor_address,
+        ?decryption_manager_address,
+        ?zkpok_manager_address,
         ?settings.networks.fhevm.ws_url,
         "Initialized contract addresses"
     );
 
     // === Intialize the orchestrator.
-    let node_id = [0x01, 0x23, 0x45, 0x67, 0x89, 0xab];
-    let dispatcher = Arc::new(TokioEventDispatcher::<RelayerEvent>::new());
+    let node_id = [0x02, 0x23, 0x45, 0x67, 0x89, 0xab];
+    let dispatcher = Arc::new(TokioEventDispatcher::<KmsRelayerEvent>::new());
     let orchestrator = Orchestrator::new(Arc::clone(&dispatcher), &node_id);
 
     // === Register the event handlers
     let tx_config = TxConfig::from(settings.transaction);
-    let host_l1_event_log_handler: Arc<dyn EventHandler<RelayerEvent>> =
-        Arc::new(EthereumHostL1Handler::new(
-            Arc::clone(&dispatcher),
-            tx_service.clone(),
-            tx_config.clone(),
-        ));
 
-    // Create input handler for L2
-    // This handler will make a transaction to the L2 network
-    // to request input verification and listen for the response
-    let input_handler: Arc<dyn EventHandler<RelayerEvent>> =
-        Arc::new(ArbitrumGatewayL2InputHandler::new(
+    let kms_connector_handler: Arc<dyn EventHandler<KmsRelayerEvent>> =
+        Arc::new(KmsConnectorHandler::new(
             Arc::clone(&dispatcher),
             tx_service_rollup.clone(),
             tx_config.clone(),
         ));
 
     // Register input event handlers
-    // Event type: InputEventData::ReqFromUser
-    orchestrator.register_handler(7, Arc::clone(&input_handler));
-    // Event type: InputEventData::RequestSentToGwL2
-    orchestrator.register_handler(8, Arc::clone(&input_handler));
-    // Event type: InputEventData::RespFromGwL2
-    orchestrator.register_handler(9, Arc::clone(&input_handler));
-    // Event type: InputEventData::EventLogResponseFromGwL2
-    orchestrator.register_handler(10, Arc::clone(&input_handler));
 
-    // Event type: PubDecryptEventLogRcvdFromHostL1
-    orchestrator.register_handler(0, Arc::clone(&host_l1_event_log_handler));
-    // Event type: DecryptionResponseRcvdFromGwL2
-    orchestrator.register_handler(4, Arc::clone(&host_l1_event_log_handler));
-    // Event type: DecryptResponseSentToHostL1
-    orchestrator.register_handler(5, Arc::clone(&host_l1_event_log_handler));
-
-    let gateway_l2_event_handler: Arc<dyn EventHandler<RelayerEvent>> = Arc::new(
-        ArbitrumGatewayL2Handler::new(Arc::clone(&dispatcher), tx_service_rollup, tx_config),
-    );
-
-    // Event type: DecryptRequestRcvd
-    orchestrator.register_handler(1, Arc::clone(&gateway_l2_event_handler));
-    // Event type: DecryptResponseEventLogRcvdFromGwL2
-    orchestrator.register_handler(2, Arc::clone(&gateway_l2_event_handler));
-    // Event type: DecryptionRequestSentToGwL2
-    orchestrator.register_handler(3, Arc::clone(&gateway_l2_event_handler));
-
-    // === Initialize Ethereum host L1 adapter
-    let host_l1 = EthereumHostL1::new(&settings.networks.fhevm.ws_url)
-        .await
-        .map_err(|e| eyre::eyre!("Failed to create event handler: {}", e))?;
-    let host_l1 = Arc::new(host_l1);
+    // Event type: InputEventData::EventLogRequestFromGwL2
+    orchestrator.register_handler(11, Arc::clone(&kms_connector_handler));
 
     // === Create a subscription for events and spawn a listener to listen for events from the subcription.
-    // TODO: Pass the event_dispatcher to the event_listener
-    let filter = ContractAndTopicsFilter::new(
-        vec![decryption_oracle_address, tfhe_executor_address],
-        vec![],
-    );
-    let subscription = host_l1.new_subscription(filter, None).await?;
-    tokio::spawn(event_listener(subscription, Arc::clone(&orchestrator)));
 
     // === Initialize Rollup L2 adapter
     let rollup_l2 = RollupL2::new(&rollup_settings.ws_url)
@@ -211,8 +144,6 @@ async fn main() -> eyre::Result<()> {
         subscription_rollup,
         Arc::clone(&orchestrator),
     ));
-
-    tokio::spawn(run_http_server(Arc::clone(&orchestrator)));
 
     // === Wait for ctrl + c signal to stop the application
     tokio::signal::ctrl_c().await?;

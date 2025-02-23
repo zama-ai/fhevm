@@ -1,11 +1,12 @@
 use alloy_sol_types::SolEvent;
 use tracing::{error, info};
 
-use crate::ethereum::bindings::{DecyptionManager, ZKPoKManager};
+use crate::ethereum::bindings::ZKPoKManager;
+use crate::kms_connector_relayer_event::{
+    self, KmsInputEventData, KmsRelayerEvent, KmsRelayerEventData,
+};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
-use crate::relayer_event::InputEventData;
-use crate::relayer_event::{self, RelayerEvent};
 use alloy::hex;
 use alloy::primitives::FixedBytes;
 use alloy::rpc::types::Log;
@@ -13,19 +14,15 @@ use futures_util::StreamExt;
 use std::sync::Arc;
 
 // Define event topics as constants
-
-const PROOF_VERIFICATION_RESPONSE_TOPIC: alloy::primitives::FixedBytes<32> =
-    ZKPoKManager::VerifyProofResponse::SIGNATURE_HASH;
-
-const DECRYPTION_RESPONSE_TOPIC: alloy::primitives::FixedBytes<32> =
-    DecyptionManager::PublicDecryptionRequest::SIGNATURE_HASH;
+const PROOF_VERIFICATION_REQUEST_TOPIC: alloy::primitives::FixedBytes<32> =
+    ZKPoKManager::VerifyProofRequest::SIGNATURE_HASH;
 
 pub async fn event_listener_rollup(
     mut subscription: alloy::pubsub::SubscriptionStream<Log>,
     orchestrator: Arc<
         Orchestrator<
-            impl EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>,
-            RelayerEvent,
+            impl EventDispatcher<KmsRelayerEvent> + HandlerRegistry<KmsRelayerEvent>,
+            KmsRelayerEvent,
         >,
     >,
 ) {
@@ -33,7 +30,7 @@ pub async fn event_listener_rollup(
         tokio::select! {
             event = subscription.next() => match event {
                 Some(event_log) => {
-                    info!("rollup listener catches one event with topic {:?}", event_log.topic0());
+                    info!("Kms connector rollup listener catches one event with topic {:?}", event_log.topic0());
 
                     let id = orchestrator.new_request_id();
 
@@ -43,20 +40,16 @@ pub async fn event_listener_rollup(
                         let topic_bytes = FixedBytes::<32>::from_slice(topic0.as_slice());
 
                         match topic_bytes {
-                        PROOF_VERIFICATION_RESPONSE_TOPIC => {
-                            info!("Received Proof Verification response event");
-                            relayer_event::RelayerEventData::Input(
-                                    InputEventData::EventLogResponseFromGwL2   {
-                                        log: event_log
-                                    }
-                                )
-                            },
-                            DECRYPTION_RESPONSE_TOPIC => {
-                                info!("Received Decryption Response event");
-                                relayer_event::RelayerEventData::EventLogFromGwL2 {
+                            PROOF_VERIFICATION_REQUEST_TOPIC => {
+                                info!("Received Proof Verification request event");
+                                KmsRelayerEventData::KmsInput(
+                                KmsInputEventData::EventLogRequestFromGwL2  {
                                     log: event_log
                                 }
-                            },
+                            )
+                        },
+
+
                             _ => {
                                 info!("Unknown event topic: 0x{}", hex::encode(topic0));
                                 continue; // Skip unknown events
@@ -67,10 +60,10 @@ pub async fn event_listener_rollup(
                         continue;
                     };
 
-                    let event = RelayerEvent::new(
+                    let event = KmsRelayerEvent::new(
                         id,
-                        relayer_event::ApiVersion {
-                            category: relayer_event::ApiCategory::PRODUCTION,
+                        kms_connector_relayer_event::ApiVersion {
+                            category: kms_connector_relayer_event::ApiCategory::PRODUCTION,
                             number: 1,
                         },
                         event_data,

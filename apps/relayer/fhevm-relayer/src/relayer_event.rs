@@ -182,7 +182,7 @@ pub enum InputEventData {
     RequestSentToGwL2 {
         zkpok_public_id: U256,
     },
-    EventLogFromGwL2 {
+    EventLogResponseFromGwL2 {
         log: Log,
     },
 }

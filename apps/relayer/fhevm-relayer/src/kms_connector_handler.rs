@@ -1,8 +1,8 @@
 use crate::{
     errors::EventProcessingError,
     ethereum::{bindings::ZKPoKManager, ComputeCalldata},
+    kms_connector_relayer_event::{KmsInputEventData, KmsRelayerEvent, KmsRelayerEventData},
     orchestrator::{traits::EventHandler, TokioEventDispatcher},
-    relayer_event::{KmsInputEventData, RelayerEvent, RelayerEventData},
     transaction::{TransactionHelper, TransactionService, TxConfig},
     utils::{colorize_event_type, colorize_request_id},
 };
@@ -20,13 +20,13 @@ const ZKPOK_MANAGER_ADDRESS: Address = Address::new([
 
 #[derive(Clone)]
 pub struct KmsConnectorHandler {
-    dispatcher: Arc<TokioEventDispatcher<RelayerEvent>>,
+    dispatcher: Arc<TokioEventDispatcher<KmsRelayerEvent>>,
     tx_helper: Arc<TransactionHelper>,
 }
 
 impl KmsConnectorHandler {
     pub fn new(
-        dispatcher: Arc<TokioEventDispatcher<RelayerEvent>>,
+        dispatcher: Arc<TokioEventDispatcher<KmsRelayerEvent>>,
         tx_service: Arc<TransactionService>,
         tx_config: TxConfig,
     ) -> Self {
@@ -39,51 +39,45 @@ impl KmsConnectorHandler {
     /// Process the InputRequest event and prepare response
     async fn process_input_request(
         &self,
-        event: &RelayerEvent,
+        event: &KmsRelayerEvent,
     ) -> Result<(), EventProcessingError> {
-        if let RelayerEventData::KmsInput(KmsInputEventData::EventLogRequestFromGwL2 { log }) =
-            &event.data
-        {
-            // Log the raw data for debugging
-            debug!(
-                topics = ?log.topics().iter().map(hex::encode).collect::<Vec<_>>(),
-                "Processing log data"
-            );
+        let KmsRelayerEventData::KmsInput(KmsInputEventData::EventLogRequestFromGwL2 { log }) =
+            &event.data;
 
-            match ZKPoKManager::VerifyProofRequest::decode_log_data(log.data(), true) {
-                Ok(request_event) => {
-                    info!(
-                        zkpok_id = ?request_event.zkProofId,
-                        chain_id = ?request_event.contractChainId,
-                        contract = ?request_event.contractAddress,
-                        user = ?request_event.userAddress,
-                        "Processing InputRequest event"
-                    );
+        // Log the raw data for debugging
+        debug!(
+            topics = ?log.topics().iter().map(hex::encode).collect::<Vec<_>>(),
+            "Processing log data"
+        );
 
-                    // Simulate some computation time
-                    tokio::time::sleep(Duration::from_secs(2)).await;
+        match ZKPoKManager::VerifyProofRequest::decode_log_data(log.data(), true) {
+            Ok(request_event) => {
+                info!(
+                    zkpok_id = ?request_event.zkProofId,
+                    chain_id = ?request_event.contractChainId,
+                    contract = ?request_event.contractAddress,
+                    user = ?request_event.userAddress,
+                    "Processing InputRequest event"
+                );
 
-                    // Generate mock handles and signatures
-                    // In real implementation, this would involve actual cryptographic operations
-                    let signatures = vec![1u8; 65];
+                // Simulate some computation time
+                tokio::time::sleep(Duration::from_secs(2)).await;
 
-                    let handles = vec![[1u8; 32], [2u8; 32]];
+                // Generate mock handles and signatures
+                // In real implementation, this would involve actual cryptographic operations
+                let signatures = vec![1u8; 65];
 
-                    self.send_input_response(request_event.zkProofId, handles, signatures)
-                        .await?;
+                let handles = vec![[1u8; 32], [2u8; 32]];
 
-                    Ok(())
-                }
-                Err(e) => {
-                    error!(?e, "Failed to decode InputRequest event");
-                    Err(EventProcessingError::DecodingError(e))
-                }
+                self.send_input_response(request_event.zkProofId, handles, signatures)
+                    .await?;
+
+                Ok(())
             }
-        } else {
-            error!("Invalid event type received");
-            Err(EventProcessingError::HandlerError(
-                "Invalid event type received".into(),
-            ))
+            Err(e) => {
+                error!(?e, "Failed to decode InputRequest event");
+                Err(EventProcessingError::DecodingError(e))
+            }
         }
     }
 
@@ -92,7 +86,7 @@ impl KmsConnectorHandler {
         &self,
         zkpok_id: U256,
         handles: Vec<[u8; 32]>,
-        signatures: Vec<u8>,
+        _signatures: Vec<u8>,
     ) -> Result<(), EventProcessingError> {
         info!(?zkpok_id, "Sending InputResponse transaction");
 
@@ -107,8 +101,8 @@ impl KmsConnectorHandler {
 }
 
 #[async_trait]
-impl EventHandler<RelayerEvent> for KmsConnectorHandler {
-    async fn handle_event(&self, event: RelayerEvent) {
+impl EventHandler<KmsRelayerEvent> for KmsConnectorHandler {
+    async fn handle_event(&self, event: KmsRelayerEvent) {
         info!(
             event_type = %colorize_event_type(event.data.as_ref()),
             request_id = %colorize_request_id(&event.request_id),
@@ -116,16 +110,19 @@ impl EventHandler<RelayerEvent> for KmsConnectorHandler {
         );
 
         match &event.data {
-            RelayerEventData::KmsInput(input_event) => match input_event {
+            KmsRelayerEventData::KmsInput(input_event) => match input_event {
                 KmsInputEventData::EventLogRequestFromGwL2 { .. } => {
                     info!("Received input event log from Gateway L2");
-                    self.process_input_request(&event).await;
+                    match self.process_input_request(&event).await {
+                        Ok(()) => {
+                            info!("Input request processing succesfull!");
+                        }
+                        Err(e) => {
+                            error!(?e, "Input request processing failed!")
+                        }
+                    }
                 }
             },
-
-            _ => {
-                // Ignore other event types
-            }
         }
     }
 }

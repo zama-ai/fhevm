@@ -15,6 +15,8 @@ pub mod input_handlers;
 pub mod input_http_listener;
 // Only for testing
 pub mod kms_connector_handler;
+pub mod kms_connector_relayer_event;
+pub mod kms_rollup_listener;
 pub mod relayer_event;
 pub mod rollup_listener;
 

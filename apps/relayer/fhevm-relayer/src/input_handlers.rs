@@ -17,7 +17,7 @@ use alloy::{
 
 use alloy_sol_types::SolEvent;
 use async_trait::async_trait;
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 use tracing::{debug, error, info};
 use uuid::Uuid;
 
@@ -338,35 +338,6 @@ impl ArbitrumGatewayL2InputHandler {
             //     "Invalid event type received".into(),
             // ))
         }
-    }
-
-    /// Extracts ZKPoK ID from event logs.
-    ///
-    /// # Arguments
-    /// * `event` - The [`RelayerEvent`] containing the [`EventLogFromGwL2`]
-    ///
-    /// # Returns
-    /// * `Ok(`[`U256`]`)` - The extracted ZKPoK ID
-    /// * `Err(`[`EventProcessingError`]`)` - If decoding fails or event type is incorrect
-    fn extract_zkpok_id_from_event(
-        &self,
-        event: &RelayerEvent,
-    ) -> Result<U256, EventProcessingError> {
-        if let RelayerEventData::EventLogFromGwL2 { log } = &event.data {
-            match ZKPoKManager::VerifyProofRequest::decode_log_data(log.data(), true) {
-                Ok(event) => {
-                    let zkpok_id = event.zkProofId;
-                    info!(?zkpok_id, "ZkPoK id from event");
-                    return Ok(zkpok_id);
-                }
-                Err(e) => {
-                    error!(?e, "Failed to decode event data");
-                }
-            }
-        }
-        Err(EventProcessingError::HandlerError(
-            "Failed to extract zkpok ID from event".into(),
-        ))
     }
 }
 
