@@ -37,8 +37,11 @@ interface IACLManager {
     /// @notice Error indicating that the given coprocessor has already delegated the decryption access.
     error CoprocessorHasAlreadyDelegated(address coprocessor);
 
-    /// @notice Error indicating that the given ciphertext handle is not allowed for user decryption.
-    error UserDecryptNotAllowed(uint256 ctHandle, address userAddress);
+    /// @notice Error indicating that the given user is not allowed to decrypt the given ciphertext handle.
+    error UserNotAllowedToUserDecrypt(uint256 ctHandle, address userAddress);
+
+    /// @notice Error indicating that the given contract is not allowed to decrypt the given ciphertext handle.
+    error ContractNotAllowedToUserDecrypt(uint256 ctHandle, address contractAddress);
 
     /// @notice Error indicating that the given ciphertext handle is not allowed for public decryption.
     error PublicDecryptNotAllowed(uint256 ctHandle);
@@ -69,19 +72,17 @@ interface IACLManager {
         address[] calldata allowedContracts
     ) external;
 
-    /// @notice Returns the handles and PBS ciphertext pairs for the given chainId, user address and ciphertext handles.
-    /// @param userAddress The address of the user tied to the requested handle and PBS ciphertext pairs.
-    /// @param ctHandleContractPairs The ciphertext handles and their associated contract addresses to retrieve.
-    /// @return A list of handle and PBS ciphertext pairs for the given chainId, user address and ciphertext handles.
-    function getUserCiphertexts(
+    /// @notice Checks if the user and the given contracts are allowed to decrypt all the given ciphertext handles.
+    /// @param userAddress The address of the user.
+    /// @param ctHandleContractPairs The ciphertext handles and their associated contract addresses.
+    function checkUserDecryptAllowed(
         address userAddress,
         IDecryptionManager.CtHandleContractPair[] calldata ctHandleContractPairs
-    ) external view returns (CiphertextMaterial[] calldata);
+    ) external view;
 
-    /// @notice Returns the handles and PBS ciphertext pairs for the given ciphertext handles.
-    /// @param ctHandles The ciphertext handles to retrieve if public decryption is allowed.
-    /// @return A list of handle and PBS ciphertext pairs for the given ciphertext handles.
-    function getPublicCiphertexts(uint256[] calldata ctHandles) external view returns (CiphertextMaterial[] calldata);
+    /// @notice Checks if the public decryption is allowed for all the given ciphertext handles.
+    /// @param ctHandles The ciphertext handles.
+    function checkPublicDecryptAllowed(uint256[] calldata ctHandles) external view;
 
     /// @notice Indicates if the decryption access to the given delegatee is already delegated.
     /// @param chainId The chainId of the blockchain the allowed contracts addresses belongs to.

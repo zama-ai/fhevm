@@ -7,11 +7,15 @@ import { CiphertextStorage } from "../typechain-types";
 import { deployKeyManagerFixture } from "./utils";
 
 describe("CiphertextStorage", function () {
-  const ctHandle = "0x01";
+  const ctHandle = 2025;
   const keyId = 0;
   const chainId = 1;
   const ciphertext64 = "0x02";
   const ciphertext128 = "0x03";
+
+  // Fake values
+  const fakeCtHandle = 11111;
+  const fakeChainId = 123;
 
   let ciphertextStorage: CiphertextStorage;
   let coprocessorSigners: HardhatEthersSigner[];
@@ -82,6 +86,12 @@ describe("CiphertextStorage", function () {
       // Then
       expect(result).to.be.deep.eq([[ctHandle, keyId, ciphertext128]]);
     });
+
+    it("Should revert with CiphertextNotFound", async function () {
+      await expect(ciphertextStorage.getCiphertexts([fakeCtHandle]))
+        .revertedWithCustomError(ciphertextStorage, "CiphertextNotFound")
+        .withArgs(fakeCtHandle);
+    });
   });
 
   describe("Has ciphertext", async function () {
@@ -94,9 +104,6 @@ describe("CiphertextStorage", function () {
     });
 
     it("Should return false", async function () {
-      // Given
-      const fakeCtHandle = "0x0123";
-
       // When
       const result = await ciphertextStorage.hasCiphertext(fakeCtHandle);
 
@@ -115,10 +122,6 @@ describe("CiphertextStorage", function () {
     });
 
     it("Should return false", async function () {
-      // Given
-      const fakeCtHandle = "0x0123";
-      const fakeChainId = 123;
-
       // When
       const txResponse1 = await ciphertextStorage.isOnNetwork(ctHandle, fakeChainId);
       const txResponse2 = await ciphertextStorage.isOnNetwork(fakeCtHandle, chainId);

@@ -14,9 +14,9 @@ contract CiphertextStorage is ICiphertextStorage {
     /// @notice The address of the KeyManager contract, used for fetching information about the current key.
     IKeyManager internal immutable _KEY_MANAGER;
 
-    /// @notice The normal (64-bit) ciphertexts tied to the ciphertext handle.
+    /// @notice The normal (64-bits) ciphertexts tied to the ciphertext handle.
     mapping(uint256 ctHandle => bytes ciphertext64) internal _ciphertext64s;
-    /// @notice The PBS (128-bit) ciphertexts tied to the ciphertext handle.
+    /// @notice The PBS (128-bits) ciphertexts tied to the ciphertext handle.
     mapping(uint256 ctHandle => bytes ciphertext128) internal _ciphertext128s;
     /// @notice The key IDs used for generating the ciphertext.
     /// @dev It's necessary in case new keys are generated: we need to know what key to use for using a ciphertext.
@@ -24,7 +24,7 @@ contract CiphertextStorage is ICiphertextStorage {
     /// @notice The chain IDs associated to the ciphertext handle.
     mapping(uint256 ctHandle => uint256 chainId) internal _chainIds;
     /// @notice The mapping of the stored ciphertext of the given handle.
-    mapping(uint256 ctHandle => bool isStored) internal _storedCiphertexts;
+    mapping(uint256 ctHandle => bool isStored) internal _isStored;
     /// @notice The counter of the Coprocessors that have added the ciphertext.
     mapping(uint256 ctHandle => uint8 ctHandleCounter) internal _ctHandleCounters;
     /// @notice The mapping of the Coprocessors that have already sent the ciphertext.
@@ -42,7 +42,7 @@ contract CiphertextStorage is ICiphertextStorage {
 
     /// @notice See {ICiphertextStorage-hasCiphertext}.
     function hasCiphertext(uint256 ctHandle) public view returns (bool) {
-        return _storedCiphertexts[ctHandle];
+        return _isStored[ctHandle];
     }
 
     /// @notice See {ICiphertextStorage-isOnNetwork}.
@@ -55,9 +55,18 @@ contract CiphertextStorage is ICiphertextStorage {
         uint256[] calldata ctHandles
     ) public view returns (CiphertextMaterial[] memory ctMaterials) {
         ctMaterials = new CiphertextMaterial[](ctHandles.length);
+
         for (uint256 i = 0; i < ctHandles.length; i++) {
+            if (!hasCiphertext(ctHandles[i])) {
+                revert CiphertextNotFound(ctHandles[i]);
+            }
+
+            /// @dev For now, only the (128 bits) ciphertexts are returned as ciphertexts are currently
+            /// @dev only retrieved for KMS operations, which only ask for these ciphertexts.
+            /// @dev This might change in the future.
             ctMaterials[i] = CiphertextMaterial(ctHandles[i], _keyIds[ctHandles[i]], _ciphertext128s[ctHandles[i]]);
         }
+
         return ctMaterials;
     }
 
@@ -74,16 +83,20 @@ contract CiphertextStorage is ICiphertextStorage {
         if (!isCoprocessor) {
             revert InvalidCoprocessorSender(msg.sender);
         }
-        /// @dev Check if the received key ID is the latest activated.
-        // TODO: Revisit the following line accordingly with key lifecycles issue /gateway-l2/issues/90
-        bool isCurrentKeyId = _KEY_MANAGER.isCurrentKeyId(keyId);
-        if (!isCurrentKeyId) {
-            revert InvalidCurrentKeyId(keyId);
-        }
+
         /// @dev Check if the Coprocessor has already added the ciphertext.
         if (_ctHandleSenders[ctHandle][msg.sender]) {
             revert CoprocessorHasAlreadyAdded(msg.sender);
         }
+
+        /// @dev Check if the received key ID is the latest activated.
+        // TODO: Revisit the following line accordingly with key lifecycles issue
+        // See: https://github.com/zama-ai/gateway-l2/issues/90
+        bool isCurrentKeyId = _KEY_MANAGER.isCurrentKeyId(keyId);
+        if (!isCurrentKeyId) {
+            revert InvalidCurrentKeyId(keyId);
+        }
+
         _ctHandleCounters[ctHandle]++;
         _ctHandleSenders[ctHandle][msg.sender] = true;
 
@@ -95,7 +108,7 @@ contract CiphertextStorage is ICiphertextStorage {
             _ciphertext128s[ctHandle] = ciphertext128;
             _keyIds[ctHandle] = keyId;
             _chainIds[ctHandle] = chainId;
-            _storedCiphertexts[ctHandle] = true;
+            _isStored[ctHandle] = true;
 
             emit AddCiphertext(ctHandle);
         }

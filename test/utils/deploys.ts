@@ -96,3 +96,73 @@ export async function deployCiphertextStorageFixture() {
     fheParams,
   };
 }
+
+/// @dev Deploy the ACLManager contract
+export async function deployACLManagerFixture() {
+  const {
+    httpz,
+    keyManager,
+    ciphertextStorage,
+    owner,
+    admins,
+    user,
+    kmsSigners,
+    coprocessorSigners,
+    signers,
+    fheParams,
+  } = await loadFixture(deployCiphertextStorageFixture);
+
+  const ACLManager = await hre.ethers.getContractFactory("ACLManager", owner);
+  const aclManager = await ACLManager.deploy(httpz, ciphertextStorage);
+
+  return {
+    httpz,
+    keyManager,
+    ciphertextStorage,
+    aclManager,
+    owner,
+    admins,
+    user,
+    kmsSigners,
+    coprocessorSigners,
+    signers,
+    fheParams,
+  };
+}
+
+/// @dev Deploy the DecryptionManager contract
+export async function deployDecryptionManagerFixture() {
+  const {
+    httpz,
+    keyManager,
+    ciphertextStorage,
+    aclManager,
+    owner,
+    admins,
+    user,
+    kmsSigners,
+    coprocessorSigners,
+    signers,
+    fheParams,
+  } = await loadFixture(deployACLManagerFixture);
+
+  const dummyPaymentManager = "0x1234567890abcdef1234567890abcdef12345678";
+
+  const DecryptionManager = await hre.ethers.getContractFactory("DecryptionManager", owner);
+  const decryptionManager = await DecryptionManager.deploy(httpz, aclManager, ciphertextStorage, dummyPaymentManager);
+
+  return {
+    httpz,
+    keyManager,
+    ciphertextStorage,
+    aclManager,
+    decryptionManager,
+    owner,
+    admins,
+    user,
+    kmsSigners,
+    coprocessorSigners,
+    signers,
+    fheParams,
+  };
+}
