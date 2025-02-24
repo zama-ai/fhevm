@@ -165,42 +165,35 @@ contract ACLManager is IACLManager {
         }
     }
 
-    /// @dev See {IACLManager-getUserCiphertexts}.
-    function getUserCiphertexts(
+    /// @dev See {IACLManager-checkUserDecryptAllowed}.
+    function checkUserDecryptAllowed(
         address userAddress,
         IDecryptionManager.CtHandleContractPair[] calldata ctHandleContractPairs
-    ) public view virtual override returns (CiphertextMaterial[] memory) {
-        if (ctHandleContractPairs.length > _MAX_CONTRACTS_INPUT) {
-            revert TooManyContractsRequested(_MAX_CONTRACTS_INPUT, ctHandleContractPairs.length);
-        }
-        uint256[] memory ctHandles = new uint256[](ctHandleContractPairs.length);
-
-        /// @dev Iterate over the ctHandleContractPairs to check if the user and the contract are allowed to decrypt.
+    ) public view virtual {
         for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
             uint256 ctHandle = ctHandleContractPairs[i].ctHandle;
             address contractAddress = ctHandleContractPairs[i].contractAddress;
+
+            /// @dev Check that the user is allowed to decrypt this ciphertext.
             if (!allowedUserDecrypts[ctHandle][userAddress]) {
-                revert UserDecryptNotAllowed(ctHandle, userAddress);
+                revert UserNotAllowedToUserDecrypt(ctHandle, userAddress);
             }
+
+            /// @dev Check that the contract is allowed to decrypt this ciphertext.
             if (!allowedUserDecrypts[ctHandle][contractAddress]) {
-                revert UserDecryptNotAllowed(ctHandle, contractAddress);
+                revert ContractNotAllowedToUserDecrypt(ctHandle, contractAddress);
             }
-            ctHandles[i] = ctHandle;
         }
-        return _CIPHERTEXT_STORAGE.getCiphertexts(ctHandles);
     }
 
-    /// @dev See {IACLManager-getPublicCiphertexts}.
-    function getPublicCiphertexts(
-        uint256[] calldata ctHandles
-    ) public view virtual override returns (CiphertextMaterial[] memory) {
+    /// @dev See {IACLManager-checkPublicDecryptAllowed}.
+    function checkPublicDecryptAllowed(uint256[] calldata ctHandles) public view virtual {
         /// @dev Iterate over the ctHandles to check if the public decryption is allowed.
         for (uint256 i = 0; i < ctHandles.length; i++) {
             if (!allowedPublicDecrypts[ctHandles[i]]) {
                 revert PublicDecryptNotAllowed(ctHandles[i]);
             }
         }
-        return _CIPHERTEXT_STORAGE.getCiphertexts(ctHandles);
     }
 
     /// @notice Returns the versions of the CiphertextStorage contract in SemVer format.

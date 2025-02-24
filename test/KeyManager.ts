@@ -139,10 +139,10 @@ describe("KeyManager", function () {
       await keyManager.connect(kmsSigners[i]).kskgenResponse(preKskId, kskId);
     }
 
-    // Activate the first key
+    // Request activation of the first key
     await keyManager.connect(admins[0]).activateKeyRequest(keyId1);
 
-    // Trigger preprocessing KSK generation responses for all coprocessors
+    // Trigger activation responses for all coprocessors
     for (let i = 0; i < coprocessorSigners.length; i++) {
       await keyManager.connect(coprocessorSigners[i]).activateKeyResponse(keyId1);
     }
