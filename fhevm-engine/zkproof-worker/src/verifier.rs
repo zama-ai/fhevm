@@ -75,7 +75,7 @@ async fn execute_verify_proof_routine(
 ) -> Result<(), ExecutionError> {
     let mut txn: sqlx::Transaction<'_, sqlx::Postgres> = pool.begin().await?;
     if let Ok(row) = sqlx::query(
-        "SELECT zk_proof_id, input, chain_id, contract_address, user_address
+        "SELECT zk_proof_id, input, tenant_id, contract_address, user_address
             FROM verify_proofs
             WHERE verified IS NULL
             ORDER BY zk_proof_id ASC
@@ -87,19 +87,19 @@ async fn execute_verify_proof_routine(
         let request_id: i64 = row.get("zk_proof_id");
         info!(message = "Processing proof", request_id);
         let input: Vec<u8> = row.get("input");
-        let chain_id: i32 = row.get("chain_id");
+        let tenant_id: i32 = row.get("tenant_id");
         let contract_address = row.get("contract_address");
         let user_address = row.get("user_address");
 
         // TODO: fetch tenant keys by tenant id
-        let keys = tenant_keys::fetch_tenant_server_key(chain_id, pool, tenant_key_cache)
+        let keys = tenant_keys::fetch_tenant_server_key(tenant_id, pool, tenant_key_cache)
             .await
             .map_err(|err| ExecutionError::ServerKeysNotFound(err.to_string()))?;
 
         let aux_data = auxiliary::ZkData {
             contract_address,
             user_address,
-            chain_id,
+            chain_id: keys.chain_id,
             acl_contract_address: keys.acl_contract_address.clone(),
         };
 

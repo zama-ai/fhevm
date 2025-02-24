@@ -1,6 +1,7 @@
 CREATE TABLE IF NOT EXISTS verify_proofs (
+    tenant_id INT DEFAULT 0, -- TODO: should not be nullable
     zk_proof_id BIGINT PRIMARY KEY NOT NULL CHECK (zk_proof_id >= 0),
-    chain_id INTEGER NOT NULL CHECK(chain_id >= 0),
+    chain_id INTEGER NOT NULL CHECK(chain_id >= 0), -- TODO: use tenants.chain_id instead
     contract_address TEXT NOT NULL,
     user_address TEXT NOT NULL,
     input BYTEA,

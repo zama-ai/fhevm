@@ -84,16 +84,18 @@ pub(crate) async fn insert_proof(
     zk_pok: &[u8],
     aux: &ZkData,
 ) -> Result<i64, sqlx::Error> {
+    let tenant_id = 1;
     //  Insert ZkPok into database
     sqlx::query(
-            "INSERT INTO verify_proofs (zk_proof_id, input, chain_id, contract_address, user_address, verified)
-             VALUES ($1, $2, $3, $4, $5, NULL)" 
+            "INSERT INTO verify_proofs (zk_proof_id, input, tenant_id, chain_id, contract_address, user_address, verified)
+             VALUES ($1, $2, $3, $4, $5, $6, NULL)" 
         ).bind(request_id)
         .bind(zk_pok)
+        .bind(tenant_id)
         .bind(aux.chain_id)
         .bind(aux.contract_address.clone())
         .bind(aux.user_address.clone())
-        .execute(pool).await.unwrap();
+        .execute(pool).await?;
 
     // pg_notify to trigger the worker
 
@@ -116,7 +118,7 @@ pub(crate) fn aux_fixture(acl_contract_address: String) -> (ZkData, [u8; 92]) {
         contract_address,
         user_address,
         acl_contract_address,
-        chain_id: 1, // TODO: db_utils::CHAIN_ID,
+        chain_id: 12345,
     };
 
     (
