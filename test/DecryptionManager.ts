@@ -83,35 +83,35 @@ describe("DecryptionManager", function () {
     // Create a dummy decrypted result
     const decryptedResult = hre.ethers.randomBytes(32);
 
-    // Deploy the DecryptionManager and add ciphertext materials associated to the handles
+    // Deploy the DecryptionManager and add SNS ciphertext materials associated to the handles
     async function deployAddCiphertextFixture() {
       const { ciphertextStorage, aclManager, decryptionManager, kmsSigners, coprocessorSigners, user, keyId } =
         await loadFixture(deployWithActivatedKeyFixture);
 
       // Define dummy ciphertext values
-      const ciphertext64 = "0x02";
-      const ciphertext128 = "0x03";
+      const ciphertext = "0x02";
+      const snsCiphertext = "0x03";
 
-      let ciphertextMaterials = [];
+      let snsCiphertextMaterials = [];
 
       // Allow public decryption
       for (const ctHandle of ctHandles) {
         for (let i = 0; i < coprocessorSigners.length; i++) {
           await ciphertextStorage
             .connect(coprocessorSigners[i])
-            .addCiphertext(ctHandle, keyId, chainId, ciphertext64, ciphertext128);
+            .addCiphertext(ctHandle, keyId, chainId, ciphertext, snsCiphertext);
         }
 
-        // Store the ciphertext materials for event checks
-        ciphertextMaterials.push([ctHandle, keyId, ciphertext128]);
+        // Store the SNS ciphertext materials for event checks
+        snsCiphertextMaterials.push([ctHandle, keyId, snsCiphertext]);
       }
 
-      return { aclManager, decryptionManager, kmsSigners, coprocessorSigners, user, ciphertextMaterials };
+      return { aclManager, decryptionManager, kmsSigners, coprocessorSigners, user, snsCiphertextMaterials };
     }
 
     // Deploy the DecryptionManager and allow handles for public decryption
     async function deployAllowPublicDecryptionFixture() {
-      const { aclManager, decryptionManager, kmsSigners, coprocessorSigners, user, ciphertextMaterials } =
+      const { aclManager, decryptionManager, kmsSigners, coprocessorSigners, user, snsCiphertextMaterials } =
         await loadFixture(deployAddCiphertextFixture);
 
       // Allow public decryption
@@ -121,7 +121,7 @@ describe("DecryptionManager", function () {
         }
       }
 
-      return { decryptionManager, kmsSigners, coprocessorSigners, user, ciphertextMaterials };
+      return { decryptionManager, kmsSigners, coprocessorSigners, user, snsCiphertextMaterials };
     }
 
     async function deployGetEIP712Fixture() {
@@ -140,7 +140,7 @@ describe("DecryptionManager", function () {
     }
 
     it("Should request a public decryption", async function () {
-      const { decryptionManager, user, ciphertextMaterials } = await loadFixture(deployAllowPublicDecryptionFixture);
+      const { decryptionManager, user, snsCiphertextMaterials } = await loadFixture(deployAllowPublicDecryptionFixture);
 
       // Request public decryption (any user can do so)
       const requestTx = await decryptionManager.connect(user).publicDecryptionRequest(ctHandles);
@@ -148,7 +148,7 @@ describe("DecryptionManager", function () {
       // Check request event
       await expect(requestTx)
         .to.emit(decryptionManager, "PublicDecryptionRequest")
-        .withArgs(publicDecryptionId, ciphertextMaterials);
+        .withArgs(publicDecryptionId, snsCiphertextMaterials);
     });
 
     it("Should revert because handles are not allowed for public decryption", async function () {

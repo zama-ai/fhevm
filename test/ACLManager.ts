@@ -10,7 +10,7 @@ describe("ACLManager", function () {
   const keyId = 0; // Using exceptional first key (currentKeyId == 0). See {HTTPZ-activateKeyRequest}
   const ctHandle = 2025;
   const chainId = 1;
-  const ciphertext128 = "0x02";
+  const snsCiphertext = "0x02";
 
   // Fake values
   const fakeCtHandle = 11111;
@@ -29,7 +29,7 @@ describe("ACLManager", function () {
     for (let i = 0; i < coprocessorSigners.length; i++) {
       await ciphertextStorage
         .connect(coprocessorSigners[i])
-        .addCiphertext(ctHandle, keyId, chainId, "0x01", ciphertext128);
+        .addCiphertext(ctHandle, keyId, chainId, "0x01", snsCiphertext);
     }
 
     return { aclManager, ciphertextStorage, coprocessorSigners, signers };
@@ -46,7 +46,7 @@ describe("ACLManager", function () {
   describe("Allow user decrypt", async function () {
     const allowedAddress = "0x388C818CA8B9251b393131C08a736A67ccB19297";
 
-    it("Should success", async function () {
+    it("Should allow for user decryption", async function () {
       // When
       await aclManager.connect(coprocessorSigners[0]).allowUserDecrypt(chainId, ctHandle, allowedAddress);
       const txResponse = aclManager.connect(coprocessorSigners[1]).allowUserDecrypt(chainId, ctHandle, allowedAddress);
@@ -90,7 +90,7 @@ describe("ACLManager", function () {
   });
 
   describe("Allow public decrypt", async function () {
-    it("Should success", async function () {
+    it("Should allow for public decryption", async function () {
       // When
       await aclManager.connect(coprocessorSigners[0]).allowPublicDecrypt(chainId, ctHandle);
       const txResponse = aclManager.connect(coprocessorSigners[1]).allowPublicDecrypt(chainId, ctHandle);
@@ -139,7 +139,7 @@ describe("ACLManager", function () {
     const allowedContract2 = hre.ethers.Wallet.createRandom().address;
     const allowedContract3 = hre.ethers.Wallet.createRandom().address;
 
-    it("Should success", async function () {
+    it("Should delegate account", async function () {
       // When
       await aclManager
         .connect(coprocessorSigners[0])
@@ -205,7 +205,7 @@ describe("ACLManager", function () {
       }
     });
 
-    it("Should success", async function () {
+    it("Should check user decrypt is allowed", async function () {
       await aclManager
         .connect(coprocessorSigners[0])
         .checkUserDecryptAllowed(allowedUserAddress, ctHandleContractPairs);
@@ -242,7 +242,7 @@ describe("ACLManager", function () {
       }
     });
 
-    it("Should success", async function () {
+    it("Should check public decrypt is allowed", async function () {
       await aclManager.connect(coprocessorSigners[0]).checkPublicDecryptAllowed([ctHandle]);
     });
 
