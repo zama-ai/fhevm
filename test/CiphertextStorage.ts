@@ -10,8 +10,8 @@ describe("CiphertextStorage", function () {
   const ctHandle = 2025;
   const keyId = 0;
   const chainId = 1;
-  const ciphertext64 = "0x02";
-  const ciphertext128 = "0x03";
+  const ciphertext = "0x02";
+  const snsCiphertext = "0x03";
 
   // Fake values
   const fakeCtHandle = 11111;
@@ -27,7 +27,7 @@ describe("CiphertextStorage", function () {
 
     // Setup the ciphertext storage state with a ciphertext used during tests
     for (let signer of coprocessorSigners) {
-      await ciphertextStorage.connect(signer).addCiphertext(ctHandle, keyId, chainId, ciphertext64, ciphertext128);
+      await ciphertextStorage.connect(signer).addCiphertext(ctHandle, keyId, chainId, ciphertext, snsCiphertext);
     }
     return { ciphertextStorage, coprocessorSigners, signers };
   }
@@ -40,19 +40,19 @@ describe("CiphertextStorage", function () {
   });
 
   describe("Add ciphertext", async function () {
-    it("Should success", async function () {
+    it("Should add a ciphertext", async function () {
       // Given
       const newCtHandle = "0x0123";
 
       // When
       await ciphertextStorage
         .connect(coprocessorSigners[0])
-        .addCiphertext(newCtHandle, keyId, chainId, ciphertext64, ciphertext128);
+        .addCiphertext(newCtHandle, keyId, chainId, ciphertext, snsCiphertext);
 
       // This transaction should make the consensus to be reached and thus emit the expected event
       const result = ciphertextStorage
         .connect(coprocessorSigners[1])
-        .addCiphertext(newCtHandle, keyId, chainId, ciphertext64, ciphertext128);
+        .addCiphertext(newCtHandle, keyId, chainId, ciphertext, snsCiphertext);
 
       // Then
       await expect(result).to.emit(ciphertextStorage, "AddCiphertext").withArgs(newCtHandle);
@@ -60,7 +60,7 @@ describe("CiphertextStorage", function () {
       // Then check that no other events get triggered
       await ciphertextStorage
         .connect(coprocessorSigners[2])
-        .addCiphertext(newCtHandle, keyId, chainId, ciphertext64, ciphertext128);
+        .addCiphertext(newCtHandle, keyId, chainId, ciphertext, snsCiphertext);
       const events = await ciphertextStorage.queryFilter(ciphertextStorage.filters.AddCiphertext(newCtHandle));
 
       // It should emit only the event once consensus is reached which means only the second transaction emits the event
@@ -71,24 +71,40 @@ describe("CiphertextStorage", function () {
       // When
       const result = ciphertextStorage
         .connect(coprocessorSigners[0])
-        .addCiphertext(ctHandle, keyId, chainId, ciphertext64, ciphertext128);
+        .addCiphertext(ctHandle, keyId, chainId, ciphertext, snsCiphertext);
 
       // Then
       await expect(result).revertedWithCustomError(ciphertextStorage, "CoprocessorHasAlreadyAdded");
     });
   });
 
-  describe("Get ciphertexts", async function () {
-    it("Should success", async function () {
+  describe("Get regular ciphertext materials", async function () {
+    it("Should get regular ciphertext materials", async function () {
       // When
-      const result = await ciphertextStorage.getCiphertexts([ctHandle]);
+      const result = await ciphertextStorage.getCiphertextMaterials([ctHandle]);
 
       // Then
-      expect(result).to.be.deep.eq([[ctHandle, keyId, ciphertext128]]);
+      expect(result).to.be.deep.eq([[ctHandle, keyId, ciphertext]]);
     });
 
-    it("Should revert with CiphertextNotFound", async function () {
-      await expect(ciphertextStorage.getCiphertexts([fakeCtHandle]))
+    it("Should revert with CiphertextNotFound (regular)", async function () {
+      await expect(ciphertextStorage.getCiphertextMaterials([fakeCtHandle]))
+        .revertedWithCustomError(ciphertextStorage, "CiphertextNotFound")
+        .withArgs(fakeCtHandle);
+    });
+  });
+
+  describe("Get SNS ciphertext materials", async function () {
+    it("Should get SNS ciphertext materials", async function () {
+      // When
+      const result = await ciphertextStorage.getSnsCiphertextMaterials([ctHandle]);
+
+      // Then
+      expect(result).to.be.deep.eq([[ctHandle, keyId, snsCiphertext]]);
+    });
+
+    it("Should revert with CiphertextNotFound (SNS)", async function () {
+      await expect(ciphertextStorage.getSnsCiphertextMaterials([fakeCtHandle]))
         .revertedWithCustomError(ciphertextStorage, "CiphertextNotFound")
         .withArgs(fakeCtHandle);
     });

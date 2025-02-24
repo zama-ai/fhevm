@@ -14,10 +14,10 @@ contract CiphertextStorage is ICiphertextStorage {
     /// @notice The address of the KeyManager contract, used for fetching information about the current key.
     IKeyManager internal immutable _KEY_MANAGER;
 
-    /// @notice The normal (64-bits) ciphertexts tied to the ciphertext handle.
-    mapping(uint256 ctHandle => bytes ciphertext64) internal _ciphertext64s;
-    /// @notice The PBS (128-bits) ciphertexts tied to the ciphertext handle.
-    mapping(uint256 ctHandle => bytes ciphertext128) internal _ciphertext128s;
+    /// @notice The regular ciphertexts tied to the ciphertext handle.
+    mapping(uint256 ctHandle => bytes ciphertext) internal _ciphertexts;
+    /// @notice The SNS ciphertexts tied to the ciphertext handle.
+    mapping(uint256 ctHandle => bytes snsCiphertext) internal _snsCiphertexts;
     /// @notice The key IDs used for generating the ciphertext.
     /// @dev It's necessary in case new keys are generated: we need to know what key to use for using a ciphertext.
     mapping(uint256 ctHandle => uint256 keyId) internal _keyIds;
@@ -50,8 +50,8 @@ contract CiphertextStorage is ICiphertextStorage {
         return _chainIds[ctHandle] == chainId;
     }
 
-    /// @notice See {ICiphertextStorage-getCiphertexts}.
-    function getCiphertexts(
+    /// @notice See {ICiphertextStorage-getCiphertextMaterials}.
+    function getCiphertextMaterials(
         uint256[] calldata ctHandles
     ) public view returns (CiphertextMaterial[] memory ctMaterials) {
         ctMaterials = new CiphertextMaterial[](ctHandles.length);
@@ -61,13 +61,31 @@ contract CiphertextStorage is ICiphertextStorage {
                 revert CiphertextNotFound(ctHandles[i]);
             }
 
-            /// @dev For now, only the (128 bits) ciphertexts are returned as ciphertexts are currently
-            /// @dev only retrieved for KMS operations, which only ask for these ciphertexts.
-            /// @dev This might change in the future.
-            ctMaterials[i] = CiphertextMaterial(ctHandles[i], _keyIds[ctHandles[i]], _ciphertext128s[ctHandles[i]]);
+            ctMaterials[i] = CiphertextMaterial(ctHandles[i], _keyIds[ctHandles[i]], _ciphertexts[ctHandles[i]]);
         }
 
         return ctMaterials;
+    }
+
+    /// @notice See {ICiphertextStorage-getSnsCiphertextMaterials}.
+    function getSnsCiphertextMaterials(
+        uint256[] calldata ctHandles
+    ) public view returns (SnsCiphertextMaterial[] memory snsCtMaterials) {
+        snsCtMaterials = new SnsCiphertextMaterial[](ctHandles.length);
+
+        for (uint256 i = 0; i < ctHandles.length; i++) {
+            if (!hasCiphertext(ctHandles[i])) {
+                revert CiphertextNotFound(ctHandles[i]);
+            }
+
+            snsCtMaterials[i] = SnsCiphertextMaterial(
+                ctHandles[i],
+                _keyIds[ctHandles[i]],
+                _snsCiphertexts[ctHandles[i]]
+            );
+        }
+
+        return snsCtMaterials;
     }
 
     /// @notice See {ICiphertextStorage-addCiphertext}.
@@ -76,8 +94,8 @@ contract CiphertextStorage is ICiphertextStorage {
         uint256 ctHandle,
         uint256 keyId,
         uint256 chainId,
-        bytes calldata ciphertext64,
-        bytes calldata ciphertext128
+        bytes calldata ciphertext,
+        bytes calldata snsCiphertext
     ) public {
         bool isCoprocessor = _HTTPZ.isCoprocessor(msg.sender);
         if (!isCoprocessor) {
@@ -104,8 +122,8 @@ contract CiphertextStorage is ICiphertextStorage {
         /// @dev and the consensus is reached in the current call.
         /// @dev This means a "late" allow will not be reverted, just ignored
         if (!hasCiphertext(ctHandle) && _isConsensusReached(_ctHandleCounters[ctHandle])) {
-            _ciphertext64s[ctHandle] = ciphertext64;
-            _ciphertext128s[ctHandle] = ciphertext128;
+            _ciphertexts[ctHandle] = ciphertext;
+            _snsCiphertexts[ctHandle] = snsCiphertext;
             _keyIds[ctHandle] = keyId;
             _chainIds[ctHandle] = chainId;
             _isStored[ctHandle] = true;

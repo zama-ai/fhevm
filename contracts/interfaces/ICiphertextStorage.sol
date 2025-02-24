@@ -33,24 +33,32 @@ interface ICiphertextStorage {
     /// @param chainId The chain ID to check if the ciphertext is associated with.
     function isOnNetwork(uint256 ctHandle, uint256 chainId) external returns (bool);
 
-    /// @notice Retrieves the list of (128 bits) ciphertexts for the given handles.
+    /// @notice Retrieves the list of regular ciphertexts for the given handles.
     /// @param ctHandles The list of handles of the ciphertexts to retrieve.
-    /// @return ctMaterials The list of (128 bits) ciphertexts, its handles and its key IDs.
-    function getCiphertexts(
+    /// @return ctMaterials The list of regular ciphertexts, its handles and its key IDs.
+    function getCiphertextMaterials(
         uint256[] calldata ctHandles
     ) external view returns (CiphertextMaterial[] memory ctMaterials);
 
-    /// @notice Adds a new ciphertext to the storage.
+    /// @notice Retrieves the list of SNS ciphertexts for the given handles.
+    /// @param ctHandles The list of handles of the ciphertexts to retrieve.
+    /// @return snsCtMaterials The list of SNS ciphertexts, its handles and its key IDs.
+    function getSnsCiphertextMaterials(
+        uint256[] calldata ctHandles
+    ) external view returns (SnsCiphertextMaterial[] memory snsCtMaterials);
+
+    /// @notice Adds a new ciphertext to the storage. Also include its SNS (Switch and Squash)
+    /// @notice version and other metadata.
     /// @param ctHandle The handle of the storing ciphertext.
     /// @param keyId The ID of the key under the ciphertext has been generated.
     /// @param chainId The chain ID of the blockchain associated to the ciphertext handle.
-    /// @param ciphertext64 The (64 bits) ciphertext to be stored.
-    /// @param ciphertext128 The (128 bits) ciphertext to be stored.
+    /// @param ciphertext The regular ciphertext to be stored.
+    /// @param snsCiphertext The SNS ciphertext to be stored.
     function addCiphertext(
         uint256 ctHandle,
         uint256 keyId,
         uint256 chainId,
-        bytes calldata ciphertext64,
-        bytes calldata ciphertext128
+        bytes calldata ciphertext,
+        bytes calldata snsCiphertext
     ) external;
 }
