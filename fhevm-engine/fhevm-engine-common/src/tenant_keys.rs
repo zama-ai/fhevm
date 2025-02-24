@@ -106,7 +106,7 @@ where
         let keys = query_tenant_keys(tenants_to_query, conn).await?;
 
         assert!(
-            keys.is_empty(),
+            !keys.is_empty(),
             "We should have keys here, otherwise our database is corrupt"
         );
 
