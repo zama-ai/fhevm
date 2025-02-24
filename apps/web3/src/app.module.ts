@@ -28,13 +28,13 @@ import { DatabaseModule } from './infra/database/database.module.js'
 import { ChainId } from './domain/entities/value-objects.js'
 import { isOk, PubSub } from 'utils'
 import fheConfig, { FheConfig, FheConfigFactory } from './config/fhe.config.js'
-import { EthersFheEventService } from './infra/adapters/ethers-fhe-event.service.js'
 import { FetchFHEEvents } from './use-cases/fetch-fhe-events.use-case.js'
 import { FheEventService } from './domain/services/fhe-event.service.js'
 import { FheEventRepository } from './domain/services/fhe-event.repository.js'
 import { PrismaFheEventRepository } from './infra/database/repositories/prisma-fhe-event.repository.js'
 import { web3 } from 'messages'
 import commonConfig from '#config/common.config.js'
+import { ViemFheEventService } from '#infra/adapters/viem-fhe-event.service.js'
 
 // Note: I need to override the default behavior of ConfigModule in the tests,
 // and, as we use a dynamic module, we need to store the current instance to
@@ -147,7 +147,7 @@ export const configModule = ConfigModule.forRoot({
             (map, cfg) => map.set(cfg.chainId.value, cfg),
             new Map<string, FheConfig>(),
           )
-        return new EthersFheEventService(map)
+        return new ViemFheEventService(map)
       },
     },
     {

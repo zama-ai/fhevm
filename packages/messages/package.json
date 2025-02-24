@@ -18,7 +18,7 @@
     "test:debug": "vitest --inspect-brk --inspect --logHeapUsage --threads=false"
   },
   "dependencies": {
-    "zod": "^3.23.8"
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@faker-js/faker": "^9.3.0",
