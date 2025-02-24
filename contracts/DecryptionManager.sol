@@ -84,12 +84,12 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
         /// @dev Check that the public decryption is allowed for the given ctHandles.
         _ACL_MANAGER.checkPublicDecryptAllowed(ctHandles);
 
-        /// @dev Fetch the ciphertexts from the ciphertext storage
+        /// @dev Fetch the SNS ciphertexts from the ciphertext storage
         /// @dev This call is reverted if any of the ciphertexts are not found in the storage, but
         /// @dev this should not happen for now as a ciphertext cannot be allowed for decryption
         /// @dev without being added to the storage first (and we currently have no ways of deleting
         /// @dev a ciphertext from the storage).
-        CiphertextMaterial[] memory ctMaterials = _CIPHERTEXT_STORAGE.getCiphertexts(ctHandles);
+        SnsCiphertextMaterial[] memory snsCtMaterials = _CIPHERTEXT_STORAGE.getSnsCiphertextMaterials(ctHandles);
 
         counterPublicDecryption++;
         uint256 publicDecryptionId = counterPublicDecryption;
@@ -99,7 +99,7 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
 
         // TODO: Implement sending service fees to PaymentManager contract
 
-        emit PublicDecryptionRequest(publicDecryptionId, ctMaterials);
+        emit PublicDecryptionRequest(publicDecryptionId, snsCtMaterials);
     }
 
     /// @dev See {IDecryptionManager-publicDecryptionResponse}.

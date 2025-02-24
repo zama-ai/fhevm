@@ -30,7 +30,7 @@ describe("ZKPoKManager", function () {
       zkpokManager = fixture.zkpokManager;
     });
 
-    it("Should success", async function () {
+    it("Should request a proof verification", async function () {
       // Given
       const contractAddress = "0xa83114A443dA1CecEFC50368531cACE9F37fCCcb";
       const userAddress = "0x388C818CA8B9251b393131C08a736A67ccB19297";
@@ -85,7 +85,7 @@ describe("ZKPoKManager", function () {
       await zkpokManager.verifyProofRequest(contractChainId, contractAddress, userAddress, ctProofHandle);
     });
 
-    it("Should success", async function () {
+    it("Should verify proof responses", async function () {
       // Given
       const zkpokManagerAddress = await zkpokManager.getAddress();
       const handles = [hre.ethers.randomBytes(32), hre.ethers.randomBytes(32)];
