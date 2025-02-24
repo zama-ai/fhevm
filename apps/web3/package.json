@@ -32,7 +32,6 @@
     "@nestjs/platform-express": "^10.0.0",
     "@prisma/client": "6.2.1",
     "cpx": "^1.5.0",
-    "ethers": "^6.13.5",
     "messages": "workspace:*",
     "nestjs-cls": "^4.5.0",
     "nestjs-pino": "catalog:",
