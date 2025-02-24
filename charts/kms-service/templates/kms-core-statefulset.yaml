@@ -273,7 +273,7 @@ spec:
               cat /var/lib/kms-core/config/enclave.json
               echo "### END - enclave.json ###"
               echo "### BEGIN - describe-eif ###"
-              nitro-cli describe-eif --eif-path enclave.eif
+              nitro-cli describe-eif --eif-path {{ .Values.kmsCore.nitroEnclave.eifPath }}
               echo "### END - describe-eif ###"
               {{- end }}
               nitro-cli run-enclave --config /var/lib/kms-core/config/enclave.json

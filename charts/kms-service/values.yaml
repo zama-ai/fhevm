@@ -65,6 +65,7 @@ kmsCore:
     # Enclave Memory in GiB
     memoryGiB: 10
     cid: 20
+    eifPath: /app/kms/core/service/enclave.eif
     userId: 10003
     groupId: 10002
     ports:
