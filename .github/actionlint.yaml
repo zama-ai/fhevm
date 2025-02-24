@@ -1,0 +1,16 @@
+# Configuration related to self-hosted runner.
+self-hosted-runner:
+  # Labels of self-hosted runner in array of strings.
+  labels:
+    - large_ubuntu_16
+    - large_ubuntu_32
+    - large_windows_16_latest
+    - large_ubuntu_16_arm
+    - large_ubuntu_16-22.04
+    - large_ubuntu_64-22.04
+    - gpu_ubuntu-22.04
+    - aws-mac2-metal
+    - office-m1-mac-mini
+    - m1mac
+    - 4090-desktop
+    - aws-mac1-metal
