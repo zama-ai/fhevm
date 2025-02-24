@@ -29,6 +29,9 @@ fhevm-engine-common = { path = "../fhevm-engine-common" }
 [features]
 nightly-avx512 = ["tfhe/nightly-avx512"]
 
+[dev-dependencies]
+test-harness = { path = "../test-harness" }
+
 [[bin]]
 name = "zkproof_worker"
 path = "src/bin/zkproof_worker.rs"

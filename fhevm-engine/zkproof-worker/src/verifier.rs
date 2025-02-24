@@ -1,8 +1,10 @@
+use alloy_primitives::Address;
 use fhevm_engine_common::tenant_keys::TfheTenantKeys;
 use fhevm_engine_common::tenant_keys::{self, FetchTenantKeyResult};
 use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, extract_ct_list};
 use fhevm_engine_common::types::SupportedFheCiphertexts;
 
+use fhevm_engine_common::utils::safe_deserialize;
 use lru::LruCache;
 use sha3::Digest;
 use sha3::Keccak256;
@@ -11,23 +13,27 @@ use std::num::NonZero;
 use std::str::FromStr;
 use tokio::sync::RwLock;
 
-use crate::ExecutionError;
+use crate::{auxiliary, ExecutionError};
 use anyhow::Result;
-use tfhe::safe_serialization::safe_deserialize;
 
 use std::sync::Arc;
 use tfhe::set_server_key;
 
 use tokio::{select, time::Duration};
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 
 pub const SAFE_SER_SIZE_LIMIT: u64 = 1024 * 1024 * 1024 * 2;
 const MAX_CACHED_TENANT_KEYS: usize = 100;
 
+pub(crate) struct Ciphertext {
+    handle: Vec<u8>,
+    compressed: Vec<u8>,
+}
+
 #[derive(Default)]
 pub struct Config {
-    database_url: String,
-    listen_database_channel: String,
+    pub database_url: String,
+    pub listen_database_channel: String,
 }
 
 /// Executes the main loop for handling verify_proofs requests inserted in the database
@@ -36,6 +42,8 @@ pub async fn execute_verify_proofs_loop(conf: &Config) -> Result<(), ExecutionEr
         .max_connections(10)
         .connect(&conf.database_url)
         .await?;
+
+    info!("Starting verify_proofs loop");
 
     let mut listener = PgListener::connect_with(&pool).await?;
     listener.listen(&conf.listen_database_channel).await?;
@@ -51,7 +59,7 @@ pub async fn execute_verify_proofs_loop(conf: &Config) -> Result<(), ExecutionEr
 
         select! {
             _ = listener.try_recv() => {
-                debug!(target: "worker", "Received notification");
+                info!(target: "worker", "Received notification");
             },
             _ = tokio::time::sleep(Duration::from_secs(10)) => {
                 debug!(target: "worker", "Polling timeout, rechecking for tasks");
@@ -69,7 +77,7 @@ async fn execute_verify_proof_routine(
     if let Ok(row) = sqlx::query(
         "SELECT zk_proof_id, input, chain_id, contract_address, user_address
             FROM verify_proofs
-            WHERE verified = NULL
+            WHERE verified IS NULL
             ORDER BY zk_proof_id ASC
             LIMIT 1 FOR UPDATE SKIP LOCKED",
     )
@@ -77,6 +85,7 @@ async fn execute_verify_proof_routine(
     .await
     {
         let request_id: i64 = row.get("zk_proof_id");
+        info!(message = "Processing proof", request_id);
         let input: Vec<u8> = row.get("input");
         let chain_id: i32 = row.get("chain_id");
         let contract_address = row.get("contract_address");
@@ -87,7 +96,7 @@ async fn execute_verify_proof_routine(
             .await
             .map_err(|err| ExecutionError::ServerKeysNotFound(err.to_string()))?;
 
-        let aux_data: AuxiliaryData = AuxiliaryData {
+        let aux_data = auxiliary::ZkData {
             contract_address,
             user_address,
             chain_id,
@@ -98,14 +107,21 @@ async fn execute_verify_proof_routine(
         let mut handles_bytes = vec![];
         match verify_proof_and_sign(request_id, &keys, &aux_data, &input).await {
             Ok(handles) => {
-                handles_bytes = handles.iter().fold(Vec::new(), |mut acc, h| {
-                    acc.extend_from_slice(h.as_ref());
+                handles_bytes = handles.iter().fold(Vec::new(), |mut acc, ct| {
+                    acc.extend_from_slice(ct.handle.as_ref());
                     acc
                 });
                 verified = true;
+                // TODO: Insert ciphertexts into the database
+
+                info!(message = "Check valid proof", request_id);
             }
             Err(err) => {
-                error!("Failed to verify proof: {}, err: {}", request_id, err);
+                error!(
+                    message = "Failed to verify proof",
+                    request_id,
+                    err = err.to_string()
+                );
             }
         }
 
@@ -135,22 +151,23 @@ async fn execute_verify_proof_routine(
 pub(crate) async fn verify_proof_and_sign(
     request_id: i64,
     keys: &FetchTenantKeyResult,
-    aux_data: &AuxiliaryData,
+    aux_data: &auxiliary::ZkData,
     raw_ct: &[u8],
-) -> Result<Vec<Vec<u8>>, ExecutionError> {
+) -> Result<Vec<Ciphertext>, ExecutionError> {
+    set_server_key(keys.server_key.clone());
+
     let cts: Vec<SupportedFheCiphertexts> =
         try_verify_and_expand_ciphertext_list(request_id, raw_ct, keys, aux_data)?;
 
-    set_server_key(keys.server_key.clone());
+    let mut h = Keccak256::new();
+    h.update(raw_ct);
+    let blob_hash = h.finalize().to_vec();
+
     let handles = cts
         .iter()
         .enumerate()
-        .map(|(idx, ct)| {
-            ciphertext_handle(&ct.compress().1, idx as u8, ct.type_num() as u8, aux_data)
-        })
+        .map(|(idx, ct)| ciphertext_handle(&blob_hash, idx, ct, aux_data))
         .collect();
-
-    // TODO: Insert ciphertexts into the database
 
     Ok(handles)
 }
@@ -159,14 +176,14 @@ fn try_verify_and_expand_ciphertext_list(
     request_id: i64,
     raw_ct: &[u8],
     keys: &FetchTenantKeyResult,
-    aux_data: &AuxiliaryData,
+    aux_data: &auxiliary::ZkData,
 ) -> Result<Vec<SupportedFheCiphertexts>, ExecutionError> {
-    let aux_data_bytes = aux_data.assemble();
+    let aux_data_bytes = aux_data
+        .assemble()
+        .map_err(|e| ExecutionError::InvalidAuxData(e.to_string()))?;
 
-    let mut cursor = std::io::Cursor::new(raw_ct);
     let the_list: tfhe::ProvenCompactCiphertextList =
-        safe_deserialize(&mut cursor, SAFE_SER_SIZE_LIMIT)
-            .map_err(ExecutionError::InvalidCiphertextBytes)?;
+        safe_deserialize(raw_ct).expect(" deserialization failed");
 
     let expanded: tfhe::CompactCiphertextListExpander = the_list
         .verify_and_expand(&keys.public_params, &keys.pks, &aux_data_bytes)
@@ -176,58 +193,34 @@ fn try_verify_and_expand_ciphertext_list(
 }
 
 /// Computes the handle for a ciphertext
-/// handle = hash(individual ciphertext, zkpok, type, user_address, contract_address, keyID, chain id)
 fn ciphertext_handle(
-    compress_ct: &[u8],
-    ct_idx: u8,
-    ct_type: u8,
-    aux_data: &AuxiliaryData,
-) -> Vec<u8> {
+    blob_hash: &[u8],
+    ct_idx: usize,
+    the_ct: &SupportedFheCiphertexts,
+    aux_data: &auxiliary::ZkData,
+) -> Ciphertext {
+    let (serialized_type, compressed) = the_ct.compress();
+    let chain_id_bytes: [u8; 32] = alloy_primitives::U256::from(aux_data.chain_id)
+        .to_owned()
+        .to_be_bytes();
+
     let mut handle_hash = Keccak256::new();
-    handle_hash.update(compress_ct); // individual ciphertext
-    handle_hash.update(aux_data.user_address.as_bytes());
-    handle_hash.update(aux_data.contract_address.as_bytes());
-    handle_hash.update([ct_idx]);
-    // handle_hash.update(acl_contract_address.as_slice());
-    // TODO: handle_hash.update(&chain_id_be);
+    handle_hash.update(blob_hash);
+    handle_hash.update([ct_idx as u8]);
+    handle_hash.update(
+        Address::from_str(&aux_data.acl_contract_address)
+            .expect("valid acl_contract_address")
+            .into_array(),
+    );
+    handle_hash.update(chain_id_bytes);
     let mut handle = handle_hash.finalize().to_vec();
+
     assert_eq!(handle.len(), 32);
     // idx cast to u8 must succeed because we don't allow
     // more handles than u8 size
-    handle[29] = ct_idx;
-    handle[30] = ct_type;
+    handle[29] = ct_idx as u8;
+    handle[30] = serialized_type as u8;
     handle[31] = current_ciphertext_version() as u8;
 
-    handle.to_vec()
-}
-
-pub(crate) struct AuxiliaryData {
-    chain_id: i32,
-    user_address: String,
-    contract_address: String,
-    acl_contract_address: String,
-}
-
-impl AuxiliaryData {
-    /// creates the metadata (auxiliary data) for proving/verifying the input ZKPs from the individual inputs
-    ///
-    /// metadata is `contract_addr || user_addr  || chain_id` i.e. 92 bytes since chain ID is encoded as a 32 byte big endian integer
-    pub fn assemble(&self) -> [u8; 92] {
-        let contract_address = alloy_primitives::Address::from_str(&self.user_address).unwrap();
-        let client_address = alloy_primitives::Address::from_str(&self.contract_address).unwrap();
-        let chain_id = alloy_primitives::U256::from(self.chain_id).to_owned();
-        // TODO: acl_contract_address
-
-        let mut metadata = [0_u8; 92];
-        let contract_bytes = contract_address.into_array();
-        let client_bytes = client_address.into_array();
-
-        let chain_id_bytes: [u8; 32] = chain_id.to_be_bytes();
-        let front = [contract_bytes, client_bytes].concat();
-        metadata[..60].copy_from_slice(front.as_slice());
-        metadata[60..].copy_from_slice(&chain_id_bytes);
-
-        // TODO: How to build metadata for the proof?
-        metadata
-    }
+    Ciphertext { handle, compressed }
 }
