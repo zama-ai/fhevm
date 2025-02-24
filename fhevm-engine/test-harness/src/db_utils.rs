@@ -5,6 +5,8 @@ use tokio::fs;
 use tokio::io::AsyncReadExt;
 use tokio::time::sleep;
 
+pub const ACL_CONTRACT_ADDR: &str = "0x339EcE85B9E11a3A3AA557582784a15d7F82AAf2";
+
 pub async fn upload_large_object(pool: &PgPool, file_path: &str) -> Result<Oid, sqlx::Error> {
     // Read file asynchronously
     let mut file = fs::File::open(file_path)
@@ -131,16 +133,17 @@ pub async fn setup_test_user(pool: &sqlx::PgPool) -> Result<(), Box<dyn std::err
             VALUES (
                 'a1503fb6-d79b-4e9e-826d-44cf262f3e05',
                 12345,
-                '0x339EcE85B9E11a3A3AA557582784a15d7F82AAf2',
-                '0x69dE3158643e738a0724418b21a35FAA20CBb1c5',
                 $1,
+                '0x69dE3158643e738a0724418b21a35FAA20CBb1c5',
                 $2,
                 $3,
                 $4,
                 $5,
-                $6
+                $6,
+                $7
             )
         ",
+        ACL_CONTRACT_ADDR.to_string(),
         &pks,
         &sks,
         &public_params,
