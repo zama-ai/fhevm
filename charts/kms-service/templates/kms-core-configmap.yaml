@@ -112,7 +112,7 @@ data:
       "cpu_count": {{ int .Values.kmsCore.nitroEnclave.cpuCount }},
       "memory_mib": {{ mulf 1024 (int .Values.kmsCore.nitroEnclave.memoryGiB) }},
       "enclave_cid": {{ int .Values.kmsCore.nitroEnclave.cid }},
-      "eif_path": "/app/kms/core/service/enclave.eif"
+      "eif_path": {{ .Values.kmsCore.nitroEnclave.eifPath | quote }}
     }
   {{- end }}
 {{- end -}}
