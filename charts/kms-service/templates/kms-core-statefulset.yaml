@@ -364,17 +364,17 @@ spec:
               {{- else }}
               memory: {{ .Values.kmsCore.resources.limits.memory }}
               {{- end }}
-{{/*          readinessProbe:*/}}
-{{/*            grpc:*/}}
-{{/*              port: {{ .Values.kmsCore.ports.client }}*/}}
-{{/*            initialDelaySeconds: 10*/}}
-{{/*            periodSeconds: 5*/}}
-{{/*            timeoutSeconds: 5*/}}
-{{/*          startupProbe:*/}}
-{{/*            grpc:*/}}
-{{/*              port: {{ .Values.kmsCore.ports.client }}*/}}
-{{/*            failureThreshold: 30*/}}
-{{/*            periodSeconds: 10*/}}
+          readinessProbe:
+            grpc:
+              port: {{ .Values.kmsCore.ports.client }}
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 5
+          startupProbe:
+            grpc:
+              port: {{ .Values.kmsCore.ports.client }}
+            failureThreshold: 30
+            periodSeconds: 10
           {{- if .Values.kmsCore.nitroEnclave.enabled }}
           lifecycle:
             preStop:

@@ -60,10 +60,10 @@ kmsCore:
   nitroEnclave:
     enabled: false
     debug: true
-    # Enclave CPU count
+    # Enclave CPU count, must be a multiple of 2 since whole cores (not hyperthreads) are sliced off and dedicated to the enclave
     cpuCount: 6
     # Enclave Memory in GiB
-    memoryGiB: 10
+    memoryGiB: 20
     cid: 20
     eifPath: /app/kms/core/service/enclave.eif
     userId: 10003
