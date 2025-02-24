@@ -8,9 +8,13 @@ import { deployCiphertextStorageFixture } from "./utils";
 
 describe("ACLManager", function () {
   const keyId = 0; // Using exceptional first key (currentKeyId == 0). See {HTTPZ-activateKeyRequest}
-  const ctHandle = 123;
-  const chainId = 456;
+  const ctHandle = 2025;
+  const chainId = 1;
   const ciphertext128 = "0x02";
+
+  // Fake values
+  const fakeCtHandle = 11111;
+  const fakeChainId = 123;
 
   let aclManager: ACLManager;
   let coprocessorSigners: HardhatEthersSigner[];
@@ -73,9 +77,6 @@ describe("ACLManager", function () {
     });
 
     it("Should revert with CiphertextHandleNotOnNetwork", async function () {
-      // Given
-      const fakeChainId = 12345;
-
       // When
       const txResponse = aclManager
         .connect(coprocessorSigners[0])
@@ -120,9 +121,6 @@ describe("ACLManager", function () {
     });
 
     it("Should revert with CiphertextHandleNotOnNetwork", async function () {
-      // Given
-      const fakeChainId = 12345;
-
       // When
       const txResponse = aclManager.connect(coprocessorSigners[0]).allowPublicDecrypt(fakeChainId, ctHandle);
 
@@ -194,7 +192,7 @@ describe("ACLManager", function () {
     });
   });
 
-  describe("Get user ciphertexts", async function () {
+  describe("Check user decrypt allowed", async function () {
     const allowedUserAddress = hre.ethers.Wallet.createRandom().address;
     const allowedContractAddress = hre.ethers.Wallet.createRandom().address;
     const ctHandleContractPairs = [{ ctHandle, contractAddress: allowedContractAddress }];
@@ -208,62 +206,35 @@ describe("ACLManager", function () {
     });
 
     it("Should success", async function () {
-      // When
-      const txResponse = await aclManager
+      await aclManager
         .connect(coprocessorSigners[0])
-        .getUserCiphertexts(allowedUserAddress, ctHandleContractPairs);
-
-      // Then
-      expect(txResponse).to.deep.equal([[ctHandle, keyId, ciphertext128]]);
+        .checkUserDecryptAllowed(allowedUserAddress, ctHandleContractPairs);
     });
 
     it("Should revert with UserDecryptNotAllowed", async function () {
-      // Given
       const fakeUserAddress = hre.ethers.Wallet.createRandom().address;
       const fakeContractAddress = hre.ethers.Wallet.createRandom().address;
-      const fakeCtHandleContractPairs = [{ ctHandle: ctHandle, contractAddress: fakeContractAddress }];
+      const fakeCtHandleFakeContractPairs = [{ ctHandle: ctHandle, contractAddress: fakeContractAddress }];
 
-      // When
-      const txResponse1 = aclManager
-        .connect(coprocessorSigners[0])
-        .getUserCiphertexts(fakeUserAddress, ctHandleContractPairs);
-      const txResponse2 = aclManager
-        .connect(coprocessorSigners[0])
-        .getUserCiphertexts(allowedUserAddress, fakeCtHandleContractPairs);
-
-      // Then, should revert as fakeUserAddress is not allowed to decrypt the ciphertext
-      await expect(txResponse1)
-        .revertedWithCustomError(aclManager, "UserDecryptNotAllowed")
+      // Check that the fakeUserAddress is not allowed to decrypt the ciphertext
+      await expect(
+        aclManager.connect(coprocessorSigners[0]).checkUserDecryptAllowed(fakeUserAddress, ctHandleContractPairs),
+      )
+        .to.be.revertedWithCustomError(aclManager, "UserNotAllowedToUserDecrypt")
         .withArgs(ctHandle, fakeUserAddress);
-      // And fakeContractAddress (in fakeCtHandleContractPairs) is also not allowed to decrypt the ciphertext
-      await expect(txResponse2)
-        .revertedWithCustomError(aclManager, "UserDecryptNotAllowed")
+
+      // Check that the fakeContractAddress is not allowed to decrypt the ciphertext
+      await expect(
+        aclManager
+          .connect(coprocessorSigners[0])
+          .checkUserDecryptAllowed(allowedUserAddress, fakeCtHandleFakeContractPairs),
+      )
+        .to.be.revertedWithCustomError(aclManager, "ContractNotAllowedToUserDecrypt")
         .withArgs(ctHandle, fakeContractAddress);
-    });
-
-    it("Should revert with TooManyContractsRequested", async function () {
-      // Given an exceeded number of ctHandleContractPairs
-      const exceededCtHandleContractPairs = [];
-      for (let i = 0; i < 12; i++) {
-        exceededCtHandleContractPairs.push({
-          ctHandle: 123,
-          contractAddress: hre.ethers.Wallet.createRandom().address,
-        });
-      }
-
-      // When
-      const txResponse = aclManager
-        .connect(coprocessorSigners[0])
-        .getUserCiphertexts(allowedUserAddress, exceededCtHandleContractPairs);
-
-      // Then
-      await expect(txResponse)
-        .revertedWithCustomError(aclManager, "TooManyContractsRequested")
-        .withArgs(10, exceededCtHandleContractPairs.length);
     });
   });
 
-  describe("Get public ciphertexts", async function () {
+  describe("Check public decrypt allowed", async function () {
     beforeEach(async function () {
       // Setup the public decrypt permission for the given chainId and ctHandle used during tests
       for (let i = 0; i < coprocessorSigners.length; i++) {
@@ -272,22 +243,14 @@ describe("ACLManager", function () {
     });
 
     it("Should success", async function () {
-      // When
-      const txResponse = await aclManager.connect(coprocessorSigners[0]).getPublicCiphertexts([ctHandle]);
-
-      // Then
-      expect(txResponse).to.deep.equal([[ctHandle, keyId, ciphertext128]]);
+      await aclManager.connect(coprocessorSigners[0]).checkPublicDecryptAllowed([ctHandle]);
     });
 
     it("Should revert with PublicDecryptNotAllowed", async function () {
-      // Given
-      const fakeCtHandle = 12345;
-
-      // When
-      const txResponse = aclManager.connect(coprocessorSigners[0]).getPublicCiphertexts([fakeCtHandle]);
-
-      // Then
-      await expect(txResponse).revertedWithCustomError(aclManager, "PublicDecryptNotAllowed").withArgs(fakeCtHandle);
+      // Check that the fakeCtHandle is not allowed for public decryption
+      await expect(aclManager.connect(coprocessorSigners[0]).checkPublicDecryptAllowed([fakeCtHandle]))
+        .to.be.revertedWithCustomError(aclManager, "PublicDecryptNotAllowed")
+        .withArgs(fakeCtHandle);
     });
   });
 
@@ -318,7 +281,6 @@ describe("ACLManager", function () {
 
     it("Should return false", async function () {
       // Given
-      const fakeChainId = 12345;
       const fakeDelegator = hre.ethers.Wallet.createRandom().address;
       const fakeDelegatee = hre.ethers.Wallet.createRandom().address;
 

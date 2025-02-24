@@ -22,7 +22,7 @@ interface IDecryptionManager {
     /// @notice Emitted when an public decryption request is made
     /// @dev This event is meant to be listened by the KMS Connectors
     /// @param publicDecryptionId The public decryption request's unique ID
-    /// @param ctMaterials The handles, key IDs and 128-PBS ciphertexts of the ciphertexts to decrypt
+    /// @param ctMaterials The handles, key IDs and (128 bits) ciphertexts to decrypt
     event PublicDecryptionRequest(uint256 indexed publicDecryptionId, CiphertextMaterial[] ctMaterials);
 
     /// @notice Emitted when an public decryption response is made

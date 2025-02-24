@@ -6,7 +6,6 @@ import "../shared/Structs.sol";
 /**
  * @title ICiphertextStorage
  * @notice Interface of the CiphertextStorage contract that stores the ciphertexts allowed/requested for decryption.
- * @dev Normal 64-bit ciphertexts are only used for computations while 128-PBS ciphertexts are used for KMS concerns.
  */
 interface ICiphertextStorage {
     /// @notice Emitted when a ciphertext storing consensus is reached.
@@ -14,12 +13,18 @@ interface ICiphertextStorage {
 
     /// @notice Error indicating that the given keyId is outdated.
     error InvalidCurrentKeyId(uint256 keyId);
+
     /// @notice Error indicating that the sender is not a valid Coprocessor
     error InvalidCoprocessorSender(address sender);
+
     /// @notice Error indicating that the given coprocessor has already authorized the add operation.
     error CoprocessorHasAlreadyAdded(address coprocessor);
 
-    /// @notice Checks if the ciphertext for the given handle is stored in the contract.
+    /// @notice Error indicating that the given ciphertext represented by the given handle has not
+    /// @notice been stored in the contract.
+    error CiphertextNotFound(uint256 ctHandle);
+
+    /// @notice Checks if the ciphertext represented by the given handle has been stored in the contract.
     /// @param ctHandle The handle of the ciphertext.
     function hasCiphertext(uint256 ctHandle) external view returns (bool);
 
@@ -28,9 +33,9 @@ interface ICiphertextStorage {
     /// @param chainId The chain ID to check if the ciphertext is associated with.
     function isOnNetwork(uint256 ctHandle, uint256 chainId) external returns (bool);
 
-    /// @notice Retrieves the list of 128-PBS ciphertexts for the given handles.
+    /// @notice Retrieves the list of (128 bits) ciphertexts for the given handles.
     /// @param ctHandles The list of handles of the ciphertexts to retrieve.
-    /// @return ctMaterials The list of 128-PBS ciphertexts, its handles and its key IDs.
+    /// @return ctMaterials The list of (128 bits) ciphertexts, its handles and its key IDs.
     function getCiphertexts(
         uint256[] calldata ctHandles
     ) external view returns (CiphertextMaterial[] memory ctMaterials);
@@ -39,8 +44,8 @@ interface ICiphertextStorage {
     /// @param ctHandle The handle of the storing ciphertext.
     /// @param keyId The ID of the key under the ciphertext has been generated.
     /// @param chainId The chain ID of the blockchain associated to the ciphertext handle.
-    /// @param ciphertext64 The normal ciphertext (64-bit) to be stored.
-    /// @param ciphertext128 The 128-PBS ciphertext (128-bit) to be stored.
+    /// @param ciphertext64 The (64 bits) ciphertext to be stored.
+    /// @param ciphertext128 The (128 bits) ciphertext to be stored.
     function addCiphertext(
         uint256 ctHandle,
         uint256 keyId,

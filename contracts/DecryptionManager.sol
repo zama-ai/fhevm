@@ -7,6 +7,7 @@ import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "./interfaces/IHTTPZ.sol";
 import "./interfaces/IACLManager.sol";
+import "./interfaces/ICiphertextStorage.sol";
 
 /// @title DecryptionManager contract
 /// @dev See {IDecryptionManager}.
@@ -24,9 +25,11 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
     /// @notice The address of the HTTPZ contract for checking if a signer is valid
     IHTTPZ internal immutable _HTTPZ;
 
-    /// @notice The address of the ACLManager contract for getting the 128-PBS ciphertexts, if they are
-    /// @notice allowed for decryption
+    /// @notice The address of the ACLManager contract for checking if a decryption requests are allowed
     IACLManager internal immutable _ACL_MANAGER;
+
+    /// @notice The address of the Ciphertext Storage contract for getting ciphertext materials.
+    ICiphertextStorage internal immutable _CIPHERTEXT_STORAGE;
 
     // TODO: Use a reference to the PaymentManager contract
     /// @notice The address of the Payment Manager contract for service fees, burn and distribution
@@ -66,25 +69,33 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
     /// @dev Contract name and version for EIP712 signature validation are defined here
     constructor(
         IHTTPZ httpz,
-        address paymentManager,
-        IACLManager aclManager
+        IACLManager aclManager,
+        ICiphertextStorage ciphertextStorage,
+        address paymentManager
     ) Ownable(msg.sender) EIP712(CONTRACT_NAME, "1") {
         _HTTPZ = httpz;
         _ACL_MANAGER = aclManager;
+        _CIPHERTEXT_STORAGE = ciphertextStorage;
         _PAYMENT_MANAGER = paymentManager;
     }
 
     /// @dev See {IDecryptionManager-publicDecryptionRequest}.
     function publicDecryptionRequest(uint256[] calldata ctHandles) public virtual {
+        /// @dev Check that the public decryption is allowed for the given ctHandles.
+        _ACL_MANAGER.checkPublicDecryptAllowed(ctHandles);
+
+        /// @dev Fetch the ciphertexts from the ciphertext storage
+        /// @dev This call is reverted if any of the ciphertexts are not found in the storage, but
+        /// @dev this should not happen for now as a ciphertext cannot be allowed for decryption
+        /// @dev without being added to the storage first (and we currently have no ways of deleting
+        /// @dev a ciphertext from the storage).
+        CiphertextMaterial[] memory ctMaterials = _CIPHERTEXT_STORAGE.getCiphertexts(ctHandles);
+
         counterPublicDecryption++;
         uint256 publicDecryptionId = counterPublicDecryption;
 
         /// @dev The handles are used during response calls for the EIP712 signature validation.
         publicCtHandles[publicDecryptionId] = ctHandles;
-
-        // TODO: Get the 128-PBS ciphertexts from the ACLManager contract instead
-        // bytes[] memory ciphertext128s = _ACL_MANAGER.getCiphertexts(ctHandles);
-        CiphertextMaterial[] memory ctMaterials = new CiphertextMaterial[](ctHandles.length);
 
         // TODO: Implement sending service fees to PaymentManager contract
 
