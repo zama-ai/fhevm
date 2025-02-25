@@ -85,7 +85,7 @@ describe('web3 dapp stats', () => {
     test('then it forward it to back', async () => {
       await vi.waitUntil(async () => {
         const size = await manager.getLogQueueSize()
-        return size === 2
+        return size >= 2
       })
       const messages = await manager.getLogQueueMessages()
       expect(messages.length).toBe(2)

@@ -15,7 +15,7 @@ import {
   vi,
 } from 'vitest'
 import { DAppStatus } from '#dapps/domain/entities/dapp.js'
-import { AppDeploymentMessage, completed, failed, requested } from 'messages'
+import { back } from 'messages'
 
 describe('deploy-dapp', () => {
   const manager = new IntegrationManager()
@@ -139,73 +139,90 @@ describe('deploy-dapp', () => {
     })
 
     describe.each([
-      'app-deployment.requested',
-      'app-deployment.completed',
-      'app-deployment.failed',
-    ] satisfies AppDeploymentMessage['type'][])(
-      'when receiving `%s` event',
-      type => {
-        let status: DAppStatus
-        switch (type) {
-          case 'app-deployment.completed':
-            status = 'LIVE'
-            break
-          case 'app-deployment.failed':
-            status = 'DRAFT'
-            break
-          default:
-            status = 'DEPLOYING'
+      'back:dapp:validation:requested',
+      'back:dapp:validation:confirmed',
+      'back:dapp:validation:failed',
+    ] satisfies back.BackEvent['type'][])('when receiving `%s` event', type => {
+      let status: DAppStatus
+      switch (type) {
+        case 'back:dapp:validation:requested':
+          status = 'DEPLOYING'
+          break
+        case 'back:dapp:validation:confirmed':
+          status = 'LIVE'
+          break
+        case 'back:dapp:validation:failed':
+          status = 'FAILED'
+          break
+        default:
+          status = 'DEPLOYING'
+      }
+
+      beforeEach(async () => {
+        const message = genMessage(type, dappId)
+        if (message) {
+          await manager.sendMessage(JSON.stringify(message))
         }
+      })
 
-        beforeEach(async () => {
-          const message = genMessage(type, dappId)
-          if (message) {
-            await manager.sendMessage(JSON.stringify(message))
-          }
+      test(`then the dapp status should be "${status}"`, async () => {
+        await vi.waitUntil(async () => {
+          const size = await manager.getQueueSize()
+          return size === 0
         })
+        // await vi.waitUntil(async () => {
+        //   const result = await manager.dapp.getDapp({
+        //     token,
+        //     dappId,
+        //   })
+        //   return result.success ? result.data.status === status : false
+        // })
 
-        test(`then the dapp status should be "${status}"`, async () => {
-          await vi.waitUntil(async () => {
-            const size = await manager.getQueueSize()
-            return size === 0
-          })
-
-          const result = await manager.dapp.getDapp({
-            token,
-            dappId,
-          })
-
-          expect(result.success).toBe(true)
-          if (result.success) {
-            expect(result.data.status).toBe(status)
-          }
+        const result = await manager.dapp.getDapp({
+          token,
+          dappId,
         })
-      },
-    )
+        if (!result.success) {
+          console.log(result)
+        }
+        expect(result.success).toBe(true)
+        if (result.success) {
+          expect(result.data.status).toBe(status)
+        }
+      })
+    })
   })
 })
 
 function genMessage(
-  type: AppDeploymentMessage['type'],
+  type: back.BackEvent['type'],
   dappId: string,
-): AppDeploymentMessage | undefined {
+): back.BackEvent | undefined {
   switch (type) {
-    case 'app-deployment.requested':
-      return requested({
-        applicationId: dappId,
-        deploymentId: faker.string.uuid(),
-        address: faker.string.hexadecimal({ length: 40 }),
-        chainId: '1',
-      })
-    case 'app-deployment.completed':
-      return completed({
-        applicationId: dappId,
-        deploymentId: faker.string.uuid(),
-      })
-    case 'app-deployment.failed':
-      return failed({
-        applicationId: dappId,
-        deploymentId: faker.string.uuid(),
-      })
+    case 'back:dapp:validation:requested':
+      return back.dappValidationRequested(
+        {
+          dAppId: dappId,
+          chainId: '1',
+          address: faker.string.hexadecimal({ length: 40 }),
+        },
+        { correlationId: faker.string.uuid() },
+      )
+    case 'back:dapp:validation:confirmed':
+      return back.dappValidationConfirmed(
+        {
+          dAppId: dappId,
+          owner: faker.string.hexadecimal({ length: 40 }),
+        },
+        { correlationId: faker.string.uuid() },
+      )
+    case 'back:dapp:validation:failed':
+      return back.dappValidationFailed(
+        {
+          dAppId: dappId,
+          reason: faker.lorem.word(5),
+        },
+        { correlationId: faker.string.uuid() },
+      )
   }
 }

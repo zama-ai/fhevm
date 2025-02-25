@@ -4,9 +4,10 @@ import { DappManager } from './dapp.manager.js'
 import {
   GetQueueAttributesCommand,
   ReceiveMessageCommand,
-  SendMessageCommand,
   SQSClient,
 } from '@aws-sdk/client-sqs'
+import { PublishCommand } from '@aws-sdk/client-sns'
+import { expect } from 'vitest'
 
 export type { GraphQlResponse } from './setup.manager.js'
 export type { User } from './auth.manager.js'
@@ -32,19 +33,22 @@ export class IntegrationManager {
     await this.setup.afterEach()
   }
 
-  async sendMessage(message: string) {
-    const sqs = new SQSClient({
-      endpoint: this.setup.queueUrl,
-      region: this.setup.awsRegion,
-    })
-    await sqs.send(
-      new SendMessageCommand({
-        QueueUrl: this.setup.queueUrl,
-        MessageBody: JSON.stringify({ Message: message }),
+  async sendMessage(message: string | object, sender = 'test') {
+    const result = await this.setup.sns.send(
+      new PublishCommand({
+        TopicArn: this.setup.topicArn,
+        Message:
+          typeof message === 'string' ? message : JSON.stringify(message),
+        MessageAttributes: {
+          Sender: { DataType: 'String', StringValue: sender },
+        },
       }),
     )
+    expect(
+      result.$metadata.httpStatusCode,
+      'Failed to sns.PublishCommand',
+    ).toBe(200)
   }
-
   async getQueueSize() {
     const sqs = new SQSClient({
       endpoint: this.setup.queueUrl,

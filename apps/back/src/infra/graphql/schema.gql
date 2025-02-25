@@ -37,7 +37,9 @@ enum DappStatus {
 
   """You can use it now"""
   LIVE
+  FAILED
   DELETED @deprecated(reason: "Not implmented yet")
+  ARCHIVED
 }
 
 type User {

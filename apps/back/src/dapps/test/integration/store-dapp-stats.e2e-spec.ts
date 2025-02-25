@@ -10,6 +10,7 @@ import {
   describe,
   expect,
   test,
+  vi,
 } from 'vitest'
 
 describe('store dapp stats', () => {
@@ -78,6 +79,10 @@ describe('store dapp stats', () => {
       })
 
       test('then it stores the dapp stats', async () => {
+        await vi.waitUntil(async () => {
+          const size = await manager.getLogQueueSize()
+          return size > 0
+        })
         const res = await manager.dapp.getDappStats({ token, dappId })
         expect(res.success, 'Failed to fetch stats').toBe(true)
         if (res.success) {

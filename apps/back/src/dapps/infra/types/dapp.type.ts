@@ -5,7 +5,9 @@ export enum DappStatus {
   DRAFT = 'DRAFT',
   DEPLOYING = 'DEPLOYING',
   LIVE = 'LIVE',
+  FAILED = 'FAILED',
   DELETED = 'DELETED',
+  ARCHIVED = 'ARCHIVED',
 }
 
 registerEnumType(DappStatus, {

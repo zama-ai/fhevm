@@ -8,6 +8,7 @@ import { back } from 'messages'
 import { faker } from '@faker-js/faker'
 import { PublishCommand, SNSClient } from '@aws-sdk/client-sns'
 import { mockClient } from 'aws-sdk-client-mock'
+import { DAppId } from '#dapps/domain/entities/value-objects.js'
 
 const client = mockClient(SNSClient)
 
@@ -36,6 +37,7 @@ describe('SnsProducer', () => {
       client.on(PublishCommand).resolves({ MessageId: LOCAL_FHEVM_CHAIN_ID })
       event = back.dappStatsRequested(
         {
+          dAppId: DAppId.random().value,
           chainId: faker.string.numeric(5),
           address: faker.string.hexadecimal({ length: 40 }),
         },
@@ -77,12 +79,12 @@ describe('SnsProducer', () => {
       {
         event: back.dappStatsRequested(
           {
+            dAppId: DAppId.random().value,
             chainId: faker.string.numeric(5),
             address: faker.string.hexadecimal({ length: 40 }),
           },
           { correlationId: faker.string.uuid() },
         ),
-        publish: true,
       },
       {
         event: back.dappStatsAvailable(
@@ -93,22 +95,22 @@ describe('SnsProducer', () => {
             timestamp: faker.date.past().toISOString(),
             externalRef: faker.string.alphanumeric(10),
           },
-          { correlationId: faker.string.uuid() },
+          {
+            correlationId: faker.string.uuid(),
+            [`${MS_NAME}-dir`]: 'in',
+          },
         ),
-        publish: false,
       },
-    ])(
-      'then it processes the $event.type event',
-      async ({ event, publish }) => {
-        await pubsub.publish(event).toPromise()
-        if (publish) {
-          expect(client).toHaveReceivedCommandWith(PublishCommand, {
-            Message: JSON.stringify(event),
-          })
-        } else {
-          expect(client).not.toHaveReceivedAnyCommand()
-        }
-      },
-    )
+    ])('then it processes the $event.type event', async ({ event }) => {
+      await pubsub.publish(event).toPromise()
+      const publish = event.meta[`${MS_NAME}-dir`] !== 'in'
+      if (publish) {
+        expect(client).toHaveReceivedCommandWith(PublishCommand, {
+          Message: JSON.stringify(event),
+        })
+      } else {
+        expect(client).not.toHaveReceivedAnyCommand()
+      }
+    })
   })
 })

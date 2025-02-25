@@ -20,6 +20,7 @@ enum DappStatus {
   DRAFT
   DEPLOYING
   LIVE
+  FAILED
   ARCHIVED
   DELETED
 }

@@ -37,6 +37,7 @@ describe('back dapp stats', () => {
         correlationId = faker.string.uuid()
         const message = back.dappStatsRequested(
           {
+            dAppId: faker.string.uuid(),
             chainId: LOCAL_FHEVM_CHAIN_ID,
             address: faker.string.hexadecimal({ length: 40 }),
           },

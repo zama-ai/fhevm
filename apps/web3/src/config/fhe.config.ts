@@ -20,7 +20,8 @@ const configs: Record<string, () => FheConfig> = {
     contractAddress: Web3Address.fromString(
       process.env.LOCAL_TFHE_EXECUTOR_CONTRACT_ADDRESS!,
     ).unwrap(),
-    providerUrl: 'ws://localhost:8756',
+    // providerUrl: 'ws://localhost:8756',
+    providerUrl: 'http://localhost:8756',
   }),
 }
 

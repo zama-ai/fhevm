@@ -1,7 +1,12 @@
 import { z } from 'zod'
 import { chainId, Meta, meta, web3Address } from './shared.js'
 
-type EventTypes = 'fhe-event:requested' | 'fhe-event:detected'
+type EventTypes =
+  | 'contract:validation:requested'
+  | 'contract:validation:success'
+  | 'contract:validation:failure'
+  | 'fhe-event:requested'
+  | 'fhe-event:detected'
 
 function genSchema<Key extends EventTypes, Payload extends z.ZodRawShape>(
   key: Key,
@@ -18,26 +23,27 @@ function genSchema<Key extends EventTypes, Payload extends z.ZodRawShape>(
   })
 }
 
-const eventMap = {
-  'fhe-event:requested': genSchema('fhe-event:requested', {}),
-  'fhe-event:detected': genSchema('fhe-event:detected', {
+const schemas = [
+  genSchema('contract:validation:requested', {}),
+  genSchema('contract:validation:success', {
+    owner: web3Address.optional(),
+  }),
+  genSchema('contract:validation:failure', {
+    reason: z.string().optional(),
+  }),
+  genSchema('fhe-event:requested', {}),
+  genSchema('fhe-event:detected', {
     id: z.string(),
     name: z.string(),
     timestamp: z.string().datetime(),
   }),
-} as const
-type EventMap = typeof eventMap
+] as const
 
-export const schema = z
-  .discriminatedUnion('type', [
-    eventMap['fhe-event:requested'],
-    eventMap['fhe-event:detected'],
-  ])
-  .and(
-    z.object({
-      meta: meta,
-    }),
-  )
+export const schema = z.discriminatedUnion('type', [...schemas]).and(
+  z.object({
+    meta: meta,
+  }),
+)
 export type Web3Event = z.infer<typeof schema>
 
 /**
@@ -46,16 +52,27 @@ export type Web3Event = z.infer<typeof schema>
  * @param type The type of the Event to generate
  * @returns the factory function for the selected event
  */
-function factory<K extends keyof EventMap>(type: K) {
-  return function (payload: z.infer<EventMap[K]>['payload'], meta: Meta) {
+function factory<
+  K extends EventTypes,
+  Event extends { type: `web3:${K}`; payload: object; meta: Meta } = Extract<
+    Web3Event,
+    { type: `web3:${K}` }
+  >,
+>(type: K) {
+  return function (payload: Event['payload'], meta: Meta) {
     return {
       type: `web3:${type}`,
       payload,
       meta,
-    } as Web3Event
+    } as Event
   }
 }
 
+export const contractValidationRequested = factory(
+  'contract:validation:requested',
+)
+export const contractValidationSuccess = factory('contract:validation:success')
+export const contractValidationFailure = factory('contract:validation:failure')
 export const fheRequested = factory('fhe-event:requested')
 export const fheDetected = factory('fhe-event:detected')
 

@@ -4,7 +4,14 @@ import { Entity, ok, fail, validationError } from 'utils'
 import { DAppId } from './value-objects.js'
 import { TeamId } from '#users/domain/entities/value-objects.js'
 
-const status = z.enum(['DRAFT', 'DEPLOYING', 'LIVE'])
+const status = z.enum([
+  'DRAFT',
+  'DEPLOYING',
+  'LIVE',
+  'FAILED',
+  'ARCHIVED',
+  'DELETED',
+])
 
 const schema = z.object({
   id: DAppId.schema,
