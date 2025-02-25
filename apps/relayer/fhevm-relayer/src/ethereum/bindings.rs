@@ -50,7 +50,6 @@ sol!(
     "./artifacts/ZKPoKManager.json"
 );
 
-
 // Define the Transfer event structure using alloy_sol_types
 sol! {
     #[derive(Debug)]

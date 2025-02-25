@@ -1,65 +1,69 @@
 use crate::errors::EventProcessingError;
+use crate::ethereum::bindings::DecyptionManager::{
+    publicDecryptionResponseCall, PublicDecryptionRequest, PublicDecryptionResponse,
+};
 use crate::ethereum_host_l1_handlers::DecryptionRequestData;
 use alloy::primitives::{keccak256, Address, Bytes, Uint, U256};
+use alloy::signers::SignerSync;
+use serde::Serialize;
 use tracing::{debug, info};
+
+use alloy::{
+    sol,
+    sol_types::SolCall,
+    sol_types::{eip712_domain, SolStruct},
+};
+use std::str::FromStr;
+
+use alloy::{dyn_abi::DynSolValue, hex, signers::local::PrivateKeySigner};
+
+sol! {
+    #[allow(missing_docs)]
+    #[derive(Serialize)]
+    struct PublicDecryptionResult {
+        uint256[] handlesList;
+        bytes decryptedResult;
+    }
+}
 
 pub struct ComputeCalldata;
 
 impl ComputeCalldata {
     pub fn callback_req(
         req: &DecryptionRequestData,
-        decrypted_value: U256,
+        public_decryption_response: PublicDecryptionResponse,
         signature_number: u8,
     ) -> Result<Bytes, EventProcessingError> {
         let mut calldata = Vec::new();
 
-        // 2. Encode main parameters following AbiCoder format:
-        // ['uint256', 'uint64', 'bytes[]']
-        // [requestID, decrypted_value, signatures]
+        calldata.extend_from_slice(&req.callback_selector.0);
 
-        // 1. Selector
-        calldata.extend_from_slice(req.callback_selector.as_ref());
+        let request_id_bytes = req.host_l1_request_id.to_be_bytes::<32>();
+        calldata.extend_from_slice(&request_id_bytes);
 
-        // 2. RequestID
-        calldata.extend_from_slice(&req.host_l1_request_id.to_be_bytes::<32>());
+        calldata.extend_from_slice(&public_decryption_response.decryptedResult);
 
-        // 3. Value
-        calldata.extend_from_slice(&decrypted_value.to_be_bytes::<32>());
+        // Add signatures array length (32 bytes)
+        let sig_count = public_decryption_response.signatures.len();
+        let sig_length_bytes = U256::from(sig_count).to_be_bytes::<32>();
+        calldata.extend_from_slice(&sig_length_bytes);
 
-        // 4. Offset to array (0x60 = 96)
+        // Add offset to signatures data (32 bytes)
         let mut offset_bytes = [0u8; 32];
-        offset_bytes[31] = 0x60;
+        offset_bytes[31] = 32u8; // offset is always 32 for the first element
         calldata.extend_from_slice(&offset_bytes);
 
-        // 5. Array length (4 signatures)
-        let mut length_bytes = [0u8; 32];
-        length_bytes[31] = signature_number;
-        calldata.extend_from_slice(&length_bytes);
-
-        // 6. Offsets to each signature
-        // First signature starts at 0x80 (128)
-        let mut offset = 0x80u32;
-        for _ in 0..signature_number {
-            let mut sig_offset = [0u8; 32];
-            sig_offset[28..].copy_from_slice(&offset.to_be_bytes());
-            calldata.extend_from_slice(&sig_offset);
-            offset += 0x80; // Each signature block is 128 bytes
-        }
-
-        // 7. Four signatures
-        for i in 1..=signature_number {
-            // Length prefix for each signature (65 bytes)
-            let mut sig_length = [0u8; 32];
-            sig_length[31] = 0x41; // 65 in hex
-            calldata.extend_from_slice(&sig_length);
-
-            // Signature data (65 bytes filled with number i)
-            let sig = vec![i; 65];
-            calldata.extend_from_slice(&sig);
-
-            // Padding to 32 byte boundary
-            let padding = vec![0u8; 32 - (65 % 32)];
-            calldata.extend_from_slice(&padding);
+        // For each signature:
+        for signature in &public_decryption_response.signatures {
+            // Add length of signature (32 bytes)
+            let sig_size = signature.len(); // typically 65 (0x41)
+            let sig_size_bytes = U256::from(sig_size).to_be_bytes::<32>();
+            calldata.extend_from_slice(&sig_size_bytes);
+            calldata.extend_from_slice(signature);
+            let padding_length = (32 - (signature.len() % 32)) % 32;
+            if padding_length > 0 {
+                calldata.extend_from_slice(&vec![0u8; padding_length]);
+            }
         }
 
         Ok(Bytes::from(calldata))
@@ -174,7 +178,7 @@ impl ComputeCalldata {
     pub fn verify_proof_response(
         zkpok_id: U256,
         handles: Vec<[u8; 32]>,
-        _signature_number: u8, // For backward compatibility, we'll just use the first signature
+        _signature_number: u8, // For backward compatibility, we'll just use the first signature,
     ) -> Result<Bytes, EventProcessingError> {
         let mut calldata = Vec::new();
 
@@ -251,5 +255,121 @@ impl ComputeCalldata {
         debug!("Raw calldata: 0x{}", hex::encode(&calldata));
 
         Ok(Bytes::from(calldata))
+    }
+
+    pub fn decryption_response(
+        req: PublicDecryptionRequest,
+        decryption_manager_address: Address,
+    ) -> Result<Bytes, EventProcessingError> {
+        // 1. Compute decryptedResult bytes array
+        let mut results: Vec<DynSolValue> = Vec::new();
+        results.push(DynSolValue::Uint(U256::from(42), 256)); // requestID placeholder
+
+        for ciphertext_handle in req.ciphertextHandles.clone() {
+            let handle: [u8; 32] = ciphertext_handle.to_be_bytes();
+
+            // Using a hardcoded value for now
+            let clear_text = "18446744073709551600".to_string();
+
+            match handle[30] {
+                9 => {
+                    // Parse the string to Uint, handle potential parsing errors
+                    let num: Uint<512, 8> = clear_text.parse().map_err(|e| {
+                        EventProcessingError::ParseError(format!(
+                            "Failed to parse to Uint<512,8>: {}",
+                            e
+                        ))
+                    })?;
+
+                    let bytes: [u8; 64] = num.to_be_bytes();
+                    let bytes_vec = bytes.to_vec();
+                    results.push(DynSolValue::Bytes(bytes_vec));
+                }
+                10 => {
+                    let num: Uint<1024, 16> = clear_text.parse().map_err(|e| {
+                        EventProcessingError::ParseError(format!(
+                            "Failed to parse to Uint<1024,16>: {}",
+                            e
+                        ))
+                    })?;
+
+                    let bytes: [u8; 128] = num.to_be_bytes();
+                    let bytes_vec = bytes.to_vec();
+                    results.push(DynSolValue::Bytes(bytes_vec));
+                }
+                11 => {
+                    let num: Uint<2048, 32> = clear_text.parse().map_err(|e| {
+                        EventProcessingError::ParseError(format!(
+                            "Failed to parse to Uint<2048,32>: {}",
+                            e
+                        ))
+                    })?;
+
+                    let bytes: [u8; 256] = num.to_be_bytes();
+                    let bytes_vec = bytes.to_vec();
+                    results.push(DynSolValue::Bytes(bytes_vec));
+                }
+                _ => {
+                    // Parse the string to U256, handle potential parsing errors
+                    let value = U256::from_str(&clear_text).map_err(|e| {
+                        EventProcessingError::ParseError(format!("Failed to parse to U256: {}", e))
+                    })?;
+
+                    results.push(DynSolValue::Uint(value, 256));
+                }
+            }
+        }
+
+        results.push(DynSolValue::Array(vec![])); // signatures placeholder
+
+        let data = DynSolValue::Tuple(results).abi_encode_params();
+        let decrypted_result = data[32..data.len() - 32].to_vec(); // remove placeholder corresponding to requestID and signatures
+
+        println!(
+            "decryptedResult : 0x{}",
+            hex::encode(decrypted_result.clone())
+        );
+
+        // 2. EIP712 signature of KMS signer
+        let signer = PrivateKeySigner::from_str(
+            "30d45b1c5a771e20d0ec15097c3b6ac7153bc1992bc78c42af37725dd93f096a",
+        )
+        .map_err(|e| {
+            EventProcessingError::SigningError(format!(
+                "Failed to create private key signer: {}",
+                e
+            ))
+        })?;
+
+        let domain = eip712_domain! {
+            name: "DecryptionManager",
+            version: "1",
+            chain_id: 654321,
+            verifying_contract: decryption_manager_address,
+        };
+
+        let public_decryption_result = PublicDecryptionResult {
+            handlesList: req.ciphertextHandles.clone(),
+            decryptedResult: decrypted_result.clone().into(),
+        };
+
+        let hash = public_decryption_result.eip712_signing_hash(&domain);
+
+        // Replace unwrap with proper error handling
+        let signature = signer.sign_hash_sync(&hash).map_err(|e| {
+            EventProcessingError::SigningError(format!("Failed to sign hash: {}", e))
+        })?;
+
+        info!("Signature: 0x{}", hex::encode(signature.as_bytes()));
+
+        let res_data_gateway = publicDecryptionResponseCall::new((
+            req.publicDecryptionId,
+            decrypted_result.into(),
+            signature.as_bytes().into(),
+        ));
+
+        let calldata_bytes = publicDecryptionResponseCall::abi_encode(&res_data_gateway);
+
+        Ok(alloy::primitives::Bytes::from(calldata_bytes))
     }
 }
