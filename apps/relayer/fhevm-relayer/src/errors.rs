@@ -37,6 +37,15 @@ pub enum EventProcessingError {
 
     #[error("Configuration error: {0}")]
     ConfigError(#[from] AppConfigError),
+
+    #[error("Parsing error: {0}")]
+    ParseError(String),
+
+    #[error("Signing error: {0}")]
+    SigningError(String),
+
+    #[error("Hex conversion error: {0}")]
+    HexError(String),
 }
 
 #[derive(Error, Debug)]

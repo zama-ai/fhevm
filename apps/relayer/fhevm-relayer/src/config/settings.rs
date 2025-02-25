@@ -127,7 +127,7 @@ impl Default for RetrySettings {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct ContractConfig {
     pub decryption_oracle_address: String,
     pub tfhe_executor_address: String,
