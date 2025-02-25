@@ -1,12 +1,9 @@
-use std::str::FromStr;
-
-use alloy::network::EthereumWallet;
 use alloy::providers::{ProviderBuilder, WsConnect};
-use alloy::signers::local::PrivateKeySigner;
 use alloy::{primitives::Address, transports::http::reqwest::Url};
 use clap::Parser;
 use gw_listener::gw_listener::GatewayListener;
 use gw_listener::ConfigSettings;
+use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
 
 #[derive(Parser, Debug, Clone)]
@@ -32,16 +29,23 @@ struct Conf {
 
     #[arg(long, default_value = "10")]
     error_sleep_max_secs: u16,
+}
 
-    #[arg(long)]
-    ws_endpoint_url: String,
-
-    #[arg(long)]
-    private_key: Option<String>,
+fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
+    let mut sigint = signal(SignalKind::interrupt())?;
+    let mut sigterm = signal(SignalKind::terminate())?;
+    tokio::spawn(async move {
+        tokio::select! {
+            _ = sigint.recv() => (),
+            _ = sigterm.recv() => ()
+        }
+        cancel_token.cancel();
+    });
+    Ok(())
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     let conf = Conf::parse();
 
     let database_url = conf
@@ -49,16 +53,8 @@ async fn main() {
         .clone()
         .unwrap_or_else(|| std::env::var("DATABASE_URL").expect("DATABASE_URL is undefined"));
 
-    let private_key = conf.private_key.clone().unwrap_or_else(|| {
-        std::env::var("GW_LISTENER_SIGNER").expect("GW_LISTENER_SIGNER is undefined")
-    });
-
-    let signer = PrivateKeySigner::from_str(private_key.trim()).expect("valid private key");
-    let wallet: EthereumWallet = signer.clone().into();
-
     let provider = ProviderBuilder::new()
-        .wallet(wallet)
-        .on_ws(WsConnect::new(conf.ws_endpoint_url))
+        .on_ws(WsConnect::new(conf.gw_url.clone()))
         .await
         .expect("should have valid provider");
 
@@ -74,9 +70,10 @@ async fn main() {
             error_sleep_max_secs: conf.error_sleep_max_secs,
         },
         cancel_token.clone(),
-        provider.clone(),
+        provider,
     );
 
     // Run gw_listener thread
-    let _ = gw_listener.run().await;
+    install_signal_handlers(cancel_token)?;
+    gw_listener.run().await
 }
