@@ -52,7 +52,10 @@ function factory({
               ({ event: { payload, meta } }) =>
                 notifyMessage(
                   back.addressValidationFailed(
-                    { ...payload, reason: payload.reason ?? 'invalid address' },
+                    {
+                      ...payload,
+                      reason: payload.reason ?? 'no reason provided',
+                    },
                     meta,
                   ),
                 ),
