@@ -3,10 +3,23 @@ import { expect } from "chai";
 import { EventLog } from "ethers";
 import hre from "hardhat";
 
-import { deployDecryptionManagerFixture } from "./utils/deploys";
-import { createEIP712ResponsePublicDecrypt, getSignaturesPublicDecrypt } from "./utils/eip712";
+import { IDecryptionManager } from "../typechain-types";
+import {
+  createEIP712RequestUserDecrypt,
+  createEIP712ResponsePublicDecrypt,
+  createEIP712ResponseUserDecrypt,
+  deployDecryptionManagerFixture,
+  getSignaturesPublicDecrypt,
+  getSignaturesUserDecryptRequest,
+  getSignaturesUserDecryptResponse,
+} from "./utils";
 
 describe("DecryptionManager", function () {
+  const chainId = hre.network.config.chainId!;
+
+  // Create 3 dummy ciphertext handles
+  const ctHandles = [2025, 2026, 2027];
+
   // Deploy contracts, trigger a key generation in KeyManager contract and activate the key
   async function deployWithActivatedKeyFixture() {
     const {
@@ -71,43 +84,38 @@ describe("DecryptionManager", function () {
     };
   }
 
+  // Deploy the DecryptionManager and add SNS ciphertext materials associated to the handles
+  async function deployAddCiphertextFixture() {
+    const { ciphertextStorage, aclManager, decryptionManager, kmsSigners, coprocessorSigners, user, keyId } =
+      await loadFixture(deployWithActivatedKeyFixture);
+
+    // Define dummy ciphertext values
+    const ciphertext = "0x02";
+    const snsCiphertext = "0x03";
+
+    let snsCiphertextMaterials = [];
+
+    // Allow public decryption
+    for (const ctHandle of ctHandles) {
+      for (let i = 0; i < coprocessorSigners.length; i++) {
+        await ciphertextStorage
+          .connect(coprocessorSigners[i])
+          .addCiphertext(ctHandle, keyId, chainId, ciphertext, snsCiphertext);
+      }
+
+      // Store the SNS ciphertext materials for event checks
+      snsCiphertextMaterials.push([ctHandle, keyId, snsCiphertext]);
+    }
+
+    return { aclManager, decryptionManager, kmsSigners, coprocessorSigners, user, snsCiphertextMaterials };
+  }
+
   describe("Public Decryption", function () {
-    const chainId = hre.network.config.chainId!;
-
-    // Create 3 dummy ciphertext handles
-    const ctHandles = [2025, 2026, 2027];
-
     // Expected public decryption id (after first request)
     const publicDecryptionId = 1;
 
     // Create a dummy decrypted result
     const decryptedResult = hre.ethers.randomBytes(32);
-
-    // Deploy the DecryptionManager and add SNS ciphertext materials associated to the handles
-    async function deployAddCiphertextFixture() {
-      const { ciphertextStorage, aclManager, decryptionManager, kmsSigners, coprocessorSigners, user, keyId } =
-        await loadFixture(deployWithActivatedKeyFixture);
-
-      // Define dummy ciphertext values
-      const ciphertext = "0x02";
-      const snsCiphertext = "0x03";
-
-      let snsCiphertextMaterials = [];
-
-      // Allow public decryption
-      for (const ctHandle of ctHandles) {
-        for (let i = 0; i < coprocessorSigners.length; i++) {
-          await ciphertextStorage
-            .connect(coprocessorSigners[i])
-            .addCiphertext(ctHandle, keyId, chainId, ciphertext, snsCiphertext);
-        }
-
-        // Store the SNS ciphertext materials for event checks
-        snsCiphertextMaterials.push([ctHandle, keyId, snsCiphertext]);
-      }
-
-      return { aclManager, decryptionManager, kmsSigners, coprocessorSigners, user, snsCiphertextMaterials };
-    }
 
     // Deploy the DecryptionManager and allow handles for public decryption
     async function deployAllowPublicDecryptionFixture() {
@@ -271,6 +279,439 @@ describe("DecryptionManager", function () {
       await expect(responseTx1).to.not.emit(decryptionManager, "PublicDecryptionResponse");
       await expect(responseTx3).to.not.emit(decryptionManager, "PublicDecryptionResponse");
       await expect(responseTx4).to.not.emit(decryptionManager, "PublicDecryptionResponse");
+    });
+  });
+
+  describe("User Decryption", function () {
+    // Expected user decryption id (after first request)
+    const userDecryptionId = 1;
+
+    // Create a dummy reencrypted share
+    const reencryptedShare = hre.ethers.randomBytes(32);
+
+    // Deploy the DecryptionManager and allow handles for public decryption
+    async function deployAllowUserDecryptionFixture() {
+      const { aclManager, decryptionManager, kmsSigners, coprocessorSigners, user, snsCiphertextMaterials } =
+        await loadFixture(deployAddCiphertextFixture);
+
+      const contractAddress = hre.ethers.Wallet.createRandom().address;
+
+      // Allow public decryption
+      for (const ctHandle of ctHandles) {
+        for (let i = 0; i < coprocessorSigners.length; i++) {
+          await aclManager.connect(coprocessorSigners[i]).allowUserDecrypt(chainId, ctHandle, user.address);
+          await aclManager.connect(coprocessorSigners[i]).allowUserDecrypt(chainId, ctHandle, contractAddress);
+        }
+      }
+
+      return { decryptionManager, kmsSigners, coprocessorSigners, user, contractAddress, snsCiphertextMaterials };
+    }
+
+    async function deployUserDecryptEIP712Fixture() {
+      const { decryptionManager, kmsSigners, user, contractAddress, snsCiphertextMaterials } = await loadFixture(
+        deployAllowUserDecryptionFixture,
+      );
+
+      const publicKey = hre.ethers.randomBytes(32);
+      const requestValidity: IDecryptionManager.RequestValidityStruct = {
+        durationDays: 120,
+        startTimestamp: Date.now(),
+      };
+
+      // Create EIP712 messages and get associated KMS nodes' signatures
+      const decryptionManagerAddress = await decryptionManager.getAddress();
+      const eip712RequestMessage = createEIP712RequestUserDecrypt(
+        chainId,
+        decryptionManagerAddress,
+        publicKey,
+        [contractAddress],
+        chainId,
+        requestValidity.startTimestamp.toString(),
+        requestValidity.durationDays.toString(),
+      );
+      const eip712ResponseMessage = createEIP712ResponseUserDecrypt(
+        chainId,
+        decryptionManagerAddress,
+        publicKey,
+        [ctHandles[0]],
+        reencryptedShare,
+      );
+
+      return {
+        decryptionManager,
+        kmsSigners,
+        user,
+        contractAddress,
+        publicKey,
+        requestValidity,
+        snsCiphertextMaterials,
+        eip712RequestMessage,
+        eip712ResponseMessage,
+      };
+    }
+
+    it("Should request a user decryption", async function () {
+      const {
+        decryptionManager,
+        user,
+        contractAddress,
+        publicKey,
+        requestValidity,
+        snsCiphertextMaterials,
+        eip712RequestMessage,
+      } = await loadFixture(deployUserDecryptEIP712Fixture);
+
+      // Create dummy input data for the user decryption request
+      const contractsChainId = chainId;
+      const contractAddresses = [contractAddress];
+      const ctHandleContractPairs: IDecryptionManager.CtHandleContractPairStruct[] = [
+        {
+          contractAddress,
+          ctHandle: ctHandles[0],
+        },
+      ];
+
+      // Sign the message with the user
+      const [userSignature] = await getSignaturesUserDecryptRequest(eip712RequestMessage, [user]);
+
+      // Request user decryption
+      const requestTx = await decryptionManager
+        .connect(user)
+        .userDecryptionRequest(
+          ctHandleContractPairs,
+          requestValidity,
+          contractsChainId,
+          contractAddresses,
+          user.address,
+          publicKey,
+          userSignature,
+        );
+
+      // Check request event
+      await expect(requestTx)
+        .to.emit(decryptionManager, "UserDecryptionRequest")
+        .withArgs(userDecryptionId, [snsCiphertextMaterials[0]], publicKey);
+    });
+
+    it("Should revert because contractAddresses exceeds maximum length allowed", async function () {
+      const { aclManager, decryptionManager, user } = await loadFixture(deployDecryptionManagerFixture);
+
+      // Create dummy input data for the user decryption request
+      const contractAddresses = [];
+      for (let i = 0; i < 11; i++) {
+        contractAddresses.push(hre.ethers.Wallet.createRandom().address);
+      }
+
+      // Check that the request fails because the given contractAddresses exceeds the maximum length allowed
+      await expect(
+        decryptionManager
+          .connect(user)
+          .userDecryptionRequest(
+            [],
+            { durationDays: 120, startTimestamp: Date.now() },
+            chainId,
+            contractAddresses,
+            user.address,
+            hre.ethers.randomBytes(32),
+            hre.ethers.randomBytes(32),
+          ),
+      )
+        .to.be.revertedWithCustomError(decryptionManager, "ContractAddressesMaxLengthExceeded")
+        .withArgs(10, contractAddresses.length);
+    });
+
+    it("Should revert because durationDays exceeds maximum allowed", async function () {
+      const { aclManager, decryptionManager, user } = await loadFixture(deployDecryptionManagerFixture);
+
+      // Create dummy input data for the user decryption request
+      const requestValidity: IDecryptionManager.RequestValidityStruct = {
+        durationDays: 400,
+        startTimestamp: Date.now(),
+      };
+
+      // Check that the request fails because the given requestValidity.durationDays exceeds the maximum allowed
+      await expect(
+        decryptionManager
+          .connect(user)
+          .userDecryptionRequest(
+            [],
+            requestValidity,
+            chainId,
+            [],
+            user.address,
+            hre.ethers.randomBytes(32),
+            hre.ethers.randomBytes(32),
+          ),
+      )
+        .to.be.revertedWithCustomError(decryptionManager, "MaxDurationDaysExceeded")
+        .withArgs(365, requestValidity.durationDays);
+    });
+
+    it("Should revert because user is not allowed for user decryption over given handles", async function () {
+      const { aclManager, decryptionManager, user } = await loadFixture(deployDecryptionManagerFixture);
+
+      // Create dummy input data for the user decryption request
+      const contractsChainId = chainId;
+      const contractAddress = hre.ethers.Wallet.createRandom().address;
+      const publicKey = hre.ethers.randomBytes(32);
+      const userSignature = hre.ethers.randomBytes(32);
+      const ctHandleContractPairs: IDecryptionManager.CtHandleContractPairStruct[] = [
+        {
+          contractAddress,
+          ctHandle: ctHandles[0],
+        },
+      ];
+      const requestValidity: IDecryptionManager.RequestValidityStruct = {
+        durationDays: 120,
+        startTimestamp: Date.now(),
+      };
+
+      // Check that the request fails because the given userAddress is not allowed for user decryption
+      // Note: the function should be reverted on the first handle since it loops over the handles
+      // in order internally
+      await expect(
+        decryptionManager
+          .connect(user)
+          .userDecryptionRequest(
+            ctHandleContractPairs,
+            requestValidity,
+            contractsChainId,
+            [contractAddress],
+            user.address,
+            publicKey,
+            userSignature,
+          ),
+      )
+        .to.be.revertedWithCustomError(aclManager, "UserNotAllowedToUserDecrypt")
+        .withArgs(ctHandles[0], user.address);
+    });
+
+    it("Should revert because of invalid EIP712 user request signature", async function () {
+      const { decryptionManager, user, contractAddress, publicKey, requestValidity, eip712RequestMessage } =
+        await loadFixture(deployUserDecryptEIP712Fixture);
+
+      // Create dummy input data for the user decryption request
+      const contractAddresses = [contractAddress];
+      const ctHandleContractPairs: IDecryptionManager.CtHandleContractPairStruct[] = [
+        {
+          contractAddress,
+          ctHandle: ctHandles[0],
+        },
+      ];
+      const fakeSigners = await hre.ethers.getSigners();
+
+      // Sign the message with the user
+      const [fakeSignature] = await getSignaturesUserDecryptRequest(eip712RequestMessage, [fakeSigners.pop()!]);
+
+      // Request user decryption
+      const requestTx = decryptionManager
+        .connect(user)
+        .userDecryptionRequest(
+          ctHandleContractPairs,
+          requestValidity,
+          chainId,
+          contractAddresses,
+          user.address,
+          publicKey,
+          fakeSignature,
+        );
+
+      // Check request event
+      await expect(requestTx)
+        .to.be.revertedWithCustomError(decryptionManager, "InvalidUserSignature")
+        .withArgs(fakeSignature);
+    });
+
+    it("Should revert because contract in ctHandleContractPairs not included in contractAddresses list", async function () {
+      const { decryptionManager, user, contractAddress } = await loadFixture(deployAllowUserDecryptionFixture);
+
+      // Create dummy input data for the user decryption request
+      const contractAddresses = [hre.ethers.Wallet.createRandom().address];
+      const publicKey = hre.ethers.randomBytes(32);
+      const ctHandleContractPairs: IDecryptionManager.CtHandleContractPairStruct[] = [
+        {
+          contractAddress,
+          ctHandle: ctHandles[0],
+        },
+      ];
+      const requestValidity: IDecryptionManager.RequestValidityStruct = {
+        durationDays: 120,
+        startTimestamp: Date.now(),
+      };
+
+      // Create EIP712 messages and get associated KMS nodes' signatures
+      const decryptionManagerAddress = await decryptionManager.getAddress();
+      const eip712Message = createEIP712RequestUserDecrypt(
+        chainId,
+        decryptionManagerAddress,
+        publicKey,
+        contractAddresses,
+        chainId,
+        requestValidity.startTimestamp.toString(),
+        requestValidity.durationDays.toString(),
+      );
+
+      // Sign the message with the user
+      const [userSignature] = await getSignaturesUserDecryptRequest(eip712Message, [user]);
+
+      // Request user decryption
+      const requestTx = decryptionManager
+        .connect(user)
+        .userDecryptionRequest(
+          ctHandleContractPairs,
+          requestValidity,
+          chainId,
+          contractAddresses,
+          user.address,
+          publicKey,
+          userSignature,
+        );
+
+      // Check request event
+      await expect(requestTx)
+        .to.be.revertedWithCustomError(decryptionManager, "ContractNotInContractAddresses")
+        .withArgs(contractAddress);
+    });
+
+    it("Should reach consensus with 3 valid responses", async function () {
+      const {
+        decryptionManager,
+        user,
+        contractAddress,
+        requestValidity,
+        publicKey,
+        kmsSigners,
+        eip712RequestMessage,
+        eip712ResponseMessage,
+      } = await loadFixture(deployUserDecryptEIP712Fixture);
+
+      // Create dummy input data for the user decryption request
+      const contractsChainId = chainId;
+      const contractAddresses = [contractAddress];
+      const ctHandleContractPairs: IDecryptionManager.CtHandleContractPairStruct[] = [
+        {
+          contractAddress,
+          ctHandle: ctHandles[0],
+        },
+      ];
+
+      // Sign the message with the user
+      const [userSignature] = await getSignaturesUserDecryptRequest(eip712RequestMessage, [user]);
+
+      // Request user decryption
+      await decryptionManager
+        .connect(user)
+        .userDecryptionRequest(
+          ctHandleContractPairs,
+          requestValidity,
+          contractsChainId,
+          contractAddresses,
+          user.address,
+          publicKey,
+          userSignature,
+        );
+
+      // Sign the message with all KMS nodes and get the first 3 signatures
+      const [signature1, signature2, signature3] = await getSignaturesUserDecryptResponse(
+        eip712ResponseMessage,
+        kmsSigners,
+      );
+
+      // Trigger three valid user decryption responses
+      await decryptionManager
+        .connect(kmsSigners[0])
+        .userDecryptionResponse(userDecryptionId, reencryptedShare, signature1);
+
+      await decryptionManager
+        .connect(kmsSigners[1])
+        .userDecryptionResponse(userDecryptionId, reencryptedShare, signature2);
+
+      const responseTx3 = await decryptionManager
+        .connect(kmsSigners[2])
+        .userDecryptionResponse(userDecryptionId, reencryptedShare, signature3);
+
+      // Consensus should be reached at the third response (reconstruction threshold)
+      // Check 3rd response event: it should only contain 3 valid signatures
+      await expect(responseTx3)
+        .to.emit(decryptionManager, "UserDecryptionResponse")
+        .withArgs(
+          userDecryptionId,
+          [reencryptedShare, reencryptedShare, reencryptedShare],
+          [signature1, signature2, signature3],
+        );
+
+      // Check that the user decryption is done
+      const isUserDecryptionDone = await decryptionManager.connect(user).isUserDecryptionDone(userDecryptionId);
+      expect(isUserDecryptionDone).to.be.true;
+    });
+
+    it("Should ignore other valid responses", async function () {
+      const {
+        decryptionManager,
+        user,
+        publicKey,
+        requestValidity,
+        contractAddress,
+        kmsSigners,
+        eip712RequestMessage,
+        eip712ResponseMessage,
+      } = await loadFixture(deployUserDecryptEIP712Fixture);
+
+      // Create dummy input data for the user decryption request
+      const contractsChainId = chainId;
+      const contractAddresses = [contractAddress];
+      const ctHandleContractPairs: IDecryptionManager.CtHandleContractPairStruct[] = [
+        {
+          contractAddress,
+          ctHandle: ctHandles[0],
+        },
+      ];
+
+      // Sign the message with the user
+      const [userSignature] = await getSignaturesUserDecryptRequest(eip712RequestMessage, [user]);
+
+      // Request user decryption
+      await decryptionManager
+        .connect(user)
+        .userDecryptionRequest(
+          ctHandleContractPairs,
+          requestValidity,
+          contractsChainId,
+          contractAddresses,
+          user.address,
+          publicKey,
+          userSignature,
+        );
+
+      // Sign the message with all KMS nodes and get the first 3 signatures
+      const [signature1, signature2, signature3, signature4] = await getSignaturesUserDecryptResponse(
+        eip712ResponseMessage,
+        kmsSigners,
+      );
+
+      // Trigger three valid user decryption responses
+      const responseTx1 = await decryptionManager
+        .connect(kmsSigners[0])
+        .userDecryptionResponse(userDecryptionId, reencryptedShare, signature1);
+
+      const responseTx2 = await decryptionManager
+        .connect(kmsSigners[1])
+        .userDecryptionResponse(userDecryptionId, reencryptedShare, signature2);
+
+      await decryptionManager
+        .connect(kmsSigners[2])
+        .userDecryptionResponse(userDecryptionId, reencryptedShare, signature3);
+
+      const responseTx4 = await decryptionManager
+        .connect(kmsSigners[3])
+        .userDecryptionResponse(userDecryptionId, reencryptedShare, signature4);
+
+      // Check that the 1st, 2nd and 4th responses do not emit an event:
+      // - 1st and 2nd responses are ignored because consensus is not reached yet
+      // - 4th response is ignored (not reverted) even though they are late
+      await expect(responseTx1).to.not.emit(decryptionManager, "UserDecryptionResponse");
+      await expect(responseTx2).to.not.emit(decryptionManager, "UserDecryptionResponse");
+      await expect(responseTx4).to.not.emit(decryptionManager, "UserDecryptionResponse");
     });
   });
 });
