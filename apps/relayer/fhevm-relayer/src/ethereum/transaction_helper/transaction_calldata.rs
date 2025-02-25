@@ -354,6 +354,8 @@ impl ComputeCalldata {
             verifying_contract: decryption_manager_address,
         };
 
+        println!("{:?}",domain);
+
         let public_decryption_result = PublicDecryptionResult {
             handlesList: req.ciphertextHandles.clone(),
             decryptedResult: decrypted_result.clone().into(),

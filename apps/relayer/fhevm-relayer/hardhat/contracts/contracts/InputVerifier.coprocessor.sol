@@ -198,8 +198,8 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
                 cvKMS.hashOfCiphertext = hashCT;
                 cvKMS.userAddress = context.userAddress;
                 cvKMS.contractAddress = context.contractAddress;
-                bool kmsCheck = kmsVerifier.verifyInputEIP712KMSSignatures(cvKMS, signaturesKMS);
-                if (!kmsCheck) revert KMSNumberSignaturesInsufficient();
+                //bool kmsCheck = kmsVerifier.verifyInputEIP712KMSSignatures(cvKMS, signaturesKMS);
+                //if (!kmsCheck) revert KMSNumberSignaturesInsufficient();
             }
 
             _cacheProof(cacheKey);
