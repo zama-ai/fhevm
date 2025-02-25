@@ -107,7 +107,7 @@ export class SqsService implements OnModuleInit, OnModuleDestroy {
     const that = this
     const promises = Array.from(this.consumers.values()).map(consumer => {
       return new Promise<void>(function (resolve) {
-        consumer.instance.on('stopped', resolve)
+        consumer.instance.on('stopped', () => resolve())
         consumer.instance.on('error', function (err) {
           // Ignore shut down errors
           that.logger.warn(`stopping the consumer raised an error: ${err}`)
