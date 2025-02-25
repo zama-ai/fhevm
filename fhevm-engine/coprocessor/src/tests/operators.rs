@@ -14,7 +14,7 @@ use bigdecimal::num_bigint::BigInt;
 use fhevm_engine_common::tfhe_ops::{
     does_fhe_operation_support_both_encrypted_operands, does_fhe_operation_support_scalar,
 };
-use fhevm_engine_common::types::{FheOperationType, SupportedFheOperations};
+use fhevm_engine_common::types::{is_ebytes_type, FheOperationType, SupportedFheOperations};
 use std::{ops::Not, str::FromStr};
 use strum::IntoEnumIterator;
 use tonic::metadata::MetadataValue;
@@ -317,10 +317,11 @@ async fn test_fhe_unary_operands() -> Result<(), Box<dyn std::error::Error>> {
         );
         let expected_value = if op.bits == 1 {
             op.expected_output.gt(&BigInt::from(0)).to_string()
-        } else { op.expected_output.to_string() };
+        } else {
+            op.expected_output.to_string()
+        };
         assert_eq!(
-            decr_response.value,
-            expected_value,
+            decr_response.value, expected_value,
             "operand output values not equal"
         );
     }
@@ -564,7 +565,8 @@ async fn test_op_trivial_encrypt() -> Result<(), Box<dyn std::error::Error>> {
             "operand types not equal"
         );
         assert_eq!(
-            value_to_compare, co.inp.to_string(),
+            value_to_compare,
+            co.inp.to_string(),
             "operand output values not equal"
         );
     }
@@ -769,8 +771,7 @@ pub fn generate_binary_test_cases() -> Vec<BinaryOperatorTestCase> {
 
     for bits in supported_bits() {
         let bits = *bits;
-        let mut shift_by =
-            if bits > 4 { bits - 8 } else { 0 };
+        let mut shift_by = if bits > 4 { bits - 8 } else { 0 };
         for op in SupportedFheOperations::iter() {
             if op.op_type() != FheOperationType::Binary {
                 continue;
@@ -847,16 +848,20 @@ pub fn generate_unary_test_cases() -> Vec<UnaryOperatorTestCase> {
             if bits == 1 && !op.supports_bool_inputs() {
                 continue;
             }
+            if is_ebytes_type(supported_bits_to_bit_type_in_db(bits) as i16)
+                && !op.supports_ebytes_inputs()
+            {
+                continue;
+            }
 
             if op.op_type() == FheOperationType::Unary {
-                let inp =
-                    if bits == 1 {
-                        BigInt::from(1)
-                    } else {
-                        let mut res = BigInt::from(3);
-                        res <<= shift_by;
-                        res
-                    };
+                let inp = if bits == 1 {
+                    BigInt::from(1)
+                } else {
+                    let mut res = BigInt::from(3);
+                    res <<= shift_by;
+                    res
+                };
                 let expected_output = compute_expected_unary_output(&inp, op) & &max_bits_value;
                 let operand = op as i32;
                 cases.push(UnaryOperatorTestCase {
