@@ -74,7 +74,7 @@ class EthersFheEventServiceImpl implements FheEventService {
           .then(() => {
             resolve(provider)
           })
-          .catch(error => {
+          .catch((error: unknown) => {
             this.logger.warn(`failed to create JSON RPC provider: ${error}`)
             reject(unknownError(`failed to create provider for ${providerUrl}`))
           })

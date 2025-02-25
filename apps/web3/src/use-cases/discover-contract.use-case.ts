@@ -30,7 +30,7 @@ export class DiscoverContract implements UseCase<Input, void> {
   }
 
   execute = ({
-    payload: { chainId, address },
+    payload: { requestId, chainId, address },
     meta,
   }: Input): Task<void, AppError> => {
     return Web3Address.fromString(address)
@@ -53,11 +53,16 @@ export class DiscoverContract implements UseCase<Input, void> {
           .publish(
             data.isSmartContract
               ? web3.contractValidationSuccess(
-                  { chainId, address, owner: data.owner?.value },
+                  { requestId, chainId, address, owner: data.owner?.value },
                   meta,
                 )
               : web3.contractValidationFailure(
-                  { chainId, address, reason: 'Not a smart contract' },
+                  {
+                    requestId,
+                    chainId,
+                    address,
+                    reason: 'Not a smart contract',
+                  },
                   meta,
                 ),
           )

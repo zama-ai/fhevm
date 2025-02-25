@@ -22,7 +22,7 @@ describe('deploy-dapp', () => {
 
   beforeAll(async () => {
     await manager.beforeAll()
-  }, 30000)
+  }, 30_000)
 
   afterAll(async () => {
     await manager.afterAll()
@@ -170,13 +170,6 @@ describe('deploy-dapp', () => {
           const size = await manager.getQueueSize()
           return size === 0
         })
-        // await vi.waitUntil(async () => {
-        //   const result = await manager.dapp.getDapp({
-        //     token,
-        //     dappId,
-        //   })
-        //   return result.success ? result.data.status === status : false
-        // })
 
         const result = await manager.dapp.getDapp({
           token,
@@ -202,6 +195,7 @@ function genMessage(
     case 'back:dapp:validation:requested':
       return back.dappValidationRequested(
         {
+          requestId: faker.string.uuid(),
           dAppId: dappId,
           chainId: '1',
           address: faker.string.hexadecimal({ length: 40 }),
@@ -211,6 +205,7 @@ function genMessage(
     case 'back:dapp:validation:confirmed':
       return back.dappValidationConfirmed(
         {
+          requestId: faker.string.uuid(),
           dAppId: dappId,
           owner: faker.string.hexadecimal({ length: 40 }),
         },
@@ -219,6 +214,7 @@ function genMessage(
     case 'back:dapp:validation:failed':
       return back.dappValidationFailed(
         {
+          requestId: faker.string.uuid(),
           dAppId: dappId,
           reason: faker.lorem.word(5),
         },

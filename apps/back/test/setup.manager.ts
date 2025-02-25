@@ -100,8 +100,6 @@ export class SetupManager {
   }
 
   async beforeAll() {
-    const awsEndpoint = this.awsEndpoint
-
     // Start services
     await Promise.all([this.startAws(), this.startPostgres()])
 
@@ -115,7 +113,7 @@ export class SetupManager {
           load: [
             commonConfig,
             registerAs('aws', () => ({
-              endpoint: awsEndpoint,
+              endpoint: this.awsEndpoint,
               queueUrl: this.queueUrl,
               region: this.awsRegion,
               topicArn: this.topicArn,

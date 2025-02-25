@@ -64,6 +64,7 @@ describe('store dapp stats', () => {
           JSON.stringify(
             back.dappStatsAvailable(
               {
+                requestId: faker.string.uuid(),
                 chainId: LOCAL_FHEVM_CHAIN_ID,
                 address,
                 name: 'FheAdd',

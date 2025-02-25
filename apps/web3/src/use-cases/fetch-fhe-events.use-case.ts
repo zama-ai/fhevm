@@ -7,7 +7,11 @@ import { web3 } from 'messages'
 import { Logger } from '@nestjs/common'
 import { randomUUID } from 'crypto'
 
-export class FetchFHEEvents implements UseCase<ChainId, FheEvent[]> {
+type Input = {
+  requestId: string
+  chainId: ChainId
+}
+export class FetchFHEEvents implements UseCase<Input, FheEvent[]> {
   private readonly logger = new Logger(FetchFHEEvents.name)
   constructor(
     private readonly pubsub: PubSub<web3.Web3Event>,
@@ -23,11 +27,19 @@ export class FetchFHEEvents implements UseCase<ChainId, FheEvent[]> {
   ): Task<void, AppError> => {
     this.logger.log(`received ${event.type}: ${JSON.stringify(event.payload)}`)
     return ChainId.fromString(event.payload.chainId)
-      .asyncChain(this.execute)
+      .asyncChain(chainId =>
+        this.execute({ requestId: event.payload.requestId, chainId }),
+      )
       .map<void>(() => void 0)
   }
 
-  execute = (chainId: ChainId): Task<FheEvent[], AppError> => {
+  execute = ({
+    requestId,
+    chainId,
+  }: {
+    requestId: string
+    chainId: ChainId
+  }): Task<FheEvent[], AppError> => {
     this.logger.log(`fetching fhe events for chain ${chainId.value}`)
     // Note: use a Unit of Work to handle transactions
     return this.repo
@@ -51,6 +63,7 @@ export class FetchFHEEvents implements UseCase<ChainId, FheEvent[]> {
         events.forEach(event => {
           const toPublish = web3.fheDetected(
             {
+              requestId,
               id: event.id.value,
               address: event.callerAddress.value,
               chainId: event.chainId.value,
