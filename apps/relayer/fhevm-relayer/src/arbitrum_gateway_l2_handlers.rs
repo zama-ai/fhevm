@@ -173,7 +173,7 @@ impl ArbitrumGatewayL2Handler {
         &self,
         event: &RelayerEvent,
     ) -> Result<U256, EventProcessingError> {
-        if let RelayerEventData::EventLogFromGwL2 { log } = &event.data {
+        if let RelayerEventData::EventLogResponseFromGwL2 { log } = &event.data {
             match DecyptionManager::PublicDecryptionRequest::decode_log_data(log.data(), true) {
                 Ok(event) => {
                     let public_decryption_id = event.publicDecryptionId;
@@ -211,41 +211,44 @@ impl ArbitrumGatewayL2Handler {
             event.request_id,
         );
 
-        // Artificial sleep for this mock, normally the decryption Response is taking more time
-        // Here we took the decryptionRequest Event as trigger, will change when real behavior will be implemented
-        // on rollup side
-        // TODO think about this getter
+        if let RelayerEventData::EventLogResponseFromGwL2 { log } = &event.data {
+            match DecyptionManager::PublicDecryptionResponse::decode_log_data(log.data(), true) {
+                Ok(req) => {
+                    let public_decryption_id = req.publicDecryptionId;
+                    info!(?public_decryption_id, "Public decryption id from event");
 
-        tokio::time::sleep(Duration::from_secs(2)).await;
+                    if let Some(entry) = self.decryption_id_to_request_id.get(&public_decryption_id)
+                    {
+                        let original_request_id = *entry.value(); // Dereference the Ref<Uuid>
 
-        if let Ok(decryption_public_id) = self.extract_decryption_id_from_event(&event) {
-            // Use get_key_value to get both key and value, or use remove if you want to clean up
-            if let Some(entry) = self.decryption_id_to_request_id.get(&decryption_public_id) {
-                let original_request_id = *entry.value(); // Dereference the Ref<Uuid>
+                        info!(
+                            ?original_request_id,
+                            ?public_decryption_id,
+                            "Found original request ID for decryption response"
+                        );
 
-                info!(
-                    ?original_request_id,
-                    ?decryption_public_id,
-                    "Found original request ID for decryption response"
-                );
+                        let next_event_data = RelayerEventData::DecryptionResponseRcvdFromGwL2 {
+                            public_decryption_response: req,
+                        };
 
-                let next_event_data = RelayerEventData::DecryptionResponseRcvdFromGwL2 {
-                    decrypted_value: DecryptedValue::PublicDecrypt {
-                        plaintext: vec![1, 2, 3],
-                        signatures: vec![vec![1, 2, 3]],
-                    },
-                };
+                        // Now we can use original_request_id directly
+                        let next_event = RelayerEvent::new(
+                            original_request_id,
+                            event.api_version,
+                            next_event_data,
+                        );
 
-                // Now we can use original_request_id directly
-                let next_event =
-                    RelayerEvent::new(original_request_id, event.api_version, next_event_data);
-
-                let _ = self.dispatcher.dispatch_event(next_event).await;
-            } else {
-                error!(
-                    ?decryption_public_id,
-                    "No matching request ID found for decryption ID"
-                );
+                        let _ = self.dispatcher.dispatch_event(next_event).await;
+                    } else {
+                        error!(
+                            ?public_decryption_id,
+                            "No matching request ID found for decryption ID"
+                        );
+                    }
+                }
+                Err(e) => {
+                    error!(?e, "Failed to decode event data");
+                }
             }
         }
     }
@@ -347,7 +350,7 @@ impl EventHandler<RelayerEvent> for ArbitrumGatewayL2Handler {
                 let handles = ct_handles.clone();
                 self.send_decryption_request_to_rollup(event, handles).await;
             }
-            RelayerEventData::EventLogFromGwL2 { .. } => {
+            RelayerEventData::EventLogResponseFromGwL2 { .. } => {
                 self.handle_decrypt_reponse_event_log(event).await;
             }
             RelayerEventData::DecryptionRequestSentToGwL2 {
