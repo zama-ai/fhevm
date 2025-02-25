@@ -42,6 +42,7 @@ impl Event for KmsRelayerEvent {
     //TODO: Replace boiler plate with macro based code.
     fn event_id(&self) -> u8 {
         match &self.data {
+            KmsRelayerEventData::EventLogFromGwL2 { .. } => 3,
             KmsRelayerEventData::KmsInput(input_event) => match input_event {
                 KmsInputEventData::EventLogRequestFromGwL2 { .. } => 11,
             },
@@ -73,12 +74,17 @@ pub enum ApiCategory {
 
 #[derive(Clone)]
 pub enum KmsRelayerEventData {
+    EventLogFromGwL2 {
+        // For gateway l2 handler
+        log: Log,
+    },
     KmsInput(KmsInputEventData),
 }
 
 impl AsRef<str> for KmsRelayerEventData {
     fn as_ref(&self) -> &str {
         match self {
+            KmsRelayerEventData::EventLogFromGwL2 { .. } => "EventLogFromGwL2",
             KmsRelayerEventData::KmsInput(input_event) => input_event.event_name(),
         }
     }

@@ -1,7 +1,7 @@
 use alloy_sol_types::SolEvent;
 use tracing::{error, info};
 
-use crate::ethereum::bindings::ZKPoKManager;
+use crate::ethereum::bindings::{DecyptionManager, ZKPoKManager};
 use crate::kms_connector_relayer_event::{
     self, KmsInputEventData, KmsRelayerEvent, KmsRelayerEventData,
 };
@@ -16,6 +16,9 @@ use std::sync::Arc;
 // Define event topics as constants
 const PROOF_VERIFICATION_REQUEST_TOPIC: alloy::primitives::FixedBytes<32> =
     ZKPoKManager::VerifyProofRequest::SIGNATURE_HASH;
+
+const DECRYPTION_REQUEST_TOPIC: alloy::primitives::FixedBytes<32> =
+    DecyptionManager::PublicDecryptionRequest::SIGNATURE_HASH;
 
 pub async fn event_listener_rollup(
     mut subscription: alloy::pubsub::SubscriptionStream<Log>,
@@ -48,9 +51,15 @@ pub async fn event_listener_rollup(
                                 }
                             )
                         },
+                            DECRYPTION_REQUEST_TOPIC => {
+                            info!("Received Decryption Response event");
+                            KmsRelayerEventData::EventLogFromGwL2 {
+                                log: event_log
+                            }
+                        },
 
 
-                            _ => {
+                        _ => {
                                 info!("Unknown event topic: 0x{}", hex::encode(topic0));
                                 continue; // Skip unknown events
                             }
