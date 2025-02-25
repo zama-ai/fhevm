@@ -1,6 +1,6 @@
 use crate::types::CoprocessorError;
 use crate::{db_queries::populate_cache_with_tenant_keys, types::TfheTenantKeys};
-use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts};
+use fhevm_engine_common::types::{FhevmError, Handle, SupportedFheCiphertexts};
 use fhevm_engine_common::{tfhe_ops::current_ciphertext_version, types::SupportedFheOperations};
 use itertools::Itertools;
 use lazy_static::lazy_static;
@@ -384,17 +384,29 @@ async fn tfhe_worker_cycle(
                     .as_mut()
                     .map(|rok| (w, rok.0, std::mem::take(&mut rok.1)))
                     .map_err(|rerr| {
-                        (
-                            CoprocessorError::SchedulerError(
-                                *rerr
-                                    .downcast_ref::<SchedulerError>()
-                                    .or(Some(&SchedulerError::SchedulerError))
-                                    .unwrap(),
+                        if rerr.downcast_ref::<FhevmError>().is_some() {
+                            let mut swap_val = FhevmError::BadInputs;
+                            std::mem::swap(
+                                &mut *rerr.downcast_mut::<FhevmError>().unwrap(),
+                                &mut swap_val,
+                            );
+                            (
+                                CoprocessorError::FhevmError(swap_val).into(),
+                                w.tenant_id,
+                                w.output_handle.clone(),
                             )
-                            .into(),
-                            w.tenant_id,
-                            w.output_handle.clone(),
-                        )
+                        } else {
+                            (
+                                CoprocessorError::SchedulerError(
+                                    *rerr
+                                        .downcast_ref::<SchedulerError>()
+                                        .unwrap_or(&SchedulerError::SchedulerError),
+                                )
+                                .into(),
+                                w.tenant_id,
+                                w.output_handle.clone(),
+                            )
+                        }
                     });
                 match finished_work_unit {
                     Ok((w, db_type, db_bytes)) => {
