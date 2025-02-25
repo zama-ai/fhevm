@@ -1,5 +1,5 @@
 use crate::utils::safe_deserialize_key;
-use sqlx::query;
+use sqlx::Row;
 use std::sync::Arc;
 
 pub struct TfheTenantKeys {
@@ -27,9 +27,10 @@ pub struct FetchTenantKeyResult {
 
 /// Returns chain id and verifying contract address for EIP712 signature and tfhe server key
 pub async fn fetch_tenant_server_key<'a, T>(
-    tenant_id: i32,
+    id: i32,
     pool: T,
     tenant_key_cache: &std::sync::Arc<tokio::sync::RwLock<lru::LruCache<i32, TfheTenantKeys>>>,
+    is_tenant_id: bool,
 ) -> Result<FetchTenantKeyResult, Box<dyn std::error::Error + Send + Sync>>
 where
     T: sqlx::PgExecutor<'a> + Copy,
@@ -38,7 +39,7 @@ where
     loop {
         {
             let mut w = tenant_key_cache.write().await;
-            if let Some(key) = w.get(&tenant_id) {
+            if let Some(key) = w.get(&id) {
                 return Ok(FetchTenantKeyResult {
                     chain_id: key.chain_id,
                     verifying_contract_address: key.verifying_contract_address.clone(),
@@ -50,44 +51,61 @@ where
             }
         }
 
-        populate_cache_with_tenant_keys(vec![tenant_id], pool, tenant_key_cache).await?;
+        populate_cache_with_tenant_keys(vec![id], pool, tenant_key_cache, is_tenant_id).await?;
     }
 }
-
 pub async fn query_tenant_keys<'a, T>(
-    tenants_to_query: Vec<i32>,
+    ids_to_query: Vec<i32>,
     conn: T,
+    is_tenant_id: bool,
 ) -> Result<Vec<TfheTenantKeys>, Box<dyn std::error::Error + Send + Sync>>
 where
     T: sqlx::PgExecutor<'a>,
 {
-    let mut res = Vec::with_capacity(tenants_to_query.len());
-    let keys = query!(
+    let column = if is_tenant_id {
+        "tenant_id"
+    } else {
+        "chain_id"
+    };
+
+    let query_str = format!(
         "
             SELECT tenant_id, chain_id, acl_contract_address, verifying_contract_address, pks_key, sks_key, public_params
             FROM tenants
-            WHERE tenant_id = ANY($1::INT[])
+            WHERE {} = ANY($1::INT[])
         ",
-        &tenants_to_query
-    )
-    .fetch_all(conn)
-    .await?;
+        column
+    );
 
-    for key in keys {
-        let sks: tfhe::ServerKey = safe_deserialize_key(&key.sks_key)
-            .expect("We can't deserialize our own validated sks key");
-        let pks: tfhe::CompactPublicKey = safe_deserialize_key(&key.pks_key)
-            .expect("We can't deserialize our own validated pks key");
-        let public_params: tfhe::zk::CompactPkeCrs = safe_deserialize_key(&key.public_params)
-            .expect("We can't deserialize our own validated public params");
+    let rows = sqlx::query(&query_str)
+        .bind(&ids_to_query)
+        .fetch_all(conn)
+        .await?;
+
+    let mut res = Vec::with_capacity(rows.len());
+
+    for row in rows {
+        let tenant_id: i32 = row.try_get("tenant_id")?;
+        let chain_id: i32 = row.try_get("chain_id")?;
+        let acl_contract_address: String = row.try_get("acl_contract_address")?;
+        let verifying_contract_address: String = row.try_get("verifying_contract_address")?;
+        let pks_key: Vec<u8> = row.try_get("pks_key")?;
+        let sks_key: Vec<u8> = row.try_get("sks_key")?;
+        let public_params_key: Vec<u8> = row.try_get("public_params")?;
+
+        // Deserialize binary keys properly
+        let sks: tfhe::ServerKey = safe_deserialize_key(&sks_key)?;
+        let pks: tfhe::CompactPublicKey = safe_deserialize_key(&pks_key)?;
+        let public_params: tfhe::zk::CompactPkeCrs = safe_deserialize_key(&public_params_key)?;
+
         res.push(TfheTenantKeys {
-            tenant_id: key.tenant_id,
+            tenant_id,
+            chain_id,
+            acl_contract_address,
+            verifying_contract_address,
             sks,
             pks,
             public_params: Arc::new(public_params),
-            chain_id: key.chain_id,
-            acl_contract_address: key.acl_contract_address,
-            verifying_contract_address: key.verifying_contract_address,
         });
     }
 
@@ -98,12 +116,13 @@ pub async fn populate_cache_with_tenant_keys<'a, T>(
     tenants_to_query: Vec<i32>,
     conn: T,
     tenant_key_cache: &std::sync::Arc<tokio::sync::RwLock<lru::LruCache<i32, TfheTenantKeys>>>,
+    is_tenant_id: bool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
 where
     T: sqlx::PgExecutor<'a>,
 {
     if !tenants_to_query.is_empty() {
-        let keys = query_tenant_keys(tenants_to_query, conn).await?;
+        let keys = query_tenant_keys(tenants_to_query, conn, is_tenant_id).await?;
 
         assert!(
             !keys.is_empty(),
@@ -113,7 +132,13 @@ where
         let mut key_cache = tenant_key_cache.write().await;
 
         for key in keys {
-            key_cache.put(key.tenant_id, key);
+            let id = if is_tenant_id {
+                key.tenant_id
+            } else {
+                key.chain_id
+            };
+
+            key_cache.put(id, key);
         }
     }
 
