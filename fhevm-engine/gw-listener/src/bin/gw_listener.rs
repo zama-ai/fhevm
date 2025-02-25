@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use alloy::network::EthereumWallet;
 use alloy::providers::{ProviderBuilder, WsConnect};
 use alloy::signers::local::PrivateKeySigner;
@@ -33,6 +35,9 @@ struct Conf {
 
     #[arg(long)]
     ws_endpoint_url: String,
+
+    #[arg(long)]
+    private_key: Option<String>,
 }
 
 #[tokio::main]
@@ -44,7 +49,11 @@ async fn main() {
         .clone()
         .unwrap_or_else(|| std::env::var("DATABASE_URL").expect("DATABASE_URL is undefined"));
 
-    let signer: PrivateKeySigner = PrivateKeySigner::random(); // TODO:
+    let private_key = conf.private_key.clone().unwrap_or_else(|| {
+        std::env::var("GW_LISTENER_SIGNER").expect("GW_LISTENER_SIGNER is undefined")
+    });
+
+    let signer = PrivateKeySigner::from_str(private_key.trim()).expect("valid private key");
     let wallet: EthereumWallet = signer.clone().into();
 
     let provider = ProviderBuilder::new()
