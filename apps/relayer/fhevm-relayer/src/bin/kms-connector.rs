@@ -39,7 +39,7 @@ use tracing::info;
 use tracing_subscriber::{fmt::SubscriberBuilder, EnvFilter};
 
 use fhevm_relayer::{
-    config::settings::{LogConfig, Settings},
+    config::settings::{ContractConfig, LogConfig, Settings},
     ethereum::{ContractAndTopicsFilter, RollupL2},
     kms_connector_handler::KmsConnectorHandler,
     kms_connector_relayer_event::KmsRelayerEvent,
@@ -118,12 +118,15 @@ async fn main() -> eyre::Result<()> {
             Arc::clone(&dispatcher),
             tx_service_rollup.clone(),
             tx_config.clone(),
+            ContractConfig::from(settings.contracts),
         ));
 
     // Register input event handlers
 
     // Event type: InputEventData::EventLogRequestFromGwL2
     orchestrator.register_handler(11, Arc::clone(&kms_connector_handler));
+    // Event type EventLogFromGwL2
+    orchestrator.register_handler(3, Arc::clone(&kms_connector_handler));
 
     // === Create a subscription for events and spawn a listener to listen for events from the subcription.
 
