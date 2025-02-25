@@ -86,8 +86,7 @@ impl EthereumHostL1Handler {
 
                 let mut ct_handles: Vec<[u8; 32]> = Vec::new();
                 for ct_handle in eth_decryption_request.cts {
-                    // TODO: Check if to_le_bytes will work.
-                    ct_handles.push(ct_handle.to_le_bytes());
+                    ct_handles.push(ct_handle.to_be_bytes());
                 }
                 event.derive_next_event(RelayerEventData::DecryptRequestRcvd {
                     ct_handles,

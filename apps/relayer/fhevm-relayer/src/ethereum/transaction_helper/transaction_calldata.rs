@@ -21,6 +21,7 @@ use alloy::{dyn_abi::DynSolValue, hex, signers::local::PrivateKeySigner};
 sol! {
     #[allow(missing_docs)]
     #[derive(Serialize)]
+    #[derive(Debug)]
     struct PublicDecryptionResult {
         uint256[] handlesList;
         bytes decryptedResult;
@@ -54,6 +55,7 @@ impl ComputeCalldata {
         offset_bytes[31] = 32u8; // offset is always 32 for the first element
         calldata.extend_from_slice(&offset_bytes);
 
+        println!("public_decryption_response {:?}", &public_decryption_response.signatures);
         // For each signature:
         for signature in &public_decryption_response.signatures {
             // Add length of signature (32 bytes)
@@ -267,7 +269,7 @@ impl ComputeCalldata {
         results.push(DynSolValue::Uint(U256::from(42), 256)); // requestID placeholder
 
         for ciphertext_handle in req.ciphertextHandles.clone() {
-            let handle: [u8; 32] = ciphertext_handle.to_le_bytes();
+            let handle: [u8; 32] = ciphertext_handle.to_be_bytes();
 
             // Using a hardcoded value for now
             let mut clear_text = String::new();
@@ -360,6 +362,8 @@ impl ComputeCalldata {
             handlesList: req.ciphertextHandles.clone(),
             decryptedResult: decrypted_result.clone().into(),
         };
+
+        println!("public_decryption_result {:?}", public_decryption_result);
 
         let hash = public_decryption_result.eip712_signing_hash(&domain);
 
