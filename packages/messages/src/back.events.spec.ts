@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import { faker } from '@faker-js/faker'
 import * as back from './back.events.js'
+import { generateRequestId } from './shared.js'
 
 describe('back', () => {
   describe('isBackEvent', () => {
@@ -8,6 +9,7 @@ describe('back', () => {
       const event = {
         type: 'back:dapp:stats-requested',
         payload: {
+          requestId: generateRequestId(),
           dAppId: faker.string.uuid(),
           chainId: faker.string.numeric(5),
           address: faker.string.hexadecimal({ length: 40 }),
@@ -23,6 +25,7 @@ describe('back', () => {
       const event = {
         type: 'back:dapp:stats-available',
         payload: {
+          requestId: generateRequestId(),
           chainId: faker.string.numeric(5),
           address: faker.string.hexadecimal({ length: 40 }),
           name: faker.string.alphanumeric(),
@@ -41,6 +44,7 @@ describe('back', () => {
     test('returns a valid `back:dapp:stats-requested`', () => {
       const event = back.dappStatsRequested(
         {
+          requestId: generateRequestId(),
           dAppId: faker.string.uuid(),
           chainId: faker.string.numeric(5),
           address: faker.string.hexadecimal({ length: 40 }),
@@ -59,6 +63,7 @@ describe('back', () => {
     test('returns a valid `back:dapp:stats-available`', () => {
       const event = back.dappStatsAvailable(
         {
+          requestId: generateRequestId(),
           chainId: faker.string.numeric(5),
           address: faker.string.hexadecimal({ length: 40 }),
           name: faker.string.alphanumeric(),

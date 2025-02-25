@@ -29,6 +29,7 @@ export class DAppStatsRequested implements UseCase<Input, void> {
     return this.pubsub.publish(
       web3.fheRequested(
         {
+          requestId: payload.requestId,
           chainId: payload.chainId,
           address: payload.address,
         },

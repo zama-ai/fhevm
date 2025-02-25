@@ -24,6 +24,7 @@ export class FheEventDetected implements UseCase<Input, void> {
     return this.pubsub.publish(
       back.dappStatsAvailable(
         {
+          requestId: payload.requestId,
           chainId: payload.chainId,
           address: payload.address,
           name: payload.name,

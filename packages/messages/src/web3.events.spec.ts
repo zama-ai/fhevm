@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import { faker } from '@faker-js/faker'
 import * as web3 from './web3.events.js'
+import { generateRequestId } from './shared.js'
 
 describe('web3', () => {
   describe('isWeb3Event', () => {
@@ -8,6 +9,7 @@ describe('web3', () => {
       const event = {
         type: 'web3:fhe-event:requested',
         payload: {
+          requestId: generateRequestId(),
           chainId: faker.string.numeric(5),
           address: faker.string.hexadecimal({ length: 40 }),
         },
@@ -22,6 +24,7 @@ describe('web3', () => {
       const event = {
         type: 'web3:fhe-event:detected',
         payload: {
+          requestId: generateRequestId(),
           id: faker.string.alphanumeric(),
           chainId: faker.string.numeric(5),
           address: faker.string.hexadecimal({ length: 40 }),
@@ -40,6 +43,7 @@ describe('web3', () => {
     test('returns a valid `web3:fhe-event:requested`', () => {
       const event = web3.fheRequested(
         {
+          requestId: generateRequestId(),
           chainId: faker.string.numeric(5),
           address: faker.string.hexadecimal({ length: 40 }),
         },
@@ -57,6 +61,7 @@ describe('web3', () => {
     test('returns a valid `web3:fhe-event:detected`', () => {
       const event = web3.fheDetected(
         {
+          requestId: generateRequestId(),
           id: faker.string.alphanumeric(10),
           chainId: faker.string.numeric(5),
           address: faker.string.hexadecimal({ length: 40 }),

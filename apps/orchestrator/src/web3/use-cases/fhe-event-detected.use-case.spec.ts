@@ -47,6 +47,7 @@ describe(FheEventDetected, () => {
       )
       event = web3.fheDetected(
         {
+          requestId: faker.string.uuid(),
           id: faker.string.alphanumeric(10),
           chainId: faker.string.numeric(5),
           address: faker.string.hexadecimal({ length: 40 }),
@@ -69,6 +70,7 @@ describe(FheEventDetected, () => {
       await task.toPromise()
       expect(handler).toHaveBeenCalledOnce()
       const { payload } = handler.mock.calls[0][0]
+      expect(payload.requestId, 'Wrong requestId').toBe(event.payload.requestId)
       expect((payload as any).chainId, 'Wrong chainId').toBe(
         event.payload.chainId,
       )
@@ -96,6 +98,7 @@ describe(FheEventDetected, () => {
     {
       event: back.dappStatsRequested(
         {
+          requestId: faker.string.uuid(),
           dAppId: faker.string.uuid(),
           chainId: faker.string.numeric(5),
           address: faker.string.hexadecimal({ length: 40 }),
@@ -106,6 +109,7 @@ describe(FheEventDetected, () => {
     {
       event: back.dappStatsAvailable(
         {
+          requestId: faker.string.uuid(),
           chainId: faker.string.numeric(5),
           address: faker.string.hexadecimal({ length: 40 }),
           name: faker.string.alphanumeric(10),
@@ -118,6 +122,7 @@ describe(FheEventDetected, () => {
     {
       event: web3.fheRequested(
         {
+          requestId: faker.string.uuid(),
           chainId: faker.string.numeric(5),
           address: faker.string.hexadecimal({ length: 40 }),
         },
