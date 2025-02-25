@@ -1,6 +1,9 @@
 use crate::{
     errors::EventProcessingError,
-    ethereum::{bindings::DecryptionOracle, ComputeCalldata},
+    ethereum::{
+        bindings::{DecryptionOracle, DecyptionManager::PublicDecryptionResponse},
+        ComputeCalldata,
+    },
     orchestrator::{
         traits::{EventDispatcher, EventHandler},
         TokioEventDispatcher,
@@ -120,13 +123,13 @@ impl EthereumHostL1Handler {
     async fn send_decrypt_response_to_fhevm(
         &self,
         event: RelayerEvent,
-        decrypted_value: DecryptedValue,
+        public_decryption_response: PublicDecryptionResponse,
     ) {
         match self.context_data.get(&event.request_id) {
             Some(decrypted_request_data) => {
                 info!(
                     "Decryption response received: request_id: {:?}, value: {:?}",
-                    event.request_id, decrypted_value,
+                    event.request_id, public_decryption_response,
                 );
                 // send the transaction using the request_id and callback selection from request data
                 let req_clone = decrypted_request_data.clone();
@@ -134,7 +137,10 @@ impl EthereumHostL1Handler {
                 let event_clone = event.clone();
 
                 task::spawn(async move {
-                    match self_clone.process_decryption_response(&req_clone).await {
+                    match self_clone
+                        .process_decryption_response(&req_clone, public_decryption_response)
+                        .await
+                    {
                         Ok(()) => {
                             self_clone.handle_successful_request(event_clone).await;
                         }
@@ -209,11 +215,12 @@ impl EthereumHostL1Handler {
     async fn process_decryption_response(
         &self,
         req: &DecryptionRequestData,
+        public_decryption_response: PublicDecryptionResponse,
     ) -> Result<(), EventProcessingError> {
-        let decrypted_value = U256::from(18446744073709551600u64);
+        // let decrypted_value = U256::from(18446744073709551600u64);
         self.tx_helper
             .send_transaction_simple("decryption_response", req.contract_caller, || {
-                ComputeCalldata::callback_req(req, decrypted_value, 4)
+                ComputeCalldata::callback_req(req, public_decryption_response.clone(), 4)
             })
             .await
     }
@@ -238,8 +245,10 @@ impl EventHandler<RelayerEvent> for EthereumHostL1Handler {
                 self.handle_public_decrypt_event_log(event, eth_event_log)
                     .await;
             }
-            RelayerEventData::DecryptionResponseRcvdFromGwL2 { decrypted_value } => {
-                self.send_decrypt_response_to_fhevm(event, decrypted_value)
+            RelayerEventData::DecryptionResponseRcvdFromGwL2 {
+                public_decryption_response,
+            } => {
+                self.send_decrypt_response_to_fhevm(event, public_decryption_response)
                     .await;
             }
             RelayerEventData::DecryptResponseSentToHostL1 => {
