@@ -18,7 +18,7 @@ const PROOF_VERIFICATION_RESPONSE_TOPIC: alloy::primitives::FixedBytes<32> =
     ZKPoKManager::VerifyProofResponse::SIGNATURE_HASH;
 
 const DECRYPTION_RESPONSE_TOPIC: alloy::primitives::FixedBytes<32> =
-    DecyptionManager::PublicDecryptionRequest::SIGNATURE_HASH;
+    DecyptionManager::PublicDecryptionResponse::SIGNATURE_HASH;
 
 pub async fn event_listener_rollup(
     mut subscription: alloy::pubsub::SubscriptionStream<Log>,
@@ -52,11 +52,13 @@ pub async fn event_listener_rollup(
                                 )
                             },
                             DECRYPTION_RESPONSE_TOPIC => {
-                                info!("Received Decryption Response event");
-                                relayer_event::RelayerEventData::EventLogFromGwL2 {
-                                    log: event_log
-                                }
-                            },
+                                info!("Received Decryption response event");
+                                relayer_event::RelayerEventData::EventLogResponseFromGwL2   {
+                                            log: event_log
+                                        }
+
+                                },
+
                             _ => {
                                 info!("Unknown event topic: 0x{}", hex::encode(topic0));
                                 continue; // Skip unknown events

@@ -1,3 +1,4 @@
+use crate::ethereum::bindings::DecyptionManager::PublicDecryptionResponse;
 use crate::input_http_listener::{InputProofRequestJson, InputProofResponseJson};
 use crate::orchestrator::traits::Event;
 use alloy::primitives::{Address, Bytes, FixedBytes};
@@ -43,7 +44,7 @@ impl Event for RelayerEvent {
             RelayerEventData::EventLogFromHostL1 { .. } => 0,
             RelayerEventData::DecryptRequestRcvd { .. } => 1,
             RelayerEventData::DecryptionRequestSentToGwL2 { .. } => 2,
-            RelayerEventData::EventLogFromGwL2 { .. } => 3,
+            RelayerEventData::EventLogResponseFromGwL2 { .. } => 3,
             RelayerEventData::DecryptionResponseRcvdFromGwL2 { .. } => 4,
             RelayerEventData::DecryptResponseSentToHostL1 { .. } => 5,
             RelayerEventData::DecryptionFailed { .. } => 6,
@@ -115,13 +116,13 @@ pub enum RelayerEventData {
     // data store of the handler. if not, drops the request (not meant for this
     // relayer instance). if found, creates the next event with the original
     // orchestrator request id retreived from contextual data store.
-    EventLogFromGwL2 {
+    EventLogResponseFromGwL2 {
         // For gateway l2 handler
         log: Log,
     },
     DecryptionResponseRcvdFromGwL2 {
         // For ethereum handler
-        decrypted_value: DecryptedValue,
+        public_decryption_response: PublicDecryptionResponse,
     },
     // This event data could be used to update the dashboard.
     DecryptResponseSentToHostL1,
@@ -141,7 +142,7 @@ impl AsRef<str> for RelayerEventData {
             RelayerEventData::EventLogFromHostL1 { .. } => "EventLogFromHostL1",
             RelayerEventData::DecryptRequestRcvd { .. } => "DecryptRequestRcvd",
             RelayerEventData::DecryptionRequestSentToGwL2 { .. } => "DecryptionRequestSentToGwL2",
-            RelayerEventData::EventLogFromGwL2 { .. } => "EventLogFromGwL2",
+            RelayerEventData::EventLogResponseFromGwL2 { .. } => "EventLogResponseFromGwL2",
             RelayerEventData::DecryptionResponseRcvdFromGwL2 { .. } => {
                 "DecryptionResponseRcvdFromGwL2"
             }
@@ -225,8 +226,6 @@ impl InputProofResponse {
         }
     }
 }
-
-
 
 impl InputEventData {
     pub fn event_name(&self) -> &'static str {
