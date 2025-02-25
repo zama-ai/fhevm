@@ -677,24 +677,24 @@ impl SupportedFheOperations {
             | SupportedFheOperations::FheRotr
             | SupportedFheOperations::FheEq
             | SupportedFheOperations::FheNe
-            | SupportedFheOperations::FheGe
+            | SupportedFheOperations::FheNot
+            | SupportedFheOperations::FheRand
+            | SupportedFheOperations::FheRandBounded
+            | SupportedFheOperations::FheIfThenElse
+            | SupportedFheOperations::FheTrivialEncrypt
+            | SupportedFheOperations::FheCast => true,
+            SupportedFheOperations::FheGe
             | SupportedFheOperations::FheGt
             | SupportedFheOperations::FheLe
             | SupportedFheOperations::FheLt
             | SupportedFheOperations::FheMin
             | SupportedFheOperations::FheMax
-            | SupportedFheOperations::FheNot
             | SupportedFheOperations::FheNeg
-            | SupportedFheOperations::FheIfThenElse
-            | SupportedFheOperations::FheTrivialEncrypt
-            | SupportedFheOperations::FheCast => true,
-            SupportedFheOperations::FheAdd
+            | SupportedFheOperations::FheAdd
             | SupportedFheOperations::FheSub
             | SupportedFheOperations::FheMul
             | SupportedFheOperations::FheDiv
             | SupportedFheOperations::FheRem
-            | SupportedFheOperations::FheRand
-            | SupportedFheOperations::FheRandBounded
             | SupportedFheOperations::FheGetInputCiphertext => false,
         }
     }
