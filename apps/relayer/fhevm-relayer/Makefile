@@ -69,6 +69,11 @@ start-fhevm-relayer:
 	@echo "$(GREEN)Starting HTTPZ event listener...$(RESET)"
 	@cargo run --bin fhevm-relayer
 
+# Start kms connector mock
+start-kms-connector:
+	@echo "$(GREEN)Starting HTTPZ event listener...$(RESET)"
+	@cargo run --bin kms-connector
+
 # Run decrypt tests
 run-test-decrypt:
 	@echo "$(GREEN)Running decrypt tests...$(RESET)"
@@ -132,6 +137,7 @@ help:
 	@echo '  ${YELLOW}make deploy-gateway-smart-contracts${RESET} - Deploy Gateway smart contracts'
 	@echo '  ${YELLOW}make config-fhevm-relayer${RESET}        - Configure HTTPZ event listener'
 	@echo '  ${YELLOW}make start-fhevm-relayer${RESET}        - Start HTTPZ event listener'
+	@echo '  ${YELLOW}make start-kms-connector${RESET}        - Start kms connector  event'
 	@echo '  ${YELLOW}make run-test-decrypt${RESET}            - Run decryption tests'
 	@echo '  ${YELLOW}make run-test-erc20${RESET}            - Run erc20 tests'
 	@echo '  ${YELLOW}make run-test-input-proof${RESET}            - Run input proof tests'
@@ -143,9 +149,9 @@ help:
 	@echo '  4. ${WHITE}make deploy-httpz-smart-contracts${RESET} - Terminal 3'
 	@echo '  5. ${WHITE}make deploy-gateway-smart-contracts${RESET} - Terminal 3'
 	@echo '  6. ${WHITE}make config-fhevm-relayer${RESET}        - Terminal 3'
-	@echo '  7. ${WHITE}make start-fhevm-relayer${RESET}        - Terminal 3'
-	@echo '  8. ${WHITE}make run-test-decrypt${RESET}            - Terminal 4'
-	@echo '  9. ${WHITE}make run-test-erc20${RESET}            - Terminal 4'
-	@echo '  10.${WHITE}make run-test-input-proof${RESET}            - Run input proof tests'
-
+	@echo '  7. ${WHITE}make start-kms-connector${RESET}        - Terminal 4'
+	@echo '  7. ${WHITE}make start-fhevm-relayer${RESET}        - Terminal 5'
+	@echo '  8. ${WHITE}make run-test-decrypt${RESET}            - Terminal 6'
+	@echo '  9. ${WHITE}make run-test-erc20${RESET}            - Terminal 6'
+	@echo '  10.${WHITE}make run-test-input-proof${RESET}        - Terminal 6'
 	@echo ''
