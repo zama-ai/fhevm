@@ -39,3 +39,12 @@ pub enum ExecutionError {
     #[error("Invalid auxiliary data {0}")]
     InvalidAuxData(String),
 }
+
+#[derive(Default)]
+pub struct Config {
+    pub database_url: String,
+    pub listen_database_channel: String,
+    pub notify_database_channel: String,
+    pub pg_pool_connections: u32,
+    pub pg_polling_interval: u32,
+}

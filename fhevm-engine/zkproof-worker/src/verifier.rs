@@ -13,7 +13,7 @@ use std::num::NonZero;
 use std::str::FromStr;
 use tokio::sync::RwLock;
 
-use crate::{auxiliary, ExecutionError};
+use crate::{auxiliary, Config, ExecutionError};
 use anyhow::Result;
 
 use std::sync::Arc;
@@ -30,16 +30,10 @@ pub(crate) struct Ciphertext {
     compressed: Vec<u8>,
 }
 
-#[derive(Default)]
-pub struct Config {
-    pub database_url: String,
-    pub listen_database_channel: String,
-}
-
 /// Executes the main loop for handling verify_proofs requests inserted in the database
 pub async fn execute_verify_proofs_loop(conf: &Config) -> Result<(), ExecutionError> {
     let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(10)
+        .max_connections(conf.pg_pool_connections)
         .connect(&conf.database_url)
         .await?;
 
@@ -54,15 +48,21 @@ pub async fn execute_verify_proofs_loop(conf: &Config) -> Result<(), ExecutionEr
 
     loop {
         if let Err(e) = execute_verify_proof_routine(&pool, &tenant_key_cache).await {
-            debug!(target: "worker", "Error executing verify_proof_routine: {:?}", e);
+            debug!(target: "zkpok", "Error executing verify_proof_routine: {:?}", e);
+        }
+
+        let count = get_remaining_tasks(&pool).await?;
+        if count > 0 {
+            info!(target: "zkpok", {count}, "ZkPok tasks available");
+            continue;
         }
 
         select! {
             _ = listener.try_recv() => {
-                info!(target: "worker", "Received notification");
+                info!(target: "zkpok", "Received notification");
             },
-            _ = tokio::time::sleep(Duration::from_secs(10)) => {
-                debug!(target: "worker", "Polling timeout, rechecking for tasks");
+            _ = tokio::time::sleep(Duration::from_secs(conf.pg_polling_interval as u64)) => {
+                debug!(target: "zkpok", "Polling timeout, rechecking for tasks");
             }
         }
     }
@@ -75,7 +75,7 @@ async fn execute_verify_proof_routine(
 ) -> Result<(), ExecutionError> {
     let mut txn: sqlx::Transaction<'_, sqlx::Postgres> = pool.begin().await?;
     if let Ok(row) = sqlx::query(
-        "SELECT zk_proof_id, input, tenant_id, contract_address, user_address
+        "SELECT zk_proof_id, input, chain_id, contract_address, user_address
             FROM verify_proofs
             WHERE verified IS NULL
             ORDER BY zk_proof_id ASC
@@ -85,14 +85,21 @@ async fn execute_verify_proof_routine(
     .await
     {
         let request_id: i64 = row.get("zk_proof_id");
-        info!(message = "Processing proof", request_id);
         let input: Vec<u8> = row.get("input");
-        let tenant_id: i32 = row.get("tenant_id");
+        let chain_id: i32 = row.get("chain_id");
         let contract_address = row.get("contract_address");
         let user_address = row.get("user_address");
 
-        // TODO: fetch tenant keys by tenant id
-        let keys = tenant_keys::fetch_tenant_server_key(tenant_id, pool, tenant_key_cache)
+        info!(
+            message = "Process zk-verify request",
+            request_id,
+            chain_id,
+            user_address,
+            contract_address,
+            input_len = format!("{}", input.len()),
+        );
+
+        let keys = tenant_keys::fetch_tenant_server_key(chain_id, pool, tenant_key_cache, false)
             .await
             .map_err(|err| ExecutionError::ServerKeysNotFound(err.to_string()))?;
 
@@ -137,6 +144,7 @@ async fn execute_verify_proof_routine(
         .await?;
 
         // Notify verify_proof_responses
+        // TODO: CLI param
         sqlx::query("SELECT pg_notify($1, '')")
             .bind("verify_proof_responses")
             .execute(&mut *txn)
@@ -223,4 +231,26 @@ fn ciphertext_handle(
     handle[31] = current_ciphertext_version() as u8;
 
     Ciphertext { handle, compressed }
+}
+
+/// Returns the number of remaining tasks in the database.
+async fn get_remaining_tasks(pool: &PgPool) -> Result<i64, ExecutionError> {
+    let row = sqlx::query(
+        "
+        SELECT COUNT(*)
+        FROM (
+            SELECT 1
+            FROM verify_proofs
+            WHERE verified IS NULL
+            ORDER BY zk_proof_id ASC
+            FOR UPDATE SKIP LOCKED
+        ) AS unlocked_rows;
+        ",
+    )
+    .fetch_one(pool)
+    .await?;
+
+    let count: i64 = row.get("count");
+
+    Ok(count)
 }

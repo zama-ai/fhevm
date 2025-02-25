@@ -12,9 +12,12 @@ pub(crate) async fn setup() -> anyhow::Result<(sqlx::PgPool, DBInstance)> {
         .await
         .expect("valid db instance");
 
-    let conf = crate::verifier::Config {
+    let conf = crate::Config {
         database_url: test_instance.db_url().to_owned(),
         listen_database_channel: "fhevm".to_string(),
+        notify_database_channel: "notify".to_string(),
+        pg_pool_connections: 10,
+        pg_polling_interval: 60,
     };
 
     let pool = sqlx::postgres::PgPoolOptions::new()
@@ -50,13 +53,14 @@ pub(crate) async fn is_valid(pool: &sqlx::PgPool, zk_proof_id: i64) -> Result<bo
 }
 
 pub(crate) async fn generate_zk_pok(pool: &sqlx::PgPool, aux_data: &[u8]) -> Vec<u8> {
-    let keys: Vec<tenant_keys::TfheTenantKeys> = tenant_keys::query_tenant_keys(vec![1], pool)
-        .await
-        .map_err(|e| {
-            let e: Box<dyn std::error::Error> = e;
-            e
-        })
-        .unwrap();
+    let keys: Vec<tenant_keys::TfheTenantKeys> =
+        tenant_keys::query_tenant_keys(vec![1], pool, true)
+            .await
+            .map_err(|e| {
+                let e: Box<dyn std::error::Error> = e;
+                e
+            })
+            .unwrap();
     let keys = &keys[0];
 
     println!("Building list");
@@ -84,14 +88,12 @@ pub(crate) async fn insert_proof(
     zk_pok: &[u8],
     aux: &ZkData,
 ) -> Result<i64, sqlx::Error> {
-    let tenant_id = 1;
     //  Insert ZkPok into database
     sqlx::query(
-            "INSERT INTO verify_proofs (zk_proof_id, input, tenant_id, chain_id, contract_address, user_address, verified)
-             VALUES ($1, $2, $3, $4, $5, $6, NULL)" 
+            "INSERT INTO verify_proofs (zk_proof_id, input, chain_id, contract_address, user_address, verified)
+             VALUES ($1, $2, $3, $4, $5, NULL )" 
         ).bind(request_id)
-        .bind(zk_pok)
-        .bind(tenant_id)
+        .bind(zk_pok) 
         .bind(aux.chain_id)
         .bind(aux.contract_address.clone())
         .bind(aux.user_address.clone())
