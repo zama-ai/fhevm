@@ -30,3 +30,4 @@ uuid = { version = "1", features = ["serde", "v1", "v4"] }
 reqwest = "0.12.12"
 axum = "0.2.5"
 serde_json = "1.0.68"
+rusqlite = "0.33.0"

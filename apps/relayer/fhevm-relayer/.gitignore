@@ -29,3 +29,4 @@ Advisory-db*
 # Test
 .anvil1.pid
 .anvil2.pid
+hardhat/contracts/sql.db

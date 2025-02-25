@@ -13,9 +13,10 @@ YELLOW := $(shell tput -Txterm setaf 3)
 WHITE  := $(shell tput -Txterm setaf 7)
 RESET  := $(shell tput -Txterm sgr0)
 
-# Setup target for initial configuration
+# Setup target at each start
 setup-mock:
 	@echo "$(GREEN)Setting up mock environment...$(RESET)"
+	@cd hardhat/contracts && rm -f sql.db
 	@cd hardhat/contracts && npm install
 	@cd hardhat/contracts && cp .env.example .env
 	@echo "$(GREEN)Setup completed!$(RESET)"

@@ -6,7 +6,8 @@ use crate::ethereum_host_l1_handlers::DecryptionRequestData;
 use alloy::primitives::{keccak256, Address, Bytes, Uint, U256};
 use alloy::signers::SignerSync;
 use serde::Serialize;
-use tracing::{debug, info};
+use tracing::{debug, error, info};
+use rusqlite::{Connection, Result};
 
 use alloy::{
     sol,
@@ -266,10 +267,15 @@ impl ComputeCalldata {
         results.push(DynSolValue::Uint(U256::from(42), 256)); // requestID placeholder
 
         for ciphertext_handle in req.ciphertextHandles.clone() {
-            let handle: [u8; 32] = ciphertext_handle.to_be_bytes();
+            let handle: [u8; 32] = ciphertext_handle.to_le_bytes();
 
             // Using a hardcoded value for now
-            let clear_text = "18446744073709551600".to_string();
+            let mut clear_text = String::new();
+
+            match get_clear_text("hardhat/contracts/sql.db", &handle).unwrap() {
+                Some(text) => clear_text = text,
+                None => error!("No value found for this handle"),
+            }
 
             match handle[30] {
                 9 => {
@@ -371,5 +377,25 @@ impl ComputeCalldata {
         let calldata_bytes = publicDecryptionResponseCall::abi_encode(&res_data_gateway);
 
         Ok(alloy::primitives::Bytes::from(calldata_bytes))
+    }
+}
+
+fn get_clear_text(db_path: &str, handle: &[u8]) -> Result<Option<String>> {
+    let conn = Connection::open(db_path)?;
+    
+    let hex_string = format!("0x{}", hex::encode(handle));
+    let mut stmt = conn.prepare("SELECT clearText FROM ciphertexts WHERE handle = ?")?;
+    let result = stmt.query_row([hex_string], |row| row.get::<_, String>(0));
+
+    match result {
+        Ok(text) => Ok(Some(text)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => {
+            println!("No rows found for this handle");
+            Ok(None)
+        },
+        Err(e) => {
+            println!("Error occurred: {}", e);
+            Err(e)
+        }
     }
 }

@@ -16,8 +16,8 @@ let lastCounterRand = 0;
 let counterRand = 0;
 let chainId: number;
 
-//const db = new Database('./sql.db'); // on-disk db for debugging
-const db = new Database(':memory:');
+const db = new Database('./sql.db'); // on-disk db for debugging
+//const db = new Database(':memory:');
 
 export function insertSQL(handle: string, clearText: BigInt, replace: boolean = false) {
   if (replace) {
