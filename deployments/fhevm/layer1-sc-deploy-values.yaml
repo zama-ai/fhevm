@@ -1,0 +1,55 @@
+scDeploy:
+  enabled: true
+  image:
+    name: ghcr.io/zama-ai/fhevm-smart-contracts-dev
+    tag: 82fb642
+  configmapName: "layer1-sc-addresses"
+  env:
+    - name: MNEMONIC
+      value: "adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer"
+    - name: CHAIN_ID_GATEWAY
+      value: "54321"
+    - name: PRIVATE_KEY_FHEVM_DEPLOYER
+      value: "2d24c36c57e6bfbf90c43173481cc00edcbd1a3922de5e5fdb9aba5fc4e0fafd" # accounts[9]
+    - name: PRIVATE_KEY_DECRYPTION_ORACLE_RELAYER
+      value: "527bd7b9f1150dc8a0936e8b5a3ba6a62bbdfd7ef0bcecbbf4d140f6c5cb5d85" # accounts[10]
+    - name: NUM_KMS_SIGNERS
+      value: "1"
+    - name: PRIVATE_KEY_KMS_SIGNER_0
+      value: "30d45b1c5a771e20d0ec15097c3b6ac7153bc1992bc78c42af37725dd93f096a" # accounts[11]
+    - name: ADDRESS_KMS_SIGNER_0
+      value: "0x6518D50aDc9036Df37119eA465a8159E34417E2E"
+    - name: PRIVATE_KEY_KMS_SIGNER_1  
+      value: "52d5c715e2b9e05f7ddaf4d390adc7b5c31829d0a015d7d0eb35e4679a4a30a3" # accounts[12]
+    - name: ADDRESS_KMS_SIGNER_1
+      value: "0xa5eE8292dA52d8234248709F3E217ffEBA5E8312"
+    - name: PRIVATE_KEY_KMS_SIGNER_2
+      value: "8f26a6ed27d0d6239f6b984dceeb3480f8c224a398de4c84826ba180c809c45a" # accounts[13]
+    - name: ADDRESS_KMS_SIGNER_2  
+      value: "0xCFbF539CB91c92ace0343c5B0487149Ad0b82078"
+    - name: PRIVATE_KEY_KMS_SIGNER_3
+      value: "30d2f81c5a1d20660d2941490d733116e2628f0067085f267c76d3597f468f45" # accounts[14]
+    - name: ADDRESS_KMS_SIGNER_3
+      value: "0xA951F315d5FD35Cac111dFB5250DF231FB8eF905"
+    - name: PRIVATE_KEY_COPROCESSOR_ACCOUNT       
+      value: "5e114f8857db80ce527af9f3b215d61f32882efc5d30c6d9c7de7a17cef560cd" # accounts[8]
+    - name: ADDRESS_COPROCESSOR_ACCOUNT
+      value: "0x466f26442DD182C9A1b018Cd06671F9791DdE8Ef" # accounts[8]
+    - name: IS_COPROCESSOR
+      value: "true"
+    - name: SEPOLIA_RPC_URL      
+      value: "https://sepolia.infura.io/v3/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    - name: STAGING_RPC_URL
+      value: "http://layer1-anvil-node:8545"
+
+  deployCommands:
+    -  "cd /app && source .env"
+    - "./launch-fhevm-staging.sh"
+  postDeployCommands:
+    - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"acl.address\" \"$(cat /app/addresses/.env.acl | cut -d'=' -f 2)\""
+    - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"coprocessor.address\" \"$(cat /app/addresses/.env.coprocessor | cut -d'=' -f 2)\""
+    - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"decryptionoracle.address\" \"$(cat /app/addresses/.env.decryptionoracle | cut -d'=' -f 2)\""
+    - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"exec.address\" \"$(cat /app/addresses/.env.exec | cut -d'=' -f 2)\""
+    - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"fhegaslimit.address\" \"$(cat /app/addresses/.env.fhegaslimit | cut -d'=' -f 2)\""
+    - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"inputverifier.address\" \"$(cat /app/addresses/.env.inputverifier | cut -d'=' -f 2)\""
+    - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"kmsverifier.address\" \"$(cat /app/addresses/.env.kmsverifier | cut -d'=' -f 2)\""

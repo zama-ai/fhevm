@@ -1,0 +1,17 @@
+nameOverride:
+
+image:
+  name: ghcr.io/foundry-rs/foundry
+  tag: stable
+
+network:
+  blockTime: 0.1
+  host: 0.0.0.0
+  chainId: 12345
+  accounts: 15
+  mnemonic: "adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer"
+
+port: 8545
+
+storage:
+  size: 5Gi

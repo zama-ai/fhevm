@@ -1,0 +1,62 @@
+{{- if .Values.scDeploy.enabled -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  labels:
+    app: fhevm-sc-deploy
+    app.kubernetes.io/name: {{ .Release.Name }}-deploy
+  name: {{ .Release.Name }}-deploy
+spec:
+  template:
+    spec:
+      serviceAccountName: {{ .Release.Name }}-config-writer
+      containers:
+      - name: deploy
+        image: {{ .Values.scDeploy.image.name }}:{{ .Values.scDeploy.image.tag }}
+        command: ["/app/deploy-contracts.sh"]
+        volumeMounts:
+          - mountPath: /app/.env
+            subPath: .env
+            name: config
+          - mountPath: /app/deploy-contracts.sh
+            subPath: deploy-contracts.sh
+            name: config
+      volumes:
+      - name: config
+        configMap:
+          name: {{ .Release.Name }}-config
+          defaultMode: 0755
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: registry-credentials
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ .Release.Name }}-config-writer
+  namespace: {{ .Release.Namespace }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "watch", "list", "create", "patch"]
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ .Release.Name }}-config-writer
+  namespace: {{ .Release.Namespace }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}-config-writer
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: {{ .Release.Name }}-config-writer
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Release.Name }}-config-writer
+  namespace: {{ .Release.Namespace }}
+{{ end }}
