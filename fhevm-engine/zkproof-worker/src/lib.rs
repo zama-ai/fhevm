@@ -40,7 +40,7 @@ pub enum ExecutionError {
     InvalidAuxData(String),
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct Config {
     pub database_url: String,
     pub listen_database_channel: String,

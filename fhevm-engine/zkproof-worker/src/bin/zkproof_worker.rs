@@ -34,10 +34,9 @@ async fn main() {
     let args = parse_args();
     tracing_subscriber::fmt().json().with_level(true).init(); // TODO: to file
 
-    let database_url = args
-        .database_url
-        .clone()
-        .unwrap_or_else(|| std::env::var("DATABASE_URL").expect("DATABASE_URL is undefined"));
+    let database_url = args.database_url.clone().unwrap_or_else(|| {
+        std::env::var("DATABASE_URL").expect("DATABASE_URL is undefined")
+    });
 
     let conf = zkproof_worker::Config {
         database_url,
@@ -48,7 +47,9 @@ async fn main() {
     };
 
     println!("Starting zkProof worker...");
-    if let Err(err) = zkproof_worker::verifier::execute_verify_proofs_loop(&conf).await {
+    if let Err(err) =
+        zkproof_worker::verifier::execute_verify_proofs_loop(&conf).await
+    {
         error!("Worker failed: {:?}", err);
     }
 }

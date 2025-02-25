@@ -41,7 +41,10 @@ pub(crate) async fn setup() -> anyhow::Result<(sqlx::PgPool, DBInstance)> {
     Ok((pool, test_instance))
 }
 
-pub(crate) async fn is_valid(pool: &sqlx::PgPool, zk_proof_id: i64) -> Result<bool, sqlx::Error> {
+pub(crate) async fn is_valid(
+    pool: &sqlx::PgPool,
+    zk_proof_id: i64,
+) -> Result<bool, sqlx::Error> {
     let result = sqlx::query!(
         "SELECT verified FROM verify_proofs WHERE zk_proof_id = $1",
         zk_proof_id
@@ -52,7 +55,10 @@ pub(crate) async fn is_valid(pool: &sqlx::PgPool, zk_proof_id: i64) -> Result<bo
     Ok(result.verified.unwrap_or(false))
 }
 
-pub(crate) async fn generate_zk_pok(pool: &sqlx::PgPool, aux_data: &[u8]) -> Vec<u8> {
+pub(crate) async fn generate_zk_pok(
+    pool: &sqlx::PgPool,
+    aux_data: &[u8],
+) -> Vec<u8> {
     let keys: Vec<tenant_keys::TfheTenantKeys> =
         tenant_keys::query_tenant_keys(vec![1], pool, true)
             .await
@@ -114,7 +120,8 @@ pub(crate) async fn insert_proof(
 
 pub(crate) fn aux_fixture(acl_contract_address: String) -> (ZkData, [u8; 92]) {
     // Define  20-byte addresses
-    let contract_address = "0x1111111111111111111111111111111111111111".to_string();
+    let contract_address =
+        "0x1111111111111111111111111111111111111111".to_string();
     let user_address = "0x2222222222222222222222222222222222222222".to_string();
     let zk_data = ZkData {
         contract_address,

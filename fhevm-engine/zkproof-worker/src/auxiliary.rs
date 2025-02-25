@@ -17,13 +17,18 @@ impl ZkData {
     /// `contract_addr || user_addr  || acl_contract_addr || chain_id` i.e. 92 bytes since chain ID is encoded as a 32 byte big endian integer
     pub fn assemble(&self) -> anyhow::Result<[u8; SIZE]> {
         let contract_bytes =
-            alloy_primitives::Address::from_str(&self.contract_address)?.into_array();
-        let user_bytes = alloy_primitives::Address::from_str(&self.user_address)?.into_array();
+            alloy_primitives::Address::from_str(&self.contract_address)?
+                .into_array();
+        let user_bytes =
+            alloy_primitives::Address::from_str(&self.user_address)?
+                .into_array();
         let acl_bytes =
-            alloy_primitives::Address::from_str(&self.acl_contract_address)?.into_array();
-        let chain_id_bytes: [u8; 32] = alloy_primitives::U256::from(self.chain_id)
-            .to_owned()
-            .to_be_bytes();
+            alloy_primitives::Address::from_str(&self.acl_contract_address)?
+                .into_array();
+        let chain_id_bytes: [u8; 32] =
+            alloy_primitives::U256::from(self.chain_id)
+                .to_owned()
+                .to_be_bytes();
 
         // Copy contract address into the first 20 bytes
         let front: Vec<u8> = [contract_bytes, user_bytes, acl_bytes].concat();
@@ -42,9 +47,12 @@ mod tests {
     #[test]
     fn test_assemble_valid_addresses() {
         // Define  20-byte addresses
-        let contract_address = "0x1111111111111111111111111111111111111111".to_string();
-        let user_address = "0x2222222222222222222222222222222222222222".to_string();
-        let acl_contract_address = "0x3333333333333333333333333333333333333333".to_string();
+        let contract_address =
+            "0x1111111111111111111111111111111111111111".to_string();
+        let user_address =
+            "0x2222222222222222222222222222222222222222".to_string();
+        let acl_contract_address =
+            "0x3333333333333333333333333333333333333333".to_string();
         let chain_id = 1;
 
         let zk_data = ZkData {
@@ -54,7 +62,8 @@ mod tests {
             chain_id,
         };
 
-        let assembled_hex = hex::encode(zk_data.assemble().expect("Failed to assemble ZkData"));
+        let assembled_hex =
+            hex::encode(zk_data.assemble().expect("Failed to assemble ZkData"));
         // concatenate the addresses
         let expected_hex = contract_address[2..].to_string()
             + &user_address[2..]

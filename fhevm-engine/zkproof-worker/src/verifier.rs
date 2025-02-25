@@ -1,7 +1,9 @@
 use alloy_primitives::Address;
 use fhevm_engine_common::tenant_keys::TfheTenantKeys;
 use fhevm_engine_common::tenant_keys::{self, FetchTenantKeyResult};
-use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, extract_ct_list};
+use fhevm_engine_common::tfhe_ops::{
+    current_ciphertext_version, extract_ct_list,
+};
 use fhevm_engine_common::types::SupportedFheCiphertexts;
 
 use fhevm_engine_common::utils::safe_deserialize;
@@ -22,46 +24,52 @@ use tfhe::set_server_key;
 use tokio::{select, time::Duration};
 use tracing::{debug, error, info};
 
-pub const SAFE_SER_SIZE_LIMIT: u64 = 1024 * 1024 * 1024 * 2;
 const MAX_CACHED_TENANT_KEYS: usize = 100;
 
 pub(crate) struct Ciphertext {
     handle: Vec<u8>,
-    compressed: Vec<u8>,
+    _compressed: Vec<u8>,
 }
 
 /// Executes the main loop for handling verify_proofs requests inserted in the database
-pub async fn execute_verify_proofs_loop(conf: &Config) -> Result<(), ExecutionError> {
+pub async fn execute_verify_proofs_loop(
+    conf: &Config,
+) -> Result<(), ExecutionError> {
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(conf.pg_pool_connections)
         .connect(&conf.database_url)
         .await?;
 
-    info!("Starting verify_proofs loop");
+    info!("Starting with config {:?}", conf);
 
     let mut listener = PgListener::connect_with(&pool).await?;
     listener.listen(&conf.listen_database_channel).await?;
+
+    let idle_poll_interval =
+        Duration::from_secs(conf.pg_polling_interval as u64);
 
     let tenant_key_cache = Arc::new(RwLock::new(LruCache::new(
         NonZero::new(MAX_CACHED_TENANT_KEYS).unwrap(),
     )));
 
     loop {
-        if let Err(e) = execute_verify_proof_routine(&pool, &tenant_key_cache).await {
-            debug!(target: "zkpok", "Error executing verify_proof_routine: {:?}", e);
-        }
-
-        let count = get_remaining_tasks(&pool).await?;
-        if count > 0 {
-            info!(target: "zkpok", {count}, "ZkPok tasks available");
-            continue;
+        if let Err(e) =
+            execute_verify_proof_routine(&pool, &tenant_key_cache, conf).await
+        {
+            debug!(target: "zkpok", "Execution err: {}", e);
+        } else {
+            let count = get_remaining_tasks(&pool).await?;
+            if count > 0 {
+                info!(target: "zkpok", {count}, "ZkPok tasks available");
+                continue;
+            }
         }
 
         select! {
             _ = listener.try_recv() => {
                 info!(target: "zkpok", "Received notification");
             },
-            _ = tokio::time::sleep(Duration::from_secs(conf.pg_polling_interval as u64)) => {
+            _ = tokio::time::sleep(idle_poll_interval) => {
                 debug!(target: "zkpok", "Polling timeout, rechecking for tasks");
             }
         }
@@ -72,6 +80,7 @@ pub async fn execute_verify_proofs_loop(conf: &Config) -> Result<(), ExecutionEr
 async fn execute_verify_proof_routine(
     pool: &PgPool,
     tenant_key_cache: &Arc<RwLock<LruCache<i32, TfheTenantKeys>>>,
+    conf: &Config,
 ) -> Result<(), ExecutionError> {
     let mut txn: sqlx::Transaction<'_, sqlx::Postgres> = pool.begin().await?;
     if let Ok(row) = sqlx::query(
@@ -99,9 +108,14 @@ async fn execute_verify_proof_routine(
             input_len = format!("{}", input.len()),
         );
 
-        let keys = tenant_keys::fetch_tenant_server_key(chain_id, pool, tenant_key_cache, false)
-            .await
-            .map_err(|err| ExecutionError::ServerKeysNotFound(err.to_string()))?;
+        let keys = tenant_keys::fetch_tenant_server_key(
+            chain_id,
+            pool,
+            tenant_key_cache,
+            false,
+        )
+        .await
+        .map_err(|err| ExecutionError::ServerKeysNotFound(err.to_string()))?;
 
         let aux_data = auxiliary::ZkData {
             contract_address,
@@ -112,16 +126,18 @@ async fn execute_verify_proof_routine(
 
         let mut verified = false;
         let mut handles_bytes = vec![];
-        match verify_proof_and_sign(request_id, &keys, &aux_data, &input).await {
+        match verify_proof(request_id, &keys, &aux_data, &input).await {
             Ok(handles) => {
-                handles_bytes = handles.iter().fold(Vec::new(), |mut acc, ct| {
-                    acc.extend_from_slice(ct.handle.as_ref());
-                    acc
-                });
-                verified = true;
-                // TODO: Insert ciphertexts into the database
+                info!(message = "Proof verification successful", request_id);
 
-                info!(message = "Check valid proof", request_id);
+                handles_bytes =
+                    handles.iter().fold(Vec::new(), |mut acc, ct| {
+                        acc.extend_from_slice(ct.handle.as_ref());
+                        acc
+                    });
+                verified = true;
+
+                insert_ciphertexts(pool).await?;
             }
             Err(err) => {
                 error!(
@@ -132,7 +148,7 @@ async fn execute_verify_proof_routine(
             }
         }
 
-        // Mark as verified and set handles
+        // Mark as verified=true/false and set handles, if computed
         sqlx::query(
             "UPDATE verify_proofs SET handles = $1, verified = $2, verified_at = NOW()
             WHERE zk_proof_id = $3",
@@ -143,10 +159,9 @@ async fn execute_verify_proof_routine(
         .execute(&mut *txn)
         .await?;
 
-        // Notify verify_proof_responses
-        // TODO: CLI param
+        // Notify
         sqlx::query("SELECT pg_notify($1, '')")
-            .bind("verify_proof_responses")
+            .bind(conf.notify_database_channel.clone())
             .execute(&mut *txn)
             .await?;
 
@@ -156,7 +171,7 @@ async fn execute_verify_proof_routine(
     Ok(())
 }
 
-pub(crate) async fn verify_proof_and_sign(
+pub(crate) async fn verify_proof(
     request_id: i64,
     keys: &FetchTenantKeyResult,
     aux_data: &auxiliary::ZkData,
@@ -165,7 +180,9 @@ pub(crate) async fn verify_proof_and_sign(
     set_server_key(keys.server_key.clone());
 
     let cts: Vec<SupportedFheCiphertexts> =
-        try_verify_and_expand_ciphertext_list(request_id, raw_ct, keys, aux_data)?;
+        try_verify_and_expand_ciphertext_list(
+            request_id, raw_ct, keys, aux_data,
+        )?;
 
     let mut h = Keccak256::new();
     h.update(raw_ct);
@@ -208,9 +225,10 @@ fn ciphertext_handle(
     aux_data: &auxiliary::ZkData,
 ) -> Ciphertext {
     let (serialized_type, compressed) = the_ct.compress();
-    let chain_id_bytes: [u8; 32] = alloy_primitives::U256::from(aux_data.chain_id)
-        .to_owned()
-        .to_be_bytes();
+    let chain_id_bytes: [u8; 32] =
+        alloy_primitives::U256::from(aux_data.chain_id)
+            .to_owned()
+            .to_be_bytes();
 
     let mut handle_hash = Keccak256::new();
     handle_hash.update(blob_hash);
@@ -230,7 +248,10 @@ fn ciphertext_handle(
     handle[30] = serialized_type as u8;
     handle[31] = current_ciphertext_version() as u8;
 
-    Ciphertext { handle, compressed }
+    Ciphertext {
+        handle,
+        _compressed: compressed,
+    }
 }
 
 /// Returns the number of remaining tasks in the database.
@@ -253,4 +274,9 @@ async fn get_remaining_tasks(pool: &PgPool) -> Result<i64, ExecutionError> {
     let count: i64 = row.get("count");
 
     Ok(count)
+}
+
+async fn insert_ciphertexts(_pool: &PgPool) -> Result<(), ExecutionError> {
+    // TODO: Issue  #338
+    Ok(())
 }
