@@ -1,14 +1,18 @@
 use crate::{
     blockchain::ethereum::{bindings::DecyptionManager, ComputeCalldata},
-    core::errors::EventProcessingError,
-    core::event::{DecryptEventData, RelayerEvent, RelayerEventData},
-    core::utils::{colorize_event_type, colorize_request_id},
+    config::settings::ContractConfig,
+    core::{
+        errors::EventProcessingError,
+        event::{DecryptEventData, RelayerEvent, RelayerEventData},
+        utils::{colorize_event_type, colorize_request_id},
+    },
     orchestrator::{
         traits::{EventDispatcher, EventHandler},
         TokioEventDispatcher,
     },
     transaction::{ReceiptProcessor, TransactionHelper, TransactionService, TxConfig},
 };
+use std::str::FromStr;
 
 use alloy::{
     primitives::{keccak256, Address, Uint, U256},
@@ -21,11 +25,6 @@ use std::sync::Arc;
 use tokio::task;
 use tracing::{error, info};
 use uuid::Uuid;
-
-const DECRYPTION_MANAGER_ADDRESS: Address = Address::new([
-    0x2f, 0xb4, 0x34, 0x10, 0x27, 0xeb, 0x1d, 0x2a, 0xd8, 0xb5, 0xd9, 0x70, 0x81, 0x87, 0xdf, 0x86,
-    0x33, 0xca, 0xfa, 0x92,
-]);
 
 struct DecryptionRequestProcessor {
     handler: Arc<ArbitrumGatewayL2Handler>,
@@ -44,6 +43,7 @@ pub struct ArbitrumGatewayL2Handler {
     dispatcher: Arc<TokioEventDispatcher<RelayerEvent>>,
     decryption_id_to_request_id: Arc<dashmap::DashMap<U256, Uuid>>,
     tx_helper: Arc<TransactionHelper>,
+    contracts: ContractConfig,
 }
 
 impl ArbitrumGatewayL2Handler {
@@ -51,11 +51,13 @@ impl ArbitrumGatewayL2Handler {
         dispatcher: Arc<TokioEventDispatcher<RelayerEvent>>,
         tx_service: Arc<TransactionService>,
         tx_config: TxConfig,
+        contracts: ContractConfig,
     ) -> Self {
         Self {
             dispatcher,
             tx_helper: Arc::new(TransactionHelper::new(tx_service, tx_config)),
             decryption_id_to_request_id: Arc::new(dashmap::DashMap::new()),
+            contracts,
         }
     }
 
@@ -303,10 +305,18 @@ impl ArbitrumGatewayL2Handler {
             handler: Arc::new(self.clone()),
         };
 
+        let decryption_manager_address =
+            Address::from_str(&self.contracts.decryption_manager_address).map_err(|_| {
+                EventProcessingError::ConfigError(
+                    crate::config::settings::AppConfigError::InvalidAddress(
+                        "contracts.decryption_manager_address".to_owned(),
+                    ),
+                )
+            })?;
         self.tx_helper
             .send_transaction(
                 "decryption_request",
-                DECRYPTION_MANAGER_ADDRESS,
+                decryption_manager_address,
                 || ComputeCalldata::decryption_req(handles.clone()),
                 &processor,
             )

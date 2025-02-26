@@ -1,14 +1,18 @@
 use crate::{
     blockchain::ethereum::{bindings::ZKPoKManager, ComputeCalldata},
-    core::errors::EventProcessingError,
-    core::event::{InputEventData, InputProofResponse, RelayerEvent, RelayerEventData},
-    core::utils::{colorize_event_type, colorize_request_id},
+    config::settings::ContractConfig,
+    core::{
+        errors::EventProcessingError,
+        event::{InputEventData, InputProofResponse, RelayerEvent, RelayerEventData},
+        utils::{colorize_event_type, colorize_request_id},
+    },
     orchestrator::{
         traits::{EventDispatcher, EventHandler},
         TokioEventDispatcher,
     },
     transaction::{ReceiptProcessor, TransactionHelper, TransactionService, TxConfig},
 };
+use std::str::FromStr;
 
 use alloy::{
     primitives::{keccak256, Address, Bytes, U256},
@@ -20,11 +24,6 @@ use async_trait::async_trait;
 use std::sync::Arc;
 use tracing::{debug, error, info};
 use uuid::Uuid;
-
-const ZKPOK_MANAGER_ADDRESS: Address = Address::new([
-    0x12, 0xB0, 0x64, 0xFB, 0x84, 0x5C, 0x1c, 0xc0, 0x5e, 0x94, 0x93, 0x85, 0x6a, 0x1D, 0x63, 0x7a,
-    0x73, 0xe9, 0x44, 0xbE,
-]);
 
 struct InputRequestProcessor {
     handler: Arc<ArbitrumGatewayL2InputHandler>,
@@ -43,6 +42,7 @@ pub struct ArbitrumGatewayL2InputHandler {
     dispatcher: Arc<TokioEventDispatcher<RelayerEvent>>,
     zkpok_id_to_request_id: Arc<dashmap::DashMap<U256, Uuid>>,
     tx_helper: Arc<TransactionHelper>,
+    contracts: ContractConfig,
 }
 
 impl ArbitrumGatewayL2InputHandler {
@@ -50,11 +50,13 @@ impl ArbitrumGatewayL2InputHandler {
         dispatcher: Arc<TokioEventDispatcher<RelayerEvent>>,
         tx_service: Arc<TransactionService>,
         tx_config: TxConfig,
+        contracts: ContractConfig,
     ) -> Self {
         Self {
             dispatcher,
             tx_helper: Arc::new(TransactionHelper::new(tx_service, tx_config)),
             zkpok_id_to_request_id: Arc::new(dashmap::DashMap::new()),
+            contracts,
         }
     }
 
@@ -239,10 +241,19 @@ impl ArbitrumGatewayL2InputHandler {
             handler: Arc::new(self.clone()),
         };
 
+        let zkpok_manager_address = Address::from_str(&self.contracts.zkpok_manager_address)
+            .map_err(|_| {
+                EventProcessingError::ConfigError(
+                    crate::config::settings::AppConfigError::InvalidAddress(
+                        "contracts.zkpok_manager_address".to_owned(),
+                    ),
+                )
+            })?;
+
         self.tx_helper
             .send_transaction(
                 "input_request",
-                ZKPOK_MANAGER_ADDRESS,
+                zkpok_manager_address,
                 || {
                     ComputeCalldata::verify_proof_req(
                         contract_chain_id,

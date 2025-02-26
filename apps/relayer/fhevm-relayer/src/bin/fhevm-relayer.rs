@@ -39,15 +39,13 @@ use tracing::info;
 use tracing_subscriber::{fmt::SubscriberBuilder, EnvFilter};
 
 use fhevm_relayer::{
-    blockchain::ethereum::ContractAndTopicsFilter,
-    blockchain::gateway::gateway_l2::GatewayL2,
-    blockchain::gateway::gateway_listener::event_listener_gateway,
-    blockchain::httpz::ethereum_listener::event_listener,
-    blockchain::httpz::host_l1::EthereumHostL1,
-    blockchain::ArbitrumGatewayL2Handler,
-    blockchain::ArbitrumGatewayL2InputHandler,
-    blockchain::EthereumHostL1Handler,
-    config::settings::{LogConfig, Settings},
+    blockchain::{
+        ethereum::ContractAndTopicsFilter,
+        gateway::{gateway_l2::GatewayL2, gateway_listener::event_listener_gateway},
+        httpz::{ethereum_listener::event_listener, host_l1::EthereumHostL1},
+        ArbitrumGatewayL2Handler, ArbitrumGatewayL2InputHandler, EthereumHostL1Handler,
+    },
+    config::settings::{ContractConfig, LogConfig, Settings},
     core::event::RelayerEvent,
     http::http_server::run_http_server,
     orchestrator::{
@@ -124,7 +122,8 @@ async fn main() -> eyre::Result<()> {
 
     info!(
         ?decryption_oracle_address,
-        ?tfhe_executor_address,
+        ?decryption_manager_address,
+        ?zkpok_manager_address,
         ?settings.networks.fhevm.ws_url,
         "Initialized contract addresses"
     );
@@ -151,6 +150,7 @@ async fn main() -> eyre::Result<()> {
             Arc::clone(&dispatcher),
             tx_service_rollup.clone(),
             tx_config.clone(),
+            ContractConfig::from(settings.contracts.clone()),
         ));
 
     // Register input event handlers
@@ -170,9 +170,13 @@ async fn main() -> eyre::Result<()> {
     // Event type: DecryptResponseSentToHostL1
     orchestrator.register_handler(5, Arc::clone(&host_l1_event_log_handler));
 
-    let gateway_l2_event_handler: Arc<dyn EventHandler<RelayerEvent>> = Arc::new(
-        ArbitrumGatewayL2Handler::new(Arc::clone(&dispatcher), tx_service_rollup, tx_config),
-    );
+    let gateway_l2_event_handler: Arc<dyn EventHandler<RelayerEvent>> =
+        Arc::new(ArbitrumGatewayL2Handler::new(
+            Arc::clone(&dispatcher),
+            tx_service_rollup,
+            tx_config,
+            ContractConfig::from(settings.contracts),
+        ));
 
     // Event type: DecryptRequestRcvd
     orchestrator.register_handler(1, Arc::clone(&gateway_l2_event_handler));
