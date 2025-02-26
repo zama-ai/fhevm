@@ -40,9 +40,9 @@ use tracing_subscriber::{fmt::SubscriberBuilder, EnvFilter};
 
 use fhevm_relayer::{
     blockchain::ethereum::ContractAndTopicsFilter,
-    blockchain::rollup::rollup_l2::RollupL2,
+    blockchain::gateway::gateway_l2::GatewayL2,
     config::settings::{ContractConfig, LogConfig, Settings},
-    gateway_processors_mock::event_listener_rollup,
+    gateway_processors_mock::event_listener_gateway,
     gateway_processors_mock::GatewayProcessorsEvent,
     gateway_processors_mock::GatewayProcessorsHandler,
     orchestrator::{
@@ -81,7 +81,7 @@ async fn main() -> eyre::Result<()> {
     // Prepare tx service for rollup
     let tx_service_rollup = TransactionService::new(
         &rollup_settings.http_url,
-        &settings.transaction.private_key_rollup_env,
+        &settings.transaction.private_key_gateway_env,
         rollup_settings.chain_id,
     )
     .await
@@ -132,7 +132,7 @@ async fn main() -> eyre::Result<()> {
     // === Create a subscription for events and spawn a listener to listen for events from the subcription.
 
     // === Initialize Rollup L2 adapter
-    let rollup_l2 = RollupL2::new(&rollup_settings.ws_url)
+    let rollup_l2 = GatewayL2::new(&rollup_settings.ws_url)
         .await
         .map_err(|e| eyre::eyre!("Failed to create event handler for Rollup L2: {}", e))?;
     let rollup_l2 = Arc::new(rollup_l2);
@@ -144,7 +144,7 @@ async fn main() -> eyre::Result<()> {
         vec![],
     );
     let subscription_rollup = rollup_l2.new_subscription(filter_rollup, None).await?;
-    tokio::spawn(event_listener_rollup(
+    tokio::spawn(event_listener_gateway(
         subscription_rollup,
         Arc::clone(&orchestrator),
     ));

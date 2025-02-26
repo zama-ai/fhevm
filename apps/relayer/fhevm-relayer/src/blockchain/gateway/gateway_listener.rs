@@ -19,7 +19,7 @@ const PROOF_VERIFICATION_RESPONSE_TOPIC: alloy::primitives::FixedBytes<32> =
 const DECRYPTION_RESPONSE_TOPIC: alloy::primitives::FixedBytes<32> =
     DecyptionManager::PublicDecryptionResponse::SIGNATURE_HASH;
 
-pub async fn event_listener_rollup(
+pub async fn event_listener_gateway(
     mut subscription: alloy::pubsub::SubscriptionStream<Log>,
     orchestrator: Arc<
         Orchestrator<

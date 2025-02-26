@@ -9,14 +9,14 @@ use alloy::{
 use std::sync::Arc;
 use tracing::{info, instrument};
 
-pub struct RollupL2 {
+pub struct GatewayL2 {
     provider: Arc<dyn Provider<PubSubFrontend> + Send + Sync>,
 }
 
-unsafe impl Send for RollupL2 {}
-unsafe impl Sync for RollupL2 {}
+unsafe impl Send for GatewayL2 {}
+unsafe impl Sync for GatewayL2 {}
 
-impl RollupL2 {
+impl GatewayL2 {
     #[instrument(skip_all)]
     pub async fn new(ws_url: &str) -> Result<Self, Error> {
         let ws = WsConnect::new(ws_url);
@@ -25,7 +25,7 @@ impl RollupL2 {
             .await
             .map_err(Error::Transport)?;
 
-        Ok(RollupL2 {
+        Ok(GatewayL2 {
             provider: Arc::new(provider),
         })
     }

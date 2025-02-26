@@ -1,8 +1,8 @@
 // Only for testing
 pub mod event;
+pub mod gateway_listener;
 pub mod handler;
-pub mod rollup_listener;
 
 pub use event::GatewayProcessorsEvent;
+pub use gateway_listener::event_listener_gateway;
 pub use handler::GatewayProcessorsHandler;
-pub use rollup_listener::event_listener_rollup;
