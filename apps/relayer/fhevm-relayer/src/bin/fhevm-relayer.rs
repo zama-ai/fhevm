@@ -81,7 +81,7 @@ async fn main() -> eyre::Result<()> {
     // Prepare tx service for L1
     let tx_service = TransactionService::new(
         &settings.networks.fhevm.http_url,
-        &settings.transaction.private_key_env,
+        &settings.transaction.private_key_httpz_env,
         settings.networks.fhevm.chain_id,
     )
     .await
@@ -97,7 +97,7 @@ async fn main() -> eyre::Result<()> {
     // Prepare tx service for rollup
     let tx_service_rollup = TransactionService::new(
         &rollup_settings.http_url,
-        &settings.transaction.private_key_env,
+        &settings.transaction.private_key_rollup_env,
         rollup_settings.chain_id,
     )
     .await

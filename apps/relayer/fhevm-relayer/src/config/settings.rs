@@ -70,8 +70,10 @@ impl NetworksConfig {
 
 #[derive(Debug, Deserialize)]
 pub struct TransactionConfig {
-    /// Environment variable name containing the private key
-    pub private_key_env: String,
+    /// Environment variable name containing the private key for httpz
+    pub private_key_httpz_env: String,
+    /// Environment variable name containing the private key for rollup
+    pub private_key_rollup_env: String,
     /// Optional gas limit for transactions
     pub gas_limit: Option<u64>,
     /// Maximum priority fee for transactions
