@@ -75,6 +75,10 @@ start-gateway-processors-mock:
 	@echo "$(GREEN)Starting gateway processors mock...$(RESET)"
 	@cargo run --bin gateway-processors-mock
 
+# Start python server for serving key and crs files:
+start-key-server:
+	@python3 -m http.server 3001 -d ./artifacts/test-keys
+
 # Run decrypt tests
 run-test-decrypt:
 	@echo "$(GREEN)Running decrypt tests...$(RESET)"
@@ -146,9 +150,11 @@ help:
 	@echo '  ${YELLOW}make config-fhevm-relayer${RESET}        	- Configure HTTPZ event listener'
 	@echo '  ${YELLOW}make start-fhevm-relayer${RESET}        	- Start HTTPZ event listener'
 	@echo '  ${YELLOW}make start-gateway-processors-mock${RESET}    - Start gateway processors mock (copro + kms)'
+	@echo '  ${YELLOW}make start-key-server${RESET}    		- Start key server for serving key and crs files'
 	@echo '  ${YELLOW}make run-test-decrypt${RESET}            	- Run decryption tests'
 	@echo '  ${YELLOW}make run-test-input-proof${RESET}           	- Run input proof tests'
 	@echo '  ${YELLOW}make run-test-erc20${RESET}            	- Run erc20 tests'
+	@echo '  ${YELLOW}make run-test-keyurl${RESET}            	- Run keyurl tests'
 	@echo ''
 	@echo 'Run sequence:'
 	@echo '  1. ${WHITE}make setup-mock${RESET}                      	- At each start'
@@ -159,7 +165,9 @@ help:
 	@echo '  6. ${WHITE}make config-fhevm-relayer${RESET}        		- Terminal 3'
 	@echo '  7. ${WHITE}make start-gateway-processors-mock${RESET}   	- Terminal 4'
 	@echo '  8. ${WHITE}make start-fhevm-relayer${RESET}        		- Terminal 5'
-	@echo '  9. ${WHITE}make run-test-decrypt${RESET}            		- Terminal 6'
-	@echo '  10.${WHITE}make run-test-input-proof${RESET}       		- Terminal 6'
-	@echo '  11. ${WHITE}make run-test-erc20${RESET}            		- Terminal 6'
+	@echo '  9. ${WHITE}make start-key-server${RESET}            		- Terminal 6'
+	@echo '  10. ${WHITE}make run-test-decrypt${RESET}            		- Terminal 7'
+	@echo '  11.${WHITE}make run-test-input-proof${RESET}       		- Terminal 7'
+	@echo '  12. ${WHITE}make run-test-erc20${RESET}            		- Terminal 7'
+	@echo '  13. ${WHITE}make run-test-keyurl${RESET}            		- Terminal 7'
 	@echo ''
