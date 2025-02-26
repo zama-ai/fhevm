@@ -1,8 +1,9 @@
 use crate::core::event::RelayerEvent;
 use crate::http::input_http_listener::{InputProofHandler, InputProofRequestJson};
+use crate::http::keyurl_http_listener::KeyUrlResponseJson;
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
-use axum::handler::post;
+use axum::handler::{get, post};
 use axum::Json;
 use axum::Router;
 use std::net::SocketAddr;
@@ -15,14 +16,26 @@ where
 {
     // Build our application with the POST endpoint '/input-proof'
     let input_proof_handler = Arc::new(InputProofHandler::new(orchestrator));
-    let app = Router::new().route(
-        "/input-proof",
-        post({
-            info!("Received POST request to '/input-proof'");
-            let handler = Arc::new(input_proof_handler);
-            move |payload: Json<InputProofRequestJson>| async move { handler.handle(payload).await }
-        }),
-    );
+    let app =
+        Router::new()
+            .route(
+                "/input-proof",
+                post({
+                    info!("Received POST request to '/input-proof'");
+                    let handler = Arc::new(input_proof_handler);
+                    move |payload: Json<InputProofRequestJson>| async move {
+                        handler.handle(payload).await
+                    }
+                }),
+            )
+            .route(
+                "/keyurl",
+                get(|| async {
+                    info!("Received GET request to '/keyurl'");
+                    let keyurl_response = KeyUrlResponseJson::default();
+                    Json(keyurl_response)
+                }),
+            );
 
     // Define the socket address for the server to listen on.
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
