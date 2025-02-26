@@ -55,6 +55,7 @@ impl Event for RelayerEvent {
                 InputEventData::RequestSentToGwL2 { .. } => 8,
                 InputEventData::RespFromGwL2 { .. } => 9,
                 InputEventData::EventLogResponseFromGwL2 { .. } => 10,
+                InputEventData::Failed { .. } => 11,
             },
         }
     }
@@ -201,6 +202,9 @@ pub enum InputEventData {
     EventLogResponseFromGwL2 {
         log: Log,
     },
+    Failed {
+        error: String,
+    },
 }
 
 impl InputEventData {
@@ -210,6 +214,7 @@ impl InputEventData {
             InputEventData::RespFromGwL2 { .. } => "Input::RespFromGwL2",
             InputEventData::RequestSentToGwL2 { .. } => "Input::RequestSentToGwL2",
             InputEventData::EventLogResponseFromGwL2 { .. } => "Input::EventLogResponseFromGwL2",
+            InputEventData::Failed { .. } => "Input::Failed",
         }
     }
 }
