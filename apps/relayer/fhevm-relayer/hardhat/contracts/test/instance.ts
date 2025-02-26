@@ -60,7 +60,7 @@ export const createInstance = async () => {
     kmsContractAddress: kmsAdd,
     aclContractAddress: aclAdd,
     networkUrl: network.config.url,
-    gatewayUrl: 'http://localhost:7077',
+    relayerUrl: 'http://localhost:3000',
   });
   return instance;
 };

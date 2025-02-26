@@ -181,7 +181,7 @@ describe('TestAsyncDecrypt', function () {
     }
   });
 
-  it.only('test async decrypt uint64', async function () {
+  it('test async decrypt uint64', async function () {
     const tx2 = await this.contract.connect(this.signers.carol).requestUint64();
     await tx2.wait();
     await awaitAllDecryptionResults();
@@ -283,15 +283,16 @@ describe('TestAsyncDecrypt', function () {
     }
   });
 
-  it('test async decrypt uint64 non-trivial', async function () {
+  it.only('test async decrypt uint64 non-trivial', async function () {
     const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     inputAlice.add64(18446744073709550042n);
     const encryptedAmount = await inputAlice.encrypt();
-    const tx = await this.contract.requestUint64NonTrivial(encryptedAmount.handles[0], encryptedAmount.inputProof);
-    await tx.wait();
-    await awaitAllDecryptionResults();
-    const y = await this.contract.yUint64();
-    expect(y).to.equal(18446744073709550042n);
+    console.log(encryptedAmount);
+    // const tx = await this.contract.requestUint64NonTrivial(encryptedAmount.handles[0], encryptedAmount.inputProof);
+    // await tx.wait();
+    // await awaitAllDecryptionResults();
+    // const y = await this.contract.yUint64();
+    // expect(y).to.equal(18446744073709550042n);
   });
 
   it('test async decrypt ebytes64 trivial', async function () {

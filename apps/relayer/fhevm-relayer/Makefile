@@ -80,6 +80,10 @@ run-test-decrypt:
 	@echo "$(GREEN)Running decrypt tests...$(RESET)"
 	@unset $$(cat hardhat/contracts/.env | sed 's/=.*//g') && cd hardhat/contracts && npx hardhat compile && npx hardhat compile:specific --contract decryptionOracle && RUST_RELAYER=true npx hardhat test test/gatewayDecrypt/* --network localCoprocessorL1
 
+run-test-input-proof-hardhat:
+	@echo "$(GREEN)Running input proof tests...$(RESET)"
+	@unset $$(cat hardhat/contracts/.env | sed 's/=.*//g') && cd hardhat/contracts && npx hardhat compile && npx hardhat compile:specific --contract decryptionOracle && RUST_RELAYER=true npx hardhat test test/gatewayDecrypt/* --network localCoprocessorL1Input
+
 
 run-test-input-proof:
 	@curl -X POST http://127.0.0.1:3000/input-proof \

@@ -90,6 +90,7 @@ const chainIds = {
   localCoprocessorL2: 654321,
   composeCoprocessorL1: 123456,
   composeCoprocessorL2: 654321,
+  localCoprocessorL1Input: 123456,
 };
 
 function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
@@ -100,6 +101,9 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
       break;
     case 'localCoprocessor':
       jsonRpcUrl = 'http://localhost:8746';
+      break;
+    case 'localCoprocessorL1Input':
+      jsonRpcUrl = 'http://localhost:8756';
       break;
     case 'localNative':
       jsonRpcUrl = 'http://localhost:8545';
@@ -157,6 +161,7 @@ const config: HardhatUserConfig = {
     localNative: getChainConfig('localNative'),
     localCoprocessor: getChainConfig('localCoprocessor'),
     localCoprocessorL1: getChainConfig('localCoprocessorL1'),
+    localCoprocessorL1Input: getChainConfig('localCoprocessorL1Input'),
     localCoprocessorL2: getChainConfig('localCoprocessorL2'),
     composeCoprocessorL1: getChainConfig('composeCoprocessorL1'),
     composeCoprocessorL2: getChainConfig('composeCoprocessorL2'),
