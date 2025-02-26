@@ -5,7 +5,7 @@ use crate::{
         traits::{EventDispatcher, EventHandler},
         TokioEventDispatcher,
     },
-    relayer_event::{DecryptedValue, RelayerEvent, RelayerEventData},
+    relayer_event::{RelayerEvent, RelayerEventData},
     transaction::{ReceiptProcessor, TransactionHelper, TransactionService, TxConfig},
     utils::{colorize_event_type, colorize_request_id},
 };
@@ -17,7 +17,7 @@ use alloy::{
 
 use alloy_sol_types::SolEvent;
 use async_trait::async_trait;
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 use tokio::task;
 use tracing::{error, info};
 use uuid::Uuid;
@@ -163,33 +163,6 @@ impl ArbitrumGatewayL2Handler {
 
     /// Extracts decryption ID from event logs.
     ///
-    /// # Arguments
-    /// * `event` - The [`RelayerEvent`] containing the [`DecryptResponseEventLogRcvdFromGwL2`]
-    ///
-    /// # Returns
-    /// * `Ok(`[`U256`]`)` - The extracted decryption ID
-    /// * `Err(`[`EventProcessingError`]`)` - If decoding fails or event type is incorrect
-    fn extract_decryption_id_from_event(
-        &self,
-        event: &RelayerEvent,
-    ) -> Result<U256, EventProcessingError> {
-        if let RelayerEventData::EventLogResponseFromGwL2 { log } = &event.data {
-            match DecyptionManager::PublicDecryptionRequest::decode_log_data(log.data(), true) {
-                Ok(event) => {
-                    let public_decryption_id = event.publicDecryptionId;
-                    info!(?public_decryption_id, "Public decryption id from event");
-                    return Ok(public_decryption_id);
-                }
-                Err(e) => {
-                    error!(?e, "Failed to decode event data");
-                }
-            }
-        }
-        Err(EventProcessingError::HandlerError(
-            "Failed to extract decryption ID from event".into(),
-        ))
-    }
-
     /// Processes decryption response events.
     ///
     /// This function:

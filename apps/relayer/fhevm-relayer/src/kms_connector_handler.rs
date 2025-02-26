@@ -20,20 +20,20 @@ use tracing::{debug, error, info};
 
 #[derive(Clone)]
 pub struct KmsConnectorHandler {
-    dispatcher: Arc<TokioEventDispatcher<KmsRelayerEvent>>,
+    _dispatcher: Arc<TokioEventDispatcher<KmsRelayerEvent>>,
     tx_helper: Arc<TransactionHelper>,
     contracts: ContractConfig,
 }
 
 impl KmsConnectorHandler {
     pub fn new(
-        dispatcher: Arc<TokioEventDispatcher<KmsRelayerEvent>>,
+        _dispatcher: Arc<TokioEventDispatcher<KmsRelayerEvent>>,
         tx_service: Arc<TransactionService>,
         tx_config: TxConfig,
         contracts: ContractConfig,
     ) -> Self {
         Self {
-            dispatcher,
+            _dispatcher,
             tx_helper: Arc::new(TransactionHelper::new(tx_service, tx_config)),
             contracts,
         }

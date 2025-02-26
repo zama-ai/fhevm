@@ -8,7 +8,7 @@ use crate::{
         traits::{EventDispatcher, EventHandler},
         TokioEventDispatcher,
     },
-    relayer_event::{DecryptedValue, DecryptionType, RelayerEvent, RelayerEventData},
+    relayer_event::{DecryptionType, RelayerEvent, RelayerEventData},
     transaction::{TransactionHelper, TransactionService, TxConfig},
     utils::{colorize_event_type, colorize_request_id},
 };
@@ -20,7 +20,6 @@ use tokio::task;
 use tracing::{error, info};
 use uuid::Uuid;
 
-use alloy::primitives::U256;
 use alloy_sol_types::SolEvent;
 
 /// Contains the context data for a decryption request from Ethereum L1.

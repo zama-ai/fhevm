@@ -5,9 +5,9 @@ use crate::ethereum::bindings::DecyptionManager::{
 use crate::ethereum_host_l1_handlers::DecryptionRequestData;
 use alloy::primitives::{keccak256, Address, Bytes, Uint, U256};
 use alloy::signers::SignerSync;
+use rusqlite::{Connection, Result};
 use serde::Serialize;
 use tracing::{debug, error, info};
-use rusqlite::{Connection, Result};
 
 use alloy::{
     sol,
@@ -34,7 +34,7 @@ impl ComputeCalldata {
     pub fn callback_req(
         req: &DecryptionRequestData,
         public_decryption_response: PublicDecryptionResponse,
-        signature_number: u8,
+        _signature_number: u8,
     ) -> Result<Bytes, EventProcessingError> {
         let mut calldata = Vec::new();
 
@@ -55,7 +55,10 @@ impl ComputeCalldata {
         offset_bytes[31] = 32u8; // offset is always 32 for the first element
         calldata.extend_from_slice(&offset_bytes);
 
-        println!("public_decryption_response {:?}", &public_decryption_response.signatures);
+        println!(
+            "public_decryption_response {:?}",
+            &public_decryption_response.signatures
+        );
         // For each signature:
         for signature in &public_decryption_response.signatures {
             // Add length of signature (32 bytes)
@@ -356,7 +359,7 @@ impl ComputeCalldata {
             verifying_contract: decryption_manager_address,
         };
 
-        println!("{:?}",domain);
+        println!("{:?}", domain);
 
         let public_decryption_result = PublicDecryptionResult {
             handlesList: req.ciphertextHandles.clone(),
@@ -388,7 +391,7 @@ impl ComputeCalldata {
 
 fn get_clear_text(db_path: &str, handle: &[u8]) -> Result<Option<String>> {
     let conn = Connection::open(db_path)?;
-    
+
     let hex_string = format!("0x{}", hex::encode(handle));
     let mut stmt = conn.prepare("SELECT clearText FROM ciphertexts WHERE handle = ?")?;
     let result = stmt.query_row([hex_string], |row| row.get::<_, String>(0));
@@ -398,7 +401,7 @@ fn get_clear_text(db_path: &str, handle: &[u8]) -> Result<Option<String>> {
         Err(rusqlite::Error::QueryReturnedNoRows) => {
             println!("No rows found for this handle");
             Ok(None)
-        },
+        }
         Err(e) => {
             println!("Error occurred: {}", e);
             Err(e)
