@@ -13,13 +13,19 @@ sol!(
 pub struct AddCiphertextOperation<P: Provider<Ethereum> + Clone + 'static> {
     ciphertext_storage_address: Address,
     provider: P,
+    conf: crate::ConfigSettings,
 }
 
 impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
-    pub fn new(ciphertext_storage_address: Address, provider: P) -> Self {
+    pub fn new(
+        ciphertext_storage_address: Address,
+        provider: P,
+        conf: crate::ConfigSettings,
+    ) -> Self {
         Self {
             ciphertext_storage_address,
             provider,
+            conf,
         }
     }
 }
@@ -30,7 +36,7 @@ where
     P: alloy::providers::Provider<Ethereum> + Clone + 'static,
 {
     fn channel(&self) -> &str {
-        "add_ciphertexts"
+        &self.conf.add_ciphertexts_db_channel
     }
 
     async fn execute(&self, _db_pool: &Pool<Postgres>) -> anyhow::Result<bool> {

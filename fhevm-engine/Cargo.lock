@@ -2550,14 +2550,17 @@ dependencies = [
  "bigdecimal",
  "bincode",
  "hex",
+ "lru 0.12.5",
  "paste",
  "prost",
  "rand 0.9.0",
  "rand_chacha 0.3.1",
  "serde",
  "sha3",
+ "sqlx",
  "strum",
  "tfhe",
+ "tokio",
  "tonic",
  "tonic-build",
 ]
@@ -7428,8 +7431,22 @@ dependencies = [
 name = "zkproof-worker"
 version = "0.6.1"
 dependencies = [
+ "alloy-primitives",
+ "anyhow",
+ "bincode",
  "clap",
+ "fhevm-engine-common",
+ "lru 0.12.5",
+ "rand 0.9.0",
+ "sha3",
+ "sqlx",
+ "test-harness",
  "tfhe",
+ "thiserror 2.0.11",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

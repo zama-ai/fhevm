@@ -17,11 +17,11 @@ mod common;
 #[serial(db)]
 async fn verify_proof_response_success() -> anyhow::Result<()> {
     sol! {
-        struct VerifyProofSignatureData {
+        struct EIP712ZKPoK {
             bytes32[] handles;
             address userAddress;
             address contractAddress;
-            uint256 chainId;
+            uint256 contractChainId;
         }
     }
 
@@ -37,7 +37,8 @@ async fn verify_proof_response_success() -> anyhow::Result<()> {
         env.cancel_token.clone(),
         env.conf.clone(),
         None,
-    );
+    )
+    .await?;
 
     let event_filter = zkpok_manager
         .VerifyProofResponseCalled_filter()
@@ -60,6 +61,8 @@ async fn verify_proof_response_success() -> anyhow::Result<()> {
             .unwrap()
     });
 
+    let contract_chain_id = 42u64;
+
     // Insert a proof into the database and notify the sender.
     sqlx::query!(
         "WITH ins AS (
@@ -68,7 +71,7 @@ async fn verify_proof_response_success() -> anyhow::Result<()> {
         )
         SELECT pg_notify($6, '')",
         proof_id as i64,
-        42,
+        contract_chain_id as i64,
         env.contract_address.to_string(),
         env.user_address.to_string(),
         &[1u8; 64],
@@ -82,21 +85,21 @@ async fn verify_proof_response_success() -> anyhow::Result<()> {
     let expected_proof_id = U256::from(proof_id);
     let expected_handles: Vec<FixedBytes<32>> = vec![FixedBytes([1u8; 32]), FixedBytes([1u8; 32])];
     let domain = eip712_domain! {
-        name: "InputVerifier",
+        name: "ZKPoKManager",
         version: "1",
-        chain_id: 42,
+        chain_id: provider.get_chain_id().await?,
         verifying_contract: *zkpok_manager.address(),
     };
-    let signing_hash = VerifyProofSignatureData {
+    let signing_hash = EIP712ZKPoK {
         handles: expected_handles.clone(),
         userAddress: env.user_address,
         contractAddress: env.contract_address,
-        chainId: U256::from(42),
+        contractChainId: U256::from(contract_chain_id),
     }
     .eip712_signing_hash(&domain);
     let expected_sig = env.signer.sign_hash_sync(&signing_hash)?;
 
-    // Make sure data in the event is correct.
+    // Make sure data in the event is correct, including the deterministic ECDSA signature.
     assert_eq!(event.0._0, expected_proof_id);
     assert_eq!(event.0._1, expected_handles);
     assert_eq!(event.0._2.as_ref(), expected_sig.as_bytes());
@@ -137,7 +140,8 @@ async fn verify_proof_response_reversal_already_signed() -> anyhow::Result<()> {
         env.cancel_token.clone(),
         env.conf.clone(),
         None,
-    );
+    )
+    .await?;
 
     let proof_id: u32 = random();
 
@@ -210,7 +214,8 @@ async fn verify_proof_response_other_reversal_gas_estimation() -> anyhow::Result
         env.cancel_token.clone(),
         env.conf.clone(),
         None,
-    );
+    )
+    .await?;
 
     let proof_id: u32 = random();
 
@@ -280,7 +285,8 @@ async fn verify_proof_response_other_reversal_receipt() -> anyhow::Result<()> {
         env.cancel_token.clone(),
         env.conf.clone(),
         Some(1_000_000),
-    );
+    )
+    .await?;
 
     let proof_id: u32 = random();
 
@@ -352,7 +358,8 @@ async fn verify_proof_max_retries_remove_entry() -> anyhow::Result<()> {
         env.cancel_token.clone(),
         env.conf.clone(),
         None,
-    );
+    )
+    .await?;
 
     let proof_id: u32 = random();
 
@@ -414,7 +421,8 @@ async fn verify_proof_max_retries_do_not_remove_entry() -> anyhow::Result<()> {
         env.cancel_token.clone(),
         env.conf.clone(),
         None,
-    );
+    )
+    .await?;
 
     let proof_id: u32 = random();
 

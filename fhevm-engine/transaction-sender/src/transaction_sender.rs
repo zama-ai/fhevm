@@ -20,7 +20,7 @@ pub struct TransactionSender<P: Provider<Ethereum> + Clone + 'static> {
 }
 
 impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
-    pub fn new(
+    pub async fn new(
         zkpok_manager_address: Address,
         ciphertext_storage_address: Address,
         signer: PrivateKeySigner,
@@ -28,27 +28,31 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
         cancel_token: CancellationToken,
         conf: ConfigSettings,
         gas: Option<u64>,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
         let operations: Vec<Arc<dyn ops::TransactionOperation<P>>> = vec![
-            Arc::new(ops::verify_proof::VerifyProofOperation::new(
-                zkpok_manager_address,
-                provider.clone(),
-                signer.clone(),
-                conf.clone(),
-                gas,
-            )),
+            Arc::new(
+                ops::verify_proof::VerifyProofOperation::new(
+                    zkpok_manager_address,
+                    provider.clone(),
+                    signer.clone(),
+                    conf.clone(),
+                    gas,
+                )
+                .await?,
+            ),
             Arc::new(ops::add_ciphertext::AddCiphertextOperation::new(
                 ciphertext_storage_address,
                 provider.clone(),
+                conf.clone(),
             )),
         ];
-        Self {
+        Ok(Self {
             cancel_token,
             conf,
             operations,
             zkpok_manager_address,
             ciphertext_storage_address,
-        }
+        })
     }
 
     pub async fn run(&self) -> anyhow::Result<()> {

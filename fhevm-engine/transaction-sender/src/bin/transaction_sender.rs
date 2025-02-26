@@ -105,7 +105,8 @@ async fn main() -> anyhow::Result<()> {
             error_sleep_max_secs: conf.error_sleep_max_secs,
         },
         None,
-    );
+    )
+    .await?;
     install_signal_handlers(cancel_token)?;
     sender.run().await
 }

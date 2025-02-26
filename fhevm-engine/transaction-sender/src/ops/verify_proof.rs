@@ -16,11 +16,11 @@ use tracing::{debug, error, info};
 use ZKPoKManager::ZKPoKManagerErrors;
 
 sol! {
-    struct VerifyProofSignatureData {
+    struct EIP712ZKPoK {
         bytes32[] handles;
         address userAddress;
         address contractAddress;
-        uint256 chainId;
+        uint256 contractChainId;
     }
 }
 
@@ -35,25 +35,28 @@ pub(crate) struct VerifyProofOperation<P: Provider<Ethereum> + Clone + 'static> 
     zkpok_manager_address: Address,
     provider: P,
     signer: PrivateKeySigner,
-    database_conf: crate::ConfigSettings,
+    conf: crate::ConfigSettings,
     gas: Option<u64>,
+    gw_chain_id: u64,
 }
 
 impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOperation<P> {
-    pub(crate) fn new(
+    pub(crate) async fn new(
         zkpok_manager_address: Address,
         provider: P,
         signer: PrivateKeySigner,
-        database_conf: crate::ConfigSettings,
+        conf: crate::ConfigSettings,
         gas: Option<u64>,
-    ) -> Self {
-        Self {
+    ) -> anyhow::Result<Self> {
+        let gw_chain_id = provider.get_chain_id().await?;
+        Ok(Self {
             zkpok_manager_address,
             provider,
             signer,
-            database_conf,
+            conf,
             gas,
-        }
+            gw_chain_id,
+        })
     }
 
     async fn remove_proof_by_id(
@@ -174,17 +177,14 @@ where
     P: alloy::providers::Provider<Ethereum> + Clone + 'static,
 {
     fn channel(&self) -> &str {
-        "verify_proofs"
+        &self.conf.add_ciphertexts_db_channel
     }
 
     async fn execute(&self, db_pool: &Pool<Postgres>) -> anyhow::Result<bool> {
         let zkpok_manager = ZKPoKManager::new(self.zkpok_manager_address, &self.provider);
-        if self.database_conf.verify_proof_remove_after_max_retries {
-            self.remove_proofs_by_retry_count(
-                db_pool,
-                self.database_conf.verify_proof_resp_max_retries,
-            )
-            .await?;
+        if self.conf.verify_proof_remove_after_max_retries {
+            self.remove_proofs_by_retry_count(db_pool, self.conf.verify_proof_resp_max_retries)
+                .await?;
         }
         let rows = sqlx::query!(
             "SELECT zk_proof_id, chain_id, contract_address, user_address, handles
@@ -192,14 +192,13 @@ where
              WHERE verified = true AND retry_count < $1
              ORDER BY zk_proof_id
              LIMIT $2",
-            self.database_conf.verify_proof_resp_max_retries as i64,
-            self.database_conf.verify_proof_resp_batch_limit as i64
+            self.conf.verify_proof_resp_max_retries as i64,
+            self.conf.verify_proof_resp_batch_limit as i64
         )
         .fetch_all(db_pool)
         .await?;
         info!(target: VERIFY_PROOFS_TARGET, "Selected {} rows to process", rows.len());
-        let maybe_has_more_work =
-            rows.len() == self.database_conf.verify_proof_resp_batch_limit as usize;
+        let maybe_has_more_work = rows.len() == self.conf.verify_proof_resp_batch_limit as usize;
         let mut join_set = JoinSet::new();
         for row in rows.into_iter() {
             let handles = row
@@ -218,19 +217,19 @@ where
                 })
                 .collect();
             let domain = alloy::sol_types::eip712_domain! {
-                name: "InputVerifier",
+                name: "ZKPoKManager",
                 version: "1",
-                chain_id: row.chain_id as u64,
+                chain_id: self.gw_chain_id,
                 verifying_contract: self.zkpok_manager_address,
             };
-            let signing_hash = VerifyProofSignatureData {
+            let signing_hash = EIP712ZKPoK {
                 handles: handles.clone(),
                 userAddress: row.user_address.parse().expect("invalid user address"),
                 contractAddress: row
                     .contract_address
                     .parse()
                     .expect("invalid contract address"),
-                chainId: U256::from(row.chain_id),
+                contractChainId: U256::from(row.chain_id),
             }
             .eip712_signing_hash(&domain);
             let signature = self
