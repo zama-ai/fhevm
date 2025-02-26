@@ -1,0 +1,31 @@
+meta {
+  name: Signup
+  type: graphql
+  seq: 2
+}
+
+post {
+  url: http://localhost:3000/graphql
+  body: graphql
+  auth: none
+}
+
+body:graphql {
+  mutation signup($invitation: String!, $password: String!, $name: String!) {
+    signup(input: {
+      invitationToken: $invitation
+      password: $password
+      name: $name
+    }) {
+      token
+    }
+  }
+}
+
+body:graphql:vars {
+  {
+    "invitation": "{{invitationToken}}",
+    "password": "ChangeMe",
+    "name": "Ale V"
+  }
+}

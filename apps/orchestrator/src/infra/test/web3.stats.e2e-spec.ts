@@ -36,6 +36,7 @@ describe('web3 dapp stats', () => {
       correlationId = faker.string.uuid()
       const message = web3.fheRequested(
         {
+          requestId: faker.string.uuid(),
           chainId: LOCAL_FHEVM_CHAIN_ID,
           address: faker.string.hexadecimal({ length: 40 }),
         },
@@ -65,12 +66,15 @@ describe('web3 dapp stats', () => {
   })
 
   describe(`when the orchestrator receive a 'web3:fhe-event:detected' event`, () => {
+    let requestId: string
     let correlationId: string
 
     beforeEach(async () => {
+      requestId = faker.string.uuid()
       correlationId = faker.string.uuid()
       const message = web3.fheDetected(
         {
+          requestId,
           id: faker.string.alphanumeric(10),
           chainId: faker.string.numeric(5),
           address: faker.string.hexadecimal({ length: 40 }),
@@ -95,12 +99,14 @@ describe('web3 dapp stats', () => {
         'web3:fhe-event:detected',
       )
       expect(first?.attributes?.Sender.Value).toBe('test')
+      expect(first?.event.payload.requestId).toBe(requestId)
 
       expect(back.isBackEvent(second?.event)).toBe(true)
       expect((second?.event as back.BackEvent).type).toBe(
         'back:dapp:stats-available',
       )
       expect(second?.attributes?.Sender.Value).toBe(MS_NAME)
+      expect(second?.event.payload.requestId).toBe(requestId)
     })
 
     test('then it forward the correlationId', async () => {

@@ -1,0 +1,13 @@
+{
+  "version": "1",
+  "name": "console",
+  "type": "collection",
+  "ignore": [
+    "node_modules",
+    ".git"
+  ],
+  "presets": {
+    "requestType": "graphql",
+    "requestUrl": "http://localhost:3000/graphql"
+  }
+}

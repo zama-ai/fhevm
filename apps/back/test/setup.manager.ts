@@ -146,15 +146,15 @@ export class SetupManager {
   }
 
   async afterEach() {
-    const WORKER_ID = Number(process.env.VITEST_POOL_ID)
+    const WORKER_ID = Number(process.env.VITEST_POOL_ID) - 1
     await Promise.all([
       this.purgeLogQueue(),
       // Clear the database
-      this.#prismaClients[WORKER_ID - 1].$transaction([
-        this.#prismaClients[WORKER_ID - 1].user.deleteMany(),
-        this.#prismaClients[WORKER_ID - 1].team.deleteMany(),
-        this.#prismaClients[WORKER_ID - 1].invitation.deleteMany(),
-        this.#prismaClients[WORKER_ID - 1].dapp.deleteMany(),
+      this.#prismaClients[WORKER_ID].$transaction([
+        this.#prismaClients[WORKER_ID].user.deleteMany(),
+        this.#prismaClients[WORKER_ID].team.deleteMany(),
+        this.#prismaClients[WORKER_ID].invitation.deleteMany(),
+        this.#prismaClients[WORKER_ID].dapp.deleteMany(),
       ]),
     ])
   }

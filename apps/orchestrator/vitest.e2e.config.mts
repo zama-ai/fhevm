@@ -12,6 +12,13 @@ export default defineConfig({
       ...config({ path: '.env.test' }).parsed,
     },
     isolate: true,
+    pool: 'forks',
+    poolOptions: {
+      forks: {
+        isolate: true,
+        maxForks: 10,
+      },
+    },
     globalSetup: './test/setup.e2e.ts',
   },
   plugins: [

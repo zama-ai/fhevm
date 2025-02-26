@@ -11,11 +11,11 @@ export default defineConfig({
     env: {
       ...config({ path: '.env.test' }).parsed,
     },
-    isolate: false,
+    isolate: true,
     pool: 'forks',
     poolOptions: {
       forks: {
-        isolate: false,
+        isolate: true,
         maxForks: 10,
       },
     },
