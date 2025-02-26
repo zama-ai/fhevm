@@ -42,12 +42,14 @@ impl Event for RelayerEvent {
     fn event_id(&self) -> u8 {
         match &self.data {
             RelayerEventData::EventLogFromHostL1 { .. } => 0,
-            RelayerEventData::DecryptRequestRcvd { .. } => 1,
-            RelayerEventData::DecryptionRequestSentToGwL2 { .. } => 2,
             RelayerEventData::EventLogResponseFromGwL2 { .. } => 3,
-            RelayerEventData::DecryptionResponseRcvdFromGwL2 { .. } => 4,
-            RelayerEventData::DecryptResponseSentToHostL1 { .. } => 5,
-            RelayerEventData::DecryptionFailed { .. } => 6,
+            RelayerEventData::Decrypt(decrypt_event) => match decrypt_event {
+                DecryptEventData::DecryptRequestRcvd { .. } => 1,
+                DecryptEventData::DecryptionRequestSentToGwL2 { .. } => 2,
+                DecryptEventData::DecryptionResponseRcvdFromGwL2 { .. } => 4,
+                DecryptEventData::DecryptResponseSentToHostL1 { .. } => 5,
+                DecryptEventData::DecryptionFailed { .. } => 6,
+            },
             RelayerEventData::Input(input_event) => match input_event {
                 InputEventData::ReqFromUser { .. } => 7,
                 InputEventData::RequestSentToGwL2 { .. } => 8,
@@ -90,22 +92,6 @@ pub enum RelayerEventData {
         // TODO: Make relayer event generic of this log type, to make it blockchain agnostic.
         event_log: Log,
     },
-    // Decryption request after processing by ethereum adapter. This will be
-    // picked up by gateway l2 adapter, which will send a request to decryption
-    // manager contract on the gateway l2 blockchain.
-    // After sending the request, it will receive a gateway_l2_request_id, which
-    // it will persist in contextual data of gateway l2 adapter.
-    //
-    // After this system will wait until a gateway l2 listener catches a response and creates a new request.
-    DecryptRequestRcvd {
-        // For gateway l2 handler
-        ct_handles: Vec<[u8; 32]>,
-        operation: DecryptionType,
-    },
-
-    DecryptionRequestSentToGwL2 {
-        decryption_public_id: U256,
-    },
 
     // Raw event log from gateway l2. Will be processed by gateway l2 handler.
     // Handler will check the event type and decode the event. After decoding,
@@ -117,18 +103,8 @@ pub enum RelayerEventData {
         // For gateway l2 handler
         log: Log,
     },
-    DecryptionResponseRcvdFromGwL2 {
-        // For ethereum handler
-        public_decryption_response: PublicDecryptionResponse,
-    },
-    // This event data could be used to update the dashboard.
-    DecryptResponseSentToHostL1,
-    // For no handler, just status update.
-    DecryptionFailed {
-        // For no handler, just status updated.
-        error: String,
-    },
 
+    Decrypt(DecryptEventData),
     Input(InputEventData),
 }
 
@@ -136,14 +112,8 @@ impl AsRef<str> for RelayerEventData {
     fn as_ref(&self) -> &str {
         match self {
             RelayerEventData::EventLogFromHostL1 { .. } => "EventLogFromHostL1",
-            RelayerEventData::DecryptRequestRcvd { .. } => "DecryptRequestRcvd",
-            RelayerEventData::DecryptionRequestSentToGwL2 { .. } => "DecryptionRequestSentToGwL2",
             RelayerEventData::EventLogResponseFromGwL2 { .. } => "EventLogResponseFromGwL2",
-            RelayerEventData::DecryptionResponseRcvdFromGwL2 { .. } => {
-                "DecryptionResponseRcvdFromGwL2"
-            }
-            RelayerEventData::DecryptResponseSentToHostL1 => "DecryptResponseSentToHostL1",
-            RelayerEventData::DecryptionFailed { .. } => "DecryptionFailed",
+            RelayerEventData::Decrypt(decrypt_event) => decrypt_event.event_name(),
             RelayerEventData::Input(input_event) => input_event.event_name(),
         }
     }
@@ -168,6 +138,58 @@ pub enum DecryptedValue {
 }
 
 #[derive(Clone, Debug)]
+pub enum DecryptEventData {
+    // Decryption request after processing by ethereum adapter. This will be
+    // picked up by gateway l2 adapter, which will send a request to decryption
+    // manager contract on the gateway l2 blockchain.
+    // After sending the request, it will receive a gateway_l2_request_id, which
+    // it will persist in contextual data of gateway l2 adapter.
+    //
+    // After this system will wait until a gateway l2 listener catches a response and creates a new request.
+    DecryptRequestRcvd {
+        // For gateway l2 handler
+        ct_handles: Vec<[u8; 32]>,
+        operation: DecryptionType,
+    },
+
+    DecryptionRequestSentToGwL2 {
+        decryption_public_id: U256,
+    },
+
+    // Raw event log from gateway l2. Will be processed by gateway l2 handler.
+    // Handler will check the event type and decode the event. After decoding,
+    // it will check if gateway_l2_request_id is available in the contextual
+    // data store of the handler. if not, drops the request (not meant for this
+    // relayer instance). if found, creates the next event with the original
+    // orchestrator request id retreived from contextual data store.
+    DecryptionResponseRcvdFromGwL2 {
+        // For ethereum handler
+        public_decryption_response: PublicDecryptionResponse,
+    },
+    // This event data could be used to update the dashboard.
+    DecryptResponseSentToHostL1,
+    // For no handler, just status update.
+    DecryptionFailed {
+        // For no handler, just status updated.
+        error: String,
+    },
+}
+
+impl DecryptEventData {
+    pub fn event_name(&self) -> &'static str {
+        match self {
+            DecryptEventData::DecryptRequestRcvd { .. } => "Decrypt::RequestRcvd",
+            DecryptEventData::DecryptionRequestSentToGwL2 { .. } => "Decrypt::RequestSendToGwL2",
+            DecryptEventData::DecryptionResponseRcvdFromGwL2 { .. } => {
+                "Decrypt:ResponseRcvdFromGwL2"
+            }
+            DecryptEventData::DecryptResponseSentToHostL1 => "Decrypt::ResponseSentToHostL1",
+            DecryptEventData::DecryptionFailed { .. } => "Decrypt::Failed",
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub enum InputEventData {
     ReqFromUser {
         input_proof_request: InputProofRequest,
@@ -181,6 +203,17 @@ pub enum InputEventData {
     EventLogResponseFromGwL2 {
         log: Log,
     },
+}
+
+impl InputEventData {
+    pub fn event_name(&self) -> &'static str {
+        match self {
+            InputEventData::ReqFromUser { .. } => "Input::ReqFromUser",
+            InputEventData::RespFromGwL2 { .. } => "Input::RespFromGwL2",
+            InputEventData::RequestSentToGwL2 { .. } => "Input::RequestSentToGwL2",
+            InputEventData::EventLogResponseFromGwL2 { .. } => "Input::EventLogResponseFromGwL2",
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -218,17 +251,6 @@ impl InputProofResponse {
         InputProofResponse {
             handles,
             signatures,
-        }
-    }
-}
-
-impl InputEventData {
-    pub fn event_name(&self) -> &'static str {
-        match self {
-            InputEventData::ReqFromUser { .. } => "Input::ReqFromUser",
-            InputEventData::RespFromGwL2 { .. } => "Input::RespFromGwL2",
-            InputEventData::RequestSentToGwL2 { .. } => "Input::RequestSentToGwL2",
-            InputEventData::EventLogResponseFromGwL2 { .. } => "Input::EventLogResponseFromGwL2",
         }
     }
 }

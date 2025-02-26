@@ -8,7 +8,7 @@ use crate::{
         traits::{EventDispatcher, EventHandler},
         TokioEventDispatcher,
     },
-    relayer_event::{DecryptionType, RelayerEvent, RelayerEventData},
+    relayer_event::{DecryptEventData, DecryptionType, RelayerEvent, RelayerEventData},
     transaction::{TransactionHelper, TransactionService, TxConfig},
     utils::{colorize_event_type, colorize_request_id},
 };
@@ -87,14 +87,18 @@ impl EthereumHostL1Handler {
                 for ct_handle in eth_decryption_request.cts {
                     ct_handles.push(ct_handle.to_be_bytes());
                 }
-                event.derive_next_event(RelayerEventData::DecryptRequestRcvd {
-                    ct_handles,
-                    operation: DecryptionType::PublicDecrypt,
-                })
+                event.derive_next_event(RelayerEventData::Decrypt(
+                    DecryptEventData::DecryptRequestRcvd {
+                        ct_handles,
+                        operation: DecryptionType::PublicDecrypt,
+                    },
+                ))
             }
-            Err(e) => event.derive_next_event(RelayerEventData::DecryptionFailed {
-                error: format!("error decoding ethereum event log data: {:?}", e),
-            }),
+            Err(e) => event.derive_next_event(RelayerEventData::Decrypt(
+                DecryptEventData::DecryptionFailed {
+                    error: format!("error decoding ethereum event log data: {:?}", e),
+                },
+            )),
         };
         _ = self.dispatcher.dispatch_event(next_event).await;
     }
@@ -151,12 +155,14 @@ impl EthereumHostL1Handler {
             None => {
                 let request_id = event.clone().request_id;
                 info!("unknown request id: {:?}", request_id);
-                let _next_event = event.derive_next_event(RelayerEventData::DecryptionFailed {
-                    error: format!(
-                        "httpz response received for unknown request id: {:?}",
-                        &request_id
-                    ),
-                });
+                let _next_event = event.derive_next_event(RelayerEventData::Decrypt(
+                    DecryptEventData::DecryptionFailed {
+                        error: format!(
+                            "httpz response received for unknown request id: {:?}",
+                            &request_id
+                        ),
+                    },
+                ));
             }
         }
     }
@@ -172,7 +178,9 @@ impl EthereumHostL1Handler {
         // Store the mapping
 
         // Create and dispatch the new event
-        let next_event = event.derive_next_event(RelayerEventData::DecryptResponseSentToHostL1);
+        let next_event = event.derive_next_event(RelayerEventData::Decrypt(
+            DecryptEventData::DecryptResponseSentToHostL1,
+        ));
 
         if let Err(e) = self.dispatcher.dispatch_event(next_event).await {
             error!(?e, "Failed to dispatch DecryptRequestProcessed event");
@@ -193,9 +201,11 @@ impl EthereumHostL1Handler {
             "Failed to send callback transaction"
         );
 
-        let error_event = event.derive_next_event(RelayerEventData::DecryptionFailed {
-            error: format!("Callback transaction failed: {}", error),
-        });
+        let error_event = event.derive_next_event(RelayerEventData::Decrypt(
+            DecryptEventData::DecryptionFailed {
+                error: format!("Callback transaction failed: {}", error),
+            },
+        ));
 
         if let Err(e) = self.dispatcher.dispatch_event(error_event).await {
             error!(?e, "Failed to dispatch error event");
@@ -243,13 +253,13 @@ impl EventHandler<RelayerEvent> for EthereumHostL1Handler {
                 self.handle_public_decrypt_event_log(event, eth_event_log)
                     .await;
             }
-            RelayerEventData::DecryptionResponseRcvdFromGwL2 {
+            RelayerEventData::Decrypt(DecryptEventData::DecryptionResponseRcvdFromGwL2 {
                 public_decryption_response,
-            } => {
+            }) => {
                 self.send_decrypt_response_to_fhevm(event, public_decryption_response)
                     .await;
             }
-            RelayerEventData::DecryptResponseSentToHostL1 => {
+            RelayerEventData::Decrypt(DecryptEventData::DecryptResponseSentToHostL1) => {
                 self.handle_decrypt_response_sent();
             }
             _ => {

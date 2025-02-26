@@ -5,7 +5,9 @@ use crate::{
         traits::{EventDispatcher, EventHandler},
         TokioEventDispatcher,
     },
-    relayer_event::{InputEventData, InputProofResponse, RelayerEvent, RelayerEventData},
+    relayer_event::{
+        DecryptEventData, InputEventData, InputProofResponse, RelayerEvent, RelayerEventData,
+    },
     transaction::{ReceiptProcessor, TransactionHelper, TransactionService, TxConfig},
     utils::{colorize_event_type, colorize_request_id},
 };
@@ -134,9 +136,11 @@ impl ArbitrumGatewayL2InputHandler {
             "Failed to process input request"
         );
 
-        let error_event = event.derive_next_event(RelayerEventData::DecryptionFailed {
-            error: format!("Input request failed: {}", error),
-        });
+        let error_event = event.derive_next_event(RelayerEventData::Decrypt(
+            DecryptEventData::DecryptionFailed {
+                error: format!("Input request failed: {}", error),
+            },
+        ));
 
         if let Err(e) = self.dispatcher.dispatch_event(error_event).await {
             error!(?e, "Failed to dispatch error event");
