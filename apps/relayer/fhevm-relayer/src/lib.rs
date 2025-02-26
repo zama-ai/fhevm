@@ -2,6 +2,7 @@
 pub mod config;
 pub mod errors;
 pub mod ethereum;
+pub mod gateway_processors_mock;
 pub mod orchestrator;
 pub mod transaction;
 pub mod utils;
@@ -13,10 +14,7 @@ pub mod ethereum_listener;
 pub mod http_server;
 pub mod input_handlers;
 pub mod input_http_listener;
-// Only for testing
-pub mod kms_connector_handler;
-pub mod kms_connector_relayer_event;
-pub mod kms_rollup_listener;
+
 pub mod relayer_event;
 pub mod rollup_listener;
 

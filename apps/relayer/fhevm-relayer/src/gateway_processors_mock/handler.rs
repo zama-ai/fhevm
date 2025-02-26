@@ -5,7 +5,9 @@ use crate::{
         bindings::{DecyptionManager::PublicDecryptionRequest, ZKPoKManager},
         ComputeCalldata,
     },
-    kms_connector_relayer_event::{KmsInputEventData, KmsRelayerEvent, KmsRelayerEventData},
+    gateway_processors_mock::event::{
+        GatewayProcessorsEvent, GatewayProcessorsEventData, GatewayProcessorsInputEventData,
+    },
     orchestrator::{traits::EventHandler, TokioEventDispatcher},
     transaction::{TransactionHelper, TransactionService, TxConfig},
     utils::{colorize_event_type, colorize_request_id},
@@ -19,15 +21,15 @@ use std::{sync::Arc, time::Duration};
 use tracing::{debug, error, info};
 
 #[derive(Clone)]
-pub struct KmsConnectorHandler {
-    _dispatcher: Arc<TokioEventDispatcher<KmsRelayerEvent>>,
+pub struct GatewayProcessorsHandler {
+    _dispatcher: Arc<TokioEventDispatcher<GatewayProcessorsEvent>>,
     tx_helper: Arc<TransactionHelper>,
     contracts: ContractConfig,
 }
 
-impl KmsConnectorHandler {
+impl GatewayProcessorsHandler {
     pub fn new(
-        _dispatcher: Arc<TokioEventDispatcher<KmsRelayerEvent>>,
+        _dispatcher: Arc<TokioEventDispatcher<GatewayProcessorsEvent>>,
         tx_service: Arc<TransactionService>,
         tx_config: TxConfig,
         contracts: ContractConfig,
@@ -42,10 +44,11 @@ impl KmsConnectorHandler {
     /// Process the InputRequest event and prepare response
     async fn process_input_request(
         &self,
-        event: &KmsRelayerEvent,
+        event: &GatewayProcessorsEvent,
     ) -> Result<(), EventProcessingError> {
-        if let KmsRelayerEventData::KmsInput(KmsInputEventData::EventLogRequestFromGwL2 { log }) =
-            &event.data
+        if let GatewayProcessorsEventData::KmsInput(
+            GatewayProcessorsInputEventData::EventLogRequestFromGwL2 { log },
+        ) = &event.data
         {
             // Log the raw data for debugging
             debug!(
@@ -151,7 +154,7 @@ impl KmsConnectorHandler {
     ///
     /// # Events
     /// Dispatches [`RelayerEventData::DecryptionResponseRcvdFromGwL2`]
-    async fn process_decryption_request(&self, event: KmsRelayerEvent) {
+    async fn process_decryption_request(&self, event: GatewayProcessorsEvent) {
         info!(
             "Decryption request received. Prepare decryption response transaction to Gateway received. {:?}",
             event.request_id,
@@ -161,7 +164,7 @@ impl KmsConnectorHandler {
 
         tokio::time::sleep(Duration::from_secs(2)).await;
 
-        if let KmsRelayerEventData::EventLogFromGwL2 { log } = &event.data {
+        if let GatewayProcessorsEventData::EventLogFromGwL2 { log } = &event.data {
             match PublicDecryptionRequest::decode_log_data(log.data(), true) {
                 Ok(req) => {
                     let public_decryption_id = req.publicDecryptionId;
@@ -190,8 +193,8 @@ impl KmsConnectorHandler {
 }
 
 #[async_trait]
-impl EventHandler<KmsRelayerEvent> for KmsConnectorHandler {
-    async fn handle_event(&self, event: KmsRelayerEvent) {
+impl EventHandler<GatewayProcessorsEvent> for GatewayProcessorsHandler {
+    async fn handle_event(&self, event: GatewayProcessorsEvent) {
         info!(
             event_type = %colorize_event_type(event.data.as_ref()),
             request_id = %colorize_request_id(&event.request_id),
@@ -199,8 +202,8 @@ impl EventHandler<KmsRelayerEvent> for KmsConnectorHandler {
         );
 
         match &event.data {
-            KmsRelayerEventData::KmsInput(input_event) => match input_event {
-                KmsInputEventData::EventLogRequestFromGwL2 { .. } => {
+            GatewayProcessorsEventData::KmsInput(input_event) => match input_event {
+                GatewayProcessorsInputEventData::EventLogRequestFromGwL2 { .. } => {
                     info!("Received input event log from Gateway L2");
                     match self.process_input_request(&event).await {
                         Ok(()) => {
@@ -212,7 +215,7 @@ impl EventHandler<KmsRelayerEvent> for KmsConnectorHandler {
                     }
                 }
             },
-            KmsRelayerEventData::EventLogFromGwL2 { .. } => {
+            GatewayProcessorsEventData::EventLogFromGwL2 { .. } => {
                 info!("Received decryption event log from Gateway L2");
                 self.process_decryption_request(event).await;
             }

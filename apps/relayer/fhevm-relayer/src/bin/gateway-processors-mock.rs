@@ -41,9 +41,9 @@ use tracing_subscriber::{fmt::SubscriberBuilder, EnvFilter};
 use fhevm_relayer::{
     config::settings::{ContractConfig, LogConfig, Settings},
     ethereum::{ContractAndTopicsFilter, RollupL2},
-    kms_connector_handler::KmsConnectorHandler,
-    kms_connector_relayer_event::KmsRelayerEvent,
-    kms_rollup_listener::event_listener_rollup,
+    gateway_processors_mock::event_listener_rollup,
+    gateway_processors_mock::GatewayProcessorsEvent,
+    gateway_processors_mock::GatewayProcessorsHandler,
     orchestrator::{
         traits::{EventHandler, HandlerRegistry},
         Orchestrator, TokioEventDispatcher,
@@ -107,14 +107,14 @@ async fn main() -> eyre::Result<()> {
 
     // === Intialize the orchestrator.
     let node_id = [0x02, 0x23, 0x45, 0x67, 0x89, 0xab];
-    let dispatcher = Arc::new(TokioEventDispatcher::<KmsRelayerEvent>::new());
+    let dispatcher = Arc::new(TokioEventDispatcher::<GatewayProcessorsEvent>::new());
     let orchestrator = Orchestrator::new(Arc::clone(&dispatcher), &node_id);
 
     // === Register the event handlers
     let tx_config = TxConfig::from(settings.transaction);
 
-    let kms_connector_handler: Arc<dyn EventHandler<KmsRelayerEvent>> =
-        Arc::new(KmsConnectorHandler::new(
+    let gateway_processors_handler: Arc<dyn EventHandler<GatewayProcessorsEvent>> =
+        Arc::new(GatewayProcessorsHandler::new(
             Arc::clone(&dispatcher),
             tx_service_rollup.clone(),
             tx_config.clone(),
@@ -124,9 +124,9 @@ async fn main() -> eyre::Result<()> {
     // Register input event handlers
 
     // Event type: InputEventData::EventLogRequestFromGwL2
-    orchestrator.register_handler(11, Arc::clone(&kms_connector_handler));
+    orchestrator.register_handler(11, Arc::clone(&gateway_processors_handler));
     // Event type EventLogFromGwL2
-    orchestrator.register_handler(3, Arc::clone(&kms_connector_handler));
+    orchestrator.register_handler(3, Arc::clone(&gateway_processors_handler));
 
     // === Create a subscription for events and spawn a listener to listen for events from the subcription.
 

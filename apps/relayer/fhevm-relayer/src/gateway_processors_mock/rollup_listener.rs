@@ -2,8 +2,8 @@ use alloy_sol_types::SolEvent;
 use tracing::{error, info};
 
 use crate::ethereum::bindings::{DecyptionManager, ZKPoKManager};
-use crate::kms_connector_relayer_event::{
-    self, KmsInputEventData, KmsRelayerEvent, KmsRelayerEventData,
+use crate::gateway_processors_mock::event::{
+    self, GatewayProcessorsEvent, GatewayProcessorsInputEventData, GatewayProcessorsEventData,
 };
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
@@ -24,8 +24,8 @@ pub async fn event_listener_rollup(
     mut subscription: alloy::pubsub::SubscriptionStream<Log>,
     orchestrator: Arc<
         Orchestrator<
-            impl EventDispatcher<KmsRelayerEvent> + HandlerRegistry<KmsRelayerEvent>,
-            KmsRelayerEvent,
+            impl EventDispatcher<GatewayProcessorsEvent> + HandlerRegistry<GatewayProcessorsEvent>,
+            GatewayProcessorsEvent,
         >,
     >,
 ) {
@@ -45,15 +45,15 @@ pub async fn event_listener_rollup(
                         match topic_bytes {
                             PROOF_VERIFICATION_REQUEST_TOPIC => {
                                 info!("Received Proof Verification request event");
-                                KmsRelayerEventData::KmsInput(
-                                KmsInputEventData::EventLogRequestFromGwL2  {
+                                GatewayProcessorsEventData::KmsInput(
+                                GatewayProcessorsInputEventData::EventLogRequestFromGwL2  {
                                     log: event_log
                                 }
                             )
                         },
                             DECRYPTION_REQUEST_TOPIC => {
                             info!("Received Decryption Response event");
-                            KmsRelayerEventData::EventLogFromGwL2 {
+                            GatewayProcessorsEventData::EventLogFromGwL2 {
                                 log: event_log
                             }
                         },
@@ -69,10 +69,10 @@ pub async fn event_listener_rollup(
                         continue;
                     };
 
-                    let event = KmsRelayerEvent::new(
+                    let event = GatewayProcessorsEvent::new(
                         id,
-                        kms_connector_relayer_event::ApiVersion {
-                            category: kms_connector_relayer_event::ApiCategory::PRODUCTION,
+                        event::ApiVersion {
+                            category: event::ApiCategory::PRODUCTION,
                             number: 1,
                         },
                         event_data,

@@ -6,27 +6,30 @@ use strum_macros::Display;
 use uuid::Uuid;
 
 #[derive(Clone)]
-pub struct KmsRelayerEvent {
+pub struct GatewayProcessorsEvent {
     pub request_id: Uuid,
     pub api_version: ApiVersion,
-    pub data: KmsRelayerEventData,
+    pub data: GatewayProcessorsEventData,
 }
 
-impl KmsRelayerEvent {
+impl GatewayProcessorsEvent {
     pub fn new(
         request_id: Uuid,
         api_version: ApiVersion,
-        data: KmsRelayerEventData,
-    ) -> KmsRelayerEvent {
-        KmsRelayerEvent {
+        data: GatewayProcessorsEventData,
+    ) -> GatewayProcessorsEvent {
+        GatewayProcessorsEvent {
             request_id,
             api_version,
             data,
         }
     }
 
-    pub fn derive_next_event(self, next_event_data: KmsRelayerEventData) -> KmsRelayerEvent {
-        KmsRelayerEvent {
+    pub fn derive_next_event(
+        self,
+        next_event_data: GatewayProcessorsEventData,
+    ) -> GatewayProcessorsEvent {
+        GatewayProcessorsEvent {
             request_id: self.request_id,
             api_version: self.api_version,
             data: next_event_data,
@@ -34,7 +37,7 @@ impl KmsRelayerEvent {
     }
 }
 
-impl Event for KmsRelayerEvent {
+impl Event for GatewayProcessorsEvent {
     fn event_name(&self) -> &str {
         self.data.as_ref()
     }
@@ -42,9 +45,9 @@ impl Event for KmsRelayerEvent {
     //TODO: Replace boiler plate with macro based code.
     fn event_id(&self) -> u8 {
         match &self.data {
-            KmsRelayerEventData::EventLogFromGwL2 { .. } => 3,
-            KmsRelayerEventData::KmsInput(input_event) => match input_event {
-                KmsInputEventData::EventLogRequestFromGwL2 { .. } => 11,
+            GatewayProcessorsEventData::EventLogFromGwL2 { .. } => 3,
+            GatewayProcessorsEventData::KmsInput(input_event) => match input_event {
+                GatewayProcessorsInputEventData::EventLogRequestFromGwL2 { .. } => 11,
             },
         }
     }
@@ -73,19 +76,19 @@ pub enum ApiCategory {
 }
 
 #[derive(Clone)]
-pub enum KmsRelayerEventData {
+pub enum GatewayProcessorsEventData {
     EventLogFromGwL2 {
         // For gateway l2 handler
         log: Log,
     },
-    KmsInput(KmsInputEventData),
+    KmsInput(GatewayProcessorsInputEventData),
 }
 
-impl AsRef<str> for KmsRelayerEventData {
+impl AsRef<str> for GatewayProcessorsEventData {
     fn as_ref(&self) -> &str {
         match self {
-            KmsRelayerEventData::EventLogFromGwL2 { .. } => "EventLogFromGwL2",
-            KmsRelayerEventData::KmsInput(input_event) => input_event.event_name(),
+            GatewayProcessorsEventData::EventLogFromGwL2 { .. } => "EventLogFromGwL2",
+            GatewayProcessorsEventData::KmsInput(input_event) => input_event.event_name(),
         }
     }
 }
@@ -109,14 +112,14 @@ pub enum DecryptedValue {
 }
 
 #[derive(Clone, Debug)]
-pub enum KmsInputEventData {
+pub enum GatewayProcessorsInputEventData {
     EventLogRequestFromGwL2 { log: Log },
 }
 
-impl KmsInputEventData {
+impl GatewayProcessorsInputEventData {
     pub fn event_name(&self) -> &'static str {
         match self {
-            KmsInputEventData::EventLogRequestFromGwL2 { .. } => {
+            GatewayProcessorsInputEventData::EventLogRequestFromGwL2 { .. } => {
                 "KmsInput::EventLogRequestFromGwL2"
             }
         }
