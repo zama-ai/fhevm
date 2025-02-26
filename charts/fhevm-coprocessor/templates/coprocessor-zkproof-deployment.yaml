@@ -1,0 +1,29 @@
+{{- if .Values.zkProofWorker.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: coprocessor-zkproof-worker
+    app.kubernetes.io/name: {{ include "zkProofWorkerName" . }}
+  name: {{ include "zkProofWorkerName" . }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: coprocessor-zkproof-worker
+  template:
+    metadata:
+      labels:
+        app: coprocessor-zkproof-worker
+        app.kubernetes.io/name: {{ include "zkProofWorkerName" . }}
+    spec:
+      restartPolicy: Always
+      containers:
+        - name: coprocessor-zkproof-worker
+          image: {{ .Values.zkProofWorker.image.name }}:{{ .Values.zkProofWorker.image.tag }}
+          command: ["zkproof_worker"]
+          args:
+{{ toYaml .Values.zkProofWorker.args | nindent 12 }}
+          env:
+{{ toYaml .Values.zkProofWorker.env | nindent 12 }}
+{{- end -}}

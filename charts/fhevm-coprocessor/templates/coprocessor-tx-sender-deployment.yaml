@@ -1,0 +1,29 @@
+{{- if .Values.txSender.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: coprocessor-tx-sender
+    app.kubernetes.io/name: {{ include "txSenderName" . }}
+  name: {{ include "txSenderName" . }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: coprocessor-tx-sender
+  template:
+    metadata:
+      labels:
+        app: coprocessor-tx-sender
+        app.kubernetes.io/name: {{ include "txSenderName" . }}
+    spec:
+      restartPolicy: Always
+      containers:
+        - name: coprocessor-tx-sender
+          image: {{ .Values.txSender.image.name }}:{{ .Values.txSender.image.tag }}
+          command: ["transaction_sender"]
+          args:
+{{ toYaml .Values.txSender.args | nindent 12 }}
+          env:
+{{ toYaml .Values.txSender.env | nindent 12 }}
+{{- end -}}

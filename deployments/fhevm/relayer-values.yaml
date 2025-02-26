@@ -1,0 +1,73 @@
+nameOverride:
+replicaCount: 1
+
+image:
+  name: ghcr.io/zama-ai/fhevm-relayer
+  tag: v0.1.0-test
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 3000
+
+env:
+  - name: HTTPZ_PRIVATE_KEY
+    value: "0x2e014a0b381171ae1ec813ccb82e1d9fed7e6cf2d860844e43e4ac072bf0e50a"
+  - name: GATEWAY_PRIVATE_KEY
+    value: "0xcb97ef45d352446a6adf810cf8f63c73ada027160c271da9bb8cfcb3d944d257"
+  - name: DECRYPTION_ORACLE_ADDRESS
+    valueFrom:
+      configMapKeyRef:
+        name: layer1-sc-addresses
+        key: decryptionoracle.address
+  - name: TFHE_EXECUTOR_ADDRESS
+    valueFrom:
+      configMapKeyRef:
+        name: layer1-sc-addresses
+        key: exec.address
+  - name: DECRYPTION_MANAGER_ADDRESS
+    valueFrom:
+      configMapKeyRef:
+        name: layer2-sc-addresses
+        key: httpz.address
+  - name: ZKPOK_MANAGER_ADDRESS
+    valueFrom:
+      configMapKeyRef:
+        name: layer2-sc-addresses
+        key: zkpok_manager.address
+
+config:
+  environment: staging
+  networks:
+    fhevm:
+      ws_url: "ws://layer1-anvil-node:8545"
+      http_url: "http://layer1-anvil-node:8545"
+      chain_id: 12345
+      retry_delay: 1000
+      max_reconnection_attempts: 3
+    rollup:
+      ws_url: "ws://layer2-anvil-node:8546"
+      http_url: "http://layer2-anvil-node:8546"
+      chain_id: 54321
+      retry_delay: 1000
+      max_reconnection_attempts: 3
+  transaction:
+    private_key_httpz_env: HTTPZ_PRIVATE_KEY
+    private_key_gateway_env: GATEWAY_PRIVATE_KEY
+    gas_limit: 150000
+    max_priority_fee: 2000000000
+    timeout_secs: 30
+    confirmations: 1
+  contracts:
+    decryption_oracle_address: 0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d
+    tfhe_executor_address: 0x12B064FB845C1cc05e9493856a1D637a73e944bE
+    decryption_manager_address: 0x5ffdaAB0373E62E2ea2944776209aEf29E631A64
+    zkpok_manager_address: 0x812b06e1CDCE800494b79fFE4f925A504a9A9810
+  log:
+    level: "info"
+    format: "pretty"
+    show_file_line: false
+    show_thread_ids: false
+    show_timestamp: true
+  staging:
+    verbose_errors: true
