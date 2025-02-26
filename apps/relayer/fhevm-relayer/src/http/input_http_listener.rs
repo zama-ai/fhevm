@@ -1,9 +1,9 @@
+use crate::core::event::{
+    ApiCategory, ApiVersion, InputEventData, InputProofRequest, RelayerEvent, RelayerEventData,
+};
+use crate::core::utils::OnceHandler;
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
-use crate::relayer_event::{
-    ApiCategory, InputEventData, InputProofRequest, RelayerEvent, RelayerEventData,
-};
-use crate::utils::OnceHandler;
 use axum::{extract::Json, http::StatusCode, response::IntoResponse};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -93,7 +93,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
 
         let event = RelayerEvent::new(
             request_id,
-            crate::relayer_event::ApiVersion {
+            ApiVersion {
                 category: ApiCategory::PRODUCTION,
                 number: 1,
             },

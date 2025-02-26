@@ -1,5 +1,5 @@
-use crate::errors::Error;
-use crate::ethereum::ContractAndTopicsFilter;
+use crate::blockchain::ethereum::ContractAndTopicsFilter;
+use crate::core::errors::Error;
 use alloy::{
     providers::{Provider, ProviderBuilder, WsConnect},
     pubsub::PubSubFrontend,
@@ -9,14 +9,14 @@ use alloy::{
 use std::sync::Arc;
 use tracing::{info, instrument};
 
-pub struct RollupL2 {
+pub struct EthereumHostL1 {
     provider: Arc<dyn Provider<PubSubFrontend> + Send + Sync>,
 }
 
-unsafe impl Send for RollupL2 {}
-unsafe impl Sync for RollupL2 {}
+unsafe impl Send for EthereumHostL1 {}
+unsafe impl Sync for EthereumHostL1 {}
 
-impl RollupL2 {
+impl EthereumHostL1 {
     #[instrument(skip_all)]
     pub async fn new(ws_url: &str) -> Result<Self, Error> {
         let ws = WsConnect::new(ws_url);
@@ -25,7 +25,7 @@ impl RollupL2 {
             .await
             .map_err(Error::Transport)?;
 
-        Ok(RollupL2 {
+        Ok(EthereumHostL1 {
             provider: Arc::new(provider),
         })
     }
@@ -46,7 +46,7 @@ impl RollupL2 {
             .await
             .map_err(Error::Transport)?;
 
-        info!("Subscription successful to Rollup L2 aka Gateway. Listening for logs...");
+        info!("Subscription successful. Listening for logs...");
         let stream = sub.into_stream();
         Ok(stream)
     }

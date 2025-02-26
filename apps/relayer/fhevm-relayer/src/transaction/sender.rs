@@ -16,7 +16,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::{
     config::settings::{RetrySettings, TransactionConfig},
-    errors::TransactionServiceError,
+    core::errors::TransactionServiceError,
 };
 
 #[derive(Debug, Clone)]

@@ -1,4 +1,4 @@
-use crate::errors::EventProcessingError;
+use crate::core::errors::EventProcessingError;
 use alloy::primitives::FixedBytes;
 use alloy::rpc::types::Log;
 

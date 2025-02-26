@@ -1,8 +1,8 @@
 use tracing::{debug, error, info};
 
+use crate::core::event::{ApiCategory, ApiVersion, RelayerEvent, RelayerEventData};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
-use crate::relayer_event::{self, RelayerEvent};
 use alloy::rpc::types::Log;
 use futures_util::StreamExt;
 use std::sync::Arc;
@@ -24,11 +24,11 @@ pub async fn event_listener(
                     let id = orchestrator.new_request_id();
                     let event = RelayerEvent::new(
                         id,
-                        relayer_event::ApiVersion {
-                            category: relayer_event::ApiCategory::PRODUCTION,
+                        ApiVersion {
+                            category: ApiCategory::PRODUCTION,
                             number: 1,
                         },
-                        relayer_event::RelayerEventData::EventLogFromHostL1  {
+                        RelayerEventData::EventLogFromHostL1  {
                             event_log,
                         },
                     );

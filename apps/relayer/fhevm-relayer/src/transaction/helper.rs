@@ -1,4 +1,4 @@
-use crate::errors::{EventProcessingError, TransactionServiceError};
+use crate::core::errors::{EventProcessingError, TransactionServiceError};
 use crate::transaction::{TransactionService, TxConfig};
 use alloy::primitives::{Address, Bytes};
 use alloy::rpc::types::TransactionReceipt;

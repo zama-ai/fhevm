@@ -1,13 +1,13 @@
 use crate::{
-    errors::EventProcessingError,
-    ethereum::{bindings::DecyptionManager, ComputeCalldata},
+    blockchain::ethereum::{bindings::DecyptionManager, ComputeCalldata},
+    core::errors::EventProcessingError,
+    core::event::{DecryptEventData, RelayerEvent, RelayerEventData},
+    core::utils::{colorize_event_type, colorize_request_id},
     orchestrator::{
         traits::{EventDispatcher, EventHandler},
         TokioEventDispatcher,
     },
-    relayer_event::{DecryptEventData, RelayerEvent, RelayerEventData},
     transaction::{ReceiptProcessor, TransactionHelper, TransactionService, TxConfig},
-    utils::{colorize_event_type, colorize_request_id},
 };
 
 use alloy::{

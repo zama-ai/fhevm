@@ -1,16 +1,16 @@
 use crate::{
-    config::settings::ContractConfig,
-    errors::EventProcessingError,
-    ethereum::{
+    blockchain::ethereum::{
         bindings::{DecyptionManager::PublicDecryptionRequest, ZKPoKManager},
         ComputeCalldata,
     },
+    config::settings::ContractConfig,
+    core::errors::EventProcessingError,
+    core::utils::{colorize_event_type, colorize_request_id},
     gateway_processors_mock::event::{
         GatewayProcessorsEvent, GatewayProcessorsEventData, GatewayProcessorsInputEventData,
     },
     orchestrator::{traits::EventHandler, TokioEventDispatcher},
     transaction::{TransactionHelper, TransactionService, TxConfig},
-    utils::{colorize_event_type, colorize_request_id},
 };
 use std::str::FromStr;
 

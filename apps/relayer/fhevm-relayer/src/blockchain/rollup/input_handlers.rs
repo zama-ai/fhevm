@@ -1,13 +1,13 @@
 use crate::{
-    errors::EventProcessingError,
-    ethereum::{bindings::ZKPoKManager, ComputeCalldata},
+    blockchain::ethereum::{bindings::ZKPoKManager, ComputeCalldata},
+    core::errors::EventProcessingError,
+    core::event::{InputEventData, InputProofResponse, RelayerEvent, RelayerEventData},
+    core::utils::{colorize_event_type, colorize_request_id},
     orchestrator::{
         traits::{EventDispatcher, EventHandler},
         TokioEventDispatcher,
     },
-    relayer_event::{InputEventData, InputProofResponse, RelayerEvent, RelayerEventData},
     transaction::{ReceiptProcessor, TransactionHelper, TransactionService, TxConfig},
-    utils::{colorize_event_type, colorize_request_id},
 };
 
 use alloy::{

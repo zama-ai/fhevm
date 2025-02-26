@@ -39,19 +39,21 @@ use tracing::info;
 use tracing_subscriber::{fmt::SubscriberBuilder, EnvFilter};
 
 use fhevm_relayer::{
-    arbitrum_gateway_l2_handlers::ArbitrumGatewayL2Handler,
+    blockchain::ethereum::ContractAndTopicsFilter,
+    blockchain::httpz::ethereum_listener::event_listener,
+    blockchain::httpz::host_l1::EthereumHostL1,
+    blockchain::rollup::rollup_l2::RollupL2,
+    blockchain::rollup::rollup_listener::event_listener_rollup,
+    blockchain::ArbitrumGatewayL2Handler,
+    blockchain::ArbitrumGatewayL2InputHandler,
+    blockchain::EthereumHostL1Handler,
     config::settings::{LogConfig, Settings},
-    ethereum::{ContractAndTopicsFilter, EthereumHostL1, RollupL2},
-    ethereum_host_l1_handlers::EthereumHostL1Handler,
-    ethereum_listener::event_listener,
-    http_server::run_http_server,
-    input_handlers::ArbitrumGatewayL2InputHandler,
+    core::event::RelayerEvent,
+    http::http_server::run_http_server,
     orchestrator::{
         traits::{EventHandler, HandlerRegistry},
         Orchestrator, TokioEventDispatcher,
     },
-    relayer_event::RelayerEvent,
-    rollup_listener::event_listener_rollup,
     transaction::{TransactionService, TxConfig},
 };
 

@@ -1,9 +1,9 @@
 use alloy_sol_types::SolEvent;
 use tracing::{error, info};
 
-use crate::ethereum::bindings::{DecyptionManager, ZKPoKManager};
+use crate::blockchain::ethereum::bindings::{DecyptionManager, ZKPoKManager};
 use crate::gateway_processors_mock::event::{
-    self, GatewayProcessorsEvent, GatewayProcessorsInputEventData, GatewayProcessorsEventData,
+    self, GatewayProcessorsEvent, GatewayProcessorsEventData, GatewayProcessorsInputEventData,
 };
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;

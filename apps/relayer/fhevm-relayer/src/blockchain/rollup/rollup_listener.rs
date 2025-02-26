@@ -1,11 +1,10 @@
 use alloy_sol_types::SolEvent;
 use tracing::{error, info};
 
-use crate::ethereum::bindings::{DecyptionManager, ZKPoKManager};
+use crate::blockchain::ethereum::bindings::{DecyptionManager, ZKPoKManager};
+use crate::core::event::{ApiCategory, ApiVersion, InputEventData, RelayerEvent, RelayerEventData};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
-use crate::relayer_event::InputEventData;
-use crate::relayer_event::{self, RelayerEvent};
 use alloy::hex;
 use alloy::primitives::FixedBytes;
 use alloy::rpc::types::Log;
@@ -45,7 +44,7 @@ pub async fn event_listener_rollup(
                         match topic_bytes {
                         PROOF_VERIFICATION_RESPONSE_TOPIC => {
                             info!("Received Proof Verification response event");
-                            relayer_event::RelayerEventData::Input(
+                            RelayerEventData::Input(
                                     InputEventData::EventLogResponseFromGwL2   {
                                         log: event_log
                                     }
@@ -53,7 +52,7 @@ pub async fn event_listener_rollup(
                             },
                             DECRYPTION_RESPONSE_TOPIC => {
                                 info!("Received Decryption response event");
-                                relayer_event::RelayerEventData::EventLogResponseFromGwL2   {
+                                RelayerEventData::EventLogResponseFromGwL2   {
                                             log: event_log
                                         }
 
@@ -71,8 +70,8 @@ pub async fn event_listener_rollup(
 
                     let event = RelayerEvent::new(
                         id,
-                        relayer_event::ApiVersion {
-                            category: relayer_event::ApiCategory::PRODUCTION,
+                        ApiVersion {
+                            category: ApiCategory::PRODUCTION,
                             number: 1,
                         },
                         event_data,

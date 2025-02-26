@@ -9,7 +9,7 @@ use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use super::sender::{RetryConfig, TransactionManager, TxConfig};
-use crate::errors::TransactionServiceError;
+use crate::core::errors::TransactionServiceError;
 
 /// Represents the current state of a transaction
 #[derive(Debug, Clone, PartialEq)]

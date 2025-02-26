@@ -1,16 +1,16 @@
 use crate::{
-    errors::EventProcessingError,
-    ethereum::{
+    blockchain::ethereum::{
         bindings::{DecryptionOracle, DecyptionManager::PublicDecryptionResponse},
         ComputeCalldata,
     },
+    core::errors::EventProcessingError,
+    core::event::{DecryptEventData, DecryptionType, RelayerEvent, RelayerEventData},
+    core::utils::{colorize_event_type, colorize_request_id},
     orchestrator::{
         traits::{EventDispatcher, EventHandler},
         TokioEventDispatcher,
     },
-    relayer_event::{DecryptEventData, DecryptionType, RelayerEvent, RelayerEventData},
     transaction::{TransactionHelper, TransactionService, TxConfig},
-    utils::{colorize_event_type, colorize_request_id},
 };
 use alloy::primitives::{Address, FixedBytes, Uint};
 use alloy::rpc::types::Log;

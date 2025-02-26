@@ -1,7 +1,7 @@
-use crate::input_http_listener::{InputProofHandler, InputProofRequestJson};
+use crate::core::event::RelayerEvent;
+use crate::http::input_http_listener::{InputProofHandler, InputProofRequestJson};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
-use crate::relayer_event::RelayerEvent;
 use axum::handler::post;
 use axum::Json;
 use axum::Router;

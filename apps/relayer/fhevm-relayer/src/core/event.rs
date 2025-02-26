@@ -1,5 +1,5 @@
-use crate::ethereum::bindings::DecyptionManager::PublicDecryptionResponse;
-use crate::input_http_listener::{InputProofRequestJson, InputProofResponseJson};
+use crate::blockchain::ethereum::bindings::DecyptionManager::PublicDecryptionResponse;
+use crate::http::input_http_listener::{InputProofRequestJson, InputProofResponseJson};
 use crate::orchestrator::traits::Event;
 use alloy::primitives::{Address, Bytes, FixedBytes};
 use alloy::{primitives::U256, rpc::types::Log};

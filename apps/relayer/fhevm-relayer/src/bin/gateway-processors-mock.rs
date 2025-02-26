@@ -39,8 +39,9 @@ use tracing::info;
 use tracing_subscriber::{fmt::SubscriberBuilder, EnvFilter};
 
 use fhevm_relayer::{
+    blockchain::ethereum::ContractAndTopicsFilter,
+    blockchain::rollup::rollup_l2::RollupL2,
     config::settings::{ContractConfig, LogConfig, Settings},
-    ethereum::{ContractAndTopicsFilter, RollupL2},
     gateway_processors_mock::event_listener_rollup,
     gateway_processors_mock::GatewayProcessorsEvent,
     gateway_processors_mock::GatewayProcessorsHandler,
