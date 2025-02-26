@@ -41,43 +41,41 @@ spec:
             - "-c"
           args:
             - |
-              export ASC_CONN__BLOCKCHAIN__SIGNKEY__MNEMONIC="$(cat /connector-wallets/connector-${POD_INDEX}.mnemonic | tr -d '\n')"
-              kms-blockchain-connector --config-file /var/lib/kms-connector/config.toml --catch-up-num-blocks {{ .Values.kmsConnector.catchUpNumBlocks | quote }}
+              kms-connector validate -c /var/lib/kms-connector/config.toml
+              kms-connector start -c /var/lib/kms-connector/config.toml
           image: {{ .Values.kmsConnector.image.name }}:{{ .Values.kmsConnector.image.tag }}
           env:
             - name: POD_INDEX
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.labels['apps.kubernetes.io/pod-index']
-            - name: ASC_CONN__CORE__ADDRESSES
+            - name: KMS_CONNECTOR__KMS_CORE_ENDPOINT
               value: {{ printf "http://%s-$(POD_INDEX):%d" $kmsCoreName (int $.Values.kmsCore.ports.client) | quote }}
-            - name: ASC_CONN__STORAGE__PATH
-              value: "/var/lib/kms-connector/events.toml"
             - name: RUN_MODE
               value: {{ .Values.runMode }}
             - name: PROBE
               value: "true"
-            - name: ASC_CONN__BLOCKCHAIN__ASC_ADDRESS
+            - name: KMS_CONNECTOR__DECRYPTION_MANAGER_ADDRESS
               valueFrom:
                 configMapKeyRef:
                   name: {{ .Values.kmsConnector.contractAddress.configmap.name }}
-                  key: {{ .Values.kmsConnector.contractAddress.configmap.ascAddressKey }}
-            - name: ASC_CONN__BLOCKCHAIN__CSC_ADDRESS
+                  key: {{ .Values.kmsConnector.contractAddress.configmap.httpzAddressKey }}
+            - name: KMS_CONNECTOR__HTTPZ_ADDRESS
               valueFrom:
                 configMapKeyRef:
                   name: {{ .Values.kmsConnector.contractAddress.configmap.name }}
-                  key: {{ .Values.kmsConnector.contractAddress.configmap.cscAddressKey }}
+                  key: {{ .Values.kmsConnector.contractAddress.configmap.decryptionManagerAddressKey }}
             - name: RUST_LOG
               value: {{ .Values.rustLog }}
           volumeMounts:
-            - mountPath: /var/lib/kms-connector
-              name: data
             - mountPath: /var/lib/kms-connector/config.toml
               subPath: config.toml
               name: config-files
             - mountPath: /connector-wallets
               name:  connector-wallet
               readOnly: true
+            - mountPath: /data
+              name: data
       restartPolicy: Always
       imagePullSecrets:
         - name: registry-credentials
