@@ -33,6 +33,11 @@ impl InputProofRequestJson {
 /// Represents the response from the '/input-proof' endpoint.
 #[derive(Debug, Serialize)]
 pub struct InputProofResponseJson {
+    pub response: InputProofResponsePayloadJson,
+}
+
+#[derive(Debug, Serialize)]
+pub struct InputProofResponsePayloadJson {
     pub handles: Vec<String>, // Ordered List of hex encoded handles with 0x prefix.
     pub signatures: Vec<String>, // Attestation signatures for ZkPoK for the ordered list of handles.
 }

@@ -1,5 +1,7 @@
 use crate::blockchain::ethereum::bindings::DecyptionManager::PublicDecryptionResponse;
-use crate::http::input_http_listener::{InputProofRequestJson, InputProofResponseJson};
+use crate::http::input_http_listener::{
+    InputProofRequestJson, InputProofResponseJson, InputProofResponsePayloadJson,
+};
 use crate::orchestrator::traits::Event;
 use alloy::primitives::{Address, Bytes, FixedBytes};
 use alloy::{primitives::U256, rpc::types::Log};
@@ -291,16 +293,18 @@ impl TryFrom<InputProofResponse> for InputProofResponseJson {
 
     fn try_from(response: InputProofResponse) -> Result<Self, Self::Error> {
         Ok(InputProofResponseJson {
-            handles: response
-                .handles
-                .into_iter()
-                .map(|handle| format!("{:#x}", handle))
-                .collect(),
-            signatures: response
-                .signatures
-                .into_iter()
-                .map(|sig| format!("{:#x}", sig))
-                .collect(),
+            response: InputProofResponsePayloadJson {
+                handles: response
+                    .handles
+                    .into_iter()
+                    .map(|handle| format!("{:#x}", handle))
+                    .collect(),
+                signatures: response
+                    .signatures
+                    .into_iter()
+                    .map(|sig| format!("{:#x}", sig))
+                    .collect(),
+            },
         })
     }
 }
@@ -364,7 +368,7 @@ mod tests {
         let expected_handle = format!("{:#x}", FixedBytes::<32>::from([FIXED_BYTE_VALUE; 32]));
         let expected_signature = format!("{:#x}", Bytes::from(vec![SIGNATURE_BYTE_VALUE; 32]));
 
-        assert_eq!(json.handles, vec![expected_handle.clone()]);
-        assert_eq!(json.signatures, vec![expected_signature]);
+        assert_eq!(json.response.handles, vec![expected_handle.clone()]);
+        assert_eq!(json.response.signatures, vec![expected_signature]);
     }
 }
