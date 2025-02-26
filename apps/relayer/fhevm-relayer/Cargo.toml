@@ -11,6 +11,7 @@ path = "src/lib.rs"
 [dependencies]
 alloy = { version = "0.9.2", features = ["full"] }
 alloy-sol-types = "0.8.18"
+base64ct = "=1.6.0"
 dashmap = "6.1.0"
 eyre = "0.6.12"
 futures = "0.3.31"
