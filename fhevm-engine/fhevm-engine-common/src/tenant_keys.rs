@@ -17,6 +17,7 @@ pub struct TfheTenantKeys {
 }
 
 pub struct FetchTenantKeyResult {
+    pub tenant_id: i32,
     pub chain_id: i32,
     pub verifying_contract_address: String,
     pub acl_contract_address: String,
@@ -41,6 +42,7 @@ where
             let mut w = tenant_key_cache.write().await;
             if let Some(key) = w.get(&id) {
                 return Ok(FetchTenantKeyResult {
+                    tenant_id: key.tenant_id,
                     chain_id: key.chain_id,
                     verifying_contract_address: key.verifying_contract_address.clone(),
                     acl_contract_address: key.acl_contract_address.clone(),
