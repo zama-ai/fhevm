@@ -1,0 +1,32 @@
+name: Rust Formatting
+
+on:
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust-formatting:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203 # v1
+      with:
+        toolchain: stable
+        components: rustfmt
+
+    - name: Check formatting
+      id: fmt
+      run: cargo fmt --all -- --check
+
+permissions:
+  contents: read
+  checks: write

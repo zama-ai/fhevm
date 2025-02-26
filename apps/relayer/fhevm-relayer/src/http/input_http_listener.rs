@@ -138,8 +138,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
                     let error_response = InputProofErrorResponseJson {
                         message: "request could not be completed 2".to_string(),
                     };
-                    (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response))
-                        .into_response()
+                    (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
                 }
             },
             _ => {
