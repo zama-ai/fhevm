@@ -1,3 +1,4 @@
+use crate::config::settings::Settings;
 use crate::core::event::RelayerEvent;
 use crate::http::input_http_listener::{InputProofHandler, InputProofRequestJson};
 use crate::http::keyurl_http_listener::KeyUrlResponseJson;
@@ -38,7 +39,10 @@ where
             );
 
     // Define the socket address for the server to listen on.
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    let settings = Settings::new()
+        .map_err(|e| eyre::eyre!("Failed to load configuration: {}", e))
+        .unwrap(); // TODO(mano): Handle error properly.
+    let addr: SocketAddr = settings.inputproof.url.parse().expect("Invalid address");
     println!("Server listening on http://{}", addr);
 
     // Start the server with hyper underneath.

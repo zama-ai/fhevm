@@ -138,6 +138,11 @@ pub struct ContractConfig {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct InputProof {
+    pub url: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct KeyUrl {
     pub fhe_public_key: KeyData,
     pub crs: KeyData,
@@ -164,6 +169,8 @@ pub struct Settings {
     pub contracts: ContractConfig,
     /// Logging configuration
     pub log: LogConfig,
+    /// Input proof endpoint address
+    pub inputproof: InputProof,
 
     /// Hard-coded data (from config for keyurl)
     pub keyurl: KeyUrl,
