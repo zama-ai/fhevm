@@ -5,8 +5,6 @@ import { LoggerModule } from 'nestjs-pino'
 import { InfraModule } from './infra/infra.module.js'
 import awsConfig from './config/aws.config.js'
 import dbConfig from '#config/db.config.js'
-import { BackModule } from '#back/back.module.js'
-import { Web3Module } from '#web3/web3.module.js'
 import commonConfig from '#config/common.config.js'
 import { MS_NAME } from '#constants.js'
 
@@ -45,8 +43,6 @@ export const configModule = ConfigModule.forRoot({
       },
     }),
     InfraModule,
-    BackModule,
-    Web3Module,
   ],
 })
 export class AppModule {}
