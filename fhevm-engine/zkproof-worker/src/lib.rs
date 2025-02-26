@@ -12,6 +12,9 @@ pub enum ExecutionError {
     #[error("Database error: {0}")]
     DbError(#[from] sqlx::Error),
 
+    #[error("Connection to PostgreSQL is lost")]
+    LostDbConnection,
+
     #[error("Serialization error: {0}")]
     SerializationError(#[from] bincode::Error),
 

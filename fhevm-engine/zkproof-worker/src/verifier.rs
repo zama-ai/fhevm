@@ -70,11 +70,14 @@ pub async fn execute_verify_proofs_loop(
         select! {
             res = listener.try_recv() => {
                 match res {
-                    Ok(None) => error!(target: "zkpok", "DB connection is lost"),
+                    Ok(None) => {
+                        error!(target: "zkpok", "DB connection err");
+                        return Err(ExecutionError::LostDbConnection)
+                    },
                     Ok(_) => info!(target: "zkpok", "Received notification"),
                     Err(err) => {
-                        error!(target: "zkpok", "DB connection err");
-                        return Err(ExecutionError::DbError(err))
+                        error!(target: "zkpok", "DB connection err {}", err);
+                        return Err(ExecutionError::LostDbConnection)
                     },
                 };
             },
