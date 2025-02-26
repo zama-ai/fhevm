@@ -7,7 +7,7 @@ sol!(
     #[sol(rpc)]
     #[derive(Debug, serde::Serialize, serde::Deserialize)]
     GatewayContract,
-    "./artifacts/GatewayContract.abi"
+    "./artifacts/contract-abis/GatewayContract.abi"
 );
 
 // New version of DecryptionOracle
@@ -17,7 +17,7 @@ sol!(
     #[sol(rpc)]
     #[derive(Debug, serde::Serialize, serde::Deserialize)]
     DecryptionOracle,
-    "./artifacts/DecryptionOracle.json"
+    "./artifacts/contract-abis/DecryptionOracle.json"
 );
 
 // TFHE EXecutor
@@ -27,7 +27,7 @@ sol!(
     #[sol(rpc)]
     #[derive(Debug, serde::Serialize, serde::Deserialize)]
     TFHEExecutor,
-    "./artifacts/TFHEExecutor.json"
+    "./artifacts/contract-abis/TFHEExecutor.json"
 );
 
 // Decryption Manager (Rollup)
@@ -37,7 +37,7 @@ sol!(
     #[sol(rpc)]
     #[derive(Debug, serde::Serialize, serde::Deserialize)]
     DecyptionManager,
-    "./artifacts/DecryptionManager.json"
+    "./artifacts/contract-abis/DecryptionManager.json"
 );
 
 // ZKPoK  Manager (Rollup)
@@ -47,7 +47,7 @@ sol!(
     #[sol(rpc)]
     #[derive(Debug, serde::Serialize, serde::Deserialize)]
     ZKPoKManager,
-    "./artifacts/ZKPoKManager.json"
+    "./artifacts/contract-abis/ZKPoKManager.json"
 );
 
 // Define the Transfer event structure using alloy_sol_types
