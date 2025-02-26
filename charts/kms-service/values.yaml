@@ -197,17 +197,3 @@ kmsCoreClient:
 # Cronjob kubernetes
 kmsCoreClientTesting:
   enabled: false
-  nameOverride:
-  image:
-    name: ghcr.io/zama-ai/kms-core-client
-    tag: latest
-  schedule: "30 * * * *"
-  envFrom:
-    configmap:
-      name:
-  num_majority: 2
-  num_reconstruct: 3
-  decryption_mode: "NoiseFloodSmall"
-  nodeSelector:
-  affinity:
-  tolerations:
