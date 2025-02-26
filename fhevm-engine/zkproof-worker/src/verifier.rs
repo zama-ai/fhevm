@@ -68,8 +68,15 @@ pub async fn execute_verify_proofs_loop(
         }
 
         select! {
-            _ = listener.try_recv() => {
-                info!(target: "zkpok", "Received notification");
+            res = listener.try_recv() => {
+                match res {
+                    Ok(None) => error!(target: "zkpok", "DB connection is lost"),
+                    Ok(_) => info!(target: "zkpok", "Received notification"),
+                    Err(err) => {
+                        error!(target: "zkpok", "DB connection err");
+                        return Err(ExecutionError::DbError(err))
+                    },
+                };
             },
             _ = tokio::time::sleep(idle_poll_interval) => {
                 debug!(target: "zkpok", "Polling timeout, rechecking for tasks");
@@ -209,8 +216,7 @@ fn try_verify_and_expand_ciphertext_list(
         .assemble()
         .map_err(|e| ExecutionError::InvalidAuxData(e.to_string()))?;
 
-    let the_list: tfhe::ProvenCompactCiphertextList =
-        safe_deserialize(raw_ct).expect(" deserialization failed");
+    let the_list: tfhe::ProvenCompactCiphertextList = safe_deserialize(raw_ct)?;
 
     let expanded: tfhe::CompactCiphertextListExpander = the_list
         .verify_and_expand(&keys.public_params, &keys.pks, &aux_data_bytes)
