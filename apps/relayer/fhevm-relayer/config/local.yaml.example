@@ -22,6 +22,14 @@ networks:
     retry_delay: 1000
     max_reconnection_attempts: 3
 
+keyurl:
+    fhe_public_key:
+      data_id: "fhe-public-key-data-id"
+      url: "fhe-public-key-url"
+    crs:
+      data_id: "crs-data-id"
+      url: "crs-data-key-url"
+
 transaction:
   private_key_httpz_env: "HTTPZ_PRIVATE_KEY"
   private_key_gateway_env: "GATEWAY_PRIVATE_KEY"

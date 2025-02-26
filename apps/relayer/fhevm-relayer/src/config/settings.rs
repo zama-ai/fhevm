@@ -138,6 +138,18 @@ pub struct ContractConfig {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct KeyUrl {
+    pub fhe_public_key: KeyData,
+    pub crs: KeyData,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct KeyData {
+    pub data_id: String,
+    pub url: String,
+}
+
+#[derive(Debug, Deserialize)]
 /// Top-level configuration structure.
 ///
 /// Contains all configuration settings for the relayer service.
@@ -152,6 +164,9 @@ pub struct Settings {
     pub contracts: ContractConfig,
     /// Logging configuration
     pub log: LogConfig,
+
+    /// Hard-coded data (from config for keyurl)
+    pub keyurl: KeyUrl,
 }
 
 // Error type for application-specific configuration errors
