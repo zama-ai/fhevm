@@ -56,6 +56,7 @@ async function startPostgres(maxWorkers: number) {
 async function stopPostgres() {
   if (pgContainer) {
     await pgContainer.stop()
+    console.log(`🚛 testcontainer Postgres stopped`)
   }
 }
 
@@ -73,6 +74,7 @@ async function startAws() {
 async function stopAws() {
   if (awsContainer) {
     await awsContainer.stop()
+    console.log(`🚛 testcontainer AWS stopped`)
   }
 }
 
@@ -95,6 +97,7 @@ async function startRedis() {
 async function stopRedis() {
   if (redisContainer) {
     await redisContainer.stop()
+    console.log(`🚛 testcontainer Redis stopped`)
   }
 }
 

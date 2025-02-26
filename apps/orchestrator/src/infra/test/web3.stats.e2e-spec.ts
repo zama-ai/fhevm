@@ -30,13 +30,15 @@ describe('web3 dapp stats', () => {
   })
 
   describe(`when the orchestrator receive a 'web3:fhe-event:requested' event`, () => {
+    let requestId: string
     let correlationId: string
 
     beforeEach(async () => {
+      requestId = faker.string.uuid()
       correlationId = faker.string.uuid()
       const message = web3.fheRequested(
         {
-          requestId: faker.string.uuid(),
+          requestId,
           chainId: LOCAL_FHEVM_CHAIN_ID,
           address: faker.string.hexadecimal({ length: 40 }),
         },

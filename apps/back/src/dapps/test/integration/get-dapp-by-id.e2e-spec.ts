@@ -40,11 +40,13 @@ describe('get-dapp-by-id', () => {
         { email: faker.internet.email(), password: faker.internet.password() },
         { signup: true },
       )
-      expect(result.success, 'Failed to login the user').toBe(true)
       if (result.success) {
         token = result.data.token
         teamId = result.data.user.teams[0].id
+      } else {
+        console.log(`failed to login: ${JSON.stringify(result)}`)
       }
+      expect(result.success, 'Failed to login the user').toBe(true)
 
       const createDappResult = await manager.dapp.createDApp({
         token,

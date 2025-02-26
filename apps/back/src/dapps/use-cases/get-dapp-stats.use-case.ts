@@ -57,7 +57,7 @@ export class GetDappStatsUseCase implements UseCase<Input, Output> {
                 .publish(
                   back.dappStatsRequested(
                     {
-                      // Note: we should retrieve the request Id from the context
+                      // TODO: retrieve the `requestId` from the adapter
                       requestId: generateRequestId(),
                       dAppId: dappId.value,
                       // Note: We should store the chainId in the DApp entity

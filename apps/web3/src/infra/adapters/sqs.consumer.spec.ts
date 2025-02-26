@@ -40,6 +40,7 @@ describe('SQSConsumer', () => {
           event = {
             type: 'web3:fhe-event:requested',
             payload: {
+              requestId: faker.string.uuid(),
               chainId: faker.string.numeric(5),
               address: faker.string.hexadecimal({ length: 40 }),
             },

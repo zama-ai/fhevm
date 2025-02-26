@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { chainId, Meta, meta, web3Address } from './shared.js'
+import { chainId, Meta, meta, requestId, web3Address } from './shared.js'
 
 type EventTypes =
   | 'contract:validation:requested'
@@ -16,6 +16,7 @@ function genSchema<Key extends EventTypes, Payload extends z.ZodRawShape>(
   return z.object({
     type: z.literal(type),
     payload: z.object({
+      requestId,
       chainId,
       address: web3Address,
       ...payload,

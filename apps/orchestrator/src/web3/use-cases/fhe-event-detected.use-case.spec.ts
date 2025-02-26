@@ -70,6 +70,7 @@ describe(FheEventDetected, () => {
       await task.toPromise()
       expect(handler).toHaveBeenCalledOnce()
       const { payload } = handler.mock.calls[0][0]
+      expect(payload.requestId, 'Wrong requestId').toBe(event.payload.requestId)
       expect((payload as any).chainId, 'Wrong chainId').toBe(
         event.payload.chainId,
       )

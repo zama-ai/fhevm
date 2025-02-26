@@ -18,6 +18,7 @@
     "test:debug": "vitest --inspect-brk --inspect --logHeapUsage --threads=false"
   },
   "dependencies": {
+    "uuid": "^11.1.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {

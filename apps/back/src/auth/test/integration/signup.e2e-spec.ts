@@ -29,8 +29,6 @@ describe('signup', () => {
 
   afterEach(async () => {
     await manager.afterEach()
-    // adding some time to debug
-    await new Promise(r => setTimeout(r, 200))
   })
 
   describe('given an invitation exists', () => {
