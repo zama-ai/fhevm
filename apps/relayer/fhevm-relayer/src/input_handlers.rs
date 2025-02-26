@@ -136,11 +136,10 @@ impl ArbitrumGatewayL2InputHandler {
             "Failed to process input request"
         );
 
-        let error_event = event.derive_next_event(RelayerEventData::Decrypt(
-            DecryptEventData::DecryptionFailed {
+        let error_event =
+            event.derive_next_event(RelayerEventData::Decrypt(DecryptEventData::Failed {
                 error: format!("Input request failed: {}", error),
-            },
-        ));
+            }));
 
         if let Err(e) = self.dispatcher.dispatch_event(error_event).await {
             error!(?e, "Failed to dispatch error event");

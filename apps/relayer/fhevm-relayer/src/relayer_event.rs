@@ -44,11 +44,11 @@ impl Event for RelayerEvent {
             RelayerEventData::EventLogFromHostL1 { .. } => 0,
             RelayerEventData::EventLogResponseFromGwL2 { .. } => 3,
             RelayerEventData::Decrypt(decrypt_event) => match decrypt_event {
-                DecryptEventData::DecryptRequestRcvd { .. } => 1,
-                DecryptEventData::DecryptionRequestSentToGwL2 { .. } => 2,
-                DecryptEventData::DecryptionResponseRcvdFromGwL2 { .. } => 4,
-                DecryptEventData::DecryptResponseSentToHostL1 { .. } => 5,
-                DecryptEventData::DecryptionFailed { .. } => 6,
+                DecryptEventData::RequestRcvd { .. } => 1,
+                DecryptEventData::RequestSentToGwL2 { .. } => 2,
+                DecryptEventData::ResponseRcvdFromGwL2 { .. } => 4,
+                DecryptEventData::ResponseSentToHostL1 { .. } => 5,
+                DecryptEventData::Failed { .. } => 6,
             },
             RelayerEventData::Input(input_event) => match input_event {
                 InputEventData::ReqFromUser { .. } => 7,
@@ -146,13 +146,13 @@ pub enum DecryptEventData {
     // it will persist in contextual data of gateway l2 adapter.
     //
     // After this system will wait until a gateway l2 listener catches a response and creates a new request.
-    DecryptRequestRcvd {
+    RequestRcvd {
         // For gateway l2 handler
         ct_handles: Vec<[u8; 32]>,
         operation: DecryptionType,
     },
 
-    DecryptionRequestSentToGwL2 {
+    RequestSentToGwL2 {
         decryption_public_id: U256,
     },
 
@@ -162,14 +162,14 @@ pub enum DecryptEventData {
     // data store of the handler. if not, drops the request (not meant for this
     // relayer instance). if found, creates the next event with the original
     // orchestrator request id retreived from contextual data store.
-    DecryptionResponseRcvdFromGwL2 {
+    ResponseRcvdFromGwL2 {
         // For ethereum handler
         public_decryption_response: PublicDecryptionResponse,
     },
     // This event data could be used to update the dashboard.
-    DecryptResponseSentToHostL1,
+    ResponseSentToHostL1,
     // For no handler, just status update.
-    DecryptionFailed {
+    Failed {
         // For no handler, just status updated.
         error: String,
     },
@@ -178,13 +178,11 @@ pub enum DecryptEventData {
 impl DecryptEventData {
     pub fn event_name(&self) -> &'static str {
         match self {
-            DecryptEventData::DecryptRequestRcvd { .. } => "Decrypt::RequestRcvd",
-            DecryptEventData::DecryptionRequestSentToGwL2 { .. } => "Decrypt::RequestSendToGwL2",
-            DecryptEventData::DecryptionResponseRcvdFromGwL2 { .. } => {
-                "Decrypt:ResponseRcvdFromGwL2"
-            }
-            DecryptEventData::DecryptResponseSentToHostL1 => "Decrypt::ResponseSentToHostL1",
-            DecryptEventData::DecryptionFailed { .. } => "Decrypt::Failed",
+            DecryptEventData::RequestRcvd { .. } => "Decrypt::RequestRcvd",
+            DecryptEventData::RequestSentToGwL2 { .. } => "Decrypt::RequestSendToGwL2",
+            DecryptEventData::ResponseRcvdFromGwL2 { .. } => "Decrypt:ResponseRcvdFromGwL2",
+            DecryptEventData::ResponseSentToHostL1 => "Decrypt::ResponseSentToHostL1",
+            DecryptEventData::Failed { .. } => "Decrypt::Failed",
         }
     }
 }

@@ -130,7 +130,7 @@ impl ArbitrumGatewayL2Handler {
 
         // Create and dispatch the new event
         let next_event = event.derive_next_event(RelayerEventData::Decrypt(
-            DecryptEventData::DecryptionRequestSentToGwL2 {
+            DecryptEventData::RequestSentToGwL2 {
                 decryption_public_id,
             },
         ));
@@ -154,11 +154,10 @@ impl ArbitrumGatewayL2Handler {
             "Failed to send callback transaction"
         );
 
-        let error_event = event.derive_next_event(RelayerEventData::Decrypt(
-            DecryptEventData::DecryptionFailed {
+        let error_event =
+            event.derive_next_event(RelayerEventData::Decrypt(DecryptEventData::Failed {
                 error: format!("Callback transaction failed: {}", error),
-            },
-        ));
+            }));
 
         if let Err(e) = self.dispatcher.dispatch_event(error_event).await {
             error!(?e, "Failed to dispatch error event");
@@ -204,11 +203,10 @@ impl ArbitrumGatewayL2Handler {
                             "Found original request ID for decryption response"
                         );
 
-                        let next_event_data = RelayerEventData::Decrypt(
-                            DecryptEventData::DecryptionResponseRcvdFromGwL2 {
+                        let next_event_data =
+                            RelayerEventData::Decrypt(DecryptEventData::ResponseRcvdFromGwL2 {
                                 public_decryption_response: req,
-                            },
-                        );
+                            });
 
                         // Now we can use original_request_id directly
                         let next_event = RelayerEvent::new(
@@ -325,17 +323,14 @@ impl EventHandler<RelayerEvent> for ArbitrumGatewayL2Handler {
             "Processing relayer event"
         );
         match event.data {
-            RelayerEventData::Decrypt(DecryptEventData::DecryptRequestRcvd {
-                ref ct_handles,
-                ..
-            }) => {
+            RelayerEventData::Decrypt(DecryptEventData::RequestRcvd { ref ct_handles, .. }) => {
                 let handles = ct_handles.clone();
                 self.send_decryption_request_to_rollup(event, handles).await;
             }
             RelayerEventData::EventLogResponseFromGwL2 { .. } => {
                 self.handle_decrypt_reponse_event_log(event).await;
             }
-            RelayerEventData::Decrypt(DecryptEventData::DecryptionRequestSentToGwL2 {
+            RelayerEventData::Decrypt(DecryptEventData::RequestSentToGwL2 {
                 decryption_public_id,
             }) => {
                 self.handle_decrypt_request_sent(decryption_public_id);
