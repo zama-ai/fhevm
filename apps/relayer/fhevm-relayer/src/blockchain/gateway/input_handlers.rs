@@ -250,6 +250,11 @@ impl ArbitrumGatewayL2InputHandler {
                 )
             })?;
 
+        info!(
+            "zkpok_manager_address used for input request {:?}",
+            zkpok_manager_address
+        );
+
         self.tx_helper
             .send_transaction(
                 "input_request",
