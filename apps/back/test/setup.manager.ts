@@ -12,6 +12,7 @@ import { execSync } from 'child_process'
 import commonConfig from '#config/common.config.js'
 import { SNSClient } from '@aws-sdk/client-sns'
 import { SQSClient } from '@aws-sdk/client-sqs'
+import { JsPromise } from '#prisma/client/runtime/library.js'
 export type GraphQlResponse<T> =
   | {
       success: true
@@ -25,28 +26,31 @@ export type GraphQlResponse<T> =
 export class SetupManager {
   #app: INestApplication
 
-  #prismaClient: PrismaClient
+  #prismaClients: PrismaClient[]
 
   #topicName: string
   #queueName: string
   #logQueueName: string
 
   private async startPostgres() {
-    const databaseUrl = inject('databaseUrl')
+    const databaseUrls = inject('databaseUrls')
 
-    // use a random schema
-    const url = `${databaseUrl}?schema=${randomUUID()}`
-
-    // Execute Prisma migrations
-    execSync('pnpx prisma migrate deploy', {
-      env: { DATABASE_URL: url, PATH: process.env.PATH },
-    })
-
-    this.#prismaClient = new PrismaClient({
-      datasources: {
-        db: { url },
-      },
-    })
+    this.#prismaClients = databaseUrls.map(
+      url =>
+        new PrismaClient({
+          datasources: {
+            db: { url },
+          },
+          log: [
+            {
+              emit: 'stdout',
+              // TODO: create a config service to solve the configuration
+              level:
+                process.env.PRISMA_LOGLEVEL === 'debug' ? 'query' : 'error',
+            },
+          ],
+        }),
+    )
   }
 
   private async execSync(command: string) {
@@ -100,8 +104,6 @@ export class SetupManager {
   }
 
   async beforeAll() {
-    const awsEndpoint = this.awsEndpoint
-
     // Start services
     await Promise.all([this.startAws(), this.startPostgres()])
 
@@ -115,7 +117,7 @@ export class SetupManager {
           load: [
             commonConfig,
             registerAs('aws', () => ({
-              endpoint: awsEndpoint,
+              endpoint: this.awsEndpoint,
               queueUrl: this.queueUrl,
               region: this.awsRegion,
               topicArn: this.topicArn,
@@ -127,10 +129,11 @@ export class SetupManager {
         }),
       )
       .overrideProvider(PrismaClient)
-      .useValue(this.#prismaClient)
+      .useValue(new PrismaClientProxy(this.#prismaClients))
       .compile()
 
     this.#app = moduleRef.createNestApplication({ cors: true })
+
     await this.#app.init()
   }
 
@@ -143,12 +146,16 @@ export class SetupManager {
   }
 
   async afterEach() {
-    // Clear the database
-    await this.#prismaClient.$transaction([
-      this.#prismaClient.user.deleteMany(),
-      this.#prismaClient.team.deleteMany(),
-      this.#prismaClient.invitation.deleteMany(),
-      this.#prismaClient.dapp.deleteMany(),
+    const WORKER_ID = Number(process.env.VITEST_POOL_ID)
+    await Promise.all([
+      this.purgeLogQueue(),
+      // Clear the database
+      this.#prismaClients[WORKER_ID - 1].$transaction([
+        this.#prismaClients[WORKER_ID - 1].user.deleteMany(),
+        this.#prismaClients[WORKER_ID - 1].team.deleteMany(),
+        this.#prismaClients[WORKER_ID - 1].invitation.deleteMany(),
+        this.#prismaClients[WORKER_ID - 1].dapp.deleteMany(),
+      ]),
     ])
   }
 
@@ -218,5 +225,43 @@ export class SetupManager {
     await this.deleteQueue(this.logQueueUrl)
     await this.createQueue(this.#logQueueName)
     await this.subscribeToTopic(this.logQueueArn)
+  }
+}
+
+class PrismaClientProxy {
+  constructor(private readonly instances: PrismaClient[]) {}
+
+  $connect(): JsPromise<void> {
+    return this.instances[Number(process.env.VITEST_POOL_ID) - 1].$connect()
+  }
+
+  $disconnect(): JsPromise<void> {
+    return this.instances[Number(process.env.VITEST_POOL_ID) - 1].$disconnect()
+  }
+
+  $transaction(fn: unknown, options?: unknown) {
+    return (
+      this.instances[Number(process.env.VITEST_POOL_ID) - 1] as any
+    ).$transaction(fn, options)
+  }
+
+  get invitation() {
+    return this.instances[Number(process.env.VITEST_POOL_ID) - 1].invitation
+  }
+
+  get user() {
+    return this.instances[Number(process.env.VITEST_POOL_ID) - 1].user
+  }
+
+  get team() {
+    return this.instances[Number(process.env.VITEST_POOL_ID) - 1].team
+  }
+
+  get dapp() {
+    return this.instances[Number(process.env.VITEST_POOL_ID) - 1].dapp
+  }
+
+  get dappStat() {
+    return this.instances[Number(process.env.VITEST_POOL_ID) - 1].dappStat
   }
 }

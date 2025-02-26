@@ -31,12 +31,15 @@ describe('back dapp stats', () => {
 
   describe('given back request for dapp stats', () => {
     describe('when the orchestrator receive the message', () => {
+      let requestId: string
       let correlationId: string
 
       beforeEach(async () => {
+        requestId = faker.string.uuid()
         correlationId = faker.string.uuid()
         const message = back.dappStatsRequested(
           {
+            requestId,
             dAppId: faker.string.uuid(),
             chainId: LOCAL_FHEVM_CHAIN_ID,
             address: faker.string.hexadecimal({ length: 40 }),
@@ -57,10 +60,13 @@ describe('back dapp stats', () => {
         expect((messages[0]?.event as back.BackEvent).type).toBe(
           'back:dapp:stats-requested',
         )
+        expect(messages[0]?.event.payload.requestId).toBe(requestId)
+
         expect(web3.isWeb3Event(messages[1]?.event)).toBe(true)
         expect((messages[1]?.event as web3.Web3Event).type).toBe(
           'web3:fhe-event:requested',
         )
+        expect(messages[1]?.event.payload.requestId).toBe(requestId)
       })
 
       test('then it forward the correlationId', async () => {
@@ -78,12 +84,15 @@ describe('back dapp stats', () => {
 
   describe('given the back detect for dapp stats', () => {
     describe('when the orchestrator receive the message', () => {
+      let requestId: string
       let correlationId: string
 
       beforeEach(async () => {
+        requestId = faker.string.uuid()
         correlationId = faker.string.uuid()
         const message = back.dappStatsAvailable(
           {
+            requestId,
             chainId: LOCAL_FHEVM_CHAIN_ID,
             address: faker.string.hexadecimal({ length: 40 }),
             name: 'FheAdd',

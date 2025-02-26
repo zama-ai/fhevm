@@ -54,13 +54,13 @@ describe('deploy-dapp', () => {
         })
         expect(dappResult.success, 'Failed to create dApp').toBe(true)
         if (dappResult.success) {
-          dappId = dappResult.data.dapp.id
+          dappId = dappResult.data.id
         }
       }
     })
 
     describe('when deploying a dapp', () => {
-      let result: GraphQlResponse<{ dapp: DeployDappResult }>
+      let result: GraphQlResponse<DeployDappResult>
 
       beforeEach(async () => {
         result = await manager.dapp.deployDApp({
@@ -95,7 +95,7 @@ describe('deploy-dapp', () => {
         })
         expect(result.success).toBe(true)
         if (result.success) {
-          status = result.data.dapp.status
+          status = result.data.status
         }
       })
 
@@ -128,7 +128,7 @@ describe('deploy-dapp', () => {
         })
         expect(dappResult.success).toBe(true)
         if (dappResult.success) {
-          dappId = dappResult.data.dapp.id
+          dappId = dappResult.data.id
           const result = await manager.dapp.deployDApp({
             token,
             dappId,
@@ -170,13 +170,6 @@ describe('deploy-dapp', () => {
           const size = await manager.getQueueSize()
           return size === 0
         })
-        // await vi.waitUntil(async () => {
-        //   const result = await manager.dapp.getDapp({
-        //     token,
-        //     dappId,
-        //   })
-        //   return result.success ? result.data.status === status : false
-        // })
 
         const result = await manager.dapp.getDapp({
           token,
@@ -202,6 +195,7 @@ function genMessage(
     case 'back:dapp:validation:requested':
       return back.dappValidationRequested(
         {
+          requestId: faker.string.uuid(),
           dAppId: dappId,
           chainId: '1',
           address: faker.string.hexadecimal({ length: 40 }),
@@ -211,6 +205,7 @@ function genMessage(
     case 'back:dapp:validation:confirmed':
       return back.dappValidationConfirmed(
         {
+          requestId: faker.string.uuid(),
           dAppId: dappId,
           owner: faker.string.hexadecimal({ length: 40 }),
         },
@@ -219,6 +214,7 @@ function genMessage(
     case 'back:dapp:validation:failed':
       return back.dappValidationFailed(
         {
+          requestId: faker.string.uuid(),
           dAppId: dappId,
           reason: faker.lorem.word(5),
         },

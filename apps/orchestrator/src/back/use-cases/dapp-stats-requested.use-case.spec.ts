@@ -47,6 +47,7 @@ describe(DAppStatsRequested, () => {
       )
       event = back.dappStatsRequested(
         {
+          requestId: faker.string.uuid(),
           dAppId: faker.string.uuid(),
           chainId: faker.string.numeric(5),
           address: faker.string.hexadecimal({ length: 40 }),
@@ -87,6 +88,7 @@ describe(DAppStatsRequested, () => {
     {
       event: back.dappStatsAvailable(
         {
+          requestId: faker.string.uuid(),
           chainId: faker.string.numeric(5),
           address: faker.string.hexadecimal({ length: 40 }),
           name: faker.string.alphanumeric(10),
@@ -99,6 +101,7 @@ describe(DAppStatsRequested, () => {
     {
       event: web3.fheDetected(
         {
+          requestId: faker.string.uuid(),
           id: faker.string.alphanumeric(10),
           chainId: faker.string.numeric(5),
           address: faker.string.hexadecimal({ length: 40 }),
@@ -111,6 +114,7 @@ describe(DAppStatsRequested, () => {
     {
       event: web3.fheRequested(
         {
+          requestId: faker.string.uuid(),
           chainId: faker.string.numeric(5),
           address: faker.string.hexadecimal({ length: 40 }),
         },

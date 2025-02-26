@@ -5,7 +5,7 @@ import { DAppId } from '#dapps/domain/entities/value-objects.js'
 import { DAppRepository } from '#dapps/domain/repositories/dapp.repository.js'
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { randomUUID } from 'crypto'
-import { back } from 'messages'
+import { back, generateRequestId } from 'messages'
 import {
   AppError,
   LOCAL_FHEVM_CHAIN_ID,
@@ -57,6 +57,8 @@ export class GetDappStatsUseCase implements UseCase<Input, Output> {
                 .publish(
                   back.dappStatsRequested(
                     {
+                      // Note: we should retrieve the request Id from the context
+                      requestId: generateRequestId(),
                       dAppId: dappId.value,
                       // Note: We should store the chainId in the DApp entity
                       chainId: LOCAL_FHEVM_CHAIN_ID,

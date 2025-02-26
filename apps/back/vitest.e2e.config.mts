@@ -11,7 +11,14 @@ export default defineConfig({
     env: {
       ...config({ path: '.env.test' }).parsed,
     },
-    isolate: true,
+    isolate: false,
+    pool: 'forks',
+    poolOptions: {
+      forks: {
+        isolate: false,
+        maxForks: 10,
+      },
+    },
     globalSetup: './test/setup.e2e.ts',
   },
   plugins: [

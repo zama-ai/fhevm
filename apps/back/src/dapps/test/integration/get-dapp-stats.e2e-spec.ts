@@ -53,11 +53,11 @@ describe('get-dapp-stats', () => {
       })
       expect(createDappResult.success).toBe(true)
       if (createDappResult.success) {
-        dappId = createDappResult.data.dapp.id
+        dappId = createDappResult.data.id
       }
     })
 
-    describe('when a logger user gets the dapp stats', () => {
+    describe('when a logged in user gets the dapp stats', () => {
       let result: GraphQlResponse<DAppStats>
 
       beforeEach(async () => {

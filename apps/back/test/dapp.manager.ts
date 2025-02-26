@@ -1,9 +1,8 @@
 import { DAppStatus } from '#dapps/domain/entities/dapp.js'
 import { faker } from '@faker-js/faker'
-import { gql } from 'graphql-tag'
-import request from 'supertest-graphql'
 import { GraphQlResponse, SetupManager } from './setup.manager.js'
 import { AuthManager } from './auth.manager.js'
+import { GraphQl } from './graphql.js'
 
 export interface DApp {
   id: string
@@ -50,7 +49,7 @@ export class DappManager {
   }: ({ token: string; teamId: string } | { token?: never; teamId?: never }) & {
     name: string
     address?: string
-  }): Promise<GraphQlResponse<{ dapp: DApp; token: string }>> {
+  }): Promise<GraphQlResponse<DApp>> {
     if (!token) {
       const result = await this.auth.signup(
         {
@@ -67,14 +66,13 @@ export class DappManager {
       }
     }
 
-    const resp = await request<{ createDapp: DApp }>(this.httpServer)
-      .auth(token, { type: 'bearer' })
-      .mutate(CREATE_DAPP)
-      .variables({ teamId, name, address })
-
-    return resp.data
-      ? { success: true, data: { dapp: resp.data.createDapp, token } }
-      : { success: false, errors: resp.errors! }
+    return GraphQl.request<
+      { createDapp: DApp },
+      { teamId: string; name: string; address: string | undefined }
+    >(this.httpServer)
+      .auth(token)
+      .mutate(CREATE_DAPP, { teamId: teamId!, name, address })
+      .exec('createDapp')
   }
 
   async getDapp({
@@ -84,14 +82,10 @@ export class DappManager {
     token: string
     dappId: string
   }): Promise<GraphQlResponse<DApp>> {
-    const resp = await request<{ dapp: DApp }>(this.httpServer)
-      .auth(token, { type: 'bearer' })
-      .query(GET_DAPP)
-      .variables({ appId: dappId })
-
-    return resp.data
-      ? { success: true, data: resp.data.dapp }
-      : { success: false, errors: resp.errors! }
+    return GraphQl.request<{ dapp: DApp }, { appId: string }>(this.httpServer)
+      .auth(token)
+      .query(GET_DAPP, { appId: dappId })
+      .exec('dapp')
   }
 
   async updateDApp({
@@ -104,35 +98,24 @@ export class DappManager {
     dappId: string
     name?: string
     address?: string
-  }): Promise<GraphQlResponse<{ dapp: DApp }>> {
-    const resp = await request<{ updateDapp: DApp }>(this.httpServer)
-      .auth(token, { type: 'bearer' })
-      .mutate(UPDATE_DAPP)
-      .variables({ appId: dappId, name, address })
-
-    return resp.data
-      ? { success: true, data: { dapp: resp.data.updateDapp } }
-      : { success: false, errors: resp.errors! }
+  }) {
+    return GraphQl.request<
+      { updateDapp: DApp },
+      { appId: string; name?: string; address?: string }
+    >(this.httpServer)
+      .auth(token)
+      .mutate(UPDATE_DAPP, { appId: dappId, name, address })
+      .exec('updateDapp')
   }
 
-  async deployDApp({
-    token,
-    dappId,
-  }: {
-    token: string
-    dappId: string
-  }): Promise<GraphQlResponse<{ dapp: DeployDappResult }>> {
-    const result = await request<
+  async deployDApp({ token, dappId }: { token: string; dappId: string }) {
+    return GraphQl.request<
       { deployDapp: DeployDappResult },
       { dappId: string }
     >(this.httpServer)
-      .auth(token, { type: 'bearer' })
-      .mutate(DEPLOY_DAPP)
-      .variables({ dappId })
-
-    return result.data
-      ? { success: true, data: { dapp: result.data.deployDapp } }
-      : { success: false, errors: result.errors! }
+      .auth(token)
+      .mutate(DEPLOY_DAPP, { dappId })
+      .exec('deployDapp')
   }
 
   async getDappStats({
@@ -142,20 +125,16 @@ export class DappManager {
     token: string
     dappId: string
   }): Promise<GraphQlResponse<DAppStats>> {
-    const result = await request<{ dapp: DAppStats }, { dappId: string }>(
+    return GraphQl.request<{ dapp: DAppStats }, { dappId: string }>(
       this.httpServer,
     )
-      .auth(token, { type: 'bearer' })
-      .query(GET_DAPP_STATS)
-      .variables({ dappId })
-
-    return result.data
-      ? { success: true, data: result.data.dapp }
-      : { success: false, errors: result.errors! }
+      .auth(token)
+      .query(GET_DAPP_STATS, { dappId })
+      .exec('dapp')
   }
 }
 
-const CREATE_DAPP = gql`
+const CREATE_DAPP = `
   mutation createDApp($teamId: String!, $name: String!, $address: String) {
     createDapp(input: { teamId: $teamId, name: $name, address: $address }) {
       id
@@ -170,7 +149,7 @@ const CREATE_DAPP = gql`
   }
 `
 
-const GET_DAPP = gql`
+const GET_DAPP = `
   query getApp($appId: ID!) {
     dapp(input: { id: $appId }) {
       id
@@ -185,7 +164,7 @@ const GET_DAPP = gql`
   }
 `
 
-const UPDATE_DAPP = gql`
+const UPDATE_DAPP = `
   mutation updateApp($appId: ID!, $name: String, $address: String) {
     updateDapp(input: { id: $appId, name: $name, address: $address }) {
       id
@@ -200,7 +179,7 @@ const UPDATE_DAPP = gql`
   }
 `
 
-const DEPLOY_DAPP = gql`
+const DEPLOY_DAPP = `
   mutation DeployDapp($dappId: String!) {
     deployDapp(input: { dappId: $dappId }) {
       id
@@ -210,7 +189,7 @@ const DEPLOY_DAPP = gql`
   }
 `
 
-const GET_DAPP_STATS = gql`
+const GET_DAPP_STATS = `
   query GetDappStats($dappId: ID!) {
     dapp(input: { id: $dappId }) {
       id

@@ -54,7 +54,7 @@ describe('get-dapp-by-id', () => {
       })
       expect(createDappResult.success).toBe(true)
       if (createDappResult.success) {
-        dappId = createDappResult.data.dapp.id
+        dappId = createDappResult.data.id
       }
     })
 
