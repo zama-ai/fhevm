@@ -13,6 +13,11 @@
 {{- default $kmsCoreClientNameDefault .Values.kmsCoreClient.nameOverride | trunc 52 | trimSuffix "-" -}}
 {{- end -}}
 
+{{- define "kmsCoreClientTestingName" -}}
+{{- $kmsCoreClientNameDefault := printf "%s-%s" .Release.Name "kms-core-client-testing" }}
+{{- default $kmsCoreClientNameDefault .Values.kmsCoreClientTesting.nameOverride | trunc 52 | trimSuffix "-" -}}
+{{- end -}}
+
 {{- define "kmsCoreAddress" -}}
 {{- $kmsCoreAddressDefault := print "" -}}
 {{- if .Values.mtls.enabled -}}
