@@ -28,7 +28,9 @@ const MAX_CACHED_TENANT_KEYS: usize = 100;
 
 pub(crate) struct Ciphertext {
     handle: Vec<u8>,
-    _compressed: Vec<u8>,
+    compressed: Vec<u8>,
+    ct_type: i16,
+    ct_version: i16,
 }
 
 /// Executes the main loop for handling verify_proofs requests inserted in the database
@@ -127,17 +129,17 @@ async fn execute_verify_proof_routine(
         let mut verified = false;
         let mut handles_bytes = vec![];
         match verify_proof(request_id, &keys, &aux_data, &input).await {
-            Ok(handles) => {
+            Ok((cts, blob_hash)) => {
                 info!(message = "Proof verification successful", request_id);
 
-                handles_bytes =
-                    handles.iter().fold(Vec::new(), |mut acc, ct| {
-                        acc.extend_from_slice(ct.handle.as_ref());
-                        acc
-                    });
+                handles_bytes = cts.iter().fold(Vec::new(), |mut acc, ct| {
+                    acc.extend_from_slice(ct.handle.as_ref());
+                    acc
+                });
                 verified = true;
 
-                insert_ciphertexts(pool).await?;
+                insert_ciphertexts(pool, keys.tenant_id, cts, blob_hash)
+                    .await?;
             }
             Err(err) => {
                 error!(
@@ -176,7 +178,7 @@ pub(crate) async fn verify_proof(
     keys: &FetchTenantKeyResult,
     aux_data: &auxiliary::ZkData,
     raw_ct: &[u8],
-) -> Result<Vec<Ciphertext>, ExecutionError> {
+) -> Result<(Vec<Ciphertext>, Vec<u8>), ExecutionError> {
     set_server_key(keys.server_key.clone());
 
     let cts: Vec<SupportedFheCiphertexts> =
@@ -188,13 +190,13 @@ pub(crate) async fn verify_proof(
     h.update(raw_ct);
     let blob_hash = h.finalize().to_vec();
 
-    let handles = cts
+    let cts = cts
         .iter()
         .enumerate()
-        .map(|(idx, ct)| ciphertext_handle(&blob_hash, idx, ct, aux_data))
+        .map(|(idx, ct)| create_ciphertext(&blob_hash, idx, ct, aux_data))
         .collect();
 
-    Ok(handles)
+    Ok((cts, blob_hash))
 }
 
 fn try_verify_and_expand_ciphertext_list(
@@ -217,8 +219,8 @@ fn try_verify_and_expand_ciphertext_list(
     Ok(extract_ct_list(&expanded)?)
 }
 
-/// Computes the handle for a ciphertext
-fn ciphertext_handle(
+/// Creates a ciphertext
+fn create_ciphertext(
     blob_hash: &[u8],
     ct_idx: usize,
     the_ct: &SupportedFheCiphertexts,
@@ -250,7 +252,9 @@ fn ciphertext_handle(
 
     Ciphertext {
         handle,
-        _compressed: compressed,
+        compressed,
+        ct_type: serialized_type,
+        ct_version: current_ciphertext_version(),
     }
 }
 
@@ -276,7 +280,35 @@ async fn get_remaining_tasks(pool: &PgPool) -> Result<i64, ExecutionError> {
     Ok(count)
 }
 
-async fn insert_ciphertexts(_pool: &PgPool) -> Result<(), ExecutionError> {
-    // TODO: Issue  #338
+pub(crate) async fn insert_ciphertexts(
+    pool: &PgPool,
+    tenant_id: i32,
+    cts: Vec<Ciphertext>,
+    blob_hash: Vec<u8>,
+) -> Result<(), ExecutionError> {
+    let mut tx = pool.begin().await?;
+
+    for (i, ct) in cts.iter().enumerate() {
+        sqlx::query!(
+            r#"
+            INSERT INTO ciphertexts (
+                tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type, 
+                input_blob_hash, input_blob_index, created_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+            ON CONFLICT (tenant_id, handle, ciphertext_version) DO NOTHING;
+            "#,
+            tenant_id,
+            &ct.handle,
+            &ct.compressed,
+            ct.ct_version,
+            ct.ct_type,
+            &blob_hash,
+            i as i32,
+        )
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await?;
     Ok(())
 }
