@@ -25,10 +25,7 @@ services:
   
   layer1-sc-deploy:
     container_name: layer1-sc-deploy
-    image: ghcr.io/zama-ai/fhevm-smart-contracts-dev:v0.7.0-rc0
+    image: ghcr.io/zama-ai/fhevm-smart-contracts-dev:82fb642
     volumes:
       - ./config/.env.staging.layer1:/app/.env
-      - ../contracts/hardhat.config.ts:/app/hardhat.config.ts
-      - ../contracts/launch-fhevm-staging.sh:/app/launch-fhevm-staging.sh
-      - ../contracts/addressesL2:/app/addressesL2
     entrypoint: ["/app/launch-fhevm-staging.sh"]
