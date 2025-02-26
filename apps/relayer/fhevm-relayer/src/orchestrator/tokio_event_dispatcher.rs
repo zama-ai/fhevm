@@ -7,11 +7,14 @@ use dashmap::DashMap;
 use std::sync::Arc;
 use uuid::Uuid;
 
+type EventHandlerMap<K, E> = Arc<DashMap<K, Arc<dyn EventHandler<E>>>>;
+
 pub struct TokioEventDispatcher<E: Event> {
-    once_subscribers: Arc<DashMap<(u8, Uuid), Arc<dyn EventHandler<E>>>>,
-    suscribers: Arc<DashMap<u8, Arc<dyn EventHandler<E>>>>,
+    once_subscribers: EventHandlerMap<(u8, Uuid), E>,
+    suscribers: EventHandlerMap<u8, E>,
 }
 
+#[allow(clippy::new_without_default)]
 impl<E: Event> TokioEventDispatcher<E> {
     pub fn new() -> Self {
         Self {

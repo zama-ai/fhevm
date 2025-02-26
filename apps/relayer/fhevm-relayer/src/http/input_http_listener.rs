@@ -24,9 +24,10 @@ impl InputProofRequestJson {
     fn validate(&self) -> Result<(), String> {
         // Add other validations here.
         if self.ciphertextWithZkpok.is_empty() {
-            return Err("ZKPoK cannot be empty.".to_string());
+            Err("ZKPoK cannot be empty.".to_string())
+        } else {
+            Ok(())
         }
-        Ok(())
     }
 }
 
@@ -130,15 +131,15 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
             }) => match InputProofResponseJson::try_from(input_proof_response) {
                 Ok(response_json) => {
                     info!("sending success reponse to user");
-                    return (StatusCode::OK, Json(response_json)).into_response();
+                    (StatusCode::OK, Json(response_json)).into_response()
                 }
                 Err(_) => {
                     info!("sending error reponse to user as response event cannot be decoded");
                     let error_response = InputProofErrorResponseJson {
                         message: "request could not be completed 2".to_string(),
                     };
-                    return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response))
-                        .into_response();
+                    (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response))
+                        .into_response()
                 }
             },
             _ => {
@@ -146,7 +147,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
                 let error_response = InputProofErrorResponseJson {
                     message: "request could not be completed 3".to_string(),
                 };
-                return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response();
+                (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
             }
         }
     }

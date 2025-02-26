@@ -33,7 +33,7 @@ where
                 "/keyurl",
                 get(|| async {
                     info!("Received GET request to '/keyurl'");
-                    let keyurl_response = KeyUrlResponseJson::default();
+                    let keyurl_response = KeyUrlResponseJson::from_settings();
                     Json(keyurl_response)
                 }),
             );

@@ -25,7 +25,7 @@ pub struct KeyData {
 }
 
 impl KeyUrlResponseJson {
-    pub fn default() -> KeyUrlResponseJson {
+    pub fn from_settings() -> KeyUrlResponseJson {
         let settings = Settings::new()
             .map_err(|e| eyre::eyre!("Failed to load configuration: {}", e))
             .unwrap(); // TODO(mano): Handle error properly.

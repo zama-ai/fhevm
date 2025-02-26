@@ -41,7 +41,7 @@ use tracing_subscriber::{fmt::SubscriberBuilder, EnvFilter};
 use fhevm_relayer::{
     blockchain::ethereum::ContractAndTopicsFilter,
     blockchain::gateway::gateway_l2::GatewayL2,
-    config::settings::{ContractConfig, LogConfig, Settings},
+    config::settings::{LogConfig, Settings},
     gateway_processors_mock::event_listener_gateway,
     gateway_processors_mock::GatewayProcessorsEvent,
     gateway_processors_mock::GatewayProcessorsHandler,
@@ -119,7 +119,7 @@ async fn main() -> eyre::Result<()> {
             Arc::clone(&dispatcher),
             tx_service_rollup.clone(),
             tx_config.clone(),
-            ContractConfig::from(settings.contracts),
+            settings.contracts,
         ));
 
     // Register input event handlers

@@ -45,7 +45,7 @@ use fhevm_relayer::{
         httpz::{ethereum_listener::event_listener, host_l1::EthereumHostL1},
         ArbitrumGatewayL2Handler, ArbitrumGatewayL2InputHandler, EthereumHostL1Handler,
     },
-    config::settings::{ContractConfig, LogConfig, Settings},
+    config::settings::{LogConfig, Settings},
     core::event::RelayerEvent,
     http::http_server::run_http_server,
     orchestrator::{
@@ -150,7 +150,7 @@ async fn main() -> eyre::Result<()> {
             Arc::clone(&dispatcher),
             tx_service_rollup.clone(),
             tx_config.clone(),
-            ContractConfig::from(settings.contracts.clone()),
+            settings.contracts.clone(),
         ));
 
     // Register input event handlers
@@ -175,7 +175,7 @@ async fn main() -> eyre::Result<()> {
             Arc::clone(&dispatcher),
             tx_service_rollup,
             tx_config,
-            ContractConfig::from(settings.contracts),
+            settings.contracts,
         ));
 
     // Event type: DecryptRequestRcvd
