@@ -46,6 +46,8 @@ fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt().json().with_level(true).init();
+
     let conf = Conf::parse();
 
     let database_url = conf
