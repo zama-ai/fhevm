@@ -4,6 +4,7 @@ repositories:
 
 releases:
   ## S3 - MINIO
+  ## temporiraly we set our own minio - this should run first + copy keys then run other releases
   - name: minio
     namespace: fhevm
     chart: bitnami/minio
@@ -57,3 +58,15 @@ releases:
     needs:
       - fhevm-postgresql
       - minio
+
+  ## FHEVM relayer
+  - name: fhevm-relayer
+    namespace: fhevm
+    chart: "../../charts/fhevm-relayer"
+    values:
+      - relayer-values.yaml
+    needs:
+      - layer1
+      - layer2
+      - layer1-sc
+      - layer2-sc

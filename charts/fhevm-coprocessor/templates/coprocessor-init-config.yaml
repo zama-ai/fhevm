@@ -3,6 +3,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: {{ .Release.Name }}-init-config
+  namespace: {{ .Release.Namespace }}
 data:
   create-secrets.sh: |
     #!/bin/sh

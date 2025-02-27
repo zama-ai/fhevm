@@ -1,0 +1,23 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: e2e-tester
+  namespace: fhevm
+spec:
+  backoffLimit: 3  # number of retries before marking the job as failed
+  activeDeadlineSeconds: 600  # timeout after 10 minutes
+  template:
+    spec:
+      containers:
+      - name: e2e-tester
+        image: debian:bullseye-slim
+        command:
+        - sh
+        - -c
+        - |
+          apt-get update && apt-get install -y curl netcat-traditional net-tools
+          echo "Running e2e tests..."
+          curl -X POST http://fhevm-relayer-server:3000/input-proof \
+                -H "Content-Type: application/json" \
+                -d '{"contractChainId": "12345", "contractAddress": "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d", "userAddress": "0x812b06e1CDCE800494b79fFE4f925A504a9A9810", "ciphertextWithZkpok": "abcdef"}'
+      restartPolicy: Never

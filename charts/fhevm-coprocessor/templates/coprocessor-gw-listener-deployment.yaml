@@ -1,0 +1,29 @@
+{{- if .Values.gwListener.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: coprocessor-gw-listener
+    app.kubernetes.io/name: {{ include "gwListenerName" . }}
+  name: {{ include "gwListenerName" . }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: coprocessor-gw-listener
+  template:
+    metadata:
+      labels:
+        app: coprocessor-gw-listener
+        app.kubernetes.io/name: {{ include "gwListenerName" . }}
+    spec:
+      restartPolicy: Always
+      containers:
+        - name: coprocessor-gw-listener
+          image: {{ .Values.gwListener.image.name }}:{{ .Values.gwListener.image.tag }}
+          command: ["gw_listener"]
+          args:
+{{ toYaml .Values.gwListener.args | nindent 12 }}
+          env:
+{{ toYaml .Values.gwListener.env | nindent 12 }}
+{{- end -}}
