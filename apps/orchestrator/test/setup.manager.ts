@@ -14,28 +14,31 @@ import { inject } from 'vitest'
 export class SetupManager {
   #app: INestApplication
 
-  #prismaClient: PrismaClient
+  #prismaClients: PrismaClient[]
 
   #topicName: string
   #queueName: string
   #logQueueName: string
 
   private async startPostgres() {
-    const databaseUrl = inject('databaseUrl')
+    const databaseUrls = inject('databaseUrls')
 
-    // use a random schema
-    const url = `${databaseUrl}?schema=${randomUUID()}`
-
-    // Execute Prisma migrations
-    execSync('pnpx prisma migrate deploy', {
-      env: { DATABASE_URL: url, PATH: process.env.PATH },
-    })
-
-    this.#prismaClient = new PrismaClient({
-      datasources: {
-        db: { url },
-      },
-    })
+    this.#prismaClients = databaseUrls.map(
+      url =>
+        new PrismaClient({
+          datasources: {
+            db: { url },
+          },
+          log: [
+            {
+              emit: 'stdout',
+              // TODO: create a config service to solve the configuration
+              level:
+                process.env.PRISMA_LOGLEVEL === 'debug' ? 'query' : 'error',
+            },
+          ],
+        }),
+    )
   }
 
   private async execSync(command: string) {
@@ -140,7 +143,7 @@ export class SetupManager {
         }),
       )
       .overrideProvider(PrismaClient)
-      .useValue(this.#prismaClient)
+      .useValue(new PrismaClientProxy(this.#prismaClients))
       .compile()
 
     this.#app = moduleRef.createNestApplication({ cors: true })
@@ -156,10 +159,12 @@ export class SetupManager {
   }
 
   async afterEach() {
+    const WORKER_ID = Number(process.env.VITEST_POOL_ID) - 1
+
     await Promise.all([
       // Clear the database
-      this.#prismaClient.$transaction([
-        this.#prismaClient.snapshot.deleteMany(),
+      this.#prismaClients[WORKER_ID].$transaction([
+        this.#prismaClients[WORKER_ID].snapshot.deleteMany(),
       ]),
       this.purgeLogQueue(),
     ])
@@ -199,5 +204,27 @@ export class SetupManager {
 
   get logQueueUrl(): string {
     return `${this.awsEndpoint}/000000000000/${this.#logQueueName}`
+  }
+}
+
+class PrismaClientProxy {
+  constructor(private readonly instances: PrismaClient[]) {}
+
+  $connect() {
+    return this.instances[Number(process.env.VITEST_POOL_ID) - 1].$connect()
+  }
+
+  $disconnect() {
+    return this.instances[Number(process.env.VITEST_POOL_ID) - 1].$disconnect()
+  }
+
+  $transaction(fn: unknown, options?: unknown) {
+    return (
+      this.instances[Number(process.env.VITEST_POOL_ID) - 1] as any
+    ).$transaction(fn, options)
+  }
+
+  get snapshot() {
+    return this.instances[Number(process.env.VITEST_POOL_ID) - 1].snapshot
   }
 }

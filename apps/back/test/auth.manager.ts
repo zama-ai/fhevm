@@ -1,7 +1,7 @@
 import { faker } from '@faker-js/faker'
-import { gql } from 'graphql-tag'
-import request from 'supertest-graphql'
 import { SetupManager, type GraphQlResponse } from './setup.manager.js'
+import { GraphQl } from './graphql.js'
+import { expect } from 'vitest'
 
 export interface User {
   name: string
@@ -15,14 +15,25 @@ export class AuthManager {
   get httpServer() {
     return this.manager.httpServer
   }
-  async createInvitation(email: string): Promise<string> {
-    const resp = await request<{ createInvitation: { token: string } }>(
-      this.httpServer,
-    )
-      .mutate(CREATE_INVITATION)
-      .variables({ email, secret: process.env.INVITATION_SECRET })
-      .expectNoErrors()
-    return resp.data!.createInvitation.token
+  createInvitation(email: string): Promise<GraphQlResponse<{ token: string }>> {
+    return GraphQl.request<
+      { createInvitation: { token: string } },
+      { email: string; secret: string }
+    >(this.httpServer)
+      .mutate(CREATE_INVITATION, {
+        email,
+        secret: process.env.INVITATION_SECRET!,
+      })
+      .exec('createInvitation')
+  }
+
+  getInvitation(token: string) {
+    return GraphQl.request<
+      { invitation: { id: string; email: string } },
+      { token: string }
+    >(this.httpServer)
+      .query(GET_INVITATION_BY_TOKEN, { token })
+      .exec('invitation')
   }
 
   async signup(
@@ -38,21 +49,21 @@ export class AuthManager {
     options?: { createInvitation?: boolean; email?: string },
   ): Promise<GraphQlResponse<{ token: string; user: User }>> {
     if (!invitation && options?.createInvitation) {
-      invitation = await this.createInvitation(
+      const created = await this.createInvitation(
         options.email ?? faker.internet.email(),
       )
+      expect(created.success).toBe(true)
+      if (created.success) {
+        invitation = created.data.token
+      }
     }
 
-    const resp = await request<{
-      signup: { token: string; user: User }
-    }>(this.httpServer)
-      .mutate(SIGN_UP)
-      .variables({ invitation, name, password })
-      .end()
-
-    return resp.data
-      ? { success: true, data: resp.data?.signup }
-      : { success: false, errors: resp.errors! }
+    return GraphQl.request<
+      { signup: { token: string; user: User } },
+      { invitation: string; name: string; password: string }
+    >(this.httpServer)
+      .mutate(SIGN_UP, { invitation: invitation!, name, password })
+      .exec('signup')
   }
 
   async login(
@@ -69,31 +80,23 @@ export class AuthManager {
       )
     }
 
-    const resp = await request<{ login: { token: string; user: User } }>(
-      this.httpServer,
-    )
-      .mutate(LOGIN)
-      .variables({ email, password })
-      .end()
-
-    return resp.data
-      ? { success: true, data: resp.data.login }
-      : { success: false, errors: resp.errors! }
+    return GraphQl.request<
+      { login: { token: string; user: User } },
+      { email: string; password: string }
+    >(this.httpServer)
+      .mutate(LOGIN, { email, password })
+      .exec('login')
   }
 
   async me(token: string): Promise<GraphQlResponse<User>> {
-    const resp = await request<{ me: User }>(this.httpServer)
-      .auth(token, { type: 'bearer' })
-      .query(ME)
-      .end()
-
-    return resp.data
-      ? { success: true, data: resp.data.me }
-      : { success: false, errors: resp.errors! }
+    return await GraphQl.request<{ me: User }>(this.httpServer)
+      .auth(token)
+      .mutate(ME)
+      .exec('me')
   }
 }
 
-const CREATE_INVITATION = gql`
+const CREATE_INVITATION = `
   mutation CreateInvitation($email: String!, $secret: String!) {
     createInvitation(input: { email: $email, secret: $secret }) {
       token
@@ -101,7 +104,16 @@ const CREATE_INVITATION = gql`
   }
 `
 
-const SIGN_UP = gql`
+const GET_INVITATION_BY_TOKEN = `
+  query GetInvitationByToken($token: String!) {
+    invitation(token: $token) {
+      id
+      email
+    }
+  }
+`
+
+const SIGN_UP = `
   mutation signup($invitation: String!, $name: String!, $password: String!) {
     signup(
       input: { invitationToken: $invitation, password: $password, name: $name }
@@ -120,7 +132,7 @@ const SIGN_UP = gql`
   }
 `
 
-const LOGIN = gql`
+const LOGIN = `
   mutation login($email: String!, $password: String!) {
     login(input: { email: $email, password: $password }) {
       user {
@@ -137,7 +149,7 @@ const LOGIN = gql`
   }
 `
 
-const ME = gql`
+const ME = `
   query me {
     me {
       id
