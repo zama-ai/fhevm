@@ -1,5 +1,5 @@
 import { RedisPubSub } from 'graphql-redis-subscriptions'
-import { Injectable, Logger } from '@nestjs/common'
+import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common'
 import { Redis, RedisOptions } from 'ioredis'
 import { ConfigService } from '@nestjs/config'
 
@@ -8,7 +8,9 @@ import { SubscriptionId } from '../domain/entities/subscription-id.js'
 import { SubscriptionService } from '../domain/services/subscription.service.js'
 
 @Injectable()
-export class PubSubSubscriptionService implements SubscriptionService {
+export class PubSubSubscriptionService
+  implements SubscriptionService, OnModuleDestroy
+{
   #pubSub: RedisPubSub
   logger = new Logger(PubSubSubscriptionService.name)
 
@@ -38,14 +40,21 @@ export class PubSubSubscriptionService implements SubscriptionService {
     callback: (payload: T) => void,
   ): Promise<SubscriptionId> {
     const subId = await this.#pubSub.subscribe(topic, callback)
+    this.logger.debug(`${subId} subscribed to topic ${topic}`)
     return SubscriptionId.from(subId)
   }
 
   unsubscribe(id: SubscriptionId): void {
+    this.logger.debug(`${id.value} unsubscribed`)
     this.#pubSub.unsubscribe(id.value)
   }
 
   asyncIterableIterator<T>(topic: string): AsyncIterableIterator<T> {
     return this.#pubSub.asyncIterableIterator(topic)
+  }
+
+  async onModuleDestroy() {
+    this.logger.debug('closing pubsub')
+    await this.#pubSub.close()
   }
 }
