@@ -19,6 +19,25 @@ spec:
         app: kms-core-client
         app.kubernetes.io/name: {{ include "kmsCoreClientName" . }}
       {{ include "kmsService.clientPodSpec" . | nindent 6 }}
+          command:
+            - /app/load-core-client-config.sh
+      envFrom:
+        - configMapRef:
+            name: {{ .Values.kmsCoreClient.envFrom.configmap.name }}
+      volumeMounts:
+        - mountPath: /app/load-core-client-config.sh
+          subPath: load-core-client-config.sh
+          name: config
+    imagePullSecrets:
+      - name: registry-credentials
+    volumes:
+      - name: config
+        configMap:
+          name: {{ include "kmsCoreClientName" . }}-config
+          defaultMode: 0777
+          items:
+            - key: load-core-client-config.sh
+              path: load-core-client-config.sh
       {{- with .Values.kmsCoreClient.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

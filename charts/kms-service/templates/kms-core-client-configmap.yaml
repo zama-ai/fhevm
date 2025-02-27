@@ -25,11 +25,29 @@ data:
     decryption_mode=${DECRYPTION_MODE}
     EOF
 
-    {{- if not .Values.kmsCoreClientTesting.enabled -}}
     # Keep the pod running
     tail -f /dev/null
 
-    {{- else -}}
+  load-core-client-testing-config.sh: |
+    #!/usr/bin/env sh
+    set -e
+
+    echo "loading configuration from env vars into the config.toml file"
+
+    # Process the S3 endpoint if it contains a variable
+    if echo "$S3_ENDPOINT" | grep -q '\$'; then
+        S3_ENDPOINT=$(eval echo "$S3_ENDPOINT")
+    fi
+
+    cat <<EOF >>config.toml
+    s3_endpoint="${CORE_CLIENT__S3_ENDPOINT:=S3_ENDPOINT}"
+    object_folder=${OBJECT_FOLDER}
+    core_addresses=${CORE_ADDRESSES}
+    num_majority=${NUM_MAJORITY}
+    num_reconstruct=${NUM_RECONSTRUCT}
+    decryption_mode=${DECRYPTION_MODE}
+    EOF
+
     echo "######################################################################"
     echo "Launching testing core-client"
     echo ""
@@ -87,6 +105,5 @@ data:
       echo "Launching decrypt with euint128"
       bin/kms-core-client -f config.toml decrypt -d euint128 -c $crs_id -k $key_id -e ffffffffffffffffffffffffffffffff
     done
-    {{- end -}}
 
 {{- end -}}

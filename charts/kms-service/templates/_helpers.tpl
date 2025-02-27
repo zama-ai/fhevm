@@ -131,6 +131,7 @@ args:
 
 
 {{- define "kmsService.clientPodSpec" }}
+{{- $kmsCoreName := include "kmsCoreName" . }}
 {{- $peersIDList := untilStep (default 1 .Values.kmsPeers.id | int) (.Values.kmsPeers.count | add1 | int) 1  }}
 spec:
   securityContext:
@@ -138,8 +139,6 @@ spec:
   containers:
   - name: kms-core-client
     image: {{ .Values.kmsCoreClient.image.name }}:{{ .Values.kmsCoreClient.image.tag }}
-    command:
-      - /app/load-core-client-config.sh
     env:
       {{ if .Values.minio.enabled }}
       - name: S3_ENDPOINT
@@ -154,7 +153,7 @@ spec:
         {{- if .Values.kmsCore.thresholdMode.peersList }}
         value: '[{{ range $i, $peer := .Values.kmsCore.thresholdMode.peersList }}{{- if $i -}},{{ end }}"http://{{- $peer.host }}:{{- $.Values.kmsCore.ports.client -}}"{{- end }}]'
         {{ else }}
-        value: '[{{ range $i := $peersIDList }}{{- if (sub $i 1) -}},{{ end }}"http://{{- printf "%s-%d" (include "kmsCoreName" .) $i }}:{{- $.Values.kmsCore.ports.client -}}"{{- end }}]'
+        value: '[{{ range $i := $peersIDList }}{{- if (sub $i 1) -}},{{ end }}"http://{{- printf "%s-%d" $kmsCoreName $i }}:{{- $.Values.kmsCore.ports.client -}}"{{- end }}]'
         {{- end }}
       - name: NUM_MAJORITY
         value: '{{ .Values.kmsCoreClient.num_majority | int }}'
@@ -162,21 +161,4 @@ spec:
         value: '{{ .Values.kmsCoreClient.num_reconstruct | int }}'
       - name: DECRYPTION_MODE
         value: '{{ .Values.kmsCoreClient.decryption_mode | quote }}'
-    envFrom:
-      - configMapRef:
-          name: {{ .Values.kmsCoreClient.envFrom.configmap.name }}
-    volumeMounts:
-      - mountPath: /app/load-core-client-config.sh
-        subPath: load-core-client-config.sh
-        name: config
-  imagePullSecrets:
-    - name: registry-credentials
-  volumes:
-    - name: config
-      configMap:
-        name: {{ include "kmsCoreClientTestingName" . }}-config
-        defaultMode: 0777
-        items:
-          - key: load-core-client-config.sh
-            path: load-core-client-config.sh
 {{- end }}

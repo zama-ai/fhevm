@@ -12,6 +12,25 @@ spec:
   schedule: {{ .Values.kmsCoreClientTesting.schedule }}
   jobTemplate:
     {{ include "kmsService.clientPodSpec" . | nindent 4 }}
+        command:
+          - /app/load-core-client-testing-config.sh
+    envFrom:
+      - configMapRef:
+          name: {{ .Values.kmsCoreClient.envFrom.configmap.name }}
+    volumeMounts:
+      - mountPath: /app/load-core-client-testing-config.sh
+        subPath: load-core-client-testing-config.sh
+        name: config
+  imagePullSecrets:
+    - name: registry-credentials
+  volumes:
+    - name: config
+      configMap:
+        name: {{ include "kmsCoreClientTestingName" . }}-config
+        defaultMode: 0777
+        items:
+          - key: load-core-client-testing-config.sh
+            path: load-core-client-testing-config.sh
     {{- with .Values.kmsCoreClient.nodeSelector }}
     nodeSelector:
       {{- toYaml . | nindent 8 }}
