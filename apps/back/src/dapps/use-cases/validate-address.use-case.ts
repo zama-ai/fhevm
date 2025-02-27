@@ -53,11 +53,12 @@ export class ValidateAddress
             return Task.of(void 0)
           }
           this.pubsub.subscribe('back:address:validation:*', handler)
-          // Note: retrieve the correlationId from the request
+          // Note: retrieve the correlationId & requestId from the request
           this.pubsub.publish(
-            back.addressValidationRequested(input, {
-              correlationId: randomUUID(),
-            }),
+            back.addressValidationRequested(
+              { ...input, requestId: randomUUID() },
+              { correlationId: randomUUID() },
+            ),
           )
         }),
         Task.timeout<ValidateAddressOutput>(1),
