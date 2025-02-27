@@ -1,15 +1,28 @@
 import { useContext, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router'
-import { Heading, Box } from '@chakra-ui/react'
-import { useMutation } from '@apollo/client'
+import { Heading } from '@chakra-ui/react'
+import { useMutation, useLazyQuery } from '@apollo/client'
 
 import { graphql } from '../__generated__/gql.js'
-import { CreateDappMutation } from '@/__generated__/graphql.js'
+import {
+  CreateDappMutation,
+  ValidateAddressQuery,
+} from '@/__generated__/graphql.js'
 import { formatErrorMessage } from '@/lib/error-message.js'
 import { CreatorName } from '@/components/creator/creator-name.js'
-import { CreatorStepper } from '@/components/creator-stepper/creator-stepper.js'
 import { TitleContext } from '@/components/title-context/title-context.js'
 import { GET_ME } from '@/queries.js'
+
+// TODO https://codesandbox.io/p/sandbox/apollo-3-playground-3-5-x-ryhg3x?file=%2Fsrc%2FApp.js%3A26%2C9-26%2C19
+
+const VALIDATE_ADDRESS = graphql(`
+  query ValidateAddress($chainId: String!, $address: String!) {
+    validateAddress(input: { chainId: $chainId, address: $address }) {
+      check
+      message
+    }
+  }
+`)
 
 const CREATE_DAPP = graphql(`
   mutation CreateDapp($teamId: String!, $name: String!) {
@@ -33,6 +46,11 @@ export function CreateStepOnePage() {
       },
     })
 
+  const [
+    validateAddressQuery,
+    { data: addressData, loading: addressLoading, error: addressError },
+  ] = useLazyQuery<ValidateAddressQuery>(VALIDATE_ADDRESS)
+
   const navigate = useNavigate()
   const { setTitle } = useContext(TitleContext)
 
@@ -47,16 +65,31 @@ export function CreateStepOnePage() {
   return (
     <>
       <Heading mb="5">Create a new dApp</Heading>
-      <Box display="flex" justifyContent="start" mb="5">
-        <CreatorStepper currentStep={0} />
-      </Box>
       <CreatorName
+        onValidateAddress={({ chainId, address }) => {
+          console.log('address', address)
+          validateAddressQuery({
+            variables: {
+              chainId,
+              address,
+            },
+          })
+        }}
+        addressLoading={addressLoading}
+        addressError={
+          addressError
+            ? formatErrorMessage(addressError.message)
+            : addressData?.validateAddress.message
+              ? addressData.validateAddress.message
+              : ''
+        }
         onSubmit={({ name }) => {
           createDappMutation({
             variables: {
               teamId,
               name,
             },
+
             onCompleted: data => {
               navigate(`/create/2/${data.createDapp.id}`)
             },

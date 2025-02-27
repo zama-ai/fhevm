@@ -80,6 +80,7 @@ input QueryDappInput {
 }
 
 input ValidateAddressInput {
+  """"1" for eth mainnet "11155111" for sepolia, etc"""
   chainId: String!
   address: String!
 }
