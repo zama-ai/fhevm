@@ -283,11 +283,11 @@ describe('TestAsyncDecrypt', function () {
     }
   });
 
-  it.only('test async decrypt uint64 non-trivial', async function () {
+  it('test async decrypt uint64 non-trivial', async function () {
     const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     inputAlice.add64(18446744073709550042n);
     const encryptedAmount = await inputAlice.encrypt();
-    encryptedAmount.handles.forEach((handle, index) => {
+    encryptedAmount.handles.forEach((handle: any, index: any) => {
     // Assuming handle is a Uint8Array or Buffer
     console.log(`  Handle ${index}: 0x${Buffer.from(handle).toString('hex')}`);
     });

@@ -82,11 +82,11 @@ start-key-server:
 # Run decrypt tests
 run-test-decrypt:
 	@echo "$(GREEN)Running decrypt tests...$(RESET)"
-	@unset $$(cat hardhat/contracts/.env | sed 's/=.*//g') && cd hardhat/contracts && npx hardhat compile && npx hardhat compile:specific --contract decryptionOracle && RUST_RELAYER=true npx hardhat test test/gatewayDecrypt/* --network localCoprocessorL1
+	@unset $$(cat hardhat/contracts/.env | sed 's/=.*//g') && cd hardhat/contracts && npx hardhat compile && npx hardhat compile:specific --contract decryptionOracle && RUST_RELAYER=true npx hardhat test --grep "test async decrypt uint64$$" --network localCoprocessorL1
 
 run-test-input-proof-hardhat:
 	@echo "$(GREEN)Running input proof tests...$(RESET)"
-	@unset $$(cat hardhat/contracts/.env | sed 's/=.*//g') && cd hardhat/contracts && npx hardhat compile && npx hardhat compile:specific --contract decryptionOracle && RUST_RELAYER=true npx hardhat test test/gatewayDecrypt/* --network localCoprocessorL1Input
+	@unset $$(cat hardhat/contracts/.env | sed 's/=.*//g') && cd hardhat/contracts && npx hardhat compile && npx hardhat compile:specific --contract decryptionOracle && RUST_RELAYER=true npx hardhat test --grep "test async decrypt uint64 non-trivial$$" --network localCoprocessorL1Input
 
 
 run-test-input-proof:
