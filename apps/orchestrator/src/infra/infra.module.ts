@@ -5,7 +5,7 @@ import { DatabaseModule } from '#database/database.module.js'
 import { SqsModule } from '@ssut/nestjs-sqs'
 import { SQSConsumer } from './adapters/sqs.consumer.js'
 import { SNSProducer } from './adapters/sns.producer.js'
-import { ProcessAppDeployment } from '../workflows/use-cases/process-app-deployment.use-case.js'
+import * as uc from '../workflows/use-cases/index.js'
 import { ConfigService } from '@nestjs/config'
 import { SQSClient } from '@aws-sdk/client-sqs'
 import { DatabaseService } from '#database/database.service.js'
@@ -55,13 +55,21 @@ import { ProcessDAppStats } from '#workflows/use-cases/process-dapp-stats.use-ca
       ) => new SNSProducer(pubsub, config),
     },
     {
-      provide: ProcessAppDeployment,
+      provide: uc.ProcessAppDeployment,
       inject: [PUBSUB, APP_DEPLOYMENT_REPO, EVENT_PRODUCER],
       useFactory: (
         pubsub: IPubSub<back.BackEvent | web3.Web3Event>,
         repo: AppDeploymentRepository,
         producer: EventProducer,
-      ) => new ProcessAppDeployment(pubsub, repo, producer),
+      ) => new uc.ProcessAppDeployment(pubsub, repo, producer),
+    },
+    {
+      provide: uc.ProcessAddressValidation,
+      inject: [PUBSUB, EVENT_PRODUCER],
+      useFactory: (
+        pubsub: IPubSub<back.BackEvent | web3.Web3Event>,
+        producer: EventProducer,
+      ) => new uc.ProcessAddressValidation(pubsub, producer),
     },
     {
       provide: ProcessDAppStats,

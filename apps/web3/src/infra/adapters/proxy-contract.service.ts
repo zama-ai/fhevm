@@ -11,7 +11,7 @@ import {
 } from 'utils'
 import { EtherscanContractService } from './etherscan-contract.service.js'
 import { ChainId, Web3Address } from '#domain/entities/value-objects.js'
-import { EthersContractService } from './ethers-contract.service.js'
+import { ViemContractService } from './viem-contract.service.js'
 
 export class ProxyContractService implements ContractService {
   private readonly services = new Map<ChainId, ContractService>()
@@ -25,7 +25,7 @@ export class ProxyContractService implements ContractService {
       const config = this.configs.get(chainId)!
       switch (config.provider) {
         case 'Ethers':
-          this.services.set(chainId, new EthersContractService(config))
+          this.services.set(chainId, new ViemContractService(config))
           break
 
         case 'Etherscan':

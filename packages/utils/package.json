@@ -25,9 +25,10 @@
     "@nestjs/platform-express": "^10.0.0",
     "reflect-metadata": "^0.2.0",
     "rxjs": "^7.8.1",
-    "zod": "^3.23.8"
+    "zod": "catalog:"
   },
   "devDependencies": {
+    "@faker-js/faker": "^9.3.0",
     "@nestjs/cli": "^10.0.0",
     "@nestjs/schematics": "^10.0.0",
     "@nestjs/testing": "^10.0.0",
