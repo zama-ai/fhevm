@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from 'vitest'
 import { CalledWithMock, mockFn } from 'vitest-mock-extended'
 import { Test, TestingModule } from '@nestjs/testing'
-import { PUBSUB } from '#constants.js'
+import { MS_NAME, PUBSUB } from '#constants.js'
 import { AppError, ISubscriber, PubSub, Task } from 'utils'
 import { back, web3 } from 'messages'
 import { faker } from '@faker-js/faker'
@@ -47,6 +47,7 @@ describe(DAppStatsRequested, () => {
       )
       event = back.dappStatsRequested(
         {
+          dAppId: faker.string.uuid(),
           chainId: faker.string.numeric(5),
           address: faker.string.hexadecimal({ length: 40 }),
         },
@@ -66,15 +67,19 @@ describe(DAppStatsRequested, () => {
       await task.toPromise()
       expect(handler).toHaveBeenCalledOnce()
       const { payload } = handler.mock.calls[0][0]
-      expect(payload.chainId, 'Wrong chainId').toBe(event.payload.chainId)
-      expect(payload.address, 'Wrong address').toBe(event.payload.address)
+      expect((payload as any).chainId, 'Wrong chainId').toBe(
+        event.payload.chainId,
+      )
+      expect((payload as any).address, 'Wrong address').toBe(
+        event.payload.address,
+      )
     })
 
     test('then it publishes the right meta', async () => {
       await task.toPromise()
       expect(handler).toHaveBeenCalledOnce()
       const { meta } = handler.mock.calls[0][0]
-      expect(meta).toEqual(event.meta)
+      expect(meta).toEqual({ ...event.meta, [`${MS_NAME}-dir`]: 'out' })
     })
   })
 

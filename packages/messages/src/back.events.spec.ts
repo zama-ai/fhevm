@@ -8,6 +8,7 @@ describe('back', () => {
       const event = {
         type: 'back:dapp:stats-requested',
         payload: {
+          dAppId: faker.string.uuid(),
           chainId: faker.string.numeric(5),
           address: faker.string.hexadecimal({ length: 40 }),
         },
@@ -40,6 +41,7 @@ describe('back', () => {
     test('returns a valid `back:dapp:stats-requested`', () => {
       const event = back.dappStatsRequested(
         {
+          dAppId: faker.string.uuid(),
           chainId: faker.string.numeric(5),
           address: faker.string.hexadecimal({ length: 40 }),
         },

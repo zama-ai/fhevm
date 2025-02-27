@@ -15,18 +15,16 @@ import {
   CONTRACT_SERVICE,
   FHE_EVENT_REPOSITORY,
   FHE_EVENT_SERVICE,
-  MESSAGE_PRODUCER,
   MS_NAME,
   PUBSUB,
 } from './constants.js'
 import { ContractService } from './domain/services/contract.service.js'
 import { ProxyContractService } from './infra/adapters/proxy-contract.service.js'
 import { SnsProducer } from './infra/adapters/sns.producer.js'
-import { MessageProducer } from './domain/services/message.producer.js'
 import { DiscoverContract } from './use-cases/discover-contract.use-case.js'
 import { DatabaseModule } from './infra/database/database.module.js'
 import { ChainId } from './domain/entities/value-objects.js'
-import { isOk, PubSub } from 'utils'
+import { IPubSub, isOk, PubSub } from 'utils'
 import fheConfig, { FheConfig, FheConfigFactory } from './config/fhe.config.js'
 import { FetchFHEEvents } from './use-cases/fetch-fhe-events.use-case.js'
 import { FheEventService } from './domain/services/fhe-event.service.js'
@@ -122,15 +120,12 @@ export const configModule = ConfigModule.forRoot({
         return new ProxyContractService(map)
       },
     },
-    {
-      provide: MESSAGE_PRODUCER,
-      useClass: SnsProducer,
-    },
+    SnsProducer,
     {
       provide: DiscoverContract,
-      inject: [CONTRACT_SERVICE, MESSAGE_PRODUCER],
-      useFactory: (service: ContractService, producer: MessageProducer) =>
-        new DiscoverContract(service, producer),
+      inject: [PUBSUB, CONTRACT_SERVICE],
+      useFactory: (pubsub: IPubSub<web3.Web3Event>, service: ContractService) =>
+        new DiscoverContract(pubsub, service),
     },
     {
       provide: FHE_EVENT_SERVICE,

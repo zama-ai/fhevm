@@ -50,13 +50,13 @@ export class SnsProducer {
   }
 
   private handleBackEvent: ISubscriber<back.BackEvent> = event => {
-    this.logger.debug(`handling event: ${event.type}`)
-    switch (event.type as unknown as back.BackEvent['type']) {
-      case 'back:dapp:stats-requested':
-        return this.publish(event)
-
-      default:
-        return Task.of(void 0)
+    if (event.meta[`${MS_NAME}-dir`] === 'in') {
+      this.logger.verbose(`stopping incoming event ${event.type}`)
+      return Task.of(void 0)
     }
+
+    this.logger.debug(`handling event: ${event.type}`)
+
+    return this.publish(event)
   }
 }

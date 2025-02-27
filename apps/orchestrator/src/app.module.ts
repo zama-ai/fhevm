@@ -2,9 +2,8 @@ import { Module } from '@nestjs/common'
 import { ConfigModule, ConfigService } from '@nestjs/config'
 import { randomUUID } from 'crypto'
 import { LoggerModule } from 'nestjs-pino'
-import { InfraModule as AppDeploymentInfraModule } from './app-deployment/infra/infra.module.js'
+import { InfraModule } from './infra/infra.module.js'
 import awsConfig from './config/aws.config.js'
-import { InfraModule } from '#infra/infra.module.js'
 import dbConfig from '#config/db.config.js'
 import { BackModule } from '#back/back.module.js'
 import { Web3Module } from '#web3/web3.module.js'
@@ -46,7 +45,6 @@ export const configModule = ConfigModule.forRoot({
       },
     }),
     InfraModule,
-    AppDeploymentInfraModule,
     BackModule,
     Web3Module,
   ],

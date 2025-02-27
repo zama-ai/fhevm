@@ -1,8 +1,8 @@
 import { ChainId } from '#domain/entities/value-objects.js'
 import { registerAs } from '@nestjs/config'
-import { SEPOLIA_CHAIN_ID } from 'utils'
+import { LOCAL_FHEVM_CHAIN_ID, SEPOLIA_CHAIN_ID } from 'utils'
 
-export type EtherProvider = 'Etherscan'
+export type EtherProvider = 'Etherscan' | 'Ethers'
 
 export interface EtherConfig {
   chainId: ChainId
@@ -16,6 +16,12 @@ const configs: Record<
   string,
   Omit<EtherConfig, 'chainId' | 'apiKey'> & { apiKey: () => string | undefined }
 > = {
+  [LOCAL_FHEVM_CHAIN_ID]: {
+    provider: 'Ethers',
+    apiEndpoint: 'ws://localhost:8545',
+    rpcEndpoint: 'ws://localhost:8545',
+    apiKey: () => undefined,
+  },
   [SEPOLIA_CHAIN_ID]: {
     provider: 'Etherscan',
     apiEndpoint: 'https://api-sepolia.etherscan.io/api',

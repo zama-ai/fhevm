@@ -6,7 +6,6 @@ import { ConfigService } from '@nestjs/config'
 
 import { SqsModule } from 'sqs'
 import { SQSConsumer } from './sqs.consumer.js'
-import { ScDiscovered } from './use-cases/sc-discovered.use-case.js'
 import { SubscriptionsModule } from '#subscriptions/infra/subscriptions.module.js'
 import { SharedModule } from '#shared/shared.module.js'
 
@@ -35,6 +34,6 @@ import { SharedModule } from '#shared/shared.module.js'
     DappsModule,
     SubscriptionsModule,
   ],
-  providers: [SQSConsumer, ScDiscovered],
+  providers: [SQSConsumer],
 })
 export class SqsConsumerModule {}

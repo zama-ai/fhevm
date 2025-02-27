@@ -65,23 +65,28 @@ export class StoreDAppStats implements UseCase<Input, Output> {
   }
 
   execute = (input: Input): Task<DAppStat, AppError> => {
-    return this.repo.findByAddress(input.chainId, input.address).chain(dapp =>
-      this.repo
-        .createStat(dapp.id, {
-          id: DAppStatId.random().value,
-          name: input.name,
-          timestamp: new Date(input.timestamp),
-          dappId: dapp.id.value,
-          externalRef: input.externalRef,
-        })
-        .tap(() => {
-          this.subscriptions.publish<SubscriptionDappUpdatedPayload>(
-            'dappUpdated',
-            {
-              dappUpdated: dapp.toJSON(),
-            },
-          )
-        }),
-    )
+    return this.repo
+      .findByAddress(input.chainId, input.address)
+      .tap(dapp => {
+        this.logger.debug(`dApp found: ${dapp.id}`)
+      })
+      .chain(dapp =>
+        this.repo
+          .createStat(dapp.id, {
+            id: DAppStatId.random().value,
+            name: input.name,
+            timestamp: new Date(input.timestamp),
+            dappId: dapp.id.value,
+            externalRef: input.externalRef,
+          })
+          .tap(() => {
+            this.subscriptions.publish<SubscriptionDappUpdatedPayload>(
+              'dappUpdated',
+              {
+                dappUpdated: dapp.toJSON(),
+              },
+            )
+          }),
+      )
   }
 }

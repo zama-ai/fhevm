@@ -75,6 +75,34 @@ describe('SnsProducer', () => {
 
     test.each([
       {
+        event: web3.contractValidationRequested(
+          {
+            chainId: faker.string.numeric(5),
+            address: faker.string.hexadecimal({ length: 40 }),
+          },
+          { correlationId: faker.string.uuid() },
+        ),
+      },
+      {
+        event: web3.contractValidationSuccess(
+          {
+            chainId: faker.string.numeric(5),
+            address: faker.string.hexadecimal({ length: 40 }),
+            owner: faker.string.hexadecimal({ length: 40 }),
+          },
+          { correlationId: faker.string.uuid() },
+        ),
+      },
+      {
+        event: web3.contractValidationFailure(
+          {
+            chainId: faker.string.numeric(5),
+            address: faker.string.hexadecimal({ length: 40 }),
+          },
+          { correlationId: faker.string.uuid() },
+        ),
+      },
+      {
         event: web3.fheRequested(
           {
             chainId: faker.string.numeric(5),
@@ -82,7 +110,6 @@ describe('SnsProducer', () => {
           },
           { correlationId: faker.string.uuid() },
         ),
-        publish: false,
       },
       {
         event: web3.fheDetected(
@@ -95,20 +122,16 @@ describe('SnsProducer', () => {
           },
           { correlationId: faker.string.uuid() },
         ),
-        publish: true,
       },
-    ])(
-      'then it processes the $event.type event',
-      async ({ event, publish }) => {
-        await pubsub.publish(event).toPromise()
-        if (publish) {
-          expect(client).toHaveReceivedCommandWith(PublishCommand, {
-            Message: JSON.stringify(event),
-          })
-        } else {
-          expect(client).not.toHaveReceivedAnyCommand()
-        }
-      },
-    )
+    ])('then it processes the $event.type event', async ({ event }) => {
+      await pubsub.publish(event).toPromise()
+      // if (publish) {
+      expect(client).toHaveReceivedCommandWith(PublishCommand, {
+        Message: JSON.stringify(event),
+      })
+      // } else {
+      //   expect(client).not.toHaveReceivedAnyCommand()
+      // }
+    })
   })
 })
