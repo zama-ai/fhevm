@@ -165,12 +165,19 @@ spec:
                      "address" (printf "kms.%s.amazonaws.com" .Values.kmsCore.aws.region)
                      "port" 443
                 ) | indent 10 | trim }}
-        {{- /* Init GRPC CLient Proxy Socket */}}
+        {{- /* Init GRPC Client Proxy Socket */}}
         - {{ include "proxyToEnclaveTcp"
                (dict "name" "grpc-client-proxy"
                      "image" .Values.kubeUtils.image
                      "cid" .Values.kmsCore.nitroEnclave.cid
                      "port" .Values.kmsCore.ports.client
+                ) | indent 10 | trim }}
+        {{- /* Init Metrics Endpoint Proxy Socket */}}
+        - {{ include "proxyToEnclaveTcp"
+               (dict "name" "metrics-endpoint-proxy"
+                     "image" .Values.kubeUtils.image
+                     "cid" .Values.kmsCore.nitroEnclave.cid
+                     "port" .Values.kmsCore.ports.metrics
                 ) | indent 10 | trim }}
         {{- if .Values.kmsCore.thresholdMode.enabled }}
         {{- /* Init GRPC Local Peer Proxy Socket */}}
