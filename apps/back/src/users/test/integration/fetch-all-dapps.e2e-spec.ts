@@ -65,7 +65,7 @@ describe('fetch all dapps', () => {
         .filter(r => {
           return r.success
         })
-        .map(r => r.data.dapp.id)
+        .map(r => r.data.id)
       expect(dappIds.length).toBe(2)
     })
 

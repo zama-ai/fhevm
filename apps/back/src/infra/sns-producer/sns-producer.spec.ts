@@ -37,6 +37,7 @@ describe('SnsProducer', () => {
       client.on(PublishCommand).resolves({ MessageId: LOCAL_FHEVM_CHAIN_ID })
       event = back.dappStatsRequested(
         {
+          requestId: faker.string.uuid(),
           dAppId: DAppId.random().value,
           chainId: faker.string.numeric(5),
           address: faker.string.hexadecimal({ length: 40 }),
@@ -79,6 +80,7 @@ describe('SnsProducer', () => {
       {
         event: back.dappStatsRequested(
           {
+            requestId: faker.string.uuid(),
             dAppId: DAppId.random().value,
             chainId: faker.string.numeric(5),
             address: faker.string.hexadecimal({ length: 40 }),
@@ -89,6 +91,7 @@ describe('SnsProducer', () => {
       {
         event: back.dappStatsAvailable(
           {
+            requestId: faker.string.uuid(),
             chainId: faker.string.numeric(5),
             address: faker.string.hexadecimal({ length: 40 }),
             name: faker.string.alphanumeric(10),

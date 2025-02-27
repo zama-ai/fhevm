@@ -1,0 +1,33 @@
+meta {
+  name: Create Invitation
+  type: graphql
+  seq: 1
+}
+
+post {
+  url: http://localhost:3000/graphql
+  body: graphql
+  auth: none
+}
+
+body:graphql {
+  mutation createInvitation($email: String!, $secret: String!) {
+    createInvitation(input: { email: $email, secret: $secret }) {
+      token
+    }
+  }
+  
+}
+
+body:graphql:vars {
+  {
+    "email": "{{email}}",
+    "secret": "{{invitationSecret}}"
+  }
+}
+
+script:post-response {
+  if (res.body?.data?.createInvitation) {
+    bru.setVar("invitationToken", res.body.data.createInvitation.token)
+  }
+}

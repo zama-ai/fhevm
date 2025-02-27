@@ -5,15 +5,15 @@ import { Task } from './task.js'
 describe('Task', () => {
   describe('of', () => {
     test('should return the passed value', async () => {
-      expect(Task.of('test').toPromise()).resolves.toBe('test')
+      await expect(Task.of('test').toPromise()).resolves.toBe('test')
     })
   })
 
   describe('reject', () => {
     test('should throw the passed error', async () => {
-      expect(Task.reject('expected error').toPromise()).rejects.toThrowError(
-        'expected error',
-      )
+      await expect(
+        Task.reject('expected error').toPromise(),
+      ).rejects.toThrowError('expected error')
     })
   })
 

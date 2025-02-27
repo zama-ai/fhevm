@@ -1,4 +1,4 @@
-import { Logger, Inject, UseGuards } from '@nestjs/common'
+import { Logger, UseGuards } from '@nestjs/common'
 import {
   Args,
   Mutation,
@@ -27,10 +27,6 @@ import { TeamType } from '#users/infra/types/team.type.js'
 import { QueryDappInput } from './dto/inputs/query-dapp.input.js'
 import { DAppStatProps } from '#dapps/domain/entities/dapp-stat.js'
 import { TeamProps } from '#users/domain/entities/team.js'
-import {
-  SUBSCRIPTION_SERVICE,
-  SubscriptionService,
-} from '#subscriptions/domain/services/subscription.service.js'
 import { DeployedDAppInput } from './dto/inputs/deployed-dapp.input.js'
 import { ValidateAddressInput } from './dto/inputs/validate-address.input.js'
 
@@ -46,8 +42,6 @@ export class DappsResolver {
     private readonly getDappStatsUC: uc.GetDappStatsUseCase,
     private readonly appUpdatesSubscriptionUC: uc.AppUpdatesSubscription,
     private readonly validateAddressUC: uc.ValidateAddress,
-    @Inject(SUBSCRIPTION_SERVICE)
-    private readonly subscriptions: SubscriptionService,
   ) {}
 
   @Query(() => DappType, { name: 'dapp' })

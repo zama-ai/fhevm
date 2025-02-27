@@ -54,7 +54,7 @@ describe('store dapp stats', () => {
       })
       expect(createDappResult.success).toBe(true)
       if (createDappResult.success) {
-        dappId = createDappResult.data.dapp.id
+        dappId = createDappResult.data.id
       }
     })
 

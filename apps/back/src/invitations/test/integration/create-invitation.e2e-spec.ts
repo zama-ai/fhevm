@@ -1,5 +1,3 @@
-import { gql } from 'graphql-tag'
-import request from 'supertest-graphql'
 import {
   afterAll,
   afterEach,
@@ -11,15 +9,6 @@ import {
 } from 'vitest'
 import { faker } from '@faker-js/faker'
 import { IntegrationManager } from '#tests/integration.manager.js'
-
-const GET_INVITATION_BY_TOKEN = gql`
-  query GetInvitationByToken($token: String!) {
-    invitation(token: $token) {
-      id
-      email
-    }
-  }
-`
 
 describe('createInvitation', () => {
   const manager = new IntegrationManager()
@@ -43,7 +32,11 @@ describe('createInvitation', () => {
 
       beforeEach(async () => {
         email = faker.internet.email()
-        token = await manager.auth.createInvitation(email)
+        const request = await manager.auth.createInvitation(email)
+        expect(request.success).toBe(true)
+        if (request.success) {
+          token = request.data.token
+        }
       })
 
       test('then it returns a new invitation token', () => {
@@ -51,13 +44,11 @@ describe('createInvitation', () => {
       })
 
       test('then it creates a new invitation with the right email', async () => {
-        const resp = await request<{
-          invitation: { id: string; email: string }
-        }>(manager.httpServer)
-          .query(GET_INVITATION_BY_TOKEN)
-          .variables({ token })
-          .expectNoErrors()
-        expect(resp.data!.invitation.email).toBe(email)
+        const request = await manager.auth.getInvitation(token)
+        expect(request.success).toBe(true)
+        if (request.success) {
+          expect(request.data.email).toBe(email)
+        }
       })
     })
   })

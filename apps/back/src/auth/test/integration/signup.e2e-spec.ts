@@ -37,7 +37,11 @@ describe('signup', () => {
 
     beforeEach(async () => {
       email = faker.internet.email()
-      invitation = await manager.auth.createInvitation(email)
+      const request = await manager.auth.createInvitation(email)
+      expect(request.success).toBe(true)
+      if (request.success) {
+        invitation = request.data.token
+      }
     })
 
     describe('when signing up', () => {
@@ -127,7 +131,13 @@ describe('signup', () => {
   describe('given an expired invitation', () => {
     let invitation: string
     beforeEach(async () => {
-      invitation = await manager.auth.createInvitation(faker.internet.email())
+      const request = await manager.auth.createInvitation(
+        faker.internet.email(),
+      )
+      expect(request.success).toBe(true)
+      if (request.success) {
+        invitation = request.data.token
+      }
     })
 
     describe('when signing up', () => {
