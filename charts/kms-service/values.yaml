@@ -51,8 +51,6 @@ kmsCore:
     #  - id: 2
     #    host: kms-service-core-2
     #    port: 50001
-    initializationScript:
-      enabled: false
     dec_capacity: 10000
     min_dec_cache: 6000
     num_sessions_preproc: 2
@@ -120,6 +118,29 @@ kmsCore:
 mtls:
   enabled: false
 
+kmsCoreClient:
+  enabled: false
+  nameOverride:
+  image:
+    name: ghcr.io/zama-ai/kms-core-client
+    tag: latest
+  envFrom:
+    configmap:
+      name:
+  num_majority: 2
+  num_reconstruct: 3
+  decryption_mode: "NoiseFloodSmall"
+  fhe_parameter: Test
+  nodeSelector:
+  affinity:
+  tolerations:
+
+kmsInit:
+  enabled: false
+  nodeSelector:
+  affinity:
+  tolerations:
+
 kubeUtils:
   image:
     name: ghcr.io/zama-ai/kube-utils
@@ -177,23 +198,6 @@ podSecurityContextForEnclave:
 
 kyverno:
   enabled: false
-
-kmsCoreClient:
-  enabled: false
-  nameOverride:
-  image:
-    name: ghcr.io/zama-ai/kms-core-client
-    tag: latest
-  envFrom:
-    configmap:
-      name:
-  num_majority: 2
-  num_reconstruct: 3
-  decryption_mode: NoiseFloodSmall
-  fhe_parameter: Test
-  nodeSelector:
-  affinity:
-  tolerations:
 
 # Cronjob kubernetes
 kmsCoreClientTesting:
