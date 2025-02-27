@@ -31,12 +31,15 @@ describe('back dapp stats', () => {
 
   describe('given back request for dapp stats', () => {
     describe('when the orchestrator receive the message', () => {
+      let requestId: string
       let correlationId: string
 
       beforeEach(async () => {
+        requestId = faker.string.uuid()
         correlationId = faker.string.uuid()
         const message = back.dappStatsRequested(
           {
+            requestId,
             dAppId: faker.string.uuid(),
             chainId: LOCAL_FHEVM_CHAIN_ID,
             address: faker.string.hexadecimal({ length: 40 }),
@@ -78,12 +81,15 @@ describe('back dapp stats', () => {
 
   describe('given the back detect for dapp stats', () => {
     describe('when the orchestrator receive the message', () => {
+      let requestId: string
       let correlationId: string
 
       beforeEach(async () => {
+        requestId = faker.string.uuid()
         correlationId = faker.string.uuid()
         const message = back.dappStatsAvailable(
           {
+            requestId,
             chainId: LOCAL_FHEVM_CHAIN_ID,
             address: faker.string.hexadecimal({ length: 40 }),
             name: 'FheAdd',

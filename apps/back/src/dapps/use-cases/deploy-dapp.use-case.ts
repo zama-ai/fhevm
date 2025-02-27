@@ -16,7 +16,7 @@ import { UpdateDapp } from './update-dapp.use-case.js'
 import { randomUUID } from 'crypto'
 import { DAppId } from '../domain/entities/value-objects.js'
 import { UserId } from '#users/domain/entities/value-objects.js'
-import { back } from 'messages'
+import { back, generateRequestId } from 'messages'
 
 interface Input {
   user: UserProps // to check if they can deploy
@@ -59,6 +59,8 @@ export class DeployDApp implements UseCase<Input, DAppProps> {
                 .publish(
                   back.dappValidationRequested(
                     {
+                      // TODO: Retrieve the `requestId` from the adapter
+                      requestId: generateRequestId(),
                       dAppId: dappId.value,
                       chainId: SEPOLIA_CHAIN_ID, // change it
                       address: dapp.address!,

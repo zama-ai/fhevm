@@ -1,14 +1,6 @@
 import { Logger } from '@nestjs/common'
 import { AppDeploymentRepository } from '../interfaces/app-deployment.repository.js'
-import {
-  AppError,
-  IPubSub,
-  ISubscriber,
-  notFoundError,
-  Option,
-  Task,
-  UseCase,
-} from 'utils'
+import { AppError, IPubSub, ISubscriber, Option, Task, UseCase } from 'utils'
 import { back, web3 } from 'messages'
 import {
   AppDeployment,
@@ -39,12 +31,7 @@ export class ProcessAppDeployment
   private fetchAppDeployment(
     event: AppDeploymentEvents,
   ): Task<Option<AppDeployment>, AppError> {
-    return back.isBackEvent(event)
-      ? this.repo.findByDAppId(event.payload.dAppId)
-      : this.repo.findByChainIdAndAddress(
-          event.payload.chainId,
-          event.payload.address,
-        )
+    return this.repo.findByRequestId(event.payload.requestId)
   }
 
   execute = (event: AppDeploymentEvents): Task<void, AppError> => {
@@ -52,11 +39,9 @@ export class ProcessAppDeployment
       .chain<AppDeployment>(opt =>
         opt.isSome()
           ? Task.of(opt.unwrap())
-          : // Note: `back:dapp:validation:requestes` is the only event with all
-            // the info to create a new AppDeployment
-            event.type === 'back:dapp:validation:requested'
-            ? Task.of(new AppDeployment(event.payload))
-            : Task.reject(notFoundError('AppDeployment not found')),
+          : // Note: `back:dapp:validation:requestes` is the starting event of the
+            // workflow. All other events should not be valid starting points
+            Task.of(new AppDeployment({ requestId: event.payload.requestId })),
       )
       .chain(appDeployment =>
         Task.all<AppError, void>(
@@ -67,8 +52,8 @@ export class ProcessAppDeployment
       )
       .chain(appDeployment =>
         appDeployment.isComplete
-          ? this.repo.delete(appDeployment)
-          : this.repo.upsert(appDeployment),
+          ? this.repo.delete(appDeployment.requestId)
+          : this.repo.upsert(appDeployment.requestId, appDeployment.snapshot),
       )
   }
 }

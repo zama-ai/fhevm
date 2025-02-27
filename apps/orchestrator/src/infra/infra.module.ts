@@ -14,6 +14,7 @@ import { SharedModule } from '#shared/shared.module.js'
 import { IPubSub } from 'utils'
 import { back, web3 } from 'messages'
 import { EventProducer } from '#workflows/interfaces/event.producer.js'
+import { ProcessDAppStats } from '#workflows/use-cases/process-dapp-stats.use-case.js'
 
 @Module({
   imports: [
@@ -69,6 +70,14 @@ import { EventProducer } from '#workflows/interfaces/event.producer.js'
         pubsub: IPubSub<back.BackEvent | web3.Web3Event>,
         producer: EventProducer,
       ) => new uc.ProcessAddressValidation(pubsub, producer),
+    },
+    {
+      provide: ProcessDAppStats,
+      inject: [PUBSUB, EVENT_PRODUCER],
+      useFactory: (
+        pubsub: IPubSub<back.BackEvent | web3.Web3Event>,
+        producer: EventProducer,
+      ) => new ProcessDAppStats(pubsub, producer),
     },
   ],
 })

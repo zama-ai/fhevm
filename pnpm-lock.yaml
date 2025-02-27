@@ -792,6 +792,9 @@ importers:
 
   packages/messages:
     dependencies:
+      uuid:
+        specifier: ^11.1.0
+        version: 11.1.0
       zod:
         specifier: 'catalog:'
         version: 3.24.2
@@ -7766,6 +7769,10 @@ packages:
 
   uuid@11.0.3:
     resolution: {integrity: sha512-d0z310fCWv5dJwnX1Y/MncBAqGMKEzlBb1AOf7z9K8ALnd0utBX/msg/fA0+sbyN1ihbMsLhrBlnl1ak7Wa0rg==}
+    hasBin: true
+
+  uuid@11.1.0:
+    resolution: {integrity: sha512-0/A9rDy9P7cJ+8w1c9WD9V//9Wj15Ce2MPz8Ri6032usz+NfePxx5AcN3bN+r6ZL6jEo066/yNYB3tn4pQEx+A==}
     hasBin: true
 
   uuid@9.0.1:
@@ -16458,6 +16465,8 @@ snapshots:
   utils-merge@1.0.1: {}
 
   uuid@11.0.3: {}
+
+  uuid@11.1.0: {}
 
   uuid@9.0.1: {}
 

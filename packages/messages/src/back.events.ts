@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { chainId, meta, Meta, web3Address } from './shared.js'
+import { chainId, meta, Meta, requestId, web3Address } from './shared.js'
 
 type EventTypes =
   | 'dapp:created'
@@ -19,7 +19,10 @@ function genSchema<Key extends EventTypes, Payload extends z.ZodRawShape>(
   const type = `back:${key}` as `back:${Key}`
   return z.object({
     type: z.literal(type),
-    payload: z.object(payload),
+    payload: z.object({
+      requestId,
+      ...payload,
+    }),
   })
 }
 
