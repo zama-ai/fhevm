@@ -60,7 +60,9 @@ export class ProcessAppDeployment
       )
       .chain(appDeployment =>
         Task.all<AppError, void>(
-          appDeployment.send(event).map(this.producer.publish),
+          appDeployment
+            .send(event)
+            .map(message => this.producer.publish(message)),
         ).map(() => appDeployment),
       )
       .chain(appDeployment =>

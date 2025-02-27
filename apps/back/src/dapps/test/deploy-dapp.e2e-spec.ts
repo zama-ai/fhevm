@@ -170,13 +170,6 @@ describe('deploy-dapp', () => {
           const size = await manager.getQueueSize()
           return size === 0
         })
-        // await vi.waitUntil(async () => {
-        //   const result = await manager.dapp.getDapp({
-        //     token,
-        //     dappId,
-        //   })
-        //   return result.success ? result.data.status === status : false
-        // })
 
         const result = await manager.dapp.getDapp({
           token,

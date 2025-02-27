@@ -4,35 +4,94 @@ import * as back from './back.events.js'
 
 describe('back', () => {
   describe('isBackEvent', () => {
-    test('identifies `back:dapp:stats-requested` event ', () => {
-      const event = {
-        type: 'back:dapp:stats-requested',
-        payload: {
-          dAppId: faker.string.uuid(),
-          chainId: faker.string.numeric(5),
-          address: faker.string.hexadecimal({ length: 40 }),
-        },
-        meta: {
-          correlationId: faker.string.uuid(),
-        },
-      } satisfies back.BackEvent
-      expect(back.isBackEvent(event)).toBe(true)
-    })
-
-    test('identifies `back:dapp:stats-available` event', () => {
-      const event = {
-        type: 'back:dapp:stats-available',
-        payload: {
-          chainId: faker.string.numeric(5),
-          address: faker.string.hexadecimal({ length: 40 }),
-          name: faker.string.alphanumeric(),
-          timestamp: faker.date.past().toISOString(),
-          externalRef: faker.string.alphanumeric(10),
-        },
-        meta: {
-          correlationId: faker.string.uuid(),
-        },
-      } satisfies back.BackEvent
+    test.each([
+      {
+        event: back.addressValidationRequested(
+          {
+            chainId: faker.string.numeric(5),
+            address: faker.string.hexadecimal({ length: 40 }),
+          },
+          { correlationId: faker.string.uuid() },
+        ),
+      },
+      {
+        event: back.addressValidationConfirmed(
+          {
+            chainId: faker.string.numeric(5),
+            address: faker.string.hexadecimal({ length: 40 }),
+          },
+          { correlationId: faker.string.uuid() },
+        ),
+      },
+      {
+        event: back.addressValidationFailed(
+          {
+            chainId: faker.string.numeric(5),
+            address: faker.string.hexadecimal({ length: 40 }),
+            reason: faker.lorem.paragraph(),
+          },
+          { correlationId: faker.string.uuid() },
+        ),
+      },
+      {
+        event: back.dappCreated(
+          {
+            dAppId: faker.string.alphanumeric(10),
+          },
+          { correlationId: faker.string.uuid() },
+        ),
+      },
+      {
+        event: back.dappValidationRequested(
+          {
+            dAppId: faker.string.alphanumeric(10),
+            chainId: faker.string.numeric(5),
+            address: faker.string.hexadecimal({ length: 40 }),
+          },
+          { correlationId: faker.string.uuid() },
+        ),
+      },
+      {
+        event: back.dappValidationConfirmed(
+          {
+            dAppId: faker.string.alphanumeric(10),
+            owner: faker.string.hexadecimal({ length: 40 }),
+          },
+          { correlationId: faker.string.uuid() },
+        ),
+      },
+      {
+        event: back.dappValidationFailed(
+          {
+            dAppId: faker.string.alphanumeric(10),
+            reason: faker.lorem.paragraph(),
+          },
+          { correlationId: faker.string.uuid() },
+        ),
+      },
+      {
+        event: back.dappStatsRequested(
+          {
+            dAppId: faker.string.alphanumeric(10),
+            chainId: faker.string.numeric(5),
+            address: faker.string.hexadecimal({ length: 40 }),
+          },
+          { correlationId: faker.string.uuid() },
+        ),
+      },
+      {
+        event: back.dappStatsAvailable(
+          {
+            chainId: faker.string.numeric(5),
+            address: faker.string.hexadecimal({ length: 40 }),
+            name: faker.string.alphanumeric(),
+            timestamp: faker.date.past().toISOString(),
+            externalRef: faker.string.alphanumeric(10),
+          },
+          { correlationId: faker.string.uuid() },
+        ),
+      },
+    ])('identifies $event.type event', ({ event }) => {
       expect(back.isBackEvent(event)).toBe(true)
     })
   })

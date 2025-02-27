@@ -10,21 +10,21 @@ import {
 } from '@nestjs/graphql'
 import { CreateDappInput } from '#dapps/infra/dto/inputs/create-dapp.input.js'
 import { UpdateDappInput } from '#dapps/infra/dto/inputs/update-dapp.input.js'
-import { CreateDapp } from '#dapps/use-cases/create-dapp.use-case.js'
+import * as uc from '#dapps/use-cases/index.js'
 import { GetTeamById } from '#users/use-cases/get-team-by-id.use-case.js'
-import { UpdateDapp } from '#dapps/use-cases/update-dapp.use-case.js'
-import { DappType, StatsType } from '#dapps/infra/types/dapp.type.js'
+import {
+  DappType,
+  StatsType,
+  ValidateAddress,
+} from '#dapps/infra/types/dapp.type.js'
 import { CurrentUser } from '#auth/infra/decorators/current-user.js'
 import { JwtAuthGuard } from '#auth/infra/guards/jwt-auth-guard.js'
 import { User, type UserProps } from '#users/domain/entities/user.js'
 import { TeamId, UserId } from '#users/domain/entities/value-objects.js'
-import { DeployDApp } from '../use-cases/deploy-dapp.use-case.js'
 import { DeployDAppInput } from './dto/inputs/deploy-dapp.input.js'
-import { GetDappById } from '../use-cases/get-dapp-by-id.use-case.js'
 import { DAppId } from '../domain/entities/value-objects.js'
 import { TeamType } from '#users/infra/types/team.type.js'
 import { QueryDappInput } from './dto/inputs/query-dapp.input.js'
-import { GetDappStatsUseCase } from '#dapps/use-cases/get-dapp-stats.use-case.js'
 import { DAppStatProps } from '#dapps/domain/entities/dapp-stat.js'
 import { TeamProps } from '#users/domain/entities/team.js'
 import {
@@ -32,19 +32,20 @@ import {
   SubscriptionService,
 } from '#subscriptions/domain/services/subscription.service.js'
 import { DeployedDAppInput } from './dto/inputs/deployed-dapp.input.js'
-import { AppUpdatesSubscription } from '#dapps/use-cases/app-updates-subscription.use-case.js'
+import { ValidateAddressInput } from './dto/inputs/validate-address.input.js'
 
 @Resolver(() => DappType)
 export class DappsResolver {
   private readonly logger = new Logger(DappsResolver.name)
   constructor(
-    private readonly createDappUC: CreateDapp,
-    private readonly updateDappUC: UpdateDapp,
-    private readonly getDappByIdUC: GetDappById,
+    private readonly createDappUC: uc.CreateDapp,
+    private readonly updateDappUC: uc.UpdateDapp,
+    private readonly getDappByIdUC: uc.GetDappById,
     private readonly getTeamByIdUC: GetTeamById,
-    private readonly deployDappUC: DeployDApp,
-    private readonly getDappStatsUC: GetDappStatsUseCase,
-    private readonly appUpdatesSubscriptionUC: AppUpdatesSubscription,
+    private readonly deployDappUC: uc.DeployDApp,
+    private readonly getDappStatsUC: uc.GetDappStatsUseCase,
+    private readonly appUpdatesSubscriptionUC: uc.AppUpdatesSubscription,
+    private readonly validateAddressUC: uc.ValidateAddress,
     @Inject(SUBSCRIPTION_SERVICE)
     private readonly subscriptions: SubscriptionService,
   ) {}
@@ -123,5 +124,15 @@ export class DappsResolver {
       .execute({ dappId: dapp.id })
       .toPromise()
     return result.stats
+  }
+
+  @Query(() => ValidateAddress, { name: 'validateAddress' })
+  @UseGuards(JwtAuthGuard)
+  async validateAddress(
+    @Args('input') input: ValidateAddressInput,
+  ): Promise<ValidateAddress> {
+    this.logger.debug(`validating address ${input.chainId}/${input.address}`)
+    const result = await this.validateAddressUC.execute(input).toPromise()
+    return result
   }
 }

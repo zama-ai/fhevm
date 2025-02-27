@@ -143,12 +143,16 @@ export class SetupManager {
   }
 
   async afterEach() {
-    // Clear the database
-    await this.#prismaClient.$transaction([
-      this.#prismaClient.user.deleteMany(),
-      this.#prismaClient.team.deleteMany(),
-      this.#prismaClient.invitation.deleteMany(),
-      this.#prismaClient.dapp.deleteMany(),
+    await Promise.all([
+      // Clear the database
+      this.#prismaClient.$transaction([
+        this.#prismaClient.user.deleteMany(),
+        this.#prismaClient.team.deleteMany(),
+        this.#prismaClient.invitation.deleteMany(),
+        this.#prismaClient.dapp.deleteMany(),
+      ]),
+      // Clear logs
+      this.purgeLogQueue(),
     ])
   }
 
@@ -218,5 +222,9 @@ export class SetupManager {
     await this.deleteQueue(this.logQueueUrl)
     await this.createQueue(this.#logQueueName)
     await this.subscribeToTopic(this.logQueueArn)
+  }
+
+  get prismaClient() {
+    return this.#prismaClient
   }
 }
