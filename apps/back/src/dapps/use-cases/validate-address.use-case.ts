@@ -2,7 +2,7 @@ import { PUBSUB } from '#constants.js'
 import { Address } from '#dapps/domain/entities/value-objects.js'
 import { Inject, Injectable } from '@nestjs/common'
 import { randomUUID } from 'crypto'
-import { back } from 'messages'
+import { back, generateRequestId } from 'messages'
 import { AppError, IPubSub, ISubscriber, Task, UseCase } from 'utils'
 
 export type ValidateAddressInput = {
@@ -57,7 +57,7 @@ export class ValidateAddress
           this.pubsub.publish(
             back.addressValidationRequested(
               { ...input, requestId: randomUUID() },
-              { correlationId: randomUUID() },
+              { correlationId: generateRequestId() },
             ),
           )
         }),
