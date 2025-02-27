@@ -25,6 +25,11 @@ data:
     decryption_mode=${DECRYPTION_MODE}
     EOF
 
+    {{- if not .Values.kmsCoreClientTesting.enabled -}}
+    # Keep the pod running
+    tail -f /dev/null
+
+    {{- else-}}
     echo "######################################################################"
     echo "Launching testing core-client"
     echo ""
@@ -82,5 +87,6 @@ data:
       echo "Launching decrypt with euint128"
       bin/kms-core-client -f config.toml decrypt -d euint128 -c $crs_id -k $key_id -e ffffffffffffffffffffffffffffffff
     done
+    {{- end -}}
 
 {{- end -}}
