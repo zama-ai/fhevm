@@ -69,7 +69,7 @@ function isWebSocket(url: string) {
   return /^wss?:\/\//.test(url)
 }
 
-// We try to retrieve the owner of the contract chechking if the Smart Contract
+// We try to retrieve the owner of the contract checking if the Smart Contract
 // implements a `owner` function. (Ownable from OpenZeppelin)
 const OWNER_ABI = [
   {
