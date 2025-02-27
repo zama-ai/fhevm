@@ -1,0 +1,74 @@
+import { faker } from '@faker-js/faker'
+import { generateRequestId, relayer } from './index.js'
+import { describe, expect, test } from 'vitest'
+
+describe('relayer', () => {
+  describe('isRelayerEvent', () => {
+    test.each([
+      {
+        event: relayer.privateDecryptionOperationRequest(
+          {
+            requestId: generateRequestId(),
+            ctHandles: [
+              faker.string.hexadecimal({
+                length: { min: 10, max: 50 },
+              }) as `0x${string}`,
+              faker.string.hexadecimal({
+                length: { min: 10, max: 50 },
+              }) as `0x${string}`,
+            ],
+            publicKey: faker.string.hexadecimal({
+              length: { min: 10, max: 50 },
+            }) as `0x${string}`,
+            chainId: faker.string.numeric(5),
+          },
+          { correlationId: faker.string.uuid() },
+        ),
+      },
+      {
+        event: relayer.privateDecryptionOperationResponse(
+          {
+            requestId: generateRequestId(),
+            ctValues: [
+              faker.string.hexadecimal({
+                length: { min: 10, max: 50 },
+              }) as `0x${string}`,
+              faker.string.hexadecimal({
+                length: { min: 10, max: 50 },
+              }) as `0x${string}`,
+            ],
+            signatures: [
+              faker.string.hexadecimal({
+                length: { min: 10, max: 50 },
+              }) as `0x${string}`,
+              faker.string.hexadecimal({
+                length: { min: 10, max: 50 },
+              }) as `0x${string}`,
+            ],
+          },
+          { correlationId: faker.string.uuid() },
+        ),
+      },
+      {
+        event: relayer.publicDecryptionAuthorizationRequest(
+          {
+            requestId: generateRequestId(),
+            callerAddress: faker.string.hexadecimal({ length: 40 }),
+          },
+          { correlationId: faker.string.uuid() },
+        ),
+      },
+      {
+        event: relayer.publicDecryptionAuthorizationResponse(
+          {
+            requestId: generateRequestId(),
+            authorized: Math.random() > 0.5,
+          },
+          { correlationId: faker.string.uuid() },
+        ),
+      },
+    ])('identifies $event.type event', ({ event }) => {
+      expect(relayer.isRelayerEvent(event)).toBe(true)
+    })
+  })
+})
