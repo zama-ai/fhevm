@@ -10,24 +10,15 @@ import {
   SelectTrigger,
   SelectValueText,
 } from '@/components/ui/select'
-
-const chains = createListCollection({
-  items: [
-    { label: 'Sepolia', value: '11155111' },
-    { label: 'Base', value: '8453' },
-    { label: 'ETH Mainnet', value: '1' },
-    { label: 'FileCoin', value: '314' },
-  ],
-})
-
 import { Field } from '@/components/ui/field.js'
+
 import { SpinnerButton } from '@/components/ui/spinner-button.js'
 import { ErrorMessage } from '@/components/error-message/error-message.js'
 import { toFormikValidate } from '@/lib/zod-schema-validator.js'
 
 import { CreatorFormSchema, AddressSchema } from './validations.js'
 import { InputGroup } from '../ui/input-group.js'
-import { Dot, GreenDot } from '../dot/dot.js'
+import { InputGroupDot } from '../input-group-dot/input-group-dot.js'
 
 type OwnProps = {
   onSubmit: (values: { name: string }) => void
@@ -45,7 +36,16 @@ type OwnProps = {
   errorMessage?: string
 }
 
-export function CreatorName({
+const chains = createListCollection({
+  items: [
+    { label: 'Sepolia', value: '11155111' },
+    { label: 'Base', value: '8453' },
+    { label: 'ETH Mainnet', value: '1' },
+    { label: 'FileCoin', value: '314' },
+  ],
+})
+
+export function CreatorForm({
   onSubmit,
   onUpdateTitle,
   loading,
@@ -74,9 +74,10 @@ export function CreatorName({
   }, [addressError, formik])
 
   function getDot() {
-    if (addressLoading && !formik.errors.address) return <Dot />
+    if (addressLoading && !formik.errors.address)
+      return <InputGroupDot variant="animated" />
     if (!formik.errors.address && formik.touched.address && !addressError)
-      return <GreenDot />
+      return <InputGroupDot variant="green" />
     return null
   }
 

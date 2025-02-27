@@ -9,11 +9,12 @@ import {
   ValidateAddressQuery,
 } from '@/__generated__/graphql.js'
 import { formatErrorMessage } from '@/lib/error-message.js'
-import { CreatorName } from '@/components/creator/creator-name.js'
+import { CreatorForm } from '@/components/creator/creator.js'
 import { TitleContext } from '@/components/title-context/title-context.js'
 import { GET_ME } from '@/queries.js'
 
-// TODO https://codesandbox.io/p/sandbox/apollo-3-playground-3-5-x-ryhg3x?file=%2Fsrc%2FApp.js%3A26%2C9-26%2C19
+// TODO cancel / intercept query
+// https://codesandbox.io/p/sandbox/apollo-3-playground-3-5-x-ryhg3x?file=%2Fsrc%2FApp.js%3A26%2C9-26%2C19
 
 const VALIDATE_ADDRESS = graphql(`
   query ValidateAddress($chainId: String!, $address: String!) {
@@ -35,14 +36,14 @@ const CREATE_DAPP = graphql(`
   }
 `)
 
-export function CreateStepOnePage() {
+export function CreatePage() {
   const { teamId } = useParams()
 
   const [createDappMutation, { loading, error }] =
     useMutation<CreateDappMutation>(CREATE_DAPP, {
       refetchQueries: [GET_ME],
       onCompleted(data) {
-        navigate(`/create/2/${data?.createDapp.id}`)
+        navigate(`/dashboard/#${data.createDapp.id}`)
       },
     })
 
@@ -65,7 +66,7 @@ export function CreateStepOnePage() {
   return (
     <>
       <Heading mb="5">Create a new dApp</Heading>
-      <CreatorName
+      <CreatorForm
         onValidateAddress={({ chainId, address }) => {
           console.log('address', address)
           validateAddressQuery({
@@ -91,7 +92,7 @@ export function CreateStepOnePage() {
             },
 
             onCompleted: data => {
-              navigate(`/create/2/${data.createDapp.id}`)
+              navigate(`/dashboard/#${data.createDapp.id}`)
             },
           })
         }}
