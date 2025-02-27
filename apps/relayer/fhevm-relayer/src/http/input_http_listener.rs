@@ -15,10 +15,10 @@ use tracing::info;
 #[derive(Debug, Deserialize)]
 #[allow(non_snake_case)]
 pub struct InputProofRequestJson {
-    pub contractChainId: String, // Hex encoded uint256 string without prefix
+    pub contractChainId: String, // Hex encoded uint256 string with 0x prefix.
     pub contractAddress: String, // Hex encoded address with 0x prefix.
-    pub userAddress: String,     // Hex encoded address with 0x prefix
-    pub ciphertextWithZkpok: String, // List of hex encoded binary proof without 0x prefix
+    pub userAddress: String,     // Hex encoded address with 0x prefix.
+    pub ciphertextWithZkpok: String, // List of hex encoded binary proof without 0x prefix.
 }
 
 impl InputProofRequestJson {
