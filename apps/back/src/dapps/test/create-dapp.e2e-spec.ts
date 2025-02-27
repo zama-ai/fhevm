@@ -54,7 +54,7 @@ describe('create-dapp', () => {
           name: faker.string.alphanumeric(10),
         })
         if (result.success) {
-          dapp = result.data.dapp
+          dapp = result.data
         }
       })
 
@@ -71,7 +71,7 @@ describe('create-dapp', () => {
 
   describe('given a user is not logged in', () => {
     describe('when creating a dapp', () => {
-      let result: GraphQlResponse<{ dapp: DApp; token: string }>
+      let result: GraphQlResponse<DApp>
 
       beforeEach(async () => {
         result = await manager.dapp.createDApp({

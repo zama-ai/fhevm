@@ -54,13 +54,13 @@ describe('deploy-dapp', () => {
         })
         expect(dappResult.success, 'Failed to create dApp').toBe(true)
         if (dappResult.success) {
-          dappId = dappResult.data.dapp.id
+          dappId = dappResult.data.id
         }
       }
     })
 
     describe('when deploying a dapp', () => {
-      let result: GraphQlResponse<{ dapp: DeployDappResult }>
+      let result: GraphQlResponse<DeployDappResult>
 
       beforeEach(async () => {
         result = await manager.dapp.deployDApp({
@@ -95,7 +95,7 @@ describe('deploy-dapp', () => {
         })
         expect(result.success).toBe(true)
         if (result.success) {
-          status = result.data.dapp.status
+          status = result.data.status
         }
       })
 
@@ -128,7 +128,7 @@ describe('deploy-dapp', () => {
         })
         expect(dappResult.success).toBe(true)
         if (dappResult.success) {
-          dappId = dappResult.data.dapp.id
+          dappId = dappResult.data.id
           const result = await manager.dapp.deployDApp({
             token,
             dappId,

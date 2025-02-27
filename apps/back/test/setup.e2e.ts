@@ -7,6 +7,8 @@ import {
   type StartedPostgreSqlContainer,
 } from '@testcontainers/postgresql'
 import { RedisContainer, StartedRedisContainer } from '@testcontainers/redis'
+import { execSync } from 'child_process'
+import { randomUUID } from 'crypto'
 
 import type { TestProject } from 'vitest/node'
 
@@ -14,7 +16,19 @@ let pgContainer: StartedPostgreSqlContainer | undefined = undefined
 let awsContainer: StartedLocalStackContainer | undefined = undefined
 let redisContainer: StartedRedisContainer | undefined = undefined
 
-async function startPostgres() {
+async function startPostresInstance(databaseUrl: string) {
+  const schema = randomUUID()
+  console.log(`migrating prisma into schema ${schema}`)
+  const url = `${databaseUrl}?schema=${schema}`
+
+  // Execute Prisma migrations
+  execSync('pnpx prisma migrate deploy', {
+    env: { DATABASE_URL: url, PATH: process.env.PATH },
+  })
+
+  return url
+}
+async function startPostgres(maxWorkers: number) {
   // Note: for better integration tests, keep the database image aligned with the one used in production
   pgContainer = await new PostgreSqlContainer('postgres:17-alpine').start()
 
@@ -31,8 +45,12 @@ async function startPostgres() {
   console.log(
     `🚛 testcontainer Postgres running on ${host}:${port}/${database}`,
   )
+  const databaseUrl = `postgresql://${username}:${password}@${host}:${port}/${database}`
+  const urls = await Promise.all(
+    new Array(maxWorkers).fill(0).map(() => startPostresInstance(databaseUrl)),
+  )
 
-  return `postgresql://${username}:${password}@${host}:${port}/${database}`
+  return urls
 }
 
 async function stopPostgres() {
@@ -84,12 +102,14 @@ async function stopRedis() {
 }
 
 export async function setup(project: TestProject) {
-  const [databaseUrl, awsEndpoint, redisConnection] = await Promise.all([
-    startPostgres(),
+  const maxWorkers = project.globalConfig.poolOptions?.forks?.maxForks ?? 10
+  const [databaseUrls, awsEndpoint, redisConnection] = await Promise.all([
+    startPostgres(maxWorkers),
     startAws(),
     startRedis(),
   ])
-  project.provide('databaseUrl', databaseUrl)
+  project.provide('maxWorkers', maxWorkers)
+  project.provide('databaseUrls', databaseUrls)
   project.provide('awsEndpoint', awsEndpoint)
   project.provide('redisConnection', redisConnection)
 }
@@ -100,7 +120,8 @@ export async function teardown() {
 
 declare module 'vitest' {
   export interface ProvidedContext {
-    databaseUrl: string
+    maxWorkers: number
+    databaseUrls: string[]
     awsEndpoint: string
     redisConnection: { host: string; port: number }
   }

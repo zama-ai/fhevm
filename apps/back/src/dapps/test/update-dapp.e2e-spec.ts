@@ -37,16 +37,36 @@ describe('update-dapp', () => {
     await manager.afterEach()
   })
 
-  describe('given a dapp exists', () => {
+  describe('given a user is logged in and a dapp exists', () => {
     let token: string
+    let teamId: string
     let dapp: DApp
 
     beforeEach(async () => {
-      const result = await manager.dapp.createDApp({
-        name: faker.string.alphanumeric(10),
-      })
-      if (result.success) {
-        ;({ token, dapp } = result.data)
+      const login = await manager.auth.login(
+        {
+          email: faker.internet.email(),
+          password: faker.internet.password(),
+        },
+        { signup: true },
+      )
+      if (login.success) {
+        token = login.data.token
+        teamId = login.data.user.teams[0].id
+        const createDapp = await manager.dapp.createDApp({
+          token,
+          teamId,
+          name: faker.string.alphanumeric(10),
+        })
+        if (createDapp.success) {
+          dapp = createDapp.data
+        } else {
+          console.log(`createDapp: ${JSON.stringify(createDapp)}`)
+          expect(createDapp.success, 'Failed to create dapp').toBe(true)
+        }
+      } else {
+        console.log(`login: ${JSON.stringify(login)}`)
+        expect(login.success, 'Failed to login the user').toBe(true)
       }
     })
 
@@ -58,15 +78,17 @@ describe('update-dapp', () => {
         name = faker.string.alphanumeric(10)
         address = faker.string.hexadecimal({ length: 40 })
 
-        const result = await manager.dapp.updateDApp({
+        const updateDApp = await manager.dapp.updateDApp({
           token,
           dappId: dapp.id,
           name,
           address,
         })
-        expect(result.success, 'Failed to update dapp').toBe(true)
-        if (result.success) {
-          updated = result.data.dapp
+        if (updateDApp.success) {
+          updated = updateDApp.data
+        } else {
+          console.log(`updateDApp: ${JSON.stringify(updateDApp)}`)
+          expect(updateDApp.success, 'Failed to update dapp').toBe(true)
         }
       })
 

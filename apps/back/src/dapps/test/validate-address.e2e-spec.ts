@@ -58,6 +58,7 @@ describe('validate-address', () => {
             JSON.stringify(
               back.addressValidationConfirmed(
                 {
+                  requestId: faker.string.uuid(),
                   chainId,
                   address,
                 },
@@ -100,6 +101,7 @@ describe('validate-address', () => {
             JSON.stringify(
               back.addressValidationFailed(
                 {
+                  requestId: faker.string.uuid(),
                   chainId,
                   address,
                   reason: `${address} not valid`,

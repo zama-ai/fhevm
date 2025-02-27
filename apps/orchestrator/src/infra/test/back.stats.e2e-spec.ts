@@ -60,10 +60,13 @@ describe('back dapp stats', () => {
         expect((messages[0]?.event as back.BackEvent).type).toBe(
           'back:dapp:stats-requested',
         )
+        expect(messages[0]?.event.payload.requestId).toBe(requestId)
+
         expect(web3.isWeb3Event(messages[1]?.event)).toBe(true)
         expect((messages[1]?.event as web3.Web3Event).type).toBe(
           'web3:fhe-event:requested',
         )
+        expect(messages[1]?.event.payload.requestId).toBe(requestId)
       })
 
       test('then it forward the correlationId', async () => {
