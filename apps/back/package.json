@@ -55,7 +55,7 @@
     "rimraf": "^6.0.1",
     "sqs": "workspace:*",
     "utils": "workspace:*",
-    "zod": "^3.23.8"
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@faker-js/faker": "^9.3.0",
