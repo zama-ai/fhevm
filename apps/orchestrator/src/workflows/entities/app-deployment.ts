@@ -3,9 +3,6 @@ import { back, web3 } from 'messages'
 
 export interface AppDeploymentProps {
   requestId: string
-  // dAppId: string
-  // chainId: string
-  // address: string
 }
 
 export const EVENT_TYPES = [
@@ -35,16 +32,12 @@ type Context = {
   dAppId: string
   chainId: string
   address: string
-  messages: (back.BackEvent | web3.Web3Event)[]
 }
 
 type AppDeploymentMachine = ReturnType<typeof factory>
 
 function factory({
   requestId,
-  // dAppId,
-  // chainId,
-  // address,
   notifyMessage,
 }: Pick<Context, 'requestId'> & {
   notifyMessage: (message: AppDeploymentEvents) => void
@@ -61,7 +54,7 @@ function factory({
   }).createMachine({
     /** @xstate-layout N4IgpgJg5mDOIC5QEMAOqAiZUBsD2AngLZgB2ALgHQCSEOYAxGqgLQTb7FlUBOYAjgFc45SAG0ADAF1EoVHlgBLcorylZIAB6IAjACYAbJQkmTAZj2WArGasGAHABoQBRPZ2UALAE5f3wwDsBhIB-gEAvuHOzFi4hCQUlBiKsADGeABuYDyKpFBM6Gwc8dyUaWwp6Vl8EJIySCDySipqGtoIVt4SlAEBEvZWEp4SVno6Vk4ubvZe9gbBVjreATpDBnqR0eixnAlUAMJqAGaKPES5+cxFcVyJ5emkJ2fi0hpNyqrqDe2rVgGUYz0yx0fXWXUmrgQ9hmnjmCyWKzWGyiIBixVuVAASmAoClRDk8gVWOwbnsyqkWHxcbB8S96nIFB9Wt9dD5ut4dJ55rYzPYTHoAs5IfY9MZTBIDN4fJ4BYZIijSHh2PAGmjSdw3oyWl9QO0WAYhYh9WLTGZPEsDGZvLzPJtUdt0WTaPRNc1Pm1EDLDQhVp4eoY7PNPFaDJ5Rna1btSsk0plshdXUydVpPeNKGYQSLYQK+RJvAapj6hv6DIHQyGw2YIw71YlDo9Tuc8ontR6EF12Tp7LZ8zorYNPN7fSWy8H82HkVtMI7StjqfiEw13q2WT6zd0AubBr1N6E9IPC8OAgH5uXx+GUZGSokAIKpFRZFvu1eZmZmM29ANWGUiocSMxeEEBg6CBiLvhm8rhEAA */
     id: 'appDeployment',
-    context: { requestId, dAppId: '', chainId: '', address: '', messages: [] },
+    context: { requestId, dAppId: '', chainId: '', address: '' },
     initial: 'Idle',
     states: {
       Idle: {

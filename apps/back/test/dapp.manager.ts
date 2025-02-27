@@ -31,6 +31,10 @@ export interface DAppStats {
   }[]
 }
 
+export type ValidateAddress =
+  | { check: true; message?: never }
+  | { check: false; message: string }
+
 export class DappManager {
   constructor(
     private readonly manager: SetupManager,
@@ -132,6 +136,24 @@ export class DappManager {
       .query(GET_DAPP_STATS, { dappId })
       .exec('dapp')
   }
+
+  async valiateAddress({
+    token,
+    chainId,
+    address,
+  }: {
+    token: string
+    chainId: string
+    address: string
+  }): Promise<GraphQlResponse<ValidateAddress>> {
+    return GraphQl.request<
+      { validateAddress: ValidateAddress },
+      { chainId: string; address: string }
+    >(this.httpServer)
+      .auth(token)
+      .query(VALIDATE_ADDRESS, { chainId, address })
+      .exec('validateAddress')
+  }
 }
 
 const CREATE_DAPP = `
@@ -199,6 +221,15 @@ const GET_DAPP_STATS = `
         timestamp
         externalRef
       }
+    }
+  }
+`
+
+const VALIDATE_ADDRESS = `
+  query ValidateAddress($chainId: String!, $address: String!) {
+    validateAddress(input: {chainId: $chainId, address: $address}) {
+      check
+      message
     }
   }
 `

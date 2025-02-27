@@ -226,6 +226,11 @@ export class SetupManager {
     await this.createQueue(this.#logQueueName)
     await this.subscribeToTopic(this.logQueueArn)
   }
+
+  get prismaClient() {
+    const WORKER_ID = Number(process.env.VITEST_POOL_ID) - 1
+    return this.#prismaClients[WORKER_ID]
+  }
 }
 
 class PrismaClientProxy {

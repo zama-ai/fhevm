@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "uuid": "^11.1.0",
-    "zod": "^3.23.8"
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@faker-js/faker": "^9.3.0",

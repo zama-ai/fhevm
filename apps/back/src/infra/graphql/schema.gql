@@ -42,6 +42,11 @@ enum DappStatus {
   ARCHIVED
 }
 
+type ValidateAddress {
+  check: Boolean!
+  message: String
+}
+
 type User {
   id: ID!
   email: String!
@@ -67,10 +72,16 @@ type Query {
   me: User!
   invitation(token: String!): Invitation!
   dapp(input: QueryDappInput!): Dapp!
+  validateAddress(input: ValidateAddressInput!): ValidateAddress!
 }
 
 input QueryDappInput {
   id: ID!
+}
+
+input ValidateAddressInput {
+  chainId: String!
+  address: String!
 }
 
 type Mutation {

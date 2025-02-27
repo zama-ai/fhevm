@@ -81,8 +81,8 @@ describe('store dapp stats', () => {
 
       test('then it stores the dapp stats', async () => {
         await vi.waitUntil(async () => {
-          const size = await manager.getLogQueueSize()
-          return size > 0
+          const count = await manager.prismaClient.dappStat.count()
+          return count > 0
         })
         const res = await manager.dapp.getDappStats({ token, dappId })
         expect(res.success, 'Failed to fetch stats').toBe(true)

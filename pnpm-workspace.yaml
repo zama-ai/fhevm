@@ -17,3 +17,4 @@ catalog:
   unplugin-swc: "^1.5.1"
   vite-tsconfig-paths: "^5.1.3"
   vitest: "^3.0.2"
+  zod: "^3.24.2"
