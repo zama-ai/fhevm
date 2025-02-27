@@ -3,7 +3,7 @@ import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { expect } from "chai";
 import hre from "hardhat";
 
-import { CiphertextStorage } from "../typechain-types";
+import { CiphertextStorage, HTTPZ } from "../typechain-types";
 import { deployKeyManagerFixture } from "./utils";
 
 describe("CiphertextStorage", function () {
@@ -17,11 +17,12 @@ describe("CiphertextStorage", function () {
   const fakeCtHandle = 11111;
   const fakeChainId = 123;
 
+  let httpz: HTTPZ;
   let ciphertextStorage: CiphertextStorage;
   let coprocessorSigners: HardhatEthersSigner[];
-
+  let user: HardhatEthersSigner;
   async function deployCiphertextStorageFixture() {
-    const { httpz, keyManager, coprocessorSigners, signers } = await loadFixture(deployKeyManagerFixture);
+    const { httpz, keyManager, coprocessorSigners, signers, user } = await loadFixture(deployKeyManagerFixture);
     const CiphertextStorageContract = await hre.ethers.getContractFactory("CiphertextStorage");
     const ciphertextStorage = await CiphertextStorageContract.deploy(httpz, keyManager);
 
@@ -29,14 +30,16 @@ describe("CiphertextStorage", function () {
     for (let signer of coprocessorSigners) {
       await ciphertextStorage.connect(signer).addCiphertext(ctHandle, keyId, chainId, ciphertext, snsCiphertext);
     }
-    return { ciphertextStorage, coprocessorSigners, signers };
+    return { httpz, ciphertextStorage, coprocessorSigners, signers, user };
   }
 
   beforeEach(async function () {
     // Initialize globally used variables before each test
     const fixture = await loadFixture(deployCiphertextStorageFixture);
-    ciphertextStorage = fixture.ciphertextStorage;
+    httpz = fixture.httpz;
     coprocessorSigners = fixture.coprocessorSigners;
+    ciphertextStorage = fixture.ciphertextStorage;
+    user = fixture.user;
   });
 
   describe("Add ciphertext", async function () {
@@ -65,6 +68,16 @@ describe("CiphertextStorage", function () {
 
       // It should emit only the event once consensus is reached which means only the second transaction emits the event
       expect(events.length).to.equal(1);
+    });
+
+    it("Should revert because the signer is not a Coprocessor", async function () {
+      // Use a signer that is not a Coprocessor
+      const result = ciphertextStorage.connect(user).addCiphertext(ctHandle, keyId, chainId, ciphertext, snsCiphertext);
+
+      // Then
+      await expect(result)
+        .revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
+        .withArgs(user.address, httpz.COPROCESSOR_ROLE());
     });
 
     it("Should revert with CoprocessorHasAlreadyAdded", async function () {
@@ -129,22 +142,16 @@ describe("CiphertextStorage", function () {
   });
 
   describe("Is on network", async function () {
-    it("Should return true", async function () {
+    it("Should not revert", async function () {
       // When
-      const result = await ciphertextStorage.isOnNetwork(ctHandle, chainId);
-
-      // Then
-      expect(result).to.be.eq(true);
+      await expect(ciphertextStorage.checkIsOnNetwork(ctHandle, chainId)).not.to.be.reverted;
     });
 
-    it("Should return false", async function () {
+    it("Should revert because the ciphertext is not on the network", async function () {
       // When
-      const txResponse1 = await ciphertextStorage.isOnNetwork(ctHandle, fakeChainId);
-      const txResponse2 = await ciphertextStorage.isOnNetwork(fakeCtHandle, chainId);
-
-      // Then
-      expect(txResponse1).to.be.eq(false);
-      expect(txResponse2).to.be.eq(false);
+      await expect(ciphertextStorage.checkIsOnNetwork(ctHandle, fakeChainId))
+        .revertedWithCustomError(ciphertextStorage, "CiphertextNotOnNetwork")
+        .withArgs(ctHandle, fakeChainId);
     });
   });
 });

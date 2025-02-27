@@ -108,24 +108,26 @@ contract HTTPZ is IHTTPZ, Ownable2Step, AccessControl {
         emit UpdateKmsThreshold(newKmsThreshold);
     }
 
-    /// @dev See {IHTTPZ-isAdmin}.
-    function isAdmin(address adminAddress) external view virtual returns (bool) {
-        return hasRole(ADMIN_ROLE, adminAddress);
+    /// @dev See {IHTTPZ-checkIsAdmin}.
+    function checkIsAdmin(address adminAddress) external view virtual {
+        _checkRole(ADMIN_ROLE, adminAddress);
     }
 
-    /// @dev See {IHTTPZ-isKmsNode}.
-    function isKmsNode(address kmsNodeAddress) external view virtual returns (bool) {
-        return hasRole(KMS_NODE_ROLE, kmsNodeAddress);
+    /// @dev See {IHTTPZ-checkIsKmsNode}.
+    function checkIsKmsNode(address kmsNodeAddress) external view virtual {
+        _checkRole(KMS_NODE_ROLE, kmsNodeAddress);
     }
 
-    /// @dev See {IHTTPZ-isCoprocessor}.
-    function isCoprocessor(address coprocessorAddress) external view virtual returns (bool) {
-        return hasRole(COPROCESSOR_ROLE, coprocessorAddress);
+    /// @dev See {IHTTPZ-checkIsCoprocessor}.
+    function checkIsCoprocessor(address coprocessorAddress) external view virtual {
+        _checkRole(COPROCESSOR_ROLE, coprocessorAddress);
     }
 
-    /// @dev See {IHTTPZ-isNetwork}.
-    function isNetwork(uint256 chainId) external view virtual returns (bool) {
-        return _isNetworkRegistered[chainId];
+    /// @dev See {IHTTPZ-checkNetworkIsRegistered}.
+    function checkNetworkIsRegistered(uint256 chainId) external view virtual {
+        if (!_isNetworkRegistered[chainId]) {
+            revert NetworkNotRegistered(chainId);
+        }
     }
 
     /// @dev See {IHTTPZ-getKmsMajorityThreshold}.

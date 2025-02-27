@@ -25,12 +25,6 @@ interface IACLManager {
     /// @param allowedContract The address of the contract being delegated to decrypt.
     event DelegateAccount(uint256 indexed chainId, address delegator, address delegatee, address allowedContract);
 
-    /// @notice Error indicating that the sender is not a valid Coprocessor.
-    error InvalidCoprocessorSender(address sender);
-
-    /// @notice Error indicating that the ciphertext handle is not associated to the given network.
-    error CiphertextHandleNotOnNetwork(uint256 ctHandle, uint256 chainId);
-
     /// @notice Error indicating that the given coprocessor has already allowed the ciphertext decryption.
     error CoprocessorHasAlreadyAllowed(address coprocessor, uint256 ctHandle);
 

@@ -3,7 +3,7 @@ import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { expect } from "chai";
 import hre from "hardhat";
 
-import { ZKPoKManager } from "../typechain-types";
+import { HTTPZ, ZKPoKManager } from "../typechain-types";
 import { createEIP712ResponseZKPoK, deployHTTPZFixture, getSignaturesZKPoK } from "./utils";
 
 describe("ZKPoKManager", function () {
@@ -56,8 +56,8 @@ describe("ZKPoKManager", function () {
     //   // When
     //   const txResponse = zkpokManager.verifyProofRequest(fakeChainId, contractAddress, userAddress, ctProofHandle);
 
-    //   // Then
-    //   await expect(txResponse).revertedWithCustomError(zkpokManager, "NetworkNotRegistered").withArgs(fakeChainId);
+    // Then
+    // await expect(txResponse).revertedWithCustomError(httpz, "NetworkNotRegistered").withArgs(fakeChainId);
     // });
   });
 
@@ -66,6 +66,7 @@ describe("ZKPoKManager", function () {
     const contractChainId = "123";
     const contractAddress = "0xa83114A443dA1CecEFC50368531cACE9F37fCCcb";
     const userAddress = "0x388C818CA8B9251b393131C08a736A67ccB19297";
+    let httpz: HTTPZ;
     let zkpokManager: ZKPoKManager;
     let coprocessorSigners: HardhatEthersSigner[];
     let fakeSigner: HardhatEthersSigner;
@@ -79,6 +80,7 @@ describe("ZKPoKManager", function () {
         name: "Network name",
         website: "network-website.com",
       });
+      httpz = fixture.httpz;
       zkpokManager = fixture.zkpokManager;
       coprocessorSigners = fixture.coprocessorSigners;
       fakeSigner = fixture.signers[0];
@@ -114,7 +116,7 @@ describe("ZKPoKManager", function () {
       await expect(lateTxResponse).to.not.emit(zkpokManager, "VerifyProofResponse");
     });
 
-    it("Should revert with InvalidCoprocessorSigner", async function () {
+    it("Should revert because the signer is not a coprocessor", async function () {
       // Given
       const handles = [hre.ethers.randomBytes(32), hre.ethers.randomBytes(32)];
       const zkpokManagerAddress = await zkpokManager.getAddress();
@@ -133,8 +135,8 @@ describe("ZKPoKManager", function () {
 
       // Then
       await expect(txResponse)
-        .revertedWithCustomError(zkpokManager, "InvalidCoprocessorSigner")
-        .withArgs(fakeSigner.address);
+        .revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
+        .withArgs(fakeSigner.address, httpz.COPROCESSOR_ROLE());
     });
 
     it("Should revert with CoprocessorHasAlreadySigned", async function () {

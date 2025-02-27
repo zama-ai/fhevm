@@ -33,14 +33,6 @@ interface IZKPoKManager {
     /// @param signatures The Coprocessor's signature
     event VerifyProofResponse(uint256 indexed zkProofId, bytes32[] handles, bytes[] signatures);
 
-    /// @notice Error indicating that a given chain ID is not registered
-    /// @param chainId The chainId of the blockchain that is not registered
-    error NetworkNotRegistered(uint256 chainId);
-
-    /// @notice Error indicating that the signer is not a valid Coprocessor
-    /// @param signer The address of the invalid coprocessor signer
-    error InvalidCoprocessorSigner(address signer);
-
     /// @notice Error indicating that the Coprocessor has already signed its ZK Proof verification response
     /// @param zkProofId The ID of the ZK Proof
     /// @param signer The address of the Coprocessor signer that has already signed

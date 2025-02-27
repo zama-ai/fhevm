@@ -345,9 +345,8 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
     function _validateEIP712Signature(uint256 decryptionId, bytes32 digest, bytes calldata signature) internal virtual {
         address signer = ECDSA.recover(digest, signature);
 
-        if (!_isKmsNode(signer)) {
-            revert InvalidKmsSigner(signer);
-        }
+        /// @dev Check that the signer is a KMS node
+        _HTTPZ.checkIsKmsNode(signer);
 
         if (alreadySigned[decryptionId][signer]) {
             revert KmsSignerAlreadySigned(decryptionId, signer);
@@ -428,14 +427,6 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
                     )
                 )
             );
-    }
-
-    /// @notice Indicates if a given address is a valid KMS node.
-    /// @dev This function calls the HTTPZ contract to check if the address is a KMS node.
-    /// @param signer The address to be checked
-    /// @return Whether the address is a valid KMS node
-    function _isKmsNode(address signer) internal view virtual returns (bool) {
-        return _HTTPZ.isKmsNode(signer);
     }
 
     /// @notice Checks if the consensus is reached among the KMS nodes.
