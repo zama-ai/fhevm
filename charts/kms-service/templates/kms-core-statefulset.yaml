@@ -49,29 +49,22 @@ spec:
           args:
             - -c
             - |
-{{- if .Values.minio.enabled }}
-              export AWS_REGION="{{ .Values.kmsCore.aws.region }}"
-              export AWS_ROLE_ARN="{{ .Values.kmsCore.aws.roleArn }}"
-              export KMS_CORE__PUBLIC_VAULT__STORAGE="{{ include "kmsPublicVaultStorage" . }}"
-              export KMS_CORE__PRIVATE_VAULT__STORAGE="{{ include "kmsPrivateVaultStorage" . }}"
-{{- else }}
               export AWS_REGION="${AWS_REGION:={{ .Values.kmsCore.aws.region }}}"
               export AWS_ROLE_ARN="${AWS_ROLE_ARN:={{ .Values.kmsCore.aws.roleArn }}}"
               export KMS_CORE__PUBLIC_VAULT__STORAGE="${KMS_CORE__PUBLIC_VAULT__STORAGE:={{ include "kmsPublicVaultStorage" . }}}"
               export KMS_CORE__PRIVATE_VAULT__STORAGE="${KMS_CORE__PRIVATE_VAULT__STORAGE:={{ include "kmsPrivateVaultStorage" . }}}"
-{{- end }}
-{{- if .Values.kmsCore.privateVault.awskms.enabled }}
+              {{- if .Values.kmsCore.privateVault.awskms.enabled }}
               export KMS_CORE__PRIVATE_VAULT__KEYCHAIN="${KMS_CORE__PRIVATE_VAULT__KEYCHAIN:={{ .Values.kmsCore.privateVault.awskms.keychain }}}"
-{{- end }}
+              {{- end }}
               envsubst < /var/lib/kms-core/config/kms-server.toml > kms-server.toml
-{{- if .Values.kmsCore.nitroEnclave.debug }}
+              {{- if .Values.kmsCore.nitroEnclave.debug }}
               echo "### BEGIN - env ###"
               env
               echo "### END - env ###"
               echo "### BEGIN - kms-server.toml ###"
               cat kms-server.toml
               echo "### END - kms-server.toml ###"
-{{- end }}
+              {{- end }}
           env:
             - name: KMS_CORE__THRESHOLD__MY_ID
               valueFrom:
