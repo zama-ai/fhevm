@@ -70,35 +70,38 @@ class ViemFheEventServiceImpl implements FheEventService {
           toBlock: 'latest',
         })
         .then(events =>
-          events.map(event =>
-            FheEvent.parse({
-              chainId: chainId.value,
-              id: `${event.transactionHash}/${event.transactionIndex}`,
-              name: event.eventName,
-              callerAddress:
-                typeof event.args === 'object' && 'caller' in event.args
-                  ? event.args['caller']
-                  : undefined,
-              blockNumber: Number(event.blockNumber),
-              args: JSON.stringify(event.args, (_, v) =>
-                typeof v === 'bigint' ? v.toString() : v,
-              ),
-              // Note: `blockTimestamp` is in the returned object, but not in the
-              // type definition
-              timestamp: new Date(
-                hexToNumber((event as any).blockTimestamp) * 1000,
-              ),
-            }).match({
-              ok: evt => evt,
-              fail: err => {
-                this.logger.debug(
-                  `Failed to parse FhEvent: ${err._tag}/${err.message}`,
-                )
-                return null
-              },
-            }),
-          ),
+          events
+            .map(event =>
+              FheEvent.parse({
+                chainId: chainId.value,
+                id: `${event.transactionHash}/${event.transactionIndex}`,
+                name: event.eventName,
+                callerAddress:
+                  typeof event.args === 'object' && 'caller' in event.args
+                    ? event.args['caller']
+                    : undefined,
+                blockNumber: Number(event.blockNumber),
+                args: JSON.stringify(event.args, (_, v) =>
+                  typeof v === 'bigint' ? v.toString() : v,
+                ),
+                // Note: `blockTimestamp` is in the returned object, but not in the
+                // type definition
+                timestamp: new Date(
+                  hexToNumber((event as any).blockTimestamp) * 1000,
+                ),
+              }).match({
+                ok: evt => evt,
+                fail: err => {
+                  this.logger.debug(
+                    `Failed to parse FhEvent: ${err._tag}/${err.message}`,
+                  )
+                  return null
+                },
+              }),
+            )
+            .filter(event => !!event),
         )
+        .then(resolve)
         .catch(error => {
           this.logger.warn(`Failed to get contract events: ${error}`)
           reject(unknownError(String(error)))
