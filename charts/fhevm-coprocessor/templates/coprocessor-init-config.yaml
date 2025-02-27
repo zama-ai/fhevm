@@ -4,6 +4,9 @@ kind: ConfigMap
 metadata:
   name: {{ .Release.Name }}-init-config
   namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": "pre-install"
+    "helm.sh/hook-weight": "-2"
 data:
   create-secrets.sh: |
     #!/bin/sh

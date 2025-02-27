@@ -18,8 +18,10 @@ dbMigration:
   enabled: true
   image:
     name: ghcr.io/zama-ai/fhevm-db-migration 
-    tag: dae6dd9
+    tag: v0.7.0-rc1
   env:
+    - name: CHAIN_ID
+      value: "12345"
     - name: DATABASE_URL
       valueFrom:
         secretKeyRef:
@@ -41,16 +43,16 @@ dbMigration:
           name: layer1-sc-addresses
           key: inputverifier.address
   insertInitContainer:
-    pksURL: http://minio:9000/kms-public/kms/PUB/PublicKey/408d8cbaa51dece7f782fe04ba0b1c1d017b1088
-    sksURL: http://minio:9000/kms-public/kms/PUB/ServerKey/408d8cbaa51dece7f782fe04ba0b1c1d017b1088
-    publicParamsURL: http://minio:9000/kms-public/kms/PUB/CRS/a5fedad3fd734a598fb67452099229445cb68447
+    pksURL: http://minio.fhevm.svc.cluster.local:9000/kms-public/kms/PUB/PublicKey/408d8cbaa51dece7f782fe04ba0b1c1d017b1088
+    sksURL: http://minio.fhevm.svc.cluster.local:9000/kms-public/kms/PUB/ServerKey/408d8cbaa51dece7f782fe04ba0b1c1d017b1088
+    publicParamsURL: http://minio.fhevm.svc.cluster.local:9000/kms-public/kms/PUB/CRS/a5fedad3fd734a598fb67452099229445cb68447
 
 server:
   enabled: true
   nameOverride:
   image:
     name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: fd7f391
+    tag: v0.7.0-rc1
   replicas: 1
   env:
     - name: DATABASE_URL
@@ -67,7 +69,7 @@ listener:
   enabled: true
   image:
     name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: fd7f391
+    tag: v0.7.0-rc1
   replicas: 1
   env:
     - name: DATABASE_URL
@@ -89,7 +91,7 @@ gwListener:
   enabled: true
   image:
     name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: fd7f391
+    tag: v0.7.0-rc1
   replicas: 1
   env:
     - name: DATABASE_URL
@@ -111,7 +113,7 @@ zkProofWorker:
   enabled: true
   image:
     name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: fd7f391
+    tag: v0.7.0-rc1
   replicas: 1
   env:
     - name: DATABASE_URL
@@ -121,13 +123,13 @@ zkProofWorker:
           key: coprocessor-db-url
   args:
     - --pg-listen-channel="event_zkpok_new_work"
-    - --pg-notify-channel="verify_proofs"
+    - --pg-notify-channel="event_zkpok_computed"
 
 txSender:
   enabled: true
   image:
     name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: fd7f391
+    tag: v0.7.0-rc1
   replicas: 1
   env:
     - name: DATABASE_URL
@@ -143,14 +145,11 @@ txSender:
           name: layer2-sc-addresses
           key: zkpok_manager.address
     - name: CIPHERTEXT_STORAGE_ADDRESS
-      valueFrom:
-        configMapKeyRef:
-          name: layer2-sc-addresses
-          key: httpz.address   
+      value: "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80"
   args:
     - --database-url=$(DATABASE_URL)
     - --gateway-url=http://layer2-anvil-node:8546
     - --private-key=$(TX_SENDER_PRIVATE_KEY)
     - --zkpok-manager-address=$(ZKPOK_MANAGER_ADDRESS)
     - --ciphertext-storage-address=$(CIPHERTEXT_STORAGE_ADDRESS)
-    - --verify-proof-resp-database-channel="verify_proofs"
+    - --verify-proof-resp-database-channel="event_zkpok_computed"
