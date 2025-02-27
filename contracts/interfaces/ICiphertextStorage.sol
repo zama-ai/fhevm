@@ -14,9 +14,6 @@ interface ICiphertextStorage {
     /// @notice Error indicating that the given keyId is outdated.
     error InvalidCurrentKeyId(uint256 keyId);
 
-    /// @notice Error indicating that the sender is not a valid Coprocessor
-    error InvalidCoprocessorSender(address sender);
-
     /// @notice Error indicating that the given coprocessor has already authorized the add operation.
     error CoprocessorHasAlreadyAdded(address coprocessor);
 
@@ -24,14 +21,17 @@ interface ICiphertextStorage {
     /// @notice been stored in the contract.
     error CiphertextNotFound(uint256 ctHandle);
 
+    /// @notice Error indicating that the given ciphertext represented by the given handle is not
+    /// @notice associated with the given chain ID.
+    error CiphertextNotOnNetwork(uint256 ctHandle, uint256 chainId);
+
     /// @notice Checks if the ciphertext represented by the given handle has been stored in the contract.
     /// @param ctHandle The handle of the ciphertext.
     function hasCiphertext(uint256 ctHandle) external view returns (bool);
 
     /// @notice Checks if the given ciphertext handle is associated with the given chain ID.
     /// @param ctHandle The handle of the ciphertext.
-    /// @param chainId The chain ID to check if the ciphertext is associated with.
-    function isOnNetwork(uint256 ctHandle, uint256 chainId) external returns (bool);
+    function checkIsOnNetwork(uint256 ctHandle, uint256 chainId) external;
 
     /// @notice Retrieves the list of regular ciphertexts for the given handles.
     /// @param ctHandles The list of handles of the ciphertexts to retrieve.

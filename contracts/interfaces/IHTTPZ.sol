@@ -90,6 +90,10 @@ interface IHTTPZ {
     /// @param nParties The number of KMS nodes
     error KmsThresholdTooHigh(uint256 threshold, uint256 nParties);
 
+    /// @notice Error emitted when a network is not registered
+    /// @param chainId The chain ID of the network
+    error NetworkNotRegistered(uint256 chainId);
+
     /// @notice Initialize the protocol
     /// @dev This function can only be called once by the owner
     /// @param initialMetadata Metadata of the protocol
@@ -118,23 +122,19 @@ interface IHTTPZ {
 
     /// @notice Check if an address is an administrator
     /// @param adminAddress The address to check
-    /// @return True if the address is an administrator, false otherwise
-    function isAdmin(address adminAddress) external view returns (bool);
+    function checkIsAdmin(address adminAddress) external view;
 
     /// @notice Check if an address is a registered KMS node
     /// @param kmsNodeAddress The address to check
-    /// @return True if the address is a registered KMS node, false otherwise
-    function isKmsNode(address kmsNodeAddress) external view returns (bool);
+    function checkIsKmsNode(address kmsNodeAddress) external view;
 
     /// @notice Check if an address is a registered coprocessor
     /// @param coprocessorAddress The address to check
-    /// @return True if the address is a registered coprocessor, false otherwise
-    function isCoprocessor(address coprocessorAddress) external view returns (bool);
+    function checkIsCoprocessor(address coprocessorAddress) external view;
 
     /// @notice Check if a chain ID corresponds to a registered network
     /// @param chainId The chain ID to check
-    /// @return True if the chain ID corresponds to a registered network, false otherwise
-    function isNetwork(uint256 chainId) external view returns (bool);
+    function checkNetworkIsRegistered(uint256 chainId) external view;
 
     /// @notice Get the KMS majority vote threshold
     /// @return The KMS majority vote threshold

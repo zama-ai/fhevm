@@ -45,9 +45,11 @@ contract CiphertextStorage is ICiphertextStorage {
         return _isStored[ctHandle];
     }
 
-    /// @notice See {ICiphertextStorage-isOnNetwork}.
-    function isOnNetwork(uint256 ctHandle, uint256 chainId) public view returns (bool) {
-        return _chainIds[ctHandle] == chainId;
+    /// @notice See {ICiphertextStorage-checkIsOnNetwork}.
+    function checkIsOnNetwork(uint256 ctHandle, uint256 chainId) public view {
+        if (_chainIds[ctHandle] != chainId) {
+            revert CiphertextNotOnNetwork(ctHandle, chainId);
+        }
     }
 
     /// @notice See {ICiphertextStorage-getCiphertextMaterials}.
@@ -97,10 +99,8 @@ contract CiphertextStorage is ICiphertextStorage {
         bytes calldata ciphertext,
         bytes calldata snsCiphertext
     ) public {
-        bool isCoprocessor = _HTTPZ.isCoprocessor(msg.sender);
-        if (!isCoprocessor) {
-            revert InvalidCoprocessorSender(msg.sender);
-        }
+        /// @dev Check if the sender is a Coprocessor
+        _HTTPZ.checkIsCoprocessor(msg.sender);
 
         /// @dev Check if the Coprocessor has already added the ciphertext.
         if (_ctHandleSenders[ctHandle][msg.sender]) {

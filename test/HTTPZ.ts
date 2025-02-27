@@ -103,8 +103,7 @@ describe("HTTPZ", function () {
 
       // Loop over admins and check if they are properly registered
       for (const admin of admins) {
-        const isAdmin = await httpz.isAdmin(admin);
-        expect(isAdmin).to.be.true;
+        await expect(httpz.checkIsAdmin(admin)).to.not.be.reverted;
       }
     });
 
@@ -113,8 +112,7 @@ describe("HTTPZ", function () {
 
       // Loop over kmsSigners and check if they are properly registered as KMS nodes
       for (const kmsSigner of kmsSigners) {
-        const isKmsNode = await httpz.isKmsNode(kmsSigner.address);
-        expect(isKmsNode).to.be.true;
+        await expect(httpz.checkIsKmsNode(kmsSigner.address)).to.not.be.reverted;
       }
     });
 
@@ -123,8 +121,7 @@ describe("HTTPZ", function () {
 
       // Loop over coprocessorSigners and check if they are properly registered as coprocessors
       for (const coprocessorSigner of coprocessorSigners) {
-        const isCoprocessor = await httpz.isCoprocessor(coprocessorSigner.address);
-        expect(isCoprocessor).to.be.true;
+        await expect(httpz.checkIsCoprocessor(coprocessorSigner.address)).to.not.be.reverted;
       }
     });
   });
@@ -168,8 +165,7 @@ describe("HTTPZ", function () {
       const { httpz, chainId } = await loadFixture(deployAndDefineNetworkFixture);
 
       // Check that the network is registered
-      const isNetwork = await httpz.isNetwork(chainId);
-      expect(isNetwork).to.be.true;
+      await expect(httpz.checkNetworkIsRegistered(chainId)).to.not.be.reverted;
     });
   });
 

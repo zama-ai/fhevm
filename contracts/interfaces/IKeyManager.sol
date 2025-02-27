@@ -99,15 +99,6 @@ interface IKeyManager {
     /// @notice Error thrown when the FHE params are not initialized
     error FheParamsNotInitialized();
 
-    /// @notice Error thrown when the sender is not an admin
-    error InvalidAdminSender(address sender);
-
-    /// @notice Error thrown when the sender is not a KMS node
-    error InvalidKmsNodeSender(address sender);
-
-    /// @notice Error thrown when the sender is not a Coprocessor
-    error InvalidCoprocessorSender(address sender);
-
     /// @notice Error thrown when a KMS node has already responded to a key generation preprocessing step
     error PreprocessKeygenKmsNodeAlreadyResponded(uint256 preKeyId);
 

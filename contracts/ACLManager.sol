@@ -62,19 +62,13 @@ contract ACLManager is IACLManager {
 
     /// @notice Checks if the sender is a Coprocessor.
     modifier onlyCoprocessor() {
-        bool isCoprocessor = _HTTPZ.isCoprocessor(msg.sender);
-        if (!isCoprocessor) {
-            revert InvalidCoprocessorSender(msg.sender);
-        }
+        _HTTPZ.checkIsCoprocessor(msg.sender);
         _;
     }
 
     /// @notice Checks if the given ciphertext handle is associated to the given chain ID.
     modifier isHandleOnNetwork(uint256 ctHandle, uint256 chainId) {
-        bool isOnNetwork = _CIPHERTEXT_STORAGE.isOnNetwork(ctHandle, chainId);
-        if (!isOnNetwork) {
-            revert CiphertextHandleNotOnNetwork(ctHandle, chainId);
-        }
+        _CIPHERTEXT_STORAGE.checkIsOnNetwork(ctHandle, chainId);
         _;
     }
 

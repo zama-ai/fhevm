@@ -174,27 +174,27 @@ describe("KeyManager", function () {
     });
 
     it("Should revert because of access controls", async function () {
-      const { keyManager, user } = await loadFixture(deployKeyManagerFixture);
+      const { httpz, keyManager, user } = await loadFixture(deployKeyManagerFixture);
 
       // Check that someone else than the admin cannot trigger a preprocessing keygen request
       await expect(keyManager.connect(user).preprocessKeygenRequest())
-        .to.be.revertedWithCustomError(keyManager, "InvalidAdminSender")
-        .withArgs(user.address);
+        .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
+        .withArgs(user.address, httpz.ADMIN_ROLE());
 
       // Check that someone else than the admin cannot trigger a preprocessing keygen response
       await expect(keyManager.connect(user).preprocessKeygenResponse(0, 0))
-        .to.be.revertedWithCustomError(keyManager, "InvalidKmsNodeSender")
-        .withArgs(user.address);
+        .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
+        .withArgs(user.address, httpz.KMS_NODE_ROLE());
 
       // Check that someone else than the admin cannot trigger a keygen request
       await expect(keyManager.connect(user).keygenRequest(0))
-        .to.be.revertedWithCustomError(keyManager, "InvalidAdminSender")
-        .withArgs(user.address);
+        .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
+        .withArgs(user.address, httpz.ADMIN_ROLE());
 
       // Check that someone else than the KMS node cannot trigger a keygen response
       await expect(keyManager.connect(user).keygenResponse(0, 0))
-        .to.be.revertedWithCustomError(keyManager, "InvalidKmsNodeSender")
-        .withArgs(user.address);
+        .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
+        .withArgs(user.address, httpz.KMS_NODE_ROLE());
     });
 
     it("Should handle a preprocessed keygen", async function () {
@@ -325,17 +325,17 @@ describe("KeyManager", function () {
     });
 
     it("Should revert because of access controls", async function () {
-      const { keyManager, user } = await loadFixture(deployKeyManagerFixture);
+      const { httpz, keyManager, user } = await loadFixture(deployKeyManagerFixture);
 
       // Check that someone else than the admin cannot trigger a CRS generation request
       await expect(keyManager.connect(user).crsgenRequest())
-        .to.be.revertedWithCustomError(keyManager, "InvalidAdminSender")
-        .withArgs(user.address);
+        .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
+        .withArgs(user.address, httpz.ADMIN_ROLE());
 
       // Check that someone else than the KMS node cannot trigger a CRS generation response
       await expect(keyManager.connect(user).crsgenResponse(0, 0))
-        .to.be.revertedWithCustomError(keyManager, "InvalidKmsNodeSender")
-        .withArgs(user.address);
+        .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
+        .withArgs(user.address, httpz.KMS_NODE_ROLE());
     });
 
     it("Should handle a CRS generation", async function () {
@@ -406,23 +406,23 @@ describe("KeyManager", function () {
 
       // Check that someone else than the admin cannot trigger a preprocessing KSK generation request
       await expect(keyManager.connect(user).preprocessKskgenRequest())
-        .to.be.revertedWithCustomError(keyManager, "InvalidAdminSender")
-        .withArgs(user.address);
+        .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
+        .withArgs(user.address, httpz.ADMIN_ROLE());
 
       // Check that someone else than the KMS node cannot trigger a preprocessing KSK generation response
       await expect(keyManager.connect(user).preprocessKskgenResponse(0, 0))
-        .to.be.revertedWithCustomError(keyManager, "InvalidKmsNodeSender")
-        .withArgs(user.address);
+        .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
+        .withArgs(user.address, httpz.KMS_NODE_ROLE());
 
       // Check that someone else than the admin cannot trigger a KSK generation request
       await expect(keyManager.connect(user).kskgenRequest(0, 0, 0))
-        .to.be.revertedWithCustomError(keyManager, "InvalidAdminSender")
-        .withArgs(user.address);
+        .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
+        .withArgs(user.address, httpz.ADMIN_ROLE());
 
       // Check that someone else than the KMS node cannot trigger a KSK generation response
       await expect(keyManager.connect(user).kskgenResponse(0, 0))
-        .to.be.revertedWithCustomError(keyManager, "InvalidKmsNodeSender")
-        .withArgs(user.address);
+        .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
+        .withArgs(user.address, httpz.KMS_NODE_ROLE());
     });
 
     it("Should handle a preprocessed KSK generation", async function () {
@@ -561,17 +561,17 @@ describe("KeyManager", function () {
 
   describe("Key activation", async function () {
     it("Should revert because of access controls", async function () {
-      const { keyManager, user } = await loadFixture(deployKeyManagerFixture);
+      const { httpz, keyManager, user } = await loadFixture(deployKeyManagerFixture);
 
       // Check that someone else than the admin cannot trigger a key activation request
       await expect(keyManager.connect(user).activateKeyRequest(0))
-        .to.be.revertedWithCustomError(keyManager, "InvalidAdminSender")
-        .withArgs(user.address);
+        .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
+        .withArgs(user.address, httpz.ADMIN_ROLE());
 
       // Check that someone else than the coprocessor cannot trigger a key activation response
       await expect(keyManager.connect(user).activateKeyResponse(0))
-        .to.be.revertedWithCustomError(keyManager, "InvalidCoprocessorSender")
-        .withArgs(user.address);
+        .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
+        .withArgs(user.address, httpz.COPROCESSOR_ROLE());
     });
 
     it("Should handle a first key activation (no KSK generation)", async function () {
