@@ -59,6 +59,7 @@ kmsCore:
     enabled: false
     debug: true
     # Enclave CPU count, must be a multiple of 2 since whole cores (not hyperthreads) are sliced off and dedicated to the enclave
+
     cpuCount: 6
     # Enclave Memory in GiB
     memoryGiB: 20
@@ -70,11 +71,13 @@ kmsCore:
       logger: 3000
       config: 4000
       tracing: 4317
-      imds: 5000
-      sts: 5500
+      # For AWS authentication, use either IMDS (to use the Kubernetes node EC2 instance role) or STS (to use the IRSA)
+      #imds: 5000
+      sts: 5000
       s3: 6000
       awskms: 7000
-      webidentitytoken: 4100
+      # The Web Identity token is only required for STS and not IMDS authentication
+      webidentitytoken: 9000
       peer: 10000
   publicVault:
     s3:

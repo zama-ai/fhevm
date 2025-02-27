@@ -95,14 +95,15 @@ spec:
             - mountPath: {{ .Values.kmsCore.workdir }}
               name: workdir
         {{- if .Values.kmsCore.nitroEnclave.enabled }}
-        {{- /* Init Enclave Web Identity TOken Socket */}}
+        {{- if .Values.kmsCore.nitroEnclave.ports.webidentitytoken }}
+        {{- /* Init Enclave Web Identity Token Socket */}}
         - {{ include "proxyFromEnclave"
                (dict "name" "enclave-web-identity-token"
                      "image" .Values.kubeUtils.image
                      "vsockPort" .Values.kmsCore.nitroEnclave.ports.webidentitytoken
           "to" "OPEN:/var/run/secrets/eks.amazonaws.com/serviceaccount/token,rdonly"
           ) | indent 10 | trim }}
-        ##
+        {{- end }}
         {{- /* Init Enclave Config Socket */}}
         - {{ include "proxyFromEnclave"
                (dict "name" "enclave-config"
@@ -128,6 +129,7 @@ spec:
                      "vsockPort" .Values.kmsCore.nitroEnclave.ports.tracing
                      "to" (printf "TCP:%s" (urlParse .Values.tracing.endpoint).host)
                 ) | indent 10 | trim }}
+        {{- if .Values.kmsCore.nitroEnclave.ports.imds }}
         {{- /* Init AWS IMDS Proxy Socket */}}
         - {{ include "proxyFromEnclaveTcp"
                (dict "name" "aws-imds-proxy"
@@ -136,6 +138,8 @@ spec:
                      "address" "169.254.169.254"
                      "port" 80
                 ) | indent 10 | trim }}
+        {{- end }}
+        {{- if .Values.kmsCore.nitroEnclave.ports.sts }}
         {{- /* Init AWS STS Proxy Socket */}}
         - {{ include "proxyFromEnclaveTcp"
                (dict "name" "aws-sts-proxy"
@@ -144,6 +148,7 @@ spec:
                      "address" (printf "sts.%s.amazonaws.com" .Values.kmsCore.aws.region)
                      "port" 443
                 ) | indent 10 | trim }}
+        {{- end }}
         {{- /* Init AWS S3 Proxy Socket */}}
         - {{ include "proxyFromEnclaveTcp"
                (dict "name" "aws-s3-proxy"
