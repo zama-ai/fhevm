@@ -60,8 +60,8 @@ spec:
               export KMS_CORE__PUBLIC_VAULT__STORAGE="${KMS_CORE__PUBLIC_VAULT__STORAGE:={{ include "kmsPublicVaultStorage" . }}}"
               export KMS_CORE__PRIVATE_VAULT__STORAGE="${KMS_CORE__PRIVATE_VAULT__STORAGE:={{ include "kmsPrivateVaultStorage" . }}}"
 {{- end }}
-{{- if .Values.kmsCore.privateVault.awskms.enabled -}}
-              export KMS_CORE__PRIVATE_VAULT__KEYCHAIN="${KMS_CORE__PRIVATE_VAULT__KEYCHAIN:={{ .Values.kmsCore.privateVault.awskms.keychain }}"
+{{- if .Values.kmsCore.privateVault.awskms.enabled }}
+              export KMS_CORE__PRIVATE_VAULT__KEYCHAIN="${KMS_CORE__PRIVATE_VAULT__KEYCHAIN:={{ .Values.kmsCore.privateVault.awskms.keychain }}}"
 {{- end }}
               envsubst < /var/lib/kms-core/config/kms-server.toml > kms-server.toml
 {{- if .Values.kmsCore.nitroEnclave.debug }}
@@ -226,8 +226,8 @@ spec:
               --aws-region {{ .Values.kmsCore.aws.region }} \
               --pub-url "${KMS_CORE__PUBLIC_VAULT__STORAGE:={{ include "kmsPublicVaultStorage" . }}}" \
               --priv-url "${KMS_CORE__PRIVATE_VAULT__STORAGE:={{ include "kmsPrivateVaultStorage" . }}}" \
-              {{- if .Values.kmsCore.privateVault.awskms.enabled -}}
-              --root-key-id "${KMS_CORE__PRIVATE_VAULT__KEYCHAIN:={{ .Values.kmsCore.privateVault.awskms.keychain }}" \
+              {{- if .Values.kmsCore.privateVault.awskms.enabled }}
+              --root-key-id "${KMS_CORE__PRIVATE_VAULT__KEYCHAIN:={{ .Values.kmsCore.privateVault.awskms.keychain }}}" \
               {{- end }}
               {{ include "kmsCoreMode" . }} \
               {{- if .Values.kmsCore.thresholdMode.enabled }}
