@@ -129,7 +129,9 @@ args:
 {{- default $kmsCoreNameDefault .Values.kmsCore.nameOverride | trunc 52 | trimSuffix "-" -}}
 {{- end -}}
 
+
 {{- define "kmsService.clientPodSpec" }}
+{{- $peersIDList := untilStep (default 1 .Values.kmsPeers.id | int) (.Values.kmsPeers.count | add1 | int) 1  }}
 spec:
   securityContext:
     {{- toYaml .Values.podSecurityContext | nindent 8 }}
@@ -152,7 +154,7 @@ spec:
         {{- if .Values.kmsCore.thresholdMode.peersList }}
         value: '[{{ range $i, $peer := .Values.kmsCore.thresholdMode.peersList }}{{- if $i -}},{{ end }}"http://{{- $peer.host }}:{{- $.Values.kmsCore.ports.client -}}"{{- end }}]'
         {{ else }}
-        value: '[{{ range $i := $peersIDList }}{{- if (sub $i 1) -}},{{ end }}"http://{{- printf "%s-%d" $kmsCoreName $i }}:{{- $.Values.kmsCore.ports.client -}}"{{- end }}]'
+        value: '[{{ range $i := $peersIDList }}{{- if (sub $i 1) -}},{{ end }}"http://{{- printf "%s-%d" (include "kmsCoreName" .) $i }}:{{- $.Values.kmsCore.ports.client -}}"{{- end }}]'
         {{- end }}
       - name: NUM_MAJORITY
         value: '{{ .Values.kmsCoreClient.num_majority | int }}'

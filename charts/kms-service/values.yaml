@@ -197,3 +197,4 @@ kmsCoreClient:
 # Cronjob kubernetes
 kmsCoreClientTesting:
   enabled: false
+  schedule: "30 0 * * *"

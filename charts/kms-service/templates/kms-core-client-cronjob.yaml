@@ -11,16 +11,16 @@ metadata:
 spec:
   schedule: {{ .Values.kmsCoreClientTesting.schedule }}
   jobTemplate:
-    {{ template "kmsService.clientPodSpec" . }}
-    {{- with .Values.kmsCoreClientTesting.nodeSelector }}
+    {{ include "kmsService.clientPodSpec" . | nindent 4 }}
+    {{- with .Values.kmsCoreClient.nodeSelector }}
     nodeSelector:
       {{- toYaml . | nindent 8 }}
     {{- end }}
-    {{- with .Values.kmsCoreClientTesting.affinity }}
+    {{- with .Values.kmsCoreClient.affinity }}
     affinity:
       {{- toYaml . | nindent 8 }}
     {{- end }}
-    {{- with .Values.kmsCoreClientTesting.tolerations }}
+    {{- with .Values.kmsCoreClient.tolerations }}
     tolerations:
       {{- toYaml . | nindent 8 }}
     {{- end }}

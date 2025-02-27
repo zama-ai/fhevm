@@ -18,7 +18,7 @@ spec:
       labels:
         app: kms-core-client
         app.kubernetes.io/name: {{ include "kmsCoreClientName" . }}
-      {{ template "kmsService.clientPodSpec" . }}
+      {{ include "kmsService.clientPodSpec" . | nindent 6 }}
       {{- with .Values.kmsCoreClient.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

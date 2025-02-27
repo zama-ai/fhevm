@@ -29,7 +29,7 @@ data:
     # Keep the pod running
     tail -f /dev/null
 
-    {{- else-}}
+    {{- else -}}
     echo "######################################################################"
     echo "Launching testing core-client"
     echo ""
