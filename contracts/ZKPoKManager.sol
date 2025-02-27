@@ -80,10 +80,7 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
         bytes calldata ciphertextWithZKProof
     ) public virtual {
         // TODO: Uncomment this once full end-to-end test is fixed
-        // bool isNetworkRegistered = _HTTPZ.isNetwork(contractChainId);
-        // if (!isNetworkRegistered) {
-        //     revert NetworkNotRegistered(contractChainId);
-        // }
+        // _HTTPZ.checkNetworkIsRegistered(contractChainId);
 
         // TODO(#52): Implement sending service fees to PaymentManager contract
 
@@ -162,10 +159,8 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
     /// @param signature The signature to be validated
     function _validateEIP712Signature(uint256 zkProofId, bytes32 digest, bytes calldata signature) internal virtual {
         address signer = ECDSA.recover(digest, signature);
-        bool isCoprocessor = _HTTPZ.isCoprocessor(signer);
-        if (!isCoprocessor) {
-            revert InvalidCoprocessorSigner(signer);
-        }
+
+        _HTTPZ.checkIsCoprocessor(signer);
 
         if (zkProofSigners[zkProofId][signer]) {
             revert CoprocessorHasAlreadySigned(zkProofId, signer);

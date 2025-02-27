@@ -59,10 +59,6 @@ interface IDecryptionManager {
     /// @param signatures The signatures of all the KMS Connectors that responded
     event UserDecryptionResponse(uint256 indexed userDecryptionId, bytes[] reencryptedShares, bytes[] signatures);
 
-    /// @notice Error indicating that the KMS Connector is not a valid signer
-    /// @param invalidSigner The address of the invalid signer
-    error InvalidKmsSigner(address invalidSigner);
-
     /// @notice Error indicating that the KMS Connector has already signed its public decryption response
     /// @param publicDecryptionId The public decryption request's unique ID associated with the response
     /// @param signer The address of the KMS Connector signer that has already signed

@@ -23,6 +23,7 @@ describe("DecryptionManager", function () {
   // Deploy contracts, trigger a key generation in KeyManager contract and activate the key
   async function deployWithActivatedKeyFixture() {
     const {
+      httpz,
       keyManager,
       ciphertextStorage,
       aclManager,
@@ -71,6 +72,7 @@ describe("DecryptionManager", function () {
     }
 
     return {
+      httpz,
       ciphertextStorage,
       aclManager,
       decryptionManager,
@@ -86,7 +88,7 @@ describe("DecryptionManager", function () {
 
   // Deploy the DecryptionManager and add SNS ciphertext materials associated to the handles
   async function deployAddCiphertextFixture() {
-    const { ciphertextStorage, aclManager, decryptionManager, kmsSigners, coprocessorSigners, user, keyId } =
+    const { httpz, ciphertextStorage, aclManager, decryptionManager, kmsSigners, coprocessorSigners, user, keyId } =
       await loadFixture(deployWithActivatedKeyFixture);
 
     // Define dummy ciphertext values
@@ -107,7 +109,7 @@ describe("DecryptionManager", function () {
       snsCiphertextMaterials.push([ctHandle, keyId, snsCiphertext]);
     }
 
-    return { aclManager, decryptionManager, kmsSigners, coprocessorSigners, user, snsCiphertextMaterials };
+    return { httpz, aclManager, decryptionManager, kmsSigners, coprocessorSigners, user, snsCiphertextMaterials };
   }
 
   describe("Public Decryption", function () {
@@ -119,7 +121,7 @@ describe("DecryptionManager", function () {
 
     // Deploy the DecryptionManager and allow handles for public decryption
     async function deployAllowPublicDecryptionFixture() {
-      const { aclManager, decryptionManager, kmsSigners, coprocessorSigners, user, snsCiphertextMaterials } =
+      const { httpz, aclManager, decryptionManager, kmsSigners, coprocessorSigners, user, snsCiphertextMaterials } =
         await loadFixture(deployAddCiphertextFixture);
 
       // Allow public decryption
@@ -129,11 +131,11 @@ describe("DecryptionManager", function () {
         }
       }
 
-      return { decryptionManager, kmsSigners, coprocessorSigners, user, snsCiphertextMaterials };
+      return { httpz, decryptionManager, kmsSigners, coprocessorSigners, user, snsCiphertextMaterials };
     }
 
     async function deployGetEIP712Fixture() {
-      const { decryptionManager, kmsSigners, user } = await loadFixture(deployAllowPublicDecryptionFixture);
+      const { httpz, decryptionManager, kmsSigners, user } = await loadFixture(deployAllowPublicDecryptionFixture);
 
       // Create EIP712 messages and get associated KMS nodes' signatures
       const decryptionManagerAddress = await decryptionManager.getAddress();
@@ -144,7 +146,7 @@ describe("DecryptionManager", function () {
         decryptedResult,
       );
 
-      return { decryptionManager, kmsSigners, user, eip712Message };
+      return { httpz, decryptionManager, kmsSigners, user, eip712Message };
     }
 
     it("Should request a public decryption", async function () {
@@ -170,8 +172,8 @@ describe("DecryptionManager", function () {
         .withArgs(ctHandles[0]);
     });
 
-    it("Should revert because invalid signer in response", async function () {
-      const { decryptionManager, user, eip712Message } = await loadFixture(deployGetEIP712Fixture);
+    it("Should revert because the signer is not a KMS node", async function () {
+      const { httpz, decryptionManager, user, eip712Message } = await loadFixture(deployGetEIP712Fixture);
 
       // Request public decryption
       // This step is necessary, else the publicDecryptionId won't be set in the state and the
@@ -185,8 +187,8 @@ describe("DecryptionManager", function () {
       await expect(
         decryptionManager.connect(user).publicDecryptionResponse(publicDecryptionId, decryptedResult, userSignature),
       )
-        .to.be.revertedWithCustomError(decryptionManager, "InvalidKmsSigner")
-        .withArgs(user.address);
+        .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
+        .withArgs(user.address, httpz.KMS_NODE_ROLE());
     });
 
     it("Should revert because of two responses with same signature", async function () {

@@ -110,28 +110,19 @@ contract KeyManager is IKeyManager, Ownable2Step {
 
     /// @notice Checks if the sender is an administrator.
     modifier onlyAdmin() {
-        bool isAdmin = _HTTPZ.isAdmin(msg.sender);
-        if (!isAdmin) {
-            revert InvalidAdminSender(msg.sender);
-        }
+        _HTTPZ.checkIsAdmin(msg.sender);
         _;
     }
 
     /// @notice Checks if the sender is a KMS node.
     modifier onlyKmsNode() {
-        bool isKmsNode = _HTTPZ.isKmsNode(msg.sender);
-        if (!isKmsNode) {
-            revert InvalidKmsNodeSender(msg.sender);
-        }
+        _HTTPZ.checkIsKmsNode(msg.sender);
         _;
     }
 
     /// @notice Checks if the sender is a Coprocessor.
     modifier onlyCoprocessor() {
-        bool isCoprocessor = _HTTPZ.isCoprocessor(msg.sender);
-        if (!isCoprocessor) {
-            revert InvalidCoprocessorSender(msg.sender);
-        }
+        _HTTPZ.checkIsCoprocessor(msg.sender);
         _;
     }
 

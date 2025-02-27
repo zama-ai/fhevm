@@ -3,7 +3,7 @@ import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { expect } from "chai";
 import hre from "hardhat";
 
-import { ACLManager } from "../typechain-types";
+import { ACLManager, CiphertextStorage, HTTPZ } from "../typechain-types";
 import { deployCiphertextStorageFixture } from "./utils";
 
 describe("ACLManager", function () {
@@ -16,7 +16,9 @@ describe("ACLManager", function () {
   const fakeCtHandle = 11111;
   const fakeChainId = 123;
 
+  let httpz: HTTPZ;
   let aclManager: ACLManager;
+  let ciphertextStorage: CiphertextStorage;
   let coprocessorSigners: HardhatEthersSigner[];
   let fakeSigner: HardhatEthersSigner;
 
@@ -32,13 +34,15 @@ describe("ACLManager", function () {
         .addCiphertext(ctHandle, keyId, chainId, "0x01", snsCiphertext);
     }
 
-    return { aclManager, ciphertextStorage, coprocessorSigners, signers };
+    return { httpz, aclManager, ciphertextStorage, coprocessorSigners, signers };
   }
 
   beforeEach(async function () {
     // Initialize used global variables before each test
     const fixture = await loadFixture(deployACLManagerFixture);
+    httpz = fixture.httpz;
     aclManager = fixture.aclManager;
+    ciphertextStorage = fixture.ciphertextStorage;
     coprocessorSigners = fixture.coprocessorSigners;
     fakeSigner = fixture.signers[0];
   });
@@ -66,17 +70,17 @@ describe("ACLManager", function () {
         .withArgs(coprocessorSigners[0].address, ctHandle);
     });
 
-    it("Should revert with InvalidCoprocessorSender", async function () {
+    it("Should revert because the signer is not a Coprocessor", async function () {
       // When
       const txResponse = aclManager.connect(fakeSigner).allowUserDecrypt(chainId, ctHandle, allowedAddress);
 
       // Then
       await expect(txResponse)
-        .revertedWithCustomError(aclManager, "InvalidCoprocessorSender")
-        .withArgs(fakeSigner.address);
+        .revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
+        .withArgs(fakeSigner.address, httpz.COPROCESSOR_ROLE());
     });
 
-    it("Should revert with CiphertextHandleNotOnNetwork", async function () {
+    it("Should revert because the ciphertext is not on the network", async function () {
       // When
       const txResponse = aclManager
         .connect(coprocessorSigners[0])
@@ -84,7 +88,7 @@ describe("ACLManager", function () {
 
       // Then
       await expect(txResponse)
-        .revertedWithCustomError(aclManager, "CiphertextHandleNotOnNetwork")
+        .revertedWithCustomError(ciphertextStorage, "CiphertextNotOnNetwork")
         .withArgs(ctHandle, fakeChainId);
     });
   });
@@ -110,23 +114,23 @@ describe("ACLManager", function () {
         .withArgs(coprocessorSigners[0].address, ctHandle);
     });
 
-    it("Should revert with InvalidCoprocessorSender", async function () {
+    it("Should revert because the signer is not a Coprocessor", async function () {
       // When
       const txResponse = aclManager.connect(fakeSigner).allowPublicDecrypt(chainId, ctHandle);
 
       // Then
       await expect(txResponse)
-        .revertedWithCustomError(aclManager, "InvalidCoprocessorSender")
-        .withArgs(fakeSigner.address);
+        .revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
+        .withArgs(fakeSigner.address, httpz.COPROCESSOR_ROLE());
     });
 
-    it("Should revert with CiphertextHandleNotOnNetwork", async function () {
+    it("Should revert because the ciphertext is not on the network", async function () {
       // When
       const txResponse = aclManager.connect(coprocessorSigners[0]).allowPublicDecrypt(fakeChainId, ctHandle);
 
       // Then
       await expect(txResponse)
-        .revertedWithCustomError(aclManager, "CiphertextHandleNotOnNetwork")
+        .revertedWithCustomError(ciphertextStorage, "CiphertextNotOnNetwork")
         .withArgs(ctHandle, fakeChainId);
     });
   });
@@ -179,7 +183,7 @@ describe("ACLManager", function () {
         .withArgs(coprocessorSigners[0].address);
     });
 
-    it("Should revert with InvalidCoprocessorSender", async function () {
+    it("Should revert because the signer is not a Coprocessor", async function () {
       // When
       const txResponse = aclManager
         .connect(fakeSigner)
@@ -187,8 +191,8 @@ describe("ACLManager", function () {
 
       // Then
       await expect(txResponse)
-        .revertedWithCustomError(aclManager, "InvalidCoprocessorSender")
-        .withArgs(fakeSigner.address);
+        .revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
+        .withArgs(fakeSigner.address, httpz.COPROCESSOR_ROLE());
     });
   });
 
