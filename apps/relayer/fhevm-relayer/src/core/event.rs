@@ -8,6 +8,7 @@ use alloy::{primitives::U256, rpc::types::Log};
 use std::fmt::Display;
 use std::str::FromStr;
 use strum_macros::Display;
+use tracing::info;
 use uuid::Uuid;
 
 #[derive(Clone, Debug)]
@@ -264,8 +265,11 @@ impl TryFrom<InputProofRequestJson> for InputProofRequest {
     type Error = String;
 
     fn try_from(json: InputProofRequestJson) -> Result<Self, Self::Error> {
-        let contract_chain_id = U256::from_str_radix(&json.contractChainId, 16)
+        let contract_chain_id = U256::from_str_radix(&json.contractChainId, 10)
             .map_err(|e| format!("Error parsing contractChainId: {}", e))?;
+
+        info!("contract_chain_id decoded: {:?}", contract_chain_id);
+        info!("json.contractChainId: {:?}", json.contractChainId);
 
         let contract_address = Address::from_str(&json.contractAddress)
             .map_err(|e| format!("Error parsing contractAddress: {:?}", e))?;

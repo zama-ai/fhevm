@@ -78,8 +78,8 @@ impl ArbitrumGatewayL2InputHandler {
         } = req_data
         {
             info!(
-                "Input request received. Making tx to rollup: request_id: {:?}, contract: {:?}, user: {:?}",
-                event.request_id, input_proof_request. contract_address, input_proof_request.user_address
+                "Input request received. Making tx to rollup: chain_id : {:?},request_id: {:?}, contract: {:?}, user: {:?}",
+                input_proof_request.contract_chain_id, event.request_id, input_proof_request. contract_address, input_proof_request.user_address
             );
 
             let self_clone = self.clone();
