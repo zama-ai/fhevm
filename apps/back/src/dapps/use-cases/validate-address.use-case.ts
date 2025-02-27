@@ -56,8 +56,8 @@ export class ValidateAddress
           // Note: retrieve the correlationId & requestId from the request
           this.pubsub.publish(
             back.addressValidationRequested(
-              { ...input, requestId: randomUUID() },
-              { correlationId: generateRequestId() },
+              { ...input, requestId: generateRequestId() },
+              { correlationId: randomUUID() },
             ),
           )
         }),
