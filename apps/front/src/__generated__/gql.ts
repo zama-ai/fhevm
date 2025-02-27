@@ -15,10 +15,7 @@ import { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-node/
  */
 type Documents = {
     "\n  query ValidateAddress($chainId: String!, $address: String!) {\n    validateAddress(input: { chainId: $chainId, address: $address }) {\n      check\n      message\n    }\n  }\n": typeof types.ValidateAddressDocument,
-    "\n  mutation CreateDapp($teamId: String!, $name: String!) {\n    createDapp(input: { teamId: $teamId, name: $name }) {\n      id\n      name\n      address\n      status\n    }\n  }\n": typeof types.CreateDappDocument,
-    "\n  query GetDapp($dappId: ID!) {\n    dapp(input: { id: $dappId }) {\n      id\n      name\n      status\n    }\n  }\n": typeof types.GetDappDocument,
-    "\n  mutation SetDappAddress($id: ID!, $address: String!) {\n    updateDapp(input: { id: $id, address: $address }) {\n      id\n      name\n      address\n      status\n    }\n  }\n": typeof types.SetDappAddressDocument,
-    "\n  mutation DeployDapp($applicationId: String!) {\n    deployDapp(input: { dappId: $applicationId }) {\n      id\n      name\n      address\n      status\n    }\n  }\n": typeof types.DeployDappDocument,
+    "\n  mutation CreateDapp($teamId: String!, $name: String!, $address: String!) {\n    createDapp(input: { teamId: $teamId, name: $name, address: $address }) {\n      id\n      name\n      address\n      status\n    }\n  }\n": typeof types.CreateDappDocument,
     "\n  query GetDappDetails($dappId: ID!) {\n    dapp(input: { id: $dappId }) {\n      id\n      name\n      status\n      stats {\n        id\n        name\n        timestamp\n        externalRef\n      }\n    }\n  }\n": typeof types.GetDappDetailsDocument,
     "\n  subscription DappUpdated($dappId: ID!) {\n    dappUpdated(input: { id: $dappId }) {\n      id\n      name\n      status\n      stats {\n        id\n        name\n        timestamp\n        externalRef\n      }\n    }\n  }\n": typeof types.DappUpdatedDocument,
     "\n  query Preferences {\n    me {\n      id\n      email\n      name\n      teams {\n        id\n        name\n      }\n    }\n  }\n": typeof types.PreferencesDocument,
@@ -30,10 +27,7 @@ type Documents = {
 };
 const documents: Documents = {
     "\n  query ValidateAddress($chainId: String!, $address: String!) {\n    validateAddress(input: { chainId: $chainId, address: $address }) {\n      check\n      message\n    }\n  }\n": types.ValidateAddressDocument,
-    "\n  mutation CreateDapp($teamId: String!, $name: String!) {\n    createDapp(input: { teamId: $teamId, name: $name }) {\n      id\n      name\n      address\n      status\n    }\n  }\n": types.CreateDappDocument,
-    "\n  query GetDapp($dappId: ID!) {\n    dapp(input: { id: $dappId }) {\n      id\n      name\n      status\n    }\n  }\n": types.GetDappDocument,
-    "\n  mutation SetDappAddress($id: ID!, $address: String!) {\n    updateDapp(input: { id: $id, address: $address }) {\n      id\n      name\n      address\n      status\n    }\n  }\n": types.SetDappAddressDocument,
-    "\n  mutation DeployDapp($applicationId: String!) {\n    deployDapp(input: { dappId: $applicationId }) {\n      id\n      name\n      address\n      status\n    }\n  }\n": types.DeployDappDocument,
+    "\n  mutation CreateDapp($teamId: String!, $name: String!, $address: String!) {\n    createDapp(input: { teamId: $teamId, name: $name, address: $address }) {\n      id\n      name\n      address\n      status\n    }\n  }\n": types.CreateDappDocument,
     "\n  query GetDappDetails($dappId: ID!) {\n    dapp(input: { id: $dappId }) {\n      id\n      name\n      status\n      stats {\n        id\n        name\n        timestamp\n        externalRef\n      }\n    }\n  }\n": types.GetDappDetailsDocument,
     "\n  subscription DappUpdated($dappId: ID!) {\n    dappUpdated(input: { id: $dappId }) {\n      id\n      name\n      status\n      stats {\n        id\n        name\n        timestamp\n        externalRef\n      }\n    }\n  }\n": types.DappUpdatedDocument,
     "\n  query Preferences {\n    me {\n      id\n      email\n      name\n      teams {\n        id\n        name\n      }\n    }\n  }\n": types.PreferencesDocument,
@@ -65,19 +59,7 @@ export function graphql(source: "\n  query ValidateAddress($chainId: String!, $a
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function graphql(source: "\n  mutation CreateDapp($teamId: String!, $name: String!) {\n    createDapp(input: { teamId: $teamId, name: $name }) {\n      id\n      name\n      address\n      status\n    }\n  }\n"): (typeof documents)["\n  mutation CreateDapp($teamId: String!, $name: String!) {\n    createDapp(input: { teamId: $teamId, name: $name }) {\n      id\n      name\n      address\n      status\n    }\n  }\n"];
-/**
- * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
- */
-export function graphql(source: "\n  query GetDapp($dappId: ID!) {\n    dapp(input: { id: $dappId }) {\n      id\n      name\n      status\n    }\n  }\n"): (typeof documents)["\n  query GetDapp($dappId: ID!) {\n    dapp(input: { id: $dappId }) {\n      id\n      name\n      status\n    }\n  }\n"];
-/**
- * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
- */
-export function graphql(source: "\n  mutation SetDappAddress($id: ID!, $address: String!) {\n    updateDapp(input: { id: $id, address: $address }) {\n      id\n      name\n      address\n      status\n    }\n  }\n"): (typeof documents)["\n  mutation SetDappAddress($id: ID!, $address: String!) {\n    updateDapp(input: { id: $id, address: $address }) {\n      id\n      name\n      address\n      status\n    }\n  }\n"];
-/**
- * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
- */
-export function graphql(source: "\n  mutation DeployDapp($applicationId: String!) {\n    deployDapp(input: { dappId: $applicationId }) {\n      id\n      name\n      address\n      status\n    }\n  }\n"): (typeof documents)["\n  mutation DeployDapp($applicationId: String!) {\n    deployDapp(input: { dappId: $applicationId }) {\n      id\n      name\n      address\n      status\n    }\n  }\n"];
+export function graphql(source: "\n  mutation CreateDapp($teamId: String!, $name: String!, $address: String!) {\n    createDapp(input: { teamId: $teamId, name: $name, address: $address }) {\n      id\n      name\n      address\n      status\n    }\n  }\n"): (typeof documents)["\n  mutation CreateDapp($teamId: String!, $name: String!, $address: String!) {\n    createDapp(input: { teamId: $teamId, name: $name, address: $address }) {\n      id\n      name\n      address\n      status\n    }\n  }\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

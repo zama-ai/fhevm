@@ -21,7 +21,7 @@ import { InputGroup } from '../ui/input-group.js'
 import { InputGroupDot } from '../input-group-dot/input-group-dot.js'
 
 type OwnProps = {
-  onSubmit: (values: { name: string }) => void
+  onSubmit: (values: { name: string; address: string }) => void
   onValidateAddress: ({
     chainId,
     address,

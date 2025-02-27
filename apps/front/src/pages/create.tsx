@@ -26,8 +26,8 @@ const VALIDATE_ADDRESS = graphql(`
 `)
 
 const CREATE_DAPP = graphql(`
-  mutation CreateDapp($teamId: String!, $name: String!) {
-    createDapp(input: { teamId: $teamId, name: $name }) {
+  mutation CreateDapp($teamId: String!, $name: String!, $address: String!) {
+    createDapp(input: { teamId: $teamId, name: $name, address: $address }) {
       id
       name
       address
@@ -68,7 +68,6 @@ export function CreatePage() {
       <Heading mb="5">Create a new dApp</Heading>
       <CreatorForm
         onValidateAddress={({ chainId, address }) => {
-          console.log('address', address)
           validateAddressQuery({
             variables: {
               chainId,
@@ -84,11 +83,12 @@ export function CreatePage() {
               ? addressData.validateAddress.message
               : ''
         }
-        onSubmit={({ name }) => {
+        onSubmit={({ name, address }) => {
           createDappMutation({
             variables: {
               teamId,
               name,
+              address,
             },
 
             onCompleted: data => {
