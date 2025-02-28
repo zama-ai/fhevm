@@ -32,7 +32,8 @@ services:
     image: ghcr.io/zama-ai/gateway-l2/sc-bundle:b479cf8
     volumes:
       - ./.env.example.deployment:/app/.env
-    entrypoint: ["/app/launch-staging-gateway-layer2.sh"]
+    entrypoint: ["/app/deploy-httpz-gateway-deployment.sh"]
+    command: ["staging"]
 
   sc-deploy-debug:
     container_name: sc-deploy-debug

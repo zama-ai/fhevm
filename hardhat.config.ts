@@ -11,7 +11,7 @@ dotenv.config({ path: resolve(__dirname, dotenvConfigPath) });
 
 const NUM_ACCOUNTS = 15;
 
-const localGatewayL2ChainId = 123456;
+const localHTTPZGatewayChainId = 123456;
 
 const stagingChainId = 54321;
 
@@ -36,13 +36,13 @@ const config: HardhatUserConfig = {
       },
       chainId: process.env.CUSTOM_CHAIN_ID ? Number(process.env.CUSTOM_CHAIN_ID) : 31337,
     },
-    localGatewayL2: {
+    localHTTPZGateway: {
       accounts: {
         count: NUM_ACCOUNTS,
         mnemonic,
         path: "m/44'/60'/0'/0",
       },
-      chainId: localGatewayL2ChainId,
+      chainId: localHTTPZGatewayChainId,
       url: `http://127.0.0.1:8546`,
     },
     staging: {

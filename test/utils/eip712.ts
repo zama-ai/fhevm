@@ -29,7 +29,7 @@ export function createEIP712ResponseZKPoK(
   handles: Uint8Array[],
   userAddress: string,
   contractAddress: string,
-  contractChainId: string,
+  contractChainId: number,
 ): EIP712 {
   if (!ethers.isAddress(verifyingContract)) {
     throw new Error("Invalid verifying contract address.");
