@@ -7,6 +7,7 @@ export async function deployHTTPZFixture() {
   const kmsThreshold = 1;
   const nKmsNodes = 4;
   const nCoprocessors = 3;
+  const chainIds = [2025, 2026, 2027, 2028];
 
   // Check that the KMS threshold is valid
   if (3 * kmsThreshold >= nKmsNodes) {
@@ -24,41 +25,58 @@ export async function deployHTTPZFixture() {
   const kmsSigners = signers.splice(0, nKmsNodes);
   const coprocessorSigners = signers.splice(0, nCoprocessors);
 
+  const protocolMetadata = { name: "Protocol", website: "https://protocol.com" };
+
   // Create dummy KMS nodes with the signers' addresses
   const kmsNodes = kmsSigners.map((kmsNode) => ({
     connectorAddress: kmsNode.address,
     identity: hre.ethers.randomBytes(32),
     ipAddress: "127.0.0.1",
-    signedNodes: [hre.ethers.randomBytes(32)],
-    daAddress: "0x1234567890abcdef1234567890abcdef12345678",
+    daAddress: "https://da.com",
+    tlsCertificate: hre.ethers.randomBytes(32),
   }));
 
   // Create dummy Coprocessors with the signers' addresses
   const coprocessors = coprocessorSigners.map((coprocessorSigner) => ({
-    connectorAddress: coprocessorSigner.address,
+    transactionSenderAddress: coprocessorSigner.address,
     identity: hre.ethers.randomBytes(32),
-    daAddress: "0x1234567890abcdef1234567890abcdef12345678",
+    daAddress: "https://da.com",
+  }));
+
+  // Create dummy Networks with the chain IDs
+  const networks = chainIds.map((chainId) => ({
+    chainId: chainId,
+    httpzExecutor: hre.ethers.getAddress("0x1234567890abcdef1234567890abcdef12345678"),
+    aclAddress: hre.ethers.getAddress("0xabcdef1234567890abcdef1234567890abcdef12"),
+    name: "Network",
+    website: "https://network.com",
   }));
 
   const HTTPZ = await hre.ethers.getContractFactory("HTTPZ", owner);
-  const httpz = await HTTPZ.connect(owner).deploy();
 
-  // Initialize a dummy protocol
-  const protocolMetadata = { name: "Protocol", website: "https://protocol.com" };
-  await httpz.connect(owner).initialize(protocolMetadata, admins, kmsThreshold, kmsNodes, coprocessors);
+  // Deploy the HTTPZ contract
+  const httpz = await HTTPZ.connect(owner).deploy(
+    protocolMetadata,
+    admins,
+    kmsThreshold,
+    kmsNodes,
+    coprocessors,
+    networks,
+  );
 
-  const network = {
-    chainId: 2025,
-    httpzLibrary: "0x1234567890abcdef1234567890abcdef12345678",
-    acl: "0xabcdef1234567890abcdef1234567890abcdef12",
-    name: "Network",
-    website: "https://network.com",
+  return {
+    httpz,
+    owner,
+    admins,
+    user,
+    kmsSigners,
+    coprocessorSigners,
+    signers,
+    kmsNodes,
+    coprocessors,
+    networks,
+    chainIds,
   };
-
-  // Add network
-  await httpz.connect(admin).addNetwork(network);
-
-  return { httpz, owner, admins, user, kmsSigners, coprocessorSigners, signers, kmsNodes, coprocessors, network };
 }
 
 /// @dev Deploy the KeyManager contract

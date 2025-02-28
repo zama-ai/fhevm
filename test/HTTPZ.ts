@@ -3,7 +3,7 @@ import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { expect } from "chai";
 import hre from "hardhat";
 
-import { deployHTTPZFixture } from "./utils/deploys";
+import { deployHTTPZFixture, toValues } from "./utils/";
 
 describe("HTTPZ", function () {
   function getKmsNodes(signers: HardhatEthersSigner[]) {
@@ -12,8 +12,8 @@ describe("HTTPZ", function () {
       connectorAddress: signer.address,
       identity: hre.ethers.randomBytes(32),
       ipAddress: "127.0.0.1",
-      signedNodes: [hre.ethers.randomBytes(32)],
-      daAddress: "0x1234567890abcdef1234567890abcdef12345678",
+      daAddress: "https://da.com",
+      tlsCertificate: hre.ethers.randomBytes(32),
     }));
 
     return { kmsNodes };
@@ -22,20 +22,32 @@ describe("HTTPZ", function () {
   function getCoprocessors(signers: HardhatEthersSigner[]) {
     // Create dummy Coprocessors with the signers' addresses
     const coprocessors = signers.map((signer) => ({
-      connectorAddress: signer.address,
+      transactionSenderAddress: signer.address,
       identity: hre.ethers.randomBytes(32),
-      daAddress: "0x1234567890abcdef1234567890abcdef12345678",
+      daAddress: "https://da.com",
     }));
 
     return { coprocessors };
   }
 
-  async function deployAndDefineInputsFixture() {
+  function getNetworks(chainIds: number[]) {
+    // Create dummy Networks with the chain IDs
+    const networks = chainIds.map((chainId) => ({
+      chainId: chainId,
+      httpzExecutor: hre.ethers.getAddress("0x1234567890AbcdEF1234567890aBcdef12345678"),
+      aclAddress: hre.ethers.getAddress("0xabcdef1234567890abcdef1234567890abcdef12"),
+      name: "Network",
+      website: "https://network.com",
+    }));
+
+    return { networks };
+  }
+
+  async function getInputsForDeployFixture() {
     const signers = await hre.ethers.getSigners();
     const [owner, admin, user] = signers.splice(0, 3);
 
     const HTTPZ = await hre.ethers.getContractFactory("HTTPZ", owner);
-    const httpz = await HTTPZ.connect(owner).deploy();
 
     const protocolMetadata = { name: "Protocol", website: "https://protocol.com" };
     const admins = [admin.address];
@@ -47,8 +59,11 @@ describe("HTTPZ", function () {
     const coprocessorSigners = signers.splice(0, 3);
     const { coprocessors } = getCoprocessors(coprocessorSigners);
 
+    const chainIds = [2025, 2026, 2027, 2028];
+    const { networks } = getNetworks(chainIds);
+
     return {
-      httpz,
+      HTTPZ,
       owner,
       admin,
       user,
@@ -57,45 +72,54 @@ describe("HTTPZ", function () {
       kmsThreshold,
       kmsNodes,
       coprocessors,
+      networks,
       kmsSigners,
       coprocessorSigners,
     };
   }
 
-  describe("Initialization", function () {
-    it("Should revert because of access controls", async function () {
-      const { httpz, user, protocolMetadata, admins, kmsThreshold, kmsNodes, coprocessors } =
-        await loadFixture(deployAndDefineInputsFixture);
-
-      // Check that someone else than the owner cannot initialize
-      await expect(httpz.connect(user).initialize(protocolMetadata, admins, kmsThreshold, kmsNodes, coprocessors))
-        .to.be.revertedWithCustomError(httpz, "OwnableUnauthorizedAccount")
-        .withArgs(user.address);
-    });
-
+  describe("Deployment", function () {
     it("Should revert because of bad KMS threshold", async function () {
-      const { httpz, owner, protocolMetadata, admins, kmsNodes, coprocessors } =
-        await loadFixture(deployAndDefineInputsFixture);
+      const { HTTPZ, owner, protocolMetadata, admins, kmsNodes, coprocessors, networks } =
+        await loadFixture(getInputsForDeployFixture);
 
       // Define a bad KMS threshold
       // The threshold must verify `3t < n`, with `n` the number of KMS nodes
       const badKmsThreshold = kmsNodes.length + 1;
 
       // Check that the initialization reverts
-      await expect(httpz.connect(owner).initialize(protocolMetadata, admins, badKmsThreshold, kmsNodes, coprocessors))
-        .to.be.revertedWithCustomError(httpz, "KmsThresholdTooHigh")
+      await expect(
+        HTTPZ.connect(owner).deploy(protocolMetadata, admins, badKmsThreshold, kmsNodes, coprocessors, networks),
+      )
+        .to.be.revertedWithCustomError(HTTPZ, "KmsThresholdTooHigh")
         .withArgs(badKmsThreshold, kmsNodes.length);
     });
 
-    it("Should initialize", async function () {
-      const { httpz, owner, protocolMetadata, admins, kmsThreshold, kmsNodes, coprocessors } =
-        await loadFixture(deployAndDefineInputsFixture);
+    it("Should deploy", async function () {
+      const { HTTPZ, owner, protocolMetadata, admins, kmsThreshold, kmsNodes, coprocessors, networks } =
+        await loadFixture(getInputsForDeployFixture);
 
       // Initialize the contract
-      const tx = await httpz.connect(owner).initialize(protocolMetadata, admins, kmsThreshold, kmsNodes, coprocessors);
+      const httpz = await HTTPZ.connect(owner).deploy(
+        protocolMetadata,
+        admins,
+        kmsThreshold,
+        kmsNodes,
+        coprocessors,
+        networks,
+      );
 
       // Check event
-      await expect(tx).to.emit(httpz, "Initialization");
+      await expect(httpz.deploymentTransaction())
+        .to.emit(httpz, "Initialization")
+        .withArgs(
+          toValues(protocolMetadata),
+          toValues(admins),
+          kmsThreshold,
+          toValues(kmsNodes),
+          toValues(coprocessors),
+          toValues(networks),
+        );
     });
 
     it("Should be registered as an admin", async function () {
@@ -107,7 +131,7 @@ describe("HTTPZ", function () {
       }
     });
 
-    it("Should be registered as a KMS node", async function () {
+    it("Should be registered as KMS nodes", async function () {
       const { httpz, kmsSigners } = await loadFixture(deployHTTPZFixture);
 
       // Loop over kmsSigners and check if they are properly registered as KMS nodes
@@ -116,7 +140,7 @@ describe("HTTPZ", function () {
       }
     });
 
-    it("Should be registered as a coprocessor", async function () {
+    it("Should be registered as coprocessors", async function () {
       const { httpz, coprocessorSigners } = await loadFixture(deployHTTPZFixture);
 
       // Loop over coprocessorSigners and check if they are properly registered as coprocessors
@@ -124,48 +148,14 @@ describe("HTTPZ", function () {
         await expect(httpz.checkIsCoprocessor(coprocessorSigner.address)).to.not.be.reverted;
       }
     });
-  });
 
-  describe("Networks", function () {
-    async function deployAndDefineNetworkFixture() {
-      const { httpz, admins, user } = await loadFixture(deployHTTPZFixture);
+    it("Should be registered as networks", async function () {
+      const { httpz, chainIds } = await loadFixture(deployHTTPZFixture);
 
-      // Define the network to add
-      const chainId = 2025;
-      const network = {
-        chainId: chainId,
-        httpzLibrary: "0x1234567890abcdef1234567890abcdef12345678",
-        acl: "0xabcdef1234567890abcdef1234567890abcdef12",
-        name: "Network",
-        website: "https://network.com",
-      };
-      return { httpz, user, admins, chainId, network };
-    }
-
-    it("Should revert because of access controls", async function () {
-      const { httpz, user, network } = await loadFixture(deployAndDefineNetworkFixture);
-
-      // Check that someone else than the admin cannot add a network
-      await expect(httpz.connect(user).addNetwork(network))
-        .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
-        .withArgs(user.address, httpz.ADMIN_ROLE());
-    });
-
-    it("Should add a network", async function () {
-      const { httpz, admins, chainId, network } = await loadFixture(deployAndDefineNetworkFixture);
-
-      // Add network
-      const tx = await httpz.connect(admins[0]).addNetwork(network);
-
-      // Check event
-      await expect(tx).to.emit(httpz, "AddNetwork").withArgs(chainId);
-    });
-
-    it("Should be registered as a network", async function () {
-      const { httpz, chainId } = await loadFixture(deployAndDefineNetworkFixture);
-
-      // Check that the network is registered
-      await expect(httpz.checkNetworkIsRegistered(chainId)).to.not.be.reverted;
+      // Loop over chain IDs and check if they are properly registered as networks
+      for (const chainId of chainIds) {
+        await expect(httpz.checkNetworkIsRegistered(chainId)).to.not.be.reverted;
+      }
     });
   });
 

@@ -11,8 +11,7 @@ pragma solidity ^0.8.28;
  * - the list of networks using this Gateway L2
  *
  * The HTTPZ contract is owned by a DAO governance contract that can be used for initialization.
- * The HTTPZ contract is also managed by administrators that can add KMS nodes, coprocessors and
- * networks.
+ * The HTTPZ contract is also managed by administrators that will be allowed to update the state.
  * Some view functions are accessible to everyone (ex: getting the number of KMS nodes).
  */
 interface IHTTPZ {
@@ -32,20 +31,20 @@ interface IHTTPZ {
         bytes identity;
         /// @notice IP address of the KMS node
         string ipAddress;
-        /// @notice Signed nodes
-        bytes[] signedNodes;
-        /// @notice Address of the KMS node's DA (data availability)
-        address daAddress;
+        /// @notice Address of the KMS node's DA (data availability, an S3 bucket)
+        string daAddress;
+        /// @notice The TLS certificate to consider for core-to-core communication
+        bytes tlsCertificate;
     }
 
     /// @notice Struct that represents a coprocessor
     struct Coprocessor {
-        /// @notice Address of the coprocessor's connector
-        address connectorAddress;
+        /// @notice Address of the the coprocessor's transaction sender
+        address transactionSenderAddress;
         /// @notice Identity of the coprocessor (its public signature key)
         bytes identity;
-        /// @notice Address of the coprocessor's DA (data availability)
-        address daAddress;
+        /// @notice Address of the coprocessor's DA (data availability, an S3 bucket)
+        string daAddress;
     }
 
     /// @notice Struct that represents a network
@@ -53,9 +52,9 @@ interface IHTTPZ {
         /// @notice Chain ID of the network (unique identifier)
         uint256 chainId;
         /// @notice Address where the HTTPZ library contract is deployed
-        address httpzLibrary;
+        address httpzExecutor;
         /// @notice Address where the ACL contract is deployed
-        address acl;
+        address aclAddress;
         /// @notice Name of the network
         string name;
         /// @notice Website of the network
@@ -68,17 +67,15 @@ interface IHTTPZ {
     /// @param kmsThreshold The KMS threshold
     /// @param kmsNodes List of KMS nodes
     /// @param coprocessors List of coprocessors
+    /// @param networks List of networks
     event Initialization(
         ProtocolMetadata metadata,
         address[] admins,
         uint256 kmsThreshold,
         KmsNode[] kmsNodes,
-        Coprocessor[] coprocessors
+        Coprocessor[] coprocessors,
+        Network[] networks
     );
-
-    /// @notice Emitted when a network has been added
-    /// @param chainId The chain ID of the network
-    event AddNetwork(uint256 chainId);
 
     /// @notice Emitted when the KMS threshold has been updated
     /// @param newKmsThreshold The new KMS threshold
@@ -93,26 +90,6 @@ interface IHTTPZ {
     /// @notice Error emitted when a network is not registered
     /// @param chainId The chain ID of the network
     error NetworkNotRegistered(uint256 chainId);
-
-    /// @notice Initialize the protocol
-    /// @dev This function can only be called once by the owner
-    /// @param initialMetadata Metadata of the protocol
-    /// @param initialAdmins List of admin addresses
-    /// @param initialKmsThreshold The KMS threshold. Must verify `3t < n` for `n` KMS nodes.
-    /// @param initialKmsNodes List of KMS nodes
-    /// @param initialCoprocessors List of coprocessors
-    function initialize(
-        ProtocolMetadata calldata initialMetadata,
-        address[] calldata initialAdmins,
-        uint256 initialKmsThreshold,
-        KmsNode[] calldata initialKmsNodes,
-        Coprocessor[] calldata initialCoprocessors
-    ) external;
-
-    /// @notice Add a network
-    /// @dev This function can only be called by an administrator
-    /// @param network The network to add
-    function addNetwork(Network calldata network) external;
 
     /// @notice Update the KMS threshold
     /// @dev This function can only be called by an administrator
