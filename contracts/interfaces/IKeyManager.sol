@@ -17,18 +17,10 @@ pragma solidity ^0.8.28;
  * Some view functions are accessible to everyone (ex: getting the current activated FHE key ID).
  */
 interface IKeyManager {
-    // TODO: To be defined: https://github.com/zama-ai/gateway-l2/issues/50
-    /// @notice Struct that represents FHE parameters
-    /// @dev FHE parameters are used for FHE key, CRS and KSK generation (including preprocessing steps)
-    struct FheParams {
-        /// @notice Placeholder for FHE parameters
-        string dummy;
-    }
-
     /// @notice Emitted to trigger a key generation preprocessing
     /// @param preKeyRequestId The preprocessed key request ID
-    /// @param fheParams The FHE parameters to use
-    event PreprocessKeygenRequest(uint256 preKeyRequestId, FheParams fheParams);
+    /// @param fheParamsDigest The digest of the FHE parameters to use
+    event PreprocessKeygenRequest(uint256 preKeyRequestId, bytes32 fheParamsDigest);
 
     /// @notice Emitted when the key generation preprocessing is completed
     /// @param preKeyRequestId The preprocessed key request ID
@@ -37,8 +29,8 @@ interface IKeyManager {
 
     /// @notice Emitted to trigger a KSK generation preprocessing
     /// @param preKskRequestId The preprocessed KSK request ID
-    /// @param fheParams The FHE parameters to use
-    event PreprocessKskgenRequest(uint256 preKskRequestId, FheParams fheParams);
+    /// @param fheParamsDigest The digest of the FHE parameters to use
+    event PreprocessKskgenRequest(uint256 preKskRequestId, bytes32 fheParamsDigest);
 
     /// @notice Emitted when the KSK generation preprocessing is completed
     /// @param preKskRequestId The preprocessed KSK request ID
@@ -47,38 +39,38 @@ interface IKeyManager {
 
     /// @notice Emitted to trigger a key generation
     /// @param preKeyId The preprocessed key ID
-    /// @param fheParams The FHE parameters to use
-    event KeygenRequest(uint256 preKeyId, FheParams fheParams);
+    /// @param fheParamsDigest The digest of the FHE parameters to use
+    event KeygenRequest(uint256 preKeyId, bytes32 fheParamsDigest);
 
     /// @notice Emitted when the key generation is completed
     /// @param preKeyId The preprocessed key ID
     /// @param keygenId The generated key ID
-    /// @param fheParams The FHE parameters used for the key generation
-    event KeygenResponse(uint256 preKeyId, uint256 keygenId, FheParams fheParams);
+    /// @param fheParamsDigest The digest of the FHE parameters used for the key generation
+    event KeygenResponse(uint256 preKeyId, uint256 keygenId, bytes32 fheParamsDigest);
 
     /// @notice Emitted to trigger a CRS (Common Reference String) generation
-    /// @param preCrsId The preprocessed CRS ID
-    /// @param fheParams The FHE parameters to use
-    event CrsgenRequest(uint256 preCrsId, FheParams fheParams);
+    /// @param crsgenRequestId The CRS generation request ID
+    /// @param fheParamsDigest The digest of the FHE parameters to use
+    event CrsgenRequest(uint256 crsgenRequestId, bytes32 fheParamsDigest);
 
     /// @notice Emitted when the CRS generation is completed
-    /// @param preCrsId The preprocessed CRS ID
+    /// @param crsgenRequestId The CRS generation request ID
     /// @param crsId The generated CRS ID
-    /// @param fheParams The FHE parameters used for the CRS generation
-    event CrsgenResponse(uint256 preCrsId, uint256 crsId, FheParams fheParams);
+    /// @param fheParamsDigest The digest of the FHE parameters used for the CRS generation
+    event CrsgenResponse(uint256 crsgenRequestId, uint256 crsId, bytes32 fheParamsDigest);
 
     /// @notice Emitted to trigger a KSK generation
     /// @param preKskId The preprocessed KSK ID
     /// @param sourceKeyId The key ID to key switch from
     /// @param destKeyId The key ID to key switch to
-    /// @param fheParams The FHE parameters to use
-    event KskgenRequest(uint256 preKskId, uint256 sourceKeyId, uint256 destKeyId, FheParams fheParams);
+    /// @param fheParamsDigest The digest of the FHE parameters to use
+    event KskgenRequest(uint256 preKskId, uint256 sourceKeyId, uint256 destKeyId, bytes32 fheParamsDigest);
 
     /// @notice Emitted when the KSK generation is completed
     /// @param preKskId The preprocessed KSK ID
     /// @param kskId The generated KSK ID
-    /// @param fheParams The FHE parameters used for the KSK generation
-    event KskgenResponse(uint256 preKskId, uint256 kskId, FheParams fheParams);
+    /// @param fheParamsDigest The digest of the FHE parameters used for the KSK generation
+    event KskgenResponse(uint256 preKskId, uint256 kskId, bytes32 fheParamsDigest);
 
     /// @notice Emitted to activate the key in coprocessors
     /// @param keyId The key ID
@@ -89,12 +81,14 @@ interface IKeyManager {
     event ActivateKeyResponse(uint256 keyId);
 
     /// @notice Emitted when the FHE parameters have been set (happens only once)
-    /// @param newFheParams The new FHE parameters
-    event SetFheParams(FheParams newFheParams);
+    /// @param fheParamsName The semantic name of the FHE params
+    /// @param fheParamsDigest The digest of the FHE params
+    event SetFheParams(string fheParamsName, bytes32 fheParamsDigest);
 
     /// @notice Emitted when the FHE parameters have been updated
-    /// @param newFheParams The new FHE parameters
-    event UpdateFheParams(FheParams newFheParams);
+    /// @param fheParamsName The semantic name of the FHE params updated
+    /// @param fheParamsDigest The new digest of the FHE params
+    event UpdateFheParams(string fheParamsName, bytes32 fheParamsDigest);
 
     /// @notice Error thrown when the FHE params are not initialized
     error FheParamsNotInitialized();
@@ -149,11 +143,12 @@ interface IKeyManager {
     error ActivateKeyKmsNodeAlreadyResponded(uint256 keyId);
 
     /// @notice Error thrown when the FHE params are already initialized
-    error FheParamsAlreadyInitialized();
+    /// @param fheParamsName The semantic name of the already initialized the FHE params
+    error FheParamsAlreadyInitialized(string fheParamsName);
 
     /// @notice Trigger a key generation preprocessing
     /// @dev This function can only be called by an administrator
-    function preprocessKeygenRequest() external;
+    function preprocessKeygenRequest(string calldata fheParamsName) external;
 
     /// @notice Handle the response of a key generation preprocessing
     /// @dev This function can only be called by a KMS connector
@@ -163,7 +158,7 @@ interface IKeyManager {
 
     /// @notice Trigger a KSK generation preprocessing
     /// @dev This function can only be called by an administrator
-    function preprocessKskgenRequest() external;
+    function preprocessKskgenRequest(string calldata fheParamsName) external;
 
     /// @notice Handle the response of a KSK generation preprocessing
     /// @dev This function can only be called by a KMS connector
@@ -184,13 +179,13 @@ interface IKeyManager {
 
     /// @notice Trigger a CRS generation
     /// @dev This function can only be called by an administrator
-    function crsgenRequest() external;
+    function crsgenRequest(string calldata fheParamsName) external;
 
     /// @notice Handle the response of a CRS generation
     /// @dev This function can only be called by a KMS connector
-    /// @param preCrsId The preprocessed CRS ID
+    /// @param crsgenRequestId The CRS generation request ID
     /// @param crsId The generated CRS ID
-    function crsgenResponse(uint256 preCrsId, uint256 crsId) external;
+    function crsgenResponse(uint256 crsgenRequestId, uint256 crsId) external;
 
     /// @notice Trigger a KSK generation
     /// @dev This function can only be called by an administrator
@@ -220,14 +215,16 @@ interface IKeyManager {
 
     /// @notice Set the FHE params
     /// @dev This function can only be called by the owner
-    /// @dev This function can only be called once, during the overall initialization of the protocol
-    /// @param newFheParams The new FHE params
-    function setFheParams(FheParams memory newFheParams) external;
+    /// @dev This function can only be called once per fheParamsName, during the overall initialization of the protocol
+    /// @param fheParamsName The semantic name of the FHE params
+    /// @param fheParamsDigest The digest of the FHE params
+    function setFheParams(string calldata fheParamsName, bytes32 fheParamsDigest) external;
 
     /// @notice Update the FHE params
     /// @dev This function can only be called by the owner
-    /// @param newFheParams The new FHE params
-    function updateFheParams(FheParams memory newFheParams) external;
+    /// @param fheParamsName The semantic name of the FHE params to update
+    /// @param fheParamsDigest The new digest of the FHE params
+    function updateFheParams(string calldata fheParamsName, bytes32 fheParamsDigest) external;
 
     // TODO: May not be needed if contracts are made pausable
     // https://github.com/zama-ai/gateway-l2/issues/51
