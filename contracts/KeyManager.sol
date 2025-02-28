@@ -159,8 +159,8 @@ contract KeyManager is IKeyManager, Ownable2Step {
         /// @dev Only send the event if consensus has not been reached in a previous response call
         /// @dev and the consensus is reached in the current response call.
         /// @dev This means a "late" response will not be reverted, just ignored
-        if (!_isPreKeygenDone[preKeyRequestId] && _isKmsConsensusReached(_preKeygenResponseCounter[preKeyRequestId])) {
-            _isPreKeygenDone[preKeyRequestId] = true;
+        if (!_isPreKeygenDone[preKeyId] && _isKmsConsensusReached(_preKeygenResponseCounter[preKeyRequestId])) {
+            _isPreKeygenDone[preKeyId] = true;
 
             emit PreprocessKeygenResponse(preKeyRequestId, preKeyId);
         }
@@ -199,8 +199,8 @@ contract KeyManager is IKeyManager, Ownable2Step {
         /// @dev Only send the event if consensus has not been reached in a previous response call
         /// @dev and the consensus is reached in the current response call.
         /// @dev This means a "late" response will not be reverted, just ignored
-        if (!_isPreKskgenDone[preKskRequestId] && _isKmsConsensusReached(_preKskgenResponseCounter[preKskRequestId])) {
-            _isPreKskgenDone[preKskRequestId] = true;
+        if (!_isPreKskgenDone[preKskId] && _isKmsConsensusReached(_preKskgenResponseCounter[preKskRequestId])) {
+            _isPreKskgenDone[preKskId] = true;
 
             emit PreprocessKskgenResponse(preKskRequestId, preKskId);
         }
