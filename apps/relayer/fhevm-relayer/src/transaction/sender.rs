@@ -409,6 +409,7 @@ mod tests {
     use alloy::primitives::{hex, keccak256, U256};
 
     #[tokio::test]
+    #[ignore]
     /// For this test having a running node is MANDATORY
     /// url: http://localhost:8756
     /// chain_id: 123456
@@ -583,6 +584,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_decryption_manager_request() -> Result<(), Box<dyn std::error::Error>> {
         // Calculate function selector for publicDecryptionRequest(uint256[])
         let selector = &keccak256("publicDecryptionRequest(uint256[])")[..4];
