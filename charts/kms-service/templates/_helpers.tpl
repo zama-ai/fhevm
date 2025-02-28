@@ -130,7 +130,7 @@ args:
 {{- end -}}
 
 
-{{- define "kmsService.clientPodSpec" }}
+{{- define "kmsService.clientPodSpec" -}}
 {{- $kmsCoreName := include "kmsCoreName" . }}
 {{- $peersIDList := untilStep (default 1 .Values.kmsPeers.id | int) (.Values.kmsPeers.count | add1 | int) 1  }}
 spec:
@@ -150,15 +150,15 @@ spec:
       - name: OBJECT_FOLDER
         value: '[{{ if .Values.kmsCore.thresholdMode.enabled }}{{ range $i, $peer := .Values.kmsCore.thresholdMode.peersList }}{{- if $i -}},{{ end }}"PUB-p{{-  $peer.id  -}}"{{- end }}{{ else }}"PUB"{{ end }}]'
       - name: CORE_ADDRESSES
-        {{- if .Values.kmsCore.thresholdMode.peersList }}
+      {{- if .Values.kmsCore.thresholdMode.peersList }}
         value: '[{{ range $i, $peer := .Values.kmsCore.thresholdMode.peersList }}{{- if $i -}},{{ end }}"http://{{- $peer.host }}:{{- $.Values.kmsCore.ports.client -}}"{{- end }}]'
-        {{ else }}
+      {{ else }}
         value: '[{{ range $i := $peersIDList }}{{- if (sub $i 1) -}},{{ end }}"http://{{- printf "%s-%d" $kmsCoreName $i }}:{{- $.Values.kmsCore.ports.client -}}"{{- end }}]'
-        {{- end }}
+      {{- end }}
       - name: NUM_MAJORITY
         value: '{{ .Values.kmsCoreClient.num_majority | int }}'
       - name: NUM_RECONSTRUCT
         value: '{{ .Values.kmsCoreClient.num_reconstruct | int }}'
       - name: DECRYPTION_MODE
         value: '{{ .Values.kmsCoreClient.decryption_mode | quote }}'
-{{- end }}
+{{- end -}}

@@ -31,16 +31,16 @@ spec:
         items:
           - key: load-core-client-testing-config.sh
             path: load-core-client-testing-config.sh
-    {{- with .Values.kmsCoreClient.nodeSelector }}
-    nodeSelector:
-      {{- toYaml . | nindent 8 }}
-    {{- end }}
-    {{- with .Values.kmsCoreClient.affinity }}
-    affinity:
-      {{- toYaml . | nindent 8 }}
-    {{- end }}
-    {{- with .Values.kmsCoreClient.tolerations }}
-    tolerations:
-      {{- toYaml . | nindent 8 }}
-    {{- end }}
+  {{- with .Values.kmsCoreClient.nodeSelector }}
+  nodeSelector:
+    {{- toYaml . | nindent 8 }}
+  {{- end }}
+  {{- with .Values.kmsCoreClient.affinity }}
+  affinity:
+    {{- toYaml . | nindent 8 }}
+  {{- end }}
+  {{- with .Values.kmsCoreClient.tolerations }}
+  tolerations:
+    {{- toYaml . | nindent 8 }}
+  {{- end }}
 {{- end -}}
