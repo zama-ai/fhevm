@@ -87,16 +87,38 @@ export async function deployKeyManagerFixture() {
   const keyManager = await KeyManager.deploy(httpz);
 
   // Set the FHE params
-  const fheParams = { dummy: "dummy" };
-  await keyManager.connect(owner).setFheParams(fheParams);
+  const fheParamsName = "TEST";
+  const fheParamsDigest = hre.ethers.randomBytes(32);
+  await keyManager.connect(owner).setFheParams(fheParamsName, fheParamsDigest);
 
-  return { httpz, keyManager, owner, admins, user, kmsSigners, coprocessorSigners, signers, fheParams };
+  return {
+    httpz,
+    keyManager,
+    owner,
+    admins,
+    user,
+    kmsSigners,
+    coprocessorSigners,
+    signers,
+    fheParamsName,
+    fheParamsDigest,
+  };
 }
 
 /// @dev Deploy the CiphertextStorage contract
 export async function deployCiphertextStorageFixture() {
-  const { httpz, keyManager, owner, admins, user, kmsSigners, coprocessorSigners, signers, fheParams } =
-    await loadFixture(deployKeyManagerFixture);
+  const {
+    httpz,
+    keyManager,
+    owner,
+    admins,
+    user,
+    kmsSigners,
+    coprocessorSigners,
+    signers,
+    fheParamsName,
+    fheParamsDigest,
+  } = await loadFixture(deployKeyManagerFixture);
 
   const CiphertextStorage = await hre.ethers.getContractFactory("CiphertextStorage", owner);
   const ciphertextStorage = await CiphertextStorage.deploy(httpz, keyManager);
@@ -111,7 +133,8 @@ export async function deployCiphertextStorageFixture() {
     kmsSigners,
     coprocessorSigners,
     signers,
-    fheParams,
+    fheParamsName,
+    fheParamsDigest,
   };
 }
 
@@ -127,7 +150,8 @@ export async function deployACLManagerFixture() {
     kmsSigners,
     coprocessorSigners,
     signers,
-    fheParams,
+    fheParamsName,
+    fheParamsDigest,
   } = await loadFixture(deployCiphertextStorageFixture);
 
   const ACLManager = await hre.ethers.getContractFactory("ACLManager", owner);
@@ -144,7 +168,8 @@ export async function deployACLManagerFixture() {
     kmsSigners,
     coprocessorSigners,
     signers,
-    fheParams,
+    fheParamsName,
+    fheParamsDigest,
   };
 }
 
@@ -161,7 +186,8 @@ export async function deployDecryptionManagerFixture() {
     kmsSigners,
     coprocessorSigners,
     signers,
-    fheParams,
+    fheParamsName,
+    fheParamsDigest,
   } = await loadFixture(deployACLManagerFixture);
 
   const dummyPaymentManager = "0x1234567890abcdef1234567890abcdef12345678";
@@ -181,6 +207,7 @@ export async function deployDecryptionManagerFixture() {
     kmsSigners,
     coprocessorSigners,
     signers,
-    fheParams,
+    fheParamsName,
+    fheParamsDigest,
   };
 }
