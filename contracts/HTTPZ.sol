@@ -16,9 +16,8 @@ contract HTTPZ is IHTTPZ, Ownable2Step, AccessControl {
     /// @notice The protocol's metadata
     ProtocolMetadata public protocolMetadata;
 
-    /// @notice The admin role. For example, only admins can add KMS nodes, coprocessors and networks
-    /// @notice (HTTPZ contract), trigger public material generation or set/update FHE parameters
-    /// @notice (in Key Manager).
+    /// @notice The admin role. For example, only admins can update the KMS threshold (HTTPZ contract)
+    /// @notice trigger public material generation or set/update FHE parameters (in Key Manager).
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
 
     /// @notice The KMS nodes' metadata
@@ -47,16 +46,21 @@ contract HTTPZ is IHTTPZ, Ownable2Step, AccessControl {
     uint256 private constant MINOR_VERSION = 1;
     uint256 private constant PATCH_VERSION = 0;
 
-    constructor() Ownable(msg.sender) {}
-
-    /// @dev See {IHTTPZ-initialize}.
-    function initialize(
-        ProtocolMetadata calldata initialMetadata,
-        address[] calldata initialAdmins,
+    /// @notice Initialize the contract
+    /// @param initialMetadata Metadata of the protocol
+    /// @param initialAdmins List of admin addresses
+    /// @param initialKmsThreshold The KMS threshold. Must verify `3t < n` for `n` KMS nodes.
+    /// @param initialKmsNodes List of KMS nodes
+    /// @param initialCoprocessors List of coprocessors
+    /// @param initialNetworks List of networks
+    constructor(
+        ProtocolMetadata memory initialMetadata,
+        address[] memory initialAdmins,
         uint256 initialKmsThreshold,
-        KmsNode[] calldata initialKmsNodes,
-        Coprocessor[] calldata initialCoprocessors
-    ) external virtual onlyOwner {
+        KmsNode[] memory initialKmsNodes,
+        Coprocessor[] memory initialCoprocessors,
+        Network[] memory initialNetworks
+    ) Ownable(msg.sender) {
         protocolMetadata = initialMetadata;
 
         /// @dev Register the admins
@@ -83,19 +87,24 @@ contract HTTPZ is IHTTPZ, Ownable2Step, AccessControl {
 
         /// @dev Register the coprocessors
         for (uint256 i = 0; i < initialCoprocessors.length; i++) {
-            _grantRole(COPROCESSOR_ROLE, initialCoprocessors[i].connectorAddress);
+            _grantRole(COPROCESSOR_ROLE, initialCoprocessors[i].transactionSenderAddress);
             coprocessors.push(initialCoprocessors[i]);
         }
 
-        emit Initialization(initialMetadata, initialAdmins, initialKmsThreshold, initialKmsNodes, initialCoprocessors);
-    }
+        /// @dev Register the networks
+        for (uint256 i = 0; i < initialNetworks.length; i++) {
+            networks.push(initialNetworks[i]);
+            _isNetworkRegistered[initialNetworks[i].chainId] = true;
+        }
 
-    /// @dev See {IHTTPZ-addNetwork}.
-    function addNetwork(Network calldata network) external virtual onlyRole(ADMIN_ROLE) {
-        networks.push(network);
-        _isNetworkRegistered[network.chainId] = true;
-
-        emit AddNetwork(network.chainId);
+        emit Initialization(
+            initialMetadata,
+            initialAdmins,
+            initialKmsThreshold,
+            initialKmsNodes,
+            initialCoprocessors,
+            initialNetworks
+        );
     }
 
     /// @dev See {IHTTPZ-updateKmsThreshold}.

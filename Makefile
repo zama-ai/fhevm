@@ -12,8 +12,14 @@ test:
 get-accounts:
 	pnpm exec hardhat get-accounts --num-accounts 15
 
-deploy:
-	./launch-local-gateway-layer2.sh
+copy-env-example:
+	cp .env.example .env
 
-deploy-init:
-	./launch-init-local-gateway-layer2.sh
+copy-env-example-deployment:
+	cp .env.example.deployment .env
+
+deploy-contracts-local: copy-env-example
+	./deploy-httpz-gateway.sh localHTTPZGateway
+
+deploy-contracts-local-deployment: copy-env-example-deployment
+	./deploy-httpz-gateway-deployment.sh localHTTPZGateway

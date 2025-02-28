@@ -8,26 +8,20 @@ import { createEIP712ResponseZKPoK, deployHTTPZFixture, getSignaturesZKPoK } fro
 
 describe("ZKPoKManager", function () {
   async function deployZKPoKManagerFixture() {
-    const { httpz, coprocessorSigners, admins, signers } = await deployHTTPZFixture();
+    const { httpz, coprocessorSigners, admins, signers, chainIds } = await deployHTTPZFixture();
     const ZKPoKManagerContract = await hre.ethers.getContractFactory("ZKPoKManager");
     const zkpokManager = await ZKPoKManagerContract.deploy(httpz, "0xDA9FeD390f02F559E62240a112aBd2FAe06DCdB5");
-    return { httpz, zkpokManager, coprocessorSigners, admins, signers };
+    return { httpz, zkpokManager, coprocessorSigners, admins, signers, chainIds };
   }
 
   describe("Verify proof request", async function () {
     const zkProofId = "0";
-    const contractChainId = "123";
+    let contractChainId: number;
     let zkpokManager: ZKPoKManager;
     before(async function () {
       const fixture = await loadFixture(deployZKPoKManagerFixture);
-      await fixture.httpz.connect(fixture.admins[0]).addNetwork({
-        chainId: contractChainId,
-        httpzLibrary: hre.ethers.Wallet.createRandom().address,
-        acl: hre.ethers.Wallet.createRandom().address,
-        name: "Network name",
-        website: "network-website.com",
-      });
       zkpokManager = fixture.zkpokManager;
+      contractChainId = fixture.chainIds[0];
     });
 
     it("Should request a proof verification", async function () {
@@ -63,27 +57,21 @@ describe("ZKPoKManager", function () {
 
   describe("Verify proof response", async function () {
     const zkProofId = "0";
-    const contractChainId = "123";
     const contractAddress = "0xa83114A443dA1CecEFC50368531cACE9F37fCCcb";
     const userAddress = "0x388C818CA8B9251b393131C08a736A67ccB19297";
     let httpz: HTTPZ;
     let zkpokManager: ZKPoKManager;
     let coprocessorSigners: HardhatEthersSigner[];
     let fakeSigner: HardhatEthersSigner;
+    let contractChainId: number;
 
     beforeEach(async function () {
       const fixture = await loadFixture(deployZKPoKManagerFixture);
-      await fixture.httpz.connect(fixture.admins[0]).addNetwork({
-        chainId: contractChainId,
-        httpzLibrary: hre.ethers.Wallet.createRandom().address,
-        acl: hre.ethers.Wallet.createRandom().address,
-        name: "Network name",
-        website: "network-website.com",
-      });
       httpz = fixture.httpz;
       zkpokManager = fixture.zkpokManager;
       coprocessorSigners = fixture.coprocessorSigners;
       fakeSigner = fixture.signers[0];
+      contractChainId = fixture.chainIds[0];
       const ctProofHandle = hre.ethers.randomBytes(32);
       await zkpokManager.verifyProofRequest(contractChainId, contractAddress, userAddress, ctProofHandle);
     });
