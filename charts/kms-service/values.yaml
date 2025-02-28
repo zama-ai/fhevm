@@ -120,22 +120,6 @@ kmsCore:
 mtls:
   enabled: false
 
-kmsCoreClient:
-  enabled: false
-  nameOverride:
-  image:
-    name: ghcr.io/zama-ai/kms-core-client
-    tag: latest
-  envFrom:
-    configmap:
-      name:
-  num_majority: 2
-  num_reconstruct: 3
-  decryption_mode: "NoiseFloodSmall"
-  nodeSelector:
-  affinity:
-  tolerations:
-
 kubeUtils:
   image:
     name: ghcr.io/zama-ai/kube-utils
@@ -193,3 +177,24 @@ podSecurityContextForEnclave:
 
 kyverno:
   enabled: false
+
+kmsCoreClient:
+  enabled: false
+  nameOverride:
+  image:
+    name: ghcr.io/zama-ai/kms-core-client
+    tag: latest
+  envFrom:
+    configmap:
+      name:
+  num_majority: 2
+  num_reconstruct: 3
+  decryption_mode: "NoiseFloodSmall"
+  nodeSelector:
+  affinity:
+  tolerations:
+
+# Cronjob kubernetes
+kmsCoreClientTesting:
+  enabled: false
+  schedule: "30 0 * * *"
