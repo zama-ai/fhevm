@@ -215,10 +215,21 @@ describe("ACLManager", function () {
         .checkUserDecryptAllowed(allowedUserAddress, ctHandleContractPairs);
     });
 
-    it("Should revert with UserDecryptNotAllowed", async function () {
+    it("Should revert because user part of the contract addresses", async function () {
+      const fakeCtHandleContractPairs = [{ ctHandle: ctHandle, contractAddress: allowedUserAddress }];
+
+      // Check that the fakeUserAddress is not allowed to decrypt the ciphertext
+      await expect(
+        aclManager
+          .connect(coprocessorSigners[0])
+          .checkUserDecryptAllowed(allowedUserAddress, fakeCtHandleContractPairs),
+      )
+        .to.be.revertedWithCustomError(aclManager, "UserAddressInContractAddresses")
+        .withArgs(allowedUserAddress);
+    });
+
+    it("Should revert because user is not allowed to decrypt", async function () {
       const fakeUserAddress = hre.ethers.Wallet.createRandom().address;
-      const fakeContractAddress = hre.ethers.Wallet.createRandom().address;
-      const fakeCtHandleFakeContractPairs = [{ ctHandle: ctHandle, contractAddress: fakeContractAddress }];
 
       // Check that the fakeUserAddress is not allowed to decrypt the ciphertext
       await expect(
@@ -226,12 +237,17 @@ describe("ACLManager", function () {
       )
         .to.be.revertedWithCustomError(aclManager, "UserNotAllowedToUserDecrypt")
         .withArgs(ctHandle, fakeUserAddress);
+    });
+
+    it("Should revert because contract it not allowed to decrypt", async function () {
+      const fakeContractAddress = hre.ethers.Wallet.createRandom().address;
+      const fakeCtHandleContractPairs = [{ ctHandle: ctHandle, contractAddress: fakeContractAddress }];
 
       // Check that the fakeContractAddress is not allowed to decrypt the ciphertext
       await expect(
         aclManager
           .connect(coprocessorSigners[0])
-          .checkUserDecryptAllowed(allowedUserAddress, fakeCtHandleFakeContractPairs),
+          .checkUserDecryptAllowed(allowedUserAddress, fakeCtHandleContractPairs),
       )
         .to.be.revertedWithCustomError(aclManager, "ContractNotAllowedToUserDecrypt")
         .withArgs(ctHandle, fakeContractAddress);

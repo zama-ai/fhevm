@@ -168,6 +168,11 @@ contract ACLManager is IACLManager {
             uint256 ctHandle = ctHandleContractPairs[i].ctHandle;
             address contractAddress = ctHandleContractPairs[i].contractAddress;
 
+            /// @dev Check that the contract address is difference from the user address
+            if (userAddress == contractAddress) {
+                revert UserAddressInContractAddresses(userAddress);
+            }
+
             /// @dev Check that the user is allowed to decrypt this ciphertext.
             if (!allowedUserDecrypts[ctHandle][userAddress]) {
                 revert UserNotAllowedToUserDecrypt(ctHandle, userAddress);
