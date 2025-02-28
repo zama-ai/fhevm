@@ -180,9 +180,10 @@ export function CreatorForm({
             type="submit"
             alignSelf="flex-start"
             disabled={
-              !(formik.isValid && formik.dirty && !addressLoading) ||
+              !(formik.isValid && formik.dirty) ||
               !!addressError ||
-              loading
+              loading ||
+              addressLoading
             }
           >
             Create

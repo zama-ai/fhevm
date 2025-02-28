@@ -5,7 +5,7 @@ export const AddressSchema = z
   // example: 0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43
   .regex(
     /^0x[a-fA-F0-9]{40}$/,
-    'Sepolia addesses are 42 characters long and start by 0x',
+    'Smart contract addesses should be 42 characters long and start by 0x',
   )
 
 export const CreatorFormSchema = z.object({
