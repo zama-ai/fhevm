@@ -6,14 +6,6 @@ import hre from "hardhat";
 import { deployHTTPZFixture, deployKeyManagerFixture } from "./utils/deploys";
 
 describe("KeyManager", function () {
-  // Define dummy FHE params to use for testing generation methods
-  function getFheParams() {
-    // TODO: Use proper fheParams format when implemented
-    return {
-      dummy: "dummy",
-    };
-  }
-
   // Deploy the KeyManager contract without setting the FHE params
   async function deployKeyManagerNoParamsFixture() {
     const { httpz, owner, admins, user, kmsSigners, coprocessorSigners, signers } =
@@ -27,11 +19,11 @@ describe("KeyManager", function () {
 
   // Deploy the keyManager contract and run a preprocessing keygen
   async function deployKeyManagerPreKeygenFixture() {
-    const { keyManager, owner, admins, user, kmsSigners, coprocessorSigners, signers, fheParams } =
+    const { keyManager, owner, admins, user, kmsSigners, coprocessorSigners, signers, fheParamsName, fheParamsDigest } =
       await loadFixture(deployKeyManagerFixture);
 
     // Trigger a preprocessing keygen request
-    const txRequest = await keyManager.connect(admins[0]).preprocessKeygenRequest();
+    const txRequest = await keyManager.connect(admins[0]).preprocessKeygenRequest(fheParamsName);
 
     const receipt = await txRequest.wait();
 
@@ -48,13 +40,34 @@ describe("KeyManager", function () {
       await keyManager.connect(kmsSigners[i]).preprocessKeygenResponse(preKeyRequestId, preKeyId);
     }
 
-    return { keyManager, owner, admins, user, kmsSigners, coprocessorSigners, signers, fheParams, preKeyId };
+    return {
+      keyManager,
+      owner,
+      admins,
+      user,
+      kmsSigners,
+      coprocessorSigners,
+      signers,
+      preKeyId,
+      fheParamsName,
+      fheParamsDigest,
+    };
   }
 
   // Deploy the keyManager contract and run a keygen
   async function deployKeyManagerKeygenFixture() {
-    const { keyManager, owner, admins, user, kmsSigners, coprocessorSigners, signers, fheParams, preKeyId } =
-      await loadFixture(deployKeyManagerPreKeygenFixture);
+    const {
+      keyManager,
+      owner,
+      admins,
+      user,
+      kmsSigners,
+      coprocessorSigners,
+      signers,
+      fheParamsName,
+      fheParamsDigest,
+      preKeyId,
+    } = await loadFixture(deployKeyManagerPreKeygenFixture);
 
     // Trigger a keygen request
     await keyManager.connect(admins[0]).keygenRequest(preKeyId);
@@ -70,16 +83,39 @@ describe("KeyManager", function () {
       await keyManager.connect(kmsSigners[i]).keygenResponse(preKeyId, keyId2);
     }
 
-    return { keyManager, owner, admins, user, kmsSigners, coprocessorSigners, signers, fheParams, keyId1, keyId2 };
+    return {
+      keyManager,
+      owner,
+      admins,
+      user,
+      kmsSigners,
+      coprocessorSigners,
+      signers,
+      fheParamsName,
+      fheParamsDigest,
+      keyId1,
+      keyId2,
+    };
   }
 
   // Deploy the keyManager contract and run a preprocessing KSK generation
   async function deployKeyManagerPreKskgenFixture() {
-    const { keyManager, owner, admins, user, kmsSigners, coprocessorSigners, signers, fheParams, keyId1, keyId2 } =
-      await loadFixture(deployKeyManagerKeygenFixture);
+    const {
+      keyManager,
+      owner,
+      admins,
+      user,
+      kmsSigners,
+      coprocessorSigners,
+      signers,
+      fheParamsName,
+      fheParamsDigest,
+      keyId1,
+      keyId2,
+    } = await loadFixture(deployKeyManagerKeygenFixture);
 
     // Trigger a preprocessing KSK generation request
-    const txRequest = await keyManager.connect(admins[0]).preprocessKskgenRequest();
+    const txRequest = await keyManager.connect(admins[0]).preprocessKskgenRequest(fheParamsName);
 
     const receipt = await txRequest.wait();
 
@@ -104,7 +140,8 @@ describe("KeyManager", function () {
       kmsSigners,
       coprocessorSigners,
       signers,
-      fheParams,
+      fheParamsName,
+      fheParamsDigest,
       keyId1,
       keyId2,
       preKskId,
@@ -121,7 +158,7 @@ describe("KeyManager", function () {
       kmsSigners,
       coprocessorSigners,
       signers,
-      fheParams,
+      fheParamsName,
       keyId1,
       keyId2,
       preKskId,
@@ -155,7 +192,7 @@ describe("KeyManager", function () {
       kmsSigners,
       coprocessorSigners,
       signers,
-      fheParams,
+      fheParamsName,
       keyId1,
       keyId2,
       kskId,
@@ -167,17 +204,17 @@ describe("KeyManager", function () {
       const { keyManager, admins } = await loadFixture(deployKeyManagerNoParamsFixture);
 
       // Check that a preprocessing keygen request cannot be triggered if the fheParams are not initialized
-      await expect(keyManager.connect(admins[0]).preprocessKeygenRequest()).to.be.revertedWithCustomError(
+      await expect(keyManager.connect(admins[0]).preprocessKeygenRequest("TEST")).to.be.revertedWithCustomError(
         keyManager,
         "FheParamsNotInitialized",
       );
     });
 
     it("Should revert because of access controls", async function () {
-      const { httpz, keyManager, user } = await loadFixture(deployKeyManagerFixture);
+      const { httpz, keyManager, user, fheParamsName } = await loadFixture(deployKeyManagerFixture);
 
       // Check that someone else than the admin cannot trigger a preprocessing keygen request
-      await expect(keyManager.connect(user).preprocessKeygenRequest())
+      await expect(keyManager.connect(user).preprocessKeygenRequest(fheParamsName))
         .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
         .withArgs(user.address, httpz.ADMIN_ROLE());
 
@@ -198,18 +235,19 @@ describe("KeyManager", function () {
     });
 
     it("Should handle a preprocessed keygen", async function () {
-      const { keyManager, admins, kmsSigners, fheParams } = await loadFixture(deployKeyManagerFixture);
+      const { keyManager, admins, kmsSigners, fheParamsName, fheParamsDigest } =
+        await loadFixture(deployKeyManagerFixture);
 
       // Define the expected preprocessing key request ID
       const expectedPreKeyRequestId = 1;
 
       // Trigger a preprocessing keygen request
-      const txRequest = await keyManager.connect(admins[0]).preprocessKeygenRequest();
+      const txRequest = await keyManager.connect(admins[0]).preprocessKeygenRequest(fheParamsName);
 
       // Check event
       await expect(txRequest)
         .to.emit(keyManager, "PreprocessKeygenRequest")
-        .withArgs(expectedPreKeyRequestId, [fheParams.dummy]);
+        .withArgs(expectedPreKeyRequestId, fheParamsDigest);
 
       // Define a preKeyId for the keygen response
       const preKeyId = 1;
@@ -252,14 +290,14 @@ describe("KeyManager", function () {
 
       // Check that triggering a new preprocessing keygen request again gives a different preKeyRequestId
       // (the counter is incremented by 1)
-      const txRequest2 = await keyManager.connect(admins[0]).preprocessKeygenRequest();
+      const txRequest2 = await keyManager.connect(admins[0]).preprocessKeygenRequest(fheParamsName);
       await expect(txRequest2)
         .to.emit(keyManager, "PreprocessKeygenRequest")
-        .withArgs(expectedPreKeyRequestId + 1, [fheParams.dummy]);
+        .withArgs(expectedPreKeyRequestId + 1, fheParamsDigest);
     });
 
     it("Should handle a keygen", async function () {
-      const { keyManager, admins, kmsSigners, preKeyId, fheParams } = await loadFixture(
+      const { keyManager, admins, kmsSigners, preKeyId, fheParamsDigest } = await loadFixture(
         deployKeyManagerPreKeygenFixture,
       );
 
@@ -274,7 +312,7 @@ describe("KeyManager", function () {
       const txRequest = await keyManager.connect(admins[0]).keygenRequest(preKeyId);
 
       // Check event
-      await expect(txRequest).to.emit(keyManager, "KeygenRequest").withArgs(preKeyId, [fheParams.dummy]);
+      await expect(txRequest).to.emit(keyManager, "KeygenRequest").withArgs(preKeyId, fheParamsDigest);
 
       // Check that a keygen request cannot be triggered again with the same preKeyId
       await expect(keyManager.connect(admins[0]).keygenRequest(preKeyId))
@@ -301,7 +339,7 @@ describe("KeyManager", function () {
       const txResponse2 = await keyManager.connect(kmsSigners[1]).keygenResponse(preKeyId, keyId);
 
       // Check event
-      await expect(txResponse2).to.emit(keyManager, "KeygenResponse").withArgs(preKeyId, keyId, [fheParams.dummy]);
+      await expect(txResponse2).to.emit(keyManager, "KeygenResponse").withArgs(preKeyId, keyId, fheParamsDigest);
 
       // The 3rd and 4th responses should be ignored (not reverted) and not emit an event
       const txResponse3 = await keyManager.connect(kmsSigners[2]).keygenResponse(preKeyId, keyId);
@@ -318,17 +356,17 @@ describe("KeyManager", function () {
       const { keyManager, admins } = await loadFixture(deployKeyManagerNoParamsFixture);
 
       // Check that a CRS generation request cannot be triggered if the fheParams are not initialized
-      await expect(keyManager.connect(admins[0]).crsgenRequest()).to.be.revertedWithCustomError(
+      await expect(keyManager.connect(admins[0]).crsgenRequest("TEST")).to.be.revertedWithCustomError(
         keyManager,
         "FheParamsNotInitialized",
       );
     });
 
     it("Should revert because of access controls", async function () {
-      const { httpz, keyManager, user } = await loadFixture(deployKeyManagerFixture);
+      const { httpz, keyManager, user, fheParamsName } = await loadFixture(deployKeyManagerFixture);
 
       // Check that someone else than the admin cannot trigger a CRS generation request
-      await expect(keyManager.connect(user).crsgenRequest())
+      await expect(keyManager.connect(user).crsgenRequest(fheParamsName))
         .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
         .withArgs(user.address, httpz.ADMIN_ROLE());
 
@@ -339,16 +377,17 @@ describe("KeyManager", function () {
     });
 
     it("Should handle a CRS generation", async function () {
-      const { keyManager, admins, kmsSigners, fheParams } = await loadFixture(deployKeyManagerFixture);
+      const { keyManager, admins, kmsSigners, fheParamsName, fheParamsDigest } =
+        await loadFixture(deployKeyManagerFixture);
 
       // Define an expected preCrsId
       const expectedPreCrsId = 1;
 
       // Trigger a CRS generation request
-      const txRequest = await keyManager.connect(admins[0]).crsgenRequest();
+      const txRequest = await keyManager.connect(admins[0]).crsgenRequest(fheParamsName);
 
       // Check event
-      await expect(txRequest).to.emit(keyManager, "CrsgenRequest").withArgs(expectedPreCrsId, [fheParams.dummy]);
+      await expect(txRequest).to.emit(keyManager, "CrsgenRequest").withArgs(expectedPreCrsId, fheParamsDigest);
 
       // Define a crsId for responses
       const crsId = 1;
@@ -371,7 +410,7 @@ describe("KeyManager", function () {
       // Check event
       await expect(txResponse2)
         .to.emit(keyManager, "CrsgenResponse")
-        .withArgs(expectedPreCrsId, crsId, [fheParams.dummy]);
+        .withArgs(expectedPreCrsId, crsId, fheParamsDigest);
 
       // The 3rd and 4th responses should be ignored (not reverted) and not emit an event
       const txResponse3 = await keyManager.connect(kmsSigners[2]).crsgenResponse(expectedPreCrsId, crsId);
@@ -383,10 +422,10 @@ describe("KeyManager", function () {
 
       // Check that triggering a new preprocessing keygen request again gives a different preKeyId
       // (the counter is incremented by 1)
-      const txRequest2 = await keyManager.connect(admins[0]).crsgenRequest();
+      const txRequest2 = await keyManager.connect(admins[0]).crsgenRequest(fheParamsName);
       await expect(txRequest2)
         .to.emit(keyManager, "CrsgenRequest")
-        .withArgs(expectedPreCrsId + 1, [fheParams.dummy]);
+        .withArgs(expectedPreCrsId + 1, fheParamsDigest);
     });
   });
 
@@ -395,17 +434,17 @@ describe("KeyManager", function () {
       const { keyManager, admins } = await loadFixture(deployKeyManagerNoParamsFixture);
 
       // Check that a preprocessing KSK generation request cannot be triggered if the fheParams are not initialized
-      await expect(keyManager.connect(admins[0]).preprocessKskgenRequest()).to.be.revertedWithCustomError(
+      await expect(keyManager.connect(admins[0]).preprocessKskgenRequest("TEST")).to.be.revertedWithCustomError(
         keyManager,
         "FheParamsNotInitialized",
       );
     });
 
     it("Should revert because of access controls", async function () {
-      const { httpz, keyManager, user } = await loadFixture(deployKeyManagerFixture);
+      const { httpz, keyManager, user, fheParamsName } = await loadFixture(deployKeyManagerFixture);
 
       // Check that someone else than the admin cannot trigger a preprocessing KSK generation request
-      await expect(keyManager.connect(user).preprocessKskgenRequest())
+      await expect(keyManager.connect(user).preprocessKskgenRequest(fheParamsName))
         .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
         .withArgs(user.address, httpz.ADMIN_ROLE());
 
@@ -426,18 +465,19 @@ describe("KeyManager", function () {
     });
 
     it("Should handle a preprocessed KSK generation", async function () {
-      const { keyManager, admins, kmsSigners, fheParams } = await loadFixture(deployKeyManagerFixture);
+      const { keyManager, admins, kmsSigners, fheParamsName, fheParamsDigest } =
+        await loadFixture(deployKeyManagerFixture);
 
       // Define the expected preprocessing KSK ID
       const expectedPreKskRequestId = 1;
 
       // Trigger a preprocessing KSK generation request
-      const txRequest = await keyManager.connect(admins[0]).preprocessKskgenRequest();
+      const txRequest = await keyManager.connect(admins[0]).preprocessKskgenRequest(fheParamsName);
 
       // Check event
       await expect(txRequest)
         .to.emit(keyManager, "PreprocessKskgenRequest")
-        .withArgs(expectedPreKskRequestId, [fheParams.dummy]);
+        .withArgs(expectedPreKskRequestId, fheParamsDigest);
 
       // Define a preKskRequestId for the preprocessing KSK generation request
       const preKskRequestId = 1;
@@ -480,14 +520,14 @@ describe("KeyManager", function () {
 
       // Check that triggering a new preprocessing KSK generation request again gives a different preKskRequestId
       // (the counter is incremented by 1)
-      const txRequest2 = await keyManager.connect(admins[0]).preprocessKskgenRequest();
+      const txRequest2 = await keyManager.connect(admins[0]).preprocessKskgenRequest(fheParamsName);
       await expect(txRequest2)
         .to.emit(keyManager, "PreprocessKskgenRequest")
-        .withArgs(expectedPreKskRequestId + 1, [fheParams.dummy]);
+        .withArgs(expectedPreKskRequestId + 1, fheParamsDigest);
     });
 
     it("Should handle a KSK generation", async function () {
-      const { keyManager, admins, kmsSigners, fheParams, keyId1, keyId2, preKskId } = await loadFixture(
+      const { keyManager, admins, kmsSigners, fheParamsDigest, keyId1, keyId2, preKskId } = await loadFixture(
         deployKeyManagerPreKskgenFixture,
       );
 
@@ -518,9 +558,7 @@ describe("KeyManager", function () {
       const txRequest = await keyManager.connect(admins[0]).kskgenRequest(preKskId, keyId1, keyId2);
 
       // Check event
-      await expect(txRequest)
-        .to.emit(keyManager, "KskgenRequest")
-        .withArgs(preKskId, keyId1, keyId2, [fheParams.dummy]);
+      await expect(txRequest).to.emit(keyManager, "KskgenRequest").withArgs(preKskId, keyId1, keyId2, fheParamsDigest);
 
       // Check that a keygen request cannot be triggered again with the same preKeyId
       await expect(keyManager.connect(admins[0]).kskgenRequest(preKskId, keyId1, keyId2))
@@ -547,7 +585,7 @@ describe("KeyManager", function () {
       const txResponse2 = await keyManager.connect(kmsSigners[1]).kskgenResponse(preKskId, kskId);
 
       // Check event
-      await expect(txResponse2).to.emit(keyManager, "KskgenResponse").withArgs(preKskId, kskId, [fheParams.dummy]);
+      await expect(txResponse2).to.emit(keyManager, "KskgenResponse").withArgs(preKskId, kskId, fheParamsDigest);
 
       // The 3rd and 4th responses should be ignored (not reverted) and not emit an event
       const txResponse3 = await keyManager.connect(kmsSigners[2]).kskgenResponse(preKskId, kskId);
@@ -656,15 +694,16 @@ describe("KeyManager", function () {
       const { keyManager, user } = await loadFixture(deployKeyManagerFixture);
 
       // Get dummy FHE params
-      const fheParams = getFheParams();
+      const fheParamsName = "TEST";
+      const fheParamsDigest = hre.ethers.randomBytes(32);
 
       // Check that only the owner can set the FHE params
-      await expect(keyManager.connect(user).setFheParams(fheParams))
+      await expect(keyManager.connect(user).setFheParams(fheParamsName, fheParamsDigest))
         .to.be.revertedWithCustomError(keyManager, "OwnableUnauthorizedAccount")
         .withArgs(user.address);
 
       // Check that only the owner can update the FHE params
-      await expect(keyManager.connect(user).updateFheParams(fheParams))
+      await expect(keyManager.connect(user).updateFheParams(fheParamsName, fheParamsDigest))
         .to.be.revertedWithCustomError(keyManager, "OwnableUnauthorizedAccount")
         .withArgs(user.address);
     });
@@ -673,31 +712,30 @@ describe("KeyManager", function () {
       const { keyManager, owner } = await loadFixture(deployKeyManagerNoParamsFixture);
 
       // Get dummy FHE params
-      const fheParams = getFheParams();
+      const fheParamsName = "TEST";
+      const fheParamsDigest = hre.ethers.randomBytes(32);
 
       // Check that FHE params cannot be updated if they are not initialized
-      await expect(keyManager.connect(owner).updateFheParams(fheParams)).to.be.revertedWithCustomError(
-        keyManager,
-        "FheParamsNotInitialized",
-      );
+      await expect(
+        keyManager.connect(owner).updateFheParams(fheParamsName, fheParamsDigest),
+      ).to.be.revertedWithCustomError(keyManager, "FheParamsNotInitialized");
 
       // Set the FHE params
-      const txSetFheParams = await keyManager.connect(owner).setFheParams(fheParams);
+      const txSetFheParams = await keyManager.connect(owner).setFheParams(fheParamsName, fheParamsDigest);
 
       // Check event
-      await expect(txSetFheParams).to.emit(keyManager, "SetFheParams").withArgs([fheParams.dummy]);
+      await expect(txSetFheParams).to.emit(keyManager, "SetFheParams").withArgs(fheParamsName, fheParamsDigest);
 
       // Check that we can only set the FHE params once
-      await expect(keyManager.setFheParams(fheParams)).to.be.revertedWithCustomError(
-        keyManager,
-        "FheParamsAlreadyInitialized",
-      );
+      await expect(keyManager.setFheParams(fheParamsName, fheParamsDigest))
+        .to.be.revertedWithCustomError(keyManager, "FheParamsAlreadyInitialized")
+        .withArgs(fheParamsName);
 
       // Update the FHE params
-      const txUpdateFheParams = await keyManager.connect(owner).updateFheParams(fheParams);
+      const txUpdateFheParams = await keyManager.connect(owner).updateFheParams(fheParamsName, fheParamsDigest);
 
       // Check event
-      await expect(txUpdateFheParams).to.emit(keyManager, "UpdateFheParams").withArgs([fheParams.dummy]);
+      await expect(txUpdateFheParams).to.emit(keyManager, "UpdateFheParams").withArgs(fheParamsName, fheParamsDigest);
     });
   });
 });

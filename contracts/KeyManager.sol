@@ -16,10 +16,6 @@ contract KeyManager is IKeyManager, Ownable2Step {
     uint256 private _preKeygenRequestCounter;
     /// @notice Whether a key generation preprocessing step is done (required for key generation)
     mapping(uint256 preKeyId => bool isDone) private _isPreKeygenDone;
-    /// @notice The FHE params used for a key generation preprocessing step
-    mapping(uint256 preKeyRequestId => FheParams fheParams) private _preKeygenRequestFheParams;
-    /// @notice The FHE params used for a key generation preprocessing step (under the preprocessed key Id)
-    mapping(uint256 preKeyId => FheParams fheParams) private _keygenFheParams;
     /// @notice The KMS responses to a key generation preprocessing step
     mapping(uint256 preKeyId => mapping(address kmsConnector => bool hasResponded)) private _preKeygenResponses;
     /// @notice The KMS response counter for a key generation preprocessing step
@@ -29,10 +25,6 @@ contract KeyManager is IKeyManager, Ownable2Step {
     uint256 private _preKskgenRequestCounter;
     /// @notice Whether a KSK generation preprocessing step is done (required for KSK generation)
     mapping(uint256 preKskId => bool isDone) private _isPreKskgenDone;
-    /// @notice The FHE params used for a KSK generation preprocessing step
-    mapping(uint256 preKskRequestId => FheParams fheParams) private _preKskgenRequestFheParams;
-    /// @notice The FHE params used for a KSK generation preprocessing step (under the preprocessed KSK Id)
-    mapping(uint256 preKskId => FheParams fheParams) private _kskgenFheParams;
     /// @notice The KMS responses to a KSK generation preprocessing step
     mapping(uint256 preKskId => mapping(address kmsConnector => bool hasResponded)) private _preKskgenResponses;
     /// @notice The KMS response counter for a KSK generation preprocessing step
@@ -48,9 +40,7 @@ contract KeyManager is IKeyManager, Ownable2Step {
     mapping(uint256 keyId => bool isGenerated) private _isKeyGenerated;
 
     /// @notice The CRS generation preprocessing counter
-    uint256 private _preCrsgenCounter;
-    /// @notice The FHE params used for a CRS generation
-    mapping(uint256 preCrsId => FheParams fheParams) private _crsgenFheParams;
+    uint256 private _crsgenRequestCounter;
     /// @notice The KMS responses to a CRS generation
     mapping(uint256 crsId => mapping(address kmsConnector => bool hasResponded)) private _crsgenResponses;
     /// @notice The KMS response counter for a CRS generation
@@ -86,9 +76,27 @@ contract KeyManager is IKeyManager, Ownable2Step {
     /// @dev The last element should be the current activated keyId
     uint256[] public activatedKeyIds;
 
-    /// @notice The current FHE params
-    FheParams public fheParams;
-    bool private _fheParamsInitialized;
+    /// @notice The FHE params digest tied to a given FHE params name
+    mapping(string fheParamsName => bytes32 paramsDigest) public fheParamsDigests;
+    /// @notice The Key ID to its generator FHE params digest
+    mapping(uint256 keyId => bytes32 paramsDigest) public keyFheParamsDigests;
+    /// @notice The KSK ID to its generator FHE params digest
+    mapping(uint256 kskId => bytes32 paramsDigest) public kskFheParamsDigests;
+    /// @notice The CRS ID to its generator FHE params digest
+    mapping(uint256 crsId => bytes32 paramsDigest) public crsFheParamsDigests;
+
+    /// @notice The preprocessing Key ID to FHE params digest used during keygen
+    mapping(uint256 preKeyId => bytes32 paramsDigest) private _preKeyFheParamsDigests;
+    /// @notice The keygen request assigned ID to the FHE params digest used during keygen preprocessing
+    mapping(uint256 preKeygenRequestId => bytes32 paramsDigest) private _preKeygenFheParamsDigests;
+    /// @notice The preprocessing KSK ID to FHE params digest used during kskgen
+    mapping(uint256 preKskId => bytes32 paramsDigest) private _preKskFheParamsDigests;
+    /// @notice The kskgen request assigned ID to the FHE params digest used during kskgen preprocessing
+    mapping(uint256 preKskgenRequestId => bytes32 paramsDigest) private _preKskgenFheParamsDigests;
+    /// @notice The crsgen request assigned ID to the FHE params digest used during crsgen
+    mapping(uint256 crsgenRequestId => bytes32 paramsDigest) private _crsgenFheParamsDigests;
+    /// @notice The fheParamsName mapping for the FHE params initialization status
+    mapping(string fheParamsName => bool isInitialized) private _fheParamsInitialized;
 
     /// @notice The contract's metadata
     string private constant CONTRACT_NAME = "KeyManager";
@@ -100,9 +108,9 @@ contract KeyManager is IKeyManager, Ownable2Step {
         _HTTPZ = httpz;
     }
 
-    /// @dev Modifier to check if the FHE params are initialized
-    modifier fheParamsInitialized() {
-        if (!_fheParamsInitialized) {
+    /// @dev Modifier to check if the given FHE params name is initialized
+    modifier fheParamsInitialized(string calldata fheParamsName) {
+        if (!_fheParamsInitialized[fheParamsName]) {
             revert FheParamsNotInitialized();
         }
         _;
@@ -127,82 +135,88 @@ contract KeyManager is IKeyManager, Ownable2Step {
     }
 
     /// @dev See {IKeyManager-preprocessKeygenRequest}.
-    function preprocessKeygenRequest() external virtual onlyAdmin fheParamsInitialized {
+    function preprocessKeygenRequest(
+        string calldata fheParamsName
+    ) external virtual onlyAdmin fheParamsInitialized(fheParamsName) {
         /// @dev TODO: maybe generate a preKeyId here instead of on KMS connectors:
         /// @dev https://github.com/zama-ai/gateway-l2/issues/67
-        /// @dev Generate a new preKeyRequestId. This is used to track the key generation preprocessing responses
+        /// @dev Generate a new preKeygenRequestId. This is used to track the key generation preprocessing responses
         /// @dev as well as linking FHE params between the preprocessing and the actual key generation
         /// @dev This is different from the preKeyId generated by the KMS connector
         _preKeygenRequestCounter++;
-        uint256 preKeyRequestId = _preKeygenRequestCounter;
+        uint256 preKeygenRequestId = _preKeygenRequestCounter;
 
         /// @dev Store the FHE params used for the key generation preprocessing step as they will be used
         /// @dev for the actual key generation as well
-        _preKeygenRequestFheParams[preKeyRequestId] = fheParams;
+        bytes32 fheParamsDigest = fheParamsDigests[fheParamsName];
+        _preKeygenFheParamsDigests[preKeygenRequestId] = fheParamsDigest;
 
-        emit PreprocessKeygenRequest(preKeyRequestId, fheParams);
+        emit PreprocessKeygenRequest(preKeygenRequestId, fheParamsDigest);
     }
 
     /// @dev See {IKeyManager-preprocessKeygenResponse}.
-    function preprocessKeygenResponse(uint256 preKeyRequestId, uint256 preKeyId) external virtual onlyKmsNode {
+    function preprocessKeygenResponse(uint256 preKeygenRequestId, uint256 preKeyId) external virtual onlyKmsNode {
         /// @dev A KMS node can only respond once
-        if (_preKeygenResponses[preKeyRequestId][msg.sender]) {
-            revert PreprocessKeygenKmsNodeAlreadyResponded(preKeyRequestId);
+        if (_preKeygenResponses[preKeygenRequestId][msg.sender]) {
+            revert PreprocessKeygenKmsNodeAlreadyResponded(preKeygenRequestId);
         }
 
-        _preKeygenResponses[preKeyRequestId][msg.sender] = true;
-        _preKeygenResponseCounter[preKeyRequestId]++;
-
-        /// @dev Store the FHE params under the preprocessing key Id
-        _keygenFheParams[preKeyId] = _preKeygenRequestFheParams[preKeyRequestId];
+        _preKeygenResponses[preKeygenRequestId][msg.sender] = true;
+        _preKeygenResponseCounter[preKeygenRequestId]++;
 
         /// @dev Only send the event if consensus has not been reached in a previous response call
         /// @dev and the consensus is reached in the current response call.
         /// @dev This means a "late" response will not be reverted, just ignored
-        if (!_isPreKeygenDone[preKeyId] && _isKmsConsensusReached(_preKeygenResponseCounter[preKeyRequestId])) {
+        if (!_isPreKeygenDone[preKeyId] && _isKmsConsensusReached(_preKeygenResponseCounter[preKeygenRequestId])) {
             _isPreKeygenDone[preKeyId] = true;
 
-            emit PreprocessKeygenResponse(preKeyRequestId, preKeyId);
+            /// @dev Store the FHE params digest used for the keygen preprocessing
+            _preKeyFheParamsDigests[preKeyId] = _preKeygenFheParamsDigests[preKeygenRequestId];
+
+            emit PreprocessKeygenResponse(preKeygenRequestId, preKeyId);
         }
     }
 
     /// @dev See {IKeyManager-preprocessKskgenRequest}.
-    function preprocessKskgenRequest() external virtual onlyAdmin fheParamsInitialized {
+    function preprocessKskgenRequest(
+        string calldata fheParamsName
+    ) external virtual onlyAdmin fheParamsInitialized(fheParamsName) {
         /// @dev TODO: maybe generate a preKeyId here instead of on KMS connectors:
         /// @dev https://github.com/zama-ai/gateway-l2/issues/67
         /// @dev Generate a new preKskRequestId. This is used to track the KSK generation preprocessing responses
         /// @dev as well as linking FHE params between the preprocessing and the actual KSK generation
         /// @dev This is different from the preKeyId generated by the KMS connector
         _preKskgenRequestCounter++;
-        uint256 preKskRequestId = _preKskgenRequestCounter;
+        uint256 preKskgenRequestId = _preKskgenRequestCounter;
 
         /// @dev Store the FHE params used for the KSK generation preprocessing step as they will be used
         /// @dev for the actual KSK generation as well
-        _preKskgenRequestFheParams[preKskRequestId] = fheParams;
+        bytes32 fheParamsDigest = fheParamsDigests[fheParamsName];
+        _preKskgenFheParamsDigests[preKskgenRequestId] = fheParamsDigest;
 
-        emit PreprocessKskgenRequest(preKskRequestId, fheParams);
+        emit PreprocessKskgenRequest(preKskgenRequestId, fheParamsDigest);
     }
 
     /// @dev See {IKeyManager-preprocessKskgenResponse}.
-    function preprocessKskgenResponse(uint256 preKskRequestId, uint256 preKskId) external virtual onlyKmsNode {
+    function preprocessKskgenResponse(uint256 preKskgenRequestId, uint256 preKskId) external virtual onlyKmsNode {
         /// @dev A KMS node can only respond once
-        if (_preKskgenResponses[preKskRequestId][msg.sender]) {
-            revert PreprocessKskgenKmsNodeAlreadyResponded(preKskRequestId);
+        if (_preKskgenResponses[preKskgenRequestId][msg.sender]) {
+            revert PreprocessKskgenKmsNodeAlreadyResponded(preKskgenRequestId);
         }
 
-        _preKskgenResponses[preKskRequestId][msg.sender] = true;
-        _preKskgenResponseCounter[preKskRequestId]++;
-
-        /// @dev Store the FHE params under the preprocessing KSK Id
-        _kskgenFheParams[preKskId] = _preKskgenRequestFheParams[preKskRequestId];
+        _preKskgenResponses[preKskgenRequestId][msg.sender] = true;
+        _preKskgenResponseCounter[preKskgenRequestId]++;
 
         /// @dev Only send the event if consensus has not been reached in a previous response call
         /// @dev and the consensus is reached in the current response call.
         /// @dev This means a "late" response will not be reverted, just ignored
-        if (!_isPreKskgenDone[preKskId] && _isKmsConsensusReached(_preKskgenResponseCounter[preKskRequestId])) {
+        if (!_isPreKskgenDone[preKskId] && _isKmsConsensusReached(_preKskgenResponseCounter[preKskgenRequestId])) {
             _isPreKskgenDone[preKskId] = true;
 
-            emit PreprocessKskgenResponse(preKskRequestId, preKskId);
+            /// @dev Store the FHE params digest used for the kskgen preprocessing
+            _preKskFheParamsDigests[preKskId] = _preKskgenFheParamsDigests[preKskgenRequestId];
+
+            emit PreprocessKskgenResponse(preKskgenRequestId, preKskId);
         }
     }
 
@@ -221,7 +235,7 @@ contract KeyManager is IKeyManager, Ownable2Step {
         _isKeygenOngoing[preKeyId] = true;
 
         /// @dev A key generation uses the same FHE params as the one used for the preprocessing step
-        emit KeygenRequest(preKeyId, _keygenFheParams[preKeyId]);
+        emit KeygenRequest(preKeyId, _preKeyFheParamsDigests[preKeyId]);
     }
 
     /// @dev See {IKeyManager-keygenResponse}.
@@ -240,27 +254,34 @@ contract KeyManager is IKeyManager, Ownable2Step {
         if (!_isKeyGenerated[keyId] && _isKmsConsensusReached(_keygenResponseCounter[keyId])) {
             _isKeyGenerated[keyId] = true;
 
+            /// @dev Store the FHE params digest used during the keygen preprocessing and subsequent keygen
+            bytes32 fheParamsDigest = _preKeyFheParamsDigests[preKeyId];
+            keyFheParamsDigests[keyId] = fheParamsDigest;
+
             /// @dev Include the FHE params used for the key generation (and its preprocessing) in
             /// @dev the event for better tracking
-            emit KeygenResponse(preKeyId, keyId, _keygenFheParams[preKeyId]);
+            emit KeygenResponse(preKeyId, keyId, fheParamsDigest);
         }
     }
 
     /// @dev See {IKeyManager-crsgenRequest}.
-    function crsgenRequest() external virtual onlyAdmin fheParamsInitialized {
-        /// @dev Generate a new preCrsId. This is used to link the FHE params sent in the request
+    function crsgenRequest(
+        string calldata fheParamsName
+    ) external virtual onlyAdmin fheParamsInitialized(fheParamsName) {
+        /// @dev Generate a new crsgenRequestId. This is used to link the FHE params sent in the request
         /// @dev with the ones emitted in the response event
-        _preCrsgenCounter++;
-        uint256 preCrsId = _preCrsgenCounter;
+        _crsgenRequestCounter++;
+        uint256 crsgenRequestId = _crsgenRequestCounter;
 
-        /// @dev Store the FHE params to use for the CRS generation
-        _crsgenFheParams[preCrsId] = fheParams;
+        /// @dev Store the FHE params digest to use for the CRS generation
+        bytes32 fheParamsDigest = fheParamsDigests[fheParamsName];
+        _crsgenFheParamsDigests[crsgenRequestId] = fheParamsDigest;
 
-        emit CrsgenRequest(preCrsId, fheParams);
+        emit CrsgenRequest(crsgenRequestId, fheParamsDigest);
     }
 
     /// @dev See {IKeyManager-crsgenResponse}.
-    function crsgenResponse(uint256 preCrsId, uint256 crsId) external virtual onlyKmsNode {
+    function crsgenResponse(uint256 crsgenRequestId, uint256 crsId) external virtual onlyKmsNode {
         /// @dev A KMS node can only respond once
         if (_crsgenResponses[crsId][msg.sender]) {
             revert CrsgenKmsNodeAlreadyResponded(crsId);
@@ -275,8 +296,12 @@ contract KeyManager is IKeyManager, Ownable2Step {
         if (!_isCrsGenerated[crsId] && _isKmsConsensusReached(_crsgenResponseCounter[crsId])) {
             _isCrsGenerated[crsId] = true;
 
+            /// @dev Store the FHE params digest used for the CRS generation
+            bytes32 fheParamsDigest = _crsgenFheParamsDigests[crsgenRequestId];
+            crsFheParamsDigests[crsId] = fheParamsDigest;
+
             /// @dev Include the FHE params used for the CRS generation in the event for better tracking
-            emit CrsgenResponse(preCrsId, crsId, _crsgenFheParams[preCrsId]);
+            emit CrsgenResponse(crsgenRequestId, crsId, fheParamsDigest);
         }
     }
 
@@ -312,7 +337,7 @@ contract KeyManager is IKeyManager, Ownable2Step {
         _isKskgenOngoing[preKskId] = true;
 
         /// @dev A KSK generation uses the same FHE params as the one used for the preprocessing step
-        emit KskgenRequest(preKskId, sourceKeyId, destKeyId, _kskgenFheParams[preKskId]);
+        emit KskgenRequest(preKskId, sourceKeyId, destKeyId, _preKskFheParamsDigests[preKskId]);
     }
 
     /// @dev See {IKeyManager-kskgenResponse}.
@@ -334,7 +359,11 @@ contract KeyManager is IKeyManager, Ownable2Step {
             /// @dev Store the KSK generation ID as a mapping of the source to the destination key ID
             _kskgenIds[_kskgenSourceKeyIds[preKskId]][_kskgenDestKeyIds[preKskId]] = kskId;
 
-            emit KskgenResponse(preKskId, kskId, _kskgenFheParams[preKskId]);
+            /// @dev Store the FHE params digest used during the kskgen preprocessing and subsequent kskgen
+            bytes32 fheParamsDigest = _preKskFheParamsDigests[preKskId];
+            kskFheParamsDigests[kskId] = fheParamsDigest;
+
+            emit KskgenResponse(preKskId, kskId, fheParamsDigest);
         }
     }
 
@@ -388,22 +417,25 @@ contract KeyManager is IKeyManager, Ownable2Step {
     }
 
     /// @dev See {IKeyManager-setFheParams}.
-    function setFheParams(FheParams memory newFheParams) external virtual onlyOwner {
-        if (_fheParamsInitialized) {
-            revert FheParamsAlreadyInitialized();
+    function setFheParams(string calldata fheParamsName, bytes32 fheParamsDigest) external virtual onlyOwner {
+        if (_fheParamsInitialized[fheParamsName]) {
+            revert FheParamsAlreadyInitialized(fheParamsName);
         }
 
-        fheParams = newFheParams;
-        _fheParamsInitialized = true;
+        fheParamsDigests[fheParamsName] = fheParamsDigest;
+        _fheParamsInitialized[fheParamsName] = true;
 
-        emit SetFheParams(newFheParams);
+        emit SetFheParams(fheParamsName, fheParamsDigest);
     }
 
     /// @dev See {IKeyManager-updateFheParams}.
-    function updateFheParams(FheParams memory newFheParams) external virtual onlyOwner fheParamsInitialized {
-        fheParams = newFheParams;
+    function updateFheParams(
+        string calldata fheParamsName,
+        bytes32 fheParamsDigest
+    ) external virtual onlyOwner fheParamsInitialized(fheParamsName) {
+        fheParamsDigests[fheParamsName] = fheParamsDigest;
 
-        emit UpdateFheParams(newFheParams);
+        emit UpdateFheParams(fheParamsName, fheParamsDigest);
     }
 
     /// @dev See {IKeyManager-isCurrentKeyId}.

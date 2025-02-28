@@ -35,10 +35,11 @@ describe("DecryptionManager", function () {
       kmsSigners,
       coprocessorSigners,
       signers,
+      fheParamsName,
     } = await loadFixture(deployDecryptionManagerFixture);
 
     // Trigger a preprocessing keygen request
-    const txRequest = await keyManager.connect(admins[0]).preprocessKeygenRequest();
+    const txRequest = await keyManager.connect(admins[0]).preprocessKeygenRequest(fheParamsName);
 
     // Get the preKeyRequestId from the event in the transaction receipt
     const receipt = await txRequest.wait();
@@ -85,6 +86,7 @@ describe("DecryptionManager", function () {
       coprocessorSigners,
       signers,
       keyId1,
+      fheParamsName,
     };
   }
 
@@ -101,6 +103,7 @@ describe("DecryptionManager", function () {
       coprocessorSigners,
       user,
       keyId1,
+      fheParamsName,
     } = await loadFixture(deployWithActivatedKeyFixture);
 
     // Define dummy ciphertext values
@@ -133,6 +136,7 @@ describe("DecryptionManager", function () {
       user,
       snsCiphertextMaterials,
       keyId1,
+      fheParamsName,
     };
   }
 
@@ -143,10 +147,11 @@ describe("DecryptionManager", function () {
     admins: HardhatEthersSigner[],
     coprocessorSigners: HardhatEthersSigner[],
     kmsSigners: HardhatEthersSigner[],
+    fheParamsName: string,
   ): Promise<BigNumberish> {
     const newKeyId = hre.ethers.toBigInt(hre.ethers.randomBytes(32));
     // Trigger a preprocessing keygen request
-    let txRequest = await keyManager.connect(admins[0]).preprocessKeygenRequest();
+    let txRequest = await keyManager.connect(admins[0]).preprocessKeygenRequest(fheParamsName);
 
     // Get the preKeyRequestId from the event in the transaction receipt
     let receipt = await txRequest.wait();
@@ -170,7 +175,7 @@ describe("DecryptionManager", function () {
     }
 
     // Trigger a preprocessing kskgen request
-    txRequest = await keyManager.connect(admins[0]).preprocessKskgenRequest();
+    txRequest = await keyManager.connect(admins[0]).preprocessKskgenRequest(fheParamsName);
 
     // Get the preKeyRequestId from the event in the transaction receipt
     receipt = await txRequest.wait();
@@ -228,6 +233,7 @@ describe("DecryptionManager", function () {
         user,
         snsCiphertextMaterials,
         keyId1,
+        fheParamsName,
       } = await loadFixture(deployAddCiphertextFixture);
 
       // Allow public decryption
@@ -249,6 +255,7 @@ describe("DecryptionManager", function () {
         user,
         snsCiphertextMaterials,
         keyId1,
+        fheParamsName,
       };
     }
 
@@ -368,9 +375,17 @@ describe("DecryptionManager", function () {
         coprocessorSigners,
         user,
         keyId1,
+        fheParamsName,
       } = await loadFixture(deployAllowPublicDecryptionFixture);
 
-      const keyId2 = await createAndRotateKey(keyId1, keyManager, admins, coprocessorSigners, kmsSigners);
+      const keyId2 = await createAndRotateKey(
+        keyId1,
+        keyManager,
+        admins,
+        coprocessorSigners,
+        kmsSigners,
+        fheParamsName,
+      );
 
       // Define ciphertext dummy values
       const ctHandle = 2050;
@@ -483,6 +498,7 @@ describe("DecryptionManager", function () {
         user,
         snsCiphertextMaterials,
         keyId1,
+        fheParamsName,
       } = await loadFixture(deployAddCiphertextFixture);
 
       const contractAddress = hre.ethers.Wallet.createRandom().address;
@@ -507,6 +523,7 @@ describe("DecryptionManager", function () {
         contractAddress,
         snsCiphertextMaterials,
         keyId1,
+        fheParamsName,
       };
     }
 
@@ -523,6 +540,7 @@ describe("DecryptionManager", function () {
         contractAddress,
         snsCiphertextMaterials,
         keyId1,
+        fheParamsName,
       } = await loadFixture(deployAllowUserDecryptionFixture);
 
       const publicKey = hre.ethers.randomBytes(32);
@@ -566,6 +584,7 @@ describe("DecryptionManager", function () {
         keyId1,
         eip712RequestMessage,
         eip712ResponseMessage,
+        fheParamsName,
       };
     }
 
@@ -882,9 +901,17 @@ describe("DecryptionManager", function () {
         requestValidity,
         publicKey,
         eip712RequestMessage,
+        fheParamsName,
       } = await loadFixture(deployUserDecryptEIP712Fixture);
 
-      const keyId2 = await createAndRotateKey(keyId1, keyManager, admins, coprocessorSigners, kmsSigners);
+      const keyId2 = await createAndRotateKey(
+        keyId1,
+        keyManager,
+        admins,
+        coprocessorSigners,
+        kmsSigners,
+        fheParamsName,
+      );
 
       // Define ciphertext dummy values
       const ctHandle = 2050;
