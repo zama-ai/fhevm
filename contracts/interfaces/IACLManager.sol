@@ -31,6 +31,10 @@ interface IACLManager {
     /// @notice Error indicating that the given coprocessor has already delegated the decryption access.
     error CoprocessorHasAlreadyDelegated(address coprocessor);
 
+    /// @dev Error indicating that the given user address has been found within the list of contract
+    /// @dev addresses during user decryption
+    error UserAddressInContractAddresses(address userAddress);
+
     /// @notice Error indicating that the given user is not allowed to decrypt the given ciphertext handle.
     error UserNotAllowedToUserDecrypt(uint256 ctHandle, address userAddress);
 
