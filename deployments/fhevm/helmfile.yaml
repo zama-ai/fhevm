@@ -3,8 +3,8 @@ repositories:
     url: https://charts.bitnami.com/bitnami
 
 releases:
-  ## S3 - MINIO
-  ## temporiraly we set our own minio - this should run first + copy keys then run other releases
+  # S3 - MINIO
+  # temporiraly we set our own minio - this should run first + copy keys then run other releases
   - name: minio
     namespace: fhevm
     chart: bitnami/minio
@@ -14,7 +14,7 @@ releases:
 
   # FHEVM postgresql    
   - name: fhevm-postgresql
-    namespace: fhevm
+    namespace: httpz
     chart: bitnami/postgresql
     version: 13.0.0
     values:
@@ -22,13 +22,13 @@ releases:
 
   # FHEVM layer1-node
   - name: layer1
-    namespace: fhevm
+    namespace: httpz
     chart: "../../charts/anvil-node"
     values:
       - layer1-node-values.yaml
 
   - name: layer1-sc
-    namespace: fhevm
+    namespace: httpz
     chart: "../../charts/fhevm-sc-deploy"
     values:
       - layer1-sc-deploy-values.yaml
@@ -36,13 +36,13 @@ releases:
       - layer1
 
   - name: layer2
-    namespace: fhevm
+    namespace: httpz
     chart: "../../charts/anvil-node"
     values:
       - layer2-node-values.yaml
 
   - name: layer2-sc
-    namespace: fhevm
+    namespace: httpz
     chart: "../../charts/fhevm-sc-deploy"
     values:
       - layer2-sc-deploy-values.yaml
@@ -51,21 +51,26 @@ releases:
 
   # FHEVM coprocessor
   - name: fhevm-coprocessor
-    namespace: fhevm
+    namespace: httpz
     chart: "../../charts/fhevm-coprocessor"
     values:
       - coprocessor-values.yaml
     needs:
+      - fhevm/minio
       - fhevm-postgresql
-      - minio
+      - layer1
+      - layer2
+      - layer1-sc
+      - layer2-sc
 
   ## FHEVM relayer
   - name: fhevm-relayer
-    namespace: fhevm
+    namespace: httpz
     chart: "../../charts/fhevm-relayer"
     values:
       - relayer-values.yaml
     needs:
+      - fhevm/minio
       - layer1
       - layer2
       - layer1-sc

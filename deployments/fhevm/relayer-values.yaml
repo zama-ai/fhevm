@@ -3,7 +3,7 @@ replicaCount: 1
 
 image:
   name: ghcr.io/zama-ai/fhevm-relayer
-  tag: v0.1.0-test
+  tag: v0.1.0-rc1
   pullPolicy: IfNotPresent
 
 service:
@@ -38,6 +38,15 @@ env:
 
 config:
   environment: staging
+  inputproof:
+    url: "0.0.0.0:3000"
+  keyurl:
+      fhe_public_key:
+        data_id: "fhe-public-key-data-id"
+        url: "http://minio.fhevm.svc.cluster.local:9000/kms-public/kms/PUB/PublicKey/408d8cbaa51dece7f782fe04ba0b1c1d017b1088"
+      crs:
+        data_id: "crs-data-id"
+        url: "http://minio.fhevm.svc.cluster.local:9000/kms-public/kms/PUB/CRS/a5fedad3fd734a598fb67452099229445cb68447"
   networks:
     fhevm:
       ws_url: "ws://layer1-anvil-node:8545"
@@ -58,6 +67,8 @@ config:
     max_priority_fee: 2000000000
     timeout_secs: 30
     confirmations: 1
+    retry:
+      enabled: false
   contracts:
     decryption_oracle_address: 0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d
     tfhe_executor_address: 0x12B064FB845C1cc05e9493856a1D637a73e944bE

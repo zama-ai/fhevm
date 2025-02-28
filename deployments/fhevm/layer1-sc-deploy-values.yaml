@@ -1,8 +1,8 @@
 scDeploy:
   enabled: true
   image:
-    name: ghcr.io/zama-ai/fhevm-smart-contracts-dev
-    tag: 82fb642
+    name: ghcr.io/zama-ai/fhevm-smart-contracts
+    tag: v0.7.0-rc1
   configmapName: "layer1-sc-addresses"
   env:
     - name: MNEMONIC

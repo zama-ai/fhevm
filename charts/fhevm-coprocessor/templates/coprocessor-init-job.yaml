@@ -7,6 +7,9 @@ metadata:
     app.kubernetes.io/name: {{ .Release.Name }}-init-job
   name: {{ .Release.Name }}-config-setup-{{ .Release.Revision }}
   namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": "pre-install"
+    "helm.sh/hook-weight": "-1"
 spec:
   template:
     metadata:
@@ -27,6 +30,8 @@ spec:
               subPath: create-secrets.sh
               name: config
       restartPolicy: Never
+      imagePullSecrets:
+        - name: registry-credentials
       volumes:
         - name: config
           configMap:
@@ -43,7 +48,7 @@ metadata:
   namespace: {{ .Release.Namespace }}
   annotations:
     "helm.sh/hook": "pre-install"
-    "helm.sh/hook-weight": "-1"
+    "helm.sh/hook-weight": "-2"
 ---
 kind: Role
 apiVersion: rbac.authorization.k8s.io/v1
@@ -52,7 +57,7 @@ metadata:
   namespace: {{ .Release.Namespace }}
   annotations:
     "helm.sh/hook": "pre-install"
-    "helm.sh/hook-weight": "-1"
+    "helm.sh/hook-weight": "-2"
 rules:
   - apiGroups: [""]
     resources: ["secrets"]
@@ -65,7 +70,7 @@ metadata:
   namespace: {{ .Release.Namespace }}
   annotations:
     "helm.sh/hook": "pre-install"
-    "helm.sh/hook-weight": "-1"
+    "helm.sh/hook-weight": "-2"
 subjects:
   - kind: ServiceAccount
     name: {{ .Release.Name }}-create-secrets
