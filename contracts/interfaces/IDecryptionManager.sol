@@ -80,6 +80,12 @@ interface IDecryptionManager {
     /// @param contractAddress The contract address that is not in the list
     error ContractNotInContractAddresses(address contractAddress);
 
+    /// @notice Error indicating that the key IDs in a given SNS ciphertext materials list are not the same
+    /// @param keyId The key ID that is different
+    /// @dev This will be removed in the future as multiple keyIds processing is implemented.
+    /// @dev See https://github.com/zama-ai/gateway-l2/issues/104.
+    error DifferentKeyIdsNotAllowed(uint256 keyId);
+
     /// @notice Requests an public decryption
     /// @dev This function can be called by a user or relayer
     /// @param ctHandles The handles of the ciphertexts to decrypt

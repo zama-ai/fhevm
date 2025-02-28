@@ -163,6 +163,11 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
         /// @dev a ciphertext from the storage).
         SnsCiphertextMaterial[] memory snsCtMaterials = _CIPHERTEXT_STORAGE.getSnsCiphertextMaterials(ctHandles);
 
+        /// @dev Check that received snsCtMaterials have the same keyId.
+        /// @dev This will be removed in the future as multiple keyIds processing is implemented.
+        /// @dev See https://github.com/zama-ai/gateway-l2/issues/104.
+        _checkCtMaterialKeyIds(snsCtMaterials);
+
         decryptionCounter++;
         uint256 publicDecryptionId = decryptionCounter;
 
@@ -256,6 +261,11 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
         /// @dev without being added to the storage first (and we currently have no ways of deleting
         /// @dev a ciphertext from the storage).
         SnsCiphertextMaterial[] memory snsCtMaterials = _CIPHERTEXT_STORAGE.getSnsCiphertextMaterials(ctHandles);
+
+        /// @dev Check that received snsCtMaterials have the same keyId.
+        /// @dev This will be removed in the future as multiple keyIds processing is implemented.
+        /// @dev See https://github.com/zama-ai/gateway-l2/issues/104.
+        _checkCtMaterialKeyIds(snsCtMaterials);
 
         // TODO: This counter will be replaced during gateway-l2/issues/92
         decryptionCounter++;
@@ -475,5 +485,17 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
             }
         }
         return false;
+    }
+
+    /// @notice Checks that all SNS ciphertext materials have the same keyId.
+    function _checkCtMaterialKeyIds(SnsCiphertextMaterial[] memory snsCtMaterials) internal pure {
+        if (snsCtMaterials.length <= 1) return;
+
+        uint256 firstKeyId = snsCtMaterials[0].keyId;
+        for (uint256 i = 1; i < snsCtMaterials.length; i++) {
+            if (snsCtMaterials[i].keyId != firstKeyId) {
+                revert DifferentKeyIdsNotAllowed(snsCtMaterials[i].keyId);
+            }
+        }
     }
 }
