@@ -177,7 +177,7 @@ where
     P: alloy::providers::Provider<Ethereum> + Clone + 'static,
 {
     fn channel(&self) -> &str {
-        &self.conf.add_ciphertexts_db_channel
+        &self.conf.verify_proof_resp_db_channel
     }
 
     async fn execute(&self, db_pool: &Pool<Postgres>) -> anyhow::Result<bool> {
