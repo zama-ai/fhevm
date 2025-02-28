@@ -37,12 +37,7 @@ type OwnProps = {
 }
 
 const chains = createListCollection({
-  items: [
-    { label: 'Sepolia', value: '11155111' },
-    { label: 'Base', value: '8453' },
-    { label: 'ETH Mainnet', value: '1' },
-    { label: 'FileCoin', value: '314' },
-  ],
+  items: [{ label: 'Sepolia', value: '11155111' }],
 })
 
 export function CreatorForm({
