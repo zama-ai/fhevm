@@ -77,6 +77,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
             .from_block(from_block)
             .subscribe()
             .await?;
+        info!(target: LOG_TARGET, "Subscribed to ZKPoKManager.VerifyProofRequest events");
         let mut stream = filter.into_stream().fuse();
         loop {
             tokio::select! {
@@ -85,8 +86,8 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                 }
                 item = stream.next() => {
                     if item.is_none() {
-                        error!(target: LOG_TARGET, "Received None item from event stream");
-                        continue;
+                        error!(target: LOG_TARGET, "Event stream closed");
+                        return Err(anyhow::anyhow!("Event stream closed"))
                     }
                     let (request, log) = item.unwrap()?;
                     info!(target: LOG_TARGET, "Received event for ZK proof request ID: {}", request.zkProofId);

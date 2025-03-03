@@ -101,14 +101,14 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
                                 // Maybe no more work to do, go and wait for the next notification.
                                 sender.reset_sleep_duration(&mut sleep_duration);
 
-                                let listener = listener.try_recv().fuse();
+                                let notification = listener.try_recv().fuse();
                                 tokio::select! {
                                     _ = token.cancelled() => {
                                         info!(target: TXN_SENDER_TARGET, "Operation {} stopping", op_channel);
                                         break;
                                     }
-                                    notif = listener => {
-                                        match notif {
+                                    n = notification => {
+                                        match n {
                                             Ok(Some(_)) => {
                                                 debug!(target: TXN_SENDER_TARGET,
                                                     "Operation {} received notification, rechecking for work", op_channel);
