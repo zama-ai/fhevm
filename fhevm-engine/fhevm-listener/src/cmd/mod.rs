@@ -318,12 +318,10 @@ pub async fn main(args: Args) {
                 // TODO: filter on contract address if known
                 println!("TFHE {event:#?}");
                 if let Some(ref mut db) = db {
-                    match db.insert_tfhe_event(&event).await {
-                        Ok(_) => db.notify_scheduler().await,
-                        Err(err) => {
-                            block_error_event_fthe += 1;
-                            eprintln!("Error inserting tfhe event: {err}")
-                        }
+                    let res = db.insert_tfhe_event(&event).await;
+                    if let Err(err) = res {
+                        block_error_event_fthe += 1;
+                        eprintln!("Error inserting tfhe event: {err}");
                     }
                 }
                 continue;
