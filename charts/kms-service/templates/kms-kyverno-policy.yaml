@@ -21,14 +21,22 @@ spec:
         all:
         - key: "{{`{{ request.object.metadata.labels.app }}`}}"
           operator: NotEquals
+          value: "kms-core-client-testing"
+        - key: "{{`{{ request.object.metadata.labels.app }}`}}"
+          operator: NotEquals
+          value: "kms-core-client"
+        - key: "{{`{{ request.object.metadata.labels.app }}`}}"
+          operator: NotEquals
           value: "kms-threshold-init-job"
         - key: "{{`{{ request.object.spec.serviceAccountName }}`}}"
           operator: NotEquals
           value: ""
       mutate:
-        patchStrategicMerge:
-          spec:
-            serviceAccountName: "{{`{{request.object.metadata.name}}`}}"
+        patchesJson6902: |-
+          - path: "/spec/serviceAccountName"
+            op: add
+            value: "{{`{{request.object.metadata.name}}`}}"
+
 
     - name: replace-configmap-names-init
       match:
@@ -43,14 +51,19 @@ spec:
         - key: "{{`{{ request.object.metadata.labels.app }}`}}"
           operator: NotEquals
           value: "kms-threshold-init-job"
+        - key: "{{`{{ request.object.metadata.labels.app }}`}}"
+          operator: NotEquals
+          value: "kms-core-client-testing"
+        - key: "{{`{{ request.object.metadata.labels.app }}`}}"
+          operator: NotEquals
+          value: "kms-core-client"
       mutate:
         foreach:
         - list: "request.object.spec.initContainers"
-          patchStrategicMerge:
-            spec:
-              initContainers:
-              - name: "{{`{{ element.name }}`}}"
-                envFrom:
+          patchesJson6902: |-
+            - op: add
+              path: "/spec/initContainers/{{`{{ elementIndex }}`}}/envFrom"
+              value:
                 - configMapRef:
                     name: "{{`{{request.object.metadata.name}}`}}"
 
@@ -67,14 +80,19 @@ spec:
         - key: "{{`{{ request.object.metadata.labels.app }}`}}"
           operator: NotEquals
           value: "kms-threshold-init-job"
+        - key: "{{`{{ request.object.metadata.labels.app }}`}}"
+          operator: NotEquals
+          value: "kms-core-client-testing"
+        - key: "{{`{{ request.object.metadata.labels.app }}`}}"
+          operator: NotEquals
+          value: "kms-core-client"
       mutate:
         foreach:
         - list: "request.object.spec.containers"
-          patchStrategicMerge:
-            spec:
-              containers:
-              - name: "{{`{{ element.name }}`}}"
-                envFrom:
+          patchesJson6902: |-
+            - op: add
+              path: "/spec/containers/{{`{{ elementIndex }}`}}/envFrom"
+              value:
                 - configMapRef:
                     name: "{{`{{request.object.metadata.name}}`}}"
 {{- end -}}
