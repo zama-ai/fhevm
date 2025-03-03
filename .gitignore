@@ -22,5 +22,4 @@ ignition/deployments/chain-31337
 .DS_Store
 .pnp.*
 coverage.json
-package-lock.json
 yarn.lock
