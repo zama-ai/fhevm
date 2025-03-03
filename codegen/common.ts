@@ -14,6 +14,8 @@ export type Operator = {
   hasEncrypted: boolean;
   arguments: OperatorArguments;
   returnType: ReturnType;
+  // It checks whether the operation has overflowed/underflowed.
+  checkOverflow?: boolean;
   // if true do trivial encryption for left scalar operand, this is workaround until tfhe-rs supports left scalar operands
   leftScalarEncrypt?: boolean;
   // disable left scalar operator
@@ -66,6 +68,37 @@ export const ALL_OPERATORS: Operator[] = [
     precompileName: 'Multiply',
     hasScalar: true,
     hasEncrypted: true,
+    arguments: OperatorArguments.Binary,
+    returnType: ReturnType.Uint,
+    binarySolidityOperator: '*',
+  },
+  {
+    name: 'safeAdd',
+    precompileName: 'SafeAdd',
+    hasScalar: true,
+    hasEncrypted: true,
+    checkOverflow: true,
+    arguments: OperatorArguments.Binary,
+    returnType: ReturnType.Uint,
+    binarySolidityOperator: '+',
+  },
+  {
+    name: 'safeSub',
+    precompileName: 'SafeSubtract',
+    hasScalar: true,
+    hasEncrypted: true,
+    checkOverflow: true,
+    arguments: OperatorArguments.Binary,
+    returnType: ReturnType.Uint,
+    leftScalarEncrypt: true,
+    binarySolidityOperator: '-',
+  },
+  {
+    name: 'safeMul',
+    precompileName: 'SafeMultiply',
+    hasScalar: true,
+    hasEncrypted: true,
+    checkOverflow: true,
     arguments: OperatorArguments.Binary,
     returnType: ReturnType.Uint,
     binarySolidityOperator: '*',
