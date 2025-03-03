@@ -370,14 +370,15 @@ spec:
           readinessProbe:
             grpc:
               port: {{ .Values.kmsCore.ports.client }}
+            failureThreshold: 30
             initialDelaySeconds: 10
             periodSeconds: 5
-            timeoutSeconds: 5
           startupProbe:
             grpc:
               port: {{ .Values.kmsCore.ports.client }}
-            failureThreshold: 30
-            periodSeconds: 10
+            failureThreshold: 10
+            initialDelaySeconds: 10
+            periodSeconds: 5
           {{- if .Values.kmsCore.nitroEnclave.enabled }}
           lifecycle:
             preStop:
