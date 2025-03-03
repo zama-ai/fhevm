@@ -14,7 +14,7 @@ $ pnpm start
 ## update generated graphql schemas
 
 Generates types for all the GQL queries in the codebase.
-Requires the graphql server ([apps/back](../back/READE.md)) to be running in dev mode to perform [introspection](https://graphql.org/learn/introspection/)
+Requires the graphql server ([apps/back](../back/README.md)) to be running in dev mode to perform [introspection](https://graphql.org/learn/introspection/)
 
 ```bash
 # update generated graphql schemas
