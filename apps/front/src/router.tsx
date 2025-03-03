@@ -14,9 +14,7 @@ import { SignupErrorPage } from './pages/signup.error.page.js'
 import { signupLoader } from './pages/signup.loader.js'
 
 import { DashboardPage } from './pages/dashboard.page.js'
-import { CreateStepOnePage } from './pages/create-step-one.page.js'
-import { CreateStepTwoPage } from './pages/create-step-two.page.js'
-import { CreateStepThreePage } from './pages/create-step-three.page.js'
+import { CreatePage } from './pages/create.js'
 import { DappPage } from './pages/dapp.page.js'
 import { PreferencesPage } from './pages/preferences.page.js'
 
@@ -56,15 +54,7 @@ const router = createBrowserRouter([
       },
       {
         path: '/create/:teamId',
-        element: <CreateStepOnePage />,
-      },
-      {
-        path: '/create/2/:dappId',
-        element: <CreateStepTwoPage />,
-      },
-      {
-        path: '/create/3/:dappId',
-        element: <CreateStepThreePage />,
+        element: <CreatePage />,
       },
       {
         path: '/dapp/:dappId',

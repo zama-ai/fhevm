@@ -28,7 +28,6 @@
     "graphql-ws": "^6.0.2",
     "lucide-react": "^0.461.0",
     "next-themes": "^0.4.3",
-    "prism-react-renderer": "^2.4.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router": "^7.1.3",
