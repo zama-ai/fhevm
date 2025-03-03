@@ -88,31 +88,22 @@ spec:
             - mountPath: {{ .Values.kmsCore.workdir }}
               name: workdir
         {{- if .Values.kmsCore.nitroEnclave.enabled }}
-        {{- if .Values.kmsCore.nitroEnclave.ports.webidentitytoken }}
-        {{- /* Init Enclave Web Identity Token Socket */}}
-        - {{ include "proxyFromEnclave"
-               (dict "name" "enclave-web-identity-token"
-                     "image" .Values.kubeUtils.image
-                     "vsockPort" .Values.kmsCore.nitroEnclave.ports.webidentitytoken
-          "to" "OPEN:/var/run/secrets/eks.amazonaws.com/serviceaccount/token,rdonly"
-          ) | indent 10 | trim }}
-        {{- end }}
-        {{- /* Init Enclave Config Socket */}}
+        {{- /* Init Enclave Config Socket, hardcoded to 4000 in https://github.com/zama-ai/kms-core/blob/main/docker/core/service/init_enclave.sh */}}
         - {{ include "proxyFromEnclave"
                (dict "name" "enclave-config"
                      "image" .Values.kubeUtils.image
-                     "vsockPort" .Values.kmsCore.nitroEnclave.ports.config
+                     "vsockPort" 4000
                      "to" (printf "OPEN:kms-server.toml,rdonly")
                 ) | indent 10 | trim }}
           workingDir: {{ .Values.kmsCore.workdir }}
           volumeMounts:
             - mountPath: {{ .Values.kmsCore.workdir }}
               name: workdir
-        {{- /* Init Enclave Logger Socket */}}
+        {{- /* Init Enclave Logger Socket, hardcoded to 3000 in https://github.com/zama-ai/kms-core/blob/main/docker/core/service/init_enclave.sh */}}
         - {{ include "proxyFromEnclave"
                (dict "name" "kms-service-enclave-logger"
                      "image" .Values.kubeUtils.image
-                     "vsockPort" .Values.kmsCore.nitroEnclave.ports.logger
+                     "vsockPort" 3000
                      "to" "STDOUT"
                ) | indent 10 | trim }}
         {{- /* Init Enclave Tracing Socket */}}
@@ -133,6 +124,13 @@ spec:
                 ) | indent 10 | trim }}
         {{- end }}
         {{- if .Values.kmsCore.nitroEnclave.ports.sts }}
+        {{- /* Init Enclave Web Identity Token Socket, hardcoded to 4100 in https://github.com/zama-ai/kms-core/blob/main/docker/core/service/init_enclave.sh */}}
+        - {{ include "proxyFromEnclave"
+               (dict "name" "enclave-web-identity-token"
+                     "image" .Values.kubeUtils.image
+                     "vsockPort" 4100
+          "to" "OPEN:/var/run/secrets/eks.amazonaws.com/serviceaccount/token,rdonly"
+          ) | indent 10 | trim }}
         {{- /* Init AWS STS Proxy Socket */}}
         - {{ include "proxyFromEnclaveTcp"
                (dict "name" "aws-sts-proxy"

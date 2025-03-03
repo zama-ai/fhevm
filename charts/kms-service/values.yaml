@@ -67,16 +67,13 @@ kmsCore:
     userId: 10003
     groupId: 10002
     ports:
-      logger: 3000
-      config: 4000
       tracing: 4317
-      # For AWS authentication, use either IMDS (to use the Kubernetes node EC2 instance role) or STS (to use the IRSA)
+      # For AWS authentication, set the `imds` or `sts` ports
+      # To authenticate using either IMDS (with the Kubernetes node EC2 instance role) or STS (with the IRSA)
       imds: 5000
       sts: 5500
       s3: 6000
       awskms: 7000
-      # The Web Identity token is only required for STS and not IMDS authentication
-      webidentitytoken: 8000
       peer: 10000
       # Important, don't bind to port 9000 as it is reserved by Nitro for communicating with the enclave.
   publicVault:
