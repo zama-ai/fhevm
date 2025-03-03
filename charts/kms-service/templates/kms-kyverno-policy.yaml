@@ -21,6 +21,12 @@ spec:
         all:
         - key: "{{`{{ request.object.metadata.labels.app }}`}}"
           operator: NotEquals
+          value: "kms-core-client-testing"
+        - key: "{{`{{ request.object.metadata.labels.app }}`}}"
+          operator: NotEquals
+          value: "kms-core-client"
+        - key: "{{`{{ request.object.metadata.labels.app }}`}}"
+          operator: NotEquals
           value: "kms-threshold-init-job"
         - key: "{{`{{ request.object.spec.serviceAccountName }}`}}"
           operator: NotEquals
@@ -43,6 +49,12 @@ spec:
         - key: "{{`{{ request.object.metadata.labels.app }}`}}"
           operator: NotEquals
           value: "kms-threshold-init-job"
+        - key: "{{`{{ request.object.metadata.labels.app }}`}}"
+          operator: NotEquals
+          value: "kms-core-client-testing"
+        - key: "{{`{{ request.object.metadata.labels.app }}`}}"
+          operator: NotEquals
+          value: "kms-core-client"
       mutate:
         foreach:
         - list: "request.object.spec.initContainers"
@@ -67,6 +79,12 @@ spec:
         - key: "{{`{{ request.object.metadata.labels.app }}`}}"
           operator: NotEquals
           value: "kms-threshold-init-job"
+        - key: "{{`{{ request.object.metadata.labels.app }}`}}"
+          operator: NotEquals
+          value: "kms-core-client-testing"
+        - key: "{{`{{ request.object.metadata.labels.app }}`}}"
+          operator: NotEquals
+          value: "kms-core-client"
       mutate:
         foreach:
         - list: "request.object.spec.containers"
