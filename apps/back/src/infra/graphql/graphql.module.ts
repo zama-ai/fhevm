@@ -7,6 +7,7 @@ import { UsersModule } from '#users/infra/users.module.js'
 import { TeamsModule } from '#teams/infra/teams.module.js'
 import { InvitationsModule } from '#invitations/infra/invitations.module.js'
 import { DappsModule } from '#dapps/infra/dapps.module.js'
+import { ComplexityPlugin } from './graphql-complexity.plugin.js'
 
 @Module({
   imports: [
@@ -30,5 +31,6 @@ import { DappsModule } from '#dapps/infra/dapps.module.js'
     InvitationsModule,
     DappsModule,
   ],
+  providers: [ComplexityPlugin],
 })
 export class GraphQLModule {}

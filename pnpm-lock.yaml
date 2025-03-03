@@ -19,6 +19,9 @@ importers:
 
   apps/back:
     dependencies:
+      '@apollo/server':
+        specifier: ^4.11.3
+        version: 4.11.3(graphql@16.10.0)
       '@aws-sdk/client-sns':
         specifier: ^3.699.0
         version: 3.750.0
@@ -58,6 +61,12 @@ importers:
       dotenv:
         specifier: ^16.4.7
         version: 16.4.7
+      graphql:
+        specifier: ^16.9.0
+        version: 16.10.0
+      graphql-query-complexity:
+        specifier: ^1.0.0
+        version: 1.0.0(graphql@16.10.0)
       graphql-redis-subscriptions:
         specifier: ^2.7.0
         version: 2.7.0(graphql-subscriptions@3.0.0(graphql@16.10.0))
@@ -5254,6 +5263,11 @@ packages:
     peerDependenciesMeta:
       cosmiconfig-toml-loader:
         optional: true
+
+  graphql-query-complexity@1.0.0:
+    resolution: {integrity: sha512-Tj7mRIuKWjGomPaRW5E+ztY8bhYPf1v/7bkDPuzksrR3GqHeIS5jxzX8CfimlV3g9z0lT20RG9JgaUUjhRjtOA==}
+    peerDependencies:
+      graphql: ^14.6.0 || ^15.0.0 || ^16.0.0
 
   graphql-redis-subscriptions@2.7.0:
     resolution: {integrity: sha512-IK4uCKx1UNhkcnG9lIqFWz9PpltSbuM8RygwGoB/e1HZMuKpAGeqqfHFeLKkQjjubvk4tAdUdx48AUkTAXJ17Q==}
@@ -13575,6 +13589,11 @@ snapshots:
       - typescript
       - uWebSockets.js
       - utf-8-validate
+
+  graphql-query-complexity@1.0.0(graphql@16.10.0):
+    dependencies:
+      graphql: 16.10.0
+      lodash.get: 4.4.2
 
   graphql-redis-subscriptions@2.7.0(graphql-subscriptions@3.0.0(graphql@16.10.0)):
     dependencies:

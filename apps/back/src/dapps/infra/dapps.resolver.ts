@@ -120,7 +120,7 @@ export class DappsResolver {
     return result.stats
   }
 
-  @Query(() => ValidateAddress, { name: 'validateAddress' })
+  @Query(() => ValidateAddress, { name: 'validateAddress', complexity: 2 })
   @UseGuards(JwtAuthGuard)
   async validateAddress(
     @Args('input') input: ValidateAddressInput,
