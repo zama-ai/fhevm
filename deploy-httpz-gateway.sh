@@ -6,9 +6,9 @@ DEFAULT_NETWORK="localHTTPZGateway"
 # The ${1:-default_value} syntax means "use $1 if it exists, otherwise use default_value"
 NETWORK=${1:-$DEFAULT_NETWORK}
 
-pnpm exec hardhat clean
+npx hardhat clean
 
-pnpm exec hardhat compile
+npx hardhat compile
 
 # Deployer
 DEPLOYER_PRIVATE_KEY=$(grep DEPLOYER_PRIVATE_KEY .env | cut -d '"' -f 2)
@@ -76,7 +76,7 @@ NETWORK_WEBSITE_1=$(grep NETWORK_WEBSITE_1 .env | cut -d '"' -f 2)
 
 echo "Deploy HTTPZ contract:"
 # Deploy HTTPZ contract
-pnpm exec hardhat task:deployHttpz --deployer-private-key "$DEPLOYER_PRIVATE_KEY" \
+npx hardhat task:deployHttpz --deployer-private-key "$DEPLOYER_PRIVATE_KEY" \
     --admin-private-key "$ADMIN_PRIVATE_KEY_1" \
     --protocol-metadata "{\"website\":\"${PROTOCOL_WEBSITE}\",\"name\":\"${PROTOCOL_NAME}\"}" \
     --admin-addresses '["'$ADMIN_ADDRESS_1'"]' \
@@ -90,20 +90,20 @@ pnpm exec hardhat task:deployHttpz --deployer-private-key "$DEPLOYER_PRIVATE_KEY
 
 echo "Deploy ZKPoKManager contract:"
 # Deploy ZKPoKManager contract
-pnpm exec hardhat task:deployZkpokManager --deployer-private-key "$DEPLOYER_PRIVATE_KEY" --network $NETWORK
+npx hardhat task:deployZkpokManager --deployer-private-key "$DEPLOYER_PRIVATE_KEY" --network $NETWORK
 
 echo "Deploy KeyManager contract:"
 # Deploy KeyManager contract
-pnpm exec hardhat task:deployKeyManager --deployer-private-key "$DEPLOYER_PRIVATE_KEY" --network $NETWORK
+npx hardhat task:deployKeyManager --deployer-private-key "$DEPLOYER_PRIVATE_KEY" --network $NETWORK
 
 echo "Deploy CiphertextStorage contract:"
 # Deploy CiphertextStorage contract
-pnpm exec hardhat task:deployCiphertextStorage --deployer-private-key "$DEPLOYER_PRIVATE_KEY" --network $NETWORK
+npx hardhat task:deployCiphertextStorage --deployer-private-key "$DEPLOYER_PRIVATE_KEY" --network $NETWORK
 
 echo "Deploy ACLManager contract:"
 # Deploy ACLManager contract
-pnpm exec hardhat task:deployAclManager --deployer-private-key "$DEPLOYER_PRIVATE_KEY" --network $NETWORK
+npx hardhat task:deployAclManager --deployer-private-key "$DEPLOYER_PRIVATE_KEY" --network $NETWORK
 
 echo "Deploy DecryptionManager contract:"
 # Deploy DecryptionManager contract
-pnpm exec hardhat task:deployDecryptionManager --deployer-private-key "$DEPLOYER_PRIVATE_KEY" --network $NETWORK
+npx hardhat task:deployDecryptionManager --deployer-private-key "$DEPLOYER_PRIVATE_KEY" --network $NETWORK

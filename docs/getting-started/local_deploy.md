@@ -7,7 +7,7 @@ Here is an example of how to deploy contracts locally (on a `gatewayL2` local ne
 0/ Prerequisites: First, git clone `gateway-l2` repo, install dependencies with
 
 ```bash
-pnpm install
+npm install
 ```
 
 Then create a `.env` file in root of the repo.
@@ -31,7 +31,7 @@ make get-accounts
 3/ Launch a hardhat node on port 8546:
 
 ```bash
-pnpm hardhat node --port 8546
+npx hardhat node --port 8546
 ```
 
 4/ Run

@@ -4,12 +4,11 @@ FROM node:20-slim
 WORKDIR /app
 
 # Copy only necessary files for npm install
-COPY package.json pnpm-lock.yaml ./
+COPY package.json ./
 
 # Install dependencies
-RUN npm install -g pnpm@6.14.5 && \
-    pnpm install && \
-    pnpm store prune
+RUN npm install && \
+    npm prune
 
 # Copy the application files
 COPY ./.env.example.deployment ./*.sh ./hardhat.config.ts ./tsconfig.json ./

@@ -1,16 +1,16 @@
 prettier:
-	pnpm exec prettier . --write
+	npx prettier . --write
 
 compile:
-	pnpm exec hardhat compile
+	npx hardhat compile
 
 # Define it as a phony target to avoid conflicts with the test directory
 .PHONY: test
 test:
-	pnpm exec hardhat test
+	npx hardhat test
 
 get-accounts:
-	pnpm exec hardhat get-accounts --num-accounts 15
+	npx hardhat get-accounts --num-accounts 15
 
 copy-env-example:
 	cp .env.example .env
