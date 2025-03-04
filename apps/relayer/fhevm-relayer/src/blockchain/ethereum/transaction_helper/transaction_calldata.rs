@@ -184,7 +184,7 @@ impl ComputeCalldata {
     pub fn verify_proof_response(
         zkpok_id: U256,
         handles: Vec<[u8; 32]>,
-        _signature_number: u8, // For backward compatibility, we'll just use the first signature,
+        signature: Vec<u8>
     ) -> Result<Bytes, EventProcessingError> {
         let mut calldata = Vec::new();
 
@@ -216,9 +216,7 @@ impl ComputeCalldata {
         sig_length[31] = 0x41; // 65 in hex
         calldata.extend_from_slice(&sig_length);
 
-        // Signature data (65 bytes filled with number 1)
-        let sig = vec![1u8; 65];
-        calldata.extend_from_slice(&sig);
+        calldata.extend_from_slice(&signature);
 
         // No padding needed for single signature as it's not an array
 

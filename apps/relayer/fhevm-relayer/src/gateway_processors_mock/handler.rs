@@ -105,7 +105,7 @@ impl GatewayProcessorsHandler {
                         handles: handles_formatted.clone(),
                         userAddress: request_event.userAddress,
                         contractAddress: request_event.contractAddress,
-                        contractChainId: request_event.contractChainId,
+                        contractChainId: U256::from(request_event.contractChainId),
                     }
                     .eip712_signing_hash(&domain);
     
@@ -134,7 +134,7 @@ impl GatewayProcessorsHandler {
         &self,
         zkpok_id: U256,
         handles: Vec<[u8; 32]>,
-        _signatures: Vec<u8>,
+        signature: Vec<u8>,
     ) -> Result<(), EventProcessingError> {
         info!(?zkpok_id, "Sending InputResponse transaction");
         let zkpok_manager_address = Address::from_str(&self.contracts.zkpok_manager_address)
@@ -147,7 +147,7 @@ impl GatewayProcessorsHandler {
             })?;
         self.tx_helper
             .send_transaction_simple("input_response", zkpok_manager_address, || {
-                ComputeCalldata::verify_proof_response(zkpok_id, handles.clone(), 4)
+                ComputeCalldata::verify_proof_response(zkpok_id, handles.clone(), signature.clone())
             })
             .await?;
 
