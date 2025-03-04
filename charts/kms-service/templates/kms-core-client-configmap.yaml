@@ -77,6 +77,18 @@ data:
       echo "######################################################################"
       echo "Launching decrypt with euint128"
       bin/kms-core-client -f config.toml decrypt -d euint128 -c $crs_id -k $key_id -e ffffffffffffffffffffffffffffffff
+      echo "######################################################################"
+      echo "Launching re-encrypt with euint8"
+      bin/kms-core-client -f config.toml re-encrypt -d euint8 -k $key_id -e ff
+      echo "######################################################################"
+      echo "Launching re-encrypt with euint32"
+      bin/kms-core-client -f config.toml re-encrypt -d euint32 -k $key_id -e ffffffff
+      echo "######################################################################"
+      echo "Launching re-encrypt with euint64"
+      bin/kms-core-client -f config.toml re-encrypt -d euint64 -k $key_id -e ffffffffffffffff
+      echo "######################################################################"
+      echo "Launching re-encrypt with euint128"
+      bin/kms-core-client -f config.toml re-encrypt -d euint128 -k $key_id -e ffffffffffffffffffffffffffffffff
     done
 
 
@@ -104,6 +116,18 @@ data:
       echo "######################################################################"
       echo "Launching decrypt with euint128"
       bin/kms-core-client -f config.toml decrypt -d euint128 -c $crs_id -k $key_id -e ffffffffffffffffffffffffffffffff
+      echo "######################################################################"
+      echo "Launching re-encrypt with euint8"
+      bin/kms-core-client -f config.toml re-encrypt -d euint8 -k $key_id -e ff
+      echo "######################################################################"
+      echo "Launching re-encrypt with euint32"
+      bin/kms-core-client -f config.toml re-encrypt -d euint32 -k $key_id -e ffffffff
+      echo "######################################################################"
+      echo "Launching re-encrypt with euint64"
+      bin/kms-core-client -f config.toml re-encrypt -d euint64 -k $key_id -e ffffffffffffffff
+      echo "######################################################################"
+      echo "Launching re-encrypt with euint128"
+      bin/kms-core-client -f config.toml re-encrypt -d euint128 -k $key_id -e ffffffffffffffffffffffffffffffff
     done
 
 {{- end -}}
