@@ -55,7 +55,8 @@ const config: HardhatUserConfig = {
       url: rpcUrl,
     },
   },
-  solidity: "0.8.28",
+  // We use 0.8.24 to align with the solidity compiler version used in the host chain smart contracts
+  solidity: "0.8.24",
   paths: {
     artifacts: "./artifacts",
     cache: "./cache",

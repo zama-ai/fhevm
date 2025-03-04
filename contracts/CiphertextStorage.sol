@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.28;
+pragma solidity ^0.8.24;
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import "./interfaces/ICiphertextStorage.sol";
 import "./interfaces/IHTTPZ.sol";
