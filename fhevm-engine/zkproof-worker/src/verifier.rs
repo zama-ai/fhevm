@@ -42,26 +42,32 @@ pub async fn execute_verify_proofs_loop(
 ) -> Result<(), ExecutionError> {
     info!("Starting with config {:?}", conf);
 
-    // Tenants key cache is shared amongsts all workers
+    // Tenants key cache is shared amongst all workers
     let tenant_key_cache = Arc::new(RwLock::new(LruCache::new(
         NonZero::new(MAX_CACHED_TENANT_KEYS).unwrap(),
     )));
+
+    // Each worker needs at least 3 pg connections
+    let pool_connections =
+        std::cmp::max(conf.pg_pool_connections, 3 * conf.worker_thread_count);
+
+    // DB Connection pool is shared amongst all workers
+    let pool = PgPoolOptions::new()
+        .max_connections(pool_connections)
+        .connect(&conf.database_url)
+        .await
+        .expect("valid db pool");
 
     let mut task_set = JoinSet::new();
 
     for _ in 0..conf.worker_thread_count {
         let conf = conf.clone();
         let tenant_key_cache = tenant_key_cache.clone();
+        let pool = pool.clone();
 
         // Spawn a ZK-proof worker
-        // All workers compete for zk-proof tasks queued in the `verify_proof` table.
+        // All workers compete for zk-proof tasks queued in the 'verify_proof' table.
         task_set.spawn(async move {
-            let pool = PgPoolOptions::new()
-                .max_connections(conf.pg_pool_connections)
-                .connect(&conf.database_url)
-                .await
-                .expect("valid db pool");
-
             if let Err(err) =
                 execute_worker(&conf, &pool, &tenant_key_cache).await
             {
@@ -166,7 +172,7 @@ async fn execute_verify_proof_routine(
         .map_err(|err| ExecutionError::ServerKeysNotFound(err.to_string()))?;
 
         let tenant_id = keys.tenant_id;
-        info!(message = "Keys retrieved", chain_id, tenant_id);
+        info!(message = "Keys retrieved", request_id, chain_id);
 
         let res = tokio::task::spawn_blocking(move || {
             let aux_data = auxiliary::ZkData {
@@ -184,7 +190,11 @@ async fn execute_verify_proof_routine(
         let mut handles_bytes = vec![];
         match res {
             Ok((cts, blob_hash)) => {
-                info!(message = "Proof verification successful", request_id);
+                info!(
+                    message = "Proof verification successful",
+                    request_id,
+                    cts = format!("{}", cts.len()),
+                );
 
                 handles_bytes = cts.iter().fold(Vec::new(), |mut acc, ct| {
                     acc.extend_from_slice(ct.handle.as_ref());
@@ -193,6 +203,8 @@ async fn execute_verify_proof_routine(
                 verified = true;
 
                 insert_ciphertexts(pool, tenant_id, cts, blob_hash).await?;
+
+                info!(message = "Ciphertexts inserted", request_id);
             }
             Err(err) => {
                 error!(
@@ -221,6 +233,8 @@ async fn execute_verify_proof_routine(
             .await?;
 
         txn.commit().await?;
+
+        info!(message = "Completed", request_id);
     }
 
     Ok(())
