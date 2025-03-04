@@ -124,14 +124,27 @@ where
     T: sqlx::PgExecutor<'a>,
 {
     if !tenants_to_query.is_empty() {
+        let mut key_cache = tenant_key_cache.write().await;
+        if tenants_to_query
+            .iter()
+            .all(|id| key_cache.get(id).is_some())
+        {
+            // All IDs are already in the key cache, no need to re-query the keys
+            return Ok(());
+        }
+
+        tracing::info!(
+            message = "query tenants",
+            tenants = format!("{:?}", tenants_to_query),
+            is_tenant_id
+        );
+
         let keys = query_tenant_keys(tenants_to_query, conn, is_tenant_id).await?;
 
         assert!(
             !keys.is_empty(),
             "We should have keys here, otherwise our database is corrupt"
         );
-
-        let mut key_cache = tenant_key_cache.write().await;
 
         for key in keys {
             let id = if is_tenant_id {
