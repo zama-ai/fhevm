@@ -17,12 +17,16 @@ pub struct Args {
     pub pg_polling_interval: u32,
 
     /// Postgres pool connections
-    #[arg(long, default_value_t = 10)]
+    #[arg(long, default_value_t = 5)]
     pub pg_pool_connections: u32,
 
     /// Postgres database url. If unspecified DATABASE_URL environment variable is used
     #[arg(long)]
     pub database_url: Option<String>,
+
+    /// Number of zkproof workers to process proofs in parallel
+    #[arg(long, default_value_t = 8)]
+    pub worker_thread_count: u32,
 }
 
 pub fn parse_args() -> Args {
@@ -44,6 +48,7 @@ async fn main() {
         notify_database_channel: args.pg_notify_channel,
         pg_pool_connections: args.pg_pool_connections,
         pg_polling_interval: args.pg_polling_interval,
+        worker_thread_count: args.worker_thread_count,
     };
 
     println!("Starting zkProof worker...");

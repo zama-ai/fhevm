@@ -10,10 +10,13 @@ use fhevm_engine_common::utils::safe_deserialize;
 use lru::LruCache;
 use sha3::Digest;
 use sha3::Keccak256;
+use sqlx::postgres::PgPoolOptions;
 use sqlx::{postgres::PgListener, PgPool, Row};
 use std::num::NonZero;
 use std::str::FromStr;
+use tokio::runtime::Handle;
 use tokio::sync::RwLock;
+use tokio::task::JoinSet;
 
 use crate::{auxiliary, Config, ExecutionError};
 use anyhow::Result;
@@ -37,30 +40,63 @@ pub(crate) struct Ciphertext {
 pub async fn execute_verify_proofs_loop(
     conf: &Config,
 ) -> Result<(), ExecutionError> {
-    let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(conf.pg_pool_connections)
-        .connect(&conf.database_url)
-        .await?;
-
     info!("Starting with config {:?}", conf);
 
-    let mut listener = PgListener::connect_with(&pool).await?;
-    listener.listen(&conf.listen_database_channel).await?;
-
-    let idle_poll_interval =
-        Duration::from_secs(conf.pg_polling_interval as u64);
-
+    // Tenants key cache is shared amongsts all workers
     let tenant_key_cache = Arc::new(RwLock::new(LruCache::new(
         NonZero::new(MAX_CACHED_TENANT_KEYS).unwrap(),
     )));
 
+    let mut task_set = JoinSet::new();
+
+    for _ in 0..conf.worker_thread_count {
+        let conf = conf.clone();
+        let tenant_key_cache = tenant_key_cache.clone();
+
+        // Spawn a ZK-proof worker
+        // All workers compete for zk-proof tasks queued in the `verify_proof` table.
+        task_set.spawn(async move {
+            let pool = PgPoolOptions::new()
+                .max_connections(conf.pg_pool_connections)
+                .connect(&conf.database_url)
+                .await
+                .expect("valid db pool");
+
+            if let Err(err) =
+                execute_worker(&conf, &pool, &tenant_key_cache).await
+            {
+                error!("executor failed with {}", err);
+            }
+        });
+    }
+
+    // Wait for all tasks to complete
+    while let Some(result) = task_set.join_next().await {
+        if let Err(err) = result {
+            eprintln!("A worker failed: {:?}", err);
+        }
+    }
+
+    Ok(())
+}
+
+async fn execute_worker(
+    conf: &Config,
+    pool: &sqlx::Pool<sqlx::Postgres>,
+    tenant_key_cache: &Arc<RwLock<LruCache<i32, TfheTenantKeys>>>,
+) -> Result<(), ExecutionError> {
+    let mut listener = PgListener::connect_with(pool).await?;
+    listener.listen(&conf.listen_database_channel).await?;
+    let idle_poll_interval =
+        Duration::from_secs(conf.pg_polling_interval as u64);
+
     loop {
         if let Err(e) =
-            execute_verify_proof_routine(&pool, &tenant_key_cache, conf).await
+            execute_verify_proof_routine(pool, tenant_key_cache, conf).await
         {
-            debug!(target: "zkpok", "Execution err: {}", e);
+            error!(target: "zkpok", "Execution err: {}", e);
         } else {
-            let count = get_remaining_tasks(&pool).await?;
+            let count = get_remaining_tasks(pool).await?;
             if count > 0 {
                 info!(target: "zkpok", {count}, "ZkPok tasks available");
                 continue;
@@ -129,16 +165,24 @@ async fn execute_verify_proof_routine(
         .await
         .map_err(|err| ExecutionError::ServerKeysNotFound(err.to_string()))?;
 
-        let aux_data = auxiliary::ZkData {
-            contract_address,
-            user_address,
-            chain_id: keys.chain_id,
-            acl_contract_address: keys.acl_contract_address.clone(),
-        };
+        let tenant_id = keys.tenant_id;
+        info!(message = "Keys retrieved", chain_id, tenant_id);
+
+        let res = tokio::task::spawn_blocking(move || {
+            let aux_data = auxiliary::ZkData {
+                contract_address,
+                user_address,
+                chain_id: keys.chain_id,
+                acl_contract_address: keys.acl_contract_address.clone(),
+            };
+
+            verify_proof(request_id, &keys, &aux_data, &input)
+        })
+        .await?;
 
         let mut verified = false;
         let mut handles_bytes = vec![];
-        match verify_proof(request_id, &keys, &aux_data, &input).await {
+        match res {
             Ok((cts, blob_hash)) => {
                 info!(message = "Proof verification successful", request_id);
 
@@ -148,8 +192,7 @@ async fn execute_verify_proof_routine(
                 });
                 verified = true;
 
-                insert_ciphertexts(pool, keys.tenant_id, cts, blob_hash)
-                    .await?;
+                insert_ciphertexts(pool, tenant_id, cts, blob_hash).await?;
             }
             Err(err) => {
                 error!(
@@ -183,7 +226,7 @@ async fn execute_verify_proof_routine(
     Ok(())
 }
 
-pub(crate) async fn verify_proof(
+pub(crate) fn verify_proof(
     request_id: i64,
     keys: &FetchTenantKeyResult,
     aux_data: &auxiliary::ZkData,

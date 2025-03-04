@@ -6,7 +6,7 @@ use tokio::time::sleep;
 
 use crate::auxiliary::ZkData;
 
-pub(crate) async fn setup() -> anyhow::Result<(sqlx::PgPool, DBInstance)> {
+pub async fn setup() -> anyhow::Result<(sqlx::PgPool, DBInstance)> {
     tracing_subscriber::fmt().json().with_level(true).init();
     let test_instance = test_harness::instance::setup_test_db()
         .await
@@ -18,6 +18,7 @@ pub(crate) async fn setup() -> anyhow::Result<(sqlx::PgPool, DBInstance)> {
         notify_database_channel: "notify".to_string(),
         pg_pool_connections: 10,
         pg_polling_interval: 60,
+        worker_thread_count: 1,
     };
 
     let pool = sqlx::postgres::PgPoolOptions::new()

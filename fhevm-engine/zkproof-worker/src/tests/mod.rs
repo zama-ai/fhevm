@@ -7,7 +7,8 @@ async fn test_verify_proof() {
     let (pool, _instance) = utils::setup().await.expect("valid setup");
 
     // Generate Valid ZkPok
-    let aux = utils::aux_fixture(ACL_CONTRACT_ADDR.to_owned());
+    let aux: (crate::auxiliary::ZkData, [u8; 92]) =
+        utils::aux_fixture(ACL_CONTRACT_ADDR.to_owned());
     let zk_pok = utils::generate_zk_pok(&pool, &aux.1).await;
     // Insert ZkPok into database
     let request_id_valid = utils::insert_proof(&pool, 101, &zk_pok, &aux.0)
