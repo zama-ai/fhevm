@@ -56,7 +56,7 @@ spec:
           volumes:
             - name: config
               configMap:
-                name: {{ include "kmsCoreClientTestingName" . }}-config
+                name: {{ include "kmsCoreClientName" . }}-config
                 defaultMode: 0777
                 items:
                   - key: load-core-client-testing-config.sh
