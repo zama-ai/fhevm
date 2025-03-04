@@ -79,8 +79,7 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
         address userAddress,
         bytes calldata ciphertextWithZKProof
     ) public virtual {
-        // TODO: Uncomment this once full end-to-end test is fixed
-        // _HTTPZ.checkNetworkIsRegistered(contractChainId);
+        _HTTPZ.checkNetworkIsRegistered(contractChainId);
 
         // TODO(#52): Implement sending service fees to PaymentManager contract
 
