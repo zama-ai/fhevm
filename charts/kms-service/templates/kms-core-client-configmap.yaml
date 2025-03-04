@@ -47,7 +47,7 @@ data:
     num_majority=${NUM_MAJORITY}
     num_reconstruct=${NUM_RECONSTRUCT}
     decryption_mode=${DECRYPTION_MODE}
-    fhe_params${FHE_PARAMETER:=Test}
+    fhe_params=${FHE_PARAMETER:=Test}
     EOF
 
     echo "######################################################################"
