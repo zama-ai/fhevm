@@ -190,6 +190,7 @@ kmsCoreClient:
   num_majority: 2
   num_reconstruct: 3
   decryption_mode: "NoiseFloodSmall"
+  fhe_parameter: "Test"
   nodeSelector:
   affinity:
   tolerations:

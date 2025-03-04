@@ -46,6 +46,8 @@ spec:
             value: '{{ .Values.kmsCoreClient.num_reconstruct | int }}'
           - name: DECRYPTION_MODE
             value: '{{ .Values.kmsCoreClient.decryption_mode | quote }}'
+          - name: FHE_PARAMETER
+            value: '{{ .Values.kmsCoreClient.fhe_parameter | quote }}'
         command:
           - /app/load-core-client-config.sh
         envFrom:
