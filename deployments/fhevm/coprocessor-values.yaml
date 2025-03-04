@@ -91,7 +91,7 @@ gwListener:
   enabled: true
   image:
     name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: v0.7.0-rc1
+    tag: c26bef0
   replicas: 1
   env:
     - name: DATABASE_URL
@@ -108,12 +108,13 @@ gwListener:
     - --database-url=$(DATABASE_URL)
     - --gw-url=ws://layer2-anvil-node:8546
     - --zkpok-manager-address=$(ZKPOK_MANAGER_ADDRESS)
+    - --verify-proof-req-database-channel="event_zkpok_new_work"
 
 zkProofWorker:
   enabled: true
   image:
     name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: v0.7.0-rc1
+    tag: c26bef0
   replicas: 1
   env:
     - name: DATABASE_URL
@@ -124,12 +125,13 @@ zkProofWorker:
   args:
     - --pg-listen-channel="event_zkpok_new_work"
     - --pg-notify-channel="event_zkpok_computed"
+    - --pg-polling-interval=60
 
 txSender:
   enabled: true
   image:
     name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: v0.7.0-rc1
+    tag: c26bef0
   replicas: 1
   env:
     - name: DATABASE_URL

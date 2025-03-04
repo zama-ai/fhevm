@@ -3,7 +3,7 @@ replicaCount: 1
 
 image:
   name: ghcr.io/zama-ai/fhevm-relayer
-  tag: v0.1.0-rc1
+  tag: 0c43f46
   pullPolicy: IfNotPresent
 
 service:
@@ -65,10 +65,13 @@ config:
     private_key_gateway_env: GATEWAY_PRIVATE_KEY
     gas_limit: 150000
     max_priority_fee: 2000000000
-    timeout_secs: 30
+    timeout_secs: 60
     confirmations: 1
     retry:
       enabled: false
+      max_attempts: 3
+      base_delay_secs: 2
+      max_delay_secs: 60
   contracts:
     decryption_oracle_address: 0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d
     tfhe_executor_address: 0x12B064FB845C1cc05e9493856a1D637a73e944bE

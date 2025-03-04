@@ -3,7 +3,7 @@ image:
   tag: stable
 
 network:
-  blockTime: 0.1
+  blockTime: 0.5
   host: 0.0.0.0
   chainId: 12345
   accounts: 15
