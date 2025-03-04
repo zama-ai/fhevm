@@ -4,54 +4,47 @@ import { task } from 'hardhat/config';
 import type { TaskArguments } from 'hardhat/types';
 import path from 'path';
 
-function writeEnvFile(envFilePath: string, solFilePath: string, content: string): void {
+function writeEnvFile(filePath: string, content: string): void {
   try {
-    fs.writeFileSync(envFilePath, content, { flag: 'w' });
-    console.log(`Content written to ${envFilePath} successfully!`);
+    fs.writeFileSync(filePath, content, { flag: 'w' });
+    console.log(`Content written to ${filePath} successfully!`);
   } catch (err) {
-    console.error(`Failed to write to ${envFilePath}:`, err);
-  }
-
-  const solidityTemplate = `// SPDX-License-Identifier: BSD-3-Clause-Clear
-
-pragma solidity ^0.8.24;
-
-address constant ${content};
-`;
-
-  try {
-    fs.writeFileSync(solFilePath, solidityTemplate, {
-      encoding: 'utf8',
-      flag: 'w',
-    });
-    console.log(`${solFilePath} file has been generated successfully.`);
-  } catch (error) {
-    console.error(`Failed to write ${solFilePath}`, error);
+    console.error(`Failed to write to ${filePath}:`, err);
   }
 }
 
-task('task:deployDecryptionManager')
-  .addParam('privateKey', 'The deployer private key')
-  .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
-    const deployer = new ethers.Wallet(taskArguments.privateKey).connect(ethers.provider);
-    const decryptionManagerFactory = await ethers.getContractFactory('DecryptionManager', deployer);
-    const decryptionManager = await decryptionManagerFactory.deploy();
-    await decryptionManager.waitForDeployment();
-    const decryptionManagerAddress = await decryptionManager.getAddress();
-    console.log('DecryptionManager contract deployed to:', decryptionManagerAddress);
-    const envFilePath = path.join(__dirname, '../addressesL2/.env.decryption_manager');
-    const solFilePath = path.join(__dirname, '../addressesL2/DecryptionManagerAddress.sol');
-    const content = `DECRYPTION_MANAGER_ADDRESS=${decryptionManagerAddress}`;
-    writeEnvFile(envFilePath, solFilePath, content);
-  });
-
 // Deploy the HTTPZ contract
 task('task:deployHttpz')
-  .addParam('privateKey', 'The deployer private key')
+  .addParam('deployerPrivateKey', 'The deployer private key')
+  .addParam('adminPrivateKey', 'The admin private key')
+  .addParam('protocolMetadata', 'The protocol metadata')
+  .addParam('adminAddresses', 'The admin addresses')
+  .addParam('kmsThreshold', 'The KMS threshold')
+  .addParam('kmsNodes', 'The KMS nodes')
+  .addParam('coprocessors', 'The coprocessors')
+  .addParam('layer1Networks', 'The L1 networks to register in HTTPZ contract')
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
-    const deployer = new ethers.Wallet(taskArguments.privateKey).connect(ethers.provider);
+    const deployer = new ethers.Wallet(taskArguments.deployerPrivateKey).connect(ethers.provider);
+    // Parse the protocol metadata
+    const metadata = JSON.parse(taskArguments.protocolMetadata);
+    // Parse the admin addresses
+    const adminAddresses = JSON.parse(taskArguments.adminAddresses);
+    // Parse the KMS nodes
+    const kmsNodes = JSON.parse(taskArguments.kmsNodes);
+    // Parse the coprocessors
+    const coprocessors = JSON.parse(taskArguments.coprocessors);
+    // Parse the L1 network
+    const layer1Networks = JSON.parse(taskArguments.layer1Networks);
+
     const HTTPZ = await ethers.getContractFactory('HTTPZ', deployer);
-    const httpz = await HTTPZ.deploy();
+    const httpz = await HTTPZ.deploy(
+      metadata,
+      adminAddresses,
+      taskArguments.kmsThreshold,
+      kmsNodes,
+      coprocessors,
+      layer1Networks,
+    );
 
     // Wait for the deployment to be confirmed
     await httpz.waitForDeployment();
@@ -59,24 +52,29 @@ task('task:deployHttpz')
     const httpzAddress = await httpz.getAddress();
 
     console.log('HTTPZ contract deployed to:', httpzAddress);
+    console.log('Protocol metadata:', metadata);
+    console.log('Admin addresses:', adminAddresses, '\n');
+    console.log('KMS threshold:', taskArguments.kmsThreshold, '\n');
+    console.log('KMS nodes:', kmsNodes, '\n');
+    console.log('Coprocessors:', coprocessors, '\n');
+    console.log('L1 networks:', layer1Networks, '\n');
 
     // Save the HTTPZ address to the .env.httpz file
     const envFilePath = path.join(__dirname, '../addressesL2/.env.httpz');
-    const solFilePath = path.join(__dirname, '../addressesL2/HttpzAddress.sol');
     const content = `HTTPZ_ADDRESS=${httpzAddress}`;
-    writeEnvFile(envFilePath, solFilePath, content);
+    writeEnvFile(envFilePath, content);
   });
 
 // Deploy the ZKPoKManager contract
-task('task:deployZkPoKManager')
-  .addParam('privateKey', 'The deployer private key')
+task('task:deployZkpokManager')
+  .addParam('deployerPrivateKey', 'The deployer private key')
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
     const parsedEnvHttpz = dotenv.parse(fs.readFileSync('addressesL2/.env.httpz'));
     const httpzAddress = parsedEnvHttpz.HTTPZ_ADDRESS;
 
     const dummyPaymentManagerAddress = '0x0000000000000000000000000000000000000000';
 
-    const deployer = new ethers.Wallet(taskArguments.privateKey).connect(ethers.provider);
+    const deployer = new ethers.Wallet(taskArguments.deployerPrivateKey).connect(ethers.provider);
 
     // Deploy ZKPoKManager contract
     const ZKPoKManager = await ethers.getContractFactory('ZKPoKManager', deployer);
@@ -91,48 +89,121 @@ task('task:deployZkPoKManager')
 
     // Save the ZKPoKManager address to the .env.zkpok_manager file
     const envFilePath = path.join(__dirname, '../addressesL2/.env.zkpok_manager');
-    const solFilePath = path.join(__dirname, '../addressesL2/ZkpokManagerAddress.sol');
     const content = `ZKPOK_MANAGER_ADDRESS=${zkpokManagerAddress}`;
-    writeEnvFile(envFilePath, solFilePath, content);
+    writeEnvFile(envFilePath, content);
   });
 
-task('task:addSignersL2')
-  .addParam('privateKey', 'The deployer private key')
-  .addParam('numSigners', 'Number of KMS signers to add')
-  .addOptionalParam(
-    'useAddress',
-    'Use addresses instead of private keys env variables for kms signers',
-    false,
-    types.boolean,
-  )
-  .addOptionalParam(
-    'customDecryptionManagerAddress',
-    'Use a custom address for the DecryptionManager contract instead of the default one - ie stored inside .env.decryption_manager',
-  )
+// Deploy the KeyManager contract
+task('task:deployKeyManager')
+  .addParam('deployerPrivateKey', 'The deployer private key')
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
-    const deployer = new ethers.Wallet(taskArguments.privateKey).connect(ethers.provider);
-    const factory = await ethers.getContractFactory('DecryptionManager', deployer);
-    let decryptionManagerAdd;
-    if (taskArguments.customKmsVerifierAddress) {
-      decryptionManagerAdd = taskArguments.customDecryptionManagerAddress;
-    } else {
-      decryptionManagerAdd = dotenv.parse(
-        fs.readFileSync('addressesL2/.env.decryption_manager'),
-      ).DECRYPTION_MANAGER_ADDRESS;
-    }
-    const decryptionManager = await factory.attach(decryptionManagerAdd);
-    for (let idx = 0; idx < taskArguments.numSigners; idx++) {
-      if (!taskArguments.useAddress) {
-        const privKeySigner = process.env[`PRIVATE_KEY_KMS_SIGNER_${idx}`];
-        const kmsSigner = new ethers.Wallet(privKeySigner).connect(ethers.provider);
-        const tx = await decryptionManager.addSigner(kmsSigner.address);
-        await tx.wait();
-        console.log(`KMS signer no${idx} (${kmsSigner.address}) was added to DecryptionManager contract`);
-      } else {
-        const kmsSignerAddress = process.env[`ADDRESS_KMS_SIGNER_${idx}`];
-        const tx = await decryptionManager.addSigner(kmsSignerAddress);
-        await tx.wait();
-        console.log(`KMS signer no${idx} (${kmsSignerAddress}) was added to DecryptionManager contract`);
-      }
-    }
+    const deployer = new ethers.Wallet(taskArguments.deployerPrivateKey).connect(ethers.provider);
+
+    const parsedEnvHttpz = dotenv.parse(fs.readFileSync('addressesL2/.env.httpz'));
+    const httpzAddress = parsedEnvHttpz.HTTPZ_ADDRESS;
+
+    const KeyManager = await ethers.getContractFactory('KeyManager', deployer);
+    const keyManager = await KeyManager.deploy(httpzAddress);
+
+    // Wait for the deployment to be confirmed
+    await keyManager.waitForDeployment();
+
+    const keyManagerAddress = await keyManager.getAddress();
+
+    console.log('KeyManager contract deployed to:', keyManagerAddress);
+
+    const envFilePath = path.join(__dirname, '../addressesL2/.env.key_manager');
+    const content = `KEY_MANAGER_ADDRESS=${keyManagerAddress}`;
+    writeEnvFile(envFilePath, content);
+  });
+
+// Deploy the CiphertextStorage contract
+task('task:deployCiphertextStorage')
+  .addParam('deployerPrivateKey', 'The deployer private key')
+  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    const deployer = new ethers.Wallet(taskArguments.deployerPrivateKey).connect(ethers.provider);
+
+    const parsedEnvHttpz = dotenv.parse(fs.readFileSync('addressesL2/.env.httpz'));
+    const httpzAddress = parsedEnvHttpz.HTTPZ_ADDRESS;
+
+    const parsedEnvKeyManager = dotenv.parse(fs.readFileSync('addressesL2/.env.key_manager'));
+    const keyManagerAddress = parsedEnvKeyManager.KEY_MANAGER_ADDRESS;
+
+    const CiphertextStorage = await ethers.getContractFactory('CiphertextStorage', deployer);
+    const ciphertextStorage = await CiphertextStorage.deploy(httpzAddress, keyManagerAddress);
+
+    // Wait for the deployment to be confirmed
+    await ciphertextStorage.waitForDeployment();
+
+    const ciphertextStorageAddress = await ciphertextStorage.getAddress();
+
+    console.log('CiphertextStorage contract deployed to:', ciphertextStorageAddress);
+
+    const envFilePath = path.join(__dirname, '../addressesL2/.env.ciphertext_storage');
+    const content = `CIPHERTEXT_STORAGE_ADDRESS=${ciphertextStorageAddress}`;
+    writeEnvFile(envFilePath, content);
+  });
+
+// Deploy the ACLManager contract
+task('task:deployAclManager')
+  .addParam('deployerPrivateKey', 'The deployer private key')
+  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    const deployer = new ethers.Wallet(taskArguments.deployerPrivateKey).connect(ethers.provider);
+
+    const parsedEnvHttpz = dotenv.parse(fs.readFileSync('addressesL2/.env.httpz'));
+    const httpzAddress = parsedEnvHttpz.HTTPZ_ADDRESS;
+
+    const parsedEnvCiphertextStorage = dotenv.parse(fs.readFileSync('addressesL2/.env.ciphertext_storage'));
+    const ciphertextStorageAddress = parsedEnvCiphertextStorage.CIPHERTEXT_STORAGE_ADDRESS;
+
+    const ACLManager = await ethers.getContractFactory('ACLManager', deployer);
+    const aclManager = await ACLManager.deploy(httpzAddress, ciphertextStorageAddress);
+
+    // Wait for the deployment to be confirmed
+    await aclManager.waitForDeployment();
+
+    const aclManagerAddress = await aclManager.getAddress();
+
+    console.log('ACLManager contract deployed to:', aclManagerAddress);
+
+    const envFilePath = path.join(__dirname, '../addressesL2/.env.acl_manager');
+    const content = `ACL_MANAGER_ADDRESS=${aclManagerAddress}`;
+    writeEnvFile(envFilePath, content);
+  });
+
+// Deploy the DecryptionManager contract
+task('task:deployDecryptionManager')
+  .addParam('deployerPrivateKey', 'The deployer private key')
+  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    const deployer = new ethers.Wallet(taskArguments.deployerPrivateKey).connect(ethers.provider);
+
+    const parsedEnvHttpz = dotenv.parse(fs.readFileSync('addressesL2/.env.httpz'));
+    const httpzAddress = parsedEnvHttpz.HTTPZ_ADDRESS;
+
+    const parsedEnvAclManager = dotenv.parse(fs.readFileSync('addressesL2/.env.acl_manager'));
+    const aclManagerAddress = parsedEnvAclManager.ACL_MANAGER_ADDRESS;
+
+    const parsedEnvCiphertextStorage = dotenv.parse(fs.readFileSync('addressesL2/.env.ciphertext_storage'));
+    const ciphertextStorageAddress = parsedEnvCiphertextStorage.CIPHERTEXT_STORAGE_ADDRESS;
+
+    const dummyPaymentManagerAddress = '0x0000000000000000000000000000000000000000';
+
+    const DecryptionManager = await ethers.getContractFactory('DecryptionManager', deployer);
+    const decryptionManager = await DecryptionManager.deploy(
+      httpzAddress,
+      aclManagerAddress,
+      ciphertextStorageAddress,
+      dummyPaymentManagerAddress,
+    );
+
+    // Wait for the deployment to be confirmed
+    await decryptionManager.waitForDeployment();
+
+    const decryptionManagerAddress = await decryptionManager.getAddress();
+
+    console.log('DecryptionManager contract deployed to:', decryptionManagerAddress);
+
+    const envFilePath = path.join(__dirname, '../addressesL2/.env.decryption_manager');
+    const content = `DECRYPTION_MANAGER_ADDRESS=${decryptionManagerAddress}`;
+    writeEnvFile(envFilePath, content);
   });

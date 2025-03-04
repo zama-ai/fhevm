@@ -30,3 +30,6 @@ Advisory-db*
 .anvil1.pid
 .anvil2.pid
 hardhat/contracts/sql.db
+
+# MacOS artifacts
+.DS_Store

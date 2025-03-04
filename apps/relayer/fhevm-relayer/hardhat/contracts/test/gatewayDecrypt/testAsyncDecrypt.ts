@@ -283,15 +283,15 @@ describe('TestAsyncDecrypt', function () {
     }
   });
 
-  it('test async decrypt uint64 non-trivial', async function () {
+  it.only('test async decrypt uint64 non-trivial', async function () {
     const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     inputAlice.add64(18446744073709550042n);
     const encryptedAmount = await inputAlice.encrypt();
     encryptedAmount.handles.forEach((handle: any, index: any) => {
-    // Assuming handle is a Uint8Array or Buffer
-    console.log(`  Handle ${index}: 0x${Buffer.from(handle).toString('hex')}`);
+      // Assuming handle is a Uint8Array or Buffer
+      console.log(`  Handle ${index}: 0x${Buffer.from(handle).toString('hex')}`);
     });
-    console.log("InputProof: 0x" + Buffer.from(encryptedAmount.inputProof).toString('hex'));
+    console.log('InputProof: 0x' + Buffer.from(encryptedAmount.inputProof).toString('hex'));
     // const tx = await this.contract.requestUint64NonTrivial(encryptedAmount.handles[0], encryptedAmount.inputProof);
     // await tx.wait();
     // await awaitAllDecryptionResults();

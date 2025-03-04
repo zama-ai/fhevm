@@ -14,11 +14,25 @@ use crate::{
 };
 use std::str::FromStr;
 
-use alloy::primitives::{Address, U256};
+use alloy::primitives::{Address, U256, FixedBytes};
 use alloy_sol_types::SolEvent;
+use alloy::signers::{local::PrivateKeySigner, Signer};
+use alloy::{
+    sol,
+    sol_types::{eip712_domain, SolStruct},
+};
 use async_trait::async_trait;
 use std::{sync::Arc, time::Duration};
 use tracing::{debug, error, info};
+
+sol! {
+    struct EIP712ZKPoK {
+        bytes32[] handles;
+        address userAddress;
+        address contractAddress;
+        uint256 contractChainId;
+    }
+}
 
 #[derive(Clone)]
 pub struct GatewayProcessorsHandler {
@@ -69,13 +83,36 @@ impl GatewayProcessorsHandler {
                     // Simulate some computation time
                     tokio::time::sleep(Duration::from_secs(2)).await;
 
-                    // Generate mock handles and signatures
-                    // In real implementation, this would involve actual cryptographic operations
-                    let signatures = vec![1u8; 65];
 
+
+                    // Generate mock handles
+                    // In real implementation, this would involve actual cryptographic operations
                     let handles = vec![[1u8; 32], [2u8; 32]];
 
-                    self.send_input_response(request_event.zkProofId, handles, signatures)
+                    //let signatures = vec![1u8; 65];
+                    let signer = PrivateKeySigner::from_str("7ec8ada6642fc4ccfb7729bc29c17cf8d21b61abd5642d1db992c0b8672ab901").unwrap();
+
+                    let domain = eip712_domain! {
+                        name: "ZKPoKManager",
+                        version: "1",
+                        chain_id: 654321,
+                        verifying_contract: Address::from_str(&self.contracts.zkpok_manager_address).unwrap(),
+                    };
+
+                    let handles_formatted: Vec<FixedBytes<32>> = handles.clone().into_iter().map(FixedBytes::from).collect();
+
+                    let signing_hash = EIP712ZKPoK {
+                        handles: handles_formatted.clone(),
+                        userAddress: request_event.userAddress,
+                        contractAddress: request_event.contractAddress,
+                        contractChainId: request_event.contractChainId,
+                    }
+                    .eip712_signing_hash(&domain);
+    
+                    let signature = signer.sign_hash(&signing_hash).await.unwrap();
+                    println!("Signature: 0x{}", hex::encode(signature.as_bytes()));
+
+                    self.send_input_response(request_event.zkProofId, handles, signature.as_bytes().to_vec())
                         .await?;
 
                     Ok(())

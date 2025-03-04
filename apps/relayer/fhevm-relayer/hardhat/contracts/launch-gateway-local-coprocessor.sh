@@ -1,23 +1,46 @@
 #!/bin/bash
-#
 # Default value
 DEFAULT_NETWORK="localCoprocessorL2"
 
 # Get the first argument ($1) if provided, otherwise use DEFAULT_VALUE
 # The ${1:-default_value} syntax means "use $1 if it exists, otherwise use default_value"
 NETWORK=${1:-$DEFAULT_NETWORK}
-npm i
+
 npx hardhat clean
-npx hardhat compile:specific --contract kmsContracts
 
-mkdir -p addressesL2
+npx hardhat compile:specific --contract gatewayContracts
 
-PRIVATE_KEY_FHEVM_DEPLOYER=$(grep PRIVATE_KEY_FHEVM_DEPLOYER .env | cut -d '"' -f 2)
-NUM_KMS_SIGNERS=$(grep NUM_KMS_SIGNERS .env | cut -d '"' -f 2)
+# Deployer
+DEPLOYER_ADDRESS=$(grep ADDRESS_FHEVM_DEPLOYER .env | cut -d '"' -f 2)
+DEPLOYER_PRIVATE_KEY=$(grep PRIVATE_KEY_FHEVM_DEPLOYER .env | cut -d '"' -f 2)
 
+# Coprocessor
+# Coprocessor address is the transaction sender's address
+COPROCESSOR_ADDRESS=$(grep ADDRESS_COPROCESSOR_ACCOUNT .env | cut -d '"' -f 2)
 
-npx hardhat task:deployDecryptionManager --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --network $NETWORK
-npx hardhat task:deployHttpz --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --network $NETWORK
-npx hardhat task:deployZkPoKManager --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --network $NETWORK
+# Network
+NETWORK_CHAIN_ID_1=$(grep CHAIN_ID_GATEWAY .env | cut -d '"' -f 2)
 
-npx hardhat task:addSignersL2 --num-signers "$NUM_KMS_SIGNERS" --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --use-address true --network $NETWORK
+# Dummy address
+# This is used for inputting dummy addresses or any bytes type when deploying the HTTPZ contract as passing
+# empty strings raises an error
+DUMMY_HEX_BYTES="0x1234567890abcdef1234567890abcdef12345678"
+# Also, we need to add a dummy KMS node, else deploying the contract will fail because the threshold will be too low
+DUMMY_KMS_NODE="[{\"connectorAddress\":\"${DUMMY_HEX_BYTES}\",\"identity\":\"${DUMMY_HEX_BYTES}\",\"ipAddress\":\"\",\"daAddress\": \"\", \"tlsCertificate\":\"${DUMMY_HEX_BYTES}\"}]"
+
+echo "Deploy HTTPZ contract:"
+# Deploy HTTPZ contract - register KMS nodes and coprocessor (transaction-sender services) and network chainID
+# for simplicity admin is the contract deployer/owner - should be different in real scenarios
+npx hardhat task:deployHttpz --deployer-private-key "$DEPLOYER_PRIVATE_KEY" \
+    --admin-private-key "$DEPLOYER_PRIVATE_KEY" \
+    --protocol-metadata "{\"website\":\"test\",\"name\":\"test\"}" \
+    --admin-addresses "[\"${DEPLOYER_ADDRESS}\"]" \
+    --kms-threshold 0 \
+    --kms-nodes "${DUMMY_KMS_NODE}" \
+    --coprocessors "[{\"transactionSenderAddress\":\"${COPROCESSOR_ADDRESS}\",\"identity\":\"${DUMMY_HEX_BYTES}\",\"daAddress\": \"\"}]" \
+    --layer1-networks "[{\"chainId\":${NETWORK_CHAIN_ID_1},\"httpzExecutor\":\"${DUMMY_HEX_BYTES}\",\"aclAddress\":\"${DUMMY_HEX_BYTES}\",\"name\":\"\",\"website\":\"\"}]" \
+    --network $NETWORK
+
+echo "Deploy ZKPoKManager contract:"
+# Deploy ZKPoKManager contract
+npx hardhat task:deployZkpokManager --deployer-private-key "$DEPLOYER_PRIVATE_KEY" --network $NETWORK
