@@ -28,22 +28,22 @@ config-fhevm-relayer:
 # Run Anvil node for httpz chain
 run-httpz-mock:
 	@echo "$(GREEN)Starting Anvil node for mock HTTPZ chain...$(RESET)"
-	@cd hardhat/contracts && anvil --block-time 0.1 --port 8756 --chain-id 123456 --accounts 15 --mnemonic $(MNEMONIC)
+	@cd hardhat/contracts && anvil --block-time 0.1 --port 8756 --chain-id 123456 --accounts 20 --mnemonic $(MNEMONIC)
 
 # Run Anvil node for gateway chain
 run-gateway-mock:
 	@echo "$(GREEN)Starting Anvil node for mock GATEWAY chain...$(RESET)"
-	@cd hardhat/contracts && anvil --block-time 0.1 --port 8757 --chain-id 654321 --accounts 15 --mnemonic $(MNEMONIC)
+	@cd hardhat/contracts && anvil --block-time 0.1 --port 8757 --chain-id 654321 --accounts 20 --mnemonic $(MNEMONIC)
 
 # Run Anvil node for httpz chain
 run-httpz-compose-mock:
 	@echo "$(GREEN)Starting Anvil node for mock HTTPZ chain...$(RESET)"
-	@cd hardhat/contracts && anvil --block-time 0.1 --port 8756 --chain-id 123456 --accounts 15 --mnemonic $(MNEMONIC) --host 0.0.0.0
+	@cd hardhat/contracts && anvil --block-time 0.1 --port 8756 --chain-id 123456 --accounts 20 --mnemonic $(MNEMONIC) --host 0.0.0.0
 
 # Run Anvil node for gateway chain
 run-gateway-compose-mock:
 	@echo "$(GREEN)Starting Anvil node for mock GATEWAY chain...$(RESET)"
-	@cd hardhat/contracts && anvil --block-time 0.1 --port 8757 --chain-id 654321 --accounts 15 --mnemonic $(MNEMONIC) --host 0.0.0.0
+	@cd hardhat/contracts && anvil --block-time 0.1 --port 8757 --chain-id 654321 --accounts 20 --mnemonic $(MNEMONIC) --host 0.0.0.0
 
 # Deploy HTTPZ smart contracts
 deploy-httpz-smart-contracts:

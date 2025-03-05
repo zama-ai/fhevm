@@ -1,8 +1,7 @@
 *
 !/artifacts/contracts/ACL.sol/ACL.json
 !/artifacts/contracts/FHEGasLimit.sol/FHEGasLimit.json
-!/artifacts/contracts/InputVerifier.coprocessor.sol/InputVerifier.json
-!/artifacts/contracts/InputVerifier.native.sol/InputVerifier.json
+!/artifacts/contracts/InputVerifier.sol/InputVerifier.json
 !/artifacts/contracts/KMSVerifier.sol/KMSVerifier.json
 !/artifacts/contracts/TFHEExecutor.sol/TFHEExecutor.json
 !/artifacts/contracts/TFHEExecutorWithEvents.sol/TFHEExecutorWithEvents.json

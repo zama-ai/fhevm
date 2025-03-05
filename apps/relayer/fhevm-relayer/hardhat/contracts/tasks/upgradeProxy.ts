@@ -137,7 +137,7 @@ task('task:upgradeKMSVerifier')
 task('task:upgradeInputVerifier')
   .addParam(
     'currentImplementation',
-    'The currently deployed implementation solidity contract path and name, eg: contracts/InputVerifier.coprocessor.sol:InputVerifier',
+    'The currently deployed implementation solidity contract path and name, eg: contracts/InputVerifier.sol:InputVerifier',
   )
   .addParam(
     'newImplementation',

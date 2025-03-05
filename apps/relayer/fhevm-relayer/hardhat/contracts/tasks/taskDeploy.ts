@@ -126,12 +126,7 @@ task('task:deployInputVerifier')
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
     const deployer = new ethers.Wallet(taskArguments.privateKey).connect(ethers.provider);
     const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
-    let newImplem;
-    if (process.env.IS_COPROCESSOR === 'true') {
-      newImplem = await ethers.getContractFactory('./contracts/InputVerifier.coprocessor.sol:InputVerifier', deployer);
-    } else {
-      newImplem = await ethers.getContractFactory('./contracts/InputVerifier.native.sol:InputVerifier', deployer);
-    }
+    const newImplem = await ethers.getContractFactory('./contracts/InputVerifier.sol:InputVerifier', deployer);
     const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.inputverifier'));
     const proxyAddress = parsedEnv.INPUT_VERIFIER_CONTRACT_ADDRESS;
     const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
@@ -443,5 +438,44 @@ address constant fheGasLimitAdd = ${taskArguments.address};\n`;
       console.log('./addresses/FHEGasLimitAddress.sol file generated successfully!');
     } catch (error) {
       console.error('Failed to write ./addresses/FHEGasLimitAddress.sol', error);
+    }
+  });
+
+task('task:addInputSigners')
+  .addParam('privateKey', 'The deployer private key')
+  .addParam('numSigners', 'Number of coprocessor signers to add')
+  .addOptionalParam(
+    'useAddress',
+    'Use addresses instead of private keys env variables for kms signers',
+    false,
+    types.boolean,
+  )
+  .addOptionalParam(
+    'customInputVerifierAddress',
+    'Use a custom address for the InputVerifier contract instead of the default one - ie stored inside .env.inputverifier',
+  )
+  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    const deployer = new ethers.Wallet(taskArguments.privateKey).connect(ethers.provider);
+    const factory = await ethers.getContractFactory('./contracts/InputVerifier.sol:InputVerifier', deployer);
+    let inputAdd;
+    if (taskArguments.customInputVerifierAddress) {
+      inputAdd = taskArguments.customInputVerifierAddress;
+    } else {
+      inputAdd = dotenv.parse(fs.readFileSync('addresses/.env.inputverifier')).INPUT_VERIFIER_CONTRACT_ADDRESS;
+    }
+    const inputVerifier = await factory.attach(inputAdd);
+    for (let idx = 0; idx < taskArguments.numSigners; idx++) {
+      if (!taskArguments.useAddress) {
+        const privKeySigner = process.env[`PRIVATE_KEY_COPROCESSOR_ACCOUNT_${idx}`]!;
+        const inputSigner = new ethers.Wallet(privKeySigner).connect(ethers.provider);
+        const tx = await inputVerifier.addSigner(inputSigner.address);
+        await tx.wait();
+        console.log(`Coprocessor signer no${idx} (${inputSigner.address}) was added to InputVerifier contract`);
+      } else {
+        const inputSignerAddress = process.env[`ADDRESS_COPROCESSOR_ACCOUNT_${idx}`];
+        const tx = await inputVerifier.addSigner(inputSignerAddress);
+        await tx.wait();
+        console.log(`Coprocessor signer no${idx} (${inputSignerAddress}) was added to InputVerifier contract`);
+      }
     }
   });

@@ -63,12 +63,10 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
     error UnsupportedType();
 
     /**
-     * @param aclAddress        ACL address.
      * @param userAddress       Address of the user.
      * @param contractAddress   Contract address.
      */
     struct ContextUserInputs {
-        address aclAddress;
         address userAddress;
         address contractAddress;
     }
@@ -699,7 +697,6 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
         bytes1 inputType
     ) public virtual returns (uint256 result) {
         ContextUserInputs memory contextUserInputs = ContextUserInputs({
-            aclAddress: address(acl),
             userAddress: userAddress,
             contractAddress: msg.sender
         });
