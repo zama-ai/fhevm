@@ -1,0 +1,26 @@
+services:
+  relayer:
+    build:
+      context: ../
+      dockerfile: Dockerfile
+      tags:
+        - "ghcr.io/zama-ai/fhevm-relayer:v0.1.0-local"
+    image: ghcr.io/zama-ai/fhevm-relayer:7e5f37e
+    container_name: fhevm-relayer
+    command:
+    - fhevm-relayer
+    environment:
+      HTTPZ_PRIVATE_KEY: $HTTPZ_PRIVATE_KEY
+      GATEWAY_PRIVATE_KEY: $GATEWAY_PRIVATE_KEY
+    volumes: 
+      - ./config/relayer/local.yaml:/app/config/local.yaml
+    ports:
+      - "3000:3000"
+  
+  e2e-tester:
+    container_name: e2e-tester
+    image: ghcr.io/zama-ai/fhevm-e2e-test:v3-test
+    command: ["sh", "-c", "tail -f /dev/null"]
+    volumes:
+      - ./config/env/.env.staging.layer1:/app/hardhat/contracts/.env.example
+      - ./config/relayer/instance.ts:/app/hardhat/contracts/test/instance.ts

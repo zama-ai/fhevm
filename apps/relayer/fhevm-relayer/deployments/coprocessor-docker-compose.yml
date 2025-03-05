@@ -1,0 +1,145 @@
+services:
+  ####################### DATABASE SETUP #######################
+  db:
+    container_name: db
+    image: postgres:15.7
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - '5432:5432'
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    volumes:
+      - db:/var/lib/postgresql/data
+
+  key-downloader:
+    container_name: key-downloader
+    image: busybox
+    volumes:
+      - keys-volume:/keys
+    command: >
+      sh -c "wget -q http://s3-mock:9000/kms-public/kms/PUB/PublicKey/408d8cbaa51dece7f782fe04ba0b1c1d017b1088 -O /keys/pks &&
+             wget -q http://s3-mock:9000/kms-public/kms/PUB/ServerKey/408d8cbaa51dece7f782fe04ba0b1c1d017b1088 -O /keys/sks &&
+             wget -q http://s3-mock:9000/kms-public/kms/PUB/CRS/a5fedad3fd734a598fb67452099229445cb68447 -O /keys/pp"
+  
+  db-migration:
+    container_name: db-migration
+    image: ghcr.io/zama-ai/fhevm-db-migration:v0.7.0-rc1
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      CHAIN_ID: ${CHAIN_ID}
+      TENANT_API_KEY: ${TENANT_API_KEY}
+      ACL_CONTRACT_ADDRESS: ${ACL_CONTRACT_ADDRESS}
+      INPUT_VERIFIER_ADDRESS: ${INPUT_VERIFIER_ADDRESS}
+    volumes:
+      - keys-volume:/fhevm-keys
+    depends_on:
+      db:
+        condition: service_healthy
+
+  ####################### COPROCESSOR SERVICES #######################
+  coprocessor-server:
+    container_name: coprocessor-server
+    image: ghcr.io/zama-ai/fhevm-coprocessor:v0.7.0-rc1
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    ports:
+      - '50051:50051'
+    volumes:
+      - ./config/coprocessor/coprocessor.key:/usr/share/coprocessor.key
+    command:
+      - coprocessor
+      - --run-server
+      - --server-addr=0.0.0.0:50051
+      - --coprocessor-private-key=/usr/share/coprocessor.key
+    depends_on:
+      db:
+        condition: service_healthy
+      db-migration:
+        condition: service_completed_successfully
+
+  fhevm-listener:
+    container_name: "fhevm-listener"
+    image: ghcr.io/zama-ai/fhevm-coprocessor:v0.7.0-rc1
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      TENANT_API_KEY: ${TENANT_API_KEY}
+      RPC_URL: ${RPC_URL}
+    command:
+      - fhevm_listener
+      - --database-url=${DATABASE_URL}
+      - --coprocessor-api-key=${TENANT_API_KEY}
+      - --url=${RPC_URL}
+    depends_on:
+      db:
+        condition: service_healthy
+      db-migration:
+        condition: service_completed_successfully
+
+  gw-listener:
+    container_name: "gw-listener"
+    image: ghcr.io/zama-ai/fhevm-coprocessor:cbcd331
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      GATEWAY_URL: ${GATEWAY_WS_URL}
+      ZKPOK_MANAGER_ADDRESS: ${ZKPOK_MANAGER_ADDRESS}
+    command:
+      - gw_listener
+      - --database-url=${DATABASE_URL}
+      - --gw-url=${GATEWAY_WS_URL}
+      - --zkpok-manager-address=${ZKPOK_MANAGER_ADDRESS}
+      - --verify-proof-req-database-channel="event_zkpok_new_work"
+    depends_on:
+      db:
+        condition: service_healthy
+      db-migration:
+        condition: service_completed_successfully
+
+  zkproof-worker:
+    container_name: "zkproof-worker"
+    image: ghcr.io/zama-ai/fhevm-coprocessor:cbcd331
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    command:
+      - zkproof_worker
+      - --pg-listen-channel="event_zkpok_new_work"
+      - --pg-notify-channel="event_zkpok_computed"
+      - --pg-polling-interval=5
+      - --worker-thread-count=4
+    depends_on:
+      db:
+        condition: service_healthy
+      db-migration:
+        condition: service_completed_successfully
+
+  transaction-sender:
+    container_name: "transaction-sender"
+    image: ghcr.io/zama-ai/fhevm-coprocessor:cbcd331
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      GATEWAY_URL: ${GATEWAY_URL}
+      TX_SENDER_PRIVATE_KEY: ${TX_SENDER_PRIVATE_KEY}
+      ZKPOK_MANAGER_ADDRESS: ${ZKPOK_MANAGER_ADDRESS}
+      CIPHERTEXT_STORAGE_ADDRESS: ${CIPHERTEXT_STORAGE_ADDRESS}
+    command:
+      - transaction_sender
+      - --database-url=${DATABASE_URL}
+      - --gateway-url=${GATEWAY_URL}
+      - --private-key=${TX_SENDER_PRIVATE_KEY}
+      - --zkpok-manager-address=${ZKPOK_MANAGER_ADDRESS}
+      - --ciphertext-storage-address=${CIPHERTEXT_STORAGE_ADDRESS}
+      - --verify-proof-resp-database-channel="event_zkpok_computed"
+    depends_on:
+      db:
+        condition: service_healthy
+      db-migration:
+        condition: service_completed_successfully
+
+volumes:
+  db:
+  keys-volume:
