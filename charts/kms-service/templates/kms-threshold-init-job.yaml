@@ -1,4 +1,4 @@
-{{- if and .Values.kmsCore.thresholdMode.enabled .Values.kmsCore.thresholdMode.initializationScript.enabled -}}
+{{- if and .Values.kmsCore.thresholdMode.enabled .Values.kmsInit.enabled -}}
 {{- $kmsCoreName := include "kmsCoreName" . }}
 {{- $peersIDList := untilStep (include "kmsPeersStartID" . | int) (.Values.kmsPeers.count | add1 | int) 1  }}
 apiVersion: batch/v1
@@ -7,6 +7,8 @@ metadata:
   labels:
     app: kms-threshold-init-job
     app.kubernetes.io/name: {{ include "kmsThresholdInitJobName" . }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
   name: {{ include "kmsThresholdInitJobName" . }}
 spec:
   template:
@@ -98,15 +100,15 @@ spec:
       restartPolicy: Never
       imagePullSecrets:
         - name: registry-credentials
-      {{- with .Values.nodeSelector }}
+      {{- with .Values.kmsInit.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.affinity }}
+      {{- with .Values.kmsInit.affinity }}
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.tolerations }}
+      {{- with .Values.kmsInit.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}

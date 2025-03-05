@@ -51,8 +51,6 @@ kmsCore:
     #  - id: 2
     #    host: kms-service-core-2
     #    port: 50001
-    initializationScript:
-      enabled: false
     dec_capacity: 10000
     min_dec_cache: 6000
     num_sessions_preproc: 2
@@ -69,15 +67,15 @@ kmsCore:
     userId: 10003
     groupId: 10002
     ports:
-      logger: 3000
-      config: 4000
       tracing: 4317
+      # For AWS authentication, set the `imds` or `sts` ports
+      # To authenticate using either IMDS (with the Kubernetes node EC2 instance role) or STS (with the IRSA)
       imds: 5000
       sts: 5500
       s3: 6000
       awskms: 7000
-      webidentitytoken: 4100
       peer: 10000
+      # Important, don't bind to port 9000 as it is reserved by Nitro for communicating with the enclave.
   publicVault:
     s3:
       enabled: true
@@ -119,6 +117,29 @@ kmsCore:
   tolerations:
 mtls:
   enabled: false
+
+kmsCoreClient:
+  enabled: false
+  nameOverride:
+  image:
+    name: ghcr.io/zama-ai/kms-core-client
+    tag: latest
+  envFrom:
+    configmap:
+      name:
+  num_majority: 2
+  num_reconstruct: 3
+  decryption_mode: "NoiseFloodSmall"
+  fhe_parameter: Test
+  nodeSelector:
+  affinity:
+  tolerations:
+
+kmsInit:
+  enabled: false
+  nodeSelector:
+  affinity:
+  tolerations:
 
 kubeUtils:
   image:
@@ -177,23 +198,6 @@ podSecurityContextForEnclave:
 
 kyverno:
   enabled: false
-
-kmsCoreClient:
-  enabled: false
-  nameOverride:
-  image:
-    name: ghcr.io/zama-ai/kms-core-client
-    tag: latest
-  envFrom:
-    configmap:
-      name:
-  num_majority: 2
-  num_reconstruct: 3
-  decryption_mode: NoiseFloodSmall
-  fhe_parameter: Test
-  nodeSelector:
-  affinity:
-  tolerations:
 
 # Cronjob kubernetes
 kmsCoreClientTesting:

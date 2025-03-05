@@ -23,8 +23,12 @@ data:
     s3_endpoint = "http://minio:9000"
     {{- else }}
     {{- if .Values.kmsCore.nitroEnclave.enabled }}
+    {{- if .Values.kmsCore.nitroEnclave.ports.imds }}
     imds_endpoint = "http://localhost:{{ .Values.kmsCore.nitroEnclave.ports.imds }}"
+    {{- end }}
+    {{- if .Values.kmsCore.nitroEnclave.ports.sts }}
     sts_endpoint = "https://localhost:{{ .Values.kmsCore.nitroEnclave.ports.sts }}"
+    {{- end }}
     s3_endpoint = "https://localhost:{{ .Values.kmsCore.nitroEnclave.ports.s3 }}"
     awskms_endpoint = "https://localhost:{{ .Values.kmsCore.nitroEnclave.ports.awskms }}"
     {{- end }}
