@@ -158,11 +158,12 @@ fn read_test_file(filename: &str) -> TestFile {
 }
 
 async fn get_tenant_id_from_db(pool: &sqlx::PgPool, tenant_api_key: &str) -> i32 {
-    let tenant_id: i32 = sqlx::query_scalar("SELECT id FROM tenants WHERE tenant_api_key = $1")
-        .bind(tenant_api_key)
-        .fetch_one(pool)
-        .await
-        .expect("tenant_id");
+    let tenant_id: i32 =
+        sqlx::query_scalar("SELECT tenant_id FROM tenants WHERE tenant_api_key = $1::uuid")
+            .bind(tenant_api_key)
+            .fetch_one(pool)
+            .await
+            .expect("tenant_id");
 
     tenant_id
 }
