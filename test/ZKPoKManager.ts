@@ -80,11 +80,11 @@ describe("ZKPoKManager", function () {
     it("Should verify proof responses", async function () {
       // Given
       const zkpokManagerAddress = await zkpokManager.getAddress();
-      const handles = [hre.ethers.randomBytes(32), hre.ethers.randomBytes(32)];
+      const ctHandles = [hre.ethers.randomBytes(32), hre.ethers.randomBytes(32)];
       const eip712Message = createEIP712ResponseZKPoK(
         hre.network.config.chainId!,
         zkpokManagerAddress,
-        handles,
+        ctHandles,
         userAddress,
         contractAddress,
         contractChainId,
@@ -92,27 +92,29 @@ describe("ZKPoKManager", function () {
       const [signature1, signature2, signature3] = await getSignaturesZKPoK(eip712Message, coprocessorSigners);
 
       // When
-      await zkpokManager.connect(coprocessorSigners[1]).verifyProofResponse(zkProofId, handles, signature1);
-      let txResponse = zkpokManager.connect(coprocessorSigners[2]).verifyProofResponse(zkProofId, handles, signature2);
+      await zkpokManager.connect(coprocessorSigners[1]).verifyProofResponse(zkProofId, ctHandles, signature1);
+      let txResponse = zkpokManager
+        .connect(coprocessorSigners[2])
+        .verifyProofResponse(zkProofId, ctHandles, signature2);
       let lateTxResponse = zkpokManager
         .connect(coprocessorSigners[2])
-        .verifyProofResponse(zkProofId, handles, signature3);
+        .verifyProofResponse(zkProofId, ctHandles, signature3);
 
       // Then
       await expect(txResponse)
         .to.emit(zkpokManager, "VerifyProofResponse")
-        .withArgs(zkProofId, handles, [signature1, signature2]);
+        .withArgs(zkProofId, ctHandles, [signature1, signature2]);
       await expect(lateTxResponse).to.not.emit(zkpokManager, "VerifyProofResponse");
     });
 
     it("Should revert because the signer is not a coprocessor", async function () {
       // Given
-      const handles = [hre.ethers.randomBytes(32), hre.ethers.randomBytes(32)];
+      const ctHandles = [hre.ethers.randomBytes(32), hre.ethers.randomBytes(32)];
       const zkpokManagerAddress = await zkpokManager.getAddress();
       const eip712Message = createEIP712ResponseZKPoK(
         hre.network.config.chainId!,
         zkpokManagerAddress,
-        handles,
+        ctHandles,
         userAddress,
         contractAddress,
         contractChainId,
@@ -120,7 +122,7 @@ describe("ZKPoKManager", function () {
       const [signature1] = await getSignaturesZKPoK(eip712Message, [fakeSigner]);
 
       // When
-      let txResponse = zkpokManager.verifyProofResponse(zkProofId, handles, signature1);
+      let txResponse = zkpokManager.verifyProofResponse(zkProofId, ctHandles, signature1);
 
       // Then
       await expect(txResponse)
@@ -130,12 +132,12 @@ describe("ZKPoKManager", function () {
 
     it("Should revert with CoprocessorHasAlreadySigned", async function () {
       // Given
-      const handles = [hre.ethers.randomBytes(32), hre.ethers.randomBytes(32)];
+      const ctHandles = [hre.ethers.randomBytes(32), hre.ethers.randomBytes(32)];
       const zkpokManagerAddress = await zkpokManager.getAddress();
       const eip712Message = createEIP712ResponseZKPoK(
         hre.network.config.chainId!,
         zkpokManagerAddress,
-        handles,
+        ctHandles,
         userAddress,
         contractAddress,
         contractChainId,
@@ -143,8 +145,8 @@ describe("ZKPoKManager", function () {
       const [signature1] = await getSignaturesZKPoK(eip712Message, coprocessorSigners);
 
       // When
-      await zkpokManager.verifyProofResponse(zkProofId, handles, signature1);
-      let txResponse = zkpokManager.verifyProofResponse(zkProofId, handles, signature1);
+      await zkpokManager.verifyProofResponse(zkProofId, ctHandles, signature1);
+      let txResponse = zkpokManager.verifyProofResponse(zkProofId, ctHandles, signature1);
 
       // Then
       await expect(txResponse)

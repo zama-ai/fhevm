@@ -29,9 +29,9 @@ interface IZKPoKManager {
     /// @notice Emitted once a ZK Proof verification is completed
     /// @dev This event is meant to be listened by the fhEVM Relayer
     /// @param zkProofId The ID of the ZK Proof
-    /// @param handles The Coprocessor's computed handles
+    /// @param ctHandles The Coprocessor's computed ciphertext handles
     /// @param signatures The Coprocessor's signature
-    event VerifyProofResponse(uint256 indexed zkProofId, bytes32[] handles, bytes[] signatures);
+    event VerifyProofResponse(uint256 indexed zkProofId, bytes32[] ctHandles, bytes[] signatures);
 
     /// @notice Error indicating that the Coprocessor has already signed its ZK Proof verification response
     /// @param zkProofId The ID of the ZK Proof
@@ -54,9 +54,9 @@ interface IZKPoKManager {
     /// @notice Responds to a ZK Proof verification request
     /// @dev This function is called by the Coprocessor
     /// @param zkProofId The ID of the requested ZK Proof
-    /// @param handles The Coprocessor's computed handles
+    /// @param ctHandles The Coprocessor's computed ciphertext handles
     /// @param signature The Coprocessor's signature
-    function verifyProofResponse(uint256 zkProofId, bytes32[] calldata handles, bytes calldata signature) external;
+    function verifyProofResponse(uint256 zkProofId, bytes32[] calldata ctHandles, bytes calldata signature) external;
 
     /// @notice Indicates if a given ZK Proof is already verified
     /// @param zkProofId The ID of the ZK Proof

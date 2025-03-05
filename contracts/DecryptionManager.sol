@@ -15,7 +15,7 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
     /// @notice The typed data structure for the EIP712 signature to validate in public decryption responses.
     /// @dev The name of this struct is not relevant for the signature validation, only the one defined
     /// @dev EIP712_PUBLIC_DECRYPT_TYPE is, but we keep it the same for clarity.
-    struct EIP712PublicDecrypt {
+    struct PublicDecryptVerification {
         /// @notice The handles of the ciphertexts that have been decrypted.
         uint256[] ctHandles;
         /// @notice The decrypted result of the public decryption.
@@ -25,7 +25,7 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
     /// @notice The typed data structure for the EIP712 signature to validate in user decryption requests.
     /// @dev The name of this struct is not relevant for the signature validation, only the one defined
     /// @dev EIP712_USER_DECRYPT_REQUEST_TYPE is, but we keep it the same for clarity.
-    struct EIP712UserDecryptRequest {
+    struct UserDecryptRequestVerification {
         /// @notice The user's public key to be used for reencryption.
         bytes publicKey;
         /// @notice The contract addresses that verification is requested for.
@@ -41,7 +41,7 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
     /// @notice The typed data structure for the EIP712 signature to validate in user decryption responses.
     /// @dev The name of this struct is not relevant for the signature validation, only the one defined
     /// @dev EIP712_USER_DECRYPT_RESPONSE_TYPE is, but we keep it the same for clarity.
-    struct EIP712UserDecryptResponse {
+    struct UserDecryptResponseVerification {
         /// @notice The user's public key used for the share reencryption.
         bytes publicKey;
         /// @notice The handles of the ciphertexts that have been decrypted.
@@ -97,11 +97,11 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
     /// @notice Whether a public decryption has been done
     mapping(uint256 publicDecryptionId => bool publicDecryptionDone) internal publicDecryptionDone;
 
-    /// @notice The definition of the EIP712PublicDecrypt structure typed data.
+    /// @notice The definition of the PublicDecryptVerification structure typed data.
     string public constant EIP712_PUBLIC_DECRYPT_TYPE =
-        "EIP712PublicDecrypt(uint256[] ctHandles,bytes decryptedResult)";
+        "PublicDecryptVerification(uint256[] ctHandles,bytes decryptedResult)";
 
-    /// @notice The hash of the EIP712PublicDecrypt structure typed data definition used for signature validation.
+    /// @notice The hash of the PublicDecryptVerification structure typed data definition used for signature validation.
     bytes32 public constant EIP712_PUBLIC_DECRYPT_TYPE_HASH = keccak256(bytes(EIP712_PUBLIC_DECRYPT_TYPE));
 
     // ----------------------------------------------------------------------------------------------
@@ -117,19 +117,21 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
     /// @notice The reencrypted shares received from user decryption responses.
     mapping(uint256 userDecryptionId => bytes[] shares) internal reencryptedShares;
 
-    /// @notice The definition of the EIP712UserDecryptRequest structure typed data.
+    /// @notice The definition of the UserDecryptRequestVerification structure typed data.
     string public constant EIP712_USER_DECRYPT_REQUEST_TYPE =
-        "EIP712UserDecryptRequest(bytes publicKey,address[] contractAddresses,uint256 contractsChainId,"
+        "UserDecryptRequestVerification(bytes publicKey,address[] contractAddresses,uint256 contractsChainId,"
         "uint256 startTimestamp,uint256 durationDays)";
 
-    /// @notice The hash of the EIP712UserDecryptRequest structure typed data definition used for signature validation.
+    /// @notice The hash of the UserDecryptRequestVerification structure typed data definition
+    /// @notice used for signature validation.
     bytes32 public constant EIP712_USER_DECRYPT_REQUEST_TYPE_HASH = keccak256(bytes(EIP712_USER_DECRYPT_REQUEST_TYPE));
 
-    /// @notice The definition of the EIP712UserDecryptResponse structure typed data.
+    /// @notice The definition of the UserDecryptResponseVerification structure typed data.
     string public constant EIP712_USER_DECRYPT_RESPONSE_TYPE =
-        "EIP712UserDecryptResponse(bytes publicKey,uint256[] ctHandles,bytes reencryptedShare)";
+        "UserDecryptResponseVerification(bytes publicKey,uint256[] ctHandles,bytes reencryptedShare)";
 
-    /// @notice The hash of the EIP712UserDecryptResponse structure typed data definition used for signature validation.
+    /// @notice The hash of the UserDecryptResponseVerification structure typed data definition
+    /// @notice used for signature validation.
     bytes32 public constant EIP712_USER_DECRYPT_RESPONSE_TYPE_HASH =
         keccak256(bytes(EIP712_USER_DECRYPT_RESPONSE_TYPE));
 
@@ -185,14 +187,14 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
         bytes calldata decryptedResult,
         bytes calldata signature
     ) public virtual {
-        /// @dev Initialize the EIP712PublicDecrypt structure for the signature validation.
-        EIP712PublicDecrypt memory eip712PublicDecrypt = EIP712PublicDecrypt(
+        /// @dev Initialize the PublicDecryptVerification structure for the signature validation.
+        PublicDecryptVerification memory publicDecryptVerification = PublicDecryptVerification(
             publicCtHandles[publicDecryptionId],
             decryptedResult
         );
 
-        /// @dev Compute the digest of the EIP712PublicDecrypt structure.
-        bytes32 digest = _hashEIP712PublicDecrypt(eip712PublicDecrypt);
+        /// @dev Compute the digest of the PublicDecryptVerification structure.
+        bytes32 digest = _hashPublicDecryptVerification(publicDecryptVerification);
 
         /// @dev Recover the signer address from the signature and validate that is a KMS node that
         /// @dev has not already signed.
@@ -237,8 +239,8 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
         /// @dev Check that the user decryption is allowed for the given userAddress and ctHandleContractPairs.
         _ACL_MANAGER.checkUserDecryptAllowed(userAddress, ctHandleContractPairs);
 
-        /// @dev Initialize the EIP712UserDecryptRequest structure for the signature validation.
-        EIP712UserDecryptRequest memory eip712UserDecryptRequest = EIP712UserDecryptRequest(
+        /// @dev Initialize the UserDecryptRequestVerification structure for the signature validation.
+        UserDecryptRequestVerification memory userDecryptRequestVerification = UserDecryptRequestVerification(
             publicKey,
             contractAddresses,
             contractsChainId,
@@ -247,7 +249,7 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
         );
 
         /// @dev Validate the received EIP712 signature on the user decryption request.
-        _validateUserDecryptRequestEIP712Signature(eip712UserDecryptRequest, userAddress, signature);
+        _validateUserDecryptRequestEIP712Signature(userDecryptRequestVerification, userAddress, signature);
 
         /// @dev Extract the ctHandles from the given ctHandleContractPairs.
         /// @dev We do not deduplicate handles if the same handle appears multiple times
@@ -287,15 +289,15 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
     ) external virtual {
         UserDecryptionPayload memory userDecryptionPayload = userDecryptionPayloads[userDecryptionId];
 
-        /// @dev Initialize the EIP712UserDecryptResponse structure for the signature validation.
-        EIP712UserDecryptResponse memory eip712UserDecryptResponse = EIP712UserDecryptResponse(
+        /// @dev Initialize the UserDecryptResponseVerification structure for the signature validation.
+        UserDecryptResponseVerification memory userDecryptResponseVerification = UserDecryptResponseVerification(
             userDecryptionPayload.publicKey,
             userDecryptionPayload.ctHandles,
             reencryptedShare
         );
 
-        /// @dev Compute the digest of the EIP712UserDecryptResponse structure.
-        bytes32 digest = _hashEIP712UserDecryptResponse(eip712UserDecryptResponse);
+        /// @dev Compute the digest of the UserDecryptResponseVerification structure.
+        bytes32 digest = _hashUserDecryptResponseVerification(userDecryptResponseVerification);
 
         /// @dev Recover the signer address from the signature and validate that is a KMS node that
         /// @dev has not already signed.
@@ -350,7 +352,7 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
     /// @dev This function checks that the signer address is a KMS Connector.
     /// @dev It also checks that the signer has not already signed the public/user decryption.
     /// @param decryptionId The ID of the public or user decryption
-    /// @param digest The hash of the EIP712PublicDecrypt/EIP712UserDecryptResponse structure
+    /// @param digest The hash of the PublicDecryptVerification/UserDecryptResponseVerification structure
     /// @param signature The signature to be validated
     function _validateEIP712Signature(uint256 decryptionId, bytes32 digest, bytes calldata signature) internal virtual {
         address signer = ECDSA.recover(digest, signature);
@@ -367,73 +369,73 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
 
     /// @notice Validates the EIP712 signature for a given user decryption request
     /// @dev This function checks that the signer address is the same as the user address.
-    /// @param eip712UserDecryptRequest The signed EIP712UserDecryptRequest structure
+    /// @param userDecryptRequestVerification The signed UserDecryptRequestVerification structure
     /// @param signature The signature to be validated
     function _validateUserDecryptRequestEIP712Signature(
-        EIP712UserDecryptRequest memory eip712UserDecryptRequest,
+        UserDecryptRequestVerification memory userDecryptRequestVerification,
         address userAddress,
         bytes calldata signature
     ) internal view virtual {
-        bytes32 digest = _hashEIP712UserDecryptRequest(eip712UserDecryptRequest);
+        bytes32 digest = _hashUserDecryptRequestVerification(userDecryptRequestVerification);
         address signer = ECDSA.recover(digest, signature);
         if (signer != userAddress) {
             revert InvalidUserSignature(signature);
         }
     }
 
-    /// @notice Computes the hash of a given EIP712PublicDecrypt structured data
-    /// @param eip712PublicDecrypt The EIP712PublicDecrypt structure
-    /// @return The hash of the EIP712PublicDecrypt structure
-    function _hashEIP712PublicDecrypt(
-        EIP712PublicDecrypt memory eip712PublicDecrypt
+    /// @notice Computes the hash of a given PublicDecryptVerification structured data
+    /// @param publicDecryptVerification The PublicDecryptVerification structure
+    /// @return The hash of the PublicDecryptVerification structure
+    function _hashPublicDecryptVerification(
+        PublicDecryptVerification memory publicDecryptVerification
     ) internal view virtual returns (bytes32) {
         return
             _hashTypedDataV4(
                 keccak256(
                     abi.encode(
                         EIP712_PUBLIC_DECRYPT_TYPE_HASH,
-                        keccak256(abi.encodePacked(eip712PublicDecrypt.ctHandles)),
-                        keccak256(eip712PublicDecrypt.decryptedResult)
+                        keccak256(abi.encodePacked(publicDecryptVerification.ctHandles)),
+                        keccak256(publicDecryptVerification.decryptedResult)
                     )
                 )
             );
     }
 
-    /// @notice Computes the hash of a given EIP712UserDecryptRequest structured data.
-    /// @param eip712UserDecryptRequest The EIP712UserDecryptRequest structure to hash.
-    /// @return The hash of the EIP712UserDecryptRequest structure.
-    function _hashEIP712UserDecryptRequest(
-        EIP712UserDecryptRequest memory eip712UserDecryptRequest
+    /// @notice Computes the hash of a given UserDecryptRequestVerification structured data.
+    /// @param userDecryptRequestVerification The UserDecryptRequestVerification structure to hash.
+    /// @return The hash of the UserDecryptRequestVerification structure.
+    function _hashUserDecryptRequestVerification(
+        UserDecryptRequestVerification memory userDecryptRequestVerification
     ) internal view virtual returns (bytes32) {
         return
             _hashTypedDataV4(
                 keccak256(
                     abi.encode(
                         EIP712_USER_DECRYPT_REQUEST_TYPE_HASH,
-                        keccak256(eip712UserDecryptRequest.publicKey),
-                        keccak256(abi.encodePacked(eip712UserDecryptRequest.contractAddresses)),
-                        eip712UserDecryptRequest.contractsChainId,
-                        eip712UserDecryptRequest.startTimestamp,
-                        eip712UserDecryptRequest.durationDays
+                        keccak256(userDecryptRequestVerification.publicKey),
+                        keccak256(abi.encodePacked(userDecryptRequestVerification.contractAddresses)),
+                        userDecryptRequestVerification.contractsChainId,
+                        userDecryptRequestVerification.startTimestamp,
+                        userDecryptRequestVerification.durationDays
                     )
                 )
             );
     }
 
-    /// @notice Computes the hash of a given EIP712UserDecryptResponse structured data.
-    /// @param eip712UserDecryptResponse The EIP712UserDecryptResponse structure to hash.
-    /// @return The hash of the EIP712UserDecryptResponse structure.
-    function _hashEIP712UserDecryptResponse(
-        EIP712UserDecryptResponse memory eip712UserDecryptResponse
+    /// @notice Computes the hash of a given UserDecryptResponseVerification structured data.
+    /// @param userDecryptResponseVerification The UserDecryptResponseVerification structure to hash.
+    /// @return The hash of the UserDecryptResponseVerification structure.
+    function _hashUserDecryptResponseVerification(
+        UserDecryptResponseVerification memory userDecryptResponseVerification
     ) internal view virtual returns (bytes32) {
         return
             _hashTypedDataV4(
                 keccak256(
                     abi.encode(
                         EIP712_USER_DECRYPT_RESPONSE_TYPE_HASH,
-                        keccak256(eip712UserDecryptResponse.publicKey),
-                        keccak256(abi.encodePacked(eip712UserDecryptResponse.ctHandles)),
-                        keccak256(eip712UserDecryptResponse.reencryptedShare)
+                        keccak256(userDecryptResponseVerification.publicKey),
+                        keccak256(abi.encodePacked(userDecryptResponseVerification.ctHandles)),
+                        keccak256(userDecryptResponseVerification.reencryptedShare)
                     )
                 )
             );

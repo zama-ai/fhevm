@@ -13,9 +13,9 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
     /// @notice The typed data structure for the EIP712 signature to validate in ZK Proof verification responses.
     /// @dev The name of this struct is not relevant for the signature validation, only the one defined
     /// @dev EIP712_ZKPOK_TYPE is, but we keep it the same for clarity.
-    struct EIP712ZKPoK {
-        /// @notice The Coprocessor's computed handles.
-        bytes32[] handles;
+    struct CiphertextVerification {
+        /// @notice The Coprocessor's computed ciphertext handles.
+        bytes32[] ctHandles;
         /// @notice The address of the user that has provided the input in the ZK Proof verification request.
         address userAddress;
         /// @notice The address of the dapp requiring the ZK Proof verification.
@@ -55,11 +55,11 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
     /// @notice The mapping of ZK Proof IDs to their inputs received on verification requests.
     mapping(uint256 zkProofId => ZKProofInput zkProofInput) internal _zkProofInputs;
 
-    /// @notice The definition of the EIP712ZKPoK structure typed data.
+    /// @notice The definition of the CiphertextVerification structure typed data.
     string private constant EIP712_ZKPOK_TYPE =
-        "EIP712ZKPoK(bytes32[] handles,address userAddress,address contractAddress,uint256 contractChainId)";
+        "CiphertextVerification(bytes32[] ctHandles,address userAddress,address contractAddress,uint256 contractChainId)";
 
-    /// @notice The hash of the EIP712ZKPoK structure typed data definition used for signature validation.
+    /// @notice The hash of the CiphertextVerification structure typed data definition used for signature validation.
     bytes32 private constant EIP712_ZKPOK_TYPE_HASH = keccak256(bytes(EIP712_ZKPOK_TYPE));
 
     string private constant CONTRACT_NAME = "ZKPoKManager";
@@ -94,22 +94,22 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
     /// @dev See {IZKPoKManager-verifyProofResponse}.
     function verifyProofResponse(
         uint256 zkProofId,
-        bytes32[] calldata handles,
+        bytes32[] calldata ctHandles,
         bytes calldata signature
     ) public virtual {
         /// @dev Retrieve stored ZK Proof verification request inputs.
         ZKProofInput memory zkProofInput = _zkProofInputs[zkProofId];
 
-        /// @dev Initialize the EIP712ZKPoK structure for the signature validation.
-        EIP712ZKPoK memory eip712ZKPoK = EIP712ZKPoK(
-            handles,
+        /// @dev Initialize the CiphertextVerification structure for the signature validation.
+        CiphertextVerification memory ciphertextVerification = CiphertextVerification(
+            ctHandles,
             zkProofInput.userAddress,
             zkProofInput.contractAddress,
             zkProofInput.contractChainId
         );
 
-        /// @dev Compute the digest of the EIP712ZKPoK structure.
-        bytes32 digest = _hashEIP712ZKPoK(eip712ZKPoK);
+        /// @dev Compute the digest of the CiphertextVerification structure.
+        bytes32 digest = _hashCiphertextVerification(ciphertextVerification);
 
         /// @dev Recover the signer address from the signature and validate that is a Coprocessor.
         _validateEIP712Signature(zkProofId, digest, signature);
@@ -124,7 +124,7 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
             // TODO(#52): Implement calling PaymentManager contract to burn and distribute fees
             verifiedZKProofs[zkProofId] = true;
 
-            emit VerifyProofResponse(zkProofId, handles, currentSignatures);
+            emit VerifyProofResponse(zkProofId, ctHandles, currentSignatures);
         }
     }
 
@@ -154,7 +154,7 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
     /// @dev This function calls the HTTPZ contract to check that the signer address is a Coprocessor.
     /// @dev It also checks that the signer has not already signed the ZK Proof.
     /// @param zkProofId The ID of the ZK Proof
-    /// @param digest The hash of the EIP712ZKPoK structure
+    /// @param digest The hash of the CiphertextVerification structure
     /// @param signature The signature to be validated
     function _validateEIP712Signature(uint256 zkProofId, bytes32 digest, bytes calldata signature) internal virtual {
         address signer = ECDSA.recover(digest, signature);
@@ -168,16 +168,18 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
         zkProofSigners[zkProofId][signer] = true;
     }
 
-    /// @notice Computes the hash of a given EIP712ZKPoK structured data
-    /// @param ctVerification The EIP712ZKPoK structure
-    /// @return The hash of the EIP712ZKPoK structure
-    function _hashEIP712ZKPoK(EIP712ZKPoK memory ctVerification) internal view virtual returns (bytes32) {
+    /// @notice Computes the hash of a given CiphertextVerification structured data
+    /// @param ctVerification The CiphertextVerification structure
+    /// @return The hash of the CiphertextVerification structure
+    function _hashCiphertextVerification(
+        CiphertextVerification memory ctVerification
+    ) internal view virtual returns (bytes32) {
         return
             _hashTypedDataV4(
                 keccak256(
                     abi.encode(
                         EIP712_ZKPOK_TYPE_HASH,
-                        keccak256(abi.encodePacked(ctVerification.handles)),
+                        keccak256(abi.encodePacked(ctVerification.ctHandles)),
                         ctVerification.userAddress,
                         ctVerification.contractAddress,
                         ctVerification.contractChainId
