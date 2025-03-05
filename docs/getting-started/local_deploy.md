@@ -10,15 +10,16 @@ Here is an example of how to deploy contracts locally (on a `gatewayL2` local ne
 npm install
 ```
 
-Then create a `.env` file in root of the repo.
-
-1/ Fill correct values in the `.env.example` if needed, depending on your scenario. It should contain :
+1/ Modify values in the `.env.example` if needed, depending on your scenario. It should contain :
 
 - protocol metadata
 - admin addresses
 - kms nodes
 - coprocessors
 - L1 network(s) infos
+
+The number of admins, KMS nodes, coprocessors and networks set in the `.env.example` file should be lower or equal to
+the number of metadata set along each, and differentiated by indexes (starting from 1).
 
 Note: to get the different accounts (with their private and public keys), run
 
@@ -49,3 +50,5 @@ To test the deployment settings locally, run:
 ```bash
 make deploy-contracts-local-deployment
 ```
+
+Note: for now, the settings are aligned with the input flow staging. In the future, more settings will be added.

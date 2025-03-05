@@ -4,10 +4,20 @@ import { task } from "hardhat/config";
 import type { TaskArguments } from "hardhat/types";
 import path from "path";
 
+// Get the required environment variable, throw an error if it's not set
+// We only check if the variable is set, not if it's empty
+function getRequiredEnvVar(name: string): string {
+  if (!(name in process.env)) {
+    throw new Error(`"${name}" env variable is not set`);
+  }
+  return process.env[name]!;
+}
+
+// Write the content to a file
 function writeEnvFile(filePath: string, content: string): void {
   try {
     fs.writeFileSync(filePath, content, { flag: "w" });
-    console.log(`Content written to ${filePath} successfully!`);
+    console.log(`Content written to ${filePath} successfully!\n`);
   } catch (err) {
     console.error(`Failed to write to ${filePath}:`, err);
   }
@@ -16,33 +26,67 @@ function writeEnvFile(filePath: string, content: string): void {
 // Deploy the HTTPZ contract
 task("task:deployHttpz")
   .addParam("deployerPrivateKey", "The deployer private key")
-  .addParam("adminPrivateKey", "The admin private key")
-  .addParam("protocolMetadata", "The protocol metadata")
-  .addParam("adminAddresses", "The admin addresses")
-  .addParam("kmsThreshold", "The KMS threshold")
-  .addParam("kmsNodes", "The KMS nodes")
-  .addParam("coprocessors", "The coprocessors")
-  .addParam("layer1Networks", "The L1 networks to register in HTTPZ contract")
+  .addParam("numAdmins", "The number of admins")
+  .addParam("numKmsNodes", "The number of KMS nodes")
+  .addParam("numCoprocessors", "The number of coprocessors")
+  .addParam("numNetworks", "The number of L1 networks")
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
     const deployer = new ethers.Wallet(taskArguments.deployerPrivateKey).connect(ethers.provider);
-    const admin = new ethers.Wallet(taskArguments.adminPrivateKey).connect(ethers.provider);
 
     // Parse the protocol metadata
-    const metadata = JSON.parse(taskArguments.protocolMetadata);
-    // Parse the admin addresses
-    const adminAddresses = JSON.parse(taskArguments.adminAddresses);
-    // Parse the KMS nodes
-    const kmsNodes = JSON.parse(taskArguments.kmsNodes);
-    // Parse the coprocessors
-    const coprocessors = JSON.parse(taskArguments.coprocessors);
-    // Parse the L1 network
-    const layer1Networks = JSON.parse(taskArguments.layer1Networks);
+    const protocolMetadata = {
+      name: getRequiredEnvVar("PROTOCOL_NAME"),
+      website: getRequiredEnvVar("PROTOCOL_WEBSITE"),
+    };
+
+    // Parse the admin addresses (index starts from 1)
+    const adminAddresses = [];
+    for (let idx = 1; idx <= taskArguments.numAdmins; idx++) {
+      adminAddresses.push(getRequiredEnvVar(`ADMIN_ADDRESS_${idx}`));
+    }
+
+    // Parse the KMS threshold
+    const kmsThreshold = getRequiredEnvVar("KMS_THRESHOLD");
+
+    // Parse the KMS nodes (index starts from 1)
+    const kmsNodes = [];
+    for (let idx = 1; idx <= taskArguments.numKmsNodes; idx++) {
+      kmsNodes.push({
+        connectorAddress: getRequiredEnvVar(`KMS_NODE_ADDRESS_${idx}`),
+        identity: getRequiredEnvVar(`KMS_NODE_IDENTITY_${idx}`),
+        ipAddress: getRequiredEnvVar(`KMS_NODE_IP_ADDRESS_${idx}`),
+        daAddress: getRequiredEnvVar(`KMS_NODE_DA_ADDRESS_${idx}`),
+        tlsCertificate: getRequiredEnvVar(`KMS_NODE_TLS_CERTIFICATE_${idx}`),
+      });
+    }
+
+    // Parse the coprocessors (index starts from 1)
+    const coprocessors = [];
+    for (let idx = 1; idx <= taskArguments.numCoprocessors; idx++) {
+      coprocessors.push({
+        transactionSenderAddress: getRequiredEnvVar(`COPROCESSOR_ADDRESS_${idx}`),
+        identity: getRequiredEnvVar(`COPROCESSOR_IDENTITY_${idx}`),
+        daAddress: getRequiredEnvVar(`COPROCESSOR_DA_ADDRESS_${idx}`),
+      });
+    }
+
+    // Parse the L1 network (index starts from 1)
+    const layer1Networks = [];
+    for (let idx = 1; idx <= taskArguments.numNetworks; idx++) {
+      layer1Networks.push({
+        chainId: getRequiredEnvVar(`NETWORK_CHAIN_ID_${idx}`),
+        httpzExecutor: getRequiredEnvVar(`NETWORK_HTTPZ_EXECUTOR_${idx}`),
+        aclAddress: getRequiredEnvVar(`NETWORK_ACL_ADDRESS_${idx}`),
+        name: getRequiredEnvVar(`NETWORK_NAME_${idx}`),
+        website: getRequiredEnvVar(`NETWORK_WEBSITE_${idx}`),
+      });
+    }
 
     const HTTPZ = await ethers.getContractFactory("HTTPZ", deployer);
     const httpz = await HTTPZ.deploy(
-      metadata,
+      protocolMetadata,
       adminAddresses,
-      taskArguments.kmsThreshold,
+      kmsThreshold,
       kmsNodes,
       coprocessors,
       layer1Networks,
@@ -54,9 +98,9 @@ task("task:deployHttpz")
     const httpzAddress = await httpz.getAddress();
 
     console.log("HTTPZ contract deployed to:", httpzAddress);
-    console.log("Protocol metadata:", metadata);
+    console.log("Protocol metadata:", protocolMetadata);
     console.log("Admin addresses:", adminAddresses, "\n");
-    console.log("KMS threshold:", taskArguments.kmsThreshold, "\n");
+    console.log("KMS threshold:", kmsThreshold, "\n");
     console.log("KMS nodes:", kmsNodes, "\n");
     console.log("Coprocessors:", coprocessors, "\n");
     console.log("L1 networks:", layer1Networks, "\n");

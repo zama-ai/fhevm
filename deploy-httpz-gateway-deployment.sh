@@ -11,35 +11,24 @@ npx hardhat clean
 npx hardhat compile
 
 # Deployer
-DEPLOYER_ADDRESS=$(grep DEPLOYER_ADDRESS .env | cut -d '"' -f 2)
 DEPLOYER_PRIVATE_KEY=$(grep DEPLOYER_PRIVATE_KEY .env | cut -d '"' -f 2)
 
-# Coprocessor
-# Coprocessor address is the transaction sender's address
-COPROCESSOR_ADDRESS=$(grep COPROCESSOR_ADDRESS .env | cut -d '"' -f 2)
-
-# Network
-NETWORK_CHAIN_ID_1=$(grep NETWORK_CHAIN_ID_1 .env | cut -d '"' -f 2)
-
-# Dummy address
-# This is used for inputting dummy addresses or any bytes type when deploying the HTTPZ contract as passing
-# empty strings raises an error
-DUMMY_HEX_BYTES="0x1234567890abcdef1234567890abcdef12345678"
-# Also, we need to add a dummy KMS node, else deploying the contract will fail because the threshold will be too low
-DUMMY_KMS_NODE="[{\"connectorAddress\":\"${DUMMY_HEX_BYTES}\",\"identity\":\"${DUMMY_HEX_BYTES}\",\"ipAddress\":\"\",\"daAddress\": \"\", \"tlsCertificate\":\"${DUMMY_HEX_BYTES}\"}]"
+# Number of admins, KMS nodes, coprocessors and networks
+NUM_ADMINS=$(grep NUM_ADMINS .env | cut -d '"' -f 2)
+NUM_KMS_NODES=$(grep NUM_KMS_NODES .env | cut -d '"' -f 2)
+NUM_COPROCESSORS=$(grep NUM_COPROCESSORS .env | cut -d '"' -f 2)
+NUM_NETWORKS=$(grep NUM_NETWORKS .env | cut -d '"' -f 2)
 
 echo "Deploy HTTPZ contract:"
-# Deploy HTTPZ contract - register KMS nodes and coprocessor (transaction-sender services) and network chainID
-# for simplicity admin is the contract deployer/owner - should be different in real scenarios
+# Deploy HTTPZ contract
 npx hardhat task:deployHttpz --deployer-private-key "$DEPLOYER_PRIVATE_KEY" \
-    --admin-private-key "$DEPLOYER_PRIVATE_KEY" \
-    --protocol-metadata "{\"website\":\"test\",\"name\":\"test\"}" \
-    --admin-addresses "[\"${DEPLOYER_ADDRESS}\"]" \
-    --kms-threshold 0 \
-    --kms-nodes "${DUMMY_KMS_NODE}" \
-    --coprocessors "[{\"transactionSenderAddress\":\"${COPROCESSOR_ADDRESS}\",\"identity\":\"${DUMMY_HEX_BYTES}\",\"daAddress\": \"\"}]" \
-    --layer1-networks "[{\"chainId\":${NETWORK_CHAIN_ID_1},\"httpzExecutor\":\"${DUMMY_HEX_BYTES}\",\"aclAddress\":\"${DUMMY_HEX_BYTES}\",\"name\":\"\",\"website\":\"\"}]" \
+    --num-admins "$NUM_ADMINS" \
+    --num-kms-nodes "$NUM_KMS_NODES" \
+    --num-coprocessors "$NUM_COPROCESSORS" \
+    --num-networks "$NUM_NETWORKS" \
     --network $NETWORK
+
+# Important: the ZKPoKManager contract must be deployed after the HTTPZ contract as it depends on it
 
 echo "Deploy ZKPoKManager contract:"
 # Deploy ZKPoKManager contract
