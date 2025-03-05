@@ -1,8 +1,11 @@
 use aligned_vec::ABox;
 use anyhow::anyhow;
+use core::fmt::Debug;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use tfhe::named::Named;
+use tfhe::Versionize;
 
 use std::panic::Location;
 
@@ -22,8 +25,8 @@ use tfhe::{
 };
 
 use tfhe::integer::ciphertext::BaseRadixCiphertext;
-
 use tfhe::shortint::ClassicPBSParameters;
+use tfhe_versionable::VersionsDispatch;
 
 #[cfg(feature = "test_decrypt_128")]
 use {
@@ -52,11 +55,28 @@ pub(crate) fn anyhow_error_and_log<S: AsRef<str> + fmt::Display>(msg: S) -> anyh
 }
 
 /// Key used for switch-and-squash to convert a ciphertext over u64 to one over u128
-#[derive(Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, VersionsDispatch)]
+pub enum SwitchAndSquashKeyVersioned {
+    V0(SwitchAndSquashKey),
+}
+
+/// Key used for switch-and-squash to convert a ciphertext over u64 to one over u128
+#[derive(Serialize, Deserialize, Clone, PartialEq, Versionize)]
+#[versionize(SwitchAndSquashKeyVersioned)]
 pub struct SwitchAndSquashKey {
     pub fbsk_out: Fourier128LweBootstrapKey<ABox<[f64]>>,
     //ksk is needed if PBSOrder is KS-PBS
     pub ksk: LweKeyswitchKey<Vec<u64>>,
+}
+
+impl Named for SwitchAndSquashKey {
+    const NAME: &'static str = "SwitchAndSquashKey";
+}
+
+impl Debug for SwitchAndSquashKey {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Bootstrapping key vector{:?}", self.fbsk_out)
+    }
 }
 
 pub trait AugmentedCiphertextParameters {

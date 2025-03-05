@@ -21,6 +21,7 @@ tracing-subscriber = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
 sqlx = { workspace = true }
+tfhe-versionable = { workspace = true }
 
 # crates.io dependencies
 hex = "0.4"

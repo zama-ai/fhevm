@@ -23,11 +23,13 @@ serde = "1.0.210"
 sha3 = "0.10.8"
 sqlx = { version = "0.8.3", features = ["runtime-tokio", "tls-rustls", "time", "postgres", "uuid"] }
 tfhe = { version = "1.0.0", features = ["boolean", "shortint", "integer", "zk-pok", "experimental-force_fft_algo_dif4"] }
+tfhe-versionable = "=0.5.0"
 tokio = { version = "1.38.0", features = ["full"] }
 tokio-util = "0.7"
 tonic = { version = "0.12", features = ["server"] }
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["fmt", "json"] }
+
 
 [profile.dev.package.tfhe]
 overflow-checks = false
