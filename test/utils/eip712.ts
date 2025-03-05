@@ -26,7 +26,7 @@ export interface EIP712 {
 export function createEIP712ResponseZKPoK(
   chainId: number,
   verifyingContract: string,
-  handles: Uint8Array[],
+  ctHandles: Uint8Array[],
   userAddress: string,
   contractAddress: string,
   contractChainId: number,
@@ -42,14 +42,14 @@ export function createEIP712ResponseZKPoK(
         { name: "chainId", type: "uint256" },
         { name: "verifyingContract", type: "address" },
       ],
-      EIP712ZKPoK: [
-        { name: "handles", type: "bytes32[]" },
+      CiphertextVerification: [
+        { name: "ctHandles", type: "bytes32[]" },
         { name: "userAddress", type: "address" },
         { name: "contractAddress", type: "address" },
         { name: "contractChainId", type: "uint256" },
       ],
     },
-    primaryType: "EIP712ZKPoK",
+    primaryType: "CiphertextVerification",
     domain: {
       name: "ZKPoKManager",
       version: "1",
@@ -57,7 +57,7 @@ export function createEIP712ResponseZKPoK(
       verifyingContract,
     },
     message: {
-      handles,
+      ctHandles,
       userAddress,
       contractAddress,
       contractChainId,
@@ -69,7 +69,11 @@ export function createEIP712ResponseZKPoK(
 export async function getSignaturesZKPoK(eip712: EIP712, signers: HardhatEthersSigner[]): Promise<string[]> {
   return Promise.all(
     signers.map((signer) =>
-      signer.signTypedData(eip712.domain, { EIP712ZKPoK: eip712.types.EIP712ZKPoK }, eip712.message),
+      signer.signTypedData(
+        eip712.domain,
+        { CiphertextVerification: eip712.types.CiphertextVerification },
+        eip712.message,
+      ),
     ),
   );
 }
@@ -92,12 +96,12 @@ export function createEIP712ResponsePublicDecrypt(
         { name: "chainId", type: "uint256" },
         { name: "verifyingContract", type: "address" },
       ],
-      EIP712PublicDecrypt: [
+      PublicDecryptVerification: [
         { name: "ctHandles", type: "uint256[]" },
         { name: "decryptedResult", type: "bytes" },
       ],
     },
-    primaryType: "EIP712PublicDecrypt",
+    primaryType: "PublicDecryptVerification",
     domain: {
       name: "DecryptionManager",
       version: "1",
@@ -115,7 +119,11 @@ export function createEIP712ResponsePublicDecrypt(
 export async function getSignaturesPublicDecrypt(eip712: EIP712, signers: HardhatEthersSigner[]): Promise<string[]> {
   return Promise.all(
     signers.map((signer) =>
-      signer.signTypedData(eip712.domain, { EIP712PublicDecrypt: eip712.types.EIP712PublicDecrypt }, eip712.message),
+      signer.signTypedData(
+        eip712.domain,
+        { PublicDecryptVerification: eip712.types.PublicDecryptVerification },
+        eip712.message,
+      ),
     ),
   );
 }
@@ -141,7 +149,7 @@ export function createEIP712RequestUserDecrypt(
         { name: "chainId", type: "uint256" },
         { name: "verifyingContract", type: "address" },
       ],
-      EIP712UserDecryptRequest: [
+      UserDecryptRequestVerification: [
         { name: "publicKey", type: "bytes" },
         { name: "contractAddresses", type: "address[]" },
         { name: "contractsChainId", type: "uint256" },
@@ -149,7 +157,7 @@ export function createEIP712RequestUserDecrypt(
         { name: "durationDays", type: "uint256" },
       ],
     },
-    primaryType: "EIP712UserDecryptRequest",
+    primaryType: "UserDecryptRequestVerification",
     domain: {
       name: "DecryptionManager",
       version: "1",
@@ -175,7 +183,7 @@ export async function getSignaturesUserDecryptRequest(
     signers.map((signer) =>
       signer.signTypedData(
         eip712.domain,
-        { EIP712UserDecryptRequest: eip712.types.EIP712UserDecryptRequest },
+        { UserDecryptRequestVerification: eip712.types.UserDecryptRequestVerification },
         eip712.message,
       ),
     ),
@@ -201,13 +209,13 @@ export function createEIP712ResponseUserDecrypt(
         { name: "chainId", type: "uint256" },
         { name: "verifyingContract", type: "address" },
       ],
-      EIP712UserDecryptResponse: [
+      UserDecryptResponseVerification: [
         { name: "publicKey", type: "bytes" },
         { name: "ctHandles", type: "uint256[]" },
         { name: "reencryptedShare", type: "bytes" },
       ],
     },
-    primaryType: "EIP712UserDecryptResponse",
+    primaryType: "UserDecryptResponseVerification",
     domain: {
       name: "DecryptionManager",
       version: "1",
@@ -231,7 +239,7 @@ export async function getSignaturesUserDecryptResponse(
     signers.map((signer) =>
       signer.signTypedData(
         eip712.domain,
-        { EIP712UserDecryptResponse: eip712.types.EIP712UserDecryptResponse },
+        { UserDecryptResponseVerification: eip712.types.UserDecryptResponseVerification },
         eip712.message,
       ),
     ),
