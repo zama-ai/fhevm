@@ -190,6 +190,71 @@ export async function getSignaturesUserDecryptRequest(
   );
 }
 
+// Create an EIP712 message for a user decryption request
+export function createEIP712RequestDelegatedUserDecrypt(
+  chainId: number,
+  verifyingContract: string,
+  publicKey: Uint8Array,
+  contractAddresses: string[],
+  delegatedAccount: string,
+  contractsChainId: number,
+  startTimestamp: string,
+  durationDays: string,
+): EIP712 {
+  if (!ethers.isAddress(verifyingContract)) {
+    throw new Error("Invalid verifying contract address.");
+  }
+  return {
+    types: {
+      EIP712Domain: [
+        { name: "name", type: "string" },
+        { name: "version", type: "string" },
+        { name: "chainId", type: "uint256" },
+        { name: "verifyingContract", type: "address" },
+      ],
+      DelegatedUserDecryptRequestVerification: [
+        { name: "publicKey", type: "bytes" },
+        { name: "contractAddresses", type: "address[]" },
+        { name: "delegatedAccount", type: "address" },
+        { name: "contractsChainId", type: "uint256" },
+        { name: "startTimestamp", type: "uint256" },
+        { name: "durationDays", type: "uint256" },
+      ],
+    },
+    primaryType: "DelegatedUserDecryptRequestVerification",
+    domain: {
+      name: "DecryptionManager",
+      version: "1",
+      chainId,
+      verifyingContract,
+    },
+    message: {
+      publicKey,
+      contractAddresses,
+      delegatedAccount,
+      contractsChainId,
+      startTimestamp,
+      durationDays,
+    },
+  };
+}
+
+// Get signatures from signers using the EIP712 message request for user decryption
+export async function getSignaturesDelegatedUserDecryptRequest(
+  eip712: EIP712,
+  signers: HardhatEthersSigner[],
+): Promise<string[]> {
+  return Promise.all(
+    signers.map((signer) =>
+      signer.signTypedData(
+        eip712.domain,
+        { DelegatedUserDecryptRequestVerification: eip712.types.DelegatedUserDecryptRequestVerification },
+        eip712.message,
+      ),
+    ),
+  );
+}
+
 // Create an EIP712 message for a user decryption response
 export function createEIP712ResponseUserDecrypt(
   chainId: number,
