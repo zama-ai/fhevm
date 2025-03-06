@@ -87,10 +87,10 @@ impl GatewayProcessorsHandler {
 
                     // Generate mock handles
                     // In real implementation, this would involve actual cryptographic operations
-                    let handles = vec![[1u8; 32], [2u8; 32]];
+                    let handles = vec![[5u8; 32], [2u8; 32]];
 
                     //let signatures = vec![1u8; 65];
-                    let signer = PrivateKeySigner::from_str("7ec8ada6642fc4ccfb7729bc29c17cf8d21b61abd5642d1db992c0b8672ab901").unwrap();
+                    let signer = PrivateKeySigner::from_str("c2454775cca95e6d17d70b68105f48009fc4bf661f025e6a7911a6b4acf2a2f3").unwrap();
 
                     let domain = eip712_domain! {
                         name: "ZKPoKManager",

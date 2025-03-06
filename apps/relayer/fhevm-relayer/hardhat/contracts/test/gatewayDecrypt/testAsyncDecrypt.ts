@@ -292,8 +292,9 @@ describe('TestAsyncDecrypt', function () {
       console.log(`  Handle ${index}: 0x${Buffer.from(handle).toString('hex')}`);
     });
     console.log('InputProof: 0x' + Buffer.from(encryptedAmount.inputProof).toString('hex'));
-    // const tx = await this.contract.requestUint64NonTrivial(encryptedAmount.handles[0], encryptedAmount.inputProof);
-    // await tx.wait();
+    const tx = await this.contract.requestUint64NonTrivial(encryptedAmount.handles[0], encryptedAmount.inputProof);
+    const receipt = await tx.wait();
+    console.log(receipt);
     // await awaitAllDecryptionResults();
     // const y = await this.contract.yUint64();
     // expect(y).to.equal(18446744073709550042n);
