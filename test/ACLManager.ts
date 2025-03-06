@@ -291,28 +291,24 @@ describe("ACLManager", function () {
       }
     });
 
-    it("Should return true", async function () {
-      // When
-      const txResponse = await aclManager.isAccountDelegated(chainId, delegator, delegatee, allowedContracts);
-
-      // Then
-      expect(txResponse).to.equal(true);
+    it("Should check account is delegated", async function () {
+      await aclManager.checkAccountDelegated(chainId, delegator, delegatee, allowedContracts);
     });
 
-    it("Should return false", async function () {
+    it("Should revert because none of the inputs has account delegation", async function () {
       // Given
       const fakeDelegator = hre.ethers.Wallet.createRandom().address;
       const fakeDelegatee = hre.ethers.Wallet.createRandom().address;
 
       // When
-      const txResponse1 = await aclManager.isAccountDelegated(fakeChainId, delegator, delegatee, allowedContracts);
-      const txResponse2 = await aclManager.isAccountDelegated(chainId, fakeDelegator, delegatee, allowedContracts);
-      const txResponse3 = await aclManager.isAccountDelegated(chainId, delegator, fakeDelegatee, allowedContracts);
+      const txResponse1 = aclManager.checkAccountDelegated(fakeChainId, delegator, delegatee, allowedContracts);
+      const txResponse2 = aclManager.checkAccountDelegated(chainId, fakeDelegator, delegatee, allowedContracts);
+      const txResponse3 = aclManager.checkAccountDelegated(chainId, delegator, fakeDelegatee, allowedContracts);
 
       // Then
-      expect(txResponse1).to.equal(false);
-      expect(txResponse2).to.equal(false);
-      expect(txResponse3).to.equal(false);
+      await expect(txResponse1).revertedWithCustomError(aclManager, "AccountNotDelegated");
+      await expect(txResponse2).revertedWithCustomError(aclManager, "AccountNotDelegated");
+      await expect(txResponse3).revertedWithCustomError(aclManager, "AccountNotDelegated");
     });
 
     it("Should distinguish between differently ordered contract list", async function () {
@@ -320,10 +316,10 @@ describe("ACLManager", function () {
       const alteredAllowedContracts = [allowedContract2, allowedContract1];
 
       // When
-      const txResponse = await aclManager.isAccountDelegated(chainId, delegator, delegatee, alteredAllowedContracts);
+      const txResponse = aclManager.checkAccountDelegated(chainId, delegator, delegatee, alteredAllowedContracts);
 
       // Then
-      expect(txResponse).to.equal(false);
+      await expect(txResponse).revertedWithCustomError(aclManager, "AccountNotDelegated");
     });
   });
 });

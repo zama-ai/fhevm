@@ -28,6 +28,15 @@ interface IDecryptionManager {
         uint256 durationDays;
     }
 
+    /// @notice A struct that specifies addresses of the user account and the delegated account
+    /// @notice for a given delegated user decryption request.
+    struct DelegationAccounts {
+        /// @notice The user's address
+        address userAddress;
+        /// @notice The address of the delegated account for the user decryption
+        address delegatedAddress;
+    }
+
     /// @notice Emitted when an public decryption request is made
     /// @dev This event is meant to be listened by the KMS Connectors
     /// @param publicDecryptionId The public decryption request's unique ID
@@ -106,8 +115,8 @@ interface IDecryptionManager {
     /// @dev This function can be called by a user or relayer
     /// @param ctHandleContractPairs The ciphertexts to decrypt for associated contracts
     /// @param requestValidity The validity period of the user decryption request
-    /// @param contractsChainId The chain ID of the given contract addresses
-    /// @param contractAddresses The contract addresses found in the message
+    /// @param contractsChainId The chain ID of the given contract addresses figuring in the signed EIP-712 message
+    /// @param contractAddresses The contract addresses figuring in the signed EIP-712 message
     /// @param userAddress The user's address
     /// @param publicKey The user's public key to reencrypt the decryption shares
     /// @param signature The EIP712 signature to verify
@@ -117,6 +126,25 @@ interface IDecryptionManager {
         uint256 contractsChainId,
         address[] calldata contractAddresses,
         address userAddress,
+        bytes calldata publicKey,
+        bytes calldata signature
+    ) external;
+
+    /// @notice Requests a user decryption
+    /// @dev This function can be called by a user or relayer
+    /// @param ctHandleContractPairs The ciphertexts to decrypt for associated contracts
+    /// @param requestValidity The validity period of the user decryption request
+    /// @param delegationAccounts The user's address and the delegated account address for the user decryption
+    /// @param contractsChainId The chain ID of the given contract addresses figuring in the signed EIP-712 message
+    /// @param contractAddresses The contract addresses figuring in the signed EIP-712 message
+    /// @param publicKey The user's public key to reencrypt the decryption shares
+    /// @param signature The EIP712 signature to verify
+    function delegatedUserDecryptionRequest(
+        CtHandleContractPair[] calldata ctHandleContractPairs,
+        RequestValidity calldata requestValidity,
+        DelegationAccounts calldata delegationAccounts,
+        uint256 contractsChainId,
+        address[] calldata contractAddresses,
         bytes calldata publicKey,
         bytes calldata signature
     ) external;

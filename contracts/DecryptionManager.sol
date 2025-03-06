@@ -50,6 +50,24 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
         bytes reencryptedShare;
     }
 
+    /// @notice The typed data structure for the EIP712 signature to validate in user decryption with delegation requests.
+    /// @dev The name of this struct is not relevant for the signature validation, only the one defined
+    /// @dev EIP712_USER_DECRYPT_DELEGATION_REQUEST_TYPE is, but we keep it the same for clarity.
+    struct DelegatedUserDecryptRequestVerification {
+        /// @notice The user's public key to be used for reencryption.
+        bytes publicKey;
+        /// @notice The contract addresses that verification is requested for.
+        address[] contractAddresses;
+        /// @notice The address of the account that is delegated to decrypt.
+        address delegatedAccount;
+        /// @notice The chain ID of the contract addresses.
+        uint256 contractsChainId;
+        /// @notice The start timestamp of the user decryption request.
+        uint256 startTimestamp;
+        /// @notice The duration in days of the user decryption request after the start timestamp.
+        uint256 durationDays;
+    }
+
     /// @notice The publicKey and ctHandles from user decryption requests used for validations during responses.
     struct UserDecryptionPayload {
         /// @notice The user's public key to be used for reencryption.
@@ -125,6 +143,13 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
     /// @notice The hash of the UserDecryptRequestVerification structure typed data definition
     /// @notice used for signature validation.
     bytes32 public constant EIP712_USER_DECRYPT_REQUEST_TYPE_HASH = keccak256(bytes(EIP712_USER_DECRYPT_REQUEST_TYPE));
+
+    string public constant EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE =
+        "DelegatedUserDecryptRequestVerification(bytes publicKey,address[] contractAddresses,address delegatedAccount,"
+        "uint256 contractsChainId,uint256 startTimestamp,uint256 durationDays)";
+
+    bytes32 public constant EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE_HASH =
+        keccak256(bytes(EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE));
 
     /// @notice The definition of the UserDecryptResponseVerification structure typed data.
     string public constant EIP712_USER_DECRYPT_RESPONSE_TYPE =
@@ -255,7 +280,102 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
         /// @dev We do not deduplicate handles if the same handle appears multiple times
         /// @dev for different contracts, it remains in the list as is. This ensures that
         /// @dev the ciphertext storage retrieval below returns all corresponding materials.
-        uint256[] memory ctHandles = _extractCtHandles(ctHandleContractPairs, contractAddresses);
+        uint256[] memory ctHandles = new uint256[](ctHandleContractPairs.length);
+        for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
+            /// @dev Check the contractAddress from ctHandleContractPairs is included in the given contractAddresses.
+            if (!_containsContractAddress(contractAddresses, ctHandleContractPairs[i].contractAddress)) {
+                revert ContractNotInContractAddresses(ctHandleContractPairs[i].contractAddress);
+            }
+            ctHandles[i] = ctHandleContractPairs[i].ctHandle;
+        }
+
+        /// @dev Fetch the ciphertexts from the ciphertext storage
+        /// @dev This call is reverted if any of the ciphertexts are not found in the storage, but
+        /// @dev this should not happen for now as a ciphertext cannot be allowed for decryption
+        /// @dev without being added to the storage first (and we currently have no ways of deleting
+        /// @dev a ciphertext from the storage).
+        SnsCiphertextMaterial[] memory snsCtMaterials = _CIPHERTEXT_STORAGE.getSnsCiphertextMaterials(ctHandles);
+
+        /// @dev Check that received snsCtMaterials have the same keyId.
+        /// @dev This will be removed in the future as multiple keyIds processing is implemented.
+        /// @dev See https://github.com/zama-ai/gateway-l2/issues/104.
+        _checkCtMaterialKeyIds(snsCtMaterials);
+
+        // TODO: This counter will be replaced during gateway-l2/issues/92
+        decryptionCounter++;
+        uint256 userDecryptionId = decryptionCounter;
+
+        /// @dev The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
+        userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
+
+        // TODO: Implement sending service fees to PaymentManager contract
+
+        emit UserDecryptionRequest(userDecryptionId, snsCtMaterials, publicKey);
+    }
+
+    /// @dev See {IDecryptionManager-userDecryptionWithDelegationRequest}.
+    function delegatedUserDecryptionRequest(
+        CtHandleContractPair[] calldata ctHandleContractPairs,
+        RequestValidity calldata requestValidity,
+        DelegationAccounts calldata delegationAccounts,
+        uint256 contractsChainId,
+        address[] calldata contractAddresses,
+        bytes calldata publicKey,
+        bytes calldata signature
+    ) external virtual {
+        /// @dev Check the given number of contractAddresses does not exceed the maximum allowed.
+        if (contractAddresses.length > _MAX_USER_DECRYPT_CONTRACT_ADDRESSES) {
+            revert ContractAddressesMaxLengthExceeded(_MAX_USER_DECRYPT_CONTRACT_ADDRESSES, contractAddresses.length);
+        }
+
+        /// @dev Check the given durationDays does not exceed the maximum allowed.
+        if (requestValidity.durationDays > _MAX_USER_DECRYPT_DURATION_DAYS) {
+            revert MaxDurationDaysExceeded(_MAX_USER_DECRYPT_DURATION_DAYS, requestValidity.durationDays);
+        }
+
+        /// @dev Check that the user decryption is allowed for the given userAddress and ctHandleContractPairs.
+        _ACL_MANAGER.checkUserDecryptAllowed(delegationAccounts.delegatedAddress, ctHandleContractPairs);
+
+        /// @dev Extract the ctHandles and contractAddresses from the given ctHandleContractPairs.
+        /// @dev We do not deduplicate handles if the same handle appears multiple times
+        /// @dev for different contracts, it remains in the list as is. This ensures that
+        /// @dev the ciphertext storage retrieval below returns all corresponding materials.
+        uint256[] memory ctHandles = new uint256[](ctHandleContractPairs.length);
+        address[] memory allowedContracts = new address[](ctHandleContractPairs.length);
+        for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
+            /// @dev Check the contractAddress from ctHandleContractPairs is included in the given contractAddresses.
+            if (!_containsContractAddress(contractAddresses, ctHandleContractPairs[i].contractAddress)) {
+                revert ContractNotInContractAddresses(ctHandleContractPairs[i].contractAddress);
+            }
+            ctHandles[i] = ctHandleContractPairs[i].ctHandle;
+            allowedContracts[i] = ctHandleContractPairs[i].contractAddress;
+        }
+
+        /// @dev Check that the user decryption is allowed for the given delegatedAccount and allowedContracts.
+        _ACL_MANAGER.checkAccountDelegated(
+            contractsChainId,
+            delegationAccounts.userAddress,
+            delegationAccounts.delegatedAddress,
+            allowedContracts
+        );
+
+        /// @dev Initialize the EIP712UserDecryptRequest structure for the signature validation.
+        DelegatedUserDecryptRequestVerification
+            memory delegatedUserDecryptRequestVerification = DelegatedUserDecryptRequestVerification(
+                publicKey,
+                contractAddresses,
+                delegationAccounts.delegatedAddress,
+                contractsChainId,
+                requestValidity.startTimestamp,
+                requestValidity.durationDays
+            );
+
+        /// @dev Validate the received EIP712 signature on the user decryption request.
+        _validateDelegatedUserDecryptRequestEIP712Signature(
+            delegatedUserDecryptRequestVerification,
+            delegationAccounts.userAddress,
+            signature
+        );
 
         /// @dev Fetch the ciphertexts from the ciphertext storage
         /// @dev This call is reverted if any of the ciphertexts are not found in the storage, but
@@ -383,6 +503,22 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
         }
     }
 
+    /// @notice Validates the EIP712 signature for a given user decryption request
+    /// @dev This function checks that the signer address is the same as the user address.
+    /// @param delegatedUserDecryptRequestVerification The signed DelegatedUserDecryptRequestVerification structure
+    /// @param signature The signature to be validated
+    function _validateDelegatedUserDecryptRequestEIP712Signature(
+        DelegatedUserDecryptRequestVerification memory delegatedUserDecryptRequestVerification,
+        address userAddress,
+        bytes calldata signature
+    ) internal view virtual {
+        bytes32 digest = _hashDelegatedUserDecryptRequestVerification(delegatedUserDecryptRequestVerification);
+        address signer = ECDSA.recover(digest, signature);
+        if (signer != userAddress) {
+            revert InvalidUserSignature(signature);
+        }
+    }
+
     /// @notice Computes the hash of a given PublicDecryptVerification structured data
     /// @param publicDecryptVerification The PublicDecryptVerification structure
     /// @return The hash of the PublicDecryptVerification structure
@@ -422,6 +558,28 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
             );
     }
 
+    /// @notice Computes the hash of a given DelegatedUserDecryptRequestVerification structured data.
+    /// @param delegatedUserDecryptRequestVerification The DelegatedUserDecryptRequestVerification structure to hash.
+    /// @return The hash of the DelegatedUserDecryptRequestVerification structure.
+    function _hashDelegatedUserDecryptRequestVerification(
+        DelegatedUserDecryptRequestVerification memory delegatedUserDecryptRequestVerification
+    ) internal view virtual returns (bytes32) {
+        return
+            _hashTypedDataV4(
+                keccak256(
+                    abi.encode(
+                        EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE_HASH,
+                        keccak256(delegatedUserDecryptRequestVerification.publicKey),
+                        keccak256(abi.encodePacked(delegatedUserDecryptRequestVerification.contractAddresses)),
+                        delegatedUserDecryptRequestVerification.delegatedAccount,
+                        delegatedUserDecryptRequestVerification.contractsChainId,
+                        delegatedUserDecryptRequestVerification.startTimestamp,
+                        delegatedUserDecryptRequestVerification.durationDays
+                    )
+                )
+            );
+    }
+
     /// @notice Computes the hash of a given UserDecryptResponseVerification structured data.
     /// @param userDecryptResponseVerification The UserDecryptResponseVerification structure to hash.
     /// @return The hash of the UserDecryptResponseVerification structure.
@@ -456,24 +614,6 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
     function _isConsensusReachedUser(uint256 verifiedSignaturesCount) internal view virtual returns (bool) {
         uint256 consensusThreshold = _HTTPZ.getKmsReconstructionThreshold();
         return verifiedSignaturesCount >= consensusThreshold;
-    }
-
-    /// @notice Extracts the ctHandles from the given ctHandleContractPairs.
-    /// @dev This checks that the contracts from ctHandleContractPairs are included in the given contractAddresses.
-    function _extractCtHandles(
-        CtHandleContractPair[] calldata ctHandleContractPairs,
-        address[] calldata contractAddresses
-    ) internal pure returns (uint256[] memory) {
-        uint256[] memory ctHandles = new uint256[](ctHandleContractPairs.length);
-
-        for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
-            /// @dev Check the contractAddress from ctHandleContractPairs is included in the given contractAddresses.
-            if (!_containsContractAddress(contractAddresses, ctHandleContractPairs[i].contractAddress)) {
-                revert ContractNotInContractAddresses(ctHandleContractPairs[i].contractAddress);
-            }
-            ctHandles[i] = ctHandleContractPairs[i].ctHandle;
-        }
-        return ctHandles;
     }
 
     /// @notice Checks if a given contractAddress is included in the contractAddresses list.
