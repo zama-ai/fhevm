@@ -213,14 +213,16 @@ contract ACLManager is IACLManager {
     }
 
     /// @dev See {IACLManager-isAccountDelegated}.
-    function isAccountDelegated(
+    function checkAccountDelegated(
         uint256 chainId,
         address delegator,
         address delegatee,
         address[] calldata allowedContracts
-    ) public view virtual returns (bool) {
+    ) public view virtual {
         bytes32 delegationDigest = keccak256(abi.encode(allowedContracts));
-        return _delegatedAccounts[delegator][delegatee][chainId][delegationDigest];
+        if (!_delegatedAccounts[delegator][delegatee][chainId][delegationDigest]) {
+            revert AccountNotDelegated(delegatee, allowedContracts);
+        }
     }
 
     /// @notice Checks if the consensus is reached among the Coprocessors.

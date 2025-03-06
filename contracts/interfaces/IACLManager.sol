@@ -47,6 +47,11 @@ interface IACLManager {
     /// @notice Error indicating that the number of handles requested exceeds the maximum allowed.
     error TooManyContractsRequested(uint8 maxNumberExpected, uint256 actualNumber);
 
+    /// @notice Error indicating that the given delegatee is not allowed to decrypt over the given allowedContracts.
+    /// @param delegatee The address of the account checking the delegation.
+    /// @param allowedContracts The addresses of the contracts that the delegatee is not allowed to decrypt.
+    error AccountNotDelegated(address delegatee, address[] allowedContracts);
+
     /// @notice Allows an account address to access the given ciphertext handle over the chainId.
     /// @param chainId The chainId of the blockchain the ciphertext handle is associated with.
     /// @param ctHandle The handle of the ciphertext allowing for decryption.
@@ -87,10 +92,10 @@ interface IACLManager {
     /// @param delegator The address of the current permission owner.
     /// @param delegatee The address of the access permission receiver.
     /// @param allowedContracts The addresses of the contracts delegated to decrypt.
-    function isAccountDelegated(
+    function checkAccountDelegated(
         uint256 chainId,
         address delegator,
         address delegatee,
         address[] calldata allowedContracts
-    ) external view returns (bool);
+    ) external view;
 }
