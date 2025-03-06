@@ -494,7 +494,7 @@ impl TransactionService {
                 Ok(Some(receipt)) => return Ok(receipt),
                 Ok(None) => {
                     // Calculate exponential backoff with jitter
-                    let backoff_base = base_delay.mul_f64(1.5f64.powi(attempt as i32));
+                    let backoff_base = base_delay.mul_f64(1.5f64.powi(attempt));
                     let jitter = 0.8 + (0.4 * rand::rng().random::<f64>());
                     let delay = backoff_base.mul_f64(jitter).min(max_delay);
 
