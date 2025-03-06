@@ -1,4 +1,4 @@
-use crate::config::settings::AppConfigError;
+use crate::{config::settings::AppConfigError, transaction::sender::TransactionError};
 use alloy::{primitives::Address, transports::TransportError};
 use eyre::Report;
 use thiserror::Error;
@@ -116,6 +116,77 @@ impl From<TransactionServiceError> for EventProcessingError {
     }
 }
 
+impl From<TransactionError> for EventProcessingError {
+    fn from(err: TransactionError) -> Self {
+        match err {
+            TransactionError::InvalidPrivateKey(msg) => {
+                Self::HandlerError(format!("Invalid private key: {}", msg))
+            }
+            TransactionError::InvalidAddress(msg) => {
+                Self::HandlerError(format!("Invalid address: {}", msg))
+            }
+            TransactionError::RpcError(msg) => {
+                Self::TransactionError(Report::msg(format!("RPC error: {}", msg)))
+            }
+            TransactionError::TransactionFailed(msg) => {
+                Self::TransactionError(Report::msg(format!("Transaction failed: {}", msg)))
+            }
+            TransactionError::TransactionTimeout(secs) => Self::TransactionError(Report::msg(
+                format!("Transaction timed out after {} seconds", secs),
+            )),
+            TransactionError::MonitoringTimeout(secs) => {
+                Self::TransactionError(Report::msg(format!(
+                    "Transaction monitoring timed out after {} seconds, but may still succeed",
+                    secs
+                )))
+            }
+            TransactionError::GasEstimationFailed(msg) => {
+                Self::TransactionError(Report::msg(format!("Gas estimation failed: {}", msg)))
+            }
+            TransactionError::ReceiptNotFound(attempts) => Self::TransactionError(Report::msg(
+                format!("Receipt not found after {} attempts", attempts),
+            )),
+            TransactionError::InsufficientConfirmations { required, actual } => {
+                Self::TransactionError(Report::msg(format!(
+                    "Insufficient confirmations: required {}, got {}",
+                    required, actual
+                )))
+            }
+            TransactionError::NetworkError(msg) => {
+                Self::TransactionError(Report::msg(format!("Network error: {}", msg)))
+            }
+        }
+    }
+}
+
+impl From<TransactionError> for TransactionServiceError {
+    fn from(err: TransactionError) -> Self {
+        match err {
+            TransactionError::InvalidPrivateKey(msg) => {
+                Self::Failed(format!("Invalid private key: {}", msg))
+            }
+            TransactionError::InvalidAddress(msg) => {
+                Self::Failed(format!("Invalid address: {}", msg))
+            }
+            TransactionError::RpcError(msg) => Self::Network(msg),
+            TransactionError::TransactionFailed(msg) => Self::Failed(msg),
+            TransactionError::TransactionTimeout(secs) => Self::Timeout(secs),
+            TransactionError::GasEstimationFailed(msg) => Self::GasEstimation(msg),
+            TransactionError::MonitoringTimeout(secs) => Self::Timeout(secs), // Transaction may still succeed but monitoring timed out
+            TransactionError::ReceiptNotFound(attempts) => {
+                Self::Failed(format!("Receipt not found after {} attempts", attempts))
+            }
+            TransactionError::InsufficientConfirmations { required, actual } => {
+                Self::Failed(format!(
+                    "Insufficient confirmations: required {}, got {}",
+                    required, actual
+                ))
+            }
+            TransactionError::NetworkError(msg) => Self::Network(msg),
+        }
+    }
+}
+
 impl From<TransportError> for TransactionServiceError {
     fn from(err: TransportError) -> Self {
         TransactionServiceError::Network(err.to_string())
@@ -131,5 +202,11 @@ impl From<String> for TransactionServiceError {
 impl From<&str> for TransactionServiceError {
     fn from(err: &str) -> Self {
         TransactionServiceError::Failed(err.to_string())
+    }
+}
+
+impl From<eyre::Report> for TransactionError {
+    fn from(err: eyre::Report) -> Self {
+        TransactionError::RpcError(err.to_string())
     }
 }

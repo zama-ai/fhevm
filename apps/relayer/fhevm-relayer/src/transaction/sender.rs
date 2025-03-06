@@ -2,16 +2,17 @@ use alloy::{
     network::{EthereumWallet, TransactionBuilder},
     primitives::{Address, Bytes, B256, U256},
     providers::{Provider, ProviderBuilder},
-    rpc::types::TransactionRequest,
+    rpc::types::{TransactionReceipt, TransactionRequest},
     signers::{local::PrivateKeySigner, Signer},
     transports::http::{Client, Http},
 };
 use eyre::Result;
+use rand::Rng;
 use reqwest::Url;
 use std::fmt;
 use std::{sync::Arc, time::Duration};
 use thiserror::Error;
-use tokio::time::timeout;
+use tokio::time::{timeout, Instant};
 use tracing::{debug, error, info, warn};
 
 use crate::{
@@ -65,6 +66,20 @@ pub enum TransactionError {
 
     #[error("Gas estimation failed: {0}")]
     GasEstimationFailed(String),
+
+    #[error(
+        "Transaction monitoring timed out after {0} seconds, but transaction may still succeed"
+    )]
+    MonitoringTimeout(u64),
+
+    #[error("Receipt not found after {0} attempts")]
+    ReceiptNotFound(u32),
+
+    #[error("Insufficient confirmations: required {required}, got {actual}")]
+    InsufficientConfirmations { required: u64, actual: u64 },
+
+    #[error("Network connectivity error: {0}")]
+    NetworkError(String),
 }
 
 impl From<TransactionConfig> for TxConfig {
@@ -121,6 +136,11 @@ impl fmt::Debug for TransactionManager {
             .field("provider", &"<provider>") // Skip detailed provider debug
             .finish()
     }
+}
+
+fn apply_jitter(value: Duration, factor: f64) -> Duration {
+    let jitter = 0.8 + (0.4 * rand::rng().random::<f64>());
+    value.mul_f64(jitter * factor)
 }
 
 impl TransactionManager {
@@ -276,7 +296,7 @@ impl TransactionManager {
         target: Address,
         calldata: Bytes,
         config: Option<TxConfig>,
-    ) -> Result<B256> {
+    ) -> Result<B256, TransactionError> {
         let config = config.unwrap_or_default();
 
         // Only run debug if log level is Debug or lower
@@ -305,31 +325,17 @@ impl TransactionManager {
             .with_input(calldata)
             .with_value(config.value.unwrap_or_default());
 
-        let timeout_duration = Duration::from_secs(config.timeout_secs.unwrap_or(60));
+        let pending_tx = self
+            .provider
+            .send_transaction(request)
+            .await
+            .map_err(|e| TransactionError::TransactionFailed(e.to_string()))?;
 
-        // Send and watch for the transaction
-        let result = timeout(
-            timeout_duration,
-            self.provider.send_transaction(request).await?.watch(),
-        )
-        .await;
+        // Get hash immediately
+        let tx_hash = pending_tx.tx_hash();
+        info!(?tx_hash, "Transaction submitted successfully");
 
-        match result {
-            Ok(tx_hash) => {
-                let tx_hash =
-                    tx_hash.map_err(|e| TransactionError::TransactionFailed(e.to_string()))?;
-
-                info!(?tx_hash, "Transaction sent successfully");
-                Ok(tx_hash)
-            }
-            Err(_) => {
-                error!(
-                    timeout_secs = ?timeout_duration.as_secs(),
-                    "Transaction timed out"
-                );
-                Err(TransactionError::TransactionTimeout(timeout_duration.as_secs()).into())
-            }
-        }
+        Ok(*tx_hash)
     }
 
     pub async fn deploy_contract(&self, bytecode: Bytes, config: Option<TxConfig>) -> Result<B256> {
@@ -385,15 +391,145 @@ impl TransactionManager {
     pub async fn wait_for_confirmation(
         &self,
         tx_hash: B256,
-        _min_confirmations: u64,
-    ) -> Result<bool> {
-        let receipt = self
-            .provider
-            .get_transaction_receipt(tx_hash)
-            .await?
-            .ok_or_else(|| TransactionError::TransactionFailed("Receipt not found".into()))?;
+        min_confirmations: u64,
+    ) -> Result<bool, eyre::Error> {
+        let config = TxConfig {
+            confirmations: Some(min_confirmations),
+            ..Default::default()
+        };
 
-        Ok(receipt.status())
+        match self.wait_for_receipt(tx_hash, &config).await {
+            Ok(receipt) => Ok(receipt.status()),
+            Err(e) => Err(eyre::eyre!("Failed to get confirmation: {}", e)),
+        }
+    }
+
+    /// Wait for a transaction receipt with configurable polling and timeout
+    ///
+    /// This function uses an exponential backoff strategy with jitter to
+    /// efficiently poll for transaction receipts while minimizing network load.
+    ///
+    /// # Arguments
+    /// * `tx_hash` - The transaction hash to wait for
+    /// * `config` - Transaction configuration including timeout and confirmations
+    ///
+    /// # Returns
+    /// * `Ok(TransactionReceipt)` - The transaction receipt once confirmed
+    /// * `Err(TransactionError)` - Various errors based on polling results
+    pub async fn wait_for_receipt(
+        &self,
+        tx_hash: B256,
+        config: &TxConfig,
+    ) -> Result<TransactionReceipt, TransactionError> {
+        let max_attempts = 30; // Reasonable maximum number of polling attempts
+        let base_delay = Duration::from_millis(500); // Start with 500ms delay
+        let max_delay = Duration::from_secs(10); // Cap delay at 10 seconds
+        let timeout = Duration::from_secs(config.timeout_secs.unwrap_or(60));
+        let start = Instant::now();
+        let required_confirmations = config.confirmations.unwrap_or(1);
+
+        let mut latest_error = None;
+
+        for attempt in 0..max_attempts {
+            // Check timeout first
+            if start.elapsed() > timeout {
+                return Err(TransactionError::TransactionTimeout(timeout.as_secs()));
+            }
+
+            // Try to get receipt
+            match self.provider.get_transaction_receipt(tx_hash).await {
+                Ok(Some(receipt)) => {
+                    info!(
+                        ?tx_hash,
+                        timeout_secs = ?timeout.as_secs(),
+                        required_confirmations,
+                        "Beginning receipt polling with exponential backoff"
+                    );
+                    // Check confirmation count if required
+                    if required_confirmations <= 1 {
+                        return Ok(receipt);
+                    }
+
+                    // For cases where we need multiple confirmations
+                    let current_block = match self.provider.get_block_number().await {
+                        Ok(block) => block,
+                        Err(e) => {
+                            latest_error = Some(e.to_string());
+                            continue; // Retry if we can't get the block number
+                        }
+                    };
+
+                    if let Some(receipt_block) = receipt.block_number {
+                        let confirmations = current_block.saturating_sub(receipt_block) + 1;
+
+                        if confirmations >= required_confirmations {
+                            return Ok(receipt);
+                        }
+
+                        info!(
+                            ?tx_hash,
+                            ?receipt_block,
+                            ?current_block,
+                            ?confirmations,
+                            required = ?required_confirmations,
+                            "Waiting for more confirmations"
+                        );
+                    }
+                }
+                Ok(None) => {
+                    info!(
+                        ?tx_hash,
+                        attempt = attempt + 1,
+                        max_attempts = max_attempts,
+                        elapsed = ?start.elapsed(),
+                        "Receipt not available yet, waiting before retry"
+                    );
+                }
+                Err(e) => {
+                    latest_error = Some(e.to_string());
+                    warn!(
+                        ?tx_hash,
+                        attempt = attempt + 1,
+                        max_attempts = max_attempts,
+                        error = %e,
+                        "Error retrieving receipt, will retry"
+                    );
+                }
+            }
+
+            // Calculate backoff with jitter (between 0.8x and 1.2x of the base)
+            let base_backoff = base_delay.mul_f64(1.5f64.powi(attempt as i32));
+            let delay = apply_jitter(base_backoff, 1.0).min(max_delay);
+
+            tokio::time::sleep(delay).await;
+        }
+
+        // If we reach here, we've exceeded max attempts
+        if let Some(error) = latest_error {
+            Err(TransactionError::RpcError(error))
+        } else {
+            Err(TransactionError::TransactionFailed(format!(
+                "Receipt not found after {} attempts",
+                max_attempts
+            )))
+        }
+    }
+
+    /// Send a transaction and wait for its receipt
+    /// This combines transaction sending and receipt waiting into one method
+    pub async fn send_transaction_and_wait(
+        &self,
+        target: Address,
+        calldata: Bytes,
+        config: Option<TxConfig>,
+    ) -> Result<TransactionReceipt, TransactionError> {
+        let config = config.unwrap_or_default();
+        let tx_hash = self
+            .send_transaction(target, calldata, Some(config.clone()))
+            .await?;
+
+        debug!(?tx_hash, "Transaction sent, waiting for receipt");
+        self.wait_for_receipt(tx_hash, &config).await
     }
 
     pub async fn verify_contract_code(&self, address: Address) -> Result<Bytes> {

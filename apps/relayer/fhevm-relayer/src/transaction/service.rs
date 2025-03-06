@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
-use super::sender::{RetryConfig, TransactionManager, TxConfig};
+use super::sender::{RetryConfig, TransactionError, TransactionManager, TxConfig};
 use crate::core::errors::TransactionServiceError;
 
 /// Represents the current state of a transaction
@@ -44,6 +44,8 @@ struct TransactionRecord {
     timestamp: Instant,
     /// Current state of the transaction
     state: TransactionState,
+    // Flag for immediate cleanup
+    ready_for_cleanup: bool,
 }
 
 /// Main service for managing transactions
@@ -65,41 +67,8 @@ impl TransactionService {
         false
     }
 
-    async fn handle_pending_transaction(
-        &self,
-        request_id: Uuid,
-        record: &TransactionRecord,
-        now: Instant,
-    ) -> Option<TransactionState> {
-        match &record.state {
-            TransactionState::Pending { hash, attempts, .. } => {
-                // First check timeout
-                if self.check_pending_timeout(record, now) {
-                    info!(
-                        ?request_id,
-                        ?hash,
-                        elapsed = ?now.duration_since(record.timestamp).as_secs(),
-                        "Transaction timed out, moving back to retry queue"
-                    );
-
-                    // Move back to retry queue
-                    return Some(TransactionState::WaitingRetry {
-                        attempts: *attempts,
-                        last_attempt: now,
-                    });
-                }
-
-                // If not timed out, check confirmation
-                match self.manager.wait_for_confirmation(*hash, 1).await {
-                    Ok(true) => Some(TransactionState::Confirmed),
-                    Ok(false) => Some(TransactionState::Failed {
-                        reason: "Transaction reverted".into(),
-                    }),
-                    Err(_) => None, // Keep current state
-                }
-            }
-            _ => None,
-        }
+    pub fn get_transaction_manager(&self) -> &Arc<TransactionManager> {
+        &self.manager
     }
 
     /// Logs state transitions for monitoring and debugging
@@ -242,6 +211,7 @@ impl TransactionService {
                 attempts: 0,
                 last_attempt: now,
             },
+            ready_for_cleanup: false,
         };
 
         self.transactions.insert(request_id, record);
@@ -257,8 +227,36 @@ impl TransactionService {
                     ?e,
                     "Initial transaction submission failed, will retry"
                 );
-                Err(e)
+                Err(TransactionServiceError::from(e))
             }
+        }
+    }
+
+    pub async fn get_transaction_receipt(
+        &self,
+        tx_hash: B256,
+    ) -> Result<TransactionReceipt, TransactionServiceError> {
+        // First check if we already have this receipt cached
+        for record in self.transactions.iter() {
+            if let TransactionState::Pending { hash, .. } = record.state {
+                if hash == tx_hash {
+                    // If we find this transaction in our records, use the manager to get the receipt
+                    return self
+                        .manager
+                        .wait_for_receipt(tx_hash, &record.config)
+                        .await
+                        .map_err(TransactionServiceError::from);
+                }
+            }
+        }
+
+        // If not found in records, just do a direct call
+        match self.manager.provider.get_transaction_receipt(tx_hash).await {
+            Ok(Some(receipt)) => Ok(receipt),
+            Ok(None) => Err(TransactionServiceError::Failed(
+                "Receipt not available yet".into(),
+            )),
+            Err(e) => Err(TransactionServiceError::Network(e.to_string())),
         }
     }
 
@@ -321,12 +319,47 @@ impl TransactionService {
 
             for (request_id, record) in entries {
                 match &record.state {
-                    TransactionState::Pending { .. } => {
-                        if let Some(new_state) = self
-                            .handle_pending_transaction(request_id, &record, now)
-                            .await
-                        {
-                            to_update.push((request_id, new_state));
+                    TransactionState::Pending {
+                        hash,
+                        attempts,
+                        last_attempt: _,
+                    } => {
+                        // Instead of handling_pending_transaction, use our new method
+                        if self.check_pending_timeout(&record, now) {
+                            warn!(
+                                ?request_id,
+                                ?hash,
+                                elapsed = ?now.duration_since(record.timestamp).as_secs(),
+                                "Transaction monitoring timed out, moving back to retry queue"
+                            );
+
+                            // Move back to retry queue
+                            to_update.push((
+                                request_id,
+                                TransactionState::WaitingRetry {
+                                    attempts: *attempts,
+                                    last_attempt: now,
+                                },
+                            ));
+                        } else {
+                            // Use our improved status checking
+                            match self.check_transaction_status(*hash, &record.config).await {
+                                Ok(new_state) => {
+                                    // Only update if the state actually changed
+                                    if !matches!(new_state, TransactionState::Pending { .. }) {
+                                        to_update.push((request_id, new_state));
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!(
+                                        ?request_id,
+                                        ?hash,
+                                        error = %e,
+                                        "Error checking transaction status"
+                                    );
+                                    // Keep current state, we'll retry on next cycle
+                                }
+                            }
                         }
                     }
                     TransactionState::WaitingRetry {
@@ -436,7 +469,30 @@ impl TransactionService {
 
     /// Cleans up old transactions that are no longer needed
     fn cleanup_old_transactions(&self, now: Instant) {
-        const CLEANUP_THRESHOLD: Duration = Duration::from_secs(3600); // 1 hour
+        const CONFIRMED_CLEANUP_THRESHOLD: Duration = Duration::from_secs(30); // Reduce from 1 hour to 30 seconds
+        const GENERAL_CLEANUP_THRESHOLD: Duration = Duration::from_secs(3600); // 1 hour for others
+
+        let ready_to_remove: Vec<_> = self
+            .transactions
+            .iter()
+            .filter_map(|entry| {
+                if entry.value().ready_for_cleanup {
+                    Some(*entry.key())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        for request_id in ready_to_remove {
+            if let Some((_, record)) = self.transactions.remove(&request_id) {
+                debug!(
+                    ?request_id,
+                    state = ?record.state,
+                    "Cleaned up confirmed transaction immediately"
+                );
+            }
+        }
 
         // Collect records to remove first
         let to_remove: Vec<_> = self
@@ -448,40 +504,104 @@ impl TransactionService {
 
                 match record.state {
                     TransactionState::Confirmed | TransactionState::Failed { .. } => {
-                        if now.duration_since(record.timestamp) > CLEANUP_THRESHOLD {
+                        // Use shorter time for confirmed/failed transactions
+                        if now.duration_since(record.timestamp) > CONFIRMED_CLEANUP_THRESHOLD {
                             Some(request_id)
                         } else {
                             None
                         }
                     }
-                    _ => None,
+                    _ => {
+                        // Use longer time for other states
+                        if now.duration_since(record.timestamp) > GENERAL_CLEANUP_THRESHOLD {
+                            Some(request_id)
+                        } else {
+                            None
+                        }
+                    }
                 }
             })
             .collect();
 
-        // Remove in separate, short operations
+        // Remove in separate  operations
         for request_id in to_remove {
             if let Some((_, record)) = self.transactions.remove(&request_id) {
                 debug!(
                     ?request_id,
                     state = ?record.state,
                     age = ?now.duration_since(record.timestamp).as_secs(),
-                    "Cleaned up old transaction"
+                    "Cleaned up  transaction"
                 );
             }
         }
     }
 
-    /// Gets a transaction receipt
-    pub async fn get_transaction_receipt(
+    pub async fn check_transaction_status(
         &self,
-        hash: B256,
-    ) -> Result<Option<TransactionReceipt>, TransactionServiceError> {
-        self.manager
-            .provider
-            .get_transaction_receipt(hash)
+        tx_hash: B256,
+        config: &TxConfig,
+    ) -> Result<TransactionState, TransactionServiceError> {
+        match self
+            .get_transaction_receipt_with_retries(tx_hash, config)
             .await
-            .map_err(|e| TransactionServiceError::Failed(e.to_string()))
+        {
+            Ok(receipt) => {
+                if receipt.status() {
+                    self.mark_transaction_for_cleanup(tx_hash);
+                    Ok(TransactionState::Confirmed)
+                } else {
+                    Ok(TransactionState::Failed {
+                        reason: "Transaction reverted on chain".into(),
+                    })
+                }
+            }
+            Err(TransactionServiceError::Timeout(_)) => {
+                // For timeouts, we keep waiting - transaction might still succeed
+                Ok(TransactionState::Pending {
+                    hash: tx_hash,
+                    attempts: 1, // This should be the actual attempt count from context
+                    last_attempt: Instant::now(),
+                })
+            }
+            Err(e) => {
+                // For other errors, mark as failed
+                Ok(TransactionState::Failed {
+                    reason: format!("Transaction failed: {}", e),
+                })
+            }
+        }
+    }
+
+    fn mark_transaction_for_cleanup(&self, tx_hash: B256) {
+        for mut record in self.transactions.iter_mut() {
+            if let TransactionState::Pending { hash, .. } = record.state {
+                if hash == tx_hash {
+                    record.ready_for_cleanup = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    /// Gets a transaction receipt
+    pub async fn get_transaction_receipt_with_retries(
+        &self,
+        tx_hash: B256,
+        config: &TxConfig,
+    ) -> Result<TransactionReceipt, TransactionServiceError> {
+        match self.manager.wait_for_receipt(tx_hash, config).await {
+            Ok(receipt) => Ok(receipt),
+            Err(e) => Err(match e {
+                TransactionError::TransactionTimeout(secs) => {
+                    TransactionServiceError::Timeout(secs)
+                }
+                TransactionError::TransactionFailed(reason) => {
+                    TransactionServiceError::Failed(reason)
+                }
+                TransactionError::RpcError(err) => TransactionServiceError::Network(err),
+                _ => TransactionServiceError::Failed(format!("Receipt error: {}", e)),
+            }),
+        }
     }
 
     /// Spawns maintenance tasks

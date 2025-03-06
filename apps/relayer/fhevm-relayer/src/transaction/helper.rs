@@ -4,7 +4,7 @@ use alloy::primitives::{Address, Bytes};
 use alloy::rpc::types::TransactionReceipt;
 use std::sync::Arc;
 
-use tracing::info;
+use tracing::{info, warn};
 
 pub trait ReceiptProcessor {
     type Output;
@@ -115,20 +115,26 @@ impl TransactionHelper {
             "Transaction submitted, waiting for confirmation"
         );
 
-        // Wait for receipt
         let receipt = self
             .tx_service
             .get_transaction_receipt(tx_hash)
             .await
-            .map_err(EventProcessingError::from)?
-            .ok_or_else(|| {
-                TransactionServiceError::Failed("Transaction receipt not found".into())
-            })?;
+            .map_err(EventProcessingError::from)?;
 
         // Check transaction status
         if !receipt.status() {
-            return Err(TransactionServiceError::Failed("Transaction reverted".into()).into());
+            return Err(
+                TransactionServiceError::Failed("Transaction reverted on chain".into()).into(),
+            );
         }
+
+        info!(
+            ?tx_hash,
+            ?receipt.block_number,
+            gas_used = ?receipt.gas_used,
+            operation = operation_name,
+            "Transaction confirmed"
+        );
 
         Ok(receipt)
     }

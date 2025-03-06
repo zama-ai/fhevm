@@ -10,6 +10,7 @@ use alloy::primitives::FixedBytes;
 use alloy::rpc::types::Log;
 use futures_util::StreamExt;
 use std::sync::Arc;
+use tokio::time::sleep;
 
 // Define event topics as constants
 
@@ -43,7 +44,10 @@ pub async fn event_listener_gateway(
 
                         match topic_bytes {
                         PROOF_VERIFICATION_RESPONSE_TOPIC => {
+                            let sleep_time = 1;
                             info!("Received Proof Verification response event");
+                            info!("Artificial sleep in anvil dev mode {}s", sleep_time);
+                            tokio::time::sleep(tokio::time::Duration::from_secs(sleep_time)).await;
                             RelayerEventData::Input(
                                     InputEventData::EventLogResponseFromGwL2   {
                                         log: event_log
