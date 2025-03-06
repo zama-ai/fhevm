@@ -17,7 +17,7 @@ library FHEVMConfig {
      * @notice This function returns a struct containing all contract addresses.
      * @dev    It returns an immutable struct.
      */
-    function defaultConfig() internal pure returns (FHEVMConfigStruct memory) {
+    function getTestConfig() internal pure returns (FHEVMConfigStruct memory) {
         return
             FHEVMConfigStruct({
                 ACLAddress: aclAdd,
@@ -25,5 +25,14 @@ library FHEVMConfig {
                 KMSVerifierAddress: kmsVerifierAdd,
                 InputVerifierAddress: inputVerifierAdd
             });
+    }
+}
+
+/**
+ * @title   TestZamaFHEVMConfig.
+ */
+contract TestZamaFHEVMConfig {
+    constructor() {
+        TFHE.setFHEVM(FHEVMConfig.getTestConfig());
     }
 }

@@ -3,10 +3,10 @@
 pragma solidity ^0.8.24;
 
 import "../lib/TFHE.sol";
-import "./FHEVMConfig.sol";
+import {TestZamaFHEVMConfig} from "./FHEVMConfig.sol";
 
 /// @notice Contract for generating random encrypted numbers
-contract Rand {
+contract Rand is TestZamaFHEVMConfig {
     /// @notice Encrypted unsigned integers of various sizes
     ebool public valueb;
     euint4 public value4;
@@ -20,11 +20,6 @@ contract Rand {
     ebytes64 public value512;
     ebytes128 public value1024;
     ebytes256 public value2048;
-
-    /// @notice Constructor to set FHE configuration
-    constructor() {
-        TFHE.setFHEVM(FHEVMConfig.defaultConfig());
-    }
 
     /// @notice Generate random 8-bit encrypted unsigned integer
     function generateBool() public {

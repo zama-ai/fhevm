@@ -235,9 +235,9 @@ export function generateSmartContract(os: OverloadShard): string {
         pragma solidity ^0.8.24;
 
         import "../../lib/TFHE.sol";
-        import "../FHEVMConfig.sol";
+        import {TestZamaFHEVMConfig} from "../FHEVMConfig.sol";
 
-        contract TFHETestSuite${os.shardNumber} {
+        contract TFHETestSuite${os.shardNumber} is TestZamaFHEVMConfig {
           ebool public resb;
           euint4 public res4;
           euint8 public res8;
@@ -246,10 +246,6 @@ export function generateSmartContract(os: OverloadShard): string {
           euint64 public res64;
           euint128 public res128;
           euint256 public res256;
-
-          constructor() {
-            TFHE.setFHEVM(FHEVMConfig.defaultConfig());
-          }
 
     `);
 

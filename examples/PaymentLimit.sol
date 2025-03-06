@@ -3,16 +3,13 @@
 pragma solidity ^0.8.24;
 
 import "../lib/TFHE.sol";
-import "./FHEVMConfig.sol";
+import {TestZamaFHEVMConfig} from "./FHEVMConfig.sol";
 
 /// @title PaymentLimit
 /// @notice A contract to demonstrate FHE gas limits in different scenarios
-contract PaymentLimit {
+contract PaymentLimit is TestZamaFHEVMConfig {
     /// @notice Constructor that sets up FHE configuration and deposits initial value
     /// @dev Payable to allow initial deposit
-    constructor() {
-        TFHE.setFHEVM(FHEVMConfig.defaultConfig());
-    }
 
     /// @notice Performs a small number of FHE operations
     /// @dev Should pass if it's the only transaction in a block

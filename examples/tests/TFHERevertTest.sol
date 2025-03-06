@@ -2,13 +2,9 @@
 pragma solidity ^0.8.24;
 
 import "../../lib/TFHE.sol";
-import "../FHEVMConfig.sol";
+import {TestZamaFHEVMConfig} from "../FHEVMConfig.sol";
 
-contract TFHERevertTest {
-    constructor() {
-        TFHE.setFHEVM(FHEVMConfig.defaultConfig());
-    }
-
+contract TFHERevertTest is TestZamaFHEVMConfig {
     function padToBytes64(bytes memory input) public pure {
         TFHE.padToBytes64(input);
     }
