@@ -164,8 +164,7 @@ contract KeyManager is IKeyManager, Ownable2Step {
         _preKeygenResponses[preKeygenRequestId][msg.sender] = true;
         _preKeygenResponseCounter[preKeygenRequestId]++;
 
-        /// @dev Only send the event if consensus has not been reached in a previous response call
-        /// @dev and the consensus is reached in the current response call.
+        /// @dev Send the event if and only if the consensus is reached in the current response call.
         /// @dev This means a "late" response will not be reverted, just ignored
         if (!_isPreKeygenDone[preKeyId] && _isKmsConsensusReached(_preKeygenResponseCounter[preKeygenRequestId])) {
             _isPreKeygenDone[preKeyId] = true;
@@ -207,8 +206,7 @@ contract KeyManager is IKeyManager, Ownable2Step {
         _preKskgenResponses[preKskgenRequestId][msg.sender] = true;
         _preKskgenResponseCounter[preKskgenRequestId]++;
 
-        /// @dev Only send the event if consensus has not been reached in a previous response call
-        /// @dev and the consensus is reached in the current response call.
+        /// @dev Send the event if and only if the consensus is reached in the current response call.
         /// @dev This means a "late" response will not be reverted, just ignored
         if (!_isPreKskgenDone[preKskId] && _isKmsConsensusReached(_preKskgenResponseCounter[preKskgenRequestId])) {
             _isPreKskgenDone[preKskId] = true;
@@ -248,8 +246,7 @@ contract KeyManager is IKeyManager, Ownable2Step {
         _keygenResponses[keyId][msg.sender] = true;
         _keygenResponseCounter[keyId]++;
 
-        /// @dev Only send the event if consensus has not been reached in a previous response call
-        /// @dev and the consensus is reached in the current response call.
+        /// @dev Send the event if and only if the consensus is reached in the current response call.
         /// @dev This means a "late" response will not be reverted, just ignored
         if (!_isKeyGenerated[keyId] && _isKmsConsensusReached(_keygenResponseCounter[keyId])) {
             _isKeyGenerated[keyId] = true;
@@ -290,8 +287,7 @@ contract KeyManager is IKeyManager, Ownable2Step {
         _crsgenResponses[crsId][msg.sender] = true;
         _crsgenResponseCounter[crsId]++;
 
-        /// @dev Only send the event if consensus has not been reached in a previous response call
-        /// @dev and the consensus is reached in the current response call.
+        /// @dev Send the event if and only if the consensus is reached in the current response call.
         /// @dev This means a "late" response will not be reverted, just ignored
         if (!_isCrsGenerated[crsId] && _isKmsConsensusReached(_crsgenResponseCounter[crsId])) {
             _isCrsGenerated[crsId] = true;
@@ -350,8 +346,7 @@ contract KeyManager is IKeyManager, Ownable2Step {
         _kskgenResponses[kskId][msg.sender] = true;
         _kskgenResponseCounter[kskId]++;
 
-        /// @dev Only send the event if consensus has not been reached in a previous response call
-        /// @dev and the consensus is reached in the current response call.
+        /// @dev Send the event if and only if the consensus is reached in the current response call.
         /// @dev This means a "late" response will not be reverted, just ignored
         if (!_isKskGenerated[kskId] && _isKmsConsensusReached(_kskgenResponseCounter[kskId])) {
             _isKskGenerated[kskId] = true;

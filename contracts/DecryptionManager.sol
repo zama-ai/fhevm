@@ -95,8 +95,8 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
     /// @notice The maximum number of contracts that can request for user decryption at once.
     uint8 internal constant _MAX_USER_DECRYPT_CONTRACT_ADDRESSES = 10;
 
-    /// @notice Whether a public/user decryption has been signed (and verified) by a signer.
-    mapping(uint256 decryptionId => mapping(address kmsSigner => bool alreadySigned)) internal alreadySigned;
+    /// @notice Whether KMS signer has already responded to a public/user decryption request.
+    mapping(uint256 decryptionId => mapping(address kmsSigner => bool alreadyResponded)) internal alreadyResponded;
 
     /// @notice Pending verified signatures for a public/user decryption.
     mapping(uint256 decryptionId => mapping(bytes32 digest => bytes[] verifiedSignatures)) internal verifiedSignatures;
@@ -229,8 +229,7 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
 
         bytes[] memory verifiedSignaturesArray = verifiedSignatures[publicDecryptionId][digest];
 
-        /// @dev Only send the event if consensus has not been reached in a previous response call
-        /// @dev and the consensus is reached in the current response call.
+        /// @dev Send the event if and only if the consensus is reached in the current response call.
         /// @dev This means a "late" response will not be reverted, just ignored
         if (!publicDecryptionDone[publicDecryptionId] && _isConsensusReachedPublic(verifiedSignaturesArray.length)) {
             publicDecryptionDone[publicDecryptionId] = true;
@@ -429,8 +428,7 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
         /// @dev Store the reencrypted share for the user decryption response.
         reencryptedShares[userDecryptionId].push(reencryptedShare);
 
-        /// @dev Only send the event if consensus has not been reached in a previous response call
-        /// @dev and the consensus is reached in the current response call.
+        /// @dev Send the event if and only if the consensus is reached in the current response call.
         /// @dev This means a "late" response will not be reverted, just ignored
         if (!userDecryptionDone[userDecryptionId] && _isConsensusReachedUser(userVerifiedSignatures.length)) {
             userDecryptionDone[userDecryptionId] = true;
@@ -468,9 +466,7 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
             );
     }
 
-    /// @notice Validates the EIP712 signature for a given public/user decryption
-    /// @dev This function checks that the signer address is a KMS Connector.
-    /// @dev It also checks that the signer has not already signed the public/user decryption.
+    /// @notice Validates the EIP712 signature for a given public/user decryption.
     /// @param decryptionId The ID of the public or user decryption
     /// @param digest The hash of the PublicDecryptVerification/UserDecryptResponseVerification structure
     /// @param signature The signature to be validated
@@ -480,11 +476,12 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
         /// @dev Check that the signer is a KMS node
         _HTTPZ.checkIsKmsNode(signer);
 
-        if (alreadySigned[decryptionId][signer]) {
-            revert KmsSignerAlreadySigned(decryptionId, signer);
+        /// @dev Check that the signer has not already responded to the public/user decryption request
+        if (alreadyResponded[decryptionId][signer]) {
+            revert KmsSignerAlreadyResponded(decryptionId, signer);
         }
 
-        alreadySigned[decryptionId][signer] = true;
+        alreadyResponded[decryptionId][signer] = true;
     }
 
     /// @notice Validates the EIP712 signature for a given user decryption request

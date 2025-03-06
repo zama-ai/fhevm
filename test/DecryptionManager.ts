@@ -362,7 +362,7 @@ describe("DecryptionManager", function () {
           .connect(firstKmsSigner)
           .publicDecryptionResponse(publicDecryptionId, decryptedResult, signature1),
       )
-        .to.be.revertedWithCustomError(decryptionManager, "KmsSignerAlreadySigned")
+        .to.be.revertedWithCustomError(decryptionManager, "KmsSignerAlreadyResponded")
         .withArgs(publicDecryptionId, firstKmsSigner.address);
     });
 
