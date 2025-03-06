@@ -1,0 +1,32 @@
+name: Slither Analysis
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - run: cp ./contracts/.env.example ./contracts/.env
+      - run: npm --prefix ./contracts ci --include=optional
+      - run: npm --prefix ./contracts install
+      - run: npm --prefix ./contracts run compile
+      - name: Run Slither
+        uses: crytic/slither-action@v0.4.0
+        with:
+          node-version: 20
+          ignore-compile: false
+          solc-version: "0.8.24"
+          slither-config: ".slither.config.json"
+          sarif: results.sarif
+          fail-on: none
+          target: "./contracts/"
+      - name: Upload SARIF file
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results.sarif
