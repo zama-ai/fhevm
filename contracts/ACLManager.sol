@@ -148,9 +148,8 @@ contract ACLManager is IACLManager {
         delegateAccountCounters[delegationDigest]++;
         delegateAccountAuthorizers[msg.sender] = true;
 
-        /// @dev Only send the event if consensus has not been reached in a previous response call
-        /// @dev and the consensus is reached in the current response call.
-        /// @dev This means a "late" delegation will not be reverted, just ignored
+        /// @dev Send the event if and only if the consensus is reached in the current response call.
+        /// @dev This means a "late" response will not be reverted, just ignored
         if (!delegatedAccounts[delegationDigest] && _isConsensusReached(delegateAccountCounters[delegationDigest])) {
             for (uint256 i = 0; i < allowedContracts.length; i++) {
                 emit DelegateAccount(chainId, delegator, delegatee, allowedContracts[i]);
