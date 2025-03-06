@@ -43,10 +43,10 @@ pub async fn event_listener_gateway(
 
                         match topic_bytes {
                         PROOF_VERIFICATION_RESPONSE_TOPIC => {
-                            let sleep_time = 1;
+                            let sleep_time = 500;
                             info!("Received Proof Verification response event");
-                            info!("Artificial sleep in anvil dev mode {}s", sleep_time);
-                            tokio::time::sleep(tokio::time::Duration::from_secs(sleep_time)).await;
+                            info!("Artificial sleep in anvil dev mode {}ms", sleep_time);
+                            tokio::time::sleep(tokio::time::Duration::from_millis(sleep_time)).await;
                             RelayerEventData::Input(
                                     InputEventData::EventLogResponseFromGwL2   {
                                         log: event_log

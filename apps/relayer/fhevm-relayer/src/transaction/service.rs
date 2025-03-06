@@ -3,6 +3,7 @@ use alloy::{
     rpc::types::TransactionReceipt,
 };
 use dashmap::DashMap;
+use rand::Rng;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
@@ -467,10 +468,23 @@ impl TransactionService {
         timeout: Duration,
     ) -> Result<TransactionReceipt, TransactionServiceError> {
         let start = Instant::now();
-        let mut interval = tokio::time::interval(Duration::from_millis(500));
+        let base_delay = Duration::from_millis(200); // Start with 200ms
+        let max_delay = Duration::from_secs(10); // Cap at 10 seconds
+        let mut attempt = 0;
+
+        // Introduce an **initial delay** before the first attempt
+        // TODO: Make this configurable
+        tokio::time::sleep(Duration::from_millis(400)).await;
+
+        info!(
+            ?tx_hash,
+            ?attempt,
+            elapsed = ?start.elapsed().as_millis(),
+            "First attempt to get receipt (ms)"
+        );
 
         loop {
-            // Check if we've exceeded timeout
+            // Check timeout
             if start.elapsed() > timeout {
                 return Err(TransactionServiceError::Timeout(timeout.as_secs()));
             }
@@ -479,13 +493,26 @@ impl TransactionService {
             match self.manager.provider.get_transaction_receipt(tx_hash).await {
                 Ok(Some(receipt)) => return Ok(receipt),
                 Ok(None) => {
-                    // Wait before next attempt
-                    interval.tick().await;
+                    // Calculate exponential backoff with jitter
+                    let backoff_base = base_delay.mul_f64(1.5f64.powi(attempt as i32));
+                    let jitter = 0.8 + (0.4 * rand::rng().random::<f64>());
+                    let delay = backoff_base.mul_f64(jitter).min(max_delay);
+
+                    info!(
+                        ?tx_hash,
+                        attempt = attempt + 1,
+                        delay_ms = ?delay.as_millis(),
+                        elapsed = ?start.elapsed().as_secs(),
+                        "Receipt not available yet, waiting with backoff"
+                    );
+
+                    tokio::time::sleep(delay).await;
+                    attempt += 1;
                 }
                 Err(e) => {
-                    // Log error and retry
+                    // Log error and use a shorter retry delay for network errors
                     warn!(?tx_hash, ?e, "Error getting receipt");
-                    interval.tick().await;
+                    tokio::time::sleep(base_delay).await;
                 }
             }
         }
