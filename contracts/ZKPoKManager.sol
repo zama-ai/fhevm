@@ -7,12 +7,16 @@ import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import "./interfaces/IZKPoKManager.sol";
 import "./interfaces/IHTTPZ.sol";
 
-/// @title ZKPoKManager smart contract
-/// @dev See {IZKPoKManager}
+/**
+ * @title ZKPoKManager smart contract
+ * @dev See {IZKPoKManager}
+ */
 contract ZKPoKManager is IZKPoKManager, EIP712 {
-    /// @notice The typed data structure for the EIP712 signature to validate in ZK Proof verification responses.
-    /// @dev The name of this struct is not relevant for the signature validation, only the one defined
-    /// @dev EIP712_ZKPOK_TYPE is, but we keep it the same for clarity.
+    /**
+     * @notice The typed data structure for the EIP712 signature to validate in ZK Proof verification responses.
+     * @dev The name of this struct is not relevant for the signature validation, only the one defined
+     * @dev EIP712_ZKPOK_TYPE is, but we keep it the same for clarity.
+     */
     struct CiphertextVerification {
         /// @notice The Coprocessor's computed ciphertext handles.
         bytes32[] ctHandles;
@@ -43,16 +47,22 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
     /// @notice The counter used for the ZK Proof IDs returned in verification request events.
     uint256 internal zkProofIdCounter;
 
-    /// @notice The mapping of ZK Proof IDs to their verification status.
+    /// @notice The ZK Proof request IDs that have been verified.
     mapping(uint256 zkProofId => bool isVerified) internal verifiedZKProofs;
 
-    /// @notice The mapping of ZK Proof IDs to their validated signatures.
+    /// @notice The ZK Proof request IDs that have been rejected.
+    mapping(uint256 zkProofId => bool isRejected) internal rejectedZKProofs;
+
+    /// @notice The validated signatures associated to a verified proof for a given ZK Proof ID.
     mapping(uint256 zkProofId => mapping(bytes32 digest => bytes[] signatures)) internal zkProofSignatures;
 
-    /// @notice The mapping of ZK Proof IDs to their signers and their signing status.
-    mapping(uint256 zkProofId => mapping(address signer => bool hasSigned)) internal zkProofSigners;
+    /// @notice The number of coprocessors that have responded with a proof rejection for a given ZK Proof ID.
+    mapping(uint256 zkProofId => uint256 responseCounter) internal rejectedProofResponseCounter;
 
-    /// @notice The mapping of ZK Proof IDs to their inputs received on verification requests.
+    /// @notice Whether a coprocessor signer has already responded to a ZK Proof verification request.
+    mapping(uint256 zkProofId => mapping(address coprocessorSigner => bool alreadyResponded)) internal alreadyResponded;
+
+    /// @notice The ZK Proof request inputs to be used for signature validation in response calls.
     mapping(uint256 zkProofId => ZKProofInput zkProofInput) internal _zkProofInputs;
 
     /// @notice The definition of the CiphertextVerification structure typed data.
@@ -83,7 +93,8 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
 
         // TODO(#52): Implement sending service fees to PaymentManager contract
 
-        uint256 zkProofId = zkProofIdCounter++;
+        zkProofIdCounter++;
+        uint256 zkProofId = zkProofIdCounter;
 
         /// @dev The following stored inputs are used during response calls for the EIP712 signature validation.
         _zkProofInputs[zkProofId] = ZKProofInput(contractChainId, contractAddress, userAddress);
@@ -111,15 +122,19 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
         /// @dev Compute the digest of the CiphertextVerification structure.
         bytes32 digest = _hashCiphertextVerification(ciphertextVerification);
 
-        /// @dev Recover the signer address from the signature and validate that is a Coprocessor.
+        /// @dev Recover the signer address from the signature and validate that it is a coprocessor
+        /// @dev that has not already responded (with either a proof verification or rejection).
         _validateEIP712Signature(zkProofId, digest, signature);
 
         bytes[] storage currentSignatures = zkProofSignatures[zkProofId][digest];
         currentSignatures.push(signature);
 
-        /// @dev Only send the event if consensus has not been reached in a previous response call
-        /// @dev and the consensus is reached in the current response call.
+        /// @dev Send the event if and only if the consensus is reached in the current response call
+        /// @dev for a proof verification.
         /// @dev This means a "late" response will not be reverted, just ignored
+        /// @dev Note that this considers that the consensus is reached with at least N/2 + 1
+        /// @dev coprocessors. If the threshold is updated to below this number, we should also
+        /// @dev check that the ZK proof request has not been rejected yet.
         if (!isProofVerified(zkProofId) && _isConsensusReached(currentSignatures.length)) {
             // TODO(#52): Implement calling PaymentManager contract to burn and distribute fees
             verifiedZKProofs[zkProofId] = true;
@@ -128,13 +143,43 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
         }
     }
 
+    /// @dev See {IZKPoKManager-rejectProofResponse}.
+    function rejectProofResponse(uint256 zkProofId) public virtual {
+        /// @dev Validate that the caller is a coprocessor that has not already responded.
+        /// @dev More info on why we do not need to validate the signature in this case is in the
+        /// @dev functions's description from the interface.
+        _checkCoprocessorAddress(msg.sender, zkProofId);
+
+        rejectedProofResponseCounter[zkProofId]++;
+
+        /// @dev Send the event if and only if the consensus is reached in the current response call
+        /// @dev for a proof rejection.
+        /// @dev This means a "late" response will not be reverted, just ignored
+        /// @dev Note that this considers that the consensus is reached with at least N/2 + 1
+        /// @dev coprocessors. If the threshold is updated to below this number, we should also
+        /// @dev check that the ZK proof request has not been verified yet.
+        if (!isProofRejected(zkProofId) && _isConsensusReached(rejectedProofResponseCounter[zkProofId])) {
+            // TODO(#52): Implement calling PaymentManager contract to burn and distribute fees
+            rejectedZKProofs[zkProofId] = true;
+
+            emit RejectProofResponse(zkProofId);
+        }
+    }
+
     /// @dev See {IZKPoKManager-isProofVerified}.
     function isProofVerified(uint256 zkProofId) public view virtual returns (bool) {
         return verifiedZKProofs[zkProofId];
     }
 
-    /// @notice Returns the versions of the ZKPoKManager contract in SemVer format.
-    /// @dev This is conventionally used for upgrade features.
+    /// @dev See {IZKPoKManager-isProofRejected}.
+    function isProofRejected(uint256 zkProofId) public view virtual returns (bool) {
+        return rejectedZKProofs[zkProofId];
+    }
+
+    /**
+     * @notice Returns the versions of the ZKPoKManager contract in SemVer format.
+     * @dev This is conventionally used for upgrade features.
+     */
     function getVersion() public pure virtual returns (string memory) {
         return
             string(
@@ -150,27 +195,38 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
             );
     }
 
-    /// @notice Validates the EIP712 signature for a given ZK Proof
-    /// @dev This function calls the HTTPZ contract to check that the signer address is a Coprocessor.
-    /// @dev It also checks that the signer has not already signed the ZK Proof.
-    /// @param zkProofId The ID of the ZK Proof
-    /// @param digest The hash of the CiphertextVerification structure
-    /// @param signature The signature to be validated
-    function _validateEIP712Signature(uint256 zkProofId, bytes32 digest, bytes calldata signature) internal virtual {
-        address signer = ECDSA.recover(digest, signature);
+    /**
+     * @notice Check that the given address is a registered coprocessor that has not already responded.
+     * @param coprocessorAddress The address of the potential coprocessor
+     * @param zkProofId The ID of the ZK Proof
+     */
+    function _checkCoprocessorAddress(address coprocessorAddress, uint256 zkProofId) internal virtual {
+        _HTTPZ.checkIsCoprocessor(coprocessorAddress);
 
-        _HTTPZ.checkIsCoprocessor(signer);
-
-        if (zkProofSigners[zkProofId][signer]) {
-            revert CoprocessorHasAlreadySigned(zkProofId, signer);
+        if (alreadyResponded[zkProofId][coprocessorAddress]) {
+            revert CoprocessorSignerAlreadyResponded(zkProofId, coprocessorAddress);
         }
 
-        zkProofSigners[zkProofId][signer] = true;
+        alreadyResponded[zkProofId][coprocessorAddress] = true;
     }
 
-    /// @notice Computes the hash of a given CiphertextVerification structured data
-    /// @param ctVerification The CiphertextVerification structure
-    /// @return The hash of the CiphertextVerification structure
+    /**
+     * @notice Validates the EIP712 signature for a given ZK Proof
+     * @param zkProofId The ID of the ZK Proof
+     * @param digest The hash of the CiphertextVerification structure
+     * @param signature The signature to be validated
+     */
+    function _validateEIP712Signature(uint256 zkProofId, bytes32 digest, bytes calldata signature) internal virtual {
+        address signerAddress = ECDSA.recover(digest, signature);
+
+        _checkCoprocessorAddress(signerAddress, zkProofId);
+    }
+
+    /**
+     * @notice Computes the hash of a given CiphertextVerification structured data
+     * @param ctVerification The CiphertextVerification structure
+     * @return The hash of the CiphertextVerification structure
+     */
     function _hashCiphertextVerification(
         CiphertextVerification memory ctVerification
     ) internal view virtual returns (bytes32) {
@@ -188,10 +244,21 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
             );
     }
 
-    /// @notice Checks if the consensus is reached among the Coprocessors.
-    /// @dev This function calls the HTTPZ contract to retrieve the consensus threshold.
-    /// @param coprocessorCounter The number of coprocessors that agreed
-    /// @return Whether the consensus is reached
+    /**
+     * @notice Computes the hash of ctHandles
+     * @param ctHandles The ctHandles
+     * @return The hash of the ctHandles
+     */
+    function _hashCtHandles(bytes32[] calldata ctHandles) internal view virtual returns (bytes32) {
+        return keccak256(abi.encodePacked(ctHandles));
+    }
+
+    /**
+     * @notice Checks if the consensus is reached among the Coprocessors.
+     * @dev This function calls the HTTPZ contract to retrieve the consensus threshold.
+     * @param coprocessorCounter The number of coprocessors that agreed
+     * @return Whether the consensus is reached
+     */
     function _isConsensusReached(uint256 coprocessorCounter) internal view virtual returns (bool) {
         uint256 consensusThreshold = _HTTPZ.getCoprocessorMajorityThreshold();
         return coprocessorCounter >= consensusThreshold;

@@ -71,7 +71,7 @@ interface IDecryptionManager {
     /// @notice Error indicating that the KMS Connector has already signed its public decryption response
     /// @param publicDecryptionId The public decryption request's unique ID associated with the response
     /// @param signer The address of the KMS Connector signer that has already signed
-    error KmsSignerAlreadySigned(uint256 publicDecryptionId, address signer);
+    error KmsSignerAlreadyResponded(uint256 publicDecryptionId, address signer);
 
     /// @notice Error indicating that the given signature for the user decryption request is invalid
     /// @param signature The invalid signature

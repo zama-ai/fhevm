@@ -79,9 +79,58 @@ export async function deployHTTPZFixture() {
   };
 }
 
+/// @dev Deploy the ZKPoKManager contract
+export async function deployZKPoKManagerFixture() {
+  const {
+    httpz,
+    owner,
+    admins,
+    user,
+    kmsSigners,
+    coprocessorSigners,
+    signers,
+    kmsNodes,
+    coprocessors,
+    networks,
+    chainIds,
+  } = await loadFixture(deployHTTPZFixture);
+
+  const dummyPaymentManager = "0x1234567890abcdef1234567890abcdef12345678";
+
+  const ZKPoKManager = await hre.ethers.getContractFactory("ZKPoKManager", owner);
+  const zkpokManager = await ZKPoKManager.deploy(httpz, dummyPaymentManager);
+
+  return {
+    httpz,
+    zkpokManager,
+    owner,
+    admins,
+    user,
+    kmsSigners,
+    coprocessorSigners,
+    signers,
+    kmsNodes,
+    coprocessors,
+    networks,
+    chainIds,
+  };
+}
+
 /// @dev Deploy the KeyManager contract
 export async function deployKeyManagerFixture() {
-  const { httpz, owner, admins, user, kmsSigners, coprocessorSigners, signers } = await loadFixture(deployHTTPZFixture);
+  const {
+    httpz,
+    owner,
+    admins,
+    user,
+    kmsSigners,
+    coprocessorSigners,
+    signers,
+    kmsNodes,
+    coprocessors,
+    networks,
+    chainIds,
+  } = await loadFixture(deployHTTPZFixture);
 
   const KeyManager = await hre.ethers.getContractFactory("KeyManager", owner);
   const keyManager = await KeyManager.deploy(httpz);
@@ -100,6 +149,10 @@ export async function deployKeyManagerFixture() {
     kmsSigners,
     coprocessorSigners,
     signers,
+    kmsNodes,
+    coprocessors,
+    networks,
+    chainIds,
     fheParamsName,
     fheParamsDigest,
   };
@@ -116,6 +169,10 @@ export async function deployCiphertextStorageFixture() {
     kmsSigners,
     coprocessorSigners,
     signers,
+    kmsNodes,
+    coprocessors,
+    networks,
+    chainIds,
     fheParamsName,
     fheParamsDigest,
   } = await loadFixture(deployKeyManagerFixture);
@@ -133,6 +190,10 @@ export async function deployCiphertextStorageFixture() {
     kmsSigners,
     coprocessorSigners,
     signers,
+    kmsNodes,
+    coprocessors,
+    networks,
+    chainIds,
     fheParamsName,
     fheParamsDigest,
   };
@@ -150,6 +211,10 @@ export async function deployACLManagerFixture() {
     kmsSigners,
     coprocessorSigners,
     signers,
+    kmsNodes,
+    coprocessors,
+    networks,
+    chainIds,
     fheParamsName,
     fheParamsDigest,
   } = await loadFixture(deployCiphertextStorageFixture);
@@ -168,6 +233,10 @@ export async function deployACLManagerFixture() {
     kmsSigners,
     coprocessorSigners,
     signers,
+    kmsNodes,
+    coprocessors,
+    networks,
+    chainIds,
     fheParamsName,
     fheParamsDigest,
   };
@@ -186,6 +255,10 @@ export async function deployDecryptionManagerFixture() {
     kmsSigners,
     coprocessorSigners,
     signers,
+    kmsNodes,
+    coprocessors,
+    networks,
+    chainIds,
     fheParamsName,
     fheParamsDigest,
   } = await loadFixture(deployACLManagerFixture);
@@ -207,6 +280,10 @@ export async function deployDecryptionManagerFixture() {
     kmsSigners,
     coprocessorSigners,
     signers,
+    kmsNodes,
+    coprocessors,
+    networks,
+    chainIds,
     fheParamsName,
     fheParamsDigest,
   };
