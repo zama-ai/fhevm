@@ -10,7 +10,6 @@ use alloy::primitives::FixedBytes;
 use alloy::rpc::types::Log;
 use futures_util::StreamExt;
 use std::sync::Arc;
-use tokio::time::sleep;
 
 // Define event topics as constants
 

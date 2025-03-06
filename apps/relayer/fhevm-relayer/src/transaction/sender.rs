@@ -7,7 +7,6 @@ use alloy::{
     transports::http::{Client, Http},
 };
 use eyre::Result;
-use rand::Rng;
 use reqwest::Url;
 use std::fmt;
 use std::{sync::Arc, time::Duration};
@@ -136,11 +135,6 @@ impl fmt::Debug for TransactionManager {
             .field("provider", &"<provider>") // Skip detailed provider debug
             .finish()
     }
-}
-
-fn apply_jitter(value: Duration, factor: f64) -> Duration {
-    let jitter = 0.8 + (0.4 * rand::rng().random::<f64>());
-    value.mul_f64(jitter * factor)
 }
 
 impl TransactionManager {
@@ -421,17 +415,12 @@ impl TransactionManager {
         tx_hash: B256,
         config: &TxConfig,
     ) -> Result<TransactionReceipt, TransactionError> {
-        let max_attempts = 30; // Reasonable maximum number of polling attempts
-        let base_delay = Duration::from_millis(500); // Start with 500ms delay
-        let max_delay = Duration::from_secs(10); // Cap delay at 10 seconds
         let timeout = Duration::from_secs(config.timeout_secs.unwrap_or(60));
         let start = Instant::now();
-        let required_confirmations = config.confirmations.unwrap_or(1);
+        let mut interval = tokio::time::interval(Duration::from_millis(500));
 
-        let mut latest_error = None;
-
-        for attempt in 0..max_attempts {
-            // Check timeout first
+        loop {
+            // Check if we've exceeded timeout
             if start.elapsed() > timeout {
                 return Err(TransactionError::TransactionTimeout(timeout.as_secs()));
             }
@@ -439,79 +428,56 @@ impl TransactionManager {
             // Try to get receipt
             match self.provider.get_transaction_receipt(tx_hash).await {
                 Ok(Some(receipt)) => {
-                    info!(
-                        ?tx_hash,
-                        timeout_secs = ?timeout.as_secs(),
-                        required_confirmations,
-                        "Beginning receipt polling with exponential backoff"
-                    );
-                    // Check confirmation count if required
-                    if required_confirmations <= 1 {
-                        return Ok(receipt);
-                    }
-
-                    // For cases where we need multiple confirmations
-                    let current_block = match self.provider.get_block_number().await {
-                        Ok(block) => block,
-                        Err(e) => {
-                            latest_error = Some(e.to_string());
-                            continue; // Retry if we can't get the block number
-                        }
-                    };
-
-                    if let Some(receipt_block) = receipt.block_number {
-                        let confirmations = current_block.saturating_sub(receipt_block) + 1;
-
-                        if confirmations >= required_confirmations {
+                    // If confirmation checks required
+                    if let Some(required_confirmations) = config.confirmations {
+                        if required_confirmations <= 1 {
                             return Ok(receipt);
                         }
 
-                        info!(
-                            ?tx_hash,
-                            ?receipt_block,
-                            ?current_block,
-                            ?confirmations,
-                            required = ?required_confirmations,
-                            "Waiting for more confirmations"
-                        );
+                        // Check block confirmations
+                        if let Ok(current_block) = self.provider.get_block_number().await {
+                            if let Some(receipt_block) = receipt.block_number {
+                                let confirmations = current_block.saturating_sub(receipt_block) + 1;
+
+                                if confirmations >= required_confirmations {
+                                    return Ok(receipt);
+                                }
+
+                                info!(
+                                    ?tx_hash,
+                                    ?receipt_block,
+                                    ?current_block,
+                                    ?confirmations,
+                                    required = ?required_confirmations,
+                                    "Waiting for more confirmations"
+                                );
+                            }
+                        }
+                    } else {
+                        // No confirmations required
+                        return Ok(receipt);
                     }
                 }
                 Ok(None) => {
-                    info!(
+                    // No receipt yet
+                    debug!(
                         ?tx_hash,
-                        attempt = attempt + 1,
-                        max_attempts = max_attempts,
-                        elapsed = ?start.elapsed(),
+                        elapsed = ?start.elapsed().as_secs(),
                         "Receipt not available yet, waiting before retry"
                     );
                 }
                 Err(e) => {
-                    latest_error = Some(e.to_string());
+                    // Error retrieving receipt
                     warn!(
                         ?tx_hash,
-                        attempt = attempt + 1,
-                        max_attempts = max_attempts,
                         error = %e,
                         "Error retrieving receipt, will retry"
                     );
                 }
             }
 
-            // Calculate backoff with jitter (between 0.8x and 1.2x of the base)
-            let base_backoff = base_delay.mul_f64(1.5f64.powi(attempt as i32));
-            let delay = apply_jitter(base_backoff, 1.0).min(max_delay);
-
-            tokio::time::sleep(delay).await;
-        }
-
-        // If we reach here, we've exceeded max attempts
-        if let Some(error) = latest_error {
-            Err(TransactionError::RpcError(error))
-        } else {
-            Err(TransactionError::TransactionFailed(format!(
-                "Receipt not found after {} attempts",
-                max_attempts
-            )))
+            // Wait with interval before next attempt
+            interval.tick().await;
         }
     }
 

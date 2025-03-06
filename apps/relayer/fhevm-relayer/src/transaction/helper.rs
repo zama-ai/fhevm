@@ -1,10 +1,10 @@
 use crate::core::errors::{EventProcessingError, TransactionServiceError};
 use crate::transaction::{TransactionService, TxConfig};
-use alloy::primitives::{Address, Bytes};
+use alloy::primitives::{Address, Bytes, B256};
 use alloy::rpc::types::TransactionReceipt;
 use std::sync::Arc;
-
-use tracing::{info, warn};
+use std::time::Duration;
+use tracing::info;
 
 pub trait ReceiptProcessor {
     type Output;
@@ -48,16 +48,35 @@ impl TransactionHelper {
         F: Fn() -> Result<Bytes, EventProcessingError>,
         P: ReceiptProcessor,
     {
-        // Single attempt using service's retry mechanism
-        let receipt = self
-            .try_send_transaction(operation_name, target, &prepare_calldata)
-            .await?;
+        // Prepare the calldata
+        let calldata = prepare_calldata()?;
 
-        // Process receipt
+        info!(
+            operation = operation_name,
+            calldata = %format!("0x{}...", hex::encode(&calldata[..std::cmp::min(20, calldata.len())])),
+            "Preparing transaction"
+        );
+
+        // Use the new submit_and_wait method that handles the full flow
+        let receipt = self
+            .tx_service
+            .submit_and_wait(target, calldata, self.tx_config.clone())
+            .await
+            .map_err(EventProcessingError::from)?;
+
+        // Process receipt with provided processor
+        info!(
+            operation = operation_name,
+            tx_hash = ?receipt.transaction_hash,
+            block_number = ?receipt.block_number,
+            gas_used = ?receipt.gas_used,
+            "Transaction confirmed"
+        );
+
         receipt_processor.process(&receipt)
     }
 
-    /// Send a simple transaction without receipt processing
+    /// Send a simple transaction without waiting for confirmation
     pub async fn send_transaction_simple<F>(
         &self,
         operation_name: &str,
@@ -69,59 +88,62 @@ impl TransactionHelper {
     {
         let calldata = prepare_calldata()?;
 
+        info!(
+            operation = operation_name,
+            calldata = %format!("0x{}...", hex::encode(&calldata[..std::cmp::min(20, calldata.len())])),
+            "Submitting transaction without waiting"
+        );
+
         let tx_hash = self
             .tx_service
             .submit_transaction(target, calldata, self.tx_config.clone())
             .await
             .map_err(EventProcessingError::from)?;
 
-        // Log success but don't wait for receipt
         info!(
             operation = operation_name,
             ?tx_hash,
-            "Transaction submitted"
+            "Transaction submitted successfully (not waiting for confirmation)"
         );
 
         Ok(())
     }
 
-    async fn try_send_transaction<F>(
+    /// Get transaction status - checks if a transaction was successful
+    pub async fn get_transaction_status(
         &self,
-        operation_name: &str,
-        target: Address,
-        prepare_calldata: &F,
-    ) -> Result<TransactionReceipt, EventProcessingError>
-    where
-        F: Fn() -> Result<Bytes, EventProcessingError>,
-    {
-        let calldata = prepare_calldata()?;
-
-        info!(
-            operation = operation_name,
-            calldata = %format!("0x{}...", hex::encode(&calldata[..20])),
-            "Submitting transaction"
-        );
-
-        // Submit transaction using service
-        let tx_hash = self
-            .tx_service
-            .submit_transaction(target, calldata, self.tx_config.clone())
-            .await
-            .map_err(EventProcessingError::from)?;
-
-        info!(
-            ?tx_hash,
-            operation = operation_name,
-            "Transaction submitted, waiting for confirmation"
-        );
-
+        tx_hash: B256,
+    ) -> Result<bool, EventProcessingError> {
         let receipt = self
             .tx_service
             .get_transaction_receipt(tx_hash)
             .await
             .map_err(EventProcessingError::from)?;
 
-        // Check transaction status
+        Ok(receipt.status())
+    }
+
+    /// Wait for an existing transaction to be confirmed
+    pub async fn wait_for_transaction(
+        &self,
+        tx_hash: B256,
+        operation_name: &str,
+    ) -> Result<TransactionReceipt, EventProcessingError> {
+        let timeout = Duration::from_secs(self.tx_config.timeout_secs.unwrap_or(60));
+
+        info!(
+            operation = operation_name,
+            ?tx_hash,
+            timeout_secs = ?timeout.as_secs(),
+            "Waiting for transaction confirmation"
+        );
+
+        let receipt = self
+            .tx_service
+            .wait_for_receipt(tx_hash, timeout)
+            .await
+            .map_err(EventProcessingError::from)?;
+
         if !receipt.status() {
             return Err(
                 TransactionServiceError::Failed("Transaction reverted on chain".into()).into(),
@@ -129,11 +151,11 @@ impl TransactionHelper {
         }
 
         info!(
-            ?tx_hash,
-            ?receipt.block_number,
-            gas_used = ?receipt.gas_used,
             operation = operation_name,
-            "Transaction confirmed"
+            ?tx_hash,
+            block_number = ?receipt.block_number,
+            gas_used = ?receipt.gas_used,
+            "Transaction confirmed successfully"
         );
 
         Ok(receipt)
