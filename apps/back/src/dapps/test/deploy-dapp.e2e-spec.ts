@@ -139,86 +139,69 @@ describe('deploy-dapp', () => {
     })
 
     describe.each([
-      'back:dapp:validation:requested',
-      'back:dapp:validation:confirmed',
-      'back:dapp:validation:failed',
-    ] satisfies back.BackEvent['type'][])('when receiving `%s` event', type => {
-      let status: DAppStatus
-      switch (type) {
-        case 'back:dapp:validation:requested':
-          status = 'DEPLOYING'
-          break
-        case 'back:dapp:validation:confirmed':
-          status = 'LIVE'
-          break
-        case 'back:dapp:validation:failed':
-          status = 'FAILED'
-          break
-        default:
-          status = 'DEPLOYING'
-      }
-
-      beforeEach(async () => {
-        const message = genMessage(type, dappId)
-        if (message) {
-          await manager.sendMessage(JSON.stringify(message))
-        }
-      })
-
-      test(`then the dapp status should be "${status}"`, async () => {
-        await vi.waitUntil(async () => {
-          const size = await manager.getQueueSize()
-          return size === 0
+      {
+        event: back.dappValidationRequested(
+          {
+            requestId: faker.string.uuid(),
+            dAppId: '',
+            chainId: '1',
+            address: faker.string.hexadecimal({ length: 40 }),
+          },
+          { correlationId: faker.string.uuid() },
+        ),
+        status: 'DEPLOYING',
+      },
+      {
+        event: back.dappValidationConfirmed(
+          {
+            requestId: faker.string.uuid(),
+            dAppId: '',
+            owner: faker.string.hexadecimal({ length: 40 }),
+          },
+          { correlationId: faker.string.uuid() },
+        ),
+        status: 'LIVE',
+      },
+      {
+        event: back.dappValidationFailed(
+          {
+            requestId: faker.string.uuid(),
+            dAppId: '',
+            reason: faker.lorem.word(5),
+          },
+          { correlationId: faker.string.uuid() },
+        ),
+        status: 'FAILED',
+      },
+    ] satisfies { event: back.BackEvent; status: DAppStatus }[])(
+      'when receiving `$event.type` event',
+      ({ event, status }) => {
+        beforeEach(async () => {
+          // NOTE: I need to override the dAppId with the created one
+          // because it doesn't exist at test description step.
+          event.payload.dAppId = dappId
+          await manager.sendMessage(JSON.stringify(event))
         })
 
-        const result = await manager.dapp.getDapp({
-          token,
-          dappId,
+        test(`then the dapp status should be "${status}"`, async () => {
+          await vi.waitUntil(async () => {
+            const size = await manager.getQueueSize()
+            return size === 0
+          })
+
+          const result = await manager.dapp.getDapp({
+            token,
+            dappId,
+          })
+          if (result.success) {
+            console.log(`dapp: ${JSON.stringify(result.data)}`)
+            expect(result.data.status).toBe(status)
+          } else {
+            console.log(result)
+            expect(result.success).toBe(true)
+          }
         })
-        if (!result.success) {
-          console.log(result)
-        }
-        expect(result.success).toBe(true)
-        if (result.success) {
-          expect(result.data.status).toBe(status)
-        }
-      })
-    })
+      },
+    )
   })
 })
-
-function genMessage(
-  type: back.BackEvent['type'],
-  dappId: string,
-): back.BackEvent | undefined {
-  switch (type) {
-    case 'back:dapp:validation:requested':
-      return back.dappValidationRequested(
-        {
-          requestId: faker.string.uuid(),
-          dAppId: dappId,
-          chainId: '1',
-          address: faker.string.hexadecimal({ length: 40 }),
-        },
-        { correlationId: faker.string.uuid() },
-      )
-    case 'back:dapp:validation:confirmed':
-      return back.dappValidationConfirmed(
-        {
-          requestId: faker.string.uuid(),
-          dAppId: dappId,
-          owner: faker.string.hexadecimal({ length: 40 }),
-        },
-        { correlationId: faker.string.uuid() },
-      )
-    case 'back:dapp:validation:failed':
-      return back.dappValidationFailed(
-        {
-          requestId: faker.string.uuid(),
-          dAppId: dappId,
-          reason: faker.lorem.word(5),
-        },
-        { correlationId: faker.string.uuid() },
-      )
-  }
-}

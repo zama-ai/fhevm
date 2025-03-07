@@ -1,4 +1,4 @@
-import { Logger, UseGuards } from '@nestjs/common'
+import { Logger, UseFilters, UseGuards } from '@nestjs/common'
 import {
   Args,
   Mutation,
@@ -29,7 +29,9 @@ import { DAppStatProps } from '#dapps/domain/entities/dapp-stat.js'
 import { TeamProps } from '#users/domain/entities/team.js'
 import { DeployedDAppInput } from './dto/inputs/deployed-dapp.input.js'
 import { ValidateAddressInput } from './dto/inputs/validate-address.input.js'
+import { AppErrorFilter } from '#auth/infra/filters/app-error.filter.js'
 
+@UseFilters(AppErrorFilter)
 @Resolver(() => DappType)
 export class DappsResolver {
   private readonly logger = new Logger(DappsResolver.name)

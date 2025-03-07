@@ -1,12 +1,3 @@
-export type {
-  AppError,
-  DuplicatedError,
-  ForbiddenError,
-  NotFoundError,
-  UnauthorizedError,
-  UnknownError,
-  ValidationError,
-} from './app-error.js'
 export type { Some, None, Option } from './option.js'
 export type { IPubSub, ISubscriber } from './pubsub.js'
 export type { Fail, Ok, Result } from './result.js'
@@ -14,6 +5,13 @@ export type { UseCase } from './use-case.js'
 export type { UnitOfWork } from './unit-of-work.js'
 
 export {
+  AppError,
+  DuplicatedError,
+  ForbiddenError,
+  NotFoundError,
+  UnauthorizedError,
+  UnknownError,
+  ValidationError,
   isAppError,
   isDuplicatedError,
   isForbiddenError,

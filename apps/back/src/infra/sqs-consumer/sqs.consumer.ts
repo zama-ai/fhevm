@@ -39,6 +39,9 @@ export class SQSConsumer {
           this.logger.log(`❌ unhandled message: ${(data as any).type}`)
         }
       } catch (err) {
+        console.log(
+          `failed to consume message: ${isAppError(err) ? err.message : err}`,
+        )
         this.logger.warn(
           `❌ failed to handle message: ${isAppError(err) ? err.message : err}`,
         )

@@ -14,72 +14,77 @@ const TAGS = [
 ] as const
 type Tag = (typeof TAGS)[number]
 
-export type ValidationError = {
-  _tag: Extract<Tag, 'ValidationError'>
-  message: string
+export class AppError extends Error {
+  _tag: Tag
+  constructor(tag: Tag, message?: string, options?: ErrorOptions) {
+    super(message, options)
+    this._tag = tag
+  }
+}
+export class ValidationError extends AppError {
+  constructor(message: string) {
+    super('ValidationError', message)
+  }
 }
 export function validationError(message: string): ValidationError {
-  return { _tag: 'ValidationError', message }
+  return new ValidationError(message)
 }
 
-export type NotFoundError = {
-  _tag: Extract<Tag, 'NotFoundError'>
-  message: string
+export class NotFoundError extends AppError {
+  constructor(message: string) {
+    super('NotFoundError', message)
+  }
 }
 export function notFoundError(message = 'Not Found'): NotFoundError {
-  return { _tag: 'NotFoundError', message }
+  return new NotFoundError(message)
 }
 
-export type UnauthorizedError = {
-  _tag: Extract<Tag, 'UnauthorizedError'>
-  message: string
+export class UnauthorizedError extends AppError {
+  constructor(message: string) {
+    super('UnauthorizedError', message)
+  }
 }
 export function unauthorizedError(message = 'Unauthorized'): UnauthorizedError {
-  return { _tag: 'UnauthorizedError', message }
+  return new UnauthorizedError(message)
 }
 
-export type ForbiddenError = {
-  _tag: Extract<Tag, 'ForbiddenError'>
-  message: string
+export class ForbiddenError extends AppError {
+  constructor(message: string) {
+    super('ForbiddenError', message)
+  }
 }
 export function forbiddenError(message = 'Forbidden'): ForbiddenError {
-  return { _tag: 'ForbiddenError', message }
+  return new ForbiddenError(message)
 }
 
-export type UnknownError = {
-  _tag: Extract<Tag, 'UnknownError'>
-  message: string
+export class UnknownError extends AppError {
+  constructor(message: string) {
+    super('UnknownError', message)
+  }
 }
 export function unknownError(message = 'Unknown Error'): UnknownError {
-  return { _tag: 'UnknownError', message }
+  return new UnknownError(message)
 }
 
-export type DuplicatedError = {
-  _tag: Extract<Tag, 'DuplicatedError'>
-  message: string
+export class DuplicatedError extends AppError {
+  constructor(message: string) {
+    super('DuplicatedError', message)
+  }
 }
 
 export function duplicatedError(message: string): DuplicatedError {
-  return { _tag: 'DuplicatedError', message }
+  return new DuplicatedError(message)
 }
 
-export type TimeoutError = {
-  _tag: Extract<Tag, 'TimeoutError'>
-  message: string
+export class TimeoutError extends AppError {
+  constructor(message: string) {
+    super('TimeoutError', message)
+  }
 }
 
 export function timeoutError(message = 'Timeout'): TimeoutError {
-  return { _tag: 'TimeoutError', message }
+  return new TimeoutError(message)
 }
-
-export type AppError =
-  | ValidationError
-  | NotFoundError
-  | UnauthorizedError
-  | ForbiddenError
-  | UnknownError
-  | DuplicatedError
-  | TimeoutError
 
 /**
  * Transforms a ZodError into a ValidationError.

@@ -81,7 +81,7 @@ describe('create-dapp', () => {
         })
       })
 
-      test('then it fails due to unauthorized error', () => {
+      test('then it raises unauthorized error', () => {
         expect(result.success).toBe(false)
         if (!result.success) {
           expect(result.errors).toBeDefined()

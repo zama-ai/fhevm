@@ -3,7 +3,10 @@ import { CreateInvitationInput } from '#invitations/infra/dto/inputs/create-invi
 import { GetInvitationByToken } from '#invitations/use-cases/get-invitation-by-token.use-case.js'
 import { CreateInvitation } from '#invitations/use-cases/create-invitation.use-case.js'
 import { InvitationType } from './types/invitations.type.js'
+import { UseFilters } from '@nestjs/common'
+import { AppErrorFilter } from '#auth/infra/filters/app-error.filter.js'
 
+@UseFilters(AppErrorFilter)
 @Resolver(() => InvitationType)
 export class InvitationsResolver {
   constructor(

@@ -40,19 +40,20 @@ export class AppDeployment implements UseCase<Input, void> {
   }
 
   execute({ event }: Input): Task<void, AppError> {
-    return this.uow.exec(
-      this.repo
-        .update(DAppId.from(event.payload.dAppId), {
+    return this.uow
+      .exec(
+        this.repo.update(DAppId.from(event.payload.dAppId), {
           status: getDAppStatus(event),
-        })
-        .match({
-          ok: dapp =>
-            this.logger.debug(`updated dapp: ${dapp.id.value}/${dapp.status}`),
-          fail: error => {
-            this.logger.error(`failed to update: ${error}`)
-          },
         }),
-    )
+      )
+      .match({
+        ok: dapp => {
+          this.logger.debug(`updated dapp: ${dapp.id.value}/${dapp.status}`)
+        },
+        fail: error => {
+          this.logger.error(`failed to update: ${error}`)
+        },
+      })
   }
 }
 
