@@ -16,6 +16,8 @@ use std::{
 };
 use tracing::{debug, error, info};
 
+const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
+
 lazy_static! {
     static ref WORKER_ERRORS_COUNTER: IntCounter =
         register_int_counter!("coprocessor_worker_errors", "worker errors encountered").unwrap();
@@ -424,6 +426,13 @@ async fn tfhe_worker_cycle(
                     ", w.tenant_id, w.output_handle, &db_bytes, current_ciphertext_version(), db_type)
                     .execute(trx.as_mut())
                     .await?;
+
+                        // Notify all workers that new ciphertext is inserted
+                        // For now, it's only the SnS workers that are listening for these events
+                        let _ = sqlx::query!("SELECT pg_notify($1, '')", EVENT_CIPHERTEXT_COMPUTED)
+                            .execute(trx.as_mut())
+                            .await?;
+
                         s.end();
                         let mut s = tracer.start_with_context("update_computation", &loop_ctx);
                         s.set_attribute(KeyValue::new("tenant_id", w.tenant_id as i64));
