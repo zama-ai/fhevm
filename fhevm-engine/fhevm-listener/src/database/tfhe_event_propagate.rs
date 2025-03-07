@@ -287,6 +287,10 @@ impl Database {
         }
     }
 
+    pub async fn notify_scheduler(&mut self) {
+        self.notify_database(EVENT_WORK_AVAILABLE).await
+    }
+
     /// Handles all types of ACL events
     pub async fn handle_acl_event(
         &mut self,
