@@ -1,0 +1,49 @@
+name: anvil
+services:
+  anvil-httpz:
+    container_name: anvil-httpz
+    image: ghcr.io/foundry-rs/foundry:stable
+    environment:
+      MNEMONIC: ${MNEMONIC}
+    entrypoint:
+      [
+        "anvil",
+        "--block-time",
+        "0.1",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8756",
+        "--chain-id",
+        "123456",
+        "--accounts",
+        "15",
+        "--mnemonic",
+        "${MNEMONIC}",
+      ]
+    ports:
+      - "8756:8756"
+
+  anvil-gateway:
+    container_name: anvil-gateway
+    image: ghcr.io/foundry-rs/foundry:stable
+    environment:
+      MNEMONIC: ${MNEMONIC}
+    entrypoint:
+      [
+        "anvil",
+        "--block-time",
+        "0.1",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8757",
+        "--chain-id",
+        "654321",
+        "--accounts",
+        "15",
+        "--mnemonic",
+        "${MNEMONIC}"
+      ]
+    ports:
+      - "8757:8757"

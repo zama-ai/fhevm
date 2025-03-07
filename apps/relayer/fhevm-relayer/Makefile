@@ -117,6 +117,21 @@ PID_FILE_2 := .anvil2.pid
 # Escape the mnemonic phrase
 ESCAPED_MNEMONIC := $(shell echo "$(MNEMONIC)" | sed 's/"/\\"/g')
 
+.PHONY: start-anvil-nodes
+start-anvil-nodes:
+	@echo "Starting anvil nodes..."
+	@cd hardhat/contracts && cp .env.example .env
+	@cd hardhat/contracts && \
+		MNEMONIC_VALUE=$$(grep MNEMONIC .env | sed -E 's/export MNEMONIC="(.*)"/\1/') && \
+		MNEMONIC="$$MNEMONIC_VALUE" docker compose up -d
+	@echo "Anvil nodes started"
+
+.PHONY: stop-anvil-nodes
+stop-anvil-nodes:
+	@echo "Stopping anvil nodes..."
+	@cd hardhat/contracts && docker compose down
+	@echo "Anvil nodes stopped"
+
 .PHONY: test
 test:
 	@echo "Starting test process..."

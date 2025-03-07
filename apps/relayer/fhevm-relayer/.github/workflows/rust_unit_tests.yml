@@ -1,9 +1,7 @@
-name: Tests
+name: Rust Unit Tests
 
 on:
   pull_request:
-    branches:
-      - main
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref }}
@@ -21,11 +19,24 @@ jobs:
       uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203 # v1
       with:
         toolchain: stable
-        components: rustfmt, clippy
+
+    - name: Run Anvil nodes
+      run: make start-anvil-nodes
+    
+    - name: Verify Anvil nodes
+      run: |
+        docker ps
+        docker logs anvil-httpz
+        docker logs anvil-gateway
+        curl -v http://localhost:8756/ || echo "Port 8756 not responding"
+        curl -v http://localhost:8757/ || echo "Port 8757 not responding"
 
     - name: Run tests
-      id: test
       run: cargo test
+    
+    - name: Stop Anvil nodes
+      if: always()
+      run: make stop-anvil-nodes
 
 permissions:
   contents: read
