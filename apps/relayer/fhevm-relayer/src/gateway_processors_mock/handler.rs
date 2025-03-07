@@ -14,13 +14,13 @@ use crate::{
 };
 use std::str::FromStr;
 
-use alloy::primitives::{Address, U256, FixedBytes};
-use alloy_sol_types::SolEvent;
+use alloy::primitives::{Address, FixedBytes, U256};
 use alloy::signers::{local::PrivateKeySigner, Signer};
 use alloy::{
     sol,
     sol_types::{eip712_domain, SolStruct},
 };
+use alloy_sol_types::SolEvent;
 use async_trait::async_trait;
 use std::{sync::Arc, time::Duration};
 use tracing::{debug, error, info};
@@ -83,8 +83,6 @@ impl GatewayProcessorsHandler {
                     // Simulate some computation time
                     tokio::time::sleep(Duration::from_secs(2)).await;
 
-
-
                     // Generate mock handles
                     // In real implementation, this would involve actual cryptographic operations
                     let mut handles = vec![[5u8; 32], [2u8; 32]];
@@ -94,7 +92,10 @@ impl GatewayProcessorsHandler {
                     handles[1][31] = 0;
 
                     //let signatures = vec![1u8; 65];
-                    let signer = PrivateKeySigner::from_str("c2454775cca95e6d17d70b68105f48009fc4bf661f025e6a7911a6b4acf2a2f3").unwrap();
+                    let signer = PrivateKeySigner::from_str(
+                        "c2454775cca95e6d17d70b68105f48009fc4bf661f025e6a7911a6b4acf2a2f3",
+                    )
+                    .unwrap();
 
                     let domain = eip712_domain! {
                         name: "ZKPoKManager",
@@ -103,7 +104,8 @@ impl GatewayProcessorsHandler {
                         verifying_contract: Address::from_str(&self.contracts.zkpok_manager_address).unwrap(),
                     };
 
-                    let handles_formatted: Vec<FixedBytes<32>> = handles.clone().into_iter().map(FixedBytes::from).collect();
+                    let handles_formatted: Vec<FixedBytes<32>> =
+                        handles.clone().into_iter().map(FixedBytes::from).collect();
 
                     let signing_hash = EIP712ZKPoK {
                         handles: handles_formatted.clone(),
@@ -112,12 +114,16 @@ impl GatewayProcessorsHandler {
                         contractChainId: U256::from(request_event.contractChainId),
                     }
                     .eip712_signing_hash(&domain);
-    
+
                     let signature = signer.sign_hash(&signing_hash).await.unwrap();
                     println!("Signature: 0x{}", hex::encode(signature.as_bytes()));
 
-                    self.send_input_response(request_event.zkProofId, handles, signature.as_bytes().to_vec())
-                        .await?;
+                    self.send_input_response(
+                        request_event.zkProofId,
+                        handles,
+                        signature.as_bytes().to_vec(),
+                    )
+                    .await?;
 
                     Ok(())
                 }

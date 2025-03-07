@@ -184,7 +184,7 @@ impl ComputeCalldata {
     pub fn verify_proof_response(
         zkpok_id: U256,
         handles: Vec<[u8; 32]>,
-        signature: Vec<u8>
+        signature: Vec<u8>,
     ) -> Result<Bytes, EventProcessingError> {
         let mut calldata = Vec::new();
 
