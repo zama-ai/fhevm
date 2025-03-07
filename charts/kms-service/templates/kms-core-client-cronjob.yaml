@@ -57,6 +57,8 @@ spec:
               - mountPath: /app/load-core-client-testing-config.sh
                 subPath: load-core-client-testing-config.sh
                 name: config
+              - name: key-files
+                mountPath: /app/key-files
           imagePullSecrets:
             - name: registry-credentials
           volumes:
@@ -67,6 +69,8 @@ spec:
                 items:
                   - key: load-core-client-testing-config.sh
                     path: load-core-client-testing-config.sh
+            - name: key-files
+              emptyDir: {}
           {{- with .Values.kmsCoreClient.nodeSelector }}
           nodeSelector:
             {{- toYaml . | nindent 12 }}
