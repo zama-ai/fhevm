@@ -96,8 +96,10 @@ contract KeyManager is IKeyManager, Ownable2Step {
     uint256 private constant MINOR_VERSION = 1;
     uint256 private constant PATCH_VERSION = 0;
 
-    constructor(IHTTPZ httpz) Ownable(msg.sender) {
+    constructor(IHTTPZ httpz, string memory fheParamsName, bytes32 fheParamsDigest) Ownable(msg.sender) {
         _HTTPZ = httpz;
+        fheParamsDigests[fheParamsName] = fheParamsDigest;
+        _fheParamsInitialized[fheParamsName] = true;
     }
 
     /// @dev Modifier to check if the given FHE params name is initialized
@@ -404,7 +406,7 @@ contract KeyManager is IKeyManager, Ownable2Step {
     }
 
     /// @dev See {IKeyManager-setFheParams}.
-    function setFheParams(string calldata fheParamsName, bytes32 fheParamsDigest) external virtual onlyOwner {
+    function addFheParams(string calldata fheParamsName, bytes32 fheParamsDigest) external virtual onlyOwner {
         if (_fheParamsInitialized[fheParamsName]) {
             revert FheParamsAlreadyInitialized(fheParamsName);
         }
@@ -412,7 +414,7 @@ contract KeyManager is IKeyManager, Ownable2Step {
         fheParamsDigests[fheParamsName] = fheParamsDigest;
         _fheParamsInitialized[fheParamsName] = true;
 
-        emit SetFheParams(fheParamsName, fheParamsDigest);
+        emit AddFheParams(fheParamsName, fheParamsDigest);
     }
 
     /// @dev See {IKeyManager-updateFheParams}.

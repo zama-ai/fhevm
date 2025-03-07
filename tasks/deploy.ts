@@ -148,8 +148,11 @@ task("task:deployKeyManager")
     const parsedEnvHttpz = dotenv.parse(fs.readFileSync("addresses/.env.httpz"));
     const httpzAddress = parsedEnvHttpz.HTTPZ_ADDRESS;
 
+    const fheParamsName = getRequiredEnvVar("FHE_PARAMS_NAME");
+    const fheParamsDigest = getRequiredEnvVar("FHE_PARAMS_DIGEST");
+
     const KeyManager = await ethers.getContractFactory("KeyManager", deployer);
-    const keyManager = await KeyManager.deploy(httpzAddress);
+    const keyManager = await KeyManager.deploy(httpzAddress, fheParamsName, fheParamsDigest);
 
     // Wait for the deployment to be confirmed
     await keyManager.waitForDeployment();
