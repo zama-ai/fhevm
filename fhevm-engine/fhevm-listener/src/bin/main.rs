@@ -1,5 +1,6 @@
 use alloy_provider::fillers::{
-    BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller,
+    BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill,
+    NonceFiller,
 };
 use futures_util::stream::StreamExt;
 use sqlx::types::Uuid;
@@ -16,7 +17,9 @@ use alloy_sol_types::SolEventInterface;
 use clap::Parser;
 
 use fhevm_listener::contracts::{AclContract, TfheContract};
-use fhevm_listener::database::tfhe_event_propagate::{Database, EVENT_WORK_AVAILABLE};
+use fhevm_listener::database::tfhe_event_propagate::{
+    Database, EVENT_WORK_AVAILABLE,
+};
 
 const DEFAULT_CATCHUP: u64 = 5;
 
@@ -57,7 +60,10 @@ pub struct Args {
 type RProvider = FillProvider<
     JoinFill<
         alloy::providers::Identity,
-        JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>,
+        JoinFill<
+            GasFiller,
+            JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>,
+        >,
     >,
     RootProvider,
 >;
@@ -77,10 +83,12 @@ impl InfiniteLogIter {
     fn new(args: &Args) -> Self {
         let mut contract_addresses = vec![];
         if let Some(acl_contract_address) = &args.acl_contract_address {
-            contract_addresses.push(Address::from_str(acl_contract_address).unwrap());
+            contract_addresses
+                .push(Address::from_str(acl_contract_address).unwrap());
         };
         if let Some(tfhe_contract_address) = &args.tfhe_contract_address {
-            contract_addresses.push(Address::from_str(tfhe_contract_address).unwrap());
+            contract_addresses
+                .push(Address::from_str(tfhe_contract_address).unwrap());
         };
         Self {
             url: args.url.clone(),
@@ -93,13 +101,18 @@ impl InfiniteLogIter {
         }
     }
 
-    async fn catchup_block_from(&self, provider: &RProvider) -> BlockNumberOrTag {
+    async fn catchup_block_from(
+        &self,
+        provider: &RProvider,
+    ) -> BlockNumberOrTag {
         if let Some(last_seen_block) = self.last_seen_block {
             return BlockNumberOrTag::Number(last_seen_block - 1);
         }
         if let Some(start_at_block) = self.start_at_block {
             if start_at_block >= 0 {
-                return BlockNumberOrTag::Number(start_at_block.try_into().unwrap());
+                return BlockNumberOrTag::Number(
+                    start_at_block.try_into().unwrap(),
+                );
             }
         }
         let Ok(last_block) = provider.get_block_number().await else {
@@ -110,7 +123,9 @@ impl InfiniteLogIter {
         } else {
             DEFAULT_CATCHUP
         };
-        return BlockNumberOrTag::Number(last_block - catch_size.min(last_block));
+        return BlockNumberOrTag::Number(
+            last_block - catch_size.min(last_block),
+        );
     }
 
     async fn new_log_stream(&mut self, not_initialized: bool) {
@@ -119,13 +134,15 @@ impl InfiniteLogIter {
             let ws = WsConnect::new(&self.url);
             match ProviderBuilder::new().on_ws(ws).await {
                 Ok(provider) => {
-                    let catch_up_from = self.catchup_block_from(&provider).await;
+                    let catch_up_from =
+                        self.catchup_block_from(&provider).await;
                     if not_initialized {
                         eprintln!("Catchup from {:?}", catch_up_from);
                     }
                     let mut filter = Filter::new().from_block(catch_up_from);
                     if let Some(end_at_block) = self.end_at_block {
-                        filter = filter.to_block(BlockNumberOrTag::Number(end_at_block));
+                        filter = filter
+                            .to_block(BlockNumberOrTag::Number(end_at_block));
                         // inclusive
                     }
                     if !self.contract_addresses.is_empty() {
@@ -146,7 +163,10 @@ impl InfiniteLogIter {
                 Err(err) => {
                     let delay = if not_initialized {
                         if retry == 0 {
-                            panic!("Cannot connect to {} due to {err}.", &self.url)
+                            panic!(
+                                "Cannot connect to {} due to {err}.",
+                                &self.url
+                            )
                         }
                         5
                     } else {
@@ -173,13 +193,16 @@ impl InfiniteLogIter {
                 continue;
             };
             let Some(log) = stream.next().await else {
-                // the stream ends, could be a restart of the full node, or just a temporary gap
+                // the stream ends, could be a restart of the full node, or just
+                // a temporary gap
                 self.stream = None;
                 if let (Some(end_at_block), Some(last_seen_block)) =
                     (self.end_at_block, self.last_seen_block)
                 {
                     if end_at_block == last_seen_block {
-                        eprintln!("Nothing to read, reached end of block range");
+                        eprintln!(
+                            "Nothing to read, reached end of block range"
+                        );
                         return None;
                     }
                 }
@@ -210,7 +233,9 @@ async fn main() -> () {
     let mut db: Option<Database> = None;
     if !args.database_url.is_empty() {
         if let Some(coprocessor_api_key) = args.coprocessor_api_key {
-            db = Some(Database::new(&args.database_url, &coprocessor_api_key).await);
+            db = Some(
+                Database::new(&args.database_url, &coprocessor_api_key).await,
+            );
         } else {
             panic!("A Coprocessor API key is required to access the database");
         }
@@ -222,20 +247,26 @@ async fn main() -> () {
             log_iter.last_seen_block = Some(block_number);
         }
         if !args.ignore_tfhe_events {
-            if let Ok(event) = TfheContract::TfheContractEvents::decode_log(&log.inner, true) {
+            if let Ok(event) =
+                TfheContract::TfheContractEvents::decode_log(&log.inner, true)
+            {
                 // TODO: filter on contract address if known
                 println!("\nTFHE {event:#?}");
                 if let Some(ref mut db) = db {
                     match db.insert_tfhe_event(&event).await {
-                        Ok(_) => db.notify_database(EVENT_WORK_AVAILABLE).await, // we always notify, e.g. for catchup
-                        Err(err) => eprintln!("Error inserting tfhe event: {err}"),
+                        Ok(_) => db.notify_database(EVENT_WORK_AVAILABLE).await, /* we always notify, e.g. for catchup */
+                        Err(err) => {
+                            eprintln!("Error inserting tfhe event: {err}")
+                        }
                     }
                 }
                 continue;
             }
         }
         if !args.ignore_tfhe_events {
-            if let Ok(event) = AclContract::AclContractEvents::decode_log(&log.inner, true) {
+            if let Ok(event) =
+                AclContract::AclContractEvents::decode_log(&log.inner, true)
+            {
                 println!("ACL {event:#?}");
 
                 if let Some(ref mut db) = db {

@@ -46,9 +46,13 @@ pub struct Database {
 }
 
 impl Database {
-    pub async fn new(url: &str, coprocessor_api_key: &CoprocessorApiKey) -> Self {
+    pub async fn new(
+        url: &str,
+        coprocessor_api_key: &CoprocessorApiKey,
+    ) -> Self {
         let pool = Self::new_pool(&url).await;
-        let tenant_id = Self::find_tenant_id_or_panic(&pool, coprocessor_api_key).await;
+        let tenant_id =
+            Self::find_tenant_id_or_panic(&pool, coprocessor_api_key).await;
         Database {
             url: url.into(),
             tenant_id,
@@ -70,7 +74,9 @@ impl Database {
         };
         let mut pool = connect().await;
         while let Err(err) = pool {
-            eprintln!("Database connection failed. {err}. Will retry indefinitively.");
+            eprintln!(
+                "Database connection failed. {err}. Will retry indefinitively."
+            );
             tokio::time::sleep(Duration::from_secs(5)).await;
             pool = connect().await;
         }
@@ -105,7 +111,9 @@ impl Database {
                 Err(SqlxError::RowNotFound) => {
                     panic!("No tenant found for the provided API key, please check your API key")
                 }
-                Err(err) => panic!("Error requesting tenant id {err}, aborting"),
+                Err(err) => {
+                    panic!("Error requesting tenant id {err}, aborting")
+                }
             }
         }
     }
@@ -115,7 +123,8 @@ impl Database {
         tenant_id: TenantId,
         result: &Handle,
         dependencies_handles: &[&Handle],
-        dependencies_bytes: &[Vec<u8>], // always added after dependencies_handles
+        dependencies_bytes: &[Vec<u8>], /* always added after
+                                         * dependencies_handles */
         fhe_operation: FheOperation,
         scalar_byte: &FixedBytes<1>,
     ) -> Result<(), SqlxError> {
@@ -124,8 +133,14 @@ impl Database {
             .map(|d| d.to_be_bytes_vec())
             .collect::<Vec<_>>();
         let dependencies = [&dependencies_handles, dependencies_bytes].concat();
-        self.insert_computation_inner(tenant_id, result, dependencies, fhe_operation, scalar_byte)
-            .await
+        self.insert_computation_inner(
+            tenant_id,
+            result,
+            dependencies,
+            fhe_operation,
+            scalar_byte,
+        )
+        .await
     }
 
     async fn insert_computation(
@@ -140,8 +155,14 @@ impl Database {
             .iter()
             .map(|d| d.to_be_bytes_vec())
             .collect::<Vec<_>>();
-        self.insert_computation_inner(tenant_id, result, dependencies, fhe_operation, scalar_byte)
-            .await
+        self.insert_computation_inner(
+            tenant_id,
+            result,
+            dependencies,
+            fhe_operation,
+            scalar_byte,
+        )
+        .await
     }
 
     async fn insert_computation_inner(
@@ -179,7 +200,10 @@ impl Database {
             match query().execute(&self.pool).await {
                 Ok(_) => return Ok(()),
                 Err(err) if retry_on_sqlx_error(&err) => {
-                    eprintln!("\tDatabase I/O error: {}, will retry indefinitely", err);
+                    eprintln!(
+                        "\tDatabase I/O error: {}, will retry indefinitely",
+                        err
+                    );
                     self.reconnect().await;
                 }
                 Err(sqlx_err) => {
@@ -271,7 +295,10 @@ impl Database {
             match query().execute(&self.pool).await {
                 Ok(_) => return (),
                 Err(err) if retry_on_sqlx_error(&err) => {
-                    eprintln!("\tDatabase I/O error: {}, will retry indefinitely", err);
+                    eprintln!(
+                        "\tDatabase I/O error: {}, will retry indefinitely",
+                        err
+                    );
                     self.reconnect().await;
                 }
                 Err(sqlx_err) => {
@@ -316,9 +343,14 @@ impl Database {
                 println!("unhandled Acl::Initialized event {:?}", initialized);
             }
             AclContractEvents::NewDelegation(new_delegation) => {
-                println!("unhandled Acl::NewDelegation event {:?}", new_delegation);
+                println!(
+                    "unhandled Acl::NewDelegation event {:?}",
+                    new_delegation
+                );
             }
-            AclContractEvents::OwnershipTransferStarted(ownership_transfer_started) => {
+            AclContractEvents::OwnershipTransferStarted(
+                ownership_transfer_started,
+            ) => {
                 println!(
                     "unhandled Acl::OwnershipTransferStarted event {:?}",
                     ownership_transfer_started
@@ -344,7 +376,8 @@ impl Database {
         Ok(())
     }
 
-    /// Adds handles to the pbs_computations table and alerts the SnS worker about new of PBS work.
+    /// Adds handles to the pbs_computations table and alerts the SnS worker
+    /// about new of PBS work.
     pub async fn insert_pbs_computations(
         &mut self,
         handles: &Vec<Vec<u8>>,
@@ -364,7 +397,10 @@ impl Database {
                 match query().execute(&self.pool).await {
                     Ok(_) => break,
                     Err(err) if retry_on_sqlx_error(&err) => {
-                        eprintln!("\tDatabase I/O error: {}, will retry indefinitely", err);
+                        eprintln!(
+                            "\tDatabase I/O error: {}, will retry indefinitely",
+                            err
+                        );
                         self.reconnect().await;
                     }
                     Err(sqlx_err) => {
@@ -407,7 +443,9 @@ fn event_to_op_int(op: &TfheContractEvents) -> FheOperation {
         E::FheNeg(_) => O::FheNeg as i32,
         E::FheNot(_) => O::FheNot as i32,
         E::Cast(_) => O::FheCast as i32,
-        E::TrivialEncrypt(_) | E::TrivialEncryptBytes(_) => O::FheTrivialEncrypt as i32,
+        E::TrivialEncrypt(_) | E::TrivialEncryptBytes(_) => {
+            O::FheTrivialEncrypt as i32
+        }
         E::FheIfThenElse(_) => O::FheIfThenElse as i32,
         E::FheRand(_) => O::FheRand as i32,
         E::FheRandBounded(_) => O::FheRandBounded as i32,
