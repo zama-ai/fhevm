@@ -50,86 +50,8 @@ data:
     fhe_params=${FHE_PARAMETER:=Test}
     EOF
 
-    echo "######################################################################"
-    echo "Launching testing core-client"
-    echo ""
-    echo ""
-    echo "######################################################################"
-    echo ""
-    echo "Launching insecure key generation"
-    result_key_id=$(bin/kms-core-client -f config.toml insecure-key-gen)
-
-    echo "######################################################################"
-    echo "Launching insecure crs generation"
-    result_crs_id=$(bin/kms-core-client -f config.toml insecure-crs-gen --max-num-bits 128)
-
-    key_id=$(echo $result_key_id | grep request_id | cut -d'"' -f4)
-    crs_id=$(echo $result_crs_id | grep request_id | cut -d'"' -f4)
-
-    for i in 1 2 3 4 5; do
-      echo "######################################################################"
-      echo "Launching decrypt with euint8"
-      bin/kms-core-client --logs -f config.toml decrypt -d euint8 -k $key_id -e ff
-      echo "######################################################################"
-      echo "Launching decrypt with euint32"
-      bin/kms-core-client --logs -f config.toml decrypt -d euint32 -k $key_id -e ffffffff
-      echo "######################################################################"
-      echo "Launching decrypt with euint64"
-      bin/kms-core-client --logs -f config.toml decrypt -d euint64 -k $key_id -e ffffffffffffffff
-      echo "######################################################################"
-      echo "Launching decrypt with euint128"
-      bin/kms-core-client --logs -f config.toml decrypt -d euint128 -k $key_id -e ffffffffffffffffffffffffffffffff
-      echo "######################################################################"
-      echo "Launching re-encrypt with euint8"
-      bin/kms-core-client --logs -f config.toml re-encrypt -d euint8 -k $key_id -e ff
-      echo "######################################################################"
-      echo "Launching re-encrypt with euint32"
-      bin/kms-core-client --logs -f config.toml re-encrypt -d euint32 -k $key_id -e ffffffff
-      echo "######################################################################"
-      echo "Launching re-encrypt with euint64"
-      bin/kms-core-client --logs -f config.toml re-encrypt -d euint64 -k $key_id -e ffffffffffffffff
-      echo "######################################################################"
-      echo "Launching re-encrypt with euint128"
-      bin/kms-core-client --logs -f config.toml re-encrypt -d euint128 -k $key_id -e ffffffffffffffffffffffffffffffff
-    done
-
-
-    echo "######################################################################"
-    echo "Launching insecure key generation"
-    result_key_id=$(bin/kms-core-client -f config.toml insecure-key-gen)
-
-    echo "######################################################################"
-    echo "Launching insecure crs generation"
-    result_crs_id=$(bin/kms-core-client -f config.toml insecure-crs-gen --max-num-bits 512)
-
-    key_id=$(echo $result_key_id | grep request_id | cut -d'"' -f4)
-    crs_id=$(echo $result_crs_id | grep request_id | cut -d'"' -f4)
-
-    for i in 1 2 3 4 5; do
-      echo "######################################################################"
-      echo "Launching decrypt with euint8"
-      bin/kms-core-client --logs -f config.toml decrypt -d euint8 -k $key_id -e ff
-      echo "######################################################################"
-      echo "Launching decrypt with euint32"
-      bin/kms-core-client --logs -f config.toml decrypt -d euint32 -k $key_id -e ffffffff
-      echo "######################################################################"
-      echo "Launching decrypt with euint64"
-      bin/kms-core-client --logs -f config.toml decrypt -d euint64 -k $key_id -e ffffffffffffffff
-      echo "######################################################################"
-      echo "Launching decrypt with euint128"
-      bin/kms-core-client --logs -f config.toml decrypt -d euint128 -k $key_id -e ffffffffffffffffffffffffffffffff
-      echo "######################################################################"
-      echo "Launching re-encrypt with euint8"
-      bin/kms-core-client --logs -f config.toml re-encrypt -d euint8 -k $key_id -e ff
-      echo "######################################################################"
-      echo "Launching re-encrypt with euint32"
-      bin/kms-core-client --logs -f config.toml re-encrypt -d euint32 -k $key_id -e ffffffff
-      echo "######################################################################"
-      echo "Launching re-encrypt with euint64"
-      bin/kms-core-client --logs -f config.toml re-encrypt -d euint64 -k $key_id -e ffffffffffffffff
-      echo "######################################################################"
-      echo "Launching re-encrypt with euint128"
-      bin/kms-core-client --logs -f config.toml re-encrypt -d euint128 -k $key_id -e ffffffffffffffffffffffffffffffff
-    done
+    {{- range .Values.kmsCoreClientTesting.shell_command }}
+    {{ . }}
+    {{- end }}
 
 {{- end -}}

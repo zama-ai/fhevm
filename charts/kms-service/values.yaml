@@ -199,3 +199,4 @@ kmsCoreClient:
 kmsCoreClientTesting:
   enabled: false
   schedule: "30 0 * * *"
+  shell_command:
