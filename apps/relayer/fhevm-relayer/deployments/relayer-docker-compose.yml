@@ -23,4 +23,3 @@ services:
     command: ["sh", "-c", "tail -f /dev/null"]
     volumes:
       - ./config/env/.env.staging.layer1:/app/hardhat/contracts/.env.example
-      - ./config/relayer/instance.ts:/app/hardhat/contracts/test/instance.ts

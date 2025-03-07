@@ -1,0 +1,51 @@
+name: "E2E Tester Docker Image"
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/e2e-tester_image.yml
+      - .github/workflows/common-docker.yml
+      - hardhat/**
+      - Makefile
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/e2e-tester_image.yml
+      - .github/workflows/common-docker.yml
+      - hardhat/**
+      - Makefile
+  release:
+    types:
+      - published
+
+concurrency:
+  group: e2e-tester-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  docker-e2e-tester:
+    uses: ./.github/workflows/common_docker.yml
+    permissions:
+      contents: "read"
+      id-token: "write"
+      packages: "write"
+    with:
+      working-directory: "."
+      push_image: true
+      image-name: "fhevm-e2e-test"
+      docker-file: "./hardhat/contracts/operations/Dockerfile"
+      arm-build: true
+
+    secrets:
+      BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+      GRAVITON_BUILDER_SSH_PRIVATE_KEY: ${{ secrets.GRAVITON_BUILDER_SSH_PRIVATE_KEY }}
+
+  done:
+    runs-on: ubuntu-latest
+    name: Pipeline Done
+    steps:
+      - name: Success
+        run: echo Pipeline Done
+    needs:
+      - docker-e2e-tester

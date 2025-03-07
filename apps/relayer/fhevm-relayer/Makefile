@@ -88,6 +88,11 @@ run-test-input-proof-hardhat:
 	@echo "$(GREEN)Running input proof tests...$(RESET)"
 	@unset $$(cat hardhat/contracts/.env | sed 's/=.*//g') && cd hardhat/contracts && npx hardhat compile && npx hardhat compile:specific --contract decryptionOracle && RUST_RELAYER=true npx hardhat test --grep "test async decrypt uint64 non-trivial$$" --network localCoprocessorL1Input
 
+run-test-input-proof-staging:
+	@echo "$(GREEN)Preparing env setup...$(RESET)"
+	@$(MAKE) setup-mock
+	@echo "$(GREEN)Running input proof tests...$(RESET)"
+	@unset $$(cat hardhat/contracts/.env | sed 's/=.*//g') && cd hardhat/contracts && npx hardhat compile && npx hardhat compile:specific --contract decryptionOracle && RUST_RELAYER=true npx hardhat test --grep "test async decrypt uint64 non-trivial$$" --network staging
 
 run-test-input-proof:
 	@curl -X POST http://127.0.0.1:3000/input-proof \
@@ -156,6 +161,7 @@ help:
 	@echo '  ${YELLOW}make run-test-erc20${RESET}            	- Run erc20 tests'
 	@echo '  ${YELLOW}make run-test-keyurl${RESET}            	- Run keyurl tests'
 	@echo '  ${YELLOW}make run-test-input-proof-hardhat${RESET}     - Run input proof tests from hardhat'
+	@echo '  ${YELLOW}make run-test-input-proof-staging${RESET}     - Run input proof tests from hardhat for staging'
 	@echo ''
 
 	@echo 'Run sequence:'

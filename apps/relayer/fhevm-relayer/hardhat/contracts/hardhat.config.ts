@@ -84,6 +84,7 @@ const chainIds = {
   localNative: 8009,
   devnetNative: 9000,
   localCoprocessor: 12345,
+  staging: 12345,
   sepolia: 11155111,
   mainnet: 1,
   localCoprocessorL1: 123456,
@@ -98,6 +99,9 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
   switch (chain) {
     case 'sepolia':
       jsonRpcUrl = process.env.SEPOLIA_RPC_URL!;
+      break;
+    case 'staging':
+        jsonRpcUrl = process.env.STAGING_RPC_URL!;
       break;
     case 'localCoprocessor':
       jsonRpcUrl = 'http://localhost:8746';
@@ -157,6 +161,7 @@ const config: HardhatUserConfig = {
         interval: 1000,
       },
     },
+    staging: getChainConfig('staging'),
     sepolia: getChainConfig('sepolia'),
     localNative: getChainConfig('localNative'),
     localCoprocessor: getChainConfig('localCoprocessor'),
