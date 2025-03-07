@@ -1,16 +1,17 @@
 use std::time::Duration;
 
 use alloy_primitives::FixedBytes;
-use alloy_primitives::Uint;
 use alloy_primitives::Log;
-use sqlx::Error as SqlxError;
-use sqlx::{Postgres, PgPool};
+use alloy_primitives::Uint;
 use sqlx::postgres::PgConnectOptions;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::types::Uuid;
+use sqlx::Error as SqlxError;
+use sqlx::{PgPool, Postgres};
 
 use fhevm_engine_common::types::SupportedFheOperations;
 
+use crate::contracts::AclContract::AclContractEvents;
 use crate::contracts::TfheContract;
 use crate::contracts::TfheContract::TfheContractEvents;
 
@@ -22,6 +23,8 @@ pub type ToType = FixedBytes<1>;
 pub type ScalarByte = FixedBytes<1>;
 
 const MAX_RETRIES_FOR_NOTIFY: usize = 5;
+pub const EVENT_PBS_COMPUTATIONS: &str = "event_pbs_computations";
+pub const EVENT_WORK_AVAILABLE: &str = "work_available";
 
 pub fn retry_on_sqlx_error(err: &SqlxError) -> bool {
     match err {
@@ -80,7 +83,10 @@ impl Database {
         self.pool = Self::new_pool(&self.url).await;
     }
 
-    pub async fn find_tenant_id_or_panic(pool: &sqlx::Pool<Postgres>, tenant_api_key: &CoprocessorApiKey) -> TenantId {
+    pub async fn find_tenant_id_or_panic(
+        pool: &sqlx::Pool<Postgres>,
+        tenant_api_key: &CoprocessorApiKey,
+    ) -> TenantId {
         let query = || {
             sqlx::query_scalar!(
                 r#"SELECT tenant_id FROM tenants WHERE tenant_api_key = $1"#,
@@ -130,7 +136,10 @@ impl Database {
         fhe_operation: FheOperation,
         scalar_byte: &FixedBytes<1>,
     ) -> Result<(), SqlxError> {
-        let dependencies = dependencies.iter().map(|d| d.to_be_bytes_vec()).collect::<Vec<_>>();
+        let dependencies = dependencies
+            .iter()
+            .map(|d| d.to_be_bytes_vec())
+            .collect::<Vec<_>>();
         self.insert_computation_inner(tenant_id, result, dependencies, fhe_operation, scalar_byte)
             .await
     }
@@ -255,8 +264,9 @@ impl Database {
         }
     }
 
-    pub async fn notify_scheduler(&mut self) {
-        let query = || sqlx::query!("NOTIFY work_available;");
+    /// Makes attempts to notify a specified DB channel
+    pub async fn notify_database(&mut self, channel: &str) {
+        let query = || sqlx::query!("SELECT pg_notify($1, '')", channel);
         for i in (0..=MAX_RETRIES_FOR_NOTIFY).rev() {
             match query().execute(&self.pool).await {
                 Ok(_) => return (),
@@ -266,12 +276,75 @@ impl Database {
                 }
                 Err(sqlx_err) => {
                     if i > 0 {
-                        eprintln!("\tDatabase logic error: {}, will retry a few time ({i}) just in case", sqlx_err);
+                        eprintln!(
+                            "\tDatabase logic error: {}, will retry a few time ({i}) just in case",
+                            sqlx_err
+                        );
                         tokio::time::sleep(Duration::from_secs(1)).await;
                     }
                 }
             }
         }
+    }
+
+    /// Handles all types of ACL events
+    pub async fn handle_acl_event(
+        &mut self,
+        event: &Log<AclContractEvents>,
+    ) -> Result<(), SqlxError> {
+        let data = &event.data;
+
+        match data {
+            AclContractEvents::Allowed(allowed) => {
+                let handle = allowed.handle.to_be_bytes_vec();
+                self.insert_pbs_computations(&vec![handle]).await
+            }
+            AclContractEvents::AllowedForDecryption(allowed_for_decryption) => {
+                let handles = allowed_for_decryption
+                    .handlesList
+                    .iter()
+                    .map(|h| h.to_be_bytes_vec())
+                    .collect::<Vec<_>>();
+
+                self.insert_pbs_computations(&handles).await
+            }
+            _ => todo!(),
+        }
+    }
+
+    /// Adds handles to the pbs_computations table and alerts the SnS worker about new of PBS work.
+    pub async fn insert_pbs_computations(
+        &mut self,
+        handles: &Vec<Vec<u8>>,
+    ) -> Result<(), SqlxError> {
+        let tenant_id = self.tenant_id;
+        for handle in handles {
+            let query = || {
+                sqlx::query!(
+                    "INSERT INTO pbs_computations(tenant_id, handle) VALUES($1, $2) 
+                         ON CONFLICT DO NOTHING;",
+                    tenant_id,
+                    handle,
+                )
+            };
+
+            loop {
+                match query().execute(&self.pool).await {
+                    Ok(_) => break,
+                    Err(err) if retry_on_sqlx_error(&err) => {
+                        eprintln!("\tDatabase I/O error: {}, will retry indefinitely", err);
+                        self.reconnect().await;
+                    }
+                    Err(sqlx_err) => {
+                        return Err(sqlx_err);
+                    }
+                }
+            }
+        }
+
+        self.notify_database(EVENT_PBS_COMPUTATIONS).await;
+
+        Ok(())
     }
 }
 

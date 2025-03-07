@@ -1,4 +1,6 @@
-use alloy_provider::fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller};
+use alloy_provider::fillers::{
+    BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller,
+};
 use futures_util::stream::StreamExt;
 use sqlx::types::Uuid;
 use std::str::FromStr;
@@ -14,7 +16,7 @@ use alloy_sol_types::SolEventInterface;
 use clap::Parser;
 
 use fhevm_listener::contracts::{AclContract, TfheContract};
-use fhevm_listener::database::tfhe_event_propagate::Database;
+use fhevm_listener::database::tfhe_event_propagate::{Database, EVENT_WORK_AVAILABLE};
 
 const DEFAULT_CATCHUP: u64 = 5;
 
@@ -36,7 +38,10 @@ pub struct Args {
     #[arg(long, default_value = None)]
     pub tfhe_contract_address: Option<String>,
 
-    #[arg(long, default_value = "postgresql://postgres:testmdp@localhost:5432/postgres")]
+    #[arg(
+        long,
+        default_value = "postgresql://postgres:testmdp@localhost:5432/postgres"
+    )]
     pub database_url: String,
 
     #[arg(long, default_value = None, help = "Can be negative from last block", allow_hyphen_values = true)]
@@ -49,7 +54,13 @@ pub struct Args {
     pub coprocessor_api_key: Option<Uuid>,
 }
 
-type RProvider = FillProvider<JoinFill<alloy::providers::Identity, JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>>, RootProvider>;
+type RProvider = FillProvider<
+    JoinFill<
+        alloy::providers::Identity,
+        JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>,
+    >,
+    RootProvider,
+>;
 
 // TODO: to merge with Levent works
 struct InfiniteLogIter {
@@ -82,10 +93,7 @@ impl InfiniteLogIter {
         }
     }
 
-    async fn catchup_block_from(
-        &self,
-        provider: &RProvider,
-    ) -> BlockNumberOrTag {
+    async fn catchup_block_from(&self, provider: &RProvider) -> BlockNumberOrTag {
         if let Some(last_seen_block) = self.last_seen_block {
             return BlockNumberOrTag::Number(last_seen_block - 1);
         }
@@ -219,7 +227,7 @@ async fn main() -> () {
                 println!("\nTFHE {event:#?}");
                 if let Some(ref mut db) = db {
                     match db.insert_tfhe_event(&event).await {
-                        Ok(_) => db.notify_scheduler().await, // we always notify, e.g. for catchup
+                        Ok(_) => db.notify_database(EVENT_WORK_AVAILABLE).await, // we always notify, e.g. for catchup
                         Err(err) => eprintln!("Error inserting tfhe event: {err}"),
                     }
                 }
@@ -229,6 +237,10 @@ async fn main() -> () {
         if !args.ignore_tfhe_events {
             if let Ok(event) = AclContract::AclContractEvents::decode_log(&log.inner, true) {
                 println!("ACL {event:#?}");
+
+                if let Some(ref mut db) = db {
+                    let _ = db.handle_acl_event(&event).await;
+                }
                 continue;
             }
         }
