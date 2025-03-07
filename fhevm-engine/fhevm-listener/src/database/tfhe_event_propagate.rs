@@ -301,7 +301,7 @@ impl Database {
         match data {
             AclContractEvents::Allowed(allowed) => {
                 let handle = allowed.handle.to_be_bytes_vec();
-                self.insert_pbs_computations(&vec![handle]).await
+                self.insert_pbs_computations(&vec![handle]).await?;
             }
             AclContractEvents::AllowedForDecryption(allowed_for_decryption) => {
                 let handles = allowed_for_decryption
@@ -310,10 +310,38 @@ impl Database {
                     .map(|h| h.to_be_bytes_vec())
                     .collect::<Vec<_>>();
 
-                self.insert_pbs_computations(&handles).await
+                self.insert_pbs_computations(&handles).await?;
             }
-            _ => todo!(),
+            AclContractEvents::Initialized(initialized) => {
+                println!("unhandled Acl::Initialized event {:?}", initialized);
+            }
+            AclContractEvents::NewDelegation(new_delegation) => {
+                println!("unhandled Acl::NewDelegation event {:?}", new_delegation);
+            }
+            AclContractEvents::OwnershipTransferStarted(ownership_transfer_started) => {
+                println!(
+                    "unhandled Acl::OwnershipTransferStarted event {:?}",
+                    ownership_transfer_started
+                );
+            }
+            AclContractEvents::OwnershipTransferred(ownership_transferred) => {
+                println!(
+                    "unhandled Acl::OwnershipTransferred event {:?}",
+                    ownership_transferred
+                );
+            }
+            AclContractEvents::RevokedDelegation(revoked_delegation) => {
+                println!(
+                    "unhandled Acl::RevokedDelegation event {:?}",
+                    revoked_delegation
+                );
+            }
+            AclContractEvents::Upgraded(upgraded) => {
+                println!("unhandled Acl::Upgraded event {:?}", upgraded);
+            }
         }
+
+        Ok(())
     }
 
     /// Adds handles to the pbs_computations table and alerts the SnS worker about new of PBS work.
