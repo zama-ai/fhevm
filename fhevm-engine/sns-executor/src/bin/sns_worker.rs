@@ -39,7 +39,7 @@ async fn main() {
         tenant_api_key: args.tenant_api_key,
         db: DBConfig {
             url: db_url,
-            listen_channel: args.pg_listen_channel,
+            listen_channels: args.pg_listen_channels,
             notify_channel: args.pg_notify_channel,
             batch_limit: args.work_items_batch_size,
             polling_interval: args.pg_polling_interval,

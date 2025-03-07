@@ -21,7 +21,7 @@ pub struct KeySet {
 
 pub struct DBConfig {
     pub url: String,
-    pub listen_channel: String,
+    pub listen_channels: Vec<String>,
     pub notify_channel: String,
     pub batch_limit: u32,
     pub polling_interval: u32,
@@ -38,8 +38,8 @@ impl std::fmt::Display for Config {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "db_url: {},  db_listen_channel: {}, db_notify_channel: {}, db_batch_limit: {}",
-            self.db.url, self.db.listen_channel, self.db.notify_channel, self.db.batch_limit
+            "db_url: {},  db_listen_channel: {:?}, db_notify_channel: {}, db_batch_limit: {}",
+            self.db.url, self.db.listen_channels, self.db.notify_channel, self.db.batch_limit
         )
     }
 }

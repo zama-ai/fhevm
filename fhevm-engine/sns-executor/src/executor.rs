@@ -42,7 +42,9 @@ pub(crate) async fn run_loop(
 
     let mut listener = PgListener::connect_with(&pool).await?;
 
-    listener.listen(&conf.listen_channel).await?;
+    listener
+        .listen_all(conf.listen_channels.iter().map(|v| v.as_str()))
+        .await?;
 
     let keys: KeySet = match keys {
         Some(keys) => keys,
@@ -268,6 +270,7 @@ async fn update_large_ct(
             error!(target: "worker", handle = ?task.handle, "Large ciphertext not computed for task");
         }
     }
+
     Ok(())
 }
 

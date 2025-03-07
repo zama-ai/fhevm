@@ -11,9 +11,9 @@ pub struct Args {
     #[arg(long, default_value_t = 4)]
     pub work_items_batch_size: u32,
 
-    /// NOTIFY/LISTEN channel for database that the worker listen to
-    #[arg(long)]
-    pub pg_listen_channel: String,
+    /// NOTIFY/LISTEN channels for database that the worker listen to
+    #[arg(long, num_args(1..))]
+    pub pg_listen_channels: Vec<String>,
 
     /// NOTIFY/LISTEN channel for database that the worker notify to
     #[arg(long)]

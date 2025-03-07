@@ -93,7 +93,7 @@ async fn setup() -> anyhow::Result<(
         tenant_api_key: TENANT_API_KEY.to_string(),
         db: DBConfig {
             url: test_instance.db_url().to_owned(),
-            listen_channel: LISTEN_CHANNEL.to_string(),
+            listen_channels: vec![LISTEN_CHANNEL.to_string()],
             notify_channel: "fhevm".to_string(),
             batch_limit: 10,
             polling_interval: 60000,
