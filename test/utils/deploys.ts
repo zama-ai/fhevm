@@ -132,13 +132,12 @@ export async function deployKeyManagerFixture() {
     chainIds,
   } = await loadFixture(deployHTTPZFixture);
 
-  const KeyManager = await hre.ethers.getContractFactory("KeyManager", owner);
-  const keyManager = await KeyManager.deploy(httpz);
-
-  // Set the FHE params
+  // Create dummy FHE params
   const fheParamsName = "TEST";
   const fheParamsDigest = hre.ethers.randomBytes(32);
-  await keyManager.connect(owner).setFheParams(fheParamsName, fheParamsDigest);
+
+  const KeyManager = await hre.ethers.getContractFactory("KeyManager", owner);
+  const keyManager = await KeyManager.deploy(httpz, fheParamsName, fheParamsDigest);
 
   return {
     httpz,

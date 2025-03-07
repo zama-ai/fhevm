@@ -83,7 +83,7 @@ interface IKeyManager {
     /// @notice Emitted when the FHE parameters have been set (happens only once)
     /// @param fheParamsName The semantic name of the FHE params
     /// @param fheParamsDigest The digest of the FHE params
-    event SetFheParams(string fheParamsName, bytes32 fheParamsDigest);
+    event AddFheParams(string fheParamsName, bytes32 fheParamsDigest);
 
     /// @notice Emitted when the FHE parameters have been updated
     /// @param fheParamsName The semantic name of the FHE params updated
@@ -213,14 +213,14 @@ interface IKeyManager {
     /// @param keyId The key ID
     function activateKeyResponse(uint256 keyId) external;
 
-    /// @notice Set the FHE params
+    /// @notice Add a new FHE params name and its digest
     /// @dev This function can only be called by the owner
     /// @dev This function can only be called once per fheParamsName, during the overall initialization of the protocol
     /// @param fheParamsName The semantic name of the FHE params
     /// @param fheParamsDigest The digest of the FHE params
-    function setFheParams(string calldata fheParamsName, bytes32 fheParamsDigest) external;
+    function addFheParams(string calldata fheParamsName, bytes32 fheParamsDigest) external;
 
-    /// @notice Update the FHE params
+    /// @notice Update the digest of the given FHE params name
     /// @dev This function can only be called by the owner
     /// @param fheParamsName The semantic name of the FHE params to update
     /// @param fheParamsDigest The new digest of the FHE params

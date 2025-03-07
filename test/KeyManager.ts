@@ -3,19 +3,10 @@ import { expect } from "chai";
 import { EventLog } from "ethers";
 import hre from "hardhat";
 
-import { deployHTTPZFixture, deployKeyManagerFixture } from "./utils/deploys";
+import { deployKeyManagerFixture } from "./utils/deploys";
 
 describe("KeyManager", function () {
-  // Deploy the KeyManager contract without setting the FHE params
-  async function deployKeyManagerNoParamsFixture() {
-    const { httpz, owner, admins, user, kmsSigners, coprocessorSigners, signers } =
-      await loadFixture(deployHTTPZFixture);
-
-    const KeyManager = await hre.ethers.getContractFactory("KeyManager", owner);
-    const keyManager = await KeyManager.deploy(httpz);
-
-    return { keyManager, owner, admins, user, kmsSigners, coprocessorSigners, signers };
-  }
+  const fakeFheParamsName = "FAKE_FHE_PARAMS_NAME";
 
   // Deploy the keyManager contract and run a preprocessing keygen
   async function deployKeyManagerPreKeygenFixture() {
@@ -201,13 +192,12 @@ describe("KeyManager", function () {
 
   describe("Key generation", function () {
     it("Should revert if the FHE params are not initialized", async function () {
-      const { keyManager, admins } = await loadFixture(deployKeyManagerNoParamsFixture);
+      const { keyManager, admins } = await loadFixture(deployKeyManagerFixture);
 
       // Check that a preprocessing keygen request cannot be triggered if the fheParams are not initialized
-      await expect(keyManager.connect(admins[0]).preprocessKeygenRequest("TEST")).to.be.revertedWithCustomError(
-        keyManager,
-        "FheParamsNotInitialized",
-      );
+      await expect(
+        keyManager.connect(admins[0]).preprocessKeygenRequest(fakeFheParamsName),
+      ).to.be.revertedWithCustomError(keyManager, "FheParamsNotInitialized");
     });
 
     it("Should revert because of access controls", async function () {
@@ -353,10 +343,10 @@ describe("KeyManager", function () {
 
   describe("CRS generation", async function () {
     it("Should revert if the FHE params are not initialized", async function () {
-      const { keyManager, admins } = await loadFixture(deployKeyManagerNoParamsFixture);
+      const { keyManager, admins } = await loadFixture(deployKeyManagerFixture);
 
       // Check that a CRS generation request cannot be triggered if the fheParams are not initialized
-      await expect(keyManager.connect(admins[0]).crsgenRequest("TEST")).to.be.revertedWithCustomError(
+      await expect(keyManager.connect(admins[0]).crsgenRequest(fakeFheParamsName)).to.be.revertedWithCustomError(
         keyManager,
         "FheParamsNotInitialized",
       );
@@ -431,13 +421,12 @@ describe("KeyManager", function () {
 
   describe("KSK generation", async function () {
     it("Should revert if the FHE params are not initialized", async function () {
-      const { keyManager, admins } = await loadFixture(deployKeyManagerNoParamsFixture);
+      const { keyManager, admins } = await loadFixture(deployKeyManagerFixture);
 
       // Check that a preprocessing KSK generation request cannot be triggered if the fheParams are not initialized
-      await expect(keyManager.connect(admins[0]).preprocessKskgenRequest("TEST")).to.be.revertedWithCustomError(
-        keyManager,
-        "FheParamsNotInitialized",
-      );
+      await expect(
+        keyManager.connect(admins[0]).preprocessKskgenRequest(fakeFheParamsName),
+      ).to.be.revertedWithCustomError(keyManager, "FheParamsNotInitialized");
     });
 
     it("Should revert because of access controls", async function () {
@@ -698,7 +687,7 @@ describe("KeyManager", function () {
       const fheParamsDigest = hre.ethers.randomBytes(32);
 
       // Check that only the owner can set the FHE params
-      await expect(keyManager.connect(user).setFheParams(fheParamsName, fheParamsDigest))
+      await expect(keyManager.connect(user).addFheParams(fheParamsName, fheParamsDigest))
         .to.be.revertedWithCustomError(keyManager, "OwnableUnauthorizedAccount")
         .withArgs(user.address);
 
@@ -708,34 +697,57 @@ describe("KeyManager", function () {
         .withArgs(user.address);
     });
 
-    it("Should update fheParams", async function () {
-      const { keyManager, owner } = await loadFixture(deployKeyManagerNoParamsFixture);
+    it("Should add fheParams", async function () {
+      const { keyManager, owner } = await loadFixture(deployKeyManagerFixture);
 
       // Get dummy FHE params
-      const fheParamsName = "TEST";
-      const fheParamsDigest = hre.ethers.randomBytes(32);
+      const newFheParamsName = "DEFAULT";
+      const newFheParamsDigest = hre.ethers.randomBytes(32);
+
+      // Set the FHE params
+      const txSetFheParams = await keyManager.connect(owner).addFheParams(newFheParamsName, newFheParamsDigest);
+
+      // Check event
+      await expect(txSetFheParams).to.emit(keyManager, "AddFheParams").withArgs(newFheParamsName, newFheParamsDigest);
+    });
+
+    it("Should revert when adding fheParams because they are initialized", async function () {
+      const { keyManager, owner, fheParamsName } = await loadFixture(deployKeyManagerFixture);
+
+      // Get dummy FHE params digest
+      const newFheParamsDigest = hre.ethers.randomBytes(32);
+
+      // Check that we can only set the FHE params once
+      await expect(keyManager.connect(owner).addFheParams(fheParamsName, newFheParamsDigest))
+        .to.be.revertedWithCustomError(keyManager, "FheParamsAlreadyInitialized")
+        .withArgs(fheParamsName);
+    });
+
+    it("Should update fheParams", async function () {
+      const { keyManager, owner, fheParamsName } = await loadFixture(deployKeyManagerFixture);
+
+      // Get dummy FHE params
+      const newFheParamsDigest = hre.ethers.randomBytes(32);
+
+      // Update the FHE params
+      const txUpdateFheParams = await keyManager.connect(owner).updateFheParams(fheParamsName, newFheParamsDigest);
+
+      // Check event
+      await expect(txUpdateFheParams)
+        .to.emit(keyManager, "UpdateFheParams")
+        .withArgs(fheParamsName, newFheParamsDigest);
+    });
+
+    it("Should revert when updating fheParams because they are not initialized", async function () {
+      const { keyManager, owner } = await loadFixture(deployKeyManagerFixture);
+
+      // Get dummy FHE params
+      const newFheParamsDigest = hre.ethers.randomBytes(32);
 
       // Check that FHE params cannot be updated if they are not initialized
       await expect(
-        keyManager.connect(owner).updateFheParams(fheParamsName, fheParamsDigest),
+        keyManager.connect(owner).updateFheParams(fakeFheParamsName, newFheParamsDigest),
       ).to.be.revertedWithCustomError(keyManager, "FheParamsNotInitialized");
-
-      // Set the FHE params
-      const txSetFheParams = await keyManager.connect(owner).setFheParams(fheParamsName, fheParamsDigest);
-
-      // Check event
-      await expect(txSetFheParams).to.emit(keyManager, "SetFheParams").withArgs(fheParamsName, fheParamsDigest);
-
-      // Check that we can only set the FHE params once
-      await expect(keyManager.setFheParams(fheParamsName, fheParamsDigest))
-        .to.be.revertedWithCustomError(keyManager, "FheParamsAlreadyInitialized")
-        .withArgs(fheParamsName);
-
-      // Update the FHE params
-      const txUpdateFheParams = await keyManager.connect(owner).updateFheParams(fheParamsName, fheParamsDigest);
-
-      // Check event
-      await expect(txUpdateFheParams).to.emit(keyManager, "UpdateFheParams").withArgs(fheParamsName, fheParamsDigest);
     });
   });
 });
