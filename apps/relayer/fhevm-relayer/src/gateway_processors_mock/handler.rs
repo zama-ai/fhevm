@@ -87,7 +87,11 @@ impl GatewayProcessorsHandler {
 
                     // Generate mock handles
                     // In real implementation, this would involve actual cryptographic operations
-                    let handles = vec![[5u8; 32], [2u8; 32]];
+                    let mut handles = vec![[5u8; 32], [2u8; 32]];
+                    handles[0][29] = 0;
+                    handles[0][31] = 0;
+                    handles[1][29] = 1;
+                    handles[1][31] = 0;
 
                     //let signatures = vec![1u8; 65];
                     let signer = PrivateKeySigner::from_str("c2454775cca95e6d17d70b68105f48009fc4bf661f025e6a7911a6b4acf2a2f3").unwrap();

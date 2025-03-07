@@ -283,7 +283,7 @@ describe('TestAsyncDecrypt', function () {
     }
   });
 
-  it.only('test async decrypt uint64 non-trivial', async function () {
+  it('test async decrypt uint64 non-trivial', async function () {
     const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     inputAlice.add64(18446744073709550042n);
     const encryptedAmount = await inputAlice.encrypt();
@@ -294,7 +294,7 @@ describe('TestAsyncDecrypt', function () {
     console.log('InputProof: 0x' + Buffer.from(encryptedAmount.inputProof).toString('hex'));
     const tx = await this.contract.requestUint64NonTrivial(encryptedAmount.handles[0], encryptedAmount.inputProof);
     const receipt = await tx.wait();
-    console.log(receipt);
+    expect(receipt.status).to.equal(1);
     // await awaitAllDecryptionResults();
     // const y = await this.contract.yUint64();
     // expect(y).to.equal(18446744073709550042n);
