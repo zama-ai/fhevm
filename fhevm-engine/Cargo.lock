@@ -2550,7 +2550,7 @@ dependencies = [
  "bigdecimal",
  "bincode",
  "hex",
- "lru 0.12.5",
+ "lru 0.13.0",
  "paste",
  "prost",
  "rand 0.9.0",
@@ -2563,6 +2563,7 @@ dependencies = [
  "tokio",
  "tonic",
  "tonic-build",
+ "tracing",
 ]
 
 [[package]]
@@ -4531,6 +4532,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "pulp"
+version = "0.21.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "95fb7a99b37aaef4c7dd2fd15a819eb8010bfc7a2c2155230d51f497316cad6d"
+dependencies = [
+ "bytemuck",
+ "cfg-if",
+ "libm",
+ "num-complex",
+ "reborrow",
+ "version_check",
+]
+
+[[package]]
 name = "quick-error"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5444,6 +5459,7 @@ dependencies = [
  "sqlx",
  "test-harness",
  "tfhe",
+ "tfhe-versionable",
  "thiserror 2.0.11",
  "tokio",
  "tonic",
@@ -6042,9 +6058,9 @@ dependencies = [
 
 [[package]]
 name = "tfhe"
-version = "1.0.0"
+version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2d542271b85a258def58c0870f75cedc5e8066cfbe4fe4842e2e259d1f8dd40"
+checksum = "f6e9c8cc15c3ba99f02a3027135ff1c0db33cd561324fc4e6a93006f7c8de5a1"
 dependencies = [
  "aligned-vec",
  "bincode",
@@ -6052,7 +6068,7 @@ dependencies = [
  "dyn-stack",
  "itertools 0.14.0",
  "paste",
- "pulp",
+ "pulp 0.21.4",
  "rand_core 0.6.4",
  "rayon",
  "serde",
@@ -6086,7 +6102,7 @@ dependencies = [
  "dyn-stack",
  "js-sys",
  "num-complex",
- "pulp",
+ "pulp 0.20.1",
  "serde",
 ]
 
@@ -6098,7 +6114,7 @@ checksum = "6cd83664188b7640456ed938f7414f0d414e96bdc07b95aaba05c2ba13e3c478"
 dependencies = [
  "aligned-vec",
  "bytemuck",
- "pulp",
+ "pulp 0.20.1",
 ]
 
 [[package]]
@@ -7436,7 +7452,7 @@ dependencies = [
  "bincode",
  "clap",
  "fhevm-engine-common",
- "lru 0.12.5",
+ "lru 0.13.0",
  "rand 0.9.0",
  "sha3",
  "sqlx",
