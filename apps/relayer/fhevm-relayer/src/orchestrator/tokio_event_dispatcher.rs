@@ -7,7 +7,7 @@ use dashmap::DashMap;
 use std::sync::Arc;
 use uuid::Uuid;
 
-type EventHandlerMap<K, E> = Arc<DashMap<K, Arc<dyn EventHandler<E>>>>;
+type EventHandlerMap<K, E> = Arc<DashMap<K, Vec<Arc<dyn EventHandler<E>>>>>;
 
 pub struct TokioEventDispatcher<E: Event> {
     once_subscribers: EventHandlerMap<(u8, Uuid), E>,
@@ -28,17 +28,21 @@ impl<E: Event> TokioEventDispatcher<E> {
 impl<E: Event> EventDispatcher<E> for TokioEventDispatcher<E> {
     async fn dispatch_event(&self, event: E) -> Result<(), Error> {
         let event = event.clone();
-        if let Some((_, handler)) = self
+        if let Some((_, handlers)) = self
             .once_subscribers
             .remove(&(event.event_id(), event.request_id()))
         {
-            let handler = handler.clone();
-            let event = event.clone();
-            tokio::spawn(async move { handler.handle_event(event).await });
-        } else if let Some(handler) = self.suscribers.get(&event.event_id()) {
-            let handler = handler.clone();
-            let event = event.clone();
-            tokio::spawn(async move { handler.handle_event(event).await });
+            let handlers = handlers.clone();
+            for handler in handlers {
+                let event = event.clone();
+                tokio::spawn(async move { handler.handle_event(event).await });
+            }
+        } else if let Some(handlers) = self.suscribers.get(&event.event_id()) {
+            let handlers = handlers.clone();
+            for handler in handlers {
+                let event = event.clone();
+                tokio::spawn(async move { handler.handle_event(event).await });
+            }
         } else {
             // Log warning and ignore event.
         }
@@ -48,7 +52,10 @@ impl<E: Event> EventDispatcher<E> for TokioEventDispatcher<E> {
 
 impl<E: Event> HandlerRegistry<E> for TokioEventDispatcher<E> {
     fn register_handler(&self, event_id: u8, handler: Arc<dyn EventHandler<E>>) {
-        self.suscribers.insert(event_id, handler);
+        self.suscribers
+            .entry(event_id)
+            .or_insert_with(Vec::new)
+            .push(handler);
     }
 
     fn register_once_handler(
@@ -58,6 +65,8 @@ impl<E: Event> HandlerRegistry<E> for TokioEventDispatcher<E> {
         handler: Arc<dyn EventHandler<E>>,
     ) {
         self.once_subscribers
-            .insert((event_id, request_id), handler);
+            .entry((event_id, request_id))
+            .or_insert_with(Vec::new)
+            .push(handler);
     }
 }
