@@ -2,6 +2,7 @@ use crate::config::settings::Settings;
 use crate::core::event::RelayerEvent;
 use crate::http::input_http_listener::{InputProofHandler, InputProofRequestJson};
 use crate::http::keyurl_http_listener::KeyUrlResponseJson;
+use crate::http::userdecrypt_http_listener::{UserDecryptHandler, UserDecryptRequestJson};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
 use axum::handler::{get, post};
@@ -16,7 +17,8 @@ where
     D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
 {
     // Build our application with the POST endpoint '/input-proof'
-    let input_proof_handler = Arc::new(InputProofHandler::new(orchestrator));
+    let input_proof_handler = Arc::new(InputProofHandler::new(orchestrator.clone()));
+    let user_decrypt_handler = Arc::new(UserDecryptHandler::new(orchestrator));
     let app =
         Router::new()
             .route(
@@ -25,6 +27,16 @@ where
                     info!("Received POST request to '/input-proof'");
                     let handler = Arc::new(input_proof_handler);
                     move |payload: Json<InputProofRequestJson>| async move {
+                        handler.handle(payload).await
+                    }
+                }),
+            )
+            .route(
+                "/user-decrypt",
+                post({
+                    info!("Received POST request to '/user-decrypt'");
+                    let handler = Arc::new(user_decrypt_handler);
+                    move |payload: Json<UserDecryptRequestJson>| async move {
                         handler.handle(payload).await
                     }
                 }),
