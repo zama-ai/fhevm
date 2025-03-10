@@ -216,9 +216,14 @@ impl GatewayProcessorsHandler {
                 Ok(req) => {
                     let public_decryption_id = req.publicDecryptionId;
                     info!(?public_decryption_id,);
+
+                    let mut ciphertext_handles: Vec<U256> = Vec::new();
+                    for sns_ct_material in req.snsCtMaterials.clone() {
+                        ciphertext_handles.push(sns_ct_material.ctHandle);
+                    }
                     info!(
                         public_decryption_id = ?req.publicDecryptionId,
-                        handles = ?req.ciphertextHandles,
+                        handles = ?ciphertext_handles,
                         "Processing DecryptRequest event"
                     );
 

@@ -269,8 +269,8 @@ impl ComputeCalldata {
         let mut results: Vec<DynSolValue> = Vec::new();
         results.push(DynSolValue::Uint(U256::from(42), 256)); // requestID placeholder
 
-        for ciphertext_handle in req.ciphertextHandles.clone() {
-            let handle: [u8; 32] = ciphertext_handle.to_be_bytes();
+        for sns_ct_material in req.snsCtMaterials.clone() {
+            let handle: [u8; 32] = sns_ct_material.ctHandle.to_be_bytes();
 
             // Using a hardcoded value for now
             let mut clear_text = String::new();
@@ -359,8 +359,12 @@ impl ComputeCalldata {
 
         println!("{:?}", domain);
 
+        let mut ct_handles: Vec<U256> = Vec::new();
+        for sns_ct_material in req.snsCtMaterials {
+            ct_handles.push(sns_ct_material.ctHandle);
+        }
         let public_decryption_result = PublicDecryptionResult {
-            handlesList: req.ciphertextHandles.clone(),
+            handlesList: ct_handles,
             decryptedResult: decrypted_result.clone().into(),
         };
 
