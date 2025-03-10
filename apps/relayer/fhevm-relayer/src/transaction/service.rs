@@ -454,9 +454,12 @@ impl TransactionService {
         calldata: Bytes,
         config: TxConfig,
     ) -> Result<TransactionReceipt, TransactionServiceError> {
+        info!("Submit_and_wait");
         let tx_hash = self
             .submit_transaction(target, calldata, config.clone())
             .await?;
+
+        info!(?tx_hash, "Transaction submitted, waiting for confirmation");
 
         let timeout = Duration::from_secs(config.timeout_secs.unwrap_or(60));
         self.wait_for_receipt(tx_hash, timeout).await

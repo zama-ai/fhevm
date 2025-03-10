@@ -1,5 +1,8 @@
 use crate::blockchain::ethereum::bindings::DecyptionManager::{
-    publicDecryptionResponseCall, PublicDecryptionRequest, PublicDecryptionResponse,
+    self, publicDecryptionResponseCall, PublicDecryptionRequest, PublicDecryptionResponse,
+};
+use crate::blockchain::ethereum::bindings::IDecryptionManager::{
+    CtHandleContractPair, RequestValidity,
 };
 use crate::blockchain::ethereum_host_l1_handlers::DecryptionRequestData;
 use crate::core::errors::EventProcessingError;
@@ -93,6 +96,75 @@ impl ComputeCalldata {
         for handle in handles {
             calldata.extend_from_slice(&handle.to_be_bytes::<32>());
         }
+
+        Ok(Bytes::from(calldata))
+    }
+
+    pub fn user_decryption_req(
+        ct_handles: Vec<Bytes>,
+        contract_chain_id: U256,
+        contract_address: Address,
+        user_address: Address,
+        public_key: Bytes,
+        signature: Bytes,
+    ) -> Result<Bytes, EventProcessingError> {
+        // Convert each handle to Uint<256, 4> and create a pair with the same contract address
+        let ct_handle_contract_pairs: Vec<CtHandleContractPair> = ct_handles
+            .into_iter()
+            .map(|handle_bytes| {
+                // Convert the bytes to a proper U256 handle
+                // We assume the handle bytes are already in proper format
+                // Typically handles are 32 bytes long representing a uint256
+                let mut handle_array = [0u8; 32];
+                let copy_len = std::cmp::min(handle_bytes.len(), 32);
+                handle_array[32 - copy_len..].copy_from_slice(&handle_bytes[..copy_len]);
+
+                let handle = Uint::<256, 4>::from_be_bytes(handle_array);
+
+                // TODO: we receive only one contract address, so for now
+                //  we use the same contract address for all in the contract_addresses array
+
+                // Create a pair with this handle and the provided contract address
+                CtHandleContractPair {
+                    ctHandle: handle,
+                    contractAddress: contract_address,
+                }
+            })
+            .collect();
+
+        // Create validity struct with current timestamp and a default duration (e.g., 1 day)
+        let current_timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        let validity = RequestValidity {
+            startTimestamp: U256::from(current_timestamp),
+            durationDays: U256::from(1), // Default to 1 day validity
+        };
+
+        // TODO: we receive only one contract address, so for now
+        //  we use the same contract address for all in the contract_addresses array
+        let contract_addresses = vec![contract_address];
+
+        // Create the userDecryptionRequest call
+        let call = DecyptionManager::userDecryptionRequestCall::new((
+            ct_handle_contract_pairs,
+            validity,
+            contract_chain_id,
+            contract_addresses,
+            user_address,
+            public_key,
+            signature,
+        ));
+
+        // Encode the call to get the calldata
+        let calldata = DecyptionManager::userDecryptionRequestCall::abi_encode(&call);
+
+        info!(
+            "UserDecryptionRequest calldata: 0x{}",
+            hex::encode(&calldata)
+        );
 
         Ok(Bytes::from(calldata))
     }
@@ -265,99 +337,99 @@ impl ComputeCalldata {
         req: PublicDecryptionRequest,
         decryption_manager_address: Address,
     ) -> Result<Bytes, EventProcessingError> {
-        // 1. Compute decryptedResult bytes array
-        let mut results: Vec<DynSolValue> = Vec::new();
-        results.push(DynSolValue::Uint(U256::from(42), 256)); // requestID placeholder
+        // // 1. Compute decryptedResult bytes array
+        // let mut results: Vec<DynSolValue> = Vec::new();
+        // results.push(DynSolValue::Uint(U256::from(42), 256)); // requestID placeholder
 
         for sns_ct_material in req.snsCtMaterials.clone() {
             let handle: [u8; 32] = sns_ct_material.ctHandle.to_be_bytes();
 
-            // Using a hardcoded value for now
-            let mut clear_text = String::new();
+        //     // Using a hardcoded value for now
+        //     let mut clear_text = String::new();
 
-            match get_clear_text("hardhat/contracts/sql.db", &handle).unwrap() {
-                Some(text) => clear_text = text,
-                None => error!("No value found for this handle"),
-            }
+        //     match get_clear_text("hardhat/contracts/sql.db", &handle).unwrap() {
+        //         Some(text) => clear_text = text,
+        //         None => error!("No value found for this handle"),
+        //     }
 
-            match handle[30] {
-                9 => {
-                    // Parse the string to Uint, handle potential parsing errors
-                    let num: Uint<512, 8> = clear_text.parse().map_err(|e| {
-                        EventProcessingError::ParseError(format!(
-                            "Failed to parse to Uint<512,8>: {}",
-                            e
-                        ))
-                    })?;
+        //     match handle[30] {
+        //         9 => {
+        //             // Parse the string to Uint, handle potential parsing errors
+        //             let num: Uint<512, 8> = clear_text.parse().map_err(|e| {
+        //                 EventProcessingError::ParseError(format!(
+        //                     "Failed to parse to Uint<512,8>: {}",
+        //                     e
+        //                 ))
+        //             })?;
 
-                    let bytes: [u8; 64] = num.to_be_bytes();
-                    let bytes_vec = bytes.to_vec();
-                    results.push(DynSolValue::Bytes(bytes_vec));
-                }
-                10 => {
-                    let num: Uint<1024, 16> = clear_text.parse().map_err(|e| {
-                        EventProcessingError::ParseError(format!(
-                            "Failed to parse to Uint<1024,16>: {}",
-                            e
-                        ))
-                    })?;
+        //             let bytes: [u8; 64] = num.to_be_bytes();
+        //             let bytes_vec = bytes.to_vec();
+        //             results.push(DynSolValue::Bytes(bytes_vec));
+        //         }
+        //         10 => {
+        //             let num: Uint<1024, 16> = clear_text.parse().map_err(|e| {
+        //                 EventProcessingError::ParseError(format!(
+        //                     "Failed to parse to Uint<1024,16>: {}",
+        //                     e
+        //                 ))
+        //             })?;
 
-                    let bytes: [u8; 128] = num.to_be_bytes();
-                    let bytes_vec = bytes.to_vec();
-                    results.push(DynSolValue::Bytes(bytes_vec));
-                }
-                11 => {
-                    let num: Uint<2048, 32> = clear_text.parse().map_err(|e| {
-                        EventProcessingError::ParseError(format!(
-                            "Failed to parse to Uint<2048,32>: {}",
-                            e
-                        ))
-                    })?;
+        //             let bytes: [u8; 128] = num.to_be_bytes();
+        //             let bytes_vec = bytes.to_vec();
+        //             results.push(DynSolValue::Bytes(bytes_vec));
+        //         }
+        //         11 => {
+        //             let num: Uint<2048, 32> = clear_text.parse().map_err(|e| {
+        //                 EventProcessingError::ParseError(format!(
+        //                     "Failed to parse to Uint<2048,32>: {}",
+        //                     e
+        //                 ))
+        //             })?;
 
-                    let bytes: [u8; 256] = num.to_be_bytes();
-                    let bytes_vec = bytes.to_vec();
-                    results.push(DynSolValue::Bytes(bytes_vec));
-                }
-                _ => {
-                    // Parse the string to U256, handle potential parsing errors
-                    let value = U256::from_str(&clear_text).map_err(|e| {
-                        EventProcessingError::ParseError(format!("Failed to parse to U256: {}", e))
-                    })?;
+        //             let bytes: [u8; 256] = num.to_be_bytes();
+        //             let bytes_vec = bytes.to_vec();
+        //             results.push(DynSolValue::Bytes(bytes_vec));
+        //         }
+        //         _ => {
+        //             // Parse the string to U256, handle potential parsing errors
+        //             let value = U256::from_str(&clear_text).map_err(|e| {
+        //                 EventProcessingError::ParseError(format!("Failed to parse to U256: {}", e))
+        //             })?;
 
-                    results.push(DynSolValue::Uint(value, 256));
-                }
-            }
-        }
+        //             results.push(DynSolValue::Uint(value, 256));
+        //         }
+        //     }
+        // }
 
-        results.push(DynSolValue::Array(vec![])); // signatures placeholder
+        // results.push(DynSolValue::Array(vec![])); // signatures placeholder
 
-        let data = DynSolValue::Tuple(results).abi_encode_params();
-        let decrypted_result = data[32..data.len() - 32].to_vec(); // remove placeholder corresponding to requestID and signatures
+        // let data = DynSolValue::Tuple(results).abi_encode_params();
+        // let decrypted_result = data[32..data.len() - 32].to_vec(); // remove placeholder corresponding to requestID and signatures
 
-        println!(
-            "decryptedResult : 0x{}",
-            hex::encode(decrypted_result.clone())
-        );
+        // println!(
+        //     "decryptedResult : 0x{}",
+        //     hex::encode(decrypted_result.clone())
+        // );
 
-        // 2. EIP712 signature of KMS signer
-        let signer = PrivateKeySigner::from_str(
-            "30d45b1c5a771e20d0ec15097c3b6ac7153bc1992bc78c42af37725dd93f096a",
-        )
-        .map_err(|e| {
-            EventProcessingError::SigningError(format!(
-                "Failed to create private key signer: {}",
-                e
-            ))
-        })?;
+        // // 2. EIP712 signature of KMS signer
+        // let signer = PrivateKeySigner::from_str(
+        //     "30d45b1c5a771e20d0ec15097c3b6ac7153bc1992bc78c42af37725dd93f096a",
+        // )
+        // .map_err(|e| {
+        //     EventProcessingError::SigningError(format!(
+        //         "Failed to create private key signer: {}",
+        //         e
+        //     ))
+        // })?;
 
-        let domain = eip712_domain! {
-            name: "DecryptionManager",
-            version: "1",
-            chain_id: 654321,
-            verifying_contract: decryption_manager_address,
-        };
+        // let domain = eip712_domain! {
+        //     name: "DecryptionManager",
+        //     version: "1",
+        //     chain_id: 654321,
+        //     verifying_contract: decryption_manager_address,
+        // };
 
-        println!("{:?}", domain);
+        // println!("{:?}", domain);
 
         let mut ct_handles: Vec<U256> = Vec::new();
         for sns_ct_material in req.snsCtMaterials {
@@ -368,24 +440,26 @@ impl ComputeCalldata {
             decryptedResult: decrypted_result.clone().into(),
         };
 
-        println!("public_decryption_result {:?}", public_decryption_result);
+        // println!("public_decryption_result {:?}", public_decryption_result);
 
-        let hash = public_decryption_result.eip712_signing_hash(&domain);
+        // let hash = public_decryption_result.eip712_signing_hash(&domain);
 
-        // Replace unwrap with proper error handling
-        let signature = signer.sign_hash_sync(&hash).map_err(|e| {
-            EventProcessingError::SigningError(format!("Failed to sign hash: {}", e))
-        })?;
+        // // Replace unwrap with proper error handling
+        // let signature = signer.sign_hash_sync(&hash).map_err(|e| {
+        //     EventProcessingError::SigningError(format!("Failed to sign hash: {}", e))
+        // })?;
 
-        info!("Signature: 0x{}", hex::encode(signature.as_bytes()));
+        // info!("Signature: 0x{}", hex::encode(signature.as_bytes()));
 
-        let res_data_gateway = publicDecryptionResponseCall::new((
-            req.publicDecryptionId,
-            decrypted_result.into(),
-            signature.as_bytes().into(),
-        ));
+        // let res_data_gateway = publicDecryptionResponseCall::new((
+        //     req.publicDecryptionId,
+        //     decrypted_result.into(),
+        //     signature.as_bytes().into(),
+        // ));
 
-        let calldata_bytes = publicDecryptionResponseCall::abi_encode(&res_data_gateway);
+        // let calldata_bytes = publicDecryptionResponseCall::abi_encode(&res_data_gateway);
+
+        let calldata_bytes = vec![1, 3];
 
         Ok(alloy::primitives::Bytes::from(calldata_bytes))
     }

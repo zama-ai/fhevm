@@ -305,20 +305,98 @@ impl TransactionManager {
         }
 
         // Check if contract exists
+        info!("Checking contract code at {:#x}", target);
         let code = self.provider.get_code_at(target).await.map_err(|e| {
             TransactionError::TransactionFailed(format!("Failed to check contract code: {}", e))
         })?;
 
         if code.is_empty() {
-            error!("⚠️  Warning: No code at target address!");
+            return Err(TransactionError::InvalidAddress(format!(
+                "No code at target address: {:#x}",
+                target
+            )));
         }
 
+        // Try a dry-run call first to get better error information
+        info!("Performing dry-run call to {:#x}", target);
+        let request = TransactionRequest::default()
+            .with_from(self.sender_address())
+            .with_to(target)
+            .with_input(calldata.clone())
+            .with_value(config.value.unwrap_or_default());
+
+        match self.provider.call(&request).await {
+            Ok(_) => info!("Dry-run call succeeded, proceeding with transaction"),
+            Err(e) => {
+                error!("Dry-run call failed: {}", e);
+
+                // Try to get more details about the error
+                let error_string = e.to_string();
+                if let Some(error_data_index) = error_string.find("data: ") {
+                    let data_slice = &error_string[error_data_index + 6..];
+                    let data_slice = data_slice.trim_matches(|c| c == '"' || c == ')');
+
+                    error!("Error data: {}", data_slice);
+
+                    // Try to decode the error if it follows the standard format
+                    if data_slice.len() > 10 && data_slice.starts_with("0x") {
+                        // Extract the function selector (first 4 bytes after 0x)
+                        let selector = &data_slice[2..10];
+
+                        // Check for standard error selector (0x08c379a0 is Error(string))
+                        if selector == "08c379a0" {
+                            // This is the standard Error(string) format
+                            if let Ok(error_data) = hex::decode(&data_slice[10..]) {
+                                // Parse ABI-encoded string
+                                if error_data.len() >= 96 {
+                                    // String data starts at position 0x20 (32 bytes in)
+                                    let string_length_bytes = &error_data[32..64];
+                                    if let Ok(string_length) =
+                                        U256::from_be_slice(string_length_bytes).try_into()
+                                    {
+                                        let string_length: usize = string_length;
+                                        if error_data.len() >= 64 + string_length {
+                                            let error_message = String::from_utf8_lossy(
+                                                &error_data[64..64 + string_length],
+                                            );
+                                            error!("Decoded error message: {}", error_message);
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            // This could be a custom error
+                            error!("Custom error selector: 0x{}", selector);
+
+                            // You could add a mapping of known error selectors to their meanings
+                            match selector {
+                                "4e487b71" => {
+                                    error!("This is a Panic error (assert, overflow, etc.)")
+                                }
+                                // Add other known error selectors here
+                                _ => error!("Unknown error selector"),
+                            }
+                        }
+                    } else if data_slice == "0x" {
+                        error!("Contract reverted without specific error data");
+                    }
+                }
+
+                return Err(TransactionError::TransactionFailed(format!(
+                    "Transaction would fail: {}",
+                    e
+                )));
+            }
+        }
+
+        info!("Preparing request: {:#x}", target);
         let request = TransactionRequest::default()
             .with_from(self.sender_address())
             .with_to(target)
             .with_input(calldata)
             .with_value(config.value.unwrap_or_default());
 
+        info!("After Preparing request: {:#x}", target);
         let pending_tx = self
             .provider
             .send_transaction(request)
@@ -500,7 +578,7 @@ impl TransactionManager {
 
     pub async fn verify_contract_code(&self, address: Address) -> Result<Bytes> {
         let code = self.provider.get_code_at(address).await?;
-        println!("Deployed bytecode: 0x{}", hex::encode(&code));
+        debug!("Deployed bytecode: 0x{}", hex::encode(&code));
         Ok(code)
     }
 }
