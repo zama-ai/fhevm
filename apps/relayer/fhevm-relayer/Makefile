@@ -99,6 +99,12 @@ run-test-input-proof:
 		-H "Content-Type: application/json" \
 		-d '{"contractChainId": "123456", "contractAddress": "0xcEc0e9723bF28D2A2C867108cC4C3A38a011d4D1", "userAddress": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80", "ciphertextWithZkpok": "abcdef"}'
 
+
+run-test-user-decrypt:
+	@curl -X POST http://127.0.0.1:3000/user-decrypt \
+-H "Content-Type: application/json" \
+-d '{"signature": "cEc0e9723bF28D2A2C867108cC4C3A38a011d4D1", "userAddress": "0xcEc0e9723bF28D2A2C867108cC4C3A38a011d4D1", "enc_key": "a5e1defb98EFe38EBb2D958CEe052410247F4c80", "ct_handle": "a5e1defb98EFe38EBb2D958CEe052410247F4c802410247F4c8010247F4c8076", "contractAddress": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80", "chainId": "1234"}'
+
 run-test-keyurl:
 	@curl  http://127.0.0.1:3000/keyurl
 
