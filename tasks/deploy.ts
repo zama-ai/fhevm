@@ -56,7 +56,6 @@ task("task:deployHttpz")
         identity: getRequiredEnvVar(`KMS_NODE_IDENTITY_${idx}`),
         ipAddress: getRequiredEnvVar(`KMS_NODE_IP_ADDRESS_${idx}`),
         daAddress: getRequiredEnvVar(`KMS_NODE_DA_ADDRESS_${idx}`),
-        tlsCertificate: getRequiredEnvVar(`KMS_NODE_TLS_CERTIFICATE_${idx}`),
       });
     }
 
