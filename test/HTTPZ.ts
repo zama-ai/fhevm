@@ -13,7 +13,6 @@ describe("HTTPZ", function () {
       identity: hre.ethers.randomBytes(32),
       ipAddress: "127.0.0.1",
       daAddress: "https://da.com",
-      tlsCertificate: hre.ethers.randomBytes(32),
     }));
 
     return { kmsNodes };
