@@ -180,6 +180,8 @@ async fn main() -> eyre::Result<()> {
 
     // Event type: DecryptRequestRcvd
     orchestrator.register_handler(1, Arc::clone(&gateway_l2_event_handler));
+    // Event type: DecryptRequestRcvd
+    orchestrator.register_handler(11, Arc::clone(&gateway_l2_event_handler));
     // Event type: DecryptResponseEventLogRcvdFromGwL2
     orchestrator.register_handler(2, Arc::clone(&gateway_l2_event_handler));
     // Event type: DecryptionRequestSentToGwL2

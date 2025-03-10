@@ -1,10 +1,13 @@
 use crate::{
     blockchain::ethereum::{
-        bindings::{DecryptionOracle, DecyptionManager::PublicDecryptionResponse},
+        bindings::DecryptionOracle, bindings::DecyptionManager::PublicDecryptionResponse,
         ComputeCalldata,
     },
     core::errors::EventProcessingError,
-    core::event::{DecryptEventData, DecryptionType, RelayerEvent, RelayerEventData},
+    core::event::{
+        DecryptEventData, PublicDecryptRequest, PublicDecryptResponse, RelayerEvent,
+        RelayerEventData,
+    },
     core::utils::{colorize_event_type, colorize_request_id},
     orchestrator::{
         traits::{EventDispatcher, EventHandler},
@@ -87,10 +90,11 @@ impl EthereumHostL1Handler {
                 for ct_handle in eth_decryption_request.cts {
                     ct_handles.push(ct_handle.to_be_bytes());
                 }
-                event.derive_next_event(RelayerEventData::Decrypt(DecryptEventData::RequestRcvd {
-                    ct_handles,
-                    operation: DecryptionType::PublicDecrypt,
-                }))
+                event.derive_next_event(RelayerEventData::Decrypt(
+                    DecryptEventData::PublicDecryptReq {
+                        decrypt_request: PublicDecryptRequest { ct_handles },
+                    },
+                ))
             }
             Err(e) => {
                 event.derive_next_event(RelayerEventData::Decrypt(DecryptEventData::Failed {
@@ -123,7 +127,7 @@ impl EthereumHostL1Handler {
     async fn send_decrypt_response_to_fhevm(
         &self,
         event: RelayerEvent,
-        public_decryption_response: PublicDecryptionResponse,
+        public_decryption_response: PublicDecryptResponse,
     ) {
         match self.context_data.get(&event.request_id) {
             Some(decrypted_request_data) => {
@@ -176,7 +180,7 @@ impl EthereumHostL1Handler {
 
         // Create and dispatch the new event
         let next_event = event.derive_next_event(RelayerEventData::Decrypt(
-            DecryptEventData::ResponseSentToHostL1,
+            DecryptEventData::RespSentToHostL1,
         ));
 
         if let Err(e) = self.dispatcher.dispatch_event(next_event).await {
@@ -219,12 +223,17 @@ impl EthereumHostL1Handler {
     async fn process_decryption_response(
         &self,
         req: &DecryptionRequestData,
-        public_decryption_response: PublicDecryptionResponse,
+        public_decryption_response: PublicDecryptResponse,
     ) -> Result<(), EventProcessingError> {
         // let decrypted_value = U256::from(18446744073709551600u64);
+        let public_decrypt_response: PublicDecryptionResponse = PublicDecryptionResponse {
+            publicDecryptionId: public_decryption_response.gateway_request_id,
+            decryptedResult: public_decryption_response.decrypted_value,
+            signatures: public_decryption_response.signatures,
+        };
         self.tx_helper
             .send_transaction_simple("decryption_response", req.contract_caller, || {
-                ComputeCalldata::callback_req(req, public_decryption_response.clone(), 4)
+                ComputeCalldata::callback_req(req, public_decrypt_response.clone(), 4)
             })
             .await
     }
@@ -249,13 +258,13 @@ impl EventHandler<RelayerEvent> for EthereumHostL1Handler {
                 self.handle_public_decrypt_event_log(event, eth_event_log)
                     .await;
             }
-            RelayerEventData::Decrypt(DecryptEventData::ResponseRcvdFromGwL2 {
-                public_decryption_response,
+            RelayerEventData::Decrypt(DecryptEventData::PublicDecryptRespFromGwL2 {
+                decrypt_response,
             }) => {
-                self.send_decrypt_response_to_fhevm(event, public_decryption_response)
+                self.send_decrypt_response_to_fhevm(event, decrypt_response)
                     .await;
             }
-            RelayerEventData::Decrypt(DecryptEventData::ResponseSentToHostL1) => {
+            RelayerEventData::Decrypt(DecryptEventData::RespSentToHostL1) => {
                 self.handle_decrypt_response_sent();
             }
             _ => {

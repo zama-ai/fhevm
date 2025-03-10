@@ -1,13 +1,14 @@
-use crate::blockchain::ethereum::bindings::DecyptionManager::PublicDecryptionResponse;
 use crate::http::input_http_listener::{
     InputProofRequestJson, InputProofResponseJson, InputProofResponsePayloadJson,
+};
+use crate::http::userdecrypt_http_listener::{
+    UserDecryptRequestJson, UserDecryptResponseJson, UserDecryptResponsePayloadJson,
 };
 use crate::orchestrator::traits::Event;
 use alloy::primitives::{Address, Bytes, FixedBytes};
 use alloy::{primitives::U256, rpc::types::Log};
 use std::fmt::Display;
 use std::str::FromStr;
-use strum_macros::Display;
 use tracing::info;
 use uuid::Uuid;
 
@@ -47,10 +48,12 @@ impl Event for RelayerEvent {
             RelayerEventData::EventLogFromHostL1 { .. } => 0,
             RelayerEventData::EventLogResponseFromGwL2 { .. } => 3,
             RelayerEventData::Decrypt(decrypt_event) => match decrypt_event {
-                DecryptEventData::RequestRcvd { .. } => 1,
-                DecryptEventData::RequestSentToGwL2 { .. } => 2,
-                DecryptEventData::ResponseRcvdFromGwL2 { .. } => 4,
-                DecryptEventData::ResponseSentToHostL1 { .. } => 5,
+                DecryptEventData::PublicDecryptReq { .. } => 1,
+                DecryptEventData::UserDecryptReq { .. } => 11,
+                DecryptEventData::ReqSentToGwL2 { .. } => 2,
+                DecryptEventData::PublicDecryptRespFromGwL2 { .. } => 4,
+                DecryptEventData::UserDecryptRespFromGwL2 { .. } => 14,
+                DecryptEventData::RespSentToHostL1 { .. } => 5,
                 DecryptEventData::Failed { .. } => 6,
             },
             RelayerEventData::Input(input_event) => match input_event {
@@ -122,24 +125,6 @@ impl AsRef<str> for RelayerEventData {
     }
 }
 
-#[derive(Clone, Debug, Display)]
-pub enum DecryptionType {
-    PublicDecrypt,
-    UserDecrypt { user_public_key: Vec<u8> },
-}
-
-#[derive(Clone, Debug)]
-pub enum DecryptedValue {
-    PublicDecrypt {
-        plaintext: Vec<u8>,
-        signatures: Vec<Vec<u8>>,
-    },
-    UserDecrypt {
-        user_encrypted_plaintext_shares: Vec<Vec<u8>>,
-        signatures: Vec<Vec<u8>>,
-    },
-}
-
 #[derive(Clone, Debug)]
 pub enum DecryptEventData {
     // Decryption request after processing by ethereum adapter. This will be
@@ -149,14 +134,17 @@ pub enum DecryptEventData {
     // it will persist in contextual data of gateway l2 adapter.
     //
     // After this system will wait until a gateway l2 listener catches a response and creates a new request.
-    RequestRcvd {
-        // For gateway l2 handler
-        ct_handles: Vec<[u8; 32]>,
-        operation: DecryptionType,
+    //
+    // For gateway l2 handler
+    PublicDecryptReq {
+        decrypt_request: PublicDecryptRequest,
+    },
+    UserDecryptReq {
+        decrypt_request: UserDecryptRequest,
     },
 
-    RequestSentToGwL2 {
-        decryption_public_id: U256,
+    ReqSentToGwL2 {
+        gateway_l2_request_id: U256,
     },
 
     // Raw event log from gateway l2. Will be processed by gateway l2 handler.
@@ -165,12 +153,18 @@ pub enum DecryptEventData {
     // data store of the handler. if not, drops the request (not meant for this
     // relayer instance). if found, creates the next event with the original
     // orchestrator request id retreived from contextual data store.
-    ResponseRcvdFromGwL2 {
-        // For ethereum handler
-        public_decryption_response: PublicDecryptionResponse,
+    //
+    // For ethereum handler
+    PublicDecryptRespFromGwL2 {
+        decrypt_response: PublicDecryptResponse,
     },
+    UserDecryptRespFromGwL2 {
+        decrypt_response: UserDecryptResponse,
+    },
+
     // This event data could be used to update the dashboard.
-    ResponseSentToHostL1,
+    RespSentToHostL1,
+
     // For no handler, just status update.
     Failed {
         // For no handler, just status updated.
@@ -181,12 +175,88 @@ pub enum DecryptEventData {
 impl DecryptEventData {
     pub fn event_name(&self) -> &'static str {
         match self {
-            DecryptEventData::RequestRcvd { .. } => "Decrypt::RequestRcvd",
-            DecryptEventData::RequestSentToGwL2 { .. } => "Decrypt::RequestSendToGwL2",
-            DecryptEventData::ResponseRcvdFromGwL2 { .. } => "Decrypt:ResponseRcvdFromGwL2",
-            DecryptEventData::ResponseSentToHostL1 => "Decrypt::ResponseSentToHostL1",
+            DecryptEventData::PublicDecryptReq { .. } => "Decrypt::PublicDecryptReq",
+            DecryptEventData::UserDecryptReq { .. } => "Decrypt::UserDecryptReq",
+            DecryptEventData::ReqSentToGwL2 { .. } => "Decrypt::RequestSendToGwL2",
+            DecryptEventData::PublicDecryptRespFromGwL2 { .. } => {
+                "Decrypt::PublicDecryptRespFromGwL2"
+            }
+            DecryptEventData::UserDecryptRespFromGwL2 { .. } => "Decrypt::UserDecryptRespFromGwL2",
+            DecryptEventData::RespSentToHostL1 => "Decrypt::ResponseSentToHostL1",
             DecryptEventData::Failed { .. } => "Decrypt::Failed",
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum DecryptRequest {
+    Public(PublicDecryptRequest),
+    User(UserDecryptRequest),
+}
+
+#[derive(Debug, Clone)]
+pub struct PublicDecryptRequest {
+    pub ct_handles: Vec<[u8; 32]>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UserDecryptRequest {
+    pub ct_handles: Vec<Bytes>,
+    pub encryption_key: Bytes,
+    pub user_address: Address,
+    pub contract_address: Address,
+    pub contracts_chain_id: U256,
+    pub signature: Bytes,
+}
+
+#[derive(Debug, Clone)]
+pub enum DecryptResponse {
+    Public(PublicDecryptResponse),
+    User(UserDecryptResponse),
+}
+
+#[derive(Debug, Clone)]
+pub struct PublicDecryptResponse {
+    pub gateway_request_id: U256,
+    pub decrypted_value: Bytes,
+    pub signatures: Vec<Bytes>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UserDecryptResponse {
+    pub gateway_request_id: Bytes,
+    pub reencrypted_shares: Vec<Vec<u8>>,
+    pub signatures: Vec<Vec<u8>>,
+}
+
+impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
+    type Error = anyhow::Error;
+
+    fn try_from(value: UserDecryptRequestJson) -> Result<Self, Self::Error> {
+        let mut ct_handles: Vec<Bytes> = Vec::new();
+        ct_handles.push(Bytes::from_str(&value.ct_handle)?);
+
+        Ok(UserDecryptRequest {
+            ct_handles,
+            encryption_key: Bytes::from_str(&value.enc_key)?,
+            user_address: Address::from_str(&value.userAddress)?,
+            contract_address: Address::from_str(&value.contractAddress)?,
+            contracts_chain_id: parse_chain_id(&value.chainId)?,
+            signature: Bytes::from_str(&value.signature)?,
+        })
+    }
+}
+
+impl TryFrom<UserDecryptResponse> for UserDecryptResponseJson {
+    type Error = String;
+
+    fn try_from(response: UserDecryptResponse) -> Result<Self, Self::Error> {
+        Ok(UserDecryptResponseJson {
+            response: UserDecryptResponsePayloadJson {
+                reencrypted_shares: response.reencrypted_shares,
+                signatures: response.signatures,
+            },
+        })
     }
 }
 
@@ -261,21 +331,8 @@ impl TryFrom<InputProofRequestJson> for InputProofRequest {
 
     fn try_from(json: InputProofRequestJson) -> Result<Self, Self::Error> {
         info!("json.contractChainId: {:?}", json.contractChainId);
-        let contract_chain_id = if json.contractChainId == "1e240" {
-            info!("Special case detected: contractChainId is 1e240, using hardcoded value 123456");
-            U256::from(123456u64)
-        } else if json.contractChainId == "3039" {
-            info!("Special case detected: contractChainId is 3039, using hardcoded value 12345");
-            U256::from(12345u64)
-        } else if json.contractChainId.starts_with("0x") {
-            // Parse as hex if it starts with 0x
-            U256::from_str(&json.contractChainId)
-                .map_err(|e| format!("Error parsing hex contractChainId: {}", e))?
-        } else {
-            // Parse as decimal otherwise
-            U256::from_str_radix(&json.contractChainId, 10)
-                .map_err(|e| format!("Error parsing decimal contractChainId: {}", e))?
-        };
+        let contract_chain_id = parse_chain_id(&json.contractChainId)
+            .map_err(|e| format!("Error parsing contractChainId: {:?}", e))?;
         info!("contract_chain_id decoded: {:?}", contract_chain_id);
 
         let contract_address = Address::from_str(&json.contractAddress)
@@ -297,6 +354,25 @@ impl TryFrom<InputProofRequestJson> for InputProofRequest {
             ciphetext_with_zk_proof,
         })
     }
+}
+
+fn parse_chain_id(
+    chain_id: &str,
+) -> Result<alloy::primitives::Uint<256, 4>, alloy::primitives::ruint::ParseError> {
+    let contract_chain_id = if chain_id == "1e240" {
+        info!("Special case detected: contractChainId is 1e240, using hardcoded value 123456");
+        U256::from(123456u64)
+    } else if chain_id == "3039" {
+        info!("Special case detected: contractChainId is 3039, using hardcoded value 12345");
+        U256::from(12345u64)
+    } else if chain_id.starts_with("0x") {
+        // Parse as hex if it starts with 0x
+        U256::from_str(&chain_id)?
+    } else {
+        // Parse as decimal otherwise
+        U256::from_str_radix(&chain_id, 10)?
+    };
+    Ok(contract_chain_id)
 }
 
 impl TryFrom<InputProofResponse> for InputProofResponseJson {

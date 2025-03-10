@@ -3,7 +3,7 @@ use crate::{
     config::settings::ContractConfig,
     core::{
         errors::EventProcessingError,
-        event::{DecryptEventData, RelayerEvent, RelayerEventData},
+        event::{DecryptEventData, PublicDecryptResponse, RelayerEvent, RelayerEventData},
         utils::{colorize_event_type, colorize_request_id},
     },
     orchestrator::{
@@ -15,7 +15,7 @@ use crate::{
 use std::str::FromStr;
 
 use alloy::{
-    primitives::{keccak256, Address, Uint, U256},
+    primitives::{keccak256, Address, Bytes, Uint, U256},
     rpc::types::TransactionReceipt,
 };
 
@@ -78,10 +78,70 @@ impl ArbitrumGatewayL2Handler {
     /// # Events
     /// * Success: [`RelayerEventData::DecryptionRequestSentToGwL2`]
     /// * Failure: [`RelayerEventData::DecryptionFailed`]
-    async fn send_decryption_request_to_rollup(&self, event: RelayerEvent, handles: Vec<[u8; 32]>) {
+    async fn send_public_decryption_request_to_rollup(
+        &self,
+        event: RelayerEvent,
+        handles: Vec<[u8; 32]>,
+    ) {
         let handles: Vec<Uint<256, 4>> = handles
             .iter()
             .map(|bytes| Uint::from_be_bytes(*bytes))
+            .collect();
+
+        info!(
+            "Decryption request received. Making a tx to rollup: request_id: {:?} with handles {:?}",
+            event.request_id,
+            handles
+        );
+
+        let self_clone = self.clone();
+        let event_clone = event.clone();
+
+        // Spawn a blocking task to make a transaction to rollup
+        task::spawn(async move {
+            match self_clone.process_decryption_request(handles).await {
+                Ok(decryption_public_id) => {
+                    self_clone
+                        .handle_successful_request(event_clone, decryption_public_id)
+                        .await;
+                }
+                Err(e) => {
+                    self_clone.handle_failed_request(event_clone, e).await;
+                }
+            }
+        });
+    }
+
+    /// Prepares and sends a decryption request transaction to the gateway.
+    ///
+    /// This function performs the following:
+    /// 1. Converts the input handles to [`Uint<256, 4>`]
+    /// 2. Sends transaction to the [`DecyptionManager`] contract
+    /// 3. Extracts the `decryption_public_id` from the receipt
+    ///
+    /// # Arguments
+    /// * `event` - The [`RelayerEvent`] containing the request context and original request ID
+    /// * `handles` - Vector of 32-byte arrays representing the encrypted handles to be decrypted
+    ///
+    /// # State Changes
+    /// On success, stores mapping between `decryption_public_id` and the original request ID
+    ///
+    /// # Events
+    /// * Success: [`RelayerEventData::DecryptionRequestSentToGwL2`]
+    /// * Failure: [`RelayerEventData::DecryptionFailed`]
+    async fn send_user_decryption_request_to_rollup(
+        &self,
+        event: RelayerEvent,
+        handles: Vec<Bytes>,
+    ) {
+        let handles: Vec<Uint<256, 4>> = handles
+            .iter()
+            .map(|bytes| {
+                let mut array = [0u8; 32];
+                let bytes_slice = &bytes[..];
+                array.copy_from_slice(bytes_slice);
+                Uint::from_be_bytes(array)
+            })
             .collect();
 
         info!(
@@ -131,11 +191,10 @@ impl ArbitrumGatewayL2Handler {
         );
 
         // Create and dispatch the new event
-        let next_event = event.derive_next_event(RelayerEventData::Decrypt(
-            DecryptEventData::RequestSentToGwL2 {
-                decryption_public_id,
-            },
-        ));
+        let next_event =
+            event.derive_next_event(RelayerEventData::Decrypt(DecryptEventData::ReqSentToGwL2 {
+                gateway_l2_request_id: decryption_public_id,
+            }));
 
         if let Err(e) = self.dispatcher.dispatch_event(next_event).await {
             error!(?e, "Failed to dispatch DecryptRequestProcessed event");
@@ -213,8 +272,12 @@ impl ArbitrumGatewayL2Handler {
                                     );
 
                                     let next_event_data = RelayerEventData::Decrypt(
-                                        DecryptEventData::ResponseRcvdFromGwL2 {
-                                            public_decryption_response: req,
+                                        DecryptEventData::PublicDecryptRespFromGwL2 {
+                                            decrypt_response: PublicDecryptResponse {
+                                                gateway_request_id: public_decryption_id,
+                                                decrypted_value: req.decryptedResult,
+                                                signatures: req.signatures,
+                                            },
                                         },
                                     );
 
@@ -346,17 +409,29 @@ impl EventHandler<RelayerEvent> for ArbitrumGatewayL2Handler {
             "Processing relayer event"
         );
         match event.data {
-            RelayerEventData::Decrypt(DecryptEventData::RequestRcvd { ref ct_handles, .. }) => {
-                let handles = ct_handles.clone();
-                self.send_decryption_request_to_rollup(event, handles).await;
+            RelayerEventData::Decrypt(DecryptEventData::PublicDecryptReq {
+                ref decrypt_request,
+                ..
+            }) => {
+                let handles = decrypt_request.ct_handles.clone();
+                self.send_public_decryption_request_to_rollup(event, handles)
+                    .await;
+            }
+            RelayerEventData::Decrypt(DecryptEventData::UserDecryptReq {
+                ref decrypt_request,
+                ..
+            }) => {
+                let handles = decrypt_request.ct_handles.clone();
+                self.send_user_decryption_request_to_rollup(event, handles)
+                    .await;
             }
             RelayerEventData::EventLogResponseFromGwL2 { .. } => {
                 self.handle_decrypt_reponse_event_log(event).await;
             }
-            RelayerEventData::Decrypt(DecryptEventData::RequestSentToGwL2 {
-                decryption_public_id,
+            RelayerEventData::Decrypt(DecryptEventData::ReqSentToGwL2 {
+                gateway_l2_request_id,
             }) => {
-                self.handle_decrypt_request_sent(decryption_public_id);
+                self.handle_decrypt_request_sent(gateway_l2_request_id);
             }
             _ => {
                 self.noop_handle_decrypt_reponse_event_log(event).await;
