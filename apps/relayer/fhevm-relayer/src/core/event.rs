@@ -224,9 +224,9 @@ pub struct PublicDecryptResponse {
 
 #[derive(Debug, Clone)]
 pub struct UserDecryptResponse {
-    pub gateway_request_id: Bytes,
-    pub reencrypted_shares: Vec<Vec<u8>>,
-    pub signatures: Vec<Vec<u8>>,
+    pub gateway_request_id: U256,
+    pub reencrypted_shares: Vec<Bytes>,
+    pub signatures: Vec<Bytes>,
 }
 
 impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {

@@ -3,7 +3,10 @@ use crate::{
     config::settings::ContractConfig,
     core::{
         errors::EventProcessingError,
-        event::{DecryptEventData, PublicDecryptResponse, RelayerEvent, RelayerEventData},
+        event::{
+            DecryptEventData, PublicDecryptResponse, RelayerEvent, RelayerEventData,
+            UserDecryptResponse,
+        },
         utils::{colorize_event_type, colorize_request_id},
     },
     orchestrator::{
@@ -41,7 +44,8 @@ impl ReceiptProcessor for DecryptionRequestProcessor {
 #[derive(Clone)]
 pub struct ArbitrumGatewayL2Handler {
     dispatcher: Arc<TokioEventDispatcher<RelayerEvent>>,
-    decryption_id_to_request_id: Arc<dashmap::DashMap<U256, Uuid>>,
+    public_decryption_id_to_request_id: Arc<dashmap::DashMap<U256, Uuid>>,
+    user_decryption_id_to_request_id: Arc<dashmap::DashMap<U256, Uuid>>,
     tx_helper: Arc<TransactionHelper>,
     contracts: ContractConfig,
 }
@@ -56,7 +60,8 @@ impl ArbitrumGatewayL2Handler {
         Self {
             dispatcher,
             tx_helper: Arc::new(TransactionHelper::new(tx_service, tx_config)),
-            decryption_id_to_request_id: Arc::new(dashmap::DashMap::new()),
+            public_decryption_id_to_request_id: Arc::new(dashmap::DashMap::new()),
+            user_decryption_id_to_request_id: Arc::new(dashmap::DashMap::new()),
             contracts,
         }
     }
@@ -102,7 +107,7 @@ impl ArbitrumGatewayL2Handler {
             match self_clone.process_decryption_request(handles).await {
                 Ok(decryption_public_id) => {
                     self_clone
-                        .handle_successful_request(event_clone, decryption_public_id)
+                        .handle_successful_public_request(event_clone, decryption_public_id)
                         .await;
                 }
                 Err(e) => {
@@ -156,9 +161,9 @@ impl ArbitrumGatewayL2Handler {
         // Spawn a blocking task to make a transaction to rollup
         task::spawn(async move {
             match self_clone.process_decryption_request(handles).await {
-                Ok(decryption_public_id) => {
+                Ok(decryption_user_id) => {
                     self_clone
-                        .handle_successful_request(event_clone, decryption_public_id)
+                        .handle_successful_user_request(event_clone, decryption_user_id)
                         .await;
                 }
                 Err(e) => {
@@ -172,6 +177,39 @@ impl ArbitrumGatewayL2Handler {
     ///
     /// # Arguments
     /// * `event` - The original [`RelayerEvent`] containing request information
+    /// * `decryption_user_id` - The [`U256`] ID received from the decryption request
+    ///
+    /// # State Changes
+    /// Stores mapping in `decryption_id_to_request_id`
+    ///
+    /// # Events
+    /// Dispatches [`RelayerEventData::DecryptionRequestSentToGwL2`]
+    async fn handle_successful_user_request(&self, event: RelayerEvent, decryption_user_id: U256) {
+        // Store the mapping
+        self.user_decryption_id_to_request_id
+            .insert(decryption_user_id, event.request_id);
+
+        info!(
+            ?event.request_id,
+            ?decryption_user_id,
+            "Stored mapping between decryption ID and request ID"
+        );
+
+        // Create and dispatch the new event
+        let next_event =
+            event.derive_next_event(RelayerEventData::Decrypt(DecryptEventData::ReqSentToGwL2 {
+                gateway_l2_request_id: decryption_user_id,
+            }));
+
+        if let Err(e) = self.dispatcher.dispatch_event(next_event).await {
+            error!(?e, "Failed to dispatch DecryptRequestProcessed event");
+        }
+    }
+
+    /// Processes a successful decryption request.
+    ///
+    /// # Arguments
+    /// * `event` - The original [`RelayerEvent`] containing request information
     /// * `decryption_public_id` - The [`U256`] ID received from the decryption request
     ///
     /// # State Changes
@@ -179,9 +217,13 @@ impl ArbitrumGatewayL2Handler {
     ///
     /// # Events
     /// Dispatches [`RelayerEventData::DecryptionRequestSentToGwL2`]
-    async fn handle_successful_request(&self, event: RelayerEvent, decryption_public_id: U256) {
+    async fn handle_successful_public_request(
+        &self,
+        event: RelayerEvent,
+        decryption_public_id: U256,
+    ) {
         // Store the mapping
-        self.decryption_id_to_request_id
+        self.public_decryption_id_to_request_id
             .insert(decryption_public_id, event.request_id);
 
         info!(
@@ -260,8 +302,9 @@ impl ArbitrumGatewayL2Handler {
                                 let public_decryption_id = req.publicDecryptionId;
                                 info!(?public_decryption_id, "Public decryption id from event");
 
-                                if let Some(entry) =
-                                    self.decryption_id_to_request_id.get(&public_decryption_id)
+                                if let Some(entry) = self
+                                    .public_decryption_id_to_request_id
+                                    .get(&public_decryption_id)
                                 {
                                     let original_request_id = *entry.value(); // Dereference the Ref<Uuid>
 
@@ -292,6 +335,58 @@ impl ArbitrumGatewayL2Handler {
                                 } else {
                                     error!(
                                         ?public_decryption_id,
+                                        "No matching request ID found for decryption ID"
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                error!(?e, "Failed to decode event data");
+                            }
+                        }
+                    }
+
+                    &DecyptionManager::UserDecryptionResponse::SIGNATURE_HASH => {
+                        match DecyptionManager::UserDecryptionResponse::decode_log_data(
+                            log.data(),
+                            true,
+                        ) {
+                            Ok(req) => {
+                                let user_decryption_id = req.userDecryptionId;
+                                info!(?user_decryption_id, "User decryption id from event");
+
+                                if let Some(entry) = self
+                                    .user_decryption_id_to_request_id
+                                    .get(&user_decryption_id)
+                                {
+                                    let original_request_id = *entry.value(); // Dereference the Ref<Uuid>
+
+                                    info!(
+                                        ?original_request_id,
+                                        ?user_decryption_id,
+                                        "Found original request ID for decryption response"
+                                    );
+
+                                    let next_event_data = RelayerEventData::Decrypt(
+                                        DecryptEventData::UserDecryptRespFromGwL2 {
+                                            decrypt_response: UserDecryptResponse {
+                                                gateway_request_id: user_decryption_id,
+                                                reencrypted_shares: req.reencryptedShares,
+                                                signatures: req.signatures,
+                                            },
+                                        },
+                                    );
+
+                                    // Now we can use original_request_id directly
+                                    let next_event = RelayerEvent::new(
+                                        original_request_id,
+                                        event.api_version,
+                                        next_event_data,
+                                    );
+
+                                    let _ = self.dispatcher.dispatch_event(next_event).await;
+                                } else {
+                                    error!(
+                                        ?user_decryption_id,
                                         "No matching request ID found for decryption ID"
                                     );
                                 }

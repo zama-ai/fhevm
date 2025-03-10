@@ -16,8 +16,11 @@ use std::sync::Arc;
 const PROOF_VERIFICATION_RESPONSE_TOPIC: alloy::primitives::FixedBytes<32> =
     ZKPoKManager::VerifyProofResponse::SIGNATURE_HASH;
 
-const DECRYPTION_RESPONSE_TOPIC: alloy::primitives::FixedBytes<32> =
+const PUBLIC_DECRYPTION_RESPONSE_TOPIC: alloy::primitives::FixedBytes<32> =
     DecyptionManager::PublicDecryptionResponse::SIGNATURE_HASH;
+
+const USER_DECRYPTION_RESPONSE_TOPIC: alloy::primitives::FixedBytes<32> =
+    DecyptionManager::UserDecryptionResponse::SIGNATURE_HASH;
 
 pub async fn event_listener_gateway(
     mut subscription: alloy::pubsub::SubscriptionStream<Log>,
@@ -51,13 +54,20 @@ pub async fn event_listener_gateway(
                                 log: event_log
                             }
                             },
-                            DECRYPTION_RESPONSE_TOPIC => {
+                            PUBLIC_DECRYPTION_RESPONSE_TOPIC => {
                                 info!("Received Decryption response event");
                                 RelayerEventData::EventLogResponseFromGwL2   {
                                             log: event_log
                                         }
 
                                 },
+                                USER_DECRYPTION_RESPONSE_TOPIC => {
+                                    info!("Received Decryption response event");
+                                    RelayerEventData::EventLogResponseFromGwL2   {
+                                                log: event_log
+                                            }
+
+                                    },
                             _ => {
                                 info!("Unknown event topic: 0x{}", hex::encode(topic0));
                                 continue; // Skip unknown events

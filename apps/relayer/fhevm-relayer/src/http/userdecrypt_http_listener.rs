@@ -4,6 +4,7 @@ use crate::core::event::{
 use crate::core::utils::OnceHandler;
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
+use alloy::primitives::Bytes;
 use axum::{extract::Json, http::StatusCode, response::IntoResponse};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -37,8 +38,8 @@ pub struct UserDecryptResponseJson {
 
 #[derive(Debug, Serialize)]
 pub struct UserDecryptResponsePayloadJson {
-    pub reencrypted_shares: Vec<Vec<u8>>,
-    pub signatures: Vec<Vec<u8>>,
+    pub reencrypted_shares: Vec<Bytes>,
+    pub signatures: Vec<Bytes>,
 }
 
 /// Represents the error response from the '/input-proof' endpoint.
