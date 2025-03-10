@@ -33,8 +33,6 @@ interface IHTTPZ {
         string ipAddress;
         /// @notice Address of the KMS node's DA (data availability, an S3 bucket)
         string daAddress;
-        /// @notice The TLS certificate to consider for core-to-core communication
-        bytes tlsCertificate;
     }
 
     /// @notice Struct that represents a coprocessor
