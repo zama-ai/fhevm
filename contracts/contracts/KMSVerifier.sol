@@ -11,7 +11,7 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
  * @title   KMSVerifier.
  * @notice  KMSVerifier (Key Management System Verifier) is a contract that allows the management of signers and provides
  *          signature verification functions.
- * @dev     The contract uses OpenZeppelin's EIP712Upgradeable for cryptographic operations and is deployed using an UUPS proxy.
+ * @dev     The contract uses EIP712UpgradeableCrossChain for cryptographic operations and is deployed using an UUPS proxy.
  */
 contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712UpgradeableCrossChain {
     /// @notice Returned if the KMS signer to add is already a signer.
@@ -65,7 +65,7 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
         bytes32 hashOfCiphertext;
         address userAddress;
         address contractAddress;
-    } // TODO: to remove once input mechanism will be updated
+    }
 
     /// @notice Decryption result type.
     string public constant DECRYPTION_RESULT_TYPE =
@@ -356,7 +356,7 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
      * @notice          Recovers the signer's address from a `signature` and a `message` digest.
      * @dev             It utilizes ECDSA for actual address recovery. It does not support contract signature (EIP-1271).
      * @param message   The hash of the message that was signed.
-     * @param signature The signature to verify. Its length can be 64 or 65 bytes.
+     * @param signature The signature to verify.
      * @return signer   The address that supposedly signed the message.
      */
     function _recoverSigner(bytes32 message, bytes memory signature) internal pure virtual returns (address) {

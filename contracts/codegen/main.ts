@@ -1,7 +1,6 @@
 import { mkdirSync, writeFileSync } from 'fs';
 
 import { ALL_OPERATORS, SUPPORTED_BITS, checks } from './common';
-import { generateInputVerifiers } from './inputVerifier';
 import operatorsPrices from './operatorsPrices.json';
 import { generateFHEGasLimit } from './payments';
 import * as t from './templates';
@@ -15,8 +14,6 @@ function generateAllFiles() {
   writeFileSync('lib/Impl.sol', t.implSol(operators));
   writeFileSync('lib/TFHE.sol', tfheSolSource);
   writeFileSync('contracts/FHEGasLimit.sol', generateFHEGasLimit(operatorsPrices));
-  writeFileSync('contracts/InputVerifier.native.sol', generateInputVerifiers(false));
-  writeFileSync('contracts/InputVerifier.coprocessor.sol', generateInputVerifiers(true));
   mkdirSync('contracts/tests', { recursive: true });
   ovShards.forEach((os) => {
     writeFileSync(`examples/tests/TFHETestSuite${os.shardNumber}.sol`, testgen.generateSmartContract(os));

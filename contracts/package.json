@@ -34,7 +34,7 @@
     "eslint": "^8.28.0",
     "eslint-config-prettier": "^8.5.0",
     "extra-bigint": "^1.2.0",
-    "fhevmjs": "^0.6.0-4",
+    "fhevmjs": "^0.7.0-7",
     "hardhat": "^2.22.15",
     "hardhat-deploy": "^0.14.0",
     "hardhat-ignore-warnings": "^0.2.11",

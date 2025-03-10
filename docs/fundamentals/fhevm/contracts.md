@@ -40,13 +40,8 @@ The KMSVerifier contract is also responsible for checking the signatures of KMS 
 
 ## InputVerifier Contract
 
-This is the only contract which implementation differs between fhEVM-coprocessor and fhEVM-native. For coprocessor, we use [InputVerifier.coprocessor.sol](../../../contracts/contracts/InputVerifier.coprocessor.sol), while for native we use InputVerifier.native.sol.
-
-The native InputVerifier contract just forwards the user input handles with the KMS signers' signatures from TFHEExecutor (when the verifyCiphertext function is called, to insert user inputs) to the KMSVerifier contract, by calling its `verifyInputEIP712KMSSignatures` function.
-
-The coprocessor version of InputVerifier also forwards the KMS signers' signatures from TFHEExecutor to KMSVerifier, but, in addition, the InputVerifier contract in this case also checks the coprocessor's account signature which includes the computed handles (the KMS signatures only include the hash of the packed ciphertext, not the handles). This additional check is done via the `verifyEIP712Copro` function.
-
-In the native case, the handles are computed onchain, whereas on the coprocessor we trust the handles computation done by the coprocessor before using them in transactions onchain.
+The InputVerifier checks the coprocessors accounts' signatures which include the computed handles (the KMS signatures only include the hash of the packed ciphertext, not the handles).
+We trust the handles computation done by the coprocessors before using them in transactions onchain.
 
 ## FHEGasLimit Contract
 

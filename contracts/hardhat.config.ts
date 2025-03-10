@@ -72,6 +72,11 @@ task('test', async (taskArgs, hre, runSuper) => {
       privateKey: privKeyFhevmDeployer,
       useAddress: false,
     });
+    await hre.run('task:addInputSigners', {
+      numSigners: process.env.NUM_COPROCESSOR_SIGNERS!,
+      privateKey: privKeyFhevmDeployer,
+      useAddress: false,
+    });
   }
   await hre.run('compile:specific', { contract: 'examples' });
   await runSuper();

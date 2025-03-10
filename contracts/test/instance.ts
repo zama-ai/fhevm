@@ -55,12 +55,12 @@ export const createInstances = async (accounts: Signers): Promise<FhevmInstances
 };
 
 export const createInstance = async () => {
-  console.log('net url:', network.config.url);
+  const relayerUrl = dotenv.parse(fs.readFileSync('.env')).RELAYER_URL || 'http://localhost:3000';
   const instance = await createFhevmInstance({
     kmsContractAddress: kmsAdd,
     aclContractAddress: aclAdd,
     networkUrl: network.config.url,
-    gatewayUrl: 'http://localhost:7077',
+    relayerUrl: relayerUrl,
   });
   return instance;
 };

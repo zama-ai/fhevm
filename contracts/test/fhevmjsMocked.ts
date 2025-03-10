@@ -305,46 +305,16 @@ export const createEncryptedInputMocked = (contractAddress: string, userAddress:
         dataInput.set([i, ENCRYPTION_TYPES[v], 0], 29);
         return dataInput;
       });
-      let inputProof = '0x' + numberToHex(handles.length); // for coprocessor : numHandles + numSignersKMS + hashCT + list_handles + signatureCopro + signatureKMSSigners (total len : 1+1+32+NUM_HANDLES*32+65+65*numSignersKMS)
-      // for native : numHandles + numSignersKMS + list_handles + signatureKMSSigners + bundleCiphertext (total len : 1+1+NUM_HANDLES*32+65*numSignersKMS+bundleCiphertext.length)
-      const numSigners = +process.env.NUM_KMS_SIGNERS!;
+      let inputProof = '0x' + numberToHex(handles.length); // numHandles + numCoprocessorSigners + list_handles + signatureCoprocessorSigners (total len : 1+1+32+NUM_HANDLES*32+65*numSigners)
+      const numSigners = +process.env.NUM_COPROCESSOR_SIGNERS!;
       inputProof += numberToHex(numSigners);
-      if (process.env.IS_COPROCESSOR === 'true') {
-        // coprocessor
-        inputProof += hash.toString('hex');
 
-        const listHandlesStr = handles.map((i) => uint8ArrayToHexString(i));
-        listHandlesStr.map((handle) => (inputProof += handle));
-        const listHandles = listHandlesStr.map((i) => BigInt('0x' + i));
-        const sigCoproc = await computeInputSignatureCopro(
-          '0x' + hash.toString('hex'),
-          listHandles,
-          userAddress,
-          contractAddress,
-        );
-        inputProof += sigCoproc.slice(2);
-
-        const signaturesKMS = await computeInputSignaturesKMS(
-          '0x' + hash.toString('hex'),
-          userAddress,
-          contractAddress,
-        );
-        signaturesKMS.map((sigKMS) => (inputProof += sigKMS.slice(2)));
-        listHandlesStr.map((handle, i) => insertSQL('0x' + handle, values[i]));
-      } else {
-        // native
-        const listHandlesStr = handles.map((i) => uint8ArrayToHexString(i));
-        listHandlesStr.map((handle) => (inputProof += handle));
-        const signaturesKMS = await computeInputSignaturesKMS(
-          '0x' + hash.toString('hex'),
-          userAddress,
-          contractAddress,
-        );
-        signaturesKMS.map((sigKMS) => (inputProof += sigKMS.slice(2)));
-        listHandlesStr.map((handle, i) => insertSQL('0x' + handle, values[i]));
-
-        inputProof += encrypted.toString('hex');
-      }
+      const listHandlesStr = handles.map((i) => uint8ArrayToHexString(i));
+      listHandlesStr.map((handle) => (inputProof += handle));
+      const listHandles = listHandlesStr.map((i) => BigInt('0x' + i));
+      const signaturesCoproc = await computeInputSignaturesCopro(listHandles, userAddress, contractAddress);
+      signaturesCoproc.map((sigCopro) => (inputProof += sigCopro.slice(2)));
+      listHandlesStr.map((handle, i) => insertSQL('0x' + handle, values[i]));
 
       return {
         handles,
@@ -394,74 +364,48 @@ export const ENCRYPTION_TYPES = {
   2048: 11,
 };
 
-async function computeInputSignatureCopro(
-  hash: string,
+async function computeInputSignaturesCopro(
   handlesList: bigint[],
-  userAddress: string,
-  contractAddress: string,
-): Promise<string> {
-  let signature: string;
-  const privKeySigner = process.env['PRIVATE_KEY_COPROCESSOR_ACCOUNT'];
-  if (privKeySigner) {
-    const coprocSigner = new Wallet(privKeySigner).connect(ethers.provider);
-    signature = await coprocSign(hash, handlesList, userAddress, contractAddress, coprocSigner);
-  } else {
-    throw new Error(`Private key for coprocessor not found in environment variables`);
-  }
-  return signature;
-}
-
-async function computeInputSignaturesKMS(
-  hash: string,
   userAddress: string,
   contractAddress: string,
 ): Promise<string[]> {
   const signatures: string[] = [];
-  const numSigners = +process.env.NUM_KMS_SIGNERS!;
+  const numSigners = +process.env.NUM_COPROCESSOR_SIGNERS!;
   for (let idx = 0; idx < numSigners; idx++) {
-    const privKeySigner = process.env[`PRIVATE_KEY_KMS_SIGNER_${idx}`];
+    const privKeySigner = process.env[`PRIVATE_KEY_COPROCESSOR_ACCOUNT_${idx}`];
     if (privKeySigner) {
-      const kmsSigner = new ethers.Wallet(privKeySigner).connect(ethers.provider);
-      const signature = await kmsSign(hash, userAddress, contractAddress, kmsSigner);
+      const coprocSigner = new Wallet(privKeySigner).connect(ethers.provider);
+      const signature = await coprocSign(handlesList, userAddress, contractAddress, coprocSigner);
       signatures.push(signature);
     } else {
-      throw new Error(`Private key for signer ${idx} not found in environment variables`);
+      throw new Error(`Private key for coprocessor signer ${idx} not found in environment variables`);
     }
   }
   return signatures;
 }
 
 async function coprocSign(
-  hashOfCiphertext: string,
   handlesList: bigint[],
   userAddress: string,
   contractAddress: string,
   signer: Wallet,
 ): Promise<string> {
-  const inputAdd = dotenv.parse(fs.readFileSync('addresses/.env.inputverifier')).INPUT_VERIFIER_CONTRACT_ADDRESS;
-  const chainId = hre.__SOLIDITY_COVERAGE_RUNNING ? 31337 : network.config.chainId;
-  const aclAdd = dotenv.parse(fs.readFileSync('addresses/.env.acl')).ACL_CONTRACT_ADDRESS;
+  const zkpokManAdd = dotenv.parse(fs.readFileSync('addressesL2/.env.zkpokmanager')).ZKPOK_MANAGER_ADDRESS;
+  const chainId = dotenv.parse(fs.readFileSync('.env')).CHAIN_ID_GATEWAY;
+  const hostChainId = hre.__SOLIDITY_COVERAGE_RUNNING ? 31337 : hre.network.config.chainId;
 
   const domain = {
-    name: 'InputVerifier',
+    name: 'ZKPoKManager',
     version: '1',
     chainId: chainId,
-    verifyingContract: inputAdd,
+    verifyingContract: zkpokManAdd,
   };
 
   const types = {
-    CiphertextVerificationForCopro: [
+    CiphertextVerification: [
       {
-        name: 'aclAddress',
-        type: 'address',
-      },
-      {
-        name: 'hashOfCiphertext',
-        type: 'bytes32',
-      },
-      {
-        name: 'handlesList',
-        type: 'uint256[]',
+        name: 'ctHandles',
+        type: 'bytes32[]',
       },
       {
         name: 'userAddress',
@@ -471,68 +415,18 @@ async function coprocSign(
         name: 'contractAddress',
         type: 'address',
       },
-    ],
-  };
-  const message = {
-    aclAddress: aclAdd,
-    hashOfCiphertext: hashOfCiphertext,
-    handlesList: handlesList,
-    userAddress: userAddress,
-    contractAddress: contractAddress,
-  };
-
-  const signature = await signer.signTypedData(domain, types, message);
-  const sigRSV = ethers.Signature.from(signature);
-  const v = 27 + sigRSV.yParity;
-  const r = sigRSV.r;
-  const s = sigRSV.s;
-
-  const result = r + s.substring(2) + v.toString(16);
-  return result;
-}
-
-async function kmsSign(
-  hashOfCiphertext: string,
-  userAddress: string,
-  contractAddress: string,
-  signer: Wallet,
-): Promise<string> {
-  const kmsVerifierAdd = dotenv.parse(fs.readFileSync('addresses/.env.kmsverifier')).KMS_VERIFIER_CONTRACT_ADDRESS;
-  const chainId = hre.__SOLIDITY_COVERAGE_RUNNING ? 31337 : network.config.chainId;
-  const aclAdd = dotenv.parse(fs.readFileSync('addresses/.env.acl')).ACL_CONTRACT_ADDRESS;
-
-  const domain = {
-    name: 'KMSVerifier',
-    version: '1',
-    chainId: chainId,
-    verifyingContract: kmsVerifierAdd,
-  };
-
-  const types = {
-    CiphertextVerificationForKMS: [
       {
-        name: 'aclAddress',
-        type: 'address',
-      },
-      {
-        name: 'hashOfCiphertext',
-        type: 'bytes32',
-      },
-      {
-        name: 'userAddress',
-        type: 'address',
-      },
-      {
-        name: 'contractAddress',
-        type: 'address',
+        name: 'contractChainId',
+        type: 'uint256',
       },
     ],
   };
+
   const message = {
-    aclAddress: aclAdd,
-    hashOfCiphertext: hashOfCiphertext,
+    ctHandles: handlesList.map((handle) => ethers.zeroPadValue(ethers.toBeHex(handle), 32)),
     userAddress: userAddress,
     contractAddress: contractAddress,
+    contractChainId: hostChainId,
   };
 
   const signature = await signer.signTypedData(domain, types, message);
