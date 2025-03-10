@@ -1,7 +1,0 @@
-name: fhevm-sc-deploy
-description: A helm chart to manage FHEVM Smart Contracts Deployment
-version: 0.1.0
-apiVersion: v2
-keywords:
-  - fhevm
-  - blockchain

@@ -31,4 +31,11 @@ spec:
             - name: {{ $portName }}
               containerPort: {{ $portValue }}
             {{- end }}
+          resources:
+            requests:
+              cpu: {{ .Values.listener.resources.requests.cpu | default "100m" }}
+              memory: {{ .Values.listener.resources.requests.memory | default "256Mi" }}
+            limits:
+              cpu: {{ .Values.listener.resources.limits.cpu | default "500m" }}
+              memory: {{ .Values.listener.resources.limits.memory | default "512Mi" }}
 {{- end -}}

@@ -15,7 +15,7 @@ spec:
         app: {{ include "relayerName" . }}
     spec:
       containers:
-        - name: fhevm-relayer
+        - name: httpz-relayer
           image: "{{ .Values.image.name }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: ["fhevm-relayer"]
@@ -27,6 +27,13 @@ spec:
             - name: config-volume
               mountPath: /app/config/local.yaml
               subPath: local.yaml
+          resources:
+            requests:
+              cpu: {{ .Values.resources.requests.cpu | default "100m" }}
+              memory: {{ .Values.resources.requests.memory | default "256Mi" }}
+            limits:
+              cpu: {{ .Values.resources.limits.cpu | default "500m" }}
+              memory: {{ .Values.resources.limits.memory | default "512Mi" }}
       volumes:
         - name: config-volume
           configMap:

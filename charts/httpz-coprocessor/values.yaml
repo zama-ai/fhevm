@@ -16,6 +16,13 @@ config:
       name: coprocessor-db-url
       key: coprocessor-db-url
       value: "postgresql://postgres:postgres@postgresql:5432/coprocessor"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
 
 dbMigration:
   enabled: true
@@ -39,6 +46,13 @@ dbMigration:
     pksURL: http://minio:9000/kms-public/kms/PUB/PublicKey/d74037feb1394aec0eb724afc4a690e16a0203eb1dc868de08179f2e4828f335
     sksURL: http://minio:9000/kms-public/kms/PUB/ServerKey/812b602c11693dda4bfa68db78269849972b6f1920a725a98fc78cf619a6ab5f
     publicParamsURL: http://minio:9000/kms-public/kms/PUB/CRS/e4e3f0deef6492bde2fac3f2c698112ace878d4a3656b272197ed332391c48fa
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
 
 server:
   enabled: true
@@ -70,7 +84,18 @@ server:
     rpc: "50051"
     metrics: "9100"
   serviceMonitor:
-    enabled: true
+    enabled: false
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  tracing:
+    enabled: false
+    endpoint: ""
+    service: "coprocessor_server"
 
 listener:
   enabled: false
@@ -95,10 +120,16 @@ listener:
     - --coprocessor-api-key=$(TENANT_API_KEY)
     - --url=ws://layer1-node:8545
   ports:
-    rpc: "50052"
     metrics: "9100"
   serviceMonitor:
-    enabled: true
+    enabled: false
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
 
 txSender:
   enabled: false
@@ -132,10 +163,16 @@ txSender:
     - --zkpok-manager-address=${ZKPOK_MANAGER_ADDRESS}
     - --ciphertext-storage-address=${CIPHERTEXT_STORAGE_ADDRESS}
   ports:
-    rpc: "50052"
     metrics: "9100"
   serviceMonitor:
     enabled: false
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
 
 gwListener:
   enabled: false
@@ -160,10 +197,16 @@ gwListener:
     - --gw-url=ws://layer2-anvil-node:8546
     - --zkpok-manager-address=${ZKPOK_MANAGER_ADDRESS}
   ports:
-    rpc: "50052"
     metrics: "9100"
   serviceMonitor:
     enabled: false
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
 
 zkProofWorker:
   enabled: false
@@ -182,7 +225,13 @@ zkProofWorker:
     - --pg-listen-channel="event_zkpok_new_work"
     - --pg-notify-channel="verify_proofs"
   ports:
-    rpc: "50052"
     metrics: "9100"
   serviceMonitor:
     enabled: false
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi

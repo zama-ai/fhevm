@@ -12,7 +12,7 @@ config:
     secret:
       name: coprocessor-db-url
       key: coprocessor-db-url
-      value: "postgresql://postgres:postgres@fhevm-postgresql:5432/coprocessor"
+      value: "postgresql://postgres:postgres@httpz-postgresql:5432/coprocessor"
 
 dbMigration:
   enabled: true
@@ -46,6 +46,13 @@ dbMigration:
     pksURL: http://minio.fhevm.svc.cluster.local:9000/kms-public/kms/PUB/PublicKey/408d8cbaa51dece7f782fe04ba0b1c1d017b1088
     sksURL: http://minio.fhevm.svc.cluster.local:9000/kms-public/kms/PUB/ServerKey/408d8cbaa51dece7f782fe04ba0b1c1d017b1088
     publicParamsURL: http://minio.fhevm.svc.cluster.local:9000/kms-public/kms/PUB/CRS/a5fedad3fd734a598fb67452099229445cb68447
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1
+      memory: 4Gi
 
 server:
   enabled: true
@@ -64,6 +71,18 @@ server:
     - --run-server
     - --server-addr=0.0.0.0:50052
     - --coprocessor-private-key=/accounts/coprocessor.hex
+  ports:
+    rpc: "50051"
+    metrics: "9100"
+  serviceMonitor:
+    enabled: true
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
 
 listener:
   enabled: true
@@ -86,12 +105,23 @@ listener:
     - --database-url=$(DATABASE_URL)
     - --coprocessor-api-key=$(TENANT_API_KEY)
     - --url=ws://layer1-anvil-node:8545
+  ports:
+    metrics: "9100"
+  serviceMonitor:
+    enabled: true
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
 
 gwListener:
   enabled: true
   image:
     name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: c26bef0
+    tag: cbcd331
   replicas: 1
   env:
     - name: DATABASE_URL
@@ -109,12 +139,23 @@ gwListener:
     - --gw-url=ws://layer2-anvil-node:8546
     - --zkpok-manager-address=$(ZKPOK_MANAGER_ADDRESS)
     - --verify-proof-req-database-channel="event_zkpok_new_work"
+  ports:
+    metrics: "9100"
+  serviceMonitor:
+    enabled: true
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
 
 zkProofWorker:
   enabled: true
   image:
     name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: c26bef0
+    tag: cbcd331
   replicas: 1
   env:
     - name: DATABASE_URL
@@ -125,13 +166,25 @@ zkProofWorker:
   args:
     - --pg-listen-channel="event_zkpok_new_work"
     - --pg-notify-channel="event_zkpok_computed"
-    - --pg-polling-interval=60
+    - --pg-polling-interval=5
+    - --worker-thread-count=4
+  ports:
+    metrics: "9100"
+  serviceMonitor:
+    enabled: true
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 2
+      memory: 4Gi
 
 txSender:
   enabled: true
   image:
     name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: c26bef0
+    tag: cbcd331
   replicas: 1
   env:
     - name: DATABASE_URL
@@ -155,3 +208,14 @@ txSender:
     - --zkpok-manager-address=$(ZKPOK_MANAGER_ADDRESS)
     - --ciphertext-storage-address=$(CIPHERTEXT_STORAGE_ADDRESS)
     - --verify-proof-resp-database-channel="event_zkpok_computed"
+  ports:
+    metrics: "9100"
+  serviceMonitor:
+    enabled: true
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi

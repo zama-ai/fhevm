@@ -3,7 +3,7 @@ replicaCount: 1
 
 image:
   name: ghcr.io/zama-ai/fhevm-relayer
-  tag: 0c43f46
+  tag: 7e5f37e
   pullPolicy: IfNotPresent
 
 service:
@@ -85,3 +85,11 @@ config:
     show_timestamp: true
   staging:
     verbose_errors: true
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi

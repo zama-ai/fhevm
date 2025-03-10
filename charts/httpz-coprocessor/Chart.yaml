@@ -1,7 +1,7 @@
-name: fhevm-coprocessor
+name: httpz-coprocessor
 description: A helm chart to distribute and deploy Zama HTTPZ Co-Processor services
 version: 0.1.3
 apiVersion: v2
 keywords:
-  - fhevm
+  - httpz
   - coprocessor

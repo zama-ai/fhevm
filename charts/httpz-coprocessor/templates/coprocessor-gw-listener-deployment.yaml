@@ -26,4 +26,11 @@ spec:
 {{ toYaml .Values.gwListener.args | nindent 12 }}
           env:
 {{ toYaml .Values.gwListener.env | nindent 12 }}
+          resources:
+            requests:
+              cpu: {{ .Values.gwListener.resources.requests.cpu | default "100m" }}
+              memory: {{ .Values.gwListener.resources.requests.memory | default "256Mi" }}
+            limits:
+              cpu: {{ .Values.gwListener.resources.limits.cpu | default "500m" }}
+              memory: {{ .Values.gwListener.resources.limits.memory | default "512Mi" }}
 {{- end -}}

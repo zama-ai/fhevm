@@ -26,4 +26,11 @@ spec:
 {{ toYaml .Values.zkProofWorker.args | nindent 12 }}
           env:
 {{ toYaml .Values.zkProofWorker.env | nindent 12 }}
+          resources:
+            requests:
+              cpu: {{ .Values.zkProofWorker.resources.requests.cpu | default "100m" }}
+              memory: {{ .Values.zkProofWorker.resources.requests.memory | default "256Mi" }}
+            limits:
+              cpu: {{ .Values.zkProofWorker.resources.limits.cpu | default "500m" }}
+              memory: {{ .Values.zkProofWorker.resources.limits.memory | default "512Mi" }}
 {{- end -}}
