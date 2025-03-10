@@ -89,6 +89,8 @@ describe("CiphertextStorage", function () {
       // Then
       await expect(result).revertedWithCustomError(ciphertextStorage, "CoprocessorHasAlreadyAdded");
     });
+
+    // TODO: Add test checking `isCurrentKeyId` once keys are generated through the Gateway
   });
 
   describe("Get regular ciphertext materials", async function () {
