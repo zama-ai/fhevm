@@ -52,9 +52,6 @@ importers:
 
   apps/back:
     dependencies:
-      '@aws-sdk/client-sns':
-        specifier: ^3.699.0
-        version: 3.750.0
       '@aws-sdk/client-sqs':
         specifier: ^3.699.0
         version: 3.750.0

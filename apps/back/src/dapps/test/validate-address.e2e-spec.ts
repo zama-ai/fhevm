@@ -113,6 +113,9 @@ describe('validate-address', () => {
         ])
         if (result.success) {
           validateAddress = result.data
+        } else {
+          console.log(`validateAddress: ${JSON.stringify(result)}`)
+          expect(result.success).toBe(true)
         }
       })
 

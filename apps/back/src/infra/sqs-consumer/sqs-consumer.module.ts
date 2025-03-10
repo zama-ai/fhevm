@@ -18,10 +18,10 @@ import { SharedModule } from '#shared/shared.module.js'
         consumers: [
           {
             name: 'back',
-            queueUrl: config.get<string>('aws.queueUrl')!,
+            queueUrl: config.get<string>('aws.back.queueUrl')!,
             useQueueUrlAsEndpoint: false,
             sqs: new SQSClient({
-              endpoint: config.get('aws.queueUrl'),
+              endpoint: config.get('aws.back.queueUrl'),
               region: config.get('aws.region'),
             }),
             messageAttributeNames: ['All'],

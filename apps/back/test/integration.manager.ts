@@ -4,9 +4,9 @@ import { DappManager } from './dapp.manager.js'
 import {
   GetQueueAttributesCommand,
   ReceiveMessageCommand,
-  SQSClient,
+  SendMessageCommand,
+  SendMessageCommandInput,
 } from '@aws-sdk/client-sqs'
-import { PublishCommand } from '@aws-sdk/client-sns'
 import { expect } from 'vitest'
 
 export type { GraphQlResponse } from './setup.manager.js'
@@ -34,58 +34,44 @@ export class IntegrationManager {
   }
 
   async sendMessage(message: string | object, sender = 'test') {
-    const result = await this.setup.sns.send(
-      new PublishCommand({
-        TopicArn: this.setup.topicArn,
-        Message:
-          typeof message === 'string' ? message : JSON.stringify(message),
-        MessageAttributes: {
-          Sender: { DataType: 'String', StringValue: sender },
-        },
-      }),
-    )
+    const input = {
+      QueueUrl: this.setup.backQueueUrl,
+      MessageBody:
+        typeof message === 'string' ? message : JSON.stringify(message),
+      MessageAttributes: {
+        Sender: { DataType: 'String', StringValue: sender },
+      },
+    } satisfies SendMessageCommandInput
+    const result = await this.setup.sqs.send(new SendMessageCommand(input))
     expect(
       result.$metadata.httpStatusCode,
-      'Failed to sns.PublishCommand',
+      'Failed to sqs.SendMessageCommand',
     ).toBe(200)
   }
-  async getQueueSize() {
-    const sqs = new SQSClient({
-      endpoint: this.setup.queueUrl,
-      region: this.setup.awsRegion,
-    })
-    const result = await sqs.send(
+  async getBackQueueSize() {
+    const result = await this.setup.sqs.send(
       new GetQueueAttributesCommand({
-        QueueUrl: this.setup.queueUrl,
+        QueueUrl: this.setup.backQueueUrl,
         AttributeNames: ['ApproximateNumberOfMessages'],
       }),
     )
     return parseInt(result.Attributes?.ApproximateNumberOfMessages ?? '-1')
   }
 
-  async getLogQueueSize() {
-    const sqs = new SQSClient({
-      endpoint: this.setup.logQueueUrl,
-      region: this.setup.awsRegion,
-    })
-    const result = await sqs.send(
+  async getOrchQueueSize() {
+    const result = await this.setup.sqs.send(
       new GetQueueAttributesCommand({
-        QueueUrl: this.setup.logQueueUrl,
+        QueueUrl: this.setup.orchQueueUrl,
         AttributeNames: ['ApproximateNumberOfMessages'],
       }),
     )
     return parseInt(result.Attributes?.ApproximateNumberOfMessages ?? '-1')
   }
 
-  async getMessageFromLogQueue() {
-    const sqs = new SQSClient({
-      endpoint: this.setup.logQueueUrl,
-      region: this.setup.awsRegion,
-    })
-
-    const result = await sqs.send(
+  async getMessageFromOrchQueue() {
+    const result = await this.setup.sqs.send(
       new ReceiveMessageCommand({
-        QueueUrl: this.setup.logQueueUrl,
+        QueueUrl: this.setup.orchQueueUrl,
         MessageAttributeNames: ['All'],
         MessageSystemAttributeNames: ['All'],
         MaxNumberOfMessages: 1,

@@ -10,7 +10,6 @@ import { inject } from 'vitest'
 import { randomUUID } from 'crypto'
 import { execSync } from 'child_process'
 import commonConfig from '#config/common.config.js'
-import { SNSClient } from '@aws-sdk/client-sns'
 import { SQSClient } from '@aws-sdk/client-sqs'
 import { JsPromise } from '#prisma/client/runtime/library.js'
 export type GraphQlResponse<T> =
@@ -28,9 +27,8 @@ export class SetupManager {
 
   #prismaClients: PrismaClient[]
 
-  #topicName: string
-  #queueName: string
-  #logQueueName: string
+  #backQueueName: string
+  #orchQueueName: string
 
   private async startPostgres() {
     const databaseUrls = inject('databaseUrls')
@@ -64,11 +62,6 @@ export class SetupManager {
       `aws --endpoint-url ${this.awsEndpoint} ${command}`,
     )
   }
-  private async createTopic(topicName: string) {
-    await this.aws(
-      `sns create-topic --region ${this.awsRegion} --name ${topicName} --attributes "FifoTopic=false,ContentBasedDeduplication=true"`,
-    )
-  }
   private async createQueue(queueName: string) {
     await this.aws(
       `sqs create-queue --region ${this.awsRegion} --queue-name ${queueName}`,
@@ -81,26 +74,15 @@ export class SetupManager {
     )
   }
 
-  private async subscribeToTopic(queueArn: string) {
-    await this.aws(
-      `sns subscribe --region ${this.awsRegion} --topic-arn ${this.topicArn} --protocol sqs --notification-endpoint ${queueArn}`,
-    )
-  }
-
   private async startAws() {
     const id = randomUUID()
     // Generate a random topic name
-    this.#topicName = `back-test-topic-${id}`
-    this.#queueName = `back-test-queue-${id}`
-    this.#logQueueName = `back-test-log-queue-${id}`
+    this.#backQueueName = `back-test-queue-${id}`
+    this.#orchQueueName = `orch-test-queue-${id}`
 
-    await this.createTopic(this.topicName)
+    await this.createQueue(this.#backQueueName)
 
-    await this.createQueue(this.#queueName)
-    await this.subscribeToTopic(this.queueArn)
-
-    await this.createQueue(this.#logQueueName)
-    await this.subscribeToTopic(this.logQueueArn)
+    await this.createQueue(this.#orchQueueName)
   }
 
   async beforeAll() {
@@ -118,9 +100,13 @@ export class SetupManager {
             commonConfig,
             registerAs('aws', () => ({
               endpoint: this.awsEndpoint,
-              queueUrl: this.queueUrl,
               region: this.awsRegion,
-              topicArn: this.topicArn,
+              back: {
+                queueUrl: this.backQueueUrl,
+              },
+              orchestrator: {
+                queueUrl: this.orchQueueUrl,
+              },
             })),
             dbConfig,
             jwtConfig,
@@ -148,7 +134,7 @@ export class SetupManager {
   async afterEach() {
     const WORKER_ID = Number(process.env.VITEST_POOL_ID) - 1
     await Promise.all([
-      this.purgeLogQueue(),
+      this.purgeOrchQueue(),
       // Clear the database
       this.#prismaClients[WORKER_ID].$transaction([
         this.#prismaClients[WORKER_ID].user.deleteMany(),
@@ -171,60 +157,40 @@ export class SetupManager {
     return inject('awsEndpoint')
   }
 
-  get topicName(): string {
-    return this.#topicName
+  get backQueueArn(): string {
+    return `arn:aws:sqs:${this.awsRegion}:000000000000:${this.#backQueueName}`
   }
 
-  get topicArn(): string {
-    return `arn:aws:sns:${this.awsRegion}:000000000000:${this.#topicName}`
+  get backQueueUrl(): string {
+    return `${this.awsEndpoint}/000000000000/${this.#backQueueName}`
   }
 
-  get queueArn(): string {
-    return `arn:aws:sqs:${this.awsRegion}:000000000000:${this.#queueName}`
+  get orchQueueArn(): string {
+    return `arn:aws:sqs:${this.awsRegion}:000000000000:${this.#orchQueueName}`
   }
 
-  get queueUrl(): string {
-    return `${this.awsEndpoint}/000000000000/${this.#queueName}`
-  }
-
-  get logQueueArn(): string {
-    return `arn:aws:sqs:${this.awsRegion}:000000000000:${this.#logQueueName}`
-  }
-
-  get logQueueUrl(): string {
-    return `${this.awsEndpoint}/000000000000/${this.#logQueueName}`
+  get orchQueueUrl(): string {
+    return `${this.awsEndpoint}/000000000000/${this.#orchQueueName}`
   }
 
   get redisConnection(): { host: string; port: number } {
     return inject('redisConnection')
   }
 
-  #sns: SNSClient | undefined
-  get sns(): SNSClient {
-    if (!this.#sns) {
-      this.#sns = new SNSClient({
-        endpoint: this.awsEndpoint,
-        region: this.awsRegion,
-      })
-    }
-    return this.#sns
-  }
-
   #sqs: SQSClient | undefined
   get sqs(): SQSClient {
     if (!this.#sqs) {
       this.#sqs = new SQSClient({
-        endpoint: this.queueUrl,
+        endpoint: this.awsEndpoint,
         region: this.awsRegion,
       })
     }
     return this.#sqs
   }
 
-  private async purgeLogQueue() {
-    await this.deleteQueue(this.logQueueUrl)
-    await this.createQueue(this.#logQueueName)
-    await this.subscribeToTopic(this.logQueueArn)
+  private async purgeOrchQueue() {
+    await this.deleteQueue(this.orchQueueUrl)
+    await this.createQueue(this.#orchQueueName)
   }
 
   get prismaClient() {

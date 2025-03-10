@@ -1,9 +1,9 @@
 import { SharedModule } from '#shared/shared.module.js'
 import { Module } from '@nestjs/common'
-import { SnsProducer } from './sns-producer.js'
+import { SqsProducer } from './sqs.producer.js'
 
 @Module({
   imports: [SharedModule],
-  providers: [SnsProducer],
+  providers: [SqsProducer],
 })
-export class SNSProducerModule {}
+export class SqsProducerModule {}

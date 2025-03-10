@@ -25,7 +25,6 @@
     "prestart": "pnpx prisma migrate dev"
   },
   "dependencies": {
-    "@aws-sdk/client-sns": "^3.699.0",
     "@aws-sdk/client-sqs": "^3.699.0",
     "@nestjs/apollo": "^12.2.1",
     "@nestjs/common": "^10.0.0",
