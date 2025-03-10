@@ -294,60 +294,66 @@ impl ArbitrumGatewayL2InputHandler {
             event.request_id,
         );
 
-        if let RelayerEventData::Input(InputEventData::EventLogResponseFromGwL2 { log }) =
-            &event.data
-        {
+        if let RelayerEventData::EventLogResponseFromGwL2 { log } = &event.data {
             // Log the raw data for debugging
             debug!(
                 topics = ?log.topics().iter().map(hex::encode).collect::<Vec<_>>(),
                 "Processing log data for input response"
             );
 
-            match ZKPoKManager::VerifyProofResponse::decode_log_data(log.data(), true) {
-                Ok(request_event) => {
-                    info!(
-                        zkpok_id = ?request_event.zkProofId,
-                        handles = ?request_event.handles,
-                        signatures = ?request_event.signatures,
-                        "Processing InputResponse event"
-                    );
+            match log.topic0() {
+                Some(topic) => match topic {
+                    &ZKPoKManager::VerifyProofResponse::SIGNATURE_HASH => {
+                        match ZKPoKManager::VerifyProofResponse::decode_log_data(log.data(), true) {
+                            Ok(request_event) => {
+                                info!(
+                                    zkpok_id = ?request_event.zkProofId,
+                                    handles = ?request_event.handles,
+                                    signatures = ?request_event.signatures,
+                                    "Processing InputResponse event"
+                                );
 
-                    // Use get_key_value to get both key and value, or use remove if you want to clean up
-                    if let Some(entry) = self.zkpok_id_to_request_id.get(&request_event.zkProofId) {
-                        let original_request_id = *entry.value(); // Dereference the Ref<Uuid>
+                                // Use get_key_value to get both key and value, or use remove if you want to clean up
+                                if let Some(entry) =
+                                    self.zkpok_id_to_request_id.get(&request_event.zkProofId)
+                                {
+                                    let original_request_id = *entry.value(); // Dereference the Ref<Uuid>
 
-                        info!(
-                            ?original_request_id,
-                            ?request_event.zkProofId,
-                            "Found original request ID for input response"
-                        );
+                                    info!(
+                                        ?original_request_id,
+                                        ?request_event.zkProofId,
+                                        "Found original request ID for input response"
+                                    );
 
-                        let next_event_data: RelayerEventData =
-                            RelayerEventData::Input(InputEventData::RespFromGwL2 {
-                                input_proof_response: InputProofResponse {
-                                    handles: request_event.handles,
-                                    signatures: request_event.signatures,
-                                },
-                            });
+                                    let next_event_data: RelayerEventData =
+                                        RelayerEventData::Input(InputEventData::RespFromGwL2 {
+                                            input_proof_response: InputProofResponse {
+                                                handles: request_event.handles,
+                                                signatures: request_event.signatures,
+                                            },
+                                        });
 
-                        // Now we can use original_request_id directly
-                        let next_event = RelayerEvent::new(
-                            original_request_id,
-                            event.api_version,
-                            next_event_data,
-                        );
+                                    // Now we can use original_request_id directly
+                                    let next_event = RelayerEvent::new(
+                                        original_request_id,
+                                        event.api_version,
+                                        next_event_data,
+                                    );
 
-                        let _ = self.dispatcher.dispatch_event(next_event).await;
-                    } else {
-                        error!(?request_event.zkProofId, "No matching request ID found for zkproof ID");
+                                    let _ = self.dispatcher.dispatch_event(next_event).await;
+                                } else {
+                                    error!(?request_event.zkProofId, "No matching request ID found for zkproof ID");
+                                }
+                            }
+                            Err(e) => {
+                                error!(?e, "Failed to decode InputRequest event");
+                                // Err(EventProcessingError::DecodingError(e))
+                            }
+                        }
                     }
-
-                    // Ok(())
-                }
-                Err(e) => {
-                    error!(?e, "Failed to decode InputRequest event");
-                    // Err(EventProcessingError::DecodingError(e))
-                }
+                    _ => {}
+                },
+                None => {}
             }
         } else {
             error!("Invalid event type received");
@@ -395,14 +401,14 @@ impl EventHandler<RelayerEvent> for ArbitrumGatewayL2InputHandler {
                             "Received L2 response, ready for HTTP handler"
                         );
                     }
-                    InputEventData::EventLogResponseFromGwL2 { .. } => {
-                        info!("Received input event log from Gateway L2");
-                        self.handle_input_reponse_event_log(event).await;
-                    }
                     InputEventData::Failed { error } => {
                         error!(?error, "Input request failed");
                     }
                 }
+            }
+            RelayerEventData::EventLogResponseFromGwL2 { .. } => {
+                info!("Received input event log from Gateway L2");
+                self.handle_input_reponse_event_log(event).await;
             }
             _ => {
                 // Ignore other event types

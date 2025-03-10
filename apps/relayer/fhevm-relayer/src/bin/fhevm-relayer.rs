@@ -161,7 +161,7 @@ async fn main() -> eyre::Result<()> {
     // Event type: InputEventData::RespFromGwL2
     orchestrator.register_handler(9, Arc::clone(&input_handler));
     // Event type: InputEventData::EventLogResponseFromGwL2
-    orchestrator.register_handler(10, Arc::clone(&input_handler));
+    orchestrator.register_handler(3, Arc::clone(&input_handler));
 
     // Event type: PubDecryptEventLogRcvdFromHostL1
     orchestrator.register_handler(0, Arc::clone(&host_l1_event_log_handler));

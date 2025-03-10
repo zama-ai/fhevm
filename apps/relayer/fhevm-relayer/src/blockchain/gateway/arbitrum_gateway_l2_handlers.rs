@@ -190,44 +190,57 @@ impl ArbitrumGatewayL2Handler {
         );
 
         if let RelayerEventData::EventLogResponseFromGwL2 { log } = &event.data {
-            match DecyptionManager::PublicDecryptionResponse::decode_log_data(log.data(), true) {
-                Ok(req) => {
-                    let public_decryption_id = req.publicDecryptionId;
-                    info!(?public_decryption_id, "Public decryption id from event");
+            match log.topic0() {
+                Some(topic) => match topic {
+                    &DecyptionManager::PublicDecryptionResponse::SIGNATURE_HASH => {
+                        match DecyptionManager::PublicDecryptionResponse::decode_log_data(
+                            log.data(),
+                            true,
+                        ) {
+                            Ok(req) => {
+                                let public_decryption_id = req.publicDecryptionId;
+                                info!(?public_decryption_id, "Public decryption id from event");
 
-                    if let Some(entry) = self.decryption_id_to_request_id.get(&public_decryption_id)
-                    {
-                        let original_request_id = *entry.value(); // Dereference the Ref<Uuid>
+                                if let Some(entry) =
+                                    self.decryption_id_to_request_id.get(&public_decryption_id)
+                                {
+                                    let original_request_id = *entry.value(); // Dereference the Ref<Uuid>
 
-                        info!(
-                            ?original_request_id,
-                            ?public_decryption_id,
-                            "Found original request ID for decryption response"
-                        );
+                                    info!(
+                                        ?original_request_id,
+                                        ?public_decryption_id,
+                                        "Found original request ID for decryption response"
+                                    );
 
-                        let next_event_data =
-                            RelayerEventData::Decrypt(DecryptEventData::ResponseRcvdFromGwL2 {
-                                public_decryption_response: req,
-                            });
+                                    let next_event_data = RelayerEventData::Decrypt(
+                                        DecryptEventData::ResponseRcvdFromGwL2 {
+                                            public_decryption_response: req,
+                                        },
+                                    );
 
-                        // Now we can use original_request_id directly
-                        let next_event = RelayerEvent::new(
-                            original_request_id,
-                            event.api_version,
-                            next_event_data,
-                        );
+                                    // Now we can use original_request_id directly
+                                    let next_event = RelayerEvent::new(
+                                        original_request_id,
+                                        event.api_version,
+                                        next_event_data,
+                                    );
 
-                        let _ = self.dispatcher.dispatch_event(next_event).await;
-                    } else {
-                        error!(
-                            ?public_decryption_id,
-                            "No matching request ID found for decryption ID"
-                        );
+                                    let _ = self.dispatcher.dispatch_event(next_event).await;
+                                } else {
+                                    error!(
+                                        ?public_decryption_id,
+                                        "No matching request ID found for decryption ID"
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                error!(?e, "Failed to decode event data");
+                            }
+                        }
                     }
-                }
-                Err(e) => {
-                    error!(?e, "Failed to decode event data");
-                }
+                    _ => {}
+                },
+                None => {}
             }
         }
     }

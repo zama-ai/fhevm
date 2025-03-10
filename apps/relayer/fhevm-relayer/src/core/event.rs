@@ -57,7 +57,6 @@ impl Event for RelayerEvent {
                 InputEventData::ReqFromUser { .. } => 7,
                 InputEventData::RequestSentToGwL2 { .. } => 8,
                 InputEventData::RespFromGwL2 { .. } => 9,
-                InputEventData::EventLogResponseFromGwL2 { .. } => 10,
                 InputEventData::Failed { .. } => 11,
             },
         }
@@ -202,9 +201,6 @@ pub enum InputEventData {
     RequestSentToGwL2 {
         zkpok_public_id: U256,
     },
-    EventLogResponseFromGwL2 {
-        log: Log,
-    },
     Failed {
         error: String,
     },
@@ -216,7 +212,6 @@ impl InputEventData {
             InputEventData::ReqFromUser { .. } => "Input::ReqFromUser",
             InputEventData::RespFromGwL2 { .. } => "Input::RespFromGwL2",
             InputEventData::RequestSentToGwL2 { .. } => "Input::RequestSentToGwL2",
-            InputEventData::EventLogResponseFromGwL2 { .. } => "Input::EventLogResponseFromGwL2",
             InputEventData::Failed { .. } => "Input::Failed",
         }
     }
