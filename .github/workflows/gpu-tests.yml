@@ -1,0 +1,197 @@
+# Compile and test fhevm-backend on a single L40 GPU, on hyperstack
+name: GPU backend tests (L40)
+
+env:
+  CARGO_TERM_COLOR: always
+  ACTION_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+  RUSTFLAGS: "-C target-cpu=native"
+  RUST_BACKTRACE: "full"
+  RUST_MIN_STACK: "8388608"
+  IS_PULL_REQUEST: ${{ github.event_name == 'pull_request' }}
+  CHECKOUT_TOKEN: ${{ secrets.REPO_CHECKOUT_TOKEN || secrets.GITHUB_TOKEN }}
+  # Secrets will be available only to zama-ai organization members
+  SECRETS_AVAILABLE: ${{ secrets.JOB_SECRET != '' }}
+
+on:
+  # Allows you to run this workflow manually from the Actions tab as an alternative.
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - fhevm-engine/Cargo.toml
+      - fhevm-engine/coprocessor/Cargo.toml
+      - fhevm-engine/coprocessor/build.rs
+      - fhevm-engine/coprocessor/src/**
+      - fhevm-engine/executor/Cargo.toml
+      - fhevm-engine/executor/build.rs
+      - fhevm-engine/executor/src/**
+      - fhevm-engine/scheduler/src/**
+      - fhevm-engine/scheduler/Cargo.toml
+      - fhevm-engine/scheduler/build.rs
+      - proto/**
+      - '.github/workflows/gpu-tests.yml'
+      - ci/slab.toml
+  push:
+    branches:
+      - main
+    paths:
+      - fhevm-engine/Cargo.toml
+      - fhevm-engine/coprocessor/Cargo.toml
+      - fhevm-engine/coprocessor/build.rs
+      - fhevm-engine/coprocessor/src/**
+      - fhevm-engine/executor/Cargo.toml
+      - fhevm-engine/executor/build.rs
+      - fhevm-engine/executor/src/**
+      - fhevm-engine/scheduler/src/**
+      - fhevm-engine/scheduler/Cargo.toml
+      - fhevm-engine/scheduler/build.rs
+      - proto/**
+      - '.github/workflows/gpu-tests.yml'
+      - ci/slab.toml
+
+jobs:
+  should-run:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      gpu_test: ${{ env.IS_PULL_REQUEST == 'false' || steps.changed-files.outputs.gpu_any_changed }}
+    steps:
+      - name: Checkout fhevm-backend
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: 'false'
+          token: ${{ env.CHECKOUT_TOKEN }}
+
+      - name: Check for file changes
+        id: changed-files
+        uses: tj-actions/changed-files@dcc7a0cba800f454d79fff4b993e8c3555bcc0a8
+        with:
+          files_yaml: |
+            gpu:
+              - fhevm-engine/Cargo.toml
+              - fhevm-engine/coprocessor/Cargo.toml
+              - fhevm-engine/coprocessor/build.rs
+              - fhevm-engine/coprocessor/src/**
+              - fhevm-engine/executor/Cargo.toml
+              - fhevm-engine/executor/build.rs
+              - fhevm-engine/executor/src/**
+              - fhevm-engine/scheduler/src/**
+              - fhevm-engine/scheduler/Cargo.toml
+              - fhevm-engine/scheduler/build.rs
+              - proto/**
+              - '.github/workflows/gpu-tests.yml'
+              - ci/slab.toml
+
+  setup-instance:
+    name: Setup instance (fhevm-backend GPU tests - L40)
+    needs: should-run
+    if: github.event_name == 'workflow_dispatch' ||
+      needs.should-run.outputs.gpu_test == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      runner-name: ${{ steps.start-remote-instance.outputs.label }}
+    steps:
+      - name: Start remote instance
+        id: start-remote-instance
+        if: env.SECRETS_AVAILABLE == 'true'
+        uses: zama-ai/slab-github-runner@79939325c3c429837c10d6041e4fd8589d328bac
+        with:
+          mode: start
+          github-token: ${{ secrets.SLAB_ACTION_TOKEN }}
+          slab-url: ${{ secrets.SLAB_BASE_URL }}
+          job-secret: ${{ secrets.JOB_SECRET }}
+          backend: hyperstack
+          profile: l40
+
+  fhevm-backend-gpu:
+    name: fhevm-backend GPU tests - L40
+    needs: [ should-run, setup-instance ]
+    if: github.event_name != 'pull_request' ||
+      (github.event_name == 'pull_request' && needs.setup-instance.result != 'skipped')
+    concurrency:
+      group: ${{ github.workflow }}_${{ github.head_ref || github.ref }}
+      cancel-in-progress: true
+    runs-on: ${{ needs.setup-instance.outputs.runner-name }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      # explicit include-based build matrix, of known valid options
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            cuda: "12.2"
+            gcc: 11 
+    steps:
+      - name: Checkout fhevm-backend
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        with:
+          persist-credentials: 'false'
+          token: ${{ env.CHECKOUT_TOKEN }}
+          lfs: true
+
+      - name: Checkout LFS objects
+        run: git lfs checkout
+
+      - name: Setup Hyperstack dependencies
+        uses: ./.github/actions/gpu_setup
+        with:
+          cuda-version: ${{ matrix.cuda }}
+          gcc-version: ${{ matrix.gcc }}
+          github-instance: ${{ env.SECRETS_AVAILABLE == 'false' }}
+
+      - name: Install latest stable
+        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203
+        with:
+          toolchain: stable
+
+      - name: Install cargo dependencies
+        run: |
+          sudo apt-get install -y protobuf-compiler && \
+          cargo install sqlx-cli
+
+      - name: Install foundry
+        uses: foundry-rs/foundry-toolchain@de808b1eea699e761c404bda44ba8f21aba30b2c
+
+      - name: Cache cargo
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Init database
+        run: make init_db
+        working-directory: fhevm-engine/coprocessor
+
+      - name: Run tests on GPU
+        run: |
+          date
+          #DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor cargo test --release --features=gpu -- --test-threads=1
+        working-directory: fhevm-engine
+
+
+  teardown-instance:
+    name: Teardown instance (fhevm-backend-gpu L40 test)
+    if: ${{ always() && needs.setup-instance.result == 'success' }}
+    needs: [ setup-instance, fhevm-backend-gpu ]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Stop remote instance
+        id: stop-instance
+        if: env.SECRETS_AVAILABLE == 'true'
+        uses: zama-ai/slab-github-runner@79939325c3c429837c10d6041e4fd8589d328bac
+        with:
+          mode: stop
+          github-token: ${{ secrets.SLAB_ACTION_TOKEN }}
+          slab-url: ${{ secrets.SLAB_BASE_URL }}
+          job-secret: ${{ secrets.JOB_SECRET }}
+          label: ${{ needs.setup-instance.outputs.runner-name }}
