@@ -66,5 +66,25 @@ describe('login', () => {
         expect(user.name, 'The name should be defined').toBeDefined()
       })
     })
+
+    describe('when the credentials are invalid', () => {
+      let error: string
+
+      beforeEach(async () => {
+        const result = await manager.auth.login({
+          email,
+          password: faker.internet.password(),
+        })
+        if (!result.success) {
+          error = result.errors[0].message
+        } else {
+          expect(result.success, 'login should fail').toBe(false)
+        }
+      })
+
+      test('should return an Unauthorized error', () => {
+        expect(error).toBe('Unauthorized')
+      })
+    })
   })
 })

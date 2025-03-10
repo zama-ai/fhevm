@@ -4,7 +4,10 @@ import { LoginInput } from './dto/inputs/login.input.js'
 import { SignUp } from '#auth/use-cases/signup.use-case.js'
 import { LogIn } from '#auth/use-cases/login.use-case.js'
 import { SignupInput } from './dto/inputs/signup.input.js'
+import { UseFilters } from '@nestjs/common'
+import { AppErrorFilter } from './filters/app-error.filter.js'
 
+@UseFilters(AppErrorFilter)
 @Resolver(() => AuthType)
 export class AuthResolver {
   constructor(

@@ -32,6 +32,7 @@ describe('address validation', () => {
       await manager.sendMessage(
         back.addressValidationRequested(
           {
+            requestId: faker.string.uuid(),
             chainId: faker.string.numeric(5),
             address: faker.string.hexadecimal({ length: 40 }),
           },
@@ -56,6 +57,7 @@ describe('address validation', () => {
       await manager.sendMessage(
         web3.contractValidationSuccess(
           {
+            requestId: faker.string.uuid(),
             chainId: faker.string.numeric(5),
             address: faker.string.hexadecimal({ length: 40 }),
           },
@@ -80,6 +82,7 @@ describe('address validation', () => {
       await manager.sendMessage(
         web3.contractValidationFailure(
           {
+            requestId: faker.string.uuid(),
             chainId: faker.string.numeric(5),
             address: faker.string.hexadecimal({ length: 40 }),
           },
