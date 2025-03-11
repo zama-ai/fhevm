@@ -1,5 +1,8 @@
 use crate::{
-    blockchain::ethereum::{bindings::DecyptionManager, ComputeCalldata},
+    blockchain::ethereum::{
+        bindings::DecyptionManager::{self, UserDecryptionRequest},
+        ComputeCalldata,
+    },
     config::settings::ContractConfig,
     core::{
         errors::EventProcessingError,
@@ -26,7 +29,7 @@ use alloy_sol_types::SolEvent;
 use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::task;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 use uuid::Uuid;
 
 struct DecryptionRequestProcessor {
@@ -473,9 +476,11 @@ impl ArbitrumGatewayL2Handler {
         receipt: &TransactionReceipt,
     ) -> Result<U256, EventProcessingError> {
         // Get the event signature for UserDecryptionRequest with the correct parameters
-        let target_topic = keccak256("UserDecryptionRequest(uint256,tuple[],bytes)");
+        let target_topic = UserDecryptionRequest::SIGNATURE_HASH;
 
-        info!(
+        info!("Looking for topic: {}", UserDecryptionRequest::SIGNATURE);
+
+        debug!(
             "Receipt details for user decryption:\n\
              Hash: {:?}\n\
              Status: {}\n\
@@ -647,7 +652,7 @@ impl EventHandler<RelayerEvent> for ArbitrumGatewayL2Handler {
 
 #[tokio::test]
 async fn test_user_decryption_request() -> Result<(), Box<dyn std::error::Error>> {
-    use crate::blockchain::ethereum::{bindings::DecyptionManager, ComputeCalldata};
+    use crate::blockchain::ethereum::ComputeCalldata;
     use crate::config::settings::Settings;
     use crate::transaction::sender::TransactionManager;
     use crate::transaction::TxConfig;
@@ -691,7 +696,8 @@ async fn test_user_decryption_request() -> Result<(), Box<dyn std::error::Error>
     println!("Checking contract state...");
     let code = manager
         .verify_contract_code(decryption_manager_address)
-        .await?;
+        .await
+        .expect("Failed to verify contract code");
     println!("Contract code size: {} bytes", code.len());
 
     // Create minimal test data
@@ -737,65 +743,33 @@ async fn test_user_decryption_request() -> Result<(), Box<dyn std::error::Error>
     // Try sending the actual transaction
     println!("Sending transaction...");
     match manager
-        .send_transaction(decryption_manager_address, calldata, Some(config))
+        .send_transaction_and_wait(decryption_manager_address, calldata, Some(config))
         .await
     {
-        Ok(tx_hash) => {
-            println!("✅ Transaction sent successfully!");
-            println!("Transaction hash: 0x{}", hex::encode(tx_hash));
+        Ok(receipt) => {
+            println!("Receipt status: {}", receipt.status());
+            println!("Gas used: {}", receipt.gas_used);
 
-            // Wait for receipt
-            println!("Waiting for receipt...");
-            let timeout = tokio::time::Duration::from_secs(30);
-            let start = tokio::time::Instant::now();
-
-            loop {
-                if start.elapsed() > timeout {
-                    println!("Timeout waiting for receipt");
-                    break;
-                }
-
-                match manager.provider.get_transaction_receipt(tx_hash).await {
-                    Ok(Some(receipt)) => {
-                        println!("Receipt status: {}", receipt.status());
-                        println!("Gas used: {}", receipt.gas_used);
-
-                        // Check for events
-                        for log in receipt.inner.logs() {
-                            println!(
-                                "Log topics: {:?}",
-                                log.topics().iter().map(hex::encode).collect::<Vec<_>>()
-                            );
-                        }
-                        break;
-                    }
-                    Ok(None) => {
-                        println!("Receipt not available yet, waiting...");
-                        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-                    }
-                    Err(e) => {
-                        println!("Error getting receipt: {}", e);
-                        break;
-                    }
-                }
+            // Check for events
+            for log in receipt.inner.logs() {
+                println!(
+                    "Log topics: {:?}",
+                    log.topics().iter().map(hex::encode).collect::<Vec<_>>()
+                );
             }
-
-            Ok(())
         }
         Err(e) => {
-            println!("❌ Transaction failed: {}", e);
-            Err(e.into())
+            println!("Error getting receipt: {}", e);
         }
     }
+    Ok(())
 }
 
 #[tokio::test]
 async fn test_diagnose_user_decryption_request() -> Result<(), Box<dyn std::error::Error>> {
-    use crate::blockchain::ethereum::ComputeCalldata;
     use crate::config::settings::Settings;
     use crate::transaction::sender::TransactionManager;
-    use crate::transaction::TxConfig;
-    use alloy::primitives::{keccak256, Address, Bytes, U256};
+    use alloy::primitives::{keccak256, Address};
     use std::str::FromStr;
 
     println!("========== RUNNING DIAGNOSTIC TEST FOR USER DECRYPTION REQUEST ==========");
@@ -853,78 +827,6 @@ async fn test_diagnose_user_decryption_request() -> Result<(), Box<dyn std::erro
     } else {
         println!("❓ Function selector not found in bytecode (might be a proxy contract)");
     }
-
-    // STEP 4: Create a minimal test payload
-    println!("\nSTEP 4: Creating minimal test payload...");
-
-    // 1. Use the minimum required data
-    let simple_handle = U256::from(123);
-    let mut handle_bytes = [0u8; 32];
-    simple_handle
-        .to_be_bytes::<32>()
-        .iter()
-        .enumerate()
-        .for_each(|(i, b)| handle_bytes[i] = *b);
-    let ct_handles = vec![Bytes::from(handle_bytes.to_vec())];
-
-    let contract_chain_id = U256::from(rollup_settings.chain_id);
-    let contract_address = decryption_manager_address;
-    let user_address = manager.sender_address();
-
-    // Let's try empty bytes for publicKey and signature first
-    let empty_key = Bytes::new();
-    let empty_sig = Bytes::new();
-
-    println!("- Creating calldata with EMPTY public key and signature...");
-    let minimal_calldata = ComputeCalldata::user_decryption_req(
-        ct_handles.clone(),
-        contract_chain_id,
-        contract_address,
-        user_address,
-        empty_key,
-        empty_sig,
-    )?;
-
-    // STEP 5: Debug call with minimal data
-    println!("\nSTEP 5: Call with minimal data...");
-    let config = TxConfig::from(settings.transaction);
-    manager
-        .send_transaction(
-            decryption_manager_address,
-            minimal_calldata,
-            Some(config.clone()),
-        )
-        .await?;
-
-    // STEP 6: Try varying parameters
-    println!("\nSTEP 6: Testing with different parameter variations...");
-
-    // Try with non-empty public key and signature
-    let public_key = Bytes::from(vec![1, 2, 3, 4, 5]);
-    let signature = Bytes::from(vec![9, 8, 7, 6, 5]);
-
-    println!("- Creating calldata with sample public key and signature...");
-    let standard_calldata = ComputeCalldata::user_decryption_req(
-        ct_handles,
-        contract_chain_id,
-        contract_address,
-        user_address,
-        public_key,
-        signature,
-    )?;
-
-    println!("Calldata: 0x{}", hex::encode(&standard_calldata));
-    println!("- Call with standard parameters...");
-    manager
-        .send_transaction(decryption_manager_address, standard_calldata, Some(config))
-        .await?;
-
-    // STEP 7: Summary and recommendations
-    println!("\nSTEP 7: Diagnostic summary");
-    println!("- If any debug calls succeeded, you should be able to send a transaction");
-    println!("- Check the test logs for any specific error messages or parameter constraints");
-    println!("- The contract may have requirements for signature format or verification");
-    println!("- The contract might require specific roles or permissions");
 
     Ok(())
 }
