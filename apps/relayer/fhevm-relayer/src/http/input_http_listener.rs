@@ -1,5 +1,6 @@
 use crate::core::event::{
     ApiCategory, ApiVersion, InputEventData, InputProofRequest, RelayerEvent, RelayerEventData,
+    RelayerInputEventId,
 };
 use crate::core::utils::OnceHandler;
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
@@ -81,8 +82,11 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
             OnceHandler::new();
         let handler = Arc::new(handler);
 
-        self.orchestrator
-            .register_once_handler(9, request_id, handler);
+        self.orchestrator.register_once_handler(
+            RelayerInputEventId::RespFromGwL2.into(),
+            request_id,
+            handler,
+        );
         info!("registered once handler");
 
         // Prepare and send an event

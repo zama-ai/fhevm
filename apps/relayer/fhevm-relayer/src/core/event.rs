@@ -12,6 +12,53 @@ use std::str::FromStr;
 use tracing::info;
 use uuid::Uuid;
 
+#[repr(u8)]
+#[derive(Debug)]
+pub enum RelayerEventId {
+    EventLogFromHostL1 = 0,
+    EventLogResponseFromGwL2 = 3,
+}
+
+impl From<RelayerEventId> for u8 {
+    fn from(e: RelayerEventId) -> u8 {
+        e as u8
+    }
+}
+
+#[repr(u8)]
+#[derive(Debug)]
+pub enum RelayerDecryptEventId {
+    PublicDecryptReq = 1,
+    UserDecryptReq = 11,
+    PublicReqSentToGwL2 = 2,
+    UserReqSentToGwL2 = 12,
+    PublicDecryptRespFromGwL2 = 4,
+    UserDecryptRespFromGwL2 = 14,
+    RespSentToHostL1 = 5,
+    Failed = 6,
+}
+
+impl From<RelayerDecryptEventId> for u8 {
+    fn from(e: RelayerDecryptEventId) -> u8 {
+        e as u8
+    }
+}
+
+#[repr(u8)]
+#[derive(Debug)]
+pub enum RelayerInputEventId {
+    ReqFromUser = 7,
+    RequestSentToGwL2 = 8,
+    RespFromGwL2 = 9,
+    Failed = 11,
+}
+
+impl From<RelayerInputEventId> for u8 {
+    fn from(e: RelayerInputEventId) -> u8 {
+        e as u8
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct RelayerEvent {
     pub request_id: Uuid,
@@ -45,23 +92,41 @@ impl Event for RelayerEvent {
     //TODO: Replace boiler plate with macro based code.
     fn event_id(&self) -> u8 {
         match &self.data {
-            RelayerEventData::EventLogFromHostL1 { .. } => 0,
-            RelayerEventData::EventLogResponseFromGwL2 { .. } => 3,
+            RelayerEventData::EventLogFromHostL1 { .. } => RelayerEventId::EventLogFromHostL1 as u8,
+            RelayerEventData::EventLogResponseFromGwL2 { .. } => {
+                RelayerEventId::EventLogResponseFromGwL2.into()
+            }
             RelayerEventData::Decrypt(decrypt_event) => match decrypt_event {
-                DecryptEventData::PublicDecryptReq { .. } => 1,
-                DecryptEventData::UserDecryptReq { .. } => 11,
-                DecryptEventData::PublicReqSentToGwL2 { .. } => 2,
-                DecryptEventData::UserReqSentToGwL2 { .. } => 12,
-                DecryptEventData::PublicDecryptRespFromGwL2 { .. } => 4,
-                DecryptEventData::UserDecryptRespFromGwL2 { .. } => 14,
-                DecryptEventData::RespSentToHostL1 { .. } => 5,
-                DecryptEventData::Failed { .. } => 6,
+                DecryptEventData::PublicDecryptReq { .. } => {
+                    RelayerDecryptEventId::PublicDecryptReq.into()
+                }
+                DecryptEventData::UserDecryptReq { .. } => {
+                    RelayerDecryptEventId::UserDecryptReq.into()
+                }
+                DecryptEventData::PublicReqSentToGwL2 { .. } => {
+                    RelayerDecryptEventId::PublicReqSentToGwL2.into()
+                }
+                DecryptEventData::UserReqSentToGwL2 { .. } => {
+                    RelayerDecryptEventId::UserReqSentToGwL2.into()
+                }
+                DecryptEventData::PublicDecryptRespFromGwL2 { .. } => {
+                    RelayerDecryptEventId::PublicDecryptRespFromGwL2.into()
+                }
+                DecryptEventData::UserDecryptRespFromGwL2 { .. } => {
+                    RelayerDecryptEventId::UserDecryptRespFromGwL2.into()
+                }
+                DecryptEventData::RespSentToHostL1 { .. } => {
+                    RelayerDecryptEventId::RespSentToHostL1.into()
+                }
+                DecryptEventData::Failed { .. } => RelayerDecryptEventId::Failed.into(),
             },
             RelayerEventData::Input(input_event) => match input_event {
-                InputEventData::ReqFromUser { .. } => 7,
-                InputEventData::RequestSentToGwL2 { .. } => 8,
-                InputEventData::RespFromGwL2 { .. } => 9,
-                InputEventData::Failed { .. } => 11,
+                InputEventData::ReqFromUser { .. } => RelayerInputEventId::ReqFromUser.into(),
+                InputEventData::RequestSentToGwL2 { .. } => {
+                    RelayerInputEventId::RequestSentToGwL2.into()
+                }
+                InputEventData::RespFromGwL2 { .. } => RelayerInputEventId::RespFromGwL2.into(),
+                InputEventData::Failed { .. } => RelayerInputEventId::Failed.into(),
             },
         }
     }

@@ -1,5 +1,6 @@
 use crate::core::event::{
-    ApiCategory, ApiVersion, DecryptEventData, RelayerEvent, RelayerEventData, UserDecryptRequest,
+    ApiCategory, ApiVersion, DecryptEventData, RelayerDecryptEventId, RelayerEvent,
+    RelayerEventData, UserDecryptRequest,
 };
 use crate::core::utils::OnceHandler;
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
@@ -93,8 +94,11 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
             OnceHandler::new();
         let handler = Arc::new(handler);
 
-        self.orchestrator
-            .register_once_handler(14, request_id, handler);
+        self.orchestrator.register_once_handler(
+            RelayerDecryptEventId::UserDecryptRespFromGwL2.into(),
+            request_id,
+            handler,
+        );
         info!("registered once handler");
 
         let request_data = DecryptEventData::UserDecryptReq {
