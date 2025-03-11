@@ -1,0 +1,7 @@
+name: httpz-relayer
+description: A Helm chart for the HTTPZ Relayer
+version: 0.1.1
+apiVersion: v2
+keywords:
+  - httpz
+  - relayer

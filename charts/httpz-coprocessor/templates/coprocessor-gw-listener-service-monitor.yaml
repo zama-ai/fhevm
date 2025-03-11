@@ -1,0 +1,16 @@
+{{- if .Values.gwListener.serviceMonitor.enabled -}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app: coprocessor-gw-listener
+    app.kubernetes.io/name: {{ include "gwListenerName" . }}
+  name: {{ include "gwListenerName" . }}
+spec:
+  selector:
+    matchLabels:
+      app: coprocessor-gw-listener
+      app.kubernetes.io/name: {{ include "gwListenerName" . }}
+  endpoints:
+  - port: metrics
+{{- end -}}

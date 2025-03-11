@@ -25,6 +25,13 @@ spec:
           image: {{ .Values.config.image.name }}:{{ .Values.config.image.tag }}
           command:
             - /app/create-secrets.sh
+          resources:
+            requests:
+              cpu: {{ .Values.config.resources.requests.cpu | default "100m" }}
+              memory: {{ .Values.config.resources.requests.memory | default "256Mi" }}
+            limits:
+              cpu: {{ .Values.config.resources.limits.cpu | default "500m" }}
+              memory: {{ .Values.config.resources.limits.memory | default "512Mi" }}
           volumeMounts:
             - mountPath: /app/create-secrets.sh
               subPath: create-secrets.sh

@@ -26,4 +26,11 @@ spec:
 {{ toYaml .Values.txSender.args | nindent 12 }}
           env:
 {{ toYaml .Values.txSender.env | nindent 12 }}
+          resources:
+            requests:
+              cpu: {{ .Values.txSender.resources.requests.cpu | default "100m" }}
+              memory: {{ .Values.txSender.resources.requests.memory | default "256Mi" }}
+            limits:
+              cpu: {{ .Values.txSender.resources.limits.cpu | default "500m" }}
+              memory: {{ .Values.txSender.resources.limits.memory | default "512Mi" }}
 {{- end -}}

@@ -1,0 +1,7 @@
+name: httpz-sc-deploy
+description: A helm chart to manage HTTPZ Smart Contracts Deployment
+version: 0.1.1
+apiVersion: v2
+keywords:
+  - httpz
+  - blockchain

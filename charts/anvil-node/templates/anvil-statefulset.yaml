@@ -35,6 +35,13 @@ spec:
             - "$(MNEMONIC)"
           ports:
             - containerPort: {{ .Values.port }}
+          resources:
+            requests:
+              cpu: {{ .Values.resources.requests.cpu | default "100m" }}
+              memory: {{ .Values.resources.requests.memory | default "256Mi" }}
+            limits:
+              cpu: {{ .Values.resources.limits.cpu | default "500m" }}
+              memory: {{ .Values.resources.limits.memory | default "512Mi" }}
           volumeMounts:
           - name: anvil-chain-data
             mountPath: /home/foundry/.foundry/anvil

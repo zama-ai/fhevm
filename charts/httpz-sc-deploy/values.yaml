@@ -13,3 +13,10 @@ scDeploy:
       value: "0xe746bc71f6bee141a954e6a49bc9384d334e393a7ea1e70b50241cb2e78e9e4c"
     - name: RPC_URL
       value: "http://layer2-node:8546"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi

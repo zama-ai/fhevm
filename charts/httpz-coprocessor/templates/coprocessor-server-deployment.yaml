@@ -26,11 +26,24 @@ spec:
 {{ toYaml .Values.server.args | nindent 12 }}
           env:
 {{ toYaml .Values.server.env | nindent 12 }}
+          {{- if .Values.server.tracing.enabled }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.server.tracing.endpoint | quote }}
+            - name: OTEL_SERVICE_NAME
+              value: {{ .Values.server.tracing.service | quote }}
+            {{- end }}
           ports:
             {{- range $portName, $portValue := .Values.server.ports }}
             - name: {{ $portName }}
               containerPort: {{ $portValue }}
             {{- end }}
+          resources:
+            requests:
+              cpu: {{ .Values.server.resources.requests.cpu | default "100m" }}
+              memory: {{ .Values.server.resources.requests.memory | default "256Mi" }}
+            limits:
+              cpu: {{ .Values.server.resources.limits.cpu | default "500m" }}
+              memory: {{ .Values.server.resources.limits.memory | default "512Mi" }}
           volumeMounts:
             - name: coprocessor-account
               mountPath: /accounts

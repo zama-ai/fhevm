@@ -72,3 +72,11 @@ config:
     show_timestamp: true
   staging:
     verbose_errors: true
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi

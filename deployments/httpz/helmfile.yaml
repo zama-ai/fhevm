@@ -12,15 +12,15 @@ releases:
     values:
       - minio-values.yaml
 
-  # FHEVM postgresql    
-  - name: fhevm-postgresql
+  # HTTPZ postgresql    
+  - name: httpz-postgresql
     namespace: httpz
     chart: bitnami/postgresql
     version: 13.0.0
     values:
       - postgresql-values.yaml
 
-  # FHEVM layer1-node
+  # HTTPZ layer1-node
   - name: layer1
     namespace: httpz
     chart: "../../charts/anvil-node"
@@ -29,7 +29,7 @@ releases:
 
   - name: layer1-sc
     namespace: httpz
-    chart: "../../charts/fhevm-sc-deploy"
+    chart: "../../charts/httpz-sc-deploy"
     values:
       - layer1-sc-deploy-values.yaml
     needs:
@@ -43,30 +43,30 @@ releases:
 
   - name: layer2-sc
     namespace: httpz
-    chart: "../../charts/fhevm-sc-deploy"
+    chart: "../../charts/httpz-sc-deploy"
     values:
       - layer2-sc-deploy-values.yaml
     needs:
       - layer2
 
-  # FHEVM coprocessor
-  - name: fhevm-coprocessor
+  # HTTPZ coprocessor
+  - name: httpz-coprocessor
     namespace: httpz
-    chart: "../../charts/fhevm-coprocessor"
+    chart: "../../charts/httpz-coprocessor"
     values:
       - coprocessor-values.yaml
     needs:
       - fhevm/minio
-      - fhevm-postgresql
+      - httpz-postgresql
       - layer1
       - layer2
       - layer1-sc
       - layer2-sc
 
-  ## FHEVM relayer
-  - name: fhevm-relayer
+  ## HTTPZ relayer
+  - name: httpz-relayer
     namespace: httpz
-    chart: "../../charts/fhevm-relayer"
+    chart: "../../charts/httpz-relayer"
     values:
       - relayer-values.yaml
     needs:

@@ -3,7 +3,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   labels:
-    app: fhevm-sc-deploy
+    app: httpz-sc-deploy
     app.kubernetes.io/name: {{ .Release.Name }}-deploy
   name: {{ .Release.Name }}-deploy
 spec:
@@ -21,6 +21,13 @@ spec:
           - mountPath: /app/deploy-contracts.sh
             subPath: deploy-contracts.sh
             name: config
+        resources:
+          requests:
+            cpu: {{ .Values.scDeploy.resources.requests.cpu | default "100m" }}
+            memory: {{ .Values.scDeploy.resources.requests.memory | default "256Mi" }}
+          limits:
+            cpu: {{ .Values.scDeploy.resources.limits.cpu | default "500m" }}
+            memory: {{ .Values.scDeploy.resources.limits.memory | default "512Mi" }}
       volumes:
       - name: config
         configMap:

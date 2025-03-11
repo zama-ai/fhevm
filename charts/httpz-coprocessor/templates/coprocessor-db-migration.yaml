@@ -43,6 +43,13 @@ spec:
         image: {{ .Values.dbMigration.image.name }}:{{ .Values.dbMigration.image.tag }}
         env:
 {{ toYaml .Values.dbMigration.env | nindent 12 }}
+        resources:
+          requests:
+            cpu: {{ .Values.dbMigration.resources.requests.cpu | default "100m" }}
+            memory: {{ .Values.dbMigration.resources.requests.memory | default "256Mi" }}
+          limits:
+            cpu: {{ .Values.dbMigration.resources.limits.cpu | default "500m" }}
+            memory: {{ .Values.dbMigration.resources.limits.memory | default "512Mi" }}
         volumeMounts:
           - mountPath: /fhevm-keys/pks
             name: cache-volume
