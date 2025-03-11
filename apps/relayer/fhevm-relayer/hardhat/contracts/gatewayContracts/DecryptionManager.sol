@@ -88,6 +88,13 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
     uint256 internal decryptionCounter;
 
     // ----------------------------------------------------------------------------------------------
+    // Events:
+    // ----------------------------------------------------------------------------------------------
+
+    /// @notice Emitted for debugging purposes.
+    event Debug(string message);
+
+    // ----------------------------------------------------------------------------------------------
     // Public decryption state variables:
     // ----------------------------------------------------------------------------------------------
 
@@ -214,7 +221,7 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
         }
     }
 
-    /// @dev See {IDecryptionManager-userDecryptionRequest}.
+    // /// @dev See {IDecryptionManager-userDecryptionRequest}.
     function userDecryptionRequest(
         CtHandleContractPair[] calldata ctHandleContractPairs,
         RequestValidity calldata requestValidity,
@@ -224,6 +231,9 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
         bytes calldata publicKey,
         bytes calldata signature
     ) external virtual {
+
+        emit Debug("userDecryptionRequest called");
+
         /// @dev Check the given number of contractAddresses does not exceed the maximum allowed.
         if (contractAddresses.length > _MAX_USER_DECRYPT_CONTRACT_ADDRESSES) {
             revert ContractAddressesMaxLengthExceeded(_MAX_USER_DECRYPT_CONTRACT_ADDRESSES, contractAddresses.length);
@@ -234,8 +244,10 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
             revert MaxDurationDaysExceeded(_MAX_USER_DECRYPT_DURATION_DAYS, requestValidity.durationDays);
         }
 
+        
+
         /// @dev Check that the user decryption is allowed for the given userAddress and ctHandleContractPairs.
-        _ACL_MANAGER.checkUserDecryptAllowed(userAddress, ctHandleContractPairs);
+        // _ACL_MANAGER.checkUserDecryptAllowed(userAddress, ctHandleContractPairs);
 
         /// @dev Initialize the EIP712UserDecryptRequest structure for the signature validation.
         EIP712UserDecryptRequest memory eip712UserDecryptRequest = EIP712UserDecryptRequest(
@@ -247,7 +259,7 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
         );
 
         /// @dev Validate the received EIP712 signature on the user decryption request.
-        _validateUserDecryptRequestEIP712Signature(eip712UserDecryptRequest, userAddress, signature);
+        // _validateUserDecryptRequestEIP712Signature(eip712UserDecryptRequest, userAddress, signature);
 
         /// @dev Extract the ctHandles from the given ctHandleContractPairs.
         /// @dev We do not deduplicate handles if the same handle appears multiple times
@@ -255,17 +267,30 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
         /// @dev the ciphertext storage retrieval below returns all corresponding materials.
         uint256[] memory ctHandles = _extractCtHandles(ctHandleContractPairs, contractAddresses);
 
+
         /// @dev Fetch the ciphertexts from the ciphertext storage
         /// @dev This call is reverted if any of the ciphertexts are not found in the storage, but
         /// @dev this should not happen for now as a ciphertext cannot be allowed for decryption
         /// @dev without being added to the storage first (and we currently have no ways of deleting
         /// @dev a ciphertext from the storage).
-        SnsCiphertextMaterial[] memory snsCtMaterials = _CIPHERTEXT_STORAGE.getSnsCiphertextMaterials(ctHandles);
+        // SnsCiphertextMaterial[] memory snsCtMaterials = _CIPHERTEXT_STORAGE.getSnsCiphertextMaterials(ctHandles);
+
+
+        // Create dummy SNS materials
+        SnsCiphertextMaterial[] memory snsCtMaterials = new SnsCiphertextMaterial[](ctHandles.length);
+        for (uint256 i = 0; i < ctHandles.length; i++) {
+            // Create a dummy SnsCiphertextMaterial for each handle
+            snsCtMaterials[i] = SnsCiphertextMaterial({
+            ctHandle: ctHandles[i],
+            keyId: 1, // Use a consistent keyId for all materials
+            snsCiphertext: bytes("dummy_sns_ciphertext") // Dummy SNS ciphertext data
+        });
+        }
 
         /// @dev Check that received snsCtMaterials have the same keyId.
         /// @dev This will be removed in the future as multiple keyIds processing is implemented.
         /// @dev See https://github.com/zama-ai/gateway-l2/issues/104.
-        _checkCtMaterialKeyIds(snsCtMaterials);
+        // _checkCtMaterialKeyIds(snsCtMaterials);
 
         // TODO: This counter will be replaced during gateway-l2/issues/92
         decryptionCounter++;
@@ -275,9 +300,11 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
         userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
 
         // TODO: Implement sending service fees to PaymentManager contract
+        
 
         emit UserDecryptionRequest(userDecryptionId, snsCtMaterials, publicKey);
     }
+
 
     /// @dev See {IDecryptionManager-userDecryptionResponse}.
     function userDecryptionResponse(

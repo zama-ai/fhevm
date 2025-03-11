@@ -44,3 +44,8 @@ npx hardhat task:deployHttpz --deployer-private-key "$DEPLOYER_PRIVATE_KEY" \
 echo "Deploy ZKPoKManager contract:"
 # Deploy ZKPoKManager contract
 npx hardhat task:deployZkpokManager --deployer-private-key "$DEPLOYER_PRIVATE_KEY" --network $NETWORK
+npx hardhat task:deployKeyManager --deployer-private-key "$DEPLOYER_PRIVATE_KEY" --network $NETWORK
+npx hardhat task:deployCiphertextStorage --deployer-private-key "$DEPLOYER_PRIVATE_KEY" --network $NETWORK
+npx hardhat task:deployAclManager --deployer-private-key "$DEPLOYER_PRIVATE_KEY" --network $NETWORK
+echo "Deploy DecryptionManager contract:"
+npx hardhat task:deployDecryptionManager --deployer-private-key "$DEPLOYER_PRIVATE_KEY" --network $NETWORK
