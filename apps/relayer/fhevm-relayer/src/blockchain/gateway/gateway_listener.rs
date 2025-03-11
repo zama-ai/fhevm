@@ -2,7 +2,7 @@ use alloy_sol_types::SolEvent;
 use tracing::{error, info};
 
 use crate::blockchain::ethereum::bindings::{DecyptionManager, ZKPoKManager};
-use crate::core::event::{ApiCategory, ApiVersion, RelayerEvent, RelayerEventData};
+use crate::core::event::{ApiCategory, ApiVersion, GenericEventData, RelayerEvent};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
 use alloy::hex;
@@ -50,20 +50,20 @@ pub async fn event_listener_gateway(
                             info!("Received Proof Verification response event");
                             info!("Artificial sleep in anvil dev mode {}ms", sleep_time);
                             tokio::time::sleep(tokio::time::Duration::from_millis(sleep_time)).await;
-                            RelayerEventData::EventLogResponseFromGwL2   {
+                            GenericEventData::EventLogFromGw   {
                                 log: event_log
                             }
                             },
                             PUBLIC_DECRYPTION_RESPONSE_TOPIC => {
                                 info!("Received Decryption response event");
-                                RelayerEventData::EventLogResponseFromGwL2   {
+                                GenericEventData::EventLogFromGw   {
                                             log: event_log
                                         }
 
                                 },
                                 USER_DECRYPTION_RESPONSE_TOPIC => {
                                     info!("Received Decryption response event");
-                                    RelayerEventData::EventLogResponseFromGwL2   {
+                                    GenericEventData::EventLogFromGw   {
                                                 log: event_log
                                             }
 

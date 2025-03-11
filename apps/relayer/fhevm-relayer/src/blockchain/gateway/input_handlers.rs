@@ -3,7 +3,7 @@ use crate::{
     config::settings::ContractConfig,
     core::{
         errors::EventProcessingError,
-        event::{InputEventData, InputProofResponse, RelayerEvent, RelayerEventData},
+        event::{GenericEventData, InputProofEventData, InputProofResponse, RelayerEvent},
         utils::{colorize_event_type, colorize_request_id},
     },
     orchestrator::{
@@ -72,8 +72,12 @@ impl ArbitrumGatewayL2InputHandler {
     ///
     /// # State Changes
     /// On success, stores mapping between zkpok_id and request_id in zkpok_id_to_request_id
-    async fn send_input_request_to_rollup(&self, event: RelayerEvent, req_data: InputEventData) {
-        if let InputEventData::ReqFromUser {
+    async fn send_input_request_to_rollup(
+        &self,
+        event: RelayerEvent,
+        req_data: InputProofEventData,
+    ) {
+        if let InputProofEventData::ReqRcvdFromUser {
             input_proof_request,
         } = req_data
         {
@@ -109,20 +113,19 @@ impl ArbitrumGatewayL2InputHandler {
     }
 
     /// Processes a successful input request by storing state and dispatching event.
-    async fn handle_successful_request(&self, event: RelayerEvent, zkpok_id: U256) {
+    async fn handle_successful_request(&self, event: RelayerEvent, zkproof_id: U256) {
         self.zkpok_id_to_request_id
-            .insert(zkpok_id, event.request_id);
+            .insert(zkproof_id, event.request_id);
 
         info!(
             ?event.request_id,
-            ?zkpok_id,
+            ?zkproof_id,
             "Stored mapping between ZKPoK ID and request ID"
         );
 
-        let next_event =
-            event.derive_next_event(RelayerEventData::Input(InputEventData::RequestSentToGwL2 {
-                zkpok_public_id: zkpok_id,
-            }));
+        let next_event = event.derive_next_event(GenericEventData::InputProof(
+            InputProofEventData::ReqSentToGw { zkproof_id },
+        ));
 
         if let Err(e) = self.dispatcher.dispatch_event(next_event).await {
             error!(?e, "Failed to dispatch RequestSentToGwL2 event");
@@ -137,7 +140,7 @@ impl ArbitrumGatewayL2InputHandler {
         );
 
         let error_event =
-            event.derive_next_event(RelayerEventData::Input(InputEventData::Failed {
+            event.derive_next_event(GenericEventData::InputProof(InputProofEventData::Failed {
                 error: format!("Input request failed: {}", error),
             }));
 
@@ -294,7 +297,7 @@ impl ArbitrumGatewayL2InputHandler {
             event.request_id,
         );
 
-        if let RelayerEventData::EventLogResponseFromGwL2 { log } = &event.data {
+        if let GenericEventData::EventLogFromGw { log } = &event.data {
             // Log the raw data for debugging
             debug!(
                 topics = ?log.topics().iter().map(hex::encode).collect::<Vec<_>>(),
@@ -325,13 +328,15 @@ impl ArbitrumGatewayL2InputHandler {
                                         "Found original request ID for input response"
                                     );
 
-                                    let next_event_data: RelayerEventData =
-                                        RelayerEventData::Input(InputEventData::RespFromGwL2 {
-                                            input_proof_response: InputProofResponse {
-                                                handles: request_event.handles,
-                                                signatures: request_event.signatures,
+                                    let next_event_data: GenericEventData =
+                                        GenericEventData::InputProof(
+                                            InputProofEventData::RespRcvdFromGw {
+                                                input_proof_response: InputProofResponse {
+                                                    handles: request_event.handles,
+                                                    signatures: request_event.signatures,
+                                                },
                                             },
-                                        });
+                                        );
 
                                     // Now we can use original_request_id directly
                                     let next_event = RelayerEvent::new(
@@ -377,24 +382,21 @@ impl EventHandler<RelayerEvent> for ArbitrumGatewayL2InputHandler {
 
         match &event.data {
             // Borrow event.data instead of moving it
-            RelayerEventData::Input(input_event) => {
+            GenericEventData::InputProof(input_event) => {
                 match input_event {
-                    InputEventData::ReqFromUser {
+                    InputProofEventData::ReqRcvdFromUser {
                         input_proof_request,
                     } => {
                         // Create a new InputEventData with cloned values
-                        let req_data = InputEventData::ReqFromUser {
+                        let req_data = InputProofEventData::ReqRcvdFromUser {
                             input_proof_request: input_proof_request.clone(),
                         };
                         self.send_input_request_to_rollup(event, req_data).await;
                     }
-                    InputEventData::RequestSentToGwL2 { zkpok_public_id } => {
-                        info!(
-                            ?zkpok_public_id,
-                            "Input request sent to rollup successfully"
-                        );
+                    InputProofEventData::ReqSentToGw { zkproof_id } => {
+                        info!(?zkproof_id, "Input request sent to rollup successfully");
                     }
-                    InputEventData::RespFromGwL2 {
+                    InputProofEventData::RespRcvdFromGw {
                         input_proof_response,
                     } => {
                         info!(
@@ -403,12 +405,12 @@ impl EventHandler<RelayerEvent> for ArbitrumGatewayL2InputHandler {
                             "Received L2 response, ready for HTTP handler"
                         );
                     }
-                    InputEventData::Failed { error } => {
+                    InputProofEventData::Failed { error } => {
                         error!(?error, "Input request failed");
                     }
                 }
             }
-            RelayerEventData::EventLogResponseFromGwL2 { .. } => {
+            GenericEventData::EventLogFromGw { .. } => {
                 info!("Received input event log from Gateway L2");
                 self.handle_input_reponse_event_log(event).await;
             }

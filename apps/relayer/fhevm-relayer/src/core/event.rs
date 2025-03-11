@@ -15,8 +15,8 @@ use uuid::Uuid;
 #[repr(u8)]
 #[derive(Debug)]
 pub enum GenericEventId {
-    EventLogFromHostL1 = 0,
-    EventLogResponseFromGwL2 = 3,
+    EventLogRcvdFromHostBc = 0,
+    EventLogRcvdFromGw = 1,
 }
 
 impl From<GenericEventId> for u8 {
@@ -28,11 +28,11 @@ impl From<GenericEventId> for u8 {
 #[repr(u8)]
 #[derive(Debug)]
 pub enum PublicDecryptEventId {
-    PublicDecryptReq = 1,
-    PublicReqSentToGwL2 = 2,
-    PublicDecryptRespFromGwL2 = 4,
-    RespSentToHostL1 = 5,
-    Failed = 6,
+    ReqRcvdFromUser = 11,
+    ReqSentToGw = 12,
+    RespRcvdFromGw = 13,
+    RespSentToHostBc = 14,
+    Failed = 15,
 }
 
 impl From<PublicDecryptEventId> for u8 {
@@ -44,11 +44,11 @@ impl From<PublicDecryptEventId> for u8 {
 #[repr(u8)]
 #[derive(Debug)]
 pub enum UserDecryptEventId {
-    UserDecryptReq = 11,
-    UserReqSentToGwL2 = 12,
-    UserDecryptRespFromGwL2 = 14,
-    RespSentToHostL1 = 90,
-    Failed = 91,
+    ReqRcvdFromUser = 20,
+    ReqSentToGwL2 = 21,
+    RespRcvdFromGwL2 = 22,
+    RespSentToUser = 23,
+    Failed = 24,
 }
 
 impl From<UserDecryptEventId> for u8 {
@@ -59,15 +59,15 @@ impl From<UserDecryptEventId> for u8 {
 
 #[repr(u8)]
 #[derive(Debug)]
-pub enum InputEventId {
-    ReqFromUser = 7,
-    RequestSentToGwL2 = 8,
-    RespFromGwL2 = 9,
-    Failed = 11,
+pub enum InputProofEventId {
+    ReqRcvdFromUser = 30,
+    ReqSentToGwL2 = 31,
+    RespRcvdFromGwL2 = 32,
+    Failed = 33,
 }
 
-impl From<InputEventId> for u8 {
-    fn from(e: InputEventId) -> u8 {
+impl From<InputProofEventId> for u8 {
+    fn from(e: InputProofEventId) -> u8 {
         e as u8
     }
 }
@@ -76,11 +76,11 @@ impl From<InputEventId> for u8 {
 pub struct RelayerEvent {
     pub request_id: Uuid,
     pub api_version: ApiVersion,
-    pub data: RelayerEventData,
+    pub data: GenericEventData,
 }
 
 impl RelayerEvent {
-    pub fn new(request_id: Uuid, api_version: ApiVersion, data: RelayerEventData) -> RelayerEvent {
+    pub fn new(request_id: Uuid, api_version: ApiVersion, data: GenericEventData) -> RelayerEvent {
         RelayerEvent {
             request_id,
             api_version,
@@ -88,7 +88,7 @@ impl RelayerEvent {
         }
     }
 
-    pub fn derive_next_event(self, next_event_data: RelayerEventData) -> RelayerEvent {
+    pub fn derive_next_event(self, next_event_data: GenericEventData) -> RelayerEvent {
         RelayerEvent {
             request_id: self.request_id,
             api_version: self.api_version,
@@ -105,45 +105,49 @@ impl Event for RelayerEvent {
     //TODO: Replace boiler plate with macro based code.
     fn event_id(&self) -> u8 {
         match &self.data {
-            RelayerEventData::EventLogFromHostL1 { .. } => GenericEventId::EventLogFromHostL1 as u8,
-            RelayerEventData::EventLogResponseFromGwL2 { .. } => {
-                GenericEventId::EventLogResponseFromGwL2.into()
+            GenericEventData::EventLogFromHostBc { .. } => {
+                GenericEventId::EventLogRcvdFromHostBc as u8
             }
-            RelayerEventData::PublicDecrypt(decrypt_event) => match decrypt_event {
-                PublicDecryptEventData::PublicDecryptReq { .. } => {
-                    PublicDecryptEventId::PublicDecryptReq.into()
+            GenericEventData::EventLogFromGw { .. } => GenericEventId::EventLogRcvdFromGw.into(),
+            GenericEventData::PublicDecrypt(decrypt_event) => match decrypt_event {
+                PublicDecryptEventData::ReqRcvdFromHostBc { .. } => {
+                    PublicDecryptEventId::ReqRcvdFromUser.into()
                 }
-                PublicDecryptEventData::PublicReqSentToGwL2 { .. } => {
-                    PublicDecryptEventId::PublicReqSentToGwL2.into()
+                PublicDecryptEventData::ReqSentToGw { .. } => {
+                    PublicDecryptEventId::ReqSentToGw.into()
                 }
-                PublicDecryptEventData::PublicDecryptRespFromGwL2 { .. } => {
-                    PublicDecryptEventId::PublicDecryptRespFromGwL2.into()
+                PublicDecryptEventData::RespRcvdFromGw { .. } => {
+                    PublicDecryptEventId::RespRcvdFromGw.into()
                 }
-                PublicDecryptEventData::RespSentToHostL1 { .. } => {
-                    PublicDecryptEventId::RespSentToHostL1.into()
+                PublicDecryptEventData::RespSentToHostBc { .. } => {
+                    PublicDecryptEventId::RespSentToHostBc.into()
                 }
                 PublicDecryptEventData::Failed { .. } => PublicDecryptEventId::Failed.into(),
             },
-            RelayerEventData::UserDecrypt(decrypt_event) => match decrypt_event {
-                UserDecryptEventData::UserDecryptReq { .. } => {
-                    UserDecryptEventId::UserDecryptReq.into()
+            GenericEventData::UserDecrypt(decrypt_event) => match decrypt_event {
+                UserDecryptEventData::ReqRcvdFromUser { .. } => {
+                    UserDecryptEventId::ReqRcvdFromUser.into()
                 }
-                UserDecryptEventData::UserReqSentToGwL2 { .. } => {
-                    UserDecryptEventId::UserReqSentToGwL2.into()
+                UserDecryptEventData::ReqSentToGw { .. } => {
+                    UserDecryptEventId::ReqSentToGwL2.into()
                 }
-                UserDecryptEventData::UserDecryptRespFromGwL2 { .. } => {
-                    UserDecryptEventId::UserDecryptRespFromGwL2.into()
+                UserDecryptEventData::RespRcvdFromGw { .. } => {
+                    UserDecryptEventId::RespRcvdFromGwL2.into()
                 }
-                UserDecryptEventData::RespSentToHostL1 { .. } => {
-                    UserDecryptEventId::RespSentToHostL1.into()
+                UserDecryptEventData::RespSentToHostBc { .. } => {
+                    UserDecryptEventId::RespSentToUser.into()
                 }
                 UserDecryptEventData::Failed { .. } => UserDecryptEventId::Failed.into(),
             },
-            RelayerEventData::Input(input_event) => match input_event {
-                InputEventData::ReqFromUser { .. } => InputEventId::ReqFromUser.into(),
-                InputEventData::RequestSentToGwL2 { .. } => InputEventId::RequestSentToGwL2.into(),
-                InputEventData::RespFromGwL2 { .. } => InputEventId::RespFromGwL2.into(),
-                InputEventData::Failed { .. } => InputEventId::Failed.into(),
+            GenericEventData::InputProof(input_event) => match input_event {
+                InputProofEventData::ReqRcvdFromUser { .. } => {
+                    InputProofEventId::ReqRcvdFromUser.into()
+                }
+                InputProofEventData::ReqSentToGw { .. } => InputProofEventId::ReqSentToGwL2.into(),
+                InputProofEventData::RespRcvdFromGw { .. } => {
+                    InputProofEventId::RespRcvdFromGwL2.into()
+                }
+                InputProofEventData::Failed { .. } => InputProofEventId::Failed.into(),
             },
         }
     }
@@ -172,11 +176,11 @@ pub enum ApiCategory {
 }
 
 #[derive(Clone, Debug)]
-pub enum RelayerEventData {
+pub enum GenericEventData {
     // Raw event log from ethereum. Handler will check event type, decode the
     // event, store ethereum related contextual data and dispatch a decryption
     // request event.
-    EventLogFromHostL1 {
+    EventLogFromHostBc {
         // For ethereum handler
         // TODO: Make relayer event generic of this log type, to make it blockchain agnostic.
         event_log: Log,
@@ -188,24 +192,24 @@ pub enum RelayerEventData {
     // data store of the handler. if not, drops the request (not meant for this
     // relayer instance). if found, creates the next event with the original
     // orchestrator request id retreived from contextual data store.
-    EventLogResponseFromGwL2 {
+    EventLogFromGw {
         // For gateway l2 handler
         log: Log,
     },
 
     PublicDecrypt(PublicDecryptEventData),
     UserDecrypt(UserDecryptEventData),
-    Input(InputEventData),
+    InputProof(InputProofEventData),
 }
 
-impl AsRef<str> for RelayerEventData {
+impl AsRef<str> for GenericEventData {
     fn as_ref(&self) -> &str {
         match self {
-            RelayerEventData::EventLogFromHostL1 { .. } => "EventLogFromHostL1",
-            RelayerEventData::EventLogResponseFromGwL2 { .. } => "EventLogResponseFromGwL2",
-            RelayerEventData::PublicDecrypt(decrypt_event) => decrypt_event.event_name(),
-            RelayerEventData::UserDecrypt(decrypt_event) => decrypt_event.event_name(),
-            RelayerEventData::Input(input_event) => input_event.event_name(),
+            GenericEventData::EventLogFromHostBc { .. } => "EventLogFromHostL1",
+            GenericEventData::EventLogFromGw { .. } => "EventLogResponseFromGwL2",
+            GenericEventData::PublicDecrypt(decrypt_event) => decrypt_event.event_name(),
+            GenericEventData::UserDecrypt(decrypt_event) => decrypt_event.event_name(),
+            GenericEventData::InputProof(input_event) => input_event.event_name(),
         }
     }
 }
@@ -221,12 +225,12 @@ pub enum PublicDecryptEventData {
     // After this system will wait until a gateway l2 listener catches a response and creates a new request.
     //
     // For gateway l2 handler
-    PublicDecryptReq {
+    ReqRcvdFromHostBc {
         decrypt_request: PublicDecryptRequest,
     },
 
-    PublicReqSentToGwL2 {
-        gateway_l2_request_id: U256,
+    ReqSentToGw {
+        public_decryption_id: U256,
     },
 
     // Raw event log from gateway l2. Will be processed by gateway l2 handler.
@@ -237,12 +241,12 @@ pub enum PublicDecryptEventData {
     // orchestrator request id retreived from contextual data store.
     //
     // For ethereum handler
-    PublicDecryptRespFromGwL2 {
+    RespRcvdFromGw {
         decrypt_response: PublicDecryptResponse,
     },
 
     // This event data could be used to update the dashboard.
-    RespSentToHostL1,
+    RespSentToHostBc,
 
     // For no handler, just status update.
     Failed {
@@ -254,14 +258,12 @@ pub enum PublicDecryptEventData {
 impl PublicDecryptEventData {
     pub fn event_name(&self) -> &'static str {
         match self {
-            PublicDecryptEventData::PublicDecryptReq { .. } => "PublicDecrypt::PublicDecryptReq",
-            PublicDecryptEventData::PublicReqSentToGwL2 { .. } => {
-                "PublicDecrypt::PublicReqSentToGwL2"
-            }
-            PublicDecryptEventData::PublicDecryptRespFromGwL2 { .. } => {
+            PublicDecryptEventData::ReqRcvdFromHostBc { .. } => "PublicDecrypt::PublicDecryptReq",
+            PublicDecryptEventData::ReqSentToGw { .. } => "PublicDecrypt::PublicReqSentToGwL2",
+            PublicDecryptEventData::RespRcvdFromGw { .. } => {
                 "PublicDecrypt::PublicDecryptRespFromGwL2"
             }
-            PublicDecryptEventData::RespSentToHostL1 => "PublicDecrypt::ResponseSentToHostL1",
+            PublicDecryptEventData::RespSentToHostBc => "PublicDecrypt::ResponseSentToHostL1",
             PublicDecryptEventData::Failed { .. } => "PublicDecrypt::Failed",
         }
     }
@@ -269,20 +271,20 @@ impl PublicDecryptEventData {
 
 #[derive(Clone, Debug)]
 pub enum UserDecryptEventData {
-    UserDecryptReq {
+    ReqRcvdFromUser {
         decrypt_request: UserDecryptRequest,
     },
 
-    UserReqSentToGwL2 {
-        gateway_l2_request_id: U256,
+    ReqSentToGw {
+        user_decryption_id: U256,
     },
 
-    UserDecryptRespFromGwL2 {
+    RespRcvdFromGw {
         decrypt_response: UserDecryptResponse,
     },
 
     // This event data could be used to update the dashboard.
-    RespSentToHostL1,
+    RespSentToHostBc,
 
     // For no handler, just status update.
     Failed {
@@ -294,12 +296,10 @@ pub enum UserDecryptEventData {
 impl UserDecryptEventData {
     pub fn event_name(&self) -> &'static str {
         match self {
-            UserDecryptEventData::UserDecryptReq { .. } => "UserDecrypt::UserDecryptReq",
-            UserDecryptEventData::UserReqSentToGwL2 { .. } => "UserDecrypt::UserReqSentToGwL2",
-            UserDecryptEventData::UserDecryptRespFromGwL2 { .. } => {
-                "UserDecrypt::UserDecryptRespFromGwL2"
-            }
-            UserDecryptEventData::RespSentToHostL1 => "UserDecrypt::ResponseSentToHostL1",
+            UserDecryptEventData::ReqRcvdFromUser { .. } => "UserDecrypt::UserDecryptReq",
+            UserDecryptEventData::ReqSentToGw { .. } => "UserDecrypt::UserReqSentToGwL2",
+            UserDecryptEventData::RespRcvdFromGw { .. } => "UserDecrypt::UserDecryptRespFromGwL2",
+            UserDecryptEventData::RespSentToHostBc => "UserDecrypt::ResponseSentToHostL1",
             UserDecryptEventData::Failed { .. } => "UserDecrypt::Failed",
         }
     }
@@ -366,28 +366,28 @@ impl TryFrom<UserDecryptResponse> for UserDecryptResponseJson {
 }
 
 #[derive(Clone, Debug)]
-pub enum InputEventData {
-    ReqFromUser {
+pub enum InputProofEventData {
+    ReqRcvdFromUser {
         input_proof_request: InputProofRequest,
     },
-    RespFromGwL2 {
-        input_proof_response: InputProofResponse,
+    ReqSentToGw {
+        zkproof_id: U256,
     },
-    RequestSentToGwL2 {
-        zkpok_public_id: U256,
+    RespRcvdFromGw {
+        input_proof_response: InputProofResponse,
     },
     Failed {
         error: String,
     },
 }
 
-impl InputEventData {
+impl InputProofEventData {
     pub fn event_name(&self) -> &'static str {
         match self {
-            InputEventData::ReqFromUser { .. } => "Input::ReqFromUser",
-            InputEventData::RespFromGwL2 { .. } => "Input::RespFromGwL2",
-            InputEventData::RequestSentToGwL2 { .. } => "Input::RequestSentToGwL2",
-            InputEventData::Failed { .. } => "Input::Failed",
+            InputProofEventData::ReqRcvdFromUser { .. } => "Input::ReqFromUser",
+            InputProofEventData::RespRcvdFromGw { .. } => "Input::RespFromGwL2",
+            InputProofEventData::ReqSentToGw { .. } => "Input::RequestSentToGwL2",
+            InputProofEventData::Failed { .. } => "Input::Failed",
         }
     }
 }

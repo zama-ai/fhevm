@@ -1,5 +1,5 @@
 use crate::core::event::{
-    ApiCategory, ApiVersion, RelayerEvent, RelayerEventData, UserDecryptEventData,
+    ApiCategory, ApiVersion, GenericEventData, RelayerEvent, UserDecryptEventData,
     UserDecryptEventId, UserDecryptRequest,
 };
 use crate::core::utils::OnceHandler;
@@ -95,13 +95,13 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
         let handler = Arc::new(handler);
 
         self.orchestrator.register_once_handler(
-            UserDecryptEventId::UserDecryptRespFromGwL2.into(),
+            UserDecryptEventId::RespRcvdFromGwL2.into(),
             request_id,
             handler,
         );
         info!("registered once handler");
 
-        let request_data = UserDecryptEventData::UserDecryptReq {
+        let request_data = UserDecryptEventData::ReqRcvdFromUser {
             decrypt_request: user_decrypt_request,
         };
         let event = RelayerEvent::new(
@@ -110,7 +110,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
                 category: ApiCategory::PRODUCTION,
                 number: 1,
             },
-            RelayerEventData::UserDecrypt(request_data),
+            GenericEventData::UserDecrypt(request_data),
         );
         let _ = self.orchestrator.dispatch_event(event).await;
         info!("dispatched event to orchestrator to initiate processing");
@@ -134,7 +134,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
 
         info!("response event type {:?}", event.data);
         match event.data {
-            RelayerEventData::UserDecrypt(UserDecryptEventData::UserDecryptRespFromGwL2 {
+            GenericEventData::UserDecrypt(UserDecryptEventData::RespRcvdFromGw {
                 decrypt_response,
             }) => match UserDecryptResponseJson::try_from(decrypt_response) {
                 Ok(response_json) => {

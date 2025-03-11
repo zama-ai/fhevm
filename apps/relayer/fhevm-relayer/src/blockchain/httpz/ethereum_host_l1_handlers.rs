@@ -5,8 +5,8 @@ use crate::{
     },
     core::errors::EventProcessingError,
     core::event::{
-        PublicDecryptEventData, PublicDecryptRequest, PublicDecryptResponse, RelayerEvent,
-        RelayerEventData,
+        GenericEventData, PublicDecryptEventData, PublicDecryptRequest, PublicDecryptResponse,
+        RelayerEvent,
     },
     core::utils::{colorize_event_type, colorize_request_id},
     orchestrator::{
@@ -90,13 +90,13 @@ impl EthereumHostL1Handler {
                 for ct_handle in eth_decryption_request.cts {
                     ct_handles.push(ct_handle.to_be_bytes());
                 }
-                event.derive_next_event(RelayerEventData::PublicDecrypt(
-                    PublicDecryptEventData::PublicDecryptReq {
+                event.derive_next_event(GenericEventData::PublicDecrypt(
+                    PublicDecryptEventData::ReqRcvdFromHostBc {
                         decrypt_request: PublicDecryptRequest { ct_handles },
                     },
                 ))
             }
-            Err(e) => event.derive_next_event(RelayerEventData::PublicDecrypt(
+            Err(e) => event.derive_next_event(GenericEventData::PublicDecrypt(
                 PublicDecryptEventData::Failed {
                     error: format!("error decoding ethereum event log data: {:?}", e),
                 },
@@ -157,7 +157,7 @@ impl EthereumHostL1Handler {
             None => {
                 let request_id = event.clone().request_id;
                 info!("unknown request id: {:?}", request_id);
-                let _next_event = event.derive_next_event(RelayerEventData::PublicDecrypt(
+                let _next_event = event.derive_next_event(GenericEventData::PublicDecrypt(
                     PublicDecryptEventData::Failed {
                         error: format!(
                             "httpz response received for unknown request id: {:?}",
@@ -180,8 +180,8 @@ impl EthereumHostL1Handler {
         // Store the mapping
 
         // Create and dispatch the new event
-        let next_event = event.derive_next_event(RelayerEventData::PublicDecrypt(
-            PublicDecryptEventData::RespSentToHostL1,
+        let next_event = event.derive_next_event(GenericEventData::PublicDecrypt(
+            PublicDecryptEventData::RespSentToHostBc,
         ));
 
         if let Err(e) = self.dispatcher.dispatch_event(next_event).await {
@@ -203,7 +203,7 @@ impl EthereumHostL1Handler {
             "Failed to send callback transaction"
         );
 
-        let error_event = event.derive_next_event(RelayerEventData::PublicDecrypt(
+        let error_event = event.derive_next_event(GenericEventData::PublicDecrypt(
             PublicDecryptEventData::Failed {
                 error: format!("Callback transaction failed: {}", error),
             },
@@ -254,19 +254,19 @@ impl EventHandler<RelayerEvent> for EthereumHostL1Handler {
             "Processing relayer event"
         );
         match event.clone().data {
-            RelayerEventData::EventLogFromHostL1 {
+            GenericEventData::EventLogFromHostBc {
                 event_log: eth_event_log,
             } => {
                 self.handle_public_decrypt_event_log(event, eth_event_log)
                     .await;
             }
-            RelayerEventData::PublicDecrypt(
-                PublicDecryptEventData::PublicDecryptRespFromGwL2 { decrypt_response },
-            ) => {
+            GenericEventData::PublicDecrypt(PublicDecryptEventData::RespRcvdFromGw {
+                decrypt_response,
+            }) => {
                 self.send_decrypt_response_to_fhevm(event, decrypt_response)
                     .await;
             }
-            RelayerEventData::PublicDecrypt(PublicDecryptEventData::RespSentToHostL1) => {
+            GenericEventData::PublicDecrypt(PublicDecryptEventData::RespSentToHostBc) => {
                 self.handle_decrypt_response_sent();
             }
             _ => {

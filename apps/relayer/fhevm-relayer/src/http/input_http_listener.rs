@@ -1,6 +1,6 @@
 use crate::core::event::{
-    ApiCategory, ApiVersion, InputEventData, InputEventId, InputProofRequest, RelayerEvent,
-    RelayerEventData,
+    ApiCategory, ApiVersion, GenericEventData, InputProofEventData, InputProofEventId,
+    InputProofRequest, RelayerEvent,
 };
 use crate::core::utils::OnceHandler;
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
@@ -83,7 +83,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
         let handler = Arc::new(handler);
 
         self.orchestrator.register_once_handler(
-            InputEventId::RespFromGwL2.into(),
+            InputProofEventId::RespRcvdFromGwL2.into(),
             request_id,
             handler,
         );
@@ -97,7 +97,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
                 return (StatusCode::BAD_REQUEST, Json(error_response)).into_response();
             }
         };
-        let request_data = InputEventData::ReqFromUser {
+        let request_data = InputProofEventData::ReqRcvdFromUser {
             input_proof_request: request_data,
         };
 
@@ -107,7 +107,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
                 category: ApiCategory::PRODUCTION,
                 number: 1,
             },
-            RelayerEventData::Input(request_data),
+            GenericEventData::InputProof(request_data),
         );
         let _ = self.orchestrator.dispatch_event(event).await;
         info!("dispatched event to orchestrator to initiate processing");
@@ -130,7 +130,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
 
         info!("response event type {:?}", event.data);
         match event.data {
-            RelayerEventData::Input(InputEventData::RespFromGwL2 {
+            GenericEventData::InputProof(InputProofEventData::RespRcvdFromGw {
                 input_proof_response,
             }) => match InputProofResponseJson::try_from(input_proof_response) {
                 Ok(response_json) => {
