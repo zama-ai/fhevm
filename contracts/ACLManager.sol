@@ -13,8 +13,8 @@ contract ACLManager is IACLManager {
     IHTTPZ internal immutable _HTTPZ;
     /// @notice The address of the CiphertextStorage contract from which ciphertexts are retrieve.
     ICiphertextStorage internal immutable _CIPHERTEXT_STORAGE;
-    /// @notice The maximum number of ciphertext handles that can be requested at once.
-    uint8 internal constant _MAX_CONTRACTS_INPUT = 10;
+    /// @notice The maximum number of contracts that can be requested for delegation.
+    uint8 internal constant _MAX_CONTRACT_ADDRESSES = 10;
 
     /// @dev The mapping of the already allowed user decryptions.
     mapping(uint256 ctHandle => mapping(address userAddress => bool isAllowed)) public allowedUserDecrypts;
@@ -32,23 +32,18 @@ contract ACLManager is IACLManager {
     mapping(uint256 ctHandle => mapping(address coprocessorAddress => bool hasAllowed))
         internal _allowPublicDecryptAuthorizers;
 
-    // TODO: Revisit the delegation storage structures; maybe use the delegationDigest as the mapping index.
+    /// @dev Tracks the computed delegateAccountHash that has already been delegated.
+    mapping(bytes32 delegateAccountHash => bool isDelegated) internal _delegatedAccountHashes;
+    /// @dev Tracks the number of times a delegateAccountHash has received confirmations.
+    mapping(bytes32 delegateAccountHash => uint8 counter) internal _delegateAccountHashCounters;
+    /// @dev Tracks the Coprocessors that has already delegated an account for a given delegateAccountHash.
+    mapping(bytes32 delegateAccountHash => mapping(address coprocessorAddress => bool hasDelegated))
+        internal _alreadyDelegatedCoprocessors;
     // prettier-ignore
-    /// @dev The mapping of the already delegated accounts.
+    /// @dev Tracks the account delegations for a given contract after reaching consensus.
     mapping(address delegator => mapping(address delegatee =>
-        mapping(uint256 chainId => mapping(bytes32 delegationDigest => bool isDelegated))))
-            internal _delegatedAccounts;
-    // prettier-ignore
-    /// @dev The counter used for the account delegation consensus.
-    mapping(address delegator => mapping(address delegatee =>
-        mapping(uint256 chainId => mapping(bytes32 delegationDigest => uint8 counter))))
-            internal _delegateAccountCounters;
-    // prettier-ignore
-    /// @dev The mapping of the Coprocessors that have already delegated the account.
-    mapping(address delegator => mapping(address delegatee =>
-        mapping(uint256 chainId => mapping(bytes32 delegationDigest =>
-            mapping(address coprocessorAddress => bool hasDelegated)))))
-                internal _delegateAccountAuthorizers;
+        mapping(uint256 chainId => mapping(address contractAddress => bool isDelegated))))
+            internal _delegatedContracts;
 
     string private constant CONTRACT_NAME = "ACLManager";
     uint256 private constant MAJOR_VERSION = 0;
@@ -124,39 +119,39 @@ contract ACLManager is IACLManager {
         uint256 chainId,
         address delegator,
         address delegatee,
-        address[] calldata allowedContracts
+        address[] calldata contractAddresses
     ) public virtual override onlyCoprocessor {
-        if (allowedContracts.length > _MAX_CONTRACTS_INPUT) {
-            revert TooManyContractsRequested(_MAX_CONTRACTS_INPUT, allowedContracts.length);
+        if (contractAddresses.length > _MAX_CONTRACT_ADDRESSES) {
+            revert ContractsMaxLengthExceeded(_MAX_CONTRACT_ADDRESSES, contractAddresses.length);
         }
-        /// @dev The delegation digest is the hash of the allowedContracts list.
-        /// @dev This digest is used to track the delegation consensus over the whole allowedContracts list,
+        /// @dev The delegateAccountHash is the hash of all input arguments.
+        /// @dev This hash is used to track the delegation consensus over the whole contractAddresses list,
         /// @dev and assumes that the Coprocessors will delegate the same list of contracts and keep the same order.
-        bytes32 delegationDigest = keccak256(abi.encode(allowedContracts));
+        bytes32 delegateAccountHash = keccak256(abi.encode(chainId, delegator, delegatee, contractAddresses));
 
-        /// @dev Declare storage variables as they are used multiple times during delegation request processing.
-        mapping(bytes32 => bool) storage delegatedAccounts = _delegatedAccounts[delegator][delegatee][chainId];
-        mapping(bytes32 => uint8) storage delegateAccountCounters = _delegateAccountCounters[delegator][delegatee][
-            chainId
+        mapping(address => bool) storage alreadyDelegatedCoprocessors = _alreadyDelegatedCoprocessors[
+            delegateAccountHash
         ];
-        mapping(address => bool) storage delegateAccountAuthorizers = _delegateAccountAuthorizers[delegator][delegatee][
-            chainId
-        ][delegationDigest];
 
-        if (delegateAccountAuthorizers[msg.sender]) {
-            revert CoprocessorHasAlreadyDelegated(msg.sender);
+        if (alreadyDelegatedCoprocessors[msg.sender]) {
+            revert CoprocessorHasAlreadyDelegated(msg.sender, chainId, delegator, delegatee, contractAddresses);
         }
 
-        delegateAccountCounters[delegationDigest]++;
-        delegateAccountAuthorizers[msg.sender] = true;
+        _delegateAccountHashCounters[delegateAccountHash]++;
+        alreadyDelegatedCoprocessors[msg.sender] = true;
 
         /// @dev Send the event if and only if the consensus is reached in the current response call.
         /// @dev This means a "late" response will not be reverted, just ignored
-        if (!delegatedAccounts[delegationDigest] && _isConsensusReached(delegateAccountCounters[delegationDigest])) {
-            for (uint256 i = 0; i < allowedContracts.length; i++) {
-                emit DelegateAccount(chainId, delegator, delegatee, allowedContracts[i]);
+        if (
+            !_delegatedAccountHashes[delegateAccountHash] &&
+            _isConsensusReached(_delegateAccountHashCounters[delegateAccountHash])
+        ) {
+            mapping(address => bool) storage delegatedContracts = _delegatedContracts[delegator][delegatee][chainId];
+            for (uint256 i = 0; i < contractAddresses.length; i++) {
+                delegatedContracts[contractAddresses[i]] = true;
             }
-            delegatedAccounts[delegationDigest] = true;
+            _delegatedAccountHashes[delegateAccountHash] = true;
+            emit DelegateAccount(chainId, delegator, delegatee, contractAddresses);
         }
     }
 
@@ -218,11 +213,12 @@ contract ACLManager is IACLManager {
         uint256 chainId,
         address delegator,
         address delegatee,
-        address[] calldata allowedContracts
+        address[] calldata contractAddresses
     ) public view virtual {
-        bytes32 delegationDigest = keccak256(abi.encode(allowedContracts));
-        if (!_delegatedAccounts[delegator][delegatee][chainId][delegationDigest]) {
-            revert AccountNotDelegated(delegatee, allowedContracts);
+        for (uint256 i = 0; i < contractAddresses.length; i++) {
+            if (!_delegatedContracts[delegator][delegatee][chainId][contractAddresses[i]]) {
+                revert AccountNotDelegated(chainId, delegator, delegatee, contractAddresses[i]);
+            }
         }
     }
 
