@@ -1,0 +1,12 @@
+[package]
+authors = ["Zama"]
+name = "gwl2_rust_bindings"
+publish = true
+edition = "2024"
+license = "BSD-3-Clause-Clear"
+version = "1.0.0"
+
+[dependencies]
+alloy-contract = { version = "0.12.4", default-features = false }
+alloy-sol-types = { version = "0.8.22", default-features = false, features = ["json"]}
+serde = { version = "1.0.217", default-features = false, features = ["derive"] }

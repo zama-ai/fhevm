@@ -9,6 +9,7 @@ cache
 coverage
 dist
 fhevmTemp
+gwl2_rust_bindings/target
 node_modules
 types
 

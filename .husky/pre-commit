@@ -1,2 +1,14 @@
 npm run --no-install prettier:check
 npm run --no-install lint:sol
+
+# Checks that the crate's version and ABI files are up-to-date.
+printf "> python3 gwl2_rust_bindings/abi_update.py check\n\n"
+python3 gwl2_rust_bindings/abi_update.py check
+
+# Checks the formatting of the crate's code.
+printf "> cd gwl2_rust_bindings && cargo fmt --check && cd ..\n\n"
+cd gwl2_rust_bindings && cargo fmt --check && cd ..
+
+# Lints the crate's code.
+printf "> cd gwl2_rust_bindings && cargo clippy -- -D warnings && cd ..\n\n"
+cd gwl2_rust_bindings && cargo clippy -- -D warnings && cd ..
