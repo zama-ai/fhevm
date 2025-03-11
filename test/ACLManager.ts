@@ -80,17 +80,19 @@ describe("ACLManager", function () {
         .withArgs(fakeSigner.address, httpz.COPROCESSOR_ROLE());
     });
 
-    it("Should revert because the ciphertext is not on the network", async function () {
-      // When
-      const txResponse = aclManager
-        .connect(coprocessorSigners[0])
-        .allowUserDecrypt(fakeChainId, ctHandle, allowedAddress);
+    // TODO: Replace test with pending allow logic tests
+    // https://github.com/zama-ai/gateway-l2/issues/171
+    // it("Should revert because the ciphertext is not on the network", async function () {
+    //   // When
+    //   const txResponse = aclManager
+    //     .connect(coprocessorSigners[0])
+    //     .allowUserDecrypt(fakeChainId, ctHandle, allowedAddress);
 
-      // Then
-      await expect(txResponse)
-        .revertedWithCustomError(ciphertextStorage, "CiphertextNotOnNetwork")
-        .withArgs(ctHandle, fakeChainId);
-    });
+    //   // Then
+    //   await expect(txResponse)
+    //     .revertedWithCustomError(ciphertextStorage, "CiphertextNotOnNetwork")
+    //     .withArgs(ctHandle, fakeChainId);
+    // });
   });
 
   describe("Allow public decrypt", async function () {
@@ -124,15 +126,17 @@ describe("ACLManager", function () {
         .withArgs(fakeSigner.address, httpz.COPROCESSOR_ROLE());
     });
 
-    it("Should revert because the ciphertext is not on the network", async function () {
-      // When
-      const txResponse = aclManager.connect(coprocessorSigners[0]).allowPublicDecrypt(fakeChainId, ctHandle);
+    // TODO: Replace test with pending allow logic tests
+    // https://github.com/zama-ai/gateway-l2/issues/171
+    // it("Should revert because the ciphertext is not on the network", async function () {
+    //   // When
+    //   const txResponse = aclManager.connect(coprocessorSigners[0]).allowPublicDecrypt(fakeChainId, ctHandle);
 
-      // Then
-      await expect(txResponse)
-        .revertedWithCustomError(ciphertextStorage, "CiphertextNotOnNetwork")
-        .withArgs(ctHandle, fakeChainId);
-    });
+    //   // Then
+    //   await expect(txResponse)
+    //     .revertedWithCustomError(ciphertextStorage, "CiphertextNotOnNetwork")
+    //     .withArgs(ctHandle, fakeChainId);
+    // });
   });
 
   describe("Delegate account", async function () {
