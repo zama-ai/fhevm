@@ -1,4 +1,6 @@
-use crate::{keyset::read_sns_sk_from_lo, switch_and_squash::SnsClientKey, Config, DBConfig};
+use crate::{
+    keyset::read_sns_sk_from_lo, switch_and_squash::SnsClientKey, Config, DBConfig, HandleItem,
+};
 use anyhow::Ok;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -8,7 +10,11 @@ use std::{
     time::Duration,
 };
 use test_harness::instance::DBInstance;
-use tokio::{sync::broadcast, time::sleep};
+use tokio::{
+    sync::{broadcast, mpsc},
+    time::sleep,
+};
+use tokio_util::sync::CancellationToken;
 
 const LISTEN_CHANNEL: &str = "sns_worker_chan";
 const TENANT_API_KEY: &str = "a1503fb6-d79b-4e9e-826d-44cf262f3e05";
@@ -99,6 +105,7 @@ async fn setup() -> anyhow::Result<(
             polling_interval: 60000,
             max_connections: 5,
         },
+        s3: crate::S3Config::default(),
     };
 
     let pool = sqlx::postgres::PgPoolOptions::new()
@@ -106,11 +113,13 @@ async fn setup() -> anyhow::Result<(
         .connect(&conf.db.url)
         .await?;
 
+    let (upload_tx, rx) = mpsc::channel::<HandleItem>(10);
     let (tx, rx) = broadcast::channel(1);
-    let cancel_chan = Arc::new(tx);
+
+    let token = test_instance.parent_token.child_token();
     let sns_client_keys = read_sns_sk_from_lo(&pool, &TENANT_API_KEY.to_owned()).await?;
     tokio::spawn(async move {
-        crate::run(None, &conf, cancel_chan.subscribe())
+        crate::compute_128bit_ct(&conf, upload_tx, token)
             .await
             .expect("valid worker");
         anyhow::Result::<()>::Ok(())
@@ -201,7 +210,8 @@ async fn insert_into_pbs_computations(
     Ok(())
 }
 
-/// Deletes all records from `pbs_computations` and `ciphertexts` where `handle` matches.
+/// Deletes all records from `pbs_computations` and `ciphertexts` where `handle`
+/// matches.
 async fn clean_up(pool: &sqlx::PgPool, handle: &Vec<u8>) -> anyhow::Result<()> {
     sqlx::query!("DELETE FROM pbs_computations WHERE handle = $1", handle)
         .execute(pool)

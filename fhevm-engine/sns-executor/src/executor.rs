@@ -1,13 +1,16 @@
 use crate::keyset::fetch_keyset;
-use crate::{switch_and_squash::Ciphertext128, KeySet};
+use crate::HandleItem;
+use crate::KeySet;
 use crate::{Config, DBConfig, ExecutionError};
+use sqlx::pool::PoolConnection;
 use sqlx::postgres::PgListener;
 use sqlx::{Acquire, PgPool, Postgres, Transaction};
 use std::time::Duration;
 use tfhe::integer::IntegerCiphertext;
 use tfhe::set_server_key;
 use tokio::select;
-use tokio::sync::broadcast;
+use tokio::sync::mpsc::Sender;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
 use fhevm_engine_common::types::{get_ct_type, SupportedFheCiphertexts};
@@ -20,17 +23,11 @@ enum ConnStatus {
     Cancelled,
 }
 
-struct SnSTask {
-    handle: Vec<u8>,
-    compressed: Vec<u8>,
-    large_ct: Option<Ciphertext128>,
-}
-
 /// Executes the worker logic for the SnS task.
 pub(crate) async fn run_loop(
-    keys: Option<KeySet>,
     conf: &Config,
-    mut cancel_chan: broadcast::Receiver<()>,
+    tx: &Sender<HandleItem>,
+    token: CancellationToken,
 ) -> Result<(), ExecutionError> {
     let tenant_api_key = &conf.tenant_api_key;
     let conf = &conf.db;
@@ -46,28 +43,26 @@ pub(crate) async fn run_loop(
         .listen_all(conf.listen_channels.iter().map(|v| v.as_str()))
         .await?;
 
-    let keys: KeySet = match keys {
-        Some(keys) => keys,
-        None => fetch_keyset(&pool, tenant_api_key).await?,
-    };
+    let keys: KeySet = fetch_keyset(&pool, tenant_api_key).await?;
 
     loop {
-        let mut conn = match acquire_connection(&pool, &mut cancel_chan).await {
-            ConnStatus::Established(conn) => conn,
-            ConnStatus::Failed => {
-                tokio::time::sleep(RETRY_DB_CONN_INTERVAL).await;
-                continue; // Retry to reacquire a connection
-            }
-            ConnStatus::Cancelled => break,
-        };
+        let mut conn: PoolConnection<Postgres> =
+            match acquire_connection(&pool, token.clone()).await {
+                ConnStatus::Established(conn) => conn,
+                ConnStatus::Failed => {
+                    tokio::time::sleep(RETRY_DB_CONN_INTERVAL).await;
+                    continue; // Retry to reacquire a connection
+                }
+                ConnStatus::Cancelled => break,
+            };
 
         loop {
-            match fetch_and_execute_sns_tasks(&mut conn, &keys, conf).await {
+            match fetch_and_execute_sns_tasks(&mut conn, tx, &keys, conf).await {
                 Ok(_) => {
                     // Check if more tasks are available
                     let count = get_remaining_tasks(&mut conn).await?;
                     if count > 0 {
-                        if cancel_chan.try_recv().is_ok() {
+                        if token.is_cancelled() {
                             return Ok(());
                         }
                         info!(target: "worker", {count}, "SnS tasks available");
@@ -84,7 +79,7 @@ pub(crate) async fn run_loop(
             }
 
             select! {
-                _ = cancel_chan.recv() => return Ok(()),
+                _ = token.cancelled() => return Ok(()),
                 _ = listener.try_recv() => {
                     debug!(target: "worker", "Received notification");
                 },
@@ -100,7 +95,8 @@ pub(crate) async fn run_loop(
 
 /// Fetch and process SnS tasks from the database.
 async fn fetch_and_execute_sns_tasks(
-    conn: &mut sqlx::pool::PoolConnection<sqlx::Postgres>,
+    conn: &mut PoolConnection<Postgres>,
+    tx: &Sender<HandleItem>,
     keys: &KeySet,
     conf: &DBConfig,
 ) -> Result<(), ExecutionError> {
@@ -115,9 +111,16 @@ async fn fetch_and_execute_sns_tasks(
     if let Some(mut tasks) = query_sns_tasks(&mut db_txn, conf.batch_limit).await? {
         process_tasks(&mut tasks, keys)?;
         update_computations_status(&mut db_txn, &tasks).await?;
-        update_large_ct(&mut db_txn, &tasks).await?;
-        notify_large_ct_ready(&mut db_txn, &conf.notify_channel).await?;
+        update_ciphertext128(&mut db_txn, &tasks).await?;
+        notify_ciphertext128_ready(&mut db_txn, &conf.notify_channel).await?;
         db_txn.commit().await?;
+
+        // Submits ciphertexts to the upload worker for processing.
+        for task in tasks {
+            tx.send(task)
+                .await
+                .map_err(|_| ExecutionError::RecvFailure)?;
+        }
     } else {
         db_txn.rollback().await?;
     }
@@ -125,10 +128,7 @@ async fn fetch_and_execute_sns_tasks(
     Ok(())
 }
 
-async fn acquire_connection(
-    pool: &PgPool,
-    cancel_chan: &mut broadcast::Receiver<()>,
-) -> ConnStatus {
+async fn acquire_connection(pool: &PgPool, token: CancellationToken) -> ConnStatus {
     select! {
         conn = pool.acquire() => match conn {
             Ok(conn) =>   ConnStatus::Established(conn),
@@ -137,7 +137,7 @@ async fn acquire_connection(
                 ConnStatus::Failed
             }
         },
-        _ = cancel_chan.recv() => {
+        _ = token.cancelled() => {
             info!(target: "worker", "Cancellation received while acquiring connection");
             ConnStatus::Cancelled
         }
@@ -148,7 +148,7 @@ async fn acquire_connection(
 async fn query_sns_tasks(
     db_txn: &mut Transaction<'_, Postgres>,
     limit: u32,
-) -> Result<Option<Vec<SnSTask>>, ExecutionError> {
+) -> Result<Option<Vec<HandleItem>>, ExecutionError> {
     let records = sqlx::query!(
         " 
         SELECT a.*, c.ciphertext
@@ -174,10 +174,11 @@ async fn query_sns_tasks(
 
     let tasks = records
         .into_iter()
-        .map(|record| SnSTask {
+        .map(|record| HandleItem {
+            tenant_id: record.tenant_id,
             handle: record.handle,
-            compressed: record.ciphertext,
-            large_ct: None,
+            ct64_compressed: record.ciphertext,
+            ct128_uncompressed: None,
         })
         .collect();
 
@@ -217,18 +218,18 @@ async fn get_remaining_tasks(
 }
 
 /// Processes the tasks by decompressing and transforming ciphertexts.
-fn process_tasks(tasks: &mut [SnSTask], keys: &KeySet) -> Result<(), ExecutionError> {
+fn process_tasks(tasks: &mut [HandleItem], keys: &KeySet) -> Result<(), ExecutionError> {
     set_server_key(keys.server_key.clone());
 
     for task in tasks.iter_mut() {
-        let ct = decompress_ct(&task.handle, &task.compressed)?;
+        let ct = decompress_ct(&task.handle, &task.ct64_compressed)?;
         let raw_ct = ct.to_ciphertext64();
         let handle = to_hex(&task.handle);
 
         let blocks = raw_ct.blocks().len();
         info!(target: "sns",  { handle, blocks }, "Converting ciphertext");
 
-        let large_ct = keys.sns_key.to_large_ciphertext(&raw_ct)?;
+        let ciphertext128 = keys.sns_key.to_large_ciphertext(&raw_ct)?;
 
         info!(target: "sns",  { handle }, "Ciphertext converted");
 
@@ -236,36 +237,37 @@ fn process_tasks(tasks: &mut [SnSTask], keys: &KeySet) -> Result<(), ExecutionEr
         #[cfg(feature = "test_decrypt_128")]
         {
             if let Some(sns_secret_key) = &keys.sns_secret_key {
-                let decrypted = sns_secret_key.decrypt_128(&large_ct);
+                let decrypted = sns_secret_key.decrypt_128(&ciphertext128);
                 info!(target: "sns", { handle, decrypted }, "Decrypted plaintext");
             }
         }
 
-        task.large_ct = Some(large_ct);
+        let ciphertext128 = bincode::serialize(&ciphertext128)?;
+        task.ct128_uncompressed = Some(ciphertext128);
     }
 
     Ok(())
 }
 
 /// Updates the database with the computed large ciphertexts.
-async fn update_large_ct(
+async fn update_ciphertext128(
     db_txn: &mut Transaction<'_, Postgres>,
-    tasks: &[SnSTask],
+    tasks: &[HandleItem],
 ) -> Result<(), ExecutionError> {
     for task in tasks {
-        if let Some(large_ct) = &task.large_ct {
-            let large_ct_bytes = bincode::serialize(large_ct)?;
-
+        if let Some(ciphertext128) = &task.ct128_uncompressed {
             sqlx::query!(
                 "
                 UPDATE ciphertexts
-                SET large_ct = $1
+                SET ciphertext128 = $1
                 WHERE handle = $2;",
-                large_ct_bytes,
+                ciphertext128,
                 task.handle
             )
             .execute(db_txn.as_mut())
             .await?;
+
+            // Notify add_ciphertexts
         } else {
             error!(target: "worker", handle = ?task.handle, "Large ciphertext not computed for task");
         }
@@ -276,10 +278,10 @@ async fn update_large_ct(
 
 async fn update_computations_status(
     db_txn: &mut Transaction<'_, Postgres>,
-    tasks: &[SnSTask],
+    tasks: &[HandleItem],
 ) -> Result<(), ExecutionError> {
     for task in tasks {
-        if task.large_ct.is_some() {
+        if task.ct128_uncompressed.is_some() {
             sqlx::query!(
                 "
                 UPDATE pbs_computations
@@ -297,7 +299,7 @@ async fn update_computations_status(
 }
 
 /// Notifies the database that large ciphertexts are ready.
-async fn notify_large_ct_ready(
+async fn notify_ciphertext128_ready(
     db_txn: &mut Transaction<'_, Postgres>,
     db_channel: &str,
 ) -> Result<(), ExecutionError> {

@@ -1,3 +1,4 @@
+mod aws_upload;
 mod executor;
 mod keyset;
 mod switch_and_squash;
@@ -9,8 +10,11 @@ use fhevm_engine_common::types::FhevmError;
 use serde::{Deserialize, Serialize};
 use switch_and_squash::{SnsClientKey, SwitchAndSquashKey};
 use thiserror::Error;
-use tokio::sync::broadcast;
+use tokio::sync::mpsc::{self, Sender};
+use tokio_util::sync::CancellationToken;
 use tracing::info;
+
+pub const UPLOAD_QUEUE_SIZE: usize = 20;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct KeySet {
@@ -19,6 +23,7 @@ pub struct KeySet {
     pub server_key: tfhe::ServerKey,
 }
 
+#[derive(Clone)]
 pub struct DBConfig {
     pub url: String,
     pub listen_channels: Vec<String>,
@@ -28,9 +33,17 @@ pub struct DBConfig {
     pub max_connections: u32,
 }
 
+#[derive(Clone, Default, Debug)]
+pub struct S3Config {
+    pub bucket_ct128: String,
+    pub bucket_ct64: String,
+}
+
+#[derive(Clone)]
 pub struct Config {
     pub tenant_api_key: String,
     pub db: DBConfig,
+    pub s3: S3Config,
 }
 
 /// Implement Display for Config
@@ -42,6 +55,14 @@ impl std::fmt::Display for Config {
             self.db.url, self.db.listen_channels, self.db.notify_channel, self.db.batch_limit
         )
     }
+}
+
+#[derive(Clone)]
+pub struct HandleItem {
+    pub tenant_id: i32,
+    pub handle: Vec<u8>,
+    pub ct64_compressed: Vec<u8>,
+    pub ct128_uncompressed: Option<Vec<u8>>,
 }
 
 #[derive(Error, Debug)]
@@ -57,23 +78,44 @@ pub enum ExecutionError {
 
     #[error("Serialization error: {0}")]
     SerializationError(#[from] bincode::Error),
+
+    #[error("Missing 128-bit ciphertext: {0}")]
+    MissingCiphertext128(String),
+
+    #[error("Recv error")]
+    RecvFailure,
+
+    #[error("Failed S3 upload: {0}")]
+    FailedUpload(String),
+
+    #[error("Upload timeout")]
+    UploadTimeout,
 }
 
-/// Starts the worker loop
-///
-/// # Arguments
-///
-/// * `keys` - The keys to use for the worker
-/// * `limit` - The maximum number of tasks to process per iteration
-pub async fn run(
-    keys: Option<KeySet>,
+/// Runs the SnS worker loop
+pub async fn compute_128bit_ct(
     conf: &Config,
-    cancel_chan: broadcast::Receiver<()>,
+    tx: Sender<HandleItem>,
+    token: CancellationToken,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     info!(target: "sns", "Worker started with {}", conf);
 
-    executor::run_loop(keys, conf, cancel_chan).await?;
+    executor::run_loop(conf, &tx, token).await?;
 
     info!(target: "sns", "Worker stopped");
+    Ok(())
+}
+
+/// Runs the uploader loop
+pub async fn process_s3_uploads(
+    conf: &Config,
+    rx: mpsc::Receiver<HandleItem>,
+    token: CancellationToken,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    info!(target: "sns", "Uploader started with {:?}", conf.s3);
+
+    aws_upload::process_s3_uploads(conf, rx, token).await?;
+
+    info!(target: "sns", "Uploader stopped");
     Ok(())
 }

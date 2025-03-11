@@ -173,9 +173,7 @@ async fn upload_ciphertexts(
 
     // If both uploads are successful, notify the Transaction Sender
     if up1.is_ok() && up2.is_ok() {
-        sqlx::query("SELECT pg_notify($1, $2)")
-            .bind(EVENT_ADD_CIPHERTEXTS)
-            .bind(handle_as_hex.clone())
+        sqlx::query("SELECT pg_notify($1, '')")
             .bind(EVENT_ADD_CIPHERTEXTS)
             .execute(trx.as_mut())
             .await?;
