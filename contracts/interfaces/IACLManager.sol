@@ -93,7 +93,7 @@ interface IACLManager {
     /// @param ctHandleContractPairs The ciphertext handles and their associated contract addresses.
     function checkUserDecryptAllowed(
         address userAddress,
-        IDecryptionManager.CtHandleContractPair[] calldata ctHandleContractPairs
+        CtHandleContractPair[] calldata ctHandleContractPairs
     ) external view;
 
     /// @notice Checks if the public decryption is allowed for all the given ciphertext handles.
