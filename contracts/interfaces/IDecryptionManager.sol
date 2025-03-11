@@ -10,15 +10,6 @@ import "../shared/Structs.sol";
 /// @dev Request functions are callable by any user or the relayer
 /// @dev Response functions are only callable by the KMS Connectors
 interface IDecryptionManager {
-    /// @notice A struct that contains a ciphertext handle and a contract address that is
-    /// @notice expected to be allowed to decrypt this ciphertext
-    struct CtHandleContractPair {
-        /// @notice The handle of the ciphertext
-        uint256 ctHandle;
-        /// @notice The address of the contract
-        address contractAddress;
-    }
-
     /// @notice A struct that specifies the validity period of a request, starting at "startTimestamp"
     /// @notice and remaining valid for "durationDays".
     struct RequestValidity {

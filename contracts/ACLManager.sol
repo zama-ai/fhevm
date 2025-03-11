@@ -158,7 +158,7 @@ contract ACLManager is IACLManager {
     /// @dev See {IACLManager-checkUserDecryptAllowed}.
     function checkUserDecryptAllowed(
         address userAddress,
-        IDecryptionManager.CtHandleContractPair[] calldata ctHandleContractPairs
+        CtHandleContractPair[] calldata ctHandleContractPairs
     ) public view virtual {
         for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
             uint256 ctHandle = ctHandleContractPairs[i].ctHandle;
