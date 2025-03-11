@@ -27,7 +27,8 @@ pub struct Args {
     #[arg(long, default_value_t = 10)]
     pub pg_pool_connections: u32,
 
-    /// Postgres database url. If unspecified DATABASE_URL environment variable is used
+    /// Postgres database url. If unspecified DATABASE_URL environment variable
+    /// is used
     #[arg(long)]
     pub database_url: Option<String>,
 
@@ -38,6 +39,14 @@ pub struct Args {
     /// sns-executor service name in OTLP traces (not implemented)
     #[arg(long, default_value = "sns-executor")]
     pub service_name: String,
+
+    /// S3 bucket name for Ct128 ciphertexts
+    #[arg(long, default_value = "Ct128")]
+    pub bucket_name_ct128: String,
+
+    /// S3 bucket name for Ct64 ciphertexts
+    #[arg(long, default_value = "Ct64")]
+    pub bucket_name_ct64: String,
 }
 
 pub fn parse_args() -> Args {

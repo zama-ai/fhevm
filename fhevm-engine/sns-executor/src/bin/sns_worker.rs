@@ -1,41 +1,28 @@
-use serde::{de::DeserializeOwned, Serialize};
-use sns_executor::DBConfig;
-use std::fs;
-use tokio::{signal::unix, sync::broadcast};
-
+use sns_executor::{
+    compute_128bit_ct, process_s3_uploads, Config, DBConfig, HandleItem, S3Config,
+    UPLOAD_QUEUE_SIZE,
+};
+use tokio::{signal::unix, spawn, sync::mpsc};
+use tokio_util::sync::CancellationToken;
 mod utils;
 
-fn read_element<T: DeserializeOwned + Serialize>(file_path: String) -> anyhow::Result<T> {
-    let read_element = fs::read(file_path.clone())?;
-    Ok(bincode::deserialize_from(read_element.as_slice())?)
-}
-
-fn handle_sigint(cancel_tx: broadcast::Sender<()>) {
+fn handle_sigint(token: CancellationToken) {
     tokio::spawn(async move {
         let mut signal = unix::signal(unix::SignalKind::interrupt()).unwrap();
         signal.recv().await;
-        cancel_tx.send(()).unwrap();
+        token.cancel();
     });
 }
 
-#[tokio::main]
-async fn main() {
-    let args = utils::daemon_cli::parse_args();
-
-    // Read keys from the file path, if specified
-    let mut keys = None;
-    if let Some(path) = args.keys_file_path {
-        keys = Some(read_element(path).expect("Failed to read keys."));
-    }
+fn construct_config() -> Config {
+    let args: utils::daemon_cli::Args = utils::daemon_cli::parse_args();
 
     let db_url = args
         .database_url
         .clone()
         .unwrap_or_else(|| std::env::var("DATABASE_URL").expect("DATABASE_URL is undefined"));
 
-    tracing_subscriber::fmt().json().with_level(true).init();
-
-    let conf = sns_executor::Config {
+    Config {
         tenant_api_key: args.tenant_api_key,
         db: DBConfig {
             url: db_url,
@@ -45,13 +32,37 @@ async fn main() {
             polling_interval: args.pg_polling_interval,
             max_connections: args.pg_pool_connections,
         },
-    };
+        s3: S3Config {
+            bucket_ct128: args.bucket_name_ct128,
+            bucket_ct64: args.bucket_name_ct64,
+        },
+    }
+}
+
+#[tokio::main]
+async fn main() {
+    let conf: Config = construct_config();
+    let parent = CancellationToken::new();
+
+    tracing_subscriber::fmt().json().with_level(true).init();
 
     // Handle SIGINIT signals
-    let (cancel_tx, cancel_rx) = broadcast::channel(1);
-    handle_sigint(cancel_tx);
+    handle_sigint(parent.clone());
 
-    if let Err(err) = sns_executor::run(keys, &conf, cancel_rx).await {
-        tracing::error!("Worker failed: {:?}", err);
+    // Queue of tasks to upload ciphertexts
+    let (uploads_tx, uploads_rx) = mpsc::channel::<HandleItem>(UPLOAD_QUEUE_SIZE);
+
+    let config = conf.clone();
+    let token = parent.child_token();
+
+    spawn(async move {
+        if let Err(err) = process_s3_uploads(&config, uploads_rx, token).await {
+            tracing::error!("Failed to run the upload-worker : {:?}", err);
+        }
+    });
+
+    // Start the SnS worker
+    if let Err(err) = compute_128bit_ct(&conf, uploads_tx, parent.child_token()).await {
+        tracing::error!("SnS worker failed: {:?}", err);
     }
 }
