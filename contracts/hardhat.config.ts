@@ -1,6 +1,7 @@
 import '@nomicfoundation/hardhat-toolbox';
 import '@openzeppelin/hardhat-upgrades';
 import dotenv from 'dotenv';
+import fs from 'fs';
 import 'hardhat-deploy';
 import 'hardhat-ignore-warnings';
 import type { HardhatUserConfig, extendProvider } from 'hardhat/config';
@@ -50,6 +51,10 @@ task('test', async (taskArgs, hre, runSuper) => {
   if (hre.network.name === 'hardhat') {
     const privKeyFhevmDeployer = process.env.PRIVATE_KEY_FHEVM_DEPLOYER;
     const privKeyFhevmRelayer = process.env.PRIVATE_KEY_DECRYPTION_ORACLE_RELAYER;
+    const parsedEnv2 = dotenv.parse(fs.readFileSync('addressesL2/.env.decryptionmanager'));
+    const decryptionManagerAddress = parsedEnv2.DECRYPTION_MANAGER_ADDRESS;
+    const parsedEnv3 = dotenv.parse(fs.readFileSync('addressesL2/.env.zkpokmanager'));
+    const zkpokManagerAddress = parsedEnv3.ZKPOK_MANAGER_ADDRESS;
     await hre.run('task:faucetToPrivate', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:faucetToPrivate', { privateKey: privKeyFhevmRelayer });
 
@@ -62,8 +67,14 @@ task('test', async (taskArgs, hre, runSuper) => {
 
     await hre.run('task:deployACL', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:deployTFHEExecutor', { privateKey: privKeyFhevmDeployer });
-    await hre.run('task:deployKMSVerifier', { privateKey: privKeyFhevmDeployer });
-    await hre.run('task:deployInputVerifier', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:deployKMSVerifier', {
+      privateKey: privKeyFhevmDeployer,
+      decryptionManagerAddress: decryptionManagerAddress,
+    });
+    await hre.run('task:deployInputVerifier', {
+      privateKey: privKeyFhevmDeployer,
+      zkpokManagerAddress: zkpokManagerAddress,
+    });
     await hre.run('task:deployFHEGasLimit', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:deployDecryptionOracle', { privateKey: privKeyFhevmDeployer });
 

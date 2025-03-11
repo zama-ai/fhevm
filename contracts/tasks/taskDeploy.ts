@@ -104,6 +104,7 @@ task('task:deployTFHEExecutor')
 
 task('task:deployKMSVerifier')
   .addParam('privateKey', 'The deployer private key')
+  .addParam('decryptionManagerAddress', 'The decryption manager contract address from the Gateway chain')
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
     const deployer = new ethers.Wallet(taskArguments.privateKey).connect(ethers.provider);
     const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
@@ -111,10 +112,9 @@ task('task:deployKMSVerifier')
     const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.kmsverifier'));
     const proxyAddress = parsedEnv.KMS_VERIFIER_CONTRACT_ADDRESS;
     const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
-    const parsedEnv2 = dotenv.parse(fs.readFileSync('addressesL2/.env.decryptionmanager'));
-    const verifyingContractSource = parsedEnv2.DECRYPTION_MANAGER_ADDRESS;
-    const parsedEnv3 = dotenv.parse(fs.readFileSync('.env'));
-    const chainIDSource = +parsedEnv3.CHAIN_ID_GATEWAY;
+    const verifyingContractSource = taskArguments.decryptionManagerAddress;
+    const parsedEnv2 = dotenv.parse(fs.readFileSync('.env'));
+    const chainIDSource = +parsedEnv2.CHAIN_ID_GATEWAY;
     await upgrades.upgradeProxy(proxy, newImplem, {
       call: { fn: 'reinitialize', args: [verifyingContractSource, chainIDSource] },
     });
@@ -123,6 +123,7 @@ task('task:deployKMSVerifier')
 
 task('task:deployInputVerifier')
   .addParam('privateKey', 'The deployer private key')
+  .addParam('zkpokManagerAddress', 'The ZKPOK manager contract address from the Gateway chain')
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
     const deployer = new ethers.Wallet(taskArguments.privateKey).connect(ethers.provider);
     const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
@@ -130,10 +131,9 @@ task('task:deployInputVerifier')
     const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.inputverifier'));
     const proxyAddress = parsedEnv.INPUT_VERIFIER_CONTRACT_ADDRESS;
     const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
-    const parsedEnv2 = dotenv.parse(fs.readFileSync('addressesL2/.env.zkpokmanager'));
-    const verifyingContractSource = parsedEnv2.ZKPOK_MANAGER_ADDRESS;
-    const parsedEnv3 = dotenv.parse(fs.readFileSync('.env'));
-    const chainIDSource = +parsedEnv3.CHAIN_ID_GATEWAY;
+    const verifyingContractSource = taskArguments.zkpokManagerAddress;
+    const parsedEnv2 = dotenv.parse(fs.readFileSync('.env'));
+    const chainIDSource = +parsedEnv2.CHAIN_ID_GATEWAY;
     await upgrades.upgradeProxy(proxy, newImplem, {
       call: { fn: 'reinitialize', args: [verifyingContractSource, chainIDSource] },
     });
