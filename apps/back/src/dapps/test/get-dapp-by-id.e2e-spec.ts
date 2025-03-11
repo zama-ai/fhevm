@@ -93,7 +93,7 @@ describe('get-dapp-by-id', () => {
         if (!result.success) {
           expect(result.errors).toBeDefined()
           expect(result.errors.length).toBeGreaterThan(0)
-          expect(result.errors[0].message).toContain('not found')
+          expect(result.errors[0].message).toContain('DApp not found')
         }
       })
     })
@@ -110,9 +110,11 @@ describe('get-dapp-by-id', () => {
           },
           { signup: true }, // signup the second user
         )
-        expect(loginResult.success, 'Failed to login the user').toBe(true)
         if (loginResult.success) {
           token2 = loginResult.data.token
+        } else {
+          console.log(`failed to login: ${JSON.stringify(loginResult)}`)
+          expect(loginResult.success, 'Failed to login the user').toBe(true)
         }
 
         result = await manager.dapp.getDapp({
@@ -121,7 +123,7 @@ describe('get-dapp-by-id', () => {
         })
       })
 
-      test('then the dapp is not returned', () => {
+      test('then it raises a Not Found error', () => {
         expect(result.success).toBe(false)
         if (!result.success) {
           expect(result.errors).toBeDefined()
@@ -141,7 +143,7 @@ describe('get-dapp-by-id', () => {
         })
       })
 
-      test('then the dapp is not returned', () => {
+      test('then it raised an Unauthorized error', () => {
         expect(result.success).toBe(false)
         if (!result.success) {
           expect(result.errors).toBeDefined()

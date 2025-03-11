@@ -11,13 +11,12 @@ type OwnProps = {
   createdAt: number
 }
 export function DappsListItem({ id, name, status, createdAt }: OwnProps) {
-  const link = status === 'DRAFT' ? `/create/2/${id}` : `/dapp/${id}`
   return (
     <LinkBox as="article">
       <Card.Root variant="outline">
         <Card.Header>
           <Flex justify="space-between">
-            <LinkOverlay to={link}>{name}</LinkOverlay>
+            <LinkOverlay to={`/dapp/${id}`}>{name}</LinkOverlay>
             <DappStatus status={status} />
           </Flex>
         </Card.Header>

@@ -6,7 +6,7 @@ import {
   Mutation,
   Args,
 } from '@nestjs/graphql'
-import { UseGuards } from '@nestjs/common'
+import { UseFilters, UseGuards } from '@nestjs/common'
 import { JwtAuthGuard } from '../../auth/infra/guards/jwt-auth-guard.js'
 import { CurrentUser } from '../../auth/infra/decorators/current-user.js'
 import { GetTeamsByUserId } from '#users/use-cases/get-teams-by-user-id.use-case.js'
@@ -15,7 +15,9 @@ import { type UserProps } from '../domain/entities/user.js'
 import { UserId } from '../domain/entities/value-objects.js'
 import { UpdateUserInput } from './dto/inputs/update-user.input.js'
 import { UpdateUser } from '#users/use-cases/update-user-by-id.use-case.js'
+import { AppErrorFilter } from '#auth/infra/filters/app-error.filter.js'
 
+@UseFilters(AppErrorFilter)
 @Resolver(() => UserType)
 export class UsersResolver {
   constructor(

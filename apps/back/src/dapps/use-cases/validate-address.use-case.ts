@@ -1,8 +1,8 @@
 import { PUBSUB } from '#constants.js'
 import { Address } from '#dapps/domain/entities/value-objects.js'
-import { Inject, Injectable } from '@nestjs/common'
+import { Inject, Injectable, Logger } from '@nestjs/common'
 import { randomUUID } from 'crypto'
-import { back } from 'messages'
+import { back, generateRequestId } from 'messages'
 import { AppError, IPubSub, ISubscriber, Task, UseCase } from 'utils'
 
 export type ValidateAddressInput = {
@@ -18,6 +18,8 @@ export type ValidateAddressOutput =
 export class ValidateAddress
   implements UseCase<ValidateAddressInput, ValidateAddressOutput>
 {
+  private readonly logger = new Logger(ValidateAddress.name)
+
   constructor(
     @Inject(PUBSUB) private readonly pubsub: IPubSub<back.BackEvent>,
   ) {}
@@ -53,15 +55,25 @@ export class ValidateAddress
             return Task.of(void 0)
           }
           this.pubsub.subscribe('back:address:validation:*', handler)
-          // Note: retrieve the correlationId from the request
+          // Note: retrieve the correlationId & requestId from the request
           this.pubsub.publish(
-            back.addressValidationRequested(input, {
-              correlationId: randomUUID(),
-            }),
+            back.addressValidationRequested(
+              { ...input, requestId: generateRequestId() },
+              { correlationId: randomUUID() },
+            ),
           )
         }),
-        Task.timeout<ValidateAddressOutput>(1),
-      ]),
+        // It fails after waiting for 30 seconds
+        // TODO: move the timeout delay into a constant or a configuration value
+        Task.timeout<ValidateAddressOutput>(30),
+      ])
+        .tap(value => {
+          this.logger.debug(`value=${JSON.stringify(value)}`)
+        })
+        .mapError(error => {
+          this.logger.debug(`${error._tag}: ${error.message}`)
+          return error
+        }),
     )
   }
 }

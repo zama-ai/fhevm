@@ -4,10 +4,10 @@ A user-friendly web app to manage your FHE dApps
 
 - apps:
 
-  - [@zws/front](apps/front/README.md) react
-  - [@zws/back](apps/back/README.md) nestjs + prisma + graphql
-  - [@zws/orchestrator](apps/orchestrator/README.md) nestjs + xstate
-  - [@zws/web3](apps/web3/README.md) nestjs
+  - [apps/front](apps/front/README.md) react
+  - [apps/back](apps/back/README.md) nestjs + prisma + graphql
+  - [apps/orchestrator](apps/orchestrator/README.md) nestjs + xstate
+  - [apps/web3](apps/web3/README.md) nestjs
 
 - packages:
 

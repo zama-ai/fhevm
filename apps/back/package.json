@@ -25,6 +25,7 @@
     "prestart": "pnpx prisma migrate dev"
   },
   "dependencies": {
+    "@apollo/server": "^4.11.3",
     "@aws-sdk/client-sqs": "^3.699.0",
     "@nestjs/apollo": "^12.2.1",
     "@nestjs/common": "^10.0.0",
@@ -38,6 +39,8 @@
     "@ssut/nestjs-sqs": "catalog:",
     "bcryptjs": "^2.4.3",
     "dotenv": "^16.4.7",
+    "graphql": "^16.9.0",
+    "graphql-query-complexity": "^1.0.0",
     "graphql-redis-subscriptions": "^2.7.0",
     "graphql-subscriptions": "^3.0.0",
     "graphql-ws": "^6.0.2",

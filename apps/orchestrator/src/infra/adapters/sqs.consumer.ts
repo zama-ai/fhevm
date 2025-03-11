@@ -40,9 +40,6 @@ export class SQSConsumer {
           this.logger.debug(`❌ unhandled message ${(data as any).type}`)
         }
       } catch (error) {
-        console.log(
-          `❌ failed to publish message: ${isAppError(error) ? error.message : error}`,
-        )
         this.logger.warn(
           `❌ failed to publish message: ${isAppError(error) ? error.message : error}`,
         )

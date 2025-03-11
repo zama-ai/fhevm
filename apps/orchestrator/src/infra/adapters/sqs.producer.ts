@@ -58,9 +58,6 @@ export class SQSProducer implements EventProducer {
             resolve()
           })
           .catch(err => {
-            console.log(
-              `❌[${Number(process.env.VITEST_POOL_ID) - 1}] failed to publish message to queue ${queueUrl}: ${JSON.stringify(err)}`,
-            )
             this.logger.warn(
               `❌ failed to publish message to queue ${queueUrl}: ${JSON.stringify(err)}`,
             )

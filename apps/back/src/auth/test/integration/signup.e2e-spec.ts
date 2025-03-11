@@ -105,11 +105,12 @@ describe('signup', () => {
 
   describe('given no invitation exists', () => {
     describe('when signing up', () => {
+      let result: GraphQlResponse<{ token: string; user: User }>
       let token: string
       let user: { email: string; name: string }
 
       beforeEach(async () => {
-        const result = await manager.auth.signup({
+        result = await manager.auth.signup({
           invitation: faker.string.uuid(),
           name: faker.internet.username(),
           password: faker.internet.password(),
@@ -124,6 +125,16 @@ describe('signup', () => {
 
       test('then it does not return a user', () => {
         expect(user).toBeUndefined()
+      })
+
+      test('then it raise an error', () => {
+        if (result.success) {
+          console.log(`signup should fail: ${JSON.stringify(result)}`)
+          expect(result.success).toBe(false)
+        } else {
+          expect(result.errors.length).toBe(1)
+          expect(result.errors[0].message).toContain('Invitation not found')
+        }
       })
     })
   })
