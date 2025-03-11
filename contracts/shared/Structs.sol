@@ -19,3 +19,14 @@ struct CiphertextMaterial {
     uint256 keyId;
     bytes ciphertext;
 }
+
+/**
+ * @notice A struct that contains a ciphertext handle and a contract address that is
+ * @notice expected to be allowed to decrypt this ciphertext
+ */
+struct CtHandleContractPair {
+    /// @notice The handle of the ciphertext
+    uint256 ctHandle;
+    /// @notice The address of the contract
+    address contractAddress;
+}

@@ -5,6 +5,7 @@ import { BigNumberish, EventLog } from "ethers";
 import hre from "hardhat";
 
 import { IDecryptionManager, KeyManager } from "../typechain-types";
+import { CtHandleContractPairStruct } from "../typechain-types/contracts/interfaces/IDecryptionManager";
 import {
   createEIP712RequestDelegatedUserDecrypt,
   createEIP712RequestUserDecrypt,
@@ -604,7 +605,7 @@ describe("DecryptionManager", function () {
       // Create dummy input data for the user decryption request
       const contractsChainId = chainId;
       const contractAddresses = [contractAddress];
-      let ctHandleContractPairs: IDecryptionManager.CtHandleContractPairStruct[] = [];
+      let ctHandleContractPairs: CtHandleContractPairStruct[] = [];
       for (const ctHandle of ctHandles) {
         ctHandleContractPairs.push({
           contractAddress,
@@ -648,7 +649,7 @@ describe("DecryptionManager", function () {
       // Create dummy input data for the user decryption request
       const contractsChainId = chainId;
       const contractAddresses = [contractAddress];
-      const ctHandleContractPairs: IDecryptionManager.CtHandleContractPairStruct[] = [
+      const ctHandleContractPairs: CtHandleContractPairStruct[] = [
         {
           contractAddress,
           ctHandle: ctHandles[0],
@@ -684,7 +685,7 @@ describe("DecryptionManager", function () {
       // Create dummy input data for the user decryption request
       const contractsChainId = chainId;
       const contractAddresses = [contractAddress];
-      const ctHandleContractPairs: IDecryptionManager.CtHandleContractPairStruct[] = [];
+      const ctHandleContractPairs: CtHandleContractPairStruct[] = [];
 
       // Sign the message with the user
       const [userSignature] = await getSignaturesUserDecryptRequest(eip712RequestMessage, [user]);
@@ -770,7 +771,7 @@ describe("DecryptionManager", function () {
       const contractAddress = hre.ethers.Wallet.createRandom().address;
       const publicKey = hre.ethers.randomBytes(32);
       const userSignature = hre.ethers.randomBytes(32);
-      const ctHandleContractPairs: IDecryptionManager.CtHandleContractPairStruct[] = [
+      const ctHandleContractPairs: CtHandleContractPairStruct[] = [
         {
           contractAddress,
           ctHandle: ctHandles[0],
@@ -807,7 +808,7 @@ describe("DecryptionManager", function () {
 
       // Create dummy input data for the user decryption request
       const contractAddresses = [contractAddress];
-      const ctHandleContractPairs: IDecryptionManager.CtHandleContractPairStruct[] = [
+      const ctHandleContractPairs: CtHandleContractPairStruct[] = [
         {
           contractAddress,
           ctHandle: ctHandles[0],
@@ -843,7 +844,7 @@ describe("DecryptionManager", function () {
       // Create dummy input data for the user decryption request
       const contractAddresses = [hre.ethers.Wallet.createRandom().address];
       const publicKey = hre.ethers.randomBytes(32);
-      const ctHandleContractPairs: IDecryptionManager.CtHandleContractPairStruct[] = [
+      const ctHandleContractPairs: CtHandleContractPairStruct[] = [
         {
           contractAddress,
           ctHandle: ctHandles[0],
@@ -934,7 +935,7 @@ describe("DecryptionManager", function () {
       // Create dummy input data for the user decryption request
       const contractsChainId = chainId;
       const contractAddresses = [contractAddress];
-      const ctHandleContractPairs: IDecryptionManager.CtHandleContractPairStruct[] = [
+      const ctHandleContractPairs: CtHandleContractPairStruct[] = [
         {
           contractAddress,
           ctHandle: ctHandles[0],
@@ -982,7 +983,7 @@ describe("DecryptionManager", function () {
       // Create dummy input data for the user decryption request
       const contractsChainId = chainId;
       const contractAddresses = [contractAddress];
-      const ctHandleContractPairs: IDecryptionManager.CtHandleContractPairStruct[] = [
+      const ctHandleContractPairs: CtHandleContractPairStruct[] = [
         {
           contractAddress,
           ctHandle: ctHandles[0],
@@ -1054,7 +1055,7 @@ describe("DecryptionManager", function () {
       // Create dummy input data for the user decryption request
       const contractsChainId = chainId;
       const contractAddresses = [contractAddress];
-      const ctHandleContractPairs: IDecryptionManager.CtHandleContractPairStruct[] = [
+      const ctHandleContractPairs: CtHandleContractPairStruct[] = [
         {
           contractAddress,
           ctHandle: ctHandles[0],
@@ -1138,7 +1139,7 @@ describe("DecryptionManager", function () {
       };
 
       // Allow user decryption and build ctHandleContractPairs
-      const ctHandleContractPairs: IDecryptionManager.CtHandleContractPairStruct[] = [];
+      const ctHandleContractPairs: CtHandleContractPairStruct[] = [];
       for (const ctHandle of ctHandles) {
         const contractAddress = hre.ethers.Wallet.createRandom().address;
         for (let i = 0; i < coprocessorSigners.length; i++) {
@@ -1420,7 +1421,7 @@ describe("DecryptionManager", function () {
       const publicKey = hre.ethers.randomBytes(32);
       const userSignature = hre.ethers.randomBytes(32);
       const delegatedAddress = hre.ethers.Wallet.createRandom().address;
-      const ctHandleContractPairs: IDecryptionManager.CtHandleContractPairStruct[] = [
+      const ctHandleContractPairs: CtHandleContractPairStruct[] = [
         {
           contractAddress,
           ctHandle: ctHandles[0],
