@@ -40,12 +40,14 @@ pub struct Args {
     #[arg(long, default_value = "sns-executor")]
     pub service_name: String,
 
-    /// S3 bucket name for Ct128 ciphertexts
-    #[arg(long, default_value = "Ct128")]
+    /// S3 bucket name for ct128 ciphertexts
+    /// See also: general purpose buckets naming rules
+    #[arg(long, default_value = "ct128")]
     pub bucket_name_ct128: String,
 
-    /// S3 bucket name for Ct64 ciphertexts
-    #[arg(long, default_value = "Ct64")]
+    /// S3 bucket name for ct64 ciphertexts
+    /// See also: general purpose buckets naming rules
+    #[arg(long, default_value = "ct64")]
     pub bucket_name_ct64: String,
 }
 

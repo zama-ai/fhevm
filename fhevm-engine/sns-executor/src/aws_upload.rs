@@ -117,9 +117,11 @@ async fn upload_ciphertexts(
     .execute(trx.as_mut())
     .await?;
 
+    let mut ct128_uploaded = false;
     // Insert digest for ct128 only if ct128 upload was successful
     match &up1 {
         Ok(Ok(_)) => {
+            ct128_uploaded = true;
             sqlx::query!(
                 "UPDATE ciphertext_digest
                  SET ciphertext128 = $1
@@ -145,8 +147,10 @@ async fn upload_ciphertexts(
     };
 
     // Insert digest for ct64 only if ct64 upload was successful
+    let mut ct64_uploaded = false;
     match &up2 {
         Ok(Ok(_)) => {
+            ct64_uploaded = true;
             sqlx::query!(
                 "UPDATE ciphertext_digest
                  SET ciphertext = $1
@@ -172,7 +176,7 @@ async fn upload_ciphertexts(
     }
 
     // If both uploads are successful, notify the Transaction Sender
-    if up1.is_ok() && up2.is_ok() {
+    if ct128_uploaded && ct64_uploaded {
         sqlx::query("SELECT pg_notify($1, '')")
             .bind(EVENT_ADD_CIPHERTEXTS)
             .execute(trx.as_mut())
