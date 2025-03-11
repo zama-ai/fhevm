@@ -244,12 +244,12 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
     }
 
     /**
-     * @notice          Cleans transient storage.
+     * @notice          Cleans a hashmap in transient storage.
      * @dev             This is important to keep composability in the context of account abstraction.
      * @param keys      An array of keys to cleanup from transient storage.
      * @param maxIndex  The biggest index to take into account from the array - assumed to be less or equal to keys.length.
      */
-    function _cleanTransientStorage(address[] memory keys, uint256 maxIndex) internal virtual {
+    function _cleanTransientHashMap(address[] memory keys, uint256 maxIndex) internal virtual {
         for (uint256 j = 0; j < maxIndex; j++) {
             _tstore(keys[j], 0);
         }
@@ -300,11 +300,11 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
                 _tstore(signerRecovered, 1);
             }
             if (uniqueValidCount >= threshold) {
-                _cleanTransientStorage(recoveredSigners, uniqueValidCount);
+                _cleanTransientHashMap(recoveredSigners, uniqueValidCount);
                 return true;
             }
         }
-        _cleanTransientStorage(recoveredSigners, uniqueValidCount);
+        _cleanTransientHashMap(recoveredSigners, uniqueValidCount);
         return false;
     }
 

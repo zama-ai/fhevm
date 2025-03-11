@@ -405,7 +405,7 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
     }
 
     /**
-     * @notice          Cleans transient storage.
+     * @notice          Cleans a hashmap in transient storage.
      * @dev             This is important to keep composability in the context of account abstraction.
      * @param keys      An array of keys to cleanup from transient storage.
      * @param maxIndex  The biggest index to take into account from the array - assumed to be less or equal to keys.length.

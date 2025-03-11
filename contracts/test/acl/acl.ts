@@ -17,7 +17,7 @@ describe('ACL', function () {
     this.acl = acl;
     this.tfheAddress = await acl.getTFHEExecutorAddress();
 
-    const amountToDistribute = BigInt(100 * 1e18);
+    const amountToDistribute = BigInt(100 * 1e24);
     await ethers.provider.send('hardhat_impersonateAccount', [this.tfheAddress]);
     await ethers.provider.send('hardhat_setBalance', [this.tfheAddress, '0x' + amountToDistribute.toString(16)]);
     this.tfheExecutor = await ethers.getSigner(this.tfheAddress);
