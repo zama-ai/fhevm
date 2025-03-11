@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, test } from 'vitest'
 import { mock, MockProxy } from 'vitest-mock-extended'
 import { SQSConsumer } from './sqs.consumer.js'
 import { Test } from '@nestjs/testing'
-import { MS_NAME, PUBSUB } from '#constants.js'
+import { PUBSUB } from '#constants.js'
 import { faker } from '@faker-js/faker'
 import { Message } from '@aws-sdk/client-sqs'
 
@@ -58,13 +58,7 @@ describe('SqsConsumer', () => {
 
           await consumer.handleMessage(message)
           if (forward) {
-            expect(pubsub.publish).toBeCalledWith({
-              ...event,
-              meta: {
-                ...event.meta,
-                [`${MS_NAME}-dir`]: 'in',
-              },
-            })
+            expect(pubsub.publish).toBeCalledWith(event)
           } else {
             expect(pubsub.publish).not.toBeCalled()
           }

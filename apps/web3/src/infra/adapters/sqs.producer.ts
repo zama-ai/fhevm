@@ -19,7 +19,7 @@ export class SqsProducer {
       region: config.get('aws.region'),
       useQueueUrlAsEndpoint: true,
     })
-    this.#queueUrl = config.getOrThrow('aws.orchestrator.topicArn')
+    this.#queueUrl = config.getOrThrow('aws.orchestrator.queueUrl')
   }
 
   /**
