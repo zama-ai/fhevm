@@ -1155,14 +1155,6 @@ describe("DecryptionManager", function () {
 
       // Delegate account
       for (const coprocessorSigner of coprocessorSigners) {
-        await aclManager
-          .connect(coprocessorSigner)
-          .delegateAccount(chainId, user.address, delegationAccounts.delegatedAddress, []);
-        await aclManager
-          .connect(coprocessorSigner)
-          .delegateAccount(chainId, user.address, delegationAccounts.delegatedAddress, [
-            ctHandleContractPairs[0].contractAddress,
-          ]);
         await aclManager.connect(coprocessorSigner).delegateAccount(
           chainId,
           user.address,
