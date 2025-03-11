@@ -1,7 +1,7 @@
 import type { Message } from '@aws-sdk/client-sqs'
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { back } from 'messages'
-import { SqsMessageHandler } from 'sqs'
+import { SqsMessageHandler } from '@ssut/nestjs-sqs'
 import { MS_NAME, PUBSUB } from '#constants.js'
 import { isAppError, PubSub } from 'utils'
 

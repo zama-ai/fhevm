@@ -1,7 +1,7 @@
 import { SQSClient } from '@aws-sdk/client-sqs'
 import { Module } from '@nestjs/common'
 import { ConfigModule, ConfigService } from '@nestjs/config'
-import { SqsModule } from 'sqs'
+import { SqsModule } from '@ssut/nestjs-sqs'
 import awsConfig from './config/aws.config.js'
 import { SQSConsumer } from './infra/adapters/sqs.consumer.js'
 import { LoggerModule } from 'nestjs-pino'

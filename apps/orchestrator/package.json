@@ -32,7 +32,7 @@
     "@nestjs/core": "^10.0.0",
     "@nestjs/platform-express": "^10.0.0",
     "@prisma/client": "catalog:",
-    "@ssut/nestjs-sqs": "^3.0.0",
+    "@ssut/nestjs-sqs": "catalog:",
     "messages": "workspace:*",
     "nestjs-pino": "catalog:",
     "pino": "catalog:",

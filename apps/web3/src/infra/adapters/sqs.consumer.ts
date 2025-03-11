@@ -1,7 +1,7 @@
 import { Message } from '@aws-sdk/client-sqs'
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { web3 } from 'messages'
-import { SqsMessageHandler } from 'sqs'
+import { SqsMessageHandler } from '@ssut/nestjs-sqs'
 import { isAppError, type IPubSub } from 'utils'
 import { MS_NAME, PUBSUB } from '#constants.js'
 

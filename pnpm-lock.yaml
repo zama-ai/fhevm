@@ -9,6 +9,9 @@ catalogs:
     '@prisma/client':
       specifier: 6.3.1
       version: 6.3.1
+    '@ssut/nestjs-sqs':
+      specifier: ^3.0.0
+      version: 3.0.1
     eslint:
       specifier: ^9.13.0
       version: 9.20.1
@@ -82,6 +85,9 @@ importers:
       '@prisma/client':
         specifier: 'catalog:'
         version: 6.3.1(prisma@6.3.1(typescript@5.6.3))(typescript@5.6.3)
+      '@ssut/nestjs-sqs':
+        specifier: 'catalog:'
+        version: 3.0.1(@aws-sdk/client-sqs@3.750.0)(@nestjs/common@10.4.15(reflect-metadata@0.2.2)(rxjs@7.8.1))(@nestjs/core@10.4.15)
       bcryptjs:
         specifier: ^2.4.3
         version: 2.4.3
@@ -133,9 +139,6 @@ importers:
       rimraf:
         specifier: ^6.0.1
         version: 6.0.1
-      sqs:
-        specifier: workspace:*
-        version: link:../../packages/sqs
       utils:
         specifier: workspace:*
         version: link:../../packages/utils
@@ -269,15 +272,15 @@ importers:
       '@nestjs/platform-express':
         specifier: ^10.0.0
         version: 10.4.15(@nestjs/common@10.4.15(reflect-metadata@0.2.2)(rxjs@7.8.1))(@nestjs/core@10.4.15)
+      '@ssut/nestjs-sqs':
+        specifier: 'catalog:'
+        version: 3.0.1(@aws-sdk/client-sqs@3.750.0)(@nestjs/common@10.4.15(reflect-metadata@0.2.2)(rxjs@7.8.1))(@nestjs/core@10.4.15)
       reflect-metadata:
         specifier: ^0.2.0
         version: 0.2.2
       rxjs:
         specifier: ^7.8.1
         version: 7.8.1
-      sqs:
-        specifier: workspace:*
-        version: link:../../packages/sqs
     devDependencies:
       '@nestjs/cli':
         specifier: ^10.0.0
@@ -503,7 +506,7 @@ importers:
         specifier: 'catalog:'
         version: 6.3.1(prisma@6.3.1(typescript@5.6.3))(typescript@5.6.3)
       '@ssut/nestjs-sqs':
-        specifier: ^3.0.0
+        specifier: 'catalog:'
         version: 3.0.1(@aws-sdk/client-sqs@3.750.0)(@nestjs/common@10.4.15(reflect-metadata@0.2.2)(rxjs@7.8.1))(@nestjs/core@10.4.15)
       messages:
         specifier: workspace:*
@@ -650,6 +653,9 @@ importers:
       '@prisma/client':
         specifier: 'catalog:'
         version: 6.3.1(prisma@6.3.1(typescript@5.6.3))(typescript@5.6.3)
+      '@ssut/nestjs-sqs':
+        specifier: 'catalog:'
+        version: 3.0.1(@aws-sdk/client-sqs@3.750.0)(@nestjs/common@10.4.15(reflect-metadata@0.2.2)(rxjs@7.8.1))(@nestjs/core@10.4.15)
       cpx:
         specifier: ^1.5.0
         version: 1.5.0
@@ -677,9 +683,6 @@ importers:
       rxjs:
         specifier: ^7.8.1
         version: 7.8.1
-      sqs:
-        specifier: workspace:*
-        version: link:../../packages/sqs
       utils:
         specifier: workspace:*
         version: link:../../packages/utils
@@ -838,103 +841,6 @@ importers:
       vitest:
         specifier: 'catalog:'
         version: 3.0.2(@types/node@22.7.5)(terser@5.39.0)
-
-  packages/sqs:
-    dependencies:
-      '@aws-sdk/client-sqs':
-        specifier: ^3.699.0
-        version: 3.750.0
-      '@golevelup/nestjs-discovery':
-        specifier: ^4.0.2
-        version: 4.0.3(@nestjs/common@10.4.15(reflect-metadata@0.2.2)(rxjs@7.8.1))(@nestjs/core@10.4.15)
-      '@nestjs/common':
-        specifier: ^10.0.0
-        version: 10.4.15(reflect-metadata@0.2.2)(rxjs@7.8.1)
-      '@nestjs/core':
-        specifier: ^10.0.0
-        version: 10.4.15(@nestjs/common@10.4.15(reflect-metadata@0.2.2)(rxjs@7.8.1))(@nestjs/platform-express@10.4.15)(reflect-metadata@0.2.2)(rxjs@7.8.1)
-      '@nestjs/platform-express':
-        specifier: ^10.0.0
-        version: 10.4.15(@nestjs/common@10.4.15(reflect-metadata@0.2.2)(rxjs@7.8.1))(@nestjs/core@10.4.15)
-      reflect-metadata:
-        specifier: ^0.2.0
-        version: 0.2.2
-      rxjs:
-        specifier: ^7.8.1
-        version: 7.8.1
-      sqs-consumer:
-        specifier: ^11.2.0
-        version: 11.5.0(@aws-sdk/client-sqs@3.750.0)
-    devDependencies:
-      '@nestjs/cli':
-        specifier: ^10.0.0
-        version: 10.4.9(@swc/core@1.10.18(@swc/helpers@0.5.15))
-      '@nestjs/schematics':
-        specifier: ^10.0.0
-        version: 10.2.3(chokidar@3.6.0)(typescript@5.6.3)
-      '@nestjs/testing':
-        specifier: ^10.0.0
-        version: 10.4.15(@nestjs/common@10.4.15(reflect-metadata@0.2.2)(rxjs@7.8.1))(@nestjs/core@10.4.15)(@nestjs/platform-express@10.4.15)
-      '@types/express':
-        specifier: ^5.0.0
-        version: 5.0.0
-      '@types/node':
-        specifier: ^20.3.1
-        version: 20.17.19
-      '@types/supertest':
-        specifier: ^6.0.0
-        version: 6.0.2
-      '@typescript-eslint/eslint-plugin':
-        specifier: ^8.16.0
-        version: 8.24.1(@typescript-eslint/parser@8.24.1(eslint@9.20.1(jiti@2.4.2))(typescript@5.6.3))(eslint@9.20.1(jiti@2.4.2))(typescript@5.6.3)
-      '@typescript-eslint/parser':
-        specifier: ^8.16.0
-        version: 8.24.1(eslint@9.20.1(jiti@2.4.2))(typescript@5.6.3)
-      dotenv:
-        specifier: ^16.4.7
-        version: 16.4.7
-      eslint:
-        specifier: 'catalog:'
-        version: 9.20.1(jiti@2.4.2)
-      eslint-config-prettier:
-        specifier: ^9.1.0
-        version: 9.1.0(eslint@9.20.1(jiti@2.4.2))
-      eslint-plugin-prettier:
-        specifier: ^5.2.1
-        version: 5.2.3(@types/eslint@9.6.1)(eslint-config-prettier@9.1.0(eslint@9.20.1(jiti@2.4.2)))(eslint@9.20.1(jiti@2.4.2))(prettier@3.5.1)
-      globals:
-        specifier: ^15.11.0
-        version: 15.15.0
-      prettier:
-        specifier: ^3.0.0
-        version: 3.5.1
-      source-map-support:
-        specifier: ^0.5.21
-        version: 0.5.21
-      supertest:
-        specifier: ^7.0.0
-        version: 7.0.0
-      ts-loader:
-        specifier: ^9.4.3
-        version: 9.5.2(typescript@5.6.3)(webpack@5.97.1(@swc/core@1.10.18(@swc/helpers@0.5.15)))
-      ts-node:
-        specifier: ^10.9.1
-        version: 10.9.2(@swc/core@1.10.18(@swc/helpers@0.5.15))(@types/node@20.17.19)(typescript@5.6.3)
-      tsconfig-paths:
-        specifier: ^4.2.0
-        version: 4.2.0
-      typescript:
-        specifier: 'catalog:'
-        version: 5.6.3
-      unplugin-swc:
-        specifier: 'catalog:'
-        version: 1.5.1(@swc/core@1.10.18(@swc/helpers@0.5.15))(rollup@4.34.8)
-      vite-tsconfig-paths:
-        specifier: 'catalog:'
-        version: 5.1.4(typescript@5.6.3)(vite@5.4.14(@types/node@20.17.19)(terser@5.39.0))
-      vitest:
-        specifier: 'catalog:'
-        version: 3.0.2(@types/node@20.17.19)(terser@5.39.0)
 
   packages/utils:
     dependencies:

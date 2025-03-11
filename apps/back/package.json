@@ -35,6 +35,7 @@
     "@nestjs/passport": "^10.0.3",
     "@nestjs/platform-express": "^10.0.0",
     "@prisma/client": "catalog:",
+    "@ssut/nestjs-sqs": "catalog:",
     "bcryptjs": "^2.4.3",
     "dotenv": "^16.4.7",
     "graphql-redis-subscriptions": "^2.7.0",
@@ -52,7 +53,6 @@
     "pino-pretty": "catalog:",
     "reflect-metadata": "^0.2.0",
     "rimraf": "^6.0.1",
-    "sqs": "workspace:*",
     "utils": "workspace:*",
     "zod": "catalog:"
   },

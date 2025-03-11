@@ -4,7 +4,7 @@ import { SQSClient } from '@aws-sdk/client-sqs'
 import { Module } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 
-import { SqsModule } from 'sqs'
+import { SqsModule } from '@ssut/nestjs-sqs'
 import { SQSConsumer } from './sqs.consumer.js'
 import { SubscriptionsModule } from '#subscriptions/infra/subscriptions.module.js'
 import { SharedModule } from '#shared/shared.module.js'

@@ -30,6 +30,7 @@
     "@nestjs/core": "^10.0.0",
     "@nestjs/platform-express": "^10.0.0",
     "@prisma/client": "catalog:",
+    "@ssut/nestjs-sqs": "catalog:",
     "cpx": "^1.5.0",
     "messages": "workspace:*",
     "nestjs-cls": "^4.5.0",
@@ -39,7 +40,6 @@
     "pino-pretty": "catalog:",
     "reflect-metadata": "^0.2.0",
     "rxjs": "^7.8.1",
-    "sqs": "workspace:*",
     "utils": "workspace:*",
     "viem": "^2.23.5",
     "zod": "catalog:"
