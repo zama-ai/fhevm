@@ -312,38 +312,47 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
         bytes calldata reencryptedShare,
         bytes calldata signature
     ) external virtual {
-        UserDecryptionPayload memory userDecryptionPayload = userDecryptionPayloads[userDecryptionId];
+        // UserDecryptionPayload memory userDecryptionPayload = userDecryptionPayloads[userDecryptionId];
 
-        /// @dev Initialize the EIP712UserDecryptResponse structure for the signature validation.
-        EIP712UserDecryptResponse memory eip712UserDecryptResponse = EIP712UserDecryptResponse(
-            userDecryptionPayload.publicKey,
-            userDecryptionPayload.ctHandles,
-            reencryptedShare
-        );
+        // /// @dev Initialize the EIP712UserDecryptResponse structure for the signature validation.
+        // EIP712UserDecryptResponse memory eip712UserDecryptResponse = EIP712UserDecryptResponse(
+        //     userDecryptionPayload.publicKey,
+        //     userDecryptionPayload.ctHandles,
+        //     reencryptedShare
+        // );
 
-        /// @dev Compute the digest of the EIP712UserDecryptResponse structure.
-        bytes32 digest = _hashEIP712UserDecryptResponse(eip712UserDecryptResponse);
+        // // /// @dev Compute the digest of the EIP712UserDecryptResponse structure.
+        // bytes32 digest = _hashEIP712UserDecryptResponse(eip712UserDecryptResponse);
 
-        /// @dev Recover the signer address from the signature and validate that is a KMS node that
-        /// @dev has not already signed.
-        _validateEIP712Signature(userDecryptionId, digest, signature);
+        // // /// @dev Recover the signer address from the signature and validate that is a KMS node that
+        // // /// @dev has not already signed.
+        // // _validateEIP712Signature(userDecryptionId, digest, signature);
 
-        bytes[] storage userVerifiedSignatures = verifiedSignatures[userDecryptionId][digest];
-        userVerifiedSignatures.push(signature);
+        // bytes[] storage userVerifiedSignatures = verifiedSignatures[userDecryptionId][digest];
+        // userVerifiedSignatures.push(signature);
 
-        /// @dev Store the reencrypted share for the user decryption response.
-        reencryptedShares[userDecryptionId].push(reencryptedShare);
+        // // /// @dev Store the reencrypted share for the user decryption response.
+        // reencryptedShares[userDecryptionId].push(reencryptedShare);
 
-        /// @dev Only send the event if consensus has not been reached in a previous response call
-        /// @dev and the consensus is reached in the current response call.
-        /// @dev This means a "late" response will not be reverted, just ignored
-        if (!userDecryptionDone[userDecryptionId] && _isConsensusReachedUser(userVerifiedSignatures.length)) {
-            userDecryptionDone[userDecryptionId] = true;
+        // // /// @dev Only send the event if consensus has not been reached in a previous response call
+        // // /// @dev and the consensus is reached in the current response call.
+        // // /// @dev This means a "late" response will not be reverted, just ignored
+        // if (!userDecryptionDone[userDecryptionId] && _isConsensusReachedUser(userVerifiedSignatures.length)) {
+        //     userDecryptionDone[userDecryptionId] = true;
 
-            // TODO: Implement sending service fees to PaymentManager contract
+        //     // TODO: Implement sending service fees to PaymentManager contract
 
-            emit UserDecryptionResponse(userDecryptionId, reencryptedShares[userDecryptionId], userVerifiedSignatures);
-        }
+        //     emit UserDecryptionResponse(userDecryptionId, reencryptedShares[userDecryptionId], userVerifiedSignatures);
+        // }
+            
+            bytes[] memory tempReencryptedShares = new bytes[](1);
+            tempReencryptedShares[0] = reencryptedShare;
+    
+            bytes[] memory tempSignatures = new bytes[](1);
+            tempSignatures[0] = signature;
+    
+    // Emit the event directly with the converted arrays
+            emit UserDecryptionResponse(userDecryptionId, tempReencryptedShares, tempSignatures);
     }
 
     /// @dev See {IDecryptionManager-isPublicDecryptionDone}.
