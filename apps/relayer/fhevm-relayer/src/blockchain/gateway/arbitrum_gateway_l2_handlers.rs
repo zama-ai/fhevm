@@ -177,9 +177,9 @@ impl ArbitrumGatewayL2Handler {
                 )
                 .await
             {
-                Ok(decryption_public_id) => {
+                Ok(user_decryption_id) => {
                     self_clone
-                        .handle_successful_user_request(event_clone, decryption_user_id)
+                        .handle_successful_user_decryption_request(event_clone, user_decryption_id)
                         .await;
                 }
                 Err(e) => {
@@ -249,10 +249,49 @@ impl ArbitrumGatewayL2Handler {
         );
 
         // Create and dispatch the new event
-        let next_event =
-            event.derive_next_event(RelayerEventData::Decrypt(DecryptEventData::ReqSentToGwL2 {
+        let next_event = event.derive_next_event(RelayerEventData::Decrypt(
+            DecryptEventData::PublicReqSentToGwL2 {
                 gateway_l2_request_id: decryption_public_id,
-            }));
+            },
+        ));
+
+        if let Err(e) = self.dispatcher.dispatch_event(next_event).await {
+            error!(?e, "Failed to dispatch DecryptRequestProcessed event");
+        }
+    }
+
+    /// Processes a successful decryption request.
+    ///
+    /// # Arguments
+    /// * `event` - The original [`RelayerEvent`] containing request information
+    /// * `decryption_public_id` - The [`U256`] ID received from the decryption request
+    ///
+    /// # State Changes
+    /// Stores mapping in `decryption_id_to_request_id`
+    ///
+    /// # Events
+    /// Dispatches [`RelayerEventData::DecryptionRequestSentToGwL2`]
+    async fn handle_successful_user_decryption_request(
+        &self,
+        event: RelayerEvent,
+        user_decryption_id: U256,
+    ) {
+        // Store the mapping
+        self.user_decryption_id_to_request_id
+            .insert(user_decryption_id, event.request_id);
+
+        info!(
+            ?event.request_id,
+            ?user_decryption_id,
+            "Stored mapping between decryption ID and request ID"
+        );
+
+        // Create and dispatch the new event
+        let next_event = event.derive_next_event(RelayerEventData::Decrypt(
+            DecryptEventData::PublicReqSentToGwL2 {
+                gateway_l2_request_id: user_decryption_id,
+            },
+        ));
 
         if let Err(e) = self.dispatcher.dispatch_event(next_event).await {
             error!(?e, "Failed to dispatch DecryptRequestProcessed event");
@@ -432,6 +471,13 @@ impl ArbitrumGatewayL2Handler {
     fn handle_decrypt_request_sent(&self, id: U256) {
         info!(
             "Transaction to rollup has been done, the associated public decryption id is {}",
+            id
+        );
+    }
+
+    fn handle_user_decrypt_request_sent(&self, id: U256) {
+        info!(
+            "Transaction to rollup has been done, the associated user decryption id is {}",
             id
         );
     }
@@ -638,10 +684,15 @@ impl EventHandler<RelayerEvent> for ArbitrumGatewayL2Handler {
             RelayerEventData::EventLogResponseFromGwL2 { .. } => {
                 self.handle_decrypt_reponse_event_log(event).await;
             }
-            RelayerEventData::Decrypt(DecryptEventData::ReqSentToGwL2 {
+            RelayerEventData::Decrypt(DecryptEventData::PublicReqSentToGwL2 {
                 gateway_l2_request_id,
             }) => {
                 self.handle_decrypt_request_sent(gateway_l2_request_id);
+            }
+            RelayerEventData::Decrypt(DecryptEventData::UserReqSentToGwL2 {
+                gateway_l2_request_id,
+            }) => {
+                self.handle_user_decrypt_request_sent(gateway_l2_request_id);
             }
             _ => {
                 self.noop_handle_decrypt_reponse_event_log(event).await;

@@ -50,7 +50,8 @@ impl Event for RelayerEvent {
             RelayerEventData::Decrypt(decrypt_event) => match decrypt_event {
                 DecryptEventData::PublicDecryptReq { .. } => 1,
                 DecryptEventData::UserDecryptReq { .. } => 11,
-                DecryptEventData::ReqSentToGwL2 { .. } => 2,
+                DecryptEventData::PublicReqSentToGwL2 { .. } => 2,
+                DecryptEventData::UserReqSentToGwL2 { .. } => 12,
                 DecryptEventData::PublicDecryptRespFromGwL2 { .. } => 4,
                 DecryptEventData::UserDecryptRespFromGwL2 { .. } => 14,
                 DecryptEventData::RespSentToHostL1 { .. } => 5,
@@ -143,7 +144,11 @@ pub enum DecryptEventData {
         decrypt_request: UserDecryptRequest,
     },
 
-    ReqSentToGwL2 {
+    PublicReqSentToGwL2 {
+        gateway_l2_request_id: U256,
+    },
+
+    UserReqSentToGwL2 {
         gateway_l2_request_id: U256,
     },
 
@@ -177,7 +182,8 @@ impl DecryptEventData {
         match self {
             DecryptEventData::PublicDecryptReq { .. } => "Decrypt::PublicDecryptReq",
             DecryptEventData::UserDecryptReq { .. } => "Decrypt::UserDecryptReq",
-            DecryptEventData::ReqSentToGwL2 { .. } => "Decrypt::RequestSendToGwL2",
+            DecryptEventData::PublicReqSentToGwL2 { .. } => "Decrypt::PublicReqSentToGwL2",
+            DecryptEventData::UserReqSentToGwL2 { .. } => "Decrypt::UserReqSentToGwL2",
             DecryptEventData::PublicDecryptRespFromGwL2 { .. } => {
                 "Decrypt::PublicDecryptRespFromGwL2"
             }
