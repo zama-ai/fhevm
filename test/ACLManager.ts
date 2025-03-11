@@ -159,17 +159,7 @@ describe("ACLManager", function () {
       // Then
       await expect(txResponse)
         .to.emit(aclManager, "DelegateAccount")
-        .withArgs(chainId, delegator, delegatee, allowedContract1);
-      await expect(txResponse)
-        .to.emit(aclManager, "DelegateAccount")
-        .withArgs(chainId, delegator, delegatee, allowedContract2);
-      await expect(txResponse)
-        .to.emit(aclManager, "DelegateAccount")
-        .withArgs(chainId, delegator, delegatee, allowedContract3);
-
-      // Check that only three events were emitted: one for each allowed contract on the list
-      const events = await aclManager.queryFilter(aclManager.filters.DelegateAccount());
-      expect(events.length).to.equal(3);
+        .withArgs(chainId, delegator, delegatee, [allowedContract1, allowedContract2, allowedContract3]);
     });
 
     it("Should revert with CoprocessorHasAlreadyDelegated", async function () {
@@ -184,7 +174,7 @@ describe("ACLManager", function () {
       // Then
       await expect(txResponse)
         .revertedWithCustomError(aclManager, "CoprocessorHasAlreadyDelegated")
-        .withArgs(coprocessorSigners[0].address);
+        .withArgs(coprocessorSigners[0].address, chainId, delegator, delegatee, [allowedContract1]);
     });
 
     it("Should revert because the signer is not a Coprocessor", async function () {
@@ -197,6 +187,24 @@ describe("ACLManager", function () {
       await expect(txResponse)
         .revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
         .withArgs(fakeSigner.address, httpz.COPROCESSOR_ROLE());
+    });
+
+    it("Should revert because the contracts list exceeds the maximum length", async function () {
+      // Given
+      const exceededLength = 15;
+      const exceededContracts = [];
+      for (let i = 0; i < exceededLength; i++) {
+        exceededContracts.push(hre.ethers.Wallet.createRandom().address);
+      }
+      // When
+      const txResponse = aclManager
+        .connect(coprocessorSigners[0])
+        .delegateAccount(chainId, delegator, delegatee, exceededContracts);
+
+      // Then
+      await expect(txResponse)
+        .revertedWithCustomError(aclManager, "ContractsMaxLengthExceeded")
+        .withArgs(10, exceededLength);
     });
   });
 
@@ -310,20 +318,22 @@ describe("ACLManager", function () {
       const txResponse3 = aclManager.checkAccountDelegated(chainId, delegator, fakeDelegatee, allowedContracts);
 
       // Then
-      await expect(txResponse1).revertedWithCustomError(aclManager, "AccountNotDelegated");
-      await expect(txResponse2).revertedWithCustomError(aclManager, "AccountNotDelegated");
-      await expect(txResponse3).revertedWithCustomError(aclManager, "AccountNotDelegated");
+      await expect(txResponse1)
+        .revertedWithCustomError(aclManager, "AccountNotDelegated")
+        .withArgs(fakeChainId, delegator, delegatee, allowedContracts[0]);
+      await expect(txResponse2)
+        .revertedWithCustomError(aclManager, "AccountNotDelegated")
+        .withArgs(chainId, fakeDelegator, delegatee, allowedContracts[0]);
+      await expect(txResponse3)
+        .revertedWithCustomError(aclManager, "AccountNotDelegated")
+        .withArgs(chainId, delegator, fakeDelegatee, allowedContracts[0]);
     });
 
-    it("Should distinguish between differently ordered contract list", async function () {
+    it("Should not distinguish between differently ordered contract list", async function () {
       // Given
       const alteredAllowedContracts = [allowedContract2, allowedContract1];
 
-      // When
-      const txResponse = aclManager.checkAccountDelegated(chainId, delegator, delegatee, alteredAllowedContracts);
-
-      // Then
-      await expect(txResponse).revertedWithCustomError(aclManager, "AccountNotDelegated");
+      await aclManager.checkAccountDelegated(chainId, delegator, delegatee, alteredAllowedContracts);
     });
   });
 });
