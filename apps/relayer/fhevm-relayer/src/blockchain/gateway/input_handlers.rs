@@ -353,7 +353,9 @@ impl ArbitrumGatewayL2InputHandler {
                     }
                     _ => {}
                 },
-                None => {}
+                None => {
+                    info!("Not a input response event");
+                }
             }
         } else {
             error!("Invalid event type received");
@@ -416,5 +418,3 @@ impl EventHandler<RelayerEvent> for ArbitrumGatewayL2InputHandler {
         }
     }
 }
-
-

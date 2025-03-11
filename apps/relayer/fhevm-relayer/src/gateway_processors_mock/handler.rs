@@ -14,13 +14,14 @@ use crate::{
     },
     gateway_processors_mock::event::{
         GatewayProcessorsEvent, GatewayProcessorsEventData, GatewayProcessorsInputEventData,
+        PublicDecryptionEventData,
     },
     orchestrator::{traits::EventHandler, TokioEventDispatcher},
     transaction::{TransactionHelper, TransactionService, TxConfig},
 };
 use std::str::FromStr;
 
-use alloy::primitives::{Address, FixedBytes, U256};
+use alloy::primitives::{Address, FixedBytes, Log, U256};
 use alloy::signers::{local::PrivateKeySigner, Signer};
 use alloy::{
     sol,
@@ -31,7 +32,7 @@ use async_trait::async_trait;
 use std::{sync::Arc, time::Duration};
 use tracing::{debug, error, info};
 
-use super::event::DecryptionType;
+use super::event::{DecryptionType, UserDecryptionEventData};
 
 sol! {
     struct EIP712ZKPoK {
@@ -230,84 +231,115 @@ impl GatewayProcessorsHandler {
     ///
     /// # Events
     /// Dispatches [`RelayerEventData::DecryptionResponseRcvdFromGwL2`]
-    async fn process_decryption_request(
+    async fn process_public_decryption_request(
         &self,
         event: GatewayProcessorsEvent,
-        decryption_type: DecryptionType,
-    ) {
+    ) -> Result<(), EventProcessingError> {
         info!(
-            "Decryption request received. Prepare decryption response transaction to Gateway received. {:?} {:?}",
+            "Public Decryption request received. Prepare user decryption response transaction to Gateway received. {:?}",
             event.request_id,
-            decryption_type
         );
 
         // Simulate some computation time
         tokio::time::sleep(Duration::from_secs(2)).await;
 
-        if let GatewayProcessorsEventData::EventLogFromGwL2 {
-            log,
-            decryption_type,
-        } = &event.data
+        if let GatewayProcessorsEventData::PublicDecrypt(
+            PublicDecryptionEventData::EventLogRequestFromGwL2 { log },
+        ) = &event.data
         {
-            match decryption_type {
-                DecryptionType::PublicDecrypt => {
-                    match PublicDecryptionRequest::decode_log_data(log.data(), true) {
-                        Ok(req) => {
-                            let public_decryption_id = req.publicDecryptionId;
-                            info!(?public_decryption_id);
+            match PublicDecryptionRequest::decode_log_data(log.data(), true) {
+                Ok(req) => {
+                    let public_decryption_id = req.publicDecryptionId;
+                    info!(?public_decryption_id);
 
-                            let mut ciphertext_handles: Vec<U256> = Vec::new();
-                            for sns_ct_material in req.snsCtMaterials.clone() {
-                                ciphertext_handles.push(sns_ct_material.ctHandle);
-                            }
+                    let mut ciphertext_handles: Vec<U256> = Vec::new();
+                    for sns_ct_material in req.snsCtMaterials.clone() {
+                        ciphertext_handles.push(sns_ct_material.ctHandle);
+                    }
 
-                            info!(
-                                public_decryption_id = ?req.publicDecryptionId,
-                                handles = ?ciphertext_handles,
-                                "Processing PublicDecryptRequest event"
-                            );
+                    info!(
+                        public_decryption_id = ?req.publicDecryptionId,
+                        handles = ?ciphertext_handles,
+                        "Processing PublicDecryptRequest event"
+                    );
 
-                            match self.send_decryption_response(req).await {
-                                Ok(()) => {
-                                    info!("Public decryption response sent successfully!");
-                                }
-                                Err(e) => {
-                                    error!(?e, "Public decryption response processing failed!")
-                                }
-                            }
+                    match self.send_decryption_response(req).await {
+                        Ok(()) => {
+                            info!("Public decryption response sent successfully!");
+                            return Ok(());
                         }
                         Err(e) => {
-                            error!(?e, "Failed to decode public decrypt event data");
+                            error!(?e, "Public decryption response processing failed!");
+                            return Err(EventProcessingError::HandlerError(
+                                "Failed to decode public decrypt event data".to_owned(),
+                            ));
                         }
                     }
                 }
-                DecryptionType::UserDecrypt => {
-                    match UserDecryptionRequest::decode_log_data(log.data(), true) {
-                        Ok(req) => {
-                            let user_decryption_id = req.userDecryptionId;
-                            info!(?user_decryption_id);
 
-                            info!(
-                                user_decryption_id = ?req.userDecryptionId,
-                                "Processing UserDecryptRequest event"
-                            );
-
-                            match self.send_user_decryption_response(req).await {
-                                Ok(()) => {
-                                    info!("User decryption response sent successfully!");
-                                }
-                                Err(e) => {
-                                    error!(?e, "User decryption response processing failed!")
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            error!(?e, "Failed to decode user decrypt event data");
-                        }
-                    }
+                Err(e) => {
+                    error!(?e, "Failed to decode public decrypt event data");
+                    return Err(EventProcessingError::HandlerError(
+                        "Failed to decode public decrypt event data".to_owned(),
+                    ));
                 }
             }
         }
+        Err(EventProcessingError::HandlerError(
+            "Failed to decode public decrypt event data".to_owned(),
+        ))
+    }
+
+    async fn process_user_decryption_request(
+        &self,
+        event: GatewayProcessorsEvent,
+    ) -> Result<(), EventProcessingError> {
+        info!(
+        "User Decryption request received. Prepare decryption response transaction to Gateway received. {:?}",
+        event.request_id,
+    );
+
+        // Simulate some computation time
+        tokio::time::sleep(Duration::from_secs(2)).await;
+
+        if let GatewayProcessorsEventData::UserDecrypt(
+            UserDecryptionEventData::EventLogRequestFromGwL2 { log },
+        ) = &event.data
+        {
+            match UserDecryptionRequest::decode_log_data(log.data(), true) {
+                Ok(req) => {
+                    let user_decryption_id = req.userDecryptionId;
+                    info!(?user_decryption_id);
+
+                    info!(
+                        user_decryption_id = ?req.userDecryptionId,
+                        "Processing UserDecryptRequest event"
+                    );
+
+                    match self.send_user_decryption_response(req).await {
+                        Ok(()) => {
+                            info!("Public decryption response sent successfully!");
+                            return Ok(());
+                        }
+                        Err(e) => {
+                            error!(?e, "Public decryption response processing failed!");
+                            return Err(EventProcessingError::HandlerError(
+                                "Failed to decode public decrypt event data".to_owned(),
+                            ));
+                        }
+                    }
+                }
+                Err(e) => {
+                    error!(?e, "Failed to decode public decrypt event data");
+                    return Err(EventProcessingError::HandlerError(
+                        "Failed to decode public decrypt event data".to_owned(),
+                    ));
+                }
+            }
+        }
+        Err(EventProcessingError::HandlerError(
+            "Failed to decode public decrypt event data".to_owned(),
+        ))
     }
 }
 
@@ -334,12 +366,34 @@ impl EventHandler<GatewayProcessorsEvent> for GatewayProcessorsHandler {
                     }
                 }
             },
-            GatewayProcessorsEventData::EventLogFromGwL2 {
-                decryption_type, ..
-            } => {
-                info!("Received decryption event log from Gateway L2");
-                self.process_decryption_request(event, decryption_type.clone())
-                    .await;
+            GatewayProcessorsEventData::UserDecrypt(user_decrypt_event) => match user_decrypt_event
+            {
+                UserDecryptionEventData::EventLogRequestFromGwL2 { .. } => {
+                    info!("Received user decryption event log from Gateway L2");
+                    match self.process_user_decryption_request(event).await {
+                        Ok(()) => {
+                            info!("Input request processing succesfull!");
+                        }
+                        Err(e) => {
+                            error!(?e, "Input request processing failed!")
+                        }
+                    }
+                }
+            },
+            GatewayProcessorsEventData::PublicDecrypt(public_decrypt_event) => {
+                match public_decrypt_event {
+                    PublicDecryptionEventData::EventLogRequestFromGwL2 { .. } => {
+                        info!("Received decryption event log from Gateway L2");
+                        match self.process_public_decryption_request(event).await {
+                            Ok(()) => {
+                                info!("Input request processing succesfull!");
+                            }
+                            Err(e) => {
+                                error!(?e, "Input request processing failed!")
+                            }
+                        }
+                    }
+                }
             }
         }
     }

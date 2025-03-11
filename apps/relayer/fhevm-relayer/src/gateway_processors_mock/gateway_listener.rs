@@ -4,6 +4,7 @@ use tracing::{error, info};
 use crate::blockchain::ethereum::bindings::{DecyptionManager, ZKPoKManager};
 use crate::gateway_processors_mock::event::{
     self, GatewayProcessorsEvent, GatewayProcessorsEventData, GatewayProcessorsInputEventData,
+    PublicDecryptionEventData, UserDecryptionEventData,
 };
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
@@ -56,18 +57,20 @@ pub async fn event_listener_gateway(
                         },
                             DECRYPTION_REQUEST_TOPIC => {
                             info!("Received Public Decryption Request event");
-                            GatewayProcessorsEventData::EventLogFromGwL2 {
-                                log: event_log,
-                                decryption_type: event::DecryptionType::PublicDecrypt
-                            }
+                            GatewayProcessorsEventData::PublicDecrypt(
+                                PublicDecryptionEventData::EventLogRequestFromGwL2  {
+                                    log: event_log
+                                }
+                            )
                         },
 
                         USER_DECRYPTION_REQUEST_TOPIC => {
                             info!("Received User Decryption Request event");
-                            GatewayProcessorsEventData::EventLogFromGwL2 {
-                                log: event_log,
-                                decryption_type: event::DecryptionType::UserDecrypt
-                            }
+                            GatewayProcessorsEventData::UserDecrypt(
+                                UserDecryptionEventData::EventLogRequestFromGwL2  {
+                                    log: event_log
+                                }
+                            )
                         },
 
 

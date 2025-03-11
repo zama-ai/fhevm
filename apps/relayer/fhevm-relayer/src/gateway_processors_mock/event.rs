@@ -45,9 +45,15 @@ impl Event for GatewayProcessorsEvent {
     //TODO: Replace boiler plate with macro based code.
     fn event_id(&self) -> u8 {
         match &self.data {
-            GatewayProcessorsEventData::EventLogFromGwL2 { .. } => 3,
             GatewayProcessorsEventData::KmsInput(input_event) => match input_event {
-                GatewayProcessorsInputEventData::EventLogRequestFromGwL2 { .. } => 11,
+                GatewayProcessorsInputEventData::EventLogRequestFromGwL2 { .. } => 5,
+            },
+            GatewayProcessorsEventData::UserDecrypt(user_decrypt_event) => match user_decrypt_event
+            {
+                UserDecryptionEventData::EventLogRequestFromGwL2 { .. } => 4,
+            },
+            GatewayProcessorsEventData::PublicDecrypt(decrypt_event) => match decrypt_event {
+                PublicDecryptionEventData::EventLogRequestFromGwL2 { .. } => 3,
             },
         }
     }
@@ -77,19 +83,21 @@ pub enum ApiCategory {
 
 #[derive(Clone)]
 pub enum GatewayProcessorsEventData {
-    EventLogFromGwL2 {
-        // For gateway l2 handler
-        log: Log,
-        decryption_type: DecryptionType,
-    },
     KmsInput(GatewayProcessorsInputEventData),
+    UserDecrypt(UserDecryptionEventData),
+    PublicDecrypt(PublicDecryptionEventData),
 }
 
 impl AsRef<str> for GatewayProcessorsEventData {
     fn as_ref(&self) -> &str {
         match self {
-            GatewayProcessorsEventData::EventLogFromGwL2 { .. } => "EventLogFromGwL2",
             GatewayProcessorsEventData::KmsInput(input_event) => input_event.event_name(),
+            GatewayProcessorsEventData::UserDecrypt(user_decrypt_event) => {
+                user_decrypt_event.event_name()
+            }
+            GatewayProcessorsEventData::PublicDecrypt(public_decrypt_event) => {
+                public_decrypt_event.event_name()
+            }
         }
     }
 }
@@ -122,6 +130,36 @@ impl GatewayProcessorsInputEventData {
         match self {
             GatewayProcessorsInputEventData::EventLogRequestFromGwL2 { .. } => {
                 "KmsInput::EventLogRequestFromGwL2"
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum UserDecryptionEventData {
+    EventLogRequestFromGwL2 { log: Log },
+}
+
+impl UserDecryptionEventData {
+    pub fn event_name(&self) -> &'static str {
+        match self {
+            UserDecryptionEventData::EventLogRequestFromGwL2 { .. } => {
+                "UserDecryption::EventLogRequestFromGwL2"
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum PublicDecryptionEventData {
+    EventLogRequestFromGwL2 { log: Log },
+}
+
+impl PublicDecryptionEventData {
+    pub fn event_name(&self) -> &'static str {
+        match self {
+            PublicDecryptionEventData::EventLogRequestFromGwL2 { .. } => {
+                "UserDecryption::EventLogRequestFromGwL2"
             }
         }
     }

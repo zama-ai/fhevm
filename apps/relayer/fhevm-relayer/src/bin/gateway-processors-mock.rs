@@ -125,9 +125,9 @@ async fn main() -> eyre::Result<()> {
     // Register input event handlers
 
     // Event type: InputEventData::EventLogRequestFromGwL2
-    orchestrator.register_handler(11, Arc::clone(&gateway_processors_handler));
-    // Event type EventLogFromGwL2
-    orchestrator.register_handler(3, Arc::clone(&gateway_processors_handler));
+    orchestrator.register_handler(5, Arc::clone(&gateway_processors_handler));
+    // Event type UserDecryptionEventData::EventLogRequestFromGwL2
+    orchestrator.register_handler(4, Arc::clone(&gateway_processors_handler));
 
     // === Create a subscription for events and spawn a listener to listen for events from the subcription.
 
