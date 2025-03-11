@@ -28,9 +28,24 @@ npx hardhat task:deployHttpz --deployer-private-key "$DEPLOYER_PRIVATE_KEY" \
     --num-networks "$NUM_NETWORKS" \
     --network $NETWORK
 
-# Important: the ZKPoKManager contract must be deployed after the HTTPZ contract as it depends on it
+# Important: the contract deployment order is currently important as some contracts depend on others
 
 echo "Deploy ZKPoKManager contract:"
 # Deploy ZKPoKManager contract
 npx hardhat task:deployZkpokManager --deployer-private-key "$DEPLOYER_PRIVATE_KEY" --network $NETWORK
 
+echo "Deploy KeyManager contract:"
+# Deploy KeyManager contract
+npx hardhat task:deployKeyManager --deployer-private-key "$DEPLOYER_PRIVATE_KEY" --network $NETWORK
+
+echo "Deploy CiphertextStorage contract:"
+# Deploy CiphertextStorage contract
+npx hardhat task:deployCiphertextStorage --deployer-private-key "$DEPLOYER_PRIVATE_KEY" --network $NETWORK
+
+echo "Deploy ACLManager contract:"
+# Deploy ACLManager contract
+npx hardhat task:deployAclManager --deployer-private-key "$DEPLOYER_PRIVATE_KEY" --network $NETWORK
+
+echo "Deploy DecryptionManager contract:"
+# Deploy DecryptionManager contract
+npx hardhat task:deployDecryptionManager --deployer-private-key "$DEPLOYER_PRIVATE_KEY" --network $NETWORK
