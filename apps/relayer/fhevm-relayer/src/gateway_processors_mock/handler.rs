@@ -1,11 +1,17 @@
 use crate::{
     blockchain::ethereum::{
-        bindings::{DecyptionManager::PublicDecryptionRequest, ZKPoKManager},
+        bindings::{
+            DecyptionManager::{PublicDecryptionRequest, UserDecryptionRequest},
+            ZKPoKManager,
+        },
         ComputeCalldata,
     },
     config::settings::ContractConfig,
-    core::errors::EventProcessingError,
-    core::utils::{colorize_event_type, colorize_request_id},
+    core::{
+        errors::EventProcessingError,
+        event::UserDecryptRequest,
+        utils::{colorize_event_type, colorize_request_id},
+    },
     gateway_processors_mock::event::{
         GatewayProcessorsEvent, GatewayProcessorsEventData, GatewayProcessorsInputEventData,
     },
@@ -188,6 +194,27 @@ impl GatewayProcessorsHandler {
         Ok(())
     }
 
+    async fn send_user_decryption_response(
+        &self,
+        req: UserDecryptionRequest,
+    ) -> Result<(), EventProcessingError> {
+        let decryption_manager_address =
+            Address::from_str(&self.contracts.decryption_manager_address).map_err(|_| {
+                EventProcessingError::ConfigError(
+                    crate::config::settings::AppConfigError::InvalidAddress(
+                        "contracts.decryption_manager_address".to_owned(),
+                    ),
+                )
+            })?;
+        self.tx_helper
+            .send_transaction_simple("decryption_response", decryption_manager_address, || {
+                ComputeCalldata::user_decryption_response(req.clone())
+            })
+            .await?;
+
+        Ok(())
+    }
+
     /// Processes decryption response events.
     ///
     /// This function:
@@ -215,36 +242,69 @@ impl GatewayProcessorsHandler {
         );
 
         // Simulate some computation time
-
         tokio::time::sleep(Duration::from_secs(2)).await;
 
-        if let GatewayProcessorsEventData::EventLogFromGwL2 { log, .. } = &event.data {
-            match PublicDecryptionRequest::decode_log_data(log.data(), true) {
-                Ok(req) => {
-                    let public_decryption_id = req.publicDecryptionId;
-                    info!(?public_decryption_id,);
+        if let GatewayProcessorsEventData::EventLogFromGwL2 {
+            log,
+            decryption_type,
+        } = &event.data
+        {
+            match decryption_type {
+                DecryptionType::PublicDecrypt => {
+                    match PublicDecryptionRequest::decode_log_data(log.data(), true) {
+                        Ok(req) => {
+                            let public_decryption_id = req.publicDecryptionId;
+                            info!(?public_decryption_id);
 
-                    let mut ciphertext_handles: Vec<U256> = Vec::new();
-                    for sns_ct_material in req.snsCtMaterials.clone() {
-                        ciphertext_handles.push(sns_ct_material.ctHandle);
-                    }
-                    info!(
-                        public_decryption_id = ?req.publicDecryptionId,
-                        handles = ?ciphertext_handles,
-                        "Processing DecryptRequest event"
-                    );
+                            let mut ciphertext_handles: Vec<U256> = Vec::new();
+                            for sns_ct_material in req.snsCtMaterials.clone() {
+                                ciphertext_handles.push(sns_ct_material.ctHandle);
+                            }
 
-                    match self.send_decryption_response(req).await {
-                        Ok(()) => {
-                            info!("Decryption response sent succesfull!");
+                            info!(
+                                public_decryption_id = ?req.publicDecryptionId,
+                                handles = ?ciphertext_handles,
+                                "Processing PublicDecryptRequest event"
+                            );
+
+                            match self.send_decryption_response(req).await {
+                                Ok(()) => {
+                                    info!("Public decryption response sent successfully!");
+                                }
+                                Err(e) => {
+                                    error!(?e, "Public decryption response processing failed!")
+                                }
+                            }
                         }
                         Err(e) => {
-                            error!(?e, "Decryption response processing failed!")
+                            error!(?e, "Failed to decode public decrypt event data");
                         }
                     }
                 }
-                Err(e) => {
-                    error!(?e, "Failed to decode event data");
+                DecryptionType::UserDecrypt => {
+                    match UserDecryptionRequest::decode_log_data(log.data(), true) {
+                        Ok(req) => {
+                            let user_decryption_id = req.userDecryptionId;
+                            info!(?user_decryption_id);
+
+                            info!(
+                                user_decryption_id = ?req.userDecryptionId,
+                                "Processing UserDecryptRequest event"
+                            );
+
+                            match self.send_user_decryption_response(req).await {
+                                Ok(()) => {
+                                    info!("User decryption response sent successfully!");
+                                }
+                                Err(e) => {
+                                    error!(?e, "User decryption response processing failed!")
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            error!(?e, "Failed to decode user decrypt event data");
+                        }
+                    }
                 }
             }
         }
@@ -257,7 +317,7 @@ impl EventHandler<GatewayProcessorsEvent> for GatewayProcessorsHandler {
         info!(
             event_type = %colorize_event_type(event.data.as_ref()),
             request_id = %colorize_request_id(&event.request_id),
-            "Processing kms input event"
+            "Processing event in processors mock"
         );
 
         match &event.clone().data {

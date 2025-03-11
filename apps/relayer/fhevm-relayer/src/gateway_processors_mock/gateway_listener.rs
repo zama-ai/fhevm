@@ -55,7 +55,7 @@ pub async fn event_listener_gateway(
                             )
                         },
                             DECRYPTION_REQUEST_TOPIC => {
-                            info!("Received Decryption Response event");
+                            info!("Received Public Decryption Request event");
                             GatewayProcessorsEventData::EventLogFromGwL2 {
                                 log: event_log,
                                 decryption_type: event::DecryptionType::PublicDecrypt
@@ -63,7 +63,7 @@ pub async fn event_listener_gateway(
                         },
 
                         USER_DECRYPTION_REQUEST_TOPIC => {
-                            info!("Received User Decryption Response event");
+                            info!("Received User Decryption Request event");
                             GatewayProcessorsEventData::EventLogFromGwL2 {
                                 log: event_log,
                                 decryption_type: event::DecryptionType::UserDecrypt

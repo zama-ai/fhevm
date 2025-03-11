@@ -1,11 +1,13 @@
 use crate::blockchain::ethereum::bindings::DecyptionManager::{
     self, publicDecryptionResponseCall, PublicDecryptionRequest, PublicDecryptionResponse,
+    UserDecryptionRequest,
 };
 use crate::blockchain::ethereum::bindings::IDecryptionManager::{
     CtHandleContractPair, RequestValidity,
 };
 use crate::blockchain::ethereum_host_l1_handlers::DecryptionRequestData;
 use crate::core::errors::EventProcessingError;
+use crate::core::event::UserDecryptRequest;
 use alloy::primitives::{keccak256, Address, Bytes, Uint, U256};
 use alloy::signers::SignerSync;
 use rusqlite::{Connection, Result};
@@ -329,6 +331,38 @@ impl ComputeCalldata {
 
         debug!("Total size: {} bytes", calldata.len());
         debug!("Raw calldata: 0x{}", hex::encode(&calldata));
+
+        Ok(Bytes::from(calldata))
+    }
+
+    pub fn user_decryption_response(
+        req: UserDecryptionRequest,
+    ) -> Result<Bytes, EventProcessingError> {
+        // Extract user_decryption_id directly from the request
+        let user_decryption_id = req.userDecryptionId;
+
+        // Create dummy values for the other parameters
+        // In a real implementation, these would be generated from the actual decryption process
+        let dummy_reencrypted_share = Bytes::from(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+
+        // Create a dummy signature (65 bytes is typical for an Ethereum signature)
+        let dummy_signature = Bytes::from(vec![42u8; 65]);
+
+        // Create the userDecryptionResponse call using Alloy's type-safe interface
+        let call = DecyptionManager::userDecryptionResponseCall::new((
+            user_decryption_id,
+            dummy_reencrypted_share,
+            dummy_signature,
+        ));
+
+        // Encode the call to get the calldata
+        let calldata = DecyptionManager::userDecryptionResponseCall::abi_encode(&call);
+
+        info!(
+            "UserDecryptionResponse calldata for user_decryption_id {}: 0x{}",
+            user_decryption_id,
+            hex::encode(&calldata)
+        );
 
         Ok(Bytes::from(calldata))
     }
