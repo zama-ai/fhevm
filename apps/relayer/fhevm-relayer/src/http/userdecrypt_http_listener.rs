@@ -1,6 +1,6 @@
 use crate::core::event::{
-    ApiCategory, ApiVersion, DecryptEventData, RelayerDecryptEventId, RelayerEvent,
-    RelayerEventData, UserDecryptRequest,
+    ApiCategory, ApiVersion, RelayerEvent, RelayerEventData, UserDecryptEventData,
+    UserDecryptEventId, UserDecryptRequest,
 };
 use crate::core::utils::OnceHandler;
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
@@ -95,13 +95,13 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
         let handler = Arc::new(handler);
 
         self.orchestrator.register_once_handler(
-            RelayerDecryptEventId::UserDecryptRespFromGwL2.into(),
+            UserDecryptEventId::UserDecryptRespFromGwL2.into(),
             request_id,
             handler,
         );
         info!("registered once handler");
 
-        let request_data = DecryptEventData::UserDecryptReq {
+        let request_data = UserDecryptEventData::UserDecryptReq {
             decrypt_request: user_decrypt_request,
         };
         let event = RelayerEvent::new(
@@ -110,12 +110,13 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
                 category: ApiCategory::PRODUCTION,
                 number: 1,
             },
-            RelayerEventData::Decrypt(request_data),
+            RelayerEventData::UserDecrypt(request_data),
         );
         let _ = self.orchestrator.dispatch_event(event).await;
         info!("dispatched event to orchestrator to initiate processing");
 
         info!("waiting for reponse event");
+        // TODO(Mano): Handle failed event as well.
         // Wait for response on the rx of Onshot channel.
         let event = match rx.await {
             Ok(event) => {
@@ -133,7 +134,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
 
         info!("response event type {:?}", event.data);
         match event.data {
-            RelayerEventData::Decrypt(DecryptEventData::UserDecryptRespFromGwL2 {
+            RelayerEventData::UserDecrypt(UserDecryptEventData::UserDecryptRespFromGwL2 {
                 decrypt_response,
             }) => match UserDecryptResponseJson::try_from(decrypt_response) {
                 Ok(response_json) => {

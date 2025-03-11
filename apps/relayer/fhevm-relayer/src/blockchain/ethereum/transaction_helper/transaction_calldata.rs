@@ -7,7 +7,6 @@ use crate::blockchain::ethereum::bindings::IDecryptionManager::{
 };
 use crate::blockchain::ethereum_host_l1_handlers::DecryptionRequestData;
 use crate::core::errors::EventProcessingError;
-use crate::core::event::UserDecryptRequest;
 use alloy::primitives::{keccak256, Address, Bytes, Uint, U256};
 use alloy::signers::SignerSync;
 use rusqlite::{Connection, Result};

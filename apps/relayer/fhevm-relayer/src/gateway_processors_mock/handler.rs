@@ -9,7 +9,6 @@ use crate::{
     config::settings::ContractConfig,
     core::{
         errors::EventProcessingError,
-        event::UserDecryptRequest,
         utils::{colorize_event_type, colorize_request_id},
     },
     gateway_processors_mock::event::{

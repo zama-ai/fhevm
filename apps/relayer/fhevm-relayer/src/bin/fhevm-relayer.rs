@@ -46,7 +46,9 @@ use fhevm_relayer::{
         ArbitrumGatewayL2Handler, ArbitrumGatewayL2InputHandler, EthereumHostL1Handler,
     },
     config::settings::{LogConfig, Settings},
-    core::event::{RelayerDecryptEventId, RelayerEvent, RelayerEventId, RelayerInputEventId},
+    core::event::{
+        GenericEventId, InputEventId, PublicDecryptEventId, RelayerEvent, UserDecryptEventId,
+    },
     http::http_server::run_http_server,
     orchestrator::{
         traits::{EventHandler, HandlerRegistry},
@@ -155,39 +157,41 @@ async fn main() -> eyre::Result<()> {
 
     // Register input event handlers
     // Event type: InputEventData::ReqFromUser
-    orchestrator.register_handler(
-        RelayerInputEventId::ReqFromUser.into(),
-        Arc::clone(&input_handler),
-    );
+    orchestrator.register_handler(InputEventId::ReqFromUser.into(), Arc::clone(&input_handler));
     // Event type: InputEventData::RequestSentToGwL2
     orchestrator.register_handler(
-        RelayerInputEventId::RequestSentToGwL2.into(),
+        InputEventId::RequestSentToGwL2.into(),
         Arc::clone(&input_handler),
     );
     // Event type: InputEventData::RespFromGwL2
     orchestrator.register_handler(
-        RelayerInputEventId::RespFromGwL2.into(),
+        InputEventId::RespFromGwL2.into(),
         Arc::clone(&input_handler),
     );
     // Event type: InputEventData::EventLogResponseFromGwL2
     orchestrator.register_handler(
-        RelayerEventId::EventLogResponseFromGwL2.into(),
+        GenericEventId::EventLogResponseFromGwL2.into(),
         Arc::clone(&input_handler),
     );
 
     // Event type: PubDecryptEventLogRcvdFromHostL1
     orchestrator.register_handler(
-        RelayerEventId::EventLogFromHostL1.into(),
+        GenericEventId::EventLogFromHostL1.into(),
         Arc::clone(&host_l1_event_log_handler),
     );
     // Event type: DecryptionResponseRcvdFromGwL2
     orchestrator.register_handler(
-        RelayerDecryptEventId::PublicDecryptRespFromGwL2.into(),
+        PublicDecryptEventId::PublicDecryptRespFromGwL2.into(),
         Arc::clone(&host_l1_event_log_handler),
     );
     // Event type: DecryptResponseSentToHostL1
     orchestrator.register_handler(
-        RelayerDecryptEventId::RespSentToHostL1.into(),
+        PublicDecryptEventId::RespSentToHostL1.into(),
+        Arc::clone(&host_l1_event_log_handler),
+    );
+    // Event type: DecryptResponseSentToHostL1
+    orchestrator.register_handler(
+        UserDecryptEventId::RespSentToHostL1.into(),
         Arc::clone(&host_l1_event_log_handler),
     );
 
@@ -201,22 +205,22 @@ async fn main() -> eyre::Result<()> {
 
     // Event type: DecryptRequestRcvd
     orchestrator.register_handler(
-        RelayerDecryptEventId::PublicDecryptReq.into(),
+        PublicDecryptEventId::PublicDecryptReq.into(),
         Arc::clone(&gateway_l2_event_handler),
     );
     // Event type: DecryptRequestRcvd
     orchestrator.register_handler(
-        RelayerDecryptEventId::UserDecryptReq.into(),
+        UserDecryptEventId::UserDecryptReq.into(),
         Arc::clone(&gateway_l2_event_handler),
     );
     // Event type: DecryptResponseEventLogRcvdFromGwL2
     orchestrator.register_handler(
-        RelayerDecryptEventId::PublicReqSentToGwL2.into(),
+        PublicDecryptEventId::PublicReqSentToGwL2.into(),
         Arc::clone(&gateway_l2_event_handler),
     );
     // Event type: DecryptionRequestSentToGwL2
     orchestrator.register_handler(
-        RelayerEventId::EventLogResponseFromGwL2.into(),
+        GenericEventId::EventLogResponseFromGwL2.into(),
         Arc::clone(&gateway_l2_event_handler),
     );
 
