@@ -1,9 +1,11 @@
 use crate::db_utils::setup_test_user;
 use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage, ImageExt};
+use tokio_util::sync::CancellationToken;
 
 pub struct DBInstance {
     _container: Option<testcontainers::ContainerAsync<testcontainers::GenericImage>>,
     db_url: String,
+    pub parent_token: CancellationToken,
 }
 
 impl DBInstance {
@@ -62,6 +64,7 @@ async fn setup_test_app_existing_localhost(
     Ok(DBInstance {
         _container: None,
         db_url: db_url.to_string(),
+        parent_token: CancellationToken::new(),
     })
 }
 
@@ -88,6 +91,7 @@ async fn setup_test_app_custom_docker() -> Result<DBInstance, Box<dyn std::error
     Ok(DBInstance {
         _container: Some(container),
         db_url,
+        parent_token: CancellationToken::new(),
     })
 }
 

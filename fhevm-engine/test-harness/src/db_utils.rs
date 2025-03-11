@@ -88,7 +88,7 @@ pub async fn wait_for_ciphertext(
 ) -> anyhow::Result<Vec<u8>> {
     for retry in 0..retries {
         let record = sqlx::query!(
-            "SELECT large_ct FROM ciphertexts WHERE tenant_id = $1 AND handle = $2",
+            "SELECT ciphertext128 FROM ciphertexts WHERE tenant_id = $1 AND handle = $2",
             tenant_id,
             handle
         )
@@ -96,8 +96,8 @@ pub async fn wait_for_ciphertext(
         .await;
 
         if let Result::Ok(record) = record {
-            if let Some(large_ct) = record.large_ct {
-                return anyhow::Ok(large_ct);
+            if let Some(ciphertext128) = record.ciphertext128 {
+                return anyhow::Ok(ciphertext128);
             }
         }
 
