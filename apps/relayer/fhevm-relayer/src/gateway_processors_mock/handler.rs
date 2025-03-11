@@ -25,6 +25,8 @@ use async_trait::async_trait;
 use std::{sync::Arc, time::Duration};
 use tracing::{debug, error, info};
 
+use super::event::DecryptionType;
+
 sol! {
     struct EIP712ZKPoK {
         bytes32[] handles;
@@ -201,17 +203,22 @@ impl GatewayProcessorsHandler {
     ///
     /// # Events
     /// Dispatches [`RelayerEventData::DecryptionResponseRcvdFromGwL2`]
-    async fn process_decryption_request(&self, event: GatewayProcessorsEvent) {
+    async fn process_decryption_request(
+        &self,
+        event: GatewayProcessorsEvent,
+        decryption_type: DecryptionType,
+    ) {
         info!(
-            "Decryption request received. Prepare decryption response transaction to Gateway received. {:?}",
+            "Decryption request received. Prepare decryption response transaction to Gateway received. {:?} {:?}",
             event.request_id,
+            decryption_type
         );
 
         // Simulate some computation time
 
         tokio::time::sleep(Duration::from_secs(2)).await;
 
-        if let GatewayProcessorsEventData::EventLogFromGwL2 { log } = &event.data {
+        if let GatewayProcessorsEventData::EventLogFromGwL2 { log, .. } = &event.data {
             match PublicDecryptionRequest::decode_log_data(log.data(), true) {
                 Ok(req) => {
                     let public_decryption_id = req.publicDecryptionId;
@@ -253,7 +260,7 @@ impl EventHandler<GatewayProcessorsEvent> for GatewayProcessorsHandler {
             "Processing kms input event"
         );
 
-        match &event.data {
+        match &event.clone().data {
             GatewayProcessorsEventData::KmsInput(input_event) => match input_event {
                 GatewayProcessorsInputEventData::EventLogRequestFromGwL2 { .. } => {
                     info!("Received input event log from Gateway L2");
@@ -267,9 +274,12 @@ impl EventHandler<GatewayProcessorsEvent> for GatewayProcessorsHandler {
                     }
                 }
             },
-            GatewayProcessorsEventData::EventLogFromGwL2 { .. } => {
+            GatewayProcessorsEventData::EventLogFromGwL2 {
+                decryption_type, ..
+            } => {
                 info!("Received decryption event log from Gateway L2");
-                self.process_decryption_request(event).await;
+                self.process_decryption_request(event, decryption_type.clone())
+                    .await;
             }
         }
     }

@@ -193,39 +193,6 @@ impl ArbitrumGatewayL2Handler {
     ///
     /// # Arguments
     /// * `event` - The original [`RelayerEvent`] containing request information
-    /// * `decryption_user_id` - The [`U256`] ID received from the decryption request
-    ///
-    /// # State Changes
-    /// Stores mapping in `decryption_id_to_request_id`
-    ///
-    /// # Events
-    /// Dispatches [`RelayerEventData::DecryptionRequestSentToGwL2`]
-    async fn handle_successful_user_request(&self, event: RelayerEvent, decryption_user_id: U256) {
-        // Store the mapping
-        self.user_decryption_id_to_request_id
-            .insert(decryption_user_id, event.request_id);
-
-        info!(
-            ?event.request_id,
-            ?decryption_user_id,
-            "Stored mapping between decryption ID and request ID"
-        );
-
-        // Create and dispatch the new event
-        let next_event =
-            event.derive_next_event(RelayerEventData::Decrypt(DecryptEventData::ReqSentToGwL2 {
-                gateway_l2_request_id: decryption_user_id,
-            }));
-
-        if let Err(e) = self.dispatcher.dispatch_event(next_event).await {
-            error!(?e, "Failed to dispatch DecryptRequestProcessed event");
-        }
-    }
-
-    /// Processes a successful decryption request.
-    ///
-    /// # Arguments
-    /// * `event` - The original [`RelayerEvent`] containing request information
     /// * `decryption_public_id` - The [`U256`] ID received from the decryption request
     ///
     /// # State Changes

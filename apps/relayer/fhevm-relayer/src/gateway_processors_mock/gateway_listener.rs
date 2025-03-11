@@ -20,6 +20,9 @@ const PROOF_VERIFICATION_REQUEST_TOPIC: alloy::primitives::FixedBytes<32> =
 const DECRYPTION_REQUEST_TOPIC: alloy::primitives::FixedBytes<32> =
     DecyptionManager::PublicDecryptionRequest::SIGNATURE_HASH;
 
+const USER_DECRYPTION_REQUEST_TOPIC: alloy::primitives::FixedBytes<32> =
+    DecyptionManager::UserDecryptionRequest::SIGNATURE_HASH;
+
 pub async fn event_listener_gateway(
     mut subscription: alloy::pubsub::SubscriptionStream<Log>,
     orchestrator: Arc<
@@ -54,7 +57,16 @@ pub async fn event_listener_gateway(
                             DECRYPTION_REQUEST_TOPIC => {
                             info!("Received Decryption Response event");
                             GatewayProcessorsEventData::EventLogFromGwL2 {
-                                log: event_log
+                                log: event_log,
+                                decryption_type: event::DecryptionType::PublicDecrypt
+                            }
+                        },
+
+                        USER_DECRYPTION_REQUEST_TOPIC => {
+                            info!("Received User Decryption Response event");
+                            GatewayProcessorsEventData::EventLogFromGwL2 {
+                                log: event_log,
+                                decryption_type: event::DecryptionType::UserDecrypt
                             }
                         },
 

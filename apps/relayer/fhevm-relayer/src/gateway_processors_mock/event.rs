@@ -80,6 +80,7 @@ pub enum GatewayProcessorsEventData {
     EventLogFromGwL2 {
         // For gateway l2 handler
         log: Log,
+        decryption_type: DecryptionType,
     },
     KmsInput(GatewayProcessorsInputEventData),
 }
@@ -96,7 +97,7 @@ impl AsRef<str> for GatewayProcessorsEventData {
 #[derive(Clone, Debug, Display)]
 pub enum DecryptionType {
     PublicDecrypt,
-    UserDecrypt { user_public_key: Vec<u8> },
+    UserDecrypt,
 }
 
 #[derive(Clone, Debug)]
