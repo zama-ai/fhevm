@@ -16,7 +16,8 @@ export default defineConfig({
     poolOptions: {
       forks: {
         isolate: true,
-        maxForks: 10,
+        minForks: 1,
+        maxForks: 3,
       },
     },
     globalSetup: './test/setup.e2e.ts',

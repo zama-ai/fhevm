@@ -31,20 +31,21 @@ export function generateRequestId() {
 }
 
 export function metaFactory<
-  Key extends string,
   Events extends {
-    type: `${Prefix}:${Key}`
+    type: string
     payload: object
     meta: Meta
   },
   Prefix extends MSPrifix = MSPrifix,
-  Event extends {
-    type: `${Prefix}:${Key}`
-    payload: object
-    meta: Meta
-  } = Extract<Events, { type: `${Prefix}:${Key}` }>,
 >(prefix: Prefix) {
-  return function (key: Key) {
+  return function <
+    Key extends string,
+    Event extends {
+      type: `${Prefix}:${Key}`
+      payload: object
+      meta: Meta
+    } = Extract<Events, { type: `${Prefix}:${Key}` }>,
+  >(key: Key) {
     return function (payload: Event['payload'], meta: Event['meta']) {
       return {
         type: `${prefix}:${key}`,

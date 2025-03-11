@@ -21,6 +21,10 @@ describe('back dapp stats', () => {
     await manager.beforeAll()
   }, 30_000)
 
+  beforeEach(async () => {
+    await manager.beforeEach()
+  })
+
   afterEach(async () => {
     await manager.afterEach()
   })
@@ -51,33 +55,31 @@ describe('back dapp stats', () => {
 
       test('then it forward it to web3', async () => {
         await vi.waitUntil(async () => {
-          const size = await manager.getLogQueueSize()
-          return size === 2
+          const size = await manager.getQueueSize(manager.setup.web3QueueUrl)
+          return size > 0
         })
-        const messages = await manager.getLogQueueMessages()
-        expect(messages.length).toBe(2)
-        expect(back.isBackEvent(messages[0]?.event)).toBe(true)
-        expect((messages[0]?.event as back.BackEvent).type).toBe(
-          'back:dapp:stats-requested',
+        const messages = await manager.getQueueMessages(
+          manager.setup.web3QueueUrl,
         )
-        expect(messages[0]?.event.payload.requestId).toBe(requestId)
+        expect(messages.length).toBe(1)
 
-        expect(web3.isWeb3Event(messages[1]?.event)).toBe(true)
-        expect((messages[1]?.event as web3.Web3Event).type).toBe(
+        expect(web3.isWeb3Event(messages[0]?.event)).toBe(true)
+        expect((messages[0]?.event as web3.Web3Event).type).toBe(
           'web3:fhe-event:requested',
         )
-        expect(messages[1]?.event.payload.requestId).toBe(requestId)
+        expect(messages[0]?.event.payload.requestId).toBe(requestId)
       })
 
       test('then it forward the correlationId', async () => {
         await vi.waitUntil(async () => {
-          const size = await manager.getLogQueueSize()
-          return size === 2
+          const size = await manager.getQueueSize(manager.setup.web3QueueUrl)
+          return size > 0
         })
-        const messages = await manager.getLogQueueMessages()
-        expect(messages.length).toBe(2)
+        const messages = await manager.getQueueMessages(
+          manager.setup.web3QueueUrl,
+        )
+        expect(messages.length).toBe(1)
         expect(messages[0]?.event.meta.correlationId).toBe(correlationId)
-        expect(messages[1]?.event.meta.correlationId).toBe(correlationId)
       })
     })
   })
@@ -106,21 +108,16 @@ describe('back dapp stats', () => {
         // republish.
         await manager.sendMessage(message, MS_NAME)
         await vi.waitUntil(async () => {
-          const size = await manager.getLogQueueSize()
-          return size > 0
+          const size = await manager.getQueueSize(manager.setup.orchQueueUrl)
+          return size === 0
         })
       })
 
       test('then it ignores it', async () => {
-        const messages = await manager.getLogQueueMessages()
-        expect(messages.length).toBe(1)
-        for (const message of messages) {
-          expect(back.isBackEvent(message?.event)).toBe(true)
-          expect(message?.attributes?.Sender.Value).toBe(MS_NAME)
-          expect((message?.event as back.BackEvent).type).toBe(
-            'back:dapp:stats-available',
-          )
-        }
+        const messages = await manager.getQueueMessages(
+          manager.setup.web3QueueUrl,
+        )
+        expect(messages.length).toBe(0)
       })
     })
   })

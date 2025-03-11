@@ -78,7 +78,7 @@ export const schema = z.discriminatedUnion('type', [...schemas]).and(
 )
 export type BackEvent = z.infer<typeof schema>
 
-const factory = metaFactory<EventTypes, BackEvent>('back')
+const factory = metaFactory<BackEvent>('back')
 
 export const dappCreated = factory('dapp:created')
 export const dappValidationRequested = factory('dapp:validation:requested')

@@ -47,7 +47,7 @@ export const schema = z.discriminatedUnion('type', [...schemas]).and(
 )
 export type Web3Event = z.infer<typeof schema>
 
-const factory = metaFactory<EventTypes, Web3Event>('web3')
+const factory = metaFactory<Web3Event>('web3')
 
 export const contractValidationRequested = factory(
   'contract:validation:requested',

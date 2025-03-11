@@ -26,7 +26,6 @@
     "copy:generated": "cpx 'generated/**' 'dist/generated'"
   },
   "dependencies": {
-    "@aws-sdk/client-sns": "^3.699.0",
     "@aws-sdk/client-sqs": "^3.699.0",
     "@nestjs/common": "^10.0.0",
     "@nestjs/config": "^3.3.0",

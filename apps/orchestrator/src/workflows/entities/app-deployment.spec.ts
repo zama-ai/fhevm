@@ -4,18 +4,21 @@ import { faker } from '@faker-js/faker'
 
 import { back, web3 } from 'messages'
 
-const chainId = '1'
-const address = '0xa2dd817c2fdc3a2996f1a5174cf8f1aaed466e82'
-
 describe('AppDeployment', () => {
   let deployment: AppDeployment
+  let requestId: string
   let dAppId: string
+  let chainId: string
+  let address: string
   let correlationId: string
 
   beforeEach(() => {
+    requestId = faker.string.uuid()
     dAppId = faker.string.uuid()
+    chainId = faker.string.numeric(5)
+    address = faker.string.hexadecimal({ length: 40 })
     correlationId = faker.string.uuid()
-    deployment = new AppDeployment({ dAppId, chainId, address })
+    deployment = new AppDeployment({ requestId })
   })
 
   describe('when idle', () => {
@@ -28,14 +31,14 @@ describe('AppDeployment', () => {
       beforeEach(() => {
         messages = deployment.send(
           back.dappValidationRequested(
-            { chainId, address, dAppId },
+            { requestId, dAppId, chainId, address },
             { correlationId },
           ),
         )
       })
 
       it(`should publish 'web3:contract:validation:requested'`, () => {
-        expect(messages[0].payload).toEqual({ address, chainId })
+        expect(messages[0].payload).toEqual({ requestId, address, chainId })
       })
 
       it('should propagate the metadata', () => {
@@ -49,7 +52,7 @@ describe('AppDeployment', () => {
     beforeEach(() => {
       deployment.send(
         back.dappValidationRequested(
-          { dAppId, address, chainId },
+          { requestId, dAppId, address, chainId },
           { correlationId },
         ),
       )
@@ -61,10 +64,7 @@ describe('AppDeployment', () => {
       beforeEach(() => {
         messages = deployment.send(
           web3.contractValidationSuccess(
-            {
-              chainId,
-              address,
-            },
+            { requestId, chainId, address },
             { correlationId },
           ),
         )
@@ -72,6 +72,11 @@ describe('AppDeployment', () => {
       it(`should publish a 'back:dapp:validation:confirmed' event`, () => {
         expect(messages.length).toBe(1)
         expect(messages[0].type).toBe('back:dapp:validation:confirmed')
+      })
+
+      it(`should propagate the right requestId`, () => {
+        expect(messages.length).toBe(1)
+        expect(messages[0].payload.requestId).toBe(requestId)
       })
 
       it(`should propagate the right dAppId`, () => {
@@ -93,11 +98,7 @@ describe('AppDeployment', () => {
         reason = faker.lorem.word(5)
         messages = deployment.send(
           web3.contractValidationFailure(
-            {
-              chainId,
-              address,
-              reason,
-            },
+            { requestId, chainId, address, reason },
             { correlationId },
           ),
         )
