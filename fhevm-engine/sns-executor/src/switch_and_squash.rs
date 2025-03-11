@@ -1,6 +1,5 @@
 use aligned_vec::ABox;
 use anyhow::anyhow;
-use core::fmt::Debug;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -41,7 +40,8 @@ pub type Z128 = Wrapping<u128>;
 
 pub type Ciphertext64 = BaseRadixCiphertext<tfhe::shortint::Ciphertext>;
 pub type Ciphertext64Block = tfhe::shortint::Ciphertext;
-// Observe that tfhe-rs is hard-coded to use u64, hence we require custom types for the 128 bit versions for now.
+// Observe that tfhe-rs is hard-coded to use u64, hence we require custom types
+// for the 128 bit versions for now.
 pub type Ciphertext128 = Vec<Ciphertext128Block>;
 pub type Ciphertext128Block = LweCiphertextOwned<u128>;
 
@@ -54,13 +54,15 @@ pub(crate) fn anyhow_error_and_log<S: AsRef<str> + fmt::Display>(msg: S) -> anyh
     anyhow!("Error in {}: {}", Location::caller(), msg)
 }
 
-/// Key used for switch-and-squash to convert a ciphertext over u64 to one over u128
+/// Key used for switch-and-squash to convert a ciphertext over u64 to one over
+/// u128
 #[derive(Serialize, Deserialize, Clone, PartialEq, VersionsDispatch)]
 pub enum SwitchAndSquashKeyVersioned {
     V0(SwitchAndSquashKey),
 }
 
-/// Key used for switch-and-squash to convert a ciphertext over u64 to one over u128
+/// Key used for switch-and-squash to convert a ciphertext over u64 to one over
+/// u128
 #[derive(Serialize, Deserialize, Clone, PartialEq, Versionize)]
 #[versionize(SwitchAndSquashKeyVersioned)]
 pub struct SwitchAndSquashKey {
@@ -74,17 +76,20 @@ impl Named for SwitchAndSquashKey {
 }
 
 pub trait AugmentedCiphertextParameters {
-    // Return the minimum amount of bits that can be used for a message in each block.
+    // Return the minimum amount of bits that can be used for a message in each
+    // block.
     fn message_modulus_log(&self) -> u32;
 
     // Return the minimum amount of bits that can be used for a carry in each block.
     fn carry_modulus_log(&self) -> u32;
-    // Return the minimum total amounts of availble bits in each block. I.e. including both message and carry bits
+    // Return the minimum total amounts of availble bits in each block. I.e.
+    // including both message and carry bits
     fn total_block_bits(&self) -> u32;
 }
 
 impl AugmentedCiphertextParameters for tfhe::shortint::Ciphertext {
-    // Return the minimum amount of bits that can be used for a message in each block.
+    // Return the minimum amount of bits that can be used for a message in each
+    // block.
     fn message_modulus_log(&self) -> u32 {
         self.message_modulus.0.ilog2()
     }
@@ -94,7 +99,8 @@ impl AugmentedCiphertextParameters for tfhe::shortint::Ciphertext {
         self.carry_modulus.0.ilog2()
     }
 
-    // Return the minimum total amounts of availble bits in each block. I.e. including both message and carry bits
+    // Return the minimum total amounts of availble bits in each block. I.e.
+    // including both message and carry bits
     fn total_block_bits(&self) -> u32 {
         self.carry_modulus_log() + self.message_modulus_log()
     }
@@ -108,10 +114,12 @@ impl SwitchAndSquashKey {
         SwitchAndSquashKey { fbsk_out, ksk }
     }
 
-    /// Converts a ciphertext over a 64 bit domain to a ciphertext over a 128 bit domain (which is needed for secure threshold decryption).
+    /// Converts a ciphertext over a 64 bit domain to a ciphertext over a 128
+    /// bit domain (which is needed for secure threshold decryption).
     /// Conversion is done using a precreated conversion key [conversion_key].
-    /// Observe that the decryption key will be different after conversion, since [conversion_key] is actually a key-switching key.
-    /// This version computes SnS on all blocks in parallel.
+    /// Observe that the decryption key will be different after conversion,
+    /// since [conversion_key] is actually a key-switching key. This version
+    /// computes SnS on all blocks in parallel.
     pub fn to_large_ciphertext(
         &self,
         raw_small_ct: &Ciphertext64,
@@ -125,9 +133,12 @@ impl SwitchAndSquashKey {
         Ok(res)
     }
 
-    /// Converts a single ciphertext block over a 64 bit domain to a ciphertext block over a 128 bit domain (which is needed for secure threshold decryption).
-    /// Conversion is done using a precreated conversion key, [conversion_key].
-    /// Observe that the decryption key will be different after conversion, since [conversion_key] is actually a key-switching key.
+    /// Converts a single ciphertext block over a 64 bit domain to a ciphertext
+    /// block over a 128 bit domain (which is needed for secure threshold
+    /// decryption). Conversion is done using a precreated conversion key,
+    /// [conversion_key]. Observe that the decryption key will be different
+    /// after conversion, since [conversion_key] is actually a key-switching
+    /// key.
     pub fn to_large_ciphertext_block(
         &self,
         small_ct_block: &Ciphertext64Block,
@@ -194,8 +205,8 @@ impl SwitchAndSquashKey {
     where
         F: Fn(Scalar) -> Scalar,
     {
-        // N/(p/2) = size of each block, to correct noise from the input we introduce the
-        // notion of box, which manages redundancy to yield a denoised value
+        // N/(p/2) = size of each block, to correct noise from the input we introduce
+        // the notion of box, which manages redundancy to yield a denoised value
         // for several noisy values around a true input value.
         let box_size = polynomial_size.0 / message_modulus;
 
@@ -212,7 +223,8 @@ impl SwitchAndSquashKey {
 
         let half_box_size = box_size / 2;
 
-        // Negate the first half_box_size coefficients to manage negacyclicity and rotate
+        // Negate the first half_box_size coefficients to manage negacyclicity and
+        // rotate
         for a_i in accumulator_scalar[0..half_box_size].iter_mut() {
             *a_i = (*a_i).wrapping_neg();
         }
@@ -229,11 +241,13 @@ impl SwitchAndSquashKey {
         )
     }
 
-    /// The method below is copied from the `noise-gap-exp` branch in tfhe-rs-internal (and added error handling)
-    /// since this branch will likely not be merged in main.
+    /// The method below is copied from the `noise-gap-exp` branch in
+    /// tfhe-rs-internal (and added error handling) since this branch will
+    /// likely not be merged in main.
     ///
-    /// Takes a ciphertext, `input`, of a certain domain, [InputScalar] and overwrites the content of `output`
-    /// with the ciphertext converted to the [OutputScaler] domain.
+    /// Takes a ciphertext, `input`, of a certain domain, [InputScalar] and
+    /// overwrites the content of `output` with the ciphertext converted to
+    /// the [OutputScaler] domain.
     fn lwe_ciphertext_modulus_switch_up<InputScalar, OutputScalar, InputCont, OutputCont>(
         output: &mut LweCiphertext<OutputCont>,
         input: &LweCiphertext<InputCont>,
@@ -269,7 +283,8 @@ impl SwitchAndSquashKey {
 }
 
 impl AugmentedCiphertextParameters for ClassicPBSParameters {
-    // Return the minimum amount of bits that can be used for a message in each block.
+    // Return the minimum amount of bits that can be used for a message in each
+    // block.
     fn message_modulus_log(&self) -> u32 {
         self.message_modulus.0.ilog2()
     }
@@ -279,7 +294,8 @@ impl AugmentedCiphertextParameters for ClassicPBSParameters {
         self.carry_modulus.0.ilog2()
     }
 
-    // Return the minimum total amounts of availble bits in each block. I.e. including both message and carry bits
+    // Return the minimum total amounts of availble bits in each block. I.e.
+    // including both message and carry bits
     fn total_block_bits(&self) -> u32 {
         self.carry_modulus_log() + self.message_modulus_log()
     }
@@ -329,29 +345,32 @@ impl SnsClientKey {
 }
 
 #[cfg(feature = "test_decrypt_128")]
-// Map a raw, decrypted message to its real value by dividing by the appropriate shift, delta, assuming padding
+// Map a raw, decrypted message to its real value by dividing by the appropriate
+// shift, delta, assuming padding
 pub(crate) fn from_expanded_msg<Scalar: UnsignedInteger + AsPrimitive<u128>>(
     raw_plaintext: Scalar,
     message_and_carry_mod_bits: usize,
 ) -> Z128 {
     // delta = q/t where t is the amount of plain text bits
-    // Observe that t includes the message and carry bits as well as the padding bit (hence the + 1)
+    // Observe that t includes the message and carry bits as well as the padding bit
+    // (hence the + 1)
     let delta_pad_bits = (Scalar::BITS as u128) - (message_and_carry_mod_bits as u128 + 1_u128);
 
     // Observe that in certain situations the computation of b-<a,s> may be negative
-    // Concretely this happens when the message encrypted is 0 and randomness ends up being negative.
-    // We cannot simply do the standard modulo operation then, as this would mean the message becomes
-    // 2^message_mod_bits instead of 0 as it should be.
-    // However the maximal negative value it can have (without a general decryption error) is delta/2
-    // which we can compute as 1 << delta_pad_bits, since the padding already halves the true delta
+    // Concretely this happens when the message encrypted is 0 and randomness ends
+    // up being negative. We cannot simply do the standard modulo operation
+    // then, as this would mean the message becomes 2^message_mod_bits instead
+    // of 0 as it should be. However the maximal negative value it can have
+    // (without a general decryption error) is delta/2 which we can compute as 1
+    // << delta_pad_bits, since the padding already halves the true delta
     if raw_plaintext.as_() > Scalar::MAX.as_() - (1 << delta_pad_bits) {
         Z128::ZERO
     } else {
         // compute delta / 2
         let delta_pad_half = 1 << (delta_pad_bits - 1);
 
-        // add delta/2 to kill the negative noise, note this does not affect the message.
-        // and then divide by delta
+        // add delta/2 to kill the negative noise, note this does not affect the
+        // message. and then divide by delta
         let raw_msg = raw_plaintext.as_().wrapping_add(delta_pad_half) >> delta_pad_bits;
         std::num::Wrapping(raw_msg % (1 << message_and_carry_mod_bits))
     }
