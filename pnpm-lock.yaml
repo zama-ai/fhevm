@@ -484,9 +484,6 @@ importers:
 
   apps/orchestrator:
     dependencies:
-      '@aws-sdk/client-sns':
-        specifier: ^3.699.0
-        version: 3.750.0
       '@aws-sdk/client-sqs':
         specifier: ^3.699.0
         version: 3.750.0
@@ -635,9 +632,6 @@ importers:
 
   apps/web3:
     dependencies:
-      '@aws-sdk/client-sns':
-        specifier: ^3.699.0
-        version: 3.750.0
       '@aws-sdk/client-sqs':
         specifier: ^3.699.0
         version: 3.750.0
@@ -847,9 +841,6 @@ importers:
 
   packages/sqs:
     dependencies:
-      '@aws-sdk/client-sns':
-        specifier: ^3.699.0
-        version: 3.750.0
       '@aws-sdk/client-sqs':
         specifier: ^3.699.0
         version: 3.750.0

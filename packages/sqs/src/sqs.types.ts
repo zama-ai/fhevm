@@ -1,24 +1,6 @@
-import type { MessageAttributeValue, SNSClient } from '@aws-sdk/client-sns'
+import { MessageAttributeValue } from '@aws-sdk/client-sqs'
 import { LoggerService, ModuleMetadata, Type } from '@nestjs/common'
 import type { Consumer, ConsumerOptions, StopOptions } from 'sqs-consumer'
-
-export interface ProducerOptions {
-  /**
-   * The ARN of the topic to send messages to.
-   */
-  topicArn: string
-
-  /**
-   * The SNS Client to use. If not provided, a new client will be created.
-   */
-  sns?: SNSClient
-
-  /**
-   * The AWS region to use. If not provided, the region will be determined
-   * from the `AWS_REGION` environment variable or will default to `eu-central-1.
-   */
-  region?: string
-}
 
 export interface Message {
   /**
@@ -64,10 +46,6 @@ export type SqsConsumerOptions = Omit<
   stopOptions?: StopOptions
 }
 
-export type SnsProducerOptions = ProducerOptions & {
-  name: string
-}
-
 export type SqsConsumerMapValues = {
   instance: Consumer
   stopOptions: StopOptions
@@ -75,7 +53,6 @@ export type SqsConsumerMapValues = {
 
 export interface SqsOptions {
   consumers?: SqsConsumerOptions[]
-  producers?: SnsProducerOptions[]
   logger?: LoggerService
   globalStopOptions?: StopOptions
 }

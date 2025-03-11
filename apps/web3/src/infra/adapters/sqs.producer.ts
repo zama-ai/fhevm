@@ -1,31 +1,25 @@
-import { PublishCommand, SNSClient } from '@aws-sdk/client-sns'
-import { Inject, Injectable, Logger } from '@nestjs/common'
+import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { web3 } from 'messages'
-import type { IPubSub, ISubscriber } from 'utils'
 import { Task, unknownError } from 'utils'
-import { MS_NAME, PUBSUB } from '#constants.js'
+import { MS_NAME } from '#constants.js'
+import { SendMessageCommand, SQSClient } from '@aws-sdk/client-sqs'
 
 @Injectable()
-export class SnsProducer {
-  logger = new Logger(SnsProducer.name)
+export class SqsProducer {
+  logger = new Logger(SqsProducer.name)
 
-  #sns: SNSClient
-  #topicArn: string
+  #sns: SQSClient
+  #queueUrl: string
 
-  constructor(
-    @Inject(PUBSUB)
-    private readonly pubsub: IPubSub<web3.Web3Event>,
-    config: ConfigService,
-  ) {
+  constructor(config: ConfigService) {
     this.logger.debug(`endpoint: ${config.get('aws.endpoint')}`)
-    this.#sns = new SNSClient({
+    this.#sns = new SQSClient({
       endpoint: config.get('aws.endpoint'),
       region: config.get('aws.region'),
+      useQueueUrlAsEndpoint: true,
     })
-    this.#topicArn = config.getOrThrow('aws.topicArn')
-
-    this.pubsub.subscribe('web3:*', this.sendMessage)
+    this.#queueUrl = config.getOrThrow('aws.orchestrator.topicArn')
   }
 
   /**
@@ -33,7 +27,7 @@ export class SnsProducer {
    * It's used in case of error to retry with an exponential delay.
    * @param message - The message to publish
    */
-  sendMessage: ISubscriber<web3.Web3Event> = event => {
+  sendMessage = (event: web3.Web3Event) => {
     if (event.meta[`${MS_NAME}-dir`] === 'in') {
       this.logger.verbose(`stopping incoming event ${event.type}`)
       return Task.of(void 0)
@@ -44,9 +38,9 @@ export class SnsProducer {
     return new Task((resolve, reject) =>
       this.#sns
         .send(
-          new PublishCommand({
-            TopicArn: this.#topicArn,
-            Message: JSON.stringify(event),
+          new SendMessageCommand({
+            QueueUrl: this.#queueUrl,
+            MessageBody: JSON.stringify(event),
             MessageAttributes: {
               Sender: { DataType: 'String', StringValue: MS_NAME },
             },
@@ -54,7 +48,7 @@ export class SnsProducer {
         )
         .then(res => {
           this.logger.debug(
-            `message ${event.type} sent to topic ${this.#topicArn} [${res.$metadata?.httpStatusCode}]`,
+            `message ${event.type} sent to queue ${this.#queueUrl} [${res.$metadata?.httpStatusCode}]`,
           )
           resolve(void 0)
         })

@@ -4,7 +4,6 @@ import { ConfigModule, ConfigService } from '@nestjs/config'
 import { SqsModule } from 'sqs'
 import awsConfig from './config/aws.config.js'
 import { SQSConsumer } from './infra/adapters/sqs.consumer.js'
-import { SNSClient } from '@aws-sdk/client-sns'
 import { LoggerModule } from 'nestjs-pino'
 import { randomUUID } from 'crypto'
 import ethersConfig, {
@@ -20,7 +19,7 @@ import {
 } from './constants.js'
 import { ContractService } from './domain/services/contract.service.js'
 import { ProxyContractService } from './infra/adapters/proxy-contract.service.js'
-import { SnsProducer } from './infra/adapters/sns.producer.js'
+import { SqsProducer } from './infra/adapters/sqs.producer.js'
 import { DiscoverContract } from './use-cases/discover-contract.use-case.js'
 import { DatabaseModule } from './infra/database/database.module.js'
 import { ChainId } from './domain/entities/value-objects.js'
@@ -75,7 +74,7 @@ export const configModule = ConfigModule.forRoot({
         consumers: [
           {
             name: 'web3',
-            queueUrl: config.get<string>('aws.queueUrl')!,
+            queueUrl: config.get<string>('aws.web3.queueUrl')!,
             useQueueUrlAsEndpoint: false,
             sqs: new SQSClient({
               endpoint: config.get<string>('aws.queueUrl'),
@@ -83,16 +82,6 @@ export const configModule = ConfigModule.forRoot({
             }),
             messageAttributeNames: ['All'],
             attributeNames: ['All'],
-          },
-        ],
-        producers: [
-          {
-            name: 'console',
-            topicArn: config.get<string>('aws.topicArn')!,
-            sns: new SNSClient({
-              endpoint: config.get<string>('aws.endpoint'),
-              region: config.get<string>('aws.region'),
-            }),
           },
         ],
       }),
@@ -120,7 +109,7 @@ export const configModule = ConfigModule.forRoot({
         return new ProxyContractService(map)
       },
     },
-    SnsProducer,
+    SqsProducer,
     {
       provide: DiscoverContract,
       inject: [PUBSUB, CONTRACT_SERVICE],

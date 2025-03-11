@@ -20,7 +20,6 @@
     "test:e2e:watch": "vitest --config ./vitest.e2e.config.mts"
   },
   "dependencies": {
-    "@aws-sdk/client-sns": "^3.699.0",
     "@aws-sdk/client-sqs": "^3.699.0",
     "@golevelup/nestjs-discovery": "^4.0.2",
     "@nestjs/common": "^10.0.0",

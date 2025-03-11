@@ -20,12 +20,10 @@ import {
   SQS_OPTIONS,
 } from './sqs.constants.js'
 import { Consumer } from 'sqs-consumer'
-import { Producer } from './producer.js'
 
 @Injectable()
 export class SqsService implements OnModuleInit, OnModuleDestroy {
   public readonly consumers = new Map<string, SqsConsumerMapValues>()
-  public readonly producers = new Map<string, Producer>()
 
   private readonly logger: LoggerService
   private readonly globalStopOptions: StopOptions
@@ -87,14 +85,6 @@ export class SqsService implements OnModuleInit, OnModuleDestroy {
         instance: consumer,
         stopOptions: stopOptions ?? this.globalStopOptions,
       })
-    })
-
-    this.options.producers?.forEach(({ name, ...options }) => {
-      if (this.producers.has(name)) {
-        throw new Error(`Producer already exists: ${name}`)
-      }
-
-      this.producers.set(name, Producer.create(options))
     })
 
     for (const consumer of this.consumers.values()) {
