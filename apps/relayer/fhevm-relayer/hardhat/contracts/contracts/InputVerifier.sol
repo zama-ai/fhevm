@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-
 import {TFHEExecutor} from "./TFHEExecutor.sol";
 
 // Importing OpenZeppelin contracts for cryptographic signature verification and access control.
@@ -69,9 +68,9 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
     /// @param userAddress      Address of the user.
     /// @param contractAddress  Contract address.
     /// @param contractChainId  ChainID of contract.
-    struct EIP712ZKPoK {
-        /// @notice The Coprocessor's computed handles.
-        bytes32[] handles;
+    struct CiphertextVerification {
+        /// @notice The Coprocessor's computed ciphertext handles.
+        bytes32[] ctHandles;
         /// @notice The address of the user that has provided the input in the ZK Proof verification request.
         address userAddress;
         /// @notice The address of the dapp requiring the ZK Proof verification.
@@ -80,9 +79,9 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
         uint256 contractChainId;
     }
 
-    /// @notice The definition of the EIP712ZKPoK structure typed data.
+    /// @notice The definition of the CiphertextVerification structure typed data.
     string private constant EIP712_ZKPOK_TYPE =
-        "EIP712ZKPoK(bytes32[] handles,address userAddress,address contractAddress,uint256 contractChainId)";
+        "CiphertextVerification(bytes32[] ctHandles,address userAddress,address contractAddress,uint256 contractChainId)";
 
     /// @notice The hash of the EIP712ZKPoK structure typed data definition used for signature validation.
     bytes32 private constant EIP712_ZKPOK_TYPE_HASH = keccak256(bytes(EIP712_ZKPOK_TYPE));
@@ -195,7 +194,6 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
                 listHandles[i] = element;
             }
 
-
             bytes[] memory signatures = new bytes[](numSigners);
             for (uint256 j = 0; j < numSigners; j++) {
                 signatures[j] = new bytes(65);
@@ -203,12 +201,11 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
                     signatures[j][i] = inputProof[2 + 32 * numHandles + 65 * j + i];
                 }
             }
-            EIP712ZKPoK memory ctVerif;
-            ctVerif.handles = listHandles;
+            CiphertextVerification memory ctVerif;
+            ctVerif.ctHandles = listHandles;
             ctVerif.userAddress = context.userAddress;
             ctVerif.contractAddress = context.contractAddress;
             _verifyEIP712(ctVerif, signatures);
-
 
             _cacheProof(cacheKey);
             if (result != uint256(listHandles[indexHandle])) revert InvalidInputHandle();
@@ -346,13 +343,13 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
     /// @notice Computes the hash of a given EIP712ZKPoK structured data
     /// @param ctVerification The EIP712ZKPoK structure
     /// @return The hash of the EIP712ZKPoK structure
-    function _hashEIP712ZKPoK(EIP712ZKPoK memory ctVerification) internal view virtual returns (bytes32) {
+    function _hashEIP712ZKPoK(CiphertextVerification memory ctVerification) internal view virtual returns (bytes32) {
         return
             _hashTypedDataV4(
                 keccak256(
                     abi.encode(
                         EIP712_ZKPOK_TYPE_HASH,
-                        keccak256(abi.encodePacked(ctVerification.handles)),
+                        keccak256(abi.encodePacked(ctVerification.ctHandles)),
                         ctVerification.userAddress,
                         ctVerification.contractAddress,
                         block.chainid
@@ -361,12 +358,9 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
             );
     }
 
-    function _verifyEIP712(
-        EIP712ZKPoK memory ctVerif,
-        bytes[] memory signatures
-    ) internal virtual {
+    function _verifyEIP712(CiphertextVerification memory ctVerif, bytes[] memory signatures) internal virtual {
         bytes32 digest = _hashEIP712ZKPoK(ctVerif);
-        if(!_verifySignaturesDigest(digest, signatures)) revert SignaturesVerificationFailed();
+        if (!_verifySignaturesDigest(digest, signatures)) revert SignaturesVerificationFailed();
     }
 
     /**
@@ -411,7 +405,7 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
     }
 
     /**
-     * @notice          Cleans transient storage.
+     * @notice          Cleans a hashmap in transient storage.
      * @dev             This is important to keep composability in the context of account abstraction.
      * @param keys      An array of keys to cleanup from transient storage.
      * @param maxIndex  The biggest index to take into account from the array - assumed to be less or equal to keys.length.

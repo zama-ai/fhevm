@@ -19,7 +19,7 @@ DEPLOYER_PRIVATE_KEY=$(grep PRIVATE_KEY_FHEVM_DEPLOYER .env | cut -d '"' -f 2)
 COPROCESSOR_ADDRESS=$(grep ADDRESS_COPROCESSOR_ACCOUNT_0 .env | cut -d '"' -f 2)
 
 # Network
-NETWORK_CHAIN_ID_1=$(grep CHAIN_ID_GATEWAY .env | cut -d '"' -f 2)
+NETWORK_CHAIN_ID_1=$(grep CHAIN_ID_HTTPZ .env | cut -d '"' -f 2)
 
 # Dummy address
 # This is used for inputting dummy addresses or any bytes type when deploying the HTTPZ contract as passing

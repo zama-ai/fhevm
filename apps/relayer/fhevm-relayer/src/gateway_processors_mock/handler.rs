@@ -34,8 +34,8 @@ use tracing::{debug, error, info};
 use super::event::UserDecryptionEventData;
 
 sol! {
-    struct EIP712ZKPoK {
-        bytes32[] handles;
+    struct CiphertextVerification {
+        bytes32[] ctHandles;
         address userAddress;
         address contractAddress;
         uint256 contractChainId;
@@ -115,8 +115,8 @@ impl GatewayProcessorsHandler {
                     let handles_formatted: Vec<FixedBytes<32>> =
                         handles.clone().into_iter().map(FixedBytes::from).collect();
 
-                    let signing_hash = EIP712ZKPoK {
-                        handles: handles_formatted.clone(),
+                    let signing_hash = CiphertextVerification {
+                        ctHandles: handles_formatted.clone(),
                         userAddress: request_event.userAddress,
                         contractAddress: request_event.contractAddress,
                         contractChainId: U256::from(request_event.contractChainId),
