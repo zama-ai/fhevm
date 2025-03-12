@@ -1,5 +1,6 @@
 mod client;
 mod filter;
+pub mod listener;
 mod transaction_helper;
 mod utils;
 
