@@ -37,6 +37,10 @@ jobs:
         make setup-mock
         make deploy-gateway-smart-contracts
 
+    - name: Setup config for relayer
+      run: |
+        make config-fhevm-relayer
+
     - name: Run tests
       run: cargo test
     
