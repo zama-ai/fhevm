@@ -52,10 +52,7 @@ impl<E: Event> EventDispatcher<E> for TokioEventDispatcher<E> {
 
 impl<E: Event> HandlerRegistry<E> for TokioEventDispatcher<E> {
     fn register_handler(&self, event_id: u8, handler: Arc<dyn EventHandler<E>>) {
-        self.suscribers
-            .entry(event_id)
-            .or_default()
-            .push(handler);
+        self.suscribers.entry(event_id).or_default().push(handler);
     }
 
     fn register_once_handler(

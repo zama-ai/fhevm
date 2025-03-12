@@ -315,114 +315,116 @@ impl ArbitrumGatewayL2Handler {
         );
 
         if let GenericEventData::EventLogFromGw { log } = &event.data {
-            if let Some(topic) = log.topic0() { match *topic {
-                DecyptionManager::PublicDecryptionResponse::SIGNATURE_HASH => {
-                    match DecyptionManager::PublicDecryptionResponse::decode_log_data(
-                        log.data(),
-                        true,
-                    ) {
-                        Ok(req) => {
-                            let public_decryption_id = req.publicDecryptionId;
-                            info!(?public_decryption_id, "Public decryption id from event");
+            if let Some(topic) = log.topic0() {
+                match *topic {
+                    DecyptionManager::PublicDecryptionResponse::SIGNATURE_HASH => {
+                        match DecyptionManager::PublicDecryptionResponse::decode_log_data(
+                            log.data(),
+                            true,
+                        ) {
+                            Ok(req) => {
+                                let public_decryption_id = req.publicDecryptionId;
+                                info!(?public_decryption_id, "Public decryption id from event");
 
-                            if let Some(entry) = self
-                                .public_decryption_id_to_request_id
-                                .get(&public_decryption_id)
-                            {
-                                let original_request_id = *entry.value(); // Dereference the Ref<Uuid>
+                                if let Some(entry) = self
+                                    .public_decryption_id_to_request_id
+                                    .get(&public_decryption_id)
+                                {
+                                    let original_request_id = *entry.value(); // Dereference the Ref<Uuid>
 
-                                info!(
-                                    ?original_request_id,
-                                    ?public_decryption_id,
-                                    "Found original request ID for decryption response"
-                                );
+                                    info!(
+                                        ?original_request_id,
+                                        ?public_decryption_id,
+                                        "Found original request ID for decryption response"
+                                    );
 
-                                let next_event_data = GenericEventData::PublicDecrypt(
-                                    PublicDecryptEventData::RespRcvdFromGw {
-                                        decrypt_response: PublicDecryptResponse {
-                                            gateway_request_id: public_decryption_id,
-                                            decrypted_value: req.decryptedResult,
-                                            signatures: req.signatures,
+                                    let next_event_data = GenericEventData::PublicDecrypt(
+                                        PublicDecryptEventData::RespRcvdFromGw {
+                                            decrypt_response: PublicDecryptResponse {
+                                                gateway_request_id: public_decryption_id,
+                                                decrypted_value: req.decryptedResult,
+                                                signatures: req.signatures,
+                                            },
                                         },
-                                    },
-                                );
+                                    );
 
-                                // Now we can use original_request_id directly
-                                let next_event = RelayerEvent::new(
-                                    original_request_id,
-                                    event.api_version,
-                                    next_event_data,
-                                );
+                                    // Now we can use original_request_id directly
+                                    let next_event = RelayerEvent::new(
+                                        original_request_id,
+                                        event.api_version,
+                                        next_event_data,
+                                    );
 
-                                let _ = self.dispatcher.dispatch_event(next_event).await;
-                            } else {
-                                error!(
-                                    ?public_decryption_id,
-                                    "No matching request ID found for decryption ID"
-                                );
+                                    let _ = self.dispatcher.dispatch_event(next_event).await;
+                                } else {
+                                    error!(
+                                        ?public_decryption_id,
+                                        "No matching request ID found for decryption ID"
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                error!(?e, "Failed to decode event data");
                             }
                         }
-                        Err(e) => {
-                            error!(?e, "Failed to decode event data");
-                        }
                     }
-                }
 
-                DecyptionManager::UserDecryptionResponse::SIGNATURE_HASH => {
-                    match DecyptionManager::UserDecryptionResponse::decode_log_data(
-                        log.data(),
-                        true,
-                    ) {
-                        Ok(req) => {
-                            let user_decryption_id = req.userDecryptionId;
-                            info!(?user_decryption_id, "User decryption id from event");
+                    DecyptionManager::UserDecryptionResponse::SIGNATURE_HASH => {
+                        match DecyptionManager::UserDecryptionResponse::decode_log_data(
+                            log.data(),
+                            true,
+                        ) {
+                            Ok(req) => {
+                                let user_decryption_id = req.userDecryptionId;
+                                info!(?user_decryption_id, "User decryption id from event");
 
-                            if let Some(entry) = self
-                                .user_decryption_id_to_request_id
-                                .get(&user_decryption_id)
-                            {
-                                let original_request_id = *entry.value(); // Dereference the Ref<Uuid>
+                                if let Some(entry) = self
+                                    .user_decryption_id_to_request_id
+                                    .get(&user_decryption_id)
+                                {
+                                    let original_request_id = *entry.value(); // Dereference the Ref<Uuid>
 
-                                info!(
-                                    ?original_request_id,
-                                    ?user_decryption_id,
-                                    "Found original request ID for user decryption response"
-                                );
+                                    info!(
+                                        ?original_request_id,
+                                        ?user_decryption_id,
+                                        "Found original request ID for user decryption response"
+                                    );
 
-                                let next_event_data = GenericEventData::UserDecrypt(
-                                    UserDecryptEventData::RespRcvdFromGw {
-                                        decrypt_response: UserDecryptResponse {
-                                            gateway_request_id: user_decryption_id,
-                                            reencrypted_shares: req.reencryptedShares,
-                                            signatures: req.signatures,
+                                    let next_event_data = GenericEventData::UserDecrypt(
+                                        UserDecryptEventData::RespRcvdFromGw {
+                                            decrypt_response: UserDecryptResponse {
+                                                gateway_request_id: user_decryption_id,
+                                                reencrypted_shares: req.reencryptedShares,
+                                                signatures: req.signatures,
+                                            },
                                         },
-                                    },
-                                );
+                                    );
 
-                                info!("Dispatching UserDecryptEventData::RespRcvdFromGw event");
+                                    info!("Dispatching UserDecryptEventData::RespRcvdFromGw event");
 
-                                // Now we can use original_request_id directly
-                                let next_event = RelayerEvent::new(
-                                    original_request_id,
-                                    event.api_version,
-                                    next_event_data,
-                                );
+                                    // Now we can use original_request_id directly
+                                    let next_event = RelayerEvent::new(
+                                        original_request_id,
+                                        event.api_version,
+                                        next_event_data,
+                                    );
 
-                                let _ = self.dispatcher.dispatch_event(next_event).await;
-                            } else {
-                                error!(
-                                    ?user_decryption_id,
-                                    "No matching request ID found for decryption ID"
-                                );
+                                    let _ = self.dispatcher.dispatch_event(next_event).await;
+                                } else {
+                                    error!(
+                                        ?user_decryption_id,
+                                        "No matching request ID found for decryption ID"
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                error!(?e, "Failed to decode event data");
                             }
                         }
-                        Err(e) => {
-                            error!(?e, "Failed to decode event data");
-                        }
                     }
+                    _ => {}
                 }
-                _ => {}
-            } }
+            }
         }
     }
 

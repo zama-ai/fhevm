@@ -305,56 +305,58 @@ impl ArbitrumGatewayL2InputHandler {
             );
 
             match log.topic0() {
-                Some(topic) => if topic == &ZKPoKManager::VerifyProofResponse::SIGNATURE_HASH {
-                    match ZKPoKManager::VerifyProofResponse::decode_log_data(log.data(), true) {
-                        Ok(request_event) => {
-                            info!(
-                                zkpok_id = ?request_event.zkProofId,
-                                handles = ?request_event.handles,
-                                signatures = ?request_event.signatures,
-                                "Processing InputResponse event"
-                            );
-
-                            // Use get_key_value to get both key and value, or use remove if you want to clean up
-                            if let Some(entry) =
-                                self.zkpok_id_to_request_id.get(&request_event.zkProofId)
-                            {
-                                let original_request_id = *entry.value(); // Dereference the Ref<Uuid>
-
+                Some(topic) => {
+                    if topic == &ZKPoKManager::VerifyProofResponse::SIGNATURE_HASH {
+                        match ZKPoKManager::VerifyProofResponse::decode_log_data(log.data(), true) {
+                            Ok(request_event) => {
                                 info!(
-                                    ?original_request_id,
-                                    ?request_event.zkProofId,
-                                    "Found original request ID for input response"
+                                    zkpok_id = ?request_event.zkProofId,
+                                    handles = ?request_event.handles,
+                                    signatures = ?request_event.signatures,
+                                    "Processing InputResponse event"
                                 );
 
-                                let next_event_data: GenericEventData =
-                                    GenericEventData::InputProof(
-                                        InputProofEventData::RespRcvdFromGw {
-                                            input_proof_response: InputProofResponse {
-                                                handles: request_event.handles,
-                                                signatures: request_event.signatures,
-                                            },
-                                        },
+                                // Use get_key_value to get both key and value, or use remove if you want to clean up
+                                if let Some(entry) =
+                                    self.zkpok_id_to_request_id.get(&request_event.zkProofId)
+                                {
+                                    let original_request_id = *entry.value(); // Dereference the Ref<Uuid>
+
+                                    info!(
+                                        ?original_request_id,
+                                        ?request_event.zkProofId,
+                                        "Found original request ID for input response"
                                     );
 
-                                // Now we can use original_request_id directly
-                                let next_event = RelayerEvent::new(
-                                    original_request_id,
-                                    event.api_version,
-                                    next_event_data,
-                                );
+                                    let next_event_data: GenericEventData =
+                                        GenericEventData::InputProof(
+                                            InputProofEventData::RespRcvdFromGw {
+                                                input_proof_response: InputProofResponse {
+                                                    handles: request_event.handles,
+                                                    signatures: request_event.signatures,
+                                                },
+                                            },
+                                        );
 
-                                let _ = self.dispatcher.dispatch_event(next_event).await;
-                            } else {
-                                error!(?request_event.zkProofId, "No matching request ID found for zkproof ID");
+                                    // Now we can use original_request_id directly
+                                    let next_event = RelayerEvent::new(
+                                        original_request_id,
+                                        event.api_version,
+                                        next_event_data,
+                                    );
+
+                                    let _ = self.dispatcher.dispatch_event(next_event).await;
+                                } else {
+                                    error!(?request_event.zkProofId, "No matching request ID found for zkproof ID");
+                                }
+                            }
+                            Err(e) => {
+                                error!(?e, "Failed to decode InputRequest event");
+                                // Err(EventProcessingError::DecodingError(e))
                             }
                         }
-                        Err(e) => {
-                            error!(?e, "Failed to decode InputRequest event");
-                            // Err(EventProcessingError::DecodingError(e))
-                        }
                     }
-                },
+                }
                 None => {
                     info!("Not a input response event");
                 }
