@@ -39,18 +39,18 @@ task("task:deployHttpz")
       website: getRequiredEnvVar("PROTOCOL_WEBSITE"),
     };
 
-    // Parse the admin addresses (index starts from 1)
+    // Parse the admin addresses
     const adminAddresses = [];
-    for (let idx = 1; idx <= taskArguments.numAdmins; idx++) {
+    for (let idx = 0; idx < taskArguments.numAdmins; idx++) {
       adminAddresses.push(getRequiredEnvVar(`ADMIN_ADDRESS_${idx}`));
     }
 
     // Parse the KMS threshold
     const kmsThreshold = getRequiredEnvVar("KMS_THRESHOLD");
 
-    // Parse the KMS nodes (index starts from 1)
+    // Parse the KMS nodes
     const kmsNodes = [];
-    for (let idx = 1; idx <= taskArguments.numKmsNodes; idx++) {
+    for (let idx = 0; idx < taskArguments.numKmsNodes; idx++) {
       kmsNodes.push({
         connectorAddress: getRequiredEnvVar(`KMS_NODE_ADDRESS_${idx}`),
         identity: getRequiredEnvVar(`KMS_NODE_IDENTITY_${idx}`),
@@ -59,9 +59,9 @@ task("task:deployHttpz")
       });
     }
 
-    // Parse the coprocessors (index starts from 1)
+    // Parse the coprocessors
     const coprocessors = [];
-    for (let idx = 1; idx <= taskArguments.numCoprocessors; idx++) {
+    for (let idx = 0; idx < taskArguments.numCoprocessors; idx++) {
       coprocessors.push({
         transactionSenderAddress: getRequiredEnvVar(`COPROCESSOR_ADDRESS_${idx}`),
         identity: getRequiredEnvVar(`COPROCESSOR_IDENTITY_${idx}`),
@@ -70,9 +70,9 @@ task("task:deployHttpz")
       });
     }
 
-    // Parse the L1 network (index starts from 1)
+    // Parse the L1 network
     const layer1Networks = [];
-    for (let idx = 1; idx <= taskArguments.numNetworks; idx++) {
+    for (let idx = 0; idx < taskArguments.numNetworks; idx++) {
       layer1Networks.push({
         chainId: getRequiredEnvVar(`NETWORK_CHAIN_ID_${idx}`),
         httpzExecutor: getRequiredEnvVar(`NETWORK_HTTPZ_EXECUTOR_${idx}`),
