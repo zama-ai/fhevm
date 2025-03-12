@@ -157,11 +157,11 @@ txSender:
           name: layer2-sc-addresses
           key: httpz.address
   args:
-    - --database-url=${DATABASE_URL}
+    - --database-url=$(DATABASE_URL)
     - --gateway-url=http://layer2-anvil-node:8546
-    - --private-key=${TX_SENDER_PRIVATE_KEY}
-    - --zkpok-manager-address=${ZKPOK_MANAGER_ADDRESS}
-    - --ciphertext-storage-address=${CIPHERTEXT_STORAGE_ADDRESS}
+    - --private-key=$(TX_SENDER_PRIVATE_KEY)
+    - --zkpok-manager-address=$(ZKPOK_MANAGER_ADDRESS)
+    - --ciphertext-storage-address=$(CIPHERTEXT_STORAGE_ADDRESS)
   ports:
     metrics: "9100"
   serviceMonitor:
@@ -193,9 +193,9 @@ gwListener:
           name: layer2-sc-addresses
           key: zkpok_manager.address
   args:
-    - --database-url=${DATABASE_URL}
+    - --database-url=$(DATABASE_URL)
     - --gw-url=ws://layer2-anvil-node:8546
-    - --zkpok-manager-address=${ZKPOK_MANAGER_ADDRESS}
+    - --zkpok-manager-address=$(ZKPOK_MANAGER_ADDRESS)
   ports:
     metrics: "9100"
   serviceMonitor:
@@ -223,7 +223,45 @@ zkProofWorker:
           key: coprocessor-db-url
   args:
     - --pg-listen-channel="event_zkpok_new_work"
-    - --pg-notify-channel="verify_proofs"
+    - --pg-notify-channel="event_zkpok_computed"
+  ports:
+    metrics: "9100"
+  serviceMonitor:
+    enabled: false
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+snsWorker:
+  enabled: false
+  nameOverride:
+  image:
+    name: ghcr.io/zama-ai/fhevm-coprocessor
+    tag: fd7f391
+  replicas: 1
+  env:
+    - name: DATABASE_URL
+      valueFrom:
+        secretKeyRef:
+          name: coprocessor-db-url
+          key: coprocessor-db-url
+    - name: TENANT_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: coprocessor-api-key
+          key: coprocessor-api-key
+  args:
+    - --database-url=$(DATABASE_URL)
+    - --tenant-api-key=$(TENANT_API_KEY)
+    - --pg-listen-channels=["event_pbs_computations" "event_ciphertext_computed"]
+    - --pg-notify-channel="event_ciphertext128_computed"
+    - --work-items-batch-size=4
+    - --pg-polling-interval=60
+    - --pg-pool-connections=10
   ports:
     metrics: "9100"
   serviceMonitor:

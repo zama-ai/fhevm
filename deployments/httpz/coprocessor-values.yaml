@@ -18,7 +18,7 @@ dbMigration:
   enabled: true
   image:
     name: ghcr.io/zama-ai/fhevm-db-migration 
-    tag: v0.7.0-rc1
+    tag: e0352c8
   env:
     - name: CHAIN_ID
       value: "12345"
@@ -43,9 +43,10 @@ dbMigration:
           name: layer1-sc-addresses
           key: inputverifier.address
   insertInitContainer:
-    pksURL: http://minio.fhevm.svc.cluster.local:9000/kms-public/kms/PUB/PublicKey/408d8cbaa51dece7f782fe04ba0b1c1d017b1088
-    sksURL: http://minio.fhevm.svc.cluster.local:9000/kms-public/kms/PUB/ServerKey/408d8cbaa51dece7f782fe04ba0b1c1d017b1088
-    publicParamsURL: http://minio.fhevm.svc.cluster.local:9000/kms-public/kms/PUB/CRS/a5fedad3fd734a598fb67452099229445cb68447
+    pksURL: http://minio.fhevm.svc.cluster.local:9000/kms-public/kms/PUB/PublicKey/408d8cbaa51dece7f782fe04ba0b1c1d017b10880c538b7c72037468fe5c97ee
+    sksURL: http://minio.fhevm.svc.cluster.local:9000/kms-public/kms/PUB/ServerKey/408d8cbaa51dece7f782fe04ba0b1c1d017b10880c538b7c72037468fe5c97ee
+    snsURL: http://minio.fhevm.svc.cluster.local:9000/kms-public/kms/PUB/SnsKey/408d8cbaa51dece7f782fe04ba0b1c1d017b10880c538b7c72037468fe5c97ee
+    publicParamsURL: http://minio.fhevm.svc.cluster.local:9000/kms-public/kms/PUB/CRS/a5fedad3fd734a598fb67452099229445cb68447198fb56f29bb64d98953d002
   resources:
     requests:
       cpu: 100m
@@ -72,7 +73,7 @@ server:
     - --server-addr=0.0.0.0:50052
     - --coprocessor-private-key=/accounts/coprocessor.hex
   ports:
-    rpc: "50051"
+    rpc: "50052"
     metrics: "9100"
   serviceMonitor:
     enabled: true
@@ -219,3 +220,42 @@ txSender:
     limits:
       cpu: 500m
       memory: 512Mi
+
+snsWorker:
+  enabled: true
+  image:
+    name: ghcr.io/zama-ai/fhevm-coprocessor
+    tag: 77ac0bd
+  replicas: 1
+  env:
+    - name: DATABASE_URL
+      valueFrom:
+        secretKeyRef:
+          name: coprocessor-db-url
+          key: coprocessor-db-url
+    - name: TENANT_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: coprocessor-api-key
+          key: coprocessor-api-key
+    - name: RUST_BACKTRACE
+      value: "1"
+  args:
+    - --database-url=$(DATABASE_URL)
+    - --tenant-api-key=$(TENANT_API_KEY)
+    - --pg-listen-channels=["event_pbs_computations" "event_ciphertext_computed"]
+    - --pg-notify-channel="event_ciphertext128_computed"
+    - --work-items-batch-size=4
+    - --pg-polling-interval=60
+    - --pg-pool-connections=10
+  ports:
+    metrics: "9100"
+  serviceMonitor:
+    enabled: false
+  resources:
+    requests:
+      cpu: 1
+      memory: 1Gi
+    limits:
+      cpu: 2
+      memory: 4Gi
