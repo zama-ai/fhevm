@@ -124,4 +124,12 @@ interface IHTTPZ {
     /// @notice Get the coprocessor majority threshold
     /// @return The coprocessor majority threshold
     function getCoprocessorMajorityThreshold() external view returns (uint256);
+
+    /// @notice Get the list of all KMS nodes' addresses currently registered
+    /// @return The list of KMS nodes' addresses
+    function getAllKmsNodeAddresses() external view returns (address[] memory);
+
+    /// @notice Get the list of all coprocessors' addresses currently registered
+    /// @return The list of coprocessors' addresses
+    function getAllCoprocessorAddresses() external view returns (address[] memory);
 }

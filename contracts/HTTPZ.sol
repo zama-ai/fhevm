@@ -162,6 +162,16 @@ contract HTTPZ is IHTTPZ, Ownable2Step, AccessControl {
         return coprocessorAddresses.length / 2 + 1;
     }
 
+    /// @dev See {IHTTPZ-getAllKmsNodeAddresses}.
+    function getAllKmsNodeAddresses() external view virtual returns (address[] memory) {
+        return kmsNodeAddresses;
+    }
+
+    /// @dev See {IHTTPZ-getAllCoprocessorAddresses}.
+    function getAllCoprocessorAddresses() external view virtual returns (address[] memory) {
+        return coprocessorAddresses;
+    }
+
     /// @notice Returns the versions of the HTTPZ contract in SemVer format.
     /// @dev This is conventionally used for upgrade features.
     function getVersion() public pure virtual returns (string memory) {

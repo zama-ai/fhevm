@@ -157,6 +157,36 @@ describe("HTTPZ", function () {
         await expect(httpz.checkNetworkIsRegistered(chainId)).to.not.be.reverted;
       }
     });
+
+    it("Should get all KMS node addresses", async function () {
+      const { httpz, kmsSigners } = await loadFixture(deployHTTPZFixture);
+
+      // Get all KMS node addresses
+      const kmsNodeAddresses = await httpz.getAllKmsNodeAddresses();
+
+      // Check that the number of KMS node addresses is correct
+      expect(kmsNodeAddresses.length).to.equal(kmsSigners.length);
+
+      // Check that all KMS node addresses are in the list
+      for (const kmsSigner of kmsSigners) {
+        expect(kmsNodeAddresses).to.include(kmsSigner.address);
+      }
+    });
+
+    it("Should get all coprocessor addresses", async function () {
+      const { httpz, coprocessorSigners } = await loadFixture(deployHTTPZFixture);
+
+      // Get all coprocessor addresses
+      const coprocessorAddresses = await httpz.getAllCoprocessorAddresses();
+
+      // Check that the number of coprocessor addresses is correct
+      expect(coprocessorAddresses.length).to.equal(coprocessorSigners.length);
+
+      // Check that all coprocessor addresses are in the list
+      for (const coprocessorSigner of coprocessorSigners) {
+        expect(coprocessorAddresses).to.include(coprocessorSigner.address);
+      }
+    });
   });
 
   describe("KMS", function () {

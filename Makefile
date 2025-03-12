@@ -23,3 +23,6 @@ deploy-contracts-local: copy-env-example
 
 deploy-contracts-local-deployment: copy-env-example-deployment
 	./deploy-httpz-gateway-deployment.sh localHTTPZGateway
+
+update-abi:
+	python3 httpz_gateway_rust_bindings/abi_update.py update
