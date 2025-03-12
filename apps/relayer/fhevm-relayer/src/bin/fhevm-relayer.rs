@@ -156,43 +156,36 @@ async fn main() -> eyre::Result<()> {
         ));
 
     // Register input event handlers
-    // Event type: InputEventData::ReqFromUser
     orchestrator.register_handler(
         InputProofEventId::ReqRcvdFromUser.into(),
         Arc::clone(&input_handler),
     );
-    // Event type: InputEventData::RequestSentToGwL2
     orchestrator.register_handler(
-        InputProofEventId::ReqSentToGwL2.into(),
+        InputProofEventId::ReqSentToGw.into(),
         Arc::clone(&input_handler),
     );
-    // Event type: InputEventData::RespFromGwL2
     orchestrator.register_handler(
-        InputProofEventId::RespRcvdFromGwL2.into(),
+        InputProofEventId::RespRcvdFromGw.into(),
         Arc::clone(&input_handler),
     );
-    // Event type: InputEventData::EventLogResponseFromGwL2
     orchestrator.register_handler(
         GenericEventId::EventLogRcvdFromGw.into(),
         Arc::clone(&input_handler),
     );
 
-    // Event type: PubDecryptEventLogRcvdFromHostL1
+    // Register public decryption events
     orchestrator.register_handler(
         GenericEventId::EventLogRcvdFromHostBc.into(),
         Arc::clone(&host_l1_event_log_handler),
     );
-    // Event type: DecryptionResponseRcvdFromGwL2
     orchestrator.register_handler(
         PublicDecryptEventId::RespRcvdFromGw.into(),
         Arc::clone(&host_l1_event_log_handler),
     );
-    // Event type: DecryptResponseSentToHostL1
     orchestrator.register_handler(
         PublicDecryptEventId::RespSentToHostBc.into(),
         Arc::clone(&host_l1_event_log_handler),
     );
-    // Event type: DecryptResponseSentToHostL1
     orchestrator.register_handler(
         UserDecryptEventId::RespSentToUser.into(),
         Arc::clone(&host_l1_event_log_handler),
@@ -206,22 +199,28 @@ async fn main() -> eyre::Result<()> {
             settings.contracts,
         ));
 
-    // Event type: DecryptRequestRcvd
     orchestrator.register_handler(
         PublicDecryptEventId::ReqRcvdFromUser.into(),
         Arc::clone(&gateway_l2_event_handler),
     );
-    // Event type: DecryptRequestRcvd
-    orchestrator.register_handler(
-        UserDecryptEventId::ReqRcvdFromUser.into(),
-        Arc::clone(&gateway_l2_event_handler),
-    );
-    // Event type: DecryptResponseEventLogRcvdFromGwL2
+
     orchestrator.register_handler(
         PublicDecryptEventId::ReqSentToGw.into(),
         Arc::clone(&gateway_l2_event_handler),
     );
-    // Event type: DecryptionRequestSentToGwL2
+
+    // Register user decryption events
+
+    orchestrator.register_handler(
+        UserDecryptEventId::ReqRcvdFromUser.into(),
+        Arc::clone(&gateway_l2_event_handler),
+    );
+
+    orchestrator.register_handler(
+        UserDecryptEventId::ReqSentToGw.into(),
+        Arc::clone(&gateway_l2_event_handler),
+    );
+
     orchestrator.register_handler(
         GenericEventId::EventLogRcvdFromGw.into(),
         Arc::clone(&gateway_l2_event_handler),

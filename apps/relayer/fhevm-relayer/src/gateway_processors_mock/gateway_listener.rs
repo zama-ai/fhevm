@@ -50,7 +50,7 @@ pub async fn event_listener_gateway(
                             PROOF_VERIFICATION_REQUEST_TOPIC => {
                                 info!("Received Proof Verification request event");
                                 GatewayProcessorsEventData::KmsInput(
-                                GatewayProcessorsInputEventData::EventLogRequestFromGwL2  {
+                                GatewayProcessorsInputEventData::EventLogRequestFromGw  {
                                     log: event_log
                                 }
                             )
@@ -58,7 +58,7 @@ pub async fn event_listener_gateway(
                             DECRYPTION_REQUEST_TOPIC => {
                             info!("Received Public Decryption Request event");
                             GatewayProcessorsEventData::PublicDecrypt(
-                                PublicDecryptionEventData::EventLogRequestFromGwL2  {
+                                PublicDecryptionEventData::EventLogRequestFromGw  {
                                     log: event_log
                                 }
                             )
@@ -67,7 +67,7 @@ pub async fn event_listener_gateway(
                         USER_DECRYPTION_REQUEST_TOPIC => {
                             info!("Received User Decryption Request event");
                             GatewayProcessorsEventData::UserDecrypt(
-                                UserDecryptionEventData::EventLogRequestFromGwL2  {
+                                UserDecryptionEventData::EventLogRequestFromGw  {
                                     log: event_log
                                 }
                             )

@@ -2,7 +2,7 @@ use crate::core::event::{
     ApiCategory, ApiVersion, GenericEventData, RelayerEvent, UserDecryptEventData,
     UserDecryptEventId, UserDecryptRequest,
 };
-use crate::core::utils::OnceHandler;
+use crate::core::utils::{colorize_event_type, colorize_request_id, OnceHandler};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
 use alloy::primitives::Bytes;
@@ -64,7 +64,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
     /// Handles POST requests to '/input-proof'. This function is responsible only for handling
     /// the validated request and returning the corresponding response.
     pub async fn handle(&self, Json(payload): Json<UserDecryptRequestJson>) -> impl IntoResponse {
-        info!("Handling input proof request");
+        info!("Handling user decryption request in http listener");
         // Validate the payload
         if let Err(message) = payload.validate() {
             let error_response = UserDecryptErrorResponseJson { message };
@@ -87,7 +87,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
         // Generate Request ID
         let request_id = self.orchestrator.new_request_id();
 
-        info!("validated and assigned request id: {}", request_id);
+        info!("Validated and assigned request id: {}", request_id);
 
         // Register once handlers for receiving the decryption response from the gateway l2
         let (handler, rx): (OnceHandler<RelayerEvent>, oneshot::Receiver<RelayerEvent>) =
@@ -95,11 +95,11 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
         let handler = Arc::new(handler);
 
         self.orchestrator.register_once_handler(
-            UserDecryptEventId::RespRcvdFromGwL2.into(),
+            UserDecryptEventId::RespRcvdFromGw.into(),
             request_id,
             handler,
         );
-        info!("registered once handler");
+        info!("Registered once handler");
 
         let request_data = UserDecryptEventData::ReqRcvdFromUser {
             decrypt_request: user_decrypt_request,
@@ -113,18 +113,18 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
             GenericEventData::UserDecrypt(request_data),
         );
         let _ = self.orchestrator.dispatch_event(event).await;
-        info!("dispatched event to orchestrator to initiate processing");
+        info!("Dispatched event to orchestrator to initiate processing");
 
-        info!("waiting for reponse event");
+        info!("Waiting for user decrypt reponse event");
         // TODO(Mano): Handle failed event as well.
         // Wait for response on the rx of Onshot channel.
         let event = match rx.await {
             Ok(event) => {
-                info!("received response event");
+                info!("Received user decrypt response event");
                 event
             }
             Err(_) => {
-                info!("received errror while waiting for response event");
+                info!("Received errror while waiting for response event");
                 let error_response = UserDecryptErrorResponseJson {
                     message: "Failed to receive response from the gateway l2.".to_string(),
                 };
@@ -132,13 +132,19 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
             }
         };
 
+        info!(
+            event_type = %colorize_event_type(event.data.as_ref()),
+            request_id = %colorize_request_id(&event.request_id),
+            "Processing http event"
+        );
+
         info!("response event type {:?}", event.data);
         match event.data {
             GenericEventData::UserDecrypt(UserDecryptEventData::RespRcvdFromGw {
                 decrypt_response,
             }) => match UserDecryptResponseJson::try_from(decrypt_response) {
                 Ok(response_json) => {
-                    info!("sending success reponse to user");
+                    info!("Sending success reponse to user");
                     (StatusCode::OK, Json(response_json)).into_response()
                 }
                 Err(error) => {

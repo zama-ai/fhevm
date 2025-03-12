@@ -83,7 +83,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
         let handler = Arc::new(handler);
 
         self.orchestrator.register_once_handler(
-            InputProofEventId::RespRcvdFromGwL2.into(),
+            InputProofEventId::RespRcvdFromGw.into(),
             request_id,
             handler,
         );

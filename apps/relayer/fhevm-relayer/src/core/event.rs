@@ -45,8 +45,8 @@ impl From<PublicDecryptEventId> for u8 {
 #[derive(Debug)]
 pub enum UserDecryptEventId {
     ReqRcvdFromUser = 20,
-    ReqSentToGwL2 = 21,
-    RespRcvdFromGwL2 = 22,
+    ReqSentToGw = 21,
+    RespRcvdFromGw = 22,
     RespSentToUser = 23,
     Failed = 24,
 }
@@ -61,8 +61,8 @@ impl From<UserDecryptEventId> for u8 {
 #[derive(Debug)]
 pub enum InputProofEventId {
     ReqRcvdFromUser = 30,
-    ReqSentToGwL2 = 31,
-    RespRcvdFromGwL2 = 32,
+    ReqSentToGw = 31,
+    RespRcvdFromGw = 32,
     Failed = 33,
 }
 
@@ -128,11 +128,9 @@ impl Event for RelayerEvent {
                 UserDecryptEventData::ReqRcvdFromUser { .. } => {
                     UserDecryptEventId::ReqRcvdFromUser.into()
                 }
-                UserDecryptEventData::ReqSentToGw { .. } => {
-                    UserDecryptEventId::ReqSentToGwL2.into()
-                }
+                UserDecryptEventData::ReqSentToGw { .. } => UserDecryptEventId::ReqSentToGw.into(),
                 UserDecryptEventData::RespRcvdFromGw { .. } => {
-                    UserDecryptEventId::RespRcvdFromGwL2.into()
+                    UserDecryptEventId::RespRcvdFromGw.into()
                 }
                 UserDecryptEventData::RespSentToHostBc { .. } => {
                     UserDecryptEventId::RespSentToUser.into()
@@ -143,9 +141,9 @@ impl Event for RelayerEvent {
                 InputProofEventData::ReqRcvdFromUser { .. } => {
                     InputProofEventId::ReqRcvdFromUser.into()
                 }
-                InputProofEventData::ReqSentToGw { .. } => InputProofEventId::ReqSentToGwL2.into(),
+                InputProofEventData::ReqSentToGw { .. } => InputProofEventId::ReqSentToGw.into(),
                 InputProofEventData::RespRcvdFromGw { .. } => {
-                    InputProofEventId::RespRcvdFromGwL2.into()
+                    InputProofEventId::RespRcvdFromGw.into()
                 }
                 InputProofEventData::Failed { .. } => InputProofEventId::Failed.into(),
             },
@@ -205,8 +203,8 @@ pub enum GenericEventData {
 impl AsRef<str> for GenericEventData {
     fn as_ref(&self) -> &str {
         match self {
-            GenericEventData::EventLogFromHostBc { .. } => "EventLogFromHostL1",
-            GenericEventData::EventLogFromGw { .. } => "EventLogResponseFromGwL2",
+            GenericEventData::EventLogFromHostBc { .. } => "EventLogFromHostBc",
+            GenericEventData::EventLogFromGw { .. } => "EventLogResponseFromGw",
             GenericEventData::PublicDecrypt(decrypt_event) => decrypt_event.event_name(),
             GenericEventData::UserDecrypt(decrypt_event) => decrypt_event.event_name(),
             GenericEventData::InputProof(input_event) => input_event.event_name(),
@@ -259,11 +257,11 @@ impl PublicDecryptEventData {
     pub fn event_name(&self) -> &'static str {
         match self {
             PublicDecryptEventData::ReqRcvdFromHostBc { .. } => "PublicDecrypt::PublicDecryptReq",
-            PublicDecryptEventData::ReqSentToGw { .. } => "PublicDecrypt::PublicReqSentToGwL2",
+            PublicDecryptEventData::ReqSentToGw { .. } => "PublicDecrypt::PublicReqSentToGw",
             PublicDecryptEventData::RespRcvdFromGw { .. } => {
-                "PublicDecrypt::PublicDecryptRespFromGwL2"
+                "PublicDecrypt::PublicDecryptRespFromGw"
             }
-            PublicDecryptEventData::RespSentToHostBc => "PublicDecrypt::ResponseSentToHostL1",
+            PublicDecryptEventData::RespSentToHostBc => "PublicDecrypt::ResponseSentToHostBc",
             PublicDecryptEventData::Failed { .. } => "PublicDecrypt::Failed",
         }
     }
@@ -296,10 +294,10 @@ pub enum UserDecryptEventData {
 impl UserDecryptEventData {
     pub fn event_name(&self) -> &'static str {
         match self {
-            UserDecryptEventData::ReqRcvdFromUser { .. } => "UserDecrypt::UserDecryptReq",
-            UserDecryptEventData::ReqSentToGw { .. } => "UserDecrypt::UserReqSentToGwL2",
-            UserDecryptEventData::RespRcvdFromGw { .. } => "UserDecrypt::UserDecryptRespFromGwL2",
-            UserDecryptEventData::RespSentToHostBc => "UserDecrypt::ResponseSentToHostL1",
+            UserDecryptEventData::ReqRcvdFromUser { .. } => "UserDecrypt::ReqRcvdFromUser",
+            UserDecryptEventData::ReqSentToGw { .. } => "UserDecrypt::ReqSentToGw",
+            UserDecryptEventData::RespRcvdFromGw { .. } => "UserDecrypt::RespRcvdFromGw",
+            UserDecryptEventData::RespSentToHostBc => "UserDecrypt::RespSentToHostBc",
             UserDecryptEventData::Failed { .. } => "UserDecrypt::Failed",
         }
     }
@@ -384,9 +382,9 @@ pub enum InputProofEventData {
 impl InputProofEventData {
     pub fn event_name(&self) -> &'static str {
         match self {
-            InputProofEventData::ReqRcvdFromUser { .. } => "Input::ReqFromUser",
-            InputProofEventData::RespRcvdFromGw { .. } => "Input::RespFromGwL2",
-            InputProofEventData::ReqSentToGw { .. } => "Input::RequestSentToGwL2",
+            InputProofEventData::ReqRcvdFromUser { .. } => "Input::ReqRcvdFromUser",
+            InputProofEventData::RespRcvdFromGw { .. } => "Input::RespRcvdFromGw",
+            InputProofEventData::ReqSentToGw { .. } => "Input::ReqSentToGw",
             InputProofEventData::Failed { .. } => "Input::Failed",
         }
     }

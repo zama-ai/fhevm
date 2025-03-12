@@ -24,7 +24,7 @@ where
             .route(
                 "/input-proof",
                 post({
-                    info!("Received POST request to '/input-proof'");
+                    info!("Enabling handler for POST request to '/input-proof'");
                     let handler = Arc::new(input_proof_handler);
                     move |payload: Json<InputProofRequestJson>| async move {
                         handler.handle(payload).await
@@ -34,7 +34,7 @@ where
             .route(
                 "/user-decrypt",
                 post({
-                    info!("Received POST request to '/user-decrypt'");
+                    info!("Enabling handler for POST request to '/user-decrypt'");
                     let handler = Arc::new(user_decrypt_handler);
                     move |payload: Json<UserDecryptRequestJson>| async move {
                         handler.handle(payload).await
@@ -44,7 +44,7 @@ where
             .route(
                 "/keyurl",
                 get(|| async {
-                    info!("Received GET request to '/keyurl'");
+                    info!("Enabling handler for GET request to '/keyurl'");
                     let keyurl_response = KeyUrlResponseJson::from_settings();
                     Json(keyurl_response)
                 }),

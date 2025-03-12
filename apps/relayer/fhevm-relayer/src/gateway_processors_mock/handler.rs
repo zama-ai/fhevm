@@ -20,7 +20,7 @@ use crate::{
 };
 use std::str::FromStr;
 
-use alloy::primitives::{Address, FixedBytes, Log, U256};
+use alloy::primitives::{Address, FixedBytes, U256};
 use alloy::signers::{local::PrivateKeySigner, Signer};
 use alloy::{
     sol,
@@ -31,7 +31,7 @@ use async_trait::async_trait;
 use std::{sync::Arc, time::Duration};
 use tracing::{debug, error, info};
 
-use super::event::{DecryptionType, UserDecryptionEventData};
+use super::event::UserDecryptionEventData;
 
 sol! {
     struct EIP712ZKPoK {
@@ -69,7 +69,7 @@ impl GatewayProcessorsHandler {
         event: &GatewayProcessorsEvent,
     ) -> Result<(), EventProcessingError> {
         if let GatewayProcessorsEventData::KmsInput(
-            GatewayProcessorsInputEventData::EventLogRequestFromGwL2 { log },
+            GatewayProcessorsInputEventData::EventLogRequestFromGw { log },
         ) = &event.data
         {
             // Log the raw data for debugging
@@ -243,7 +243,7 @@ impl GatewayProcessorsHandler {
         tokio::time::sleep(Duration::from_secs(2)).await;
 
         if let GatewayProcessorsEventData::PublicDecrypt(
-            PublicDecryptionEventData::EventLogRequestFromGwL2 { log },
+            PublicDecryptionEventData::EventLogRequestFromGw { log },
         ) = &event.data
         {
             match PublicDecryptionRequest::decode_log_data(log.data(), true) {
@@ -302,7 +302,7 @@ impl GatewayProcessorsHandler {
         tokio::time::sleep(Duration::from_secs(2)).await;
 
         if let GatewayProcessorsEventData::UserDecrypt(
-            UserDecryptionEventData::EventLogRequestFromGwL2 { log },
+            UserDecryptionEventData::EventLogRequestFromGw { log },
         ) = &event.data
         {
             match UserDecryptionRequest::decode_log_data(log.data(), true) {
@@ -317,27 +317,27 @@ impl GatewayProcessorsHandler {
 
                     match self.send_user_decryption_response(req).await {
                         Ok(()) => {
-                            info!("Public decryption response sent successfully!");
+                            info!("User decryption response sent successfully!");
                             return Ok(());
                         }
                         Err(e) => {
-                            error!(?e, "Public decryption response processing failed!");
+                            error!(?e, "User decryption response processing failed!");
                             return Err(EventProcessingError::HandlerError(
-                                "Failed to decode public decrypt event data".to_owned(),
+                                "Failed to decode user decrypt event data".to_owned(),
                             ));
                         }
                     }
                 }
                 Err(e) => {
-                    error!(?e, "Failed to decode public decrypt event data");
+                    error!(?e, "Failed to decode user decrypt event data");
                     return Err(EventProcessingError::HandlerError(
-                        "Failed to decode public decrypt event data".to_owned(),
+                        "Failed to decode user decrypt event data".to_owned(),
                     ));
                 }
             }
         }
         Err(EventProcessingError::HandlerError(
-            "Failed to decode public decrypt event data".to_owned(),
+            "Failed to decode user decrypt event data".to_owned(),
         ))
     }
 }
@@ -353,8 +353,8 @@ impl EventHandler<GatewayProcessorsEvent> for GatewayProcessorsHandler {
 
         match &event.clone().data {
             GatewayProcessorsEventData::KmsInput(input_event) => match input_event {
-                GatewayProcessorsInputEventData::EventLogRequestFromGwL2 { .. } => {
-                    info!("Received input event log from Gateway L2");
+                GatewayProcessorsInputEventData::EventLogRequestFromGw { .. } => {
+                    info!("Received input event log from Gateway");
                     match self.process_input_request(&event).await {
                         Ok(()) => {
                             info!("Input request processing succesfull!");
@@ -367,28 +367,28 @@ impl EventHandler<GatewayProcessorsEvent> for GatewayProcessorsHandler {
             },
             GatewayProcessorsEventData::UserDecrypt(user_decrypt_event) => match user_decrypt_event
             {
-                UserDecryptionEventData::EventLogRequestFromGwL2 { .. } => {
-                    info!("Received user decryption event log from Gateway L2");
+                UserDecryptionEventData::EventLogRequestFromGw { .. } => {
+                    info!("Received user decryption event log from Gateway");
                     match self.process_user_decryption_request(event).await {
                         Ok(()) => {
-                            info!("Input request processing succesfull!");
+                            info!("User decrypt request processing succesfull!");
                         }
                         Err(e) => {
-                            error!(?e, "Input request processing failed!")
+                            error!(?e, "User decrypt request processing failed!")
                         }
                     }
                 }
             },
             GatewayProcessorsEventData::PublicDecrypt(public_decrypt_event) => {
                 match public_decrypt_event {
-                    PublicDecryptionEventData::EventLogRequestFromGwL2 { .. } => {
-                        info!("Received decryption event log from Gateway L2");
+                    PublicDecryptionEventData::EventLogRequestFromGw { .. } => {
+                        info!("Received public decryption event log from Gateway");
                         match self.process_public_decryption_request(event).await {
                             Ok(()) => {
-                                info!("Input request processing succesfull!");
+                                info!("Public request processing succesfull!");
                             }
                             Err(e) => {
-                                error!(?e, "Input request processing failed!")
+                                error!(?e, "Public request processing failed!")
                             }
                         }
                     }

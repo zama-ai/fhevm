@@ -46,14 +46,14 @@ impl Event for GatewayProcessorsEvent {
     fn event_id(&self) -> u8 {
         match &self.data {
             GatewayProcessorsEventData::KmsInput(input_event) => match input_event {
-                GatewayProcessorsInputEventData::EventLogRequestFromGwL2 { .. } => 5,
+                GatewayProcessorsInputEventData::EventLogRequestFromGw { .. } => 5,
             },
             GatewayProcessorsEventData::UserDecrypt(user_decrypt_event) => match user_decrypt_event
             {
-                UserDecryptionEventData::EventLogRequestFromGwL2 { .. } => 4,
+                UserDecryptionEventData::EventLogRequestFromGw { .. } => 4,
             },
             GatewayProcessorsEventData::PublicDecrypt(decrypt_event) => match decrypt_event {
-                PublicDecryptionEventData::EventLogRequestFromGwL2 { .. } => 3,
+                PublicDecryptionEventData::EventLogRequestFromGw { .. } => 3,
             },
         }
     }
@@ -122,14 +122,14 @@ pub enum DecryptedValue {
 
 #[derive(Clone, Debug)]
 pub enum GatewayProcessorsInputEventData {
-    EventLogRequestFromGwL2 { log: Log },
+    EventLogRequestFromGw { log: Log },
 }
 
 impl GatewayProcessorsInputEventData {
     pub fn event_name(&self) -> &'static str {
         match self {
-            GatewayProcessorsInputEventData::EventLogRequestFromGwL2 { .. } => {
-                "KmsInput::EventLogRequestFromGwL2"
+            GatewayProcessorsInputEventData::EventLogRequestFromGw { .. } => {
+                "KmsInput::EventLogRequestFromGw"
             }
         }
     }
@@ -137,14 +137,14 @@ impl GatewayProcessorsInputEventData {
 
 #[derive(Clone, Debug)]
 pub enum UserDecryptionEventData {
-    EventLogRequestFromGwL2 { log: Log },
+    EventLogRequestFromGw { log: Log },
 }
 
 impl UserDecryptionEventData {
     pub fn event_name(&self) -> &'static str {
         match self {
-            UserDecryptionEventData::EventLogRequestFromGwL2 { .. } => {
-                "UserDecryption::EventLogRequestFromGwL2"
+            UserDecryptionEventData::EventLogRequestFromGw { .. } => {
+                "UserDecryption::EventLogRequestFromGw"
             }
         }
     }
@@ -152,14 +152,14 @@ impl UserDecryptionEventData {
 
 #[derive(Clone, Debug)]
 pub enum PublicDecryptionEventData {
-    EventLogRequestFromGwL2 { log: Log },
+    EventLogRequestFromGw { log: Log },
 }
 
 impl PublicDecryptionEventData {
     pub fn event_name(&self) -> &'static str {
         match self {
-            PublicDecryptionEventData::EventLogRequestFromGwL2 { .. } => {
-                "UserDecryption::EventLogRequestFromGwL2"
+            PublicDecryptionEventData::EventLogRequestFromGw { .. } => {
+                "UserDecryption::EventLogRequestFromGw"
             }
         }
     }

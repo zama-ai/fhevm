@@ -254,14 +254,15 @@ impl ArbitrumGatewayL2Handler {
         );
 
         // Create and dispatch the new event
-        let next_event = event.derive_next_event(GenericEventData::PublicDecrypt(
-            PublicDecryptEventData::ReqSentToGw {
-                public_decryption_id: user_decryption_id,
-            },
+        let next_event = event.derive_next_event(GenericEventData::UserDecrypt(
+            UserDecryptEventData::ReqSentToGw { user_decryption_id },
         ));
 
         if let Err(e) = self.dispatcher.dispatch_event(next_event).await {
-            error!(?e, "Failed to dispatch DecryptRequestProcessed event");
+            error!(
+                ?e,
+                "Failed to dispatch UserDecryptEventData::ReqSentToGw event"
+            );
         }
     }
 
@@ -386,7 +387,7 @@ impl ArbitrumGatewayL2Handler {
                                     info!(
                                         ?original_request_id,
                                         ?user_decryption_id,
-                                        "Found original request ID for decryption response"
+                                        "Found original request ID for user decryption response"
                                     );
 
                                     let next_event_data = GenericEventData::UserDecrypt(
@@ -398,6 +399,8 @@ impl ArbitrumGatewayL2Handler {
                                             },
                                         },
                                     );
+
+                                    info!("Dispatching UserDecryptEventData::RespRcvdFromGw event");
 
                                     // Now we can use original_request_id directly
                                     let next_event = RelayerEvent::new(
