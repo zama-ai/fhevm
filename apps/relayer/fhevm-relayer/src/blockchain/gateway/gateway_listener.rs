@@ -9,8 +9,15 @@ use alloy::rpc::types::Log;
 use futures_util::StreamExt;
 use std::sync::Arc;
 
+pub type EventLogConverter = fn(Log) -> RelayerEventData;
+
+pub fn gateway_event_log_converter(log: Log) -> RelayerEventData {
+    RelayerEventData::Generic(GenericEventData::EventLogFromGw { log })
+}
+
 pub async fn event_listener_gateway(
     mut subscription: alloy::pubsub::SubscriptionStream<Log>,
+    log_converter: EventLogConverter,
     orchestrator: Arc<
         Orchestrator<
             impl EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>,
@@ -28,11 +35,8 @@ pub async fn event_listener_gateway(
                             category: ApiCategory::PRODUCTION,
                             number: 1,
                         },
-                        RelayerEventData::Generic(GenericEventData::EventLogFromGw   {
-                                                log: event_log
-                                            }),
+                        log_converter(event_log),
                     );
-
                     orchestrator.dispatch_event(event).await.unwrap_or_else(|e| {
                         error!("Failed to dispatch event: {e}");
                     });

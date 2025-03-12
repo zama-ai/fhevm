@@ -41,7 +41,7 @@ use tracing_subscriber::{fmt::SubscriberBuilder, EnvFilter};
 use fhevm_relayer::{
     blockchain::{
         ethereum::{ChainName, ContractAndTopicsFilter, EthereumJsonRPCWsClient},
-        gateway::gateway_listener::event_listener_gateway,
+        gateway::gateway_listener::{event_listener_gateway, gateway_event_log_converter},
         httpz::ethereum_listener::event_listener,
         ArbitrumGatewayL2Handler, ArbitrumGatewayL2InputHandler, EthereumHostL1Handler,
     },
@@ -256,6 +256,7 @@ async fn main() -> eyre::Result<()> {
     let subscription_rollup = rollup_l2.new_subscription(filter_rollup, None).await?;
     tokio::spawn(event_listener_gateway(
         subscription_rollup,
+        gateway_event_log_converter,
         Arc::clone(&orchestrator),
     ));
 
