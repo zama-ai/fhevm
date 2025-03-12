@@ -7,7 +7,8 @@ pragma solidity ^0.8.24;
 struct SnsCiphertextMaterial {
     uint256 ctHandle;
     uint256 keyId;
-    bytes snsCiphertext;
+    bytes32 snsCiphertextDigest;
+    address[] coprocessorAddresses;
 }
 
 /**
@@ -17,7 +18,8 @@ struct SnsCiphertextMaterial {
 struct CiphertextMaterial {
     uint256 ctHandle;
     uint256 keyId;
-    bytes ciphertext;
+    bytes32 ciphertextDigest;
+    address[] coprocessorAddresses;
 }
 
 /**

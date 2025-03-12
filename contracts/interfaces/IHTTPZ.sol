@@ -31,8 +31,8 @@ interface IHTTPZ {
         bytes identity;
         /// @notice IP address of the KMS node
         string ipAddress;
-        /// @notice Address of the KMS node's DA (data availability, an S3 bucket)
-        string daAddress;
+        /// @notice URL address of the KMS node's data availability (DA)
+        string daUrl;
     }
 
     /// @notice Struct that represents a coprocessor
@@ -41,8 +41,10 @@ interface IHTTPZ {
         address transactionSenderAddress;
         /// @notice Identity of the coprocessor (its public signature key)
         bytes identity;
-        /// @notice Address of the coprocessor's DA (data availability, an S3 bucket)
-        string daAddress;
+        /// @notice URL address of the coprocessor's data availability (DA)
+        string daUrl;
+        /// @notice URL address of the coprocessor's S3 bucket where ciphertexts are stored
+        string s3BucketUrl;
     }
 
     /// @notice Struct that represents a network

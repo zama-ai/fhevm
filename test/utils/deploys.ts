@@ -32,14 +32,15 @@ export async function deployHTTPZFixture() {
     connectorAddress: kmsNode.address,
     identity: hre.ethers.randomBytes(32),
     ipAddress: "127.0.0.1",
-    daAddress: "https://da.com",
+    daUrl: "https://da.com",
   }));
 
   // Create dummy Coprocessors with the signers' addresses
   const coprocessors = coprocessorSigners.map((coprocessorSigner) => ({
     transactionSenderAddress: coprocessorSigner.address,
     identity: hre.ethers.randomBytes(32),
-    daAddress: "https://da.com",
+    daUrl: "https://da.com",
+    s3BucketUrl: "s3://bucket",
   }));
 
   // Create dummy Networks with the chain IDs
@@ -156,8 +157,8 @@ export async function deployKeyManagerFixture() {
   };
 }
 
-/// @dev Deploy the CiphertextStorage contract
-export async function deployCiphertextStorageFixture() {
+/// @dev Deploy the CiphertextManager contract
+export async function deployCiphertextManagerFixture() {
   const {
     httpz,
     keyManager,
@@ -175,13 +176,13 @@ export async function deployCiphertextStorageFixture() {
     fheParamsDigest,
   } = await loadFixture(deployKeyManagerFixture);
 
-  const CiphertextStorage = await hre.ethers.getContractFactory("CiphertextStorage", owner);
-  const ciphertextStorage = await CiphertextStorage.deploy(httpz, keyManager);
+  const CiphertextManager = await hre.ethers.getContractFactory("CiphertextManager", owner);
+  const ciphertextManager = await CiphertextManager.deploy(httpz, keyManager);
 
   return {
     httpz,
     keyManager,
-    ciphertextStorage,
+    ciphertextManager,
     owner,
     admins,
     user,
@@ -202,7 +203,7 @@ export async function deployACLManagerFixture() {
   const {
     httpz,
     keyManager,
-    ciphertextStorage,
+    ciphertextManager,
     owner,
     admins,
     user,
@@ -215,15 +216,15 @@ export async function deployACLManagerFixture() {
     chainIds,
     fheParamsName,
     fheParamsDigest,
-  } = await loadFixture(deployCiphertextStorageFixture);
+  } = await loadFixture(deployCiphertextManagerFixture);
 
   const ACLManager = await hre.ethers.getContractFactory("ACLManager", owner);
-  const aclManager = await ACLManager.deploy(httpz, ciphertextStorage);
+  const aclManager = await ACLManager.deploy(httpz, ciphertextManager);
 
   return {
     httpz,
     keyManager,
-    ciphertextStorage,
+    ciphertextManager,
     aclManager,
     owner,
     admins,
@@ -245,7 +246,7 @@ export async function deployDecryptionManagerFixture() {
   const {
     httpz,
     keyManager,
-    ciphertextStorage,
+    ciphertextManager,
     aclManager,
     owner,
     admins,
@@ -264,12 +265,12 @@ export async function deployDecryptionManagerFixture() {
   const dummyPaymentManager = "0x1234567890abcdef1234567890abcdef12345678";
 
   const DecryptionManager = await hre.ethers.getContractFactory("DecryptionManager", owner);
-  const decryptionManager = await DecryptionManager.deploy(httpz, aclManager, ciphertextStorage, dummyPaymentManager);
+  const decryptionManager = await DecryptionManager.deploy(httpz, aclManager, ciphertextManager, dummyPaymentManager);
 
   return {
     httpz,
     keyManager,
-    ciphertextStorage,
+    ciphertextManager,
     aclManager,
     decryptionManager,
     owner,
