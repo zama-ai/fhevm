@@ -75,7 +75,7 @@ const config: HardhatUserConfig = {
     timeout: 500000,
     // NOTE: `spec` is the default mocha reporter
     // List of other available reporters can be found in https://github.com/mochajs/mocha/tree/main/lib/reporters
-    reporter: ((process.env["MOCHA_REPORTER"] || "BASE") === "OTEL") ? './instrument-tests/otel-reporter.js' : 'spec',
+    reporter: ((process.env["MOCHA_REPORTER"] || "BASE") === "OTEL") ? './instrument-tests/json-file-to-prom-reporter.js' : 'spec',
     // NOTE: We can't use the `--require` flags because of a discrepancy in Mocha as used in Hardhat
     // https://github.com/mochajs/mocha/issues/5006
     // require: ['./instrument-tests/otel-setup'],
