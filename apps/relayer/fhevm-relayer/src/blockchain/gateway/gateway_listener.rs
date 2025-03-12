@@ -38,7 +38,12 @@ pub async fn event_listener_gateway(
                         log_converter(event_log),
                     );
                     orchestrator.dispatch_event(event).await.unwrap_or_else(|e| {
-                        error!("Failed to dispatch event: {e}");
+                        error!(
+                            file = file!(),
+                            line = line!(),
+                            error = %e,
+                            "Failed to dispatch event"
+                        );
                     });
                 }
                 None => {
