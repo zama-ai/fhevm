@@ -21,7 +21,7 @@ interface ICiphertextManager {
     error InvalidCurrentKeyId(uint256 keyId);
 
     /// @notice Error indicating that the given coprocessor has already authorized the add operation.
-    error CoprocessorHasAlreadyAdded(address coprocessor);
+    error CoprocessorAlreadyAdded(address coprocessor);
 
     /// @notice Error indicating that the given ciphertext material represented by the given handle has not
     /// @notice been added in the contract.
