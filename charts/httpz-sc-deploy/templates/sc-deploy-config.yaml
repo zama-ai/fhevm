@@ -7,14 +7,10 @@ metadata:
     app.kubernetes.io/name: {{ .Release.Name }}-config
   name: {{ .Release.Name }}-config
 data:
-  .env: |
-    {{- range .Values.scDeploy.env }}
-    export {{ .name }}="{{ .value }}"
-    {{- end }}
-
   deploy-contracts.sh: |
     #!/bin/bash
     set -eo pipefail
+    
     create_configmap() {
       configmap_name="${1}"
       if [[ -z "$configmap_name" ]]; then
@@ -49,8 +45,34 @@ data:
     apt update && apt install kubernetes-client -y
     echo "creating kubernetes configmap for smart contract configuration outputs"
     create_configmap "${CONFIGMAP_NAME}"
-  
-    # Pre-deploy commands
+
+    # Populate .env file
+    echo "# Generated at $(date)" > /app/.env
+    env | \
+      grep -v '^KUBERNETES_' | \
+      grep -v '^HOSTNAME=' | \
+      grep -v '^HOME=' | \
+      grep -v '^PATH=' | \
+      grep -v '^PWD=' | \
+      grep -v '^SHLVL=' | \
+      grep -v '^_=' | \
+      grep -v '_SERVICE_' | \
+      grep -v '_PORT_' | \
+      grep -v '_SERVICE_PORT' | \
+      grep -v 'VERSION=' | \
+      grep -v '^YARN_' | \
+      grep -v '^NODE_' | \
+      grep -v 'TCP_ADDR=' | \
+      grep -v 'TCP_PORT=' | \
+      grep -v 'TCP_PROTO=' | \
+      while read -r line; do
+        key=$(echo "$line" | cut -d= -f1)
+        value=$(echo "$line" | cut -d= -f2-)
+        echo "export ${key}=\"${value}\"" >> /app/.env
+      done
+    echo "Generated .env file with $(($(wc -l < /app/.env) - 1)) variables"
+    
+    # Main deploy commands
     {{- range .Values.scDeploy.deployCommands }}
     {{ . }}
     {{- end }}
