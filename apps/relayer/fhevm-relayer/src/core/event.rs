@@ -470,10 +470,10 @@ fn parse_chain_id(
         U256::from(12345u64)
     } else if chain_id.starts_with("0x") {
         // Parse as hex if it starts with 0x
-        U256::from_str(&chain_id)?
+        U256::from_str(chain_id)?
     } else {
         // Parse as decimal otherwise
-        U256::from_str_radix(&chain_id, 10)?
+        U256::from_str_radix(chain_id, 10)?
     };
     Ok(contract_chain_id)
 }

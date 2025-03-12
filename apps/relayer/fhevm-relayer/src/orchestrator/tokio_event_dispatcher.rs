@@ -54,7 +54,7 @@ impl<E: Event> HandlerRegistry<E> for TokioEventDispatcher<E> {
     fn register_handler(&self, event_id: u8, handler: Arc<dyn EventHandler<E>>) {
         self.suscribers
             .entry(event_id)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(handler);
     }
 
@@ -66,7 +66,7 @@ impl<E: Event> HandlerRegistry<E> for TokioEventDispatcher<E> {
     ) {
         self.once_subscribers
             .entry((event_id, request_id))
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(handler);
     }
 }
