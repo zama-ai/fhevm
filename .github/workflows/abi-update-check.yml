@@ -28,4 +28,4 @@ jobs:
         run: npm install
 
       - name: Check crate's version and ABI files
-        run: python3 gwl2_rust_bindings/abi_update.py check
+        run: python3 httpz_gateway_rust_bindings/abi_update.py check
