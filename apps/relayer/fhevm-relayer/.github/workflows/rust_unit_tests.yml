@@ -21,8 +21,9 @@ jobs:
         toolchain: stable
 
     - name: Run Anvil nodes
-      run: make start-anvil-nodes
-    
+      run: |
+        make start-anvil-nodes
+        
     - name: Verify Anvil nodes
       run: |
         docker ps
@@ -30,6 +31,11 @@ jobs:
         docker logs anvil-gateway
         curl -v http://localhost:8756/ || echo "Port 8756 not responding"
         curl -v http://localhost:8757/ || echo "Port 8757 not responding"
+
+    - name: Deploy Gateway Smart Contracts
+      run: |
+        make setup-mock
+        make deploy-gateway-smart-contracts
 
     - name: Run tests
       run: cargo test
