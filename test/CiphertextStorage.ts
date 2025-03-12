@@ -89,14 +89,14 @@ describe("CiphertextManager", function () {
         .withArgs(user.address, httpz.COPROCESSOR_ROLE());
     });
 
-    it("Should revert with CoprocessorHasAlreadyAdded", async function () {
+    it("Should revert with CoprocessorAlreadyAdded", async function () {
       // When
       const result = ciphertextManager
         .connect(coprocessorSigners[0])
         .addCiphertextMaterial(ctHandle, keyId, chainId, ciphertextDigest, snsCiphertextDigest);
 
       // Then
-      await expect(result).revertedWithCustomError(ciphertextManager, "CoprocessorHasAlreadyAdded");
+      await expect(result).revertedWithCustomError(ciphertextManager, "CoprocessorAlreadyAdded");
     });
 
     // TODO: Add test checking `isCurrentKeyId` once keys are generated through the Gateway

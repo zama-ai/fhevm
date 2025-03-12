@@ -16,21 +16,21 @@ contract ACLManager is IACLManager {
     /// @notice The maximum number of contracts that can be requested for delegation.
     uint8 internal constant _MAX_CONTRACT_ADDRESSES = 10;
 
-    /// @dev The mapping of the already allowed user decryptions.
-    mapping(uint256 ctHandle => mapping(address userAddress => bool isAllowed)) public allowedUserDecrypts;
-    /// @dev The counter used for the user decryption consensus.
-    mapping(uint256 ctHandle => mapping(address userAddress => uint8 counter)) internal _allowUserDecryptCounters;
-    /// @notice The mapping of the Coprocessors that have already allowed the user decryption.
-    mapping(uint256 ctHandle => mapping(address userAddress => mapping(address coprocessorAddress => bool hasAllowed)))
-        internal _allowUserDecryptAuthorizers;
+    /// @notice Accounts allowed to use the ciphertext handle.
+    mapping(uint256 ctHandle => mapping(address accountAddress => bool isAllowed)) public allowedAccounts;
+    /// @notice The counter used for the allowAccount consensus.
+    mapping(uint256 ctHandle => mapping(address accountAddress => uint8 counter)) internal _allowAccountCounters;
+    /// @notice Coprocessors that have already allowed an account to use the ciphertext handle.
+    mapping(uint256 ctHandle => mapping(address accountAddress => mapping(address coprocessorAddress => bool hasAllowed)))
+        internal _allowAccountCoprocessors;
 
-    /// @dev The mapping of the already allowed public decryptions.
+    /// @notice Allowed public decryptions.
     mapping(uint256 ctHandle => bool isAllowed) public allowedPublicDecrypts;
-    /// @dev The counter used for the public decryption consensus.
+    /// @notice The counter used for the public decryption consensus.
     mapping(uint256 ctHandle => uint8 counter) internal _allowPublicDecryptCounters;
-    /// @notice The mapping of the Coprocessors that have already allowed the user decryption.
+    /// @notice Coprocessors that have already allowed a public decryption.
     mapping(uint256 ctHandle => mapping(address coprocessorAddress => bool hasAllowed))
-        internal _allowPublicDecryptAuthorizers;
+        internal _allowPublicDecryptCoprocessors;
 
     /// @dev Tracks the computed delegateAccountHash that has already been delegated.
     mapping(bytes32 delegateAccountHash => bool isDelegated) internal _delegatedAccountHashes;
@@ -69,28 +69,28 @@ contract ACLManager is IACLManager {
         _;
     }
 
-    /// @dev See {IACLManager-allowUserDecrypt}.
-    function allowUserDecrypt(
+    /// @dev See {IACLManager-allowAccount}.
+    function allowAccount(
         uint256 chainId,
         uint256 ctHandle,
-        address allowedAddress
+        address accountAddress
     ) public virtual override onlyCoprocessor isHandleOnNetwork(ctHandle, chainId) {
-        /// @dev Check if the Coprocessor has already allowed the decryption.
-        if (_allowUserDecryptAuthorizers[ctHandle][allowedAddress][msg.sender]) {
-            revert CoprocessorHasAlreadyAllowed(msg.sender, ctHandle);
+        /// @dev Check if the coprocessor has already allowed the account to use the ciphertext handle.
+        if (_allowAccountCoprocessors[ctHandle][accountAddress][msg.sender]) {
+            revert CoprocessorAlreadyAllowed(msg.sender, ctHandle);
         }
-        _allowUserDecryptCounters[ctHandle][allowedAddress]++;
-        _allowUserDecryptAuthorizers[ctHandle][allowedAddress][msg.sender] = true;
+        _allowAccountCounters[ctHandle][accountAddress]++;
+        _allowAccountCoprocessors[ctHandle][accountAddress][msg.sender] = true;
 
         /// @dev Only send the event if consensus has not been reached in a previous call
         /// @dev and the consensus is reached in the current call.
         /// @dev This means a "late" allow will not be reverted, just ignored
         if (
-            !allowedUserDecrypts[ctHandle][allowedAddress] &&
-            _isConsensusReached(_allowUserDecryptCounters[ctHandle][allowedAddress])
+            !allowedAccounts[ctHandle][accountAddress] &&
+            _isConsensusReached(_allowAccountCounters[ctHandle][accountAddress])
         ) {
-            emit AllowUserDecrypt(ctHandle, allowedAddress);
-            allowedUserDecrypts[ctHandle][allowedAddress] = true;
+            allowedAccounts[ctHandle][accountAddress] = true;
+            emit AllowAccount(ctHandle, accountAddress);
         }
     }
 
@@ -99,18 +99,18 @@ contract ACLManager is IACLManager {
         uint256 chainId,
         uint256 ctHandle
     ) public virtual override onlyCoprocessor isHandleOnNetwork(ctHandle, chainId) {
-        if (_allowPublicDecryptAuthorizers[ctHandle][msg.sender]) {
-            revert CoprocessorHasAlreadyAllowed(msg.sender, ctHandle);
+        if (_allowPublicDecryptCoprocessors[ctHandle][msg.sender]) {
+            revert CoprocessorAlreadyAllowed(msg.sender, ctHandle);
         }
         _allowPublicDecryptCounters[ctHandle]++;
-        _allowPublicDecryptAuthorizers[ctHandle][msg.sender] = true;
+        _allowPublicDecryptCoprocessors[ctHandle][msg.sender] = true;
 
         /// @dev Only send the event if consensus has not been reached in a previous call
         /// @dev and the consensus is reached in the current call.
         /// @dev This means a "late" allow will not be reverted, just ignored
         if (!allowedPublicDecrypts[ctHandle] && _isConsensusReached(_allowPublicDecryptCounters[ctHandle])) {
-            emit AllowPublicDecrypt(ctHandle);
             allowedPublicDecrypts[ctHandle] = true;
+            emit AllowPublicDecrypt(ctHandle);
         }
     }
 
@@ -134,7 +134,7 @@ contract ACLManager is IACLManager {
         ];
 
         if (alreadyDelegatedCoprocessors[msg.sender]) {
-            revert CoprocessorHasAlreadyDelegated(msg.sender, chainId, delegator, delegatee, contractAddresses);
+            revert CoprocessorAlreadyDelegated(msg.sender, chainId, delegator, delegatee, contractAddresses);
         }
 
         _delegateAccountHashCounters[delegateAccountHash]++;
@@ -155,8 +155,8 @@ contract ACLManager is IACLManager {
         }
     }
 
-    /// @dev See {IACLManager-checkUserDecryptAllowed}.
-    function checkUserDecryptAllowed(
+    /// @dev See {IACLManager-checkAccountAllowed}.
+    function checkAccountAllowed(
         address userAddress,
         CtHandleContractPair[] calldata ctHandleContractPairs
     ) public view virtual {
@@ -169,14 +169,14 @@ contract ACLManager is IACLManager {
                 revert UserAddressInContractAddresses(userAddress);
             }
 
-            /// @dev Check that the user is allowed to decrypt this ciphertext.
-            if (!allowedUserDecrypts[ctHandle][userAddress]) {
-                revert UserNotAllowedToUserDecrypt(ctHandle, userAddress);
+            /// @dev Check that the user is allowed to use this ciphertext.
+            if (!allowedAccounts[ctHandle][userAddress]) {
+                revert UserNotAllowedToUseCiphertext(ctHandle, userAddress);
             }
 
-            /// @dev Check that the contract is allowed to decrypt this ciphertext.
-            if (!allowedUserDecrypts[ctHandle][contractAddress]) {
-                revert ContractNotAllowedToUserDecrypt(ctHandle, contractAddress);
+            /// @dev Check that the contract is allowed to use this ciphertext.
+            if (!allowedAccounts[ctHandle][contractAddress]) {
+                revert ContractNotAllowedToUseCiphertext(ctHandle, contractAddress);
             }
         }
     }
@@ -187,6 +187,20 @@ contract ACLManager is IACLManager {
         for (uint256 i = 0; i < ctHandles.length; i++) {
             if (!allowedPublicDecrypts[ctHandles[i]]) {
                 revert PublicDecryptNotAllowed(ctHandles[i]);
+            }
+        }
+    }
+
+    /// @dev See {IACLManager-isAccountDelegated}.
+    function checkAccountDelegated(
+        uint256 chainId,
+        address delegator,
+        address delegatee,
+        address[] calldata contractAddresses
+    ) public view virtual {
+        for (uint256 i = 0; i < contractAddresses.length; i++) {
+            if (!_delegatedContracts[delegator][delegatee][chainId][contractAddresses[i]]) {
+                revert AccountNotDelegated(chainId, delegator, delegatee, contractAddresses[i]);
             }
         }
     }
@@ -206,20 +220,6 @@ contract ACLManager is IACLManager {
                     Strings.toString(PATCH_VERSION)
                 )
             );
-    }
-
-    /// @dev See {IACLManager-isAccountDelegated}.
-    function checkAccountDelegated(
-        uint256 chainId,
-        address delegator,
-        address delegatee,
-        address[] calldata contractAddresses
-    ) public view virtual {
-        for (uint256 i = 0; i < contractAddresses.length; i++) {
-            if (!_delegatedContracts[delegator][delegatee][chainId][contractAddresses[i]]) {
-                revert AccountNotDelegated(chainId, delegator, delegatee, contractAddresses[i]);
-            }
-        }
     }
 
     /// @notice Checks if the consensus is reached among the Coprocessors.

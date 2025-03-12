@@ -261,7 +261,7 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
         }
 
         /// @dev Check that the user decryption is allowed for the given userAddress and ctHandleContractPairs.
-        _ACL_MANAGER.checkUserDecryptAllowed(userAddress, ctHandleContractPairs);
+        _ACL_MANAGER.checkAccountAllowed(userAddress, ctHandleContractPairs);
 
         /// @dev Initialize the UserDecryptRequestVerification structure for the signature validation.
         UserDecryptRequestVerification memory userDecryptRequestVerification = UserDecryptRequestVerification(
@@ -333,7 +333,7 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
         }
 
         /// @dev Check that the user decryption is allowed for the given userAddress and ctHandleContractPairs.
-        _ACL_MANAGER.checkUserDecryptAllowed(delegationAccounts.delegatedAddress, ctHandleContractPairs);
+        _ACL_MANAGER.checkAccountAllowed(delegationAccounts.delegatedAddress, ctHandleContractPairs);
 
         /// @dev Extract the ctHandles and contractAddresses from the given ctHandleContractPairs.
         /// @dev We do not deduplicate handles if the same handle appears multiple times

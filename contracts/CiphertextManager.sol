@@ -119,7 +119,7 @@ contract CiphertextManager is ICiphertextManager {
 
         /// @dev Check if the Coprocessor has already added the ciphertext.
         if (_alreadyAddedCoprocessors[addCiphertextHash][msg.sender]) {
-            revert CoprocessorHasAlreadyAdded(msg.sender);
+            revert CoprocessorAlreadyAdded(msg.sender);
         }
 
         /// @dev Check if the received key ID is the latest activated.
