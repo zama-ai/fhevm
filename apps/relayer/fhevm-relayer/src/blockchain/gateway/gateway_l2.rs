@@ -9,23 +9,31 @@ use alloy::{
 use std::sync::Arc;
 use tracing::{info, instrument};
 
-pub struct GatewayL2 {
+#[derive(Debug)]
+pub enum ChainName {
+    Httpz,
+    Gateway,
+}
+
+pub struct EthereumJsonRPCWs {
+    chain_name: ChainName,
     provider: Arc<dyn Provider<PubSubFrontend> + Send + Sync>,
 }
 
-unsafe impl Send for GatewayL2 {}
-unsafe impl Sync for GatewayL2 {}
+unsafe impl Send for EthereumJsonRPCWs {}
+unsafe impl Sync for EthereumJsonRPCWs {}
 
-impl GatewayL2 {
+impl EthereumJsonRPCWs {
     #[instrument(skip_all)]
-    pub async fn new(ws_url: &str) -> Result<Self, Error> {
+    pub async fn new(chain_name: ChainName, ws_url: &str) -> Result<Self, Error> {
         let ws = WsConnect::new(ws_url);
         let provider = ProviderBuilder::new()
             .on_ws(ws)
             .await
             .map_err(Error::Transport)?;
 
-        Ok(GatewayL2 {
+        Ok(EthereumJsonRPCWs {
+            chain_name,
             provider: Arc::new(provider),
         })
     }
@@ -46,7 +54,10 @@ impl GatewayL2 {
             .await
             .map_err(Error::Transport)?;
 
-        info!("Subscription successful to Rollup L2 aka Gateway. Listening for logs...");
+        info!(
+            "Subscription to {:?} is successful. Listening for logs...",
+            self.chain_name
+        );
         let stream = sub.into_stream();
         Ok(stream)
     }
