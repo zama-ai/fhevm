@@ -11,6 +11,5 @@ cd deployments
 
 ```sh
 docker compose -p zama exec e2e-tester bash
-make setup-mock
-make run-test-input-proof-hardhat
+make run-test-input-proof-staging
 ```

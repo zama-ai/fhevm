@@ -25,7 +25,7 @@ services:
   
   layer2-sc-deploy:
     container_name: layer2-sc-deploy
-    image: ghcr.io/zama-ai/gateway-l2/sc-bundle:v0.1.0-rc2
+    image: ghcr.io/zama-ai/gateway-l2/sc-bundle:v0.1.0-rc3
     volumes:
       - ./config/env/.env.staging.layer2:/app/.env
-    entrypoint: ["/app/launch-staging-gateway-layer2.sh"]
+    command: [ "bash", "/app/deploy-httpz-gateway-deployment.sh", "staging"]

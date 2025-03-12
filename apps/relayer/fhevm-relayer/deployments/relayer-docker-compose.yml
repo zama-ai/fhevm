@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
       tags:
         - "ghcr.io/zama-ai/fhevm-relayer:v0.1.0-local"
-    image: ghcr.io/zama-ai/fhevm-relayer:7e5f37e
+    image: ghcr.io/zama-ai/fhevm-relayer:7b90cf3
     container_name: fhevm-relayer
     command:
     - fhevm-relayer
@@ -19,7 +19,7 @@ services:
   
   e2e-tester:
     container_name: e2e-tester
-    image: ghcr.io/zama-ai/fhevm-e2e-test:v3-test
+    image: ghcr.io/zama-ai/fhevm-e2e-test:bd96ef8
     command: ["sh", "-c", "tail -f /dev/null"]
     volumes:
       - ./config/env/.env.staging.layer1:/app/hardhat/contracts/.env.example

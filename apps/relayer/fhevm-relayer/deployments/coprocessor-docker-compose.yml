@@ -119,7 +119,7 @@ services:
 
   transaction-sender:
     container_name: "transaction-sender"
-    image: ghcr.io/zama-ai/fhevm-coprocessor:cbcd331
+    image: ghcr.io/zama-ai/fhevm-coprocessor:8e13315
     environment:
       DATABASE_URL: ${DATABASE_URL}
       GATEWAY_URL: ${GATEWAY_URL}
