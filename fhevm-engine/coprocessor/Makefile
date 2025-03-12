@@ -7,11 +7,11 @@ build:
 
 .PHONY: cleanup
 cleanup:
-	docker compose down -v
+	docker compose down -v --remove-orphans
 
 .PHONY: init_db
 init_db:
-	docker compose up -d db migration
+	docker compose up -d --build db-migration
 	docker wait db-migration
 	@echo "Database migration completed"
 

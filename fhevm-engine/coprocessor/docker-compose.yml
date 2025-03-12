@@ -18,13 +18,11 @@ services:
     volumes:
       - db:/var/lib/postgresql/data
 
-  migration:
+  db-migration:
     container_name: db-migration
     build:
       context: ../../.
       dockerfile: fhevm-engine/fhevm-db/Dockerfile
-      tags:
-      - "ghcr.io/zama-ai/fhevm-db-migration:v0.7.0-local"
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/coprocessor
       TENANT_API_KEY: "a1503fb6-d79b-4e9e-826d-44cf262f3e05"
