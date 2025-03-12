@@ -21,8 +21,8 @@ pub mod acl {
 sol!(
     #[sol(rpc)]
     #[derive(Debug, serde::Serialize, serde::Deserialize)]
-    ICiphertextStorage,
-    "abi/ICiphertextStorage.abi"
+    ICiphertextManager,
+    "abi/ICiphertextManager.abi"
 );
 
 sol!(

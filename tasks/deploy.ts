@@ -55,7 +55,7 @@ task("task:deployHttpz")
         connectorAddress: getRequiredEnvVar(`KMS_NODE_ADDRESS_${idx}`),
         identity: getRequiredEnvVar(`KMS_NODE_IDENTITY_${idx}`),
         ipAddress: getRequiredEnvVar(`KMS_NODE_IP_ADDRESS_${idx}`),
-        daAddress: getRequiredEnvVar(`KMS_NODE_DA_ADDRESS_${idx}`),
+        daUrl: getRequiredEnvVar(`KMS_NODE_DA_URL_${idx}`),
       });
     }
 
@@ -65,7 +65,8 @@ task("task:deployHttpz")
       coprocessors.push({
         transactionSenderAddress: getRequiredEnvVar(`COPROCESSOR_ADDRESS_${idx}`),
         identity: getRequiredEnvVar(`COPROCESSOR_IDENTITY_${idx}`),
-        daAddress: getRequiredEnvVar(`COPROCESSOR_DA_ADDRESS_${idx}`),
+        daUrl: getRequiredEnvVar(`COPROCESSOR_DA_URL_${idx}`),
+        s3BucketUrl: getRequiredEnvVar(`COPROCESSOR_S3_BUCKET_URL_${idx}`),
       });
     }
 
@@ -165,8 +166,8 @@ task("task:deployKeyManager")
     writeEnvFile(envFilePath, content);
   });
 
-// Deploy the CiphertextStorage contract
-task("task:deployCiphertextStorage")
+// Deploy the CiphertextManager contract
+task("task:deployCiphertextManager")
   .addParam("deployerPrivateKey", "The deployer private key")
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
     const deployer = new ethers.Wallet(taskArguments.deployerPrivateKey).connect(ethers.provider);
@@ -177,18 +178,18 @@ task("task:deployCiphertextStorage")
     const parsedEnvKeyManager = dotenv.parse(fs.readFileSync("addresses/.env.key_manager"));
     const keyManagerAddress = parsedEnvKeyManager.KEY_MANAGER_ADDRESS;
 
-    const CiphertextStorage = await ethers.getContractFactory("CiphertextStorage", deployer);
-    const ciphertextStorage = await CiphertextStorage.deploy(httpzAddress, keyManagerAddress);
+    const CiphertextManager = await ethers.getContractFactory("CiphertextManager", deployer);
+    const ciphertextManager = await CiphertextManager.deploy(httpzAddress, keyManagerAddress);
 
     // Wait for the deployment to be confirmed
-    await ciphertextStorage.waitForDeployment();
+    await ciphertextManager.waitForDeployment();
 
-    const ciphertextStorageAddress = await ciphertextStorage.getAddress();
+    const ciphertextManagerAddress = await ciphertextManager.getAddress();
 
-    console.log("CiphertextStorage contract deployed to:", ciphertextStorageAddress);
+    console.log("CiphertextManager contract deployed to:", ciphertextManagerAddress);
 
-    const envFilePath = path.join(__dirname, "../addresses/.env.ciphertext_storage");
-    const content = `CIPHERTEXT_STORAGE_ADDRESS=${ciphertextStorageAddress}`;
+    const envFilePath = path.join(__dirname, "../addresses/.env.ciphertext_manager");
+    const content = `CIPHERTEXT_MANAGER_ADDRESS=${ciphertextManagerAddress}`;
     writeEnvFile(envFilePath, content);
   });
 
@@ -201,11 +202,11 @@ task("task:deployAclManager")
     const parsedEnvHttpz = dotenv.parse(fs.readFileSync("addresses/.env.httpz"));
     const httpzAddress = parsedEnvHttpz.HTTPZ_ADDRESS;
 
-    const parsedEnvCiphertextStorage = dotenv.parse(fs.readFileSync("addresses/.env.ciphertext_storage"));
-    const ciphertextStorageAddress = parsedEnvCiphertextStorage.CIPHERTEXT_STORAGE_ADDRESS;
+    const parsedEnvCiphertextManager = dotenv.parse(fs.readFileSync("addresses/.env.ciphertext_manager"));
+    const ciphertextManagerAddress = parsedEnvCiphertextManager.CIPHERTEXT_MANAGER_ADDRESS;
 
     const ACLManager = await ethers.getContractFactory("ACLManager", deployer);
-    const aclManager = await ACLManager.deploy(httpzAddress, ciphertextStorageAddress);
+    const aclManager = await ACLManager.deploy(httpzAddress, ciphertextManagerAddress);
 
     // Wait for the deployment to be confirmed
     await aclManager.waitForDeployment();
@@ -231,8 +232,8 @@ task("task:deployDecryptionManager")
     const parsedEnvAclManager = dotenv.parse(fs.readFileSync("addresses/.env.acl_manager"));
     const aclManagerAddress = parsedEnvAclManager.ACL_MANAGER_ADDRESS;
 
-    const parsedEnvCiphertextStorage = dotenv.parse(fs.readFileSync("addresses/.env.ciphertext_storage"));
-    const ciphertextStorageAddress = parsedEnvCiphertextStorage.CIPHERTEXT_STORAGE_ADDRESS;
+    const parsedEnvCiphertextManager = dotenv.parse(fs.readFileSync("addresses/.env.ciphertext_manager"));
+    const ciphertextManagerAddress = parsedEnvCiphertextManager.CIPHERTEXT_MANAGER_ADDRESS;
 
     const dummyPaymentManagerAddress = "0x0000000000000000000000000000000000000000";
 
@@ -240,7 +241,7 @@ task("task:deployDecryptionManager")
     const decryptionManager = await DecryptionManager.deploy(
       httpzAddress,
       aclManagerAddress,
-      ciphertextStorageAddress,
+      ciphertextManagerAddress,
       dummyPaymentManagerAddress,
     );
 

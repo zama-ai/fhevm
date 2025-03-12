@@ -12,7 +12,7 @@ describe("HTTPZ", function () {
       connectorAddress: signer.address,
       identity: hre.ethers.randomBytes(32),
       ipAddress: "127.0.0.1",
-      daAddress: "https://da.com",
+      daUrl: "https://da.com",
     }));
 
     return { kmsNodes };
@@ -23,7 +23,8 @@ describe("HTTPZ", function () {
     const coprocessors = signers.map((signer) => ({
       transactionSenderAddress: signer.address,
       identity: hre.ethers.randomBytes(32),
-      daAddress: "https://da.com",
+      daUrl: "https://da.com",
+      s3BucketUrl: "s3://bucket",
     }));
 
     return { coprocessors };

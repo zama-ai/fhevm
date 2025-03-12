@@ -38,9 +38,9 @@ echo "Deploy KeyManager contract:"
 # Deploy KeyManager contract
 npx hardhat task:deployKeyManager --deployer-private-key "$DEPLOYER_PRIVATE_KEY" --network $NETWORK
 
-echo "Deploy CiphertextStorage contract:"
-# Deploy CiphertextStorage contract
-npx hardhat task:deployCiphertextStorage --deployer-private-key "$DEPLOYER_PRIVATE_KEY" --network $NETWORK
+echo "Deploy CiphertextManager contract:"
+# Deploy CiphertextManager contract
+npx hardhat task:deployCiphertextManager --deployer-private-key "$DEPLOYER_PRIVATE_KEY" --network $NETWORK
 
 echo "Deploy ACLManager contract:"
 # Deploy ACLManager contract

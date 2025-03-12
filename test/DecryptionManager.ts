@@ -29,7 +29,7 @@ describe("DecryptionManager", function () {
     const {
       httpz,
       keyManager,
-      ciphertextStorage,
+      ciphertextManager,
       aclManager,
       decryptionManager,
       owner,
@@ -78,7 +78,7 @@ describe("DecryptionManager", function () {
 
     return {
       httpz,
-      ciphertextStorage,
+      ciphertextManager,
       aclManager,
       decryptionManager,
       keyManager,
@@ -98,7 +98,7 @@ describe("DecryptionManager", function () {
     const {
       httpz,
       keyManager,
-      ciphertextStorage,
+      ciphertextManager,
       aclManager,
       decryptionManager,
       admins,
@@ -110,21 +110,21 @@ describe("DecryptionManager", function () {
     } = await loadFixture(deployWithActivatedKeyFixture);
 
     // Define dummy ciphertext values
-    const ciphertext = "0x02";
-    const snsCiphertext = "0x03";
+    const ciphertextDigest = hre.ethers.hexlify(hre.ethers.randomBytes(32));
+    const snsCiphertextDigest = hre.ethers.hexlify(hre.ethers.randomBytes(32));
 
     let snsCiphertextMaterials = [];
 
     // Allow public decryption
     for (const ctHandle of ctHandles) {
       for (let i = 0; i < coprocessorSigners.length; i++) {
-        await ciphertextStorage
+        await ciphertextManager
           .connect(coprocessorSigners[i])
-          .addCiphertext(ctHandle, keyId1, chainId, ciphertext, snsCiphertext);
+          .addCiphertextMaterial(ctHandle, keyId1, chainId, ciphertextDigest, snsCiphertextDigest);
       }
 
       // Store the SNS ciphertext materials for event checks
-      snsCiphertextMaterials.push([ctHandle, keyId1, snsCiphertext]);
+      snsCiphertextMaterials.push([ctHandle, keyId1, snsCiphertextDigest, coprocessorSigners.map((s) => s.address)]);
     }
 
     return {
@@ -132,7 +132,7 @@ describe("DecryptionManager", function () {
       keyManager,
       aclManager,
       decryptionManager,
-      ciphertextStorage,
+      ciphertextManager,
       admins,
       kmsSigners,
       coprocessorSigners,
@@ -229,7 +229,7 @@ describe("DecryptionManager", function () {
         keyManager,
         aclManager,
         decryptionManager,
-        ciphertextStorage,
+        ciphertextManager,
         admins,
         kmsSigners,
         coprocessorSigners,
@@ -251,7 +251,7 @@ describe("DecryptionManager", function () {
         httpz,
         aclManager,
         decryptionManager,
-        ciphertextStorage,
+        ciphertextManager,
         admins,
         kmsSigners,
         coprocessorSigners,
@@ -371,7 +371,7 @@ describe("DecryptionManager", function () {
       const {
         keyManager,
         decryptionManager,
-        ciphertextStorage,
+        ciphertextManager,
         aclManager,
         admins,
         kmsSigners,
@@ -392,14 +392,14 @@ describe("DecryptionManager", function () {
 
       // Define ciphertext dummy values
       const ctHandle = 2050;
-      const ciphertext = "0x07";
-      const snsCiphertext = "0x08";
+      const ciphertextDigest = hre.ethers.hexlify(hre.ethers.randomBytes(32));
+      const snsCiphertextDigest = hre.ethers.hexlify(hre.ethers.randomBytes(32));
 
       // Store the ciphertext and allow public decryption
       for (let i = 0; i < coprocessorSigners.length; i++) {
-        await ciphertextStorage
+        await ciphertextManager
           .connect(coprocessorSigners[i])
-          .addCiphertext(ctHandle, keyId2, chainId, ciphertext, snsCiphertext);
+          .addCiphertextMaterial(ctHandle, keyId2, chainId, ciphertextDigest, snsCiphertextDigest);
       }
       for (let i = 0; i < coprocessorSigners.length; i++) {
         await aclManager.connect(coprocessorSigners[i]).allowPublicDecrypt(chainId, ctHandle);
@@ -494,7 +494,7 @@ describe("DecryptionManager", function () {
         keyManager,
         aclManager,
         decryptionManager,
-        ciphertextStorage,
+        ciphertextManager,
         admins,
         kmsSigners,
         coprocessorSigners,
@@ -518,7 +518,7 @@ describe("DecryptionManager", function () {
         keyManager,
         aclManager,
         decryptionManager,
-        ciphertextStorage,
+        ciphertextManager,
         admins,
         kmsSigners,
         coprocessorSigners,
@@ -535,7 +535,7 @@ describe("DecryptionManager", function () {
         keyManager,
         aclManager,
         decryptionManager,
-        ciphertextStorage,
+        ciphertextManager,
         admins,
         coprocessorSigners,
         kmsSigners,
@@ -575,7 +575,7 @@ describe("DecryptionManager", function () {
         keyManager,
         aclManager,
         decryptionManager,
-        ciphertextStorage,
+        ciphertextManager,
         admins,
         coprocessorSigners,
         kmsSigners,
@@ -893,7 +893,7 @@ describe("DecryptionManager", function () {
       const {
         keyManager,
         decryptionManager,
-        ciphertextStorage,
+        ciphertextManager,
         aclManager,
         admins,
         coprocessorSigners,
@@ -918,14 +918,14 @@ describe("DecryptionManager", function () {
 
       // Define ciphertext dummy values
       const ctHandle = 2050;
-      const ciphertext = "0x07";
-      const snsCiphertext = "0x08";
+      const ciphertextDigest = hre.ethers.hexlify(hre.ethers.randomBytes(32));
+      const snsCiphertextDigest = hre.ethers.hexlify(hre.ethers.randomBytes(32));
 
       // Store the ciphertext and allow public decryption
       for (let i = 0; i < coprocessorSigners.length; i++) {
-        await ciphertextStorage
+        await ciphertextManager
           .connect(coprocessorSigners[i])
-          .addCiphertext(ctHandle, keyId2, chainId, ciphertext, snsCiphertext);
+          .addCiphertextMaterial(ctHandle, keyId2, chainId, ciphertextDigest, snsCiphertextDigest);
       }
       for (let i = 0; i < coprocessorSigners.length; i++) {
         await aclManager.connect(coprocessorSigners[i]).allowUserDecrypt(chainId, ctHandle, user.address);
@@ -1123,7 +1123,7 @@ describe("DecryptionManager", function () {
         keyManager,
         aclManager,
         decryptionManager,
-        ciphertextStorage,
+        ciphertextManager,
         admins,
         kmsSigners,
         coprocessorSigners,
@@ -1168,7 +1168,7 @@ describe("DecryptionManager", function () {
         keyManager,
         aclManager,
         decryptionManager,
-        ciphertextStorage,
+        ciphertextManager,
         admins,
         kmsSigners,
         coprocessorSigners,
@@ -1186,7 +1186,7 @@ describe("DecryptionManager", function () {
         keyManager,
         aclManager,
         decryptionManager,
-        ciphertextStorage,
+        ciphertextManager,
         admins,
         coprocessorSigners,
         kmsSigners,
@@ -1228,7 +1228,7 @@ describe("DecryptionManager", function () {
         keyManager,
         aclManager,
         decryptionManager,
-        ciphertextStorage,
+        ciphertextManager,
         admins,
         coprocessorSigners,
         kmsSigners,
@@ -1543,7 +1543,7 @@ describe("DecryptionManager", function () {
       const {
         keyManager,
         decryptionManager,
-        ciphertextStorage,
+        ciphertextManager,
         aclManager,
         admins,
         coprocessorSigners,
@@ -1568,8 +1568,8 @@ describe("DecryptionManager", function () {
       );
 
       // Define ciphertext dummy values
-      const ciphertext = "0x07";
-      const snsCiphertext = "0x08";
+      const ciphertextDigest = hre.ethers.hexlify(hre.ethers.randomBytes(32));
+      const snsCiphertextDigest = hre.ethers.hexlify(hre.ethers.randomBytes(32));
       const ctHandleContractPair = {
         ctHandle: 2050,
         contractAddress: ctHandleContractPairs[0].contractAddress,
@@ -1577,9 +1577,9 @@ describe("DecryptionManager", function () {
 
       // Store the ciphertext and allow public decryption
       for (let i = 0; i < coprocessorSigners.length; i++) {
-        await ciphertextStorage
+        await ciphertextManager
           .connect(coprocessorSigners[i])
-          .addCiphertext(ctHandleContractPair.ctHandle, keyId2, chainId, ciphertext, snsCiphertext);
+          .addCiphertextMaterial(ctHandleContractPair.ctHandle, keyId2, chainId, ciphertextDigest, snsCiphertextDigest);
       }
       for (let i = 0; i < coprocessorSigners.length; i++) {
         await aclManager
