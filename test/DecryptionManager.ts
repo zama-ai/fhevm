@@ -5,6 +5,8 @@ import { BigNumberish, EventLog } from "ethers";
 import hre from "hardhat";
 
 import { IDecryptionManager, KeyManager } from "../typechain-types";
+// The type needs to be imported separately because it is not properly detected by the linter
+// as this type is defined as a shared structs instead of directly in the IDecryptionManager interface
 import { CtHandleContractPairStruct } from "../typechain-types/contracts/interfaces/IDecryptionManager";
 import {
   createEIP712RequestDelegatedUserDecrypt,
@@ -489,7 +491,7 @@ describe("DecryptionManager", function () {
     const reencryptedShare = hre.ethers.randomBytes(32);
 
     // Deploy the DecryptionManager and allow handles for user decryption
-    async function deployAllowUserDecryptionFixture() {
+    async function deployAllowAccountionFixture() {
       const {
         keyManager,
         aclManager,
@@ -509,8 +511,8 @@ describe("DecryptionManager", function () {
       // Allow user decryption
       for (const ctHandle of ctHandles) {
         for (let i = 0; i < coprocessorSigners.length; i++) {
-          await aclManager.connect(coprocessorSigners[i]).allowUserDecrypt(chainId, ctHandle, user.address);
-          await aclManager.connect(coprocessorSigners[i]).allowUserDecrypt(chainId, ctHandle, contractAddress);
+          await aclManager.connect(coprocessorSigners[i]).allowAccount(chainId, ctHandle, user.address);
+          await aclManager.connect(coprocessorSigners[i]).allowAccount(chainId, ctHandle, contractAddress);
         }
       }
 
@@ -544,7 +546,7 @@ describe("DecryptionManager", function () {
         snsCiphertextMaterials,
         keyId1,
         fheParamsName,
-      } = await loadFixture(deployAllowUserDecryptionFixture);
+      } = await loadFixture(deployAllowAccountionFixture);
 
       const publicKey = hre.ethers.randomBytes(32);
       const requestValidity: IDecryptionManager.RequestValidityStruct = {
@@ -798,7 +800,7 @@ describe("DecryptionManager", function () {
             userSignature,
           ),
       )
-        .to.be.revertedWithCustomError(aclManager, "UserNotAllowedToUserDecrypt")
+        .to.be.revertedWithCustomError(aclManager, "UserNotAllowedToUseCiphertext")
         .withArgs(ctHandles[0], user.address);
     });
 
@@ -839,7 +841,7 @@ describe("DecryptionManager", function () {
     });
 
     it("Should revert because contract in ctHandleContractPairs not included in contractAddresses list", async function () {
-      const { decryptionManager, user, contractAddress } = await loadFixture(deployAllowUserDecryptionFixture);
+      const { decryptionManager, user, contractAddress } = await loadFixture(deployAllowAccountionFixture);
 
       // Create dummy input data for the user decryption request
       const contractAddresses = [hre.ethers.Wallet.createRandom().address];
@@ -928,8 +930,8 @@ describe("DecryptionManager", function () {
           .addCiphertextMaterial(ctHandle, keyId2, chainId, ciphertextDigest, snsCiphertextDigest);
       }
       for (let i = 0; i < coprocessorSigners.length; i++) {
-        await aclManager.connect(coprocessorSigners[i]).allowUserDecrypt(chainId, ctHandle, user.address);
-        await aclManager.connect(coprocessorSigners[i]).allowUserDecrypt(chainId, ctHandle, contractAddress);
+        await aclManager.connect(coprocessorSigners[i]).allowAccount(chainId, ctHandle, user.address);
+        await aclManager.connect(coprocessorSigners[i]).allowAccount(chainId, ctHandle, contractAddress);
       }
 
       // Create dummy input data for the user decryption request
@@ -1145,8 +1147,8 @@ describe("DecryptionManager", function () {
         for (let i = 0; i < coprocessorSigners.length; i++) {
           await aclManager
             .connect(coprocessorSigners[i])
-            .allowUserDecrypt(chainId, ctHandle, delegationAccounts.delegatedAddress);
-          await aclManager.connect(coprocessorSigners[i]).allowUserDecrypt(chainId, ctHandle, contractAddress);
+            .allowAccount(chainId, ctHandle, delegationAccounts.delegatedAddress);
+          await aclManager.connect(coprocessorSigners[i]).allowAccount(chainId, ctHandle, contractAddress);
         }
         ctHandleContractPairs.push({
           contractAddress,
@@ -1448,7 +1450,7 @@ describe("DecryptionManager", function () {
             userSignature,
           ),
       )
-        .to.be.revertedWithCustomError(aclManager, "UserNotAllowedToUserDecrypt")
+        .to.be.revertedWithCustomError(aclManager, "UserNotAllowedToUseCiphertext")
         .withArgs(ctHandles[0], delegatedAddress);
     });
 
@@ -1584,10 +1586,10 @@ describe("DecryptionManager", function () {
       for (let i = 0; i < coprocessorSigners.length; i++) {
         await aclManager
           .connect(coprocessorSigners[i])
-          .allowUserDecrypt(chainId, ctHandleContractPair.ctHandle, delegationAccounts.delegatedAddress);
+          .allowAccount(chainId, ctHandleContractPair.ctHandle, delegationAccounts.delegatedAddress);
         await aclManager
           .connect(coprocessorSigners[i])
-          .allowUserDecrypt(chainId, ctHandleContractPair.ctHandle, ctHandleContractPair.contractAddress);
+          .allowAccount(chainId, ctHandleContractPair.ctHandle, ctHandleContractPair.contractAddress);
       }
 
       // Create dummy input data for the user decryption request
