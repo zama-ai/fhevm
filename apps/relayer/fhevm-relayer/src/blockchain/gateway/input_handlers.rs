@@ -3,7 +3,10 @@ use crate::{
     config::settings::ContractConfig,
     core::{
         errors::EventProcessingError,
-        event::{GenericEventData, InputProofEventData, InputProofResponse, RelayerEvent},
+        event::{
+            GenericEventData, InputProofEventData, InputProofResponse, RelayerEvent,
+            RelayerEventData,
+        },
         utils::{colorize_event_type, colorize_request_id},
     },
     orchestrator::{
@@ -123,7 +126,7 @@ impl ArbitrumGatewayL2InputHandler {
             "Stored mapping between ZKPoK ID and request ID"
         );
 
-        let next_event = event.derive_next_event(GenericEventData::InputProof(
+        let next_event = event.derive_next_event(RelayerEventData::InputProof(
             InputProofEventData::ReqSentToGw { zkproof_id },
         ));
 
@@ -140,7 +143,7 @@ impl ArbitrumGatewayL2InputHandler {
         );
 
         let error_event =
-            event.derive_next_event(GenericEventData::InputProof(InputProofEventData::Failed {
+            event.derive_next_event(RelayerEventData::InputProof(InputProofEventData::Failed {
                 error: format!("Input request failed: {}", error),
             }));
 
@@ -297,7 +300,7 @@ impl ArbitrumGatewayL2InputHandler {
             event.request_id,
         );
 
-        if let GenericEventData::EventLogFromGw { log } = &event.data {
+        if let RelayerEventData::Generic(GenericEventData::EventLogFromGw { log }) = &event.data {
             // Log the raw data for debugging
             debug!(
                 topics = ?log.topics().iter().map(hex::encode).collect::<Vec<_>>(),
@@ -328,8 +331,8 @@ impl ArbitrumGatewayL2InputHandler {
                                         "Found original request ID for input response"
                                     );
 
-                                    let next_event_data: GenericEventData =
-                                        GenericEventData::InputProof(
+                                    let next_event_data: RelayerEventData =
+                                        RelayerEventData::InputProof(
                                             InputProofEventData::RespRcvdFromGw {
                                                 input_proof_response: InputProofResponse {
                                                     handles: request_event.handles,
@@ -381,7 +384,7 @@ impl EventHandler<RelayerEvent> for ArbitrumGatewayL2InputHandler {
 
         match &event.data {
             // Borrow event.data instead of moving it
-            GenericEventData::InputProof(input_event) => {
+            RelayerEventData::InputProof(input_event) => {
                 match input_event {
                     InputProofEventData::ReqRcvdFromUser {
                         input_proof_request,
@@ -409,7 +412,7 @@ impl EventHandler<RelayerEvent> for ArbitrumGatewayL2InputHandler {
                     }
                 }
             }
-            GenericEventData::EventLogFromGw { .. } => {
+            RelayerEventData::Generic(GenericEventData::EventLogFromGw { .. }) => {
                 info!("Received input event log from Gateway L2");
                 self.handle_input_reponse_event_log(event).await;
             }

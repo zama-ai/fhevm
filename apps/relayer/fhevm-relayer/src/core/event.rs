@@ -76,11 +76,11 @@ impl From<InputProofEventId> for u8 {
 pub struct RelayerEvent {
     pub request_id: Uuid,
     pub api_version: ApiVersion,
-    pub data: GenericEventData,
+    pub data: RelayerEventData,
 }
 
 impl RelayerEvent {
-    pub fn new(request_id: Uuid, api_version: ApiVersion, data: GenericEventData) -> RelayerEvent {
+    pub fn new(request_id: Uuid, api_version: ApiVersion, data: RelayerEventData) -> RelayerEvent {
         RelayerEvent {
             request_id,
             api_version,
@@ -88,7 +88,7 @@ impl RelayerEvent {
         }
     }
 
-    pub fn derive_next_event(self, next_event_data: GenericEventData) -> RelayerEvent {
+    pub fn derive_next_event(self, next_event_data: RelayerEventData) -> RelayerEvent {
         RelayerEvent {
             request_id: self.request_id,
             api_version: self.api_version,
@@ -105,11 +105,15 @@ impl Event for RelayerEvent {
     //TODO: Replace boiler plate with macro based code.
     fn event_id(&self) -> u8 {
         match &self.data {
-            GenericEventData::EventLogFromHostBc { .. } => {
-                GenericEventId::EventLogRcvdFromHostBc as u8
-            }
-            GenericEventData::EventLogFromGw { .. } => GenericEventId::EventLogRcvdFromGw.into(),
-            GenericEventData::PublicDecrypt(decrypt_event) => match decrypt_event {
+            RelayerEventData::Generic(generic_event) => match generic_event {
+                GenericEventData::EventLogFromHostBc { .. } => {
+                    GenericEventId::EventLogRcvdFromHostBc.into()
+                }
+                GenericEventData::EventLogFromGw { .. } => {
+                    GenericEventId::EventLogRcvdFromGw.into()
+                }
+            },
+            RelayerEventData::PublicDecrypt(decrypt_event) => match decrypt_event {
                 PublicDecryptEventData::ReqRcvdFromHostBc { .. } => {
                     PublicDecryptEventId::ReqRcvdFromUser.into()
                 }
@@ -124,7 +128,7 @@ impl Event for RelayerEvent {
                 }
                 PublicDecryptEventData::Failed { .. } => PublicDecryptEventId::Failed.into(),
             },
-            GenericEventData::UserDecrypt(decrypt_event) => match decrypt_event {
+            RelayerEventData::UserDecrypt(decrypt_event) => match decrypt_event {
                 UserDecryptEventData::ReqRcvdFromUser { .. } => {
                     UserDecryptEventId::ReqRcvdFromUser.into()
                 }
@@ -137,7 +141,7 @@ impl Event for RelayerEvent {
                 }
                 UserDecryptEventData::Failed { .. } => UserDecryptEventId::Failed.into(),
             },
-            GenericEventData::InputProof(input_event) => match input_event {
+            RelayerEventData::InputProof(input_event) => match input_event {
                 InputProofEventData::ReqRcvdFromUser { .. } => {
                     InputProofEventId::ReqRcvdFromUser.into()
                 }
@@ -174,6 +178,25 @@ pub enum ApiCategory {
 }
 
 #[derive(Clone, Debug)]
+pub enum RelayerEventData {
+    Generic(GenericEventData),
+    PublicDecrypt(PublicDecryptEventData),
+    UserDecrypt(UserDecryptEventData),
+    InputProof(InputProofEventData),
+}
+
+impl AsRef<str> for RelayerEventData {
+    fn as_ref(&self) -> &str {
+        match self {
+            RelayerEventData::Generic(generic_event) => generic_event.event_name(),
+            RelayerEventData::PublicDecrypt(decrypt_event) => decrypt_event.event_name(),
+            RelayerEventData::UserDecrypt(decrypt_event) => decrypt_event.event_name(),
+            RelayerEventData::InputProof(input_event) => input_event.event_name(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub enum GenericEventData {
     // Raw event log from ethereum. Handler will check event type, decode the
     // event, store ethereum related contextual data and dispatch a decryption
@@ -194,20 +217,13 @@ pub enum GenericEventData {
         // For gateway l2 handler
         log: Log,
     },
-
-    PublicDecrypt(PublicDecryptEventData),
-    UserDecrypt(UserDecryptEventData),
-    InputProof(InputProofEventData),
 }
 
-impl AsRef<str> for GenericEventData {
-    fn as_ref(&self) -> &str {
+impl GenericEventData {
+    pub fn event_name(&self) -> &'static str {
         match self {
-            GenericEventData::EventLogFromHostBc { .. } => "EventLogFromHostBc",
-            GenericEventData::EventLogFromGw { .. } => "EventLogResponseFromGw",
-            GenericEventData::PublicDecrypt(decrypt_event) => decrypt_event.event_name(),
-            GenericEventData::UserDecrypt(decrypt_event) => decrypt_event.event_name(),
-            GenericEventData::InputProof(input_event) => input_event.event_name(),
+            GenericEventData::EventLogFromHostBc { .. } => "Generic::EventLogFromHostBc",
+            GenericEventData::EventLogFromGw { .. } => "Generic::EventLogFromGw",
         }
     }
 }
@@ -256,12 +272,10 @@ pub enum PublicDecryptEventData {
 impl PublicDecryptEventData {
     pub fn event_name(&self) -> &'static str {
         match self {
-            PublicDecryptEventData::ReqRcvdFromHostBc { .. } => "PublicDecrypt::PublicDecryptReq",
-            PublicDecryptEventData::ReqSentToGw { .. } => "PublicDecrypt::PublicReqSentToGw",
-            PublicDecryptEventData::RespRcvdFromGw { .. } => {
-                "PublicDecrypt::PublicDecryptRespFromGw"
-            }
-            PublicDecryptEventData::RespSentToHostBc => "PublicDecrypt::ResponseSentToHostBc",
+            PublicDecryptEventData::ReqRcvdFromHostBc { .. } => "PublicDecrypt::ReqRcvdFromHostBc",
+            PublicDecryptEventData::ReqSentToGw { .. } => "PublicDecrypt::ReqSentToGw",
+            PublicDecryptEventData::RespRcvdFromGw { .. } => "PublicDecrypt::RespRcvdFromGw",
+            PublicDecryptEventData::RespSentToHostBc => "PublicDecrypt::RespSentToHostBc",
             PublicDecryptEventData::Failed { .. } => "PublicDecrypt::Failed",
         }
     }

@@ -1,6 +1,6 @@
 use crate::core::event::{
-    ApiCategory, ApiVersion, GenericEventData, InputProofEventData, InputProofEventId,
-    InputProofRequest, RelayerEvent,
+    ApiCategory, ApiVersion, InputProofEventData, InputProofEventId, InputProofRequest,
+    RelayerEvent, RelayerEventData,
 };
 use crate::core::utils::OnceHandler;
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
@@ -107,7 +107,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
                 category: ApiCategory::PRODUCTION,
                 number: 1,
             },
-            GenericEventData::InputProof(request_data),
+            RelayerEventData::InputProof(request_data),
         );
         let _ = self.orchestrator.dispatch_event(event).await;
         info!("dispatched event to orchestrator to initiate processing");
@@ -130,7 +130,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
 
         info!("response event type {:?}", event.data);
         match event.data {
-            GenericEventData::InputProof(InputProofEventData::RespRcvdFromGw {
+            RelayerEventData::InputProof(InputProofEventData::RespRcvdFromGw {
                 input_proof_response,
             }) => match InputProofResponseJson::try_from(input_proof_response) {
                 Ok(response_json) => {

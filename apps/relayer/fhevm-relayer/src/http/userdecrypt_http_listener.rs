@@ -1,5 +1,5 @@
 use crate::core::event::{
-    ApiCategory, ApiVersion, GenericEventData, RelayerEvent, UserDecryptEventData,
+    ApiCategory, ApiVersion, RelayerEvent, RelayerEventData, UserDecryptEventData,
     UserDecryptEventId, UserDecryptRequest,
 };
 use crate::core::utils::{colorize_event_type, colorize_request_id, OnceHandler};
@@ -108,7 +108,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
                 category: ApiCategory::PRODUCTION,
                 number: 1,
             },
-            GenericEventData::UserDecrypt(request_data),
+            RelayerEventData::UserDecrypt(request_data),
         );
         let _ = self.orchestrator.dispatch_event(event).await;
         info!("Dispatched event to orchestrator to initiate processing");
@@ -138,7 +138,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
 
         info!("response event type {:?}", event.data);
         match event.data {
-            GenericEventData::UserDecrypt(UserDecryptEventData::RespRcvdFromGw {
+            RelayerEventData::UserDecrypt(UserDecryptEventData::RespRcvdFromGw {
                 decrypt_response,
             }) => match UserDecryptResponseJson::try_from(decrypt_response) {
                 Ok(response_json) => {

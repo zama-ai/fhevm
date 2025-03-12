@@ -1,14 +1,16 @@
 use crate::{
     blockchain::ethereum::{
-        bindings::DecryptionOracle, bindings::DecyptionManager::PublicDecryptionResponse,
+        bindings::{DecryptionOracle, DecyptionManager::PublicDecryptionResponse},
         ComputeCalldata,
     },
-    core::errors::EventProcessingError,
-    core::event::{
-        GenericEventData, PublicDecryptEventData, PublicDecryptRequest, PublicDecryptResponse,
-        RelayerEvent,
+    core::{
+        errors::EventProcessingError,
+        event::{
+            GenericEventData, PublicDecryptEventData, PublicDecryptRequest, PublicDecryptResponse,
+            RelayerEvent, RelayerEventData,
+        },
+        utils::{colorize_event_type, colorize_request_id},
     },
-    core::utils::{colorize_event_type, colorize_request_id},
     orchestrator::{
         traits::{EventDispatcher, EventHandler},
         TokioEventDispatcher,
@@ -90,13 +92,13 @@ impl EthereumHostL1Handler {
                 for ct_handle in eth_decryption_request.cts {
                     ct_handles.push(ct_handle.to_be_bytes());
                 }
-                event.derive_next_event(GenericEventData::PublicDecrypt(
+                event.derive_next_event(RelayerEventData::PublicDecrypt(
                     PublicDecryptEventData::ReqRcvdFromHostBc {
                         decrypt_request: PublicDecryptRequest { ct_handles },
                     },
                 ))
             }
-            Err(e) => event.derive_next_event(GenericEventData::PublicDecrypt(
+            Err(e) => event.derive_next_event(RelayerEventData::PublicDecrypt(
                 PublicDecryptEventData::Failed {
                     error: format!("error decoding ethereum event log data: {:?}", e),
                 },
@@ -157,7 +159,7 @@ impl EthereumHostL1Handler {
             None => {
                 let request_id = event.clone().request_id;
                 info!("unknown request id: {:?}", request_id);
-                let _next_event = event.derive_next_event(GenericEventData::PublicDecrypt(
+                let _next_event = event.derive_next_event(RelayerEventData::PublicDecrypt(
                     PublicDecryptEventData::Failed {
                         error: format!(
                             "httpz response received for unknown request id: {:?}",
@@ -180,7 +182,7 @@ impl EthereumHostL1Handler {
         // Store the mapping
 
         // Create and dispatch the new event
-        let next_event = event.derive_next_event(GenericEventData::PublicDecrypt(
+        let next_event = event.derive_next_event(RelayerEventData::PublicDecrypt(
             PublicDecryptEventData::RespSentToHostBc,
         ));
 
@@ -203,7 +205,7 @@ impl EthereumHostL1Handler {
             "Failed to send callback transaction"
         );
 
-        let error_event = event.derive_next_event(GenericEventData::PublicDecrypt(
+        let error_event = event.derive_next_event(RelayerEventData::PublicDecrypt(
             PublicDecryptEventData::Failed {
                 error: format!("Callback transaction failed: {}", error),
             },
@@ -254,19 +256,19 @@ impl EventHandler<RelayerEvent> for EthereumHostL1Handler {
             "Processing relayer event"
         );
         match event.clone().data {
-            GenericEventData::EventLogFromHostBc {
+            RelayerEventData::Generic(GenericEventData::EventLogFromHostBc {
                 event_log: eth_event_log,
-            } => {
+            }) => {
                 self.handle_public_decrypt_event_log(event, eth_event_log)
                     .await;
             }
-            GenericEventData::PublicDecrypt(PublicDecryptEventData::RespRcvdFromGw {
+            RelayerEventData::PublicDecrypt(PublicDecryptEventData::RespRcvdFromGw {
                 decrypt_response,
             }) => {
                 self.send_decrypt_response_to_fhevm(event, decrypt_response)
                     .await;
             }
-            GenericEventData::PublicDecrypt(PublicDecryptEventData::RespSentToHostBc) => {
+            RelayerEventData::PublicDecrypt(PublicDecryptEventData::RespSentToHostBc) => {
                 self.handle_decrypt_response_sent();
             }
             _ => {

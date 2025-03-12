@@ -8,7 +8,7 @@ use crate::{
         errors::EventProcessingError,
         event::{
             GenericEventData, PublicDecryptEventData, PublicDecryptResponse, RelayerEvent,
-            UserDecryptEventData, UserDecryptRequest, UserDecryptResponse,
+            RelayerEventData, UserDecryptEventData, UserDecryptRequest, UserDecryptResponse,
         },
         utils::{colorize_event_type, colorize_request_id},
     },
@@ -216,7 +216,7 @@ impl ArbitrumGatewayL2Handler {
         );
 
         // Create and dispatch the new event
-        let next_event = event.derive_next_event(GenericEventData::PublicDecrypt(
+        let next_event = event.derive_next_event(RelayerEventData::PublicDecrypt(
             PublicDecryptEventData::ReqSentToGw {
                 public_decryption_id: decryption_public_id,
             },
@@ -254,7 +254,7 @@ impl ArbitrumGatewayL2Handler {
         );
 
         // Create and dispatch the new event
-        let next_event = event.derive_next_event(GenericEventData::UserDecrypt(
+        let next_event = event.derive_next_event(RelayerEventData::UserDecrypt(
             UserDecryptEventData::ReqSentToGw { user_decryption_id },
         ));
 
@@ -280,7 +280,7 @@ impl ArbitrumGatewayL2Handler {
             "Failed to send callback transaction"
         );
 
-        let error_event = event.derive_next_event(GenericEventData::PublicDecrypt(
+        let error_event = event.derive_next_event(RelayerEventData::PublicDecrypt(
             PublicDecryptEventData::Failed {
                 error: format!("Callback transaction failed: {}", error),
             },
@@ -314,7 +314,7 @@ impl ArbitrumGatewayL2Handler {
             event.request_id,
         );
 
-        if let GenericEventData::EventLogFromGw { log } = &event.data {
+        if let RelayerEventData::Generic(GenericEventData::EventLogFromGw { log }) = &event.data {
             if let Some(topic) = log.topic0() {
                 match *topic {
                     DecyptionManager::PublicDecryptionResponse::SIGNATURE_HASH => {
@@ -338,7 +338,7 @@ impl ArbitrumGatewayL2Handler {
                                         "Found original request ID for decryption response"
                                     );
 
-                                    let next_event_data = GenericEventData::PublicDecrypt(
+                                    let next_event_data = RelayerEventData::PublicDecrypt(
                                         PublicDecryptEventData::RespRcvdFromGw {
                                             decrypt_response: PublicDecryptResponse {
                                                 gateway_request_id: public_decryption_id,
@@ -390,7 +390,7 @@ impl ArbitrumGatewayL2Handler {
                                         "Found original request ID for user decryption response"
                                     );
 
-                                    let next_event_data = GenericEventData::UserDecrypt(
+                                    let next_event_data = RelayerEventData::UserDecrypt(
                                         UserDecryptEventData::RespRcvdFromGw {
                                             decrypt_response: UserDecryptResponse {
                                                 gateway_request_id: user_decryption_id,
@@ -635,7 +635,7 @@ impl EventHandler<RelayerEvent> for ArbitrumGatewayL2Handler {
             "Processing relayer event"
         );
         match event.data {
-            GenericEventData::PublicDecrypt(PublicDecryptEventData::ReqRcvdFromHostBc {
+            RelayerEventData::PublicDecrypt(PublicDecryptEventData::ReqRcvdFromHostBc {
                 ref decrypt_request,
                 ..
             }) => {
@@ -643,7 +643,7 @@ impl EventHandler<RelayerEvent> for ArbitrumGatewayL2Handler {
                 self.send_public_decryption_request_to_rollup(event, handles)
                     .await;
             }
-            GenericEventData::UserDecrypt(UserDecryptEventData::ReqRcvdFromUser {
+            RelayerEventData::UserDecrypt(UserDecryptEventData::ReqRcvdFromUser {
                 ref decrypt_request,
                 ..
             }) => {
@@ -651,15 +651,15 @@ impl EventHandler<RelayerEvent> for ArbitrumGatewayL2Handler {
                 self.send_user_decryption_request_to_rollup(event.clone(), cloned_request)
                     .await;
             }
-            GenericEventData::EventLogFromGw { .. } => {
+            RelayerEventData::Generic(GenericEventData::EventLogFromGw { .. }) => {
                 self.handle_decrypt_reponse_event_log(event).await;
             }
-            GenericEventData::PublicDecrypt(PublicDecryptEventData::ReqSentToGw {
+            RelayerEventData::PublicDecrypt(PublicDecryptEventData::ReqSentToGw {
                 public_decryption_id,
             }) => {
                 self.handle_decrypt_request_sent(public_decryption_id);
             }
-            GenericEventData::UserDecrypt(UserDecryptEventData::ReqSentToGw {
+            RelayerEventData::UserDecrypt(UserDecryptEventData::ReqSentToGw {
                 user_decryption_id,
             }) => {
                 self.handle_user_decrypt_request_sent(user_decryption_id);

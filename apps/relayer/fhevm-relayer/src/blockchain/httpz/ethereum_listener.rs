@@ -1,6 +1,8 @@
 use tracing::{debug, error, info};
 
-use crate::core::event::{ApiCategory, ApiVersion, GenericEventData, RelayerEvent};
+use crate::core::event::{
+    ApiCategory, ApiVersion, GenericEventData, RelayerEvent, RelayerEventData,
+};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
 use alloy::rpc::types::Log;
@@ -28,9 +30,9 @@ pub async fn event_listener(
                             category: ApiCategory::PRODUCTION,
                             number: 1,
                         },
-                        GenericEventData::EventLogFromHostBc  {
+                        RelayerEventData::Generic(GenericEventData::EventLogFromHostBc  {
                             event_log,
-                        },
+                        }),
                     );
                     debug!(
                         file = file!(),
