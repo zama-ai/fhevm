@@ -6,9 +6,10 @@ A bridge service connecting HTTPZ and Gateway networks.
 
 The fhEVM Relayer provides crucial connectivity between Ethereum HTTPZ and Gateway networks for FHE-related operations:
 
-- **Decryption Services**: Relays decryption requests from HTTPZ to Gateway, and responses back to HTTPZ
+- **Public Decryption**: Relays decryption requests from HTTPZ event (or from user) to Gateway, and responses back to HTTPZ (or to user)
 - **Input Proof Verification**: Handles zero-knowledge proof verification between layers
-- **User Decryption**: Supports user-specific decryption operations
+- **User Decryption**: Supports user-specific decryption operations (HTTP request)
+- **Key Materialn**: Exposes key material URLs (as FHE public key, FHE evaluation key ...)
 
 ## Architecture
 
