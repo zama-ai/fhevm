@@ -40,9 +40,9 @@ use tracing_subscriber::{fmt::SubscriberBuilder, EnvFilter};
 
 use fhevm_relayer::{
     blockchain::{
-        httpz::{ethereum_listener::event_listener, host_l1::EthereumHostL1},
         ethereum::{ChainName, ContractAndTopicsFilter, EthereumJsonRPCWsClient},
         gateway::gateway_listener::event_listener_gateway,
+        httpz::ethereum_listener::event_listener,
         ArbitrumGatewayL2Handler, ArbitrumGatewayL2InputHandler, EthereumHostL1Handler,
     },
     config::settings::{LogConfig, Settings},
@@ -227,7 +227,7 @@ async fn main() -> eyre::Result<()> {
     );
 
     // === Initialize Ethereum host L1 adapter
-    let host_l1 = EthereumHostL1::new(&settings.networks.fhevm.ws_url)
+    let host_l1 = EthereumJsonRPCWsClient::new(ChainName::Httpz, &settings.networks.fhevm.ws_url)
         .await
         .map_err(|e| eyre::eyre!("Failed to create event handler: {}", e))?;
     let host_l1 = Arc::new(host_l1);
