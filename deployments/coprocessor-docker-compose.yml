@@ -24,14 +24,14 @@ services:
       dockerfile: fhevm-engine/fhevm-db/Dockerfile
       tags:
       - "fhevm-db-migration:v0.7.0-local"
-    image: ghcr.io/zama-ai/fhevm-db-migration:dae6dd9
+    image: ghcr.io/zama-ai/fhevm-db-migration:e0352c8
     environment:
       DATABASE_URL: ${DATABASE_URL}
       TENANT_API_KEY: ${TENANT_API_KEY}
       ACL_CONTRACT_ADDRESS: ${ACL_CONTRACT_ADDRESS}
       INPUT_VERIFIER_ADDRESS: ${INPUT_VERIFIER_ADDRESS}
     volumes:
-      - ./config/keys:/fhevm-keys
+      - ../fhevm-engine/fhevm-keys:/fhevm-keys
     depends_on:
       db:
         condition: service_healthy
@@ -44,7 +44,7 @@ services:
       dockerfile: fhevm-engine/coprocessor/Dockerfile
       tags:
         - "ghcr.io/zama-ai/fhevm-coprocessor:v0.7.0-local"
-    image: ghcr.io/zama-ai/fhevm-coprocessor:a741a94
+    image: ghcr.io/zama-ai/fhevm-coprocessor:6ce1fd7
     environment:
       DATABASE_URL: ${DATABASE_URL}
     ports:
@@ -69,7 +69,7 @@ services:
       dockerfile: fhevm-engine/coprocessor/Dockerfile
       tags:
         - "ghcr.io/zama-ai/fhevm-coprocessor:v0.7.0-local"
-    image: ghcr.io/zama-ai/fhevm-coprocessor:a741a94
+    image: ghcr.io/zama-ai/fhevm-coprocessor:6ce1fd7
     environment:
       DATABASE_URL: ${DATABASE_URL}
       TENANT_API_KEY: ${TENANT_API_KEY}
@@ -92,7 +92,7 @@ services:
       dockerfile: fhevm-engine/coprocessor/Dockerfile
       tags:
         - "ghcr.io/zama-ai/fhevm-coprocessor:v0.7.0-local"
-    image: ghcr.io/zama-ai/fhevm-coprocessor:fd7f391
+    image: ghcr.io/zama-ai/fhevm-coprocessor:6ce1fd7
     environment:
       DATABASE_URL: ${DATABASE_URL}
       GATEWAY_URL: ${GATEWAY_WS_URL}
@@ -116,13 +116,44 @@ services:
       dockerfile: fhevm-engine/coprocessor/Dockerfile
       tags:
         - "ghcr.io/zama-ai/fhevm-coprocessor:v0.7.0-local"
-    image: ghcr.io/zama-ai/fhevm-coprocessor:fd7f391
+    image: ghcr.io/zama-ai/fhevm-coprocessor:6ce1fd7
     environment:
       DATABASE_URL: ${DATABASE_URL}
     command:
       - zkproof_worker
       - --pg-listen-channel="event_zkpok_new_work"
-      - --pg-notify-channel="verify_proofs"
+      - --pg-notify-channel="event_zkpok_computed"
+    depends_on:
+      db:
+        condition: service_healthy
+      migration:
+        condition: service_completed_successfully
+
+  sns-worker:
+    container_name: "sns-worker"
+    build:
+      context: ../.
+      dockerfile: fhevm-engine/coprocessor/Dockerfile
+      tags:
+        - "ghcr.io/zama-ai/fhevm-coprocessor:v0.7.0-local"
+    image: ghcr.io/zama-ai/fhevm-coprocessor:77ac0bd
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      TENANT_API_KEY: ${TENANT_API_KEY}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL}
+      AWS_REGION: ${AWS_REGION}
+    command:
+      - sns_worker
+      - --database-url=${DATABASE_URL}
+      - --tenant-api-key=${TENANT_API_KEY}
+      - --pg-listen-channels=["event_pbs_computations" "event_ciphertext_computed"]
+      - --pg-notify-channel="event_ciphertext128_computed"
+      - --work-items-batch-size=4
+      - --pg-polling-interval=60
+      - --pg-pool-connections=10
+      
     depends_on:
       db:
         condition: service_healthy
@@ -136,7 +167,7 @@ services:
       dockerfile: fhevm-engine/coprocessor/Dockerfile
       tags:
         - "ghcr.io/zama-ai/fhevm-coprocessor:v0.7.0-local"
-    image: ghcr.io/zama-ai/fhevm-coprocessor:fd7f391
+    image: ghcr.io/zama-ai/fhevm-coprocessor:6ce1fd7
     environment:
       DATABASE_URL: ${DATABASE_URL}
       GATEWAY_URL: ${GATEWAY_URL}
@@ -150,12 +181,13 @@ services:
       - --private-key=${TX_SENDER_PRIVATE_KEY}
       - --zkpok-manager-address=${ZKPOK_MANAGER_ADDRESS}
       - --ciphertext-storage-address=${CIPHERTEXT_STORAGE_ADDRESS}
-      - --verify-proof-resp-database-channel="verify_proofs"
+      - --verify-proof-resp-database-channel="event_zkpok_computed"
     depends_on:
       db:
         condition: service_healthy
       migration:
         condition: service_completed_successfully
+
 
 volumes:
   db:
