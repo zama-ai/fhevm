@@ -46,6 +46,7 @@
 - [Gas estimation](smart_contracts/gas.md)
 - [Debug decrypt](smart_contracts/debug_decrypt.md)
 - [Using Foundry](smart_contracts/write_contract/foundry.md)
+- [Mocked mode](smart_contracts/mocked.md)
 
 ## Frontend
 
