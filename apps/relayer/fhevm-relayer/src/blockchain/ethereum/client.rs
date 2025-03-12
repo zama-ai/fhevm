@@ -15,15 +15,15 @@ pub enum ChainName {
     Gateway,
 }
 
-pub struct EthereumJsonRPCWs {
+pub struct EthereumJsonRPCWsClient {
     chain_name: ChainName,
     provider: Arc<dyn Provider<PubSubFrontend> + Send + Sync>,
 }
 
-unsafe impl Send for EthereumJsonRPCWs {}
-unsafe impl Sync for EthereumJsonRPCWs {}
+unsafe impl Send for EthereumJsonRPCWsClient {}
+unsafe impl Sync for EthereumJsonRPCWsClient {}
 
-impl EthereumJsonRPCWs {
+impl EthereumJsonRPCWsClient {
     #[instrument(skip_all)]
     pub async fn new(chain_name: ChainName, ws_url: &str) -> Result<Self, Error> {
         let ws = WsConnect::new(ws_url);
@@ -32,7 +32,7 @@ impl EthereumJsonRPCWs {
             .await
             .map_err(Error::Transport)?;
 
-        Ok(EthereumJsonRPCWs {
+        Ok(EthereumJsonRPCWsClient {
             chain_name,
             provider: Arc::new(provider),
         })
