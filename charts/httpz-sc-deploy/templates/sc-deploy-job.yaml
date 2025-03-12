@@ -14,10 +14,11 @@ spec:
       - name: deploy
         image: {{ .Values.scDeploy.image.name }}:{{ .Values.scDeploy.image.tag }}
         command: ["/app/deploy-contracts.sh"]
+        {{- if .Values.scDeploy.env }}
+        env:
+          {{- toYaml .Values.scDeploy.env | nindent 10 }}
+        {{- end }}
         volumeMounts:
-          - mountPath: /app/.env
-            subPath: .env
-            name: config
           - mountPath: /app/deploy-contracts.sh
             subPath: deploy-contracts.sh
             name: config

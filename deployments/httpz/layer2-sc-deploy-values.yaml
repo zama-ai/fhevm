@@ -2,7 +2,7 @@ scDeploy:
   enabled: true
   image:
     name: ghcr.io/zama-ai/gateway-l2/sc-bundle
-    tag: v0.1.0-rc2
+    tag: v0.1.0-rc3
   configmapName: "layer2-sc-addresses"
   env:
     - name: MNEMONIC
@@ -13,16 +13,58 @@ scDeploy:
       value: "0xe746bc71f6bee141a954e6a49bc9384d334e393a7ea1e70b50241cb2e78e9e4c"
     - name: RPC_URL
       value: "http://layer2-anvil-node:8546"
+    - name: PROTOCOL_NAME
+      value: ""
+    - name: PROTOCOL_WEBSITE
+      value: ""
+    - name: NUM_ADMINS
+      value: "1"
+    - name: ADMIN_ADDRESS_1
+      value: "0xCf28E90D4A6dB23c34E1881aEF5fd9fF2e478634"
+    - name: KMS_THRESHOLD
+      value: "0"
+    - name: NUM_KMS_NODES
+      value: "1"
+    - name: KMS_NODE_ADDRESS_1
+      value: "0x0000000000000000000000000000000000000000"
+    - name: KMS_NODE_IDENTITY_1
+      value: "0x0000000000000000000000000000000000000000"
+    - name: KMS_NODE_IP_ADDRESS_1
+      value: ""
+    - name: KMS_NODE_DA_ADDRESS_1
+      value: ""
+    - name: NUM_COPROCESSORS
+      value: "1"
+    - name: COPROCESSOR_ADDRESS_1
+      value: "0x6254A198F67ad40290a2E7B48aDB2d19B71f67BD"
+    - name: COPROCESSOR_IDENTITY_1
+      value: "0x0000000000000000000000000000000000000000"
+    - name: COPROCESSOR_DA_ADDRESS_1
+      value: ""
+    - name: NUM_NETWORKS
+      value: "1"
     - name: NETWORK_CHAIN_ID_1
       value: "12345"
-    - name: COPROCESSOR_ADDRESS
-      value: "0x6254A198F67ad40290a2E7B48aDB2d19B71f67BD"
-    - name: COPROCESSOR_PUBLIC_KEY
-      value: "0x8f82b3f482c19a95ac29c82cf048c076ed0de2530c64a73f2d2d7d1e64b5cc6e"
+    - name: NETWORK_HTTPZ_EXECUTOR_1
+      value: "0x0000000000000000000000000000000000000000"
+    - name: NETWORK_ACL_ADDRESS_1
+      value: "0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c"
+    - name: NETWORK_NAME_1
+      value: ""
+    - name: NETWORK_WEBSITE_1
+      value: ""
+    - name: FHE_PARAMS_NAME
+      value: "test"
+    - name: FHE_PARAMS_DIGEST
+      value: "0x0000000000000000000000000000000000000000000000000000000000000000"
 
   deployCommands:
-    -  "cd /app && source .env"
-    - "./launch-staging-gateway-layer2.sh"
+    - "cat /app/.env"
+    - "/app/deploy-httpz-gateway-deployment.sh staging"
   postDeployCommands:
     - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"httpz.address\" \"$(cat /app/addresses/.env.httpz | cut -d'=' -f 2)\""
     - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"zkpok_manager.address\" \"$(cat /app/addresses/.env.zkpok_manager | cut -d'=' -f 2)\""
+    - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"key_manager.address\" \"$(cat /app/addresses/.env.key_manager | cut -d'=' -f 2)\""
+    - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"ciphertext_storage.address\" \"$(cat /app/addresses/.env.ciphertext_storage | cut -d'=' -f 2)\""
+    - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"acl_manager.address\" \"$(cat /app/addresses/.env.acl_manager | cut -d'=' -f 2)\""
+    - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"decryption_manager.address\" \"$(cat /app/addresses/.env.decryption_manager | cut -d'=' -f 2)\""
