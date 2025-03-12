@@ -20,8 +20,8 @@ pub mod acl {
 sol!(
     #[sol(rpc)]
     #[derive(Debug, serde::Serialize, serde::Deserialize)]
-    CiphertextStorage,
-    "abi/CiphertextStorage.abi"
+    CiphertextManager,
+    "abi/CiphertextManager.abi"
 );
 
 sol!(

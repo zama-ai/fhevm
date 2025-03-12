@@ -21,7 +21,10 @@ contract HTTPZ is IHTTPZ, Ownable2Step, AccessControl {
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
 
     /// @notice The KMS nodes' metadata
-    KmsNode[] public kmsNodes;
+    mapping(address kmsNodeAddress => KmsNode kmsNode) public kmsNodes;
+    /// @notice The KMS nodes' addresses
+    address[] public kmsNodeAddresses;
+
     /// @notice The KMS' threshold to consider for majority vote or reconstruction. For a set ot `n`
     /// @notice KMS nodes, the threshold `t` must verify `3t < n`.
     uint256 public kmsThreshold;
@@ -30,7 +33,10 @@ contract HTTPZ is IHTTPZ, Ownable2Step, AccessControl {
     bytes32 public constant KMS_NODE_ROLE = keccak256("KMS_NODE_ROLE");
 
     /// @notice The coprocessors' metadata
-    Coprocessor[] public coprocessors;
+    mapping(address coprocessorAddress => Coprocessor coprocessor) public coprocessors;
+    /// @notice The coprocessors' addresses
+    address[] public coprocessorAddresses;
+
     /// @notice The coprocessor role. For example, only coprocessors can send response transactions
     /// @notice during key activation (in Key Manager) or ZK Proof verification (in ZKPoK Manager).
     bytes32 public constant COPROCESSOR_ROLE = keccak256("COPROCESSOR_ROLE");
@@ -82,13 +88,15 @@ contract HTTPZ is IHTTPZ, Ownable2Step, AccessControl {
         /// @dev Register the KMS nodes
         for (uint256 i = 0; i < nParties; i++) {
             _grantRole(KMS_NODE_ROLE, initialKmsNodes[i].connectorAddress);
-            kmsNodes.push(initialKmsNodes[i]);
+            kmsNodes[initialKmsNodes[i].connectorAddress] = initialKmsNodes[i];
+            kmsNodeAddresses.push(initialKmsNodes[i].connectorAddress);
         }
 
         /// @dev Register the coprocessors
         for (uint256 i = 0; i < initialCoprocessors.length; i++) {
             _grantRole(COPROCESSOR_ROLE, initialCoprocessors[i].transactionSenderAddress);
-            coprocessors.push(initialCoprocessors[i]);
+            coprocessors[initialCoprocessors[i].transactionSenderAddress] = initialCoprocessors[i];
+            coprocessorAddresses.push(initialCoprocessors[i].transactionSenderAddress);
         }
 
         /// @dev Register the networks
@@ -109,8 +117,8 @@ contract HTTPZ is IHTTPZ, Ownable2Step, AccessControl {
 
     /// @dev See {IHTTPZ-updateKmsThreshold}.
     function updateKmsThreshold(uint256 newKmsThreshold) external virtual onlyRole(ADMIN_ROLE) {
-        if (3 * newKmsThreshold >= kmsNodes.length) {
-            revert KmsThresholdTooHigh(newKmsThreshold, kmsNodes.length);
+        if (3 * newKmsThreshold >= kmsNodeAddresses.length) {
+            revert KmsThresholdTooHigh(newKmsThreshold, kmsNodeAddresses.length);
         }
 
         kmsThreshold = newKmsThreshold;
@@ -151,7 +159,7 @@ contract HTTPZ is IHTTPZ, Ownable2Step, AccessControl {
 
     /// @dev See {IHTTPZ-getCoprocessorMajorityThreshold}.
     function getCoprocessorMajorityThreshold() external view virtual returns (uint256) {
-        return coprocessors.length / 2 + 1;
+        return coprocessorAddresses.length / 2 + 1;
     }
 
     /// @notice Returns the versions of the HTTPZ contract in SemVer format.

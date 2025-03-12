@@ -3,14 +3,15 @@ import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { expect } from "chai";
 import hre from "hardhat";
 
-import { ACLManager, CiphertextStorage, HTTPZ } from "../typechain-types";
-import { deployCiphertextStorageFixture } from "./utils";
+import { ACLManager, CiphertextManager, HTTPZ } from "../typechain-types";
+import { deployCiphertextManagerFixture } from "./utils";
 
 describe("ACLManager", function () {
   const keyId = 0; // Using exceptional first key (currentKeyId == 0). See {HTTPZ-activateKeyRequest}
   const ctHandle = 2025;
   const chainId = 1;
-  const snsCiphertext = "0x02";
+  const ciphertextDigest = hre.ethers.hexlify(hre.ethers.randomBytes(32));
+  const snsCiphertextDigest = hre.ethers.hexlify(hre.ethers.randomBytes(32));
 
   // Fake values
   const fakeCtHandle = 11111;
@@ -18,23 +19,23 @@ describe("ACLManager", function () {
 
   let httpz: HTTPZ;
   let aclManager: ACLManager;
-  let ciphertextStorage: CiphertextStorage;
+  let ciphertextManager: CiphertextManager;
   let coprocessorSigners: HardhatEthersSigner[];
   let fakeSigner: HardhatEthersSigner;
 
   async function deployACLManagerFixture() {
-    const { httpz, ciphertextStorage, coprocessorSigners, signers } = await deployCiphertextStorageFixture();
+    const { httpz, ciphertextManager, coprocessorSigners, signers } = await deployCiphertextManagerFixture();
     const ACLManager = await hre.ethers.getContractFactory("ACLManager");
-    const aclManager = await ACLManager.deploy(httpz, ciphertextStorage);
+    const aclManager = await ACLManager.deploy(httpz, ciphertextManager);
 
-    // Add the ciphertext to the CiphertextStorage contract state which will be used during the tests
+    // Add the ciphertext to the CiphertextManager contract state which will be used during the tests
     for (let i = 0; i < coprocessorSigners.length; i++) {
-      await ciphertextStorage
+      await ciphertextManager
         .connect(coprocessorSigners[i])
-        .addCiphertext(ctHandle, keyId, chainId, "0x01", snsCiphertext);
+        .addCiphertextMaterial(ctHandle, keyId, chainId, ciphertextDigest, snsCiphertextDigest);
     }
 
-    return { httpz, aclManager, ciphertextStorage, coprocessorSigners, signers };
+    return { httpz, aclManager, ciphertextManager, coprocessorSigners, signers };
   }
 
   beforeEach(async function () {
@@ -42,7 +43,7 @@ describe("ACLManager", function () {
     const fixture = await loadFixture(deployACLManagerFixture);
     httpz = fixture.httpz;
     aclManager = fixture.aclManager;
-    ciphertextStorage = fixture.ciphertextStorage;
+    ciphertextManager = fixture.ciphertextManager;
     coprocessorSigners = fixture.coprocessorSigners;
     fakeSigner = fixture.signers[0];
   });
@@ -90,7 +91,7 @@ describe("ACLManager", function () {
 
     //   // Then
     //   await expect(txResponse)
-    //     .revertedWithCustomError(ciphertextStorage, "CiphertextNotOnNetwork")
+    //     .revertedWithCustomError(ciphertextManager, "CiphertextNotOnNetwork")
     //     .withArgs(ctHandle, fakeChainId);
     // });
   });
@@ -134,7 +135,7 @@ describe("ACLManager", function () {
 
     //   // Then
     //   await expect(txResponse)
-    //     .revertedWithCustomError(ciphertextStorage, "CiphertextNotOnNetwork")
+    //     .revertedWithCustomError(ciphertextManager, "CiphertextNotOnNetwork")
     //     .withArgs(ctHandle, fakeChainId);
     // });
   });

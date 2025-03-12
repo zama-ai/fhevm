@@ -1,36 +1,41 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
-import "./interfaces/ICiphertextStorage.sol";
+import "./interfaces/ICiphertextManager.sol";
 import "./interfaces/IHTTPZ.sol";
 import "./interfaces/IKeyManager.sol";
 
-/// @title CiphertextStorage smart contract
-/// @dev See {ICiphertextStorage}.
-contract CiphertextStorage is ICiphertextStorage {
+/**
+ * @title CiphertextManager smart contract
+ * @dev See {ICiphertextManager}.
+ */
+contract CiphertextManager is ICiphertextManager {
     /// @notice The address of the HTTPZ contract, used for fetching information about coprocessors.
     IHTTPZ internal immutable _HTTPZ;
 
     /// @notice The address of the KeyManager contract, used for fetching information about the current key.
     IKeyManager internal immutable _KEY_MANAGER;
 
-    /// @notice The regular ciphertexts tied to the ciphertext handle.
-    mapping(uint256 ctHandle => bytes ciphertext) internal _ciphertexts;
-    /// @notice The SNS ciphertexts tied to the ciphertext handle.
-    mapping(uint256 ctHandle => bytes snsCiphertext) internal _snsCiphertexts;
+    /// @notice The regular ciphertext digests tied to the ciphertext handle.
+    mapping(uint256 ctHandle => bytes32 ctDigest) internal _ciphertextDigests;
+    /// @notice The SNS ciphertext digests tied to the ciphertext handle.
+    mapping(uint256 ctHandle => bytes32 snsCtDigest) internal _snsCiphertextDigests;
     /// @notice The key IDs used for generating the ciphertext.
     /// @dev It's necessary in case new keys are generated: we need to know what key to use for using a ciphertext.
     mapping(uint256 ctHandle => uint256 keyId) internal _keyIds;
     /// @notice The chain IDs associated to the ciphertext handle.
     mapping(uint256 ctHandle => uint256 chainId) internal _chainIds;
-    /// @notice The mapping of the stored ciphertext of the given handle.
-    mapping(uint256 ctHandle => bool isStored) internal _isStored;
-    /// @notice The counter of the Coprocessors that have added the ciphertext.
-    mapping(uint256 ctHandle => uint8 ctHandleCounter) internal _ctHandleCounters;
-    /// @notice The mapping of the Coprocessors that have already sent the ciphertext.
-    mapping(uint256 ctHandle => mapping(address coprocessorAddress => bool hasSent)) internal _ctHandleSenders;
+    /// @notice The mapping of already added ciphertexts tied to the given handle.
+    mapping(uint256 ctHandle => bool isAdded) internal _isCiphertextMaterialAdded;
+    /// @notice The counter of confirmations received for a ciphertext to be added.
+    mapping(bytes32 addCiphertextHash => uint8 counter) internal _addCiphertextHashCounters;
+    /// @notice The mapping of the Coprocessors that have already added the ciphertext.
+    mapping(bytes32 addCiphertextHash => mapping(address coprocessorAddress => bool hasSent))
+        internal _alreadyAddedCoprocessors;
+    /// @notice The mapping of the Coprocessors that have added the ciphertext.
+    mapping(uint256 ctHandle => address[] coprocessorAddresses) internal _coprocessorAddresses;
 
-    string private constant CONTRACT_NAME = "CiphertextStorage";
+    string private constant CONTRACT_NAME = "CiphertextManager";
     uint256 private constant MAJOR_VERSION = 0;
     uint256 private constant MINOR_VERSION = 1;
     uint256 private constant PATCH_VERSION = 0;
@@ -40,70 +45,80 @@ contract CiphertextStorage is ICiphertextStorage {
         _KEY_MANAGER = keyManager;
     }
 
-    /// @notice See {ICiphertextStorage-hasCiphertext}.
-    function hasCiphertext(uint256 ctHandle) public view returns (bool) {
-        return _isStored[ctHandle];
-    }
-
-    /// @notice See {ICiphertextStorage-checkIsOnNetwork}.
-    function checkIsOnNetwork(uint256 ctHandle, uint256 chainId) public view {
-        if (_chainIds[ctHandle] != chainId) {
-            revert CiphertextNotOnNetwork(ctHandle, chainId);
+    /// @notice See {ICiphertextManager-checkCiphertextMaterial}.
+    function checkCiphertextMaterial(uint256 ctHandle) public view virtual {
+        if (!_isCiphertextMaterialAdded[ctHandle]) {
+            revert CiphertextMaterialNotFound(ctHandle);
         }
     }
 
-    /// @notice See {ICiphertextStorage-getCiphertextMaterials}.
+    /// @notice See {ICiphertextManager-checkIsOnNetwork}.
+    function checkIsOnNetwork(uint256 ctHandle, uint256 chainId) public view {
+        if (_chainIds[ctHandle] != chainId) {
+            revert CiphertextMaterialNotOnNetwork(ctHandle, chainId);
+        }
+    }
+
+    /// @notice See {ICiphertextManager-getCiphertextMaterials}.
     function getCiphertextMaterials(
         uint256[] calldata ctHandles
     ) public view returns (CiphertextMaterial[] memory ctMaterials) {
         ctMaterials = new CiphertextMaterial[](ctHandles.length);
 
         for (uint256 i = 0; i < ctHandles.length; i++) {
-            if (!hasCiphertext(ctHandles[i])) {
-                revert CiphertextNotFound(ctHandles[i]);
-            }
+            checkCiphertextMaterial(ctHandles[i]);
 
-            ctMaterials[i] = CiphertextMaterial(ctHandles[i], _keyIds[ctHandles[i]], _ciphertexts[ctHandles[i]]);
+            ctMaterials[i] = CiphertextMaterial(
+                ctHandles[i],
+                _keyIds[ctHandles[i]],
+                _ciphertextDigests[ctHandles[i]],
+                _coprocessorAddresses[ctHandles[i]]
+            );
         }
 
         return ctMaterials;
     }
 
-    /// @notice See {ICiphertextStorage-getSnsCiphertextMaterials}.
+    /// @notice See {ICiphertextManager-getSnsCiphertextMaterials}.
     function getSnsCiphertextMaterials(
         uint256[] calldata ctHandles
     ) public view returns (SnsCiphertextMaterial[] memory snsCtMaterials) {
         snsCtMaterials = new SnsCiphertextMaterial[](ctHandles.length);
 
         for (uint256 i = 0; i < ctHandles.length; i++) {
-            if (!hasCiphertext(ctHandles[i])) {
-                revert CiphertextNotFound(ctHandles[i]);
-            }
+            checkCiphertextMaterial(ctHandles[i]);
 
             snsCtMaterials[i] = SnsCiphertextMaterial(
                 ctHandles[i],
                 _keyIds[ctHandles[i]],
-                _snsCiphertexts[ctHandles[i]]
+                _snsCiphertextDigests[ctHandles[i]],
+                _coprocessorAddresses[ctHandles[i]]
             );
         }
 
         return snsCtMaterials;
     }
 
-    /// @notice See {ICiphertextStorage-addCiphertext}.
+    /// @notice See {ICiphertextManager-addCiphertextMaterial}.
     /// @dev This function calls the HTTPZ contract to check that the sender address is a Coprocessor.
-    function addCiphertext(
+    function addCiphertextMaterial(
         uint256 ctHandle,
         uint256 keyId,
         uint256 chainId,
-        bytes calldata ciphertext,
-        bytes calldata snsCiphertext
+        bytes32 ciphertextDigest,
+        bytes32 snsCiphertextDigest
     ) public {
         /// @dev Check if the sender is a Coprocessor
         _HTTPZ.checkIsCoprocessor(msg.sender);
 
+        /// @dev The addCiphertextHash is the hash of all input arguments.
+        /// @dev This hash is used to track the addition consensus over the received ciphertext digests.
+        bytes32 addCiphertextHash = keccak256(
+            abi.encode(ctHandle, keyId, chainId, ciphertextDigest, snsCiphertextDigest)
+        );
+
         /// @dev Check if the Coprocessor has already added the ciphertext.
-        if (_ctHandleSenders[ctHandle][msg.sender]) {
+        if (_alreadyAddedCoprocessors[addCiphertextHash][msg.sender]) {
             revert CoprocessorHasAlreadyAdded(msg.sender);
         }
 
@@ -116,24 +131,32 @@ contract CiphertextStorage is ICiphertextStorage {
         //     revert InvalidCurrentKeyId(keyId);
         // }
 
-        _ctHandleCounters[ctHandle]++;
-        _ctHandleSenders[ctHandle][msg.sender] = true;
+        _addCiphertextHashCounters[addCiphertextHash]++;
+        _alreadyAddedCoprocessors[addCiphertextHash][msg.sender] = true;
+        _coprocessorAddresses[ctHandle].push(msg.sender);
 
         /// @dev Only send the event if consensus has not been reached in a previous call
         /// @dev and the consensus is reached in the current call.
         /// @dev This means a "late" allow will not be reverted, just ignored
-        if (!hasCiphertext(ctHandle) && _isConsensusReached(_ctHandleCounters[ctHandle])) {
-            _ciphertexts[ctHandle] = ciphertext;
-            _snsCiphertexts[ctHandle] = snsCiphertext;
+        if (
+            !_isCiphertextMaterialAdded[ctHandle] && _isConsensusReached(_addCiphertextHashCounters[addCiphertextHash])
+        ) {
+            _ciphertextDigests[ctHandle] = ciphertextDigest;
+            _snsCiphertextDigests[ctHandle] = snsCiphertextDigest;
             _keyIds[ctHandle] = keyId;
             _chainIds[ctHandle] = chainId;
-            _isStored[ctHandle] = true;
+            _isCiphertextMaterialAdded[ctHandle] = true;
 
-            emit AddCiphertext(ctHandle);
+            emit AddCiphertextMaterial(
+                ctHandle,
+                ciphertextDigest,
+                snsCiphertextDigest,
+                _coprocessorAddresses[ctHandle]
+            );
         }
     }
 
-    /// @notice Returns the versions of the CiphertextStorage contract in SemVer format.
+    /// @notice Returns the versions of the CiphertextManager contract in SemVer format.
     /// @dev This is conventionally used for upgrade features.
     function getVersion() public pure virtual returns (string memory) {
         return

@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import "./interfaces/IACLManager.sol";
-import "./interfaces/ICiphertextStorage.sol";
+import "./interfaces/ICiphertextManager.sol";
 import "./interfaces/IHTTPZ.sol";
 
 /// @title ACLManager smart contract
@@ -12,7 +12,7 @@ contract ACLManager is IACLManager {
     /// @notice The address of the HTTPZ contract for protocol state calls.
     IHTTPZ internal immutable _HTTPZ;
     /// @notice The address of the CiphertextStorage contract from which ciphertexts are retrieve.
-    ICiphertextStorage internal immutable _CIPHERTEXT_STORAGE;
+    ICiphertextManager internal immutable _CIPHERTEXT_MANAGER;
     /// @notice The maximum number of contracts that can be requested for delegation.
     uint8 internal constant _MAX_CONTRACT_ADDRESSES = 10;
 
@@ -50,9 +50,9 @@ contract ACLManager is IACLManager {
     uint256 private constant MINOR_VERSION = 1;
     uint256 private constant PATCH_VERSION = 0;
 
-    constructor(IHTTPZ httpz, ICiphertextStorage ciphertextStorage) {
+    constructor(IHTTPZ httpz, ICiphertextManager ciphertextManager) {
         _HTTPZ = httpz;
-        _CIPHERTEXT_STORAGE = ciphertextStorage;
+        _CIPHERTEXT_MANAGER = ciphertextManager;
     }
 
     /// @notice Checks if the sender is a Coprocessor.
@@ -65,7 +65,7 @@ contract ACLManager is IACLManager {
     /// @dev TODO: Remove chainId check and replace with pending allow logic in allow calls
     /// @dev https://github.com/zama-ai/gateway-l2/issues/171
     modifier isHandleOnNetwork(uint256 ctHandle, uint256 chainId) {
-        // _CIPHERTEXT_STORAGE.checkIsOnNetwork(ctHandle, chainId);
+        // _CIPHERTEXT_MANAGER.checkIsOnNetwork(ctHandle, chainId);
         _;
     }
 
@@ -191,7 +191,7 @@ contract ACLManager is IACLManager {
         }
     }
 
-    /// @notice Returns the versions of the CiphertextStorage contract in SemVer format.
+    /// @notice Returns the versions of the ACLManager contract in SemVer format.
     /// @dev This is conventionally used for upgrade features.
     function getVersion() public pure virtual returns (string memory) {
         return

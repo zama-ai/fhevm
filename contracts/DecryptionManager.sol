@@ -7,7 +7,7 @@ import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "./interfaces/IHTTPZ.sol";
 import "./interfaces/IACLManager.sol";
-import "./interfaces/ICiphertextStorage.sol";
+import "./interfaces/ICiphertextManager.sol";
 
 /// @title DecryptionManager contract
 /// @dev See {IDecryptionManager}.
@@ -82,8 +82,8 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
     /// @notice The address of the ACLManager contract for checking if a decryption requests are allowed
     IACLManager internal immutable _ACL_MANAGER;
 
-    /// @notice The address of the Ciphertext Storage contract for getting ciphertext materials.
-    ICiphertextStorage internal immutable _CIPHERTEXT_STORAGE;
+    /// @notice The address of the CiphertextManager contract for getting ciphertext materials.
+    ICiphertextManager internal immutable _CIPHERTEXT_MANAGER;
 
     // TODO: Use a reference to the PaymentManager contract
     /// @notice The address of the Payment Manager contract for service fees, burn and distribution
@@ -169,12 +169,12 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
     constructor(
         IHTTPZ httpz,
         IACLManager aclManager,
-        ICiphertextStorage ciphertextStorage,
+        ICiphertextManager ciphertextManager,
         address paymentManager
     ) Ownable(msg.sender) EIP712(CONTRACT_NAME, "1") {
         _HTTPZ = httpz;
         _ACL_MANAGER = aclManager;
-        _CIPHERTEXT_STORAGE = ciphertextStorage;
+        _CIPHERTEXT_MANAGER = ciphertextManager;
         _PAYMENT_MANAGER = paymentManager;
     }
 
@@ -183,12 +183,12 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
         /// @dev Check that the public decryption is allowed for the given ctHandles.
         _ACL_MANAGER.checkPublicDecryptAllowed(ctHandles);
 
-        /// @dev Fetch the SNS ciphertexts from the ciphertext storage
-        /// @dev This call is reverted if any of the ciphertexts are not found in the storage, but
+        /// @dev Fetch the SNS ciphertexts from the CiphertextManager contract
+        /// @dev This call is reverted if any of the ciphertexts are not found in the contract, but
         /// @dev this should not happen for now as a ciphertext cannot be allowed for decryption
-        /// @dev without being added to the storage first (and we currently have no ways of deleting
-        /// @dev a ciphertext from the storage).
-        SnsCiphertextMaterial[] memory snsCtMaterials = _CIPHERTEXT_STORAGE.getSnsCiphertextMaterials(ctHandles);
+        /// @dev without being added to the contract first (and we currently have no ways of deleting
+        /// @dev a ciphertext from the contract).
+        SnsCiphertextMaterial[] memory snsCtMaterials = _CIPHERTEXT_MANAGER.getSnsCiphertextMaterials(ctHandles);
 
         /// @dev Check that received snsCtMaterials have the same keyId.
         /// @dev This will be removed in the future as multiple keyIds processing is implemented.
@@ -278,7 +278,7 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
         /// @dev Extract the ctHandles from the given ctHandleContractPairs.
         /// @dev We do not deduplicate handles if the same handle appears multiple times
         /// @dev for different contracts, it remains in the list as is. This ensures that
-        /// @dev the ciphertext storage retrieval below returns all corresponding materials.
+        /// @dev the CiphertextManager retrieval below returns all corresponding materials.
         uint256[] memory ctHandles = new uint256[](ctHandleContractPairs.length);
         for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
             /// @dev Check the contractAddress from ctHandleContractPairs is included in the given contractAddresses.
@@ -288,12 +288,12 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
             ctHandles[i] = ctHandleContractPairs[i].ctHandle;
         }
 
-        /// @dev Fetch the ciphertexts from the ciphertext storage
-        /// @dev This call is reverted if any of the ciphertexts are not found in the storage, but
+        /// @dev Fetch the ciphertexts from the CiphertextManager contract
+        /// @dev This call is reverted if any of the ciphertexts are not found in the contract, but
         /// @dev this should not happen for now as a ciphertext cannot be allowed for decryption
-        /// @dev without being added to the storage first (and we currently have no ways of deleting
-        /// @dev a ciphertext from the storage).
-        SnsCiphertextMaterial[] memory snsCtMaterials = _CIPHERTEXT_STORAGE.getSnsCiphertextMaterials(ctHandles);
+        /// @dev without being added to the contract first (and we currently have no ways of deleting
+        /// @dev a ciphertext from the contract).
+        SnsCiphertextMaterial[] memory snsCtMaterials = _CIPHERTEXT_MANAGER.getSnsCiphertextMaterials(ctHandles);
 
         /// @dev Check that received snsCtMaterials have the same keyId.
         /// @dev This will be removed in the future as multiple keyIds processing is implemented.
@@ -338,7 +338,7 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
         /// @dev Extract the ctHandles and contractAddresses from the given ctHandleContractPairs.
         /// @dev We do not deduplicate handles if the same handle appears multiple times
         /// @dev for different contracts, it remains in the list as is. This ensures that
-        /// @dev the ciphertext storage retrieval below returns all corresponding materials.
+        /// @dev the CiphertextManager retrieval below returns all corresponding materials.
         uint256[] memory ctHandles = new uint256[](ctHandleContractPairs.length);
         address[] memory allowedContracts = new address[](ctHandleContractPairs.length);
         for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
@@ -376,12 +376,12 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
             signature
         );
 
-        /// @dev Fetch the ciphertexts from the ciphertext storage
-        /// @dev This call is reverted if any of the ciphertexts are not found in the storage, but
+        /// @dev Fetch the ciphertexts from the CiphertextManager contract
+        /// @dev This call is reverted if any of the ciphertexts are not found in the contract, but
         /// @dev this should not happen for now as a ciphertext cannot be allowed for decryption
-        /// @dev without being added to the storage first (and we currently have no ways of deleting
-        /// @dev a ciphertext from the storage).
-        SnsCiphertextMaterial[] memory snsCtMaterials = _CIPHERTEXT_STORAGE.getSnsCiphertextMaterials(ctHandles);
+        /// @dev without being added to the contract first (and we currently have no ways of deleting
+        /// @dev a ciphertext from the contract).
+        SnsCiphertextMaterial[] memory snsCtMaterials = _CIPHERTEXT_MANAGER.getSnsCiphertextMaterials(ctHandles);
 
         /// @dev Check that received snsCtMaterials have the same keyId.
         /// @dev This will be removed in the future as multiple keyIds processing is implemented.
