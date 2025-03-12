@@ -71,18 +71,16 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
             return (StatusCode::BAD_REQUEST, Json(error_response)).into_response();
         }
 
-        let user_decrypt_request: UserDecryptRequest;
-        match UserDecryptRequest::try_from(payload.clone()) {
-            Ok(request) => {
-                user_decrypt_request = request;
-            }
-            Err(error) => {
-                let error_response = UserDecryptErrorResponseJson {
-                    message: error.to_string(),
-                };
-                return (StatusCode::BAD_REQUEST, Json(error_response)).into_response();
-            }
-        }
+        let user_decrypt_request: UserDecryptRequest =
+            match UserDecryptRequest::try_from(payload.clone()) {
+                Ok(request) => request,
+                Err(error) => {
+                    let error_response = UserDecryptErrorResponseJson {
+                        message: error.to_string(),
+                    };
+                    return (StatusCode::BAD_REQUEST, Json(error_response)).into_response();
+                }
+            };
 
         // Generate Request ID
         let request_id = self.orchestrator.new_request_id();

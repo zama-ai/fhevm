@@ -336,8 +336,7 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
     type Error = anyhow::Error;
 
     fn try_from(value: UserDecryptRequestJson) -> Result<Self, Self::Error> {
-        let mut ct_handles: Vec<Bytes> = Vec::new();
-        ct_handles.push(Bytes::from_str(&value.ct_handle)?);
+        let ct_handles: Vec<Bytes> = vec![(Bytes::from_str(&value.ct_handle)?)];
 
         Ok(UserDecryptRequest {
             ct_handles,
