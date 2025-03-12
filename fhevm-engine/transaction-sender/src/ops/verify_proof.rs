@@ -16,8 +16,8 @@ use tracing::{debug, error, info};
 use ZKPoKManager::ZKPoKManagerErrors;
 
 sol! {
-    struct EIP712ZKPoK {
-        bytes32[] handles;
+    struct CiphertextVerification {
+        bytes32[] ctHandles;
         address userAddress;
         address contractAddress;
         uint256 contractChainId;
@@ -222,8 +222,8 @@ where
                 chain_id: self.gw_chain_id,
                 verifying_contract: self.zkpok_manager_address,
             };
-            let signing_hash = EIP712ZKPoK {
-                handles: handles.clone(),
+            let signing_hash = CiphertextVerification {
+                ctHandles: handles.clone(),
                 userAddress: row.user_address.parse().expect("invalid user address"),
                 contractAddress: row
                     .contract_address

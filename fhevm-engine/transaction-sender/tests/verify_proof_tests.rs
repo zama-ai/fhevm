@@ -17,8 +17,8 @@ mod common;
 #[serial(db)]
 async fn verify_proof_response_success() -> anyhow::Result<()> {
     sol! {
-        struct EIP712ZKPoK {
-            bytes32[] handles;
+        struct CiphertextVerification {
+            bytes32[] ctHandles;
             address userAddress;
             address contractAddress;
             uint256 contractChainId;
@@ -90,8 +90,8 @@ async fn verify_proof_response_success() -> anyhow::Result<()> {
         chain_id: provider.get_chain_id().await?,
         verifying_contract: *zkpok_manager.address(),
     };
-    let signing_hash = EIP712ZKPoK {
-        handles: expected_handles.clone(),
+    let signing_hash = CiphertextVerification {
+        ctHandles: expected_handles.clone(),
         userAddress: env.user_address,
         contractAddress: env.contract_address,
         contractChainId: U256::from(contract_chain_id),
