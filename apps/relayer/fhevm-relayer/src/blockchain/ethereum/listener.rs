@@ -15,6 +15,10 @@ pub fn gateway_event_log_converter(log: Log) -> RelayerEventData {
     RelayerEventData::Generic(GenericEventData::EventLogFromGw { log })
 }
 
+pub fn host_bc_event_log_converter(log: Log) -> RelayerEventData {
+    RelayerEventData::Generic(GenericEventData::EventLogFromHostBc { log })
+}
+
 pub async fn ethereum_listener(
     mut subscription: alloy::pubsub::SubscriptionStream<Log>,
     log_converter: EventLogConverter,

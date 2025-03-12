@@ -257,7 +257,7 @@ impl EventHandler<RelayerEvent> for EthereumHostL1Handler {
         );
         match event.clone().data {
             RelayerEventData::Generic(GenericEventData::EventLogFromHostBc {
-                event_log: eth_event_log,
+                log: eth_event_log,
             }) => {
                 self.handle_public_decrypt_event_log(event, eth_event_log)
                     .await;

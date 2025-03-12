@@ -204,7 +204,7 @@ pub enum GenericEventData {
     EventLogFromHostBc {
         // For ethereum handler
         // TODO: Make relayer event generic of this log type, to make it blockchain agnostic.
-        event_log: Log,
+        log: Log,
     },
 
     // Raw event log from gateway l2. Will be processed by gateway l2 handler.
