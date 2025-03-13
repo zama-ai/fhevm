@@ -36,7 +36,7 @@ export function metaFactory<
     payload: object
     meta: Meta
   },
-  Prefix extends MSPrefix = MSPrefix,
+  Prefix extends string = MSPrefix,
 >(prefix: Prefix) {
   return function <
     Key extends string,
