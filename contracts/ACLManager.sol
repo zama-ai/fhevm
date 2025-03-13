@@ -157,21 +157,21 @@ contract ACLManager is IACLManager {
 
     /// @dev See {IACLManager-checkAccountAllowed}.
     function checkAccountAllowed(
-        address userAddress,
+        address accountAddress,
         CtHandleContractPair[] calldata ctHandleContractPairs
     ) public view virtual {
         for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
             uint256 ctHandle = ctHandleContractPairs[i].ctHandle;
             address contractAddress = ctHandleContractPairs[i].contractAddress;
 
-            /// @dev Check that the contract address is difference from the user address
-            if (userAddress == contractAddress) {
-                revert UserAddressInContractAddresses(userAddress);
+            /// @dev Check that the contract address is different from the account address
+            if (accountAddress == contractAddress) {
+                revert AccountAddressInContractAddresses(accountAddress);
             }
 
-            /// @dev Check that the user is allowed to use this ciphertext.
-            if (!allowedAccounts[ctHandle][userAddress]) {
-                revert UserNotAllowedToUseCiphertext(ctHandle, userAddress);
+            /// @dev Check that the account address is allowed to use this ciphertext.
+            if (!allowedAccounts[ctHandle][accountAddress]) {
+                revert AccountNotAllowedToUseCiphertext(ctHandle, accountAddress);
             }
 
             /// @dev Check that the contract is allowed to use this ciphertext.
