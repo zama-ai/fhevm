@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { chainId, meta, Meta, requestId, web3Address } from './shared.js'
+import { chainId, meta, metaFactory, requestId, web3Address } from './shared.js'
 
 type EventTypes =
   | 'dapp:created'
@@ -78,27 +78,7 @@ export const schema = z.discriminatedUnion('type', [...schemas]).and(
 )
 export type BackEvent = z.infer<typeof schema>
 
-/**
- * Create a factory to generate a given event
- *
- * @param type The type of the Event to generate
- * @returns the factory function for the selected event
- */
-function factory<
-  K extends EventTypes,
-  Event extends { type: `back:${K}`; payload: object; meta: Meta } = Extract<
-    BackEvent,
-    { type: `back:${K}` }
-  >,
->(type: K) {
-  return function (payload: Event['payload'], meta: Meta) {
-    return {
-      type: `back:${type}`,
-      payload,
-      meta,
-    } as Event
-  }
-}
+const factory = metaFactory<BackEvent>('back')
 
 export const dappCreated = factory('dapp:created')
 export const dappValidationRequested = factory('dapp:validation:requested')

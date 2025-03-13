@@ -4,7 +4,7 @@ import { AppDeploymentRepository } from '../workflows/interfaces/app-deployment.
 import { DatabaseModule } from '#database/database.module.js'
 import { SqsModule } from '@ssut/nestjs-sqs'
 import { SQSConsumer } from './adapters/sqs.consumer.js'
-import { SNSProducer } from './adapters/sns.producer.js'
+import { SQSProducer } from './adapters/sqs.producer.js'
 import * as uc from '../workflows/use-cases/index.js'
 import { ConfigService } from '@nestjs/config'
 import { SQSClient } from '@aws-sdk/client-sqs'
@@ -26,10 +26,10 @@ import { ProcessDAppStats } from '#workflows/use-cases/process-dapp-stats.use-ca
         consumers: [
           {
             name: 'orchestrator',
-            queueUrl: config.get<string>('aws.queueUrl')!,
+            queueUrl: config.get<string>('aws.orchestrator.queueUrl')!,
             useQueueUrlAsEndpoint: false,
             sqs: new SQSClient({
-              endpoint: config.get<string>('aws.queueUrl'),
+              endpoint: config.get<string>('aws.endpoint'),
               region: config.get<string>('aws.region'),
             }),
             messageAttributeNames: ['All'],
@@ -48,11 +48,11 @@ import { ProcessDAppStats } from '#workflows/use-cases/process-dapp-stats.use-ca
     SQSConsumer,
     {
       provide: EVENT_PRODUCER,
-      inject: [PUBSUB, ConfigService],
+      inject: [/*PUBSUB,*/ ConfigService],
       useFactory: (
-        pubsub: IPubSub<back.BackEvent | web3.Web3Event>,
+        // pubsub: IPubSub<back.BackEvent | web3.Web3Event>,
         config: ConfigService,
-      ) => new SNSProducer(pubsub, config),
+      ) => new SQSProducer(/*pubsub, */ config),
     },
     {
       provide: uc.ProcessAppDeployment,

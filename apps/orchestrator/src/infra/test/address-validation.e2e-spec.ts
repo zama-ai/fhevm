@@ -19,6 +19,10 @@ describe('address validation', () => {
     await manager.beforeAll()
   }, 30_000)
 
+  beforeEach(async () => {
+    await manager.beforeEach()
+  })
+
   afterEach(async () => {
     await manager.afterEach()
   })
@@ -43,12 +47,13 @@ describe('address validation', () => {
     })
     test("then it publish a 'web3:contract:validation:requested' event", async () => {
       await vi.waitUntil(async () => {
-        const size = await manager.getLogQueueSize()
-        return size >= 2
+        const size = await manager.getQueueSize(manager.setup.web3QueueUrl)
+        return size > 0
       })
-      const [first, second] = await manager.getLogQueueMessages()
-      expect(first?.event.type).toBe('back:address:validation:requested')
-      expect(second?.event.type).toBe('web3:contract:validation:requested')
+      const [message] = await manager.getQueueMessages(
+        manager.setup.web3QueueUrl,
+      )
+      expect(message?.event.type).toBe('web3:contract:validation:requested')
     })
   })
 
@@ -68,12 +73,13 @@ describe('address validation', () => {
     })
     test("then it publish a 'back:address:validation:confirmed' event", async () => {
       await vi.waitUntil(async () => {
-        const size = await manager.getLogQueueSize()
-        return size >= 2
+        const size = await manager.getQueueSize(manager.setup.backQueueUrl)
+        return size > 0
       })
-      const [first, second] = await manager.getLogQueueMessages()
-      expect(first?.event.type).toBe('web3:contract:validation:success')
-      expect(second?.event.type).toBe('back:address:validation:confirmed')
+      const [message] = await manager.getQueueMessages(
+        manager.setup.backQueueUrl,
+      )
+      expect(message?.event.type).toBe('back:address:validation:confirmed')
     })
   })
 
@@ -93,12 +99,13 @@ describe('address validation', () => {
     })
     test("then it publish a 'back:address:validation:failed' event", async () => {
       await vi.waitUntil(async () => {
-        const size = await manager.getLogQueueSize()
-        return size >= 2
+        const size = await manager.getQueueSize(manager.setup.backQueueUrl)
+        return size > 0
       })
-      const [first, second] = await manager.getLogQueueMessages()
-      expect(first?.event.type).toBe('web3:contract:validation:failure')
-      expect(second?.event.type).toBe('back:address:validation:failed')
+      const messages = await manager.getQueueMessages(
+        manager.setup.backQueueUrl,
+      )
+      expect(messages[0]?.event.type).toBe('back:address:validation:failed')
     })
   })
 })

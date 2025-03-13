@@ -26,7 +26,6 @@
   },
   "dependencies": {
     "@apollo/server": "^4.11.3",
-    "@aws-sdk/client-sns": "^3.699.0",
     "@aws-sdk/client-sqs": "^3.699.0",
     "@nestjs/apollo": "^12.2.1",
     "@nestjs/common": "^10.0.0",
@@ -37,6 +36,7 @@
     "@nestjs/passport": "^10.0.3",
     "@nestjs/platform-express": "^10.0.0",
     "@prisma/client": "catalog:",
+    "@ssut/nestjs-sqs": "catalog:",
     "bcryptjs": "^2.4.3",
     "dotenv": "^16.4.7",
     "graphql": "^16.9.0",
@@ -56,7 +56,6 @@
     "pino-pretty": "catalog:",
     "reflect-metadata": "^0.2.0",
     "rimraf": "^6.0.1",
-    "sqs": "workspace:*",
     "utils": "workspace:*",
     "zod": "catalog:"
   },

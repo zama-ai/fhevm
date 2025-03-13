@@ -21,9 +21,6 @@ import { back, generateRequestId } from 'messages'
 interface Input {
   user: UserProps // to check if they can deploy
   dappId: DAppId
-  // deploymentId: string  // it will be random uuid for now
-  // chainId: string // for now it's sepolia
-  // address will be fetch from the dapp entity
 }
 
 export class DeployDApp implements UseCase<Input, DAppProps> {
@@ -35,6 +32,7 @@ export class DeployDApp implements UseCase<Input, DAppProps> {
     private readonly pubsub: IPubSub<back.BackEvent>,
     private readonly updateDappUC: UpdateDapp,
   ) {}
+
   execute({ user, dappId }: Input): Task<DAppProps, AppError> {
     this.logger.debug(`[${user.email}] deploying dapp: ${dappId}`)
 

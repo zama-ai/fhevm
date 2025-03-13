@@ -77,6 +77,7 @@ async function stopAws() {
 
 export default async function setup(project: TestProject) {
   const maxWorkers = project.globalConfig.poolOptions?.forks?.maxForks ?? 10
+  project.provide('maxWorkers', maxWorkers)
 
   const [databaseUrls, awsEndpoint] = await Promise.all([
     startPostgres(maxWorkers),
@@ -96,6 +97,7 @@ export default async function setup(project: TestProject) {
 
 declare module 'vitest' {
   export interface ProvidedContext {
+    maxWorkers: number
     databaseUrls: string[]
     awsEndpoint: string
   }
