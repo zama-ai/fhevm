@@ -261,7 +261,9 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
         }
 
         /// @dev Check that the user decryption is allowed for the given userAddress and ctHandleContractPairs.
-        _ACL_MANAGER.checkAccountAllowed(userAddress, ctHandleContractPairs);
+        /// @dev TODO: Enable the allow check back once the allow flow is fully implemented
+        /// @dev See https://github.com/zama-ai/gateway-l2/issues/188
+        // _ACL_MANAGER.checkAccountAllowed(userAddress, ctHandleContractPairs);
 
         /// @dev Initialize the UserDecryptRequestVerification structure for the signature validation.
         UserDecryptRequestVerification memory userDecryptRequestVerification = UserDecryptRequestVerification(
