@@ -10,7 +10,6 @@ use crate::{
             GenericEventData, RelayerEvent, RelayerEventData, UserDecryptEventData,
             UserDecryptRequest, UserDecryptResponse,
         },
-        utils::{colorize_event_type, colorize_request_id},
     },
     orchestrator::{
         traits::{EventDispatcher, EventHandler},
@@ -21,7 +20,7 @@ use crate::{
 use std::str::FromStr;
 
 use alloy::{
-    primitives::{Address, Bytes, U256},
+    primitives::{Address, Bytes, FixedBytes, U256},
     rpc::types::TransactionReceipt,
 };
 
@@ -150,6 +149,8 @@ impl UserDecryptGatewayHandler {
             "Stored mapping between decryption ID and request ID"
         );
 
+        info!("User decryption request sent to gateway");
+
         // Create and dispatch the new event
         let next_event = event.derive_next_event(RelayerEventData::UserDecrypt(
             UserDecryptEventData::ReqSentToGw { user_decryption_id },
@@ -205,11 +206,8 @@ impl UserDecryptGatewayHandler {
     ///
     /// # Events
     /// Dispatches [`RelayerEventData::DecryptionResponseRcvdFromGwL2`]
-    async fn handle_decrypt_reponse_event_log(&self, event: RelayerEvent) {
-        info!(
-            "Decryption response received. Trigger a tx to L1  {:?}",
-            event.request_id,
-        );
+    async fn handle_user_decrypt_reponse_event_log(&self, event: RelayerEvent) {
+        info!("User Decryption response received: {:?}", event.request_id,);
 
         if let RelayerEventData::Generic(GenericEventData::EventLogFromGw { log }) = &event.data {
             if let Some(topic) = log.topic0() {
@@ -336,7 +334,7 @@ impl UserDecryptGatewayHandler {
         ))
     }
 
-    async fn noop_handle_decrypt_reponse_event_log(&self, _event: RelayerEvent) {}
+    async fn noop_handle_decrypt_reponse_event_log(&self, _event: &RelayerEvent) {}
 
     async fn process_user_decryption_request(
         &self,
@@ -382,11 +380,6 @@ impl UserDecryptGatewayHandler {
 #[async_trait]
 impl EventHandler<RelayerEvent> for UserDecryptGatewayHandler {
     async fn handle_event(&self, event: RelayerEvent) {
-        info!(
-            event_type = %colorize_event_type(event.data.as_ref()),
-            request_id = %colorize_request_id(&event.request_id),
-            "Processing relayer event"
-        );
         match event.data {
             RelayerEventData::UserDecrypt(UserDecryptEventData::ReqRcvdFromUser {
                 ref decrypt_request,
@@ -396,8 +389,21 @@ impl EventHandler<RelayerEvent> for UserDecryptGatewayHandler {
                 self.send_user_decryption_request_to_rollup(event.clone(), cloned_request)
                     .await;
             }
-            RelayerEventData::Generic(GenericEventData::EventLogFromGw { .. }) => {
-                self.handle_decrypt_reponse_event_log(event).await;
+            RelayerEventData::Generic(GenericEventData::EventLogFromGw { ref log }) => {
+                if let Some(topic0) = log.topic0() {
+                    if FixedBytes::<32>::from_slice(topic0.as_slice())
+                        != DecyptionManager::UserDecryptionResponse::SIGNATURE_HASH
+                    {
+                        debug!(
+                            "Ignore this event: expected event: {:?}, received {} ",
+                            log.topic0(),
+                            DecyptionManager::UserDecryptionResponse::SIGNATURE_HASH
+                        );
+                        self.noop_handle_decrypt_reponse_event_log(&event).await;
+                    } else {
+                        self.handle_user_decrypt_reponse_event_log(event).await;
+                    }
+                };
             }
             RelayerEventData::UserDecrypt(UserDecryptEventData::ReqSentToGw {
                 user_decryption_id,
@@ -405,7 +411,7 @@ impl EventHandler<RelayerEvent> for UserDecryptGatewayHandler {
                 self.handle_user_decrypt_request_sent(user_decryption_id);
             }
             _ => {
-                self.noop_handle_decrypt_reponse_event_log(event).await;
+                self.noop_handle_decrypt_reponse_event_log(&event).await;
             }
         }
     }

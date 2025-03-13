@@ -1,13 +1,23 @@
 use super::traits::{EventDispatcher, HandlerRegistry};
+use crate::core::utils::{colorize_event_type, colorize_request_id};
 use crate::orchestrator::traits::Event;
 use crate::orchestrator::traits::EventHandler;
 use anyhow::Error;
 use async_trait::async_trait;
 use dashmap::DashMap;
 use std::sync::Arc;
+use tracing::info;
 use uuid::Uuid;
 
 type EventHandlerMap<K, E> = Arc<DashMap<K, Vec<Arc<dyn EventHandler<E>>>>>;
+
+pub fn log_event<E: Event>(event: &E) {
+    info!(
+        event_type = %colorize_event_type(event.event_name()),
+        request_id = %colorize_request_id(&event.request_id()),
+        "Processing relayer event"
+    );
+}
 
 pub struct TokioEventDispatcher<E: Event> {
     once_subscribers: EventHandlerMap<(u8, Uuid), E>,
@@ -27,6 +37,7 @@ impl<E: Event> TokioEventDispatcher<E> {
 #[async_trait]
 impl<E: Event> EventDispatcher<E> for TokioEventDispatcher<E> {
     async fn dispatch_event(&self, event: E) -> Result<(), Error> {
+        log_event(&event);
         let event = event.clone();
         if let Some((_, handlers)) = self
             .once_subscribers

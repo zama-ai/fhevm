@@ -1,6 +1,9 @@
 use crate::{
     blockchain::ethereum::{
-        bindings::{DecryptionOracle, DecyptionManager::PublicDecryptionResponse},
+        bindings::{
+            DecryptionOracle,
+            DecyptionManager::{self, PublicDecryptionResponse},
+        },
         ComputeCalldata,
     },
     core::{
@@ -9,7 +12,6 @@ use crate::{
             GenericEventData, PublicDecryptEventData, PublicDecryptRequest, PublicDecryptResponse,
             RelayerEvent, RelayerEventData,
         },
-        utils::{colorize_event_type, colorize_request_id},
     },
     orchestrator::{
         traits::{EventDispatcher, EventHandler},
@@ -22,7 +24,7 @@ use alloy::rpc::types::Log;
 use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::task;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 use uuid::Uuid;
 
 use alloy_sol_types::SolEvent;
@@ -250,17 +252,24 @@ impl EthereumHostL1Handler {
 #[async_trait]
 impl EventHandler<RelayerEvent> for EthereumHostL1Handler {
     async fn handle_event(&self, event: RelayerEvent) {
-        info!(
-            event_type = %colorize_event_type(event.data.as_ref()),
-            request_id = %colorize_request_id(&event.request_id),
-            "Processing relayer event"
-        );
         match event.clone().data {
             RelayerEventData::Generic(GenericEventData::EventLogFromHostBc {
                 log: eth_event_log,
             }) => {
-                self.handle_public_decrypt_event_log(event, eth_event_log)
-                    .await;
+                if let Some(topic0) = eth_event_log.topic0() {
+                    if FixedBytes::<32>::from_slice(topic0.as_slice())
+                        != DecyptionManager::PublicDecryptionResponse::SIGNATURE_HASH
+                    {
+                        debug!(
+                            "Ignore this event: expected event: {:?}, received {} ",
+                            eth_event_log.topic0(),
+                            DecyptionManager::PublicDecryptionResponse::SIGNATURE_HASH
+                        );
+                    } else {
+                        self.handle_public_decrypt_event_log(event, eth_event_log)
+                            .await;
+                    }
+                };
             }
             RelayerEventData::PublicDecrypt(PublicDecryptEventData::RespRcvdFromGw {
                 decrypt_response,

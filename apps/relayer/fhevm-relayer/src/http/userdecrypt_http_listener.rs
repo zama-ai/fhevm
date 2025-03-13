@@ -2,7 +2,7 @@ use crate::core::event::{
     ApiCategory, ApiVersion, RelayerEvent, RelayerEventData, UserDecryptEventData,
     UserDecryptEventId, UserDecryptRequest,
 };
-use crate::core::utils::{colorize_event_type, colorize_request_id, OnceHandler};
+use crate::core::utils::OnceHandler;
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
 use alloy::primitives::Bytes;
@@ -130,13 +130,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
             }
         };
 
-        info!(
-            event_type = %colorize_event_type(event.data.as_ref()),
-            request_id = %colorize_request_id(&event.request_id),
-            "Processing http event"
-        );
-
-        info!("response event type {:?}", event.data);
+        info!("Response event type {:?}", event.data);
         match event.data {
             RelayerEventData::UserDecrypt(UserDecryptEventData::RespRcvdFromGw {
                 decrypt_response,

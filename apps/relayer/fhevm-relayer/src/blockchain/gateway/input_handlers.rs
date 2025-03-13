@@ -7,7 +7,6 @@ use crate::{
             GenericEventData, InputProofEventData, InputProofResponse, RelayerEvent,
             RelayerEventData,
         },
-        utils::{colorize_event_type, colorize_request_id},
     },
     orchestrator::{
         traits::{EventDispatcher, EventHandler},
@@ -18,7 +17,7 @@ use crate::{
 use std::str::FromStr;
 
 use alloy::{
-    primitives::{keccak256, Address, Bytes, U256},
+    primitives::{keccak256, Address, Bytes, FixedBytes, U256},
     rpc::types::TransactionReceipt,
 };
 
@@ -371,17 +370,13 @@ impl ArbitrumGatewayL2InputHandler {
             // ))
         }
     }
+
+    async fn noop_handle_input_reponse_event_log(&self, _event: &RelayerEvent) {}
 }
 
 #[async_trait]
 impl EventHandler<RelayerEvent> for ArbitrumGatewayL2InputHandler {
     async fn handle_event(&self, event: RelayerEvent) {
-        info!(
-            event_type = %colorize_event_type(event.data.as_ref()),
-            request_id = %colorize_request_id(&event.request_id),
-            "Processing input event"
-        );
-
         match &event.data {
             // Borrow event.data instead of moving it
             RelayerEventData::InputProof(input_event) => {
@@ -412,12 +407,26 @@ impl EventHandler<RelayerEvent> for ArbitrumGatewayL2InputHandler {
                     }
                 }
             }
-            RelayerEventData::Generic(GenericEventData::EventLogFromGw { .. }) => {
-                info!("Received input event log from Gateway L2");
-                self.handle_input_reponse_event_log(event).await;
+
+            RelayerEventData::Generic(GenericEventData::EventLogFromGw { ref log }) => {
+                if let Some(topic0) = log.topic0() {
+                    if FixedBytes::<32>::from_slice(topic0.as_slice())
+                        != ZKPoKManager::VerifyProofResponse::SIGNATURE_HASH
+                    {
+                        debug!(
+                            "Ignore this event: expected event: {:?}, received {} ",
+                            log.topic0(),
+                            ZKPoKManager::VerifyProofResponse::SIGNATURE_HASH
+                        );
+                        self.noop_handle_input_reponse_event_log(&event).await;
+                    } else {
+                        self.handle_input_reponse_event_log(event).await;
+                    }
+                };
             }
             _ => {
                 // Ignore other event types
+                self.noop_handle_input_reponse_event_log(&event).await;
             }
         }
     }

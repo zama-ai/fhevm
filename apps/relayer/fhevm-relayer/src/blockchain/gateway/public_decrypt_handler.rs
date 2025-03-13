@@ -7,7 +7,6 @@ use crate::{
             GenericEventData, PublicDecryptEventData, PublicDecryptResponse, RelayerEvent,
             RelayerEventData,
         },
-        utils::{colorize_event_type, colorize_request_id},
     },
     orchestrator::{
         traits::{EventDispatcher, EventHandler},
@@ -18,7 +17,7 @@ use crate::{
 use std::str::FromStr;
 
 use alloy::{
-    primitives::{keccak256, Address, Uint, U256},
+    primitives::{keccak256, Address, FixedBytes, Uint, U256},
     rpc::types::TransactionReceipt,
 };
 
@@ -26,7 +25,7 @@ use alloy_sol_types::SolEvent;
 use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::task;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 use uuid::Uuid;
 
 struct PublicDecryptionRequestProcessor {
@@ -198,7 +197,7 @@ impl PublicDecryptGatewayHandler {
     /// Dispatches [`RelayerEventData::DecryptionResponseRcvdFromGwL2`]
     async fn handle_decrypt_reponse_event_log(&self, event: RelayerEvent) {
         info!(
-            "Decryption response received. Trigger a tx to L1  {:?}",
+            "Public Decryption response received. Trigger a tx to L1  {:?}",
             event.request_id,
         );
 
@@ -311,7 +310,7 @@ impl PublicDecryptGatewayHandler {
         ))
     }
 
-    async fn noop_handle_decrypt_reponse_event_log(&self, _event: RelayerEvent) {}
+    async fn noop_handle_decrypt_reponse_event_log(&self, _event: &RelayerEvent) {}
 
     /// Processes a decryption request by sending it to the L2 contract.
     ///
@@ -354,11 +353,6 @@ impl PublicDecryptGatewayHandler {
 #[async_trait]
 impl EventHandler<RelayerEvent> for PublicDecryptGatewayHandler {
     async fn handle_event(&self, event: RelayerEvent) {
-        info!(
-            event_type = %colorize_event_type(event.data.as_ref()),
-            request_id = %colorize_request_id(&event.request_id),
-            "Processing relayer event"
-        );
         match event.data {
             RelayerEventData::PublicDecrypt(PublicDecryptEventData::ReqRcvdFromHostBc {
                 ref decrypt_request,
@@ -368,8 +362,21 @@ impl EventHandler<RelayerEvent> for PublicDecryptGatewayHandler {
                 self.send_public_decryption_request_to_rollup(event, handles)
                     .await;
             }
-            RelayerEventData::Generic(GenericEventData::EventLogFromGw { .. }) => {
-                self.handle_decrypt_reponse_event_log(event).await;
+            RelayerEventData::Generic(GenericEventData::EventLogFromGw { ref log }) => {
+                if let Some(topic0) = log.topic0() {
+                    if FixedBytes::<32>::from_slice(topic0.as_slice())
+                        != DecyptionManager::PublicDecryptionResponse::SIGNATURE_HASH
+                    {
+                        debug!(
+                            "Ignore this event: expected event: {:?}, received {} ",
+                            log.topic0(),
+                            DecyptionManager::PublicDecryptionResponse::SIGNATURE_HASH
+                        );
+                        self.noop_handle_decrypt_reponse_event_log(&event).await;
+                    } else {
+                        self.handle_decrypt_reponse_event_log(event).await;
+                    }
+                };
             }
             RelayerEventData::PublicDecrypt(PublicDecryptEventData::ReqSentToGw {
                 public_decryption_id,
@@ -377,7 +384,7 @@ impl EventHandler<RelayerEvent> for PublicDecryptGatewayHandler {
                 self.handle_decrypt_request_sent(public_decryption_id);
             }
             _ => {
-                self.noop_handle_decrypt_reponse_event_log(event).await;
+                self.noop_handle_decrypt_reponse_event_log(&event).await;
             }
         }
     }
