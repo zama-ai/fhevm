@@ -3,7 +3,7 @@ import { EventProducer } from '#workflows/interfaces/event.producer.js'
 import { SendMessageCommand, SQSClient } from '@aws-sdk/client-sqs'
 import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
-import { back, MSPrifix, web3 } from 'messages'
+import { back, MSPrefix, web3 } from 'messages'
 import type { Result } from 'utils'
 import { AppError, fail, ok, Task, unknownError, validationError } from 'utils'
 
@@ -11,7 +11,7 @@ import { AppError, fail, ok, Task, unknownError, validationError } from 'utils'
 export class SQSProducer implements EventProducer {
   private readonly logger = new Logger(SQSProducer.name)
   private readonly client: SQSClient
-  private readonly queueMap = new Map<MSPrifix, string>()
+  private readonly queueMap = new Map<MSPrefix, string>()
 
   constructor(config: ConfigService) {
     this.client = new SQSClient({
@@ -27,7 +27,7 @@ export class SQSProducer implements EventProducer {
   private getQueueFromEvent = (
     event: back.BackEvent | web3.Web3Event,
   ): Result<string, AppError> => {
-    const prefix = event.type.split(':')[0] as MSPrifix
+    const prefix = event.type.split(':')[0] as MSPrefix
     return this.queueMap.has(prefix)
       ? ok(this.queueMap.get(prefix)!)
       : fail(validationError('invalid event prefix'))

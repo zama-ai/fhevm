@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { v7 as uuid } from 'uuid'
 
 export const MS_PREFIXES = ['back', 'orch', 'relayer', 'web3'] as const
-export type MSPrifix = (typeof MS_PREFIXES)[number]
+export type MSPrefix = (typeof MS_PREFIXES)[number]
 
 export const meta = z.record(z.string(), z.union([z.string(), z.number()])).and(
   z.object({
@@ -36,7 +36,7 @@ export function metaFactory<
     payload: object
     meta: Meta
   },
-  Prefix extends MSPrifix = MSPrifix,
+  Prefix extends MSPrefix = MSPrefix,
 >(prefix: Prefix) {
   return function <
     Key extends string,
