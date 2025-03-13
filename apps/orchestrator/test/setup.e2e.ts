@@ -41,7 +41,7 @@ async function startPostgres(maxWorkers: number) {
   const password = pgContainer.getPassword()
 
   console.log(
-    `🚛 testcontainer Postgres running on ${host}:${port}/${database}`,
+    `\x1b[32m🚛 testcontainer Postgres running on ${host}:${port}/${database}\x1b[0m`,
   )
 
   const databaseUrl = `postgresql://${username}:${password}@${host}:${port}/${database}`
@@ -54,7 +54,7 @@ async function startPostgres(maxWorkers: number) {
 
 async function stopPostgres() {
   if (pgContainer) {
-    console.log(`🛑 testcontainer stopping Postgres`)
+    console.log(`\x1b[33m🛑 testcontainer stopping Postgres\x1b[0m`)
     await pgContainer.stop()
   }
 }
@@ -65,14 +65,14 @@ async function startAws() {
   ).start()
 
   const connectionUri = awsContainer.getConnectionUri()
-  console.log(`🚛 testcontainer AWS running on ${connectionUri}`)
+  console.log(`\x1b[32m🚛 testcontainer AWS running on ${connectionUri}\x1b[0m`)
 
   return connectionUri
 }
 
 async function stopAws() {
   if (awsContainer) {
-    console.log(`🛑 testcontainer stopping Postgres`)
+    console.log(`\x1b[33m🛑 testcontainer stopping Postgres\x1b[0m`)
     await awsContainer.stop()
   }
 }
@@ -88,7 +88,9 @@ async function startRedis() {
   const port = redisContainer.getPort()
 
   // TODO REMOVE THIS
-  console.log(`🚛 testcontainer Redis running on ${host}:${port}`)
+  console.log(
+    `\x1b[32m🚛 testcontainer Redis running on ${host}:${port}\x1b[0m`,
+  )
 
   return { host, port }
 }
@@ -96,7 +98,7 @@ async function startRedis() {
 async function stopRedis() {
   if (redisContainer) {
     await redisContainer.stop()
-    console.log(`🚛 testcontainer Redis stopped`)
+    console.log(`\x1b[33m🛑 testcontainer Redis stopped\x1b[0m`)
   }
 }
 

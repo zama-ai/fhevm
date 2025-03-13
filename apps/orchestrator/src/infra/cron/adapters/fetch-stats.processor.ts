@@ -25,7 +25,9 @@ export class FetchStatsProcessor extends WorkerHost<Worker<FetchStats>> {
   }
 
   process(job: Job<FetchStats>): Promise<any> {
-    console.log(`processing ${job.name}: chainId=${job.data.chainId}`)
+    console.log(
+      `\x1b[33mprocessing ${job.name}: chainId=${job.data.chainId}\x1b[0m`,
+    )
     this.logger.debug(`processing ${job.name}: chainId=${job.data.chainId}`)
 
     return this.pubsub

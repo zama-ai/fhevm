@@ -1,6 +1,7 @@
 import { AppModule, configModule } from '#app.module.js'
-import commonConfig from '#config/common.config.js'
-import dbConfig from '#config/db.config.js'
+// import commonConfig from '#config/common.config.js'
+// import dbConfig from '#config/db.config.js'
+import config from '#config/index.js'
 import { PrismaClient } from '#prisma/client/index.js'
 import { SQSClient } from '@aws-sdk/client-sqs'
 import { INestApplication } from '@nestjs/common'
@@ -24,7 +25,9 @@ export class SetupManager {
   constructor(private readonly logEnabled = false) {}
   private log(message: string) {
     if (this.logEnabled) {
-      console.log(`[SetupManager|${this.workerId}] ${message}`)
+      console.log(
+        `\x1b[34m[SetupManager|${this.workerId}]\x1b[33m ${message}\x1b[0m`,
+      )
     }
   }
 
@@ -156,7 +159,8 @@ export class SetupManager {
         ConfigModule.forRoot({
           isGlobal: true,
           load: [
-            commonConfig,
+            ...config,
+            // commonConfig,
             registerAs('aws', () => ({
               endpoint: this.awsEndpoint,
               back: {
@@ -172,7 +176,7 @@ export class SetupManager {
                 queueUrl: this.web3QueueUrl,
               },
             })),
-            dbConfig,
+            // dbConfig,
             registerAs('redis', () => this.redisConnection),
           ],
         }),

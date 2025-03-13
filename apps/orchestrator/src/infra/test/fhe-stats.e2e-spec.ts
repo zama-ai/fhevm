@@ -11,10 +11,9 @@ import {
   vi,
 } from 'vitest'
 import { faker } from '@faker-js/faker'
-import { LOCAL_FHEVM_CHAIN_ID } from 'utils'
 
 describe('fhe stats', () => {
-  const manager = new IntegrationManager(true)
+  const manager = new IntegrationManager()
 
   beforeAll(async () => {
     await manager.beforeAll()
@@ -44,7 +43,7 @@ describe('fhe stats', () => {
           {
             requestId,
             dAppId: faker.string.uuid(),
-            chainId: LOCAL_FHEVM_CHAIN_ID,
+            chainId: faker.string.numeric(5),
             address: faker.string.hexadecimal({ length: 40 }),
           },
           { correlationId },
