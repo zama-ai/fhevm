@@ -5,7 +5,7 @@ import {
   createInstance as createFhevmInstance,
   generateKeypair,
   getCiphertextCallParams,
-} from 'fhevmjs';
+} from '@httpz/sdk';
 import { readFileSync } from 'fs';
 import * as fs from 'fs';
 import { ethers, ethers as hethers, network } from 'hardhat';

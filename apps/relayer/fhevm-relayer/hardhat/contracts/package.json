@@ -23,6 +23,7 @@
   "author": "",
   "license": "BSD-3-Clause",
   "devDependencies": {
+    "@httpz/sdk": "^0.7.0-8",
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "@openzeppelin/contracts-upgradeable": "^5.0.2",
     "@openzeppelin/foundry-upgrades": "^0.3.6",
@@ -34,7 +35,6 @@
     "eslint": "^8.28.0",
     "eslint-config-prettier": "^8.5.0",
     "extra-bigint": "^1.2.0",
-    "fhevmjs": "^0.7.0-7",
     "hardhat": "^2.22.15",
     "hardhat-deploy": "^0.14.0",
     "hardhat-ignore-warnings": "^0.2.11",
