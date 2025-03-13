@@ -14,7 +14,7 @@ interface IACLManager {
     /// @param accountAddress The address of the account allowed to use the ciphertext handle
     event AllowAccount(uint256 indexed ctHandle, address accountAddress);
 
-    /// @notice Emitted when a public decryption is allowed for a given ciphertext handle
+    /// @notice Emitted when a public decryption is allowed for a ciphertext handle
     /// @param ctHandle The ciphertext handle that is allowed for public decryption
     event AllowPublicDecrypt(uint256 indexed ctHandle);
 
@@ -25,10 +25,10 @@ interface IACLManager {
     /// @param contractAddresses The addresses of the delegatedcontracts.
     event DelegateAccount(uint256 indexed chainId, address delegator, address delegatee, address[] contractAddresses);
 
-    /// @notice Error indicating that the given coprocessor has already allowed access to the ciphertext.
+    /// @notice Error indicating that the coprocessor has already allowed access to the ciphertext.
     error CoprocessorAlreadyAllowed(address coprocessor, uint256 ctHandle);
 
-    /// @notice Error indicating that the given coprocessor has already delegated access to another account.
+    /// @notice Error indicating that the coprocessor has already delegated access to another account.
     /// @param coprocessor The address of the coprocessor that has already confirm delegation.
     /// @param chainId The chainId of the blockchain the delegatee contract addresses belongs to.
     /// @param delegator The address of the permission owner.
@@ -42,17 +42,17 @@ interface IACLManager {
         address[] contractAddresses
     );
 
-    /// @dev Error indicating that the given user address has been found within the list of contract
+    /// @dev Error indicating that the account address has been found within the list of contract
     /// @dev addresses during account access check
-    error UserAddressInContractAddresses(address userAddress);
+    error AccountAddressInContractAddresses(address accountAddress);
 
-    /// @notice Error indicating that the given user is not allowed to use the ciphertext handle.
-    error UserNotAllowedToUseCiphertext(uint256 ctHandle, address userAddress);
+    /// @notice Error indicating that the account address is not allowed to use the ciphertext handle.
+    error AccountNotAllowedToUseCiphertext(uint256 ctHandle, address accountAddress);
 
-    /// @notice Error indicating that the given contract is not allowed to use the ciphertext handle.
+    /// @notice Error indicating that the contract is not allowed to use the ciphertext handle.
     error ContractNotAllowedToUseCiphertext(uint256 ctHandle, address contractAddress);
 
-    /// @notice Error indicating that the given ciphertext handle is not allowed for public decryption.
+    /// @notice Error indicating that the ciphertext handle is not allowed for public decryption.
     error PublicDecryptNotAllowed(uint256 ctHandle);
 
     /// @notice Error indicating that the number of delegation contracts requested exceeds the maximum allowed.
@@ -71,16 +71,16 @@ interface IACLManager {
     /// @param accountAddress The account's address.
     function allowAccount(uint256 chainId, uint256 ctHandle, address accountAddress) external;
 
-    /// @notice Allows access to the given ciphertext handle for public decryption.
+    /// @notice Allows access to the ciphertext handle for public decryption.
     /// @param chainId The network's chainId where the ciphertext handle belongs to.
     /// @param ctHandle The ciphertext handle.
     function allowPublicDecrypt(uint256 chainId, uint256 ctHandle) external;
 
-    /// @notice Delegates the decryption access to the given delegatee for the given chainId and allowed contracts.
-    /// @param chainId The network's chainId where the allowed contracts addresses belongs to.
+    /// @notice Delegates the access to the delegatee and contracts.
+    /// @param chainId The network's chainId where the contracts addresses belongs to.
     /// @param delegator The address of the current permission owner.
     /// @param delegatee The address of the access permission receiver.
-    /// @param contractAddresses The addresses of the contracts being delegated to decrypt.
+    /// @param contractAddresses The contract addresses to delegate access to.
     function delegateAccount(
         uint256 chainId,
         address delegator,
@@ -88,23 +88,23 @@ interface IACLManager {
         address[] calldata contractAddresses
     ) external;
 
-    /// @notice Checks if the user and the given contracts are allowed to decrypt all the given ciphertext handles.
-    /// @param userAddress The address of the user.
+    /// @notice Checks that the account and the contracts are allowed to use all the ciphertext handles.
+    /// @param accountAddress The address of the account.
     /// @param ctHandleContractPairs The ciphertext handles and their associated contract addresses.
     function checkAccountAllowed(
-        address userAddress,
+        address accountAddress,
         CtHandleContractPair[] calldata ctHandleContractPairs
     ) external view;
 
-    /// @notice Checks if the public decryption is allowed for all the given ciphertext handles.
+    /// @notice Checks that the public decryption is allowed for all the ciphertext handles.
     /// @param ctHandles The ciphertext handles.
     function checkPublicDecryptAllowed(uint256[] calldata ctHandles) external view;
 
-    /// @notice Indicates if the decryption access to the given delegatee is already delegated.
+    /// @notice Checks delegator has delegated access to the delegatee and contracts.
     /// @param chainId The chainId of the blockchain the allowed contracts addresses belongs to.
     /// @param delegator The address of the current permission owner.
     /// @param delegatee The address of the access permission receiver.
-    /// @param contractAddresses The addresses of the contracts delegated to decrypt.
+    /// @param contractAddresses The delegated contract addresses.
     function checkAccountDelegated(
         uint256 chainId,
         address delegator,

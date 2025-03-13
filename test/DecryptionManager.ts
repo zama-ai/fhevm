@@ -490,8 +490,8 @@ describe("DecryptionManager", function () {
     // Create a dummy reencrypted share
     const reencryptedShare = hre.ethers.randomBytes(32);
 
-    // Deploy the DecryptionManager and allow handles for user decryption
-    async function deployAllowAccountionFixture() {
+    // Deploy the DecryptionManager and allow access the the handles for the user and the contract
+    async function deployAllowAccountFixture() {
       const {
         keyManager,
         aclManager,
@@ -546,7 +546,7 @@ describe("DecryptionManager", function () {
         snsCiphertextMaterials,
         keyId1,
         fheParamsName,
-      } = await loadFixture(deployAllowAccountionFixture);
+      } = await loadFixture(deployAllowAccountFixture);
 
       const publicKey = hre.ethers.randomBytes(32);
       const requestValidity: IDecryptionManager.RequestValidityStruct = {
@@ -800,7 +800,7 @@ describe("DecryptionManager", function () {
             userSignature,
           ),
       )
-        .to.be.revertedWithCustomError(aclManager, "UserNotAllowedToUseCiphertext")
+        .to.be.revertedWithCustomError(aclManager, "AccountNotAllowedToUseCiphertext")
         .withArgs(ctHandles[0], user.address);
     });
 
@@ -841,7 +841,7 @@ describe("DecryptionManager", function () {
     });
 
     it("Should revert because contract in ctHandleContractPairs not included in contractAddresses list", async function () {
-      const { decryptionManager, user, contractAddress } = await loadFixture(deployAllowAccountionFixture);
+      const { decryptionManager, user, contractAddress } = await loadFixture(deployAllowAccountFixture);
 
       // Create dummy input data for the user decryption request
       const contractAddresses = [hre.ethers.Wallet.createRandom().address];
@@ -1450,7 +1450,7 @@ describe("DecryptionManager", function () {
             userSignature,
           ),
       )
-        .to.be.revertedWithCustomError(aclManager, "UserNotAllowedToUseCiphertext")
+        .to.be.revertedWithCustomError(aclManager, "AccountNotAllowedToUseCiphertext")
         .withArgs(ctHandles[0], delegatedAddress);
     });
 

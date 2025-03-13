@@ -233,7 +233,7 @@ describe("ACLManager", function () {
       await expect(
         aclManager.connect(coprocessorSigners[0]).checkAccountAllowed(allowedUserAddress, fakeCtHandleContractPairs),
       )
-        .to.be.revertedWithCustomError(aclManager, "UserAddressInContractAddresses")
+        .to.be.revertedWithCustomError(aclManager, "AccountAddressInContractAddresses")
         .withArgs(allowedUserAddress);
     });
 
@@ -244,7 +244,7 @@ describe("ACLManager", function () {
       await expect(
         aclManager.connect(coprocessorSigners[0]).checkAccountAllowed(fakeUserAddress, ctHandleContractPairs),
       )
-        .to.be.revertedWithCustomError(aclManager, "UserNotAllowedToUseCiphertext")
+        .to.be.revertedWithCustomError(aclManager, "AccountNotAllowedToUseCiphertext")
         .withArgs(ctHandle, fakeUserAddress);
     });
 
