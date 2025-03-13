@@ -44,7 +44,8 @@ use fhevm_relayer::{
             ethereum_listener, gateway_event_log_converter, host_bc_event_log_converter,
         },
         ethereum::{ChainName, ContractAndTopicsFilter, EthereumJsonRPCWsClient},
-        ArbitrumGatewayL2Handler, ArbitrumGatewayL2InputHandler, EthereumHostL1Handler,
+        ArbitrumGatewayL2InputHandler, EthereumHostL1Handler, PublicDecryptGatewayHandler,
+        UserDecryptGatewayHandler,
     },
     config::settings::{LogConfig, Settings},
     core::event::{
@@ -192,8 +193,16 @@ async fn main() -> eyre::Result<()> {
         Arc::clone(&host_l1_event_log_handler),
     );
 
-    let gateway_l2_event_handler: Arc<dyn EventHandler<RelayerEvent>> =
-        Arc::new(ArbitrumGatewayL2Handler::new(
+    let public_decrypt_gateway_handler: Arc<dyn EventHandler<RelayerEvent>> =
+        Arc::new(PublicDecryptGatewayHandler::new(
+            Arc::clone(&dispatcher),
+            tx_service_rollup.clone(),
+            tx_config.clone(),
+            settings.contracts.clone(),
+        ));
+
+    let user_decrypt_gateway_handler: Arc<dyn EventHandler<RelayerEvent>> =
+        Arc::new(UserDecryptGatewayHandler::new(
             Arc::clone(&dispatcher),
             tx_service_rollup,
             tx_config,
@@ -202,29 +211,34 @@ async fn main() -> eyre::Result<()> {
 
     orchestrator.register_handler(
         PublicDecryptEventId::ReqRcvdFromUser.into(),
-        Arc::clone(&gateway_l2_event_handler),
+        Arc::clone(&public_decrypt_gateway_handler),
     );
 
     orchestrator.register_handler(
         PublicDecryptEventId::ReqSentToGw.into(),
-        Arc::clone(&gateway_l2_event_handler),
+        Arc::clone(&public_decrypt_gateway_handler),
     );
 
     // Register user decryption events
 
     orchestrator.register_handler(
         UserDecryptEventId::ReqRcvdFromUser.into(),
-        Arc::clone(&gateway_l2_event_handler),
+        Arc::clone(&user_decrypt_gateway_handler),
     );
 
     orchestrator.register_handler(
         UserDecryptEventId::ReqSentToGw.into(),
-        Arc::clone(&gateway_l2_event_handler),
+        Arc::clone(&user_decrypt_gateway_handler),
     );
 
     orchestrator.register_handler(
         GenericEventId::EventLogRcvdFromGw.into(),
-        Arc::clone(&gateway_l2_event_handler),
+        Arc::clone(&public_decrypt_gateway_handler),
+    );
+
+    orchestrator.register_handler(
+        GenericEventId::EventLogRcvdFromGw.into(),
+        Arc::clone(&user_decrypt_gateway_handler),
     );
 
     // === Initialize Ethereum host L1 adapter

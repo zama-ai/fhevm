@@ -32,11 +32,11 @@ use tokio::task;
 use tracing::{debug, error, info};
 use uuid::Uuid;
 
-struct DecryptionRequestProcessor {
-    handler: Arc<ArbitrumGatewayL2Handler>,
+struct PublicDecryptionRequestProcessor {
+    handler: Arc<PublicDecryptGatewayHandler>,
 }
 
-impl ReceiptProcessor for DecryptionRequestProcessor {
+impl ReceiptProcessor for PublicDecryptionRequestProcessor {
     type Output = U256;
 
     fn process(&self, receipt: &TransactionReceipt) -> Result<Self::Output, EventProcessingError> {
@@ -45,7 +45,7 @@ impl ReceiptProcessor for DecryptionRequestProcessor {
 }
 
 struct UserDecryptionRequestProcessor {
-    handler: Arc<ArbitrumGatewayL2Handler>,
+    handler: Arc<PublicDecryptGatewayHandler>,
 }
 
 impl ReceiptProcessor for UserDecryptionRequestProcessor {
@@ -58,7 +58,7 @@ impl ReceiptProcessor for UserDecryptionRequestProcessor {
 }
 
 #[derive(Clone)]
-pub struct ArbitrumGatewayL2Handler {
+pub struct PublicDecryptGatewayHandler {
     dispatcher: Arc<TokioEventDispatcher<RelayerEvent>>,
     public_decryption_id_to_request_id: Arc<dashmap::DashMap<U256, Uuid>>,
     user_decryption_id_to_request_id: Arc<dashmap::DashMap<U256, Uuid>>,
@@ -66,7 +66,7 @@ pub struct ArbitrumGatewayL2Handler {
     contracts: ContractConfig,
 }
 
-impl ArbitrumGatewayL2Handler {
+impl PublicDecryptGatewayHandler {
     pub fn new(
         dispatcher: Arc<TokioEventDispatcher<RelayerEvent>>,
         tx_service: Arc<TransactionService>,
@@ -563,7 +563,7 @@ impl ArbitrumGatewayL2Handler {
         &self,
         handles: Vec<Uint<256, 4>>,
     ) -> Result<U256, EventProcessingError> {
-        let processor = DecryptionRequestProcessor {
+        let processor = PublicDecryptionRequestProcessor {
             handler: Arc::new(self.clone()),
         };
 
@@ -627,7 +627,7 @@ impl ArbitrumGatewayL2Handler {
 }
 
 #[async_trait]
-impl EventHandler<RelayerEvent> for ArbitrumGatewayL2Handler {
+impl EventHandler<RelayerEvent> for PublicDecryptGatewayHandler {
     async fn handle_event(&self, event: RelayerEvent) {
         info!(
             event_type = %colorize_event_type(event.data.as_ref()),
