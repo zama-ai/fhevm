@@ -2,9 +2,9 @@
 pragma solidity ^0.8.24;
 
 import "../../lib/TFHE.sol";
-import "../FHEVMConfig.sol";
+import {TestZamaFHEVMConfig} from "../FHEVMConfig.sol";
 
-contract TFHETestSuite6 {
+contract TFHETestSuite6 is TestZamaFHEVMConfig {
     ebool public resb;
     euint4 public res4;
     euint8 public res8;
@@ -13,10 +13,6 @@ contract TFHETestSuite6 {
     euint64 public res64;
     euint128 public res128;
     euint256 public res256;
-
-    constructor() {
-        TFHE.setFHEVM(FHEVMConfig.defaultConfig());
-    }
 
     function le_euint32_euint64(einput a, einput b, bytes calldata inputProof) public {
         euint32 aProc = TFHE.asEuint32(a, inputProof);

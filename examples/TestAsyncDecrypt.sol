@@ -3,12 +3,12 @@
 pragma solidity ^0.8.24;
 
 import "../lib/TFHE.sol";
-import "./FHEVMConfig.sol";
+import {TestZamaFHEVMConfig} from "./FHEVMConfig.sol";
 import "../decryption/DecryptionOracleCaller.sol";
 import "./DecryptionOracleConfig.sol";
 
 /// @notice Contract for testing asynchronous decryption using the Gateway
-contract TestAsyncDecrypt is DecryptionOracleCaller {
+contract TestAsyncDecrypt is TestZamaFHEVMConfig, DecryptionOracleCaller {
     /// @dev Encrypted state variables
     ebool xBool;
     euint4 xUint4;
@@ -45,9 +45,7 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
 
     /// @notice Constructor to initialize the contract and set up encrypted values
     constructor() {
-        TFHE.setFHEVM(FHEVMConfig.defaultConfig());
         setDecryptionOracle(DECRYPTION_ORACLE_ADDRESS);
-
         /// @dev Initialize encrypted variables with sample values
         xBool = TFHE.asEbool(true);
         TFHE.allowThis(xBool);

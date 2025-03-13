@@ -3,10 +3,10 @@
 pragma solidity ^0.8.24;
 
 import "../lib/TFHE.sol";
-import "./FHEVMConfig.sol";
+import {TestZamaFHEVMConfig} from "./FHEVMConfig.sol";
 
 /// @notice Contract for demonstrating reencryption of various FHE data types
-contract Reencrypt {
+contract Reencrypt is TestZamaFHEVMConfig {
     /// @dev Encrypted boolean
     ebool public xBool;
     /// @dev Encrypted 4-bit unsigned integer
@@ -28,9 +28,6 @@ contract Reencrypt {
 
     /// @notice Constructor to initialize encrypted values and set permissions
     constructor() {
-        // Set default FHE configuration
-        TFHE.setFHEVM(FHEVMConfig.defaultConfig());
-
         // Initialize and set permissions for xBool
         xBool = TFHE.asEbool(true);
         TFHE.allowThis(xBool);
