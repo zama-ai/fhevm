@@ -1,4 +1,4 @@
-use fhevm_engine_common::utils::safe_deserialize_key;
+use fhevm_engine_common::utils::{safe_deserialize_key, safe_deserialize_sns_key};
 use sqlx::postgres::types::Oid;
 use sqlx::postgres::PgRow;
 use sqlx::{PgPool, Row};
@@ -40,7 +40,7 @@ async fn read_sns_pk_from_lo(
 ) -> anyhow::Result<SwitchAndSquashKey> {
     let bytes = read_keys_from_lo(pool, tenant_api_key, "sns_pk").await?;
     info!(target: "sns", "Retrieved sns_pk bytes length: {:?}", bytes.len());
-    let sns_pk: SwitchAndSquashKey = bincode::deserialize(&bytes)?;
+    let sns_pk: SwitchAndSquashKey = safe_deserialize_sns_key(&bytes)?;
     anyhow::Ok(sns_pk)
 }
 

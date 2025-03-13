@@ -5,6 +5,7 @@ use crate::types::FhevmError;
 
 pub const SAFE_SER_DESER_LIMIT: u64 = 1024 * 1024 * 16;
 pub const SAFE_SER_DESER_KEY_LIMIT: u64 = 1024 * 1024 * 512;
+pub const SAFE_SER_DESER_SNS_KEY_LIMIT: u64 = 1024 * 1024 * 1024;
 
 pub fn safe_serialize<T: Serialize + Named + Versionize>(object: &T) -> Vec<u8> {
     let mut out = vec![];
@@ -45,5 +46,12 @@ pub fn safe_deserialize_key<T: DeserializeOwned + Named + Unversionize>(
     input: &[u8],
 ) -> Result<T, FhevmError> {
     tfhe::safe_serialization::safe_deserialize(input, SAFE_SER_DESER_KEY_LIMIT)
+        .map_err(|e| FhevmError::DeserializationError(e.into()))
+}
+
+pub fn safe_deserialize_sns_key<T: DeserializeOwned + Named + Unversionize>(
+    input: &[u8],
+) -> Result<T, FhevmError> {
+    tfhe::safe_serialization::safe_deserialize(input, SAFE_SER_DESER_SNS_KEY_LIMIT)
         .map_err(|e| FhevmError::DeserializationError(e.into()))
 }
