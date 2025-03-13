@@ -1,7 +1,6 @@
 import { Test } from '@nestjs/testing'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 import { SqsProducer } from './sqs.producer.js'
-import { MS_NAME } from '#constants.js'
 import { LOCAL_FHEVM_CHAIN_ID } from 'utils'
 import { configModule } from '#app.module.js'
 import { web3 } from 'messages'
@@ -54,17 +53,6 @@ describe('SqsProducer', () => {
     test('then it publishes the right content', async () => {
       expect(client).toHaveReceivedCommandWith(SendMessageCommand, {
         MessageBody: JSON.stringify(event),
-      })
-    })
-
-    test('then it publishes the sender attribute', async () => {
-      expect(client).toHaveReceivedCommandWith(SendMessageCommand, {
-        MessageAttributes: {
-          Sender: {
-            DataType: 'String',
-            StringValue: MS_NAME,
-          },
-        },
       })
     })
   })

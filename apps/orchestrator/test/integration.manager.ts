@@ -5,7 +5,7 @@ import {
   ReceiveMessageCommand,
   SendMessageCommand,
 } from '@aws-sdk/client-sqs'
-import { back, web3 } from 'messages'
+import { back, MSPrefix, web3 } from 'messages'
 import { expect } from 'vitest'
 import type { Type } from '@nestjs/common'
 
@@ -34,15 +34,12 @@ export class IntegrationManager {
     return this.setup.get<TInput, TResult>(typeOrToken)
   }
 
-  async sendMessage(message: string | object, sender = 'test') {
+  async sendMessage(message: string | object) {
     const result = await this.setup.sqs.send(
       new SendMessageCommand({
         QueueUrl: this.setup.orchQueueUrl,
         MessageBody:
           typeof message === 'string' ? message : JSON.stringify(message),
-        MessageAttributes: {
-          Sender: { DataType: 'String', StringValue: sender },
-        },
       }),
     )
     expect(
@@ -51,17 +48,30 @@ export class IntegrationManager {
     ).toBe(200)
   }
 
-  async getQueueSize(queueUrl: string) {
+  getQueueUrlByName(name: MSPrefix): string {
+    switch (name) {
+      case 'back':
+        return this.setup.backQueueUrl
+      case 'orch':
+        return this.setup.orchQueueUrl
+      case 'relayer':
+        return this.setup.relayerQueueUrl
+      case 'web3':
+        return this.setup.web3QueueUrl
+    }
+  }
+
+  async getQueueSize(name: MSPrefix) {
     const result = await this.setup.sqs.send(
       new GetQueueAttributesCommand({
-        QueueUrl: queueUrl,
+        QueueUrl: this.getQueueUrlByName(name),
         AttributeNames: ['ApproximateNumberOfMessages'],
       }),
     )
     return parseInt(result.Attributes?.ApproximateNumberOfMessages ?? '-1')
   }
 
-  async getQueueMessages(queueUrl: string): Promise<
+  async getQueueMessages(name: MSPrefix): Promise<
     Array<{
       event: back.BackEvent | web3.Web3Event
       attributes?: Record<string, MessageAttributeValue>
@@ -69,7 +79,7 @@ export class IntegrationManager {
   > {
     const result = await this.setup.sqs.send(
       new ReceiveMessageCommand({
-        QueueUrl: queueUrl,
+        QueueUrl: this.getQueueUrlByName(name),
         MessageAttributeNames: ['All'],
         MessageSystemAttributeNames: ['All'],
         MaxNumberOfMessages: 10,
