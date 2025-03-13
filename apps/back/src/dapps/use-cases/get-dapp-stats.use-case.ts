@@ -1,15 +1,15 @@
-import { PUBSUB } from '#constants.js'
+import { PRODUCER } from '#constants.js'
 import { DAppStat, DAppStatProps } from '#dapps/domain/entities/dapp-stat.js'
 import { DApp } from '#dapps/domain/entities/dapp.js'
 import { DAppId } from '#dapps/domain/entities/value-objects.js'
 import { DAppRepository } from '#dapps/domain/repositories/dapp.repository.js'
+import { IProducer } from '#shared/services/producer.js'
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { randomUUID } from 'crypto'
 import { back, generateRequestId } from 'messages'
 import {
   AppError,
   LOCAL_FHEVM_CHAIN_ID,
-  PubSub,
   Task,
   UseCase,
   validationError,
@@ -27,7 +27,7 @@ type Output = {
 export class GetDappStatsUseCase implements UseCase<Input, Output> {
   private readonly logger = new Logger(GetDappStatsUseCase.name)
   constructor(
-    @Inject(PUBSUB) private readonly pubsub: PubSub<back.BackEvent>,
+    @Inject(PRODUCER) private readonly producer: IProducer,
     private readonly repo: DAppRepository,
   ) {}
 
@@ -53,7 +53,7 @@ export class GetDappStatsUseCase implements UseCase<Input, Output> {
               this.logger.verbose(
                 `publishing dappStatsRequested for dappId=${dappId} on chain ${LOCAL_FHEVM_CHAIN_ID}`,
               )
-              return this.pubsub
+              return this.producer
                 .publish(
                   back.dappStatsRequested(
                     {

@@ -1,4 +1,3 @@
-import { MS_NAME } from '#constants.js'
 import { faker } from '@faker-js/faker'
 import { back, web3 } from 'messages'
 import { IntegrationManager } from 'test/integration.manager.js'
@@ -51,7 +50,7 @@ describe('web3 dapp stats', () => {
       // Note: The only micro service that should rise this event is the orchestrator
       // In case another micro service publishes this event, the orchestrator is going to
       // republish.
-      await manager.sendMessage(message, MS_NAME)
+      await manager.sendMessage(message)
       await vi.waitUntil(async () => {
         const size = await manager.getQueueSize(manager.setup.orchQueueUrl)
         return size === 0
@@ -100,7 +99,6 @@ describe('web3 dapp stats', () => {
       expect((messages[0]?.event as back.BackEvent).type).toBe(
         'back:dapp:stats-available',
       )
-      expect(messages[0]?.attributes?.Sender.StringValue).toBe(MS_NAME)
       expect(messages[0]?.event.payload.requestId).toBe(requestId)
     })
 

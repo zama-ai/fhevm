@@ -11,7 +11,6 @@ import {
   vi,
 } from 'vitest'
 import { faker } from '@faker-js/faker'
-import { MS_NAME } from '#constants.js'
 import { LOCAL_FHEVM_CHAIN_ID } from 'utils'
 
 describe('back dapp stats', () => {
@@ -106,7 +105,7 @@ describe('back dapp stats', () => {
         // Note: The only micro service that should rise this event is the orchestrator
         // In case another micro service publishes this event, the orchestrator is going to
         // republish.
-        await manager.sendMessage(message, MS_NAME)
+        await manager.sendMessage(message)
         await vi.waitUntil(async () => {
           const size = await manager.getQueueSize(manager.setup.orchQueueUrl)
           return size === 0

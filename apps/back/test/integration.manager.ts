@@ -33,14 +33,11 @@ export class IntegrationManager {
     await this.setup.afterEach()
   }
 
-  async sendMessage(message: string | object, sender = 'test') {
+  async sendMessage(message: string | object) {
     const input = {
       QueueUrl: this.setup.backQueueUrl,
       MessageBody:
         typeof message === 'string' ? message : JSON.stringify(message),
-      MessageAttributes: {
-        Sender: { DataType: 'String', StringValue: sender },
-      },
     } satisfies SendMessageCommandInput
     const result = await this.setup.sqs.send(new SendMessageCommand(input))
     expect(

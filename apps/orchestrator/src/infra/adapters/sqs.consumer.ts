@@ -1,4 +1,4 @@
-import { MS_NAME, PUBSUB } from '#constants.js'
+import { PUBSUB } from '#constants.js'
 import { Message } from '@aws-sdk/client-sqs'
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { SqsMessageHandler } from '@ssut/nestjs-sqs'
@@ -22,16 +22,6 @@ export class SQSConsumer {
 
       try {
         if (back.isBackEvent(data) || web3.isWeb3Event(data)) {
-          // Note: I need to drop all the messages coming from the orchestrator
-          // otherwise I start an infinite loop
-          if (
-            message.MessageAttributes?.Sender?.StringValue ===
-            (MS_NAME as string)
-          ) {
-            this.logger.debug(`⛔️ stopping ${data.type} propagation`)
-            return { batchItemFailures }
-          }
-
           this.logger.debug(
             `📬 publishing event ${data.type} on the internal queue`,
           )

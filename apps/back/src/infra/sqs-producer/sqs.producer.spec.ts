@@ -1,8 +1,6 @@
 import { Test } from '@nestjs/testing'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 import { SqsProducer } from './sqs.producer.js'
-import { MS_NAME, PUBSUB } from '#constants.js'
-import { LOCAL_FHEVM_CHAIN_ID, PubSub } from 'utils'
 import { configModule } from '#app.module.js'
 import { back } from 'messages'
 import { faker } from '@faker-js/faker'
@@ -14,16 +12,14 @@ const client = mockClient(SQSClient)
 
 describe('SqsProducer', () => {
   let producer: SqsProducer
-  let pubsub: PubSub<back.BackEvent>
 
   beforeEach(async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [configModule],
-      providers: [SqsProducer, { provide: PUBSUB, useValue: new PubSub() }],
+      providers: [SqsProducer],
     }).compile()
 
     producer = moduleRef.get(SqsProducer)
-    pubsub = moduleRef.get(PUBSUB)
   })
 
   afterEach(() => {
@@ -34,9 +30,7 @@ describe('SqsProducer', () => {
     let event: back.BackEvent
 
     beforeEach(async () => {
-      client
-        .on(SendMessageCommand)
-        .resolves({ MessageId: LOCAL_FHEVM_CHAIN_ID })
+      client.on(SendMessageCommand).resolves({ MessageId: faker.string.uuid() })
       event = back.dappStatsRequested(
         {
           requestId: faker.string.uuid(),
@@ -59,65 +53,6 @@ describe('SqsProducer', () => {
       expect(client).toHaveReceivedCommandWith(SendMessageCommand, {
         MessageBody: JSON.stringify(event),
       })
-    })
-
-    test('then it publishes the sender attribute', async () => {
-      expect(client).toHaveReceivedCommandWith(SendMessageCommand, {
-        MessageAttributes: {
-          Sender: {
-            DataType: 'String',
-            StringValue: MS_NAME,
-          },
-        },
-      })
-    })
-  })
-
-  describe('when pubsub pubslish an event', () => {
-    beforeEach(() => {
-      client
-        .on(SendMessageCommand)
-        .resolves({ MessageId: LOCAL_FHEVM_CHAIN_ID })
-    })
-
-    test.each([
-      {
-        event: back.dappStatsRequested(
-          {
-            requestId: faker.string.uuid(),
-            dAppId: DAppId.random().value,
-            chainId: faker.string.numeric(5),
-            address: faker.string.hexadecimal({ length: 40 }),
-          },
-          { correlationId: faker.string.uuid() },
-        ),
-      },
-      {
-        event: back.dappStatsAvailable(
-          {
-            requestId: faker.string.uuid(),
-            chainId: faker.string.numeric(5),
-            address: faker.string.hexadecimal({ length: 40 }),
-            name: faker.string.alphanumeric(10),
-            timestamp: faker.date.past().toISOString(),
-            externalRef: faker.string.alphanumeric(10),
-          },
-          {
-            correlationId: faker.string.uuid(),
-            [`${MS_NAME}-dir`]: 'in',
-          },
-        ),
-      },
-    ])('then it processes the $event.type event', async ({ event }) => {
-      await pubsub.publish(event).toPromise()
-      const publish = event.meta[`${MS_NAME}-dir`] !== 'in'
-      if (publish) {
-        expect(client).toHaveReceivedCommandWith(SendMessageCommand, {
-          MessageBody: JSON.stringify(event),
-        })
-      } else {
-        expect(client).not.toHaveReceivedAnyCommand()
-      }
     })
   })
 })

@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { web3 } from 'messages'
 import { Task, unknownError } from 'utils'
-import { MS_NAME } from '#constants.js'
 import { SendMessageCommand, SQSClient } from '@aws-sdk/client-sqs'
 
 @Injectable()
@@ -28,11 +27,6 @@ export class SqsProducer {
    * @param message - The message to publish
    */
   sendMessage = (event: web3.Web3Event) => {
-    if (event.meta[`${MS_NAME}-dir`] === 'in') {
-      this.logger.verbose(`stopping incoming event ${event.type}`)
-      return Task.of(void 0)
-    }
-
     this.logger.debug(`sendMessage: ${JSON.stringify(event)}`)
 
     return new Task((resolve, reject) =>
@@ -41,9 +35,6 @@ export class SqsProducer {
           new SendMessageCommand({
             QueueUrl: this.#queueUrl,
             MessageBody: JSON.stringify(event),
-            MessageAttributes: {
-              Sender: { DataType: 'String', StringValue: MS_NAME },
-            },
           }),
         )
         .then(res => {

@@ -1,4 +1,3 @@
-import { MS_NAME } from '#constants.js'
 import { EventProducer } from '#workflows/interfaces/event.producer.js'
 import { SendMessageCommand, SQSClient } from '@aws-sdk/client-sqs'
 import { Injectable, Logger } from '@nestjs/common'
@@ -46,9 +45,6 @@ export class SQSProducer implements EventProducer {
             new SendMessageCommand({
               QueueUrl: queueUrl,
               MessageBody: JSON.stringify(message),
-              MessageAttributes: {
-                Sender: { DataType: 'String', StringValue: MS_NAME },
-              },
             }),
           )
           .then(result => {
