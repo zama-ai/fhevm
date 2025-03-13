@@ -19,10 +19,7 @@ npx hardhat compile:specific --contract decryptionOracle
 
 npx hardhat task:deployACL --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --network "$NETWORK"
 npx hardhat task:deployTFHEExecutor --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --network "$NETWORK"
-npx hardhat task:deployKMSVerifier --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --decryption-manager-address "$DECRYPTION_MANAGER_ADDRESS" --network "$NETWORK"
-npx hardhat task:deployInputVerifier --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --zkpok-manager-address "$ZKPOK_MANAGER_ADDRESS"  --network "$NETWORK"
+npx hardhat task:deployKMSVerifier --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --decryption-manager-address "$DECRYPTION_MANAGER_ADDRESS" --use-address true --network "$NETWORK"
+npx hardhat task:deployInputVerifier --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --zkpok-manager-address "$ZKPOK_MANAGER_ADDRESS" --use-address true --network "$NETWORK"
 npx hardhat task:deployFHEGasLimit --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --network "$NETWORK"
 npx hardhat task:deployDecryptionOracle --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --network "$NETWORK"
-
-npx hardhat task:addSigners --num-signers "$NUM_KMS_SIGNERS" --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --use-address true --network "$NETWORK"
-npx hardhat task:addInputSigners --num-signers "$NUM_COPROCESSOR_SIGNERS" --private-key "$PRIVATE_KEY_FHEVM_DEPLOYER" --use-address true --network "$NETWORK"

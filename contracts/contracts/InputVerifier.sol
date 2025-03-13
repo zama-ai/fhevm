@@ -40,6 +40,9 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
     /// @notice Returned if the handle version is not the correct one.
     error InvalidHandleVersion();
 
+    /// @notice Returned if the initial signers set is empty.
+    error InitialSignersSetIsEmpty();
+
     /// @notice Returned if signer is null.
     error SignerNull();
 
@@ -123,8 +126,19 @@ contract InputVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgrad
     /**
      * @notice  Re-initializes the contract.
      */
-    function reinitialize(address verifyingContractSource, uint64 chainIDSource) public reinitializer(2) {
+    function reinitialize(
+        address verifyingContractSource,
+        uint64 chainIDSource,
+        address[] calldata initialSigners
+    ) public reinitializer(2) {
         __EIP712_init(CONTRACT_NAME_SOURCE, "1", verifyingContractSource, chainIDSource);
+        uint256 initialSignersLen = initialSigners.length;
+        if (initialSignersLen == 0) {
+            revert InitialSignersSetIsEmpty();
+        }
+        for (uint256 i = 0; i < initialSignersLen; i++) {
+            addSigner(initialSigners[i]);
+        }
     }
 
     /**

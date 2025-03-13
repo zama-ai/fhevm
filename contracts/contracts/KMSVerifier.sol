@@ -37,6 +37,15 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
     /// @notice Returned if the number of signatures is equal to 0.
     error KMSZeroSignature();
 
+    /// @notice Returned if the initial signers set is empty.
+    error InitialSignersSetIsEmpty();
+
+    /// @notice Returned if the chosen threshold is null.
+    error ThresholdIsNull();
+
+    /// @notice Threshold is above number of signers.
+    error ThresholdIsAboveNumberOfSigners();
+
     /// @notice         Emitted when a signer is added.
     /// @param signer   The address of the signer that was added.
     event SignerAdded(address indexed signer);
@@ -44,6 +53,10 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
     /// @notice         Emitted when a signer is removed.
     /// @param signer   The address of the signer that was removed.
     event SignerRemoved(address indexed signer);
+
+    /// @notice         Emitted when a threshold is set.
+    /// @param threshold   The new threshold set by the owner.
+    event SetKMSThreshold(uint threshold);
 
     /**
      * @param handlesList       List of handles.
@@ -107,9 +120,26 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
 
     /**
      * @notice  Re-initializes the contract.
+     * @param verifyingContractSource The DecryptionManager contract address from the Gateway chain.
+     * @param chainIDSource The chain id of the Gateway chain.
+     * @param initialSigners The list of initial KMS signers, should be non-empty and contain unique addresses, otherwise initialization will fail.
+     * @param initialThreshold Initial threshold, should be non-null and less or equal to the initialSigners length.
      */
-    function reinitialize(address verifyingContractSource, uint64 chainIDSource) public reinitializer(2) {
+    function reinitialize(
+        address verifyingContractSource,
+        uint64 chainIDSource,
+        address[] calldata initialSigners,
+        uint256 initialThreshold
+    ) public reinitializer(2) {
         __EIP712_init(CONTRACT_NAME_SOURCE, "1", verifyingContractSource, chainIDSource);
+        uint256 initialSignersLen = initialSigners.length;
+        if (initialSignersLen == 0) {
+            revert InitialSignersSetIsEmpty();
+        }
+        for (uint256 i = 0; i < initialSignersLen; i++) {
+            addSigner(initialSigners[i]);
+        }
+        setThreshold(initialThreshold);
     }
 
     /**
@@ -129,8 +159,24 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
 
         $.isSigner[signer] = true;
         $.signers.push(signer);
-        _applyThreshold();
         emit SignerAdded(signer);
+    }
+
+    /**
+     * @notice          Sets a threshold.
+     * @dev             Only the owner can set a threshold.
+     * @param threshold    The threshold to be set. Threshold should be non-null and less than the number of signers.
+     */
+    function setThreshold(uint256 threshold) public virtual onlyOwner {
+        if (threshold == 0) {
+            revert ThresholdIsNull();
+        }
+        KMSVerifierStorage storage $ = _getKMSVerifierStorage();
+        if (threshold > $.signers.length) {
+            revert ThresholdIsAboveNumberOfSigners();
+        }
+        $.threshold = threshold;
+        emit SetKMSThreshold(threshold);
     }
 
     /**
@@ -152,7 +198,11 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
             if ($.signers[i] == signer) {
                 $.signers[i] = $.signers[$.signers.length - 1]; /// @dev Move the last element into the place to delete.
                 $.signers.pop(); /// @dev Remove the last element.
-                _applyThreshold();
+
+                if ($.signers.length == 0) {
+                    revert AtLeastOneSignerIsRequired();
+                }
+
                 emit SignerRemoved(signer);
                 return;
             }
@@ -168,7 +218,6 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
      * @return isVerified       true if enough provided signatures are valid, false otherwise.
      */
     function verifyDecryptionEIP712KMSSignatures(
-        address /*aclAddress*/,
         uint256[] memory handlesList,
         bytes memory decryptedResult,
         bytes[] memory signatures
@@ -226,21 +275,6 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
                     Strings.toString(PATCH_VERSION)
                 )
             );
-    }
-
-    /**
-     * @notice Sets the threshold for the number of signers required for a signature to be valid.
-     */
-    function _applyThreshold() internal virtual {
-        KMSVerifierStorage storage $ = _getKMSVerifierStorage();
-        uint256 signerLength = $.signers.length;
-
-        if (signerLength != 0) {
-            $.threshold = (signerLength - 1) / 3 + 1;
-        } else {
-            /// @dev It is impossible to remove all KMS signers.
-            revert AtLeastOneSignerIsRequired();
-        }
     }
 
     /**

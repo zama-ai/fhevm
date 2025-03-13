@@ -58,6 +58,10 @@ describe('KMSVerifier', function () {
       await tx4.wait();
       expect((await kmsVerifier.getSigners()).length).to.equal(4); // 3rd and 4th signer has been added successfully
 
+      const txSetTh = await kmsVerifier.connect(deployer).setThreshold(2n);
+      await txSetTh.wait();
+      expect(await kmsVerifier.getThreshold()).to.equal(2);
+
       const tx5 = await contract.requestUint4();
       await tx5.wait();
       await expect(awaitAllDecryptionResults())
@@ -109,6 +113,9 @@ describe('KMSVerifier', function () {
       process.env.NUM_KMS_SIGNERS = '1';
       const tx8 = await kmsVerifier.connect(deployer).removeSigner(kmsSigner2.address);
       await tx8.wait();
+      const txSetTh2 = await kmsVerifier.connect(deployer).setThreshold(1n);
+      await txSetTh2.wait();
+      expect(await kmsVerifier.getThreshold()).to.equal(1);
       const tx7Bis = await contract.requestUint16();
       await tx7Bis.wait();
       await awaitAllDecryptionResults();

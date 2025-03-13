@@ -7,7 +7,6 @@ import "../lib/Impl.sol";
 
 interface IKMSVerifier {
     function verifyDecryptionEIP712KMSSignatures(
-        address aclAddress,
         uint256[] memory handlesList,
         bytes memory decryptedResult,
         bytes[] memory signatures
@@ -220,7 +219,6 @@ abstract contract DecryptionOracleCaller {
         FHEVMConfig.FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
         return
             IKMSVerifier($.KMSVerifierAddress).verifyDecryptionEIP712KMSSignatures(
-                $.ACLAddress,
                 handlesList,
                 decryptedResult,
                 signatures

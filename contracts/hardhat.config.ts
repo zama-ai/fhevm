@@ -70,24 +70,15 @@ task('test', async (taskArgs, hre, runSuper) => {
     await hre.run('task:deployKMSVerifier', {
       privateKey: privKeyFhevmDeployer,
       decryptionManagerAddress: decryptionManagerAddress,
+      useAddress: false,
     });
     await hre.run('task:deployInputVerifier', {
       privateKey: privKeyFhevmDeployer,
       zkpokManagerAddress: zkpokManagerAddress,
+      useAddress: false,
     });
     await hre.run('task:deployFHEGasLimit', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:deployDecryptionOracle', { privateKey: privKeyFhevmDeployer });
-
-    await hre.run('task:addSigners', {
-      numSigners: process.env.NUM_KMS_SIGNERS!,
-      privateKey: privKeyFhevmDeployer,
-      useAddress: false,
-    });
-    await hre.run('task:addInputSigners', {
-      numSigners: process.env.NUM_COPROCESSOR_SIGNERS!,
-      privateKey: privKeyFhevmDeployer,
-      useAddress: false,
-    });
   }
   await hre.run('compile:specific', { contract: 'examples' });
   await runSuper();

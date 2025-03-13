@@ -105,6 +105,12 @@ task('task:deployTFHEExecutor')
 task('task:deployKMSVerifier')
   .addParam('privateKey', 'The deployer private key')
   .addParam('decryptionManagerAddress', 'The decryption manager contract address from the Gateway chain')
+  .addOptionalParam(
+    'useAddress',
+    'Use addresses instead of private keys env variables for kms signers',
+    false,
+    types.boolean,
+  )
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
     const deployer = new ethers.Wallet(taskArguments.privateKey).connect(ethers.provider);
     const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
@@ -115,10 +121,24 @@ task('task:deployKMSVerifier')
     const verifyingContractSource = taskArguments.decryptionManagerAddress;
     const parsedEnv2 = dotenv.parse(fs.readFileSync('.env'));
     const chainIDSource = +parsedEnv2.CHAIN_ID_GATEWAY;
+    const initialThreshold = +parsedEnv2.INITIAL_KMS_THRESHOLD;
+    let initialSigners: string[] = [];
+    const numSigners = +parsedEnv2.NUM_KMS_SIGNERS;
+    for (let idx = 0; idx < numSigners; idx++) {
+      if (!taskArguments.useAddress) {
+        const privKeySigner = parsedEnv2[`PRIVATE_KEY_KMS_SIGNER_${idx}`];
+        const kmsSigner = new ethers.Wallet(privKeySigner).connect(ethers.provider);
+        initialSigners.push(kmsSigner.address);
+      } else {
+        const kmsSignerAddress = parsedEnv2[`ADDRESS_KMS_SIGNER_${idx}`];
+        initialSigners.push(kmsSignerAddress);
+      }
+    }
     await upgrades.upgradeProxy(proxy, newImplem, {
-      call: { fn: 'reinitialize', args: [verifyingContractSource, chainIDSource] },
+      call: { fn: 'reinitialize', args: [verifyingContractSource, chainIDSource, initialSigners, initialThreshold] },
     });
     console.log('KMSVerifier code set successfully at address:', proxyAddress);
+    console.log(`${numSigners} KMS signers were added to KMSVerifier at initialization`);
   });
 
 task('task:deployInputVerifier')
@@ -134,8 +154,22 @@ task('task:deployInputVerifier')
     const verifyingContractSource = taskArguments.zkpokManagerAddress;
     const parsedEnv2 = dotenv.parse(fs.readFileSync('.env'));
     const chainIDSource = +parsedEnv2.CHAIN_ID_GATEWAY;
+
+    let initialSigners: string[] = [];
+    const numSigners = +parsedEnv2.NUM_KMS_SIGNERS;
+    for (let idx = 0; idx < numSigners; idx++) {
+      if (!taskArguments.useAddress) {
+        const privKeySigner = parsedEnv2[`PRIVATE_KEY_COPROCESSOR_ACCOUNT_${idx}`];
+        const inputSigner = new ethers.Wallet(privKeySigner).connect(ethers.provider);
+        initialSigners.push(inputSigner.address);
+      } else {
+        const inputSignerAddress = parsedEnv2[`ADDRESS_COPROCESSOR_ACCOUNT_${idx}`];
+        initialSigners.push(inputSignerAddress);
+      }
+    }
+
     await upgrades.upgradeProxy(proxy, newImplem, {
-      call: { fn: 'reinitialize', args: [verifyingContractSource, chainIDSource] },
+      call: { fn: 'reinitialize', args: [verifyingContractSource, chainIDSource, initialSigners] },
     });
     console.log('InputVerifier code set successfully at address:', proxyAddress);
   });
