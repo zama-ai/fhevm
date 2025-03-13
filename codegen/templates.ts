@@ -6,18 +6,18 @@ import { getUint } from './utils';
 
 export function commonSolLib(): string {
   return `
-type ebool is uint256;
-type euint4 is uint256;
-type euint8 is uint256;
-type euint16 is uint256;
-type euint32 is uint256;
-type euint64 is uint256;
-type euint128 is uint256;
-type euint256 is uint256;
-type eaddress is uint256;
-type ebytes64 is uint256;
-type ebytes128 is uint256;
-type ebytes256 is uint256;
+type ebool is bytes32;
+type euint4 is bytes32;
+type euint8 is bytes32;
+type euint16 is bytes32;
+type euint32 is bytes32;
+type euint64 is bytes32;
+type euint128 is bytes32;
+type euint256 is bytes32;
+type eaddress is bytes32;
+type ebytes64 is bytes32;
+type ebytes128 is bytes32;
+type ebytes256 is bytes32;
 type einput is bytes32;
 
 /**
@@ -80,7 +80,7 @@ function binaryOperatorImpl(op: Operator): string {
     /**
      * @dev Returns the FHEVM config.
      */
-    function ${op.name}(uint256 lhs, uint256 rhs${scalarArg}) internal returns (uint256 result) {
+    function ${op.name}(bytes32 lhs, bytes32 rhs${scalarArg}) internal returns (bytes32 result) {
         ${scalarSection}
         FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).${fname}(lhs, rhs, scalarByte);
@@ -216,11 +216,11 @@ function generateImplCoprocessorInterface(operators: Operator[]): string {
     interface ITFHEExecutor {`);
   operators.forEach((op) => {
     let functionName = operatorFheLibFunction(op);
-    const tail = 'external returns (uint256 result);';
+    const tail = 'external returns (bytes32 result);';
     let functionArguments: string;
     switch (op.arguments) {
       case OperatorArguments.Binary:
-        functionArguments = '(uint256 lhs, uint256 rhs, bytes1 scalarByte)';
+        functionArguments = '(bytes32 lhs, bytes32 rhs, bytes1 scalarByte)';
         res.push(`  
           
           /**
@@ -233,7 +233,7 @@ function generateImplCoprocessorInterface(operators: Operator[]): string {
           function ${functionName}${functionArguments} ${tail}`);
         break;
       case OperatorArguments.Unary:
-        functionArguments = '(uint256 ct)';
+        functionArguments = '(bytes32 ct)';
         res.push(`  
 
            /**
@@ -263,7 +263,7 @@ function fheLibCustomInterfaceFunctions(): string {
      * @param inputType       Input type.
      * @return result         Result.
      */
-    function verifyCiphertext(bytes32 inputHandle, address callerAddress, address contractAddress, bytes memory inputProof, bytes1 inputType) external pure returns (uint256 result);
+    function verifyCiphertext(bytes32 inputHandle, address callerAddress, address contractAddress, bytes memory inputProof, bytes1 inputType) external pure returns (bytes32 result);
   `;
 }
 
@@ -277,7 +277,7 @@ function coprocessorInterfaceCustomFunctions(): string {
      * @param inputType       Input type.
      * @return result         Result.
      */
-    function verifyCiphertext(bytes32 inputHandle, address callerAddress, bytes memory inputProof, bytes1 inputType) external returns (uint256 result);
+    function verifyCiphertext(bytes32 inputHandle, address callerAddress, bytes memory inputProof, bytes1 inputType) external returns (bytes32 result);
 
     /**
      * @notice          Performs the casting to a target type.
@@ -285,7 +285,7 @@ function coprocessorInterfaceCustomFunctions(): string {
      * @param toType    Target type.
      * @return result   Result value of the target type.
      */
-    function cast(uint256 ct, bytes1 toType) external returns (uint256 result);
+    function cast(bytes32 ct, bytes1 toType) external returns (bytes32 result);
 
      /**
      * @notice          Does trivial encryption.
@@ -293,7 +293,7 @@ function coprocessorInterfaceCustomFunctions(): string {
      * @param toType    Target type.
      * @return result   Result value of the target type.
      */
-    function trivialEncrypt(uint256 ct, bytes1 toType) external returns (uint256 result);
+    function trivialEncrypt(uint256 ct, bytes1 toType) external returns (bytes32 result);
 
     /**
      * @notice          Does trivial encryption.
@@ -301,7 +301,7 @@ function coprocessorInterfaceCustomFunctions(): string {
      * @param toType    Target type.
      * @return result   Result value of the target type.
      */
-    function trivialEncrypt(bytes memory ct, bytes1 toType) external returns (uint256 result);
+    function trivialEncrypt(bytes memory ct, bytes1 toType) external returns (bytes32 result);
 
     /**
      * @notice              Computes FHEEq operation.
@@ -310,7 +310,7 @@ function coprocessorInterfaceCustomFunctions(): string {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheEq(uint256 lhs, bytes memory  rhs, bytes1 scalarByte) external returns (uint256 result);
+    function fheEq(bytes32 lhs, bytes memory rhs, bytes1 scalarByte) external returns (bytes32 result);
 
     /**
      * @notice              Computes FHENe operation.
@@ -319,7 +319,7 @@ function coprocessorInterfaceCustomFunctions(): string {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheNe(uint256 lhs, bytes memory  rhs, bytes1 scalarByte) external returns (uint256 result);
+    function fheNe(bytes32 lhs, bytes memory rhs, bytes1 scalarByte) external returns (bytes32 result);
 
     /**
      * @notice              Computes FHEIfThenElse operation.
@@ -328,14 +328,14 @@ function coprocessorInterfaceCustomFunctions(): string {
      * @param ifFalse       If false.
      * @return result       Result.
      */
-    function fheIfThenElse(uint256 control, uint256 ifTrue, uint256 ifFalse) external returns (uint256 result);
+    function fheIfThenElse(bytes32 control, bytes32 ifTrue, bytes32 ifFalse) external returns (bytes32 result);
 
     /**
      * @notice              Computes FHERand operation.
      * @param randType      Type for the random result.
      * @return result       Result.
      */
-    function fheRand(bytes1 randType) external returns (uint256 result);
+    function fheRand(bytes1 randType) external returns (bytes32 result);
 
     /**
      * @notice              Computes FHERandBounded operation.
@@ -343,7 +343,7 @@ function coprocessorInterfaceCustomFunctions(): string {
      * @param randType      Type for the random result.
      * @return result       Result.
      */
-    function fheRandBounded(uint256 upperBound, bytes1 randType) external returns (uint256 result);
+    function fheRandBounded(uint256 upperBound, bytes1 randType) external returns (bytes32 result);
   `;
 }
 
@@ -363,7 +363,7 @@ function generateACLInterface(): string {
      * @param ciphertext    Ciphertext.
      * @param account       Address of the account.
      */
-    function allowTransient(uint256 ciphertext, address account) external;
+    function allowTransient(bytes32 ciphertext, address account) external;
 
     /**
      * @notice              Allows the use of handle for the address account.
@@ -371,7 +371,7 @@ function generateACLInterface(): string {
      * @param handle        Handle.
      * @param account       Address of the account.
      */
-    function allow(uint256 handle, address account) external;
+    function allow(bytes32 handle, address account) external;
 
 
     /**
@@ -387,13 +387,13 @@ function generateACLInterface(): string {
      * @param account       Address of the account.
      * @return isAllowed    Whether the account can access the handle.
      */
-    function isAllowed(uint256 handle, address account) external view returns(bool);
+    function isAllowed(bytes32 handle, address account) external view returns(bool);
 
     /**
      * @notice              Allows a list of handles to be decrypted.
      * @param handlesList   List of handles.
      */
-    function allowForDecryption(uint256[] memory handlesList) external;
+    function allowForDecryption(bytes32[] memory handlesList) external;
   }
   `;
 }
@@ -617,8 +617,8 @@ function tfheScalarOperator(
   const returnTypeOverload = operator.returnType == ReturnType.Uint ? ArgumentType.EUint : ArgumentType.Ebool;
   var scalarFlag = operator.hasEncrypted && operator.hasScalar ? ', true' : '';
   const leftOpName = operator.leftScalarInvertOp ?? operator.name;
-  var implExpressionA = `Impl.${operator.name}(euint${outputBits}.unwrap(a), uint256(b)${scalarFlag})`;
-  var implExpressionB = `Impl.${leftOpName}(euint${outputBits}.unwrap(b), uint256(a)${scalarFlag})`;
+  var implExpressionA = `Impl.${operator.name}(euint${outputBits}.unwrap(a), bytes32(uint256(b))${scalarFlag})`;
+  var implExpressionB = `Impl.${leftOpName}(euint${outputBits}.unwrap(b), bytes32(uint256(a))${scalarFlag})`;
   var maybeEncryptLeft = '';
   if (operator.leftScalarEncrypt) {
     // workaround until tfhe-rs left scalar support:
@@ -739,12 +739,12 @@ function tfheShiftOperators(
 
   // Code and test for shift(euint{inputBits},uint8}
   scalarFlag = ', true';
-  implExpression = `Impl.${operator.name}(euint${outputBits}.unwrap(a), uint256(b)${scalarFlag})`;
+  implExpression = `Impl.${operator.name}(euint${outputBits}.unwrap(a), bytes32(uint256(b))${scalarFlag})`;
   if (mocked) {
     if (rotate) {
-      implExpression = `Impl.${operator.name}(euint${outputBits}.unwrap(a), uint256(b) % ${lhsBits}, ${lhsBits}${scalarFlag})`;
+      implExpression = `Impl.${operator.name}(euint${outputBits}.unwrap(a), bytes32(uint256(b)) % ${lhsBits}, ${lhsBits}${scalarFlag})`;
     } else {
-      implExpression = `Impl.${operator.name}(euint${outputBits}.unwrap(a), uint256(b) % ${lhsBits}${scalarFlag})`;
+      implExpression = `Impl.${operator.name}(euint${outputBits}.unwrap(a), bytes32(uint256(b)) % ${lhsBits}${scalarFlag})`;
     }
   }
   signatures.push({
@@ -827,9 +827,9 @@ function tfheAsEboolUnaryCast(bits: number): string {
      */
     function asEbool(bool value) internal returns (ebool) {
         if (value) {
-            return asEbool(1);
+            return asEbool(uint256(1));
         } else {
-            return asEbool(0);
+            return asEbool(uint256(0));
         }
     }
 
@@ -851,14 +851,14 @@ function tfheAsEboolUnaryCast(bits: number): string {
      * @dev Evaluates and(a, b) and returns the result.
     */
      function and(ebool a, bool b) internal returns (ebool) {
-        return ebool.wrap(Impl.and(ebool.unwrap(a), b?1:0, true));
+        return ebool.wrap(Impl.and(ebool.unwrap(a), bytes32(uint256(b?1:0)), true));
     }
 
      /** 
      * @dev Evaluates and(a, b) and returns the result.
     */
      function and(bool a, ebool b) internal returns (ebool) {
-        return ebool.wrap(Impl.and(ebool.unwrap(b), a?1:0, true));
+        return ebool.wrap(Impl.and(ebool.unwrap(b), bytes32(uint256(a?1:0)), true));
     }
 
      /** 
@@ -872,14 +872,14 @@ function tfheAsEboolUnaryCast(bits: number): string {
      * @dev Evaluates or(a, b) and returns the result.
      */
      function or(ebool a, bool b) internal returns (ebool) {
-        return ebool.wrap(Impl.or(ebool.unwrap(a), b?1:0, true));
+        return ebool.wrap(Impl.or(ebool.unwrap(a), bytes32(uint256(b?1:0)), true));
     }
 
     /** 
      * @dev Evaluates or(a, b) and returns the result.
      */
     function or(bool a, ebool b) internal returns (ebool) {
-        return ebool.wrap(Impl.or(ebool.unwrap(b), a?1:0, true));
+        return ebool.wrap(Impl.or(ebool.unwrap(b), bytes32(uint256(a?1:0)), true));
     }
 
     /** 
@@ -893,14 +893,14 @@ function tfheAsEboolUnaryCast(bits: number): string {
      * @dev Evaluates xor(a, b) and returns the result.
      */ 
     function xor(ebool a, bool b) internal returns (ebool) {
-        return ebool.wrap(Impl.xor(ebool.unwrap(a), b?1:0, true));
+        return ebool.wrap(Impl.xor(ebool.unwrap(a), bytes32(uint256(b?1:0)), true));
     }
 
     /** 
      * @dev Evaluates xor(a, b) and returns the result.
      */
     function xor(bool a, ebool b) internal returns (ebool) {
-        return ebool.wrap(Impl.xor(ebool.unwrap(b), a?1:0, true));
+        return ebool.wrap(Impl.xor(ebool.unwrap(b), bytes32(uint256(a?1:0)), true));
     }
 
     function not(ebool a) internal returns (ebool) {
@@ -966,7 +966,7 @@ function tfheCustomUnaryOperators(bits: number, signatures: OverloadSignature[],
 function unaryOperatorImpl(op: Operator): string {
   let fname = operatorFheLibFunction(op);
   return `
-    function ${op.name}(uint256 ct) internal returns (uint256 result) {
+    function ${op.name}(bytes32 ct) internal returns (bytes32 result) {
       FHEVMConfigStruct storage $ = getFHEVMConfig();
       result = ITFHEExecutor($.TFHEExecutorAddress).${fname}(ct);
     }
@@ -1533,7 +1533,7 @@ function tfheCustomMethods(): string {
             a = asEbool(false);
         }
         uint256 bProc = b?1:0;
-        return ebool.wrap(Impl.eq(ebool.unwrap(a), bProc, true));
+        return ebool.wrap(Impl.eq(ebool.unwrap(a), bytes32(bProc), true));
     }
 
     /** 
@@ -1544,7 +1544,7 @@ function tfheCustomMethods(): string {
             a = asEbool(false);
         }
         uint256 bProc = b?1:0;
-        return ebool.wrap(Impl.eq(ebool.unwrap(a), bProc, true));
+        return ebool.wrap(Impl.eq(ebool.unwrap(a), bytes32(bProc), true));
     }
 
     /** 
@@ -1555,7 +1555,7 @@ function tfheCustomMethods(): string {
             a = asEbool(false);
         }
         uint256 bProc = b?1:0;
-        return ebool.wrap(Impl.ne(ebool.unwrap(a), bProc, true));
+        return ebool.wrap(Impl.ne(ebool.unwrap(a), bytes32(bProc), true));
     }
 
     /** 
@@ -1566,7 +1566,7 @@ function tfheCustomMethods(): string {
             a = asEbool(false);
         }
         uint256 bProc = b?1:0;
-        return ebool.wrap(Impl.ne(ebool.unwrap(a), bProc, true));
+        return ebool.wrap(Impl.ne(ebool.unwrap(a), bytes32(bProc), true));
     }
 
     /** 
@@ -1602,7 +1602,7 @@ function tfheCustomMethods(): string {
         if (!isInitialized(a)) {
             a = asEaddress(address(0));
         }
-        uint256 bProc = uint256(uint160(b));
+        bytes32 bProc = bytes32(uint256(uint160(b)));
         return ebool.wrap(Impl.eq(eaddress.unwrap(a), bProc, true));
     }
 
@@ -1613,7 +1613,7 @@ function tfheCustomMethods(): string {
         if (!isInitialized(a)) {
             a = asEaddress(address(0));
         }
-        uint256 bProc = uint256(uint160(b));
+        bytes32 bProc = bytes32(uint256(uint160(b)));
         return ebool.wrap(Impl.eq(eaddress.unwrap(a), bProc, true));
     }
 
@@ -1624,7 +1624,7 @@ function tfheCustomMethods(): string {
         if (!isInitialized(a)) {
             a = asEaddress(address(0));
         }
-        uint256 bProc = uint256(uint160(b));
+        bytes32 bProc = bytes32(uint256(uint160(b)));
         return ebool.wrap(Impl.ne(eaddress.unwrap(a), bProc, true));
     }
 
@@ -1635,7 +1635,7 @@ function tfheCustomMethods(): string {
         if (!isInitialized(a)) {
             a = asEaddress(address(0));
         }
-        uint256 bProc = uint256(uint160(b));
+        bytes32 bProc = bytes32(uint256(uint160(b)));
         return ebool.wrap(Impl.ne(eaddress.unwrap(a), bProc, true));
     }
 
@@ -1886,7 +1886,7 @@ function implCustomMethods(): string {
     * @dev If 'control's value is 'true', the result has the same value as 'ifTrue'.
     *         If 'control's value is 'false', the result has the same value as 'ifFalse'.
     */
-    function select(uint256 control, uint256 ifTrue, uint256 ifFalse) internal returns (uint256 result) {
+    function select(bytes32 control, bytes32 ifTrue, bytes32 ifFalse) internal returns (bytes32 result) {
         FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).fheIfThenElse(control, ifTrue, ifFalse);
     }
@@ -1902,7 +1902,7 @@ function implCustomMethods(): string {
         bytes32 inputHandle,
         bytes memory inputProof,
         uint8 toType
-    ) internal returns (uint256 result) {
+    ) internal returns (bytes32 result) {
       FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).verifyCiphertext(inputHandle, msg.sender, inputProof, bytes1(toType));
         IACL($.ACLAddress).allowTransient(result, msg.sender);
@@ -1915,9 +1915,9 @@ function implCustomMethods(): string {
      * @return result     Result value of the target type.
      */
     function cast(
-        uint256 ciphertext,
+        bytes32 ciphertext,
         uint8 toType
-    ) internal returns (uint256 result) {
+    ) internal returns (bytes32 result) {
         FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).cast(ciphertext, bytes1(toType));
     }
@@ -1931,7 +1931,7 @@ function implCustomMethods(): string {
     function trivialEncrypt(
         uint256 value,
         uint8 toType
-    ) internal returns (uint256 result) {
+    ) internal returns (bytes32 result) {
       FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).trivialEncrypt(value, bytes1(toType));
     }
@@ -1945,7 +1945,7 @@ function implCustomMethods(): string {
     function trivialEncrypt(
       bytes memory value,
       uint8 toType
-    ) internal returns (uint256 result) {
+    ) internal returns (bytes32 result) {
       FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).trivialEncrypt(value, bytes1(toType));
     }
@@ -1957,7 +1957,7 @@ function implCustomMethods(): string {
      * @param scalar        Scalar byte.
      * @return result       Result.
      */
-    function eq(uint256 lhs, bytes memory rhs, bool scalar) internal returns (uint256 result) {
+    function eq(bytes32 lhs, bytes memory rhs, bool scalar) internal returns (bytes32 result) {
       bytes1 scalarByte;
       if (scalar) {
           scalarByte = 0x01;
@@ -1975,7 +1975,7 @@ function implCustomMethods(): string {
    * @param scalar        Scalar byte.
    * @return result       Result.
   */
-  function ne(uint256 lhs, bytes memory rhs, bool scalar) internal returns (uint256 result) {
+  function ne(bytes32 lhs, bytes memory rhs, bool scalar) internal returns (bytes32 result) {
       bytes1 scalarByte;
       if (scalar) {
           scalarByte = 0x01;
@@ -1986,12 +1986,12 @@ function implCustomMethods(): string {
       result = ITFHEExecutor($.TFHEExecutorAddress).fheNe(lhs, rhs, scalarByte);
   }
 
-    function rand(uint8 randType) internal returns(uint256 result) {
+    function rand(uint8 randType) internal returns(bytes32 result) {
       FHEVMConfigStruct storage $ = getFHEVMConfig();
       result = ITFHEExecutor($.TFHEExecutorAddress).fheRand(bytes1(randType));
     }
 
-    function randBounded(uint256 upperBound, uint8 randType) internal returns(uint256 result) {
+    function randBounded(uint256 upperBound, uint8 randType) internal returns(bytes32 result) {
       FHEVMConfigStruct storage $ = getFHEVMConfig();
       result = ITFHEExecutor($.TFHEExecutorAddress).fheRandBounded(upperBound, bytes1(randType));
     }
@@ -2004,7 +2004,7 @@ function implCustomMethods(): string {
      * @param handle        Handle.
      * @param account       Address of the account.
      */
-    function allowTransient(uint256 handle, address account) internal {
+    function allowTransient(bytes32 handle, address account) internal {
       FHEVMConfigStruct storage $ = getFHEVMConfig();
       IACL($.ACLAddress).allowTransient(handle, account);
     }
@@ -2016,7 +2016,7 @@ function implCustomMethods(): string {
      * @param handle        Handle.
      * @param account       Address of the account.
      */
-    function allow(uint256 handle, address account) internal {
+    function allow(bytes32 handle, address account) internal {
       FHEVMConfigStruct storage $ = getFHEVMConfig();
       IACL($.ACLAddress).allow(handle, account);
     }
@@ -2048,7 +2048,7 @@ function implCustomMethods(): string {
      * @param account       Address of the account.
      * @return isAllowed    Whether the account can access the handle.
      */
-    function isAllowed(uint256 handle, address account) internal view returns (bool) {
+    function isAllowed(bytes32 handle, address account) internal view returns (bool) {
       FHEVMConfigStruct storage $ = getFHEVMConfig();
       return IACL($.ACLAddress).isAllowed(handle, account);
     }

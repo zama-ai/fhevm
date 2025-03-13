@@ -3,18 +3,18 @@ pragma solidity ^0.8.24;
 
 import "./Impl.sol";
 
-type ebool is uint256;
-type euint4 is uint256;
-type euint8 is uint256;
-type euint16 is uint256;
-type euint32 is uint256;
-type euint64 is uint256;
-type euint128 is uint256;
-type euint256 is uint256;
-type eaddress is uint256;
-type ebytes64 is uint256;
-type ebytes128 is uint256;
-type ebytes256 is uint256;
+type ebool is bytes32;
+type euint4 is bytes32;
+type euint8 is bytes32;
+type euint16 is bytes32;
+type euint32 is bytes32;
+type euint64 is bytes32;
+type euint128 is bytes32;
+type euint256 is bytes32;
+type eaddress is bytes32;
+type ebytes64 is bytes32;
+type ebytes128 is bytes32;
+type ebytes256 is bytes32;
 type einput is bytes32;
 
 /**
@@ -1416,7 +1416,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint4(0);
         }
-        return euint4.wrap(Impl.add(euint4.unwrap(a), uint256(b), true));
+        return euint4.wrap(Impl.add(euint4.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -1426,7 +1426,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint4(0);
         }
-        return euint4.wrap(Impl.add(euint4.unwrap(b), uint256(a), true));
+        return euint4.wrap(Impl.add(euint4.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -1436,7 +1436,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint4(0);
         }
-        return euint4.wrap(Impl.sub(euint4.unwrap(a), uint256(b), true));
+        return euint4.wrap(Impl.sub(euint4.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -1457,7 +1457,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint4(0);
         }
-        return euint4.wrap(Impl.mul(euint4.unwrap(a), uint256(b), true));
+        return euint4.wrap(Impl.mul(euint4.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -1467,7 +1467,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint4(0);
         }
-        return euint4.wrap(Impl.mul(euint4.unwrap(b), uint256(a), true));
+        return euint4.wrap(Impl.mul(euint4.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -1477,7 +1477,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint4(0);
         }
-        return euint4.wrap(Impl.div(euint4.unwrap(a), uint256(b)));
+        return euint4.wrap(Impl.div(euint4.unwrap(a), bytes32(uint256(b))));
     }
 
     /**
@@ -1487,7 +1487,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint4(0);
         }
-        return euint4.wrap(Impl.rem(euint4.unwrap(a), uint256(b)));
+        return euint4.wrap(Impl.rem(euint4.unwrap(a), bytes32(uint256(b))));
     }
 
     /**
@@ -1497,7 +1497,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint4(0);
         }
-        return euint4.wrap(Impl.and(euint4.unwrap(a), uint256(b), true));
+        return euint4.wrap(Impl.and(euint4.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -1507,7 +1507,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint4(0);
         }
-        return euint4.wrap(Impl.and(euint4.unwrap(b), uint256(a), true));
+        return euint4.wrap(Impl.and(euint4.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -1517,7 +1517,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint4(0);
         }
-        return euint4.wrap(Impl.or(euint4.unwrap(a), uint256(b), true));
+        return euint4.wrap(Impl.or(euint4.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -1527,7 +1527,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint4(0);
         }
-        return euint4.wrap(Impl.or(euint4.unwrap(b), uint256(a), true));
+        return euint4.wrap(Impl.or(euint4.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -1537,7 +1537,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint4(0);
         }
-        return euint4.wrap(Impl.xor(euint4.unwrap(a), uint256(b), true));
+        return euint4.wrap(Impl.xor(euint4.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -1547,7 +1547,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint4(0);
         }
-        return euint4.wrap(Impl.xor(euint4.unwrap(b), uint256(a), true));
+        return euint4.wrap(Impl.xor(euint4.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -1557,7 +1557,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint4(0);
         }
-        return ebool.wrap(Impl.eq(euint4.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.eq(euint4.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -1567,7 +1567,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint4(0);
         }
-        return ebool.wrap(Impl.eq(euint4.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.eq(euint4.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -1577,7 +1577,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint4(0);
         }
-        return ebool.wrap(Impl.ne(euint4.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.ne(euint4.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -1587,7 +1587,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint4(0);
         }
-        return ebool.wrap(Impl.ne(euint4.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.ne(euint4.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -1597,7 +1597,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint4(0);
         }
-        return ebool.wrap(Impl.ge(euint4.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.ge(euint4.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -1607,7 +1607,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint4(0);
         }
-        return ebool.wrap(Impl.le(euint4.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.le(euint4.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -1617,7 +1617,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint4(0);
         }
-        return ebool.wrap(Impl.gt(euint4.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.gt(euint4.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -1627,7 +1627,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint4(0);
         }
-        return ebool.wrap(Impl.lt(euint4.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.lt(euint4.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -1637,7 +1637,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint4(0);
         }
-        return ebool.wrap(Impl.le(euint4.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.le(euint4.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -1647,7 +1647,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint4(0);
         }
-        return ebool.wrap(Impl.ge(euint4.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.ge(euint4.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -1657,7 +1657,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint4(0);
         }
-        return ebool.wrap(Impl.lt(euint4.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.lt(euint4.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -1667,7 +1667,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint4(0);
         }
-        return ebool.wrap(Impl.gt(euint4.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.gt(euint4.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -1677,7 +1677,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint4(0);
         }
-        return euint4.wrap(Impl.min(euint4.unwrap(a), uint256(b), true));
+        return euint4.wrap(Impl.min(euint4.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -1687,7 +1687,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint4(0);
         }
-        return euint4.wrap(Impl.min(euint4.unwrap(b), uint256(a), true));
+        return euint4.wrap(Impl.min(euint4.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -1697,7 +1697,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint4(0);
         }
-        return euint4.wrap(Impl.max(euint4.unwrap(a), uint256(b), true));
+        return euint4.wrap(Impl.max(euint4.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -1707,7 +1707,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint4(0);
         }
-        return euint4.wrap(Impl.max(euint4.unwrap(b), uint256(a), true));
+        return euint4.wrap(Impl.max(euint4.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -2991,7 +2991,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
-        return euint8.wrap(Impl.add(euint8.unwrap(a), uint256(b), true));
+        return euint8.wrap(Impl.add(euint8.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -3001,7 +3001,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return euint8.wrap(Impl.add(euint8.unwrap(b), uint256(a), true));
+        return euint8.wrap(Impl.add(euint8.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -3011,7 +3011,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
-        return euint8.wrap(Impl.sub(euint8.unwrap(a), uint256(b), true));
+        return euint8.wrap(Impl.sub(euint8.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -3032,7 +3032,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
-        return euint8.wrap(Impl.mul(euint8.unwrap(a), uint256(b), true));
+        return euint8.wrap(Impl.mul(euint8.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -3042,7 +3042,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return euint8.wrap(Impl.mul(euint8.unwrap(b), uint256(a), true));
+        return euint8.wrap(Impl.mul(euint8.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -3052,7 +3052,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
-        return euint8.wrap(Impl.div(euint8.unwrap(a), uint256(b)));
+        return euint8.wrap(Impl.div(euint8.unwrap(a), bytes32(uint256(b))));
     }
 
     /**
@@ -3062,7 +3062,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
-        return euint8.wrap(Impl.rem(euint8.unwrap(a), uint256(b)));
+        return euint8.wrap(Impl.rem(euint8.unwrap(a), bytes32(uint256(b))));
     }
 
     /**
@@ -3072,7 +3072,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
-        return euint8.wrap(Impl.and(euint8.unwrap(a), uint256(b), true));
+        return euint8.wrap(Impl.and(euint8.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -3082,7 +3082,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return euint8.wrap(Impl.and(euint8.unwrap(b), uint256(a), true));
+        return euint8.wrap(Impl.and(euint8.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -3092,7 +3092,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
-        return euint8.wrap(Impl.or(euint8.unwrap(a), uint256(b), true));
+        return euint8.wrap(Impl.or(euint8.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -3102,7 +3102,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return euint8.wrap(Impl.or(euint8.unwrap(b), uint256(a), true));
+        return euint8.wrap(Impl.or(euint8.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -3112,7 +3112,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
-        return euint8.wrap(Impl.xor(euint8.unwrap(a), uint256(b), true));
+        return euint8.wrap(Impl.xor(euint8.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -3122,7 +3122,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return euint8.wrap(Impl.xor(euint8.unwrap(b), uint256(a), true));
+        return euint8.wrap(Impl.xor(euint8.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -3132,7 +3132,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
-        return ebool.wrap(Impl.eq(euint8.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.eq(euint8.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -3142,7 +3142,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return ebool.wrap(Impl.eq(euint8.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.eq(euint8.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -3152,7 +3152,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
-        return ebool.wrap(Impl.ne(euint8.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.ne(euint8.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -3162,7 +3162,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return ebool.wrap(Impl.ne(euint8.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.ne(euint8.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -3172,7 +3172,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
-        return ebool.wrap(Impl.ge(euint8.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.ge(euint8.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -3182,7 +3182,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return ebool.wrap(Impl.le(euint8.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.le(euint8.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -3192,7 +3192,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
-        return ebool.wrap(Impl.gt(euint8.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.gt(euint8.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -3202,7 +3202,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return ebool.wrap(Impl.lt(euint8.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.lt(euint8.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -3212,7 +3212,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
-        return ebool.wrap(Impl.le(euint8.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.le(euint8.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -3222,7 +3222,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return ebool.wrap(Impl.ge(euint8.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.ge(euint8.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -3232,7 +3232,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
-        return ebool.wrap(Impl.lt(euint8.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.lt(euint8.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -3242,7 +3242,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return ebool.wrap(Impl.gt(euint8.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.gt(euint8.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -3252,7 +3252,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
-        return euint8.wrap(Impl.min(euint8.unwrap(a), uint256(b), true));
+        return euint8.wrap(Impl.min(euint8.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -3262,7 +3262,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return euint8.wrap(Impl.min(euint8.unwrap(b), uint256(a), true));
+        return euint8.wrap(Impl.min(euint8.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -3272,7 +3272,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
-        return euint8.wrap(Impl.max(euint8.unwrap(a), uint256(b), true));
+        return euint8.wrap(Impl.max(euint8.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -3282,7 +3282,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
-        return euint8.wrap(Impl.max(euint8.unwrap(b), uint256(a), true));
+        return euint8.wrap(Impl.max(euint8.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -4566,7 +4566,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        return euint16.wrap(Impl.add(euint16.unwrap(a), uint256(b), true));
+        return euint16.wrap(Impl.add(euint16.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -4576,7 +4576,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return euint16.wrap(Impl.add(euint16.unwrap(b), uint256(a), true));
+        return euint16.wrap(Impl.add(euint16.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -4586,7 +4586,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        return euint16.wrap(Impl.sub(euint16.unwrap(a), uint256(b), true));
+        return euint16.wrap(Impl.sub(euint16.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -4607,7 +4607,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        return euint16.wrap(Impl.mul(euint16.unwrap(a), uint256(b), true));
+        return euint16.wrap(Impl.mul(euint16.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -4617,7 +4617,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return euint16.wrap(Impl.mul(euint16.unwrap(b), uint256(a), true));
+        return euint16.wrap(Impl.mul(euint16.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -4627,7 +4627,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        return euint16.wrap(Impl.div(euint16.unwrap(a), uint256(b)));
+        return euint16.wrap(Impl.div(euint16.unwrap(a), bytes32(uint256(b))));
     }
 
     /**
@@ -4637,7 +4637,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        return euint16.wrap(Impl.rem(euint16.unwrap(a), uint256(b)));
+        return euint16.wrap(Impl.rem(euint16.unwrap(a), bytes32(uint256(b))));
     }
 
     /**
@@ -4647,7 +4647,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        return euint16.wrap(Impl.and(euint16.unwrap(a), uint256(b), true));
+        return euint16.wrap(Impl.and(euint16.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -4657,7 +4657,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return euint16.wrap(Impl.and(euint16.unwrap(b), uint256(a), true));
+        return euint16.wrap(Impl.and(euint16.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -4667,7 +4667,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        return euint16.wrap(Impl.or(euint16.unwrap(a), uint256(b), true));
+        return euint16.wrap(Impl.or(euint16.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -4677,7 +4677,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return euint16.wrap(Impl.or(euint16.unwrap(b), uint256(a), true));
+        return euint16.wrap(Impl.or(euint16.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -4687,7 +4687,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        return euint16.wrap(Impl.xor(euint16.unwrap(a), uint256(b), true));
+        return euint16.wrap(Impl.xor(euint16.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -4697,7 +4697,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return euint16.wrap(Impl.xor(euint16.unwrap(b), uint256(a), true));
+        return euint16.wrap(Impl.xor(euint16.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -4707,7 +4707,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        return ebool.wrap(Impl.eq(euint16.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.eq(euint16.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -4717,7 +4717,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return ebool.wrap(Impl.eq(euint16.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.eq(euint16.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -4727,7 +4727,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        return ebool.wrap(Impl.ne(euint16.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.ne(euint16.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -4737,7 +4737,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return ebool.wrap(Impl.ne(euint16.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.ne(euint16.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -4747,7 +4747,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        return ebool.wrap(Impl.ge(euint16.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.ge(euint16.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -4757,7 +4757,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return ebool.wrap(Impl.le(euint16.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.le(euint16.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -4767,7 +4767,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        return ebool.wrap(Impl.gt(euint16.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.gt(euint16.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -4777,7 +4777,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return ebool.wrap(Impl.lt(euint16.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.lt(euint16.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -4787,7 +4787,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        return ebool.wrap(Impl.le(euint16.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.le(euint16.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -4797,7 +4797,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return ebool.wrap(Impl.ge(euint16.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.ge(euint16.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -4807,7 +4807,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        return ebool.wrap(Impl.lt(euint16.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.lt(euint16.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -4817,7 +4817,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return ebool.wrap(Impl.gt(euint16.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.gt(euint16.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -4827,7 +4827,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        return euint16.wrap(Impl.min(euint16.unwrap(a), uint256(b), true));
+        return euint16.wrap(Impl.min(euint16.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -4837,7 +4837,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return euint16.wrap(Impl.min(euint16.unwrap(b), uint256(a), true));
+        return euint16.wrap(Impl.min(euint16.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -4847,7 +4847,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        return euint16.wrap(Impl.max(euint16.unwrap(a), uint256(b), true));
+        return euint16.wrap(Impl.max(euint16.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -4857,7 +4857,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
-        return euint16.wrap(Impl.max(euint16.unwrap(b), uint256(a), true));
+        return euint16.wrap(Impl.max(euint16.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -6141,7 +6141,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        return euint32.wrap(Impl.add(euint32.unwrap(a), uint256(b), true));
+        return euint32.wrap(Impl.add(euint32.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -6151,7 +6151,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return euint32.wrap(Impl.add(euint32.unwrap(b), uint256(a), true));
+        return euint32.wrap(Impl.add(euint32.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -6161,7 +6161,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        return euint32.wrap(Impl.sub(euint32.unwrap(a), uint256(b), true));
+        return euint32.wrap(Impl.sub(euint32.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -6182,7 +6182,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        return euint32.wrap(Impl.mul(euint32.unwrap(a), uint256(b), true));
+        return euint32.wrap(Impl.mul(euint32.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -6192,7 +6192,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return euint32.wrap(Impl.mul(euint32.unwrap(b), uint256(a), true));
+        return euint32.wrap(Impl.mul(euint32.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -6202,7 +6202,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        return euint32.wrap(Impl.div(euint32.unwrap(a), uint256(b)));
+        return euint32.wrap(Impl.div(euint32.unwrap(a), bytes32(uint256(b))));
     }
 
     /**
@@ -6212,7 +6212,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        return euint32.wrap(Impl.rem(euint32.unwrap(a), uint256(b)));
+        return euint32.wrap(Impl.rem(euint32.unwrap(a), bytes32(uint256(b))));
     }
 
     /**
@@ -6222,7 +6222,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        return euint32.wrap(Impl.and(euint32.unwrap(a), uint256(b), true));
+        return euint32.wrap(Impl.and(euint32.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -6232,7 +6232,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return euint32.wrap(Impl.and(euint32.unwrap(b), uint256(a), true));
+        return euint32.wrap(Impl.and(euint32.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -6242,7 +6242,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        return euint32.wrap(Impl.or(euint32.unwrap(a), uint256(b), true));
+        return euint32.wrap(Impl.or(euint32.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -6252,7 +6252,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return euint32.wrap(Impl.or(euint32.unwrap(b), uint256(a), true));
+        return euint32.wrap(Impl.or(euint32.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -6262,7 +6262,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        return euint32.wrap(Impl.xor(euint32.unwrap(a), uint256(b), true));
+        return euint32.wrap(Impl.xor(euint32.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -6272,7 +6272,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return euint32.wrap(Impl.xor(euint32.unwrap(b), uint256(a), true));
+        return euint32.wrap(Impl.xor(euint32.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -6282,7 +6282,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        return ebool.wrap(Impl.eq(euint32.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.eq(euint32.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -6292,7 +6292,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return ebool.wrap(Impl.eq(euint32.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.eq(euint32.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -6302,7 +6302,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        return ebool.wrap(Impl.ne(euint32.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.ne(euint32.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -6312,7 +6312,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return ebool.wrap(Impl.ne(euint32.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.ne(euint32.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -6322,7 +6322,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        return ebool.wrap(Impl.ge(euint32.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.ge(euint32.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -6332,7 +6332,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return ebool.wrap(Impl.le(euint32.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.le(euint32.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -6342,7 +6342,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        return ebool.wrap(Impl.gt(euint32.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.gt(euint32.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -6352,7 +6352,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return ebool.wrap(Impl.lt(euint32.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.lt(euint32.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -6362,7 +6362,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        return ebool.wrap(Impl.le(euint32.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.le(euint32.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -6372,7 +6372,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return ebool.wrap(Impl.ge(euint32.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.ge(euint32.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -6382,7 +6382,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        return ebool.wrap(Impl.lt(euint32.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.lt(euint32.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -6392,7 +6392,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return ebool.wrap(Impl.gt(euint32.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.gt(euint32.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -6402,7 +6402,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        return euint32.wrap(Impl.min(euint32.unwrap(a), uint256(b), true));
+        return euint32.wrap(Impl.min(euint32.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -6412,7 +6412,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return euint32.wrap(Impl.min(euint32.unwrap(b), uint256(a), true));
+        return euint32.wrap(Impl.min(euint32.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -6422,7 +6422,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        return euint32.wrap(Impl.max(euint32.unwrap(a), uint256(b), true));
+        return euint32.wrap(Impl.max(euint32.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -6432,7 +6432,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
-        return euint32.wrap(Impl.max(euint32.unwrap(b), uint256(a), true));
+        return euint32.wrap(Impl.max(euint32.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -7716,7 +7716,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        return euint64.wrap(Impl.add(euint64.unwrap(a), uint256(b), true));
+        return euint64.wrap(Impl.add(euint64.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -7726,7 +7726,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
-        return euint64.wrap(Impl.add(euint64.unwrap(b), uint256(a), true));
+        return euint64.wrap(Impl.add(euint64.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -7736,7 +7736,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        return euint64.wrap(Impl.sub(euint64.unwrap(a), uint256(b), true));
+        return euint64.wrap(Impl.sub(euint64.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -7757,7 +7757,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        return euint64.wrap(Impl.mul(euint64.unwrap(a), uint256(b), true));
+        return euint64.wrap(Impl.mul(euint64.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -7767,7 +7767,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
-        return euint64.wrap(Impl.mul(euint64.unwrap(b), uint256(a), true));
+        return euint64.wrap(Impl.mul(euint64.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -7777,7 +7777,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        return euint64.wrap(Impl.div(euint64.unwrap(a), uint256(b)));
+        return euint64.wrap(Impl.div(euint64.unwrap(a), bytes32(uint256(b))));
     }
 
     /**
@@ -7787,7 +7787,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        return euint64.wrap(Impl.rem(euint64.unwrap(a), uint256(b)));
+        return euint64.wrap(Impl.rem(euint64.unwrap(a), bytes32(uint256(b))));
     }
 
     /**
@@ -7797,7 +7797,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        return euint64.wrap(Impl.and(euint64.unwrap(a), uint256(b), true));
+        return euint64.wrap(Impl.and(euint64.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -7807,7 +7807,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
-        return euint64.wrap(Impl.and(euint64.unwrap(b), uint256(a), true));
+        return euint64.wrap(Impl.and(euint64.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -7817,7 +7817,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        return euint64.wrap(Impl.or(euint64.unwrap(a), uint256(b), true));
+        return euint64.wrap(Impl.or(euint64.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -7827,7 +7827,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
-        return euint64.wrap(Impl.or(euint64.unwrap(b), uint256(a), true));
+        return euint64.wrap(Impl.or(euint64.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -7837,7 +7837,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        return euint64.wrap(Impl.xor(euint64.unwrap(a), uint256(b), true));
+        return euint64.wrap(Impl.xor(euint64.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -7847,7 +7847,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
-        return euint64.wrap(Impl.xor(euint64.unwrap(b), uint256(a), true));
+        return euint64.wrap(Impl.xor(euint64.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -7857,7 +7857,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        return ebool.wrap(Impl.eq(euint64.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.eq(euint64.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -7867,7 +7867,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
-        return ebool.wrap(Impl.eq(euint64.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.eq(euint64.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -7877,7 +7877,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        return ebool.wrap(Impl.ne(euint64.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.ne(euint64.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -7887,7 +7887,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
-        return ebool.wrap(Impl.ne(euint64.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.ne(euint64.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -7897,7 +7897,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        return ebool.wrap(Impl.ge(euint64.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.ge(euint64.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -7907,7 +7907,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
-        return ebool.wrap(Impl.le(euint64.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.le(euint64.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -7917,7 +7917,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        return ebool.wrap(Impl.gt(euint64.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.gt(euint64.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -7927,7 +7927,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
-        return ebool.wrap(Impl.lt(euint64.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.lt(euint64.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -7937,7 +7937,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        return ebool.wrap(Impl.le(euint64.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.le(euint64.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -7947,7 +7947,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
-        return ebool.wrap(Impl.ge(euint64.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.ge(euint64.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -7957,7 +7957,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        return ebool.wrap(Impl.lt(euint64.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.lt(euint64.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -7967,7 +7967,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
-        return ebool.wrap(Impl.gt(euint64.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.gt(euint64.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -7977,7 +7977,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        return euint64.wrap(Impl.min(euint64.unwrap(a), uint256(b), true));
+        return euint64.wrap(Impl.min(euint64.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -7987,7 +7987,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
-        return euint64.wrap(Impl.min(euint64.unwrap(b), uint256(a), true));
+        return euint64.wrap(Impl.min(euint64.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -7997,7 +7997,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        return euint64.wrap(Impl.max(euint64.unwrap(a), uint256(b), true));
+        return euint64.wrap(Impl.max(euint64.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -8007,7 +8007,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
-        return euint64.wrap(Impl.max(euint64.unwrap(b), uint256(a), true));
+        return euint64.wrap(Impl.max(euint64.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -9291,7 +9291,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        return euint128.wrap(Impl.add(euint128.unwrap(a), uint256(b), true));
+        return euint128.wrap(Impl.add(euint128.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -9301,7 +9301,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
-        return euint128.wrap(Impl.add(euint128.unwrap(b), uint256(a), true));
+        return euint128.wrap(Impl.add(euint128.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -9311,7 +9311,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        return euint128.wrap(Impl.sub(euint128.unwrap(a), uint256(b), true));
+        return euint128.wrap(Impl.sub(euint128.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -9332,7 +9332,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        return euint128.wrap(Impl.mul(euint128.unwrap(a), uint256(b), true));
+        return euint128.wrap(Impl.mul(euint128.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -9342,7 +9342,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
-        return euint128.wrap(Impl.mul(euint128.unwrap(b), uint256(a), true));
+        return euint128.wrap(Impl.mul(euint128.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -9352,7 +9352,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        return euint128.wrap(Impl.div(euint128.unwrap(a), uint256(b)));
+        return euint128.wrap(Impl.div(euint128.unwrap(a), bytes32(uint256(b))));
     }
 
     /**
@@ -9362,7 +9362,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        return euint128.wrap(Impl.rem(euint128.unwrap(a), uint256(b)));
+        return euint128.wrap(Impl.rem(euint128.unwrap(a), bytes32(uint256(b))));
     }
 
     /**
@@ -9372,7 +9372,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        return euint128.wrap(Impl.and(euint128.unwrap(a), uint256(b), true));
+        return euint128.wrap(Impl.and(euint128.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -9382,7 +9382,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
-        return euint128.wrap(Impl.and(euint128.unwrap(b), uint256(a), true));
+        return euint128.wrap(Impl.and(euint128.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -9392,7 +9392,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        return euint128.wrap(Impl.or(euint128.unwrap(a), uint256(b), true));
+        return euint128.wrap(Impl.or(euint128.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -9402,7 +9402,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
-        return euint128.wrap(Impl.or(euint128.unwrap(b), uint256(a), true));
+        return euint128.wrap(Impl.or(euint128.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -9412,7 +9412,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        return euint128.wrap(Impl.xor(euint128.unwrap(a), uint256(b), true));
+        return euint128.wrap(Impl.xor(euint128.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -9422,7 +9422,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
-        return euint128.wrap(Impl.xor(euint128.unwrap(b), uint256(a), true));
+        return euint128.wrap(Impl.xor(euint128.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -9432,7 +9432,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        return ebool.wrap(Impl.eq(euint128.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.eq(euint128.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -9442,7 +9442,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
-        return ebool.wrap(Impl.eq(euint128.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.eq(euint128.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -9452,7 +9452,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        return ebool.wrap(Impl.ne(euint128.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.ne(euint128.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -9462,7 +9462,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
-        return ebool.wrap(Impl.ne(euint128.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.ne(euint128.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -9472,7 +9472,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        return ebool.wrap(Impl.ge(euint128.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.ge(euint128.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -9482,7 +9482,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
-        return ebool.wrap(Impl.le(euint128.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.le(euint128.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -9492,7 +9492,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        return ebool.wrap(Impl.gt(euint128.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.gt(euint128.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -9502,7 +9502,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
-        return ebool.wrap(Impl.lt(euint128.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.lt(euint128.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -9512,7 +9512,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        return ebool.wrap(Impl.le(euint128.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.le(euint128.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -9522,7 +9522,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
-        return ebool.wrap(Impl.ge(euint128.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.ge(euint128.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -9532,7 +9532,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        return ebool.wrap(Impl.lt(euint128.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.lt(euint128.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -9542,7 +9542,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
-        return ebool.wrap(Impl.gt(euint128.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.gt(euint128.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -9552,7 +9552,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        return euint128.wrap(Impl.min(euint128.unwrap(a), uint256(b), true));
+        return euint128.wrap(Impl.min(euint128.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -9562,7 +9562,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
-        return euint128.wrap(Impl.min(euint128.unwrap(b), uint256(a), true));
+        return euint128.wrap(Impl.min(euint128.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -9572,7 +9572,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        return euint128.wrap(Impl.max(euint128.unwrap(a), uint256(b), true));
+        return euint128.wrap(Impl.max(euint128.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -9582,7 +9582,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
-        return euint128.wrap(Impl.max(euint128.unwrap(b), uint256(a), true));
+        return euint128.wrap(Impl.max(euint128.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -10866,7 +10866,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        return euint256.wrap(Impl.add(euint256.unwrap(a), uint256(b), true));
+        return euint256.wrap(Impl.add(euint256.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -10876,7 +10876,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
-        return euint256.wrap(Impl.add(euint256.unwrap(b), uint256(a), true));
+        return euint256.wrap(Impl.add(euint256.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -10886,7 +10886,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        return euint256.wrap(Impl.sub(euint256.unwrap(a), uint256(b), true));
+        return euint256.wrap(Impl.sub(euint256.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -10907,7 +10907,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        return euint256.wrap(Impl.mul(euint256.unwrap(a), uint256(b), true));
+        return euint256.wrap(Impl.mul(euint256.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -10917,7 +10917,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
-        return euint256.wrap(Impl.mul(euint256.unwrap(b), uint256(a), true));
+        return euint256.wrap(Impl.mul(euint256.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -10927,7 +10927,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        return euint256.wrap(Impl.div(euint256.unwrap(a), uint256(b)));
+        return euint256.wrap(Impl.div(euint256.unwrap(a), bytes32(uint256(b))));
     }
 
     /**
@@ -10937,7 +10937,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        return euint256.wrap(Impl.rem(euint256.unwrap(a), uint256(b)));
+        return euint256.wrap(Impl.rem(euint256.unwrap(a), bytes32(uint256(b))));
     }
 
     /**
@@ -10947,7 +10947,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        return euint256.wrap(Impl.and(euint256.unwrap(a), uint256(b), true));
+        return euint256.wrap(Impl.and(euint256.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -10957,7 +10957,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
-        return euint256.wrap(Impl.and(euint256.unwrap(b), uint256(a), true));
+        return euint256.wrap(Impl.and(euint256.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -10967,7 +10967,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        return euint256.wrap(Impl.or(euint256.unwrap(a), uint256(b), true));
+        return euint256.wrap(Impl.or(euint256.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -10977,7 +10977,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
-        return euint256.wrap(Impl.or(euint256.unwrap(b), uint256(a), true));
+        return euint256.wrap(Impl.or(euint256.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -10987,7 +10987,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        return euint256.wrap(Impl.xor(euint256.unwrap(a), uint256(b), true));
+        return euint256.wrap(Impl.xor(euint256.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -10997,7 +10997,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
-        return euint256.wrap(Impl.xor(euint256.unwrap(b), uint256(a), true));
+        return euint256.wrap(Impl.xor(euint256.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -11007,7 +11007,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        return ebool.wrap(Impl.eq(euint256.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.eq(euint256.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -11017,7 +11017,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
-        return ebool.wrap(Impl.eq(euint256.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.eq(euint256.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -11027,7 +11027,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        return ebool.wrap(Impl.ne(euint256.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.ne(euint256.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -11037,7 +11037,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
-        return ebool.wrap(Impl.ne(euint256.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.ne(euint256.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -11047,7 +11047,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        return ebool.wrap(Impl.ge(euint256.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.ge(euint256.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -11057,7 +11057,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
-        return ebool.wrap(Impl.le(euint256.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.le(euint256.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -11067,7 +11067,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        return ebool.wrap(Impl.gt(euint256.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.gt(euint256.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -11077,7 +11077,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
-        return ebool.wrap(Impl.lt(euint256.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.lt(euint256.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -11087,7 +11087,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        return ebool.wrap(Impl.le(euint256.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.le(euint256.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -11097,7 +11097,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
-        return ebool.wrap(Impl.ge(euint256.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.ge(euint256.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -11107,7 +11107,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        return ebool.wrap(Impl.lt(euint256.unwrap(a), uint256(b), true));
+        return ebool.wrap(Impl.lt(euint256.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -11117,7 +11117,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
-        return ebool.wrap(Impl.gt(euint256.unwrap(b), uint256(a), true));
+        return ebool.wrap(Impl.gt(euint256.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -11127,7 +11127,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        return euint256.wrap(Impl.min(euint256.unwrap(a), uint256(b), true));
+        return euint256.wrap(Impl.min(euint256.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -11137,7 +11137,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
-        return euint256.wrap(Impl.min(euint256.unwrap(b), uint256(a), true));
+        return euint256.wrap(Impl.min(euint256.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -11147,7 +11147,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        return euint256.wrap(Impl.max(euint256.unwrap(a), uint256(b), true));
+        return euint256.wrap(Impl.max(euint256.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -11157,7 +11157,7 @@ library TFHE {
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
-        return euint256.wrap(Impl.max(euint256.unwrap(b), uint256(a), true));
+        return euint256.wrap(Impl.max(euint256.unwrap(b), bytes32(uint256(a)), true));
     }
 
     /**
@@ -11167,7 +11167,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint4(0);
         }
-        return euint4.wrap(Impl.shl(euint4.unwrap(a), uint256(b), true));
+        return euint4.wrap(Impl.shl(euint4.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -11177,7 +11177,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint4(0);
         }
-        return euint4.wrap(Impl.shr(euint4.unwrap(a), uint256(b), true));
+        return euint4.wrap(Impl.shr(euint4.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -11187,7 +11187,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint4(0);
         }
-        return euint4.wrap(Impl.rotl(euint4.unwrap(a), uint256(b), true));
+        return euint4.wrap(Impl.rotl(euint4.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -11197,7 +11197,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint4(0);
         }
-        return euint4.wrap(Impl.rotr(euint4.unwrap(a), uint256(b), true));
+        return euint4.wrap(Impl.rotr(euint4.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -11220,7 +11220,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
-        return euint8.wrap(Impl.shl(euint8.unwrap(a), uint256(b), true));
+        return euint8.wrap(Impl.shl(euint8.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -11243,7 +11243,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
-        return euint8.wrap(Impl.shr(euint8.unwrap(a), uint256(b), true));
+        return euint8.wrap(Impl.shr(euint8.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -11266,7 +11266,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
-        return euint8.wrap(Impl.rotl(euint8.unwrap(a), uint256(b), true));
+        return euint8.wrap(Impl.rotl(euint8.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -11289,7 +11289,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint8(0);
         }
-        return euint8.wrap(Impl.rotr(euint8.unwrap(a), uint256(b), true));
+        return euint8.wrap(Impl.rotr(euint8.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -11312,7 +11312,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        return euint16.wrap(Impl.shl(euint16.unwrap(a), uint256(b), true));
+        return euint16.wrap(Impl.shl(euint16.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -11335,7 +11335,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        return euint16.wrap(Impl.shr(euint16.unwrap(a), uint256(b), true));
+        return euint16.wrap(Impl.shr(euint16.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -11358,7 +11358,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        return euint16.wrap(Impl.rotl(euint16.unwrap(a), uint256(b), true));
+        return euint16.wrap(Impl.rotl(euint16.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -11381,7 +11381,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        return euint16.wrap(Impl.rotr(euint16.unwrap(a), uint256(b), true));
+        return euint16.wrap(Impl.rotr(euint16.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -11404,7 +11404,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        return euint32.wrap(Impl.shl(euint32.unwrap(a), uint256(b), true));
+        return euint32.wrap(Impl.shl(euint32.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -11427,7 +11427,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        return euint32.wrap(Impl.shr(euint32.unwrap(a), uint256(b), true));
+        return euint32.wrap(Impl.shr(euint32.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -11450,7 +11450,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        return euint32.wrap(Impl.rotl(euint32.unwrap(a), uint256(b), true));
+        return euint32.wrap(Impl.rotl(euint32.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -11473,7 +11473,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        return euint32.wrap(Impl.rotr(euint32.unwrap(a), uint256(b), true));
+        return euint32.wrap(Impl.rotr(euint32.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -11496,7 +11496,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        return euint64.wrap(Impl.shl(euint64.unwrap(a), uint256(b), true));
+        return euint64.wrap(Impl.shl(euint64.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -11519,7 +11519,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        return euint64.wrap(Impl.shr(euint64.unwrap(a), uint256(b), true));
+        return euint64.wrap(Impl.shr(euint64.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -11542,7 +11542,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        return euint64.wrap(Impl.rotl(euint64.unwrap(a), uint256(b), true));
+        return euint64.wrap(Impl.rotl(euint64.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -11565,7 +11565,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        return euint64.wrap(Impl.rotr(euint64.unwrap(a), uint256(b), true));
+        return euint64.wrap(Impl.rotr(euint64.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -11588,7 +11588,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        return euint128.wrap(Impl.shl(euint128.unwrap(a), uint256(b), true));
+        return euint128.wrap(Impl.shl(euint128.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -11611,7 +11611,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        return euint128.wrap(Impl.shr(euint128.unwrap(a), uint256(b), true));
+        return euint128.wrap(Impl.shr(euint128.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -11634,7 +11634,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        return euint128.wrap(Impl.rotl(euint128.unwrap(a), uint256(b), true));
+        return euint128.wrap(Impl.rotl(euint128.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -11657,7 +11657,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        return euint128.wrap(Impl.rotr(euint128.unwrap(a), uint256(b), true));
+        return euint128.wrap(Impl.rotr(euint128.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -11680,7 +11680,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        return euint256.wrap(Impl.shl(euint256.unwrap(a), uint256(b), true));
+        return euint256.wrap(Impl.shl(euint256.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -11703,7 +11703,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        return euint256.wrap(Impl.shr(euint256.unwrap(a), uint256(b), true));
+        return euint256.wrap(Impl.shr(euint256.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -11726,7 +11726,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        return euint256.wrap(Impl.rotl(euint256.unwrap(a), uint256(b), true));
+        return euint256.wrap(Impl.rotl(euint256.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -11749,7 +11749,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        return euint256.wrap(Impl.rotr(euint256.unwrap(a), uint256(b), true));
+        return euint256.wrap(Impl.rotr(euint256.unwrap(a), bytes32(uint256(b)), true));
     }
 
     /**
@@ -11925,9 +11925,9 @@ library TFHE {
      */
     function asEbool(bool value) internal returns (ebool) {
         if (value) {
-            return asEbool(1);
+            return asEbool(uint256(1));
         } else {
-            return asEbool(0);
+            return asEbool(uint256(0));
         }
     }
 
@@ -11949,14 +11949,14 @@ library TFHE {
      * @dev Evaluates and(a, b) and returns the result.
      */
     function and(ebool a, bool b) internal returns (ebool) {
-        return ebool.wrap(Impl.and(ebool.unwrap(a), b ? 1 : 0, true));
+        return ebool.wrap(Impl.and(ebool.unwrap(a), bytes32(uint256(b ? 1 : 0)), true));
     }
 
     /**
      * @dev Evaluates and(a, b) and returns the result.
      */
     function and(bool a, ebool b) internal returns (ebool) {
-        return ebool.wrap(Impl.and(ebool.unwrap(b), a ? 1 : 0, true));
+        return ebool.wrap(Impl.and(ebool.unwrap(b), bytes32(uint256(a ? 1 : 0)), true));
     }
 
     /**
@@ -11970,14 +11970,14 @@ library TFHE {
      * @dev Evaluates or(a, b) and returns the result.
      */
     function or(ebool a, bool b) internal returns (ebool) {
-        return ebool.wrap(Impl.or(ebool.unwrap(a), b ? 1 : 0, true));
+        return ebool.wrap(Impl.or(ebool.unwrap(a), bytes32(uint256(b ? 1 : 0)), true));
     }
 
     /**
      * @dev Evaluates or(a, b) and returns the result.
      */
     function or(bool a, ebool b) internal returns (ebool) {
-        return ebool.wrap(Impl.or(ebool.unwrap(b), a ? 1 : 0, true));
+        return ebool.wrap(Impl.or(ebool.unwrap(b), bytes32(uint256(a ? 1 : 0)), true));
     }
 
     /**
@@ -11991,14 +11991,14 @@ library TFHE {
      * @dev Evaluates xor(a, b) and returns the result.
      */
     function xor(ebool a, bool b) internal returns (ebool) {
-        return ebool.wrap(Impl.xor(ebool.unwrap(a), b ? 1 : 0, true));
+        return ebool.wrap(Impl.xor(ebool.unwrap(a), bytes32(uint256(b ? 1 : 0)), true));
     }
 
     /**
      * @dev Evaluates xor(a, b) and returns the result.
      */
     function xor(bool a, ebool b) internal returns (ebool) {
-        return ebool.wrap(Impl.xor(ebool.unwrap(b), a ? 1 : 0, true));
+        return ebool.wrap(Impl.xor(ebool.unwrap(b), bytes32(uint256(a ? 1 : 0)), true));
     }
 
     function not(ebool a) internal returns (ebool) {
@@ -12754,7 +12754,7 @@ library TFHE {
             a = asEbool(false);
         }
         uint256 bProc = b ? 1 : 0;
-        return ebool.wrap(Impl.eq(ebool.unwrap(a), bProc, true));
+        return ebool.wrap(Impl.eq(ebool.unwrap(a), bytes32(bProc), true));
     }
 
     /**
@@ -12765,7 +12765,7 @@ library TFHE {
             a = asEbool(false);
         }
         uint256 bProc = b ? 1 : 0;
-        return ebool.wrap(Impl.eq(ebool.unwrap(a), bProc, true));
+        return ebool.wrap(Impl.eq(ebool.unwrap(a), bytes32(bProc), true));
     }
 
     /**
@@ -12776,7 +12776,7 @@ library TFHE {
             a = asEbool(false);
         }
         uint256 bProc = b ? 1 : 0;
-        return ebool.wrap(Impl.ne(ebool.unwrap(a), bProc, true));
+        return ebool.wrap(Impl.ne(ebool.unwrap(a), bytes32(bProc), true));
     }
 
     /**
@@ -12787,7 +12787,7 @@ library TFHE {
             a = asEbool(false);
         }
         uint256 bProc = b ? 1 : 0;
-        return ebool.wrap(Impl.ne(ebool.unwrap(a), bProc, true));
+        return ebool.wrap(Impl.ne(ebool.unwrap(a), bytes32(bProc), true));
     }
 
     /**
@@ -12823,7 +12823,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEaddress(address(0));
         }
-        uint256 bProc = uint256(uint160(b));
+        bytes32 bProc = bytes32(uint256(uint160(b)));
         return ebool.wrap(Impl.eq(eaddress.unwrap(a), bProc, true));
     }
 
@@ -12834,7 +12834,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEaddress(address(0));
         }
-        uint256 bProc = uint256(uint160(b));
+        bytes32 bProc = bytes32(uint256(uint160(b)));
         return ebool.wrap(Impl.eq(eaddress.unwrap(a), bProc, true));
     }
 
@@ -12845,7 +12845,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEaddress(address(0));
         }
-        uint256 bProc = uint256(uint160(b));
+        bytes32 bProc = bytes32(uint256(uint160(b)));
         return ebool.wrap(Impl.ne(eaddress.unwrap(a), bProc, true));
     }
 
@@ -12856,7 +12856,7 @@ library TFHE {
         if (!isInitialized(a)) {
             a = asEaddress(address(0));
         }
-        uint256 bProc = uint256(uint160(b));
+        bytes32 bProc = bytes32(uint256(uint160(b)));
         return ebool.wrap(Impl.ne(eaddress.unwrap(a), bProc, true));
     }
 
