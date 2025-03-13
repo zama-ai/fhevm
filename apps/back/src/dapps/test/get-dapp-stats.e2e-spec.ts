@@ -76,13 +76,12 @@ describe('get-dapp-stats', () => {
 
       test('then it should emit a dapp stats requested event', async () => {
         await vi.waitUntil(async () => {
-          const size = await manager.getLogQueueSize()
+          const size = await manager.getOrchQueueSize()
           return size > 0
         })
 
-        const message = await manager.getMessageFromLogQueue()
-        const parsedMessage = JSON.parse(message!)
-        const event = JSON.parse(parsedMessage.Message)
+        const message = await manager.getMessageFromOrchQueue()
+        const event = JSON.parse(message!)
         expect(back.isBackEvent(event)).toBe(true)
         expect(event.type).toBe('back:dapp:stats-requested')
       })

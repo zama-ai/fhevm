@@ -1,28 +1,28 @@
 import { Test } from '@nestjs/testing'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
-import { SnsProducer } from './sns-producer.js'
+import { SqsProducer } from './sqs.producer.js'
 import { MS_NAME, PUBSUB } from '#constants.js'
 import { LOCAL_FHEVM_CHAIN_ID, PubSub } from 'utils'
 import { configModule } from '#app.module.js'
 import { back } from 'messages'
 import { faker } from '@faker-js/faker'
-import { PublishCommand, SNSClient } from '@aws-sdk/client-sns'
 import { mockClient } from 'aws-sdk-client-mock'
 import { DAppId } from '#dapps/domain/entities/value-objects.js'
+import { SendMessageCommand, SQSClient } from '@aws-sdk/client-sqs'
 
-const client = mockClient(SNSClient)
+const client = mockClient(SQSClient)
 
-describe('SnsProducer', () => {
-  let producer: SnsProducer
+describe('SqsProducer', () => {
+  let producer: SqsProducer
   let pubsub: PubSub<back.BackEvent>
 
   beforeEach(async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [configModule],
-      providers: [SnsProducer, { provide: PUBSUB, useValue: new PubSub() }],
+      providers: [SqsProducer, { provide: PUBSUB, useValue: new PubSub() }],
     }).compile()
 
-    producer = moduleRef.get(SnsProducer)
+    producer = moduleRef.get(SqsProducer)
     pubsub = moduleRef.get(PUBSUB)
   })
 
@@ -34,7 +34,9 @@ describe('SnsProducer', () => {
     let event: back.BackEvent
 
     beforeEach(async () => {
-      client.on(PublishCommand).resolves({ MessageId: LOCAL_FHEVM_CHAIN_ID })
+      client
+        .on(SendMessageCommand)
+        .resolves({ MessageId: LOCAL_FHEVM_CHAIN_ID })
       event = back.dappStatsRequested(
         {
           requestId: faker.string.uuid(),
@@ -50,17 +52,17 @@ describe('SnsProducer', () => {
     })
 
     test('then it publishes a message successfully', () => {
-      expect(client).toHaveReceivedCommand(PublishCommand)
+      expect(client).toHaveReceivedCommand(SendMessageCommand)
     })
 
     test('then it publishes the right content', async () => {
-      expect(client).toHaveReceivedCommandWith(PublishCommand, {
-        Message: JSON.stringify(event),
+      expect(client).toHaveReceivedCommandWith(SendMessageCommand, {
+        MessageBody: JSON.stringify(event),
       })
     })
 
     test('then it publishes the sender attribute', async () => {
-      expect(client).toHaveReceivedCommandWith(PublishCommand, {
+      expect(client).toHaveReceivedCommandWith(SendMessageCommand, {
         MessageAttributes: {
           Sender: {
             DataType: 'String',
@@ -73,7 +75,9 @@ describe('SnsProducer', () => {
 
   describe('when pubsub pubslish an event', () => {
     beforeEach(() => {
-      client.on(PublishCommand).resolves({ MessageId: LOCAL_FHEVM_CHAIN_ID })
+      client
+        .on(SendMessageCommand)
+        .resolves({ MessageId: LOCAL_FHEVM_CHAIN_ID })
     })
 
     test.each([
@@ -108,8 +112,8 @@ describe('SnsProducer', () => {
       await pubsub.publish(event).toPromise()
       const publish = event.meta[`${MS_NAME}-dir`] !== 'in'
       if (publish) {
-        expect(client).toHaveReceivedCommandWith(PublishCommand, {
-          Message: JSON.stringify(event),
+        expect(client).toHaveReceivedCommandWith(SendMessageCommand, {
+          MessageBody: JSON.stringify(event),
         })
       } else {
         expect(client).not.toHaveReceivedAnyCommand()

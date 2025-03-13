@@ -94,13 +94,11 @@ function encodeMessage(
   options?: { sender?: string },
 ): Message {
   return {
-    Body: JSON.stringify({
-      Message: JSON.stringify(message),
-      MessageAttributes: options?.sender
-        ? {
-            Sender: { Type: 'String', Value: options.sender },
-          }
-        : {},
-    }),
+    Body: JSON.stringify(message),
+    MessageAttributes: options?.sender
+      ? {
+          Sender: { DataType: 'String', StringValue: options.sender },
+        }
+      : {},
   }
 }

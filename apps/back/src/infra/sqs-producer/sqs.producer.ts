@@ -1,25 +1,26 @@
 import { MS_NAME, PUBSUB } from '#constants.js'
-import { PublishCommand, SNSClient } from '@aws-sdk/client-sns'
+import { SendMessageCommand, SQSClient } from '@aws-sdk/client-sqs'
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { back } from 'messages'
 import { AppError, PubSub, type ISubscriber, Task, unknownError } from 'utils'
 
 @Injectable()
-export class SnsProducer {
-  private readonly sns: SNSClient
-  private readonly topicArn: string
-  private readonly logger = new Logger(SnsProducer.name)
+export class SqsProducer {
+  private readonly sqs: SQSClient
+  private readonly queueUrl: string
+  private readonly logger = new Logger(SqsProducer.name)
 
   constructor(
     @Inject(PUBSUB) private readonly pubsub: PubSub<back.BackEvent>,
     config: ConfigService,
   ) {
-    this.sns = new SNSClient({
+    this.sqs = new SQSClient({
       endpoint: config.get('aws.endpoint'),
       region: config.get('aws.region'),
+      useQueueUrlAsEndpoint: true,
     })
-    this.topicArn = config.getOrThrow('aws.topicArn')
+    this.queueUrl = config.getOrThrow('aws.orchestrator.queueUrl')
 
     this.pubsub.subscribe('back:*', this.handleBackEvent)
   }
@@ -28,11 +29,11 @@ export class SnsProducer {
     this.logger.debug(`publishing: ${JSON.stringify(event)}`)
 
     return new Task((resolve, reject) => {
-      this.sns
+      this.sqs
         .send(
-          new PublishCommand({
-            TopicArn: this.topicArn,
-            Message: JSON.stringify(event),
+          new SendMessageCommand({
+            QueueUrl: this.queueUrl,
+            MessageBody: JSON.stringify(event),
             MessageAttributes: {
               Sender: { DataType: 'String', StringValue: MS_NAME },
             },
@@ -43,7 +44,7 @@ export class SnsProducer {
           resolve(void 0)
         })
         .catch(error => {
-          this.logger.warn(`failed to publish on ${this.topicArn}: ${error}`)
+          this.logger.warn(`failed to publish on ${this.queueUrl}: ${error}`)
           reject(unknownError(String(error)))
         })
     })
