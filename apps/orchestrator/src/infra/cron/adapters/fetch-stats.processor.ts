@@ -22,7 +22,6 @@ export class FetchStatsProcessor extends WorkerHost<Worker<FetchStats>> {
     @Inject(PUBSUB) private readonly pubsub: IPubSub<back.BackEvent>,
   ) {
     super()
-    console.log(`new FetchStatsProcessor`)
   }
 
   process(job: Job<FetchStats>): Promise<any> {

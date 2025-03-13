@@ -10,7 +10,20 @@ import { expect } from 'vitest'
 import type { Type } from '@nestjs/common'
 
 export class IntegrationManager {
-  readonly setup = new SetupManager()
+  readonly setup: SetupManager
+  constructor(private readonly logEnabled = false) {
+    this.setup = new SetupManager(this.logEnabled)
+  }
+
+  private get workerId(): number {
+    return Number(process.env.VITEST_POOL_ID) - 1
+  }
+
+  private log(message: string) {
+    if (this.logEnabled) {
+      console.log(`[IntegrationManger|${this.workerId}] ${message}`)
+    }
+  }
 
   async beforeAll() {
     await this.setup.beforeAll()
@@ -35,16 +48,17 @@ export class IntegrationManager {
   }
 
   async sendMessage(message: string | object) {
+    const body = typeof message === 'string' ? message : JSON.stringify(message)
+    this.log(`sendMessage ${body} to ${this.setup.orchQueueUrl}`)
     const result = await this.setup.sqs.send(
       new SendMessageCommand({
         QueueUrl: this.setup.orchQueueUrl,
-        MessageBody:
-          typeof message === 'string' ? message : JSON.stringify(message),
+        MessageBody: body,
       }),
     )
     expect(
       result.$metadata.httpStatusCode,
-      'Failed to sns.PublishCommand',
+      'Failed to send message to orch queue',
     ).toBe(200)
   }
 

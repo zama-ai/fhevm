@@ -49,6 +49,9 @@ function factory({
           },
           'web3:contract:validation:failure': {
             actions: [
+              ({ event }) => {
+                console.log(`address-validation on ${event.type}`)
+              },
               ({ event: { payload, meta } }) =>
                 notifyMessage(
                   back.addressValidationFailed(

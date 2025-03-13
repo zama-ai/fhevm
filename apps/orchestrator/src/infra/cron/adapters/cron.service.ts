@@ -13,11 +13,13 @@ export class CronService implements OnModuleInit {
   ) {}
 
   onModuleInit() {
-    console.log(`registering job scheduler`)
     this.statQueue.upsertJobScheduler(
       `fetch-stats-123456`,
       {
         every: 30 * 60 * 1_000, // 30 minutes
+        // NOTE: I don't want to start the execution right away because it
+        // can mess with the integration tests
+        startDate: Date.now() + 60_000,
       },
       { data: { chainId: '123456' } },
     )

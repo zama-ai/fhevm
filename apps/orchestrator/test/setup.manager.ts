@@ -14,44 +14,38 @@ import type { Type } from '@nestjs/common'
 export class SetupManager {
   #prismaClients: PrismaClient[]
 
-  #instance: {
-    uuid: string
-    app: INestApplication<any>
+  #app: INestApplication<any>
+
+  #orchQueueName: string
+  #backQueueName: string
+  #relayerQueueName: string
+  #web3QueueName: string
+
+  constructor(private readonly logEnabled = false) {}
+  private log(message: string) {
+    if (this.logEnabled) {
+      console.log(`[SetupManager|${this.workerId}] ${message}`)
+    }
   }
 
   private get workerId(): number {
     return Number(process.env.VITEST_POOL_ID) - 1
   }
-  get orchQueueName(): string {
-    return `orch-queue-${this.#instance.uuid}`
-  }
 
   get orchQueueUrl(): string {
-    return `${this.awsEndpoint}/000000000000/orch-queue-${this.#instance.uuid}`
-  }
-
-  get backQueueName(): string {
-    return `back-queue-${this.#instance.uuid}`
+    return `${this.awsEndpoint}/000000000000/${this.#orchQueueName}`
   }
 
   get backQueueUrl(): string {
-    return `${this.awsEndpoint}/000000000000/back-queue-${this.#instance.uuid}`
-  }
-
-  get web3QueueName(): string {
-    return `web3-queue-${this.#instance.uuid}`
+    return `${this.awsEndpoint}/000000000000/${this.#backQueueName}`
   }
 
   get web3QueueUrl(): string {
-    return `${this.awsEndpoint}/000000000000/web3-queue-${this.#instance.uuid}`
-  }
-
-  get relayerQueueName(): string {
-    return `relayer-queue-${this.#instance.uuid}`
+    return `${this.awsEndpoint}/000000000000/${this.#web3QueueName}`
   }
 
   get relayerQueueUrl(): string {
-    return `${this.awsEndpoint}/000000000000/relayer-queue-${this.#instance.uuid}`
+    return `${this.awsEndpoint}/000000000000/${this.#relayerQueueName}`
   }
 
   private async startPostgres() {
@@ -81,7 +75,7 @@ export class SetupManager {
         env: { PATH: process.env.PATH, AWS_DEFAULT_REGION: this.awsRegion },
       }).toString()
     } catch (error) {
-      console.log(`failed to execute ${command}:\n${JSON.stringify(error)}`)
+      this.log(`failed to execute ${command}: ${error}`)
       return String(error)
     }
   }
@@ -90,15 +84,32 @@ export class SetupManager {
     return this.execSync(`aws --endpoint-url ${this.awsEndpoint} ${command}`)
   }
   private createQueue(queueName: string) {
+    this.log(`creating ${queueName} queue`)
     this.aws(
       `sqs create-queue --region ${this.awsRegion} --queue-name ${queueName}`,
     )
   }
 
   private deleteQueue(queueUrl: string) {
+    this.log(`deleting ${queueUrl.slice(queueUrl.lastIndexOf('/') + 1)} queue`)
     this.aws(
       `sqs delete-queue --region ${this.awsRegion} --queue-url ${queueUrl}`,
     )
+  }
+
+  private startAws() {
+    const id = randomUUID()
+    this.log(`startAws id=${id}`)
+    // Generate a random topic name
+    this.#backQueueName = `back-queue-${id}`
+    this.#orchQueueName = `orch-queue-${id}`
+    this.#relayerQueueName = `relayer-queue-${id}`
+    this.#web3QueueName = `web3-queue-${id}`
+
+    // NOTE: We need to create the orch queue once because
+    // the SqsConsumer open a Long Pulling request to this queue
+    this.log(`creating ${this.#orchQueueName} queue`)
+    this.createQueue(this.#orchQueueName)
   }
 
   #sqs: SQSClient | undefined
@@ -114,31 +125,28 @@ export class SetupManager {
   }
 
   private createQueues() {
-    this.createQueue(this.backQueueName)
-    this.createQueue(this.web3QueueName)
-    this.createQueue(this.relayerQueueName)
+    this.log(`creating queues`)
+    this.createQueue(this.#backQueueName)
+    this.createQueue(this.#web3QueueName)
+    this.createQueue(this.#relayerQueueName)
+    this.log(`queue created`)
   }
 
   private deleteQueues() {
+    this.log(`deleting queues`)
     this.deleteQueue(this.backQueueUrl)
     this.deleteQueue(this.web3QueueUrl)
     this.deleteQueue(this.relayerQueueUrl)
+    this.log(`queue deleted`)
   }
 
   get redisConnection(): { host: string; port: number } {
     return inject('redisConnection')
   }
-  private async startAws() {}
 
   async beforeAll() {
     // Start services
     await Promise.all([this.startAws(), this.startPostgres()])
-
-    // Generate a random uuid suffix
-    const uuid = randomUUID()
-
-    // Creating the orch queue
-    this.createQueue(`orch-queue-${uuid}`)
 
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
@@ -152,16 +160,16 @@ export class SetupManager {
             registerAs('aws', () => ({
               endpoint: this.awsEndpoint,
               back: {
-                queueUrl: `${this.awsEndpoint}/000000000000/back-queue-${uuid}`,
+                queueUrl: this.backQueueUrl,
               },
               orchestrator: {
-                queueUrl: `${this.awsEndpoint}/000000000000/orch-queue-${uuid}`,
+                queueUrl: this.orchQueueUrl,
               },
               relayer: {
-                queueUrl: `${this.awsEndpoint}/000000000000/relayer-queue-${uuid}`,
+                queueUrl: this.relayerQueueUrl,
               },
               web3: {
-                queueUrl: `${this.awsEndpoint}/000000000000/web3-queue-${uuid}`,
+                queueUrl: this.web3QueueUrl,
               },
             })),
             dbConfig,
@@ -173,22 +181,23 @@ export class SetupManager {
       .useValue(new PrismaClientProxy(this.#prismaClients))
       .compile()
 
-    const app = moduleRef.createNestApplication({ cors: true })
-    await app.init()
-
-    this.#instance = { uuid, app }
+    this.#app = moduleRef.createNestApplication({ cors: true })
+    await this.#app.init()
   }
 
   async afterAll() {
-    await this.#instance.app?.close()
-    // await this.deleteQueue(`orch-queue-${uuid}`)
+    await this.#app?.close()
+    this.log(`deleting ${this.#orchQueueName} queue`)
+    this.deleteQueue(this.orchQueueUrl)
   }
 
   beforeEach() {
+    this.log(`beforeEach`)
     this.createQueues()
   }
 
   async afterEach() {
+    this.log(`after each`)
     await Promise.all([
       // Clear the database
       this.#prismaClients[this.workerId].$transaction([
@@ -201,7 +210,7 @@ export class SetupManager {
   get<TInput = any, TResult = TInput>(
     typeOrToken: Type<TInput> | string | symbol,
   ): TResult {
-    return this.#instance.app.get(typeOrToken)
+    return this.#app.get(typeOrToken)
   }
 
   get awsEndpoint(): string {

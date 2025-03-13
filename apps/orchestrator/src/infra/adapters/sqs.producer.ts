@@ -27,6 +27,7 @@ export class SQSProducer implements EventProducer {
     event: back.BackEvent | web3.Web3Event,
   ): Result<string, AppError> => {
     const prefix = event.type.split(':')[0] as MSPrefix
+    console.log(`queueMap has ${prefix}? ${this.queueMap.has(prefix)}`)
     return this.queueMap.has(prefix)
       ? ok(this.queueMap.get(prefix)!)
       : fail(validationError('invalid event prefix'))
@@ -35,6 +36,7 @@ export class SQSProducer implements EventProducer {
   readonly publish = (
     message: back.BackEvent | web3.Web3Event,
   ): Task<void, AppError> => {
+    console.log(`🚀 publishing: ${message.type}`)
     this.logger.debug(`🚀 publishing: ${message.type}`)
 
     return this.getQueueFromEvent(message).asyncChain(queueUrl => {
