@@ -42,7 +42,7 @@ data:
       kubectl patch configmap "${configmap_name}" -p="{\"data\": {\"${name}\": \"${value}\"}}"
     }
     CONFIGMAP_NAME="{{ .Values.scDeploy.configmapName }}"
-    apt update && apt install kubernetes-client -y
+
     echo "creating kubernetes configmap for smart contract configuration outputs"
     create_configmap "${CONFIGMAP_NAME}"
 
