@@ -7,13 +7,14 @@ import awsConfig from './config/aws.config.js'
 import dbConfig from '#config/db.config.js'
 import commonConfig from '#config/common.config.js'
 import { MS_NAME } from '#constants.js'
+import redisConfig from '#config/redis.config.js'
 
 // Note: I need to override the default behavior of ConfigModule in the tests,
 // and, as we use a dynamic module, we need to store the current instance to
 // override it in the tests.
 export const configModule = ConfigModule.forRoot({
   isGlobal: true,
-  load: [commonConfig, awsConfig, dbConfig],
+  load: [commonConfig, awsConfig, dbConfig, redisConfig],
 })
 
 @Module({

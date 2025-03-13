@@ -6,6 +6,7 @@ import {
 } from '@aws-sdk/client-sqs'
 import { back, web3 } from 'messages'
 import { expect } from 'vitest'
+import type { Type } from '@nestjs/common'
 
 export class IntegrationManager {
   readonly setup = new SetupManager()
@@ -20,6 +21,12 @@ export class IntegrationManager {
 
   async afterEach() {
     await this.setup.afterEach()
+  }
+
+  get<TInput = any, TResult = TInput>(
+    typeOrToken: Type<TInput> | string | symbol,
+  ): TResult {
+    return this.setup.get<TInput, TResult>(typeOrToken)
   }
 
   async sendMessage(message: string | object, sender = 'test') {

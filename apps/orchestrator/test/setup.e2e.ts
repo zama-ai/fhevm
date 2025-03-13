@@ -6,12 +6,14 @@ import {
   PostgreSqlContainer,
   type StartedPostgreSqlContainer,
 } from '@testcontainers/postgresql'
+import { RedisContainer, StartedRedisContainer } from '@testcontainers/redis'
 import { execSync } from 'child_process'
 import { randomUUID } from 'crypto'
 import type { TestProject } from 'vitest/node'
 
 let pgContainer: StartedPostgreSqlContainer | undefined = undefined
 let awsContainer: StartedLocalStackContainer | undefined = undefined
+let redisContainer: StartedRedisContainer | undefined = undefined
 
 async function startPostresInstance(databaseUrl: string) {
   const schema = randomUUID()
@@ -75,22 +77,47 @@ async function stopAws() {
   }
 }
 
+async function startRedis() {
+  redisContainer = await new RedisContainer('redis:7.4-alpine').start()
+
+  if (!redisContainer) {
+    throw new Error('Failed to start postgres container')
+  }
+
+  const host = redisContainer.getHost()
+  const port = redisContainer.getPort()
+
+  // TODO REMOVE THIS
+  console.log(`🚛 testcontainer Redis running on ${host}:${port}`)
+
+  return { host, port }
+}
+
+async function stopRedis() {
+  if (redisContainer) {
+    await redisContainer.stop()
+    console.log(`🚛 testcontainer Redis stopped`)
+  }
+}
+
 export default async function setup(project: TestProject) {
   const maxWorkers = project.globalConfig.poolOptions?.forks?.maxForks ?? 10
 
-  const [databaseUrls, awsEndpoint] = await Promise.all([
+  const [databaseUrls, awsEndpoint, redisConnection] = await Promise.all([
     startPostgres(maxWorkers),
     startAws(),
+    startRedis(),
   ])
   project.provide('databaseUrls', databaseUrls)
   project.provide('awsEndpoint', awsEndpoint)
+  project.provide('redisConnection', redisConnection)
 
   project.onTestsRerun(() => {
     console.log(`global setup: rerunning...`)
   })
 
   return async () => {
-    await Promise.all([stopPostgres(), stopAws()])
+    await Promise.all([stopPostgres(), stopAws(), stopRedis()])
   }
 }
 
@@ -98,5 +125,6 @@ declare module 'vitest' {
   export interface ProvidedContext {
     databaseUrls: string[]
     awsEndpoint: string
+    redisConnection: { host: string; port: number }
   }
 }

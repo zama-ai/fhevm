@@ -3,9 +3,11 @@ services:
     image: redis:7.4-alpine
     restart: always
     ports:
-      - '6379:6379'
-    command: redis-server --save 20 1 --loglevel warning
-    volumes: 
+      - "6379:6379"
+    # Note: we need to set maxmemory policy to noeviction in order to avoid
+    # automatic removal of keys which would cause unexpected errors in BullMQ
+    command: redis-server --save 20 1 --loglevel warning --maxmemory-policy noeviction
+    volumes:
       - cache:/data
   postgres:
     image: postgres:17-alpine

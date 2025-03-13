@@ -29,6 +29,7 @@ export class SNSProducer implements EventProducer {
   readonly publish = (
     message: back.BackEvent | web3.Web3Event,
   ): Task<void, AppError> => {
+    console.log(`🚀 publishing: ${message.type}`)
     this.logger.debug(`🚀 publishing: ${message.type}`)
     return new Task((resolve, reject) => {
       this.client
@@ -60,10 +61,12 @@ export class SNSProducer implements EventProducer {
     event: back.BackEvent | web3.Web3Event,
   ): Task<void, AppError> => {
     if (event.meta[`${MS_NAME}-dir`] === 'in') {
+      console.log(`stopping incoming event ${event.type}`)
       this.logger.verbose(`stopping incoming event ${event.type}`)
       return Task.of(void 0)
     }
 
+    console.log(`publishing ${event.type}`)
     this.logger.debug(`publishing ${event.type}`)
     return this.publish(event)
   }

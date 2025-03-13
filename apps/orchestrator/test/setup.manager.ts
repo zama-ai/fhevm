@@ -10,6 +10,7 @@ import { Test } from '@nestjs/testing'
 import { execSync } from 'child_process'
 import { randomUUID } from 'crypto'
 import { inject } from 'vitest'
+import type { Type } from '@nestjs/common'
 
 export class SetupManager {
   #app: INestApplication
@@ -119,6 +120,10 @@ export class SetupManager {
     await this.subscribeToTopic(this.logQueueArn)
   }
 
+  get redisConnection(): { host: string; port: number } {
+    return inject('redisConnection')
+  }
+
   async beforeAll() {
     // Start services
     await Promise.all([this.startAws(), this.startPostgres()])
@@ -139,6 +144,7 @@ export class SetupManager {
               topicArn: this.topicArn,
             })),
             dbConfig,
+            registerAs('redis', () => this.redisConnection),
           ],
         }),
       )
@@ -168,6 +174,12 @@ export class SetupManager {
       ]),
       this.purgeLogQueue(),
     ])
+  }
+
+  get<TInput = any, TResult = TInput>(
+    typeOrToken: Type<TInput> | string | symbol,
+  ): TResult {
+    return this.#app.get(typeOrToken)
   }
 
   get httpServer(): any {
