@@ -22,3 +22,8 @@
 {{- $zkProofWorkerNameDefault := printf "%s-%s" .Release.Name "zkproof-worker" }}
 {{- default $zkProofWorkerNameDefault .Values.zkProofWorker.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
+
+{{- define "snsWorkerName" -}}
+{{- $snsWorkerNameDefault := printf "%s-%s" .Release.Name "sns-worker" }}
+{{- default $snsWorkerNameDefault .Values.zkProofWorker.nameOverride | trunc 63 | trimSuffix "-" -}}
+{{- end -}}

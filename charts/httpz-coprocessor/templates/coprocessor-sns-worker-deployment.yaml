@@ -1,0 +1,36 @@
+{{- if .Values.snsWorker.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: coprocessor-sns-worker
+    app.kubernetes.io/name: {{ include "snsWorkerName" . }}
+  name: {{ include "snsWorkerName" . }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: coprocessor-sns-worker
+  template:
+    metadata:
+      labels:
+        app: coprocessor-sns-worker
+        app.kubernetes.io/name: {{ include "snsWorkerName" . }}
+    spec:
+      restartPolicy: Always
+      containers:
+        - name: coprocessor-sns-worker
+          image: {{ .Values.snsWorker.image.name }}:{{ .Values.snsWorker.image.tag }}
+          command: ["sns_worker"]
+          args:
+{{ toYaml .Values.snsWorker.args | nindent 12 }}
+          env:
+{{ toYaml .Values.snsWorker.env | nindent 12 }}
+          resources:
+            requests:
+              cpu: {{ .Values.snsWorker.resources.requests.cpu | default "100m" }}
+              memory: {{ .Values.snsWorker.resources.requests.memory | default "256Mi" }}
+            limits:
+              cpu: {{ .Values.snsWorker.resources.limits.cpu | default "500m" }}
+              memory: {{ .Values.snsWorker.resources.limits.memory | default "512Mi" }}
+{{- end -}}

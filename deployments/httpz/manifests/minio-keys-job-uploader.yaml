@@ -9,10 +9,10 @@ spec:
       # # Temporarily used to simulate KMS
       # # this is a hack to copy files from local filesystem to pvc
       # # POD=$(kubectl get pod -n fhevm -l job-name=minio-keys-uploader -o jsonpath='{.items[0].metadata.name}')
-      # # kubectl cp fhevm-keys/sks fhevm/$POD:/keys/sks -c init-keys
-      # kubectl cp PublicKey/408d8cbaa51dece7f782fe04ba0b1c1d017b1088 fhevm/$POD:/keys/PublicKey/408d8cbaa51dece7f782fe04ba0b1c1d017b1088 -c init-keys
-      # kubectl cp ServerKey/408d8cbaa51dece7f782fe04ba0b1c1d017b1088 fhevm/$POD:/keys/ServerKey/408d8cbaa51dece7f782fe04ba0b1c1d017b1088 -c init-keys
-      # kubectl cp CRS/a5fedad3fd734a598fb67452099229445cb68447 fhevm/$POD:/keys/CRS/a5fedad3fd734a598fb67452099229445cb68447 -c init-keys
+      # kubectl cp PublicKey/408d8cbaa51dece7f782fe04ba0b1c1d017b10880c538b7c72037468fe5c97ee fhevm/$POD:/keys/PublicKey/408d8cbaa51dece7f782fe04ba0b1c1d017b10880c538b7c72037468fe5c97ee -c init-keys
+      # kubectl cp ServerKey/408d8cbaa51dece7f782fe04ba0b1c1d017b10880c538b7c72037468fe5c97ee fhevm/$POD:/keys/ServerKey/408d8cbaa51dece7f782fe04ba0b1c1d017b10880c538b7c72037468fe5c97ee -c init-keys
+      # kubectl cp SnsKey/408d8cbaa51dece7f782fe04ba0b1c1d017b10880c538b7c72037468fe5c97ee fhevm/$POD:/keys/SnsKey/408d8cbaa51dece7f782fe04ba0b1c1d017b10880c538b7c72037468fe5c97ee -c init-keys
+      # kubectl cp CRS/a5fedad3fd734a598fb67452099229445cb68447198fb56f29bb64d98953d002 fhevm/$POD:/keys/CRS/a5fedad3fd734a598fb67452099229445cb68447198fb56f29bb64d98953d002 -c init-keys
       # initContainers:
       # - name: init-keys
       #   image: busybox
@@ -33,9 +33,9 @@ spec:
             AWS_ACCESS_KEY_ID="fhevm-access-key"
             AWS_SECRET_ACCESS_KEY="fhevm-access-secret-key"
             BUCKET_NAME="kms-public"
-            PATHS=(PublicKey ServerKey CRS)
+            PATHS=(PublicKey ServerKey SnsKey CRS)
             FILES_DIR="/keys"
-            IDS=(408d8cbaa51dece7f782fe04ba0b1c1d017b1088 408d8cbaa51dece7f782fe04ba0b1c1d017b1088 a5fedad3fd734a598fb67452099229445cb68447)
+            IDS=(408d8cbaa51dece7f782fe04ba0b1c1d017b10880c538b7c72037468fe5c97ee 408d8cbaa51dece7f782fe04ba0b1c1d017b10880c538b7c72037468fe5c97ee 408d8cbaa51dece7f782fe04ba0b1c1d017b10880c538b7c72037468fe5c97ee a5fedad3fd734a598fb67452099229445cb68447198fb56f29bb64d98953d002)
 
             wget https://dl.min.io/client/mc/release/linux-amd64/mc -O /usr/local/bin/mc
             chmod +x /usr/local/bin/mc
@@ -45,7 +45,8 @@ spec:
             for i in "${!IDS[@]}"; do
               id="${IDS[$i]}"
               path="${PATHS[$i]}"
-              if [ ! -f "$FILES_DIR/$path/$id" ]; then
+              file="${FILES_DIR}/${path}/${id}"
+              if [ ! -f $file ]; then
                 echo "Error: File $file not found"
                 exit 1
               fi
@@ -56,7 +57,7 @@ spec:
                 --attr "Content-Type=application/octet-stream" \
                 --preserve \
                 --checksum SHA256 \
-                "$FILES_DIR/$path/$id" \
+                "$file" \
                 "$DEST_PATH"; then
                 echo "Error: Failed to upload $file"
                 exit 1
@@ -89,4 +90,4 @@ spec:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 1Gi
+      storage: 5Gi
