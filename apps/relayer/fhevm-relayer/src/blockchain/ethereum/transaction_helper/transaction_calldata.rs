@@ -5,7 +5,7 @@ use crate::blockchain::ethereum::bindings::DecyptionManager::{
 use crate::blockchain::ethereum::bindings::IDecryptionManager::{
     CtHandleContractPair, RequestValidity,
 };
-use crate::blockchain::ethereum_host_l1_handlers::DecryptionRequestData;
+use crate::blockchain::public_decrypt_handler::DecryptionRequestData;
 use crate::core::errors::EventProcessingError;
 use alloy::primitives::{keccak256, Address, Bytes, Uint, U256};
 use alloy::signers::SignerSync;

@@ -1,1 +1,1 @@
-pub mod ethereum_host_l1_handlers;
+pub mod public_decrypt_handler;
