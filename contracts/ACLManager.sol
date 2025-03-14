@@ -11,7 +11,7 @@ import "./interfaces/IHTTPZ.sol";
 contract ACLManager is IACLManager {
     /// @notice The address of the HTTPZ contract for protocol state calls.
     IHTTPZ internal immutable _HTTPZ;
-    /// @notice The address of the CiphertextStorage contract from which ciphertexts are retrieve.
+    /// @notice The address of the CiphertextManager contract for checking ciphertext materials.
     ICiphertextManager internal immutable _CIPHERTEXT_MANAGER;
     /// @notice The maximum number of contracts that can be requested for delegation.
     uint8 internal constant _MAX_CONTRACT_ADDRESSES = 10;
