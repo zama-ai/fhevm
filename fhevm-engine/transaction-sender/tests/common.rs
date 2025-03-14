@@ -12,8 +12,8 @@ sol!(
 
 sol!(
     #[sol(rpc)]
-    CiphertextStorage,
-    "artifacts/CiphertextStorage.sol/CiphertextStorage.json"
+    CiphertextManager,
+    "artifacts/CiphertextManager.sol/CiphertextManager.json"
 );
 
 pub struct TestEnvironment {
@@ -46,9 +46,14 @@ impl TestEnvironment {
             .execute(&db_pool)
             .await?;
 
+        // Delete all ciphertext_digest from the database.
+        sqlx::query!("TRUNCATE ciphertext_digest",)
+            .execute(&db_pool)
+            .await?;
+
         Ok(Self {
             signer: PrivateKeySigner::random(),
-            conf: conf,
+            conf,
             cancel_token: CancellationToken::new(),
             db_pool,
             contract_address: PrivateKeySigner::random().address(),

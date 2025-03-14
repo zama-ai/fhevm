@@ -17,12 +17,17 @@ tokio = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+hex = "0.4"
 
 # crates.io dependencies
 async-trait = "0.1.86"
+
+# local dependencies
+fhevm-engine-common = { path = "../fhevm-engine-common" }
 
 [build-dependencies]
 foundry-compilers = { version = "0.13.0", features = ["svm-solc"] }
 
 [dev-dependencies]
 serial_test = "3.2.0"
+test-harness = { path = "../test-harness" }

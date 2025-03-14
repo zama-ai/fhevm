@@ -2,7 +2,7 @@ use alloy::primitives::FixedBytes;
 use alloy::providers::{Provider, WalletProvider};
 use alloy::{primitives::U256, sol_types::eip712_domain};
 use alloy::{providers::ProviderBuilder, signers::SignerSync, sol, sol_types::SolStruct};
-use common::{CiphertextStorage, TestEnvironment, ZKPoKManager};
+use common::{CiphertextManager, TestEnvironment, ZKPoKManager};
 use futures_util::StreamExt;
 use rand::random;
 use serial_test::serial;
@@ -28,10 +28,10 @@ async fn verify_proof_response_success() -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
     let provider = Arc::new(ProviderBuilder::new().on_anvil_with_wallet());
     let zkpok_manager = ZKPoKManager::deploy(&provider, false, false).await?;
-    let ciphertext_storage = CiphertextStorage::deploy(&provider).await?;
+    let ciphertext_manager = CiphertextManager::deploy(&provider).await?;
     let txn_sender = TransactionSender::new(
         *zkpok_manager.address(),
-        *ciphertext_storage.address(),
+        *ciphertext_manager.address(),
         env.signer.clone(),
         provider.clone(),
         env.cancel_token.clone(),
@@ -131,10 +131,10 @@ async fn verify_proof_response_reversal_already_signed() -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
     let provider = Arc::new(ProviderBuilder::new().on_anvil_with_wallet());
     let zkpok_manager = ZKPoKManager::deploy(&provider, true, false).await?;
-    let ciphertext_storage = CiphertextStorage::deploy(&provider).await?;
+    let ciphertext_manager = CiphertextManager::deploy(&provider).await?;
     let txn_sender = TransactionSender::new(
         *zkpok_manager.address(),
-        *ciphertext_storage.address(),
+        *ciphertext_manager.address(),
         env.signer.clone(),
         provider.clone(),
         env.cancel_token.clone(),
@@ -205,10 +205,10 @@ async fn verify_proof_response_other_reversal_gas_estimation() -> anyhow::Result
     let env = TestEnvironment::new().await?;
     let provider = Arc::new(ProviderBuilder::new().on_anvil_with_wallet());
     let zkpok_manager = ZKPoKManager::deploy(&provider, false, true).await?;
-    let ciphertext_storage = CiphertextStorage::deploy(&provider).await?;
+    let ciphertext_manager = CiphertextManager::deploy(&provider).await?;
     let txn_sender = TransactionSender::new(
         *zkpok_manager.address(),
-        *ciphertext_storage.address(),
+        *ciphertext_manager.address(),
         env.signer.clone(),
         provider.clone(),
         env.cancel_token.clone(),
@@ -275,11 +275,11 @@ async fn verify_proof_response_other_reversal_receipt() -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
     let provider = Arc::new(ProviderBuilder::new().on_anvil_with_wallet());
     let zkpok_manager = ZKPoKManager::deploy(&provider, false, true).await?;
-    let ciphertext_storage = CiphertextStorage::deploy(&provider).await?;
+    let ciphertext_manager = CiphertextManager::deploy(&provider).await?;
     // Create the sender with a gas limit such that no gas estimation is done, forcing failure at receipt (after the txn has been sent).
     let txn_sender = TransactionSender::new(
         *zkpok_manager.address(),
-        *ciphertext_storage.address(),
+        *ciphertext_manager.address(),
         env.signer.clone(),
         provider.clone(),
         env.cancel_token.clone(),
@@ -349,10 +349,10 @@ async fn verify_proof_max_retries_remove_entry() -> anyhow::Result<()> {
 
     let provider = Arc::new(ProviderBuilder::new().on_anvil_with_wallet());
     let zkpok_manager = ZKPoKManager::deploy(&provider, false, true).await?;
-    let ciphertext_storage = CiphertextStorage::deploy(&provider).await?;
+    let ciphertext_manager = CiphertextManager::deploy(&provider).await?;
     let txn_sender = TransactionSender::new(
         *zkpok_manager.address(),
-        *ciphertext_storage.address(),
+        *ciphertext_manager.address(),
         env.signer.clone(),
         provider.clone(),
         env.cancel_token.clone(),
@@ -412,10 +412,10 @@ async fn verify_proof_max_retries_do_not_remove_entry() -> anyhow::Result<()> {
 
     let provider = Arc::new(ProviderBuilder::new().on_anvil_with_wallet());
     let zkpok_manager = ZKPoKManager::deploy(&provider, false, true).await?;
-    let ciphertext_storage = CiphertextStorage::deploy(&provider).await?;
+    let ciphertext_manager = CiphertextManager::deploy(&provider).await?;
     let txn_sender = TransactionSender::new(
         *zkpok_manager.address(),
-        *ciphertext_storage.address(),
+        *ciphertext_manager.address(),
         env.signer.clone(),
         provider.clone(),
         env.cancel_token.clone(),
