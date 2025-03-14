@@ -55,3 +55,20 @@ pub fn safe_deserialize_sns_key<T: DeserializeOwned + Named + Unversionize>(
     tfhe::safe_serialization::safe_deserialize(input, SAFE_SER_DESER_SNS_KEY_LIMIT)
         .map_err(|e| FhevmError::DeserializationError(e.into()))
 }
+
+// Print first 4 and last 4 bytes of a blob as hex
+pub fn to_hex(blob: &[u8]) -> String {
+    const OFFSET: usize = 8;
+    match blob.len() {
+        0 => String::from("0x"),
+        len if len <= 2 * OFFSET => format!("0x{}", hex::encode(blob)),
+        _ => {
+            let hex_str = hex::encode(blob);
+            format!(
+                "0x{}...{}",
+                &hex_str[..OFFSET],
+                &hex_str[hex_str.len() - OFFSET..]
+            )
+        }
+    }
+}

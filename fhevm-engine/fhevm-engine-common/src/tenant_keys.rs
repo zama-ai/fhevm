@@ -159,3 +159,22 @@ where
 
     Ok(())
 }
+
+/// Returns the key_id, chain_id for a given tenant_id
+pub async fn query_tenant_info<'a, T>(
+    conn: T,
+    tenant_id: i32,
+) -> Result<(i32, i32), Box<dyn std::error::Error + Send + Sync>>
+where
+    T: sqlx::PgExecutor<'a>,
+{
+    let row = sqlx::query(
+        "SELECT key_id, chain_id FROM tenants
+            WHERE tenant_id = $1::INT",
+    )
+    .bind(tenant_id)
+    .fetch_one(conn)
+    .await?;
+
+    Ok((row.try_get("key_id")?, row.try_get("chain_id")?))
+}
