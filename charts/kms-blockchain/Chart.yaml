@@ -1,9 +1,0 @@
-name: kms-blockchain
-description: A helm chart to distribute and deploy the KMS Blockchain application stack
-version: 0.8.2
-apiVersion: v2
-keywords:
-  - kms-core
-  - blockchain
-sources:
-home:
