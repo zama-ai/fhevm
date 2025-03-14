@@ -56,7 +56,7 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
 
     /// @notice         Emitted when a threshold is set.
     /// @param threshold   The new threshold set by the owner.
-    event SetKMSThreshold(uint threshold);
+    event KMSThresholdSet(uint256 threshold);
 
     /**
      * @param handlesList       List of handles.
@@ -163,7 +163,7 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
     }
 
     /**
-     * @notice          Sets a threshold.
+     * @notice          Sets a threshold (i.e. the minimum number of valid signatures required to accept a transaction).
      * @dev             Only the owner can set a threshold.
      * @param threshold    The threshold to be set. Threshold should be non-null and less than the number of signers.
      */
@@ -176,7 +176,7 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
             revert ThresholdIsAboveNumberOfSigners();
         }
         $.threshold = threshold;
-        emit SetKMSThreshold(threshold);
+        emit KMSThresholdSet(threshold);
     }
 
     /**

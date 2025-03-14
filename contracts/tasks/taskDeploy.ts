@@ -144,6 +144,12 @@ task('task:deployKMSVerifier')
 task('task:deployInputVerifier')
   .addParam('privateKey', 'The deployer private key')
   .addParam('zkpokManagerAddress', 'The ZKPOK manager contract address from the Gateway chain')
+  .addOptionalParam(
+    'useAddress',
+    'Use addresses instead of private keys env variables for kms signers',
+    false,
+    types.boolean,
+  )
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
     const deployer = new ethers.Wallet(taskArguments.privateKey).connect(ethers.provider);
     const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
