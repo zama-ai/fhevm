@@ -5,7 +5,10 @@ CREATE TABLE ciphertext_digest (
     handle BYTEA NOT NULL,
     ciphertext BYTEA NULL DEFAULT NULL,  -- ciphertext64 digest (nullable)
     ciphertext128 BYTEA NULL DEFAULT NULL, -- ciphertext128 digest (nullable)
-    retry_send INT DEFAULT 0,
-    is_sent BOOLEAN DEFAULT FALSE,
+    
+    txn_is_sent BOOLEAN DEFAULT FALSE,
+    txn_retry_count INT DEFAULT 0,
+    txn_last_error TEXT DEFAULT NULL,
+    txn_last_error_at TIMESTAMP DEFAULT NULL,
     PRIMARY KEY (tenant_id, handle)
 );
