@@ -11,9 +11,12 @@ dotenv.config({ path: resolve(__dirname, dotenvConfigPath) });
 
 const NUM_ACCOUNTS = 15;
 
-const localHTTPZGatewayChainId = 123456;
-
-const stagingChainId = 54321;
+const chainIds = {
+  hardhat: 31337,
+  localHTTPZGateway: 123456,
+  staging: 54321,
+  zwsDev: 412346,
+};
 
 // If the mnemonic is not set, use a default one
 let mnemonic: string | undefined = process.env.MNEMONIC;
@@ -34,7 +37,7 @@ const config: HardhatUserConfig = {
         mnemonic,
         path: "m/44'/60'/0'/0",
       },
-      chainId: process.env.CUSTOM_CHAIN_ID ? Number(process.env.CUSTOM_CHAIN_ID) : 31337,
+      chainId: process.env.CHAIN_ID ? Number(process.env.CHAIN_ID) : chainIds.hardhat,
     },
     localHTTPZGateway: {
       accounts: {
@@ -42,7 +45,7 @@ const config: HardhatUserConfig = {
         mnemonic,
         path: "m/44'/60'/0'/0",
       },
-      chainId: localHTTPZGatewayChainId,
+      chainId: process.env.CHAIN_ID ? Number(process.env.CHAIN_ID) : chainIds.localHTTPZGateway,
       url: `http://127.0.0.1:8546`,
     },
     staging: {
@@ -51,7 +54,16 @@ const config: HardhatUserConfig = {
         mnemonic,
         path: "m/44'/60'/0'/0",
       },
-      chainId: stagingChainId,
+      chainId: process.env.CHAIN_ID ? Number(process.env.CHAIN_ID) : chainIds.staging,
+      url: rpcUrl,
+    },
+    zwsDev: {
+      accounts: {
+        count: NUM_ACCOUNTS,
+        mnemonic,
+        path: "m/44'/60'/0'/0",
+      },
+      chainId: process.env.CHAIN_ID ? Number(process.env.CHAIN_ID) : chainIds.zwsDev,
       url: rpcUrl,
     },
   },
