@@ -41,7 +41,7 @@ if (networkName === 'hardhat') {
 }
 
 const argEvents =
-  '(uint256 indexed counter, uint256 requestID, uint256[] cts, address contractCaller, bytes4 callbackSelector)';
+  '(uint256 indexed counter, uint256 requestID, bytes32[] cts, address contractCaller, bytes4 callbackSelector)';
 const ifaceEventDecryption = new ethers.Interface(['event DecryptionRequest' + argEvents]);
 
 let decryptionOracle: DecryptionOracle;
@@ -96,6 +96,7 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
     topics: eventDecryption,
   };
   const pastRequests = await ethers.provider.getLogs(filterDecryption);
+
   for (const request of pastRequests) {
     const event = ifaceEventDecryption.parseLog(request);
     const requestID = event.args[1];
@@ -111,23 +112,27 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
       // first check tat all handles are allowed for decryption
       const aclFactory = await ethers.getContractFactory('ACL');
       const acl = aclFactory.attach(aclAdd);
-      const isAllowedForDec = await Promise.all(handles.map(async (handle) => acl.isAllowedForDecryption(handle)));
+      const isAllowedForDec = await Promise.all(
+        handles.map(async (handle: string) => acl.isAllowedForDecryption(handle)),
+      );
       if (!allTrue(isAllowedForDec)) {
         throw new Error('Some handle is not authorized for decryption');
       }
-      const types = typesList.map((num) => CiphertextType[num]);
-      const values = await Promise.all(handles.map(async (handle) => BigInt(await getClearText(handle))));
+      const types = typesList.map((num: string | number) => CiphertextType[num]);
+      const values = await Promise.all(handles.map(async (handle: string) => await getClearText(handle)));
+
       const valuesFormatted = values.map((value, index) =>
-        types[index] === 'address' ? '0x' + value.toString(16).padStart(40, '0') : value,
+        types[index] === 'address' ? '0x' + BigInt(value).toString(16).padStart(40, '0') : value,
       );
+
       const valuesFormatted2 = valuesFormatted.map((value, index) =>
-        typesList[index] === 9 ? '0x' + value.toString(16).padStart(128, '0') : value,
+        typesList[index] === 9 ? '0x' + BigInt(value).toString(16).padStart(128, '0') : value,
       );
       const valuesFormatted3 = valuesFormatted2.map((value, index) =>
-        typesList[index] === 10 ? '0x' + value.toString(16).padStart(256, '0') : value,
+        typesList[index] === 10 ? '0x' + BigInt(value).toString(16).padStart(256, '0') : value,
       );
       const valuesFormatted4 = valuesFormatted3.map((value, index) =>
-        typesList[index] === 11 ? '0x' + value.toString(16).padStart(512, '0') : value,
+        typesList[index] === 11 ? '0x' + BigInt(value).toString(16).padStart(512, '0') : value,
       );
 
       const abiCoder = new ethers.AbiCoder();
@@ -164,7 +169,7 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
 };
 
 async function computeDecryptSignatures(
-  handlesList: bigint[],
+  handlesList: string[],
   decryptedResult: string,
   numSigners: number,
 ): Promise<string[]> {
@@ -183,7 +188,7 @@ async function computeDecryptSignatures(
   return signatures;
 }
 
-async function kmsSign(handlesList: bigint[], decryptedResult: string, kmsSigner: Wallet) {
+async function kmsSign(handlesList: string[], decryptedResult: string, kmsSigner: Wallet) {
   const decManAdd = dotenv.parse(fs.readFileSync('addressesL2/.env.decryptionmanager')).DECRYPTION_MANAGER_ADDRESS;
   const chainId = dotenv.parse(fs.readFileSync('.env')).CHAIN_ID_GATEWAY;
 
@@ -198,7 +203,7 @@ async function kmsSign(handlesList: bigint[], decryptedResult: string, kmsSigner
     PublicDecryptionResult: [
       {
         name: 'handlesList',
-        type: 'uint256[]',
+        type: 'bytes32[]',
       },
       {
         name: 'decryptedResult',

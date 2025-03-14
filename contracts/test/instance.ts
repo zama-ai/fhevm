@@ -65,7 +65,7 @@ export const createInstance = async () => {
   return instance;
 };
 
-const getCiphertext = async (handle: bigint, ethers: typeof hethers): Promise<string> => {
+const getCiphertext = async (handle: string, ethers: typeof hethers): Promise<string> => {
   return ethers.provider.call(getCiphertextCallParams(handle));
 };
 
@@ -91,7 +91,7 @@ const getDecryptor = () => {
  * @param {bigint} a handle to decrypt
  * @returns {bool}
  */
-export const decryptBool = async (handle: bigint): Promise<boolean> => {
+export const decryptBool = async (handle: string): Promise<boolean> => {
   if (network.name === 'hardhat') {
     await awaitCoprocessor();
     return (await getClearText(handle)) === '1';
@@ -109,7 +109,7 @@ export const decryptBool = async (handle: bigint): Promise<boolean> => {
  * @param {bigint} a handle to decrypt
  * @returns {bigint}
  */
-export const decrypt4 = async (handle: bigint): Promise<bigint> => {
+export const decrypt4 = async (handle: string): Promise<bigint> => {
   if (network.name === 'hardhat') {
     await awaitCoprocessor();
     return BigInt(await getClearText(handle));
@@ -127,7 +127,7 @@ export const decrypt4 = async (handle: bigint): Promise<bigint> => {
  * @param {bigint} a handle to decrypt
  * @returns {bigint}
  */
-export const decrypt8 = async (handle: bigint): Promise<bigint> => {
+export const decrypt8 = async (handle: string): Promise<bigint> => {
   if (network.name === 'hardhat') {
     await awaitCoprocessor();
     return BigInt(await getClearText(handle));
@@ -145,7 +145,7 @@ export const decrypt8 = async (handle: bigint): Promise<bigint> => {
  * @param {bigint} a handle to decrypt
  * @returns {bigint}
  */
-export const decrypt16 = async (handle: bigint): Promise<bigint> => {
+export const decrypt16 = async (handle: string): Promise<bigint> => {
   if (network.name === 'hardhat') {
     await awaitCoprocessor();
     return BigInt(await getClearText(handle));
@@ -163,7 +163,7 @@ export const decrypt16 = async (handle: bigint): Promise<bigint> => {
  * @param {bigint} a handle to decrypt
  * @returns {bigint}
  */
-export const decrypt32 = async (handle: bigint): Promise<bigint> => {
+export const decrypt32 = async (handle: string): Promise<bigint> => {
   if (network.name === 'hardhat') {
     await awaitCoprocessor();
     return BigInt(await getClearText(handle));
@@ -181,7 +181,7 @@ export const decrypt32 = async (handle: bigint): Promise<bigint> => {
  * @param {bigint} a handle to decrypt
  * @returns {bigint}
  */
-export const decrypt64 = async (handle: bigint): Promise<bigint> => {
+export const decrypt64 = async (handle: string): Promise<bigint> => {
   if (network.name === 'hardhat') {
     await awaitCoprocessor();
     return BigInt(await getClearText(handle));
@@ -199,7 +199,7 @@ export const decrypt64 = async (handle: bigint): Promise<bigint> => {
  * @param {bigint} a handle to decrypt
  * @returns {bigint}
  */
-export const decrypt128 = async (handle: bigint): Promise<bigint> => {
+export const decrypt128 = async (handle: string): Promise<bigint> => {
   if (network.name === 'hardhat') {
     await awaitCoprocessor();
     return BigInt(await getClearText(handle));
@@ -217,7 +217,7 @@ export const decrypt128 = async (handle: bigint): Promise<bigint> => {
  * @param {bigint} a handle to decrypt
  * @returns {bigint}
  */
-export const decrypt256 = async (handle: bigint): Promise<bigint> => {
+export const decrypt256 = async (handle: string): Promise<bigint> => {
   if (network.name === 'hardhat') {
     await awaitCoprocessor();
     return BigInt(await getClearText(handle));
@@ -235,7 +235,7 @@ export const decrypt256 = async (handle: bigint): Promise<bigint> => {
  * @param {bigint} a handle to decrypt
  * @returns {string}
  */
-export const decryptAddress = async (handle: bigint): Promise<string> => {
+export const decryptAddress = async (handle: string): Promise<string> => {
   if (network.name === 'hardhat') {
     await awaitCoprocessor();
     const bigintAdd = BigInt(await getClearText(handle));
@@ -255,7 +255,7 @@ export const decryptAddress = async (handle: bigint): Promise<string> => {
  * @param {bigint} a handle to decrypt
  * @returns {bigint}
  */
-export const decryptEbytes64 = async (handle: bigint): Promise<bigint> => {
+export const decryptEbytes64 = async (handle: string): Promise<bigint> => {
   if (network.name === 'hardhat') {
     await awaitCoprocessor();
     return BigInt(await getClearText(handle));
@@ -273,7 +273,7 @@ export const decryptEbytes64 = async (handle: bigint): Promise<bigint> => {
  * @param {bigint} a handle to decrypt
  * @returns {bigint}
  */
-export const decryptEbytes128 = async (handle: bigint): Promise<bigint> => {
+export const decryptEbytes128 = async (handle: string): Promise<bigint> => {
   if (network.name === 'hardhat') {
     await awaitCoprocessor();
     return BigInt(await getClearText(handle));
@@ -291,7 +291,7 @@ export const decryptEbytes128 = async (handle: bigint): Promise<bigint> => {
  * @param {bigint} a handle to decrypt
  * @returns {bigint}
  */
-export const decryptEbytes256 = async (handle: bigint): Promise<bigint> => {
+export const decryptEbytes256 = async (handle: string): Promise<bigint> => {
   if (network.name === 'hardhat') {
     await awaitCoprocessor();
     return BigInt(await getClearText(handle));

@@ -365,7 +365,7 @@ export const ENCRYPTION_TYPES = {
 };
 
 async function computeInputSignaturesCopro(
-  handlesList: bigint[],
+  handlesList: string[],
   userAddress: string,
   contractAddress: string,
 ): Promise<string[]> {
@@ -385,7 +385,7 @@ async function computeInputSignaturesCopro(
 }
 
 async function coprocSign(
-  handlesList: bigint[],
+  handlesList: string[],
   userAddress: string,
   contractAddress: string,
   signer: Wallet,

@@ -19,7 +19,7 @@ interface IInputVerifier {
         TFHEExecutorNoEvents.ContextUserInputs memory context,
         bytes32 inputHandle,
         bytes memory inputProof
-    ) external returns (uint256);
+    ) external returns (bytes32);
 }
 
 /**
@@ -32,7 +32,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
     /// @notice         Returned when the handle is not allowed in the ACL for the account.
     /// @param handle   Handle.
     /// @param account  Address of the account.
-    error ACLNotAllowed(uint256 handle, address account);
+    error ACLNotAllowed(bytes32 handle, address account);
 
     /// @notice Returned when the FHE operator attempts to divide by zero.
     error DivisionByZero();
@@ -149,7 +149,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheAdd(uint256 lhs, uint256 rhs, bytes1 scalarByte) public virtual returns (uint256 result) {
+    function fheAdd(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5) + (1 << 6) + (1 << 8);
         _requireType(lhs, supportedTypes);
         uint8 lhsType = _typeOf(lhs);
@@ -165,7 +165,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheSub(uint256 lhs, uint256 rhs, bytes1 scalarByte) public virtual returns (uint256 result) {
+    function fheSub(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5) + (1 << 6) + (1 << 8);
         _requireType(lhs, supportedTypes);
         uint8 lhsType = _typeOf(lhs);
@@ -181,7 +181,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheMul(uint256 lhs, uint256 rhs, bytes1 scalarByte) public virtual returns (uint256 result) {
+    function fheMul(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5) + (1 << 6) + (1 << 8);
         _requireType(lhs, supportedTypes);
         uint8 lhsType = _typeOf(lhs);
@@ -197,7 +197,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheDiv(uint256 lhs, uint256 rhs, bytes1 scalarByte) public virtual returns (uint256 result) {
+    function fheDiv(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         if (scalarByte & 0x01 != 0x01) revert IsNotScalar();
         if (rhs == 0) revert DivisionByZero();
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5) + (1 << 6) + (1 << 8);
@@ -215,7 +215,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheRem(uint256 lhs, uint256 rhs, bytes1 scalarByte) public virtual returns (uint256 result) {
+    function fheRem(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         if (scalarByte & 0x01 != 0x01) revert IsNotScalar();
         if (rhs == 0) revert DivisionByZero();
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5) + (1 << 6) + (1 << 8);
@@ -233,7 +233,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheBitAnd(uint256 lhs, uint256 rhs, bytes1 scalarByte) public virtual returns (uint256 result) {
+    function fheBitAnd(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << 0) + (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5) + (1 << 6) + (1 << 8);
         _requireType(lhs, supportedTypes);
         uint8 lhsType = _typeOf(lhs);
@@ -249,7 +249,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheBitOr(uint256 lhs, uint256 rhs, bytes1 scalarByte) public virtual returns (uint256 result) {
+    function fheBitOr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << 0) + (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5) + (1 << 6) + (1 << 8);
         _requireType(lhs, supportedTypes);
         uint8 lhsType = _typeOf(lhs);
@@ -265,7 +265,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheBitXor(uint256 lhs, uint256 rhs, bytes1 scalarByte) public virtual returns (uint256 result) {
+    function fheBitXor(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << 0) + (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5) + (1 << 6) + (1 << 8);
         _requireType(lhs, supportedTypes);
         uint8 lhsType = _typeOf(lhs);
@@ -281,7 +281,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheShl(uint256 lhs, uint256 rhs, bytes1 scalarByte) public virtual returns (uint256 result) {
+    function fheShl(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5) + (1 << 6) + (1 << 8);
         _requireType(lhs, supportedTypes);
         uint8 lhsType = _typeOf(lhs);
@@ -297,7 +297,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheShr(uint256 lhs, uint256 rhs, bytes1 scalarByte) public virtual returns (uint256 result) {
+    function fheShr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5) + (1 << 6) + (1 << 8);
         _requireType(lhs, supportedTypes);
         uint8 lhsType = _typeOf(lhs);
@@ -313,7 +313,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheRotl(uint256 lhs, uint256 rhs, bytes1 scalarByte) public virtual returns (uint256 result) {
+    function fheRotl(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5) + (1 << 6) + (1 << 8);
         _requireType(lhs, supportedTypes);
         uint8 lhsType = _typeOf(lhs);
@@ -329,7 +329,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheRotr(uint256 lhs, uint256 rhs, bytes1 scalarByte) public virtual returns (uint256 result) {
+    function fheRotr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5) + (1 << 6) + (1 << 8);
         _requireType(lhs, supportedTypes);
         uint8 lhsType = _typeOf(lhs);
@@ -345,7 +345,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheEq(uint256 lhs, uint256 rhs, bytes1 scalarByte) public virtual returns (uint256 result) {
+    function fheEq(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << 0) +
             (1 << 1) +
             (1 << 2) +
@@ -358,6 +358,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             (1 << 9) +
             (1 << 10) +
             (1 << 11);
+
         _requireType(lhs, supportedTypes);
         uint8 lhsType = _typeOf(lhs);
         bytes1 scalar = scalarByte & 0x01;
@@ -374,7 +375,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheEq(uint256 lhs, bytes memory rhs, bytes1 scalarByte) public virtual returns (uint256 result) {
+    function fheEq(bytes32 lhs, bytes memory rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << 9) + (1 << 10) + (1 << 11);
         _requireType(lhs, supportedTypes);
         uint8 lhsType = _typeOf(lhs);
@@ -384,9 +385,9 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
         fheGasLimit.payForFheEq(lhsType, scalar);
 
         if (!acl.isAllowed(lhs, msg.sender)) revert ACLNotAllowed(lhs, msg.sender);
-        _checkByteLengthForTypeOfAbove8(rhs.length, lhsType);
+        _checkByteLengthForEbytesTypes(rhs.length, lhsType);
 
-        result = uint256(keccak256(abi.encodePacked(Operators.fheEq, lhs, rhs, scalar, acl, block.chainid)));
+        result = keccak256(abi.encodePacked(Operators.fheEq, lhs, rhs, scalar, acl, block.chainid));
         result = _appendType(result, 0);
         acl.allowTransient(result, msg.sender);
     }
@@ -398,7 +399,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheNe(uint256 lhs, uint256 rhs, bytes1 scalarByte) public virtual returns (uint256 result) {
+    function fheNe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << 0) +
             (1 << 1) +
             (1 << 2) +
@@ -428,7 +429,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheNe(uint256 lhs, bytes memory rhs, bytes1 scalarByte) public virtual returns (uint256 result) {
+    function fheNe(bytes32 lhs, bytes memory rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << 9) + (1 << 10) + (1 << 11);
         _requireType(lhs, supportedTypes);
         uint8 lhsType = _typeOf(lhs);
@@ -437,8 +438,8 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
         if (scalar != 0x01) revert SecondOperandIsNotScalar();
         fheGasLimit.payForFheNe(lhsType, scalar);
         if (!acl.isAllowed(lhs, msg.sender)) revert ACLNotAllowed(lhs, msg.sender);
-        _checkByteLengthForTypeOfAbove8(rhs.length, lhsType);
-        result = uint256(keccak256(abi.encodePacked(Operators.fheNe, lhs, rhs, scalar, acl, block.chainid)));
+        _checkByteLengthForEbytesTypes(rhs.length, lhsType);
+        result = keccak256(abi.encodePacked(Operators.fheNe, lhs, rhs, scalar, acl, block.chainid));
         result = _appendType(result, 0);
         acl.allowTransient(result, msg.sender);
     }
@@ -450,7 +451,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheGe(uint256 lhs, uint256 rhs, bytes1 scalarByte) public virtual returns (uint256 result) {
+    function fheGe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5) + (1 << 6) + (1 << 8);
         _requireType(lhs, supportedTypes);
         uint8 lhsType = _typeOf(lhs);
@@ -466,7 +467,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheGt(uint256 lhs, uint256 rhs, bytes1 scalarByte) public virtual returns (uint256 result) {
+    function fheGt(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5) + (1 << 6) + (1 << 8);
         _requireType(lhs, supportedTypes);
         uint8 lhsType = _typeOf(lhs);
@@ -482,7 +483,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheLe(uint256 lhs, uint256 rhs, bytes1 scalarByte) public virtual returns (uint256 result) {
+    function fheLe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5) + (1 << 6) + (1 << 8);
         _requireType(lhs, supportedTypes);
         uint8 lhsType = _typeOf(lhs);
@@ -498,7 +499,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheLt(uint256 lhs, uint256 rhs, bytes1 scalarByte) public virtual returns (uint256 result) {
+    function fheLt(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5) + (1 << 6) + (1 << 8);
         _requireType(lhs, supportedTypes);
         uint8 lhsType = _typeOf(lhs);
@@ -514,7 +515,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheMin(uint256 lhs, uint256 rhs, bytes1 scalarByte) public virtual returns (uint256 result) {
+    function fheMin(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5) + (1 << 6) + (1 << 8);
         _requireType(lhs, supportedTypes);
         uint8 lhsType = _typeOf(lhs);
@@ -530,7 +531,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param scalarByte    Scalar byte.
      * @return result       Result.
      */
-    function fheMax(uint256 lhs, uint256 rhs, bytes1 scalarByte) public virtual returns (uint256 result) {
+    function fheMax(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5) + (1 << 6) + (1 << 8);
         _requireType(lhs, supportedTypes);
         uint8 lhsType = _typeOf(lhs);
@@ -544,7 +545,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param ct            Ct
      * @return result       Result.
      */
-    function fheNeg(uint256 ct) public virtual returns (uint256 result) {
+    function fheNeg(bytes32 ct) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5) + (1 << 6) + (1 << 8);
         _requireType(ct, supportedTypes);
         uint8 typeCt = _typeOf(ct);
@@ -557,7 +558,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param ct            Ct
      * @return result       Result.
      */
-    function fheNot(uint256 ct) public virtual returns (uint256 result) {
+    function fheNot(bytes32 ct) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << 0) + (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5) + (1 << 6) + (1 << 8);
         _requireType(ct, supportedTypes);
         uint8 typeCt = _typeOf(ct);
@@ -572,7 +573,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param ifFalse       If false.
      * @return result       Result.
      */
-    function fheIfThenElse(uint256 control, uint256 ifTrue, uint256 ifFalse) public virtual returns (uint256 result) {
+    function fheIfThenElse(bytes32 control, bytes32 ifTrue, bytes32 ifFalse) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << 0) +
             (1 << 1) +
             (1 << 2) +
@@ -596,7 +597,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param randType      Type for the random result.
      * @return result       Result.
      */
-    function fheRand(bytes1 randType) public virtual returns (uint256 result) {
+    function fheRand(bytes1 randType) public virtual returns (bytes32 result) {
         bytes16 seed = _generateSeed();
         result = _generateRand(randType, seed);
     }
@@ -607,7 +608,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param randType      Type for the random result.
      * @return result       Result.
      */
-    function fheRandBounded(uint256 upperBound, bytes1 randType) public virtual returns (uint256 result) {
+    function fheRandBounded(uint256 upperBound, bytes1 randType) public virtual returns (bytes32 result) {
         bytes16 seed = _generateSeed();
         result = _generateRandBounded(upperBound, randType, seed);
     }
@@ -618,7 +619,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param toType    Target type.
      * @return result   Result value of the target type.
      */
-    function cast(uint256 ct, bytes1 toType) public virtual returns (uint256 result) {
+    function cast(bytes32 ct, bytes1 toType) public virtual returns (bytes32 result) {
         if (!acl.isAllowed(ct, msg.sender)) revert ACLNotAllowed(ct, msg.sender);
         uint256 supportedTypesInput = (1 << 0) +
             (1 << 1) +
@@ -635,7 +636,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
         /// @dev It must not cast to same type.
         if (bytes1(typeCt) == toType) revert InvalidType();
         fheGasLimit.payForCast(typeCt);
-        result = uint256(keccak256(abi.encodePacked(Operators.cast, ct, toType, acl, block.chainid)));
+        result = keccak256(abi.encodePacked(Operators.cast, ct, toType, acl, block.chainid));
         result = _appendType(result, uint8(toType));
         acl.allowTransient(result, msg.sender);
     }
@@ -646,7 +647,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param toType    Target type.
      * @return result   Result value of the target type.
      */
-    function trivialEncrypt(uint256 pt, bytes1 toType) public virtual returns (uint256 result) {
+    function trivialEncrypt(uint256 pt, bytes1 toType) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << 0) +
             (1 << 1) +
             (1 << 2) +
@@ -659,7 +660,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
         uint8 toT = uint8(toType);
         if ((1 << toT) & supportedTypes == 0) revert UnsupportedType();
         fheGasLimit.payForTrivialEncrypt(toT);
-        result = uint256(keccak256(abi.encodePacked(Operators.trivialEncrypt, pt, toType, acl, block.chainid)));
+        result = keccak256(abi.encodePacked(Operators.trivialEncrypt, pt, toType, acl, block.chainid));
         result = _appendType(result, toT);
         acl.allowTransient(result, msg.sender);
     }
@@ -671,13 +672,13 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @return result   Result value of the target type.
      * @dev             This is an overloaded function for ebytesXX types.
      */
-    function trivialEncrypt(bytes memory pt, bytes1 toType) public virtual returns (uint256 result) {
+    function trivialEncrypt(bytes memory pt, bytes1 toType) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << 9) + (1 << 10) + (1 << 11);
         uint8 toT = uint8(toType);
         if ((1 << toT) & supportedTypes == 0) revert UnsupportedType();
         fheGasLimit.payForTrivialEncrypt(toT);
-        _checkByteLengthForTypeOfAbove8(pt.length, toT);
-        result = uint256(keccak256(abi.encodePacked(Operators.trivialEncrypt, pt, toType, acl, block.chainid)));
+        _checkByteLengthForEbytesTypes(pt.length, toT);
+        result = keccak256(abi.encodePacked(Operators.trivialEncrypt, pt, toType, acl, block.chainid));
         result = _appendType(result, toT);
         acl.allowTransient(result, msg.sender);
     }
@@ -695,12 +696,12 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
         address userAddress,
         bytes memory inputProof,
         bytes1 inputType
-    ) public virtual returns (uint256 result) {
+    ) public virtual returns (bytes32 result) {
         ContextUserInputs memory contextUserInputs = ContextUserInputs({
             userAddress: userAddress,
             contractAddress: msg.sender
         });
-        uint8 typeCt = _typeOf(uint256(inputHandle));
+        uint8 typeCt = _typeOf(inputHandle);
         if (uint8(inputType) != typeCt) revert InvalidType();
         result = inputVerifier.verifyCiphertext(contextUserInputs, inputHandle, inputProof);
         acl.allowTransient(result, msg.sender);
@@ -751,21 +752,20 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
      *      Other handles format (fhe ops results) is: keccak256(keccak256(rawCiphertextFHEList)||index_handle)[0:30] || handle_type || handle_version
      *      The CiphertextFHEList actually contains: 1 byte (= N) for size of handles_list, N bytes for the handles_types : 1 per handle, then the original fhe160list raw ciphertext
      */
-    function _typeOf(uint256 handle) internal pure virtual returns (uint8) {
-        uint8 typeCt = uint8(handle >> 8);
-        return typeCt;
+    function _typeOf(bytes32 handle) internal pure virtual returns (uint8 typeCt) {
+        typeCt = uint8(handle[30]);
     }
 
-    function _appendType(uint256 prehandle, uint8 handleType) internal pure virtual returns (uint256 result) {
+    function _appendType(bytes32 prehandle, uint8 handleType) internal pure virtual returns (bytes32 result) {
         result = prehandle & 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000;
-        result = result | (uint256(handleType) << 8); /// @dev Appends the type.
-        result = result | HANDLE_VERSION;
+        result = result | (bytes32(uint256(handleType)) << 8);
+        result = result | bytes32(uint256(HANDLE_VERSION));
     }
 
     /**
      * @dev Checks the length for typeOf >= 9.
      */
-    function _checkByteLengthForTypeOfAbove8(uint256 byteLength, uint8 typeOf) internal pure virtual {
+    function _checkByteLengthForEbytesTypes(uint256 byteLength, uint8 typeOf) internal pure virtual {
         if (typeOf == 9) {
             if (byteLength != 64) revert InvalidByteLength(typeOf, byteLength);
         } else if (typeOf == 10) {
@@ -776,14 +776,14 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
         }
     }
 
-    function _requireType(uint256 handle, uint256 supportedTypes) internal pure virtual {
+    function _requireType(bytes32 handle, uint256 supportedTypes) internal pure virtual {
         uint8 typeCt = _typeOf(handle);
         if ((1 << typeCt) & supportedTypes == 0) revert UnsupportedType();
     }
 
-    function _unaryOp(Operators op, uint256 ct) internal virtual returns (uint256 result) {
+    function _unaryOp(Operators op, bytes32 ct) internal virtual returns (bytes32 result) {
         if (!acl.isAllowed(ct, msg.sender)) revert ACLNotAllowed(ct, msg.sender);
-        result = uint256(keccak256(abi.encodePacked(op, ct, acl, block.chainid)));
+        result = keccak256(abi.encodePacked(op, ct, acl, block.chainid));
         uint8 typeCt = _typeOf(ct);
         result = _appendType(result, typeCt);
         acl.allowTransient(result, msg.sender);
@@ -791,11 +791,11 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
 
     function _binaryOp(
         Operators op,
-        uint256 lhs,
-        uint256 rhs,
+        bytes32 lhs,
+        bytes32 rhs,
         bytes1 scalar,
         uint8 resultType
-    ) internal virtual returns (uint256 result) {
+    ) internal virtual returns (bytes32 result) {
         if (!acl.isAllowed(lhs, msg.sender)) revert ACLNotAllowed(lhs, msg.sender);
         if (scalar == 0x00) {
             if (!acl.isAllowed(rhs, msg.sender)) revert ACLNotAllowed(rhs, msg.sender);
@@ -804,17 +804,17 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
             uint8 typeLhs = _typeOf(lhs);
             if (typeLhs != typeRhs) revert IncompatibleTypes();
         }
-        result = uint256(keccak256(abi.encodePacked(op, lhs, rhs, scalar, acl, block.chainid)));
+        result = keccak256(abi.encodePacked(op, lhs, rhs, scalar, acl, block.chainid));
         result = _appendType(result, resultType);
         acl.allowTransient(result, msg.sender);
     }
 
     function _ternaryOp(
         Operators op,
-        uint256 lhs,
-        uint256 middle,
-        uint256 rhs
-    ) internal virtual returns (uint256 result) {
+        bytes32 lhs,
+        bytes32 middle,
+        bytes32 rhs
+    ) internal virtual returns (bytes32 result) {
         if (!acl.isAllowed(lhs, msg.sender)) revert ACLNotAllowed(lhs, msg.sender);
         if (!acl.isAllowed(middle, msg.sender)) revert ACLNotAllowed(middle, msg.sender);
         if (!acl.isAllowed(rhs, msg.sender)) revert ACLNotAllowed(rhs, msg.sender);
@@ -826,7 +826,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
         if (typeLhs != 0) revert UnsupportedType(); /// @dev lhs must be ebool
         if (typeMiddle != typeRhs) revert IncompatibleTypes();
 
-        result = uint256(keccak256(abi.encodePacked(op, lhs, middle, rhs, acl, block.chainid)));
+        result = keccak256(abi.encodePacked(op, lhs, middle, rhs, acl, block.chainid));
         result = _appendType(result, typeMiddle);
         acl.allowTransient(result, msg.sender);
     }
@@ -839,7 +839,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
         $.counterRand++;
     }
 
-    function _generateRand(bytes1 randType, bytes16 seed) internal virtual returns (uint256 result) {
+    function _generateRand(bytes1 randType, bytes16 seed) internal virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << 0) +
             (1 << 1) +
             (1 << 2) +
@@ -855,7 +855,7 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
         /// @dev Unsupported erandom type.
         if ((1 << randT) & supportedTypes == 0) revert UnsupportedType();
         fheGasLimit.payForFheRand(randT);
-        result = uint256(keccak256(abi.encodePacked(Operators.fheRand, randType, seed)));
+        result = keccak256(abi.encodePacked(Operators.fheRand, randType, seed));
         result = _appendType(result, randT);
         acl.allowTransient(result, msg.sender);
     }
@@ -864,14 +864,14 @@ contract TFHEExecutorNoEvents is UUPSUpgradeable, Ownable2StepUpgradeable {
         uint256 upperBound,
         bytes1 randType,
         bytes16 seed
-    ) internal virtual returns (uint256 result) {
+    ) internal virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << 1) + (1 << 2) + (1 << 3) + (1 << 4) + (1 << 5) + (1 << 6) + (1 << 8);
         uint8 randT = uint8(randType);
         /// @dev Unsupported erandom type.
         if ((1 << randT) & supportedTypes == 0) revert UnsupportedType();
         if (!_isPowerOfTwo(upperBound)) revert NotPowerOfTwo();
         fheGasLimit.payForFheRandBounded(randT);
-        result = uint256(keccak256(abi.encodePacked(Operators.fheRandBounded, upperBound, randType, seed)));
+        result = keccak256(abi.encodePacked(Operators.fheRandBounded, upperBound, randType, seed));
         result = _appendType(result, randT);
         acl.allowTransient(result, msg.sender);
     }

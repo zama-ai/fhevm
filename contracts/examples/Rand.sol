@@ -4,6 +4,8 @@ pragma solidity ^0.8.24;
 
 import "../lib/TFHE.sol";
 
+import "../lib/FHEVMConfig.sol";
+
 /// @notice Contract for generating random encrypted numbers
 contract Rand {
     /// @notice Encrypted unsigned integers of various sizes

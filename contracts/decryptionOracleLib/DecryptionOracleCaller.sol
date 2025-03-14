@@ -5,16 +5,18 @@ pragma solidity ^0.8.24;
 import "../lib/TFHE.sol";
 import "../lib/Impl.sol";
 
+import "../lib/FHEVMConfig.sol";
+
 interface IKMSVerifier {
     function verifyDecryptionEIP712KMSSignatures(
-        uint256[] memory handlesList,
+        bytes32[] memory handlesList,
         bytes memory decryptedResult,
         bytes[] memory signatures
     ) external returns (bool);
 }
 
 interface IDecryptionOracle {
-    function requestDecryption(uint256 requestID, uint256[] calldata ctsHandles, bytes4 callbackSelector) external;
+    function requestDecryption(uint256 requestID, bytes32[] calldata ctsHandles, bytes4 callbackSelector) external;
 }
 
 struct DecryptionOracleConfigStruct {
@@ -28,7 +30,7 @@ abstract contract DecryptionOracleCaller {
     error UnsupportedHandleType();
 
     uint256 internal counterRequest;
-    mapping(uint256 => uint256[]) private requestedHandles;
+    mapping(uint256 => bytes32[]) private requestedHandles;
     mapping(uint256 => ebool[]) private paramsEBool;
     mapping(uint256 => euint4[]) private paramsEUint4;
     mapping(uint256 => euint8[]) private paramsEUint8;
@@ -77,14 +79,14 @@ abstract contract DecryptionOracleCaller {
         paramsUint256[requestID].push(_uint);
     }
 
-    function saveRequestedHandles(uint256 requestID, uint256[] memory handlesList) internal {
+    function saveRequestedHandles(uint256 requestID, bytes32[] memory handlesList) internal {
         if (requestedHandles[requestID].length != 0) {
             revert HandlesAlreadySavedForRequestID();
         }
         requestedHandles[requestID] = handlesList;
     }
 
-    function loadRequestedHandles(uint256 requestID) internal view returns (uint256[] memory) {
+    function loadRequestedHandles(uint256 requestID) internal view returns (bytes32[] memory) {
         if (requestedHandles[requestID].length == 0) {
             revert NoHandleFoundForRequestID();
         }
@@ -147,60 +149,60 @@ abstract contract DecryptionOracleCaller {
         return $.DecryptionOracleAddress;
     }
 
-    function toUint256(ebool newCT) internal pure returns (uint256 ct) {
+    function toBytes32(ebool newCT) internal pure returns (bytes32 ct) {
         ct = ebool.unwrap(newCT);
     }
 
-    function toUint256(euint4 newCT) internal pure returns (uint256 ct) {
+    function toBytes32(euint4 newCT) internal pure returns (bytes32 ct) {
         ct = euint4.unwrap(newCT);
     }
 
-    function toUint256(euint8 newCT) internal pure returns (uint256 ct) {
+    function toBytes32(euint8 newCT) internal pure returns (bytes32 ct) {
         ct = euint8.unwrap(newCT);
     }
 
-    function toUint256(euint16 newCT) internal pure returns (uint256 ct) {
+    function toBytes32(euint16 newCT) internal pure returns (bytes32 ct) {
         ct = euint16.unwrap(newCT);
     }
 
-    function toUint256(euint32 newCT) internal pure returns (uint256 ct) {
+    function toBytes32(euint32 newCT) internal pure returns (bytes32 ct) {
         ct = euint32.unwrap(newCT);
     }
 
-    function toUint256(euint64 newCT) internal pure returns (uint256 ct) {
+    function toBytes32(euint64 newCT) internal pure returns (bytes32 ct) {
         ct = euint64.unwrap(newCT);
     }
 
-    function toUint256(euint128 newCT) internal pure returns (uint256 ct) {
+    function toBytes32(euint128 newCT) internal pure returns (bytes32 ct) {
         ct = euint128.unwrap(newCT);
     }
 
-    function toUint256(eaddress newCT) internal pure returns (uint256 ct) {
+    function toBytes32(eaddress newCT) internal pure returns (bytes32 ct) {
         ct = eaddress.unwrap(newCT);
     }
 
-    function toUint256(euint256 newCT) internal pure returns (uint256 ct) {
+    function toBytes32(euint256 newCT) internal pure returns (bytes32 ct) {
         ct = euint256.unwrap(newCT);
     }
 
-    function toUint256(ebytes64 newCT) internal pure returns (uint256 ct) {
+    function toBytes32(ebytes64 newCT) internal pure returns (bytes32 ct) {
         ct = ebytes64.unwrap(newCT);
     }
 
-    function toUint256(ebytes128 newCT) internal pure returns (uint256 ct) {
+    function toBytes32(ebytes128 newCT) internal pure returns (bytes32 ct) {
         ct = ebytes128.unwrap(newCT);
     }
 
-    function toUint256(ebytes256 newCT) internal pure returns (uint256 ct) {
+    function toBytes32(ebytes256 newCT) internal pure returns (bytes32 ct) {
         ct = ebytes256.unwrap(newCT);
     }
 
     function requestDecryption(
-        uint256[] memory ctsHandles,
+        bytes32[] memory ctsHandles,
         bytes4 callbackSelector
     ) internal returns (uint256 requestID) {
         requestID = counterRequest;
-        FHEVMConfig.FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
+        FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
         IACL($.ACLAddress).allowForDecryption(ctsHandles);
         DecryptionOracleConfigStruct storage $$ = getDecryptionOracleConfig();
         IDecryptionOracle($$.DecryptionOracleAddress).requestDecryption(requestID, ctsHandles, callbackSelector);
@@ -209,14 +211,14 @@ abstract contract DecryptionOracleCaller {
     }
 
     /// @dev this function should be called inside the callback function the dApp contract to verify the signatures
-    function verifySignatures(uint256[] memory handlesList, bytes[] memory signatures) internal returns (bool) {
+    function verifySignatures(bytes32[] memory handlesList, bytes[] memory signatures) internal returns (bool) {
         uint256 start = 4 + 32; // start position after skipping the selector (4 bytes) and the first argument (index, 32 bytes)
         uint256 length = getSignedDataLength(handlesList);
         bytes memory decryptedResult = new bytes(length);
         assembly {
             calldatacopy(add(decryptedResult, 0x20), start, length) // Copy the relevant part of calldata to decryptedResult memory
         }
-        FHEVMConfig.FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
+        FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
         return
             IKMSVerifier($.KMSVerifierAddress).verifyDecryptionEIP712KMSSignatures(
                 handlesList,
@@ -225,11 +227,11 @@ abstract contract DecryptionOracleCaller {
             );
     }
 
-    function getSignedDataLength(uint256[] memory handlesList) private pure returns (uint256) {
+    function getSignedDataLength(bytes32[] memory handlesList) private pure returns (uint256) {
         uint256 handlesListlen = handlesList.length;
         uint256 signedDataLength;
         for (uint256 i = 0; i < handlesListlen; i++) {
-            uint8 typeCt = uint8(handlesList[i] >> 8);
+            uint8 typeCt = uint8(handlesList[i][30]);
             if (typeCt < 9) {
                 signedDataLength += 32;
             } else if (typeCt == 9) {
@@ -250,7 +252,7 @@ abstract contract DecryptionOracleCaller {
     }
 
     modifier checkSignatures(uint256 requestID, bytes[] memory signatures) {
-        uint256[] memory handlesList = loadRequestedHandles(requestID);
+        bytes32[] memory handlesList = loadRequestedHandles(requestID);
         bool isVerified = verifySignatures(handlesList, signatures);
         if (!isVerified) {
             revert InvalidKMSSignatures();

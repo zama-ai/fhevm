@@ -44,12 +44,12 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
     /// @param caller   account calling the allow function.
     /// @param account  account being allowed for the handle.
     /// @param handle   handle being allowed.
-    event Allowed(address indexed caller, address indexed account, uint256 handle);
+    event Allowed(address indexed caller, address indexed account, bytes32 handle);
 
     /// @notice             Emitted when a list of handles is allowed for decryption.
     /// @param caller       account calling the allowForDecryption function.
     /// @param handlesList  List of handles allowed for decryption.
-    event AllowedForDecryption(address indexed caller, uint256[] handlesList);
+    event AllowedForDecryption(address indexed caller, bytes32[] handlesList);
 
     /// @notice                 Emitted when a new delegatee address is added.
     /// @param caller           caller address
@@ -65,8 +65,8 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
 
     /// @custom:storage-location erc7201:fhevm.storage.ACL
     struct ACLStorage {
-        mapping(uint256 handle => mapping(address account => bool isAllowed)) persistedAllowedPairs;
-        mapping(uint256 handle => bool isAllowedForDecryption) allowedForDecryption;
+        mapping(bytes32 handle => mapping(address account => bool isAllowed)) persistedAllowedPairs;
+        mapping(bytes32 handle => bool isAllowedForDecryption) allowedForDecryption;
         mapping(address account => mapping(address delegatee => mapping(address contractAddress => bool isDelegate))) delegates;
     }
 
@@ -102,7 +102,7 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param handle        Handle.
      * @param account       Address of the account.
      */
-    function allow(uint256 handle, address account) public virtual {
+    function allow(bytes32 handle, address account) public virtual {
         ACLStorage storage $ = _getACLStorage();
         if (!isAllowed(handle, msg.sender)) {
             revert SenderNotAllowed(msg.sender);
@@ -115,7 +115,7 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @notice              Allows a list of handles to be decrypted.
      * @param handlesList   List of handles.
      */
-    function allowForDecryption(uint256[] memory handlesList) public virtual {
+    function allowForDecryption(bytes32[] memory handlesList) public virtual {
         uint256 lenHandlesList = handlesList.length;
         if (lenHandlesList == 0) {
             revert HandlesListIsEmpty();
@@ -123,7 +123,7 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
 
         ACLStorage storage $ = _getACLStorage();
         for (uint256 k = 0; k < lenHandlesList; k++) {
-            uint256 handle = handlesList[k];
+            bytes32 handle = handlesList[k];
             if (!isAllowed(handle, msg.sender)) {
                 revert SenderNotAllowed(msg.sender);
             }
@@ -140,7 +140,7 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param handle        Handle.
      * @param account       Address of the account.
      */
-    function allowTransient(uint256 handle, address account) public virtual {
+    function allowTransient(bytes32 handle, address account) public virtual {
         if (msg.sender != tfheExecutorAddress) {
             if (!isAllowed(handle, msg.sender)) {
                 revert SenderNotAllowed(msg.sender);
@@ -219,7 +219,7 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
      */
     function allowedOnBehalf(
         address delegatee,
-        uint256 handle,
+        bytes32 handle,
         address contractAddress,
         address account
     ) public view virtual returns (bool) {
@@ -237,7 +237,7 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param account               Address of the account.
      * @return isAllowedTransient   Whether the account can access transiently the handle.
      */
-    function allowedTransient(uint256 handle, address account) public view virtual returns (bool) {
+    function allowedTransient(bytes32 handle, address account) public view virtual returns (bool) {
         bool isAllowedTransient;
         bytes32 key = keccak256(abi.encodePacked(handle, account));
         assembly {
@@ -261,7 +261,7 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param account       Address of the account.
      * @return isAllowed    Whether the account can access the handle.
      */
-    function isAllowed(uint256 handle, address account) public view virtual returns (bool) {
+    function isAllowed(bytes32 handle, address account) public view virtual returns (bool) {
         return allowedTransient(handle, account) || persistAllowed(handle, account);
     }
 
@@ -270,7 +270,7 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param handle        Handle.
      * @return isAllowed    Whether the handle is allowed for decryption.
      */
-    function isAllowedForDecryption(uint256 handle) public view virtual returns (bool) {
+    function isAllowedForDecryption(bytes32 handle) public view virtual returns (bool) {
         ACLStorage storage $ = _getACLStorage();
         return $.allowedForDecryption[handle];
     }
@@ -281,7 +281,7 @@ contract ACL is UUPSUpgradeable, Ownable2StepUpgradeable {
      * @param account       Address of the account.
      * @return isAllowed    Whether the account can access the handle.
      */
-    function persistAllowed(uint256 handle, address account) public view virtual returns (bool) {
+    function persistAllowed(bytes32 handle, address account) public view virtual returns (bool) {
         ACLStorage storage $ = _getACLStorage();
         return $.persistedAllowedPairs[handle][account];
     }

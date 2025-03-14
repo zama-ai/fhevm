@@ -19,7 +19,7 @@ contract ACLTest is Test {
     address internal tfheExecutor;
 
     /// @dev This helper function allows to add any handle for any account.
-    function _allowHandle(uint256 handle, address account) internal {
+    function _allowHandle(bytes32 handle, address account) internal {
         vm.prank(tfheExecutor);
         acl.allowTransient(handle, account);
         vm.prank(account);
@@ -50,40 +50,40 @@ contract ACLTest is Test {
         assertEq(acl.getTFHEExecutorAddress(), tfheExecutorAdd);
     }
 
-    function test_isAllowedReturnsFalseIfNotAllowed(uint256 handle, address account) public view {
+    function test_isAllowedReturnsFalseIfNotAllowed(bytes32 handle, address account) public view {
         assertFalse(acl.isAllowed(handle, account));
     }
 
-    function test_isAllowedForDecryptionReturnsFalseIfNotAllowed(uint256 handle) public view {
+    function test_isAllowedForDecryptionReturnsFalseIfNotAllowed(bytes32 handle) public view {
         assertFalse(acl.isAllowedForDecryption(handle));
     }
 
-    function test_allowedTransientReturnsFalseIfNotAllowed(uint256 handle, address account) public view {
+    function test_allowedTransientReturnsFalseIfNotAllowed(bytes32 handle, address account) public view {
         assertFalse(acl.allowedTransient(handle, account));
     }
 
-    function test_persistAllowedReturnsFalseIfNotAllowed(uint256 handle, address account) public view {
+    function test_persistAllowedReturnsFalseIfNotAllowed(bytes32 handle, address account) public view {
         assertFalse(acl.persistAllowed(handle, account));
     }
 
-    function test_CannotAllowIfNotAllowedToUseTheHandle(uint256 handle, address account) public {
+    function test_CannotAllowIfNotAllowedToUseTheHandle(bytes32 handle, address account) public {
         vm.expectPartialRevert(ACL.SenderNotAllowed.selector);
         acl.allow(handle, account);
     }
 
-    function test_CannotAllowTrasientIfNotAllowedToUseTheHandle(uint256 handle, address account) public {
+    function test_CannotAllowTrasientIfNotAllowedToUseTheHandle(bytes32 handle, address account) public {
         vm.expectPartialRevert(ACL.SenderNotAllowed.selector);
         acl.allowTransient(handle, account);
     }
 
-    function test_CanAllowTransientIfTFHEExecutor(uint256 handle, address account) public {
+    function test_CanAllowTransientIfTFHEExecutor(bytes32 handle, address account) public {
         vm.prank(tfheExecutor);
         acl.allowTransient(handle, account);
         assertTrue(acl.allowedTransient(handle, account));
         assertTrue(acl.isAllowed(handle, account));
     }
 
-    function test_CanAllowTransientIfTFHEExecutorButOnlyUntilItGetsCleaned(uint256 handle, address account) public {
+    function test_CanAllowTransientIfTFHEExecutorButOnlyUntilItGetsCleaned(bytes32 handle, address account) public {
         vm.prank(tfheExecutor);
         acl.allowTransient(handle, account);
         acl.cleanTransientStorage();
@@ -91,7 +91,7 @@ contract ACLTest is Test {
         assertFalse(acl.isAllowed(handle, account));
     }
 
-    function test_CanAllow(uint256 handle, address account) public {
+    function test_CanAllow(bytes32 handle, address account) public {
         assertFalse(acl.isAllowed(handle, account));
         _allowHandle(handle, account);
         assertTrue(acl.isAllowed(handle, account));
@@ -99,7 +99,7 @@ contract ACLTest is Test {
     }
 
     function test_CanDelegateAccountButItIsAllowedOnBehalfOnlyIfBothContractAndSenderAreAllowed(
-        uint256 handle,
+        bytes32 handle,
         address sender,
         address delegatee,
         address delegateeContract
@@ -123,7 +123,7 @@ contract ACLTest is Test {
     }
 
     function test_CannotDelegateAccountToSameAccountTwice(
-        uint256 handle,
+        bytes32 handle,
         address sender,
         address delegatee,
         address delegateeContract
@@ -152,7 +152,7 @@ contract ACLTest is Test {
     }
 
     function test_CanDelegateAccountIfAccountNotAllowed(
-        uint256 handle,
+        bytes32 handle,
         address sender,
         address delegatee,
         address delegateeContract
@@ -172,7 +172,7 @@ contract ACLTest is Test {
     }
 
     function test_NoOneCanAllowForDecryptionIfEmptyList(address sender) public {
-        uint256[] memory handlesList = new uint256[](0);
+        bytes32[] memory handlesList = new bytes32[](0);
         vm.prank(sender);
         vm.expectRevert(ACL.HandlesListIsEmpty.selector);
         acl.allowForDecryption(handlesList);
@@ -180,10 +180,10 @@ contract ACLTest is Test {
 
     function test_CanAllowForDecryptionIfSenderIsApprovedToUseHandle(
         address sender,
-        uint256 handle0,
-        uint256 handle1
+        bytes32 handle0,
+        bytes32 handle1
     ) public {
-        uint256[] memory handlesList = new uint256[](2);
+        bytes32[] memory handlesList = new bytes32[](2);
         handlesList[0] = handle0;
         handlesList[1] = handle1;
 
@@ -199,8 +199,8 @@ contract ACLTest is Test {
         assertTrue(acl.isAllowedForDecryption(handle1));
     }
 
-    function test_CannotAllowForDecryptionIfSenderIsNotAllowedToUseTheHandle(uint256 handle0, uint256 handle1) public {
-        uint256[] memory handlesList = new uint256[](2);
+    function test_CannotAllowForDecryptionIfSenderIsNotAllowedToUseTheHandle(bytes32 handle0, bytes32 handle1) public {
+        bytes32[] memory handlesList = new bytes32[](2);
         handlesList[0] = handle0;
         handlesList[1] = handle1;
         vm.expectPartialRevert(ACL.SenderNotAllowed.selector);
@@ -209,11 +209,11 @@ contract ACLTest is Test {
 
     function test_CannotAllowForDecryptionIfSenderIsNotAllowedToUseOneOfTheHandles(
         address sender,
-        uint256 handle0,
-        uint256 handle1
+        bytes32 handle0,
+        bytes32 handle1
     ) public {
         vm.assume(handle0 != handle1);
-        uint256[] memory handlesList = new uint256[](2);
+        bytes32[] memory handlesList = new bytes32[](2);
         handlesList[0] = handle0;
         handlesList[1] = handle1;
 

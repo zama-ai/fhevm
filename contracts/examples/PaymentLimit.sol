@@ -3,6 +3,7 @@
 pragma solidity ^0.8.24;
 
 import "../lib/TFHE.sol";
+import "../lib/FHEVMConfig.sol";
 
 /// @title PaymentLimit
 /// @notice A contract to demonstrate FHE gas limits in different scenarios

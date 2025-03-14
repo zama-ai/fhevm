@@ -63,26 +63,13 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
      * @param decryptedResult   Decrypted result.
      */
     struct PublicDecryptionResult {
-        uint256[] handlesList;
+        bytes32[] handlesList;
         bytes decryptedResult;
-    }
-
-    /**
-     * @param aclAddress        ACL address.
-     * @param hashOfCiphertext  Hash of ciphertext.
-     * @param userAddress       Address of the user.
-     * @param contractAddress   Contract address.
-     */
-    struct CiphertextVerificationForKMS {
-        address aclAddress;
-        bytes32 hashOfCiphertext;
-        address userAddress;
-        address contractAddress;
     }
 
     /// @notice Decryption result type.
     string public constant DECRYPTION_RESULT_TYPE =
-        "PublicDecryptionResult(uint256[] handlesList,bytes decryptedResult)";
+        "PublicDecryptionResult(bytes32[] handlesList,bytes decryptedResult)";
 
     /// @notice Decryption result typehash.
     bytes32 public constant DECRYPTION_RESULT_TYPEHASH = keccak256(bytes(DECRYPTION_RESULT_TYPE));
@@ -218,7 +205,7 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
      * @return isVerified       true if enough provided signatures are valid, false otherwise.
      */
     function verifyDecryptionEIP712KMSSignatures(
-        uint256[] memory handlesList,
+        bytes32[] memory handlesList,
         bytes memory decryptedResult,
         bytes[] memory signatures
     ) public virtual returns (bool) {

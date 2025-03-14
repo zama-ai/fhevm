@@ -24,7 +24,7 @@ describe('ACL', function () {
   });
 
   it('allowTransient() is not persistent', async function () {
-    const randomHandle = 3290232n;
+    const randomHandle = '0x7345544800000000000000000000000000000000000000000000000000000000';
     const randomAccount = this.signers.bob.address;
     await this.acl.connect(this.tfheExecutor).allowTransient(randomHandle, randomAccount);
 
@@ -36,7 +36,7 @@ describe('ACL', function () {
   });
 
   it('allowTransient() reverts if sender is not allowed', async function () {
-    const randomHandle = 3290232n;
+    const randomHandle = '0x7345544800000000000000000000000000000000000000000000000000000000';
     const randomAccount = this.signers.alice.address;
     const sender = this.signers.alice;
 
@@ -46,7 +46,7 @@ describe('ACL', function () {
   });
 
   it('allow() reverts if sender is not allowed', async function () {
-    const randomHandle = 3290232n;
+    const randomHandle = '0x7345544800000000000000000000000000000000000000000000000000000000';
     const randomAccount = this.signers.alice.address;
     const sender = this.signers.alice;
 

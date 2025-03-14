@@ -76,8 +76,8 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
 
     /// @notice Function to request decryption of a boolean value with an infinite loop in the callback
     function requestBoolInfinite() public {
-        uint256[] memory cts = new uint256[](1);
-        cts[0] = toUint256(xBool);
+        bytes32[] memory cts = new bytes32[](1);
+        cts[0] = toBytes32(xBool);
         requestDecryption(cts, this.callbackBoolInfinite.selector);
     }
 
@@ -97,15 +97,15 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
 
     /// @notice Request decryption of a boolean value
     function requestBool() public {
-        uint256[] memory cts = new uint256[](1);
-        cts[0] = toUint256(xBool);
+        bytes32[] memory cts = new bytes32[](1);
+        cts[0] = toBytes32(xBool);
         requestDecryption(cts, this.callbackBool.selector);
     }
 
     /// @notice Attempt to request decryption of a fake boolean value (should revert)
     function requestFakeBool() public {
-        uint256[] memory cts = new uint256[](1);
-        cts[0] = uint256(0x4200000000000000000000000000000000000000000000000000000000000000);
+        bytes32[] memory cts = new bytes32[](1);
+        cts[0] = 0x4200000000000000000000000000000000000000000000000000000000000000;
         /// @dev This should revert because the previous ebool is not honestly obtained
         requestDecryption(cts, this.callbackBool.selector);
     }
@@ -122,15 +122,15 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
 
     /// @notice Request decryption of a 4-bit unsigned integer
     function requestUint4() public {
-        uint256[] memory cts = new uint256[](1);
-        cts[0] = toUint256(xUint4);
+        bytes32[] memory cts = new bytes32[](1);
+        cts[0] = toBytes32(xUint4);
         requestDecryption(cts, this.callbackUint4.selector);
     }
 
     /// @notice Attempt to request decryption of a fake 4-bit unsigned integer (should revert)
     function requestFakeUint4() public {
-        uint256[] memory cts = new uint256[](1);
-        cts[0] = uint256(0x4200000000000000000000000000000000000000000000000000000000000100);
+        bytes32[] memory cts = new bytes32[](1);
+        cts[0] = 0x4200000000000000000000000000000000000000000000000000000000000100;
         /// @dev This should revert because the previous handle is not honestly obtained
         requestDecryption(cts, this.callbackUint4.selector);
     }
@@ -149,15 +149,15 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
 
     /// @notice Request decryption of an 8-bit unsigned integer
     function requestUint8() public {
-        uint256[] memory cts = new uint256[](1);
-        cts[0] = toUint256(xUint8);
+        bytes32[] memory cts = new bytes32[](1);
+        cts[0] = toBytes32(xUint8);
         requestDecryption(cts, this.callbackUint8.selector);
     }
 
     /// @notice Attempt to request decryption of a fake 8-bit unsigned integer (should revert)
     function requestFakeUint8() public {
-        uint256[] memory cts = new uint256[](1);
-        cts[0] = uint256(0x4200000000000000000000000000000000000000000000000000000000000200);
+        bytes32[] memory cts = new bytes32[](1);
+        cts[0] = 0x4200000000000000000000000000000000000000000000000000000000000200;
         /// @dev This should revert because the previous handle is not honestly obtained
         requestDecryption(cts, this.callbackUint8.selector);
     }
@@ -176,15 +176,15 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
 
     /// @notice Request decryption of a 16-bit unsigned integer
     function requestUint16() public {
-        uint256[] memory cts = new uint256[](1);
-        cts[0] = toUint256(xUint16);
+        bytes32[] memory cts = new bytes32[](1);
+        cts[0] = toBytes32(xUint16);
         requestDecryption(cts, this.callbackUint16.selector);
     }
 
     /// @notice Attempt to request decryption of a fake 16-bit unsigned integer (should revert)
     function requestFakeUint16() public {
-        uint256[] memory cts = new uint256[](1);
-        cts[0] = uint256(0x4200000000000000000000000000000000000000000000000000000000000300);
+        bytes32[] memory cts = new bytes32[](1);
+        cts[0] = 0x4200000000000000000000000000000000000000000000000000000000000300;
         /// @dev This should revert because the previous handle is not honestly obtained
         requestDecryption(cts, this.callbackUint16.selector);
     }
@@ -205,8 +205,8 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
     /// @param input1 First additional input
     /// @param input2 Second additional input
     function requestUint32(uint32 input1, uint32 input2) public {
-        uint256[] memory cts = new uint256[](1);
-        cts[0] = toUint256(xUint32);
+        bytes32[] memory cts = new bytes32[](1);
+        cts[0] = toBytes32(xUint32);
         uint256 requestID = requestDecryption(cts, this.callbackUint32.selector);
         addParamsUint256(requestID, input1);
         addParamsUint256(requestID, input2);
@@ -214,8 +214,8 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
 
     /// @notice Attempt to request decryption of a fake 32-bit unsigned integer (should revert)
     function requestFakeUint32() public {
-        uint256[] memory cts = new uint256[](1);
-        cts[0] = uint256(0x4200000000000000000000000000000000000000000000000000000000000400);
+        bytes32[] memory cts = new bytes32[](1);
+        cts[0] = 0x4200000000000000000000000000000000000000000000000000000000000400;
         /// @dev This should revert because the previous handle is not honestly obtained
         requestDecryption(cts, this.callbackUint32.selector);
     }
@@ -231,7 +231,7 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
     ) public checkSignatures(requestID, signatures) returns (uint32) {
         uint256[] memory params = getParamsUint256(requestID);
         unchecked {
-            uint32 result = uint32(params[0]) + uint32(params[1]) + decryptedInput;
+            uint32 result = uint32(uint256(params[0])) + uint32(uint256(params[1])) + decryptedInput;
             yUint32 = result;
             return result;
         }
@@ -239,15 +239,15 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
 
     /// @notice Request decryption of a 64-bit unsigned integer
     function requestUint64() public {
-        uint256[] memory cts = new uint256[](1);
-        cts[0] = toUint256(xUint64);
+        bytes32[] memory cts = new bytes32[](1);
+        cts[0] = toBytes32(xUint64);
         requestDecryption(cts, this.callbackUint64.selector);
     }
 
     /// @notice Attempt to request decryption of a fake 64-bit unsigned integer (should revert)
     function requestFakeUint64() public {
-        uint256[] memory cts = new uint256[](1);
-        cts[0] = uint256(0x4200000000000000000000000000000000000000000000000000000000000500);
+        bytes32[] memory cts = new bytes32[](1);
+        cts[0] = 0x4200000000000000000000000000000000000000000000000000000000000500;
         /// @dev This should revert because the previous handle is not honestly obtained
         requestDecryption(cts, this.callbackUint64.selector);
     }
@@ -257,8 +257,8 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
     /// @param inputProof The input proof for the encrypted value
     function requestUint64NonTrivial(einput inputHandle, bytes calldata inputProof) public {
         euint64 inputNonTrivial = TFHE.asEuint64(inputHandle, inputProof);
-        uint256[] memory cts = new uint256[](1);
-        cts[0] = toUint256(inputNonTrivial);
+        bytes32[] memory cts = new bytes32[](1);
+        cts[0] = toBytes32(inputNonTrivial);
         requestDecryption(cts, this.callbackUint64.selector);
     }
 
@@ -275,15 +275,15 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
     }
 
     function requestUint128() public {
-        uint256[] memory cts = new uint256[](1);
-        cts[0] = toUint256(xUint128);
+        bytes32[] memory cts = new bytes32[](1);
+        cts[0] = toBytes32(xUint128);
         requestDecryption(cts, this.callbackUint128.selector);
     }
 
     function requestUint128NonTrivial(einput inputHandle, bytes calldata inputProof) public {
         euint128 inputNonTrivial = TFHE.asEuint128(inputHandle, inputProof);
-        uint256[] memory cts = new uint256[](1);
-        cts[0] = toUint256(inputNonTrivial);
+        bytes32[] memory cts = new bytes32[](1);
+        cts[0] = toBytes32(inputNonTrivial);
         requestDecryption(cts, this.callbackUint128.selector);
     }
 
@@ -297,15 +297,15 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
     }
 
     function requestUint256() public {
-        uint256[] memory cts = new uint256[](1);
-        cts[0] = toUint256(xUint256);
+        bytes32[] memory cts = new bytes32[](1);
+        cts[0] = toBytes32(xUint256);
         requestDecryption(cts, this.callbackUint256.selector);
     }
 
     function requestUint256NonTrivial(einput inputHandle, bytes calldata inputProof) public {
         euint256 inputNonTrivial = TFHE.asEuint256(inputHandle, inputProof);
-        uint256[] memory cts = new uint256[](1);
-        cts[0] = toUint256(inputNonTrivial);
+        bytes32[] memory cts = new bytes32[](1);
+        cts[0] = toBytes32(inputNonTrivial);
         requestDecryption(cts, this.callbackUint256.selector);
     }
 
@@ -320,15 +320,15 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
 
     function requestEbytes64NonTrivial(einput inputHandle, bytes calldata inputProof) public {
         ebytes64 inputNonTrivial = TFHE.asEbytes64(inputHandle, inputProof);
-        uint256[] memory cts = new uint256[](1);
-        cts[0] = toUint256(inputNonTrivial);
+        bytes32[] memory cts = new bytes32[](1);
+        cts[0] = toBytes32(inputNonTrivial);
         requestDecryption(cts, this.callbackBytes64.selector);
     }
 
     function requestEbytes64Trivial(bytes calldata value) public {
         ebytes64 inputTrivial = TFHE.asEbytes64(TFHE.padToBytes64(value));
-        uint256[] memory cts = new uint256[](1);
-        cts[0] = toUint256(inputTrivial);
+        bytes32[] memory cts = new bytes32[](1);
+        cts[0] = toBytes32(inputTrivial);
         requestDecryption(cts, this.callbackBytes64.selector);
     }
 
@@ -343,15 +343,15 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
 
     function requestEbytes128NonTrivial(einput inputHandle, bytes calldata inputProof) public {
         ebytes128 inputNonTrivial = TFHE.asEbytes128(inputHandle, inputProof);
-        uint256[] memory cts = new uint256[](1);
-        cts[0] = toUint256(inputNonTrivial);
+        bytes32[] memory cts = new bytes32[](1);
+        cts[0] = toBytes32(inputNonTrivial);
         requestDecryption(cts, this.callbackBytes128.selector);
     }
 
     function requestEbytes128Trivial(bytes calldata value) public {
         ebytes128 inputTrivial = TFHE.asEbytes128(TFHE.padToBytes128(value));
-        uint256[] memory cts = new uint256[](1);
-        cts[0] = toUint256(inputTrivial);
+        bytes32[] memory cts = new bytes32[](1);
+        cts[0] = toBytes32(inputTrivial);
         requestDecryption(cts, this.callbackBytes128.selector);
     }
 
@@ -366,15 +366,15 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
 
     function requestEbytes256Trivial(bytes calldata value) public {
         ebytes256 inputTrivial = TFHE.asEbytes256(TFHE.padToBytes256(value));
-        uint256[] memory cts = new uint256[](1);
-        cts[0] = toUint256(inputTrivial);
+        bytes32[] memory cts = new bytes32[](1);
+        cts[0] = toBytes32(inputTrivial);
         requestDecryption(cts, this.callbackBytes256.selector);
     }
 
     function requestEbytes256NonTrivial(einput inputHandle, bytes calldata inputProof) public {
         ebytes256 inputNonTrivial = TFHE.asEbytes256(inputHandle, inputProof);
-        uint256[] memory cts = new uint256[](1);
-        cts[0] = toUint256(inputNonTrivial);
+        bytes32[] memory cts = new bytes32[](1);
+        cts[0] = toBytes32(inputNonTrivial);
         requestDecryption(cts, this.callbackBytes256.selector);
     }
 
@@ -392,16 +392,16 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
 
     /// @notice Request decryption of an encrypted address
     function requestAddress() public {
-        uint256[] memory cts = new uint256[](1);
-        cts[0] = toUint256(xAddress);
+        bytes32[] memory cts = new bytes32[](1);
+        cts[0] = toBytes32(xAddress);
         requestDecryption(cts, this.callbackAddress.selector);
     }
 
     /// @notice Request decryption of multiple encrypted addresses
     function requestSeveralAddresses() public {
-        uint256[] memory cts = new uint256[](2);
-        cts[0] = toUint256(xAddress);
-        cts[1] = toUint256(xAddress2);
+        bytes32[] memory cts = new bytes32[](2);
+        cts[0] = toBytes32(xAddress);
+        cts[1] = toBytes32(xAddress2);
         requestDecryption(cts, this.callbackAddresses.selector);
     }
 
@@ -422,8 +422,8 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
 
     /// @notice Attempt to request decryption of a fake address (should revert)
     function requestFakeAddress() public {
-        uint256[] memory cts = new uint256[](1);
-        cts[0] = uint256(0x4200000000000000000000000000000000000000000000000000000000000700);
+        bytes32[] memory cts = new bytes32[](1);
+        cts[0] = 0x4200000000000000000000000000000000000000000000000000000000000700;
         /// @dev This should revert because the previous handle is not honestly obtained
         requestDecryption(cts, this.callbackAddress.selector);
     }
@@ -446,12 +446,12 @@ contract TestAsyncDecrypt is DecryptionOracleCaller {
     /// @param inputProof The proof for the encrypted bytes256
     function requestMixedBytes256(einput inputHandle, bytes calldata inputProof) public {
         ebytes256 xBytes256 = TFHE.asEbytes256(inputHandle, inputProof);
-        uint256[] memory cts = new uint256[](4);
-        cts[0] = toUint256(xBool);
-        cts[1] = toUint256(xAddress);
-        cts[2] = toUint256(xBytes256);
+        bytes32[] memory cts = new bytes32[](4);
+        cts[0] = toBytes32(xBool);
+        cts[1] = toBytes32(xAddress);
+        cts[2] = toBytes32(xBytes256);
         ebytes64 input64Bytes = TFHE.asEbytes64(TFHE.padToBytes64(hex"aaff42"));
-        cts[3] = toUint256(input64Bytes);
+        cts[3] = toBytes32(input64Bytes);
         requestDecryption(cts, this.callbackMixedBytes256.selector);
     }
 

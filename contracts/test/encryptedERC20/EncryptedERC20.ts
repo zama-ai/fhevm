@@ -23,6 +23,7 @@ describe('EncryptedERC20', function () {
 
     // Reencrypt Alice's balance
     const balanceHandleAlice = await this.erc20.balanceOf(this.signers.alice);
+
     const { publicKey: publicKeyAlice, privateKey: privateKeyAlice } = this.instances.alice.generateKeypair();
     const eip712 = this.instances.alice.createEIP712(publicKeyAlice, this.contractAddress);
     const signatureAlice = await this.signers.alice.signTypedData(
@@ -30,6 +31,7 @@ describe('EncryptedERC20', function () {
       { Reencrypt: eip712.types.Reencrypt },
       eip712.message,
     );
+
     const balanceAlice = await this.instances.alice.reencrypt(
       balanceHandleAlice,
       privateKeyAlice,
@@ -38,6 +40,7 @@ describe('EncryptedERC20', function () {
       this.contractAddress,
       this.signers.alice.address,
     );
+
     expect(balanceAlice).to.equal(1000);
 
     const totalSupply = await this.erc20.totalSupply();
@@ -51,7 +54,9 @@ describe('EncryptedERC20', function () {
 
     const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     input.add64(1337);
+
     const encryptedTransferAmount = await input.encrypt();
+
     const tx = await this.erc20['transfer(address,bytes32,bytes)'](
       this.signers.bob.address,
       encryptedTransferAmount.handles[0],

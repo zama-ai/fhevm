@@ -23,8 +23,8 @@ contract TestInput is DecryptionOracleCaller {
 
     function requestUint64NonTrivial(einput inputHandle, bytes calldata inputProof) public {
         euint64 inputNonTrivial = TFHE.asEuint64(inputHandle, inputProof);
-        uint256[] memory cts = new uint256[](1);
-        cts[0] = toUint256(inputNonTrivial);
+        bytes32[] memory cts = new bytes32[](1);
+        cts[0] = toBytes32(inputNonTrivial);
         requestDecryption(cts, this.callbackUint64.selector);
     }
 
@@ -45,10 +45,10 @@ contract TestInput is DecryptionOracleCaller {
         ebool encBool = TFHE.asEbool(inputHandleBool, inputProof);
         euint8 encUint8 = TFHE.asEuint8(inputHandleUint8, inputProof);
         eaddress encAddress = TFHE.asEaddress(inputHandleAddress, inputProof);
-        uint256[] memory cts = new uint256[](3);
-        cts[0] = toUint256(encBool);
-        cts[1] = toUint256(encUint8);
-        cts[2] = toUint256(encAddress);
+        bytes32[] memory cts = new bytes32[](3);
+        cts[0] = toBytes32(encBool);
+        cts[1] = toBytes32(encUint8);
+        cts[2] = toBytes32(encAddress);
         requestDecryption(cts, this.callbackMixed.selector);
     }
 

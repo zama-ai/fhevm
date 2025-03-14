@@ -7,14 +7,9 @@ import "../addresses/KMSVerifierAddress.sol";
 import "../addresses/InputVerifierAddress.sol";
 import "../addresses/TFHEExecutorAddress.sol";
 
-library FHEVMConfig {
-    struct FHEVMConfigStruct {
-        address ACLAddress;
-        address TFHEExecutorAddress;
-        address KMSVerifierAddress;
-        address InputVerifierAddress;
-    }
+import {FHEVMConfigStruct} from "./TFHE.sol";
 
+library FHEVMConfig {
     /// @dev Function to return an immutable struct
     function defaultConfig() internal pure returns (FHEVMConfigStruct memory) {
         return

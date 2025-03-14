@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "../../lib/TFHE.sol";
+import "../../lib/FHEVMConfig.sol";
 
 contract TFHEManualTestSuite {
     ebool public resb;
@@ -18,7 +19,7 @@ contract TFHEManualTestSuite {
     ebytes256 public resB256;
 
     constructor() {
-        TFHE.setFHEVM(FHEVMConfig.defaultConfig());
+        TFHE.setFHEVM(FHEVMConfig.defaultConfig()); // Set up the FHEVM configuration for this contract
     }
 
     function eqEbool(bool a, bool b) external {
