@@ -9,7 +9,8 @@ cd deployments
 
 ## Testing
 
+The test is automated, container is now a job, so you can just check the logs:
+
 ```sh
-docker compose -p zama exec e2e-tester bash
-make run-test-input-proof-staging
+docker logs e2e-tester
 ```

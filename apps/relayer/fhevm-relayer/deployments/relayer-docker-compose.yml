@@ -19,7 +19,17 @@ services:
   
   e2e-tester:
     container_name: e2e-tester
-    image: ghcr.io/zama-ai/fhevm-e2e-test:bd96ef8
-    command: ["sh", "-c", "tail -f /dev/null"]
+    build:
+      context: ../
+      dockerfile: hardhat/contracts/operations/Dockerfile
+      tags:
+      - "httpz-e2e-tester:0.1.1-local"
+    image: ghcr.io/zama-ai/fhevm-e2e-test:a6fdd46
+    command:
+      - /bin/bash
+      - -c
+      - |
+        source /app/hardhat/contracts/.env
+        make run-test-input-proof-staging
     volumes:
-      - ./config/env/.env.staging.layer1:/app/hardhat/contracts/.env.example
+      - ./config/env/.env.staging.layer1:/app/hardhat/contracts/.env

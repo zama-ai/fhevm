@@ -1,8 +1,5 @@
 #.PHONY: all setup run-hardhat deploy-fhevm-smart-contracts start-fhevm-relayer run-decrypt-test help
 -include hardhat/contracts/.env
-ifneq (,$(wildcard hardhat/contracts/.env))
-    export $(shell cat hardhat/contracts/.env | sed 's/=.*//g')
-endif
 
 # Default target
 all: help
@@ -89,16 +86,12 @@ run-test-input-proof-hardhat:
 	@unset $$(cat hardhat/contracts/.env | sed 's/=.*//g') && cd hardhat/contracts && npx hardhat compile && npx hardhat compile:specific --contract decryptionOracle && RUST_RELAYER=true npx hardhat test --grep "test user input uint64" --network localCoprocessorL1Input
 
 run-test-input-proof-staging:
-	@echo "$(GREEN)Preparing env setup...$(RESET)"
-	@$(MAKE) setup-mock
-	@echo "$(GREEN)Running input proof tests...$(RESET)"
-	@unset $$(cat hardhat/contracts/.env | sed 's/=.*//g') && cd hardhat/contracts && npx hardhat compile && npx hardhat compile:specific --contract decryptionOracle && RUST_RELAYER=true npx hardhat test --grep "test user input uint64" --network staging
+	@./run-input-proof.sh
 
 run-test-input-proof:
 	@curl -X POST http://127.0.0.1:3000/input-proof \
 		-H "Content-Type: application/json" \
 		-d '{"contractChainId": "123456", "contractAddress": "0xcEc0e9723bF28D2A2C867108cC4C3A38a011d4D1", "userAddress": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80", "ciphertextWithZkpok": "abcdef"}'
-
 
 run-test-user-decrypt:
 	@curl -X POST http://127.0.0.1:3000/user-decrypt \

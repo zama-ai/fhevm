@@ -18,6 +18,7 @@ import type { Signers } from './signers';
 import { FhevmInstances } from './types';
 
 const FHE_CLIENT_KEY_PATH = process.env.FHE_CLIENT_KEY_PATH;
+const RELAYER_URL = process.env.RELAYER_URL;
 
 let clientKey: Uint8Array | undefined;
 
@@ -56,7 +57,7 @@ export const createInstances = async (accounts: Signers): Promise<FhevmInstances
 
 export const createInstance = async () => {
   console.log('net url:', network.config.url);
-  const relayerUrl = dotenv.parse(fs.readFileSync('.env')).RELAYER_URL || 'http://localhost:3000';
+  const relayerUrl = RELAYER_URL || 'http://localhost:3000';
   const instance = await createFhevmInstance({
     kmsContractAddress: kmsAdd,
     aclContractAddress: aclAdd,
