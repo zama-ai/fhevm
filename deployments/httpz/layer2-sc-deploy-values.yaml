@@ -2,7 +2,7 @@ scDeploy:
   enabled: true
   image:
     name: ghcr.io/zama-ai/gateway-l2/sc-bundle
-    tag: v0.1.0-rc3
+    tag: v0.1.0-rc4
   configmapName: "layer2-sc-addresses"
   env:
     - name: MNEMONIC
@@ -19,7 +19,7 @@ scDeploy:
       value: ""
     - name: NUM_ADMINS
       value: "1"
-    - name: ADMIN_ADDRESS_1
+    - name: ADMIN_ADDRESS_0
       value: "0xCf28E90D4A6dB23c34E1881aEF5fd9fF2e478634"
     - name: KMS_THRESHOLD
       value: "0"
@@ -65,6 +65,6 @@ scDeploy:
     - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"httpz.address\" \"$(cat /app/addresses/.env.httpz | cut -d'=' -f 2)\""
     - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"zkpok_manager.address\" \"$(cat /app/addresses/.env.zkpok_manager | cut -d'=' -f 2)\""
     - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"key_manager.address\" \"$(cat /app/addresses/.env.key_manager | cut -d'=' -f 2)\""
-    - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"ciphertext_storage.address\" \"$(cat /app/addresses/.env.ciphertext_storage | cut -d'=' -f 2)\""
+    - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"ciphertext_manager.address\" \"$(cat /app/addresses/.env.ciphertext_manager | cut -d'=' -f 2)\""
     - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"acl_manager.address\" \"$(cat /app/addresses/.env.acl_manager | cut -d'=' -f 2)\""
     - "add_key_to_configmap \"${CONFIGMAP_NAME}\" \"decryption_manager.address\" \"$(cat /app/addresses/.env.decryption_manager | cut -d'=' -f 2)\""

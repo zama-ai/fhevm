@@ -6,7 +6,7 @@ primary:
   persistence:
     enabled: true
     size: 20Gi
-    storageClass: gp3
+    #storageClass: gp3
 resources:
   requests:
     cpu: "1"
