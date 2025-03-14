@@ -1,3 +1,5 @@
+use rand::distr::Alphanumeric;
+use rand::Rng;
 use sqlx::postgres::types::Oid;
 use sqlx::{query, PgPool};
 use std::time::Duration;
@@ -155,4 +157,46 @@ pub async fn setup_test_user(pool: &sqlx::PgPool) -> Result<(), Box<dyn std::err
     .await?;
 
     Ok(())
+}
+
+pub async fn insert_random_tenant(pool: &PgPool) -> Result<i32, sqlx::Error> {
+    let chain_id: i32 = rand::rng().random_range(1..10000);
+    let key_id: i32 = rand::rng().random_range(1..10000);
+
+    let verifying_contract_address: String = rand::rng()
+        .sample_iter(&Alphanumeric)
+        .take(42)
+        .map(char::from)
+        .collect();
+
+    let acl_contract_address: String = rand::rng()
+        .sample_iter(&Alphanumeric)
+        .take(42)
+        .map(char::from)
+        .collect();
+
+    let pks_key: Vec<u8> = (0..32).map(|_| rand::random::<u8>()).collect();
+    let sks_key: Vec<u8> = (0..32).map(|_| rand::random::<u8>()).collect();
+    let public_params: Vec<u8> = (0..64).map(|_| rand::random::<u8>()).collect();
+
+    let row = sqlx::query!(
+        r#"
+        INSERT INTO tenants (chain_id, key_id, verifying_contract_address, acl_contract_address, 
+                            pks_key, sks_key, public_params)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING tenant_id, tenant_api_key, chain_id, verifying_contract_address, 
+                  acl_contract_address, pks_key, sks_key, public_params, key_id
+        "#,
+        chain_id,
+        key_id,
+        verifying_contract_address,
+        acl_contract_address,
+        pks_key,
+        sks_key,
+        public_params
+    )
+    .fetch_one(pool)
+    .await?;
+
+    Ok(row.tenant_id)
 }
