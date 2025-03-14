@@ -2,6 +2,7 @@ use crate::keyset::fetch_keyset;
 use crate::HandleItem;
 use crate::KeySet;
 use crate::{Config, DBConfig, ExecutionError};
+use fhevm_engine_common::utils::to_hex;
 use sqlx::pool::PoolConnection;
 use sqlx::postgres::PgListener;
 use sqlx::{Acquire, PgPool, Postgres, Transaction};
@@ -319,21 +320,4 @@ fn decompress_ct(
 
     let result = SupportedFheCiphertexts::decompress(ct_type, compressed_ct)?;
     Ok(result)
-}
-
-// Print first 4 and last 4 bytes of a blob as hex
-fn to_hex(handle: &[u8]) -> String {
-    const OFFSET: usize = 8;
-    match handle.len() {
-        0 => String::from("0x"),
-        len if len <= 2 * OFFSET => format!("0x{}", hex::encode(handle)),
-        _ => {
-            let hex_str = hex::encode(handle);
-            format!(
-                "0x{}...{}",
-                &hex_str[..OFFSET],
-                &hex_str[hex_str.len() - OFFSET..]
-            )
-        }
-    }
 }
