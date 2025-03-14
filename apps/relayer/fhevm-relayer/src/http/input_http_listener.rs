@@ -75,7 +75,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
         // Generate Request ID
         let request_id = self.orchestrator.new_request_id();
 
-        info!("validated and assigned request id: {}", request_id);
+        info!("Validated and assigned request id: {}", request_id);
 
         // Register once handlers for receiving the decryption response from the gateway l2
         let (handler, rx): (OnceHandler<RelayerEvent>, oneshot::Receiver<RelayerEvent>) =
@@ -87,7 +87,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
             request_id,
             handler,
         );
-        info!("registered once handler");
+        info!("Registered once handler");
 
         // Prepare and send an event
         let request_data: InputProofRequest = match payload.try_into() {
@@ -128,13 +128,13 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
             }
         };
 
-        info!("response event type {:?}", event.data);
+        info!("Response event type {:?}", event.data);
         match event.data {
             RelayerEventData::InputProof(InputProofEventData::RespRcvdFromGw {
                 input_proof_response,
             }) => match InputProofResponseJson::try_from(input_proof_response) {
                 Ok(response_json) => {
-                    info!("sending success reponse to user");
+                    info!("Sending success reponse to user");
                     (StatusCode::OK, Json(response_json)).into_response()
                 }
                 Err(_) => {
