@@ -47,6 +47,48 @@ interface ITFHEExecutor {
     function fheMul(uint256 lhs, uint256 rhs, bytes1 scalarByte) external returns (uint256 result);
 
     /**
+     * @notice              Computes fheSafeAdd operation.
+     * @param lhs           LHS.
+     * @param rhs           RHS.
+     * @param scalarByte    Scalar byte.
+     * @return result       Result.
+     * @return overflowed   Whether the function overflowed.
+     */
+    function fheSafeAdd(
+        uint256 lhs,
+        uint256 rhs,
+        bytes1 scalarByte
+    ) external returns (uint256 result, uint256 overflowed);
+
+    /**
+     * @notice              Computes fheSafeSub operation.
+     * @param lhs           LHS.
+     * @param rhs           RHS.
+     * @param scalarByte    Scalar byte.
+     * @return result       Result.
+     * @return overflowed   Whether the function overflowed.
+     */
+    function fheSafeSub(
+        uint256 lhs,
+        uint256 rhs,
+        bytes1 scalarByte
+    ) external returns (uint256 result, uint256 overflowed);
+
+    /**
+     * @notice              Computes fheSafeMul operation.
+     * @param lhs           LHS.
+     * @param rhs           RHS.
+     * @param scalarByte    Scalar byte.
+     * @return result       Result.
+     * @return overflowed   Whether the function overflowed.
+     */
+    function fheSafeMul(
+        uint256 lhs,
+        uint256 rhs,
+        bytes1 scalarByte
+    ) external returns (uint256 result, uint256 overflowed);
+
+    /**
      * @notice              Computes fheDiv operation.
      * @param lhs           LHS.
      * @param rhs           RHS.
@@ -382,7 +424,10 @@ library Impl {
     }
 
     /**
-     * @dev Returns the FHEVM config.
+     * @notice              Computes add operation.
+     * @param lhs           LHS.
+     * @param rhs           RHS.
+     * @return result       Result.
      */
     function add(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
         bytes1 scalarByte;
@@ -396,7 +441,10 @@ library Impl {
     }
 
     /**
-     * @dev Returns the FHEVM config.
+     * @notice              Computes sub operation.
+     * @param lhs           LHS.
+     * @param rhs           RHS.
+     * @return result       Result.
      */
     function sub(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
         bytes1 scalarByte;
@@ -410,7 +458,10 @@ library Impl {
     }
 
     /**
-     * @dev Returns the FHEVM config.
+     * @notice              Computes mul operation.
+     * @param lhs           LHS.
+     * @param rhs           RHS.
+     * @return result       Result.
      */
     function mul(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
         bytes1 scalarByte;
@@ -424,7 +475,64 @@ library Impl {
     }
 
     /**
-     * @dev Returns the FHEVM config.
+     * @notice              Computes safeAdd operation.
+     * @param lhs           LHS.
+     * @param rhs           RHS.
+     * @return result       Result.
+     * @return overflowed   Whether the result has overflowed.
+     */
+    function safeAdd(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result, uint256 overflowed) {
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        (result, overflowed) = ITFHEExecutor($.TFHEExecutorAddress).fheSafeAdd(lhs, rhs, scalarByte);
+    }
+
+    /**
+     * @notice              Computes safeSub operation.
+     * @param lhs           LHS.
+     * @param rhs           RHS.
+     * @return result       Result.
+     * @return overflowed   Whether the result has overflowed.
+     */
+    function safeSub(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result, uint256 overflowed) {
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        (result, overflowed) = ITFHEExecutor($.TFHEExecutorAddress).fheSafeSub(lhs, rhs, scalarByte);
+    }
+
+    /**
+     * @notice              Computes safeMul operation.
+     * @param lhs           LHS.
+     * @param rhs           RHS.
+     * @return result       Result.
+     * @return overflowed   Whether the result has overflowed.
+     */
+    function safeMul(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result, uint256 overflowed) {
+        bytes1 scalarByte;
+        if (scalar) {
+            scalarByte = 0x01;
+        } else {
+            scalarByte = 0x00;
+        }
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        (result, overflowed) = ITFHEExecutor($.TFHEExecutorAddress).fheSafeMul(lhs, rhs, scalarByte);
+    }
+
+    /**
+     * @notice              Computes div operation.
+     * @param lhs           LHS.
+     * @param rhs           RHS.
+     * @return result       Result.
      */
     function div(uint256 lhs, uint256 rhs) internal returns (uint256 result) {
         bytes1 scalarByte = 0x01;
@@ -433,7 +541,10 @@ library Impl {
     }
 
     /**
-     * @dev Returns the FHEVM config.
+     * @notice              Computes rem operation.
+     * @param lhs           LHS.
+     * @param rhs           RHS.
+     * @return result       Result.
      */
     function rem(uint256 lhs, uint256 rhs) internal returns (uint256 result) {
         bytes1 scalarByte = 0x01;
@@ -442,7 +553,10 @@ library Impl {
     }
 
     /**
-     * @dev Returns the FHEVM config.
+     * @notice              Computes and operation.
+     * @param lhs           LHS.
+     * @param rhs           RHS.
+     * @return result       Result.
      */
     function and(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
         bytes1 scalarByte;
@@ -456,7 +570,10 @@ library Impl {
     }
 
     /**
-     * @dev Returns the FHEVM config.
+     * @notice              Computes or operation.
+     * @param lhs           LHS.
+     * @param rhs           RHS.
+     * @return result       Result.
      */
     function or(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
         bytes1 scalarByte;
@@ -470,7 +587,10 @@ library Impl {
     }
 
     /**
-     * @dev Returns the FHEVM config.
+     * @notice              Computes xor operation.
+     * @param lhs           LHS.
+     * @param rhs           RHS.
+     * @return result       Result.
      */
     function xor(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
         bytes1 scalarByte;
@@ -484,7 +604,10 @@ library Impl {
     }
 
     /**
-     * @dev Returns the FHEVM config.
+     * @notice              Computes shl operation.
+     * @param lhs           LHS.
+     * @param rhs           RHS.
+     * @return result       Result.
      */
     function shl(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
         bytes1 scalarByte;
@@ -498,7 +621,10 @@ library Impl {
     }
 
     /**
-     * @dev Returns the FHEVM config.
+     * @notice              Computes shr operation.
+     * @param lhs           LHS.
+     * @param rhs           RHS.
+     * @return result       Result.
      */
     function shr(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
         bytes1 scalarByte;
@@ -512,7 +638,10 @@ library Impl {
     }
 
     /**
-     * @dev Returns the FHEVM config.
+     * @notice              Computes rotl operation.
+     * @param lhs           LHS.
+     * @param rhs           RHS.
+     * @return result       Result.
      */
     function rotl(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
         bytes1 scalarByte;
@@ -526,7 +655,10 @@ library Impl {
     }
 
     /**
-     * @dev Returns the FHEVM config.
+     * @notice              Computes rotr operation.
+     * @param lhs           LHS.
+     * @param rhs           RHS.
+     * @return result       Result.
      */
     function rotr(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
         bytes1 scalarByte;
@@ -540,7 +672,10 @@ library Impl {
     }
 
     /**
-     * @dev Returns the FHEVM config.
+     * @notice              Computes eq operation.
+     * @param lhs           LHS.
+     * @param rhs           RHS.
+     * @return result       Result.
      */
     function eq(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
         bytes1 scalarByte;
@@ -554,7 +689,10 @@ library Impl {
     }
 
     /**
-     * @dev Returns the FHEVM config.
+     * @notice              Computes ne operation.
+     * @param lhs           LHS.
+     * @param rhs           RHS.
+     * @return result       Result.
      */
     function ne(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
         bytes1 scalarByte;
@@ -568,7 +706,10 @@ library Impl {
     }
 
     /**
-     * @dev Returns the FHEVM config.
+     * @notice              Computes ge operation.
+     * @param lhs           LHS.
+     * @param rhs           RHS.
+     * @return result       Result.
      */
     function ge(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
         bytes1 scalarByte;
@@ -582,7 +723,10 @@ library Impl {
     }
 
     /**
-     * @dev Returns the FHEVM config.
+     * @notice              Computes gt operation.
+     * @param lhs           LHS.
+     * @param rhs           RHS.
+     * @return result       Result.
      */
     function gt(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
         bytes1 scalarByte;
@@ -596,7 +740,10 @@ library Impl {
     }
 
     /**
-     * @dev Returns the FHEVM config.
+     * @notice              Computes le operation.
+     * @param lhs           LHS.
+     * @param rhs           RHS.
+     * @return result       Result.
      */
     function le(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
         bytes1 scalarByte;
@@ -610,7 +757,10 @@ library Impl {
     }
 
     /**
-     * @dev Returns the FHEVM config.
+     * @notice              Computes lt operation.
+     * @param lhs           LHS.
+     * @param rhs           RHS.
+     * @return result       Result.
      */
     function lt(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
         bytes1 scalarByte;
@@ -624,7 +774,10 @@ library Impl {
     }
 
     /**
-     * @dev Returns the FHEVM config.
+     * @notice              Computes min operation.
+     * @param lhs           LHS.
+     * @param rhs           RHS.
+     * @return result       Result.
      */
     function min(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
         bytes1 scalarByte;
@@ -638,7 +791,10 @@ library Impl {
     }
 
     /**
-     * @dev Returns the FHEVM config.
+     * @notice              Computes max operation.
+     * @param lhs           LHS.
+     * @param rhs           RHS.
+     * @return result       Result.
      */
     function max(uint256 lhs, uint256 rhs, bool scalar) internal returns (uint256 result) {
         bytes1 scalarByte;

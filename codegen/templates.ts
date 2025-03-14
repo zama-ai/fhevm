@@ -40,10 +40,13 @@ library Common {
 
     /// @notice Runtime type for encrypted uint32.
     uint8 internal constant euint32_t = 4;
+
     /// @notice Runtime type for encrypted uint64.
     uint8 internal constant euint64_t = 5;
+
     /// @notice Runtime type for encrypted uint128.
     uint8 internal constant euint128_t = 6;
+    
     /// @notice Runtime type for encrypted addresses.
     uint8 internal constant euint160_t = 7;
 
@@ -75,17 +78,39 @@ function binaryOperatorImpl(op: Operator): string {
             scalarByte = 0x00;
         }`
       : `bytes1 scalarByte = ${scalarByte};`;
-  return (
-    `
-    /**
-     * @dev Returns the FHEVM config.
-     */
+
+  if (!op.checkOverflow) {
+    return (
+      `
+  /**
+   * @notice              Computes ${op.name} operation.
+   * @param lhs           LHS.
+   * @param rhs           RHS.
+   * @return result       Result.
+   */
     function ${op.name}(uint256 lhs, uint256 rhs${scalarArg}) internal returns (uint256 result) {
         ${scalarSection}
         FHEVMConfigStruct storage $ = getFHEVMConfig();
         result = ITFHEExecutor($.TFHEExecutorAddress).${fname}(lhs, rhs, scalarByte);
     }` + '\n'
-  );
+    );
+  } else {
+    return (
+      `
+  /**
+   * @notice              Computes ${op.name} operation.
+   * @param lhs           LHS.
+   * @param rhs           RHS.
+   * @return result       Result.
+   * @return overflowed   Whether the result has overflowed.
+   */
+    function ${op.name}(uint256 lhs, uint256 rhs${scalarArg}) internal returns (uint256 result, uint256 overflowed) {
+        ${scalarSection}
+        FHEVMConfigStruct storage $ = getFHEVMConfig();
+        (result, overflowed) = ITFHEExecutor($.TFHEExecutorAddress).${fname}(lhs, rhs, scalarByte);
+    }` + '\n'
+    );
+  }
 }
 
 export function implSol(operators: Operator[]): string {
@@ -217,11 +242,11 @@ function generateImplCoprocessorInterface(operators: Operator[]): string {
   operators.forEach((op) => {
     let functionName = operatorFheLibFunction(op);
     const tail = 'external returns (uint256 result);';
+    const tailWithOverflowCheck = 'external returns (uint256 result, uint256 overflowed);';
     let functionArguments: string;
-    switch (op.arguments) {
-      case OperatorArguments.Binary:
-        functionArguments = '(uint256 lhs, uint256 rhs, bytes1 scalarByte)';
-        res.push(`  
+    if (op.arguments == OperatorArguments.Binary && !op.checkOverflow) {
+      functionArguments = '(uint256 lhs, uint256 rhs, bytes1 scalarByte)';
+      res.push(`  
           
           /**
            * @notice              Computes ${functionName} operation.
@@ -231,10 +256,22 @@ function generateImplCoprocessorInterface(operators: Operator[]): string {
            * @return result       Result.
            */
           function ${functionName}${functionArguments} ${tail}`);
-        break;
-      case OperatorArguments.Unary:
-        functionArguments = '(uint256 ct)';
-        res.push(`  
+    } else if (op.arguments == OperatorArguments.Binary && op.checkOverflow) {
+      functionArguments = '(uint256 lhs, uint256 rhs, bytes1 scalarByte)';
+      res.push(`  
+            
+            /**
+             * @notice              Computes ${functionName} operation.
+             * @param lhs           LHS.
+             * @param rhs           RHS.
+             * @param scalarByte    Scalar byte.
+             * @return result       Result.
+             * @return overflowed   Whether the function overflowed.
+             */
+            function ${functionName}${functionArguments} ${tailWithOverflowCheck}`);
+    } else if (op.arguments == OperatorArguments.Unary) {
+      functionArguments = '(uint256 ct)';
+      res.push(`  
 
            /**
            * @notice              Computes ${functionName} operation.
@@ -242,7 +279,8 @@ function generateImplCoprocessorInterface(operators: Operator[]): string {
            * @return result       Result.
            */
           function ${functionName}${functionArguments} ${tail}`);
-        break;
+    } else {
+      console.warn('Unknown OperatorArgument!');
     }
   });
 
@@ -573,7 +611,9 @@ function tfheEncryptedOperator(
     ],
     returnType: { type: returnTypeOverload, bits: outputBits },
   });
-  res.push(`
+
+  if (!operator.checkOverflow) {
+    res.push(`
     /**
     * @dev Evaluates ${operator.name}(a, b) and returns the result.
     */
@@ -587,6 +627,25 @@ function tfheEncryptedOperator(
         return ${returnType}.wrap(${implExpression});
     }
 `);
+  } else {
+    res.push(`
+      /**
+      * @dev Evaluates ${operator.name}(a, b) and returns the result.
+      */
+      function ${operator.name}(euint${lhsBits} a, euint${rhsBits} b) internal returns (${returnType}, ebool) {
+          if (!isInitialized(a)) {
+              a = asEuint${lhsBits}(0);
+          }
+          if (!isInitialized(b)) {
+              b = asEuint${rhsBits}(0);
+          }
+
+          (uint256 result, uint256 overflowed) = ${implExpression};
+          
+          return (${returnType}.wrap(result), ebool.wrap(overflowed));
+      }
+  `);
+  }
 
   return res.join('');
 }
@@ -637,7 +696,9 @@ function tfheScalarOperator(
   });
 
   // rhs scalar
-  res.push(`
+
+  if (!operator.checkOverflow) {
+    res.push(`
     /**
     * @dev Evaluates ${operator.name}(a, b) and returns the result.
     */
@@ -648,6 +709,23 @@ function tfheScalarOperator(
         return ${returnType}.wrap(${implExpressionA});
     }
 `);
+  } else {
+    res.push(`
+      /**
+      * @dev Evaluates ${operator.name}(a, b) and returns the result.
+      */
+      function ${operator.name}(euint${lhsBits} a, ${getUint(rhsBits)} b) internal returns (${returnType}, ebool) {
+          if (!isInitialized(a)) {
+              a = asEuint${lhsBits}(0);
+          }
+
+
+          (uint256 result, uint256 overflowed) = ${implExpressionA};
+          
+          return (${returnType}.wrap(result), ebool.wrap(overflowed));
+      }
+  `);
+  }
 
   // lhs scalar
   if (!operator.leftScalarDisable) {
@@ -660,7 +738,8 @@ function tfheScalarOperator(
       returnType: { type: returnTypeOverload, bits: outputBits },
     });
 
-    res.push(`
+    if (!operator.checkOverflow) {
+      res.push(`
 
     /**
     * @dev Evaluates ${operator.name}(a, b) and returns the result.
@@ -673,6 +752,24 @@ function tfheScalarOperator(
         return ${returnType}.wrap(${implExpressionB});
     }
         `);
+    } else {
+      res.push(`
+
+        /**
+        * @dev Evaluates ${operator.name}(a, b) and returns the result.
+        */
+        function ${operator.name}(${getUint(lhsBits)} a, euint${rhsBits} b) internal returns (${returnType}, ebool) {
+            ${maybeEncryptLeft}
+            if (!isInitialized(b)) {
+                b = asEuint${rhsBits}(0);
+            }
+
+
+          (uint256 result, uint256 overflowed) = ${implExpressionB};
+            return (${returnType}.wrap(result), ebool.wrap(overflowed));
+        }
+            `);
+    }
   }
 
   return res.join('');

@@ -36,10 +36,13 @@ library Common {
 
     /// @notice Runtime type for encrypted uint32.
     uint8 internal constant euint32_t = 4;
+
     /// @notice Runtime type for encrypted uint64.
     uint8 internal constant euint64_t = 5;
+
     /// @notice Runtime type for encrypted uint128.
     uint8 internal constant euint128_t = 6;
+
     /// @notice Runtime type for encrypted addresses.
     uint8 internal constant euint160_t = 7;
 
@@ -172,6 +175,54 @@ library TFHE {
             b = asEuint4(0);
         }
         return euint4.wrap(Impl.mul(euint4.unwrap(a), euint4.unwrap(b), false));
+    }
+
+    /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint4 a, euint4 b) internal returns (euint4, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint4(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint4(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint4.unwrap(a), euint4.unwrap(b), false);
+
+        return (euint4.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint4 a, euint4 b) internal returns (euint4, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint4(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint4(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint4.unwrap(a), euint4.unwrap(b), false);
+
+        return (euint4.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint4 a, euint4 b) internal returns (euint4, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint4(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint4(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint4.unwrap(a), euint4.unwrap(b), false);
+
+        return (euint4.wrap(result), ebool.wrap(overflowed));
     }
 
     /**
@@ -357,6 +408,54 @@ library TFHE {
     }
 
     /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint4 a, euint8 b) internal returns (euint8, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint4(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint8.unwrap(asEuint8(a)), euint8.unwrap(b), false);
+
+        return (euint8.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint4 a, euint8 b) internal returns (euint8, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint4(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint8.unwrap(asEuint8(a)), euint8.unwrap(b), false);
+
+        return (euint8.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint4 a, euint8 b) internal returns (euint8, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint4(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint8.unwrap(asEuint8(a)), euint8.unwrap(b), false);
+
+        return (euint8.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
      * @dev Evaluates and(a, b) and returns the result.
      */
     function and(euint4 a, euint8 b) internal returns (euint8) {
@@ -536,6 +635,54 @@ library TFHE {
             b = asEuint16(0);
         }
         return euint16.wrap(Impl.mul(euint16.unwrap(asEuint16(a)), euint16.unwrap(b), false));
+    }
+
+    /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint4 a, euint16 b) internal returns (euint16, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint4(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint16.unwrap(asEuint16(a)), euint16.unwrap(b), false);
+
+        return (euint16.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint4 a, euint16 b) internal returns (euint16, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint4(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint16.unwrap(asEuint16(a)), euint16.unwrap(b), false);
+
+        return (euint16.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint4 a, euint16 b) internal returns (euint16, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint4(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint16.unwrap(asEuint16(a)), euint16.unwrap(b), false);
+
+        return (euint16.wrap(result), ebool.wrap(overflowed));
     }
 
     /**
@@ -721,6 +868,54 @@ library TFHE {
     }
 
     /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint4 a, euint32 b) internal returns (euint32, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint4(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false);
+
+        return (euint32.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint4 a, euint32 b) internal returns (euint32, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint4(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false);
+
+        return (euint32.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint4 a, euint32 b) internal returns (euint32, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint4(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false);
+
+        return (euint32.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
      * @dev Evaluates and(a, b) and returns the result.
      */
     function and(euint4 a, euint32 b) internal returns (euint32) {
@@ -900,6 +1095,54 @@ library TFHE {
             b = asEuint64(0);
         }
         return euint64.wrap(Impl.mul(euint64.unwrap(asEuint64(a)), euint64.unwrap(b), false));
+    }
+
+    /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint4 a, euint64 b) internal returns (euint64, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint4(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint64(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint64.unwrap(asEuint64(a)), euint64.unwrap(b), false);
+
+        return (euint64.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint4 a, euint64 b) internal returns (euint64, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint4(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint64(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint64.unwrap(asEuint64(a)), euint64.unwrap(b), false);
+
+        return (euint64.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint4 a, euint64 b) internal returns (euint64, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint4(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint64(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint64.unwrap(asEuint64(a)), euint64.unwrap(b), false);
+
+        return (euint64.wrap(result), ebool.wrap(overflowed));
     }
 
     /**
@@ -1085,6 +1328,54 @@ library TFHE {
     }
 
     /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint4 a, euint128 b) internal returns (euint128, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint4(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint128(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint128.unwrap(asEuint128(a)), euint128.unwrap(b), false);
+
+        return (euint128.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint4 a, euint128 b) internal returns (euint128, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint4(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint128(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint128.unwrap(asEuint128(a)), euint128.unwrap(b), false);
+
+        return (euint128.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint4 a, euint128 b) internal returns (euint128, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint4(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint128(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint128.unwrap(asEuint128(a)), euint128.unwrap(b), false);
+
+        return (euint128.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
      * @dev Evaluates and(a, b) and returns the result.
      */
     function and(euint4 a, euint128 b) internal returns (euint128) {
@@ -1264,6 +1555,54 @@ library TFHE {
             b = asEuint256(0);
         }
         return euint256.wrap(Impl.mul(euint256.unwrap(asEuint256(a)), euint256.unwrap(b), false));
+    }
+
+    /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint4 a, euint256 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint4(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint256(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint256.unwrap(asEuint256(a)), euint256.unwrap(b), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint4 a, euint256 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint4(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint256(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint256.unwrap(asEuint256(a)), euint256.unwrap(b), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint4 a, euint256 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint4(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint256(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint256.unwrap(asEuint256(a)), euint256.unwrap(b), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
     }
 
     /**
@@ -1468,6 +1807,82 @@ library TFHE {
             b = asEuint4(0);
         }
         return euint4.wrap(Impl.mul(euint4.unwrap(b), uint256(a), true));
+    }
+
+    /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint4 a, uint8 b) internal returns (euint4, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint4(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint4.unwrap(a), uint256(b), true);
+
+        return (euint4.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(uint8 a, euint4 b) internal returns (euint4, ebool) {
+        if (!isInitialized(b)) {
+            b = asEuint4(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint4.unwrap(b), uint256(a), true);
+        return (euint4.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint4 a, uint8 b) internal returns (euint4, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint4(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint4.unwrap(a), uint256(b), true);
+
+        return (euint4.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(uint8 a, euint4 b) internal returns (euint4, ebool) {
+        euint4 aEnc = asEuint4(a);
+        if (!isInitialized(b)) {
+            b = asEuint4(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint4.unwrap(aEnc), euint4.unwrap(b), false);
+        return (euint4.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint4 a, uint8 b) internal returns (euint4, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint4(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint4.unwrap(a), uint256(b), true);
+
+        return (euint4.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(uint8 a, euint4 b) internal returns (euint4, ebool) {
+        if (!isInitialized(b)) {
+            b = asEuint4(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint4.unwrap(b), uint256(a), true);
+        return (euint4.wrap(result), ebool.wrap(overflowed));
     }
 
     /**
@@ -1750,6 +2165,54 @@ library TFHE {
     }
 
     /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint8 a, euint4 b) internal returns (euint8, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint4(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint8.unwrap(a), euint8.unwrap(asEuint8(b)), false);
+
+        return (euint8.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint8 a, euint4 b) internal returns (euint8, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint4(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint8.unwrap(a), euint8.unwrap(asEuint8(b)), false);
+
+        return (euint8.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint8 a, euint4 b) internal returns (euint8, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint4(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint8.unwrap(a), euint8.unwrap(asEuint8(b)), false);
+
+        return (euint8.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
      * @dev Evaluates and(a, b) and returns the result.
      */
     function and(euint8 a, euint4 b) internal returns (euint8) {
@@ -1929,6 +2392,54 @@ library TFHE {
             b = asEuint8(0);
         }
         return euint8.wrap(Impl.mul(euint8.unwrap(a), euint8.unwrap(b), false));
+    }
+
+    /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint8 a, euint8 b) internal returns (euint8, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint8.unwrap(a), euint8.unwrap(b), false);
+
+        return (euint8.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint8 a, euint8 b) internal returns (euint8, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint8.unwrap(a), euint8.unwrap(b), false);
+
+        return (euint8.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint8 a, euint8 b) internal returns (euint8, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint8.unwrap(a), euint8.unwrap(b), false);
+
+        return (euint8.wrap(result), ebool.wrap(overflowed));
     }
 
     /**
@@ -2114,6 +2625,54 @@ library TFHE {
     }
 
     /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint8 a, euint16 b) internal returns (euint16, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint16.unwrap(asEuint16(a)), euint16.unwrap(b), false);
+
+        return (euint16.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint8 a, euint16 b) internal returns (euint16, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint16.unwrap(asEuint16(a)), euint16.unwrap(b), false);
+
+        return (euint16.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint8 a, euint16 b) internal returns (euint16, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint16.unwrap(asEuint16(a)), euint16.unwrap(b), false);
+
+        return (euint16.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
      * @dev Evaluates and(a, b) and returns the result.
      */
     function and(euint8 a, euint16 b) internal returns (euint16) {
@@ -2293,6 +2852,54 @@ library TFHE {
             b = asEuint32(0);
         }
         return euint32.wrap(Impl.mul(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false));
+    }
+
+    /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint8 a, euint32 b) internal returns (euint32, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false);
+
+        return (euint32.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint8 a, euint32 b) internal returns (euint32, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false);
+
+        return (euint32.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint8 a, euint32 b) internal returns (euint32, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false);
+
+        return (euint32.wrap(result), ebool.wrap(overflowed));
     }
 
     /**
@@ -2478,6 +3085,54 @@ library TFHE {
     }
 
     /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint8 a, euint64 b) internal returns (euint64, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint64(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint64.unwrap(asEuint64(a)), euint64.unwrap(b), false);
+
+        return (euint64.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint8 a, euint64 b) internal returns (euint64, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint64(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint64.unwrap(asEuint64(a)), euint64.unwrap(b), false);
+
+        return (euint64.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint8 a, euint64 b) internal returns (euint64, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint64(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint64.unwrap(asEuint64(a)), euint64.unwrap(b), false);
+
+        return (euint64.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
      * @dev Evaluates and(a, b) and returns the result.
      */
     function and(euint8 a, euint64 b) internal returns (euint64) {
@@ -2660,6 +3315,54 @@ library TFHE {
     }
 
     /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint8 a, euint128 b) internal returns (euint128, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint128(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint128.unwrap(asEuint128(a)), euint128.unwrap(b), false);
+
+        return (euint128.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint8 a, euint128 b) internal returns (euint128, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint128(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint128.unwrap(asEuint128(a)), euint128.unwrap(b), false);
+
+        return (euint128.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint8 a, euint128 b) internal returns (euint128, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint128(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint128.unwrap(asEuint128(a)), euint128.unwrap(b), false);
+
+        return (euint128.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
      * @dev Evaluates and(a, b) and returns the result.
      */
     function and(euint8 a, euint128 b) internal returns (euint128) {
@@ -2839,6 +3542,54 @@ library TFHE {
             b = asEuint256(0);
         }
         return euint256.wrap(Impl.mul(euint256.unwrap(asEuint256(a)), euint256.unwrap(b), false));
+    }
+
+    /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint8 a, euint256 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint256(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint256.unwrap(asEuint256(a)), euint256.unwrap(b), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint8 a, euint256 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint256(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint256.unwrap(asEuint256(a)), euint256.unwrap(b), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint8 a, euint256 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint256(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint256.unwrap(asEuint256(a)), euint256.unwrap(b), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
     }
 
     /**
@@ -3043,6 +3794,82 @@ library TFHE {
             b = asEuint8(0);
         }
         return euint8.wrap(Impl.mul(euint8.unwrap(b), uint256(a), true));
+    }
+
+    /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint8 a, uint8 b) internal returns (euint8, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint8.unwrap(a), uint256(b), true);
+
+        return (euint8.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(uint8 a, euint8 b) internal returns (euint8, ebool) {
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint8.unwrap(b), uint256(a), true);
+        return (euint8.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint8 a, uint8 b) internal returns (euint8, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint8.unwrap(a), uint256(b), true);
+
+        return (euint8.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(uint8 a, euint8 b) internal returns (euint8, ebool) {
+        euint8 aEnc = asEuint8(a);
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint8.unwrap(aEnc), euint8.unwrap(b), false);
+        return (euint8.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint8 a, uint8 b) internal returns (euint8, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint8.unwrap(a), uint256(b), true);
+
+        return (euint8.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(uint8 a, euint8 b) internal returns (euint8, ebool) {
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint8.unwrap(b), uint256(a), true);
+        return (euint8.wrap(result), ebool.wrap(overflowed));
     }
 
     /**
@@ -3325,6 +4152,54 @@ library TFHE {
     }
 
     /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint16 a, euint4 b) internal returns (euint16, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint4(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false);
+
+        return (euint16.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint16 a, euint4 b) internal returns (euint16, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint4(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false);
+
+        return (euint16.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint16 a, euint4 b) internal returns (euint16, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint4(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false);
+
+        return (euint16.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
      * @dev Evaluates and(a, b) and returns the result.
      */
     function and(euint16 a, euint4 b) internal returns (euint16) {
@@ -3504,6 +4379,54 @@ library TFHE {
             b = asEuint8(0);
         }
         return euint16.wrap(Impl.mul(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false));
+    }
+
+    /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint16 a, euint8 b) internal returns (euint16, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false);
+
+        return (euint16.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint16 a, euint8 b) internal returns (euint16, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false);
+
+        return (euint16.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint16 a, euint8 b) internal returns (euint16, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false);
+
+        return (euint16.wrap(result), ebool.wrap(overflowed));
     }
 
     /**
@@ -3689,6 +4612,54 @@ library TFHE {
     }
 
     /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint16 a, euint16 b) internal returns (euint16, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint16.unwrap(a), euint16.unwrap(b), false);
+
+        return (euint16.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint16 a, euint16 b) internal returns (euint16, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint16.unwrap(a), euint16.unwrap(b), false);
+
+        return (euint16.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint16 a, euint16 b) internal returns (euint16, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint16.unwrap(a), euint16.unwrap(b), false);
+
+        return (euint16.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
      * @dev Evaluates and(a, b) and returns the result.
      */
     function and(euint16 a, euint16 b) internal returns (euint16) {
@@ -3868,6 +4839,54 @@ library TFHE {
             b = asEuint32(0);
         }
         return euint32.wrap(Impl.mul(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false));
+    }
+
+    /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint16 a, euint32 b) internal returns (euint32, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false);
+
+        return (euint32.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint16 a, euint32 b) internal returns (euint32, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false);
+
+        return (euint32.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint16 a, euint32 b) internal returns (euint32, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint32.unwrap(asEuint32(a)), euint32.unwrap(b), false);
+
+        return (euint32.wrap(result), ebool.wrap(overflowed));
     }
 
     /**
@@ -4053,6 +5072,54 @@ library TFHE {
     }
 
     /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint16 a, euint64 b) internal returns (euint64, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint64(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint64.unwrap(asEuint64(a)), euint64.unwrap(b), false);
+
+        return (euint64.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint16 a, euint64 b) internal returns (euint64, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint64(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint64.unwrap(asEuint64(a)), euint64.unwrap(b), false);
+
+        return (euint64.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint16 a, euint64 b) internal returns (euint64, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint64(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint64.unwrap(asEuint64(a)), euint64.unwrap(b), false);
+
+        return (euint64.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
      * @dev Evaluates and(a, b) and returns the result.
      */
     function and(euint16 a, euint64 b) internal returns (euint64) {
@@ -4235,6 +5302,54 @@ library TFHE {
     }
 
     /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint16 a, euint128 b) internal returns (euint128, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint128(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint128.unwrap(asEuint128(a)), euint128.unwrap(b), false);
+
+        return (euint128.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint16 a, euint128 b) internal returns (euint128, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint128(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint128.unwrap(asEuint128(a)), euint128.unwrap(b), false);
+
+        return (euint128.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint16 a, euint128 b) internal returns (euint128, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint128(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint128.unwrap(asEuint128(a)), euint128.unwrap(b), false);
+
+        return (euint128.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
      * @dev Evaluates and(a, b) and returns the result.
      */
     function and(euint16 a, euint128 b) internal returns (euint128) {
@@ -4414,6 +5529,54 @@ library TFHE {
             b = asEuint256(0);
         }
         return euint256.wrap(Impl.mul(euint256.unwrap(asEuint256(a)), euint256.unwrap(b), false));
+    }
+
+    /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint16 a, euint256 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint256(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint256.unwrap(asEuint256(a)), euint256.unwrap(b), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint16 a, euint256 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint256(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint256.unwrap(asEuint256(a)), euint256.unwrap(b), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint16 a, euint256 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint256(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint256.unwrap(asEuint256(a)), euint256.unwrap(b), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
     }
 
     /**
@@ -4618,6 +5781,82 @@ library TFHE {
             b = asEuint16(0);
         }
         return euint16.wrap(Impl.mul(euint16.unwrap(b), uint256(a), true));
+    }
+
+    /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint16 a, uint16 b) internal returns (euint16, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint16.unwrap(a), uint256(b), true);
+
+        return (euint16.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(uint16 a, euint16 b) internal returns (euint16, ebool) {
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint16.unwrap(b), uint256(a), true);
+        return (euint16.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint16 a, uint16 b) internal returns (euint16, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint16.unwrap(a), uint256(b), true);
+
+        return (euint16.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(uint16 a, euint16 b) internal returns (euint16, ebool) {
+        euint16 aEnc = asEuint16(a);
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint16.unwrap(aEnc), euint16.unwrap(b), false);
+        return (euint16.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint16 a, uint16 b) internal returns (euint16, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint16.unwrap(a), uint256(b), true);
+
+        return (euint16.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(uint16 a, euint16 b) internal returns (euint16, ebool) {
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint16.unwrap(b), uint256(a), true);
+        return (euint16.wrap(result), ebool.wrap(overflowed));
     }
 
     /**
@@ -4900,6 +6139,54 @@ library TFHE {
     }
 
     /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint32 a, euint4 b) internal returns (euint32, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint4(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false);
+
+        return (euint32.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint32 a, euint4 b) internal returns (euint32, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint4(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false);
+
+        return (euint32.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint32 a, euint4 b) internal returns (euint32, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint4(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false);
+
+        return (euint32.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
      * @dev Evaluates and(a, b) and returns the result.
      */
     function and(euint32 a, euint4 b) internal returns (euint32) {
@@ -5079,6 +6366,54 @@ library TFHE {
             b = asEuint8(0);
         }
         return euint32.wrap(Impl.mul(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
+    }
+
+    /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint32 a, euint8 b) internal returns (euint32, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false);
+
+        return (euint32.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint32 a, euint8 b) internal returns (euint32, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false);
+
+        return (euint32.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint32 a, euint8 b) internal returns (euint32, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false);
+
+        return (euint32.wrap(result), ebool.wrap(overflowed));
     }
 
     /**
@@ -5264,6 +6599,54 @@ library TFHE {
     }
 
     /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint32 a, euint16 b) internal returns (euint32, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false);
+
+        return (euint32.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint32 a, euint16 b) internal returns (euint32, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false);
+
+        return (euint32.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint32 a, euint16 b) internal returns (euint32, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false);
+
+        return (euint32.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
      * @dev Evaluates and(a, b) and returns the result.
      */
     function and(euint32 a, euint16 b) internal returns (euint32) {
@@ -5443,6 +6826,54 @@ library TFHE {
             b = asEuint32(0);
         }
         return euint32.wrap(Impl.mul(euint32.unwrap(a), euint32.unwrap(b), false));
+    }
+
+    /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint32 a, euint32 b) internal returns (euint32, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint32.unwrap(a), euint32.unwrap(b), false);
+
+        return (euint32.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint32 a, euint32 b) internal returns (euint32, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint32.unwrap(a), euint32.unwrap(b), false);
+
+        return (euint32.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint32 a, euint32 b) internal returns (euint32, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint32.unwrap(a), euint32.unwrap(b), false);
+
+        return (euint32.wrap(result), ebool.wrap(overflowed));
     }
 
     /**
@@ -5628,6 +7059,54 @@ library TFHE {
     }
 
     /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint32 a, euint64 b) internal returns (euint64, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint64(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint64.unwrap(asEuint64(a)), euint64.unwrap(b), false);
+
+        return (euint64.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint32 a, euint64 b) internal returns (euint64, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint64(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint64.unwrap(asEuint64(a)), euint64.unwrap(b), false);
+
+        return (euint64.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint32 a, euint64 b) internal returns (euint64, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint64(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint64.unwrap(asEuint64(a)), euint64.unwrap(b), false);
+
+        return (euint64.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
      * @dev Evaluates and(a, b) and returns the result.
      */
     function and(euint32 a, euint64 b) internal returns (euint64) {
@@ -5810,6 +7289,54 @@ library TFHE {
     }
 
     /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint32 a, euint128 b) internal returns (euint128, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint128(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint128.unwrap(asEuint128(a)), euint128.unwrap(b), false);
+
+        return (euint128.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint32 a, euint128 b) internal returns (euint128, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint128(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint128.unwrap(asEuint128(a)), euint128.unwrap(b), false);
+
+        return (euint128.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint32 a, euint128 b) internal returns (euint128, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint128(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint128.unwrap(asEuint128(a)), euint128.unwrap(b), false);
+
+        return (euint128.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
      * @dev Evaluates and(a, b) and returns the result.
      */
     function and(euint32 a, euint128 b) internal returns (euint128) {
@@ -5989,6 +7516,54 @@ library TFHE {
             b = asEuint256(0);
         }
         return euint256.wrap(Impl.mul(euint256.unwrap(asEuint256(a)), euint256.unwrap(b), false));
+    }
+
+    /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint32 a, euint256 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint256(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint256.unwrap(asEuint256(a)), euint256.unwrap(b), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint32 a, euint256 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint256(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint256.unwrap(asEuint256(a)), euint256.unwrap(b), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint32 a, euint256 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint256(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint256.unwrap(asEuint256(a)), euint256.unwrap(b), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
     }
 
     /**
@@ -6193,6 +7768,82 @@ library TFHE {
             b = asEuint32(0);
         }
         return euint32.wrap(Impl.mul(euint32.unwrap(b), uint256(a), true));
+    }
+
+    /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint32 a, uint32 b) internal returns (euint32, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint32.unwrap(a), uint256(b), true);
+
+        return (euint32.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(uint32 a, euint32 b) internal returns (euint32, ebool) {
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint32.unwrap(b), uint256(a), true);
+        return (euint32.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint32 a, uint32 b) internal returns (euint32, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint32.unwrap(a), uint256(b), true);
+
+        return (euint32.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(uint32 a, euint32 b) internal returns (euint32, ebool) {
+        euint32 aEnc = asEuint32(a);
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint32.unwrap(aEnc), euint32.unwrap(b), false);
+        return (euint32.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint32 a, uint32 b) internal returns (euint32, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint32.unwrap(a), uint256(b), true);
+
+        return (euint32.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(uint32 a, euint32 b) internal returns (euint32, ebool) {
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint32.unwrap(b), uint256(a), true);
+        return (euint32.wrap(result), ebool.wrap(overflowed));
     }
 
     /**
@@ -6475,6 +8126,54 @@ library TFHE {
     }
 
     /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint64 a, euint4 b) internal returns (euint64, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint64(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint4(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false);
+
+        return (euint64.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint64 a, euint4 b) internal returns (euint64, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint64(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint4(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false);
+
+        return (euint64.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint64 a, euint4 b) internal returns (euint64, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint64(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint4(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false);
+
+        return (euint64.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
      * @dev Evaluates and(a, b) and returns the result.
      */
     function and(euint64 a, euint4 b) internal returns (euint64) {
@@ -6654,6 +8353,54 @@ library TFHE {
             b = asEuint8(0);
         }
         return euint64.wrap(Impl.mul(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
+    }
+
+    /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint64 a, euint8 b) internal returns (euint64, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint64(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false);
+
+        return (euint64.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint64 a, euint8 b) internal returns (euint64, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint64(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false);
+
+        return (euint64.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint64 a, euint8 b) internal returns (euint64, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint64(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false);
+
+        return (euint64.wrap(result), ebool.wrap(overflowed));
     }
 
     /**
@@ -6839,6 +8586,54 @@ library TFHE {
     }
 
     /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint64 a, euint16 b) internal returns (euint64, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint64(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false);
+
+        return (euint64.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint64 a, euint16 b) internal returns (euint64, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint64(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false);
+
+        return (euint64.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint64 a, euint16 b) internal returns (euint64, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint64(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false);
+
+        return (euint64.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
      * @dev Evaluates and(a, b) and returns the result.
      */
     function and(euint64 a, euint16 b) internal returns (euint64) {
@@ -7018,6 +8813,54 @@ library TFHE {
             b = asEuint32(0);
         }
         return euint64.wrap(Impl.mul(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
+    }
+
+    /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint64 a, euint32 b) internal returns (euint64, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint64(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false);
+
+        return (euint64.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint64 a, euint32 b) internal returns (euint64, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint64(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false);
+
+        return (euint64.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint64 a, euint32 b) internal returns (euint64, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint64(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false);
+
+        return (euint64.wrap(result), ebool.wrap(overflowed));
     }
 
     /**
@@ -7203,6 +9046,54 @@ library TFHE {
     }
 
     /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint64 a, euint64 b) internal returns (euint64, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint64(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint64(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint64.unwrap(a), euint64.unwrap(b), false);
+
+        return (euint64.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint64 a, euint64 b) internal returns (euint64, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint64(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint64(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint64.unwrap(a), euint64.unwrap(b), false);
+
+        return (euint64.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint64 a, euint64 b) internal returns (euint64, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint64(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint64(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint64.unwrap(a), euint64.unwrap(b), false);
+
+        return (euint64.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
      * @dev Evaluates and(a, b) and returns the result.
      */
     function and(euint64 a, euint64 b) internal returns (euint64) {
@@ -7385,6 +9276,54 @@ library TFHE {
     }
 
     /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint64 a, euint128 b) internal returns (euint128, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint64(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint128(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint128.unwrap(asEuint128(a)), euint128.unwrap(b), false);
+
+        return (euint128.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint64 a, euint128 b) internal returns (euint128, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint64(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint128(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint128.unwrap(asEuint128(a)), euint128.unwrap(b), false);
+
+        return (euint128.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint64 a, euint128 b) internal returns (euint128, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint64(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint128(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint128.unwrap(asEuint128(a)), euint128.unwrap(b), false);
+
+        return (euint128.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
      * @dev Evaluates and(a, b) and returns the result.
      */
     function and(euint64 a, euint128 b) internal returns (euint128) {
@@ -7564,6 +9503,54 @@ library TFHE {
             b = asEuint256(0);
         }
         return euint256.wrap(Impl.mul(euint256.unwrap(asEuint256(a)), euint256.unwrap(b), false));
+    }
+
+    /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint64 a, euint256 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint64(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint256(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint256.unwrap(asEuint256(a)), euint256.unwrap(b), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint64 a, euint256 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint64(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint256(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint256.unwrap(asEuint256(a)), euint256.unwrap(b), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint64 a, euint256 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint64(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint256(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint256.unwrap(asEuint256(a)), euint256.unwrap(b), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
     }
 
     /**
@@ -7768,6 +9755,82 @@ library TFHE {
             b = asEuint64(0);
         }
         return euint64.wrap(Impl.mul(euint64.unwrap(b), uint256(a), true));
+    }
+
+    /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint64 a, uint64 b) internal returns (euint64, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint64(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint64.unwrap(a), uint256(b), true);
+
+        return (euint64.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(uint64 a, euint64 b) internal returns (euint64, ebool) {
+        if (!isInitialized(b)) {
+            b = asEuint64(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint64.unwrap(b), uint256(a), true);
+        return (euint64.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint64 a, uint64 b) internal returns (euint64, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint64(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint64.unwrap(a), uint256(b), true);
+
+        return (euint64.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(uint64 a, euint64 b) internal returns (euint64, ebool) {
+        euint64 aEnc = asEuint64(a);
+        if (!isInitialized(b)) {
+            b = asEuint64(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint64.unwrap(aEnc), euint64.unwrap(b), false);
+        return (euint64.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint64 a, uint64 b) internal returns (euint64, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint64(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint64.unwrap(a), uint256(b), true);
+
+        return (euint64.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(uint64 a, euint64 b) internal returns (euint64, ebool) {
+        if (!isInitialized(b)) {
+            b = asEuint64(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint64.unwrap(b), uint256(a), true);
+        return (euint64.wrap(result), ebool.wrap(overflowed));
     }
 
     /**
@@ -8050,6 +10113,54 @@ library TFHE {
     }
 
     /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint128 a, euint4 b) internal returns (euint128, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint128(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint4(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false);
+
+        return (euint128.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint128 a, euint4 b) internal returns (euint128, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint128(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint4(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false);
+
+        return (euint128.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint128 a, euint4 b) internal returns (euint128, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint128(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint4(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false);
+
+        return (euint128.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
      * @dev Evaluates and(a, b) and returns the result.
      */
     function and(euint128 a, euint4 b) internal returns (euint128) {
@@ -8229,6 +10340,54 @@ library TFHE {
             b = asEuint8(0);
         }
         return euint128.wrap(Impl.mul(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
+    }
+
+    /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint128 a, euint8 b) internal returns (euint128, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint128(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false);
+
+        return (euint128.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint128 a, euint8 b) internal returns (euint128, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint128(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false);
+
+        return (euint128.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint128 a, euint8 b) internal returns (euint128, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint128(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false);
+
+        return (euint128.wrap(result), ebool.wrap(overflowed));
     }
 
     /**
@@ -8414,6 +10573,54 @@ library TFHE {
     }
 
     /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint128 a, euint16 b) internal returns (euint128, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint128(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false);
+
+        return (euint128.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint128 a, euint16 b) internal returns (euint128, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint128(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false);
+
+        return (euint128.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint128 a, euint16 b) internal returns (euint128, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint128(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false);
+
+        return (euint128.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
      * @dev Evaluates and(a, b) and returns the result.
      */
     function and(euint128 a, euint16 b) internal returns (euint128) {
@@ -8593,6 +10800,54 @@ library TFHE {
             b = asEuint32(0);
         }
         return euint128.wrap(Impl.mul(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
+    }
+
+    /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint128 a, euint32 b) internal returns (euint128, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint128(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false);
+
+        return (euint128.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint128 a, euint32 b) internal returns (euint128, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint128(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false);
+
+        return (euint128.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint128 a, euint32 b) internal returns (euint128, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint128(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false);
+
+        return (euint128.wrap(result), ebool.wrap(overflowed));
     }
 
     /**
@@ -8778,6 +11033,54 @@ library TFHE {
     }
 
     /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint128 a, euint64 b) internal returns (euint128, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint128(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint64(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false);
+
+        return (euint128.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint128 a, euint64 b) internal returns (euint128, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint128(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint64(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false);
+
+        return (euint128.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint128 a, euint64 b) internal returns (euint128, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint128(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint64(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false);
+
+        return (euint128.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
      * @dev Evaluates and(a, b) and returns the result.
      */
     function and(euint128 a, euint64 b) internal returns (euint128) {
@@ -8960,6 +11263,54 @@ library TFHE {
     }
 
     /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint128 a, euint128 b) internal returns (euint128, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint128(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint128(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint128.unwrap(a), euint128.unwrap(b), false);
+
+        return (euint128.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint128 a, euint128 b) internal returns (euint128, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint128(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint128(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint128.unwrap(a), euint128.unwrap(b), false);
+
+        return (euint128.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint128 a, euint128 b) internal returns (euint128, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint128(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint128(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint128.unwrap(a), euint128.unwrap(b), false);
+
+        return (euint128.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
      * @dev Evaluates and(a, b) and returns the result.
      */
     function and(euint128 a, euint128 b) internal returns (euint128) {
@@ -9139,6 +11490,54 @@ library TFHE {
             b = asEuint256(0);
         }
         return euint256.wrap(Impl.mul(euint256.unwrap(asEuint256(a)), euint256.unwrap(b), false));
+    }
+
+    /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint128 a, euint256 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint128(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint256(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint256.unwrap(asEuint256(a)), euint256.unwrap(b), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint128 a, euint256 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint128(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint256(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint256.unwrap(asEuint256(a)), euint256.unwrap(b), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint128 a, euint256 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint128(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint256(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint256.unwrap(asEuint256(a)), euint256.unwrap(b), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
     }
 
     /**
@@ -9343,6 +11742,82 @@ library TFHE {
             b = asEuint128(0);
         }
         return euint128.wrap(Impl.mul(euint128.unwrap(b), uint256(a), true));
+    }
+
+    /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint128 a, uint128 b) internal returns (euint128, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint128(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint128.unwrap(a), uint256(b), true);
+
+        return (euint128.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(uint128 a, euint128 b) internal returns (euint128, ebool) {
+        if (!isInitialized(b)) {
+            b = asEuint128(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint128.unwrap(b), uint256(a), true);
+        return (euint128.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint128 a, uint128 b) internal returns (euint128, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint128(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint128.unwrap(a), uint256(b), true);
+
+        return (euint128.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(uint128 a, euint128 b) internal returns (euint128, ebool) {
+        euint128 aEnc = asEuint128(a);
+        if (!isInitialized(b)) {
+            b = asEuint128(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint128.unwrap(aEnc), euint128.unwrap(b), false);
+        return (euint128.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint128 a, uint128 b) internal returns (euint128, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint128(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint128.unwrap(a), uint256(b), true);
+
+        return (euint128.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(uint128 a, euint128 b) internal returns (euint128, ebool) {
+        if (!isInitialized(b)) {
+            b = asEuint128(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint128.unwrap(b), uint256(a), true);
+        return (euint128.wrap(result), ebool.wrap(overflowed));
     }
 
     /**
@@ -9625,6 +12100,54 @@ library TFHE {
     }
 
     /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint256 a, euint4 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint256(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint4(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint256 a, euint4 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint256(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint4(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint256 a, euint4 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint256(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint4(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
      * @dev Evaluates and(a, b) and returns the result.
      */
     function and(euint256 a, euint4 b) internal returns (euint256) {
@@ -9804,6 +12327,54 @@ library TFHE {
             b = asEuint8(0);
         }
         return euint256.wrap(Impl.mul(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false));
+    }
+
+    /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint256 a, euint8 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint256(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint256 a, euint8 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint256(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint256 a, euint8 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint256(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
     }
 
     /**
@@ -9989,6 +12560,54 @@ library TFHE {
     }
 
     /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint256 a, euint16 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint256(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint256 a, euint16 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint256(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint256 a, euint16 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint256(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
      * @dev Evaluates and(a, b) and returns the result.
      */
     function and(euint256 a, euint16 b) internal returns (euint256) {
@@ -10168,6 +12787,54 @@ library TFHE {
             b = asEuint32(0);
         }
         return euint256.wrap(Impl.mul(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false));
+    }
+
+    /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint256 a, euint32 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint256(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint256 a, euint32 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint256(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint256 a, euint32 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint256(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
     }
 
     /**
@@ -10353,6 +13020,54 @@ library TFHE {
     }
 
     /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint256 a, euint64 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint256(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint64(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint256 a, euint64 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint256(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint64(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint256 a, euint64 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint256(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint64(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
      * @dev Evaluates and(a, b) and returns the result.
      */
     function and(euint256 a, euint64 b) internal returns (euint256) {
@@ -10535,6 +13250,54 @@ library TFHE {
     }
 
     /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint256 a, euint128 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint256(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint128(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint256 a, euint128 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint256(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint128(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint256 a, euint128 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint256(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint128(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
      * @dev Evaluates and(a, b) and returns the result.
      */
     function and(euint256 a, euint128 b) internal returns (euint256) {
@@ -10714,6 +13477,54 @@ library TFHE {
             b = asEuint256(0);
         }
         return euint256.wrap(Impl.mul(euint256.unwrap(a), euint256.unwrap(b), false));
+    }
+
+    /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint256 a, euint256 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint256(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint256(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint256.unwrap(a), euint256.unwrap(b), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint256 a, euint256 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint256(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint256(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint256.unwrap(a), euint256.unwrap(b), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint256 a, euint256 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint256(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint256(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint256.unwrap(a), euint256.unwrap(b), false);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
     }
 
     /**
@@ -10918,6 +13729,82 @@ library TFHE {
             b = asEuint256(0);
         }
         return euint256.wrap(Impl.mul(euint256.unwrap(b), uint256(a), true));
+    }
+
+    /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(euint256 a, uint256 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint256(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint256.unwrap(a), uint256(b), true);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeAdd(a, b) and returns the result.
+     */
+    function safeAdd(uint256 a, euint256 b) internal returns (euint256, ebool) {
+        if (!isInitialized(b)) {
+            b = asEuint256(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeAdd(euint256.unwrap(b), uint256(a), true);
+        return (euint256.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(euint256 a, uint256 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint256(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint256.unwrap(a), uint256(b), true);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeSub(a, b) and returns the result.
+     */
+    function safeSub(uint256 a, euint256 b) internal returns (euint256, ebool) {
+        euint256 aEnc = asEuint256(a);
+        if (!isInitialized(b)) {
+            b = asEuint256(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeSub(euint256.unwrap(aEnc), euint256.unwrap(b), false);
+        return (euint256.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(euint256 a, uint256 b) internal returns (euint256, ebool) {
+        if (!isInitialized(a)) {
+            a = asEuint256(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint256.unwrap(a), uint256(b), true);
+
+        return (euint256.wrap(result), ebool.wrap(overflowed));
+    }
+
+    /**
+     * @dev Evaluates safeMul(a, b) and returns the result.
+     */
+    function safeMul(uint256 a, euint256 b) internal returns (euint256, ebool) {
+        if (!isInitialized(b)) {
+            b = asEuint256(0);
+        }
+
+        (uint256 result, uint256 overflowed) = Impl.safeMul(euint256.unwrap(b), uint256(a), true);
+        return (euint256.wrap(result), ebool.wrap(overflowed));
     }
 
     /**
