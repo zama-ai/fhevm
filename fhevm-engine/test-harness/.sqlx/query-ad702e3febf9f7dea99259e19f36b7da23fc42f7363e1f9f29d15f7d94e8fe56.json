@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO tenants (chain_id, key_id, verifying_contract_address, acl_contract_address, \n                            pks_key, sks_key, public_params)\n        VALUES ($1, $2, $3, $4, $5, $6, $7)\n        RETURNING tenant_id, tenant_api_key, chain_id, verifying_contract_address, \n                  acl_contract_address, pks_key, sks_key, public_params, key_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "tenant_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "tenant_api_key",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "chain_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "verifying_contract_address",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "acl_contract_address",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "pks_key",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 6,
+        "name": "sks_key",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 7,
+        "name": "public_params",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 8,
+        "name": "key_id",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int4",
+        "Text",
+        "Text",
+        "Bytea",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "ad702e3febf9f7dea99259e19f36b7da23fc42f7363e1f9f29d15f7d94e8fe56"
+}

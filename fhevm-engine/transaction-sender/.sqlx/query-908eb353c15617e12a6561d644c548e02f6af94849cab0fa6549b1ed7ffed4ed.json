@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE ciphertext_digest\n            SET\n            txn_retry_count = txn_retry_count + 1,\n            txn_last_error = $1,\n            txn_last_error_at = NOW()\n            WHERE handle = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "908eb353c15617e12a6561d644c548e02f6af94849cab0fa6549b1ed7ffed4ed"
+}
