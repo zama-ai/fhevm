@@ -16,7 +16,7 @@ struct Conf {
     zkpok_manager_address: Address,
 
     #[arg(short, long)]
-    ciphertext_storage_address: Address,
+    ciphertext_manager_address: Address,
 
     #[arg(short, long)]
     gateway_url: Url,
@@ -47,6 +47,12 @@ struct Conf {
 
     #[arg(long, default_value = "true")]
     verify_proof_remove_after_max_retries: bool,
+
+    #[arg(long, default_value = "10")]
+    add_ciphertexts_batch_limit: u32,
+
+    #[arg(long, default_value = "15")]
+    add_ciphertexts_resp_max_retries: u32,
 
     #[arg(long, default_value = "1")]
     error_sleep_initial_secs: u16,
@@ -84,25 +90,23 @@ async fn main() -> anyhow::Result<()> {
     let cancel_token = CancellationToken::new();
     let sender = TransactionSender::new(
         conf.zkpok_manager_address,
-        conf.ciphertext_storage_address,
+        conf.ciphertext_manager_address,
         signer,
         provider,
         cancel_token.clone(),
         ConfigSettings {
             database_url,
             database_pool_size: conf.database_pool_size,
-
             verify_proof_resp_db_channel: conf.verify_proof_resp_database_channel,
             add_ciphertexts_db_channel: conf.add_ciphertexts_database_channel,
-
             verify_proof_resp_batch_limit: conf.verify_proof_resp_batch_limit,
             verify_proof_resp_max_retries: conf.verify_proof_resp_max_retries,
             verify_proof_remove_after_max_retries: conf.verify_proof_remove_after_max_retries,
-
+            add_ciphertexts_batch_limit: conf.add_ciphertexts_batch_limit,
             db_polling_interval_secs: conf.database_polling_interval_secs,
-
             error_sleep_initial_secs: conf.error_sleep_initial_secs,
             error_sleep_max_secs: conf.error_sleep_max_secs,
+            add_ciphertexts_resp_max_retries: conf.add_ciphertexts_resp_max_retries,
         },
         None,
     )

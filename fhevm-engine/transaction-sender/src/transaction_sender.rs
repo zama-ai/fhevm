@@ -16,13 +16,13 @@ pub struct TransactionSender<P: Provider<Ethereum> + Clone + 'static> {
     conf: ConfigSettings,
     operations: Vec<Arc<dyn ops::TransactionOperation<P>>>,
     zkpok_manager_address: Address,
-    ciphertext_storage_address: Address,
+    ciphertext_manager_address: Address,
 }
 
 impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
     pub async fn new(
         zkpok_manager_address: Address,
-        ciphertext_storage_address: Address,
+        ciphertext_manager_address: Address,
         signer: PrivateKeySigner,
         provider: P,
         cancel_token: CancellationToken,
@@ -41,9 +41,10 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
                 .await?,
             ),
             Arc::new(ops::add_ciphertext::AddCiphertextOperation::new(
-                ciphertext_storage_address,
+                ciphertext_manager_address,
                 provider.clone(),
                 conf.clone(),
+                gas,
             )),
         ];
         Ok(Self {
@@ -51,13 +52,13 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
             conf,
             operations,
             zkpok_manager_address,
-            ciphertext_storage_address,
+            ciphertext_manager_address,
         })
     }
 
     pub async fn run(&self) -> anyhow::Result<()> {
-        info!(target: TXN_SENDER_TARGET, "Starting Transaction Sender with: {:?}, ZKPoKManager: {}, CiphertextStorage: {}",
-            self.conf, self.zkpok_manager_address, self.ciphertext_storage_address);
+        info!(target: TXN_SENDER_TARGET, "Starting Transaction Sender with: {:?}, ZKPoKManager: {}, CiphertextManager: {}",
+            self.conf, self.zkpok_manager_address, self.ciphertext_manager_address);
 
         let db_pool = sqlx::postgres::PgPoolOptions::new()
             .max_connections(self.conf.database_pool_size)
