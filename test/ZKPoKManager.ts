@@ -97,8 +97,10 @@ describe("ZKPoKManager", function () {
 
     it("Should verify proof with 2 valid responses", async function () {
       // Trigger two valid proof verification responses
-      await zkpokManager.verifyProofResponse(zkProofId, ctHandles, signature1);
-      let txResponse = zkpokManager.verifyProofResponse(zkProofId, ctHandles, signature2);
+      await zkpokManager.connect(coprocessorSigners[0]).verifyProofResponse(zkProofId, ctHandles, signature1);
+      let txResponse = zkpokManager
+        .connect(coprocessorSigners[1])
+        .verifyProofResponse(zkProofId, ctHandles, signature2);
 
       // Consensus should be reached at the second response
       // Check 2nd response event: it should only contain 2 valid signatures
@@ -112,9 +114,13 @@ describe("ZKPoKManager", function () {
 
     it("Should ignore other valid responses", async function () {
       // Trigger three valid proof verification responses
-      let txResponse1 = await zkpokManager.verifyProofResponse(zkProofId, ctHandles, signature1);
-      await zkpokManager.verifyProofResponse(zkProofId, ctHandles, signature2);
-      let txResponse3 = zkpokManager.verifyProofResponse(zkProofId, ctHandles, signature3);
+      let txResponse1 = await zkpokManager
+        .connect(coprocessorSigners[0])
+        .verifyProofResponse(zkProofId, ctHandles, signature1);
+      await zkpokManager.connect(coprocessorSigners[1]).verifyProofResponse(zkProofId, ctHandles, signature2);
+      let txResponse3 = zkpokManager
+        .connect(coprocessorSigners[2])
+        .verifyProofResponse(zkProofId, ctHandles, signature3);
 
       // Check that the 1st and 3rd responses do not emit an event:
       // - 1st response is ignored because consensus is not reached yet
@@ -127,15 +133,21 @@ describe("ZKPoKManager", function () {
       // Trigger a valid proof rejection with the first coprocessor
       await zkpokManager.connect(coprocessorSigners[0]).rejectProofResponse(zkProofId);
 
-      // Trigger two valid proof verification responses with the 2 other coprocessors' signatures
-      let txResponse2 = zkpokManager.verifyProofResponse(zkProofId, ctHandles, signature2);
-      let txResponse3 = zkpokManager.verifyProofResponse(zkProofId, ctHandles, signature3);
+      // Trigger a first valid proof verification response with other coprocessor's signature
+      let txResponse2 = zkpokManager
+        .connect(coprocessorSigners[1])
+        .verifyProofResponse(zkProofId, ctHandles, signature2);
 
       // Consensus should not be reached at the second response since the first response is a proof rejection
       // Check 2nd response event: it should not emit an event (either for proof verification or rejection)
       await expect(txResponse2)
         .to.not.emit(zkpokManager, "VerifyProofResponse")
         .to.not.emit(zkpokManager, "RejectProofResponse");
+
+      // Trigger a second valid proof verification response with other coprocessor's signature
+      let txResponse3 = zkpokManager
+        .connect(coprocessorSigners[2])
+        .verifyProofResponse(zkProofId, ctHandles, signature3);
 
       // Consensus should be reached at the third response
       // Check 3rd response event: it should only contain 2 valid signatures
@@ -163,15 +175,21 @@ describe("ZKPoKManager", function () {
       const [fakeSignature] = await getSignaturesZKPoK(fakeEip712Message, coprocessorSigners);
 
       // Trigger a malicious proof verification response with the first coprocessor
-      await zkpokManager.verifyProofResponse(zkProofId, fakeCtHandles, fakeSignature);
+      await zkpokManager.connect(coprocessorSigners[0]).verifyProofResponse(zkProofId, fakeCtHandles, fakeSignature);
 
-      // Trigger two valid proof verification responses with the 2 other coprocessors' signatures
-      let txResponse2 = zkpokManager.verifyProofResponse(zkProofId, ctHandles, signature2);
-      let txResponse3 = zkpokManager.verifyProofResponse(zkProofId, ctHandles, signature3);
+      // Trigger a first valid proof verification response with other coprocessor's signature
+      let txResponse2 = zkpokManager
+        .connect(coprocessorSigners[1])
+        .verifyProofResponse(zkProofId, ctHandles, signature2);
 
       // Consensus should not be reached at the second response since the first response is malicious
       // Check 2nd response event: it should not emit an event for proof verification
       await expect(txResponse2).to.not.emit(zkpokManager, "VerifyProofResponse");
+
+      // Trigger a second valid proof verification response with other coprocessor's signature
+      let txResponse3 = zkpokManager
+        .connect(coprocessorSigners[2])
+        .verifyProofResponse(zkProofId, ctHandles, signature3);
 
       // Consensus should be reached at the third response
       // Check 3rd response event: it should only contain 2 valid signatures
@@ -185,17 +203,17 @@ describe("ZKPoKManager", function () {
 
     it("Should revert because of two responses with same signature for proof verification", async function () {
       // Trigger a first proof response
-      await zkpokManager.verifyProofResponse(zkProofId, ctHandles, signature1);
+      await zkpokManager.connect(coprocessorSigners[0]).verifyProofResponse(zkProofId, ctHandles, signature1);
 
       // Check that a coprocessor cannot sign a second time for the same proof
-      await expect(zkpokManager.verifyProofResponse(zkProofId, ctHandles, signature1))
+      await expect(zkpokManager.connect(coprocessorSigners[0]).verifyProofResponse(zkProofId, ctHandles, signature1))
         .revertedWithCustomError(zkpokManager, "CoprocessorSignerAlreadyResponded")
         .withArgs(zkProofId, coprocessorSigners[0].address);
     });
 
     it("Should revert because same coprocessor both verifies and rejects a proof", async function () {
       // Trigger a proof verification response with the first coprocessor's signature
-      await zkpokManager.verifyProofResponse(zkProofId, ctHandles, signature1);
+      await zkpokManager.connect(coprocessorSigners[0]).verifyProofResponse(zkProofId, ctHandles, signature1);
 
       // Check that the same coprocessor cannot send a second response for the same proof with a
       // proof rejection
@@ -209,7 +227,13 @@ describe("ZKPoKManager", function () {
       const [fakeSignature] = await getSignaturesZKPoK(eip712Message, [fakeSigner]);
 
       // Check that triggering a proof response using a signature from a non-coprocessor signer reverts
-      await expect(zkpokManager.verifyProofResponse(zkProofId, ctHandles, fakeSignature))
+      await expect(zkpokManager.connect(coprocessorSigners[0]).verifyProofResponse(zkProofId, ctHandles, fakeSignature))
+        .revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
+        .withArgs(fakeSigner.address, httpz.COPROCESSOR_ROLE());
+    });
+
+    it("Should revert because the transaction sender is not a coprocessor", async function () {
+      await expect(zkpokManager.connect(fakeSigner).verifyProofResponse(zkProofId, ctHandles, signature1))
         .revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
         .withArgs(fakeSigner.address, httpz.COPROCESSOR_ROLE());
     });
@@ -277,7 +301,7 @@ describe("ZKPoKManager", function () {
       const [signature1] = await getSignaturesZKPoK(eip712Message, coprocessorSigners);
 
       // Trigger a valid proof verification response with the first coprocessor's signature
-      await zkpokManager.verifyProofResponse(zkProofId, ctHandles, signature1);
+      await zkpokManager.connect(coprocessorSigners[0]).verifyProofResponse(zkProofId, ctHandles, signature1);
 
       // Trigger two valid proof rejection responses with the 2 other coprocessors
       let txResponse2 = zkpokManager.connect(coprocessorSigners[1]).rejectProofResponse(zkProofId);

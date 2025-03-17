@@ -481,6 +481,19 @@ describe("DecryptionManager", function () {
       await expect(responseTx3).to.not.emit(decryptionManager, "PublicDecryptionResponse");
       await expect(responseTx4).to.not.emit(decryptionManager, "PublicDecryptionResponse");
     });
+
+    it("Should revert because the transaction sender is not a KMS node", async function () {
+      const { httpz, decryptionManager, user, kmsSigners, eip712Message } = await loadFixture(deployGetEIP712Fixture);
+
+      const [signature1] = await getSignaturesPublicDecrypt(eip712Message, [kmsSigners[0]]);
+
+      // Check that the transaction fails because the msg.sender is not a registered KMS node
+      await expect(
+        decryptionManager.connect(user).publicDecryptionResponse(publicDecryptionId, decryptedResult, signature1),
+      )
+        .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
+        .withArgs(user.address, httpz.KMS_NODE_ROLE());
+    });
   });
 
   describe("User Decryption", function () {
@@ -493,6 +506,7 @@ describe("DecryptionManager", function () {
     // Deploy the DecryptionManager and allow access the the handles for the user and the contract
     async function deployAllowAccountFixture() {
       const {
+        httpz,
         keyManager,
         aclManager,
         decryptionManager,
@@ -517,6 +531,7 @@ describe("DecryptionManager", function () {
       }
 
       return {
+        httpz,
         keyManager,
         aclManager,
         decryptionManager,
@@ -534,6 +549,7 @@ describe("DecryptionManager", function () {
 
     async function deployUserDecryptEIP712Fixture() {
       const {
+        httpz,
         keyManager,
         aclManager,
         decryptionManager,
@@ -574,6 +590,7 @@ describe("DecryptionManager", function () {
       );
 
       return {
+        httpz,
         keyManager,
         aclManager,
         decryptionManager,
@@ -840,6 +857,21 @@ describe("DecryptionManager", function () {
       await expect(requestTx)
         .to.be.revertedWithCustomError(decryptionManager, "InvalidUserSignature")
         .withArgs(fakeSignature);
+    });
+
+    it("Should revert because the transaction sender is not a KMS node", async function () {
+      const { httpz, decryptionManager, user, kmsSigners, eip712ResponseMessage } =
+        await loadFixture(deployUserDecryptEIP712Fixture);
+
+      // Sign the message with all KMS nodes and get the first 3 signatures
+      const [signature1] = await getSignaturesUserDecryptResponse(eip712ResponseMessage, [kmsSigners[0]]);
+
+      // Check that the transaction fails because the msg.sender is not a registered KMS node
+      await expect(
+        decryptionManager.connect(user).userDecryptionResponse(userDecryptionId, reencryptedShare, signature1),
+      )
+        .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
+        .withArgs(user.address, httpz.KMS_NODE_ROLE());
     });
 
     it("Should revert because contract in ctHandleContractPairs not included in contractAddresses list", async function () {

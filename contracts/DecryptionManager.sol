@@ -178,6 +178,12 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
         _PAYMENT_MANAGER = paymentManager;
     }
 
+    /// @notice Checks if the sender is a KMS Node.
+    modifier onlyKmsNode() {
+        _HTTPZ.checkIsKmsNode(msg.sender);
+        _;
+    }
+
     /// @dev See {IDecryptionManager-publicDecryptionRequest}.
     function publicDecryptionRequest(uint256[] calldata ctHandles) public virtual {
         /// @dev Check that the public decryption is allowed for the given ctHandles.
@@ -207,11 +213,13 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
     }
 
     /// @dev See {IDecryptionManager-publicDecryptionResponse}.
+    /// @dev Uses the isKmsNode modifier to prevent someone else from copying the signature and
+    /// @dev sending it to trigger a consensus in case of reorgs.
     function publicDecryptionResponse(
         uint256 publicDecryptionId,
         bytes calldata decryptedResult,
         bytes calldata signature
-    ) public virtual {
+    ) public virtual onlyKmsNode {
         /// @dev Initialize the PublicDecryptVerification structure for the signature validation.
         PublicDecryptVerification memory publicDecryptVerification = PublicDecryptVerification(
             publicCtHandles[publicDecryptionId],
@@ -403,11 +411,13 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
     }
 
     /// @dev See {IDecryptionManager-userDecryptionResponse}.
+    /// @dev Uses the isKmsNode modifier to prevent someone else from copying the signature and
+    /// @dev sending it to trigger a consensus in case of reorgs.
     function userDecryptionResponse(
         uint256 userDecryptionId,
         bytes calldata reencryptedShare,
         bytes calldata signature
-    ) external virtual {
+    ) external virtual onlyKmsNode {
         UserDecryptionPayload memory userDecryptionPayload = userDecryptionPayloads[userDecryptionId];
 
         /// @dev Initialize the UserDecryptResponseVerification structure for the signature validation.
