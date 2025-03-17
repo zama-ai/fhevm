@@ -27,12 +27,12 @@ RUN chmod +x ./*.sh && \
     cp .env.example.deployment .env
 
 # Set up environment variables and compile contracts
-RUN PRIVATE_KEY_FHEVM_DEPLOYER="$(grep PRIVATE_KEY_FHEVM_DEPLOYER .env | cut -d '"' -f 2)" && \
-    export PRIVATE_KEY_FHEVM_DEPLOYER && \
-    NUM_KMS_SIGNERS="$(grep NUM_KMS_SIGNERS .env | cut -d '"' -f 2)" && \
-    export NUM_KMS_SIGNERS && \
-    npx hardhat clean && \
-    npx hardhat compile:specific --contract addresses && \
-    npx hardhat compile:specific --contract contracts && \
-    npx hardhat compile:specific --contract lib && \
-    npx hardhat compile:specific --contract decryptionOracle
+# RUN PRIVATE_KEY_FHEVM_DEPLOYER="$(grep PRIVATE_KEY_FHEVM_DEPLOYER .env | cut -d '"' -f 2)" && \
+#     export PRIVATE_KEY_FHEVM_DEPLOYER && \
+#     NUM_KMS_SIGNERS="$(grep NUM_KMS_SIGNERS .env | cut -d '"' -f 2)" && \
+#     export NUM_KMS_SIGNERS && \
+#     npx hardhat clean && \
+#     npx hardhat compile:specific --contract addresses && \
+#     npx hardhat compile:specific --contract contracts && \
+#     npx hardhat compile:specific --contract lib && \
+#     npx hardhat compile:specific --contract decryptionOracle
