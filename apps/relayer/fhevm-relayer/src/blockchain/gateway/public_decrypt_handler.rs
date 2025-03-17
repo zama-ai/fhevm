@@ -343,7 +343,7 @@ impl PublicDecryptGatewayHandler {
             .send_transaction(
                 "decryption_request",
                 decryption_manager_address,
-                || ComputeCalldata::decryption_req(handles.clone()),
+                || ComputeCalldata::public_decryption_req(handles.clone()),
                 &processor,
             )
             .await

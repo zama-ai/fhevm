@@ -9,7 +9,7 @@ use crate::blockchain::ethereum::bindings::IDecryptionManager::{
 use crate::blockchain::ethereum::bindings::ZKPoKManager;
 use crate::blockchain::public_decrypt_handler::DecryptionRequestData;
 use crate::core::errors::EventProcessingError;
-use alloy::primitives::{keccak256, Address, Bytes, Uint, U256};
+use alloy::primitives::{Address, Bytes, Uint, U256};
 use alloy::signers::SignerSync;
 use rusqlite::{Connection, Result};
 use serde::Serialize;
@@ -81,24 +81,15 @@ impl ComputeCalldata {
         Ok(Bytes::from(calldata))
     }
 
-    pub fn decryption_req(handles: Vec<Uint<256, 4>>) -> Result<Bytes, EventProcessingError> {
-        let selector = &keccak256("publicDecryptionRequest(uint256[])")[..4];
-        // Encode the parameters properly following ABI encoding rules
-        let mut calldata = Vec::new();
+    pub fn public_decryption_req(
+        handles: Vec<Uint<256, 4>>,
+    ) -> Result<Bytes, EventProcessingError> {
+        let calldata = DecyptionManager::publicDecryptionRequestCall::new((handles,)).abi_encode();
 
-        // 1. Add function selector
-        calldata.extend_from_slice(selector);
-
-        // 2. Add offset to start of array (32 bytes from start of parameters)
-        calldata.extend_from_slice(&U256::from(32).to_be_bytes::<32>());
-
-        // 3. Add array length
-        calldata.extend_from_slice(&U256::from(handles.len()).to_be_bytes::<32>());
-
-        // 4. Add array elements
-        for handle in handles {
-            calldata.extend_from_slice(&handle.to_be_bytes::<32>());
-        }
+        info!(
+            "publicDecryptionRequest calldata: 0x{}",
+            hex::encode(&calldata)
+        );
 
         Ok(Bytes::from(calldata))
     }
