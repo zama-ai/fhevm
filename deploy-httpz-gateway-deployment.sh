@@ -19,6 +19,8 @@ NUM_KMS_NODES=$(grep NUM_KMS_NODES .env | cut -d '"' -f 2)
 NUM_COPROCESSORS=$(grep NUM_COPROCESSORS .env | cut -d '"' -f 2)
 NUM_NETWORKS=$(grep NUM_NETWORKS .env | cut -d '"' -f 2)
 
+npx hardhat task:deployEmptyUUPSProxies --deployer-private-key "$DEPLOYER_PRIVATE_KEY" --network $NETWORK
+
 echo "Deploy HTTPZ contract:"
 # Deploy HTTPZ contract
 npx hardhat task:deployHttpz --deployer-private-key "$DEPLOYER_PRIVATE_KEY" \

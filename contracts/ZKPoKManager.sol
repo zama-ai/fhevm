@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
+import { httpzAddress } from "../addresses/HttpzAddress.sol";
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import { EIP712Upgradeable } from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
+import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import "./interfaces/IZKPoKManager.sol";
 import "./interfaces/IHTTPZ.sol";
@@ -11,7 +14,7 @@ import "./interfaces/IHTTPZ.sol";
  * @title ZKPoKManager smart contract
  * @dev See {IZKPoKManager}
  */
-contract ZKPoKManager is IZKPoKManager, EIP712 {
+contract ZKPoKManager is IZKPoKManager, EIP712Upgradeable, Ownable2StepUpgradeable, UUPSUpgradeable {
     /**
      * @notice The typed data structure for the EIP712 signature to validate in ZK Proof verification responses.
      * @dev The name of this struct is not relevant for the signature validation, only the one defined
@@ -39,31 +42,7 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
     }
 
     /// @notice The address of the HTTPZ contract for protocol state calls.
-    IHTTPZ internal immutable _HTTPZ;
-
-    /// @notice The address of the Payment Manager contract for service fees, burn and distribution.
-    address internal immutable _PAYMENT_MANAGER;
-
-    /// @notice The counter used for the ZK Proof IDs returned in verification request events.
-    uint256 internal zkProofIdCounter;
-
-    /// @notice The ZK Proof request IDs that have been verified.
-    mapping(uint256 zkProofId => bool isVerified) internal verifiedZKProofs;
-
-    /// @notice The ZK Proof request IDs that have been rejected.
-    mapping(uint256 zkProofId => bool isRejected) internal rejectedZKProofs;
-
-    /// @notice The validated signatures associated to a verified proof for a given ZK Proof ID.
-    mapping(uint256 zkProofId => mapping(bytes32 digest => bytes[] signatures)) internal zkProofSignatures;
-
-    /// @notice The number of coprocessors that have responded with a proof rejection for a given ZK Proof ID.
-    mapping(uint256 zkProofId => uint256 responseCounter) internal rejectedProofResponseCounter;
-
-    /// @notice Whether a coprocessor signer has already responded to a ZK Proof verification request.
-    mapping(uint256 zkProofId => mapping(address coprocessorSigner => bool alreadyResponded)) internal alreadyResponded;
-
-    /// @notice The ZK Proof request inputs to be used for signature validation in response calls.
-    mapping(uint256 zkProofId => ZKProofInput zkProofInput) internal _zkProofInputs;
+    IHTTPZ private constant _HTTPZ = IHTTPZ(httpzAddress);
 
     /// @notice The definition of the CiphertextVerification structure typed data.
     string private constant EIP712_ZKPOK_TYPE =
@@ -77,9 +56,39 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
     uint256 private constant MINOR_VERSION = 1;
     uint256 private constant PATCH_VERSION = 0;
 
-    constructor(IHTTPZ httpz, address paymentManager) EIP712(CONTRACT_NAME, "1") {
-        _HTTPZ = httpz;
-        _PAYMENT_MANAGER = paymentManager;
+    /// @notice The contract's variable storage struct (@dev see ERC-7201)
+    /// @custom:storage-location erc7201:httpz_gateway.storage.ZKPoKManager
+    struct ZKPoKManagerStorage {
+        /// @notice The counter used for the ZK Proof IDs returned in verification request events.
+        uint256 zkProofIdCounter;
+        /// @notice The ZK Proof request IDs that have been verified.
+        mapping(uint256 zkProofId => bool isVerified) verifiedZKProofs;
+        /// @notice The ZK Proof request IDs that have been rejected.
+        mapping(uint256 zkProofId => bool isRejected) rejectedZKProofs;
+        /// @notice The validated signatures associated to a verified proof for a given ZK Proof ID.
+        mapping(uint256 zkProofId => mapping(bytes32 digest => bytes[] signatures)) zkProofSignatures;
+        /// @notice The number of coprocessors that have responded with a proof rejection for a given ZK Proof ID.
+        mapping(uint256 zkProofId => uint256 responseCounter) rejectedProofResponseCounter;
+        /// @notice Whether a coprocessor signer has already responded to a ZK Proof verification request.
+        mapping(uint256 zkProofId => mapping(address coprocessorSigner => bool alreadyResponded)) alreadyResponded;
+        /// @notice The ZK Proof request inputs to be used for signature validation in response calls.
+        mapping(uint256 zkProofId => ZKProofInput zkProofInput) _zkProofInputs;
+    }
+
+    /// @dev keccak256(abi.encode(uint256(keccak256("httpz_gateway.storage.ZKPoKManager")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant ZKPOK_MANAGER_STORAGE_LOCATION =
+        0xfc4275d554bf606fe8341b5d487ea117d8e849caa41b49b189053b59696e2700;
+
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    /// @notice Initializes the contract.
+    /// @dev Contract name and version for EIP712 signature validation are defined here
+    function initialize() public reinitializer(2) {
+        __EIP712_init(CONTRACT_NAME, "1");
+        __Ownable_init(msg.sender);
     }
 
     /// @dev See {IZKPoKManager-verifyProofRequest}.
@@ -89,15 +98,16 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
         address userAddress,
         bytes calldata ciphertextWithZKProof
     ) public virtual {
+        ZKPoKManagerStorage storage $ = _getZKPoKManagerStorage();
         _HTTPZ.checkNetworkIsRegistered(contractChainId);
 
         // TODO(#52): Implement sending service fees to PaymentManager contract
 
-        zkProofIdCounter++;
-        uint256 zkProofId = zkProofIdCounter;
+        $.zkProofIdCounter++;
+        uint256 zkProofId = $.zkProofIdCounter;
 
         /// @dev The following stored inputs are used during response calls for the EIP712 signature validation.
-        _zkProofInputs[zkProofId] = ZKProofInput(contractChainId, contractAddress, userAddress);
+        $._zkProofInputs[zkProofId] = ZKProofInput(contractChainId, contractAddress, userAddress);
 
         emit VerifyProofRequest(zkProofId, contractChainId, contractAddress, userAddress, ciphertextWithZKProof);
     }
@@ -114,8 +124,10 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
          */
         _HTTPZ.checkIsCoprocessor(msg.sender);
 
+        ZKPoKManagerStorage storage $ = _getZKPoKManagerStorage();
+
         /// @dev Retrieve stored ZK Proof verification request inputs.
-        ZKProofInput memory zkProofInput = _zkProofInputs[zkProofId];
+        ZKProofInput memory zkProofInput = $._zkProofInputs[zkProofId];
 
         /// @dev Initialize the CiphertextVerification structure for the signature validation.
         CiphertextVerification memory ciphertextVerification = CiphertextVerification(
@@ -132,7 +144,7 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
         /// @dev that has not already responded (with either a proof verification or rejection).
         _validateEIP712Signature(zkProofId, digest, signature);
 
-        bytes[] storage currentSignatures = zkProofSignatures[zkProofId][digest];
+        bytes[] storage currentSignatures = $.zkProofSignatures[zkProofId][digest];
         currentSignatures.push(signature);
 
         /// @dev Send the event if and only if the consensus is reached in the current response call
@@ -143,7 +155,7 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
         /// @dev check that the ZK proof request has not been rejected yet.
         if (!isProofVerified(zkProofId) && _isConsensusReached(currentSignatures.length)) {
             // TODO(#52): Implement calling PaymentManager contract to burn and distribute fees
-            verifiedZKProofs[zkProofId] = true;
+            $.verifiedZKProofs[zkProofId] = true;
 
             emit VerifyProofResponse(zkProofId, ctHandles, currentSignatures);
         }
@@ -151,12 +163,14 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
 
     /// @dev See {IZKPoKManager-rejectProofResponse}.
     function rejectProofResponse(uint256 zkProofId) public virtual {
+        ZKPoKManagerStorage storage $ = _getZKPoKManagerStorage();
+
         /// @dev Validate that the caller is a coprocessor that has not already responded.
         /// @dev More info on why we do not need to validate the signature in this case is in the
         /// @dev functions's description from the interface.
         _checkCoprocessorAddress(msg.sender, zkProofId);
 
-        rejectedProofResponseCounter[zkProofId]++;
+        $.rejectedProofResponseCounter[zkProofId]++;
 
         /// @dev Send the event if and only if the consensus is reached in the current response call
         /// @dev for a proof rejection.
@@ -164,9 +178,9 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
         /// @dev Note that this considers that the consensus is reached with at least N/2 + 1
         /// @dev coprocessors. If the threshold is updated to below this number, we should also
         /// @dev check that the ZK proof request has not been verified yet.
-        if (!isProofRejected(zkProofId) && _isConsensusReached(rejectedProofResponseCounter[zkProofId])) {
+        if (!isProofRejected(zkProofId) && _isConsensusReached($.rejectedProofResponseCounter[zkProofId])) {
             // TODO(#52): Implement calling PaymentManager contract to burn and distribute fees
-            rejectedZKProofs[zkProofId] = true;
+            $.rejectedZKProofs[zkProofId] = true;
 
             emit RejectProofResponse(zkProofId);
         }
@@ -174,12 +188,14 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
 
     /// @dev See {IZKPoKManager-isProofVerified}.
     function isProofVerified(uint256 zkProofId) public view virtual returns (bool) {
-        return verifiedZKProofs[zkProofId];
+        ZKPoKManagerStorage storage $ = _getZKPoKManagerStorage();
+        return $.verifiedZKProofs[zkProofId];
     }
 
     /// @dev See {IZKPoKManager-isProofRejected}.
     function isProofRejected(uint256 zkProofId) public view virtual returns (bool) {
-        return rejectedZKProofs[zkProofId];
+        ZKPoKManagerStorage storage $ = _getZKPoKManagerStorage();
+        return $.rejectedZKProofs[zkProofId];
     }
 
     /**
@@ -207,13 +223,14 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
      * @param zkProofId The ID of the ZK Proof
      */
     function _checkCoprocessorAddress(address coprocessorAddress, uint256 zkProofId) internal virtual {
+        ZKPoKManagerStorage storage $ = _getZKPoKManagerStorage();
         _HTTPZ.checkIsCoprocessor(coprocessorAddress);
 
-        if (alreadyResponded[zkProofId][coprocessorAddress]) {
+        if ($.alreadyResponded[zkProofId][coprocessorAddress]) {
             revert CoprocessorSignerAlreadyResponded(zkProofId, coprocessorAddress);
         }
 
-        alreadyResponded[zkProofId][coprocessorAddress] = true;
+        $.alreadyResponded[zkProofId][coprocessorAddress] = true;
     }
 
     /**
@@ -269,4 +286,19 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
         uint256 consensusThreshold = _HTTPZ.getCoprocessorMajorityThreshold();
         return coprocessorCounter >= consensusThreshold;
     }
+
+    /**
+     * @dev Returns the ZKPoKManager storage location.
+     */
+    function _getZKPoKManagerStorage() internal pure returns (ZKPoKManagerStorage storage $) {
+        // solhint-disable-next-line no-inline-assembly
+        assembly {
+            $.slot := ZKPOK_MANAGER_STORAGE_LOCATION
+        }
+    }
+
+    /**
+     * @dev Should revert when `msg.sender` is not authorized to upgrade the contract.
+     */
+    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
 }

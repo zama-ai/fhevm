@@ -113,6 +113,14 @@ interface IHTTPZ {
     /// @param chainId The chain ID to check
     function checkNetworkIsRegistered(uint256 chainId) external view;
 
+    /// @notice Get the protocol's metadata
+    /// @return The protocol's metadata
+    function getProtocolMetadata() external view returns (ProtocolMetadata memory);
+
+    /// @notice Get the KMS vote threshold
+    /// @return The KMS vote threshold
+    function getKmsThreshold() external view returns (uint256);
+
     /// @notice Get the KMS majority vote threshold
     /// @return The KMS majority vote threshold
     function getKmsMajorityThreshold() external view returns (uint256);
@@ -125,11 +133,31 @@ interface IHTTPZ {
     /// @return The coprocessor majority threshold
     function getCoprocessorMajorityThreshold() external view returns (uint256);
 
+    /// @notice Get the metadata of the KMS node with the given address
+    /// @return The KMS node's metadata
+    function kmsNodes(address addr) external view returns (KmsNode memory);
+
+    /// @notice Get the address of the KMS node with the given index
+    /// @return The KMS node's address
+    function kmsNodeAddresses(uint256 index) external view returns (address);
+
     /// @notice Get the list of all KMS nodes' addresses currently registered
     /// @return The list of KMS nodes' addresses
     function getAllKmsNodeAddresses() external view returns (address[] memory);
 
+    /// @notice Get the metadata of the coprocessor with the given address
+    /// @return The coprocessor's metadata
+    function coprocessors(address addr) external view returns (Coprocessor memory);
+
+    /// @notice Get the address of the coprocessor with the given index
+    /// @return The coprocessor's address
+    function coprocessorAddresses(uint256 index) external view returns (address);
+
     /// @notice Get the list of all coprocessors' addresses currently registered
     /// @return The list of coprocessors' addresses
     function getAllCoprocessorAddresses() external view returns (address[] memory);
+
+    /// @notice Get the metadata of the network with the given index
+    /// @return The network's metadata
+    function networks(uint256 index) external view returns (Network memory);
 }
