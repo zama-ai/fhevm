@@ -3,9 +3,8 @@ use bigdecimal::num_bigint::BigInt;
 
 use fhevm_listener::contracts::TfheContract;
 use fhevm_listener::contracts::TfheContract::TfheContractEvents;
-use fhevm_listener::database::tfhe_event_propagate::{
-    Database as ListenerDatabase, Handle, ToType,
-};
+use fhevm_listener::database::tfhe_event_propagate::{ClearConst, Database as ListenerDatabase, Handle, ToType};
+
 
 use crate::tests::operators::{generate_binary_test_cases, generate_unary_test_cases};
 use crate::tests::utils::{decrypt_ciphertexts, wait_until_all_ciphertexts_computed};
@@ -29,9 +28,23 @@ fn tfhe_event(data: TfheContractEvents) -> Log<TfheContractEvents> {
     Log::<TfheContractEvents> { address, data }
 }
 
-fn as_scalar(big_int: &BigInt) -> Handle {
+fn as_handle(big_int: &BigInt) -> Handle {
     let (_, bytes) = big_int.to_bytes_be();
-    Handle::from_be_slice(&bytes)
+    Handle::right_padding_from(&bytes)
+}
+
+fn as_scalar_handle(big_int: &BigInt) -> Handle {
+    let (_, mut bytes) = big_int.to_bytes_le();
+    while bytes.len() < 32 {
+        bytes.push(0_u8)
+    }
+    bytes.reverse();
+    Handle::from_slice(&bytes)
+}
+
+fn as_scalar_uint(big_int: &BigInt) -> ClearConst {
+    let (_, bytes) = big_int.to_bytes_be();
+    ClearConst::from_be_slice(&bytes)
 }
 
 fn to_bytes(big_int: &BigInt) -> Bytes {
@@ -64,7 +77,7 @@ fn binary_op_to_event(
     let use_bytes_when_avail = op.is_scalar && op.bits > 256;
     let rhs_bytes = to_bytes(r_scalar);
     let rhs = if op.is_scalar && op.bits <= 256 {
-        as_scalar(r_scalar)
+        as_scalar_handle(r_scalar)
     } else {
         *rhs
     };
@@ -242,7 +255,7 @@ fn next_handle() -> Handle {
     #[allow(non_upper_case_globals)]
     static count: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
     let v = count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    Handle::from_limbs([1, 2, 3, v])
+    as_handle(&BigInt::from(v))
 }
 
 async fn listener_event_to_db(app: &TestInstance) -> ListenerDatabase {
@@ -318,7 +331,7 @@ async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Err
 
     wait_until_all_ciphertexts_computed(&app).await?;
     for (op, output_handle) in cases {
-        let decrypt_request = vec![output_handle.to_be_bytes_vec()];
+        let decrypt_request = vec![output_handle.to_vec()];
         let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
         let decr_response = &resp[0];
         println!("Checking computation for binary test bits:{} op:{} is_scalar:{} lhs:{} rhs:{} output:{}",
@@ -419,7 +432,7 @@ async fn test_fhe_unary_operands_events() -> Result<(), Box<dyn std::error::Erro
         listener_event_to_db.notify_scheduler().await;
         wait_until_all_ciphertexts_computed(&app).await?;
 
-        let decrypt_request = vec![output_handle.to_be_bytes_vec()];
+        let decrypt_request = vec![output_handle.to_vec()];
         let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
         let decr_response = &resp[0];
         println!(
@@ -540,7 +553,7 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
                 .await?;
             listener_event_to_db.notify_scheduler().await;
             wait_until_all_ciphertexts_computed(&app).await?;
-            let decrypt_request = vec![output_handle.to_be_bytes_vec()];
+            let decrypt_request = vec![output_handle.to_vec()];
             let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
             let decr_response = &resp[0];
             println!(
@@ -615,7 +628,7 @@ async fn test_fhe_cast_events() -> Result<(), Box<dyn std::error::Error>> {
 
             listener_event_to_db.notify_scheduler().await;
             wait_until_all_ciphertexts_computed(&app).await?;
-            let decrypt_request = vec![output_handle.to_be_bytes_vec()];
+            let decrypt_request = vec![output_handle.to_vec()];
             let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
             let decr_response = &resp[0];
 
@@ -689,7 +702,7 @@ async fn test_fhe_rand_events() -> Result<(), Box<dyn std::error::Error>> {
             .insert_tfhe_event(&tfhe_event(TfheContractEvents::FheRandBounded(
                 TfheContract::FheRandBounded {
                     caller,
-                    upperBound: as_scalar(&BigInt::from(1)),
+                    upperBound: as_scalar_uint(&BigInt::from(1)),
                     randType: to_ty(rand_type),
                     seed: FixedBytes::from([
                         1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
@@ -704,9 +717,9 @@ async fn test_fhe_rand_events() -> Result<(), Box<dyn std::error::Error>> {
         wait_until_all_ciphertexts_computed(&app).await?;
 
         let decrypt_request = vec![
-            output1_handle.to_be_bytes_vec(),
-            output2_handle.to_be_bytes_vec(),
-            output3_handle.to_be_bytes_vec(),
+            output1_handle.to_vec(),
+            output2_handle.to_vec(),
+            output3_handle.to_vec(),
         ];
         let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
         assert_eq!(resp[0].output_type, rand_type as i16);

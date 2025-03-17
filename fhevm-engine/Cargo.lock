@@ -3212,6 +3212,7 @@ dependencies = [
  "clap",
  "fhevm-engine-common",
  "foundry-compilers",
+ "foundry-compilers-artifacts",
  "futures-util",
  "semver 1.0.26",
  "serde",

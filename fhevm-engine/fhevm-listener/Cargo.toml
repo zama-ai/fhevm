@@ -33,5 +33,6 @@ anyhow = { workspace = true }
 serial_test = "3.2.0"
 
 [build-dependencies]
-foundry-compilers = { version = "0.13.0", features = ["svm-solc"] }
+foundry-compilers = { version = "=0.13.5", features = ["svm-solc"] }
+foundry-compilers-artifacts = "=0.13.5"
 semver = "1.0.26"

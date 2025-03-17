@@ -56,7 +56,7 @@ async fn emit_events<P, N>(
         let provider = provider.clone();
         let thread = tokio::spawn(async move {
             for _ in 1..=NB_EVENTS_PER_WALLET {
-                let to_type = ToType::from_slice(&[4]);
+                let to_type: ToType = 4_u8;
                 let pt = U256::from(UNIQUE_INT.fetch_add(1, Ordering::SeqCst));
                 let txn_req = tfhe_contract
                     .trivialEncrypt_1(pt.clone(), to_type.clone())
@@ -65,6 +65,7 @@ async fn emit_events<P, N>(
                 let pending_txn =
                     provider.send_transaction(txn_req).await.unwrap();
                 let receipt = pending_txn.get_receipt().await.unwrap();
+                assert!(receipt.status());
             }
         });
         threads.push(thread);
