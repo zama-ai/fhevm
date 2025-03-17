@@ -11,4 +11,5 @@ export abstract class TeamRepository {
     id: TeamId,
     userId: UserId,
   ): Task<Team, AppError>
+  abstract delete(id: TeamId): Task<void, AppError>
 }

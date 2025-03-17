@@ -118,7 +118,7 @@ describe('get-dapp-stats', () => {
           where: { id: dappId },
         })
       } else {
-        expect(createDappResult.success, 'it should success').toBe(true)
+        expect(createDappResult.success, 'it should succeed').toBe(true)
         console.log(`createDapp: ${JSON.stringify(createDappResult)}`)
       }
     })
