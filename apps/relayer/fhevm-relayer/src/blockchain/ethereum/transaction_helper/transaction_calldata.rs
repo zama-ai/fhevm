@@ -204,6 +204,7 @@ impl ComputeCalldata {
     }
 
     /// Computes calldata for verifyProofResponse function with multiple signatures
+    /// Used in gateway_processors_mock
     ///
     /// # Arguments
     /// * `zkpok_id` - ID of the proof being verified
@@ -218,76 +219,16 @@ impl ComputeCalldata {
         handles: Vec<[u8; 32]>,
         signature: Vec<u8>,
     ) -> Result<Bytes, EventProcessingError> {
-        let mut calldata = Vec::new();
+        let calldata = ZKPoKManager::verifyProofResponseCall::new((
+            zkpok_id,
+            handles
+                .into_iter()
+                .map(alloy::primitives::FixedBytes::<32>::from)
+                .collect(),
+            signature.into(),
+        ))
+        .abi_encode();
 
-        // 1. Function selector for verifyProofResponse(uint256,bytes32[],bytes)
-        let selector = &keccak256("verifyProofResponse(uint256,bytes32[],bytes)")[..4];
-        calldata.extend_from_slice(selector);
-
-        // 2. zkpok_id (uint256)
-        calldata.extend_from_slice(&zkpok_id.to_be_bytes::<32>());
-
-        // 3. Offset to handles array (0x60)
-        calldata.extend_from_slice(&U256::from(0x60).to_be_bytes::<32>());
-
-        // 4. Offset to signature (0xc0 = 192 for 2 handles)
-        let sig_offset = 0xc0u32;
-        calldata.extend_from_slice(&U256::from(sig_offset).to_be_bytes::<32>());
-
-        // 5. Length of handles array
-        calldata.extend_from_slice(&U256::from(handles.len()).to_be_bytes::<32>());
-
-        // 6. Handles data
-        for handle in &handles {
-            calldata.extend_from_slice(handle);
-        }
-
-        // 7. Single signature encoding
-        // Length prefix for signature (65 bytes)
-        let mut sig_length = [0u8; 32];
-        sig_length[31] = 0x41; // 65 in hex
-        calldata.extend_from_slice(&sig_length);
-
-        calldata.extend_from_slice(&signature);
-
-        // No padding needed for single signature as it's not an array
-
-        // Debug logging
-        debug!("Detailed calldata breakdown:");
-        debug!("Selector (4 bytes): 0x{}", hex::encode(&calldata[..4]));
-        debug!("zkpok_id (32 bytes): 0x{}", hex::encode(&calldata[4..36]));
-        debug!(
-            "handles_offset (32 bytes): 0x{}",
-            hex::encode(&calldata[36..68])
-        );
-        debug!(
-            "signature_offset (32 bytes): 0x{}",
-            hex::encode(&calldata[68..100])
-        );
-        debug!(
-            "handles_length (32 bytes): 0x{}",
-            hex::encode(&calldata[100..132])
-        );
-
-        let handles_end = 132 + handles.len() * 32;
-        debug!(
-            "handles_data ({} bytes): 0x{}",
-            handles.len() * 32,
-            hex::encode(&calldata[132..handles_end])
-        );
-
-        debug!(
-            "signature_length (32 bytes): 0x{}",
-            hex::encode(&calldata[handles_end..handles_end + 32])
-        );
-
-        let sig_start = handles_end + 32;
-        debug!(
-            "signature_data (65 bytes): 0x{}",
-            hex::encode(&calldata[sig_start..])
-        );
-
-        debug!("Total size: {} bytes", calldata.len());
         debug!("Raw calldata: 0x{}", hex::encode(&calldata));
 
         Ok(Bytes::from(calldata))
