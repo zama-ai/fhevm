@@ -27,14 +27,16 @@ pub struct TestEnvironment {
 
 impl TestEnvironment {
     pub async fn new() -> anyhow::Result<Self> {
+        Self::new_with_config(ConfigSettings::default()).await
+    }
+
+    pub async fn new_with_config(conf: ConfigSettings) -> anyhow::Result<Self> {
         let _ = tracing_subscriber::fmt()
             .json()
             .with_level(true)
             .with_max_level(Level::DEBUG)
             .with_test_writer()
             .try_init();
-
-        let conf = ConfigSettings::default();
 
         let db_pool = PgPoolOptions::new()
             .max_connections(1)

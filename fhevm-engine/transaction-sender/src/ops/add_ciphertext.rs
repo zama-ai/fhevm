@@ -176,7 +176,7 @@ where
             AND ciphertext128 IS NOT NULL
             AND txn_retry_count < $1
             LIMIT $2",
-            self.conf.verify_proof_resp_max_retries as i64,
+            self.conf.add_ciphertexts_resp_max_retries as i64,
             self.conf.add_ciphertexts_batch_limit as i64,
         )
         .fetch_all(db_pool)

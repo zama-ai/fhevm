@@ -1,26 +1,29 @@
+use alloy::primitives::Address;
 use alloy::providers::{Provider, ProviderBuilder, WalletProvider};
+use alloy::signers::local::PrivateKeySigner;
+use alloy::transports::Transport;
 use common::{CiphertextManager, TestEnvironment, ZKPoKManager};
 
-use rand::random;
+use rand::{random, Rng};
 use serial_test::serial;
 use sqlx::PgPool;
 use std::sync::Arc;
 use std::time::Duration;
 use test_harness::db_utils::insert_random_tenant;
 use tokio::time::sleep;
-use transaction_sender::TransactionSender;
+use transaction_sender::{ConfigSettings, TransactionSender};
 
 mod common;
 
 #[tokio::test]
 #[serial(db)]
-async fn add_ciphertext_digests() -> anyhow::Result<()> {
+async fn test_add_ciphertext_digests() -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
     let provider = Arc::new(ProviderBuilder::new().on_anvil_with_wallet());
-    let zkpok_manager = ZKPoKManager::deploy(&provider, false, false).await?;
+
     let ciphertext_manager = CiphertextManager::deploy(&provider).await?;
     let txn_sender = TransactionSender::new(
-        *zkpok_manager.address(),
+        PrivateKeySigner::random().address(),
         *ciphertext_manager.address(),
         env.signer.clone(),
         provider.clone(),
@@ -61,6 +64,7 @@ async fn add_ciphertext_digests() -> anyhow::Result<()> {
     .await?;
 
     // Make sure the digest was tagged as sent.
+    let mut digests_sent = false;
     for _retries in 0..10 {
         let rows = sqlx::query!(
             "SELECT txn_is_sent
@@ -71,11 +75,24 @@ async fn add_ciphertext_digests() -> anyhow::Result<()> {
         .fetch_one(&env.db_pool)
         .await?;
         if rows.txn_is_sent.unwrap_or_default() {
+            digests_sent = true;
             break;
         }
 
         sleep(Duration::from_millis(500)).await;
     }
+    sqlx::query!(
+        "
+        delete from tenants where tenant_id = $1",
+        tenant_id
+    )
+    .execute(&env.db_pool)
+    .await?;
+
+    assert!(
+        digests_sent,
+        "Expected the digests to be tagged as sent after sending a notification"
+    );
 
     // Verify that a transaction has been sent.
     let tx_count = provider
@@ -87,6 +104,92 @@ async fn add_ciphertext_digests() -> anyhow::Result<()> {
         "Expected a new transaction to be sent"
     );
 
+    env.cancel_token.cancel();
+    run_handle.await??;
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_retry_mechanism() -> anyhow::Result<()> {
+    let conf = ConfigSettings {
+        add_ciphertexts_resp_max_retries: 3,
+        ..Default::default()
+    };
+
+    let env = TestEnvironment::new_with_config(conf).await?;
+
+    // Create a provider without a wallet.
+    let provider = Arc::new(ProviderBuilder::new().on_anvil());
+    let txn_sender = TransactionSender::new(
+        PrivateKeySigner::random().address(),
+        PrivateKeySigner::random().address(),
+        env.signer.clone(),
+        provider.clone(),
+        env.cancel_token.clone(),
+        env.conf.clone(),
+        None,
+    )
+    .await?;
+
+    let txn_sender_task = tokio::spawn(async move { txn_sender.run().await });
+
+    let tenant_id = insert_random_tenant(&env.db_pool).await?;
+
+    let mut rng = rand::rng();
+    let handle = rng.random::<[u8; 32]>().to_vec();
+
+    // Insert a ciphertext digest into the database.
+    insert_ciphertext_digest(
+        &env.db_pool,
+        tenant_id,
+        handle.clone(),
+        random::<[u8; 32]>().to_vec(),
+        random::<[u8; 32]>().to_vec(),
+        1,
+    )
+    .await?;
+
+    sqlx::query!(
+        "
+        SELECT pg_notify($1, '')",
+        env.conf.add_ciphertexts_db_channel
+    )
+    .execute(&env.db_pool)
+    .await?;
+
+    let mut valid_retries_count = false;
+    // Make sure the digest was tagged as sent.
+    for _retries in 0..10 {
+        let rows = sqlx::query!(
+            "SELECT txn_is_sent, txn_retry_count
+             FROM ciphertext_digest
+             WHERE handle = $1",
+            handle,
+        )
+        .fetch_one(&env.db_pool)
+        .await?;
+
+        match rows.txn_is_sent {
+            Some(true) => panic!("Expected txn_is_sent to be false"),
+            Some(false) => {
+                print!(
+                    "txn_retry_count: {:?}",
+                    rows.txn_retry_count.unwrap_or_default()
+                );
+                if rows.txn_retry_count.unwrap_or_default()
+                    == env.conf.add_ciphertexts_resp_max_retries as i32 - 1
+                {
+                    valid_retries_count = true;
+                    break;
+                }
+            }
+            None => {}
+        }
+
+        sleep(Duration::from_millis(500)).await;
+    }
+
     sqlx::query!(
         "
         delete from tenants where tenant_id = $1",
@@ -95,8 +198,13 @@ async fn add_ciphertext_digests() -> anyhow::Result<()> {
     .execute(&env.db_pool)
     .await?;
 
+    assert!(
+        valid_retries_count,
+        "Expected the retry count to be greater than 0"
+    );
+
     env.cancel_token.cancel();
-    run_handle.await??;
+    txn_sender_task.await??;
     Ok(())
 }
 
