@@ -12,6 +12,7 @@ import { execSync } from 'child_process'
 import commonConfig from '#config/common.config.js'
 import { SQSClient } from '@aws-sdk/client-sqs'
 import { JsPromise } from '#prisma/client/runtime/library.js'
+import type { Type } from '@nestjs/common'
 export type GraphQlResponse<T> =
   | {
       success: true
@@ -143,6 +144,12 @@ export class SetupManager {
         this.#prismaClients[WORKER_ID].dapp.deleteMany(),
       ]),
     ])
+  }
+
+  get<TInput = any, TResult = TInput>(
+    typeOrToken: Type<TInput> | string | symbol,
+  ): TResult {
+    return this.#app.get(typeOrToken)
   }
 
   get httpServer(): any {

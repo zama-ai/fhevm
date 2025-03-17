@@ -13,7 +13,7 @@ import {
 } from 'vitest'
 
 describe('address validation', () => {
-  const manager = new IntegrationManager()
+  const manager = new IntegrationManager(false)
 
   beforeAll(async () => {
     await manager.beforeAll()
@@ -42,17 +42,14 @@ describe('address validation', () => {
           },
           { correlationId: faker.string.uuid() },
         ),
-        'back',
       )
     })
     test("then it publish a 'web3:contract:validation:requested' event", async () => {
       await vi.waitUntil(async () => {
-        const size = await manager.getQueueSize(manager.setup.web3QueueUrl)
+        const size = await manager.getQueueSize('web3')
         return size > 0
       })
-      const [message] = await manager.getQueueMessages(
-        manager.setup.web3QueueUrl,
-      )
+      const [message] = await manager.getQueueMessages('web3')
       expect(message?.event.type).toBe('web3:contract:validation:requested')
     })
   })
@@ -68,17 +65,14 @@ describe('address validation', () => {
           },
           { correlationId: faker.string.uuid() },
         ),
-        'web3',
       )
     })
     test("then it publish a 'back:address:validation:confirmed' event", async () => {
       await vi.waitUntil(async () => {
-        const size = await manager.getQueueSize(manager.setup.backQueueUrl)
+        const size = await manager.getQueueSize('back')
         return size > 0
       })
-      const [message] = await manager.getQueueMessages(
-        manager.setup.backQueueUrl,
-      )
+      const [message] = await manager.getQueueMessages('back')
       expect(message?.event.type).toBe('back:address:validation:confirmed')
     })
   })
@@ -94,17 +88,15 @@ describe('address validation', () => {
           },
           { correlationId: faker.string.uuid() },
         ),
-        'web3',
       )
     })
+
     test("then it publish a 'back:address:validation:failed' event", async () => {
       await vi.waitUntil(async () => {
-        const size = await manager.getQueueSize(manager.setup.backQueueUrl)
+        const size = await manager.getQueueSize('back')
         return size > 0
       })
-      const messages = await manager.getQueueMessages(
-        manager.setup.backQueueUrl,
-      )
+      const messages = await manager.getQueueMessages('back')
       expect(messages[0]?.event.type).toBe('back:address:validation:failed')
     })
   })

@@ -15,6 +15,7 @@ import { IPubSub } from 'utils'
 import { back, web3 } from 'messages'
 import { EventProducer } from '#workflows/interfaces/event.producer.js'
 import { ProcessDAppStats } from '#workflows/use-cases/process-dapp-stats.use-case.js'
+import { CronModule } from './cron/cron.module.js'
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { ProcessDAppStats } from '#workflows/use-cases/process-dapp-stats.use-ca
         ],
       }),
     }),
+    CronModule,
   ],
   providers: [
     {

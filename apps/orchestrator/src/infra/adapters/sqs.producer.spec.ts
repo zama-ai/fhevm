@@ -1,6 +1,5 @@
 import { Test } from '@nestjs/testing'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
-import { LOCAL_FHEVM_CHAIN_ID } from 'utils'
 import { configModule } from '#app.module.js'
 import { back, web3 } from 'messages'
 import { faker } from '@faker-js/faker'
@@ -105,9 +104,7 @@ describe('SqsProducer', () => {
     },
   ])('when publish is called with an $event.type event', ({ event, queue }) => {
     beforeEach(async () => {
-      client
-        .on(SendMessageCommand)
-        .resolves({ MessageId: LOCAL_FHEVM_CHAIN_ID })
+      client.on(SendMessageCommand).resolves({ MessageId: faker.string.uuid() })
 
       await producer.publish(event).toPromise()
     })

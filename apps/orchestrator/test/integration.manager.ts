@@ -5,11 +5,25 @@ import {
   ReceiveMessageCommand,
   SendMessageCommand,
 } from '@aws-sdk/client-sqs'
-import { back, web3 } from 'messages'
+import { back, MSPrefix, web3 } from 'messages'
 import { expect } from 'vitest'
+import type { Type } from '@nestjs/common'
 
 export class IntegrationManager {
-  readonly setup = new SetupManager()
+  readonly setup: SetupManager
+  constructor(private readonly logEnabled = false) {
+    this.setup = new SetupManager(this.logEnabled)
+  }
+
+  private get workerId(): number {
+    return Number(process.env.VITEST_POOL_ID) - 1
+  }
+
+  private log(message: string) {
+    if (this.logEnabled) {
+      console.log(`[IntegrationManger|${this.workerId}] ${message}`)
+    }
+  }
 
   async beforeAll() {
     await this.setup.beforeAll()
@@ -27,31 +41,51 @@ export class IntegrationManager {
     await this.setup.afterEach()
   }
 
+  get<TInput = any, TResult = TInput>(
+    typeOrToken: Type<TInput> | string | symbol,
+  ): TResult {
+    return this.setup.get<TInput, TResult>(typeOrToken)
+  }
+
   async sendMessage(message: string | object) {
+    const body = typeof message === 'string' ? message : JSON.stringify(message)
+    this.log(`sendMessage ${body} to ${this.setup.orchQueueUrl}`)
     const result = await this.setup.sqs.send(
       new SendMessageCommand({
         QueueUrl: this.setup.orchQueueUrl,
-        MessageBody:
-          typeof message === 'string' ? message : JSON.stringify(message),
+        MessageBody: body,
       }),
     )
     expect(
       result.$metadata.httpStatusCode,
-      'Failed to sns.PublishCommand',
+      'Failed to send message to orch queue',
     ).toBe(200)
   }
 
-  async getQueueSize(queueUrl: string) {
+  getQueueUrlByName(name: MSPrefix): string {
+    switch (name) {
+      case 'back':
+        return this.setup.backQueueUrl
+      case 'orch':
+        return this.setup.orchQueueUrl
+      case 'relayer':
+        return this.setup.relayerQueueUrl
+      case 'web3':
+        return this.setup.web3QueueUrl
+    }
+  }
+
+  async getQueueSize(name: MSPrefix) {
     const result = await this.setup.sqs.send(
       new GetQueueAttributesCommand({
-        QueueUrl: queueUrl,
+        QueueUrl: this.getQueueUrlByName(name),
         AttributeNames: ['ApproximateNumberOfMessages'],
       }),
     )
     return parseInt(result.Attributes?.ApproximateNumberOfMessages ?? '-1')
   }
 
-  async getQueueMessages(queueUrl: string): Promise<
+  async getQueueMessages(name: MSPrefix): Promise<
     Array<{
       event: back.BackEvent | web3.Web3Event
       attributes?: Record<string, MessageAttributeValue>
@@ -59,7 +93,7 @@ export class IntegrationManager {
   > {
     const result = await this.setup.sqs.send(
       new ReceiveMessageCommand({
-        QueueUrl: queueUrl,
+        QueueUrl: this.getQueueUrlByName(name),
         MessageAttributeNames: ['All'],
         MessageSystemAttributeNames: ['All'],
         MaxNumberOfMessages: 10,

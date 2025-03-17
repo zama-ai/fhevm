@@ -40,8 +40,15 @@ function factory({
       Idle: {
         on: {
           'back:dapp:stats-requested': {
-            actions: ({ event: { payload, meta } }) =>
-              notifyMessage(web3.fheRequested(payload, meta)),
+            actions: [
+              ({ event }) => {
+                console.log(
+                  `DAppStats handling ${event.type} for chain ${event.payload.chainId}`,
+                )
+              },
+              ({ event: { payload, meta } }) =>
+                notifyMessage(web3.fheRequested(payload, meta)),
+            ],
           },
 
           'web3:fhe-event:detected': {

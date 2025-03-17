@@ -6,12 +6,14 @@ import {
   PostgreSqlContainer,
   type StartedPostgreSqlContainer,
 } from '@testcontainers/postgresql'
+import { RedisContainer, StartedRedisContainer } from '@testcontainers/redis'
 import { execSync } from 'child_process'
 import { randomUUID } from 'crypto'
 import type { TestProject } from 'vitest/node'
 
 let pgContainer: StartedPostgreSqlContainer | undefined = undefined
 let awsContainer: StartedLocalStackContainer | undefined = undefined
+let redisContainer: StartedRedisContainer | undefined = undefined
 
 async function startPostresInstance(databaseUrl: string) {
   const schema = randomUUID()
@@ -39,7 +41,7 @@ async function startPostgres(maxWorkers: number) {
   const password = pgContainer.getPassword()
 
   console.log(
-    `🚛 testcontainer Postgres running on ${host}:${port}/${database}`,
+    `\x1b[32m🚛 testcontainer Postgres running on ${host}:${port}/${database}\x1b[0m`,
   )
 
   const databaseUrl = `postgresql://${username}:${password}@${host}:${port}/${database}`
@@ -52,7 +54,7 @@ async function startPostgres(maxWorkers: number) {
 
 async function stopPostgres() {
   if (pgContainer) {
-    console.log(`🛑 testcontainer stopping Postgres`)
+    console.log(`\x1b[33m🛑 testcontainer stopping Postgres\x1b[0m`)
     await pgContainer.stop()
   }
 }
@@ -63,15 +65,39 @@ async function startAws() {
   ).start()
 
   const connectionUri = awsContainer.getConnectionUri()
-  console.log(`🚛 testcontainer AWS running on ${connectionUri}`)
+  console.log(`\x1b[32m🚛 testcontainer AWS running on ${connectionUri}\x1b[0m`)
 
   return connectionUri
 }
 
 async function stopAws() {
   if (awsContainer) {
-    console.log(`🛑 testcontainer stopping Postgres`)
+    console.log(`\x1b[33m🛑 testcontainer stopping Postgres\x1b[0m`)
     await awsContainer.stop()
+  }
+}
+
+async function startRedis() {
+  redisContainer = await new RedisContainer('redis:7.4-alpine').start()
+
+  if (!redisContainer) {
+    throw new Error('Failed to start postgres container')
+  }
+
+  const host = redisContainer.getHost()
+  const port = redisContainer.getPort()
+
+  console.log(
+    `\x1b[32m🚛 testcontainer Redis running on ${host}:${port}\x1b[0m`,
+  )
+
+  return { host, port }
+}
+
+async function stopRedis() {
+  if (redisContainer) {
+    await redisContainer.stop()
+    console.log(`\x1b[33m🛑 testcontainer Redis stopped\x1b[0m`)
   }
 }
 
@@ -79,19 +105,21 @@ export default async function setup(project: TestProject) {
   const maxWorkers = project.globalConfig.poolOptions?.forks?.maxForks ?? 10
   project.provide('maxWorkers', maxWorkers)
 
-  const [databaseUrls, awsEndpoint] = await Promise.all([
+  const [databaseUrls, awsEndpoint, redisConnection] = await Promise.all([
     startPostgres(maxWorkers),
     startAws(),
+    startRedis(),
   ])
   project.provide('databaseUrls', databaseUrls)
   project.provide('awsEndpoint', awsEndpoint)
+  project.provide('redisConnection', redisConnection)
 
   project.onTestsRerun(() => {
     console.log(`global setup: rerunning...`)
   })
 
   return async () => {
-    await Promise.all([stopPostgres(), stopAws()])
+    await Promise.all([stopPostgres(), stopAws(), stopRedis()])
   }
 }
 
@@ -100,5 +128,6 @@ declare module 'vitest' {
     maxWorkers: number
     databaseUrls: string[]
     awsEndpoint: string
+    redisConnection: { host: string; port: number }
   }
 }
