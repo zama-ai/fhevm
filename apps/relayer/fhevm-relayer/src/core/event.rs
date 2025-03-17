@@ -324,12 +324,27 @@ pub struct PublicDecryptRequest {
 
 #[derive(Debug, Clone)]
 pub struct UserDecryptRequest {
-    pub ct_handles: Vec<Bytes>,
-    pub encryption_key: Bytes,
-    pub user_address: Address,
-    pub contract_address: Address,
+    pub ct_handle_contract_pairs: Vec<CtHandleContractPair>,
+    pub request_validity: RequestValidity,
     pub contracts_chain_id: U256,
+    pub contract_addresses: Vec<Address>,
+    pub user_address: Address,
     pub signature: Bytes,
+    pub public_key: Bytes,
+}
+
+#[derive(Debug, Clone)]
+#[allow(non_snake_case)]
+pub struct CtHandleContractPair {
+    pub ct_handle: U256,
+    pub contract_address: Address,
+}
+
+#[derive(Debug, Clone)]
+#[allow(non_snake_case)]
+pub struct RequestValidity {
+    pub start_timestamp: U256,
+    pub duration_days: U256,
 }
 
 #[derive(Debug, Clone)]
@@ -350,15 +365,33 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
     type Error = anyhow::Error;
 
     fn try_from(value: UserDecryptRequestJson) -> Result<Self, Self::Error> {
-        let ct_handles: Vec<Bytes> = vec![(Bytes::from_str(&value.ct_handle)?)];
+        let mut ct_handle_contract_pairs = Vec::new();
+        for json_data in &value.ctHandleContractPairs {
+            ct_handle_contract_pairs.push(CtHandleContractPair {
+                ct_handle: U256::from_str_radix(&json_data.ctHandle, 16)?,
+                contract_address: Address::from_str(&json_data.contractAddress)?,
+            });
+        }
+
+        let request_validity = RequestValidity {
+            start_timestamp: U256::from_str(&value.requestValidity.startTimestamp)?,
+            duration_days: U256::from(value.requestValidity.durationDays),
+        };
+
+        let contract_addresses = &value
+            .contractAddresses
+            .iter()
+            .map(|addr| Address::from_str(addr))
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(UserDecryptRequest {
-            ct_handles,
-            encryption_key: Bytes::from_str(&value.enc_key)?,
+            ct_handle_contract_pairs,
+            request_validity,
+            contracts_chain_id: U256::from_str(&value.contractsChainId)?,
+            contract_addresses: contract_addresses.clone(),
             user_address: Address::from_str(&value.userAddress)?,
-            contract_address: Address::from_str(&value.contractAddress)?,
-            contracts_chain_id: parse_chain_id(&value.chainId)?,
             signature: Bytes::from_str(&value.signature)?,
+            public_key: Bytes::from_str(&value.publicKey)?,
         })
     }
 }

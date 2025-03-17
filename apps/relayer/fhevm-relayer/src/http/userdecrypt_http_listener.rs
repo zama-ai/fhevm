@@ -16,12 +16,27 @@ use tracing::info;
 #[derive(Debug, Deserialize, Clone)]
 #[allow(non_snake_case)]
 pub struct UserDecryptRequestJson {
-    pub signature: String,
+    pub ctHandleContractPairs: Vec<CtHandleContractPairJson>,
+    pub requestValidity: RequestValidityJson,
+    pub contractsChainId: String,
+    pub contractAddresses: Vec<String>,
     pub userAddress: String,
-    pub enc_key: String,
-    pub ct_handle: String,
+    pub signature: String,
+    pub publicKey: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[allow(non_snake_case)]
+pub struct CtHandleContractPairJson {
+    pub ctHandle: String,
     pub contractAddress: String,
-    pub chainId: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[allow(non_snake_case)]
+pub struct RequestValidityJson {
+    pub startTimestamp: String, // TODO(mano): Can be u64, as its epoch timestamp ?
+    pub durationDays: u32,
 }
 
 impl UserDecryptRequestJson {
@@ -76,7 +91,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
                 Ok(request) => request,
                 Err(error) => {
                     let error_response = UserDecryptErrorResponseJson {
-                        message: error.to_string(),
+                        message: format!("parsing request data: {}", error),
                     };
                     return (StatusCode::BAD_REQUEST, Json(error_response)).into_response();
                 }

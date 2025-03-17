@@ -9,6 +9,7 @@ use crate::blockchain::ethereum::bindings::IDecryptionManager::{
 use crate::blockchain::ethereum::bindings::ZKPoKManager;
 use crate::blockchain::public_decrypt_handler::DecryptionRequestData;
 use crate::core::errors::EventProcessingError;
+use crate::core::event::UserDecryptRequest;
 use alloy::primitives::{Address, Bytes, Uint, U256};
 use alloy::signers::SignerSync;
 use rusqlite::{Connection, Result};
@@ -95,61 +96,31 @@ impl ComputeCalldata {
     }
 
     pub fn user_decryption_req(
-        ct_handles: Vec<Bytes>,
-        contract_chain_id: U256,
-        contract_address: Address,
-        user_address: Address,
-        public_key: Bytes,
-        signature: Bytes,
+        user_decrypt_request: UserDecryptRequest,
     ) -> Result<Bytes, EventProcessingError> {
-        // Convert each handle to Uint<256, 4> and create a pair with the same contract address
-        let ct_handle_contract_pairs: Vec<CtHandleContractPair> = ct_handles
-            .into_iter()
-            .map(|handle_bytes| {
-                // Convert the bytes to a proper U256 handle
-                // We assume the handle bytes are already in proper format
-                // Typically handles are 32 bytes long representing a uint256
-                let mut handle_array = [0u8; 32];
-                let copy_len = std::cmp::min(handle_bytes.len(), 32);
-                handle_array[32 - copy_len..].copy_from_slice(&handle_bytes[..copy_len]);
-
-                let handle = Uint::<256, 4>::from_be_bytes(handle_array);
-
-                // TODO: we receive only one contract address, so for now
-                //  we use the same contract address for all in the contract_addresses array
-
-                // Create a pair with this handle and the provided contract address
-                CtHandleContractPair {
-                    ctHandle: handle,
-                    contractAddress: contract_address,
-                }
+        let ct_handle_contract_pairs = user_decrypt_request
+            .ct_handle_contract_pairs
+            .iter()
+            .map(|d| CtHandleContractPair {
+                ctHandle: d.ct_handle,
+                contractAddress: d.contract_address,
             })
-            .collect();
-
-        // Create validity struct with current timestamp and a default duration (e.g., 1 day)
-        let current_timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+            .collect::<Vec<_>>();
 
         let validity = RequestValidity {
-            startTimestamp: U256::from(current_timestamp),
-            durationDays: U256::from(1), // Default to 1 day validity
+            startTimestamp: user_decrypt_request.request_validity.start_timestamp,
+            durationDays: user_decrypt_request.request_validity.duration_days,
         };
-
-        // TODO: we receive only one contract address, so for now
-        //  we use the same contract address for all in the contract_addresses array
-        let contract_addresses = vec![contract_address];
 
         // Create the userDecryptionRequest call
         let call = DecyptionManager::userDecryptionRequestCall::new((
             ct_handle_contract_pairs,
             validity,
-            contract_chain_id,
-            contract_addresses,
-            user_address,
-            public_key,
-            signature,
+            user_decrypt_request.contracts_chain_id,
+            user_decrypt_request.contract_addresses,
+            user_decrypt_request.user_address,
+            user_decrypt_request.public_key,
+            user_decrypt_request.signature,
         ));
 
         // Encode the call to get the calldata

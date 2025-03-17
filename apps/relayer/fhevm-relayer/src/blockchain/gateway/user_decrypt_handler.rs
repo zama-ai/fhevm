@@ -20,7 +20,7 @@ use crate::{
 use std::str::FromStr;
 
 use alloy::{
-    primitives::{Address, Bytes, FixedBytes, U256},
+    primitives::{Address, FixedBytes, U256},
     rpc::types::TransactionReceipt,
 };
 
@@ -101,14 +101,7 @@ impl UserDecryptGatewayHandler {
         // Spawn a blocking task to make a transaction to rollup
         task::spawn(async move {
             match self_clone
-                .process_user_decryption_request(
-                    user_decrypt_request.ct_handles,
-                    user_decrypt_request.contracts_chain_id,
-                    user_decrypt_request.contract_address,
-                    user_decrypt_request.user_address,
-                    user_decrypt_request.encryption_key.clone(),
-                    user_decrypt_request.signature.clone(),
-                )
+                .process_user_decryption_request(user_decrypt_request)
                 .await
             {
                 Ok(user_decryption_id) => {
@@ -338,12 +331,7 @@ impl UserDecryptGatewayHandler {
 
     async fn process_user_decryption_request(
         &self,
-        ct_handles: Vec<Bytes>,
-        contract_chain_id: U256,
-        contract_address: Address,
-        user_address: Address,
-        public_key: Bytes,
-        signature: Bytes,
+        user_decrypt_request: UserDecryptRequest,
     ) -> Result<U256, EventProcessingError> {
         let processor = UserDecryptionRequestProcessor {
             handler: Arc::new(self.clone()),
@@ -361,16 +349,7 @@ impl UserDecryptGatewayHandler {
             .send_transaction(
                 "user_decryption_request",
                 decryption_manager_address,
-                || {
-                    ComputeCalldata::user_decryption_req(
-                        ct_handles.clone(),
-                        contract_chain_id,
-                        contract_address,
-                        user_address,
-                        public_key.clone(),
-                        signature.clone(),
-                    )
-                },
+                || ComputeCalldata::user_decryption_req(user_decrypt_request.clone()),
                 &processor,
             )
             .await
@@ -421,6 +400,7 @@ impl EventHandler<RelayerEvent> for UserDecryptGatewayHandler {
 async fn test_user_decryption_request() -> Result<(), Box<dyn std::error::Error>> {
     use crate::blockchain::ethereum::ComputeCalldata;
     use crate::config::settings::Settings;
+    use crate::core::event::{CtHandleContractPair, RequestValidity};
     use crate::transaction::sender::TransactionManager;
     use crate::transaction::TxConfig;
     use alloy::primitives::{Address, Bytes, U256};
@@ -470,37 +450,36 @@ async fn test_user_decryption_request() -> Result<(), Box<dyn std::error::Error>
     // Create minimal test data
     println!("Creating minimal test data...");
 
-    // 1. Simple handle - just a small number
-    let simple_handle = U256::from(123);
-    let mut handle_bytes = [0u8; 32];
-    simple_handle
-        .to_be_bytes::<32>()
-        .iter()
-        .enumerate()
-        .for_each(|(i, b)| handle_bytes[i] = *b);
-    let ct_handles = vec![Bytes::from(handle_bytes.to_vec())];
+    let simple_handle = U256::from(123); // Random handle
+    let contract_addresses = vec![decryption_manager_address];
+    let ct_handle_contract_pairs = vec![CtHandleContractPair {
+        ct_handle: simple_handle,
+        contract_address: decryption_manager_address,
+    }];
+    let request_validity = RequestValidity {
+        start_timestamp: U256::from(1672531200), // random unix timestamp
+        duration_days: U256::from(10),
+    };
 
-    // 2. Chain ID from config
-    let contract_chain_id = U256::from(rollup_settings.chain_id);
-
-    // 3. Contract address from config & user address from the transaction manager
-    let contract_address = decryption_manager_address;
+    let contracts_chain_id = U256::from(rollup_settings.chain_id);
     let user_address = manager.sender_address();
 
-    // 4. Simple public key and signature
     let public_key = Bytes::from(vec![1, 2, 3, 4, 5]);
     let signature = Bytes::from(vec![9, 8, 7, 6, 5]);
 
-    // Create and prepare calldata using your existing function
-    let calldata = ComputeCalldata::user_decryption_req(
-        ct_handles,
-        contract_chain_id,
-        contract_address,
+    let user_decrypt_request: UserDecryptRequest = UserDecryptRequest {
+        ct_handle_contract_pairs,
+        request_validity,
+        contracts_chain_id,
+        contract_addresses,
         user_address,
         public_key,
         signature,
-    )
-    .expect("Failed to prepare calldata");
+    };
+
+    // Create and prepare calldata using your existing function
+    let calldata = ComputeCalldata::user_decryption_req(user_decrypt_request)
+        .expect("Failed to prepare calldata");
 
     println!("Calldata prepared: 0x{}", hex::encode(&calldata));
 
