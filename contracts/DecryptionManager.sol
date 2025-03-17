@@ -95,19 +95,20 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
     /// @notice The maximum number of contracts that can request for user decryption at once.
     uint8 internal constant _MAX_USER_DECRYPT_CONTRACT_ADDRESSES = 10;
 
-    /// @notice Whether KMS signer has already responded to a public/user decryption request.
-    mapping(uint256 decryptionId => mapping(address kmsSigner => bool alreadyResponded)) internal alreadyResponded;
-
-    /// @notice Pending verified signatures for a public/user decryption.
-    mapping(uint256 decryptionId => mapping(bytes32 digest => bytes[] verifiedSignatures)) internal verifiedSignatures;
-
-    /// @notice The number of public/user decryptions requested, used to generate the publicDecryptionIds/userDecryptionIds.
-    // TODO: This will be replaced during gateway-l2/issues/92
-    uint256 internal decryptionCounter;
-
     // ----------------------------------------------------------------------------------------------
     // Public decryption state variables:
     // ----------------------------------------------------------------------------------------------
+
+    /// @notice The number of public decryptions requested, used to generate the publicDecryptionIds.
+    uint256 internal _publicDecryptionCounter;
+
+    /// @notice Whether KMS signer has already responded to a public decryption request.
+    mapping(uint256 publicDecryptionId => mapping(address kmsSigner => bool alreadyResponded))
+        internal _alreadyPublicDecryptResponded;
+
+    /// @notice Verified signatures for a public decryption.
+    mapping(uint256 publicDecryptionId => mapping(bytes32 digest => bytes[] verifiedSignatures))
+        internal _verifiedPublicDecryptSignatures;
 
     /// @notice Handles of the ciphertexts requested for a public decryption
     mapping(uint256 publicDecryptionId => uint256[] ctHandles) internal publicCtHandles;
@@ -125,6 +126,17 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
     // ----------------------------------------------------------------------------------------------
     // User decryption state variables:
     // ----------------------------------------------------------------------------------------------
+
+    /// @notice The number of user decryptions requested, used to generate the userDecryptionIds.
+    uint256 internal _userDecryptionCounter;
+
+    /// @notice Whether KMS signer has already responded to a user decryption request.
+    mapping(uint256 userDecryptionId => mapping(address kmsSigner => bool alreadyResponded))
+        internal _alreadyUserDecryptResponded;
+
+    /// @notice Verified signatures for a user decryption.
+    mapping(uint256 userDecryptionId => mapping(bytes32 digest => bytes[] verifiedSignatures))
+        internal _verifiedUserDecryptSignatures;
 
     /// @notice The decryption payloads stored during user decryption requests.
     mapping(uint256 userDecryptionId => UserDecryptionPayload payload) internal userDecryptionPayloads;
@@ -201,8 +213,8 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
         /// @dev See https://github.com/zama-ai/gateway-l2/issues/104.
         _checkCtMaterialKeyIds(snsCtMaterials);
 
-        decryptionCounter++;
-        uint256 publicDecryptionId = decryptionCounter;
+        _publicDecryptionCounter++;
+        uint256 publicDecryptionId = _publicDecryptionCounter;
 
         /// @dev The handles are used during response calls for the EIP712 signature validation.
         publicCtHandles[publicDecryptionId] = ctHandles;
@@ -231,20 +243,20 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
 
         /// @dev Recover the signer address from the signature and validate that is a KMS node that
         /// @dev has not already signed.
-        _validateEIP712Signature(publicDecryptionId, digest, signature);
+        _validatePublicDecryptEIP712Signature(publicDecryptionId, digest, signature);
 
-        verifiedSignatures[publicDecryptionId][digest].push(signature);
+        bytes[] storage verifiedSignatures = _verifiedPublicDecryptSignatures[publicDecryptionId][digest];
 
-        bytes[] memory verifiedSignaturesArray = verifiedSignatures[publicDecryptionId][digest];
+        verifiedSignatures.push(signature);
 
         /// @dev Send the event if and only if the consensus is reached in the current response call.
         /// @dev This means a "late" response will not be reverted, just ignored
-        if (!publicDecryptionDone[publicDecryptionId] && _isConsensusReachedPublic(verifiedSignaturesArray.length)) {
+        if (!publicDecryptionDone[publicDecryptionId] && _isConsensusReachedPublic(verifiedSignatures.length)) {
             publicDecryptionDone[publicDecryptionId] = true;
 
             // TODO: Implement sending service fees to PaymentManager contract
 
-            emit PublicDecryptionResponse(publicDecryptionId, decryptedResult, verifiedSignaturesArray);
+            emit PublicDecryptionResponse(publicDecryptionId, decryptedResult, verifiedSignatures);
         }
     }
 
@@ -310,9 +322,8 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
         /// @dev See https://github.com/zama-ai/gateway-l2/issues/104.
         _checkCtMaterialKeyIds(snsCtMaterials);
 
-        // TODO: This counter will be replaced during gateway-l2/issues/92
-        decryptionCounter++;
-        uint256 userDecryptionId = decryptionCounter;
+        _userDecryptionCounter++;
+        uint256 userDecryptionId = _userDecryptionCounter;
 
         /// @dev The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
         userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
@@ -398,9 +409,8 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
         /// @dev See https://github.com/zama-ai/gateway-l2/issues/104.
         _checkCtMaterialKeyIds(snsCtMaterials);
 
-        // TODO: This counter will be replaced during gateway-l2/issues/92
-        decryptionCounter++;
-        uint256 userDecryptionId = decryptionCounter;
+        _userDecryptionCounter++;
+        uint256 userDecryptionId = _userDecryptionCounter;
 
         /// @dev The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
         userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
@@ -432,22 +442,22 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
 
         /// @dev Recover the signer address from the signature and validate that is a KMS node that
         /// @dev has not already signed.
-        _validateEIP712Signature(userDecryptionId, digest, signature);
+        _validateUserDecryptEIP712Signature(userDecryptionId, digest, signature);
 
-        bytes[] storage userVerifiedSignatures = verifiedSignatures[userDecryptionId][digest];
-        userVerifiedSignatures.push(signature);
+        bytes[] storage verifiedSignatures = _verifiedUserDecryptSignatures[userDecryptionId][digest];
+        verifiedSignatures.push(signature);
 
         /// @dev Store the reencrypted share for the user decryption response.
         reencryptedShares[userDecryptionId].push(reencryptedShare);
 
         /// @dev Send the event if and only if the consensus is reached in the current response call.
         /// @dev This means a "late" response will not be reverted, just ignored
-        if (!userDecryptionDone[userDecryptionId] && _isConsensusReachedUser(userVerifiedSignatures.length)) {
+        if (!userDecryptionDone[userDecryptionId] && _isConsensusReachedUser(verifiedSignatures.length)) {
             userDecryptionDone[userDecryptionId] = true;
 
             // TODO: Implement sending service fees to PaymentManager contract
 
-            emit UserDecryptionResponse(userDecryptionId, reencryptedShares[userDecryptionId], userVerifiedSignatures);
+            emit UserDecryptionResponse(userDecryptionId, reencryptedShares[userDecryptionId], verifiedSignatures);
         }
     }
 
@@ -478,22 +488,48 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
             );
     }
 
-    /// @notice Validates the EIP712 signature for a given public/user decryption.
-    /// @param decryptionId The ID of the public or user decryption
-    /// @param digest The hash of the PublicDecryptVerification/UserDecryptResponseVerification structure
-    /// @param signature The signature to be validated
-    function _validateEIP712Signature(uint256 decryptionId, bytes32 digest, bytes calldata signature) internal virtual {
+    /// @notice Validates the EIP712 signature for a given public decryption.
+    /// @param publicDecryptionId The ID of the public decryption request.
+    /// @param digest The hash of the PublicDecryptVerification structure.
+    /// @param signature The signature to be validated.
+    function _validatePublicDecryptEIP712Signature(
+        uint256 publicDecryptionId,
+        bytes32 digest,
+        bytes calldata signature
+    ) internal virtual {
         address signer = ECDSA.recover(digest, signature);
 
-        /// @dev Check that the signer is a KMS node
+        /// @dev Check that the signer is a KMS node.
         _HTTPZ.checkIsKmsNode(signer);
 
-        /// @dev Check that the signer has not already responded to the public/user decryption request
-        if (alreadyResponded[decryptionId][signer]) {
-            revert KmsSignerAlreadyResponded(decryptionId, signer);
+        /// @dev Check that the signer has not already responded to the public decryption request.
+        if (_alreadyPublicDecryptResponded[publicDecryptionId][signer]) {
+            revert KmsSignerAlreadyResponded(publicDecryptionId, signer);
         }
 
-        alreadyResponded[decryptionId][signer] = true;
+        _alreadyPublicDecryptResponded[publicDecryptionId][signer] = true;
+    }
+
+    /// @notice Validates the EIP712 signature for a given user decryption.
+    /// @param userDecryptionId The ID of the user decryption request.
+    /// @param digest The hash of the UserDecryptVerification structure.
+    /// @param signature The signature to be validated.
+    function _validateUserDecryptEIP712Signature(
+        uint256 userDecryptionId,
+        bytes32 digest,
+        bytes calldata signature
+    ) internal virtual {
+        address signer = ECDSA.recover(digest, signature);
+
+        /// @dev Check that the signer is a KMS node.
+        _HTTPZ.checkIsKmsNode(signer);
+
+        /// @dev Check that the signer has not already responded to the user decryption request.
+        if (_alreadyUserDecryptResponded[userDecryptionId][signer]) {
+            revert KmsSignerAlreadyResponded(userDecryptionId, signer);
+        }
+
+        _alreadyUserDecryptResponded[userDecryptionId][signer] = true;
     }
 
     /// @notice Validates the EIP712 signature for a given user decryption request

@@ -11,6 +11,7 @@
       }
     ],
     "max-line-length": ["error", 125],
+    "max-states-count": "off",
     "named-parameters-mapping": "warn",
     "no-console": "off",
     "no-global-import": "off",
