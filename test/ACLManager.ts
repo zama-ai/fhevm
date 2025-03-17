@@ -1,6 +1,8 @@
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { expect } from "chai";
+import dotenv from "dotenv";
+import fs from "fs";
 import hre from "hardhat";
 
 import { ACLManager, CiphertextManager, HTTPZ } from "../typechain-types";
@@ -24,9 +26,14 @@ describe("ACLManager", function () {
   let fakeSigner: HardhatEthersSigner;
 
   async function deployACLManagerFixture() {
-    const { httpz, ciphertextManager, coprocessorSigners, signers } = await deployCiphertextManagerFixture();
-    const ACLManager = await hre.ethers.getContractFactory("ACLManager");
-    const aclManager = await ACLManager.deploy(httpz, ciphertextManager);
+    const { httpz, owner, ciphertextManager, coprocessorSigners, signers } = await deployCiphertextManagerFixture();
+
+    // Deploying ACLManager using its deploy task
+    await hre.run("task:deployAclManager", {
+      deployerPrivateKey: owner.privateKey,
+    });
+    const parsedEnvAclManager = dotenv.parse(fs.readFileSync("addresses/.env.acl_manager"));
+    const aclManager = await hre.ethers.getContractAt("ACLManager", parsedEnvAclManager.ACL_MANAGER_ADDRESS);
 
     // Add the ciphertext to the CiphertextManager contract state which will be used during the tests
     for (let i = 0; i < coprocessorSigners.length; i++) {

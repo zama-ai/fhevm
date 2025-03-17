@@ -5,8 +5,11 @@ compile:
 	npx hardhat compile
 
 # Define it as a phony target to avoid conflicts with the test directory
+TEST_DEPLOY_KEY = $(shell npx hardhat get-accounts --num-accounts 1 | grep Private | cut -d " " -f 3)
 .PHONY: test
 test:
+	# Recompute addresses values that will be used for the tests, in case they have changed
+	npx hardhat compile && npx hardhat task:deployEmptyUUPSProxies --deployer-private-key "$(TEST_DEPLOY_KEY)" --network hardhat
 	npx hardhat test
 
 get-accounts:

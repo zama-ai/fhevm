@@ -1,4 +1,7 @@
+import { HardhatEthersHelpers } from "@nomicfoundation/hardhat-ethers/types";
+import { HardhatUpgrades } from "@openzeppelin/hardhat-upgrades";
 import dotenv from "dotenv";
+import { Wallet } from "ethers";
 import fs from "fs";
 import { task } from "hardhat/config";
 import type { TaskArguments } from "hardhat/types";
@@ -13,15 +16,66 @@ function getRequiredEnvVar(name: string): string {
   return process.env[name]!;
 }
 
-// Write the content to a file
-function writeEnvFile(filePath: string, content: string): void {
-  try {
-    fs.writeFileSync(filePath, content, { flag: "w" });
-    console.log(`Content written to ${filePath} successfully!\n`);
-  } catch (err) {
-    console.error(`Failed to write to ${filePath}:`, err);
-  }
+// Deploy a new EmptyUUPSProxy contract
+async function deployEmptyUUPS(ethers: HardhatEthersHelpers, upgrades: HardhatUpgrades, deployer: Wallet) {
+  const factory = await ethers.getContractFactory("EmptyUUPSProxy", deployer);
+  const UUPSEmpty = await upgrades.deployProxy(factory, [deployer.address], {
+    initializer: "initialize",
+    kind: "uups",
+  });
+  await UUPSEmpty.waitForDeployment();
+  const UUPSEmptyAddress = await UUPSEmpty.getAddress();
+  console.log("EmptyUUPS proxy contract successfully deployed!\n");
+  return UUPSEmptyAddress;
 }
+
+task("task:deployEmptyUUPSProxies")
+  .addParam("deployerPrivateKey", "The deployer private key")
+  .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades, run }) {
+    const deployer = new ethers.Wallet(taskArguments.deployerPrivateKey).connect(ethers.provider);
+
+    console.log("Deploying an EmptyUUPS proxy contract for ACLManager...");
+    const aclManagerAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+    await run("task:setContractAddress", {
+      name: "AclManager",
+      address: aclManagerAddress,
+    });
+
+    console.log("Deploying an EmptyUUPS proxy contract for CiphertextManager...");
+    const ciphertextManagerAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+    await run("task:setContractAddress", {
+      name: "CiphertextManager",
+      address: ciphertextManagerAddress,
+    });
+
+    console.log("Deploying an EmptyUUPS proxy contract for DecryptionManager...");
+    const decryptionManagerAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+    await run("task:setContractAddress", {
+      name: "DecryptionManager",
+      address: decryptionManagerAddress,
+    });
+
+    console.log("Deploying an EmptyUUPS proxy contract for HTTPZ...");
+    const httpzAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+    await run("task:setContractAddress", {
+      name: "Httpz",
+      address: httpzAddress,
+    });
+
+    console.log("Deploying an EmptyUUPS proxy contract for KeyManager...");
+    const keyManagerAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+    await run("task:setContractAddress", {
+      name: "KeyManager",
+      address: keyManagerAddress,
+    });
+
+    console.log("Deploying an EmptyUUPS proxy contract for ZKPoKManager...");
+    const zkpokManagerAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+    await run("task:setContractAddress", {
+      name: "ZkpokManager",
+      address: zkpokManagerAddress,
+    });
+  });
 
 // Deploy the HTTPZ contract
 task("task:deployHttpz")
@@ -30,7 +84,7 @@ task("task:deployHttpz")
   .addParam("numKmsNodes", "The number of KMS nodes")
   .addParam("numCoprocessors", "The number of coprocessors")
   .addParam("numNetworks", "The number of L1 networks")
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+  .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
     const deployer = new ethers.Wallet(taskArguments.deployerPrivateKey).connect(ethers.provider);
 
     // Parse the protocol metadata
@@ -82,177 +136,165 @@ task("task:deployHttpz")
       });
     }
 
-    const HTTPZ = await ethers.getContractFactory("HTTPZ", deployer);
-    const httpz = await HTTPZ.deploy(
-      protocolMetadata,
-      adminAddresses,
-      kmsThreshold,
-      kmsNodes,
-      coprocessors,
-      layer1Networks,
-    );
+    // Upgrade proxy to HTTPZ
+    const proxyImplementation = await ethers.getContractFactory("EmptyUUPSProxy", deployer);
+    const newImplem = await ethers.getContractFactory("HTTPZ", deployer);
 
-    // Wait for the deployment to be confirmed
-    await httpz.waitForDeployment();
+    const parsedEnvHttpz = dotenv.parse(fs.readFileSync("addresses/.env.httpz"));
+    const proxyAddress = parsedEnvHttpz.HTTPZ_ADDRESS;
+    const proxy = await upgrades.forceImport(proxyAddress, proxyImplementation);
+    await upgrades.upgradeProxy(proxy, newImplem, {
+      call: {
+        fn: "initialize",
+        args: [protocolMetadata, adminAddresses, kmsThreshold, kmsNodes, coprocessors, layer1Networks],
+      },
+    });
 
-    const httpzAddress = await httpz.getAddress();
-
-    console.log("HTTPZ contract deployed to:", httpzAddress);
+    console.log("HTTPZ contract deployed to:", proxyAddress);
     console.log("Protocol metadata:", protocolMetadata);
     console.log("Admin addresses:", adminAddresses, "\n");
     console.log("KMS threshold:", kmsThreshold, "\n");
     console.log("KMS nodes:", kmsNodes, "\n");
     console.log("Coprocessors:", coprocessors, "\n");
     console.log("L1 networks:", layer1Networks, "\n");
-
-    // Save the HTTPZ address to the .env.httpz file
-    const envFilePath = path.join(__dirname, "../addresses/.env.httpz");
-    const content = `HTTPZ_ADDRESS=${httpzAddress}`;
-    writeEnvFile(envFilePath, content);
   });
 
 // Deploy the ZKPoKManager contract
 task("task:deployZkpokManager")
   .addParam("deployerPrivateKey", "The deployer private key")
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
-    const parsedEnvHttpz = dotenv.parse(fs.readFileSync("addresses/.env.httpz"));
-    const httpzAddress = parsedEnvHttpz.HTTPZ_ADDRESS;
-
-    const dummyPaymentManagerAddress = "0x0000000000000000000000000000000000000000";
-
+  .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
     const deployer = new ethers.Wallet(taskArguments.deployerPrivateKey).connect(ethers.provider);
 
-    // Deploy ZKPoKManager contract
-    const ZKPoKManager = await ethers.getContractFactory("ZKPoKManager", deployer);
-    const zkpokManager = await ZKPoKManager.deploy(httpzAddress, dummyPaymentManagerAddress);
+    // Upgrade proxy to ZKPoKManager
+    const proxyImplementation = await ethers.getContractFactory("EmptyUUPSProxy", deployer);
+    const newImplem = await ethers.getContractFactory("ZKPoKManager", deployer);
 
-    // Wait for the deployment to be confirmed
-    await zkpokManager.waitForDeployment();
+    const parsedEnvZkpokManager = dotenv.parse(fs.readFileSync("addresses/.env.zkpok_manager"));
+    const proxyAddress = parsedEnvZkpokManager.ZKPOK_MANAGER_ADDRESS;
+    const proxy = await upgrades.forceImport(proxyAddress, proxyImplementation);
+    await upgrades.upgradeProxy(proxy, newImplem, { call: { fn: "initialize" } });
 
-    const zkpokManagerAddress = await zkpokManager.getAddress();
-
-    console.log("ZKPoKManager contract deployed to:", zkpokManagerAddress);
-
-    // Save the ZKPoKManager address to the .env.zkpok_manager file
-    const envFilePath = path.join(__dirname, "../addresses/.env.zkpok_manager");
-    const content = `ZKPOK_MANAGER_ADDRESS=${zkpokManagerAddress}`;
-    writeEnvFile(envFilePath, content);
+    console.log(`ZKPoKManager code set successfully at address: ${proxyAddress}\n`);
   });
 
 // Deploy the KeyManager contract
 task("task:deployKeyManager")
   .addParam("deployerPrivateKey", "The deployer private key")
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+  .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
     const deployer = new ethers.Wallet(taskArguments.deployerPrivateKey).connect(ethers.provider);
-
-    const parsedEnvHttpz = dotenv.parse(fs.readFileSync("addresses/.env.httpz"));
-    const httpzAddress = parsedEnvHttpz.HTTPZ_ADDRESS;
 
     const fheParamsName = getRequiredEnvVar("FHE_PARAMS_NAME");
     const fheParamsDigest = getRequiredEnvVar("FHE_PARAMS_DIGEST");
 
-    const KeyManager = await ethers.getContractFactory("KeyManager", deployer);
-    const keyManager = await KeyManager.deploy(httpzAddress, fheParamsName, fheParamsDigest);
+    // Upgrade proxy to KeyManager
+    const proxyImplementation = await ethers.getContractFactory("EmptyUUPSProxy", deployer);
+    const newImplem = await ethers.getContractFactory("KeyManager", deployer);
 
-    // Wait for the deployment to be confirmed
-    await keyManager.waitForDeployment();
+    const parsedEnvKeyManager = dotenv.parse(fs.readFileSync("addresses/.env.key_manager"));
+    const proxyAddress = parsedEnvKeyManager.KEY_MANAGER_ADDRESS;
+    const proxy = await upgrades.forceImport(proxyAddress, proxyImplementation);
+    await upgrades.upgradeProxy(proxy, newImplem, {
+      call: { fn: "initialize", args: [fheParamsName, fheParamsDigest] },
+    });
 
-    const keyManagerAddress = await keyManager.getAddress();
-
-    console.log("KeyManager contract deployed to:", keyManagerAddress);
-
-    const envFilePath = path.join(__dirname, "../addresses/.env.key_manager");
-    const content = `KEY_MANAGER_ADDRESS=${keyManagerAddress}`;
-    writeEnvFile(envFilePath, content);
+    console.log(`KeyManager code set successfully at address: ${proxyAddress}\n`);
   });
 
 // Deploy the CiphertextManager contract
 task("task:deployCiphertextManager")
   .addParam("deployerPrivateKey", "The deployer private key")
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+  .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
     const deployer = new ethers.Wallet(taskArguments.deployerPrivateKey).connect(ethers.provider);
 
-    const parsedEnvHttpz = dotenv.parse(fs.readFileSync("addresses/.env.httpz"));
-    const httpzAddress = parsedEnvHttpz.HTTPZ_ADDRESS;
+    // Upgrade proxy to CiphertextManager
+    const proxyImplementation = await ethers.getContractFactory("EmptyUUPSProxy", deployer);
+    const newImplem = await ethers.getContractFactory("CiphertextManager", deployer);
 
-    const parsedEnvKeyManager = dotenv.parse(fs.readFileSync("addresses/.env.key_manager"));
-    const keyManagerAddress = parsedEnvKeyManager.KEY_MANAGER_ADDRESS;
+    const parsedEnvCiphertextManager = dotenv.parse(fs.readFileSync("addresses/.env.ciphertext_manager"));
+    const proxyAddress = parsedEnvCiphertextManager.CIPHERTEXT_MANAGER_ADDRESS;
+    const proxy = await upgrades.forceImport(proxyAddress, proxyImplementation);
+    await upgrades.upgradeProxy(proxy, newImplem, { call: { fn: "initialize" } });
 
-    const CiphertextManager = await ethers.getContractFactory("CiphertextManager", deployer);
-    const ciphertextManager = await CiphertextManager.deploy(httpzAddress, keyManagerAddress);
-
-    // Wait for the deployment to be confirmed
-    await ciphertextManager.waitForDeployment();
-
-    const ciphertextManagerAddress = await ciphertextManager.getAddress();
-
-    console.log("CiphertextManager contract deployed to:", ciphertextManagerAddress);
-
-    const envFilePath = path.join(__dirname, "../addresses/.env.ciphertext_manager");
-    const content = `CIPHERTEXT_MANAGER_ADDRESS=${ciphertextManagerAddress}`;
-    writeEnvFile(envFilePath, content);
+    console.log(`CiphertextManager code set successfully at address: ${proxyAddress}\n`);
   });
 
 // Deploy the ACLManager contract
 task("task:deployAclManager")
   .addParam("deployerPrivateKey", "The deployer private key")
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+  .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
     const deployer = new ethers.Wallet(taskArguments.deployerPrivateKey).connect(ethers.provider);
 
-    const parsedEnvHttpz = dotenv.parse(fs.readFileSync("addresses/.env.httpz"));
-    const httpzAddress = parsedEnvHttpz.HTTPZ_ADDRESS;
+    // Upgrade proxy to ACLManager
+    const proxyImplementation = await ethers.getContractFactory("EmptyUUPSProxy", deployer);
+    const newImplem = await ethers.getContractFactory("ACLManager", deployer);
 
-    const parsedEnvCiphertextManager = dotenv.parse(fs.readFileSync("addresses/.env.ciphertext_manager"));
-    const ciphertextManagerAddress = parsedEnvCiphertextManager.CIPHERTEXT_MANAGER_ADDRESS;
+    const parsedEnvAclManager = dotenv.parse(fs.readFileSync("addresses/.env.acl_manager"));
+    const proxyAddress = parsedEnvAclManager.ACL_MANAGER_ADDRESS;
+    const proxy = await upgrades.forceImport(proxyAddress, proxyImplementation);
+    await upgrades.upgradeProxy(proxy, newImplem, { call: { fn: "initialize" } });
 
-    const ACLManager = await ethers.getContractFactory("ACLManager", deployer);
-    const aclManager = await ACLManager.deploy(httpzAddress, ciphertextManagerAddress);
-
-    // Wait for the deployment to be confirmed
-    await aclManager.waitForDeployment();
-
-    const aclManagerAddress = await aclManager.getAddress();
-
-    console.log("ACLManager contract deployed to:", aclManagerAddress);
-
-    const envFilePath = path.join(__dirname, "../addresses/.env.acl_manager");
-    const content = `ACL_MANAGER_ADDRESS=${aclManagerAddress}`;
-    writeEnvFile(envFilePath, content);
+    console.log(`ACLManager code set successfully at address: ${proxyAddress}\n`);
   });
 
 // Deploy the DecryptionManager contract
 task("task:deployDecryptionManager")
   .addParam("deployerPrivateKey", "The deployer private key")
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+  .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
     const deployer = new ethers.Wallet(taskArguments.deployerPrivateKey).connect(ethers.provider);
 
-    const parsedEnvHttpz = dotenv.parse(fs.readFileSync("addresses/.env.httpz"));
-    const httpzAddress = parsedEnvHttpz.HTTPZ_ADDRESS;
+    // Upgrade proxy to DecryptionManager
+    const proxyImplementation = await ethers.getContractFactory("EmptyUUPSProxy", deployer);
+    const newImplem = await ethers.getContractFactory("DecryptionManager", deployer);
 
-    const parsedEnvAclManager = dotenv.parse(fs.readFileSync("addresses/.env.acl_manager"));
-    const aclManagerAddress = parsedEnvAclManager.ACL_MANAGER_ADDRESS;
+    const parsedEnvDecryptionManager = dotenv.parse(fs.readFileSync("addresses/.env.decryption_manager"));
+    const proxyAddress = parsedEnvDecryptionManager.DECRYPTION_MANAGER_ADDRESS;
+    const proxy = await upgrades.forceImport(proxyAddress, proxyImplementation);
+    await upgrades.upgradeProxy(proxy, newImplem, { call: { fn: "initialize" } });
 
-    const parsedEnvCiphertextManager = dotenv.parse(fs.readFileSync("addresses/.env.ciphertext_manager"));
-    const ciphertextManagerAddress = parsedEnvCiphertextManager.CIPHERTEXT_MANAGER_ADDRESS;
-
-    const dummyPaymentManagerAddress = "0x0000000000000000000000000000000000000000";
-
-    const DecryptionManager = await ethers.getContractFactory("DecryptionManager", deployer);
-    const decryptionManager = await DecryptionManager.deploy(
-      httpzAddress,
-      aclManagerAddress,
-      ciphertextManagerAddress,
-      dummyPaymentManagerAddress,
-    );
-
-    // Wait for the deployment to be confirmed
-    await decryptionManager.waitForDeployment();
-
-    const decryptionManagerAddress = await decryptionManager.getAddress();
-
-    console.log("DecryptionManager contract deployed to:", decryptionManagerAddress);
-
-    const envFilePath = path.join(__dirname, "../addresses/.env.decryption_manager");
-    const content = `DECRYPTION_MANAGER_ADDRESS=${decryptionManagerAddress}`;
-    writeEnvFile(envFilePath, content);
+    console.log(`DecryptionManager code set successfully at address: ${proxyAddress}\n`);
   });
+
+// A helpher task to update a contract's address in their .sol and .env file in the `addresses` folder
+task("task:setContractAddress")
+  .addParam("name", "The name of the contract (PascalCase)")
+  .addParam("address", "The address of the contract")
+  .setAction(async function (taskArguments: TaskArguments) {
+    const name = taskArguments.name;
+    const address = taskArguments.address;
+
+    // Write address of contract in its addresses/.env.xxx file
+    const envFilePath = path.join(__dirname, `../addresses/.env.${pascalCaseToSnakeCase(name)}`);
+    const content = `${pascalCaseToSnakeCase(name).toUpperCase()}_ADDRESS=${address}\n`;
+    try {
+      fs.writeFileSync(envFilePath, content, { flag: "w" });
+      console.log(`${name} address ${address} written successfully!`);
+    } catch (err) {
+      console.error(`Failed to write ${name} address:`, err);
+    }
+
+    // Write address of contract in its addresses/xxxAddress.sol file
+    const solidityTemplate = `// SPDX-License-Identifier: BSD-3-Clause-Clear\n
+pragma solidity ^0.8.24;\n
+address constant ${pascalCaseToCamelCase(name)}Address = ${address};\n`;
+
+    try {
+      fs.writeFileSync(`./addresses/${name}Address.sol`, solidityTemplate, {
+        encoding: "utf8",
+        flag: "w",
+      });
+      console.log(`./addresses/${name}Address.sol file generated successfully!\n`);
+    } catch (error) {
+      console.error(`Failed to write ./addresses/${name}Address.sol\n`, error);
+    }
+  });
+
+function pascalCaseToSnakeCase(str: string) {
+  return str
+    .split(/\.?(?=[A-Z])/)
+    .join("_")
+    .toLowerCase();
+}
+
+function pascalCaseToCamelCase(str: string) {
+  return str[0].toLowerCase() + str.substring(1);
+}

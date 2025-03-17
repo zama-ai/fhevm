@@ -1,5 +1,19 @@
 import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
+import dotenv from "dotenv";
+import fs from "fs";
 import hre from "hardhat";
+import { config } from "hardhat";
+import { HDAccountsUserConfig } from "hardhat/types";
+
+/// @dev Deploy the empty proxies
+export async function deployEmptyProxiesFixture() {
+  const accounts = config.networks.hardhat.accounts as HDAccountsUserConfig;
+  const owner = hre.ethers.Wallet.fromPhrase(accounts.mnemonic, hre.ethers.provider);
+  await hre.run("task:deployEmptyUUPSProxies", {
+    deployerPrivateKey: owner.privateKey,
+  });
+  return owner;
+}
 
 /// @dev Deploy the HTTPZ contract, initialize the protocol, add KMS nodes and coprocessors
 export async function deployHTTPZFixture() {
@@ -19,50 +33,54 @@ export async function deployHTTPZFixture() {
   // - the admin can add KMS nodes, coprocessors, networks, trigger key/CRS/KSK generation
   // - the user has no particular rights and is mostly used to check roles are properly set
   const signers = await hre.ethers.getSigners();
-  const [owner, admin, user] = signers.splice(0, 3);
+  const owner = await loadFixture(deployEmptyProxiesFixture);
+  const [admin, user] = signers.splice(1, 3);
   const admins = [admin];
 
   const kmsSigners = signers.splice(0, nKmsNodes);
   const coprocessorSigners = signers.splice(0, nCoprocessors);
 
-  const protocolMetadata = { name: "Protocol", website: "https://protocol.com" };
+  // Setting up env variables for deployHttpz task
+  process.env["PROTOCOL_NAME"] = "Protocol";
+  process.env["PROTOCOL_WEBSITE"] = "https://protocol.com";
+  process.env["KMS_THRESHOLD"] = kmsThreshold.toString();
+  process.env[`ADMIN_ADDRESS_0`] = admin.address;
 
   // Create dummy KMS nodes with the signers' addresses
-  const kmsNodes = kmsSigners.map((kmsNode) => ({
-    connectorAddress: kmsNode.address,
-    identity: hre.ethers.randomBytes(32),
-    ipAddress: "127.0.0.1",
-    daUrl: "https://da.com",
-  }));
+  const kmsNodes = kmsSigners.forEach((kmsNode, idx) => {
+    process.env[`KMS_NODE_ADDRESS_${idx}`] = kmsNode.address;
+    (process.env[`KMS_NODE_IDENTITY_${idx}`] = toHexString(hre.ethers.randomBytes(32))),
+      (process.env[`KMS_NODE_IP_ADDRESS_${idx}`] = "127.0.0.1");
+    process.env[`KMS_NODE_DA_URL_${idx}`] = "https://da.com";
+  });
 
   // Create dummy Coprocessors with the signers' addresses
-  const coprocessors = coprocessorSigners.map((coprocessorSigner) => ({
-    transactionSenderAddress: coprocessorSigner.address,
-    identity: hre.ethers.randomBytes(32),
-    daUrl: "https://da.com",
-    s3BucketUrl: "s3://bucket",
-  }));
+  const coprocessors = coprocessorSigners.forEach((coprocessorSigner, idx) => {
+    process.env[`COPROCESSOR_ADDRESS_${idx}`] = coprocessorSigner.address;
+    (process.env[`COPROCESSOR_IDENTITY_${idx}`] = toHexString(hre.ethers.randomBytes(32))),
+      (process.env[`COPROCESSOR_DA_URL_${idx}`] = "https://da.com");
+    process.env[`COPROCESSOR_S3_BUCKET_URL_${idx}`] = "s3://bucket";
+  });
 
   // Create dummy Networks with the chain IDs
-  const networks = chainIds.map((chainId) => ({
-    chainId: chainId,
-    httpzExecutor: hre.ethers.getAddress("0x1234567890abcdef1234567890abcdef12345678"),
-    aclAddress: hre.ethers.getAddress("0xabcdef1234567890abcdef1234567890abcdef12"),
-    name: "Network",
-    website: "https://network.com",
-  }));
+  const networks = chainIds.map((chainId, idx) => {
+    process.env[`NETWORK_CHAIN_ID_${idx}`] = chainId.toString();
+    (process.env[`NETWORK_HTTPZ_EXECUTOR_${idx}`] = "0x1234567890abcdef1234567890abcdef12345678"),
+      (process.env[`NETWORK_ACL_ADDRESS_${idx}`] = "0xabcdef1234567890abcdef1234567890abcdef12");
+    process.env[`NETWORK_NAME_${idx}`] = "Network";
+    process.env[`NETWORK_WEBSITE_${idx}`] = "https://network.com";
+  });
 
-  const HTTPZ = await hre.ethers.getContractFactory("HTTPZ", owner);
+  await hre.run("task:deployHttpz", {
+    deployerPrivateKey: owner.privateKey,
+    numAdmins: admins.length.toString(),
+    numKmsNodes: nKmsNodes.toString(),
+    numCoprocessors: nCoprocessors.toString(),
+    numNetworks: chainIds.length.toString(),
+  });
 
-  // Deploy the HTTPZ contract
-  const httpz = await HTTPZ.connect(owner).deploy(
-    protocolMetadata,
-    admins,
-    kmsThreshold,
-    kmsNodes,
-    coprocessors,
-    networks,
-  );
+  const parsedEnvHttpz = dotenv.parse(fs.readFileSync("addresses/.env.httpz"));
+  const httpz = await hre.ethers.getContractAt("HTTPZ", parsedEnvHttpz.HTTPZ_ADDRESS);
 
   return {
     httpz,
@@ -95,10 +113,12 @@ export async function deployZKPoKManagerFixture() {
     chainIds,
   } = await loadFixture(deployHTTPZFixture);
 
-  const dummyPaymentManager = "0x1234567890abcdef1234567890abcdef12345678";
+  await hre.run("task:deployZkpokManager", {
+    deployerPrivateKey: owner.privateKey,
+  });
 
-  const ZKPoKManager = await hre.ethers.getContractFactory("ZKPoKManager", owner);
-  const zkpokManager = await ZKPoKManager.deploy(httpz, dummyPaymentManager);
+  const parsedEnvZkpokManager = dotenv.parse(fs.readFileSync("addresses/.env.zkpok_manager"));
+  const zkpokManager = await hre.ethers.getContractAt("ZKPoKManager", parsedEnvZkpokManager.ZKPOK_MANAGER_ADDRESS);
 
   return {
     httpz,
@@ -132,12 +152,18 @@ export async function deployKeyManagerFixture() {
     chainIds,
   } = await loadFixture(deployHTTPZFixture);
 
-  // Create dummy FHE params
+  // Create dummy FHE params and set up env variables for deployKeyManager task
   const fheParamsName = "TEST";
   const fheParamsDigest = hre.ethers.randomBytes(32);
+  process.env["FHE_PARAMS_NAME"] = fheParamsName;
+  process.env["FHE_PARAMS_DIGEST"] = toHexString(fheParamsDigest);
 
-  const KeyManager = await hre.ethers.getContractFactory("KeyManager", owner);
-  const keyManager = await KeyManager.deploy(httpz, fheParamsName, fheParamsDigest);
+  await hre.run("task:deployKeyManager", {
+    deployerPrivateKey: owner.privateKey,
+  });
+
+  const parsedEnvKeyManager = dotenv.parse(fs.readFileSync("addresses/.env.key_manager"));
+  const keyManager = await hre.ethers.getContractAt("KeyManager", parsedEnvKeyManager.KEY_MANAGER_ADDRESS);
 
   return {
     httpz,
@@ -176,8 +202,15 @@ export async function deployCiphertextManagerFixture() {
     fheParamsDigest,
   } = await loadFixture(deployKeyManagerFixture);
 
-  const CiphertextManager = await hre.ethers.getContractFactory("CiphertextManager", owner);
-  const ciphertextManager = await CiphertextManager.deploy(httpz, keyManager);
+  await hre.run("task:deployCiphertextManager", {
+    deployerPrivateKey: owner.privateKey,
+  });
+
+  const parsedEnvCiphertextManager = dotenv.parse(fs.readFileSync("addresses/.env.ciphertext_manager"));
+  const ciphertextManager = await hre.ethers.getContractAt(
+    "CiphertextManager",
+    parsedEnvCiphertextManager.CIPHERTEXT_MANAGER_ADDRESS,
+  );
 
   return {
     httpz,
@@ -218,8 +251,12 @@ export async function deployACLManagerFixture() {
     fheParamsDigest,
   } = await loadFixture(deployCiphertextManagerFixture);
 
-  const ACLManager = await hre.ethers.getContractFactory("ACLManager", owner);
-  const aclManager = await ACLManager.deploy(httpz, ciphertextManager);
+  await hre.run("task:deployAclManager", {
+    deployerPrivateKey: owner.privateKey,
+  });
+
+  const parsedEnvAclManager = dotenv.parse(fs.readFileSync("addresses/.env.acl_manager"));
+  const aclManager = await hre.ethers.getContractAt("ACLManager", parsedEnvAclManager.ACL_MANAGER_ADDRESS);
 
   return {
     httpz,
@@ -262,10 +299,15 @@ export async function deployDecryptionManagerFixture() {
     fheParamsDigest,
   } = await loadFixture(deployACLManagerFixture);
 
-  const dummyPaymentManager = "0x1234567890abcdef1234567890abcdef12345678";
+  await hre.run("task:deployDecryptionManager", {
+    deployerPrivateKey: owner.privateKey,
+  });
 
-  const DecryptionManager = await hre.ethers.getContractFactory("DecryptionManager", owner);
-  const decryptionManager = await DecryptionManager.deploy(httpz, aclManager, ciphertextManager, dummyPaymentManager);
+  const parsedEnvDecryptionManager = dotenv.parse(fs.readFileSync("addresses/.env.decryption_manager"));
+  const decryptionManager = await hre.ethers.getContractAt(
+    "DecryptionManager",
+    parsedEnvDecryptionManager.DECRYPTION_MANAGER_ADDRESS,
+  );
 
   return {
     httpz,
@@ -286,4 +328,14 @@ export async function deployDecryptionManagerFixture() {
     fheParamsName,
     fheParamsDigest,
   };
+}
+
+/// @dev A helper function to convert a bytearray into an hex string (prefixed with '0x')
+function toHexString(byteArray: Uint8Array) {
+  return (
+    "0x" +
+    Array.from(byteArray, function (byte) {
+      return ("0" + (byte & 0xff).toString(16)).slice(-2);
+    }).join("")
+  );
 }

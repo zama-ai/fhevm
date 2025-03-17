@@ -1,4 +1,5 @@
 import "@nomicfoundation/hardhat-toolbox";
+import "@openzeppelin/hardhat-upgrades";
 import dotenv from "dotenv";
 import { HardhatUserConfig } from "hardhat/config";
 import { resolve } from "path";
@@ -68,7 +69,24 @@ const config: HardhatUserConfig = {
     },
   },
   // We use 0.8.24 to align with the solidity compiler version used in the host chain smart contracts
-  solidity: "0.8.24",
+  solidity: {
+    version: "0.8.24",
+    settings: {
+      metadata: {
+        // Not including the metadata hash
+        // https://github.com/paulrberg/hardhat-template/issues/31
+        bytecodeHash: "none",
+      },
+      // Disable the optimizer when debugging
+      // https://hardhat.org/hardhat-network/#solidity-optimizer-support
+      optimizer: {
+        enabled: true,
+        runs: 800,
+      },
+      evmVersion: "cancun",
+      viaIR: false,
+    },
+  },
   paths: {
     artifacts: "./artifacts",
     cache: "./cache",

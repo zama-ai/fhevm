@@ -1,7 +1,7 @@
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { expect } from "chai";
-import hre from "hardhat";
+import hre, { ethers } from "hardhat";
 
 import { deployHTTPZFixture, toValues } from "./utils/";
 
@@ -78,40 +78,52 @@ describe("HTTPZ", function () {
     };
   }
 
+  async function deployEmptyProxy(owner: HardhatEthersSigner) {
+    const proxyImplementation = await ethers.getContractFactory("EmptyUUPSProxy", owner);
+    const proxyContract = await hre.upgrades.deployProxy(proxyImplementation, [owner.address], {
+      initializer: "initialize",
+      kind: "uups",
+    });
+    await proxyContract.waitForDeployment();
+    return proxyContract;
+  }
+
   describe("Deployment", function () {
     it("Should revert because of bad KMS threshold", async function () {
-      const { HTTPZ, owner, protocolMetadata, admins, kmsNodes, coprocessors, networks } =
+      const { HTTPZ, protocolMetadata, owner, admins, kmsNodes, coprocessors, networks } =
         await loadFixture(getInputsForDeployFixture);
+      const proxyContract = await deployEmptyProxy(owner);
 
       // Define a bad KMS threshold
       // The threshold must verify `3t < n`, with `n` the number of KMS nodes
       const badKmsThreshold = kmsNodes.length + 1;
 
       // Check that the initialization reverts
-      await expect(
-        HTTPZ.connect(owner).deploy(protocolMetadata, admins, badKmsThreshold, kmsNodes, coprocessors, networks),
-      )
+      const upgradeTx = hre.upgrades.upgradeProxy(proxyContract, HTTPZ, {
+        call: {
+          fn: "initialize",
+          args: [protocolMetadata, admins, badKmsThreshold, kmsNodes, coprocessors, networks],
+        },
+      });
+      await expect(upgradeTx)
         .to.be.revertedWithCustomError(HTTPZ, "KmsThresholdTooHigh")
         .withArgs(badKmsThreshold, kmsNodes.length);
     });
 
     it("Should deploy", async function () {
-      const { HTTPZ, owner, protocolMetadata, admins, kmsThreshold, kmsNodes, coprocessors, networks } =
+      const { HTTPZ, protocolMetadata, owner, admins, kmsThreshold, kmsNodes, coprocessors, networks } =
         await loadFixture(getInputsForDeployFixture);
+      const proxyContract = await deployEmptyProxy(owner);
 
-      // Initialize the contract
-      const httpz = await HTTPZ.connect(owner).deploy(
-        protocolMetadata,
-        admins,
-        kmsThreshold,
-        kmsNodes,
-        coprocessors,
-        networks,
-      );
+      const upgradeTx = hre.upgrades.upgradeProxy(proxyContract, HTTPZ, {
+        call: {
+          fn: "initialize",
+          args: [protocolMetadata, admins, kmsThreshold, kmsNodes, coprocessors, networks],
+        },
+      });
 
-      // Check event
-      await expect(httpz.deploymentTransaction())
-        .to.emit(httpz, "Initialization")
+      expect(upgradeTx)
+        .to.emit(HTTPZ, "Initialization")
         .withArgs(
           toValues(protocolMetadata),
           toValues(admins),
@@ -210,7 +222,7 @@ describe("HTTPZ", function () {
       await expect(tx).to.emit(httpz, "UpdateKmsThreshold").withArgs(newKmsThreshold);
 
       // Check that the KMS threshold has been updated
-      expect(await httpz.kmsThreshold()).to.equal(newKmsThreshold);
+      expect(await httpz.getKmsThreshold()).to.equal(newKmsThreshold);
     });
   });
 });
