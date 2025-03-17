@@ -32,6 +32,32 @@ export class PrismaDAppRepository extends DAppRepository {
     }).chain(props => DApp.parse(props).async())
   }
 
+  delete = (id: DAppId): Task<void, AppError> => {
+    return new Task((resolve, reject) => {
+      this.db.dapp
+        .findUnique({
+          where: { id: id.value, deletedAt: null },
+        })
+        .then(dapp => {
+          if (!dapp) {
+            reject(notFoundError('dapp not found'))
+          } else {
+            return this.db.dapp.update({
+              data: { deletedAt: new Date() },
+              where: { id: id.value },
+            })
+          }
+        })
+        .then(() => {
+          resolve(void 0)
+        })
+        .catch(error => {
+          this.logger.warn(`failed to delete dapp ${id.value}: ${error}`)
+          reject(unknownError(String(error)))
+        })
+    })
+  }
+
   update = (
     id: DAppId,
     data: Partial<Omit<DAppProps, 'id'>>,
@@ -39,7 +65,17 @@ export class PrismaDAppRepository extends DAppRepository {
     this.logger.debug(`update: ${id} ${JSON.stringify(data)}`)
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.dapp
-        .update({ where: { id: id.value }, data })
+        .findUnique({ where: { id: id.value, deletedAt: null } })
+        .then(dapp => {
+          if (!dapp) {
+            reject(notFoundError(`dapp not found`))
+          } else {
+            return this.db.dapp.update({
+              where: { id: id.value },
+              data,
+            })
+          }
+        })
         .then(data => {
           this.logger.verbose(`updated: ${JSON.stringify(data)}`)
           resolve(data)
@@ -54,7 +90,7 @@ export class PrismaDAppRepository extends DAppRepository {
   findById = (id: DAppId): Task<DApp, AppError> => {
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.dapp
-        .findUnique({ where: { id: id.value } })
+        .findUnique({ where: { id: id.value, deletedAt: null } })
         .then(data =>
           data ? resolve(data) : reject(notFoundError('DApp not found')),
         )
@@ -65,7 +101,7 @@ export class PrismaDAppRepository extends DAppRepository {
   findByAddress = (chainId: string, address: string): Task<DApp, AppError> => {
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.dapp
-        .findFirst({ where: { address } })
+        .findFirst({ where: { address, deletedAt: null } })
         .then(data =>
           data
             ? resolve(data)
@@ -81,6 +117,7 @@ export class PrismaDAppRepository extends DAppRepository {
         .findUnique({
           where: {
             id: id.value,
+            deletedAt: null,
             team: {
               users: {
                 some: { id: { equals: userId.value } },
@@ -99,7 +136,7 @@ export class PrismaDAppRepository extends DAppRepository {
     return new Task<unknown[], AppError>((resolve, reject) => {
       this.db.dapp
         .findMany({
-          where: { teamId },
+          where: { teamId, deletedAt: null },
           orderBy: { createdAt: 'desc' },
         })
         .then(resolve)

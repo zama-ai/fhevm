@@ -1,5 +1,8 @@
 import { DAppStatus } from '#dapps/domain/entities/dapp.js'
-import { IntegrationManager } from '#tests/integration.manager.js'
+import {
+  GraphQlResponse,
+  IntegrationManager,
+} from '#tests/integration.manager.js'
 import { faker } from '@faker-js/faker'
 import {
   afterAll,
@@ -132,6 +135,70 @@ describe('update-dapp', () => {
         expect(result.success).toBe(false)
         if (!result.success) {
           expect(result.errors[0].message).toContain('Forbidden')
+        }
+      })
+    })
+  })
+
+  describe('given a user is logged in and a dapp has been deleted', () => {
+    let token: string
+    let teamId: string
+    let dappId: string
+
+    beforeEach(async () => {
+      const login = await manager.auth.login(
+        {
+          email: faker.internet.email(),
+          password: faker.internet.password(),
+        },
+        { signup: true },
+      )
+      if (login.success) {
+        token = login.data.token
+        teamId = login.data.user.teams[0].id
+        const createDapp = await manager.dapp.createDApp({
+          token,
+          teamId,
+          name: faker.string.alphanumeric(10),
+        })
+        if (createDapp.success) {
+          dappId = createDapp.data.id
+          // TODO: Change it when a GraphQL endpoint has been implemented
+          await manager.prismaClient.dapp.update({
+            data: { deletedAt: new Date() },
+            where: { id: dappId },
+          })
+        } else {
+          console.log(`createDapp: ${JSON.stringify(createDapp)}`)
+          expect(createDapp.success, 'Failed to create dapp').toBe(true)
+        }
+      } else {
+        console.log(`login: ${JSON.stringify(login)}`)
+        expect(login.success, 'Failed to login the user').toBe(true)
+      }
+    })
+
+    describe('when updating the dapp', () => {
+      let updated: GraphQlResponse<DApp>
+      let name: string
+      let address: string
+      beforeEach(async () => {
+        name = faker.string.alphanumeric(10)
+        address = faker.string.hexadecimal({ length: 40 })
+
+        updated = await manager.dapp.updateDApp({
+          token,
+          dappId: dappId,
+          name,
+          address,
+        })
+      })
+
+      test('then it should fail', () => {
+        expect(updated.success).toBe(false)
+        if (!updated.success) {
+          // NOTE: currently we remap a not found error to forbidden
+          expect(updated.errors[0].message).toMatch('Forbidden')
         }
       })
     })

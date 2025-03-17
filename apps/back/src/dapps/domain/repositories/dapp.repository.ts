@@ -11,6 +11,8 @@ export abstract class DAppRepository {
     id: DAppId,
     data: Partial<Omit<DAppProps, 'id'>>,
   ): Task<DApp, AppError>
+
+  abstract delete(id: DAppId): Task<void, AppError>
   abstract findById(id: DAppId): Task<DApp, AppError>
   abstract findByAddress(chainId: string, address: string): Task<DApp, AppError>
   abstract findOneByIdAndUserId(

@@ -87,4 +87,59 @@ describe('get-dapp-stats', () => {
       })
     })
   })
+
+  describe('given a dapp has been deleted', () => {
+    let dappId: string
+    let token: string
+    let teamId: string
+
+    beforeEach(async () => {
+      const result = await manager.auth.login(
+        { email: faker.internet.email(), password: faker.internet.password() },
+        { signup: true },
+      )
+      expect(result.success, 'Failed to login the user').toBe(true)
+      if (result.success) {
+        token = result.data.token
+        teamId = result.data.user.teams[0].id
+      }
+
+      const createDappResult = await manager.dapp.createDApp({
+        token,
+        teamId,
+        name: faker.string.alphanumeric(10),
+        address: faker.string.hexadecimal({ length: 40 }),
+      })
+      if (createDappResult.success) {
+        dappId = createDappResult.data.id
+        // TODO: move to a GraphQL endpoint when implemented
+        await manager.prismaClient.dapp.update({
+          data: { deletedAt: new Date() },
+          where: { id: dappId },
+        })
+      } else {
+        expect(createDappResult.success, 'it should success').toBe(true)
+        console.log(`createDapp: ${JSON.stringify(createDappResult)}`)
+      }
+    })
+
+    describe('when a logged in user gets the dapp stats', () => {
+      let getDappStats: GraphQlResponse<DAppStats>
+
+      beforeEach(async () => {
+        getDappStats = await manager.dapp.getDappStats({
+          token,
+          dappId,
+        })
+      })
+
+      test(`then it should return a 'NotFound' error`, () => {
+        if (!getDappStats.success) {
+          expect(getDappStats.errors[0].message).toMatch('not found')
+        } else {
+          expect(getDappStats.success, 'it should fail').toBe(false)
+        }
+      })
+    })
+  })
 })
