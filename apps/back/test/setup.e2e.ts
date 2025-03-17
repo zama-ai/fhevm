@@ -88,7 +88,6 @@ async function startRedis() {
   const host = redisContainer.getHost()
   const port = redisContainer.getPort()
 
-  // TODO REMOVE THIS
   console.log(`🚛 testcontainer Redis running on ${host}:${port}`)
 
   return { host, port }
