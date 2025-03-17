@@ -20,7 +20,7 @@ jobs:
       - run: npm --prefix ./contracts install
       - run: npm --prefix ./contracts run compile
       - name: Run Slither
-        uses: crytic/slither-action@f197989dea5b53e986d0f88c60a034ddd77ec9a8 # v4.0
+        uses: crytic/slither-action@d86660fe7e45835a0ec7b7aeb768d271fb421ea0 # temporarily commit that fixes the issue
         with:
           node-version: 20
           ignore-compile: false
