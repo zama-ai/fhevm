@@ -27,6 +27,7 @@ fhevm-engine-common = { path = "../fhevm-engine-common" }
 
 [build-dependencies]
 foundry-compilers = { version = "0.13.0", features = ["svm-solc"] }
+semver = "1.0.26"
 
 [dev-dependencies]
 serial_test = "3.2.0"

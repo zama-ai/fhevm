@@ -13,9 +13,8 @@ use tfhe::{
         RotateLeft, RotateRight,
     },
     zk::CompactPkeCrs,
-    CompactCiphertextList, CompactCiphertextListExpander, FheBool, FheUint1024, FheUint128,
-    FheUint16, FheUint160, FheUint2, FheUint2048, FheUint256, FheUint32, FheUint4, FheUint512,
-    FheUint64, FheUint8, Seed,
+    CompactCiphertextListExpander, FheBool, FheUint1024, FheUint128, FheUint16, FheUint160,
+    FheUint2048, FheUint256, FheUint32, FheUint4, FheUint512, FheUint64, FheUint8, Seed,
 };
 
 pub fn deserialize_fhe_ciphertext(

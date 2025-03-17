@@ -1,11 +1,11 @@
 # Stage 1: Build
-FROM rust:1.84.1-bullseye AS build
+FROM rust:1.85.0-bookworm AS build
 
 WORKDIR /app
 
 # Install dependencies
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends protobuf-compiler=3.12.4* && \
+    apt-get install -y --no-install-recommends protobuf-compiler && \
     rm -rf /var/lib/apt/lists/*
 
 COPY ./fhevm-engine/ ./fhevm-engine/
@@ -18,7 +18,7 @@ RUN cargo fetch && \
     SQLX_OFFLINE=true cargo build --release
 
 # Stage 2: Final image
-FROM debian:bullseye-slim
+FROM debian:bookworm-slim
 
 # Install dependencies
 RUN apt-get update && \

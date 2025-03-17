@@ -14,7 +14,6 @@ use sqlx::postgres::PgPoolOptions;
 use sqlx::{postgres::PgListener, PgPool, Row};
 use std::num::NonZero;
 use std::str::FromStr;
-use tokio::runtime::Handle;
 use tokio::sync::RwLock;
 use tokio::task::JoinSet;
 

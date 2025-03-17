@@ -1,5 +1,5 @@
 # Use the Rust image as the base
-FROM rust:1.84.1-slim
+FROM rust:1.85.0-slim
 
 # Install dependencies and tools
 RUN apt-get update && \
