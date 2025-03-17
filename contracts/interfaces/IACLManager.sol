@@ -111,4 +111,12 @@ interface IACLManager {
         address delegatee,
         address[] calldata contractAddresses
     ) external view;
+
+    /// @notice Return whether the account is allowed to use the ciphertext handle or not.
+    /// @return Whether the account is allowed to use the ciphertext handle or not.
+    function allowedAccounts(uint256 ctHandle, address accountAddress) external view returns (bool);
+
+    /// @notice Return whether the ciphertext can be publicly decrypted or not.
+    /// @return Whether the ciphertext can be publicly decrypted or not.
+    function allowedPublicDecrypts(uint256 ctHandle) external view returns (bool);
 }

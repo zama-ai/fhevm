@@ -233,4 +233,28 @@ interface IKeyManager {
     /// @param keyId The key ID to check
     /// @return True if the key ID is the current one, false otherwise
     function isCurrentKeyId(uint256 keyId) external view returns (bool);
+
+    /// @notice Get the digest of the given FHE params name
+    /// @return The digest of the given FHE params name
+    function fheParamsDigests(string calldata fheParamsName) external view returns (bytes32);
+
+    /// @notice Get the current (activated) keyId
+    /// @return The current (activated) keyId
+    function getCurrentKeyId() external view returns (uint256);
+
+    /// @notice Get the activated keyId with the given index
+    /// @return The activated keyId with the given index
+    function activatedKeyIds(uint256 index) external view returns (uint256);
+
+    /// @notice Get the generator FHE params digest associated with the key ID
+    /// @return The generator FHE params digest associated with the key ID
+    function keyFheParamsDigests(uint256 keyId) external view returns (bytes32);
+
+    /// @notice Get the generator FHE params digest associated with the KSK ID
+    /// @return The generator FHE params digest associated with the KSK ID
+    function kskFheParamsDigests(uint256 kskId) external view returns (bytes32);
+
+    /// @notice Get the generator FHE params digest associated with the CRS ID
+    /// @return The generator FHE params digest associated with the CRS ID
+    function crsFheParamsDigests(uint256 crsId) external view returns (bytes32);
 }

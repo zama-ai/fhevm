@@ -1,17 +1,21 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 import { IDecryptionManager } from "./interfaces/IDecryptionManager.sol";
-import "@openzeppelin/contracts/access/Ownable2Step.sol";
-import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
-import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
+import { aclManagerAddress } from "../addresses/AclManagerAddress.sol";
+import { ciphertextManagerAddress } from "../addresses/CiphertextManagerAddress.sol";
+import { httpzAddress } from "../addresses/HttpzAddress.sol";
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import { EIP712Upgradeable } from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
+import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import "./interfaces/IHTTPZ.sol";
 import "./interfaces/IACLManager.sol";
 import "./interfaces/ICiphertextManager.sol";
 
 /// @title DecryptionManager contract
 /// @dev See {IDecryptionManager}.
-contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
+contract DecryptionManager is IDecryptionManager, EIP712Upgradeable, Ownable2StepUpgradeable, UUPSUpgradeable {
     /// @notice The typed data structure for the EIP712 signature to validate in public decryption responses.
     /// @dev The name of this struct is not relevant for the signature validation, only the one defined
     /// @dev EIP712_PUBLIC_DECRYPT_TYPE is, but we keep it the same for clarity.
@@ -77,17 +81,13 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
     }
 
     /// @notice The address of the HTTPZ contract for checking if a signer is valid
-    IHTTPZ internal immutable _HTTPZ;
+    IHTTPZ private constant _HTTPZ = IHTTPZ(httpzAddress);
 
     /// @notice The address of the ACLManager contract for checking if a decryption requests are allowed
-    IACLManager internal immutable _ACL_MANAGER;
+    IACLManager private constant _ACL_MANAGER = IACLManager(aclManagerAddress);
 
     /// @notice The address of the CiphertextManager contract for getting ciphertext materials.
-    ICiphertextManager internal immutable _CIPHERTEXT_MANAGER;
-
-    // TODO: Use a reference to the PaymentManager contract
-    /// @notice The address of the Payment Manager contract for service fees, burn and distribution
-    address internal immutable _PAYMENT_MANAGER;
+    ICiphertextManager private constant _CIPHERTEXT_MANAGER = ICiphertextManager(ciphertextManagerAddress);
 
     /// @notice The maximum number of duration days that can be requested for a user decryption.
     uint16 internal constant _MAX_USER_DECRYPT_DURATION_DAYS = 365;
@@ -95,57 +95,12 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
     /// @notice The maximum number of contracts that can request for user decryption at once.
     uint8 internal constant _MAX_USER_DECRYPT_CONTRACT_ADDRESSES = 10;
 
-    // ----------------------------------------------------------------------------------------------
-    // Public decryption state variables:
-    // ----------------------------------------------------------------------------------------------
-
-    /// @notice The number of public decryptions requested, used to generate the publicDecryptionIds.
-    uint256 internal _publicDecryptionCounter;
-
-    /// @notice Whether KMS signer has already responded to a public decryption request.
-    mapping(uint256 publicDecryptionId => mapping(address kmsSigner => bool alreadyResponded))
-        internal _alreadyPublicDecryptResponded;
-
-    /// @notice Verified signatures for a public decryption.
-    mapping(uint256 publicDecryptionId => mapping(bytes32 digest => bytes[] verifiedSignatures))
-        internal _verifiedPublicDecryptSignatures;
-
-    /// @notice Handles of the ciphertexts requested for a public decryption
-    mapping(uint256 publicDecryptionId => uint256[] ctHandles) internal publicCtHandles;
-
-    /// @notice Whether a public decryption has been done
-    mapping(uint256 publicDecryptionId => bool publicDecryptionDone) internal publicDecryptionDone;
-
     /// @notice The definition of the PublicDecryptVerification structure typed data.
     string public constant EIP712_PUBLIC_DECRYPT_TYPE =
         "PublicDecryptVerification(uint256[] ctHandles,bytes decryptedResult)";
 
     /// @notice The hash of the PublicDecryptVerification structure typed data definition used for signature validation.
     bytes32 public constant EIP712_PUBLIC_DECRYPT_TYPE_HASH = keccak256(bytes(EIP712_PUBLIC_DECRYPT_TYPE));
-
-    // ----------------------------------------------------------------------------------------------
-    // User decryption state variables:
-    // ----------------------------------------------------------------------------------------------
-
-    /// @notice The number of user decryptions requested, used to generate the userDecryptionIds.
-    uint256 internal _userDecryptionCounter;
-
-    /// @notice Whether KMS signer has already responded to a user decryption request.
-    mapping(uint256 userDecryptionId => mapping(address kmsSigner => bool alreadyResponded))
-        internal _alreadyUserDecryptResponded;
-
-    /// @notice Verified signatures for a user decryption.
-    mapping(uint256 userDecryptionId => mapping(bytes32 digest => bytes[] verifiedSignatures))
-        internal _verifiedUserDecryptSignatures;
-
-    /// @notice The decryption payloads stored during user decryption requests.
-    mapping(uint256 userDecryptionId => UserDecryptionPayload payload) internal userDecryptionPayloads;
-
-    /// @notice Whether a user decryption has been done
-    mapping(uint256 userDecryptionId => bool userDecryptionDone) internal userDecryptionDone;
-
-    /// @notice The reencrypted shares received from user decryption responses.
-    mapping(uint256 userDecryptionId => bytes[] shares) internal reencryptedShares;
 
     /// @notice The definition of the UserDecryptRequestVerification structure typed data.
     string public constant EIP712_USER_DECRYPT_REQUEST_TYPE =
@@ -177,17 +132,70 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
     uint256 private constant MINOR_VERSION = 1;
     uint256 private constant PATCH_VERSION = 0;
 
+    /// @notice The contract's variable storage struct (@dev see ERC-7201)
+    /// @custom:storage-location erc7201:httpz_gateway.storage.DecryptionManager
+    struct DecryptionManagerStorage {
+        /// @notice Pending verified signatures for a public/user decryption.
+        mapping(uint256 decryptionId => mapping(bytes32 digest => bytes[] verifiedSignatures)) verifiedSignatures;
+        // ----------------------------------------------------------------------------------------------
+        // Public decryption state variables:
+        // ----------------------------------------------------------------------------------------------
+
+        /// @notice The number of public decryptions requested, used to generate the publicDecryptionIds.
+        uint256 _publicDecryptionCounter;
+        // prettier-ignore
+        /// @notice Whether KMS signer has already responded to a public decryption request.
+        mapping(uint256 publicDecryptionId =>
+            mapping(address kmsSigner => bool alreadyResponded))
+                _alreadyPublicDecryptResponded;
+        // prettier-ignore
+        /// @notice Verified signatures for a public decryption.
+        mapping(uint256 publicDecryptionId =>
+            mapping(bytes32 digest => bytes[] verifiedSignatures))
+                _verifiedPublicDecryptSignatures;
+        /// @notice Handles of the ciphertexts requested for a public decryption
+        mapping(uint256 publicDecryptionId => uint256[] ctHandles) publicCtHandles;
+        /// @notice Whether a public decryption has been done
+        mapping(uint256 publicDecryptionId => bool publicDecryptionDone) publicDecryptionDone;
+        // ----------------------------------------------------------------------------------------------
+        // User decryption state variables:
+        // ----------------------------------------------------------------------------------------------
+
+        /// @notice The number of user decryptions requested, used to generate the userDecryptionIds.
+        uint256 _userDecryptionCounter;
+        // prettier-ignore
+        /// @notice Whether KMS signer has already responded to a user decryption request.
+        mapping(uint256 userDecryptionId =>
+            mapping(address kmsSigner => bool alreadyResponded))
+                _alreadyUserDecryptResponded;
+        // prettier-ignore
+        /// @notice Verified signatures for a user decryption.
+        mapping(uint256 userDecryptionId =>
+            mapping(bytes32 digest => bytes[] verifiedSignatures))
+                _verifiedUserDecryptSignatures;
+        /// @notice The decryption payloads stored during user decryption requests.
+        mapping(uint256 userDecryptionId => UserDecryptionPayload payload) userDecryptionPayloads;
+        /// @notice Whether a user decryption has been done
+        mapping(uint256 userDecryptionId => bool userDecryptionDone) userDecryptionDone;
+        /// @notice The reencrypted shares received from user decryption responses.
+        mapping(uint256 userDecryptionId => bytes[] shares) reencryptedShares;
+    }
+
+    /// @dev keccak256(abi.encode(uint256(keccak256("httpz_gateway.storage.DecryptionManager")) - 1)) &
+    /// @dev ~bytes32(uint256(0xff))
+    bytes32 private constant DECRYPTION_MANAGER_STORAGE_LOCATION =
+        0x13fa45e3e06dd5c7291d8698d89ad1fd40bc82f98a605fa4761ea2b538c8db00;
+
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    /// @notice Initializes the contract.
     /// @dev Contract name and version for EIP712 signature validation are defined here
-    constructor(
-        IHTTPZ httpz,
-        IACLManager aclManager,
-        ICiphertextManager ciphertextManager,
-        address paymentManager
-    ) Ownable(msg.sender) EIP712(CONTRACT_NAME, "1") {
-        _HTTPZ = httpz;
-        _ACL_MANAGER = aclManager;
-        _CIPHERTEXT_MANAGER = ciphertextManager;
-        _PAYMENT_MANAGER = paymentManager;
+    function initialize() public reinitializer(2) {
+        __EIP712_init(CONTRACT_NAME, "1");
+        __Ownable_init(msg.sender);
     }
 
     /// @notice Checks if the sender is a KMS Node.
@@ -198,6 +206,8 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
 
     /// @dev See {IDecryptionManager-publicDecryptionRequest}.
     function publicDecryptionRequest(uint256[] calldata ctHandles) public virtual {
+        DecryptionManagerStorage storage $ = _getDecryptionManagerStorage();
+
         /// @dev Check that the public decryption is allowed for the given ctHandles.
         _ACL_MANAGER.checkPublicDecryptAllowed(ctHandles);
 
@@ -213,11 +223,11 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
         /// @dev See https://github.com/zama-ai/gateway-l2/issues/104.
         _checkCtMaterialKeyIds(snsCtMaterials);
 
-        _publicDecryptionCounter++;
-        uint256 publicDecryptionId = _publicDecryptionCounter;
+        $._publicDecryptionCounter++;
+        uint256 publicDecryptionId = $._publicDecryptionCounter;
 
         /// @dev The handles are used during response calls for the EIP712 signature validation.
-        publicCtHandles[publicDecryptionId] = ctHandles;
+        $.publicCtHandles[publicDecryptionId] = ctHandles;
 
         // TODO: Implement sending service fees to PaymentManager contract
 
@@ -232,9 +242,11 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
         bytes calldata decryptedResult,
         bytes calldata signature
     ) public virtual onlyKmsNode {
+        DecryptionManagerStorage storage $ = _getDecryptionManagerStorage();
+
         /// @dev Initialize the PublicDecryptVerification structure for the signature validation.
         PublicDecryptVerification memory publicDecryptVerification = PublicDecryptVerification(
-            publicCtHandles[publicDecryptionId],
+            $.publicCtHandles[publicDecryptionId],
             decryptedResult
         );
 
@@ -245,14 +257,14 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
         /// @dev has not already signed.
         _validatePublicDecryptEIP712Signature(publicDecryptionId, digest, signature);
 
-        bytes[] storage verifiedSignatures = _verifiedPublicDecryptSignatures[publicDecryptionId][digest];
+        bytes[] storage verifiedSignatures = $._verifiedPublicDecryptSignatures[publicDecryptionId][digest];
 
         verifiedSignatures.push(signature);
 
         /// @dev Send the event if and only if the consensus is reached in the current response call.
         /// @dev This means a "late" response will not be reverted, just ignored
-        if (!publicDecryptionDone[publicDecryptionId] && _isConsensusReachedPublic(verifiedSignatures.length)) {
-            publicDecryptionDone[publicDecryptionId] = true;
+        if (!$.publicDecryptionDone[publicDecryptionId] && _isConsensusReachedPublic(verifiedSignatures.length)) {
+            $.publicDecryptionDone[publicDecryptionId] = true;
 
             // TODO: Implement sending service fees to PaymentManager contract
 
@@ -322,11 +334,12 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
         /// @dev See https://github.com/zama-ai/gateway-l2/issues/104.
         _checkCtMaterialKeyIds(snsCtMaterials);
 
-        _userDecryptionCounter++;
-        uint256 userDecryptionId = _userDecryptionCounter;
+        DecryptionManagerStorage storage $ = _getDecryptionManagerStorage();
+        $._userDecryptionCounter++;
+        uint256 userDecryptionId = $._userDecryptionCounter;
 
         /// @dev The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
-        userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
+        $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
 
         // TODO: Implement sending service fees to PaymentManager contract
 
@@ -409,11 +422,12 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
         /// @dev See https://github.com/zama-ai/gateway-l2/issues/104.
         _checkCtMaterialKeyIds(snsCtMaterials);
 
-        _userDecryptionCounter++;
-        uint256 userDecryptionId = _userDecryptionCounter;
+        DecryptionManagerStorage storage $ = _getDecryptionManagerStorage();
+        $._userDecryptionCounter++;
+        uint256 userDecryptionId = $._userDecryptionCounter;
 
         /// @dev The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
-        userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
+        $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
 
         // TODO: Implement sending service fees to PaymentManager contract
 
@@ -428,7 +442,8 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
         bytes calldata reencryptedShare,
         bytes calldata signature
     ) external virtual onlyKmsNode {
-        UserDecryptionPayload memory userDecryptionPayload = userDecryptionPayloads[userDecryptionId];
+        DecryptionManagerStorage storage $ = _getDecryptionManagerStorage();
+        UserDecryptionPayload memory userDecryptionPayload = $.userDecryptionPayloads[userDecryptionId];
 
         /// @dev Initialize the UserDecryptResponseVerification structure for the signature validation.
         UserDecryptResponseVerification memory userDecryptResponseVerification = UserDecryptResponseVerification(
@@ -444,31 +459,33 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
         /// @dev has not already signed.
         _validateUserDecryptEIP712Signature(userDecryptionId, digest, signature);
 
-        bytes[] storage verifiedSignatures = _verifiedUserDecryptSignatures[userDecryptionId][digest];
+        bytes[] storage verifiedSignatures = $._verifiedUserDecryptSignatures[userDecryptionId][digest];
         verifiedSignatures.push(signature);
 
         /// @dev Store the reencrypted share for the user decryption response.
-        reencryptedShares[userDecryptionId].push(reencryptedShare);
+        $.reencryptedShares[userDecryptionId].push(reencryptedShare);
 
         /// @dev Send the event if and only if the consensus is reached in the current response call.
         /// @dev This means a "late" response will not be reverted, just ignored
-        if (!userDecryptionDone[userDecryptionId] && _isConsensusReachedUser(verifiedSignatures.length)) {
-            userDecryptionDone[userDecryptionId] = true;
+        if (!$.userDecryptionDone[userDecryptionId] && _isConsensusReachedUser(verifiedSignatures.length)) {
+            $.userDecryptionDone[userDecryptionId] = true;
 
             // TODO: Implement sending service fees to PaymentManager contract
 
-            emit UserDecryptionResponse(userDecryptionId, reencryptedShares[userDecryptionId], verifiedSignatures);
+            emit UserDecryptionResponse(userDecryptionId, $.reencryptedShares[userDecryptionId], verifiedSignatures);
         }
     }
 
     /// @dev See {IDecryptionManager-isPublicDecryptionDone}.
     function isPublicDecryptionDone(uint256 publicDecryptionId) public view virtual returns (bool) {
-        return publicDecryptionDone[publicDecryptionId];
+        DecryptionManagerStorage storage $ = _getDecryptionManagerStorage();
+        return $.publicDecryptionDone[publicDecryptionId];
     }
 
     /// @dev See {IDecryptionManager-isUserDecryptionDone}.
     function isUserDecryptionDone(uint256 userDecryptionId) public view virtual returns (bool) {
-        return userDecryptionDone[userDecryptionId];
+        DecryptionManagerStorage storage $ = _getDecryptionManagerStorage();
+        return $.userDecryptionDone[userDecryptionId];
     }
 
     /// @notice Returns the versions of the DecryptionManager contract in SemVer format.
@@ -497,17 +514,18 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
         bytes32 digest,
         bytes calldata signature
     ) internal virtual {
+        DecryptionManagerStorage storage $ = _getDecryptionManagerStorage();
         address signer = ECDSA.recover(digest, signature);
 
         /// @dev Check that the signer is a KMS node.
         _HTTPZ.checkIsKmsNode(signer);
 
         /// @dev Check that the signer has not already responded to the public decryption request.
-        if (_alreadyPublicDecryptResponded[publicDecryptionId][signer]) {
+        if ($._alreadyPublicDecryptResponded[publicDecryptionId][signer]) {
             revert KmsSignerAlreadyResponded(publicDecryptionId, signer);
         }
 
-        _alreadyPublicDecryptResponded[publicDecryptionId][signer] = true;
+        $._alreadyPublicDecryptResponded[publicDecryptionId][signer] = true;
     }
 
     /// @notice Validates the EIP712 signature for a given user decryption.
@@ -519,17 +537,18 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
         bytes32 digest,
         bytes calldata signature
     ) internal virtual {
+        DecryptionManagerStorage storage $ = _getDecryptionManagerStorage();
         address signer = ECDSA.recover(digest, signature);
 
         /// @dev Check that the signer is a KMS node.
         _HTTPZ.checkIsKmsNode(signer);
 
         /// @dev Check that the signer has not already responded to the user decryption request.
-        if (_alreadyUserDecryptResponded[userDecryptionId][signer]) {
+        if ($._alreadyUserDecryptResponded[userDecryptionId][signer]) {
             revert KmsSignerAlreadyResponded(userDecryptionId, signer);
         }
 
-        _alreadyUserDecryptResponded[userDecryptionId][signer] = true;
+        $._alreadyUserDecryptResponded[userDecryptionId][signer] = true;
     }
 
     /// @notice Validates the EIP712 signature for a given user decryption request
@@ -685,4 +704,19 @@ contract DecryptionManager is Ownable2Step, EIP712, IDecryptionManager {
             }
         }
     }
+
+    /**
+     * @dev Returns the DecryptionManager storage location.
+     */
+    function _getDecryptionManagerStorage() internal pure returns (DecryptionManagerStorage storage $) {
+        // solhint-disable-next-line no-inline-assembly
+        assembly {
+            $.slot := DECRYPTION_MANAGER_STORAGE_LOCATION
+        }
+    }
+
+    /**
+     * @dev Should revert when `msg.sender` is not authorized to upgrade the contract.
+     */
+    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
 }

@@ -1,6 +1,8 @@
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { expect } from "chai";
+import dotenv from "dotenv";
+import fs from "fs";
 import hre from "hardhat";
 
 import { CiphertextManager, HTTPZ } from "../typechain-types";
@@ -22,9 +24,17 @@ describe("CiphertextManager", function () {
   let coprocessorSigners: HardhatEthersSigner[];
   let user: HardhatEthersSigner;
   async function deployCiphertextManagerFixture() {
-    const { httpz, keyManager, coprocessorSigners, signers, user } = await loadFixture(deployKeyManagerFixture);
-    const CiphertextManagerContract = await hre.ethers.getContractFactory("CiphertextManager");
-    const ciphertextManager = await CiphertextManagerContract.deploy(httpz, keyManager);
+    const { httpz, owner, coprocessorSigners, signers, user } = await loadFixture(deployKeyManagerFixture);
+
+    // Deploying CiphertextManager using its deploy task
+    await hre.run("task:deployCiphertextManager", {
+      deployerPrivateKey: owner.privateKey,
+    });
+    const parsedEnvCiphertextManager = dotenv.parse(fs.readFileSync("addresses/.env.ciphertext_manager"));
+    const ciphertextManager = await hre.ethers.getContractAt(
+      "CiphertextManager",
+      parsedEnvCiphertextManager.CIPHERTEXT_MANAGER_ADDRESS,
+    );
 
     // Setup the CiphertextManager contract state with a ciphertext used during tests
     for (let signer of coprocessorSigners) {
