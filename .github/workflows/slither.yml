@@ -1,23 +1,26 @@
 name: Slither Analysis
+permissions:
+  contents: read
+  checks: write
 on:
   pull_request:
     branches:
       - main
-  push:
-    branches:
-      - main
+    paths:
+      - contracts/**
+      - .github/workflows/slither.yml
 jobs:
   analyze:
-    runs-on: ubuntu-latest
+    runs-on: large_ubuntu_32
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
       - run: cp ./contracts/.env.example ./contracts/.env
       - run: npm --prefix ./contracts ci --include=optional
       - run: npm --prefix ./contracts install
       - run: npm --prefix ./contracts run compile
       - name: Run Slither
-        uses: crytic/slither-action@v0.4.0
+        uses: crytic/slither-action@f197989dea5b53e986d0f88c60a034ddd77ec9a8 # v4.0
         with:
           node-version: 20
           ignore-compile: false
@@ -27,6 +30,6 @@ jobs:
           fail-on: none
           target: "./contracts/"
       - name: Upload SARIF file
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@80f993039571a6de66594ecaa432875a6942e8e0 #v2.20.6
         with:
           sarif_file: results.sarif
