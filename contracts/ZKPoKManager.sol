@@ -108,6 +108,12 @@ contract ZKPoKManager is IZKPoKManager, EIP712 {
         bytes32[] calldata ctHandles,
         bytes calldata signature
     ) public virtual {
+        /**
+         * @dev Check that the transaction sender is a Coprocessor. In case of reorgs, this prevents
+         * someone else from copying the signature and sending it to trigger a consensus.
+         */
+        _HTTPZ.checkIsCoprocessor(msg.sender);
+
         /// @dev Retrieve stored ZK Proof verification request inputs.
         ZKProofInput memory zkProofInput = _zkProofInputs[zkProofId];
 
