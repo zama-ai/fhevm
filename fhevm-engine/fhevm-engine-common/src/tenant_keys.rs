@@ -160,11 +160,16 @@ where
     Ok(())
 }
 
+pub struct TenantInfo {
+    pub key_id: i32,
+    pub chain_id: i32,
+}
+
 /// Returns the key_id, chain_id for a given tenant_id
 pub async fn query_tenant_info<'a, T>(
     conn: T,
     tenant_id: i32,
-) -> Result<(i32, i32), Box<dyn std::error::Error + Send + Sync>>
+) -> Result<TenantInfo, Box<dyn std::error::Error + Send + Sync>>
 where
     T: sqlx::PgExecutor<'a>,
 {
@@ -176,5 +181,10 @@ where
     .fetch_one(conn)
     .await?;
 
-    Ok((row.try_get("key_id")?, row.try_get("chain_id")?))
+    let res: TenantInfo = TenantInfo {
+        key_id: row.try_get("key_id")?,
+        chain_id: row.try_get("chain_id")?,
+    };
+
+    Ok(res)
 }

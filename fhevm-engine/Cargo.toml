@@ -29,6 +29,7 @@ tokio-util = "0.7"
 tonic = { version = "0.12", features = ["server"] }
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["fmt", "json"] }
+hex = "0.4"
 
 
 [profile.dev.package.tfhe]

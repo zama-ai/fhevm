@@ -17,7 +17,7 @@ tokio = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-hex = "0.4"
+hex = { workspace = true }
 
 # crates.io dependencies
 async-trait = "0.1.86"

@@ -57,7 +57,7 @@ pub fn safe_deserialize_sns_key<T: DeserializeOwned + Named + Unversionize>(
 }
 
 // Print first 4 and last 4 bytes of a blob as hex
-pub fn to_hex(blob: &[u8]) -> String {
+pub fn compact_hex(blob: &[u8]) -> String {
     const OFFSET: usize = 8;
     match blob.len() {
         0 => String::from("0x"),

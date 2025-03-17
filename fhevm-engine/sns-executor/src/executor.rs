@@ -2,7 +2,7 @@ use crate::keyset::fetch_keyset;
 use crate::HandleItem;
 use crate::KeySet;
 use crate::{Config, DBConfig, ExecutionError};
-use fhevm_engine_common::utils::to_hex;
+use fhevm_engine_common::utils::compact_hex;
 use sqlx::pool::PoolConnection;
 use sqlx::postgres::PgListener;
 use sqlx::{Acquire, PgPool, Postgres, Transaction};
@@ -225,7 +225,7 @@ fn process_tasks(tasks: &mut [HandleItem], keys: &KeySet) -> Result<(), Executio
     for task in tasks.iter_mut() {
         let ct = decompress_ct(&task.handle, &task.ct64_compressed)?;
         let raw_ct = ct.to_ciphertext64();
-        let handle = to_hex(&task.handle);
+        let handle = compact_hex(&task.handle);
 
         let blocks = raw_ct.blocks().len();
         info!(target: "sns",  { handle, blocks }, "Converting ciphertext");

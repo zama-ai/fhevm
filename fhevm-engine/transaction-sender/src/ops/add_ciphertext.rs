@@ -6,8 +6,9 @@ use alloy::{
     rpc::types::TransactionRequest,
     sol,
 };
+use anyhow::bail;
 use async_trait::async_trait;
-use fhevm_engine_common::{tenant_keys::query_tenant_info, utils::to_hex};
+use fhevm_engine_common::{tenant_keys::query_tenant_info, utils::compact_hex};
 use sqlx::{Pool, Postgres};
 use tokio::task::JoinSet;
 use tracing::{error, info};
@@ -43,7 +44,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
         handle: Vec<u8>,
         txn_request: impl Into<TransactionRequest>,
     ) -> anyhow::Result<()> {
-        let h = to_hex(&handle);
+        let h = compact_hex(&handle);
 
         info!("Processing transaction, handle: {}", h);
 
@@ -57,7 +58,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
                 );
 
                 Self::increment_db_retry(&db_pool, handle, &e.to_string()).await?;
-                return Ok(());
+                bail!("Transaction sending failed with error: {}", e);
             }
         };
 
@@ -137,7 +138,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
         handle: Vec<u8>,
         err: &str,
     ) -> anyhow::Result<()> {
-        info!("Updating retry count, handle {}", to_hex(&handle));
+        info!("Updating retry count, handle {}", compact_hex(&handle));
         sqlx::query!(
             "UPDATE ciphertext_digest
             SET
@@ -189,7 +190,7 @@ where
 
         let mut join_set = JoinSet::new();
         for row in rows.into_iter() {
-            let (key_id, chain_id) = match query_tenant_info(db_pool, row.tenant_id).await {
+            let tenant_info = match query_tenant_info(db_pool, row.tenant_id).await {
                 Ok(res) => res,
                 Err(_) => {
                     error!(
@@ -201,8 +202,10 @@ where
                 }
             };
 
+            let key_id = tenant_info.key_id;
+            let chain_id = tenant_info.chain_id;
             let handle: Vec<u8> = row.handle.clone();
-            let h_as_hex = to_hex(&handle);
+            let h_as_hex = compact_hex(&handle);
 
             let (ciphertext64_digest, ciphertext128_digest) =
                 match (row.ciphertext, row.ciphertext128) {
@@ -221,10 +224,10 @@ where
             info!(
                 "Adding ciphertext, handle: {}, chain_id: {}, key_id: {}, ct64: {}, ct128: {}",
                 h_as_hex,
-                chain_id,
-                key_id,
-                to_hex(ciphertext64_digest.as_ref()),
-                to_hex(ciphertext128_digest.as_ref()),
+                tenant_info.chain_id,
+                tenant_info.key_id,
+                compact_hex(ciphertext64_digest.as_ref()),
+                compact_hex(ciphertext128_digest.as_ref()),
             );
 
             let txn_request = match &self.gas {
