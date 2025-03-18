@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE allowed_handles\n                 SET txn_is_sent = true\n                 WHERE handle = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "450a5a4100c4cab9cc81880472d7944d7351eaa0067efc6fc439d2dc8ccf2d9d"
+}
