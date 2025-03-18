@@ -36,7 +36,7 @@ pub struct CtHandleContractPairJson {
 #[allow(non_snake_case)]
 pub struct RequestValidityJson {
     pub startTimestamp: String, // TODO(mano): Can be u64, as its epoch timestamp ?
-    pub durationDays: u32,
+    pub durationDays: String,
 }
 
 impl UserDecryptRequestJson {

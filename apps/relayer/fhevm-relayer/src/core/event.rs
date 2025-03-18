@@ -375,7 +375,7 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
 
         let request_validity = RequestValidity {
             start_timestamp: U256::from_str(&value.requestValidity.startTimestamp)?,
-            duration_days: U256::from(value.requestValidity.durationDays),
+            duration_days: U256::from_str(&value.requestValidity.durationDays)?,
         };
 
         let contract_addresses = &value
