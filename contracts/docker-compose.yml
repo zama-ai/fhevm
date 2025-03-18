@@ -34,6 +34,8 @@ services:
       dockerfile: contracts/operations/docker/ci.dockerfile
       tags:
         - "httpz-smart-contracts:0.7.0-local"
+    environment:
+      - HARDHAT_NETWORK=staging
     volumes:
       - ./.env.example.deployment:/app/.env
-    command: ["/app/deploy-core-contracts.sh", "staging"]
+    command: ["/app/deploy-core-contracts.sh"]

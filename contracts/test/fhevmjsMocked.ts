@@ -390,8 +390,8 @@ async function coprocSign(
   contractAddress: string,
   signer: Wallet,
 ): Promise<string> {
-  const zkpokManAdd = dotenv.parse(fs.readFileSync('addressesL2/.env.zkpokmanager')).ZKPOK_MANAGER_ADDRESS;
-  const chainId = dotenv.parse(fs.readFileSync('.env')).CHAIN_ID_GATEWAY;
+  const zkpokManAdd = process.env.ZKPOK_MANAGER_ADDRESS;
+  const chainId = process.env.CHAIN_ID_GATEWAY;
   const hostChainId = hre.__SOLIDITY_COVERAGE_RUNNING ? 31337 : hre.network.config.chainId;
 
   const domain = {

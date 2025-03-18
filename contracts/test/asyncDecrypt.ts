@@ -189,8 +189,8 @@ async function computeDecryptSignatures(
 }
 
 async function kmsSign(handlesList: string[], decryptedResult: string, kmsSigner: Wallet) {
-  const decManAdd = dotenv.parse(fs.readFileSync('addressesL2/.env.decryptionmanager')).DECRYPTION_MANAGER_ADDRESS;
-  const chainId = dotenv.parse(fs.readFileSync('.env')).CHAIN_ID_GATEWAY;
+  const decManAdd = process.env.DECRYPTION_MANAGER_ADDRESS;
+  const chainId = process.env.CHAIN_ID_GATEWAY;
 
   const domain = {
     name: 'DecryptionManager',

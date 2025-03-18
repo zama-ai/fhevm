@@ -1,7 +1,6 @@
 import '@nomicfoundation/hardhat-toolbox';
 import '@openzeppelin/hardhat-upgrades';
 import dotenv from 'dotenv';
-import fs from 'fs';
 import 'hardhat-deploy';
 import 'hardhat-ignore-warnings';
 import type { HardhatUserConfig, extendProvider } from 'hardhat/config';
@@ -15,6 +14,8 @@ import './tasks/etherscanVerify';
 import './tasks/taskDeploy';
 import './tasks/taskUtils';
 import './tasks/upgradeProxy';
+
+const NUM_ACCOUNTS = 15;
 
 extendProvider(async (provider, config, network) => {
   const newProvider = new CustomProvider(provider);
@@ -51,10 +52,8 @@ task('test', async (taskArgs, hre, runSuper) => {
   if (hre.network.name === 'hardhat') {
     const privKeyFhevmDeployer = process.env.PRIVATE_KEY_FHEVM_DEPLOYER;
     const privKeyFhevmRelayer = process.env.PRIVATE_KEY_DECRYPTION_ORACLE_RELAYER;
-    const parsedEnv2 = dotenv.parse(fs.readFileSync('addressesL2/.env.decryptionmanager'));
-    const decryptionManagerAddress = parsedEnv2.DECRYPTION_MANAGER_ADDRESS;
-    const parsedEnv3 = dotenv.parse(fs.readFileSync('addressesL2/.env.zkpokmanager'));
-    const zkpokManagerAddress = parsedEnv3.ZKPOK_MANAGER_ADDRESS;
+    const decryptionManagerAddress = process.env.DECRYPTION_MANAGER_ADDRESS;
+    const zkpokManagerAddress = process.env.ZKPOK_MANAGER_ADDRESS;
     await hre.run('task:faucetToPrivate', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:faucetToPrivate', { privateKey: privKeyFhevmRelayer });
 
@@ -85,43 +84,26 @@ task('test', async (taskArgs, hre, runSuper) => {
 });
 
 const chainIds = {
-  localNative: 8009,
-  devnetNative: 9000,
-  localCoprocessor: 12345,
+  localHostChain: 123456,
   sepolia: 11155111,
   staging: 12345,
   zws_dev: 1337,
   mainnet: 1,
+  custom: 9999,
 };
 
 function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
-  let jsonRpcUrl: string;
-  switch (chain) {
-    case 'staging':
-      jsonRpcUrl = process.env.RPC_URL!;
-      break;
-    case 'zws_dev':
-      jsonRpcUrl = process.env.RPC_URL!;
-      break;
-    case 'sepolia':
-      jsonRpcUrl = process.env.SEPOLIA_RPC_URL!;
-      break;
-    case 'localCoprocessor':
-      jsonRpcUrl = 'http://localhost:8745';
-      break;
-    case 'localNative':
-      jsonRpcUrl = 'http://localhost:8545';
-      break;
-    default:
-      throw new Error(`unsupported chain: ${chain}`);
+  let jsonRpcUrl: string | undefined = process.env.RPC_URL;
+  if (!jsonRpcUrl) {
+    jsonRpcUrl = 'http://127.0.0.1:8756';
   }
   return {
     accounts: {
-      count: 15,
+      count: NUM_ACCOUNTS,
       mnemonic,
       path: "m/44'/60'/0'/0",
     },
-    chainId: chainIds[chain],
+    chainId: process.env.CHAIN_ID ? Number(process.env.CHAIN_ID) : chainIds[chain],
     url: jsonRpcUrl,
   };
 }
@@ -151,8 +133,9 @@ const config: HardhatUserConfig = {
     staging: getChainConfig('staging'),
     zws_dev: getChainConfig('zws_dev'),
     sepolia: getChainConfig('sepolia'),
-    localNative: getChainConfig('localNative'),
-    localCoprocessor: getChainConfig('localCoprocessor'),
+    localHostChain: getChainConfig('localHostChain'),
+    mainnet: getChainConfig('mainnet'),
+    custom: getChainConfig('custom'),
   },
   paths: {
     artifacts: './artifacts',

@@ -18,7 +18,6 @@ RUN npm install && \
 # Copy the application files
 COPY contracts/*.sh contracts/*.ts contracts/tsconfig.json ./
 COPY contracts/addresses ./addresses/
-COPY contracts/addressesL2/ ./addressesL2/
 COPY contracts/contracts ./contracts/
 COPY contracts/lib ./lib/
 COPY contracts/tasks ./tasks/
