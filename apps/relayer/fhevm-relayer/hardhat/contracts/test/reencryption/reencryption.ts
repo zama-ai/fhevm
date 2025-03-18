@@ -21,12 +21,6 @@ describe('Reencryption', function () {
   it('test reencrypt ebool', async function () {
     const handle = await this.contract.xBool();
     const { publicKey, privateKey } = this.instances.alice.generateKeypair();
-    const eip712 = this.instances.alice.createEIP712(publicKey, this.contractAddress);
-    const signature = await this.signers.alice.signTypedData(
-      eip712.domain,
-      { Reencrypt: eip712.types.Reencrypt },
-      eip712.message,
-    );
     const ctHandleContractPairs = [
 	    {
 		    ctHandle: handle,
@@ -36,6 +30,19 @@ describe('Reencryption', function () {
     const startTimeStamp = Math.floor(Date.now() / 1000).toString();
     const durationDays = 10;
     const contractAddresses = [this.contractAddress];
+    const gatewayChainId = 54321;
+    const eip712 = this.instances.alice.createEIP712(
+      publicKey,
+      "0x2Fb4341027eb1d2aD8B5D9708187df8633cAFA92", // Decryption Manager contract
+      contractAddresses,
+      gatewayChainId,
+      startTimeStamp,
+      durationDays);
+    const signature = await this.signers.alice.signTypedData(
+      eip712.domain,
+      { UserDecrypt: eip712.types.UserDecrypt },
+      eip712.message,
+    );
     const decryptedValue = await this.instances.alice.userDecrypt(
       ctHandleContractPairs,
       privateKey,
