@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use alloy_primitives::FixedBytes;
 use alloy_primitives::Log;
 use alloy_primitives::Uint;
@@ -8,6 +6,7 @@ use sqlx::postgres::PgPoolOptions;
 use sqlx::types::Uuid;
 use sqlx::Error as SqlxError;
 use sqlx::{PgPool, Postgres};
+use std::time::Duration;
 
 use fhevm_engine_common::types::SupportedFheOperations;
 
@@ -24,6 +23,7 @@ pub type ScalarByte = FixedBytes<1>;
 
 const MAX_RETRIES_FOR_NOTIFY: usize = 5;
 pub const EVENT_PBS_COMPUTATIONS: &str = "event_pbs_computations";
+pub const EVENT_ALLOWED_HANDLE: &str = "event_allowed_handle";
 pub const EVENT_WORK_AVAILABLE: &str = "work_available";
 
 pub fn retry_on_sqlx_error(err: &SqlxError) -> bool {
@@ -328,6 +328,13 @@ impl Database {
         match data {
             AclContractEvents::Allowed(allowed) => {
                 let handle = allowed.handle.to_be_bytes_vec();
+
+                self.insert_allowed_handle(
+                    handle.clone(),
+                    allowed.account.to_string(),
+                )
+                .await?;
+
                 self.insert_pbs_computations(&vec![handle]).await?;
             }
             AclContractEvents::AllowedForDecryption(allowed_for_decryption) => {
@@ -411,6 +418,45 @@ impl Database {
         }
 
         self.notify_database(EVENT_PBS_COMPUTATIONS).await;
+
+        Ok(())
+    }
+
+    /// Add the handle to the allowed_handles table
+    pub async fn insert_allowed_handle(
+        &mut self,
+        handle: Vec<u8>,
+        account_address: String,
+    ) -> Result<(), SqlxError> {
+        let tenant_id = self.tenant_id;
+
+        let query = || {
+            sqlx::query!(
+                    "INSERT INTO allowed_handles(tenant_id, handle, account_address) VALUES($1, $2, $3)
+                         ON CONFLICT DO NOTHING;",
+                    tenant_id,
+                    handle,
+                    &account_address,
+                )
+        };
+
+        loop {
+            match query().execute(&self.pool).await {
+                Ok(_) => break,
+                Err(err) if retry_on_sqlx_error(&err) => {
+                    eprintln!(
+                        "\tDatabase I/O error: {}, will retry indefinitely",
+                        err
+                    );
+                    self.reconnect().await;
+                }
+                Err(sqlx_err) => {
+                    return Err(sqlx_err);
+                }
+            }
+        }
+
+        self.notify_database(EVENT_ALLOWED_HANDLE).await;
 
         Ok(())
     }
