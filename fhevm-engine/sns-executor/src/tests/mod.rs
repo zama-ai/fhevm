@@ -87,7 +87,7 @@ async fn test_decryptable(
 async fn setup() -> anyhow::Result<(
     sqlx::PgPool,
     SnsClientKey,
-    broadcast::Receiver<()>,
+    tokio::sync::mpsc::Receiver<HandleItem>,
     DBInstance,
 )> {
     tracing_subscriber::fmt().json().with_level(true).init();
@@ -113,8 +113,7 @@ async fn setup() -> anyhow::Result<(
         .connect(&conf.db.url)
         .await?;
 
-    let (upload_tx, rx) = mpsc::channel::<HandleItem>(10);
-    let (tx, rx) = broadcast::channel(1);
+    let (upload_tx, upload_rx) = mpsc::channel::<HandleItem>(10);
 
     let token = test_instance.parent_token.child_token();
     let sns_client_keys = read_sns_sk_from_lo(&pool, &TENANT_API_KEY.to_owned()).await?;
@@ -128,7 +127,7 @@ async fn setup() -> anyhow::Result<(
     // TODO: Replace this with notification from the worker when it's in ready-state
     sleep(Duration::from_secs(5)).await;
 
-    Ok((pool, sns_client_keys.unwrap(), rx, test_instance))
+    Ok((pool, sns_client_keys.unwrap(), upload_rx, test_instance))
 }
 
 #[derive(Serialize, Deserialize)]
