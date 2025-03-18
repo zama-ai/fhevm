@@ -180,6 +180,7 @@ help:
 	@echo '  ${YELLOW}make run-test-keyurl${RESET}            	- Run keyurl tests'
 	@echo '  ${YELLOW}make run-test-input-proof-hardhat${RESET}     - Run input proof tests from hardhat'
 	@echo '  ${YELLOW}make run-test-input-proof-staging${RESET}     - Run input proof tests from hardhat for staging'
+	@echo '  ${YELLOW}make run-test-decrypt-hardhat${RESET}            	- Run decryption tests'
 	@echo ''
 
 	@echo 'Run sequence:'
@@ -197,4 +198,5 @@ help:
 	@echo '  12. ${WHITE}make run-test-erc20${RESET}            		- Terminal 7'
 	@echo '  13. ${WHITE}make run-test-keyurl${RESET}            		- Terminal 7'
 	@echo '  14. ${WHITE}make run-test-input-proof-hardhat${RESET}     	- Terminal 7'
+	@echo '  15. ${WHITE}make run-test-decrypt-hardhat${RESET}          - Terminal 7'
 	@echo ''
