@@ -180,6 +180,8 @@ where
 
         info!("Selected {} rows to process", rows.len());
 
+        let maybe_has_more_work = rows.len() == self.conf.allow_handle_batch_limit as usize;
+
         let mut join_set = JoinSet::new();
         for row in rows.into_iter() {
             let tenant = match query_tenant_info(db_pool, row.tenant_id).await {
@@ -243,6 +245,6 @@ where
             res??;
         }
 
-        Ok(false)
+        Ok(maybe_has_more_work)
     }
 }
