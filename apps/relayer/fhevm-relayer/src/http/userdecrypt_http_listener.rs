@@ -18,7 +18,7 @@ use tracing::info;
 pub struct UserDecryptRequestJson {
     pub ctHandleContractPairs: Vec<CtHandleContractPairJson>,
     pub requestValidity: RequestValidityJson,
-    pub contractsChainId: String,
+    pub contractsChainId: u64,
     pub contractAddresses: Vec<String>,
     pub userAddress: String,
     pub signature: String,

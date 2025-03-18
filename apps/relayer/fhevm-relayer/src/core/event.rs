@@ -387,7 +387,7 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
         Ok(UserDecryptRequest {
             ct_handle_contract_pairs,
             request_validity,
-            contracts_chain_id: U256::from_str(&value.contractsChainId)?,
+            contracts_chain_id: U256::from(value.contractsChainId),
             contract_addresses: contract_addresses.clone(),
             user_address: Address::from_str(&value.userAddress)?,
             signature: Bytes::from_str(&value.signature)?,
