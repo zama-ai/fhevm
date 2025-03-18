@@ -27,13 +27,24 @@ describe('Reencryption', function () {
       { Reencrypt: eip712.types.Reencrypt },
       eip712.message,
     );
-    const decryptedValue = await this.instances.alice.reencrypt(
-      handle,
+    const ctHandleContractPairs = [
+	    {
+		    ctHandle: handle,
+		    contractAddress: this.contractAddress,
+	    }
+    ];
+    const startTimeStamp = Math.floor(Date.now() / 1000).toString();
+    const durationDays = 10;
+    const contractAddresses = [this.contractAddress];
+    const decryptedValue = await this.instances.alice.userDecrypt(
+      ctHandleContractPairs,
       privateKey,
       publicKey,
       signature.replace('0x', ''),
-      this.contractAddress,
+      contractAddresses,
       this.signers.alice.address,
+      startTimeStamp,
+      durationDays,
     );
     expect(decryptedValue).to.equal(1);
 
