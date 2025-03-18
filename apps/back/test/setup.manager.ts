@@ -13,6 +13,7 @@ import commonConfig from '#config/common.config.js'
 import { SNSClient } from '@aws-sdk/client-sns'
 import { SQSClient } from '@aws-sdk/client-sqs'
 import { JsPromise } from '#prisma/client/runtime/library.js'
+import httpzConfig from '#config/httpz.config.js'
 export type GraphQlResponse<T> =
   | {
       success: true
@@ -125,6 +126,7 @@ export class SetupManager {
             dbConfig,
             jwtConfig,
             registerAs('redis', () => this.redisConnection),
+            httpzConfig,
           ],
         }),
       )
