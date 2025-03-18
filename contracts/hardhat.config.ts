@@ -87,7 +87,7 @@ const chainIds = {
   localHostChain: 123456,
   sepolia: 11155111,
   staging: 12345,
-  zws_dev: 1337,
+  zwsDev: 1337,
   mainnet: 1,
   custom: 9999,
 };
@@ -131,7 +131,7 @@ const config: HardhatUserConfig = {
       },
     },
     staging: getChainConfig('staging'),
-    zws_dev: getChainConfig('zws_dev'),
+    zwsDev: getChainConfig('zwsDev'),
     sepolia: getChainConfig('sepolia'),
     localHostChain: getChainConfig('localHostChain'),
     mainnet: getChainConfig('mainnet'),
