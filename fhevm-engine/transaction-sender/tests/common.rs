@@ -16,6 +16,12 @@ sol!(
     "artifacts/CiphertextManager.sol/CiphertextManager.json"
 );
 
+sol!(
+    #[sol(rpc)]
+    ACLManager,
+    "artifacts/ACLManager.sol/ACLManager.json"
+);
+
 pub struct TestEnvironment {
     pub signer: PrivateKeySigner,
     pub conf: ConfigSettings,
@@ -43,15 +49,11 @@ impl TestEnvironment {
             .connect(&conf.database_url)
             .await?;
 
-        // Delete all proofs from the database.
-        sqlx::query!("TRUNCATE verify_proofs",)
-            .execute(&db_pool)
-            .await?;
-
-        // Delete all ciphertext_digest from the database.
-        sqlx::query!("TRUNCATE ciphertext_digest",)
-            .execute(&db_pool)
-            .await?;
+        truncate_tables(
+            &db_pool,
+            vec!["verify_proofs", "ciphertext_digest", "allowed_handles"],
+        )
+        .await?;
 
         Ok(Self {
             signer: PrivateKeySigner::random(),
@@ -62,4 +64,12 @@ impl TestEnvironment {
             user_address: PrivateKeySigner::random().address(),
         })
     }
+}
+
+async fn truncate_tables(db_pool: &sqlx::PgPool, tables: Vec<&str>) -> Result<(), sqlx::Error> {
+    for table in tables {
+        let query = format!("TRUNCATE {}", table);
+        sqlx::query(&query).execute(db_pool).await?;
+    }
+    Ok(())
 }

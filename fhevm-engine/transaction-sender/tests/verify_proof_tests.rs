@@ -1,5 +1,6 @@
 use alloy::primitives::FixedBytes;
 use alloy::providers::{Provider, WalletProvider};
+use alloy::signers::local::PrivateKeySigner;
 use alloy::{primitives::U256, sol_types::eip712_domain};
 use alloy::{providers::ProviderBuilder, signers::SignerSync, sol, sol_types::SolStruct};
 use common::{CiphertextManager, TestEnvironment, ZKPoKManager};
@@ -32,6 +33,7 @@ async fn verify_proof_response_success() -> anyhow::Result<()> {
     let txn_sender = TransactionSender::new(
         *zkpok_manager.address(),
         *ciphertext_manager.address(),
+        PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),
         env.cancel_token.clone(),
@@ -135,6 +137,7 @@ async fn verify_proof_response_reversal_already_signed() -> anyhow::Result<()> {
     let txn_sender = TransactionSender::new(
         *zkpok_manager.address(),
         *ciphertext_manager.address(),
+        PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),
         env.cancel_token.clone(),
@@ -209,6 +212,7 @@ async fn verify_proof_response_other_reversal_gas_estimation() -> anyhow::Result
     let txn_sender = TransactionSender::new(
         *zkpok_manager.address(),
         *ciphertext_manager.address(),
+        PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),
         env.cancel_token.clone(),
@@ -280,6 +284,7 @@ async fn verify_proof_response_other_reversal_receipt() -> anyhow::Result<()> {
     let txn_sender = TransactionSender::new(
         *zkpok_manager.address(),
         *ciphertext_manager.address(),
+        PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),
         env.cancel_token.clone(),
@@ -353,6 +358,7 @@ async fn verify_proof_max_retries_remove_entry() -> anyhow::Result<()> {
     let txn_sender = TransactionSender::new(
         *zkpok_manager.address(),
         *ciphertext_manager.address(),
+        PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),
         env.cancel_token.clone(),
@@ -416,6 +422,7 @@ async fn verify_proof_max_retries_do_not_remove_entry() -> anyhow::Result<()> {
     let txn_sender = TransactionSender::new(
         *zkpok_manager.address(),
         *ciphertext_manager.address(),
+        PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),
         env.cancel_token.clone(),

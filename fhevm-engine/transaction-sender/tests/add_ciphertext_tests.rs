@@ -1,8 +1,6 @@
-use alloy::primitives::Address;
 use alloy::providers::{Provider, ProviderBuilder, WalletProvider};
 use alloy::signers::local::PrivateKeySigner;
-use alloy::transports::Transport;
-use common::{CiphertextManager, TestEnvironment, ZKPoKManager};
+use common::{CiphertextManager, TestEnvironment};
 
 use rand::{random, Rng};
 use serial_test::serial;
@@ -25,6 +23,7 @@ async fn test_add_ciphertext_digests() -> anyhow::Result<()> {
     let txn_sender = TransactionSender::new(
         PrivateKeySigner::random().address(),
         *ciphertext_manager.address(),
+        PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),
         env.cancel_token.clone(),
@@ -124,6 +123,7 @@ async fn test_retry_mechanism() -> anyhow::Result<()> {
     let txn_sender = TransactionSender::new(
         PrivateKeySigner::random().address(),
         PrivateKeySigner::random().address(),
+        PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),
         env.cancel_token.clone(),
@@ -159,7 +159,7 @@ async fn test_retry_mechanism() -> anyhow::Result<()> {
     .await?;
 
     let mut valid_retries_count = false;
-    // Make sure the digest was tagged as sent.
+    // Make sure the digest was not tagged as sent.
     for _retries in 0..10 {
         let rows = sqlx::query!(
             "SELECT txn_is_sent, txn_retry_count
