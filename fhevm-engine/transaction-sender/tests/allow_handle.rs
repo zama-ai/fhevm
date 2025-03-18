@@ -54,8 +54,8 @@ async fn test_allow_handle() -> anyhow::Result<()> {
     .execute(&env.db_pool)
     .await?;
 
-    // Make sure the digest was tagged as sent.
-    let mut digests_sent = false;
+    // Make sure the allowed handle was tagged as sent.
+    let mut allow_handle_is_sent = false;
     for _retries in 0..10 {
         let rows = sqlx::query!(
             "SELECT txn_is_sent
@@ -66,7 +66,7 @@ async fn test_allow_handle() -> anyhow::Result<()> {
         .fetch_one(&env.db_pool)
         .await?;
         if rows.txn_is_sent.unwrap_or_default() {
-            digests_sent = true;
+            allow_handle_is_sent = true;
             break;
         }
 
@@ -81,8 +81,8 @@ async fn test_allow_handle() -> anyhow::Result<()> {
     .await?;
 
     assert!(
-        digests_sent,
-        "Expected the digests to be tagged as sent after sending a notification"
+        allow_handle_is_sent,
+        "Expected the allowed handle to be tagged as sent"
     );
 
     env.cancel_token.cancel();
