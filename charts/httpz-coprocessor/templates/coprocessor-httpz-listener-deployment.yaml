@@ -1,0 +1,49 @@
+{{- if .Values.httpzListener.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: coprocessor-httpz-listener
+    app.kubernetes.io/name: {{ include "httpzListenerName" . }}
+  name: {{ include "httpzListenerName" . }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: coprocessor-httpz-listener
+  template:
+    metadata:
+      labels:
+        app: coprocessor-httpz-listener
+        app.kubernetes.io/name: {{ include "httpzListenerName" . }}
+    spec:
+      restartPolicy: Always
+      {{- if and .Values.httpzListener.affinity .Values.httpzListener.affinity.enabled }}
+      affinity:
+{{ toYaml (omit .Values.httpzListener.affinity "enabled") | indent 8 }}
+      {{- end }}
+      {{- if and .Values.httpzListener.tolerations .Values.httpzListener.tolerations.enabled }}
+      tolerations:
+{{ toYaml .Values.httpzListener.tolerations.items | indent 8 }}
+      {{- end }}
+      containers:
+        - name: coprocessor-httpz-listener
+          image: {{ .Values.httpzListener.image.name }}:{{ .Values.httpzListener.image.tag }}
+          command: ["fhevm_listener"]
+          args:
+{{ toYaml .Values.httpzListener.args | nindent 12 }}
+          env:
+{{ toYaml .Values.httpzListener.env | nindent 12 }}
+          ports:
+            {{- range $portName, $portValue := .Values.httpzListener.ports }}
+            - name: {{ $portName }}
+              containerPort: {{ $portValue }}
+            {{- end }}
+          resources:
+            requests:
+              cpu: {{ .Values.httpzListener.resources.requests.cpu | default "100m" }}
+              memory: {{ .Values.httpzListener.resources.requests.memory | default "256Mi" }}
+            limits:
+              cpu: {{ .Values.httpzListener.resources.limits.cpu | default "500m" }}
+              memory: {{ .Values.httpzListener.resources.limits.memory | default "512Mi" }}
+{{- end -}}

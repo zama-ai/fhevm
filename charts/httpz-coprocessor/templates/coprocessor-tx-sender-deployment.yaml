@@ -18,6 +18,14 @@ spec:
         app.kubernetes.io/name: {{ include "txSenderName" . }}
     spec:
       restartPolicy: Always
+      {{- if and .Values.txSender.affinity .Values.txSender.affinity.enabled }}
+      affinity:
+{{ toYaml (omit .Values.txSender.affinity "enabled") | indent 8 }}
+      {{- end }}
+      {{- if and .Values.txSender.tolerations .Values.txSender.tolerations.enabled }}
+      tolerations:
+{{ toYaml .Values.txSender.tolerations.items | indent 8 }}
+      {{- end }}
       containers:
         - name: coprocessor-tx-sender
           image: {{ .Values.txSender.image.name }}:{{ .Values.txSender.image.tag }}

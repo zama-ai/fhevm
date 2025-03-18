@@ -18,6 +18,14 @@ spec:
         app.kubernetes.io/name: {{ include "zkProofWorkerName" . }}
     spec:
       restartPolicy: Always
+      {{- if and .Values.zkProofWorker.affinity .Values.zkProofWorker.affinity.enabled }}
+      affinity:
+{{ toYaml (omit .Values.zkProofWorker.affinity "enabled") | indent 8 }}
+      {{- end }}
+      {{- if and .Values.zkProofWorker.tolerations .Values.zkProofWorker.tolerations.enabled }}
+      tolerations:
+{{ toYaml .Values.zkProofWorker.tolerations.items | indent 8 }}
+      {{- end }}
       containers:
         - name: coprocessor-zkproof-worker
           image: {{ .Values.zkProofWorker.image.name }}:{{ .Values.zkProofWorker.image.tag }}

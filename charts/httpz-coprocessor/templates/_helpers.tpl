@@ -1,11 +1,11 @@
-{{- define "serverName" -}}
-{{- $serverNameDefault := printf "%s-%s" .Release.Name "server" }}
-{{- default $serverNameDefault .Values.server.nameOverride | trunc 63 | trimSuffix "-" -}}
+{{- define "tfheWorkerName" -}}
+{{- $tfheWorkerNameDefault := printf "%s-%s" .Release.Name "tfhe-worker" }}
+{{- default $tfheWorkerNameDefault .Values.tfheWorker.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{- define "listenerName" -}}
-{{- $listenerNameDefault := printf "%s-%s" .Release.Name "listener" }}
-{{- default $listenerNameDefault .Values.listener.nameOverride | trunc 63 | trimSuffix "-" -}}
+{{- define "httpzListenerName" -}}
+{{- $httpzListenerNameDefault := printf "%s-%s" .Release.Name "httpz-listener" }}
+{{- default $httpzListenerNameDefault .Values.httpzListener.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
 {{- define "txSenderName" -}}
