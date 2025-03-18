@@ -20,9 +20,11 @@ pub struct TransactionSender<P: Provider<Ethereum> + Clone + 'static> {
 }
 
 impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         zkpok_manager_address: Address,
         ciphertext_manager_address: Address,
+        acl_manager_address: Address,
         signer: PrivateKeySigner,
         provider: P,
         cancel_token: CancellationToken,
@@ -42,6 +44,12 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
             ),
             Arc::new(ops::add_ciphertext::AddCiphertextOperation::new(
                 ciphertext_manager_address,
+                provider.clone(),
+                conf.clone(),
+                gas,
+            )),
+            Arc::new(ops::allow_handle::ACLManagerOperation::new(
+                acl_manager_address,
                 provider.clone(),
                 conf.clone(),
                 gas,

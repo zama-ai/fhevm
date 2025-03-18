@@ -1,5 +1,6 @@
 use alloy::network::Ethereum;
 use async_trait::async_trait;
+
 use sqlx::{Pool, Postgres};
 
 #[async_trait]
@@ -13,4 +14,7 @@ where
 }
 
 pub(crate) mod add_ciphertext;
+pub(crate) mod allow_handle;
 pub(crate) mod verify_proof;
+
+mod common;

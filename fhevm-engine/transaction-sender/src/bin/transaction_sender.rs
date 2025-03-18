@@ -19,6 +19,9 @@ struct Conf {
     ciphertext_manager_address: Address,
 
     #[arg(short, long)]
+    acl_manager_address: Address,
+
+    #[arg(short, long)]
     gateway_url: Url,
 
     #[arg(short, long)]
@@ -39,6 +42,9 @@ struct Conf {
     #[arg(short, long, default_value = "add_ciphertexts")]
     add_ciphertexts_database_channel: String,
 
+    #[arg(short, long, default_value = "event_allowed_handle")]
+    allow_handle_database_channel: String,
+
     #[arg(long, default_value = "128")]
     verify_proof_resp_batch_limit: u32,
 
@@ -50,6 +56,9 @@ struct Conf {
 
     #[arg(long, default_value = "10")]
     add_ciphertexts_batch_limit: u32,
+
+    #[arg(long, default_value = "10")]
+    allow_handle_batch_limit: u32,
 
     #[arg(long, default_value = "15")]
     add_ciphertexts_resp_max_retries: u32,
@@ -91,6 +100,7 @@ async fn main() -> anyhow::Result<()> {
     let sender = TransactionSender::new(
         conf.zkpok_manager_address,
         conf.ciphertext_manager_address,
+        conf.acl_manager_address,
         signer,
         provider,
         cancel_token.clone(),
@@ -99,6 +109,7 @@ async fn main() -> anyhow::Result<()> {
             database_pool_size: conf.database_pool_size,
             verify_proof_resp_db_channel: conf.verify_proof_resp_database_channel,
             add_ciphertexts_db_channel: conf.add_ciphertexts_database_channel,
+            allow_handle_db_channel: conf.allow_handle_database_channel,
             verify_proof_resp_batch_limit: conf.verify_proof_resp_batch_limit,
             verify_proof_resp_max_retries: conf.verify_proof_resp_max_retries,
             verify_proof_remove_after_max_retries: conf.verify_proof_remove_after_max_retries,
@@ -107,6 +118,7 @@ async fn main() -> anyhow::Result<()> {
             error_sleep_initial_secs: conf.error_sleep_initial_secs,
             error_sleep_max_secs: conf.error_sleep_max_secs,
             add_ciphertexts_resp_max_retries: conf.add_ciphertexts_resp_max_retries,
+            allow_handle_batch_limit: conf.allow_handle_batch_limit,
         },
         None,
     )

@@ -8,6 +8,7 @@ pub struct ConfigSettings {
 
     pub verify_proof_resp_db_channel: String,
     pub add_ciphertexts_db_channel: String,
+    pub allow_handle_db_channel: String,
 
     pub verify_proof_resp_batch_limit: u32,
     pub verify_proof_resp_max_retries: u32,
@@ -15,6 +16,8 @@ pub struct ConfigSettings {
 
     pub add_ciphertexts_batch_limit: u32,
     pub add_ciphertexts_resp_max_retries: u32,
+
+    pub allow_handle_batch_limit: u32,
 
     pub db_polling_interval_secs: u16,
 
@@ -30,6 +33,7 @@ impl Default for ConfigSettings {
             database_pool_size: 10,
             verify_proof_resp_db_channel: "verify_proof_responses".to_owned(),
             add_ciphertexts_db_channel: "add_ciphertexts".to_owned(),
+            allow_handle_db_channel: "event_allowed_handle".to_owned(),
             verify_proof_resp_batch_limit: 128,
             verify_proof_resp_max_retries: 15,
             verify_proof_remove_after_max_retries: true,
@@ -38,6 +42,7 @@ impl Default for ConfigSettings {
             error_sleep_max_secs: 16,
             add_ciphertexts_batch_limit: 10,
             add_ciphertexts_resp_max_retries: 15,
+            allow_handle_batch_limit: 10,
         }
     }
 }

@@ -1,3 +1,4 @@
+use super::common::try_into_array;
 use super::TransactionOperation;
 use alloy::{
     network::{Ethereum, TransactionBuilder},
@@ -18,16 +19,6 @@ sol!(
     CiphertextManager,
     "artifacts/CiphertextManager.sol/CiphertextManager.json"
 );
-
-macro_rules! try_into_array {
-    ($vec:expr, $size:expr) => {{
-        if $vec.len() != $size {
-            panic!("invalid len, expected {} but got {}", $size, $vec.len());
-        }
-        let arr: [u8; $size] = $vec.try_into().expect("Failed to convert Vec to array");
-        arr
-    }};
-}
 
 #[derive(Clone)]
 pub struct AddCiphertextOperation<P: Provider<Ethereum> + Clone + 'static> {
@@ -210,8 +201,8 @@ where
             let (ciphertext64_digest, ciphertext128_digest) =
                 match (row.ciphertext, row.ciphertext128) {
                     (Some(ct), Some(ct128)) => (
-                        FixedBytes::from(try_into_array!(ct, 32)),
-                        FixedBytes::from(try_into_array!(ct128, 32)),
+                        FixedBytes::from(try_into_array::<32>(ct)?),
+                        FixedBytes::from(try_into_array::<32>(ct128)?),
                     ),
                     _ => {
                         error!("Missing ciphertext(s), handle {}", h_as_hex);
@@ -219,7 +210,7 @@ where
                     }
                 };
 
-            let handle_u256 = U256::from_be_bytes(try_into_array!(handle, 32));
+            let handle_u256 = U256::from_be_bytes(try_into_array::<32>(handle)?);
 
             info!(
                 "Adding ciphertext, handle: {}, chain_id: {}, key_id: {}, ct64: {}, ct128: {}",
