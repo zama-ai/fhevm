@@ -7,10 +7,14 @@ metadata:
     app.kubernetes.io/name: {{ include "zkProofWorkerName" . }}
   name: {{ include "zkProofWorkerName" . }}
 spec:
-  replicas: 1
+  replicas: {{ .Values.zkProofWorker.replicas | default 0 }}
   selector:
     matchLabels:
       app: coprocessor-zkproof-worker
+  {{- if .Values.zkProofWorker.updateStrategy }}
+  strategy:
+    {{- toYaml .Values.zkProofWorker.updateStrategy | nindent 4 }}
+  {{- end }}
   template:
     metadata:
       labels:

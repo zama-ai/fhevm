@@ -7,10 +7,14 @@ metadata:
     app.kubernetes.io/name: {{ include "gwListenerName" . }}
   name: {{ include "gwListenerName" . }}
 spec:
-  replicas: 1
+  replicas: {{ .Values.gwListener.replicas | default 1 }}
   selector:
     matchLabels:
       app: coprocessor-gw-listener
+  {{- if .Values.gwListener.updateStrategy }}
+  strategy:
+    {{- toYaml .Values.gwListener.updateStrategy | nindent 4 }}
+  {{- end }}
   template:
     metadata:
       labels:

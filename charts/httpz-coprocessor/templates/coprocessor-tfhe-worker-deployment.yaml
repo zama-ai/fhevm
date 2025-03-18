@@ -7,10 +7,14 @@ metadata:
     app.kubernetes.io/name: {{ include "tfheWorkerName" . }}
   name: {{ include "tfheWorkerName" . }}
 spec:
-  replicas: 1
+  replicas: {{ .Values.tfheWorker.replicas | default 0 }}
   selector:
     matchLabels:
       app: coprocessor-server
+  {{- if .Values.tfheWorker.updateStrategy }}
+  strategy:
+    {{- toYaml .Values.tfheWorker.updateStrategy | nindent 4 }}
+  {{- end }}
   template:
     metadata:
       labels:

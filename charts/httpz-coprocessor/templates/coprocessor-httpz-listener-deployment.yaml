@@ -7,10 +7,14 @@ metadata:
     app.kubernetes.io/name: {{ include "httpzListenerName" . }}
   name: {{ include "httpzListenerName" . }}
 spec:
-  replicas: 1
+  replicas: {{ .Values.httpzListener.replicas | default 1 }}
   selector:
     matchLabels:
       app: coprocessor-httpz-listener
+  {{- if .Values.httpzListener.updateStrategy }}
+  strategy:
+    {{- toYaml .Values.httpzListener.updateStrategy | nindent 4 }}
+  {{- end }}
   template:
     metadata:
       labels:

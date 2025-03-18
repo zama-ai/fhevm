@@ -7,10 +7,14 @@ metadata:
     app.kubernetes.io/name: {{ include "snsWorkerName" . }}
   name: {{ include "snsWorkerName" . }}
 spec:
-  replicas: 1
+  replicas: {{ .Values.snsWorker.replicas | default 0 }}
   selector:
     matchLabels:
       app: coprocessor-sns-worker
+  {{- if .Values.tfheWorker.updateStrategy }}
+  strategy:
+    {{- toYaml .Values.tfheWorker.updateStrategy | nindent 4 }}
+  {{- end }}
   template:
     metadata:
       labels:

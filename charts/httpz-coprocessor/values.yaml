@@ -28,7 +28,7 @@ dbMigration:
   enabled: true
   image:
     name: ghcr.io/zama-ai/fhevm-db-migration
-    tag: v0.1.2
+    tag: v0.7.0-rc2
   env:
     - name: CHAIN_ID
       value: "12345"
@@ -59,12 +59,100 @@ dbMigration:
     enabled: false
     items: []
 
+httpzListener:
+  enabled: false
+  nameOverride:
+  image:
+    name: ghcr.io/zama-ai/fhevm-coprocessor
+    tag: v0.7.0-rc2
+  replicas: 1
+  env:
+    - name: DATABASE_URL
+      valueFrom:
+        secretKeyRef:
+          name: coprocessor-db-url
+          key: coprocessor-db-url
+    - name: TENANT_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: coprocessor-api-key
+          key: coprocessor-api-key
+  args:
+    - --database-url=$(DATABASE_URL)
+    - --coprocessor-api-key=$(TENANT_API_KEY)
+    - --url=ws://layer1-node:8545
+  ports:
+    metrics: "9100"
+  serviceMonitor:
+    enabled: false
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  affinity:
+    enabled: false
+  tolerations:
+    enabled: false
+    items: []
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+gwListener:
+  enabled: false
+  nameOverride:
+  image:
+    name: ghcr.io/zama-ai/fhevm-coprocessor
+    tag: v0.7.0-rc2
+  replicas: 1
+  env:
+    - name: DATABASE_URL
+      valueFrom:
+        secretKeyRef:
+          name: coprocessor-db-url
+          key: coprocessor-db-url
+    - name: ZKPOK_MANAGER_ADDRESS
+      valueFrom:
+        configMapKeyRef:
+          name: layer2-sc-addresses
+          key: zkpok_manager.address
+  args:
+    - --database-url=$(DATABASE_URL)
+    - --gw-url=ws://layer2-anvil-node:8546
+    - --zkpok-manager-address=$(ZKPOK_MANAGER_ADDRESS)
+  ports:
+    metrics: "9100"
+  serviceMonitor:
+    enabled: false
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  affinity:
+    enabled: false
+  tolerations:
+    enabled: false
+    items: []
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
 tfheWorker:
   enabled: true
   nameOverride:
   image:
     name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: v0.7.0-rc0
+    tag: v0.7.0-rc2
   replicas: 1
   env:
     - name: DATABASE_URL
@@ -103,91 +191,18 @@ tfheWorker:
   tolerations:
     enabled: false
     items: []
-
-httpzListener:
-  enabled: false
-  nameOverride:
-  image:
-    name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: b826fbf
-  replicas: 1
-  env:
-    - name: DATABASE_URL
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-db-url
-          key: coprocessor-db-url
-    - name: TENANT_API_KEY
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-api-key
-          key: coprocessor-api-key
-  args:
-    - --database-url=$(DATABASE_URL)
-    - --coprocessor-api-key=$(TENANT_API_KEY)
-    - --url=ws://layer1-node:8545
-  ports:
-    metrics: "9100"
-  serviceMonitor:
-    enabled: false
-  resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
-  affinity:
-    enabled: false
-  tolerations:
-    enabled: false
-    items: []
-
-gwListener:
-  enabled: false
-  nameOverride:
-  image:
-    name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: db8c783
-  replicas: 1
-  env:
-    - name: DATABASE_URL
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-db-url
-          key: coprocessor-db-url
-    - name: ZKPOK_MANAGER_ADDRESS
-      valueFrom:
-        configMapKeyRef:
-          name: layer2-sc-addresses
-          key: zkpok_manager.address
-  args:
-    - --database-url=$(DATABASE_URL)
-    - --gw-url=ws://layer2-anvil-node:8546
-    - --zkpok-manager-address=$(ZKPOK_MANAGER_ADDRESS)
-  ports:
-    metrics: "9100"
-  serviceMonitor:
-    enabled: false
-  resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
-  affinity:
-    enabled: false
-  tolerations:
-    enabled: false
-    items: []
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
 
 zkProofWorker:
   enabled: false
   nameOverride:
   image:
     name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: fd7f391
+    tag: v0.7.0-rc2
   replicas: 1
   env:
     - name: DATABASE_URL
@@ -214,13 +229,18 @@ zkProofWorker:
   tolerations:
     enabled: false
     items: []
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
 
 snsWorker:
   enabled: false
   nameOverride:
   image:
     name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: fd7f391
+    tag: v0.7.0-rc2
   replicas: 1
   env:
     - name: DATABASE_URL
@@ -257,13 +277,18 @@ snsWorker:
   tolerations:
     enabled: false
     items: []
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
 
 txSender:
   enabled: false
   nameOverride:
   image:
     name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: db8c783
+    tag: v0.7.0-rc2
   replicas: 1
   env:
     - name: DATABASE_URL
@@ -305,3 +330,8 @@ txSender:
   tolerations:
     enabled: false
     items: []
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0

@@ -7,10 +7,14 @@ metadata:
     app.kubernetes.io/name: {{ include "txSenderName" . }}
   name: {{ include "txSenderName" . }}
 spec:
-  replicas: 1
+  replicas: {{ .Values.txSender.replicas | default 1 }}
   selector:
     matchLabels:
       app: coprocessor-tx-sender
+  {{- if .Values.txSender.updateStrategy }}
+  strategy:
+    {{- toYaml .Values.txSender.updateStrategy | nindent 4 }}
+  {{- end }}
   template:
     metadata:
       labels:
