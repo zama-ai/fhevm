@@ -804,23 +804,21 @@ describe("DecryptionManager", function () {
       // Check that the request fails because the given userAddress is not allowed for user decryption
       // Note: the function should be reverted on the first handle since it loops over the handles
       // in order internally
-      // TODO: Enable the allow check test back once the allow flow is fully implemented
-      // @dev See https://github.com/zama-ai/gateway-l2/issues/188
-      // await expect(
-      //   decryptionManager
-      //     .connect(user)
-      //     .userDecryptionRequest(
-      //       ctHandleContractPairs,
-      //       requestValidity,
-      //       contractsChainId,
-      //       [contractAddress],
-      //       user.address,
-      //       publicKey,
-      //       userSignature,
-      //     ),
-      // )
-      //   .to.be.revertedWithCustomError(aclManager, "AccountNotAllowedToUseCiphertext")
-      //   .withArgs(ctHandles[0], user.address);
+      await expect(
+        decryptionManager
+          .connect(user)
+          .userDecryptionRequest(
+            ctHandleContractPairs,
+            requestValidity,
+            contractsChainId,
+            [contractAddress],
+            user.address,
+            publicKey,
+            userSignature,
+          ),
+      )
+        .to.be.revertedWithCustomError(aclManager, "AccountNotAllowedToUseCiphertext")
+        .withArgs(ctHandles[0], user.address);
     });
 
     it("Should revert because of invalid EIP712 user request signature", async function () {
