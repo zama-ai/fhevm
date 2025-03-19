@@ -25,12 +25,12 @@ config-fhevm-relayer:
 # Run Anvil node for httpz chain
 run-httpz-mock:
 	@echo "$(GREEN)Starting Anvil node for mock HTTPZ chain...$(RESET)"
-	@cd hardhat/contracts && anvil --block-time 0.1 --port 8756 --chain-id 123456 --accounts 20 --mnemonic $(MNEMONIC)
+	@cd hardhat/contracts && anvil --block-time 1 --port 8756 --chain-id 123456 --accounts 20 --mnemonic $(MNEMONIC)
 
 # Run Anvil node for gateway chain
 run-gateway-mock:
 	@echo "$(GREEN)Starting Anvil node for mock GATEWAY chain...$(RESET)"
-	@cd hardhat/contracts && anvil --block-time 0.1 --port 8757 --chain-id 654321 --accounts 20 --mnemonic $(MNEMONIC)
+	@cd hardhat/contracts && anvil --block-time 1 --port 8757 --chain-id 654321 --accounts 20 --mnemonic $(MNEMONIC)
 
 # Run Anvil node for httpz chain
 run-httpz-compose-mock:
@@ -96,7 +96,7 @@ run-test-input-proof:
 run-test-user-decrypt:
 	@curl -X POST http://127.0.0.1:3000/user-decrypt \
 -H "Content-Type: application/json" \
--d '{"ctHandleContractPairs":[{"ctHandle":"a5e1defb98efe38ebb2d958cee052410247f4c802410247f4c8010247f4c8076","contractAddress":"0xa5e1defb98EFe38EBb2D958CEe052410247F4c80"}],"requestValidity":{"startTimestamp":"1742249385","durationDays":"30"},"contractsChainId":1234,"contractAddresses":["0xa5e1defb98EFe38EBb2D958CEe052410247F4c80"],"userAddress":"0xcEc0e9723bF28D2A2C867108cC4C3A38a011d4D1","signature":"6d2a6a0d1bb22079d68e2448d0b2b6b7bcb6ee6a146d69d96c2b9db0b3217e505b1b39c3f2fd9b1e978a1f63fc9353fb1eaa4df7f64d61b49e019f785c89d81e1b","publicKey":"a5e1defb98efe38ebb2d958cee052410247f4c80"}'
+-d '{"ctHandleContractPairs":[{"ctHandle":"a5e1defb98efe38ebb2d958cee052410247f4c802410247f4c8010247f4c8076","contractAddress":"0xa5e1defb98EFe38EBb2D958CEe052410247F4c80"}],"requestValidity":{"startTimestamp":"1742249385","durationDays":"30"},"contractsChainId":1234,"contractAddresses":["0xa5e1defb98EFe38EBb2D958CEe052410247F4c80"],"userAddress":"0xcd09f75E2BF2A4d11F3AB23f1389FcC1621c0cc2","signature":"8427fe6416be49dffb0b05a225af11364c17d9599e6c9ae899b03be901155ef97017a4dde46c5fe5893fde6249c33a03f559766b1f82381cd81a6e5b707c12e51b","publicKey":"a5e1defb98efe38ebb2d958cee052410247f4c80"}'
 
 run-test-user-decrypt-hardhat:
 	@echo "$(GREEN)Running input proof tests...$(RESET)"

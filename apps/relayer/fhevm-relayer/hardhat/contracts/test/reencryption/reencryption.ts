@@ -19,41 +19,53 @@ describe('Reencryption', function () {
   });
 
   it('test reencrypt ebool', async function () {
+    console.log('1.1');
     const handle = await this.contract.xBool();
-    const { publicKey, privateKey } = this.instances.alice.generateKeypair();
+    let { publicKey, privateKey } = this.instances.alice.generateKeypair();
+    // publicKey = '0x' + Buffer.from(publicKey).toString('hex');
+    publicKey = ethers.hexlify(ethers.randomBytes(32));
     const ctHandleContractPairs = [
-	    {
-		    ctHandle: handle,
-		    contractAddress: this.contractAddress,
-	    }
+      {
+        ctHandle: handle,
+        contractAddress: this.contractAddress,
+      },
     ];
     const startTimeStamp = Math.floor(Date.now() / 1000).toString();
     const durationDays = 10;
     const contractAddresses = [this.contractAddress];
-    const gatewayChainId = 54321;
+    const gatewayChainId = 654321;
+    console.log('1.2');
     const eip712 = this.instances.alice.createEIP712(
       publicKey,
-      "0x2Fb4341027eb1d2aD8B5D9708187df8633cAFA92", // Decryption Manager contract
+      '0x857Ca72A957920Fa0FB138602995839866Bd4005', // Decryption Manager contract
       contractAddresses,
       gatewayChainId,
       startTimeStamp,
-      durationDays);
+      durationDays,
+    );
+
+    console.log('1.3');
+    console.log('1.3.1 public key', publicKey);
+    // console.log('1.3.2 public key 2', publicKey2);
     const signature = await this.signers.alice.signTypedData(
       eip712.domain,
-      { UserDecrypt: eip712.types.UserDecrypt },
+      { UserDecryptRequestVerification: eip712.types.UserDecryptRequestVerification },
       eip712.message,
     );
+    console.log('1.4');
     const decryptedValue = await this.instances.alice.userDecrypt(
       ctHandleContractPairs,
       privateKey,
-      publicKey,
+      publicKey.replace('0x', ''),
       signature.replace('0x', ''),
       contractAddresses,
       this.signers.alice.address,
       startTimeStamp,
       durationDays,
     );
+    console.log('1.5 user address', this.signers.alice.address);
     expect(decryptedValue).to.equal(1);
+    console.log('1.6');
 
     // on the other hand, Bob should be unable to read Alice's balance
     try {
