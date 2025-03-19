@@ -1,9 +1,7 @@
 <p align="center">
 <!-- product name logo -->
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./assets/Zama-KMS-fhEVM-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="./assets/Zama-KMS-fhEVM-light.png">
-  <img width=600 alt="Zama fhEVM & KMS">
+  <img src="https://private-user-images.githubusercontent.com/1384478/421481269-6173e401-7c1b-4911-9731-ca2eb436e85f.png?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NDIzNzM0NjcsIm5iZiI6MTc0MjM3MzE2NywicGF0aCI6Ii8xMzg0NDc4LzQyMTQ4MTI2OS02MTczZTQwMS03YzFiLTQ5MTEtOTczMS1jYTJlYjQzNmU4NWYucG5nP1gtQW16LUFsZ29yaXRobT1BV1M0LUhNQUMtU0hBMjU2JlgtQW16LUNyZWRlbnRpYWw9QUtJQVZDT0RZTFNBNTNQUUs0WkElMkYyMDI1MDMxOSUyRnVzLWVhc3QtMSUyRnMzJTJGYXdzNF9yZXF1ZXN0JlgtQW16LURhdGU9MjAyNTAzMTlUMDgzMjQ3WiZYLUFtei1FeHBpcmVzPTMwMCZYLUFtei1TaWduYXR1cmU9Y2QxMzBhMGJlY2UyMTAwYTg4NTFkOGM5MWRkZGJlYmZiMDgyNzNiYjQ5OTM4MWI5MzA5NGU0ZmI4NWFhNWZlNSZYLUFtei1TaWduZWRIZWFkZXJzPWhvc3QifQ.YViSBhLRoakk-dPU_lPcV3xDGvPUYqmzqo5eOyJsEWs" alt="Zama HTTPZ">
 </picture>
 </p>
 
@@ -18,9 +16,6 @@
   <a href="https://github.com/zama-ai/bounty-program"><img src="https://img.shields.io/badge/Contribute-Zama%20Bounty%20Program-%23ffd208?style=flat-square"></a>
 </p>
 
-> [!Note]
-> To try out the Q2 release of our fhEVM-native demo, use the [release/0.5.x branch](https://github.com/zama-ai/fhevm-devops/tree/release/0.5.x).
-
 > [!Warning]
 > This demo is an early beta version.
 
@@ -34,36 +29,19 @@
 
 ## About
 
-This repository provides a docker based setup to locally run an integration of fhEVM blockchain and Zama KMS (Key Management System).
+This repository provides a docker based setup to locally run an integration of HTTPZ and Zama KMS (Key Management System).
 
 For overview of the system, architecture and details on individual components, refer to our [documentation](https://docs.zama.ai/fhevm-backend).
-
-fhEVM blockchain comes in two variants:
-
-- Native
-- Coprocessor
 
 KMS can be configured to two modes:
 
 - Central
 - Threshold
 
-Possible configurations in the demo:
-
-- fhEVM-Native variant supports running KMS in only central mode. Support for threshold mode is coming in next release.
-- fhEVM-Coprocessor variant supports running KMS in both central and threshold modes (with 4 parties).
-
 ## Running the demo
 
-- For fhEVM Native:
-
-  - Switch to the [release/0.5.x branch](https://github.com/zama-ai/fhevm-devops/tree/release/0.5.x) and follow the steps in the README.
-  - This is our Q2 2024 release.
-  - [native](native) directory on `main` branch is being actively updated for next release.
-
-- For fhEVM Coprocessor
-  - Switch to the [coprocessor](coprocessor) directory on `main` branch and follow the steps in the README.
-  - This is the most up to date version.
+- Switch to the [coprocessor](coprocessor) directory on `main` branch and follow the steps in the README.
+- This is the most up to date version.
 
 ## License
 
