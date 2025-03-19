@@ -1,11 +1,13 @@
 import { z } from 'zod'
-import { chainId, meta, metaFactory, requestId, web3Address } from './shared.js'
+import { chainId, Meta, meta, requestId, web3Address } from './shared.js'
+
+const hexEncoded = z.string().startsWith('0x').and(z.custom<`0x${string}`>())
 
 type EventTypes =
   | 'public-decryption:authorization-request'
   | 'public-decryption:authorization-response'
   | 'private-decryption:operation-request'
-  | 'rivate-decryption:operation-response'
+  | 'private-decryption:operation-response'
 
 function genSchema<Key extends EventTypes, Payload extends z.ZodRawShape>(
   key: Key,
@@ -21,40 +23,51 @@ function genSchema<Key extends EventTypes, Payload extends z.ZodRawShape>(
   })
 }
 
-function hexString(options?: { length?: number; prefix?: boolean }) {
-  const prefix = options?.prefix ? '0x' : ''
-  const length = options?.length ? `{${options.length}}` : '+'
-  const regex = `^${prefix}[\\da-f]${length}$`
-  return z.string().regex(new RegExp(regex, 'i'))
-}
-
 const schemas = [
   genSchema('public-decryption:authorization-request', {
     callerAddress: web3Address,
   }),
   genSchema('public-decryption:authorization-response', {
-    result: z.string(),
     authorized: z.boolean(),
   }),
   genSchema('private-decryption:operation-request', {
-    ctHandles: z.array(hexString({ prefix: true })),
-    publicKey: hexString({ prefix: true }),
+    ctHandles: z.array(hexEncoded),
+    publicKey: hexEncoded,
     chainId,
   }),
-  genSchema('rivate-decryption:operation-response', {
-    ctValues: z.array(hexString({ prefix: true })),
-    signatures: z.array(hexString({ prefix: true })),
+  genSchema('private-decryption:operation-response', {
+    ctValues: z.array(hexEncoded),
+    signatures: z.array(hexEncoded),
   }),
 ] as const
 
-export const schema = z.discriminatedUnion('type', [...schemas]).and(
-  z.object({
-    meta,
-  }),
-)
+export const schema = z
+  .discriminatedUnion('type', [...schemas])
+  .and(z.object({ meta }))
 export type RelayerEvent = z.infer<typeof schema>
 
-const factory = metaFactory<RelayerEvent>('relayer')
+/**
+ * Create a factory to generate a given event
+ *
+ * @param type The type of the Event to generate
+ * @returns the factory function for the selected event
+ */
+function factory<
+  K extends EventTypes,
+  Event extends { type: `relayer:${K}`; payload: object; meta: Meta } = Extract<
+    RelayerEvent,
+    { type: `relayer:${K}` }
+  >,
+>(type: K) {
+  return function (payload: Event['payload'], meta: Meta) {
+    return {
+      type: `relayer:${type}`,
+      payload,
+      meta,
+    } as Event
+  }
+}
+
 export const publicDecryptionAuthorizationRequest = factory(
   'public-decryption:authorization-request',
 )
@@ -65,7 +78,7 @@ export const privateDecryptionOperationRequest = factory(
   'private-decryption:operation-request',
 )
 export const privateDecryptionOperationResponse = factory(
-  'rivate-decryption:operation-response',
+  'private-decryption:operation-response',
 )
 
 export function isRelayerEvent(data: unknown): data is RelayerEvent {
