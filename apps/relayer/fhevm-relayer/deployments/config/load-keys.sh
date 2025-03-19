@@ -7,15 +7,16 @@ apt update && apt install -y wget
 
 # Configuration
 MINIO_URL="http://s3-mock:9000"
-AWS_ACCESS_KEY_ID="fhevm-access-key"
-AWS_SECRET_ACCESS_KEY="fhevm-access-secret-key"
+AWS_ACCESS_KEY_ID="httpz-access-key"
+AWS_SECRET_ACCESS_KEY="httpz-access-secret-key"
 BUCKET_NAME="kms-public"
-PATHS=(PublicKey ServerKey CRS)
+PATHS=(PublicKey ServerKey SnsKey CRS)
 FILES_DIR="/keys"
 IDS=(
-    "408d8cbaa51dece7f782fe04ba0b1c1d017b1088"
-    "408d8cbaa51dece7f782fe04ba0b1c1d017b1088"
-    "a5fedad3fd734a598fb67452099229445cb68447"
+    "408d8cbaa51dece7f782fe04ba0b1c1d017b10880c538b7c72037468fe5c97ee"
+    "408d8cbaa51dece7f782fe04ba0b1c1d017b10880c538b7c72037468fe5c97ee"
+    "408d8cbaa51dece7f782fe04ba0b1c1d017b10880c538b7c72037468fe5c97ee"
+    "a5fedad3fd734a598fb67452099229445cb68447198fb56f29bb64d98953d002"
 )
 
 # Install Minio client

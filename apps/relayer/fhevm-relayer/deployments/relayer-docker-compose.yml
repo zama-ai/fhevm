@@ -1,12 +1,12 @@
 services:
-  relayer:
+  httpz-relayer:
+    container_name: httpz-relayer
     build:
       context: ../
       dockerfile: Dockerfile
       tags:
         - "ghcr.io/zama-ai/fhevm-relayer:v0.1.0-local"
-    image: ghcr.io/zama-ai/fhevm-relayer:7b90cf3
-    container_name: fhevm-relayer
+    image: ghcr.io/zama-ai/fhevm-relayer:0c56ee3
     command:
     - fhevm-relayer
     environment:
@@ -17,19 +17,26 @@ services:
     ports:
       - "3000:3000"
   
-  e2e-tester:
-    container_name: e2e-tester
-    build:
-      context: ../
-      dockerfile: hardhat/contracts/operations/Dockerfile
-      tags:
-      - "httpz-e2e-tester:0.1.1-local"
-    image: ghcr.io/zama-ai/fhevm-e2e-test:a6fdd46
+  input-proof-test:
+    container_name: input-proof-test
+    image: ghcr.io/zama-ai/fhevm-e2e-test:v0.1.0-rc2
     command:
       - /bin/bash
       - -c
       - |
         source /app/hardhat/contracts/.env
-        make run-test-input-proof-staging
+        ./run-input-proof.sh
+    volumes:
+      - ./config/env/.env.staging.layer1:/app/hardhat/contracts/.env
+
+  e2e-test-debug:
+    container_name: e2e-test-debug
+    build:
+      context: ../
+      dockerfile: hardhat/contracts/operations/Dockerfile
+      tags:
+      - "httpz-e2e-tester:0.1.1-local"
+    image: ghcr.io/zama-ai/fhevm-e2e-test:0c56ee3
+    command: ["/bin/bash", "-c", "tail -f /dev/null"]
     volumes:
       - ./config/env/.env.staging.layer1:/app/hardhat/contracts/.env

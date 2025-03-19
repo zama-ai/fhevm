@@ -50,9 +50,10 @@ setup_git_lfs() {
     # Verify LFS files are present
     log_info "Checking LFS files existence..."
     local lfs_files=(
-        "deployments/config/kms-keys/CRS/a5fedad3fd734a598fb67452099229445cb68447"
-        "deployments/config/kms-keys/PublicKey/408d8cbaa51dece7f782fe04ba0b1c1d017b1088"
-        "deployments/config/kms-keys/ServerKey/408d8cbaa51dece7f782fe04ba0b1c1d017b1088"
+        "deployments/config/kms-keys/CRS/a5fedad3fd734a598fb67452099229445cb68447198fb56f29bb64d98953d002"
+        "deployments/config/kms-keys/PublicKey/408d8cbaa51dece7f782fe04ba0b1c1d017b10880c538b7c72037468fe5c97ee"
+        "deployments/config/kms-keys/ServerKey/408d8cbaa51dece7f782fe04ba0b1c1d017b10880c538b7c72037468fe5c97ee"
+        "deployments/config/kms-keys/SnsKey/408d8cbaa51dece7f782fe04ba0b1c1d017b10880c538b7c72037468fe5c97ee"
     )
 
     local missing_files=false
@@ -200,14 +201,16 @@ run_compose "./config/env/.env.staging.layer1" "layer1-docker-compose.yml" "Laye
 run_compose "./config/env/.env.staging.coprocessor" "coprocessor-docker-compose.yml" "Coprocessor Services" \
     "db:running" \
     "db-migration:complete" \
-    "coprocessor-server:running" \
-    "fhevm-listener:running" \
+    "httpz-listener:running" \
     "gw-listener:running" \
+    "tfhe-worker:running" \
     "zkproof-worker:running" \
+    "sns-worker:running" \
     "transaction-sender:running"
 
 run_compose "./config/env/.env.staging.relayer" "relayer-docker-compose.yml" "Relayer Services" \
-    "fhevm-relayer:running" \
-    "e2e-tester:running"
+    "httpz-relayer:running" \
+    "input-proof-test:complete" \
+    "e2e-test-debug:running"
 
 log_info "All services started successfully!"

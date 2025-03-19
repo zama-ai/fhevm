@@ -6,10 +6,10 @@ inputproof:
 keyurl:
     fhe_public_key:
       data_id: "fhe-public-key-data-id"
-      url: "http://s3-mock:9000/kms-public/kms/PUB/PublicKey/408d8cbaa51dece7f782fe04ba0b1c1d017b1088"
+      url: "http://s3-mock:9000/kms-public/kms/PUB/PublicKey/408d8cbaa51dece7f782fe04ba0b1c1d017b10880c538b7c72037468fe5c97ee"
     crs:
       data_id: "crs-data-id"
-      url: "http://s3-mock:9000/kms-public/kms/PUB/CRS/a5fedad3fd734a598fb67452099229445cb68447"
+      url: "http://s3-mock:9000/kms-public/kms/PUB/CRS/a5fedad3fd734a598fb67452099229445cb68447198fb56f29bb64d98953d002"
 
 networks:
   fhevm:
@@ -42,7 +42,7 @@ contracts:
   # Example local contract addresses - Update these after deployment
   decryption_oracle_address: 0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d
   tfhe_executor_address: 0x12B064FB845C1cc05e9493856a1D637a73e944bE
-  decryption_manager_address: 0x2Fb4341027eb1d2aD8B5D9708187df8633cAFA92
+  decryption_manager_address: 0xF0bFB159C7381F7CB332586004d8247252C5b816
   zkpok_manager_address: 0x812b06e1CDCE800494b79fFE4f925A504a9A9810
 
 log:

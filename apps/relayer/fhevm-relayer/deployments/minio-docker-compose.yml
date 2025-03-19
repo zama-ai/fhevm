@@ -23,8 +23,8 @@ services:
     environment:
       MINIO_ROOT_USER: zamadmin
       MINIO_ROOT_PASSWORD: zamadmin
-      ACCESS_KEY: fhevm-access-key
-      SECRET_KEY: fhevm-access-secret-key
+      ACCESS_KEY: httpz-access-key
+      SECRET_KEY: httpz-access-secret-key
       MINIO_ENDPOINT: "http://s3-mock:9000"
     # entrypoint: > 
     #     /bin/sh -c " tail -f /dev/null"

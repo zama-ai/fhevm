@@ -8,7 +8,7 @@ services:
       [
         "anvil",
         "--block-time",
-        "1",
+        "0.5",
         "--host",
         "0.0.0.0",
         "--port",
@@ -25,7 +25,7 @@ services:
   
   layer1-sc-deploy:
     container_name: layer1-sc-deploy
-    image: ghcr.io/zama-ai/fhevm-smart-contracts-dev:d1369ae
+    image: ghcr.io/zama-ai/fhevm-smart-contracts-dev:v0.7.0-rc2
     volumes:
       - ./config/env/.env.staging.layer1:/app/.env
-    entrypoint: ["/app/launch-fhevm-staging.sh"]
+    command: [ "bash", "/app/deploy-core-contracts.sh", "staging"]
