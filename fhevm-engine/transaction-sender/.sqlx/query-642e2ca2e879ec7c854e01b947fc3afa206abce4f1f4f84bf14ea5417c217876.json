@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT handle, tenant_id, account_address\n            FROM allowed_handles\n            WHERE account_address IS NOT NULL\n                AND TRIM(account_address) <> ''\n            LIMIT $1;\n            ",
+  "query": "\n            SELECT handle, tenant_id, account_address\n            FROM allowed_handles\n            WHERE account_address IS NOT NULL\n                AND TRIM(account_address) <> ''\n                AND txn_is_sent = false\n                AND txn_retry_count < $1\n            LIMIT $2;\n            ",
   "describe": {
     "columns": [
       {
@@ -21,6 +21,7 @@
     ],
     "parameters": {
       "Left": [
+        "Int4",
         "Int8"
       ]
     },
@@ -30,5 +31,5 @@
       true
     ]
   },
-  "hash": "dda323ef56ffe94e91562bcdee6cae6dfb559d55d2420f5527abd3836270b63c"
+  "hash": "642e2ca2e879ec7c854e01b947fc3afa206abce4f1f4f84bf14ea5417c217876"
 }
