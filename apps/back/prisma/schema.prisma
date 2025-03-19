@@ -38,22 +38,24 @@ model Invitation {
 }
 
 model User {
-  id        String   @id
-  email     String   @unique
+  id        String    @id
+  email     String    @unique
   password  String
   name      String
   teams     Team[]
-  updatedAt DateTime @updatedAt
-  createdAt DateTime @default(now())
+  updatedAt DateTime  @updatedAt
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
 }
 
 model Team {
-  id        String   @id
+  id        String    @id
   name      String
   users     User[]
   dapps     Dapp[]
-  updatedAt DateTime @updatedAt
-  createdAt DateTime @default(now())
+  updatedAt DateTime  @updatedAt
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
 }
 
 model Dapp {
@@ -65,6 +67,7 @@ model Dapp {
   team      Team       @relation(fields: [teamId], references: [id], onDelete: Cascade)
   updatedAt DateTime   @updatedAt
   createdAt DateTime   @default(now())
+  deletedAt DateTime?
   DappStats DappStat[]
 }
 

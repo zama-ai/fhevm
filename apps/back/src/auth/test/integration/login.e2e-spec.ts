@@ -1,4 +1,8 @@
-import { IntegrationManager, User } from '#tests/integration.manager.js'
+import {
+  GraphQlResponse,
+  IntegrationManager,
+  User,
+} from '#tests/integration.manager.js'
 import { faker } from '@faker-js/faker'
 import {
   afterAll,
@@ -84,6 +88,79 @@ describe('login', () => {
 
       test('should return an Unauthorized error', () => {
         expect(error).toBe('Unauthorized')
+      })
+    })
+  })
+
+  describe('given a user has been deleted', () => {
+    let email: string
+    let password: string
+
+    beforeEach(async () => {
+      email = faker.internet.email()
+      password = faker.internet.password()
+
+      await manager.auth.signup(
+        {
+          name: faker.internet.username(),
+          password,
+        },
+        { createInvitation: true, email },
+      )
+      // TODO: use a GraphQL endpoint when implemented
+      await manager.prismaClient.user.update({
+        where: { email },
+        data: { deletedAt: new Date() },
+      })
+    })
+
+    describe('when logging in', () => {
+      let login: GraphQlResponse<{
+        user: User
+        token: string
+      }>
+
+      beforeEach(async () => {
+        login = await manager.auth.login({ email, password })
+      })
+
+      test('should return an Unauthorized error', () => {
+        if (!login.success) {
+          expect(login.errors[0].message).toMatch('Unauthorized')
+        } else {
+          console.log()
+          expect(login.success, 'It should fail').toBe(false)
+        }
+      })
+    })
+  })
+
+  describe(`given a user doesn't exist`, () => {
+    let email: string
+    let password: string
+
+    beforeEach(async () => {
+      email = faker.internet.email()
+      password = faker.internet.password()
+    })
+
+    describe('when logging in', () => {
+      let login: GraphQlResponse<{
+        user: User
+        token: string
+      }>
+
+      beforeEach(async () => {
+        login = await manager.auth.login({ email, password })
+      })
+
+      test('should return an Unauthorized error', () => {
+        if (!login.success) {
+          expect(login.errors[0].message).toMatch('Unauthorized')
+        } else {
+          console.log()
+          expect(login.success, 'It should fail').toBe(false)
+        }
       })
     })
   })

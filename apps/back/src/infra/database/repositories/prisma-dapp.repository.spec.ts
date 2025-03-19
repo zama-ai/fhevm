@@ -8,6 +8,8 @@ import { DAppStat, DAppStatProps } from '#dapps/domain/entities/dapp-stat.js'
 import { AppError, every, executeTask, isAppError } from 'utils'
 import { faker } from '@faker-js/faker'
 import { z } from 'zod'
+import { TeamId } from '#users/domain/entities/value-objects.js'
+import { Dapp } from '#prisma/client/index.js'
 
 vi.mock('../prisma.service.js')
 
@@ -140,6 +142,69 @@ describe('PrismaDappRepository', () => {
           expect(success).toBe(false)
           expect(value).toBeUndefined()
           expect(isAppError(error)).toBe(true)
+        })
+      })
+    })
+  })
+
+  describe('delete', () => {
+    describe('given a dapp exists', () => {
+      let dappId: DAppId
+      let dapp: Dapp
+      beforeEach(() => {
+        dappId = DAppId.random()
+        dapp = {
+          id: dappId.value,
+          name: faker.string.alphanumeric(10),
+          status: 'LIVE',
+          address: faker.string.hexadecimal({ length: 40 }),
+          teamId: TeamId.random().value,
+          updatedAt: faker.date.past(),
+          createdAt: faker.date.past(),
+          deletedAt: null,
+        }
+        prisma.dapp.findUnique.mockResolvedValue(dapp)
+        prisma.dapp.findFirst.mockResolvedValue(dapp)
+      })
+
+      describe('when I delete it', () => {
+        beforeEach(() => {
+          prisma.dapp.update.mockResolvedValue({
+            ...dapp,
+            deletedAt: new Date(),
+          })
+        })
+
+        test('should soft delete it', async () => {
+          const { success } = await executeTask<void, AppError>(
+            repo.delete(dappId),
+          )
+          expect(success).toBe(true)
+          expect(prisma.dapp.update).toHaveBeenCalledExactlyOnceWith({
+            data: { deletedAt: new Date() },
+            where: { id: dappId.value },
+          })
+        })
+      })
+    })
+
+    describe(`given a dapp doesn't exist`, () => {
+      let dappId: DAppId
+      beforeEach(() => {
+        dappId = DAppId.random()
+
+        prisma.dapp.findUnique.mockResolvedValue(null)
+        prisma.dapp.findFirst.mockResolvedValue(null)
+      })
+
+      describe('when I delete it', () => {
+        test('should fail', async () => {
+          const { success, error } = await executeTask<void, AppError>(
+            repo.delete(dappId),
+          )
+          expect(success).toBe(false)
+          expect(error?._tag).toBe('NotFoundError')
+          expect(prisma.dapp.update).not.toHaveBeenCalled()
         })
       })
     })

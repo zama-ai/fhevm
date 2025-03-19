@@ -1,13 +1,14 @@
 import { User } from '#users/domain/entities/user.js'
 import { UserRepository } from '#users/domain/repositories/user.repository.js'
 import { PrismaService } from '../prisma.service.js'
-import { Injectable } from '@nestjs/common'
-import type { AppError } from 'utils'
+import { Injectable, Logger } from '@nestjs/common'
+import { AppError, isAppError } from 'utils'
 import { notFoundError, Task, unknownError } from 'utils'
 import { UserId } from '#users/domain/entities/value-objects.js'
 
 @Injectable()
 export class PrismaUserRepository extends UserRepository {
+  private readonly logger = new Logger(PrismaUserRepository.name)
   constructor(private readonly db: PrismaService) {
     super()
   }
@@ -27,7 +28,7 @@ export class PrismaUserRepository extends UserRepository {
     }
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.user
-        .findFirst({ where: { id: id.value } })
+        .findFirst({ where: { id: id.value, deletedAt: null } })
         .then(data =>
           data ? resolve(data) : reject(notFoundError('User not found')),
         )
@@ -41,7 +42,7 @@ export class PrismaUserRepository extends UserRepository {
     }
     return new Task<unknown, AppError>((resolve, reject) => {
       this.db.user
-        .findFirst({ where: { email } })
+        .findFirst({ where: { email, deletedAt: null } })
         .then(data =>
           data ? resolve(data) : reject(notFoundError('User not found')),
         )
@@ -59,5 +60,40 @@ export class PrismaUserRepository extends UserRepository {
         .then(resolve)
         .catch((err: unknown) => reject(unknownError(String(err))))
     }).chain(props => User.parse(props).async())
+  }
+
+  delete = (id: UserId): Task<void, AppError> => {
+    return new Task<void, AppError>((resolve, reject) => {
+      this.db.user
+        .findUnique({
+          where: { id: id.value, deletedAt: null },
+        })
+        .then(user => {
+          if (!user) {
+            reject(notFoundError(`user not found`))
+          } else {
+            return this.db.user.update({
+              where: { id: id.value, deletedAt: null },
+              data: {
+                deletedAt: new Date().toISOString(),
+              },
+            })
+          }
+        })
+        .then(() => {
+          resolve(void 0)
+        })
+        .catch((err: unknown) => {
+          if (isAppError(err)) {
+            this.logger.warn(`failed to delete: ${err._tag}/${err.message}`)
+            reject(err)
+          } else {
+            this.logger.warn(`failed to delete: ${err}`)
+            reject(unknownError(String(err)))
+          }
+        })
+    }).tap(() => {
+      this.logger.debug(`user ${id.value} deleted`)
+    })
   }
 }
