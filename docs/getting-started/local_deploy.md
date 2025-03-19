@@ -32,7 +32,7 @@ make get-accounts
 3/ Launch a hardhat node on port 8546:
 
 ```bash
-npx hardhat node --port 8546
+make start-local-node
 ```
 
 4/ Run
@@ -41,14 +41,14 @@ npx hardhat node --port 8546
 make deploy-contracts-local
 ```
 
-This will run the script [`./deploy-httpz-gateway.sh`](../deploy-httpz-gateway.sh)
+This will run the script [`./deploy-httpz-gateway-deployment.sh`](../deploy-httpz-gateway-deployment.sh) on the
+`localHTTPZGateway` network.
 
-# Testing deployment settings
+# Testing staging deployment
 
-To test the deployment settings locally, run:
+To test the staging deployment settings locally, run the following docker compose commands:
 
 ```bash
-make deploy-contracts-local-deployment
+make docker-compose-build
+make docker-compose-up
 ```
-
-Note: for now, the settings are aligned with the input flow staging. In the future, more settings will be added.

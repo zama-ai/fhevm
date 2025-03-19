@@ -1,4 +1,4 @@
-name: fhevm-layer2
+name: httpz-gateway
 
 services:
   anvil-node:
@@ -28,16 +28,21 @@ services:
       - .:/anvil
 
   sc-deploy:
-    container_name: layer2-sc-deploy
-    image: ghcr.io/zama-ai/gateway-l2/sc-bundle:b479cf8
+    container_name: httpz-gateway-sc-deploy
+    image: ghcr.io/zama-ai/gateway-l2/sc-bundle:0.1.0-local
+    build:
+      context: .
+      dockerfile: Dockerfile
+      tags:
+        - ghcr.io/zama-ai/gateway-l2/sc-bundle:0.1.0-local
     volumes:
       - ./.env.example.deployment:/app/.env
     entrypoint: ["/app/deploy-httpz-gateway-deployment.sh"]
     command: ["staging"]
 
   sc-deploy-debug:
-    container_name: sc-deploy-debug
-    image: ghcr.io/zama-ai/gateway-l2/sc-bundle:b479cf8
+    container_name: httpz-gateway-sc-deploy-debug
+    image: ghcr.io/zama-ai/gateway-l2/sc-bundle:0.1.0-local
     volumes:
       - ./.env.example.deployment:/app/.env
     entrypoint: ["/bin/bash"]
