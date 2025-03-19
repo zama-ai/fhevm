@@ -96,7 +96,7 @@ run-test-input-proof:
 run-test-user-decrypt:
 	@curl -X POST http://127.0.0.1:3000/user-decrypt \
 -H "Content-Type: application/json" \
--d '{"ctHandleContractPairs":[{"ctHandle":"a5e1defb98efe38ebb2d958cee052410247f4c802410247f4c8010247f4c8076","contractAddress":"0xa5e1defb98EFe38EBb2D958CEe052410247F4c80"}],"requestValidity":{"startTimestamp":"1742249385","durationDays":30},"contractsChainId":1234,"contractAddresses":["0xa5e1defb98EFe38EBb2D958CEe052410247F4c80"],"userAddress":"0xcEc0e9723bF28D2A2C867108cC4C3A38a011d4D1","signature":"cEc0e9723bF28D2A2C867108cC4C3A38a011d4D1","publicKey":"a5e1defb98efe38ebb2d958cee052410247f4c80"}'
+-d '{"ctHandleContractPairs":[{"ctHandle":"a5e1defb98efe38ebb2d958cee052410247f4c802410247f4c8010247f4c8076","contractAddress":"0xa5e1defb98EFe38EBb2D958CEe052410247F4c80"}],"requestValidity":{"startTimestamp":"1742249385","durationDays":"30"},"contractsChainId":1234,"contractAddresses":["0xa5e1defb98EFe38EBb2D958CEe052410247F4c80"],"userAddress":"0xcEc0e9723bF28D2A2C867108cC4C3A38a011d4D1","signature":"6d2a6a0d1bb22079d68e2448d0b2b6b7bcb6ee6a146d69d96c2b9db0b3217e505b1b39c3f2fd9b1e978a1f63fc9353fb1eaa4df7f64d61b49e019f785c89d81e1b","publicKey":"a5e1defb98efe38ebb2d958cee052410247f4c80"}'
 
 run-test-user-decrypt-hardhat:
 	@echo "$(GREEN)Running input proof tests...$(RESET)"
