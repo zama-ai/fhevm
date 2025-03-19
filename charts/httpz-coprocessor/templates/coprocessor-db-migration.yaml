@@ -20,6 +20,14 @@ spec:
         app.kubernetes.io/name: {{ .Release.Name }}-db-migration
     spec:
       restartPolicy: Never
+      {{- if and .Values.dbMigration.affinity .Values.dbMigration.affinity.enabled }}
+      affinity:
+{{ toYaml (omit .Values.dbMigration.affinity "enabled") | indent 8 }}
+      {{- end }}
+      {{- if and .Values.dbMigration.tolerations .Values.dbMigration.tolerations.enabled }}
+      tolerations:
+{{ toYaml .Values.dbMigration.tolerations.items | indent 8 }}
+      {{- end }}
       initContainers:
       - name: fetch-pub-key-matter
         image: netdata/wget:latest

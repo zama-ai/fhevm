@@ -7,10 +7,14 @@ metadata:
     app.kubernetes.io/name: {{ include "zkProofWorkerName" . }}
   name: {{ include "zkProofWorkerName" . }}
 spec:
-  replicas: 1
+  replicas: {{ .Values.zkProofWorker.replicas | default 0 }}
   selector:
     matchLabels:
       app: coprocessor-zkproof-worker
+  {{- if .Values.zkProofWorker.updateStrategy }}
+  strategy:
+    {{- toYaml .Values.zkProofWorker.updateStrategy | nindent 4 }}
+  {{- end }}
   template:
     metadata:
       labels:
@@ -18,6 +22,14 @@ spec:
         app.kubernetes.io/name: {{ include "zkProofWorkerName" . }}
     spec:
       restartPolicy: Always
+      {{- if and .Values.zkProofWorker.affinity .Values.zkProofWorker.affinity.enabled }}
+      affinity:
+{{ toYaml (omit .Values.zkProofWorker.affinity "enabled") | indent 8 }}
+      {{- end }}
+      {{- if and .Values.zkProofWorker.tolerations .Values.zkProofWorker.tolerations.enabled }}
+      tolerations:
+{{ toYaml .Values.zkProofWorker.tolerations.items | indent 8 }}
+      {{- end }}
       containers:
         - name: coprocessor-zkproof-worker
           image: {{ .Values.zkProofWorker.image.name }}:{{ .Values.zkProofWorker.image.tag }}

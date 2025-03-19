@@ -7,10 +7,14 @@ metadata:
     app.kubernetes.io/name: {{ include "txSenderName" . }}
   name: {{ include "txSenderName" . }}
 spec:
-  replicas: 1
+  replicas: {{ .Values.txSender.replicas | default 1 }}
   selector:
     matchLabels:
       app: coprocessor-tx-sender
+  {{- if .Values.txSender.updateStrategy }}
+  strategy:
+    {{- toYaml .Values.txSender.updateStrategy | nindent 4 }}
+  {{- end }}
   template:
     metadata:
       labels:
@@ -18,6 +22,14 @@ spec:
         app.kubernetes.io/name: {{ include "txSenderName" . }}
     spec:
       restartPolicy: Always
+      {{- if and .Values.txSender.affinity .Values.txSender.affinity.enabled }}
+      affinity:
+{{ toYaml (omit .Values.txSender.affinity "enabled") | indent 8 }}
+      {{- end }}
+      {{- if and .Values.txSender.tolerations .Values.txSender.tolerations.enabled }}
+      tolerations:
+{{ toYaml .Values.txSender.tolerations.items | indent 8 }}
+      {{- end }}
       containers:
         - name: coprocessor-tx-sender
           image: {{ .Values.txSender.image.name }}:{{ .Values.txSender.image.tag }}

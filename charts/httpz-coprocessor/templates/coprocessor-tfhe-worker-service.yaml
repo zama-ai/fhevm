@@ -1,0 +1,19 @@
+{{- if .Values.tfheWorker.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: coprocessor-tfhe-worker
+    app.kubernetes.io/name: {{ include "tfheWorkerName" . }}
+  name: {{ include "tfheWorkerName" . }}
+spec:
+  clusterIP: None
+  ports:
+    - name: metrics
+      port: {{ .Values.tfheWorker.ports.metrics }}
+      targetPort: {{ .Values.tfheWorker.ports.metrics }}
+  selector:
+    app: coprocessor-tfhe-worker
+    app.kubernetes.io/name: {{ include "tfheWorkerName" . }}
+  type: ClusterIP
+{{- end }}

@@ -28,7 +28,7 @@ dbMigration:
   enabled: true
   image:
     name: ghcr.io/zama-ai/fhevm-db-migration
-    tag: v0.1.2
+    tag: v0.7.0-rc2
   env:
     - name: CHAIN_ID
       value: "12345"
@@ -53,56 +53,18 @@ dbMigration:
     limits:
       cpu: 500m
       memory: 512Mi
-
-server:
-  enabled: true
-  nameOverride:
-  image:
-    name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: v0.7.0-rc0
-  replicas: 1
-  env:
-    - name: DATABASE_URL
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-db-url
-          key: coprocessor-db-url
-    - name: TENANT_API_KEY
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-api-key
-          key: coprocessor-api-key
-    - name: ACL_CONTRACT_ADDRESS
-      value: "0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c"
-    - name: INPUT_VERIFIER_ADDRESS
-      value: "0xa1880e99d86F081E8D3868A8C4732C8f65dfdB11"
-  args:
-    - --run-server
-    - --server-addr=0.0.0.0:50051
-    - --coprocessor-private-key=/accounts/coprocessor.hex
-  ports:
-    rpc: "50051"
-    metrics: "9100"
-  serviceMonitor:
+  affinity:
     enabled: false
-  resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
-  tracing:
+  tolerations:
     enabled: false
-    endpoint: ""
-    service: "coprocessor_server"
+    items: []
 
-listener:
+httpzListener:
   enabled: false
   nameOverride:
   image:
     name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: b826fbf
+    tag: v0.7.0-rc2
   replicas: 1
   env:
     - name: DATABASE_URL
@@ -130,13 +92,203 @@ listener:
     limits:
       cpu: 500m
       memory: 512Mi
+  affinity:
+    enabled: false
+  tolerations:
+    enabled: false
+    items: []
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+gwListener:
+  enabled: false
+  nameOverride:
+  image:
+    name: ghcr.io/zama-ai/fhevm-coprocessor
+    tag: v0.7.0-rc2
+  replicas: 1
+  env:
+    - name: DATABASE_URL
+      valueFrom:
+        secretKeyRef:
+          name: coprocessor-db-url
+          key: coprocessor-db-url
+    - name: ZKPOK_MANAGER_ADDRESS
+      valueFrom:
+        configMapKeyRef:
+          name: layer2-sc-addresses
+          key: zkpok_manager.address
+  args:
+    - --database-url=$(DATABASE_URL)
+    - --gw-url=ws://layer2-anvil-node:8546
+    - --zkpok-manager-address=$(ZKPOK_MANAGER_ADDRESS)
+  ports:
+    metrics: "9100"
+  serviceMonitor:
+    enabled: false
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  affinity:
+    enabled: false
+  tolerations:
+    enabled: false
+    items: []
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+tfheWorker:
+  enabled: true
+  nameOverride:
+  image:
+    name: ghcr.io/zama-ai/fhevm-coprocessor
+    tag: v0.7.0-rc2
+  replicas: 1
+  env:
+    - name: DATABASE_URL
+      valueFrom:
+        secretKeyRef:
+          name: coprocessor-db-url
+          key: coprocessor-db-url
+    - name: TENANT_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: coprocessor-api-key
+          key: coprocessor-api-key
+    - name: ACL_CONTRACT_ADDRESS
+      value: "0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c"
+    - name: INPUT_VERIFIER_ADDRESS
+      value: "0xa1880e99d86F081E8D3868A8C4732C8f65dfdB11"
+  args:
+    - --coprocessor-private-key=/accounts/coprocessor.hex
+  ports:
+    metrics: "9100"
+  serviceMonitor:
+    enabled: false
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  tracing:
+    enabled: false
+    endpoint: ""
+    service: "coprocessor_server"
+  affinity:
+    enabled: false
+  tolerations:
+    enabled: false
+    items: []
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+zkProofWorker:
+  enabled: false
+  nameOverride:
+  image:
+    name: ghcr.io/zama-ai/fhevm-coprocessor
+    tag: v0.7.0-rc2
+  replicas: 1
+  env:
+    - name: DATABASE_URL
+      valueFrom:
+        secretKeyRef:
+          name: coprocessor-db-url
+          key: coprocessor-db-url
+  args:
+    - --pg-listen-channel="event_zkpok_new_work"
+    - --pg-notify-channel="event_zkpok_computed"
+  ports:
+    metrics: "9100"
+  serviceMonitor:
+    enabled: false
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  affinity:
+    enabled: false
+  tolerations:
+    enabled: false
+    items: []
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+snsWorker:
+  enabled: false
+  nameOverride:
+  image:
+    name: ghcr.io/zama-ai/fhevm-coprocessor
+    tag: v0.7.0-rc2
+  replicas: 1
+  env:
+    - name: DATABASE_URL
+      valueFrom:
+        secretKeyRef:
+          name: coprocessor-db-url
+          key: coprocessor-db-url
+    - name: TENANT_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: coprocessor-api-key
+          key: coprocessor-api-key
+  args:
+    - --database-url=$(DATABASE_URL)
+    - --tenant-api-key=$(TENANT_API_KEY)
+    - --pg-listen-channels=["event_pbs_computations" "event_ciphertext_computed"]
+    - --pg-notify-channel="event_ciphertext128_computed"
+    - --work-items-batch-size=4
+    - --pg-polling-interval=60
+    - --pg-pool-connections=10
+  ports:
+    metrics: "9100"
+  serviceMonitor:
+    enabled: false
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  affinity:
+    enabled: false
+  tolerations:
+    enabled: false
+    items: []
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
 
 txSender:
   enabled: false
   nameOverride:
   image:
     name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: db8c783
+    tag: v0.7.0-rc2
   replicas: 1
   env:
     - name: DATABASE_URL
@@ -173,103 +325,13 @@ txSender:
     limits:
       cpu: 500m
       memory: 512Mi
-
-gwListener:
-  enabled: false
-  nameOverride:
-  image:
-    name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: db8c783
-  replicas: 1
-  env:
-    - name: DATABASE_URL
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-db-url
-          key: coprocessor-db-url
-    - name: ZKPOK_MANAGER_ADDRESS
-      valueFrom:
-        configMapKeyRef:
-          name: layer2-sc-addresses
-          key: zkpok_manager.address
-  args:
-    - --database-url=$(DATABASE_URL)
-    - --gw-url=ws://layer2-anvil-node:8546
-    - --zkpok-manager-address=$(ZKPOK_MANAGER_ADDRESS)
-  ports:
-    metrics: "9100"
-  serviceMonitor:
+  affinity:
     enabled: false
-  resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
-
-zkProofWorker:
-  enabled: false
-  nameOverride:
-  image:
-    name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: fd7f391
-  replicas: 1
-  env:
-    - name: DATABASE_URL
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-db-url
-          key: coprocessor-db-url
-  args:
-    - --pg-listen-channel="event_zkpok_new_work"
-    - --pg-notify-channel="event_zkpok_computed"
-  ports:
-    metrics: "9100"
-  serviceMonitor:
+  tolerations:
     enabled: false
-  resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
-
-snsWorker:
-  enabled: false
-  nameOverride:
-  image:
-    name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: fd7f391
-  replicas: 1
-  env:
-    - name: DATABASE_URL
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-db-url
-          key: coprocessor-db-url
-    - name: TENANT_API_KEY
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-api-key
-          key: coprocessor-api-key
-  args:
-    - --database-url=$(DATABASE_URL)
-    - --tenant-api-key=$(TENANT_API_KEY)
-    - --pg-listen-channels=["event_pbs_computations" "event_ciphertext_computed"]
-    - --pg-notify-channel="event_ciphertext128_computed"
-    - --work-items-batch-size=4
-    - --pg-polling-interval=60
-    - --pg-pool-connections=10
-  ports:
-    metrics: "9100"
-  serviceMonitor:
-    enabled: false
-  resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
+    items: []
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0

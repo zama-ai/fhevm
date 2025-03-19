@@ -1,0 +1,16 @@
+{{- if .Values.httpzListener.serviceMonitor.enabled -}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app: coprocessor-httpz-listener
+    app.kubernetes.io/name: {{ include "httpzListenerName" . }}
+  name: {{ include "httpzListenerName" . }}
+spec:
+  selector:
+    matchLabels:
+      app: coprocessor-httpz-listener
+      app.kubernetes.io/name: {{ include "httpzListenerName" . }}
+  endpoints:
+  - port: metrics
+{{- end -}}

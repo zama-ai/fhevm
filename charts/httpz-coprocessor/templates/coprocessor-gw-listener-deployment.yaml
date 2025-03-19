@@ -7,10 +7,14 @@ metadata:
     app.kubernetes.io/name: {{ include "gwListenerName" . }}
   name: {{ include "gwListenerName" . }}
 spec:
-  replicas: 1
+  replicas: {{ .Values.gwListener.replicas | default 1 }}
   selector:
     matchLabels:
       app: coprocessor-gw-listener
+  {{- if .Values.gwListener.updateStrategy }}
+  strategy:
+    {{- toYaml .Values.gwListener.updateStrategy | nindent 4 }}
+  {{- end }}
   template:
     metadata:
       labels:
@@ -18,6 +22,14 @@ spec:
         app.kubernetes.io/name: {{ include "gwListenerName" . }}
     spec:
       restartPolicy: Always
+      {{- if and .Values.gwListener.affinity .Values.gwListener.affinity.enabled }}
+      affinity:
+{{ toYaml (omit .Values.gwListener.affinity "enabled") | indent 8 }}
+      {{- end }}
+      {{- if and .Values.gwListener.tolerations .Values.gwListener.tolerations.enabled }}
+      tolerations:
+{{ toYaml .Values.gwListener.tolerations.items | indent 8 }}
+      {{- end }}
       containers:
         - name: coprocessor-gw-listener
           image: {{ .Values.gwListener.image.name }}:{{ .Values.gwListener.image.tag }}

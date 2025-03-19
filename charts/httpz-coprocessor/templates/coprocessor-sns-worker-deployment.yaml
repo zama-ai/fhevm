@@ -7,10 +7,14 @@ metadata:
     app.kubernetes.io/name: {{ include "snsWorkerName" . }}
   name: {{ include "snsWorkerName" . }}
 spec:
-  replicas: 1
+  replicas: {{ .Values.snsWorker.replicas | default 0 }}
   selector:
     matchLabels:
       app: coprocessor-sns-worker
+  {{- if .Values.tfheWorker.updateStrategy }}
+  strategy:
+    {{- toYaml .Values.tfheWorker.updateStrategy | nindent 4 }}
+  {{- end }}
   template:
     metadata:
       labels:
@@ -18,6 +22,14 @@ spec:
         app.kubernetes.io/name: {{ include "snsWorkerName" . }}
     spec:
       restartPolicy: Always
+      {{- if and .Values.snsWorker.affinity .Values.snsWorker.affinity.enabled }}
+      affinity:
+{{ toYaml (omit .Values.snsWorker.affinity "enabled") | indent 8 }}
+      {{- end }}
+      {{- if and .Values.snsWorker.tolerations .Values.snsWorker.tolerations.enabled }}
+      tolerations:
+{{ toYaml .Values.snsWorker.tolerations.items | indent 8 }}
+      {{- end }}
       containers:
         - name: coprocessor-sns-worker
           image: {{ .Values.snsWorker.image.name }}:{{ .Values.snsWorker.image.tag }}
