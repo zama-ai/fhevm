@@ -16,7 +16,7 @@ RUN npm install && \
     npm prune
 
 # Copy the application files
-COPY ./.env.example.deployment ./*.sh ./hardhat.config.ts ./tsconfig.json ./
+COPY ./*.sh ./hardhat.config.ts ./tsconfig.json ./
 COPY ./contracts ./contracts/
 COPY ./addresses ./addresses/
 COPY ./tasks ./tasks/
