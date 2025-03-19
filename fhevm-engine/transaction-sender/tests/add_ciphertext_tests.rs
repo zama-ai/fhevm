@@ -112,7 +112,7 @@ async fn test_add_ciphertext_digests() -> anyhow::Result<()> {
 #[serial(db)]
 async fn test_retry_mechanism() -> anyhow::Result<()> {
     let conf = ConfigSettings {
-        add_ciphertexts_resp_max_retries: 3,
+        add_ciphertexts_max_retries: 3,
         ..Default::default()
     };
 
@@ -178,7 +178,7 @@ async fn test_retry_mechanism() -> anyhow::Result<()> {
                     rows.txn_retry_count.unwrap_or_default()
                 );
                 if rows.txn_retry_count.unwrap_or_default()
-                    == env.conf.add_ciphertexts_resp_max_retries as i32 - 1
+                    == env.conf.add_ciphertexts_max_retries as i32 - 1
                 {
                     valid_retries_count = true;
                     break;

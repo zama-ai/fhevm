@@ -168,9 +168,12 @@ where
             FROM allowed_handles
             WHERE account_address IS NOT NULL
                 AND TRIM(account_address) <> ''
-            LIMIT $1;
+                AND txn_is_sent = false
+                AND txn_retry_count < $1
+            LIMIT $2;
             ",
-            self.conf.allow_handle_batch_limit as i32
+            self.conf.allow_handle_max_retries as i32,
+            self.conf.allow_handle_batch_limit as i32,
         )
         .fetch_all(db_pool)
         .await?;

@@ -60,8 +60,11 @@ struct Conf {
     #[arg(long, default_value = "10")]
     allow_handle_batch_limit: u32,
 
+    #[arg(long, default_value = "10")]
+    allow_handle_max_retries: u32,
+
     #[arg(long, default_value = "15")]
-    add_ciphertexts_resp_max_retries: u32,
+    add_ciphertexts_max_retries: u32,
 
     #[arg(long, default_value = "1")]
     error_sleep_initial_secs: u16,
@@ -117,8 +120,9 @@ async fn main() -> anyhow::Result<()> {
             db_polling_interval_secs: conf.database_polling_interval_secs,
             error_sleep_initial_secs: conf.error_sleep_initial_secs,
             error_sleep_max_secs: conf.error_sleep_max_secs,
-            add_ciphertexts_resp_max_retries: conf.add_ciphertexts_resp_max_retries,
+            add_ciphertexts_max_retries: conf.add_ciphertexts_max_retries,
             allow_handle_batch_limit: conf.allow_handle_batch_limit,
+            allow_handle_max_retries: conf.allow_handle_max_retries,
         },
         None,
     )
