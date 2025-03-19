@@ -15,17 +15,21 @@ test:
 get-accounts:
 	npx hardhat get-accounts --num-accounts 15
 
-copy-env-example:
+deploy-contracts-local:
 	cp .env.example .env
-
-copy-env-example-deployment:
-	cp .env.example.deployment .env
-
-deploy-contracts-local: copy-env-example
-	./deploy-httpz-gateway.sh localHTTPZGateway
-
-deploy-contracts-local-deployment: copy-env-example-deployment
 	./deploy-httpz-gateway-deployment.sh localHTTPZGateway
+
+docker-compose-build:
+	docker compose -vvv build
+
+docker-compose-up:
+	docker compose -vvv up -d
+
+docker-compose-down:
+	docker compose -vvv down
 
 update-abi:
 	python3 httpz_gateway_rust_bindings/abi_update.py update
+
+start-local-node:
+	npx hardhat node --port 8546
