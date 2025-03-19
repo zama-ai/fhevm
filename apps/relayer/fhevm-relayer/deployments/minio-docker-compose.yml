@@ -41,7 +41,11 @@ services:
         cat /minio_secrets/access_key &&
         cat /minio_secrets/secret_key &&
         mc mb --with-lock --ignore-existing myminio/kms-public &&
-        mc anonymous set public myminio/kms-public
+        mc anonymous set public myminio/kms-public &&
+        # create sns-worker buckets
+        mc alias set minio $${MINIO_ENDPOINT} $${ACCESS_KEY} $${SECRET_KEY} &&
+        mc mb --with-lock --ignore-existing minio/ct64 &&
+        mc mb --with-lock --ignore-existing minio/ct128
       "
     volumes:
       - minio_secrets:/minio_secrets

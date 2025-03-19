@@ -145,6 +145,8 @@ services:
       - --work-items-batch-size=4
       - --pg-polling-interval=60
       - --pg-pool-connections=10
+      - --bucket-name-ct64=ct64
+      - --bucket-name-ct128=ct128
     depends_on:
       db:
         condition: service_healthy
