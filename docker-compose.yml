@@ -27,23 +27,46 @@ services:
     volumes:
       - .:/anvil
 
-  sc-deploy:
-    container_name: httpz-gateway-sc-deploy
-    image: ghcr.io/zama-ai/gateway-l2/sc-bundle:0.1.0-local
+  deploy-gateway-contracts:
+    container_name: deploy-gateway-contracts
+    image: gateway-l2/sc-bundle:0.1.0-local
     build:
       context: .
       dockerfile: Dockerfile
       tags:
-        - ghcr.io/zama-ai/gateway-l2/sc-bundle:0.1.0-local
+        - gateway-l2/sc-bundle:0.1.0-local
     volumes:
       - ./.env.example.deployment:/app/.env
-    entrypoint: ["/app/deploy-httpz-gateway-deployment.sh"]
-    command: ["staging"]
+    command:
+      - /bin/bash
+      - "-c"
+      - |
+        source /app/.env
+        # please replace with deploy-gateway-contracts.sh once ready
+        /app/deploy-httpz-gateway-deployment.sh staging
+    depends_on:
+      anvil-node:
+        condition: service_started
 
-  sc-deploy-debug:
-    container_name: httpz-gateway-sc-deploy-debug
-    image: ghcr.io/zama-ai/gateway-l2/sc-bundle:0.1.0-local
+  add-httpz-networks:
+    container_name: add-httpz-networks
+    image: gateway-l2/sc-bundle:0.1.0-local
+    build:
+      context: .
+      dockerfile: Dockerfile
+      tags:
+        - gateway-l2/sc-bundle:0.1.0-local
     volumes:
       - ./.env.example.deployment:/app/.env
-    entrypoint: ["/bin/bash"]
-    command: ["-c", "tail -f /dev/null"]
+    command:
+      - /bin/bash
+      - "-c"
+      - |
+        source /app/.env
+        # please uncomment this line when script is ready
+        # /app/add-httpz-networks.sh staging
+    depends_on:
+      anvil-node:
+        condition: service_started
+      deploy-gateway-contracts:
+        condition: service_completed_successfully
