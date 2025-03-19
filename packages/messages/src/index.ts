@@ -1,5 +1,6 @@
 export * as back from './back.events.js'
 export * as web3 from './web3.events.js'
+export * as relayer from './relayer.events.js'
 export type { MSPrefix } from './shared.js'
 export {
   chainId,
