@@ -93,13 +93,12 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
 
         let serialized = safe_serialize(&the_list);
 
-        let mut input_ciphertexts = Vec::new();
-        input_ciphertexts.push(InputToUpload {
+        let input_ciphertexts = vec![InputToUpload {
             input_payload: serialized[0..32].to_vec(),
             signatures: Vec::new(),
             user_address: test_random_user_address(),
             contract_address: test_random_contract_address(),
-        });
+        }];
 
         println!("Encrypting inputs...");
         let mut input_request = tonic::Request::new(InputUploadBatch { input_ciphertexts });
@@ -130,13 +129,12 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
             .unwrap();
         let serialized = safe_serialize(&the_list);
 
-        let mut input_ciphertexts = Vec::new();
-        input_ciphertexts.push(InputToUpload {
+        let input_ciphertexts = vec![InputToUpload {
             input_payload: serialized,
             signatures: Vec::new(),
             user_address: test_random_user_address(),
             contract_address: test_random_contract_address(),
-        });
+        }];
 
         println!("Encrypting inputs...");
         let mut input_request = tonic::Request::new(InputUploadBatch { input_ciphertexts });
@@ -210,10 +208,10 @@ async fn test_coprocessor_api_key_errors() -> Result<(), Box<dyn std::error::Err
         let mut input_request = tonic::Request::new(InputUploadBatch {
             input_ciphertexts: Vec::new(),
         });
-        let api_key_header = format!("bearer invalid-guid");
+        const API_KEY_HEADER: &str = "bearer invalid-guid";
         input_request.metadata_mut().append(
             "authorization",
-            MetadataValue::from_str(&api_key_header).unwrap(),
+            MetadataValue::from_str(API_KEY_HEADER).unwrap(),
         );
         let resp = client.upload_inputs(input_request).await;
         match resp {
@@ -235,10 +233,10 @@ async fn test_coprocessor_api_key_errors() -> Result<(), Box<dyn std::error::Err
             input_ciphertexts: Vec::new(),
         });
 
-        let api_key_header = format!("bearer 9a671665-3842-400f-b4d1-37e194e5e9a0");
+        const API_KEY_HEADER: &str = "bearer 9a671665-3842-400f-b4d1-37e194e5e9a0";
         input_request.metadata_mut().append(
             "authorization",
-            MetadataValue::from_str(&api_key_header).unwrap(),
+            MetadataValue::from_str(API_KEY_HEADER).unwrap(),
         );
         let resp = client.upload_inputs(input_request).await;
         match resp {
@@ -295,13 +293,12 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
 
         let serialized = safe_serialize(&the_list);
 
-        let mut input_ciphertexts = Vec::new();
-        input_ciphertexts.push(InputToUpload {
+        let input_ciphertexts = vec![InputToUpload {
             input_payload: serialized,
             signatures: Vec::new(),
             user_address: test_random_user_address(),
             contract_address: test_random_contract_address(),
-        });
+        }];
 
         println!("Encrypting inputs...");
         let mut input_request = tonic::Request::new(InputUploadBatch { input_ciphertexts });

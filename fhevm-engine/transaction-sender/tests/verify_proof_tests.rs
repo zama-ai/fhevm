@@ -462,7 +462,7 @@ async fn verify_proof_max_retries_do_not_remove_entry() -> anyhow::Result<()> {
         )
         .fetch_all(&env.db_pool)
         .await?;
-        if rows.len() > 0 {
+        if !rows.is_empty() {
             break;
         }
         sleep(Duration::from_millis(500)).await;

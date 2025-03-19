@@ -180,13 +180,11 @@ impl FhevmExecutorService {
             .result_handles
             .first()
             .filter(|h| h.len() == HANDLE_LEN)
-            .ok_or_else(|| SyncComputeError::BadResultHandles)?
+            .ok_or(SyncComputeError::BadResultHandles)?
             .clone();
         let op = FheOperation::try_from(comp.operation);
         match op {
-            Ok(FheOperation::FheGetCiphertext) => {
-                Self::get_ciphertext(comp, &result_handle, &state)
-            }
+            Ok(FheOperation::FheGetCiphertext) => Self::get_ciphertext(comp, &result_handle, state),
             Ok(_) => Self::compute(comp, result_handle, state),
             _ => Err(SyncComputeError::InvalidOperation),
         }
@@ -198,7 +196,7 @@ impl FhevmExecutorService {
         public_params: &CompactPkeCrs,
     ) -> Result<(), FhevmError> {
         for list in lists {
-            let cts = try_expand_ciphertext_list(&list, &public_params)?;
+            let cts = try_expand_ciphertext_list(list, public_params)?;
             let list_hash: Handle = Keccak256::digest(list).to_vec();
             for (i, ct) in cts.iter().enumerate() {
                 let mut handle = list_hash.clone();
@@ -218,7 +216,7 @@ impl FhevmExecutorService {
     }
 
     fn decompress_compressed_ciphertexts(
-        cts: &Vec<CompressedCiphertext>,
+        cts: &[CompressedCiphertext],
         state: &mut ComputationState,
         #[cfg(not(feature = "gpu"))] sks: tfhe::ServerKey,
         #[cfg(feature = "gpu")] sks: tfhe::CudaServerKey,
@@ -369,7 +367,7 @@ pub fn build_taskgraph_from_request(
                 computation.operation,
                 std::mem::take(&mut inputs),
             )
-            .or_else(|_| Err(SyncComputeError::ComputationFailed))?;
+            .map_err(|_| SyncComputeError::ComputationFailed)?;
         produced_handles.insert(res_handle, n.index());
     }
     // Traverse computations and add dependences/edges as required
@@ -379,7 +377,7 @@ pub fn build_taskgraph_from_request(
                 if !state.ciphertexts.contains_key(input) {
                     if let Some(producer_index) = produced_handles.get(input) {
                         dfg.add_dependence(*producer_index, index, input_idx)
-                            .or_else(|_| Err(SyncComputeError::UnsatisfiedDependence))?;
+                            .map_err(|_| SyncComputeError::UnsatisfiedDependence)?;
                     } else {
                         return Err(SyncComputeError::ComputationFailed);
                     }

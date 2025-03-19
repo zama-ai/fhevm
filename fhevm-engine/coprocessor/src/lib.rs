@@ -1,7 +1,7 @@
-use std::sync::Once;
-use fhevm_engine_common::keys::{FhevmKeys, SerializedFhevmKeys};
-use tokio::task::JoinSet;
 use ::tracing::{error, info};
+use fhevm_engine_common::keys::{FhevmKeys, SerializedFhevmKeys};
+use std::sync::Once;
+use tokio::task::JoinSet;
 
 pub mod daemon_cli;
 mod db_queries;
@@ -38,10 +38,8 @@ pub fn start_runtime(
                         info!(target: "main_wchannel", "Service stopped voluntarily");
                     }
                 }
-            } else {
-                if let Err(e) = async_main(args).await {
-                    error!(target: "main", { error = e }, "Runtime error");
-                }
+            } else if let Err(e) = async_main(args).await {
+                error!(target: "main", { error = e }, "Runtime error");
             }
         })
 }

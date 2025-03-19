@@ -6,15 +6,10 @@ use serde::{Deserialize, Serialize};
 use std::{
     fs::File,
     io::{Read, Write},
-    sync::Arc,
     time::Duration,
 };
 use test_harness::instance::DBInstance;
-use tokio::{
-    sync::{broadcast, mpsc},
-    time::sleep,
-};
-use tokio_util::sync::CancellationToken;
+use tokio::{sync::mpsc, time::sleep};
 
 const LISTEN_CHANNEL: &str = "sns_worker_chan";
 const TENANT_API_KEY: &str = "a1503fb6-d79b-4e9e-826d-44cf262f3e05";

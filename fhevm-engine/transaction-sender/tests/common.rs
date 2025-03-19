@@ -27,7 +27,9 @@ pub struct TestEnvironment {
     pub conf: ConfigSettings,
     pub cancel_token: CancellationToken,
     pub db_pool: Pool<Postgres>,
+    #[allow(dead_code)]
     pub contract_address: Address,
+    #[allow(dead_code)]
     pub user_address: Address,
 }
 

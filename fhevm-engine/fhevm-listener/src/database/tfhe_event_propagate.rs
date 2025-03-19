@@ -50,7 +50,7 @@ impl Database {
         url: &str,
         coprocessor_api_key: &CoprocessorApiKey,
     ) -> Self {
-        let pool = Self::new_pool(&url).await;
+        let pool = Self::new_pool(url).await;
         let tenant_id =
             Self::find_tenant_id_or_panic(&pool, coprocessor_api_key).await;
         Database {
@@ -223,10 +223,10 @@ impl Database {
         const HAS_SCALAR : FixedBytes::<1> = FixedBytes([1]); // if any dependency is a scalar.
         const NO_SCALAR : FixedBytes::<1> = FixedBytes([0]); // if all dependencies are handles.
         // ciphertext type
-        let ty = |to_type: &ToType| vec![to_type[0] as u8];
+        let ty = |to_type: &ToType| vec![to_type[0]];
         let as_bytes = |x: &Handle| x.to_be_bytes_vec();
         let tenant_id = self.tenant_id;
-        let fhe_operation = event_to_op_int(&event);
+        let fhe_operation = event_to_op_int(event);
         match &event.data {
             E::Cast(C::Cast {ct, toType, result, ..})
             => self.insert_computation_bytes(tenant_id, result, &[ct], &[ty(toType)], fhe_operation, &HAS_SCALAR).await,
@@ -271,7 +271,7 @@ impl Database {
             => self.insert_computation_bytes(tenant_id, result, &[], &[seed.to_vec(), ty(randType)], fhe_operation, &HAS_SCALAR).await,
 
             | E::FheRandBounded(C::FheRandBounded {upperBound, randType, seed, result, ..})
-            => self.insert_computation_bytes(tenant_id, result, &[], &[seed.to_vec(), as_bytes(&upperBound), ty(randType)], fhe_operation, &HAS_SCALAR).await,
+            => self.insert_computation_bytes(tenant_id, result, &[], &[seed.to_vec(), as_bytes(upperBound), ty(randType)], fhe_operation, &HAS_SCALAR).await,
 
             | E::TrivialEncrypt(C::TrivialEncrypt {pt, toType, result, ..})
             => self.insert_computation_bytes(tenant_id, result, &[pt], &[ty(toType)], fhe_operation, &HAS_SCALAR).await,
@@ -293,7 +293,7 @@ impl Database {
         let query = || sqlx::query!("SELECT pg_notify($1, '')", channel);
         for i in (0..=MAX_RETRIES_FOR_NOTIFY).rev() {
             match query().execute(&self.pool).await {
-                Ok(_) => return (),
+                Ok(_) => return,
                 Err(err) if retry_on_sqlx_error(&err) => {
                     eprintln!(
                         "\tDatabase I/O error: {}, will retry indefinitely",

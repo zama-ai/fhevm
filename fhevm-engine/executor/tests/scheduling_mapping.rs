@@ -8,7 +8,6 @@ use executor::server::executor::{sync_input::Input, SyncInput};
 use fhevm_engine_common::types::{SupportedFheCiphertexts, HANDLE_LEN};
 use std::time::SystemTime;
 use tfhe::prelude::CiphertextList;
-use tfhe::zk::{CompactPkeCrs, ZkComputeLoad};
 use tfhe::ProvenCompactCiphertextList;
 use utils::get_test;
 mod utils;
@@ -169,15 +168,13 @@ async fn schedule_multi_erc20() {
                             "10" if i % 4 == 1 => (),   // select trxa
                             "90" if i % 4 == 2 => (),   // bals - trxa
                             "30" if i % 4 == 3 => (),   // bald + trxa
-                            s => assert!(
-                                false,
+                            s => panic!(
                                 "unexpected result: {} for handle 0x{:x}",
                                 s, cts.ciphertexts[i as usize].handle[0]
                             ),
                         }
                     }
-                    _ => assert!(
-                        false,
+                    _ => panic!(
                         "unexpected handle 0x{:x}",
                         cts.ciphertexts[i as usize].handle[0]
                     ),

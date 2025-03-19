@@ -107,7 +107,7 @@ async fn verify_proof_request_inserted_into_db() -> anyhow::Result<()> {
         )
         .fetch_all(&env.db_pool)
         .await?;
-        if rows.len() > 0 {
+        if !rows.is_empty() {
             let row = &rows[0];
             assert_eq!(row.chain_id, 42);
             assert_eq!(row.contract_address, contract_address.to_string());

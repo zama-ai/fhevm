@@ -64,6 +64,7 @@ impl DFGraph {
         Ok(())
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn get_results(&mut self) -> Vec<(Handle, Result<(i16, Vec<u8>)>)> {
         let mut res = Vec::with_capacity(self.graph.node_count());
         for index in 0..self.graph.node_count() {

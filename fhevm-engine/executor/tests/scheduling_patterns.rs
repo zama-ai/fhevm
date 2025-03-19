@@ -8,7 +8,7 @@ use executor::server::executor::{sync_input::Input, SyncInput};
 use executor::server::SyncComputeError;
 use fhevm_engine_common::types::{SupportedFheCiphertexts, HANDLE_LEN};
 use tfhe::prelude::CiphertextList;
-use tfhe::zk::{CompactPkeCrs, ZkComputeLoad};
+use tfhe::zk::ZkComputeLoad;
 use tfhe::ProvenCompactCiphertextList;
 use utils::get_test;
 
@@ -54,10 +54,9 @@ async fn schedule_circular_dependence() {
     let sync_compute_response = response.get_ref();
     let resp = sync_compute_response.resp.clone().unwrap();
     match resp {
-        Resp::ResultCiphertexts(_cts) => assert!(
-            false,
-            "Received ciphertext outputs despite circular dependence."
-        ),
+        Resp::ResultCiphertexts(_cts) => {
+            panic!("Received ciphertext outputs despite circular dependence.")
+        }
         Resp::Error(e) => assert!(
             e == SyncComputeError::UnsatisfiedDependence as i32,
             "Error response should be UnsatisfiedDependence but is {}",
@@ -197,11 +196,7 @@ async fn schedule_dependent_computations() {
                             .as_str()
                         {
                             "8" => (),
-                            s => assert!(
-                                false,
-                                "unexpected result: {} for handle 0x{:x}",
-                                s, ct.handle[0]
-                            ),
+                            s => panic!("unexpected result: {} for handle 0x{:x}", s, ct.handle[0]),
                         }
                     }
                     b if *b == bb => {
@@ -212,11 +207,7 @@ async fn schedule_dependent_computations() {
                             .as_str()
                         {
                             "18" => (),
-                            s => assert!(
-                                false,
-                                "unexpected result: {} for handle 0x{:x}",
-                                s, ct.handle[0]
-                            ),
+                            s => panic!("unexpected result: {} for handle 0x{:x}", s, ct.handle[0]),
                         }
                     }
                     c if *c == cc => {
@@ -227,11 +218,7 @@ async fn schedule_dependent_computations() {
                             .as_str()
                         {
                             "26" => (),
-                            s => assert!(
-                                false,
-                                "unexpected result: {} for handle 0x{:x}",
-                                s, ct.handle[0]
-                            ),
+                            s => panic!("unexpected result: {} for handle 0x{:x}", s, ct.handle[0]),
                         }
                     }
                     d if *d == dd => {
@@ -242,11 +229,7 @@ async fn schedule_dependent_computations() {
                             .as_str()
                         {
                             "39" => (),
-                            s => assert!(
-                                false,
-                                "unexpected result: {} for handle 0x{:x}",
-                                s, ct.handle[0]
-                            ),
+                            s => panic!("unexpected result: {} for handle 0x{:x}", s, ct.handle[0]),
                         }
                     }
                     _ => panic!("unexpected handle 0x{:x}", ct.handle[0]),
@@ -272,7 +255,7 @@ async fn schedule_y_patterns() {
         .push(4_u16)
         .push(5_u16)
         .build_with_proof_packed(
-            &CompactPkeCrs::from((*test.keys.public_params).clone()),
+            &(*test.keys.public_params).clone(),
             &[],
             ZkComputeLoad::Proof,
         )
@@ -435,11 +418,7 @@ async fn schedule_y_patterns() {
                             .as_str()
                         {
                             "2" => (),
-                            s => assert!(
-                                false,
-                                "unexpected result: {} for handle 0x{:x}",
-                                s, ct.handle[0]
-                            ),
+                            s => panic!("unexpected result: {} for handle 0x{:x}", s, ct.handle[0]),
                         }
                     }
                     b if *b == bb => {
@@ -450,11 +429,7 @@ async fn schedule_y_patterns() {
                             .as_str()
                         {
                             "4" => (),
-                            s => assert!(
-                                false,
-                                "unexpected result: {} for handle 0x{:x}",
-                                s, ct.handle[0]
-                            ),
+                            s => panic!("unexpected result: {} for handle 0x{:x}", s, ct.handle[0]),
                         }
                     }
                     c if *c == cc => {
@@ -465,11 +440,7 @@ async fn schedule_y_patterns() {
                             .as_str()
                         {
                             "6" => (),
-                            s => assert!(
-                                false,
-                                "unexpected result: {} for handle 0x{:x}",
-                                s, ct.handle[0]
-                            ),
+                            s => panic!("unexpected result: {} for handle 0x{:x}", s, ct.handle[0]),
                         }
                     }
                     d if *d == dd => {
@@ -480,11 +451,7 @@ async fn schedule_y_patterns() {
                             .as_str()
                         {
                             "9" => (),
-                            s => assert!(
-                                false,
-                                "unexpected result: {} for handle 0x{:x}",
-                                s, ct.handle[0]
-                            ),
+                            s => panic!("unexpected result: {} for handle 0x{:x}", s, ct.handle[0]),
                         }
                     }
                     e if *e == ee => {
@@ -495,11 +462,7 @@ async fn schedule_y_patterns() {
                             .as_str()
                         {
                             "2" => (),
-                            s => assert!(
-                                false,
-                                "unexpected result: {} for handle 0x{:x}",
-                                s, ct.handle[0]
-                            ),
+                            s => panic!("unexpected result: {} for handle 0x{:x}", s, ct.handle[0]),
                         }
                     }
                     f if *f == ff => {
@@ -510,11 +473,7 @@ async fn schedule_y_patterns() {
                             .as_str()
                         {
                             "4" => (),
-                            s => assert!(
-                                false,
-                                "unexpected result: {} for handle 0x{:x}",
-                                s, ct.handle[0]
-                            ),
+                            s => panic!("unexpected result: {} for handle 0x{:x}", s, ct.handle[0]),
                         }
                     }
                     x if *x == x99 => {
@@ -525,11 +484,7 @@ async fn schedule_y_patterns() {
                             .as_str()
                         {
                             "9" => (),
-                            s => assert!(
-                                false,
-                                "unexpected result: {} for handle 0x{:x}",
-                                s, ct.handle[0]
-                            ),
+                            s => panic!("unexpected result: {} for handle 0x{:x}", s, ct.handle[0]),
                         }
                     }
                     x if *x == x88 => {
@@ -540,11 +495,7 @@ async fn schedule_y_patterns() {
                             .as_str()
                         {
                             "7" => (),
-                            s => assert!(
-                                false,
-                                "unexpected result: {} for handle 0x{:x}",
-                                s, ct.handle[0]
-                            ),
+                            s => panic!("unexpected result: {} for handle 0x{:x}", s, ct.handle[0]),
                         }
                     }
                     _ => panic!("unexpected handle 0x{:x}", ct.handle[0]),
@@ -731,11 +682,7 @@ async fn schedule_diamond_reduction_dependence_pattern() {
                             .as_str()
                         {
                             "2" => (),
-                            s => assert!(
-                                false,
-                                "unexpected result: {} for handle 0x{:x}",
-                                s, ct.handle[0]
-                            ),
+                            s => panic!("unexpected result: {} for handle 0x{:x}", s, ct.handle[0]),
                         }
                     }
                     b if *b == bb => {
@@ -746,11 +693,7 @@ async fn schedule_diamond_reduction_dependence_pattern() {
                             .as_str()
                         {
                             "4" => (),
-                            s => assert!(
-                                false,
-                                "unexpected result: {} for handle 0x{:x}",
-                                s, ct.handle[0]
-                            ),
+                            s => panic!("unexpected result: {} for handle 0x{:x}", s, ct.handle[0]),
                         }
                     }
                     c if *c == cc => {
@@ -761,11 +704,7 @@ async fn schedule_diamond_reduction_dependence_pattern() {
                             .as_str()
                         {
                             "5" => (),
-                            s => assert!(
-                                false,
-                                "unexpected result: {} for handle 0x{:x}",
-                                s, ct.handle[0]
-                            ),
+                            s => panic!("unexpected result: {} for handle 0x{:x}", s, ct.handle[0]),
                         }
                     }
                     d if *d == dd => {
@@ -776,11 +715,7 @@ async fn schedule_diamond_reduction_dependence_pattern() {
                             .as_str()
                         {
                             "6" => (),
-                            s => assert!(
-                                false,
-                                "unexpected result: {} for handle 0x{:x}",
-                                s, ct.handle[0]
-                            ),
+                            s => panic!("unexpected result: {} for handle 0x{:x}", s, ct.handle[0]),
                         }
                     }
                     e if *e == ee => {
@@ -791,11 +726,7 @@ async fn schedule_diamond_reduction_dependence_pattern() {
                             .as_str()
                         {
                             "7" => (),
-                            s => assert!(
-                                false,
-                                "unexpected result: {} for handle 0x{:x}",
-                                s, ct.handle[0]
-                            ),
+                            s => panic!("unexpected result: {} for handle 0x{:x}", s, ct.handle[0]),
                         }
                     }
                     f if *f == ff => {
@@ -806,11 +737,7 @@ async fn schedule_diamond_reduction_dependence_pattern() {
                             .as_str()
                         {
                             "9" => (),
-                            s => assert!(
-                                false,
-                                "unexpected result: {} for handle 0x{:x}",
-                                s, ct.handle[0]
-                            ),
+                            s => panic!("unexpected result: {} for handle 0x{:x}", s, ct.handle[0]),
                         }
                     }
                     x if *x == x99 => {
@@ -821,11 +748,7 @@ async fn schedule_diamond_reduction_dependence_pattern() {
                             .as_str()
                         {
                             "13" => (),
-                            s => assert!(
-                                false,
-                                "unexpected result: {} for handle 0x{:x}",
-                                s, ct.handle[0]
-                            ),
+                            s => panic!("unexpected result: {} for handle 0x{:x}", s, ct.handle[0]),
                         }
                     }
                     x if *x == x88 => {
@@ -836,11 +759,7 @@ async fn schedule_diamond_reduction_dependence_pattern() {
                             .as_str()
                         {
                             "22" => (),
-                            s => assert!(
-                                false,
-                                "unexpected result: {} for handle 0x{:x}",
-                                s, ct.handle[0]
-                            ),
+                            s => panic!("unexpected result: {} for handle 0x{:x}", s, ct.handle[0]),
                         }
                     }
                     _ => panic!("unexpected handle 0x{:x}", ct.handle[0]),

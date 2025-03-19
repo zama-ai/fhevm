@@ -49,11 +49,9 @@ pub async fn check_if_api_key_is_valid<T>(
 
             let tenant_id = tenant[0].tenant_id;
             outer_span.set_attribute(KeyValue::new("tenant_id", tenant_id as i64));
-            return Ok(tenant_id);
+            Ok(tenant_id)
         }
-        None => {
-            return Err(CoprocessorError::Unauthorized);
-        }
+        None => Err(CoprocessorError::Unauthorized),
     }
 }
 
@@ -94,7 +92,7 @@ where
             }
         }
 
-        populate_cache_with_tenant_keys(vec![tenant_id], pool, &tenant_key_cache).await?;
+        populate_cache_with_tenant_keys(vec![tenant_id], pool, tenant_key_cache).await?;
     }
 }
 
@@ -172,7 +170,7 @@ where
         let keys = query_tenant_keys(tenants_to_query, conn).await?;
 
         assert!(
-            keys.len() > 0,
+            !keys.is_empty(),
             "We should have keys here, otherwise our database is corrupt"
         );
 

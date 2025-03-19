@@ -19,7 +19,7 @@ pub struct TestInstance {
 impl TestInstance {
     pub async fn new() -> Self {
         // Get defaults by parsing a cmd line without any arguments.
-        let args = Args::parse_from(&["test", "--fhe-keys-directory", "../fhevm-keys"]);
+        let args = Args::parse_from(["test", "--fhe-keys-directory", "../fhevm-keys"]);
 
         let instance = TestInstance {
             keys: SerializedFhevmKeys::load_from_disk("../fhevm-keys").into(),
@@ -44,7 +44,7 @@ impl TestInstance {
     }
 
     pub fn ciphertext_handle(&self, ciphertext: &[u8], ct_type: u8) -> Handle {
-        let mut handle: Handle = Keccak256::digest(&ciphertext).to_vec();
+        let mut handle: Handle = Keccak256::digest(ciphertext).to_vec();
         handle[30] = ct_type;
         handle[31] = current_ciphertext_version() as u8;
         handle

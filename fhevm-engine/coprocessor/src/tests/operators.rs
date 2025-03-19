@@ -114,11 +114,7 @@ async fn test_fhe_binary_operands() -> Result<(), Box<dyn std::error::Error>> {
 
         println!(
             "Encrypting inputs for binary test bits:{} op:{} is_scalar:{} lhs:{} rhs:{}",
-            op.bits,
-            op.operand,
-            op.is_scalar,
-            op.lhs.to_string(),
-            op.rhs.to_string()
+            op.bits, op.operand, op.is_scalar, op.lhs, op.rhs
         );
         enc_request_payload.push(TrivialEncryptRequestSingle {
             handle: lhs_handle.clone(),
@@ -136,7 +132,7 @@ async fn test_fhe_binary_operands() -> Result<(), Box<dyn std::error::Error>> {
 
         println!("rhs handle: 0x{}", hex::encode(&rhs_handle));
         println!("Scheduling computation for binary test bits:{} op:{} is_scalar:{} lhs:{} rhs:{} output:{}",
-            op.bits, op.operand, op.is_scalar, op.lhs.to_string(), op.rhs.to_string(), op.expected_output.to_string());
+            op.bits, op.operand, op.is_scalar, op.lhs, op.rhs, op.expected_output);
 
         let mut inputs = vec![AsyncComputationInput {
             input: Some(Input::InputHandle(lhs_handle)),
@@ -152,7 +148,7 @@ async fn test_fhe_binary_operands() -> Result<(), Box<dyn std::error::Error>> {
         }
         async_computations.push(AsyncComputation {
             operation: op.operand,
-            output_handle: output_handle,
+            output_handle,
             inputs,
         });
     }
@@ -192,7 +188,7 @@ async fn test_fhe_binary_operands() -> Result<(), Box<dyn std::error::Error>> {
     for (idx, op) in ops.iter().enumerate() {
         let decr_response = &resp[idx];
         println!("Checking computation for binary test bits:{} op:{} is_scalar:{} lhs:{} rhs:{} output:{}",
-            op.bits, op.operand, op.is_scalar, op.lhs.to_string(), op.rhs.to_string(), op.expected_output.to_string());
+            op.bits, op.operand, op.is_scalar, op.lhs, op.rhs, op.expected_output);
         assert_eq!(
             decr_response.output_type, op.expected_output_type as i16,
             "operand types not equal"
@@ -244,9 +240,7 @@ async fn test_fhe_unary_operands() -> Result<(), Box<dyn std::error::Error>> {
 
         println!(
             "Encrypting inputs for unary test bits:{} op:{} input:{}",
-            op.bits,
-            op.operand,
-            op.inp.to_string()
+            op.bits, op.operand, op.inp
         );
         enc_request_payload.push(TrivialEncryptRequestSingle {
             handle: input_handle.clone(),
@@ -256,14 +250,11 @@ async fn test_fhe_unary_operands() -> Result<(), Box<dyn std::error::Error>> {
 
         println!(
             "Scheduling computation for binary test bits:{} op:{} input:{} output:{}",
-            op.bits,
-            op.operand,
-            op.inp.to_string(),
-            op.expected_output.to_string()
+            op.bits, op.operand, op.inp, op.expected_output
         );
         async_computations.push(AsyncComputation {
             operation: op.operand,
-            output_handle: output_handle,
+            output_handle,
             inputs: vec![AsyncComputationInput {
                 input: Some(Input::InputHandle(input_handle)),
             }],
@@ -306,10 +297,7 @@ async fn test_fhe_unary_operands() -> Result<(), Box<dyn std::error::Error>> {
         let decr_response = &resp[idx];
         println!(
             "Checking computation for binary test bits:{} op:{} input:{} output:{}",
-            op.bits,
-            op.operand,
-            op.inp.to_string(),
-            op.expected_output.to_string()
+            op.bits, op.operand, op.inp, op.expected_output
         );
         assert_eq!(
             decr_response.output_type, op.operand_types as i16,
@@ -491,7 +479,7 @@ async fn test_op_trivial_encrypt() -> Result<(), Box<dyn std::error::Error>> {
         inp: BigInt::from(1),
     });
 
-    let max_num: BigInt = BigInt::from(1) << 256 - 1;
+    let max_num: BigInt = BigInt::from(1) << (256 - 1);
     for bits in supported_bits() {
         let bits = *bits;
         let inp_type = supported_bits_to_bit_type_in_db(bits);

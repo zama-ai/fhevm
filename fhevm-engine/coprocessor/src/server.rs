@@ -304,7 +304,7 @@ impl CoprocessorService {
         request: tonic::Request<InputUploadBatch>,
         tracer: &GrpcTracer,
     ) -> std::result::Result<tonic::Response<InputUploadResponse>, tonic::Status> {
-        let tenant_id = check_if_api_key_is_valid(&request, &self.pool, &tracer).await?;
+        let tenant_id = check_if_api_key_is_valid(&request, &self.pool, tracer).await?;
 
         let req = request.get_ref();
         if req.input_ciphertexts.len() > self.args.maximimum_compact_inputs_upload {
@@ -326,7 +326,7 @@ impl CoprocessorService {
         let fetch_key_response = {
             fetch_tenant_server_key(tenant_id, &self.pool, &self.tenant_key_cache)
                 .await
-                .map_err(|e| tonic::Status::from_error(e))?
+                .map_err(tonic::Status::from_error)?
         };
         let chain_id = fetch_key_response.chain_id;
         let chain_id_be = (chain_id as u64).to_be_bytes();
@@ -521,9 +521,9 @@ impl CoprocessorService {
                     let (serialized_type, serialized_ct) = the_ct.compress();
                     let mut handle_hash = Keccak256::new();
                     handle_hash.update(&blob_hash_clone);
-                    handle_hash.update(&[ct_idx as u8]);
+                    handle_hash.update([ct_idx as u8]);
                     handle_hash.update(acl_contract_address.as_slice());
-                    handle_hash.update(&chain_id_be);
+                    handle_hash.update(chain_id_be);
                     let mut handle = handle_hash.finalize().to_vec();
                     assert_eq!(handle.len(), 32);
                     // idx cast to u8 must succeed because we don't allow
@@ -614,7 +614,7 @@ impl CoprocessorService {
             )));
         }
 
-        let tenant_id = check_if_api_key_is_valid(&request, &self.pool, &tracer).await?;
+        let tenant_id = check_if_api_key_is_valid(&request, &self.pool, tracer).await?;
 
         if req.computations.is_empty() {
             return Ok(tonic::Response::new(GenericResponse { response_code: 0 }));
@@ -641,7 +641,7 @@ impl CoprocessorService {
                 let fhe_op: SupportedFheOperations = comp
                     .operation
                     .try_into()
-                    .map_err(|e| CoprocessorError::FhevmError(e))?;
+                    .map_err(CoprocessorError::FhevmError)?;
                 if let Some(input) = &ih.input {
                     match input {
                         Input::InputHandle(ih) => {
@@ -661,7 +661,7 @@ impl CoprocessorService {
             // check before we insert computation that it has
             // to succeed according to the type system
             check_fhe_operand_types(comp.operation, &this_comp_inputs, &is_scalar_op_vec)
-                .map_err(|e| CoprocessorError::FhevmError(e))?;
+                .map_err(CoprocessorError::FhevmError)?;
 
             computations_inputs.push(this_comp_inputs);
             are_comps_scalar.push(is_computation_scalar);
@@ -721,7 +721,7 @@ impl CoprocessorService {
         }
         trx.commit().await.map_err(Into::<CoprocessorError>::into)?;
         tx_span.end();
-        return Ok(tonic::Response::new(GenericResponse { response_code: 0 }));
+        Ok(tonic::Response::new(GenericResponse { response_code: 0 }))
     }
 
     async fn trivial_encrypt_ciphertexts_impl(
@@ -729,12 +729,12 @@ impl CoprocessorService {
         request: tonic::Request<coprocessor::TrivialEncryptBatch>,
         tracer: &GrpcTracer,
     ) -> std::result::Result<tonic::Response<coprocessor::GenericResponse>, tonic::Status> {
-        let tenant_id = check_if_api_key_is_valid(&request, &self.pool, &tracer).await?;
+        let tenant_id = check_if_api_key_is_valid(&request, &self.pool, tracer).await?;
         let req = request.get_ref();
 
         let mut unique_handles: BTreeSet<&[u8]> = BTreeSet::new();
         for val in &req.values {
-            validate_fhe_type(val.output_type).map_err(|e| CoprocessorError::FhevmError(e))?;
+            validate_fhe_type(val.output_type).map_err(CoprocessorError::FhevmError)?;
             if !unique_handles.insert(&val.handle) {
                 return Err(CoprocessorError::DuplicateOutputHandleInBatch(format!(
                     "0x{}",
@@ -748,7 +748,7 @@ impl CoprocessorService {
         let fetch_key_response = {
             fetch_tenant_server_key(tenant_id, &self.pool, &self.tenant_key_cache)
                 .await
-                .map_err(|e| tonic::Status::from_error(e))?
+                .map_err(tonic::Status::from_error)?
         };
         let server_key = fetch_key_response.server_key;
         span.end();
@@ -807,7 +807,7 @@ impl CoprocessorService {
         trx.commit().await.map_err(Into::<CoprocessorError>::into)?;
         tx_span.end();
 
-        return Ok(tonic::Response::new(GenericResponse { response_code: 0 }));
+        Ok(tonic::Response::new(GenericResponse { response_code: 0 }))
     }
 
     async fn get_ciphertexts_impl(
@@ -816,7 +816,7 @@ impl CoprocessorService {
         tracer: &GrpcTracer,
     ) -> std::result::Result<tonic::Response<coprocessor::GetCiphertextResponse>, tonic::Status>
     {
-        let tenant_id = check_if_api_key_is_valid(&request, &self.pool, &tracer).await?;
+        let tenant_id = check_if_api_key_is_valid(&request, &self.pool, tracer).await?;
         let req = request.get_ref();
 
         if req.handles.len() > self.args.server_maximum_ciphertexts_to_get {
@@ -866,7 +866,7 @@ impl CoprocessorService {
                 .get(h)
                 .map(|res| {
                     let signature_data = GetCiphertextResponseSignatureData {
-                        handle: alloy::primitives::U256::from_be_slice(&h),
+                        handle: alloy::primitives::U256::from_be_slice(h),
                         ciphertext_digest: Keccak256::digest(&the_map.get(h).unwrap().ciphertext)
                             .to_vec()
                             .into(),
@@ -892,6 +892,6 @@ impl CoprocessorService {
             });
         }
 
-        return Ok(tonic::Response::new(result));
+        Ok(tonic::Response::new(result))
     }
 }

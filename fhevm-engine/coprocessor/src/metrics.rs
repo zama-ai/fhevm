@@ -16,7 +16,7 @@ pub async fn run_metrics_server(
     args: crate::daemon_cli::Args,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     info!("metrics server listening at {}", args.metrics_addr);
-    let _ = actix_web::HttpServer::new(|| {
+    actix_web::HttpServer::new(|| {
         actix_web::App::new()
             .route("/metrics", actix_web::web::to(metrics))
             .route("/health", actix_web::web::to(healthcheck))

@@ -8,7 +8,6 @@ use executor::server::executor::{sync_input::Input, SyncInput};
 use fhevm_engine_common::types::{SupportedFheCiphertexts, HANDLE_LEN};
 use fhevm_engine_common::utils::safe_serialize;
 use tfhe::prelude::CiphertextList;
-use tfhe::zk::{CompactPkeCrs, ZkComputeLoad};
 use tfhe::ProvenCompactCiphertextList;
 use utils::get_test;
 

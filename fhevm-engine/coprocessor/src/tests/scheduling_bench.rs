@@ -298,7 +298,7 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
                     input: Some(Input::InputHandle(has_enough_funds_handle.clone())),
                 },
                 AsyncComputationInput {
-                    input: Some(Input::Scalar(vec![5 as u8])),
+                    input: Some(Input::Scalar(vec![5u8])),
                 },
             ],
         });

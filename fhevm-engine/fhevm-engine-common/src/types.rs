@@ -479,7 +479,7 @@ impl SupportedFheCiphertexts {
                 let mut slice: [u8; 32] = [0; 32];
                 dec.copy_to_be_byte_slice(&mut slice);
                 let final_slice = &slice[slice.len() - 20..];
-                BigInt::from_bytes_be(bigdecimal::num_bigint::Sign::Plus, &final_slice).to_string()
+                BigInt::from_bytes_be(bigdecimal::num_bigint::Sign::Plus, final_slice).to_string()
             }
             SupportedFheCiphertexts::FheUint256(v) => {
                 let dec = FheDecrypt::<U256>::decrypt(v, client_key);
@@ -634,36 +634,36 @@ impl SupportedFheOperations {
     }
 
     pub fn is_comparison(&self) -> bool {
-        match self {
+        matches!(
+            self,
             SupportedFheOperations::FheEq
-            | SupportedFheOperations::FheNe
-            | SupportedFheOperations::FheGe
-            | SupportedFheOperations::FheGt
-            | SupportedFheOperations::FheLe
-            | SupportedFheOperations::FheLt => true,
-            _ => false,
-        }
+                | SupportedFheOperations::FheNe
+                | SupportedFheOperations::FheGe
+                | SupportedFheOperations::FheGt
+                | SupportedFheOperations::FheLe
+                | SupportedFheOperations::FheLt
+        )
     }
 
     pub fn does_have_more_than_one_scalar(&self) -> bool {
-        match self {
+        matches!(
+            self,
             SupportedFheOperations::FheRand
-            | SupportedFheOperations::FheRandBounded
-            | SupportedFheOperations::FheTrivialEncrypt => true,
-            _ => false,
-        }
+                | SupportedFheOperations::FheRandBounded
+                | SupportedFheOperations::FheTrivialEncrypt
+        )
     }
 
     pub fn supports_bool_inputs(&self) -> bool {
-        match self {
+        matches!(
+            self,
             SupportedFheOperations::FheEq
-            | SupportedFheOperations::FheNe
-            | SupportedFheOperations::FheNot
-            | SupportedFheOperations::FheBitAnd
-            | SupportedFheOperations::FheBitOr
-            | SupportedFheOperations::FheBitXor => true,
-            _ => false,
-        }
+                | SupportedFheOperations::FheNe
+                | SupportedFheOperations::FheNot
+                | SupportedFheOperations::FheBitAnd
+                | SupportedFheOperations::FheBitOr
+                | SupportedFheOperations::FheBitXor
+        )
     }
 
     pub fn supports_ebytes_inputs(&self) -> bool {
@@ -738,7 +738,7 @@ impl TryFrom<i16> for SupportedFheOperations {
 
         // ensure we're always having the same value serialized back and forth
         if let Ok(v) = &res {
-            assert_eq!(v.clone() as i16, value);
+            assert_eq!(*v as i16, value);
         }
 
         res
@@ -777,5 +777,5 @@ pub fn get_ct_type(handle: &[u8]) -> Result<i16, FhevmError> {
 }
 
 pub fn is_ebytes_type(inp: i16) -> bool {
-    inp >= 9 && inp <= 11
+    (9..=11).contains(&inp)
 }

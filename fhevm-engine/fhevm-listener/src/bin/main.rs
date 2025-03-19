@@ -92,7 +92,7 @@ impl InfiniteLogIter {
         };
         Self {
             url: args.url.clone(),
-            contract_addresses: contract_addresses,
+            contract_addresses,
             stream: None,
             provider: None,
             last_seen_block: None,
@@ -123,9 +123,7 @@ impl InfiniteLogIter {
         } else {
             DEFAULT_CATCHUP
         };
-        return BlockNumberOrTag::Number(
-            last_block - catch_size.min(last_block),
-        );
+        BlockNumberOrTag::Number(last_block - catch_size.min(last_block))
     }
 
     async fn new_log_stream(&mut self, not_initialized: bool) {
@@ -216,7 +214,7 @@ impl InfiniteLogIter {
 }
 
 #[tokio::main]
-async fn main() -> () {
+async fn main() {
     let args = Args::parse();
     let mut log_iter = InfiniteLogIter::new(&args);
     if let Some(acl_contract_address) = &args.acl_contract_address {

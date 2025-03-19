@@ -55,6 +55,12 @@ pub struct SerializedFhevmKeys {
     pub compressed_server_key: Vec<u8>,
 }
 
+impl Default for FhevmKeys {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FhevmKeys {
     pub fn new() -> Self {
         println!("Generating keys...");
@@ -123,39 +129,34 @@ impl SerializedFhevmKeys {
         #[cfg(not(feature = "gpu"))]
         {
             println!("Creating file {}", Self::SKS);
-            std::fs::write(format!("{}", Self::SKS), self.server_key).expect("write sks");
+            std::fs::write(Self::SKS, self.server_key).expect("write sks");
 
             if self.client_key.is_some() {
                 println!("Creating file {}", Self::CKS);
-                std::fs::write(format!("{}", Self::CKS), self.client_key.unwrap())
-                    .expect("write cks");
+                std::fs::write(Self::CKS, self.client_key.unwrap()).expect("write cks");
             }
 
             println!("Creating file {}", Self::PKS);
-            std::fs::write(format!("{}", Self::PKS), self.compact_public_key).expect("write pks");
+            std::fs::write(Self::PKS, self.compact_public_key).expect("write pks");
 
             println!("Creating file {}", Self::PUBLIC_PARAMS);
-            std::fs::write(format!("{}", Self::PUBLIC_PARAMS), self.public_params)
-                .expect("write public params");
+            std::fs::write(Self::PUBLIC_PARAMS, self.public_params).expect("write public params");
         }
         #[cfg(feature = "gpu")]
         {
             println!("Creating file {}", Self::GPU_CSKS);
-            std::fs::write(format!("{}", Self::GPU_CSKS), self.compressed_server_key)
-                .expect("write gpu csks");
+            std::fs::write(Self::GPU_CSKS, self.compressed_server_key).expect("write gpu csks");
 
             if self.client_key.is_some() {
                 println!("Creating file {}", Self::GPU_CKS);
-                std::fs::write(format!("{}", Self::GPU_CKS), self.client_key.unwrap())
-                    .expect("write gpu cks");
+                std::fs::write(Self::GPU_CKS, self.client_key.unwrap()).expect("write gpu cks");
             }
 
             println!("Creating file {}", Self::GPU_PKS);
-            std::fs::write(format!("{}", Self::GPU_PKS), self.compact_public_key)
-                .expect("write gpu pks");
+            std::fs::write(Self::GPU_PKS, self.compact_public_key).expect("write gpu pks");
 
             println!("Creating file {}", Self::GPU_PUBLIC_PARAMS);
-            std::fs::write(format!("{}", Self::GPU_PUBLIC_PARAMS), self.public_params)
+            std::fs::write(Self::GPU_PUBLIC_PARAMS, self.public_params)
                 .expect("write gpu public params");
         }
     }

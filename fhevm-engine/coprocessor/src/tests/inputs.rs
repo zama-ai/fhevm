@@ -150,7 +150,7 @@ async fn custom_insert_inputs() -> Result<(), Box<dyn std::error::Error>> {
     let mut client = FhevmCoprocessorClient::connect(grpc_url).await?;
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(2)
-        .connect(&db_url)
+        .connect(db_url)
         .await?;
 
     let keys = query_tenant_keys(vec![default_tenant_id()], &pool)

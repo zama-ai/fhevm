@@ -70,15 +70,13 @@ pub fn deserialize_fhe_ciphertext(
             let v: tfhe::FheUint2048 = safe_deserialize(input_bytes)?;
             Ok(SupportedFheCiphertexts::FheBytes256(v))
         }
-        _ => {
-            return Err(FhevmError::UnknownFheType(input_type as i32));
-        }
+        _ => Err(FhevmError::UnknownFheType(input_type as i32)),
     }
 }
 
 /// Function assumes encryption key already set
 pub fn trivial_encrypt_be_bytes(output_type: i16, input_bytes: &[u8]) -> SupportedFheCiphertexts {
-    let last_byte = if input_bytes.len() > 0 {
+    let last_byte = if !input_bytes.is_empty() {
         input_bytes[input_bytes.len() - 1]
     } else {
         0
@@ -95,7 +93,7 @@ pub fn trivial_encrypt_be_bytes(output_type: i16, input_bytes: &[u8]) -> Support
         ),
         3 => {
             let mut padded: [u8; 2] = [0; 2];
-            if input_bytes.len() > 0 {
+            if !input_bytes.is_empty() {
                 let padded_len = padded.len();
                 let copy_from = if padded_len >= input_bytes.len() {
                     padded_len - input_bytes.len()
@@ -113,7 +111,7 @@ pub fn trivial_encrypt_be_bytes(output_type: i16, input_bytes: &[u8]) -> Support
         }
         4 => {
             let mut padded: [u8; 4] = [0; 4];
-            if input_bytes.len() > 0 {
+            if !input_bytes.is_empty() {
                 let padded_len = padded.len();
                 let copy_from = if padded_len >= input_bytes.len() {
                     padded_len - input_bytes.len()
@@ -131,7 +129,7 @@ pub fn trivial_encrypt_be_bytes(output_type: i16, input_bytes: &[u8]) -> Support
         }
         5 => {
             let mut padded: [u8; 8] = [0; 8];
-            if input_bytes.len() > 0 {
+            if !input_bytes.is_empty() {
                 let padded_len = padded.len();
                 let copy_from = if padded_len >= input_bytes.len() {
                     padded_len - input_bytes.len()
@@ -149,7 +147,7 @@ pub fn trivial_encrypt_be_bytes(output_type: i16, input_bytes: &[u8]) -> Support
         }
         6 => {
             let mut padded: [u8; 16] = [0; 16];
-            if input_bytes.len() > 0 {
+            if !input_bytes.is_empty() {
                 let padded_len = padded.len();
                 let copy_from = if padded_len >= input_bytes.len() {
                     padded_len - input_bytes.len()
@@ -167,7 +165,7 @@ pub fn trivial_encrypt_be_bytes(output_type: i16, input_bytes: &[u8]) -> Support
         7 => {
             let mut padded: [u8; 32] = [0; 32];
             let mut be: U256 = U256::ZERO;
-            if input_bytes.len() > 0 {
+            if !input_bytes.is_empty() {
                 let padded_len = padded.len();
                 let copy_from = if padded_len >= input_bytes.len() {
                     padded_len - input_bytes.len()
@@ -187,7 +185,7 @@ pub fn trivial_encrypt_be_bytes(output_type: i16, input_bytes: &[u8]) -> Support
         8 => {
             let mut padded: [u8; 32] = [0; 32];
             let mut be: U256 = U256::ZERO;
-            if input_bytes.len() > 0 {
+            if !input_bytes.is_empty() {
                 let padded_len = padded.len();
                 let copy_from = if padded_len >= input_bytes.len() {
                     padded_len - input_bytes.len()
@@ -205,7 +203,7 @@ pub fn trivial_encrypt_be_bytes(output_type: i16, input_bytes: &[u8]) -> Support
         9 => {
             let mut padded: [u8; 64] = [0; 64];
             let mut be: StaticUnsignedBigInt<8> = StaticUnsignedBigInt::<8>::ZERO;
-            if input_bytes.len() > 0 {
+            if !input_bytes.is_empty() {
                 let padded_len = padded.len();
                 let copy_from = if padded_len >= input_bytes.len() {
                     padded_len - input_bytes.len()
@@ -223,7 +221,7 @@ pub fn trivial_encrypt_be_bytes(output_type: i16, input_bytes: &[u8]) -> Support
         10 => {
             let mut padded: [u8; 128] = [0; 128];
             let mut be: StaticUnsignedBigInt<16> = StaticUnsignedBigInt::<16>::ZERO;
-            if input_bytes.len() > 0 {
+            if !input_bytes.is_empty() {
                 let padded_len = padded.len();
                 let copy_from = if padded_len >= input_bytes.len() {
                     padded_len - input_bytes.len()
@@ -241,7 +239,7 @@ pub fn trivial_encrypt_be_bytes(output_type: i16, input_bytes: &[u8]) -> Support
         11 => {
             let mut padded: [u8; 256] = [0; 256];
             let mut be: StaticUnsignedBigInt<32> = StaticUnsignedBigInt::<32>::ZERO;
-            if input_bytes.len() > 0 {
+            if !input_bytes.is_empty() {
                 let padded_len = padded.len();
                 let copy_from = if padded_len >= input_bytes.len() {
                     padded_len - input_bytes.len()
@@ -283,7 +281,7 @@ pub fn try_expand_ciphertext_list(
 
     let expanded = the_list
         .expand_without_verification()
-        .map_err(|e| FhevmError::CiphertextExpansionError(e))?;
+        .map_err(FhevmError::CiphertextExpansionError)?;
 
     extract_ct_list(&expanded)
 }
@@ -445,7 +443,7 @@ pub fn check_fhe_operand_types(
         .filter(|(_, is_scalar)| **is_scalar)
         .collect::<Vec<_>>();
 
-    let is_scalar = scalar_operands.len() > 0;
+    let is_scalar = !scalar_operands.is_empty();
 
     // do this check for only random ops because
     // all random ops inputs are scalar
@@ -498,25 +496,19 @@ pub fn check_fhe_operand_types(
             }
 
             // special case for div operation, rhs for scalar must not be zero
-            if is_scalar {
-                if fhe_op == SupportedFheOperations::FheDiv {
-                    let all_zeroes = input_handles[1].iter().all(|i| *i == 0u8);
-                    if all_zeroes {
-                        return Err(FhevmError::FheOperationScalarDivisionByZero {
-                            lhs_handle: format!("0x{}", hex::encode(&input_handles[0])),
-                            rhs_value: format!("0x{}", hex::encode(&input_handles[1])),
-                            fhe_operation,
-                            fhe_operation_name: format!("{:?}", fhe_op),
-                        });
-                    }
+            if is_scalar && fhe_op == SupportedFheOperations::FheDiv {
+                let all_zeroes = input_handles[1].iter().all(|i| *i == 0u8);
+                if all_zeroes {
+                    return Err(FhevmError::FheOperationScalarDivisionByZero {
+                        lhs_handle: format!("0x{}", hex::encode(&input_handles[0])),
+                        rhs_value: format!("0x{}", hex::encode(&input_handles[1])),
+                        fhe_operation,
+                        fhe_operation_name: format!("{:?}", fhe_op),
+                    });
                 }
             }
 
-            if fhe_op.is_comparison() {
-                return Ok(()); // fhe bool type
-            }
-
-            return Ok(());
+            Ok(())
         }
         FheOperationType::Unary => {
             let expected_operands = 1;
@@ -529,7 +521,7 @@ pub fn check_fhe_operand_types(
                 });
             }
 
-            return Ok(());
+            Ok(())
         }
         FheOperationType::Other => {
             match &fhe_op {
@@ -579,7 +571,7 @@ pub fn check_fhe_operand_types(
                             let bool_to_op =
                                 |inp| (if inp { "scalar" } else { "handle" }).to_string();
 
-                            return Err(FhevmError::UnexpectedCastOperandTypes {
+                            Err(FhevmError::UnexpectedCastOperandTypes {
                                 fhe_operation,
                                 fhe_operation_name: format!("{:?}", fhe_op),
                                 expected_operator_combination: vec![
@@ -590,7 +582,7 @@ pub fn check_fhe_operand_types(
                                     bool_to_op(other_left),
                                     bool_to_op(other_right),
                                 ],
-                            });
+                            })
                         }
                     }
                 }
@@ -718,7 +710,7 @@ pub fn validate_fhe_type(input_type: i32) -> Result<(), FhevmError> {
         .try_into()
         .or(Err(FhevmError::UnknownFheType(input_type)))?;
     match i16_type {
-        0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 => Ok(()),
+        0..=11 => Ok(()),
         _ => Err(FhevmError::UnknownFheType(input_type)),
     }
 }
@@ -739,10 +731,7 @@ pub fn does_fhe_operation_support_scalar(op: &SupportedFheOperations) -> bool {
 
 // add operations here that don't support both encrypted operands
 pub fn does_fhe_operation_support_both_encrypted_operands(op: &SupportedFheOperations) -> bool {
-    match op {
-        SupportedFheOperations::FheDiv => false,
-        _ => true,
-    }
+    !matches!(op, SupportedFheOperations::FheDiv)
 }
 
 pub fn perform_fhe_operation(
@@ -2354,7 +2343,7 @@ pub fn perform_fhe_operation(
                 let l = to_be_u16_bit(op) as i16;
                 let type_id = input_operands[0].type_num();
                 if l == type_id {
-                    return Ok(SupportedFheCiphertexts::FheBool(inp.clone()));
+                    Ok(SupportedFheCiphertexts::FheBool(inp.clone()))
                 } else {
                     match l {
                         1 => {
@@ -2412,7 +2401,7 @@ pub fn perform_fhe_operation(
                 let l = to_be_u16_bit(op) as i16;
                 let type_id = input_operands[0].type_num();
                 if l == type_id {
-                    return Ok(SupportedFheCiphertexts::FheUint4(inp.clone()));
+                    Ok(SupportedFheCiphertexts::FheUint4(inp.clone()))
                 } else {
                     match l {
                         0 => {
@@ -2470,7 +2459,7 @@ pub fn perform_fhe_operation(
                 let l = to_be_u16_bit(op) as i16;
                 let type_id = input_operands[0].type_num();
                 if l == type_id {
-                    return Ok(SupportedFheCiphertexts::FheUint8(inp.clone()));
+                    Ok(SupportedFheCiphertexts::FheUint8(inp.clone()))
                 } else {
                     match l {
                         0 => {
@@ -2528,7 +2517,7 @@ pub fn perform_fhe_operation(
                 let l = to_be_u16_bit(op) as i16;
                 let type_id = input_operands[0].type_num();
                 if l == type_id {
-                    return Ok(SupportedFheCiphertexts::FheUint16(inp.clone()));
+                    Ok(SupportedFheCiphertexts::FheUint16(inp.clone()))
                 } else {
                     match l {
                         0 => {
@@ -2586,7 +2575,7 @@ pub fn perform_fhe_operation(
                 let l = to_be_u16_bit(op) as i16;
                 let type_id = input_operands[0].type_num();
                 if l == type_id {
-                    return Ok(SupportedFheCiphertexts::FheUint32(inp.clone()));
+                    Ok(SupportedFheCiphertexts::FheUint32(inp.clone()))
                 } else {
                     match l {
                         0 => {
@@ -2644,7 +2633,7 @@ pub fn perform_fhe_operation(
                 let l = to_be_u16_bit(op) as i16;
                 let type_id = input_operands[0].type_num();
                 if l == type_id {
-                    return Ok(SupportedFheCiphertexts::FheUint64(inp.clone()));
+                    Ok(SupportedFheCiphertexts::FheUint64(inp.clone()))
                 } else {
                     match l {
                         0 => {
@@ -2702,7 +2691,7 @@ pub fn perform_fhe_operation(
                 let l = to_be_u16_bit(op) as i16;
                 let type_id = input_operands[0].type_num();
                 if l == type_id {
-                    return Ok(SupportedFheCiphertexts::FheUint128(inp.clone()));
+                    Ok(SupportedFheCiphertexts::FheUint128(inp.clone()))
                 } else {
                     match l {
                         0 => {
@@ -2760,7 +2749,7 @@ pub fn perform_fhe_operation(
                 let l = to_be_u16_bit(op) as i16;
                 let type_id = input_operands[0].type_num();
                 if l == type_id {
-                    return Ok(SupportedFheCiphertexts::FheUint160(inp.clone()));
+                    Ok(SupportedFheCiphertexts::FheUint160(inp.clone()))
                 } else {
                     match l {
                         0 => {
@@ -2818,7 +2807,7 @@ pub fn perform_fhe_operation(
                 let l = to_be_u16_bit(op) as i16;
                 let type_id = input_operands[0].type_num();
                 if l == type_id {
-                    return Ok(SupportedFheCiphertexts::FheUint256(inp.clone()));
+                    Ok(SupportedFheCiphertexts::FheUint256(inp.clone()))
                 } else {
                     match l {
                         0 => {
@@ -2876,7 +2865,7 @@ pub fn perform_fhe_operation(
                 let l = to_be_u16_bit(op) as i16;
                 let type_id = input_operands[0].type_num();
                 if l == type_id {
-                    return Ok(SupportedFheCiphertexts::FheBytes64(inp.clone()));
+                    Ok(SupportedFheCiphertexts::FheBytes64(inp.clone()))
                 } else {
                     match l {
                         0 => {
@@ -2934,7 +2923,7 @@ pub fn perform_fhe_operation(
                 let l = to_be_u16_bit(op) as i16;
                 let type_id = input_operands[0].type_num();
                 if l == type_id {
-                    return Ok(SupportedFheCiphertexts::FheBytes128(inp.clone()));
+                    Ok(SupportedFheCiphertexts::FheBytes128(inp.clone()))
                 } else {
                     match l {
                         0 => {
@@ -2992,7 +2981,7 @@ pub fn perform_fhe_operation(
                 let l = to_be_u16_bit(op) as i16;
                 let type_id = input_operands[0].type_num();
                 if l == type_id {
-                    return Ok(SupportedFheCiphertexts::FheBytes256(inp.clone()));
+                    Ok(SupportedFheCiphertexts::FheBytes256(inp.clone()))
                 } else {
                     match l {
                         0 => {
@@ -3121,15 +3110,19 @@ pub fn to_be_u8_bit(inp: &[u8]) -> u8 {
 fn to_constant_size_array<const SIZE: usize>(inp: &[u8]) -> [u8; SIZE] {
     let mut res = [0u8; SIZE];
 
-    if inp.len() < SIZE {
-        // truncate input slice from the left
-        let slice = &mut res[SIZE - inp.len()..];
-        slice.copy_from_slice(inp);
-    } else if inp.len() == SIZE {
-        res.copy_from_slice(inp);
-    } else {
-        // input slice larger than result, truncate input slice from the left
-        res.copy_from_slice(&inp[inp.len() - SIZE..]);
+    match inp.len().cmp(&SIZE) {
+        std::cmp::Ordering::Less => {
+            // truncate input slice from the left
+            let slice = &mut res[SIZE - inp.len()..];
+            slice.copy_from_slice(inp);
+        }
+        std::cmp::Ordering::Equal => {
+            res.copy_from_slice(inp);
+        }
+        std::cmp::Ordering::Greater => {
+            // input slice larger than result, truncate input slice from the left
+            res.copy_from_slice(&inp[inp.len() - SIZE..]);
+        }
     }
 
     res
@@ -3208,19 +3201,23 @@ fn arr_non_zero(inp: &[u8]) -> bool {
             return true;
         }
     }
-    return false;
+    false
 }
 
 fn be_number_random_bits(inp: &[u8]) -> u32 {
     let mut res = 0;
     for i in inp.iter().rev() {
         let i = *i;
-        if i == 0 {
-            // all bits zero, add 8
-            res += 8;
-        } else if i > 0 {
-            res += 7 - i.leading_zeros();
-            break;
+        match i.cmp(&0) {
+            std::cmp::Ordering::Less => {}
+            std::cmp::Ordering::Equal => {
+                // all bits zero, add 8
+                res += 8;
+            }
+            std::cmp::Ordering::Greater => {
+                res += 7 - i.leading_zeros();
+                break;
+            }
         }
     }
 
@@ -3260,7 +3257,7 @@ pub fn generate_random_number(
         1 => {
             let bit_count = 4;
             let random_bits = upper_bound
-                .map(|i| be_number_random_bits(i))
+                .map(be_number_random_bits)
                 .unwrap_or(bit_count)
                 .min(bit_count) as u64;
             SupportedFheCiphertexts::FheUint4(FheUint4::generate_oblivious_pseudo_random_bounded(
@@ -3271,7 +3268,7 @@ pub fn generate_random_number(
         2 => {
             let bit_count = 8;
             let random_bits = upper_bound
-                .map(|i| be_number_random_bits(i))
+                .map(be_number_random_bits)
                 .unwrap_or(bit_count)
                 .min(bit_count) as u64;
             SupportedFheCiphertexts::FheUint8(FheUint8::generate_oblivious_pseudo_random_bounded(
@@ -3282,7 +3279,7 @@ pub fn generate_random_number(
         3 => {
             let bit_count = 16;
             let random_bits = upper_bound
-                .map(|i| be_number_random_bits(i))
+                .map(be_number_random_bits)
                 .unwrap_or(bit_count)
                 .min(bit_count) as u64;
             SupportedFheCiphertexts::FheUint16(FheUint16::generate_oblivious_pseudo_random_bounded(
@@ -3293,7 +3290,7 @@ pub fn generate_random_number(
         4 => {
             let bit_count = 32;
             let random_bits = upper_bound
-                .map(|i| be_number_random_bits(i))
+                .map(be_number_random_bits)
                 .unwrap_or(bit_count)
                 .min(bit_count) as u64;
             SupportedFheCiphertexts::FheUint32(FheUint32::generate_oblivious_pseudo_random_bounded(
@@ -3304,7 +3301,7 @@ pub fn generate_random_number(
         5 => {
             let bit_count = 64;
             let random_bits = upper_bound
-                .map(|i| be_number_random_bits(i))
+                .map(be_number_random_bits)
                 .unwrap_or(bit_count)
                 .min(bit_count) as u64;
             SupportedFheCiphertexts::FheUint64(FheUint64::generate_oblivious_pseudo_random_bounded(
@@ -3315,7 +3312,7 @@ pub fn generate_random_number(
         6 => {
             let bit_count = 128;
             let random_bits = upper_bound
-                .map(|i| be_number_random_bits(i))
+                .map(be_number_random_bits)
                 .unwrap_or(bit_count)
                 .min(bit_count) as u64;
             SupportedFheCiphertexts::FheUint128(
@@ -3325,7 +3322,7 @@ pub fn generate_random_number(
         7 => {
             let bit_count = 160;
             let random_bits = upper_bound
-                .map(|i| be_number_random_bits(i))
+                .map(be_number_random_bits)
                 .unwrap_or(bit_count)
                 .min(bit_count) as u64;
             SupportedFheCiphertexts::FheUint160(
@@ -3335,7 +3332,7 @@ pub fn generate_random_number(
         8 => {
             let bit_count = 256;
             let random_bits = upper_bound
-                .map(|i| be_number_random_bits(i))
+                .map(be_number_random_bits)
                 .unwrap_or(bit_count)
                 .min(bit_count) as u64;
             SupportedFheCiphertexts::FheUint256(
@@ -3345,7 +3342,7 @@ pub fn generate_random_number(
         9 => {
             let bit_count = 512;
             let random_bits = upper_bound
-                .map(|i| be_number_random_bits(i))
+                .map(be_number_random_bits)
                 .unwrap_or(bit_count)
                 .min(bit_count) as u64;
             SupportedFheCiphertexts::FheBytes64(
@@ -3355,7 +3352,7 @@ pub fn generate_random_number(
         10 => {
             let bit_count = 1024;
             let random_bits = upper_bound
-                .map(|i| be_number_random_bits(i))
+                .map(be_number_random_bits)
                 .unwrap_or(bit_count)
                 .min(bit_count) as u64;
             SupportedFheCiphertexts::FheBytes128(
@@ -3365,7 +3362,7 @@ pub fn generate_random_number(
         11 => {
             let bit_count = 2048;
             let random_bits = upper_bound
-                .map(|i| be_number_random_bits(i))
+                .map(be_number_random_bits)
                 .unwrap_or(bit_count)
                 .min(bit_count) as u64;
             SupportedFheCiphertexts::FheBytes256(

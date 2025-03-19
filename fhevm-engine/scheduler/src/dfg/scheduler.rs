@@ -135,8 +135,7 @@ impl<'a> Scheduler<'a> {
     }
 
     async fn schedule_fine_grain(&mut self) -> Result<()> {
-        let mut set: JoinSet<(usize, Result<(SupportedFheCiphertexts, i16, Vec<u8>)>)> =
-            JoinSet::new();
+        let mut set: JoinSet<TaskResult> = JoinSet::new();
         #[cfg(feature = "gpu")]
         let sks = self.csks.clone();
         #[cfg(not(feature = "gpu"))]
@@ -217,10 +216,7 @@ impl<'a> Scheduler<'a> {
         #[cfg(not(feature = "gpu"))]
         let sks = self.sks.clone();
         tfhe::set_server_key(sks.clone());
-        let mut set: JoinSet<(
-            Vec<(usize, Result<(SupportedFheCiphertexts, i16, Vec<u8>)>)>,
-            NodeIndex,
-        )> = JoinSet::new();
+        let mut set: JoinSet<(Vec<TaskResult>, NodeIndex)> = JoinSet::new();
         let mut execution_graph: Dag<ExecNode, ()> = Dag::default();
         let _ = match strategy {
             PartitionStrategy::MaxLocality => {
@@ -479,13 +475,12 @@ fn partition_components(
     Ok(())
 }
 
+type TaskResult = (usize, Result<(SupportedFheCiphertexts, i16, Vec<u8>)>);
+
 fn execute_partition(
     computations: Vec<(i32, Vec<DFGTaskInput>, NodeIndex)>,
     task_id: NodeIndex,
-) -> (
-    Vec<(usize, Result<(SupportedFheCiphertexts, i16, Vec<u8>)>)>,
-    NodeIndex,
-) {
+) -> (Vec<TaskResult>, NodeIndex) {
     let mut res: HashMap<usize, Result<(SupportedFheCiphertexts, i16, Vec<u8>)>> =
         HashMap::with_capacity(computations.len());
     'comps: for (opcode, inputs, nidx) in computations {
@@ -529,7 +524,7 @@ fn run_computation(
     operation: i32,
     inputs: Result<Vec<SupportedFheCiphertexts>>,
     graph_node_index: usize,
-) -> (usize, Result<(SupportedFheCiphertexts, i16, Vec<u8>)>) {
+) -> TaskResult {
     let op = FheOperation::try_from(operation);
     match inputs {
         Ok(inputs) => match op {

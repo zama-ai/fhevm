@@ -15,7 +15,7 @@ pub fn check_valid_ciphertext_handle(inp: &[u8]) -> Result<(), CoprocessorError>
         return Err(CoprocessorError::CiphertextHandleLongerThan256Bytes);
     }
 
-    if inp.len() < 1 {
+    if inp.is_empty() {
         return Err(CoprocessorError::CiphertextHandleMustBeAtLeast1Byte(
             format!("0x{}", hex::encode(inp)),
         ));
@@ -25,9 +25,9 @@ pub fn check_valid_ciphertext_handle(inp: &[u8]) -> Result<(), CoprocessorError>
 }
 
 /// Returns computations in order for dependency resolution and not found handles for checking in database
-pub fn sort_computations_by_dependencies<'a>(
-    input: &'a [AsyncComputation],
-) -> Result<(Vec<&'a AsyncComputation>, BTreeSet<Vec<u8>>), CoprocessorError> {
+pub fn sort_computations_by_dependencies(
+    input: &[AsyncComputation],
+) -> Result<(Vec<&AsyncComputation>, BTreeSet<Vec<u8>>), CoprocessorError> {
     let mut res = Vec::with_capacity(input.len());
 
     let mut output_handles: HashMap<&[u8], usize> = HashMap::new();
@@ -49,13 +49,13 @@ pub fn sort_computations_by_dependencies<'a>(
         let fhe_op: SupportedFheOperations = comp
             .operation
             .try_into()
-            .map_err(|e| CoprocessorError::FhevmError(e))?;
+            .map_err(CoprocessorError::FhevmError)?;
         for (dep_idx, ih) in comp.inputs.iter().enumerate() {
             let mut is_scalar_operand = false;
             if let Some(ih_input) = &ih.input {
                 match ih_input {
                     Input::InputHandle(ih_bytes) => {
-                        check_valid_ciphertext_handle(&ih_bytes)?;
+                        check_valid_ciphertext_handle(ih_bytes)?;
                         if ih_bytes == &comp.output_handle {
                             return Err(CoprocessorError::OutputHandleIsAlsoInputHandle(format!(
                                 "0x{}",
@@ -73,7 +73,7 @@ pub fn sort_computations_by_dependencies<'a>(
                         }
                     }
                     Input::Scalar(sc_bytes) => {
-                        check_valid_ciphertext_handle(&sc_bytes)?;
+                        check_valid_ciphertext_handle(sc_bytes)?;
                         if dep_idx != 1 && !fhe_op.does_have_more_than_one_scalar() {
                             // TODO: remove wrapping after refactor
                             return Err(CoprocessorError::FhevmError(
@@ -147,7 +147,7 @@ pub fn sort_computations_by_dependencies<'a>(
                 CoprocessorError::CiphertextComputationDependencyLoopDetected {
                     uncomputable_output_handle: format!(
                         "0x{}",
-                        hex::encode(&first_uncomputable_handle)
+                        hex::encode(first_uncomputable_handle)
                     ),
                     uncomputable_handle_dependency: format!(
                         "0x{}",
