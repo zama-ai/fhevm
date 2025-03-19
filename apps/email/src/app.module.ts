@@ -1,8 +1,7 @@
-import { SNSClient } from '@aws-sdk/client-sns'
 import { SQSClient } from '@aws-sdk/client-sqs'
 import { Module } from '@nestjs/common'
 import { ConfigModule, ConfigService } from '@nestjs/config'
-import { SqsModule } from 'sqs'
+import { SqsModule } from '@ssut/nestjs-sqs'
 import awsConfig from './config/aws.config.js'
 import { SQSConsumer } from './infra/adapeters/sqs.consumer.js'
 
@@ -26,16 +25,6 @@ import { SQSConsumer } from './infra/adapeters/sqs.consumer.js'
             }),
             messageAttributeNames: ['All'],
             attributeNames: ['All'],
-          },
-        ],
-        producers: [
-          {
-            name: 'console',
-            topicArn: config.get<string>('aws.topicArn')!,
-            sns: new SNSClient({
-              endpoint: config.get<string>('aws.endpoint'),
-              region: config.get<string>('aws.region'),
-            }),
           },
         ],
       }),

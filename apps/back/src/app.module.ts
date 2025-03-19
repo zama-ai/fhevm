@@ -5,7 +5,7 @@ import { randomUUID } from 'crypto'
 
 import { SqsConsumerModule } from './infra/sqs-consumer/sqs-consumer.module.js'
 import { GraphQLModule } from './infra/graphql/graphql.module.js'
-import { SNSProducerModule } from './infra/sns-producer/sns-producer.module.js'
+import { SqsProducerModule } from './infra/sqs-producer/sqs-producer.module.js'
 
 import awsConfig from './config/aws.config.js'
 import dbConfig from './config/db.config.js'
@@ -58,9 +58,9 @@ export const configModule = ConfigModule.forRoot({
       },
     }),
     GraphQLModule,
-    SqsConsumerModule,
-    SNSProducerModule,
     RestModule,
+    SqsConsumerModule,
+    SqsProducerModule,
   ],
 })
 export class AppModule {}

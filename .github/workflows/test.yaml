@@ -49,7 +49,6 @@ jobs:
         run: |
           pnpm --filter messages build
           pnpm --filter utils build
-          pnpm --filter sqs build
       - name: Generate Prisma code
         run: pnpm prisma:generate
       - name: Test

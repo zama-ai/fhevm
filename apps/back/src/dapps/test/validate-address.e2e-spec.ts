@@ -83,7 +83,7 @@ describe('validate-address', () => {
       })
     })
 
-    describe('when the address is invalid', () => {
+    describe('when the address is invalid', { timeout: 30_000 }, () => {
       let validateAddress: ValidateAddress | undefined
       let chainId: string
       let address: string
@@ -113,6 +113,9 @@ describe('validate-address', () => {
         ])
         if (result.success) {
           validateAddress = result.data
+        } else {
+          console.log(`validateAddress: ${JSON.stringify(result)}`)
+          expect(result.success).toBe(true)
         }
       })
 

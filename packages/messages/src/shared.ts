@@ -1,6 +1,9 @@
 import { z } from 'zod'
 import { v7 as uuid } from 'uuid'
 
+export const MS_PREFIXES = ['back', 'orch', 'relayer', 'web3'] as const
+export type MSPrefix = (typeof MS_PREFIXES)[number]
+
 export const meta = z.record(z.string(), z.union([z.string(), z.number()])).and(
   z.object({
     correlationId: z.string().uuid(),
@@ -25,4 +28,30 @@ export const web3Address = z
 export const requestId = z.string().uuid()
 export function generateRequestId() {
   return uuid()
+}
+
+export function metaFactory<
+  Events extends {
+    type: string
+    payload: object
+    meta: Meta
+  },
+  Prefix extends string = MSPrefix,
+>(prefix: Prefix) {
+  return function <
+    Key extends string,
+    Event extends {
+      type: `${Prefix}:${Key}`
+      payload: object
+      meta: Meta
+    } = Extract<Events, { type: `${Prefix}:${Key}` }>,
+  >(key: Key) {
+    return function (payload: Event['payload'], meta: Event['meta']) {
+      return {
+        type: `${prefix}:${key}`,
+        payload,
+        meta,
+      } as Event
+    }
+  }
 }

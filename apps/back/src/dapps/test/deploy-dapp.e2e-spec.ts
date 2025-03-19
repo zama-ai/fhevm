@@ -115,7 +115,6 @@ describe('deploy-dapp', () => {
         { email: faker.internet.email(), password: faker.internet.password() },
         { signup: true },
       )
-      expect(result.success, 'Failed to login the user').toBe(true)
       if (result.success) {
         token = result.data.token
         teamId = result.data.user.teams[0].id
@@ -126,15 +125,23 @@ describe('deploy-dapp', () => {
           name: faker.string.alphanumeric(10),
           address: faker.string.hexadecimal({ length: 40 }),
         })
-        expect(dappResult.success).toBe(true)
         if (dappResult.success) {
           dappId = dappResult.data.id
           const result = await manager.dapp.deployDApp({
             token,
             dappId,
           })
-          expect(result.success).toBe(true)
+          if (!result.success) {
+            console.log(`result: ${JSON.stringify(result)}`)
+            expect(result.success).toBe(true)
+          }
+        } else {
+          console.log(`dappResult: ${JSON.stringify(dappResult)}`)
+          expect(dappResult.success).toBe(true)
         }
+      } else {
+        console.log(`failed to login: ${JSON.stringify(result)}`)
+        expect(result.success, 'Failed to login the user').toBe(true)
       }
     })
 
@@ -185,7 +192,7 @@ describe('deploy-dapp', () => {
 
         test(`then the dapp status should be "${status}"`, async () => {
           await vi.waitUntil(async () => {
-            const size = await manager.getQueueSize()
+            const size = await manager.getBackQueueSize()
             return size === 0
           })
 
@@ -194,7 +201,6 @@ describe('deploy-dapp', () => {
             dappId,
           })
           if (result.success) {
-            console.log(`dapp: ${JSON.stringify(result.data)}`)
             expect(result.data.status).toBe(status)
           } else {
             console.log(result)
