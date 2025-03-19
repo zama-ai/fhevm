@@ -1,8 +1,8 @@
 <p align="center">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/zama-ai/fhevm/assets/157474013/b07e7e65-12b2-4048-b5de-35e169ed96e4">
-  <source media="(prefers-color-scheme: light)" srcset="https://github.com/zama-ai/fhevm/assets/157474013/c0fab5b1-adef-4db4-9607-fa0a793acaf8">
-  <img width=600 alt="Zama fhEVM">
+  <source media="(prefers-color-scheme: dark)" srcset="https://private-user-images.githubusercontent.com/1384478/421481269-6173e401-7c1b-4911-9731-ca2eb436e85f.png?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NDIzNzM0NjcsIm5iZiI6MTc0MjM3MzE2NywicGF0aCI6Ii8xMzg0NDc4LzQyMTQ4MTI2OS02MTczZTQwMS03YzFiLTQ5MTEtOTczMS1jYTJlYjQzNmU4NWYucG5nP1gtQW16LUFsZ29yaXRobT1BV1M0LUhNQUMtU0hBMjU2JlgtQW16LUNyZWRlbnRpYWw9QUtJQVZDT0RZTFNBNTNQUUs0WkElMkYyMDI1MDMxOSUyRnVzLWVhc3QtMSUyRnMzJTJGYXdzNF9yZXF1ZXN0JlgtQW16LURhdGU9MjAyNTAzMTlUMDgzMjQ3WiZYLUFtei1FeHBpcmVzPTMwMCZYLUFtei1TaWduYXR1cmU9Y2QxMzBhMGJlY2UyMTAwYTg4NTFkOGM5MWRkZGJlYmZiMDgyNzNiYjQ5OTM4MWI5MzA5NGU0ZmI4NWFhNWZlNSZYLUFtei1TaWduZWRIZWFkZXJzPWhvc3QifQ.YViSBhLRoakk-dPU_lPcV3xDGvPUYqmzqo5eOyJsEWs">
+  <source media="(prefers-color-scheme: light)" srcset="https://private-user-images.githubusercontent.com/1384478/421481269-6173e401-7c1b-4911-9731-ca2eb436e85f.png?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NDIzNzM0NjcsIm5iZiI6MTc0MjM3MzE2NywicGF0aCI6Ii8xMzg0NDc4LzQyMTQ4MTI2OS02MTczZTQwMS03YzFiLTQ5MTEtOTczMS1jYTJlYjQzNmU4NWYucG5nP1gtQW16LUFsZ29yaXRobT1BV1M0LUhNQUMtU0hBMjU2JlgtQW16LUNyZWRlbnRpYWw9QUtJQVZDT0RZTFNBNTNQUUs0WkElMkYyMDI1MDMxOSUyRnVzLWVhc3QtMSUyRnMzJTJGYXdzNF9yZXF1ZXN0JlgtQW16LURhdGU9MjAyNTAzMTlUMDgzMjQ3WiZYLUFtei1FeHBpcmVzPTMwMCZYLUFtei1TaWduYXR1cmU9Y2QxMzBhMGJlY2UyMTAwYTg4NTFkOGM5MWRkZGJlYmZiMDgyNzNiYjQ5OTM4MWI5MzA5NGU0ZmI4NWFhNWZlNSZYLUFtei1TaWduZWRIZWFkZXJzPWhvc3QifQ.YViSBhLRoakk-dPU_lPcV3xDGvPUYqmzqo5eOyJsEWs">
+  <img width=600 alt="Zama HTTPZ">
 </picture>
 </p>
 
@@ -11,13 +11,13 @@
 <hr/>
 
 <p align="center">
-<a href="https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper.pdf"> 📃 Read white paper</a> |<a href="https://docs.zama.ai/fhevm-backend"> 📒 Documentation</a> | <a href="https://zama.ai/community"> 💛 Community support</a> | <a href="https://github.com/zama-ai/awesome-zama"> 📚 FHE resources by Zama</a>
+<a href="https://github.com/zama-ai/httpz-solidity/blob/main/fhevm-whitepaper.pdf"> 📃 Read white paper</a> |<a href="https://docs.zama.ai/fhevm-backend"> 📒 Documentation</a> | <a href="https://zama.ai/community"> 💛 Community support</a> | <a href="https://github.com/zama-ai/awesome-zama"> 📚 FHE resources by Zama</a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/zama-ai/fhevm/releases">
+  <a href="https://github.com/zama-ai/httpz-solidity/releases">
     <img src="https://img.shields.io/github/v/release/zama-ai/fhevm?style=flat-square"></a>
-  <a href="https://github.com/zama-ai/fhevm/blob/main/LICENSE">
+  <a href="https://github.com/zama-ai/httpz-solidity/blob/main/LICENSE">
     <!-- markdown-link-check-disable-next-line -->
     <img src="https://img.shields.io/badge/License-BSD--3--Clause--Clear-%23ffb243?style=flat-square"></a>
   <a href="https://github.com/zama-ai/bounty-program">
@@ -26,44 +26,47 @@
   <a href="https://slsa.dev"><img alt="SLSA 3" src="https://slsa.dev/images/gh-badge-level3.svg" /></a>
 </p>
 
-
 ## About
 
-### What is fhEVM-backend
+### What is HTTPZ Backend
 
-**fhEVM-backend** provides the execution service for FHE computations.
+**HTTPZ Backend** provides the execution service for FHE computations.
 
 It includes:
-- An **Executor** service for [fhEVM-native](https://docs.zama.ai/fhevm-backend/getting-started/fhevm/fhevm-native) 
+
+- An **Executor** service for [fhEVM-native](https://docs.zama.ai/fhevm-backend/getting-started/fhevm/fhevm-native)
 - A **Coprocessor** service for [fhEVM-coprocessor](https://docs.zama.ai/fhevm-backend/getting-started/fhevm/fhevm-coprocessor)
 
-*Learn more about fhEVM-backend features in the [documentation](https://docs.zama.ai/fhevm-backend).*
+_Learn more about fhEVM-backend features in the [documentation](https://docs.zama.ai/fhevm-backend)._
 <br></br>
 
 ## Table of Contents
+
 - **[Getting started](#getting-started)**
-   - [Generating keys](#generating-keys)
-   - [Executor](#executor)
-   - [Coprocessor](#coprocessor)
+  - [Generating keys](#generating-keys)
+  - [Executor](#executor)
+  - [Coprocessor](#coprocessor)
 - **[Resources](#resources)**
-   - [Documentation](#documentation)
-   - [fhEVM Demo](#fhevm-demo)
+  - [Documentation](#documentation)
+  - [fhEVM Demo](#fhevm-demo)
 - **[Working with fhEVM-backend](#working-with-fhevm-backend)**
-   - [Citations](#citations)
-   - [Contributing](#contributing)
-   - [License](#license)
+  - [Citations](#citations)
+  - [Contributing](#contributing)
+  - [License](#license)
 - **[Support](#support)**
-<br></br>
+  <br></br>
 
 ## Getting started
 
 ### Generating keys
 
 For testing purposes a set of keys can be generated as follows:
+
 ```
 $ cd fhevm-engine/fhevm-engine-common
 $ cargo run generate-keys
 ```
+
 The keys are stored by default in `fhevm-engine/fhevm-keys`.
 
 ### Executor
@@ -78,6 +81,7 @@ $ cargo install --path .
 #### Configuration
 
 Once installed, the executor can be started with the following configuration options:
+
 ```
 $ executor --help
 Usage: executor [OPTIONS] --fhe-keys-directory <FHE_KEYS_DIRECTORY>
@@ -120,6 +124,7 @@ $ cargo install --path .
 #### Services Configuration
 
 ##### coprocessor
+
 ```bash
 $ coprocessor --help
 Usage: coprocessor [OPTIONS]
@@ -181,27 +186,28 @@ Usage: fhevm_listener [OPTIONS]
 
 Options:
       --url <URL>                                      [default: ws://0.0.0.0:8746]
-      --ignore-tfhe-events                             
-      --ignore-acl-events                              
-      --acl-contract-address <ACL_CONTRACT_ADDRESS>    
-      --tfhe-contract-address <TFHE_CONTRACT_ADDRESS>  
-      --database-url <DATABASE_URL>                    
+      --ignore-tfhe-events
+      --ignore-acl-events
+      --acl-contract-address <ACL_CONTRACT_ADDRESS>
+      --tfhe-contract-address <TFHE_CONTRACT_ADDRESS>
+      --database-url <DATABASE_URL>
       --start-at-block <START_AT_BLOCK>                Can be negative from last block
-      --end-at-block <END_AT_BLOCK>                    
+      --end-at-block <END_AT_BLOCK>
   -h, --help                                           Print help
   -V, --version                                        Print version
 ```
 
 ##### gw-listener
+
 ```bash
 $ gw_listener --help
 Usage: gw_listener [OPTIONS] --gw-url <GW_URL> --zkpok-manager-address <ZKPOK_MANAGER_ADDRESS>
 
 Options:
-      --database-url <DATABASE_URL>                          
+      --database-url <DATABASE_URL>
       --database-pool-size <DATABASE_POOL_SIZE>              [default: 16]
-      --gw-url <GW_URL>                                      
-  -z, --zkpok-manager-address <ZKPOK_MANAGER_ADDRESS>        
+      --gw-url <GW_URL>
+  -z, --zkpok-manager-address <ZKPOK_MANAGER_ADDRESS>
       --error-sleep-initial-secs <ERROR_SLEEP_INITIAL_SECS>  [default: 1]
       --error-sleep-max-secs <ERROR_SLEEP_MAX_SECS>          [default: 10]
   -h, --help                                                 Print help
@@ -209,6 +215,7 @@ Options:
 ```
 
 ##### sns-worker
+
 ```bash
 $ sns_worker --help
 Usage: sns_worker [OPTIONS] --pg-listen-channel <PG_LISTEN_CHANNEL> --pg-notify-channel <PG_NOTIFY_CHANNEL>
@@ -244,7 +251,7 @@ Usage: zkproof_worker [OPTIONS]
 
 Options:
   -d, --database-url <DATABASE_URL>
-          
+
       --database-pool-size <DATABASE_POOL_SIZE>
           [default: 10]
       --database-polling-interval-secs <DATABASE_POLLING_INTERVAL_SECS>
@@ -271,15 +278,15 @@ Usage: transaction_sender [OPTIONS] --zkpok-manager-address <ZKPOK_MANAGER_ADDRE
 
 Options:
   -z, --zkpok-manager-address <ZKPOK_MANAGER_ADDRESS>
-          
+
   -c, --ciphertext-storage-address <CIPHERTEXT_STORAGE_ADDRESS>
-          
+
   -g, --gateway-url <GATEWAY_URL>
-          
+
   -p, --private-key <PRIVATE_KEY>
-          
+
   -d, --database-url <DATABASE_URL>
-          
+
       --database-pool-size <DATABASE_POOL_SIZE>
           [default: 10]
       --database-polling-interval-secs <DATABASE_POLLING_INTERVAL_SECS>
@@ -312,8 +319,7 @@ Full, comprehensive documentation is available here: [https://docs.zama.ai/fhevm
 
 ### fhEVM Demo
 
-A complete demo showcasing an integrated fhEVM blockchain and KMS (Key Management System) is available here: [https://github.com/zama-ai/fhevm-devops](https://github.com/zama-ai/fhevm-devops).
-
+A complete demo showcasing an integrated fhEVM blockchain and KMS (Key Management System) is available here: [https://github.com/zama-ai/httpz-devops/](https://github.com/zama-ai/httpz-devops/).
 
 ## Working with fhEVM-backend
 
@@ -345,7 +351,7 @@ year = "2023"
 
 There are two ways to contribute to the Zama fhEVM:
 
-- [Open issues](https://github.com/zama-ai/fhevm-backend/issues/new/choose) to report bugs and typos, or to suggest new ideas
+- [Open issues](https://github.com/zama-ai/httpz-backend/issues/new/choose) to report bugs and typos, or to suggest new ideas
 - Request to become an official contributor by emailing hello@zama.ai.
 
 Becoming an approved contributor involves signing our Contributor License Agreement (CLA)). Only approved contributors can send pull requests, so please make sure to get in touch before you do!
@@ -383,8 +389,8 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 
 <a target="_blank" href="https://community.zama.ai">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/zama-ai/fhevm/assets/157474013/e249e1a8-d724-478c-afa8-e4fe01c1a0fd">
-  <source media="(prefers-color-scheme: light)" srcset="https://github.com/zama-ai/fhevm/assets/157474013/a72200cc-d93e-44c7-81a8-557901d8798d">
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/zama-ai/httpz-solidity/assets/157474013/e249e1a8-d724-478c-afa8-e4fe01c1a0fd">
+  <source media="(prefers-color-scheme: light)" srcset="https://github.com/zama-ai/httpz-solidity/assets/157474013/a72200cc-d93e-44c7-81a8-557901d8798d">
   <img alt="Support">
 </picture>
 </a>
