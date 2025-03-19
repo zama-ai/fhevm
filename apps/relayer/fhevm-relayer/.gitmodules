@@ -1,3 +1,6 @@
 [submodule "hardhat/contracts/lib/forge-std"]
 	path = hardhat/contracts/lib/forge-std
 	url = https://github.com/foundry-rs/forge-std
+[submodule "contracts/gateway-l2"]
+	path = contracts/gateway-l2
+	url = git@github.com:zama-ai/gateway-l2.git
