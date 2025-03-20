@@ -2,9 +2,29 @@ name: "Relayer Docker Image"
 
 on:
   pull_request:
+    paths:
+      - .github/workflows/relayer_image.yml
+      - .github/workflows/common_docker.yml
+      - src/**
+      - config/**
+      - Dockerfile
+      - .hadolint.yaml
+      - Makefile
+      - Cargo.toml
+      - Cargo.lock
   push:
     branches:
       - main
+    paths:
+      - .github/workflows/relayer_image.yml
+      - .github/workflows/common_docker.yml
+      - src/**
+      - config/**
+      - Dockerfile
+      - .hadolint.yaml
+      - Makefile
+      - Cargo.toml
+      - Cargo.lock
   release:
     types:
       - published
