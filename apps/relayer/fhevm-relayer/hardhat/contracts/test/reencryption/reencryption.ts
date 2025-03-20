@@ -30,14 +30,14 @@ describe('Reencryption', function () {
     const startTimeStamp = Math.floor(Date.now() / 1000).toString();
     const durationDays = "10"; // String for consistency
     const contractAddresses = [this.contractAddress];
-    const gatewayChainId = 654321;
-    const hostChainId = "123456";
+    const gatewayChainId = process.env.CHAIN_ID_GATEWAY || 654321;
+    const hostChainId = process.env.CHAIN_ID_HTTPZ || "123456";
 
     
     // Use the new createEIP712UserDecrypt function
     const eip712 = this.instances.alice.createEIP712UserDecrypt(
       gatewayChainId,
-     "0x857Ca72A957920Fa0FB138602995839866Bd4005", // Decryption Manager contract
+      process.env.DECRYPTION_MANAGER_ADDRESS, // Decryption Manager contract
       publicKey,
       contractAddresses,
       hostChainId,
