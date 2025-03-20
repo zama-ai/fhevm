@@ -195,7 +195,7 @@ contract DecryptionManager is IDecryptionManager, EIP712Upgradeable, Ownable2Ste
     /// @dev Contract name and version for EIP712 signature validation are defined here
     function initialize() public reinitializer(2) {
         __EIP712_init(CONTRACT_NAME, "1");
-        __Ownable_init(msg.sender);
+        __Ownable_init(owner());
     }
 
     /// @notice Checks if the sender is a KMS Node.
@@ -716,5 +716,6 @@ contract DecryptionManager is IDecryptionManager, EIP712Upgradeable, Ownable2Ste
     /**
      * @dev Should revert when `msg.sender` is not authorized to upgrade the contract.
      */
+    // solhint-disable-next-line no-empty-blocks
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
 }

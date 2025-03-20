@@ -112,7 +112,7 @@ contract KeyManager is IKeyManager, Ownable2StepUpgradeable, UUPSUpgradeable {
 
     /// @notice Initializes the contract.
     function initialize(string memory fheParamsName, bytes32 fheParamsDigest) public reinitializer(2) {
-        __Ownable_init(msg.sender);
+        __Ownable_init(owner());
 
         KeyManagerStorage storage $ = _getKeyManagerStorage();
         $.fheParamsDigests[fheParamsName] = fheParamsDigest;
@@ -561,5 +561,6 @@ contract KeyManager is IKeyManager, Ownable2StepUpgradeable, UUPSUpgradeable {
     /**
      * @dev Should revert when `msg.sender` is not authorized to upgrade the contract.
      */
+    // solhint-disable-next-line no-empty-blocks
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
 }
