@@ -1,8 +1,8 @@
 <p align="center">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/zama-ai/fhevm/assets/157474013/b07e7e65-12b2-4048-b5de-35e169ed96e4">
-  <source media="(prefers-color-scheme: light)" srcset="https://github.com/zama-ai/fhevm/assets/157474013/c0fab5b1-adef-4db4-9607-fa0a793acaf8">
-  <img width=600 alt="Zama fhEVM">
+  <source media="(prefers-color-scheme: dark)" srcset="https://private-user-images.githubusercontent.com/1384478/421481269-6173e401-7c1b-4911-9731-ca2eb436e85f.png?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NDI0NjM5MTAsIm5iZiI6MTc0MjQ2MzYxMCwicGF0aCI6Ii8xMzg0NDc4LzQyMTQ4MTI2OS02MTczZTQwMS03YzFiLTQ5MTEtOTczMS1jYTJlYjQzNmU4NWYucG5nP1gtQW16LUFsZ29yaXRobT1BV1M0LUhNQUMtU0hBMjU2JlgtQW16LUNyZWRlbnRpYWw9QUtJQVZDT0RZTFNBNTNQUUs0WkElMkYyMDI1MDMyMCUyRnVzLWVhc3QtMSUyRnMzJTJGYXdzNF9yZXF1ZXN0JlgtQW16LURhdGU9MjAyNTAzMjBUMDk0MDEwWiZYLUFtei1FeHBpcmVzPTMwMCZYLUFtei1TaWduYXR1cmU9MGRlNjEwZjBlZWU1Njk5N2M5NGM0ODY3YzFiOTg4NTgzOGZmZTkwYzIxYjMwMGY4ZDE0YjZiODFlYzk4OWE0ZiZYLUFtei1TaWduZWRIZWFkZXJzPWhvc3QifQ.h99DLUrF4y1JrFJ2HGCgGQ6fNgGglbBIwrROYGHVOJs">
+  <source media="(prefers-color-scheme: light)" srcset="https://private-user-images.githubusercontent.com/1384478/421481269-6173e401-7c1b-4911-9731-ca2eb436e85f.png?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NDI0NjM5MTAsIm5iZiI6MTc0MjQ2MzYxMCwicGF0aCI6Ii8xMzg0NDc4LzQyMTQ4MTI2OS02MTczZTQwMS03YzFiLTQ5MTEtOTczMS1jYTJlYjQzNmU4NWYucG5nP1gtQW16LUFsZ29yaXRobT1BV1M0LUhNQUMtU0hBMjU2JlgtQW16LUNyZWRlbnRpYWw9QUtJQVZDT0RZTFNBNTNQUUs0WkElMkYyMDI1MDMyMCUyRnVzLWVhc3QtMSUyRnMzJTJGYXdzNF9yZXF1ZXN0JlgtQW16LURhdGU9MjAyNTAzMjBUMDk0MDEwWiZYLUFtei1FeHBpcmVzPTMwMCZYLUFtei1TaWduYXR1cmU9MGRlNjEwZjBlZWU1Njk5N2M5NGM0ODY3YzFiOTg4NTgzOGZmZTkwYzIxYjMwMGY4ZDE0YjZiODFlYzk4OWE0ZiZYLUFtei1TaWduZWRIZWFkZXJzPWhvc3QifQ.h99DLUrF4y1JrFJ2HGCgGQ6fNgGglbBIwrROYGHVOJs">
+  <img width=600 alt="Zama HTTPZ">
 </picture>
 </p>
 
@@ -13,9 +13,9 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/zama-ai/fhevm/releases">
+  <a href="https://github.com/zama-ai/httpz-solidity/releases">
     <img src="https://img.shields.io/github/v/release/zama-ai/fhevm?style=flat-square"></a>
-  <a href="https://github.com/zama-ai/fhevm/blob/main/LICENSE">
+  <a href="https://github.com/zama-ai/httpz-solidity/blob/main/LICENSE">
     <!-- markdown-link-check-disable-next-line -->
     <img src="https://img.shields.io/badge/License-BSD--3--Clause--Clear-%23ffb243?style=flat-square"></a>
   <a href="https://github.com/zama-ai/bounty-program">
@@ -26,11 +26,11 @@
 
 ## About
 
-### What is fhEVM
+### What is HTTPZ
 
-**fhEVM** is a technology that enables confidential smart contracts on the EVM using fully homomorphic encryption (FHE).
+**HTTPZ** is a technology that enables confidential smart contracts on the EVM using fully homomorphic encryption (FHE).
 
-Thanks to a breakthrough in homomorphic encryption, Zama’s fhEVM makes it possible to run confidential smart contracts on encrypted data, guaranteeing both confidentiality and composability with:
+Thanks to a breakthrough in homomorphic encryption, Zama’s HTTPZ makes it possible to run confidential smart contracts on encrypted data, guaranteeing both confidentiality and composability with:
 
 - **End-to-end encryption of transactions and state:** Data included in transactions is encrypted and never visible to anyone.
 - **Composability and data availability on-chain:** States are updated while remaining encrypted at all times.
@@ -39,7 +39,7 @@ Thanks to a breakthrough in homomorphic encryption, Zama’s fhEVM makes it poss
 
 ### Main features
 
-- **Solidity integration:** fhEVM contracts are simple solidity contracts that are built using traditional solidity toolchains.
+- **Solidity integration:** HTTPZ contracts are simple solidity contracts that are built using traditional solidity toolchains.
 - **Simple developer experience:** Developers can use the `euint` data types to mark which part of their contracts should be private.
 - **Programmable privacy:** All the logic for access control of encrypted states is defined by developers in their smart contracts.
 - **High precision encrypted integers :** Up to 256 bits of precision for integers
@@ -49,12 +49,12 @@ Thanks to a breakthrough in homomorphic encryption, Zama’s fhEVM makes it poss
 - **Configurable decryption :** Threshold, centralized or KMS decryption
 - **Unbounded compute Depth :** Unlimited consecutive FHE operations
 
-_Learn more about fhEVM features in the [documentation](https://docs.zama.ai/fhevm)._
+_Learn more about HTTPZ features in the [documentation](https://docs.zama.ai/fhevm)._
 <br></br>
 
 ### Use cases
 
-fhEVM is built for developers to write confidential smart contracts without learning cryptography. Leveraging fhEVM, you can unlock a myriad of new use cases such as DeFi, gaming, and more. For instance:
+HTTPZ is built for developers to write confidential smart contracts without learning cryptography. Leveraging HTTPZ, you can unlock a myriad of new use cases such as DeFi, gaming, and more. For instance:
 
 - **Tokenization**: Swap tokens and RWAs on-chain without others seeing the amounts.
 - **Blind auctions**: Bid on items without revealing the amount or the winner.
@@ -72,31 +72,31 @@ _Learn more use cases in the [list of examples](https://docs.zama.ai/fhevm/tutor
 
 ### Citations
 
-To cite fhEVM or the whitepaper in academic papers, please use the following entries:
+To cite HTTPZ or the whitepaper in academic papers, please use the following entries:
 
 ```text
-@Misc{fhEVM,
+@Misc{HTTPZ,
 title={{Confidential EVM Smart Contracts using Fully Homomorphic Encryption}},
 author={Zama},
 year={2024},
-note={\url{https://github.com/zama-ai/fhevm}},
+note={\url{https://github.com/zama-ai/httpz-solidity}},
 }
 ```
 
 ```text
-@techreport{fhEVM,
+@techreport{HTTPZ,
 author = "Zama",
 title = "Confidential EVM Smart Contracts using Fully Homomorphic Encryption",
 institution = "Zama",
-year = "2024"
+year = "2025"
 }
 ```
 
 ### Contributing
 
-There are two ways to contribute to the Zama fhEVM:
+There are two ways to contribute to the Zama HTTPZ:
 
-- [Open issues](https://github.com/zama-ai/fhevm/issues/new/choose) to report bugs and typos, or to suggest new ideas
+- [Open issues](https://github.com/zama-ai/httpz-solidity/issues/new/choose) to report bugs and typos, or to suggest new ideas
 - Request to become an official contributor by emailing hello@zama.ai.
 
 Becoming an approved contributor involves signing our Contributor License Agreement (CLA). Only approved contributors can send pull requests, so please make sure to get in touch before you do!
@@ -130,8 +130,8 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 
 <a target="_blank" href="https://community.zama.ai">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/zama-ai/fhevm/assets/157474013/e249e1a8-d724-478c-afa8-e4fe01c1a0fd">
-  <source media="(prefers-color-scheme: light)" srcset="https://github.com/zama-ai/fhevm/assets/157474013/a72200cc-d93e-44c7-81a8-557901d8798d">
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/zama-ai/httpz-solidity/assets/157474013/e249e1a8-d724-478c-afa8-e4fe01c1a0fd">
+  <source media="(prefers-color-scheme: light)" srcset="https://github.com/zama-ai/httpz-solidity/assets/157474013/a72200cc-d93e-44c7-81a8-557901d8798d">
   <img alt="Support">
 </picture>
 </a>
