@@ -10,29 +10,30 @@ use axum::{extract::Json, http::StatusCode, response::IntoResponse};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::oneshot;
+use tracing::error;
 use tracing::info;
 
 /// Represents the payload coming into the '/input-proof' endpoint.
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Serialize)]
 #[allow(non_snake_case)]
 pub struct UserDecryptRequestJson {
     pub ctHandleContractPairs: Vec<CtHandleContractPairJson>,
     pub requestValidity: RequestValidityJson,
-    pub contractsChainId: u64,
+    pub contractsChainId: String,
     pub contractAddresses: Vec<String>,
     pub userAddress: String,
     pub signature: String,
     pub publicKey: String,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Serialize)]
 #[allow(non_snake_case)]
 pub struct CtHandleContractPairJson {
     pub ctHandle: String,
     pub contractAddress: String,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Serialize)]
 #[allow(non_snake_case)]
 pub struct RequestValidityJson {
     pub startTimestamp: String, // TODO(mano): Can be u64, as its epoch timestamp ?
@@ -86,16 +87,25 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
             return (StatusCode::BAD_REQUEST, Json(error_response)).into_response();
         }
 
-        let user_decrypt_request: UserDecryptRequest =
-            match UserDecryptRequest::try_from(payload.clone()) {
-                Ok(request) => request,
-                Err(error) => {
-                    let error_response = UserDecryptErrorResponseJson {
-                        message: format!("parsing request data: {}", error),
-                    };
-                    return (StatusCode::BAD_REQUEST, Json(error_response)).into_response();
+        let user_decrypt_request = match UserDecryptRequest::try_from(payload.clone()) {
+            Ok(request) => request,
+            Err(error) => {
+                error!("Conversion failed: {}", error);
+                // Try to identify exactly where it's failing
+                if let Err(e) = serde_json::to_string(&payload) {
+                    error!("Cannot serialize payload: {}", e);
                 }
-            };
+                // Try parsing individual fields
+                if let Err(e) = payload.requestValidity.durationDays.parse::<u32>() {
+                    error!("Failed to parse durationDays: {}", e);
+                }
+
+                let error_response = UserDecryptErrorResponseJson {
+                    message: format!("parsing request data: {}", error),
+                };
+                return (StatusCode::BAD_REQUEST, Json(error_response)).into_response();
+            }
+        };
 
         // Generate Request ID
         let request_id = self.orchestrator.new_request_id();

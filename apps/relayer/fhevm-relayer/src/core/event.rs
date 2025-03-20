@@ -322,7 +322,7 @@ pub struct PublicDecryptRequest {
     pub ct_handles: Vec<[u8; 32]>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct UserDecryptRequest {
     pub ct_handle_contract_pairs: Vec<CtHandleContractPair>,
     pub request_validity: RequestValidity,
@@ -333,14 +333,14 @@ pub struct UserDecryptRequest {
     pub public_key: Bytes,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 #[allow(non_snake_case)]
 pub struct CtHandleContractPair {
     pub ct_handle: U256,
     pub contract_address: Address,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 #[allow(non_snake_case)]
 pub struct RequestValidity {
     pub start_timestamp: U256,
@@ -365,17 +365,53 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
     type Error = anyhow::Error;
 
     fn try_from(value: UserDecryptRequestJson) -> Result<Self, Self::Error> {
+        info!("Converting UserDecryptRequestJson to UserDecryptRequest");
+
         let mut ct_handle_contract_pairs = Vec::new();
         for json_data in &value.ctHandleContractPairs {
+            // Always parse ctHandle as hex
+            let ct_handle = U256::from_str_radix(&json_data.ctHandle, 16)
+                .map_err(|e| anyhow::anyhow!("Failed to parse ctHandle: {}", e))?;
+
+            let contract_address = Address::from_str(&json_data.contractAddress)
+                .map_err(|e| anyhow::anyhow!("Failed to parse contractAddress: {}", e))?;
+
             ct_handle_contract_pairs.push(CtHandleContractPair {
-                ct_handle: U256::from_str_radix(&json_data.ctHandle, 16)?,
-                contract_address: Address::from_str(&json_data.contractAddress)?,
+                ct_handle,
+                contract_address,
             });
         }
 
+        // Parse duration days - first try as number, then as string
+        let duration_days = match value.requestValidity.durationDays.parse::<u64>() {
+            Ok(num) => U256::from(num),
+            Err(_) => {
+                // Try parsing as hex if it starts with 0x
+                if value.requestValidity.durationDays.starts_with("0x") {
+                    U256::from_str(&value.requestValidity.durationDays)?
+                } else {
+                    // Otherwise try as decimal string
+                    U256::from_str_radix(&value.requestValidity.durationDays, 10)?
+                }
+            }
+        };
+
         let request_validity = RequestValidity {
             start_timestamp: U256::from_str(&value.requestValidity.startTimestamp)?,
-            duration_days: U256::from_str(&value.requestValidity.durationDays)?,
+            duration_days,
+        };
+
+        // Parse contract chain ID - first as u64, then as string
+        let contracts_chain_id = match value.contractsChainId.to_string().parse::<u64>() {
+            Ok(id) => U256::from(id),
+            Err(_) => {
+                // Try as hex or decimal string
+                if value.contractsChainId.to_string().starts_with("0x") {
+                    U256::from_str(&value.contractsChainId.to_string())?
+                } else {
+                    U256::from_str_radix(&value.contractsChainId.to_string(), 10)?
+                }
+            }
         };
 
         let contract_addresses = &value
@@ -387,7 +423,7 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
         Ok(UserDecryptRequest {
             ct_handle_contract_pairs,
             request_validity,
-            contracts_chain_id: U256::from(value.contractsChainId),
+            contracts_chain_id,
             contract_addresses: contract_addresses.clone(),
             user_address: Address::from_str(&value.userAddress)?,
             signature: Bytes::from_str(&value.signature)?,
