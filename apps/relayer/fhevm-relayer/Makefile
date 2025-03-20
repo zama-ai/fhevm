@@ -86,7 +86,7 @@ run-test-input-proof-hardhat:
 	@unset $$(cat hardhat/contracts/.env | sed 's/=.*//g') && cd hardhat/contracts && npx hardhat compile && npx hardhat compile:specific --contract decryptionOracle && RUST_RELAYER=true npx hardhat test --grep "test user input uint64" --network localCoprocessorL1Input
 
 run-test-input-proof-staging:
-	@./run-input-proof.sh
+	@./run-tests.sh
 
 run-test-input-proof:
 	@curl -X POST http://127.0.0.1:3000/input-proof \

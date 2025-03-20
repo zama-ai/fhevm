@@ -9,7 +9,7 @@ RUN apt-get update && \
 WORKDIR /app
 
 COPY Makefile ./Makefile
-COPY run-input-proof.sh ./run-input-proof.sh
+COPY run-tests.sh ./run-tests.sh
 COPY hardhat/contracts ./hardhat/contracts
 
 # Install node dependencies

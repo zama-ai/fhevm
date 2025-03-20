@@ -25,7 +25,7 @@ services:
       - -c
       - |
         source /app/hardhat/contracts/.env
-        ./run-input-proof.sh
+        ./run-tests.sh
     volumes:
       - ./config/env/.env.staging.layer1:/app/hardhat/contracts/.env
 
