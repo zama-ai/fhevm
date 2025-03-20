@@ -3,7 +3,7 @@ import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { expect } from "chai";
 import hre, { ethers } from "hardhat";
 
-import { deployHTTPZFixture, toValues } from "./utils/";
+import { loadTestVariablesFixture, toValues } from "./utils/";
 
 describe("HTTPZ", function () {
   function getKmsNodes(signers: HardhatEthersSigner[]) {
@@ -125,7 +125,7 @@ describe("HTTPZ", function () {
     });
 
     it("Should be registered as an admin", async function () {
-      const { httpz, admins } = await loadFixture(deployHTTPZFixture);
+      const { httpz, admins } = await loadFixture(loadTestVariablesFixture);
 
       // Loop over admins and check if they are properly registered
       for (const admin of admins) {
@@ -134,7 +134,7 @@ describe("HTTPZ", function () {
     });
 
     it("Should be registered as KMS nodes", async function () {
-      const { httpz, kmsSigners } = await loadFixture(deployHTTPZFixture);
+      const { httpz, kmsSigners } = await loadFixture(loadTestVariablesFixture);
 
       // Loop over kmsSigners and check if they are properly registered as KMS nodes
       for (const kmsSigner of kmsSigners) {
@@ -143,7 +143,7 @@ describe("HTTPZ", function () {
     });
 
     it("Should be registered as coprocessors", async function () {
-      const { httpz, coprocessorSigners } = await loadFixture(deployHTTPZFixture);
+      const { httpz, coprocessorSigners } = await loadFixture(loadTestVariablesFixture);
 
       // Loop over coprocessorSigners and check if they are properly registered as coprocessors
       for (const coprocessorSigner of coprocessorSigners) {
@@ -152,7 +152,7 @@ describe("HTTPZ", function () {
     });
 
     it("Should be registered as networks", async function () {
-      const { httpz, chainIds } = await loadFixture(deployHTTPZFixture);
+      const { httpz, chainIds } = await loadFixture(loadTestVariablesFixture);
 
       // Loop over chain IDs and check if they are properly registered as networks
       for (const chainId of chainIds) {
@@ -161,7 +161,7 @@ describe("HTTPZ", function () {
     });
 
     it("Should get all KMS node addresses", async function () {
-      const { httpz, kmsSigners } = await loadFixture(deployHTTPZFixture);
+      const { httpz, kmsSigners } = await loadFixture(loadTestVariablesFixture);
 
       // Get all KMS node addresses
       const kmsNodeAddresses = await httpz.getAllKmsNodeAddresses();
@@ -176,7 +176,7 @@ describe("HTTPZ", function () {
     });
 
     it("Should get all coprocessor addresses", async function () {
-      const { httpz, coprocessorSigners } = await loadFixture(deployHTTPZFixture);
+      const { httpz, coprocessorSigners } = await loadFixture(loadTestVariablesFixture);
 
       // Get all coprocessor addresses
       const coprocessorAddresses = await httpz.getAllCoprocessorAddresses();
@@ -193,7 +193,7 @@ describe("HTTPZ", function () {
 
   describe("KMS", function () {
     it("Should revert because of access controls", async function () {
-      const { httpz, user } = await loadFixture(deployHTTPZFixture);
+      const { httpz, user } = await loadFixture(loadTestVariablesFixture);
 
       // Check that someone else than the admin cannot update the KMS threshold
       await expect(httpz.connect(user).updateKmsThreshold(1))
@@ -202,7 +202,7 @@ describe("HTTPZ", function () {
     });
 
     it("Should update the KMS threshold", async function () {
-      const { httpz, admins } = await loadFixture(deployHTTPZFixture);
+      const { httpz, admins } = await loadFixture(loadTestVariablesFixture);
 
       // Update the KMS threshold
       const newKmsThreshold = 0;
@@ -218,7 +218,7 @@ describe("HTTPZ", function () {
 
   describe("Add network", function () {
     it("Should add a new network metadata", async function () {
-      const { httpz, admins } = await loadFixture(deployHTTPZFixture);
+      const { httpz, admins } = await loadFixture(loadTestVariablesFixture);
 
       const newNetwork = {
         chainId: hre.ethers.toNumber(hre.ethers.randomBytes(2)),
@@ -235,7 +235,7 @@ describe("HTTPZ", function () {
     });
 
     it("Should revert because the network's chainId is null", async function () {
-      const { httpz, admins } = await loadFixture(deployHTTPZFixture);
+      const { httpz, admins } = await loadFixture(loadTestVariablesFixture);
 
       const txResponse = httpz.connect(admins[0]).addNetwork({
         chainId: 0,
@@ -250,7 +250,7 @@ describe("HTTPZ", function () {
     });
 
     it("Should revert because a network with the same chainId already exists", async function () {
-      const { httpz, admins } = await loadFixture(deployHTTPZFixture);
+      const { httpz, admins } = await loadFixture(loadTestVariablesFixture);
 
       const alreadyAddedNetwork = await httpz.networks(0);
 

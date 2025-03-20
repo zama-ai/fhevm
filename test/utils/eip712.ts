@@ -1,4 +1,5 @@
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import { HDNodeWallet, Wallet } from "ethers";
 import { ethers } from "hardhat";
 
 export interface EIP712Type {
@@ -66,7 +67,10 @@ export function createEIP712ResponseZKPoK(
 }
 
 // Get signatures from signers using the EIP712 message response for proof verification
-export async function getSignaturesZKPoK(eip712: EIP712, signers: HardhatEthersSigner[]): Promise<string[]> {
+export async function getSignaturesZKPoK(
+  eip712: EIP712,
+  signers: (HardhatEthersSigner | HDNodeWallet | Wallet)[],
+): Promise<string[]> {
   return Promise.all(
     signers.map((signer) =>
       signer.signTypedData(
@@ -116,7 +120,10 @@ export function createEIP712ResponsePublicDecrypt(
 }
 
 // Get signatures from signers using the EIP712 message response for public decryption
-export async function getSignaturesPublicDecrypt(eip712: EIP712, signers: HardhatEthersSigner[]): Promise<string[]> {
+export async function getSignaturesPublicDecrypt(
+  eip712: EIP712,
+  signers: (HardhatEthersSigner | Wallet | HDNodeWallet)[],
+): Promise<string[]> {
   return Promise.all(
     signers.map((signer) =>
       signer.signTypedData(
@@ -177,7 +184,7 @@ export function createEIP712RequestUserDecrypt(
 // Get signatures from signers using the EIP712 message request for user decryption
 export async function getSignaturesUserDecryptRequest(
   eip712: EIP712,
-  signers: HardhatEthersSigner[],
+  signers: (HardhatEthersSigner | Wallet | HDNodeWallet)[],
 ): Promise<string[]> {
   return Promise.all(
     signers.map((signer) =>
@@ -242,7 +249,7 @@ export function createEIP712RequestDelegatedUserDecrypt(
 // Get signatures from signers using the EIP712 message request for user decryption
 export async function getSignaturesDelegatedUserDecryptRequest(
   eip712: EIP712,
-  signers: HardhatEthersSigner[],
+  signers: (HardhatEthersSigner | HDNodeWallet | Wallet)[],
 ): Promise<string[]> {
   return Promise.all(
     signers.map((signer) =>
@@ -298,7 +305,7 @@ export function createEIP712ResponseUserDecrypt(
 // Get signatures from signers using the EIP712 message response for user decryption
 export async function getSignaturesUserDecryptResponse(
   eip712: EIP712,
-  signers: HardhatEthersSigner[],
+  signers: (HardhatEthersSigner | HDNodeWallet | Wallet)[],
 ): Promise<string[]> {
   return Promise.all(
     signers.map((signer) =>

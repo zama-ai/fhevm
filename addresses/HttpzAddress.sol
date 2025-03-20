@@ -2,4 +2,4 @@
 
 pragma solidity ^0.8.24;
 
-address constant httpzAddress = 0x59AAd6Dc3C909aeED1916937cC310fBfBB118c8C;
+address constant httpzAddress = 0x0f886fD6E24D9FAb00BDdd0ae3C59C22724Fb1E3;

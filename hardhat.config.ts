@@ -1,11 +1,12 @@
 import "@nomicfoundation/hardhat-toolbox";
 import "@openzeppelin/hardhat-upgrades";
 import dotenv from "dotenv";
-import { HardhatUserConfig } from "hardhat/config";
+import { HardhatUserConfig, task } from "hardhat/config";
 import { resolve } from "path";
 
 import "./tasks/accounts";
 import "./tasks/deploy";
+import "./tasks/faucet";
 
 const dotenvConfigPath: string = process.env.DOTENV_CONFIG_PATH || "./.env";
 dotenv.config({ path: resolve(__dirname, dotenvConfigPath) });
@@ -29,6 +30,35 @@ let rpcUrl: string | undefined = process.env.RPC_URL;
 if (!rpcUrl) {
   rpcUrl = "http://127.0.0.1:8757";
 }
+
+task("compile:specific", "Compiles only the specified contract")
+  .addParam("contract", "The contract's path")
+  .setAction(async ({ contract }, hre) => {
+    // Adjust the configuration to include only the specified contract
+    hre.config.paths.sources = contract;
+
+    await hre.run("compile");
+  });
+
+task("test", async (_taskArgs, hre, runSuper) => {
+  await hre.run("compile:specific", { contract: "contracts/emptyProxy" });
+  await hre.run("task:faucetToPrivate", { privateKey: process.env.DEPLOYER_PRIVATE_KEY });
+  await hre.run("task:deployEmptyUUPSProxies");
+
+  // The deployEmptyUUPSProxies task may have updated the contracts' addresses in `addresses/*.sol`.
+  // Thus, we must re-compile the contracts with these new addresses, otherwise the old ones will be
+  // used during the tests which will make them fail.
+  await hre.run("compile:specific", { contract: "contracts" });
+
+  await hre.run("task:deployHttpz");
+  await hre.run("task:addNetworksToHttpz");
+  await hre.run("task:deployZkpokManager");
+  await hre.run("task:deployKeyManager");
+  await hre.run("task:deployCiphertextManager");
+  await hre.run("task:deployAclManager");
+  await hre.run("task:deployDecryptionManager");
+  await runSuper();
+});
 
 const config: HardhatUserConfig = {
   networks: {
