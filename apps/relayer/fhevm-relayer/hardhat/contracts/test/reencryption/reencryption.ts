@@ -33,9 +33,7 @@ describe('Reencryption', function () {
     const gatewayChainId = 654321;
     const hostChainId = "123456";
 
-    console.log(this.instances.alice);
-    console.log(this.instances.alice.createEIP712UserDecrypt);
-
+    
     // Use the new createEIP712UserDecrypt function
     const eip712 = this.instances.alice.createEIP712UserDecrypt(
       gatewayChainId,
@@ -61,20 +59,6 @@ describe('Reencryption', function () {
       eip712.message
     );
 
-    console.log(signature);
-
-    function computeEIP712Digest(typedData:any) {
-      return ethers.TypedDataEncoder.hash(
-        typedData.domain,
-        { [typedData.primaryType]: typedData.types[typedData.primaryType] },
-        typedData.message
-      );
-    }
-
-    console.log('Computed digest:', computeEIP712Digest(eip712));
-
-
-
     const decryptedValue = await this.instances.alice.userDecrypt(
       ctHandleContractPairs,
       privateKey,
@@ -85,7 +69,7 @@ describe('Reencryption', function () {
       startTimeStamp,
       durationDays
     );
-    console.log('1.5 user address', this.signers.alice.address);
+
     expect(decryptedValue).to.equal(1);
 
 
