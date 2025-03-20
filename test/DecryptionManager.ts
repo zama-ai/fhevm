@@ -1,7 +1,6 @@
-import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { expect } from "chai";
-import { BigNumberish, EventLog } from "ethers";
+import { BigNumberish, EventLog, Wallet } from "ethers";
 import hre from "hardhat";
 
 import { IDecryptionManager, KeyManager } from "../typechain-types";
@@ -13,11 +12,11 @@ import {
   createEIP712RequestUserDecrypt,
   createEIP712ResponsePublicDecrypt,
   createEIP712ResponseUserDecrypt,
-  deployDecryptionManagerFixture,
   getSignaturesDelegatedUserDecryptRequest,
   getSignaturesPublicDecrypt,
   getSignaturesUserDecryptRequest,
   getSignaturesUserDecryptResponse,
+  loadTestVariablesFixture,
 } from "./utils";
 
 describe("DecryptionManager", function () {
@@ -26,8 +25,8 @@ describe("DecryptionManager", function () {
   // Create 3 dummy ciphertext handles
   const ctHandles = [2025, 2026, 2027];
 
-  // Deploy contracts, trigger a key generation in KeyManager contract and activate the key
-  async function deployWithActivatedKeyFixture() {
+  // Trigger a key generation in KeyManager contract and activate the key
+  async function prepareWithActivatedKeyFixture() {
     const {
       httpz,
       keyManager,
@@ -39,9 +38,8 @@ describe("DecryptionManager", function () {
       user,
       kmsSigners,
       coprocessorSigners,
-      signers,
       fheParamsName,
-    } = await loadFixture(deployDecryptionManagerFixture);
+    } = await loadFixture(loadTestVariablesFixture);
 
     // Trigger a preprocessing keygen request
     const txRequest = await keyManager.connect(admins[0]).preprocessKeygenRequest(fheParamsName);
@@ -89,14 +87,13 @@ describe("DecryptionManager", function () {
       user,
       kmsSigners,
       coprocessorSigners,
-      signers,
       keyId1,
       fheParamsName,
     };
   }
 
-  // Deploy the DecryptionManager and add SNS ciphertext materials associated to the handles
-  async function deployAddCiphertextFixture() {
+  // Add SNS ciphertext materials associated to the handles
+  async function prepareAddCiphertextFixture() {
     const {
       httpz,
       keyManager,
@@ -109,7 +106,7 @@ describe("DecryptionManager", function () {
       user,
       keyId1,
       fheParamsName,
-    } = await loadFixture(deployWithActivatedKeyFixture);
+    } = await loadFixture(prepareWithActivatedKeyFixture);
 
     // Define dummy ciphertext values
     const ciphertextDigest = hre.ethers.hexlify(hre.ethers.randomBytes(32));
@@ -149,9 +146,9 @@ describe("DecryptionManager", function () {
   async function createAndRotateKey(
     sourceKeyId: BigNumberish,
     keyManager: KeyManager,
-    admins: HardhatEthersSigner[],
-    coprocessorSigners: HardhatEthersSigner[],
-    kmsSigners: HardhatEthersSigner[],
+    admins: Wallet[],
+    coprocessorSigners: Wallet[],
+    kmsSigners: Wallet[],
     fheParamsName: string,
   ): Promise<BigNumberish> {
     const newKeyId = hre.ethers.toBigInt(hre.ethers.randomBytes(32));
@@ -224,8 +221,8 @@ describe("DecryptionManager", function () {
     // Create a dummy decrypted result
     const decryptedResult = hre.ethers.randomBytes(32);
 
-    // Deploy the DecryptionManager and allow handles for public decryption
-    async function deployAllowPublicDecryptionFixture() {
+    // Allow handles for public decryption
+    async function prepareAllowPublicDecryptionFixture() {
       const {
         httpz,
         keyManager,
@@ -239,7 +236,7 @@ describe("DecryptionManager", function () {
         snsCiphertextMaterials,
         keyId1,
         fheParamsName,
-      } = await loadFixture(deployAddCiphertextFixture);
+      } = await loadFixture(prepareAddCiphertextFixture);
 
       // Allow public decryption
       for (const ctHandle of ctHandles) {
@@ -264,8 +261,8 @@ describe("DecryptionManager", function () {
       };
     }
 
-    async function deployGetEIP712Fixture() {
-      const { httpz, decryptionManager, kmsSigners, user } = await loadFixture(deployAllowPublicDecryptionFixture);
+    async function prepareGetEIP712Fixture() {
+      const { httpz, decryptionManager, kmsSigners, user } = await loadFixture(prepareAllowPublicDecryptionFixture);
 
       // Create EIP712 messages and get associated KMS nodes' signatures
       const decryptionManagerAddress = await decryptionManager.getAddress();
@@ -280,7 +277,9 @@ describe("DecryptionManager", function () {
     }
 
     it("Should request a public decryption with multiple ctHandles", async function () {
-      const { decryptionManager, user, snsCiphertextMaterials } = await loadFixture(deployAllowPublicDecryptionFixture);
+      const { decryptionManager, user, snsCiphertextMaterials } = await loadFixture(
+        prepareAllowPublicDecryptionFixture,
+      );
 
       // Request public decryption (any user can do so)
       const requestTx = await decryptionManager.connect(user).publicDecryptionRequest(ctHandles);
@@ -292,7 +291,9 @@ describe("DecryptionManager", function () {
     });
 
     it("Should request a public decryption with a single ctHandle", async function () {
-      const { decryptionManager, user, snsCiphertextMaterials } = await loadFixture(deployAllowPublicDecryptionFixture);
+      const { decryptionManager, user, snsCiphertextMaterials } = await loadFixture(
+        prepareAllowPublicDecryptionFixture,
+      );
 
       // Request public decryption with a single ctHandle
       const requestTx = await decryptionManager.connect(user).publicDecryptionRequest([ctHandles[0]]);
@@ -304,7 +305,7 @@ describe("DecryptionManager", function () {
     });
 
     it("Should request a public decryption with empty ctHandles list", async function () {
-      const { decryptionManager, user } = await loadFixture(deployAllowPublicDecryptionFixture);
+      const { decryptionManager, user } = await loadFixture(prepareAllowPublicDecryptionFixture);
 
       // Request public decryption with an empty list of ctHandles
       const requestTx = await decryptionManager.connect(user).publicDecryptionRequest([]);
@@ -314,7 +315,7 @@ describe("DecryptionManager", function () {
     });
 
     it("Should revert because handles are not allowed for public decryption", async function () {
-      const { aclManager, decryptionManager, user } = await loadFixture(deployDecryptionManagerFixture);
+      const { aclManager, decryptionManager, user } = await loadFixture(loadTestVariablesFixture);
 
       // Check that the request fails because the handles are not allowed for public decryption
       // Note: the function should be reverted on the first handle since it loops over the handles
@@ -325,7 +326,7 @@ describe("DecryptionManager", function () {
     });
 
     it("Should revert because the signer is not a KMS node", async function () {
-      const { httpz, decryptionManager, user, eip712Message } = await loadFixture(deployGetEIP712Fixture);
+      const { httpz, decryptionManager, user, eip712Message } = await loadFixture(prepareGetEIP712Fixture);
 
       // Request public decryption
       // This step is necessary, else the publicDecryptionId won't be set in the state and the
@@ -344,7 +345,7 @@ describe("DecryptionManager", function () {
     });
 
     it("Should revert because of two responses with same signature", async function () {
-      const { decryptionManager, kmsSigners, user, eip712Message } = await loadFixture(deployGetEIP712Fixture);
+      const { decryptionManager, kmsSigners, user, eip712Message } = await loadFixture(prepareGetEIP712Fixture);
 
       const firstKmsSigner = kmsSigners[0];
 
@@ -381,7 +382,7 @@ describe("DecryptionManager", function () {
         user,
         keyId1,
         fheParamsName,
-      } = await loadFixture(deployAllowPublicDecryptionFixture);
+      } = await loadFixture(prepareAllowPublicDecryptionFixture);
 
       const keyId2 = await createAndRotateKey(
         keyId1,
@@ -417,7 +418,7 @@ describe("DecryptionManager", function () {
     });
 
     it("Should reach consensus with 2 valid responses", async function () {
-      const { decryptionManager, kmsSigners, user, eip712Message } = await loadFixture(deployGetEIP712Fixture);
+      const { decryptionManager, kmsSigners, user, eip712Message } = await loadFixture(prepareGetEIP712Fixture);
 
       // Request public decryption
       await decryptionManager.connect(user).publicDecryptionRequest(ctHandles);
@@ -446,7 +447,7 @@ describe("DecryptionManager", function () {
     });
 
     it("Should ignore other valid responses", async function () {
-      const { decryptionManager, kmsSigners, user, eip712Message } = await loadFixture(deployGetEIP712Fixture);
+      const { decryptionManager, kmsSigners, user, eip712Message } = await loadFixture(prepareGetEIP712Fixture);
 
       // Request public decryption
       await decryptionManager.connect(user).publicDecryptionRequest(ctHandles);
@@ -483,7 +484,7 @@ describe("DecryptionManager", function () {
     });
 
     it("Should revert because the transaction sender is not a KMS node", async function () {
-      const { httpz, decryptionManager, user, kmsSigners, eip712Message } = await loadFixture(deployGetEIP712Fixture);
+      const { httpz, decryptionManager, user, kmsSigners, eip712Message } = await loadFixture(prepareGetEIP712Fixture);
 
       const [signature1] = await getSignaturesPublicDecrypt(eip712Message, [kmsSigners[0]]);
 
@@ -503,8 +504,8 @@ describe("DecryptionManager", function () {
     // Create a dummy reencrypted share
     const reencryptedShare = hre.ethers.randomBytes(32);
 
-    // Deploy the DecryptionManager and allow access the the handles for the user and the contract
-    async function deployAllowAccountFixture() {
+    // Allow access the the handles for the user and the contract
+    async function prepareAllowAccountFixture() {
       const {
         httpz,
         keyManager,
@@ -518,7 +519,7 @@ describe("DecryptionManager", function () {
         snsCiphertextMaterials,
         keyId1,
         fheParamsName,
-      } = await loadFixture(deployAddCiphertextFixture);
+      } = await loadFixture(prepareAddCiphertextFixture);
 
       const contractAddress = hre.ethers.Wallet.createRandom().address;
 
@@ -547,7 +548,7 @@ describe("DecryptionManager", function () {
       };
     }
 
-    async function deployUserDecryptEIP712Fixture() {
+    async function prepareUserDecryptEIP712Fixture() {
       const {
         httpz,
         keyManager,
@@ -562,7 +563,7 @@ describe("DecryptionManager", function () {
         snsCiphertextMaterials,
         keyId1,
         fheParamsName,
-      } = await loadFixture(deployAllowAccountFixture);
+      } = await loadFixture(prepareAllowAccountFixture);
 
       const publicKey = hre.ethers.randomBytes(32);
       const requestValidity: IDecryptionManager.RequestValidityStruct = {
@@ -619,7 +620,7 @@ describe("DecryptionManager", function () {
         requestValidity,
         snsCiphertextMaterials,
         eip712RequestMessage,
-      } = await loadFixture(deployUserDecryptEIP712Fixture);
+      } = await loadFixture(prepareUserDecryptEIP712Fixture);
 
       // Create dummy input data for the user decryption request
       const contractsChainId = chainId;
@@ -663,7 +664,7 @@ describe("DecryptionManager", function () {
         requestValidity,
         snsCiphertextMaterials,
         eip712RequestMessage,
-      } = await loadFixture(deployUserDecryptEIP712Fixture);
+      } = await loadFixture(prepareUserDecryptEIP712Fixture);
 
       // Create dummy input data for the user decryption request
       const contractsChainId = chainId;
@@ -699,7 +700,7 @@ describe("DecryptionManager", function () {
 
     it("Should request a user decryption with empty ctHandleContractPairs list", async function () {
       const { decryptionManager, user, contractAddress, publicKey, requestValidity, eip712RequestMessage } =
-        await loadFixture(deployUserDecryptEIP712Fixture);
+        await loadFixture(prepareUserDecryptEIP712Fixture);
 
       // Create dummy input data for the user decryption request
       const contractsChainId = chainId;
@@ -729,7 +730,7 @@ describe("DecryptionManager", function () {
     });
 
     it("Should revert because contractAddresses exceeds maximum length allowed", async function () {
-      const { decryptionManager, user } = await loadFixture(deployDecryptionManagerFixture);
+      const { decryptionManager, user } = await loadFixture(loadTestVariablesFixture);
 
       // Create dummy input data for the user decryption request
       const contractAddresses = [];
@@ -756,7 +757,7 @@ describe("DecryptionManager", function () {
     });
 
     it("Should revert because durationDays exceeds maximum allowed", async function () {
-      const { decryptionManager, user } = await loadFixture(deployDecryptionManagerFixture);
+      const { decryptionManager, user } = await loadFixture(loadTestVariablesFixture);
 
       // Create dummy input data for the user decryption request
       const requestValidity: IDecryptionManager.RequestValidityStruct = {
@@ -783,7 +784,7 @@ describe("DecryptionManager", function () {
     });
 
     it("Should revert because user is not allowed for user decryption over given handles", async function () {
-      const { aclManager, decryptionManager, user } = await loadFixture(deployDecryptionManagerFixture);
+      const { aclManager, decryptionManager, user } = await loadFixture(loadTestVariablesFixture);
 
       // Create dummy input data for the user decryption request
       const contractsChainId = chainId;
@@ -823,7 +824,7 @@ describe("DecryptionManager", function () {
 
     it("Should revert because of invalid EIP712 user request signature", async function () {
       const { decryptionManager, user, contractAddress, publicKey, requestValidity, eip712RequestMessage } =
-        await loadFixture(deployUserDecryptEIP712Fixture);
+        await loadFixture(prepareUserDecryptEIP712Fixture);
 
       // Create dummy input data for the user decryption request
       const contractAddresses = [contractAddress];
@@ -858,8 +859,9 @@ describe("DecryptionManager", function () {
     });
 
     it("Should revert because the transaction sender is not a KMS node", async function () {
-      const { httpz, decryptionManager, user, kmsSigners, eip712ResponseMessage } =
-        await loadFixture(deployUserDecryptEIP712Fixture);
+      const { httpz, decryptionManager, user, kmsSigners, eip712ResponseMessage } = await loadFixture(
+        prepareUserDecryptEIP712Fixture,
+      );
 
       // Sign the message with all KMS nodes and get the first 3 signatures
       const [signature1] = await getSignaturesUserDecryptResponse(eip712ResponseMessage, [kmsSigners[0]]);
@@ -873,7 +875,7 @@ describe("DecryptionManager", function () {
     });
 
     it("Should revert because contract in ctHandleContractPairs not included in contractAddresses list", async function () {
-      const { decryptionManager, user, contractAddress } = await loadFixture(deployAllowAccountFixture);
+      const { decryptionManager, user, contractAddress } = await loadFixture(prepareAllowAccountFixture);
 
       // Create dummy input data for the user decryption request
       const contractAddresses = [hre.ethers.Wallet.createRandom().address];
@@ -939,7 +941,7 @@ describe("DecryptionManager", function () {
         publicKey,
         eip712RequestMessage,
         fheParamsName,
-      } = await loadFixture(deployUserDecryptEIP712Fixture);
+      } = await loadFixture(prepareUserDecryptEIP712Fixture);
 
       const keyId2 = await createAndRotateKey(
         keyId1,
@@ -1012,7 +1014,7 @@ describe("DecryptionManager", function () {
         kmsSigners,
         eip712RequestMessage,
         eip712ResponseMessage,
-      } = await loadFixture(deployUserDecryptEIP712Fixture);
+      } = await loadFixture(prepareUserDecryptEIP712Fixture);
 
       // Create dummy input data for the user decryption request
       const contractsChainId = chainId;
@@ -1084,7 +1086,7 @@ describe("DecryptionManager", function () {
         kmsSigners,
         eip712RequestMessage,
         eip712ResponseMessage,
-      } = await loadFixture(deployUserDecryptEIP712Fixture);
+      } = await loadFixture(prepareUserDecryptEIP712Fixture);
 
       // Create dummy input data for the user decryption request
       const contractsChainId = chainId;
@@ -1151,8 +1153,8 @@ describe("DecryptionManager", function () {
     // Create a dummy reencrypted share
     const reencryptedShare = hre.ethers.randomBytes(32);
 
-    // Deploy the DecryptionManager and allow handles for user decryption
-    async function deployAllowDelegatedUserDecryptionFixture() {
+    // Allow handles for user decryption
+    async function prepareAllowDelegatedUserDecryptionFixture() {
       const {
         keyManager,
         aclManager,
@@ -1165,7 +1167,7 @@ describe("DecryptionManager", function () {
         snsCiphertextMaterials,
         keyId1,
         fheParamsName,
-      } = await loadFixture(deployAddCiphertextFixture);
+      } = await loadFixture(prepareAddCiphertextFixture);
 
       const delegationAccounts: IDecryptionManager.DelegationAccountsStruct = {
         userAddress: user.address,
@@ -1215,7 +1217,7 @@ describe("DecryptionManager", function () {
       };
     }
 
-    async function deployDelegatedUserDecryptEIP712Fixture() {
+    async function prepareDelegatedUserDecryptEIP712Fixture() {
       const {
         keyManager,
         aclManager,
@@ -1230,7 +1232,7 @@ describe("DecryptionManager", function () {
         snsCiphertextMaterials,
         keyId1,
         fheParamsName,
-      } = await loadFixture(deployAllowDelegatedUserDecryptionFixture);
+      } = await loadFixture(prepareAllowDelegatedUserDecryptionFixture);
 
       const publicKey = hre.ethers.randomBytes(32);
       const requestValidity: IDecryptionManager.RequestValidityStruct = {
@@ -1289,7 +1291,7 @@ describe("DecryptionManager", function () {
         requestValidity,
         snsCiphertextMaterials,
         eip712RequestMessage,
-      } = await loadFixture(deployDelegatedUserDecryptEIP712Fixture);
+      } = await loadFixture(prepareDelegatedUserDecryptEIP712Fixture);
 
       // Create dummy input data for the user decryption request
       const contractsChainId = chainId;
@@ -1327,7 +1329,7 @@ describe("DecryptionManager", function () {
         requestValidity,
         snsCiphertextMaterials,
         eip712RequestMessage,
-      } = await loadFixture(deployDelegatedUserDecryptEIP712Fixture);
+      } = await loadFixture(prepareDelegatedUserDecryptEIP712Fixture);
 
       // Create dummy input data for the user decryption request
       const contractsChainId = chainId;
@@ -1364,7 +1366,7 @@ describe("DecryptionManager", function () {
         publicKey,
         requestValidity,
         eip712RequestMessage,
-      } = await loadFixture(deployDelegatedUserDecryptEIP712Fixture);
+      } = await loadFixture(prepareDelegatedUserDecryptEIP712Fixture);
 
       // Create dummy input data for the user decryption request
       const contractsChainId = chainId;
@@ -1393,7 +1395,7 @@ describe("DecryptionManager", function () {
     });
 
     it("Should revert because contractAddresses exceeds maximum length allowed", async function () {
-      const { decryptionManager, user } = await loadFixture(deployDecryptionManagerFixture);
+      const { decryptionManager, user } = await loadFixture(loadTestVariablesFixture);
 
       // Create dummy input data for the user decryption request
       const contractAddresses = [];
@@ -1420,7 +1422,7 @@ describe("DecryptionManager", function () {
     });
 
     it("Should revert because durationDays exceeds maximum allowed", async function () {
-      const { decryptionManager, user } = await loadFixture(deployDecryptionManagerFixture);
+      const { decryptionManager, user } = await loadFixture(loadTestVariablesFixture);
 
       // Create dummy input data for the user decryption request
       const requestValidity: IDecryptionManager.RequestValidityStruct = {
@@ -1447,7 +1449,7 @@ describe("DecryptionManager", function () {
     });
 
     it("Should revert because user is not allowed for user decryption over given handles", async function () {
-      const { aclManager, decryptionManager, user } = await loadFixture(deployDecryptionManagerFixture);
+      const { aclManager, decryptionManager, user } = await loadFixture(loadTestVariablesFixture);
 
       // Create dummy input data for the user decryption request
       const contractsChainId = chainId;
@@ -1495,7 +1497,7 @@ describe("DecryptionManager", function () {
         publicKey,
         requestValidity,
         eip712RequestMessage,
-      } = await loadFixture(deployDelegatedUserDecryptEIP712Fixture);
+      } = await loadFixture(prepareDelegatedUserDecryptEIP712Fixture);
 
       // Create dummy input data for the user decryption request
       const contractAddresses = ctHandleContractPairs.map((pair) => pair.contractAddress);
@@ -1527,7 +1529,7 @@ describe("DecryptionManager", function () {
 
     it("Should revert because contract in ctHandleContractPairs not included in contractAddresses list", async function () {
       const { decryptionManager, user, delegationAccounts, ctHandleContractPairs } = await loadFixture(
-        deployAllowDelegatedUserDecryptionFixture,
+        prepareAllowDelegatedUserDecryptionFixture,
       );
 
       // Create dummy input data for the user decryption request
@@ -1590,7 +1592,7 @@ describe("DecryptionManager", function () {
         publicKey,
         eip712RequestMessage,
         fheParamsName,
-      } = await loadFixture(deployDelegatedUserDecryptEIP712Fixture);
+      } = await loadFixture(prepareDelegatedUserDecryptEIP712Fixture);
 
       const keyId2 = await createAndRotateKey(
         keyId1,
@@ -1661,7 +1663,7 @@ describe("DecryptionManager", function () {
         kmsSigners,
         eip712RequestMessage,
         eip712ResponseMessage,
-      } = await loadFixture(deployDelegatedUserDecryptEIP712Fixture);
+      } = await loadFixture(prepareDelegatedUserDecryptEIP712Fixture);
 
       // Create dummy input data for the user decryption request
       const contractsChainId = chainId;
@@ -1728,7 +1730,7 @@ describe("DecryptionManager", function () {
         kmsSigners,
         eip712RequestMessage,
         eip712ResponseMessage,
-      } = await loadFixture(deployDelegatedUserDecryptEIP712Fixture);
+      } = await loadFixture(prepareDelegatedUserDecryptEIP712Fixture);
 
       // Create dummy input data for the user decryption request
       const contractsChainId = chainId;

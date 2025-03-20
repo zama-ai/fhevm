@@ -5,21 +5,17 @@ compile:
 	npx hardhat compile
 
 # Define it as a phony target to avoid conflicts with the test directory
-TEST_DEPLOY_KEY = $(shell npx hardhat get-accounts --num-accounts 1 | grep Private | cut -d " " -f 3)
 .PHONY: test
 test:
-	cp .env.example .env
-	# Recompute addresses values that will be used for the tests, in case they have changed
-	npx hardhat compile && npx hardhat task:deployEmptyUUPSProxies --deployer-private-key "$(TEST_DEPLOY_KEY)" --network hardhat
-	npx hardhat test
+	DOTENV_CONFIG_PATH=.env.test npx hardhat test
 
 get-accounts:
 	npx hardhat get-accounts --num-accounts 15
 
 deploy-contracts-local:
 	cp .env.example .env
-	./deploy-gateway-contracts localHTTPZGateway
-	./add-httpz-networks.sh localHTTPZGateway
+	HARDHAT_NETWORK=localHTTPZGateway ./deploy-gateway-contracts.sh
+	HARDHAT_NETWORK=localHTTPZGateway ./add-httpz-networks.sh
 
 docker-compose-build:
 	docker compose -vvv build

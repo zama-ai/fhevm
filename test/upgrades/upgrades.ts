@@ -1,29 +1,38 @@
 import { expect } from "chai";
 import dotenv from "dotenv";
+import { Wallet } from "ethers";
 import fs from "fs";
 import { ethers, upgrades } from "hardhat";
 
+import { createAndFundRandomUser } from "../utils";
+
 describe("Upgrades", function () {
   before(async function () {
-    this.signers = await ethers.getSigners();
-    this.emptyUUPSFactory = await ethers.getContractFactory("EmptyUUPSProxy");
-    this.aclManagerFactory = await ethers.getContractFactory("ACLManager");
-    this.aclManagerFactoryUpgraded = await ethers.getContractFactory("ACLManagerUpgradedExample");
-    this.ciphertextManagerFactory = await ethers.getContractFactory("CiphertextManager");
-    this.ciphertextManagerFactoryUpgraded = await ethers.getContractFactory("CiphertextManagerUpgradedExample");
-    this.decryptionManagerFactory = await ethers.getContractFactory("DecryptionManager");
-    this.decryptionManagerFactoryUpgraded = await ethers.getContractFactory("DecryptionManagerUpgradedExample");
-    this.httpzFactory = await ethers.getContractFactory("HTTPZ");
-    this.httpzFactoryUpgraded = await ethers.getContractFactory("HTTPZUpgradedExample");
-    this.keyManagerFactory = await ethers.getContractFactory("KeyManager");
-    this.keyManagerFactoryUpgraded = await ethers.getContractFactory("KeyManagerUpgradedExample");
-    this.zkpokManagerFactory = await ethers.getContractFactory("ZKPoKManager");
-    this.zkpokManagerFactoryUpgraded = await ethers.getContractFactory("ZKPoKManagerUpgradedExample");
+    this.owner = new Wallet(process.env.DEPLOYER_PRIVATE_KEY!).connect(ethers.provider);
+    this.emptyUUPSFactory = await ethers.getContractFactory("EmptyUUPSProxy", this.owner);
+    this.aclManagerFactory = await ethers.getContractFactory("ACLManager", this.owner);
+    this.aclManagerFactoryUpgraded = await ethers.getContractFactory("ACLManagerUpgradedExample", this.owner);
+    this.ciphertextManagerFactory = await ethers.getContractFactory("CiphertextManager", this.owner);
+    this.ciphertextManagerFactoryUpgraded = await ethers.getContractFactory(
+      "CiphertextManagerUpgradedExample",
+      this.owner,
+    );
+    this.decryptionManagerFactory = await ethers.getContractFactory("DecryptionManager", this.owner);
+    this.decryptionManagerFactoryUpgraded = await ethers.getContractFactory(
+      "DecryptionManagerUpgradedExample",
+      this.owner,
+    );
+    this.httpzFactory = await ethers.getContractFactory("HTTPZ", this.owner);
+    this.httpzFactoryUpgraded = await ethers.getContractFactory("HTTPZUpgradedExample", this.owner);
+    this.keyManagerFactory = await ethers.getContractFactory("KeyManager", this.owner);
+    this.keyManagerFactoryUpgraded = await ethers.getContractFactory("KeyManagerUpgradedExample", this.owner);
+    this.zkpokManagerFactory = await ethers.getContractFactory("ZKPoKManager", this.owner);
+    this.zkpokManagerFactoryUpgraded = await ethers.getContractFactory("ZKPoKManagerUpgradedExample", this.owner);
   });
 
   it("deploy upgradable ACLManager", async function () {
-    const nonceBef = await ethers.provider.getTransactionCount(this.signers[0]);
-    const emptyUUPS = await upgrades.deployProxy(this.emptyUUPSFactory, [this.signers[0].address], {
+    const nonceBef = await ethers.provider.getTransactionCount(this.owner);
+    const emptyUUPS = await upgrades.deployProxy(this.emptyUUPSFactory, [this.owner.address], {
       initializer: "initialize",
       kind: "uups",
     });
@@ -37,14 +46,14 @@ describe("Upgrades", function () {
     expect(ownerBef).to.equal(ownerAft);
     expect(await aclManager2.getVersion()).to.equal("ACLManager v0.2.0");
     const aclManagerAddress = ethers.getCreateAddress({
-      from: this.signers[0].address,
+      from: this.owner.address,
       nonce: nonceBef, // using nonce of nonceBef instead of nonceBef+1 here, since the original implementation has already been deployer during the setup phase, and hardhat-upgrades plugin is able to detect this and not redeploy twice same contract
     });
     expect(aclManagerAddress).to.equal(await aclManager2.getAddress());
   });
 
   it("deploy upgradable CiphertextManager", async function () {
-    const emptyUUPS = await upgrades.deployProxy(this.emptyUUPSFactory, [this.signers[0].address], {
+    const emptyUUPS = await upgrades.deployProxy(this.emptyUUPSFactory, [this.owner.address], {
       initializer: "initialize",
       kind: "uups",
     });
@@ -57,7 +66,7 @@ describe("Upgrades", function () {
   });
 
   it("deploy upgradable DecryptionManager", async function () {
-    const emptyUUPS = await upgrades.deployProxy(this.emptyUUPSFactory, [this.signers[0].address], {
+    const emptyUUPS = await upgrades.deployProxy(this.emptyUUPSFactory, [this.owner.address], {
       initializer: "initialize",
       kind: "uups",
     });
@@ -70,7 +79,7 @@ describe("Upgrades", function () {
   });
 
   it("deploy upgradable HTTPZ", async function () {
-    const emptyUUPS = await upgrades.deployProxy(this.emptyUUPSFactory, [this.signers[0].address], {
+    const emptyUUPS = await upgrades.deployProxy(this.emptyUUPSFactory, [this.owner.address], {
       initializer: "initialize",
       kind: "uups",
     });
@@ -83,7 +92,7 @@ describe("Upgrades", function () {
   });
 
   it("deploy upgradable KeyManager", async function () {
-    const emptyUUPS = await upgrades.deployProxy(this.emptyUUPSFactory, [this.signers[0].address], {
+    const emptyUUPS = await upgrades.deployProxy(this.emptyUUPSFactory, [this.owner.address], {
       initializer: "initialize",
       kind: "uups",
     });
@@ -96,7 +105,7 @@ describe("Upgrades", function () {
   });
 
   it("deploy upgradable ZKPoKManager", async function () {
-    const emptyUUPS = await upgrades.deployProxy(this.emptyUUPSFactory, [this.signers[0].address], {
+    const emptyUUPS = await upgrades.deployProxy(this.emptyUUPSFactory, [this.owner.address], {
       initializer: "initialize",
       kind: "uups",
     });
@@ -110,7 +119,7 @@ describe("Upgrades", function () {
 
   it("original owner upgrades the original HTTPZ and transfer ownership", async function () {
     const origHTTPZAdd = dotenv.parse(fs.readFileSync("addresses/.env.httpz")).HTTPZ_ADDRESS;
-    const deployer = this.signers[0];
+    const deployer = this.owner;
     const httpz = await this.httpzFactory.attach(origHTTPZAdd, deployer);
     expect(await httpz.getVersion()).to.equal("HTTPZ v0.1.0");
     const newHttpzFactoryUpgraded = await ethers.getContractFactory("HTTPZUpgradedExample", deployer);
@@ -118,7 +127,7 @@ describe("Upgrades", function () {
     await httpz2.waitForDeployment();
     expect(await httpz2.getVersion()).to.equal("HTTPZ v0.2.0");
     expect(await httpz2.getAddress()).to.equal(origHTTPZAdd);
-    const newSigner = this.signers[1];
+    const newSigner = await createAndFundRandomUser();
     await httpz2.transferOwnership(newSigner);
     await httpz2.connect(newSigner).acceptOwnership();
     const newHttpzFactoryUpgraded2 = await ethers.getContractFactory("HTTPZUpgradedExample2", deployer);

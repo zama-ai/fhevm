@@ -1,12 +1,10 @@
-import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { expect } from "chai";
-import dotenv from "dotenv";
-import fs from "fs";
+import { HDNodeWallet, Wallet } from "ethers";
 import hre from "hardhat";
 
 import { ACLManager, CiphertextManager, HTTPZ } from "../typechain-types";
-import { deployCiphertextManagerFixture } from "./utils";
+import { createAndFundRandomUser, loadTestVariablesFixture } from "./utils";
 
 describe("ACLManager", function () {
   const keyId = 0; // Using exceptional first key (currentKeyId == 0). See {HTTPZ-activateKeyRequest}
@@ -22,18 +20,11 @@ describe("ACLManager", function () {
   let httpz: HTTPZ;
   let aclManager: ACLManager;
   let ciphertextManager: CiphertextManager;
-  let coprocessorSigners: HardhatEthersSigner[];
-  let fakeSigner: HardhatEthersSigner;
+  let coprocessorSigners: Wallet[];
+  let fakeSigner: HDNodeWallet;
 
-  async function deployACLManagerFixture() {
-    const { httpz, owner, ciphertextManager, coprocessorSigners, signers } = await deployCiphertextManagerFixture();
-
-    // Deploying ACLManager using its deploy task
-    await hre.run("task:deployAclManager", {
-      deployerPrivateKey: owner.privateKey,
-    });
-    const parsedEnvAclManager = dotenv.parse(fs.readFileSync("addresses/.env.acl_manager"));
-    const aclManager = await hre.ethers.getContractAt("ACLManager", parsedEnvAclManager.ACL_MANAGER_ADDRESS);
+  async function prepareACLManagerFixture() {
+    const { httpz, aclManager, ciphertextManager, coprocessorSigners } = await loadFixture(loadTestVariablesFixture);
 
     // Add the ciphertext to the CiphertextManager contract state which will be used during the tests
     for (let i = 0; i < coprocessorSigners.length; i++) {
@@ -42,17 +33,18 @@ describe("ACLManager", function () {
         .addCiphertextMaterial(ctHandle, keyId, chainId, ciphertextDigest, snsCiphertextDigest);
     }
 
-    return { httpz, aclManager, ciphertextManager, coprocessorSigners, signers };
+    const fakeSigner = await createAndFundRandomUser();
+    return { httpz, aclManager, ciphertextManager, coprocessorSigners, fakeSigner };
   }
 
   beforeEach(async function () {
     // Initialize used global variables before each test
-    const fixture = await loadFixture(deployACLManagerFixture);
+    const fixture = await loadFixture(prepareACLManagerFixture);
     httpz = fixture.httpz;
     aclManager = fixture.aclManager;
     ciphertextManager = fixture.ciphertextManager;
     coprocessorSigners = fixture.coprocessorSigners;
-    fakeSigner = fixture.signers[0];
+    fakeSigner = fixture.fakeSigner;
   });
 
   describe("Allow account", async function () {

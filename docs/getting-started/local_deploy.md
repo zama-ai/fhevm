@@ -41,8 +41,8 @@ make start-local-node
 make deploy-contracts-local
 ```
 
-This will run the script [`./deploy-httpz-gateway-deployment.sh`](../deploy-httpz-gateway-deployment.sh) on the
-`localHTTPZGateway` network.
+This will run the script [`./deploy-gateway-contracts.sh`](../deploy-gateway-contracts.sh) on the `localHTTPZGateway`
+network.
 
 # Testing staging deployment
 
