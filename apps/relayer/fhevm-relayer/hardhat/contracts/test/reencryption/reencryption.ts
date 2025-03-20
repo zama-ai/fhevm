@@ -20,6 +20,7 @@ describe('Reencryption', function () {
 
   it('test reencrypt ebool', async function () {
     const handle = await this.contract.xBool();
+    console.log('handle:', handle);
     const { publicKey, privateKey } = this.instances.alice.generateKeypair();
     const ctHandleContractPairs = [
       {
