@@ -190,6 +190,9 @@ help:
 	@echo '  ${YELLOW}make run-test-input-proof-hardhat${RESET}     - Run input proof tests from hardhat'
 	@echo '  ${YELLOW}make run-test-input-proof-staging${RESET}     - Run input proof tests from hardhat for staging'
 	@echo '  ${YELLOW}make run-test-decrypt-hardhat${RESET}            	- Run decryption tests'
+	@echo '  ${YELLOW}make run-test-user-decrypt${RESET}            	- Run user decrypt test from curl (failing at user verififcation)'
+	@echo '  ${YELLOW}make run-test-user-decrypt-hardhat${RESET}          	- Run user decrypt test using hardhat (failing at sns)'
+	@echo '  ${YELLOW}make run-test-user-decrypt-from-working-hardhat${RESET} - Run user decrypt test from curl (user verif ok but sns failing)'
 	@echo ''
 
 	@echo 'Run sequence:'
