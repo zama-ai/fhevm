@@ -19,53 +19,76 @@ describe('Reencryption', function () {
   });
 
   it('test reencrypt ebool', async function () {
-    console.log('1.1');
     const handle = await this.contract.xBool();
-    let { publicKey, privateKey } = this.instances.alice.generateKeypair();
-    // publicKey = '0x' + Buffer.from(publicKey).toString('hex');
-    publicKey = ethers.hexlify(ethers.randomBytes(32));
+    const { publicKey, privateKey } = this.instances.alice.generateKeypair();
     const ctHandleContractPairs = [
       {
         ctHandle: handle,
         contractAddress: this.contractAddress,
-      },
+      }
     ];
     const startTimeStamp = Math.floor(Date.now() / 1000).toString();
-    const durationDays = 10;
+    const durationDays = "10"; // String for consistency
     const contractAddresses = [this.contractAddress];
     const gatewayChainId = 654321;
-    console.log('1.2');
-    const eip712 = this.instances.alice.createEIP712(
-      publicKey,
-      '0x857Ca72A957920Fa0FB138602995839866Bd4005', // Decryption Manager contract
-      contractAddresses,
+    const hostChainId = "123456";
+
+    console.log(this.instances.alice);
+    console.log(this.instances.alice.createEIP712UserDecrypt);
+
+    // Use the new createEIP712UserDecrypt function
+    const eip712 = this.instances.alice.createEIP712UserDecrypt(
       gatewayChainId,
+     "0x857Ca72A957920Fa0FB138602995839866Bd4005", // Decryption Manager contract
+      publicKey,
+      contractAddresses,
+      hostChainId,
       startTimeStamp,
-      durationDays,
+      durationDays
     );
 
-    console.log('1.3');
-    console.log('1.3.1 public key', publicKey);
-    // console.log('1.3.2 public key 2', publicKey2);
+    console.log('EIP712 structure:', {
+      domain: eip712.domain,
+      types: eip712.types,
+      primaryType: eip712.primaryType,
+      message: eip712.message
+    });
+
+    // Update the signing to match the new primaryType
     const signature = await this.signers.alice.signTypedData(
       eip712.domain,
       { UserDecryptRequestVerification: eip712.types.UserDecryptRequestVerification },
-      eip712.message,
+      eip712.message
     );
-    console.log('1.4');
+
+    console.log(signature);
+
+    function computeEIP712Digest(typedData:any) {
+      return ethers.TypedDataEncoder.hash(
+        typedData.domain,
+        { [typedData.primaryType]: typedData.types[typedData.primaryType] },
+        typedData.message
+      );
+    }
+
+    console.log('Computed digest:', computeEIP712Digest(eip712));
+
+
+
     const decryptedValue = await this.instances.alice.userDecrypt(
       ctHandleContractPairs,
       privateKey,
-      publicKey.replace('0x', ''),
+      publicKey,
       signature.replace('0x', ''),
       contractAddresses,
       this.signers.alice.address,
       startTimeStamp,
-      durationDays,
+      durationDays
     );
     console.log('1.5 user address', this.signers.alice.address);
     expect(decryptedValue).to.equal(1);
-    console.log('1.6');
+
+
 
     // on the other hand, Bob should be unable to read Alice's balance
     try {
