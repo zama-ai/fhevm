@@ -10,7 +10,7 @@ describe("HTTPZ", function () {
     // Create dummy KMS nodes with the signers' addresses
     const kmsNodes = signers.map((signer) => ({
       connectorAddress: signer.address,
-      identity: hre.ethers.randomBytes(32),
+      identity: hre.ethers.hexlify(hre.ethers.randomBytes(32)),
       ipAddress: "127.0.0.1",
       daUrl: "https://da.com",
     }));
@@ -22,25 +22,12 @@ describe("HTTPZ", function () {
     // Create dummy Coprocessors with the signers' addresses
     const coprocessors = signers.map((signer) => ({
       transactionSenderAddress: signer.address,
-      identity: hre.ethers.randomBytes(32),
+      identity: hre.ethers.hexlify(hre.ethers.randomBytes(32)),
       daUrl: "https://da.com",
       s3BucketUrl: "s3://bucket",
     }));
 
     return { coprocessors };
-  }
-
-  function getNetworks(chainIds: number[]) {
-    // Create dummy Networks with the chain IDs
-    const networks = chainIds.map((chainId) => ({
-      chainId: chainId,
-      httpzExecutor: hre.ethers.getAddress("0x1234567890AbcdEF1234567890aBcdef12345678"),
-      aclAddress: hre.ethers.getAddress("0xabcdef1234567890abcdef1234567890abcdef12"),
-      name: "Network",
-      website: "https://network.com",
-    }));
-
-    return { networks };
   }
 
   async function getInputsForDeployFixture() {
@@ -59,9 +46,6 @@ describe("HTTPZ", function () {
     const coprocessorSigners = signers.splice(0, 3);
     const { coprocessors } = getCoprocessors(coprocessorSigners);
 
-    const chainIds = [2025, 2026, 2027, 2028];
-    const { networks } = getNetworks(chainIds);
-
     return {
       HTTPZ,
       owner,
@@ -72,7 +56,6 @@ describe("HTTPZ", function () {
       kmsThreshold,
       kmsNodes,
       coprocessors,
-      networks,
       kmsSigners,
       coprocessorSigners,
     };
@@ -90,7 +73,7 @@ describe("HTTPZ", function () {
 
   describe("Deployment", function () {
     it("Should revert because of bad KMS threshold", async function () {
-      const { HTTPZ, protocolMetadata, owner, admins, kmsNodes, coprocessors, networks } =
+      const { HTTPZ, protocolMetadata, owner, admins, kmsNodes, coprocessors } =
         await loadFixture(getInputsForDeployFixture);
       const proxyContract = await deployEmptyProxy(owner);
 
@@ -102,7 +85,7 @@ describe("HTTPZ", function () {
       const upgradeTx = hre.upgrades.upgradeProxy(proxyContract, HTTPZ, {
         call: {
           fn: "initialize",
-          args: [protocolMetadata, admins, badKmsThreshold, kmsNodes, coprocessors, networks],
+          args: [protocolMetadata, admins, badKmsThreshold, kmsNodes, coprocessors],
         },
       });
       await expect(upgradeTx)
@@ -111,27 +94,34 @@ describe("HTTPZ", function () {
     });
 
     it("Should deploy", async function () {
-      const { HTTPZ, protocolMetadata, owner, admins, kmsThreshold, kmsNodes, coprocessors, networks } =
+      const { HTTPZ, protocolMetadata, owner, admins, kmsThreshold, kmsNodes, coprocessors } =
         await loadFixture(getInputsForDeployFixture);
       const proxyContract = await deployEmptyProxy(owner);
 
-      const upgradeTx = hre.upgrades.upgradeProxy(proxyContract, HTTPZ, {
+      const upgradeTx = await hre.upgrades.upgradeProxy(proxyContract, HTTPZ, {
         call: {
           fn: "initialize",
-          args: [protocolMetadata, admins, kmsThreshold, kmsNodes, coprocessors, networks],
+          args: [protocolMetadata, admins, kmsThreshold, kmsNodes, coprocessors],
         },
       });
 
-      expect(upgradeTx)
-        .to.emit(HTTPZ, "Initialization")
-        .withArgs(
-          toValues(protocolMetadata),
-          toValues(admins),
-          kmsThreshold,
-          toValues(kmsNodes),
-          toValues(coprocessors),
-          toValues(networks),
-        );
+      /**
+       * Extract event args and convert to strings. This is needed as the "upgradeProxy()" method above
+       * returns an HTTPZ instance instead of a ContractTransactionResponse, so the expect() function ç
+       * from chaijs fails on the evaluation of the transaction events.
+       */
+      const initializationEvents = await upgradeTx.queryFilter(upgradeTx.filters.Initialization);
+      const stringifiedEventArgs = initializationEvents[0].args.map((arg) => arg.toString());
+
+      // It should emit one event containing the initialization parameters
+      expect(initializationEvents.length).to.equal(1);
+      expect(stringifiedEventArgs).to.deep.equal([
+        toValues(protocolMetadata).toString(),
+        admins.toString(),
+        kmsThreshold,
+        toValues(kmsNodes).toString(),
+        toValues(coprocessors).toString(),
+      ]);
     });
 
     it("Should be registered as an admin", async function () {
@@ -223,6 +213,59 @@ describe("HTTPZ", function () {
 
       // Check that the KMS threshold has been updated
       expect(await httpz.getKmsThreshold()).to.equal(newKmsThreshold);
+    });
+  });
+
+  describe("Add network", function () {
+    it("Should add a new network metadata", async function () {
+      const { httpz, admins } = await loadFixture(deployHTTPZFixture);
+
+      const newNetwork = {
+        chainId: hre.ethers.toNumber(hre.ethers.randomBytes(2)),
+        httpzExecutor: hre.ethers.getAddress("0x1234567890AbcdEF1234567890aBcdef12345678"),
+        aclAddress: hre.ethers.getAddress("0xabcdef1234567890abcdef1234567890abcdef12"),
+        name: "Network",
+        website: "https://network.com",
+      };
+
+      const txResponse = httpz.connect(admins[0]).addNetwork(newNetwork);
+
+      // Check AddNetwork event has been emitted
+      await expect(txResponse).to.emit(httpz, "AddNetwork").withArgs(toValues(newNetwork));
+    });
+
+    it("Should revert because the network's chainId is null", async function () {
+      const { httpz, admins } = await loadFixture(deployHTTPZFixture);
+
+      const txResponse = httpz.connect(admins[0]).addNetwork({
+        chainId: 0,
+        httpzExecutor: hre.ethers.getAddress("0x1234567890AbcdEF1234567890aBcdef12345678"),
+        aclAddress: hre.ethers.getAddress("0xabcdef1234567890abcdef1234567890abcdef12"),
+        name: "Network",
+        website: "https://network.com",
+      });
+
+      // Check AddNetwork event has been emitted
+      await expect(txResponse).to.revertedWithCustomError(httpz, "InvalidNullChainId");
+    });
+
+    it("Should revert because a network with the same chainId already exists", async function () {
+      const { httpz, admins } = await loadFixture(deployHTTPZFixture);
+
+      const alreadyAddedNetwork = await httpz.networks(0);
+
+      const txResponse = httpz.connect(admins[0]).addNetwork({
+        chainId: alreadyAddedNetwork.chainId,
+        httpzExecutor: hre.ethers.getAddress("0x1234567890AbcdEF1234567890aBcdef12345678"),
+        aclAddress: hre.ethers.getAddress("0xabcdef1234567890abcdef1234567890abcdef12"),
+        name: "Network",
+        website: "https://network.com",
+      });
+
+      // Check AddNetwork event has been emitted
+      await expect(txResponse)
+        .to.revertedWithCustomError(httpz, "NetworkAlreadyRegistered")
+        .withArgs(alreadyAddedNetwork.chainId);
     });
   });
 });

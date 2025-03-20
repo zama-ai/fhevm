@@ -69,14 +69,12 @@ contract HTTPZ is IHTTPZ, AccessControlUpgradeable, Ownable2StepUpgradeable, UUP
     /// @param initialKmsThreshold The KMS threshold. Must verify `3t < n` for `n` KMS nodes.
     /// @param initialKmsNodes List of KMS nodes
     /// @param initialCoprocessors List of coprocessors
-    /// @param initialNetworks List of networks
     function initialize(
         ProtocolMetadata memory initialMetadata,
         address[] memory initialAdmins,
         uint256 initialKmsThreshold,
         KmsNode[] memory initialKmsNodes,
-        Coprocessor[] memory initialCoprocessors,
-        Network[] memory initialNetworks
+        Coprocessor[] memory initialCoprocessors
     ) public reinitializer(2) {
         __Ownable_init(owner());
 
@@ -113,20 +111,7 @@ contract HTTPZ is IHTTPZ, AccessControlUpgradeable, Ownable2StepUpgradeable, UUP
             $.coprocessorAddresses.push(initialCoprocessors[i].transactionSenderAddress);
         }
 
-        /// @dev Register the networks
-        for (uint256 i = 0; i < initialNetworks.length; i++) {
-            $.networks.push(initialNetworks[i]);
-            $._isNetworkRegistered[initialNetworks[i].chainId] = true;
-        }
-
-        emit Initialization(
-            initialMetadata,
-            initialAdmins,
-            initialKmsThreshold,
-            initialKmsNodes,
-            initialCoprocessors,
-            initialNetworks
-        );
+        emit Initialization(initialMetadata, initialAdmins, initialKmsThreshold, initialKmsNodes, initialCoprocessors);
     }
 
     /// @dev See {IHTTPZ-updateKmsThreshold}.
@@ -233,6 +218,21 @@ contract HTTPZ is IHTTPZ, AccessControlUpgradeable, Ownable2StepUpgradeable, UUP
     function networks(uint256 index) external view virtual returns (Network memory) {
         HTTPZStorage storage $ = _getHTTPZStorage();
         return $.networks[index];
+    }
+
+    /// @dev See {IHTTPZ-addNetwork}.
+    function addNetwork(Network calldata network) external virtual {
+        if (network.chainId == 0) {
+            revert InvalidNullChainId();
+        }
+        HTTPZStorage storage $ = _getHTTPZStorage();
+        if ($._isNetworkRegistered[network.chainId]) {
+            revert NetworkAlreadyRegistered(network.chainId);
+        }
+
+        $.networks.push(network);
+        $._isNetworkRegistered[network.chainId] = true;
+        emit AddNetwork(network);
     }
 
     /// @notice Returns the versions of the HTTPZ contract in SemVer format.

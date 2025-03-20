@@ -42,8 +42,7 @@ services:
       - "-c"
       - |
         source /app/.env
-        # please replace with deploy-gateway-contracts.sh once ready
-        /app/deploy-httpz-gateway-deployment.sh staging
+        /app/deploy-gateway-contracts.sh staging
     depends_on:
       anvil-node:
         condition: service_started
@@ -63,8 +62,7 @@ services:
       - "-c"
       - |
         source /app/.env
-        # please uncomment this line when script is ready
-        # /app/add-httpz-networks.sh staging
+        /app/add-httpz-networks.sh staging
     depends_on:
       anvil-node:
         condition: service_started
