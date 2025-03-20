@@ -3,9 +3,8 @@ use crate::blockchain::ethereum::bindings::DecyptionManager::{
     UserDecryptionRequest,
 };
 
-use crate::blockchain::ethereum::bindings::IDecryptionManager::{
-    CtHandleContractPair, RequestValidity,
-};
+use crate::blockchain::ethereum::bindings::DecyptionManager::CtHandleContractPair;
+use crate::blockchain::ethereum::bindings::IDecryptionManager::RequestValidity;
 use crate::blockchain::ethereum::bindings::ZKPoKManager;
 use crate::blockchain::public_decrypt_handler::DecryptionRequestData;
 use crate::core::errors::EventProcessingError;
