@@ -43,6 +43,11 @@ export interface IPubSub<TEvent extends EventObject> {
     subscriber: ISubscriber<TEvent>,
   ): void
 
+  once<TKey extends EventDescriptor<TEvent>>(
+    descriptor: TKey,
+    subscriber: ISubscriber<TEvent>,
+  ): void
+
   publish(event: TEvent): Task<void, AppError>
 }
 
@@ -57,6 +62,24 @@ export class PubSub<TEvent extends EventObject> implements IPubSub<TEvent> {
       this.#subscribers[descriptor] = []
     }
     this.#subscribers[descriptor].push(subscriber)
+  }
+
+  once<TKey extends EventDescriptor<TEvent>>(
+    descriptor: TKey,
+    subscriber: ISubscriber<TEvent>,
+  ) {
+    if (!this.#subscribers[descriptor]) {
+      this.#subscribers[descriptor] = []
+    }
+    // I wrap the subscriber with a proxy, so I can remove it after
+    // the first call
+    const handler: ISubscriber<TEvent> = event => {
+      this.#subscribers[descriptor] = this.#subscribers[descriptor]!.filter(
+        s => s !== handler,
+      )
+      return subscriber(event)
+    }
+    this.#subscribers[descriptor].push(handler)
   }
 
   unsubscribe<TKey extends EventDescriptor<TEvent>>(

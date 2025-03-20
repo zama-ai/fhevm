@@ -16,9 +16,11 @@ describe('ValidateAddress', () => {
   })
   describe('when address is valid', () => {
     let task: Promise<ValidateAddressOutput>
+    let requestId: string
     let chainId: string
     let address: string
     beforeEach(() => {
+      requestId = faker.string.uuid()
       chainId = faker.string.numeric(5)
       address = faker.string.hexadecimal({ length: 40 })
       task = useCase.execute({ chainId, address }).toPromise()
@@ -26,7 +28,7 @@ describe('ValidateAddress', () => {
     test('should return true', async () => {
       pupsub.publish(
         back.addressValidationConfirmed(
-          { chainId, address },
+          { requestId, chainId, address },
           { correlationId: faker.string.uuid() },
         ),
       )
@@ -35,10 +37,12 @@ describe('ValidateAddress', () => {
   })
   describe('when address is invalid', () => {
     let task: Promise<ValidateAddressOutput>
+    let requestId: string
     let chainId: string
     let address: string
     let reason: string
     beforeEach(() => {
+      requestId = faker.string.uuid()
       chainId = faker.string.numeric(5)
       address = faker.string.hexadecimal({ length: 40 })
       reason = faker.lorem.paragraph()
@@ -47,7 +51,7 @@ describe('ValidateAddress', () => {
     test('should return false', async () => {
       pupsub.publish(
         back.addressValidationFailed(
-          { chainId, address, reason },
+          { requestId, chainId, address, reason },
           { correlationId: faker.string.uuid() },
         ),
       )
@@ -56,7 +60,7 @@ describe('ValidateAddress', () => {
     test('should return the reason', async () => {
       pupsub.publish(
         back.addressValidationFailed(
-          { chainId, address, reason },
+          { requestId, chainId, address, reason },
           { correlationId: faker.string.uuid() },
         ),
       )
@@ -89,7 +93,7 @@ describe('ValidateAddress', () => {
           address: faker.string.alphanumeric(40),
         })
         .toPromise()
-      await expect(task).rejects.toThrowError(/blockchain address must be/i)
+      await expect(task).rejects.toThrowError(/invalid address/i)
     })
   })
 })

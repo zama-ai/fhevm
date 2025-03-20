@@ -188,6 +188,15 @@ export function match<R1, R2, T, E>(matchers: Matchers<T, E, R1, R2>) {
   }
 }
 
+export function every<T1, T2, E>(
+  values: [Result<T1, E>, Result<T2, E>],
+): Result<[T1, T2], E>
+export function every<T1, T2, T3, E>(
+  values: [Result<T1, E>, Result<T2, E>, Result<T3, E>],
+): Result<[T1, T2, T3], E>
+export function every<T1, T2, T3, T4, E>(
+  values: [Result<T1, E>, Result<T2, E>, Result<T3, E>, Result<T4, E>],
+): Result<[T1, T2, T3, T4], E>
 export function every<T, E>(values: Result<T, E>[]): Result<T[], E> {
   return values.reduce(
     (acc, item) => {

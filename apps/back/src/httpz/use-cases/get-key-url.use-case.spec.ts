@@ -2,8 +2,10 @@ import { Test, TestingModule } from '@nestjs/testing'
 import { beforeEach, describe, expect, test } from 'vitest'
 import { GetKeyUrl } from './get-key-url.use-case.js'
 import { KeyUrlService } from '#httpz/domain/service/key-url.service.js'
-import { CRS } from '#httpz/domain/entities/crs.js'
-import { FHEPublicKey } from '#httpz/domain/entities/fhe-public-key.js'
+import {
+  CRS,
+  FHEPublicKey,
+} from '#httpz/domain/entities/value-objects/index.js'
 import { Task } from 'utils'
 import { faker } from '@faker-js/faker'
 import { mock, MockProxy } from 'vitest-mock-extended'

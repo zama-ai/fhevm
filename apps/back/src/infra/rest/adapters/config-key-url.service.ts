@@ -1,5 +1,7 @@
-import { CRS } from '#httpz/domain/entities/crs.js'
-import { FHEPublicKey } from '#httpz/domain/entities/fhe-public-key.js'
+import {
+  CRS,
+  FHEPublicKey,
+} from '#httpz/domain/entities/value-objects/index.js'
 import { KeyUrlService } from '#httpz/domain/service/key-url.service.js'
 import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'

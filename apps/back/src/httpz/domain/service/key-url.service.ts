@@ -1,6 +1,5 @@
 import { AppError, Task } from 'utils'
-import { FHEPublicKey } from '../entities/fhe-public-key.js'
-import { CRS } from '../entities/crs.js'
+import { CRS, FHEPublicKey } from '../entities/value-objects/index.js'
 
 export abstract class KeyUrlService {
   abstract getFHEPublicKey(): Task<FHEPublicKey[], AppError>

@@ -3,10 +3,13 @@ import { HttpzController } from './httpz.controller.js'
 import { Test, TestingModule } from '@nestjs/testing'
 import { GetKeyUrl } from '#httpz/use-cases/get-key-url.use-case.js'
 import { Task } from 'utils'
-import { FHEPublicKey } from '#httpz/domain/entities/fhe-public-key.js'
+import {
+  CRS,
+  FHEPublicKey,
+} from '#httpz/domain/entities/value-objects/index.js'
 import { faker } from '@faker-js/faker'
-import { CRS } from '#httpz/domain/entities/crs.js'
 import { mock, MockProxy } from 'vitest-mock-extended'
+import { InputProof } from '#httpz/use-cases/input-proof.use-case.js'
 
 describe('HttpzController', () => {
   let module: TestingModule
@@ -18,6 +21,10 @@ describe('HttpzController', () => {
       providers: [
         {
           provide: GetKeyUrl,
+          useValue: mock(),
+        },
+        {
+          provide: InputProof,
           useValue: mock(),
         },
       ],
@@ -64,6 +71,23 @@ describe('HttpzController', () => {
       expect(crs).toBeDefined()
       expect(crs.length).toBeGreaterThan(0)
       expect(getKeyUrl.execute.mock.calls.length).toBe(1)
+    })
+  })
+
+  describe(`POST /input-proof`, () => {
+    let inputProof: MockProxy<InputProof>
+    beforeEach(() => {
+      inputProof = module.get(InputProof)
+      inputProof.execute.mockReturnValue(Task.of(void 0))
+    })
+    test('should return a success response', async () => {
+      await controller.postInputProof({
+        contractChainId: faker.string.hexadecimal({ length: 3 }),
+        contractAddress: faker.string.hexadecimal({ length: 40 }),
+        userAddress: faker.string.hexadecimal({ length: 40 }),
+        ciphertextWithZkpok: faker.string.hexadecimal({ length: 40 }),
+      })
+      expect(inputProof.execute).toHaveBeenCalledOnce()
     })
   })
 })
