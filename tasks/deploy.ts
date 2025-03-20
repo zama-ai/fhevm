@@ -83,7 +83,6 @@ task("task:deployHttpz")
   .addParam("numAdmins", "The number of admins")
   .addParam("numKmsNodes", "The number of KMS nodes")
   .addParam("numCoprocessors", "The number of coprocessors")
-  .addParam("numNetworks", "The number of L1 networks")
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
     const deployer = new ethers.Wallet(taskArguments.deployerPrivateKey).connect(ethers.provider);
 
@@ -146,7 +145,7 @@ task("task:deployHttpz")
     await upgrades.upgradeProxy(proxy, newImplem, {
       call: {
         fn: "initialize",
-        args: [protocolMetadata, adminAddresses, kmsThreshold, kmsNodes, coprocessors, layer1Networks],
+        args: [protocolMetadata, adminAddresses, kmsThreshold, kmsNodes, coprocessors],
       },
     });
 
@@ -156,8 +155,37 @@ task("task:deployHttpz")
     console.log("KMS threshold:", kmsThreshold, "\n");
     console.log("KMS nodes:", kmsNodes, "\n");
     console.log("Coprocessors:", coprocessors, "\n");
-    console.log("L1 networks:", layer1Networks, "\n");
   });
+
+// Add L1 networks metadata to the HTTPZ contract
+task("task:addNetworksToHttpz").setAction(async function (_, { ethers }) {
+  const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
+  const numNetworks = parseInt(getRequiredEnvVar("NUM_NETWORKS"));
+  const deployer = new ethers.Wallet(deployerPrivateKey).connect(ethers.provider);
+
+  // Parse the L1 network
+  const layer1Networks = [];
+  for (let idx = 0; idx < numNetworks; idx++) {
+    layer1Networks.push({
+      chainId: getRequiredEnvVar(`NETWORK_CHAIN_ID_${idx}`),
+      httpzExecutor: getRequiredEnvVar(`NETWORK_HTTPZ_EXECUTOR_${idx}`),
+      aclAddress: getRequiredEnvVar(`NETWORK_ACL_ADDRESS_${idx}`),
+      name: getRequiredEnvVar(`NETWORK_NAME_${idx}`),
+      website: getRequiredEnvVar(`NETWORK_WEBSITE_${idx}`),
+    });
+  }
+
+  const parsedEnvHttpz = dotenv.parse(fs.readFileSync("addresses/.env.httpz"));
+  const proxyAddress = parsedEnvHttpz.HTTPZ_ADDRESS;
+
+  // Add L1 networks
+  const httpz = await ethers.getContractAt("HTTPZ", proxyAddress, deployer);
+  for (const network of layer1Networks) {
+    await httpz.addNetwork(network);
+  }
+
+  console.log("Added L1 networks:", layer1Networks, "\n");
+});
 
 // Deploy the ZKPoKManager contract
 task("task:deployZkpokManager")

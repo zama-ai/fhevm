@@ -8,6 +8,7 @@ compile:
 TEST_DEPLOY_KEY = $(shell npx hardhat get-accounts --num-accounts 1 | grep Private | cut -d " " -f 3)
 .PHONY: test
 test:
+	cp .env.example .env
 	# Recompute addresses values that will be used for the tests, in case they have changed
 	npx hardhat compile && npx hardhat task:deployEmptyUUPSProxies --deployer-private-key "$(TEST_DEPLOY_KEY)" --network hardhat
 	npx hardhat test
@@ -17,7 +18,8 @@ get-accounts:
 
 deploy-contracts-local:
 	cp .env.example .env
-	./deploy-httpz-gateway-deployment.sh localHTTPZGateway
+	./deploy-gateway-contracts localHTTPZGateway
+	./add-httpz-networks.sh localHTTPZGateway
 
 docker-compose-build:
 	docker compose -vvv build

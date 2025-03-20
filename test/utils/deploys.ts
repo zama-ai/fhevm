@@ -49,24 +49,25 @@ export async function deployHTTPZFixture() {
   // Create dummy KMS nodes with the signers' addresses
   const kmsNodes = kmsSigners.forEach((kmsNode, idx) => {
     process.env[`KMS_NODE_ADDRESS_${idx}`] = kmsNode.address;
-    (process.env[`KMS_NODE_IDENTITY_${idx}`] = toHexString(hre.ethers.randomBytes(32))),
-      (process.env[`KMS_NODE_IP_ADDRESS_${idx}`] = "127.0.0.1");
+    process.env[`KMS_NODE_IDENTITY_${idx}`] = toHexString(hre.ethers.randomBytes(32));
+    process.env[`KMS_NODE_IP_ADDRESS_${idx}`] = "127.0.0.1";
     process.env[`KMS_NODE_DA_URL_${idx}`] = "https://da.com";
   });
 
   // Create dummy Coprocessors with the signers' addresses
   const coprocessors = coprocessorSigners.forEach((coprocessorSigner, idx) => {
     process.env[`COPROCESSOR_ADDRESS_${idx}`] = coprocessorSigner.address;
-    (process.env[`COPROCESSOR_IDENTITY_${idx}`] = toHexString(hre.ethers.randomBytes(32))),
-      (process.env[`COPROCESSOR_DA_URL_${idx}`] = "https://da.com");
+    process.env[`COPROCESSOR_IDENTITY_${idx}`] = toHexString(hre.ethers.randomBytes(32));
+    process.env[`COPROCESSOR_DA_URL_${idx}`] = "https://da.com";
     process.env[`COPROCESSOR_S3_BUCKET_URL_${idx}`] = "s3://bucket";
   });
 
   // Create dummy Networks with the chain IDs
+  process.env.NUM_NETWORKS = chainIds.length.toString();
   const networks = chainIds.map((chainId, idx) => {
     process.env[`NETWORK_CHAIN_ID_${idx}`] = chainId.toString();
-    (process.env[`NETWORK_HTTPZ_EXECUTOR_${idx}`] = "0x1234567890abcdef1234567890abcdef12345678"),
-      (process.env[`NETWORK_ACL_ADDRESS_${idx}`] = "0xabcdef1234567890abcdef1234567890abcdef12");
+    process.env[`NETWORK_HTTPZ_EXECUTOR_${idx}`] = "0x1234567890abcdef1234567890abcdef12345678";
+    process.env[`NETWORK_ACL_ADDRESS_${idx}`] = "0xabcdef1234567890abcdef1234567890abcdef12";
     process.env[`NETWORK_NAME_${idx}`] = "Network";
     process.env[`NETWORK_WEBSITE_${idx}`] = "https://network.com";
   });
@@ -76,8 +77,9 @@ export async function deployHTTPZFixture() {
     numAdmins: admins.length.toString(),
     numKmsNodes: nKmsNodes.toString(),
     numCoprocessors: nCoprocessors.toString(),
-    numNetworks: chainIds.length.toString(),
   });
+
+  await hre.run("task:addNetworksToHttpz");
 
   const parsedEnvHttpz = dotenv.parse(fs.readFileSync("addresses/.env.httpz"));
   const httpz = await hre.ethers.getContractAt("HTTPZ", parsedEnvHttpz.HTTPZ_ADDRESS);
