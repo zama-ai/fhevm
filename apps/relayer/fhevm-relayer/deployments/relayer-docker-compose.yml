@@ -19,7 +19,7 @@ services:
   
   input-proof-test:
     container_name: input-proof-test
-    image: ghcr.io/zama-ai/fhevm-e2e-test:v0.1.0-rc2
+    image: ghcr.io/zama-ai/fhevm-e2e-test:1f9eec1
     command:
       - /bin/bash
       - -c
