@@ -26,8 +26,6 @@ services:
       ACCESS_KEY: httpz-access-key
       SECRET_KEY: httpz-access-secret-key
       MINIO_ENDPOINT: "http://s3-mock:9000"
-    # entrypoint: > 
-    #     /bin/sh -c " tail -f /dev/null"
     entrypoint: >
       /bin/sh -c "
         sleep 1 &&
@@ -41,14 +39,38 @@ services:
         cat /minio_secrets/access_key &&
         cat /minio_secrets/secret_key &&
         mc mb --with-lock --ignore-existing myminio/kms-public &&
-        mc anonymous set public myminio/kms-public &&
-        # create sns-worker buckets
-        mc alias set minio $${MINIO_ENDPOINT} $${ACCESS_KEY} $${SECRET_KEY} &&
-        mc mb --with-lock --ignore-existing minio/ct64 &&
-        mc mb --with-lock --ignore-existing minio/ct128
+        mc anonymous set public myminio/kms-public
       "
     volumes:
       - minio_secrets:/minio_secrets
+    depends_on:
+      s3-mock:
+        condition: service_healthy
+
+  create-sns-buckets:
+    container_name: create-sns-buckets
+    image: quay.io/minio/mc
+    environment:
+      MINIO_ROOT_USER: zamadmin
+      MINIO_ROOT_PASSWORD: zamadmin
+      ACCESS_KEY: sns-access-key
+      SECRET_KEY: sns-access-secret-key
+      MINIO_ENDPOINT: "http://s3-mock:9000"
+    entrypoint: >
+      /bin/sh -c "
+        sleep 1 &&
+        mc alias set myminio $${MINIO_ENDPOINT} $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD} &&
+        mc admin user add myminio $${ACCESS_KEY} $${SECRET_KEY} &&
+        mc admin policy create myminio sns-policy /policy.json &&
+        mc admin policy attach myminio sns-policy --user $${ACCESS_KEY} &&
+        echo $${ACCESS_KEY} > /minio_secrets/sns_access_key &&
+        echo $${SECRET_KEY} > /minio_secrets/sns_secret_key &&
+        mc mb --with-lock --ignore-existing myminio/ct64 &&
+        mc mb --with-lock --ignore-existing myminio/ct128
+      "
+    volumes:
+      - minio_secrets:/minio_secrets
+      - ./config/policy.json:/policy.json
     depends_on:
       s3-mock:
         condition: service_healthy

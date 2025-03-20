@@ -34,7 +34,7 @@ services:
             echo 'Downloaded PP key - All downloads complete'"
   db-migration:
     container_name: db-migration
-    image: ghcr.io/zama-ai/fhevm-db-migration:f1ed378
+    image: ghcr.io/zama-ai/fhevm-db-migration:2adb080
     environment:
       DATABASE_URL: ${DATABASE_URL}
       CHAIN_ID: ${CHAIN_ID}
@@ -50,7 +50,7 @@ services:
   ####################### COPROCESSOR SERVICES #######################
   httpz-listener:
     container_name: "httpz-listener"
-    image: ghcr.io/zama-ai/fhevm-coprocessor:f1ed378
+    image: ghcr.io/zama-ai/fhevm-coprocessor:2adb080
     environment:
       DATABASE_URL: ${DATABASE_URL}
       TENANT_API_KEY: ${TENANT_API_KEY}
@@ -68,7 +68,7 @@ services:
 
   gw-listener:
     container_name: "gw-listener"
-    image: ghcr.io/zama-ai/fhevm-coprocessor:f1ed378
+    image: ghcr.io/zama-ai/fhevm-coprocessor:2adb080
     environment:
       DATABASE_URL: ${DATABASE_URL}
       GATEWAY_URL: ${GATEWAY_WS_URL}
@@ -87,7 +87,7 @@ services:
 
   tfhe-worker:
     container_name: tfhe-worker
-    image: ghcr.io/zama-ai/fhevm-coprocessor:f1ed378
+    image: ghcr.io/zama-ai/fhevm-coprocessor:2adb080
     environment:
       DATABASE_URL: ${DATABASE_URL}
     volumes:
@@ -109,7 +109,7 @@ services:
 
   zkproof-worker:
     container_name: "zkproof-worker"
-    image: ghcr.io/zama-ai/fhevm-coprocessor:f1ed378
+    image: ghcr.io/zama-ai/fhevm-coprocessor:2adb080
     environment:
       DATABASE_URL: ${DATABASE_URL}
     command:
@@ -128,7 +128,7 @@ services:
 
   sns-worker:
     container_name: "sns-worker"
-    image: ghcr.io/zama-ai/fhevm-coprocessor:f1ed378
+    image: ghcr.io/zama-ai/fhevm-coprocessor:2adb080
     environment:
       DATABASE_URL: ${DATABASE_URL}
       TENANT_API_KEY: ${TENANT_API_KEY}
@@ -155,13 +155,14 @@ services:
 
   transaction-sender:
     container_name: "transaction-sender"
-    image: ghcr.io/zama-ai/fhevm-coprocessor:f1ed378
+    image: ghcr.io/zama-ai/fhevm-coprocessor:2adb080
     environment:
       DATABASE_URL: ${DATABASE_URL}
       GATEWAY_URL: ${GATEWAY_URL}
       TX_SENDER_PRIVATE_KEY: ${TX_SENDER_PRIVATE_KEY}
       ZKPOK_MANAGER_ADDRESS: ${ZKPOK_MANAGER_ADDRESS}
       CIPHERTEXT_MANAGER_ADDRESS: ${CIPHERTEXT_MANAGER_ADDRESS}
+      ACL_MANAGER_ADDRESS: ${ACL_MANAGER_ADDRESS}
     command:
       - transaction_sender
       - --database-url=${DATABASE_URL}
@@ -176,6 +177,7 @@ services:
       - --zkpok-manager-address=${ZKPOK_MANAGER_ADDRESS}
       - --gateway-url=${GATEWAY_URL}
       - --private-key=${TX_SENDER_PRIVATE_KEY}
+      - --acl-manager-address=${ACL_MANAGER_ADDRESS}
     depends_on:
       db:
         condition: service_healthy
