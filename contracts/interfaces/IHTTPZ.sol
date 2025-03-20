@@ -67,19 +67,21 @@ interface IHTTPZ {
     /// @param kmsThreshold The KMS threshold
     /// @param kmsNodes List of KMS nodes
     /// @param coprocessors List of coprocessors
-    /// @param networks List of networks
     event Initialization(
         ProtocolMetadata metadata,
         address[] admins,
         uint256 kmsThreshold,
         KmsNode[] kmsNodes,
-        Coprocessor[] coprocessors,
-        Network[] networks
+        Coprocessor[] coprocessors
     );
 
     /// @notice Emitted when the KMS threshold has been updated
     /// @param newKmsThreshold The new KMS threshold
     event UpdateKmsThreshold(uint256 newKmsThreshold);
+
+    /// @notice Emitted when a new network metadata is added
+    /// @param network The new network metadata
+    event AddNetwork(Network network);
 
     /// @notice Error emitted when the KMS threshold is too high with respect to the number of KMS nodes
     /// @notice For a set of `n` KMS nodes, the threshold `t` must verify `3t < n`.
@@ -90,6 +92,12 @@ interface IHTTPZ {
     /// @notice Error emitted when a network is not registered
     /// @param chainId The chain ID of the network
     error NetworkNotRegistered(uint256 chainId);
+
+    /// @notice Error emitted when trying to add a network that is already registered.
+    error NetworkAlreadyRegistered(uint256 chainId);
+
+    /// @notice Error indicating that a null chain ID is not allowed.
+    error InvalidNullChainId();
 
     /// @notice Update the KMS threshold
     /// @dev This function can only be called by an administrator
@@ -160,4 +168,8 @@ interface IHTTPZ {
     /// @notice Get the metadata of the network with the given index
     /// @return The network's metadata
     function networks(uint256 index) external view returns (Network memory);
+
+    /// @notice Add a new Network metadata to the HTTPZ contract.
+    /// @param network The new network metadata to include.
+    function addNetwork(Network calldata network) external;
 }

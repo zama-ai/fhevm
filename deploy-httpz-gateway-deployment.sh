@@ -17,7 +17,6 @@ DEPLOYER_PRIVATE_KEY=$(grep DEPLOYER_PRIVATE_KEY .env | cut -d '"' -f 2)
 NUM_ADMINS=$(grep NUM_ADMINS .env | cut -d '"' -f 2)
 NUM_KMS_NODES=$(grep NUM_KMS_NODES .env | cut -d '"' -f 2)
 NUM_COPROCESSORS=$(grep NUM_COPROCESSORS .env | cut -d '"' -f 2)
-NUM_NETWORKS=$(grep NUM_NETWORKS .env | cut -d '"' -f 2)
 
 npx hardhat task:deployEmptyUUPSProxies --deployer-private-key "$DEPLOYER_PRIVATE_KEY" --network $NETWORK
 
@@ -27,7 +26,6 @@ npx hardhat task:deployHttpz --deployer-private-key "$DEPLOYER_PRIVATE_KEY" \
     --num-admins "$NUM_ADMINS" \
     --num-kms-nodes "$NUM_KMS_NODES" \
     --num-coprocessors "$NUM_COPROCESSORS" \
-    --num-networks "$NUM_NETWORKS" \
     --network $NETWORK
 
 # Important: the contract deployment order is currently important as some contracts depend on others
