@@ -28,7 +28,9 @@ describe('KMSVerifier', function () {
 
       const privKeySigner = process.env['PRIVATE_KEY_KMS_SIGNER_1']!;
       const kmsSigner = new ethers.Wallet(privKeySigner).connect(ethers.provider);
-      const tx = await kmsVerifier.connect(deployer).addSigner(kmsSigner.address);
+      let setSigners = await kmsVerifier.getSigners();
+      setSigners = [...setSigners, kmsSigner.address];
+      const tx = await kmsVerifier.connect(deployer).defineNewContext(setSigners, 1);
       await tx.wait();
 
       expect((await kmsVerifier.getSigners()).length).to.equal(2); // one signer has been added
@@ -42,7 +44,8 @@ describe('KMSVerifier', function () {
       expect(y).to.equal(true); // in this case, one signature still suffices to pass the decrypt (threshold is still 1)
 
       const kmsSignerDup = new ethers.Wallet(privKeySigner).connect(ethers.provider);
-      await expect(kmsVerifier.connect(deployer).addSigner(kmsSignerDup.address)).to.revertedWithCustomError(
+      setSigners = [...setSigners, kmsSignerDup];
+      await expect(kmsVerifier.connect(deployer).defineNewContext(setSigners, 1)).to.revertedWithCustomError(
         kmsVerifier,
         'KMSAlreadySigner',
       ); // cannot add duplicated signer
@@ -50,11 +53,11 @@ describe('KMSVerifier', function () {
 
       const privKeySigner2 = process.env['PRIVATE_KEY_KMS_SIGNER_2']!;
       const kmsSigner2 = new ethers.Wallet(privKeySigner2).connect(ethers.provider);
-      const tx3 = await kmsVerifier.connect(deployer).addSigner(kmsSigner2.address);
-      await tx3.wait();
       const privKeySigner3 = process.env['PRIVATE_KEY_KMS_SIGNER_3']!;
       const kmsSigner3 = new ethers.Wallet(privKeySigner3).connect(ethers.provider);
-      const tx4 = await kmsVerifier.connect(deployer).addSigner(kmsSigner3.address);
+      let setSigners2 = await kmsVerifier.getSigners();
+      setSigners2 = [...setSigners2, kmsSigner2.address, kmsSigner3.address];
+      const tx4 = await kmsVerifier.connect(deployer).defineNewContext(setSigners2, 1);
       await tx4.wait();
       expect((await kmsVerifier.getSigners()).length).to.equal(4); // 3rd and 4th signer has been added successfully
 
@@ -111,10 +114,10 @@ describe('KMSVerifier', function () {
       expect(y5).to.equal(0);
 
       process.env.NUM_KMS_SIGNERS = '1';
-      const tx8 = await kmsVerifier.connect(deployer).removeSigner(kmsSigner2.address);
+      let setSigners3 = [...(await kmsVerifier.getSigners())];
+      setSigners3.pop();
+      const tx8 = await kmsVerifier.connect(deployer).defineNewContext(setSigners3, 1);
       await tx8.wait();
-      const txSetTh2 = await kmsVerifier.connect(deployer).setThreshold(1n);
-      await txSetTh2.wait();
       expect(await kmsVerifier.getThreshold()).to.equal(1);
       const tx7Bis = await contract.requestUint16();
       await tx7Bis.wait();
@@ -127,14 +130,10 @@ describe('KMSVerifier', function () {
   it('cannot add/remove signers if not the owner', async function () {
     const origKMSAdd = dotenv.parse(fs.readFileSync('addresses/.env.kmsverifier')).KMS_VERIFIER_CONTRACT_ADDRESS;
     const kmsVerifier = await this.kmsFactory.attach(origKMSAdd);
+    let setSigners = await kmsVerifier.getSigners();
     const randomAccount = this.signers.carol;
-
-    await expect(kmsVerifier.connect(randomAccount).addSigner(randomAccount)).to.be.revertedWithCustomError(
-      kmsVerifier,
-      'OwnableUnauthorizedAccount',
-    );
-
-    await expect(kmsVerifier.connect(randomAccount).removeSigner(randomAccount)).to.be.revertedWithCustomError(
+    setSigners = [...setSigners, randomAccount];
+    await expect(kmsVerifier.connect(randomAccount).defineNewContext(setSigners, 2)).to.be.revertedWithCustomError(
       kmsVerifier,
       'OwnableUnauthorizedAccount',
     );

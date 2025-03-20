@@ -86,9 +86,11 @@ contract KMSVerifierTest is Test {
     /// @dev Adds three predefined signers to the KMSVerifier contract.
     function _setThreeSigners() internal {
         vm.startPrank(owner);
-        kmsVerifier.addSigner(kmsSigner1);
-        kmsVerifier.addSigner(kmsSigner2);
-        kmsVerifier.addSigner(kmsSigner3);
+        address[] memory newSigners = new address[](3);
+        newSigners[0] = kmsSigner1;
+        newSigners[1] = kmsSigner2;
+        newSigners[2] = kmsSigner3;
+        kmsVerifier.defineNewContext(newSigners, 2);
         vm.stopPrank();
     }
 
@@ -130,8 +132,8 @@ contract KMSVerifierTest is Test {
      */
     function setUp() public {
         _deployProxy();
-        _upgradeProxy();
         _initializeSigners();
+        _upgradeProxy();
     }
 
     /// @dev Tests that the version returned by getVersion is "KMSVerifier v0.1.0"
@@ -150,24 +152,14 @@ contract KMSVerifierTest is Test {
      * @dev Tests that only the contract owner can add a signer.
      * @param randomAccount An address that is not the owner of the contract.
      */
-    function test_OnlyOwnerCanAddSigner(address randomAccount) public {
+    function test_OnlyOwnerCanDefineNewContext(address randomAccount) public {
         vm.assume(randomAccount != owner);
         address randomSigner = address(42);
         vm.expectPartialRevert(OwnableUpgradeable.OwnableUnauthorizedAccount.selector);
         vm.prank(randomAccount);
-        kmsVerifier.addSigner(randomSigner);
-    }
-
-    /**
-     * @dev Tests that only the owner can remove a signer.
-     * @param randomAccount An address that is not the owner.
-     */
-    function test_OnlyOwnerCanRemoveSigner(address randomAccount) public {
-        vm.assume(randomAccount != owner);
-        address randomSigner = address(42);
-        vm.expectPartialRevert(OwnableUpgradeable.OwnableUnauthorizedAccount.selector);
-        vm.prank(randomAccount);
-        kmsVerifier.removeSigner(randomSigner);
+        address[] memory newSigners = new address[](1);
+        newSigners[0] = randomSigner;
+        kmsVerifier.defineNewContext(newSigners, 1);
     }
 
     /**
@@ -175,9 +167,11 @@ contract KMSVerifierTest is Test {
      */
     function test_OwnerCannotAddNullAddressAsSigner() public {
         address nullSigner = address(0);
+        address[] memory newSigners = new address[](1);
+        newSigners[0] = nullSigner;
         vm.expectPartialRevert(KMSVerifier.KMSSignerNull.selector);
         vm.prank(owner);
-        kmsVerifier.addSigner(nullSigner);
+        kmsVerifier.defineNewContext(newSigners, 1);
     }
 
     /**
@@ -185,10 +179,12 @@ contract KMSVerifierTest is Test {
      */
     function test_OwnerCanAddNewSigner() public {
         address randomSigner = address(42);
+        address[] memory newSigners = new address[](1);
+        newSigners[0] = randomSigner;
         vm.prank(owner);
         vm.expectEmit();
-        emit KMSVerifier.SignerAdded(randomSigner);
-        kmsVerifier.addSigner(randomSigner);
+        emit KMSVerifier.NewContextSet(newSigners, 1);
+        kmsVerifier.defineNewContext(newSigners, 1);
         assertEq(kmsVerifier.getSigners()[0], randomSigner);
         assertTrue(kmsVerifier.isSigner(randomSigner));
     }
@@ -197,22 +193,14 @@ contract KMSVerifierTest is Test {
      * @dev Tests that the contract owner cannot add the same signer twice.
      */
     function test_OwnerCannotAddSameSignerTwice() public {
-        /// @dev We call the other test to avoid repeating the same code.
         test_OwnerCanAddNewSigner();
         address randomSigner = kmsVerifier.getSigners()[0];
+        address[] memory newSigners = new address[](2);
+        newSigners[0] = randomSigner;
+        newSigners[1] = randomSigner;
         vm.prank(owner);
         vm.expectRevert(KMSVerifier.KMSAlreadySigner.selector);
-        kmsVerifier.addSigner(randomSigner);
-    }
-
-    /**
-     * @dev Tests that the owner cannot remove a signer if the owner is not a signer.
-     */
-    function test_OwnerCannotRemoveSignerIfNotSigner() public {
-        address randomSigner = address(42);
-        vm.prank(owner);
-        vm.expectRevert(KMSVerifier.KMSNotASigner.selector);
-        kmsVerifier.removeSigner(randomSigner);
+        kmsVerifier.defineNewContext(newSigners, 1);
     }
 
     /**
@@ -222,18 +210,19 @@ contract KMSVerifierTest is Test {
         /// @dev We call the other test to avoid repeating the same code.
         test_OwnerCanAddNewSigner();
 
-        address randomSigner2 = address(43);
-        vm.prank(owner);
-        kmsVerifier.addSigner(randomSigner2);
+        address randomSigner = address(43);
+        vm.startPrank(owner);
+
+        address[] memory newSigners = new address[](2);
+        newSigners[0] = address(42);
+        newSigners[1] = randomSigner;
+        kmsVerifier.defineNewContext(newSigners, 2);
         assertEq(kmsVerifier.getSigners().length, 2);
 
-        address randomSigner1 = kmsVerifier.getSigners()[0];
-        vm.prank(owner);
-        vm.expectEmit(true, false, false, true);
-        emit KMSVerifier.SignerRemoved(randomSigner1);
-        kmsVerifier.removeSigner(randomSigner1);
-
-        assertFalse(kmsVerifier.isSigner(randomSigner1));
+        address[] memory newSigners2 = new address[](1);
+        newSigners2[0] = address(42);
+        kmsVerifier.defineNewContext(newSigners2, 1);
+        assertFalse(kmsVerifier.isSigner(randomSigner));
         assertEq(kmsVerifier.getSigners().length, 1);
     }
 
@@ -245,11 +234,10 @@ contract KMSVerifierTest is Test {
     function test_OwnerCannotRemoveTheLastSigner() public {
         /// @dev We call the other test to avoid repeating the same code.
         test_OwnerCanAddNewSigner();
-
-        address randomSigner = kmsVerifier.getSigners()[0];
+        address[] memory emptyAddress = new address[](0);
         vm.prank(owner);
-        vm.expectRevert(KMSVerifier.AtLeastOneSignerIsRequired.selector);
-        kmsVerifier.removeSigner(randomSigner);
+        vm.expectRevert(KMSVerifier.SignersSetIsEmpty.selector);
+        kmsVerifier.defineNewContext(emptyAddress, 0);
     }
 
     /**

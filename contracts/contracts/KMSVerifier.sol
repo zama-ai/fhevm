@@ -17,15 +17,9 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
     /// @notice Returned if the KMS signer to add is already a signer.
     error KMSAlreadySigner();
 
-    /// @notice Returned if the owner tries to remove all the KMS signers.
-    error AtLeastOneSignerIsRequired();
-
     /// @notice Returned if the recovered KMS signer is not a valid KMS signer.
     /// @param invalidSigner Address of the invalid signer.
     error KMSInvalidSigner(address invalidSigner);
-
-    /// @notice Returned if the KMS signer to remove is not a signer.
-    error KMSNotASigner();
 
     /// @notice Returned if the KMS signer to add is the null address.
     error KMSSignerNull();
@@ -37,8 +31,8 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
     /// @notice Returned if the number of signatures is equal to 0.
     error KMSZeroSignature();
 
-    /// @notice Returned if the initial signers set is empty.
-    error InitialSignersSetIsEmpty();
+    /// @notice Returned if the signers set is empty.
+    error SignersSetIsEmpty();
 
     /// @notice Returned if the chosen threshold is null.
     error ThresholdIsNull();
@@ -46,17 +40,10 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
     /// @notice Threshold is above number of signers.
     error ThresholdIsAboveNumberOfSigners();
 
-    /// @notice         Emitted when a signer is added.
-    /// @param signer   The address of the signer that was added.
-    event SignerAdded(address indexed signer);
-
-    /// @notice         Emitted when a signer is removed.
-    /// @param signer   The address of the signer that was removed.
-    event SignerRemoved(address indexed signer);
-
-    /// @notice         Emitted when a threshold is set.
-    /// @param threshold   The new threshold set by the owner.
-    event KMSThresholdSet(uint256 threshold);
+    /// @notice         Emitted when a context is set or changed.
+    /// @param newKmsSignersSet   The set of new KMS signers.
+    /// @param newThreshold   The new threshold set by the owner.
+    event NewContextSet(address[] newKmsSignersSet, uint256 newThreshold);
 
     /**
      * @param handlesList       List of handles.
@@ -119,34 +106,44 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
         uint256 initialThreshold
     ) public reinitializer(2) {
         __EIP712_init(CONTRACT_NAME_SOURCE, "1", verifyingContractSource, chainIDSource);
-        uint256 initialSignersLen = initialSigners.length;
-        if (initialSignersLen == 0) {
-            revert InitialSignersSetIsEmpty();
-        }
-        for (uint256 i = 0; i < initialSignersLen; i++) {
-            addSigner(initialSigners[i]);
-        }
-        setThreshold(initialThreshold);
+        defineNewContext(initialSigners, initialThreshold);
     }
 
     /**
-     * @notice          Adds a new signer.
-     * @dev             Only the owner can add a signer.
-     * @param signer    The address to be added as a signer.
+     * @notice          Sets a new context (i.e. new set of unique signers and new threshold).
+     * @dev             Only the owner can set a new context.
+     * @param newSignersSet   The new set of signers to be set. This array should not be empty and without duplicates nor null values.
+     * @param newThreshold    The threshold to be set. Threshold should be non-null and less than the number of signers.
      */
-    function addSigner(address signer) public virtual onlyOwner {
-        if (signer == address(0)) {
-            revert KMSSignerNull();
+    function defineNewContext(address[] memory newSignersSet, uint256 newThreshold) public virtual onlyOwner {
+        uint256 newSignersLen = newSignersSet.length;
+        if (newSignersLen == 0) {
+            revert SignersSetIsEmpty();
         }
 
+        /// @dev First, we remove the old signers set
         KMSVerifierStorage storage $ = _getKMSVerifierStorage();
-        if ($.isSigner[signer]) {
-            revert KMSAlreadySigner();
+        address[] memory oldSignersSet = $.signers;
+        uint256 oldSignersLen = oldSignersSet.length;
+        for (uint256 i = 0; i < oldSignersLen; i++) {
+            $.isSigner[oldSignersSet[i]] = false;
+            $.signers.pop();
         }
 
-        $.isSigner[signer] = true;
-        $.signers.push(signer);
-        emit SignerAdded(signer);
+        /// @dev Next, we add the new set of signers.
+        for (uint256 i = 0; i < newSignersLen; i++) {
+            address signer = newSignersSet[i];
+            if (signer == address(0)) {
+                revert KMSSignerNull();
+            }
+            if ($.isSigner[signer]) {
+                revert KMSAlreadySigner();
+            }
+            $.isSigner[signer] = true;
+            $.signers.push(signer);
+        }
+        _setThreshold(newThreshold);
+        emit NewContextSet(newSignersSet, newThreshold);
     }
 
     /**
@@ -155,45 +152,9 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
      * @param threshold    The threshold to be set. Threshold should be non-null and less than the number of signers.
      */
     function setThreshold(uint256 threshold) public virtual onlyOwner {
-        if (threshold == 0) {
-            revert ThresholdIsNull();
-        }
+        _setThreshold(threshold);
         KMSVerifierStorage storage $ = _getKMSVerifierStorage();
-        if (threshold > $.signers.length) {
-            revert ThresholdIsAboveNumberOfSigners();
-        }
-        $.threshold = threshold;
-        emit KMSThresholdSet(threshold);
-    }
-
-    /**
-     * @notice          Removes an existing signer.
-     * @dev             Only the owner can remove a signer.
-     * @param signer    The signer address to remove.
-     */
-    function removeSigner(address signer) public virtual onlyOwner {
-        KMSVerifierStorage storage $ = _getKMSVerifierStorage();
-        if (!$.isSigner[signer]) {
-            revert KMSNotASigner();
-        }
-
-        /// @dev Remove signer from the mapping.
-        $.isSigner[signer] = false;
-
-        /// @dev Find the index of the signer and remove it from the array.
-        for (uint i = 0; i < $.signers.length; i++) {
-            if ($.signers[i] == signer) {
-                $.signers[i] = $.signers[$.signers.length - 1]; /// @dev Move the last element into the place to delete.
-                $.signers.pop(); /// @dev Remove the last element.
-
-                if ($.signers.length == 0) {
-                    revert AtLeastOneSignerIsRequired();
-                }
-
-                emit SignerRemoved(signer);
-                return;
-            }
-        }
+        emit NewContextSet($.signers, threshold);
     }
 
     /**
@@ -286,6 +247,22 @@ contract KMSVerifier is UUPSUpgradeable, Ownable2StepUpgradeable, EIP712Upgradea
         assembly {
             tstore(location, value)
         }
+    }
+
+    /**
+     * @notice          Internal function that sets the minimum number of valid signatures required to accept a transaction.
+     * @dev             External functions using this internal function should be access controlled to owner.
+     * @param threshold    The threshold to be set. Threshold should be non-null and less than the number of signers.
+     */
+    function _setThreshold(uint256 threshold) internal virtual {
+        if (threshold == 0) {
+            revert ThresholdIsNull();
+        }
+        KMSVerifierStorage storage $ = _getKMSVerifierStorage();
+        if (threshold > $.signers.length) {
+            revert ThresholdIsAboveNumberOfSigners();
+        }
+        $.threshold = threshold;
     }
 
     /**
