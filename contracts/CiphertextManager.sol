@@ -61,7 +61,7 @@ contract CiphertextManager is ICiphertextManager, Ownable2StepUpgradeable, UUPSU
      * @notice  Initializes the contract.
      */
     function initialize() public reinitializer(2) {
-        __Ownable_init(msg.sender);
+        __Ownable_init(owner());
     }
 
     /// @notice See {ICiphertextManager-checkCiphertextMaterial}.
@@ -221,5 +221,6 @@ contract CiphertextManager is ICiphertextManager, Ownable2StepUpgradeable, UUPSU
     /**
      * @dev Should revert when `msg.sender` is not authorized to upgrade the contract.
      */
+    // solhint-disable-next-line no-empty-blocks
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
 }

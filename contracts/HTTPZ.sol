@@ -78,7 +78,7 @@ contract HTTPZ is IHTTPZ, AccessControlUpgradeable, Ownable2StepUpgradeable, UUP
         Coprocessor[] memory initialCoprocessors,
         Network[] memory initialNetworks
     ) public reinitializer(2) {
-        __Ownable_init(msg.sender);
+        __Ownable_init(owner());
 
         HTTPZStorage storage $ = _getHTTPZStorage();
         $.protocolMetadata = initialMetadata;
@@ -265,5 +265,6 @@ contract HTTPZ is IHTTPZ, AccessControlUpgradeable, Ownable2StepUpgradeable, UUP
     /**
      * @dev Should revert when `msg.sender` is not authorized to upgrade the contract.
      */
+    // solhint-disable-next-line no-empty-blocks
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
 }
