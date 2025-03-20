@@ -1,12 +1,10 @@
-import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { expect } from "chai";
-import dotenv from "dotenv";
-import fs from "fs";
+import { HDNodeWallet, Wallet } from "ethers";
 import hre from "hardhat";
 
 import { CiphertextManager, HTTPZ } from "../typechain-types";
-import { deployKeyManagerFixture } from "./utils";
+import { loadTestVariablesFixture } from "./utils";
 
 describe("CiphertextManager", function () {
   const ctHandle = 2025;
@@ -21,20 +19,11 @@ describe("CiphertextManager", function () {
 
   let httpz: HTTPZ;
   let ciphertextManager: CiphertextManager;
-  let coprocessorSigners: HardhatEthersSigner[];
-  let user: HardhatEthersSigner;
-  async function deployCiphertextManagerFixture() {
-    const { httpz, owner, coprocessorSigners, signers, user } = await loadFixture(deployKeyManagerFixture);
+  let coprocessorSigners: Wallet[];
+  let user: HDNodeWallet;
 
-    // Deploying CiphertextManager using its deploy task
-    await hre.run("task:deployCiphertextManager", {
-      deployerPrivateKey: owner.privateKey,
-    });
-    const parsedEnvCiphertextManager = dotenv.parse(fs.readFileSync("addresses/.env.ciphertext_manager"));
-    const ciphertextManager = await hre.ethers.getContractAt(
-      "CiphertextManager",
-      parsedEnvCiphertextManager.CIPHERTEXT_MANAGER_ADDRESS,
-    );
+  async function prepareCiphertextManagerFixture() {
+    const { httpz, ciphertextManager, coprocessorSigners, user } = await loadFixture(loadTestVariablesFixture);
 
     // Setup the CiphertextManager contract state with a ciphertext used during tests
     for (let signer of coprocessorSigners) {
@@ -42,12 +31,13 @@ describe("CiphertextManager", function () {
         .connect(signer)
         .addCiphertextMaterial(ctHandle, keyId, chainId, ciphertextDigest, snsCiphertextDigest);
     }
-    return { httpz, ciphertextManager, coprocessorSigners, signers, user };
+
+    return { httpz, ciphertextManager, coprocessorSigners, user };
   }
 
   beforeEach(async function () {
     // Initialize globally used variables before each test
-    const fixture = await loadFixture(deployCiphertextManagerFixture);
+    const fixture = await loadFixture(prepareCiphertextManagerFixture);
     httpz = fixture.httpz;
     coprocessorSigners = fixture.coprocessorSigners;
     ciphertextManager = fixture.ciphertextManager;

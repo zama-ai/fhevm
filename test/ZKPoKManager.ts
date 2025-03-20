@@ -1,10 +1,16 @@
-import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { expect } from "chai";
+import { HDNodeWallet, Wallet } from "ethers";
 import hre from "hardhat";
 
 import { HTTPZ, ZKPoKManager } from "../typechain-types";
-import { EIP712, createEIP712ResponseZKPoK, deployZKPoKManagerFixture, getSignaturesZKPoK } from "./utils";
+import {
+  EIP712,
+  createAndFundRandomUser,
+  createEIP712ResponseZKPoK,
+  getSignaturesZKPoK,
+  loadTestVariablesFixture,
+} from "./utils";
 
 describe("ZKPoKManager", function () {
   const contractAddress = hre.ethers.getAddress("0x1234567890AbcdEF1234567890aBcdef12345678");
@@ -24,7 +30,7 @@ describe("ZKPoKManager", function () {
     let zkpokManager: ZKPoKManager;
     let contractChainId: number;
     before(async function () {
-      const fixture = await loadFixture(deployZKPoKManagerFixture);
+      const fixture = await loadFixture(loadTestVariablesFixture);
       httpz = fixture.httpz;
       zkpokManager = fixture.zkpokManager;
       contractChainId = fixture.chainIds[0];
@@ -56,8 +62,8 @@ describe("ZKPoKManager", function () {
   describe("Proof verification response", async function () {
     let httpz: HTTPZ;
     let zkpokManager: ZKPoKManager;
-    let coprocessorSigners: HardhatEthersSigner[];
-    let fakeSigner: HardhatEthersSigner;
+    let coprocessorSigners: Wallet[];
+    let fakeSigner: HDNodeWallet;
     let contractChainId: number;
     let zkpokManagerAddress: string;
     let eip712Message: EIP712;
@@ -66,11 +72,11 @@ describe("ZKPoKManager", function () {
     let signature3: string;
 
     beforeEach(async function () {
-      const fixture = await loadFixture(deployZKPoKManagerFixture);
+      const fixture = await loadFixture(loadTestVariablesFixture);
       httpz = fixture.httpz;
       zkpokManager = fixture.zkpokManager;
       coprocessorSigners = fixture.coprocessorSigners;
-      fakeSigner = fixture.signers[0];
+      fakeSigner = await createAndFundRandomUser();
       contractChainId = fixture.chainIds[0];
 
       zkpokManagerAddress = await zkpokManager.getAddress();
@@ -91,7 +97,7 @@ describe("ZKPoKManager", function () {
       signature2 = signatures[1];
       signature3 = signatures[2];
 
-      // The ZK proof ID will always be 1 since we deploy a new contract before each test
+      // The ZK proof ID will always be 1 since we reset the state of the network before each test (using fixtures)
       await zkpokManager.verifyProofRequest(contractChainId, contractAddress, userAddress, ciphertextWithZKProof);
     });
 
@@ -242,22 +248,22 @@ describe("ZKPoKManager", function () {
   describe("Proof rejection response", async function () {
     let httpz: HTTPZ;
     let zkpokManager: ZKPoKManager;
-    let coprocessorSigners: HardhatEthersSigner[];
-    let fakeSigner: HardhatEthersSigner;
+    let coprocessorSigners: Wallet[];
+    let fakeSigner: HDNodeWallet;
     let contractChainId: number;
     let zkpokManagerAddress: string;
 
     beforeEach(async function () {
-      const fixture = await loadFixture(deployZKPoKManagerFixture);
+      const fixture = await loadFixture(loadTestVariablesFixture);
       httpz = fixture.httpz;
       zkpokManager = fixture.zkpokManager;
       coprocessorSigners = fixture.coprocessorSigners;
-      fakeSigner = fixture.signers[0];
+      fakeSigner = await createAndFundRandomUser();
       contractChainId = fixture.chainIds[0];
 
       zkpokManagerAddress = await zkpokManager.getAddress();
 
-      // The ZK proof ID will always be 1 since we deploy a new contract before each test
+      // The ZK proof ID will always be 1 since we reset the state of the network before each test (using fixtures)
       await zkpokManager.verifyProofRequest(contractChainId, contractAddress, userAddress, ciphertextWithZKProof);
     });
 
@@ -303,15 +309,17 @@ describe("ZKPoKManager", function () {
       // Trigger a valid proof verification response with the first coprocessor's signature
       await zkpokManager.connect(coprocessorSigners[0]).verifyProofResponse(zkProofId, ctHandles, signature1);
 
-      // Trigger two valid proof rejection responses with the 2 other coprocessors
+      // Trigger a valid proof rejection responses with another coprocessor
       let txResponse2 = zkpokManager.connect(coprocessorSigners[1]).rejectProofResponse(zkProofId);
-      let txResponse3 = zkpokManager.connect(coprocessorSigners[2]).rejectProofResponse(zkProofId);
 
       // Consensus should not be reached at the second response since the first response is a proof verification
       // Check 2nd response event: it should not emit an event (either for proof verification or rejection)
       await expect(txResponse2)
         .to.not.emit(zkpokManager, "RejectProofResponse")
         .to.not.emit(zkpokManager, "VerifyProofResponse");
+
+      // Trigger another valid proof rejection responses with a third coprocessor
+      let txResponse3 = zkpokManager.connect(coprocessorSigners[2]).rejectProofResponse(zkProofId);
 
       // Consensus should be reached at the third response
       await expect(txResponse3).to.emit(zkpokManager, "RejectProofResponse").withArgs(zkProofId);
