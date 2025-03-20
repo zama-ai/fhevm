@@ -96,7 +96,16 @@ run-test-input-proof:
 run-test-user-decrypt:
 	@curl -X POST http://127.0.0.1:3000/user-decrypt \
 -H "Content-Type: application/json" \
--d '{"ctHandleContractPairs":[{"ctHandle":"a5e1defb98efe38ebb2d958cee052410247f4c802410247f4c8010247f4c8076","contractAddress":"0xa5e1defb98EFe38EBb2D958CEe052410247F4c80"}],"requestValidity":{"startTimestamp":"1742249385","durationDays":"30"},"contractsChainId":1234,"contractAddresses":["0xa5e1defb98EFe38EBb2D958CEe052410247F4c80"],"userAddress":"0xcd09f75E2BF2A4d11F3AB23f1389FcC1621c0cc2","signature":"8427fe6416be49dffb0b05a225af11364c17d9599e6c9ae899b03be901155ef97017a4dde46c5fe5893fde6249c33a03f559766b1f82381cd81a6e5b707c12e51b","publicKey":"a5e1defb98efe38ebb2d958cee052410247f4c80"}'
+-d '{"ctHandleContractPairs":[{"ctHandle":"a5e1defb98efe38ebb2d958cee052410247f4c802410247f4c8010247f4c8076","contractAddress":"0xA674ef0e9b1AeBf8b4f5492b7A75d5B577208FCa"}],"requestValidity":{"startTimestamp":"1742407793301","durationDays":"120"},"contractsChainId":"123456","contractAddresses":["0xA674ef0e9b1AeBf8b4f5492b7A75d5B577208FCa"],"userAddress":"0xa44366bAA26296c1409AD1e284264212029F02f1","signature":"f488286b25a610aaff1a178ab0e3b508e5afb5cca448ed91b46ee47145dcdb79334a7ad3862b9f084708664bc78c6e5cab81176b8e231c92712e5ef5d6be90b41c","publicKey":"200000000000000043bcdaeb96544d5513b954982cbba73f4afb975f30507c170fe052a0c5d8f16c"}'
+
+
+run-test-user-decrypt-from-working-hardhat:
+	@curl -X POST http://127.0.0.1:3000/user-decrypt \
+-H "Content-Type: application/json" \
+-d '{"ctHandleContractPairs":[{"ctHandle":"bf9b45c007d626278570aa9622a9c8646f1bfd4e25a5401bd576d15e05320000","contractAddress":"0x59AAd6Dc3C909aeED1916937cC310fBfBB118c8C"}],"requestValidity":{"startTimestamp":"1742450894","durationDays":"10"},"contractsChainId":"123456","contractAddresses":["0x59AAd6Dc3C909aeED1916937cC310fBfBB118c8C"],"userAddress":"0xa5e1defb98EFe38EBb2D958CEe052410247F4c80","signature":"f77ca89b541ca80645dfa2822a95354142b73d078429083569d9ec97e23868282a11bc8f2addeac311edbb0d6b4e2763ae1f8e69702f2ddb89ff952dded2c2d61c","publicKey":"2000000000000000127eae823019dbba103069c7d2ee53b16de8a29057911dfd8ba82c25abfb071a"}'
+
+
+
 
 run-test-user-decrypt-hardhat:
 	@echo "$(GREEN)Running input proof tests...$(RESET)"
