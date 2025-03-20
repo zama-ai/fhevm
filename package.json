@@ -1,6 +1,6 @@
 {
-  "name": "fhevm",
-  "description": "A Solidity library for interacting with the Zama Blockchain",
+  "name": "@httpz/solidity",
+  "description": "A Solidity library for interacting with HTTPZ protocol",
   "version": "0.6.2",
   "engines": {
     "node": ">=20.0.0"
@@ -35,14 +35,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/zama-ai/fhevm.git"
+    "url": "git+https://github.com/zama-ai/httpz-solidity.git"
   },
   "author": "",
   "license": "BSD-3-Clause-Clear",
   "bugs": {
-    "url": "https://github.com/zama-ai/fhevm/issues"
+    "url": "https://github.com/zama-ai/httpz-solidity/issues"
   },
-  "homepage": "https://github.com/zama-ai/fhevm#readme",
+  "homepage": "https://github.com/zama-ai/httpz-solidity#readme",
   "devDependencies": {
     "@commitlint/cli": "^19.5.0",
     "@commitlint/config-conventional": "^19.5.0",
