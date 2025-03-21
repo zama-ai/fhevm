@@ -8,8 +8,8 @@ type EventTypes =
   | 'public-decryption:authorization-response'
   | 'private-decryption:operation-request'
   | 'private-decryption:operation-response'
-  | 'input-proof:requested'
-  | 'input-proof:completed'
+  | 'input-registration:input-registration-request'
+  | 'input-registration:input-registration-response'
 
 function genSchema<Key extends EventTypes, Payload extends z.ZodRawShape>(
   key: Key,
@@ -41,13 +41,13 @@ const schemas = [
     ctValues: z.array(hexEncoded),
     signatures: z.array(hexEncoded),
   }),
-  genSchema('input-proof:requested', {
+  genSchema('input-registration:input-registration-request', {
     contractChainId: chainId,
     contractAddress: web3Address,
     userAddress: web3Address,
     ciphertextWithZkpok: z.string(),
   }),
-  genSchema('input-proof:completed', {
+  genSchema('input-registration:input-registration-response', {
     success: z.boolean(),
   }),
 ] as const
@@ -91,8 +91,12 @@ export const privateDecryptionOperationRequest = factory(
 export const privateDecryptionOperationResponse = factory(
   'private-decryption:operation-response',
 )
-export const inputProofRequest = factory('input-proof:requested')
-export const inputProofCompleted = factory('input-proof:completed')
+export const inputRegistrationRequest = factory(
+  'input-registration:input-registration-request',
+)
+export const inputRegistrationResponse = factory(
+  'input-registration:input-registration-response',
+)
 
 export function isRelayerEvent(data: unknown): data is RelayerEvent {
   return schema.safeParse(data).success

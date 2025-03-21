@@ -81,6 +81,7 @@ import { CronModule } from './cron/cron.module.js'
         producer: EventProducer,
       ) => new ProcessDAppStats(pubsub, producer),
     },
+    uc.ProcessInputProof,
   ],
 })
 export class InfraModule {}
