@@ -5,6 +5,7 @@ import { HardhatUserConfig, task } from "hardhat/config";
 import { resolve } from "path";
 
 import "./tasks/accounts";
+import "./tasks/addNetworks";
 import "./tasks/deploy";
 import "./tasks/faucet";
 
