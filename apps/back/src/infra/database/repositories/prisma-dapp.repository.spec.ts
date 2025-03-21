@@ -181,7 +181,7 @@ describe('PrismaDappRepository', () => {
           )
           expect(success).toBe(true)
           expect(prisma.dapp.update).toHaveBeenCalledExactlyOnceWith({
-            data: { deletedAt: new Date() },
+            data: { deletedAt: new Date() }, // there is some flakiness here a ±10ms
             where: { id: dappId.value },
           })
         })

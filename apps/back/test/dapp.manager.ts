@@ -122,7 +122,7 @@ export class DappManager {
       .exec('deployDapp')
   }
 
-  async getDappStats({
+  async getDappRawStats({
     token,
     dappId,
   }: {
@@ -133,7 +133,7 @@ export class DappManager {
       this.httpServer,
     )
       .auth(token)
-      .query(GET_DAPP_STATS, { dappId })
+      .query(GET_DAPP_RAW_STATS, { dappId })
       .exec('dapp')
   }
 
@@ -211,11 +211,11 @@ const DEPLOY_DAPP = `
   }
 `
 
-const GET_DAPP_STATS = `
+const GET_DAPP_RAW_STATS = `
   query GetDappStats($dappId: ID!) {
     dapp(input: { id: $dappId }) {
       id
-      stats {
+      rawStats {
         id
         name
         timestamp

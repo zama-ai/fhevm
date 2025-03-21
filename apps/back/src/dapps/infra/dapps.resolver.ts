@@ -41,7 +41,7 @@ export class DappsResolver {
     private readonly getDappByIdUC: uc.GetDappById,
     private readonly getTeamByIdUC: GetTeamById,
     private readonly deployDappUC: uc.DeployDApp,
-    private readonly getDappStatsUC: uc.GetDappStatsUseCase,
+    private readonly getDappRawStatsUC: uc.GetDappRawStatsUseCase,
     private readonly appUpdatesSubscriptionUC: uc.AppUpdatesSubscription,
     private readonly validateAddressUC: uc.ValidateAddress,
   ) {}
@@ -115,7 +115,7 @@ export class DappsResolver {
 
   @ResolveField(() => [RawStatsType], { name: 'rawStats' })
   async rawStats(@Parent() dapp: DappType): Promise<DAppStatProps[]> {
-    const result = await this.getDappStatsUC
+    const result = await this.getDappRawStatsUC
       .execute({ dappId: dapp.id })
       .toPromise()
     return result.stats
@@ -126,7 +126,7 @@ export class DappsResolver {
   })
   async stats(@Parent() dapp: DappType): Promise<DAppStatProps[]> {
     this.logger.debug(`getting stats for dappId=${dapp.id}`)
-    const result = await this.getDappStatsUC
+    const result = await this.getDappRawStatsUC
       .execute({ dappId: dapp.id })
       .toPromise()
     return result.stats

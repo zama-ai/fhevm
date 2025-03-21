@@ -17,7 +17,7 @@ import { SubscriptionsModule } from '#subscriptions/infra/subscriptions.module.j
     uc.GetDappById,
     GetTeamById,
     uc.DeployDApp,
-    uc.GetDappStatsUseCase,
+    uc.GetDappRawStatsUseCase,
     uc.AppDeployment,
     uc.AppUpdatesSubscription,
     uc.StoreDAppStats,
