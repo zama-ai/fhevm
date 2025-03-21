@@ -41,8 +41,13 @@ contract CiphertextManager is ICiphertextManager, Ownable2StepUpgradeable, UUPSU
         mapping(uint256 ctHandle => bool isAdded) _isCiphertextMaterialAdded;
         /// @notice The counter of confirmations received for a ciphertext to be added.
         mapping(bytes32 addCiphertextHash => uint8 counter) _addCiphertextHashCounters;
-        /// @notice The mapping of the Coprocessors that have already added the ciphertext.
-        mapping(bytes32 addCiphertextHash => mapping(address coprocessorAddress => bool hasSent)) _alreadyAddedCoprocessors;
+        /// @notice The mapping of the Coprocessors that have already added the ciphertext handle.
+        mapping(uint256 ctHandle => mapping(address coprocessorAddress => bool hasAdded)) _alreadyAddedCoprocessors;
+        // prettier-ignore
+        /// @notice The mapping of the Coprocessors that have already added the ciphertext handle.
+        /// @dev This does not imply consensus but only that a Coprocessor has added the ciphertext handle.
+        mapping(uint256 ctHandle => mapping(uint256 chainId => mapping(address coprocessor => bool hasAdded)))
+            _coprocessorsAddedCtHandleForChainId;
         /// @notice The mapping of the Coprocessors that have added the ciphertext.
         mapping(uint256 ctHandle => address[] coprocessorAddresses) _coprocessorAddresses;
     }
@@ -64,19 +69,24 @@ contract CiphertextManager is ICiphertextManager, Ownable2StepUpgradeable, UUPSU
         __Ownable_init(owner());
     }
 
+    /// @notice See {ICiphertextManager-ciphertextMaterialExists}.
+    function ciphertextMaterialExists(uint256 ctHandle) public view virtual returns (bool) {
+        CiphertextManagerStorage storage $ = _getCiphertextManagerStorage();
+        return $._isCiphertextMaterialAdded[ctHandle];
+    }
+
     /// @notice See {ICiphertextManager-checkCiphertextMaterial}.
     function checkCiphertextMaterial(uint256 ctHandle) public view virtual {
-        CiphertextManagerStorage storage $ = _getCiphertextManagerStorage();
-        if (!$._isCiphertextMaterialAdded[ctHandle]) {
+        if (!ciphertextMaterialExists(ctHandle)) {
             revert CiphertextMaterialNotFound(ctHandle);
         }
     }
 
-    /// @notice See {ICiphertextManager-checkIsOnNetwork}.
-    function checkIsOnNetwork(uint256 ctHandle, uint256 chainId) public view {
+    /// @notice See {ICiphertextManager-checkCoprocessorHasAdded}.
+    function checkCoprocessorHasAdded(uint256 ctHandle, uint256 chainId, address coprocessorAddress) external view {
         CiphertextManagerStorage storage $ = _getCiphertextManagerStorage();
-        if ($._chainIds[ctHandle] != chainId) {
-            revert CiphertextMaterialNotOnNetwork(ctHandle, chainId);
+        if (!$._coprocessorsAddedCtHandleForChainId[ctHandle][chainId][coprocessorAddress]) {
+            revert CoprocessorHasNotAdded(ctHandle, chainId, coprocessorAddress);
         }
     }
 
@@ -136,14 +146,11 @@ contract CiphertextManager is ICiphertextManager, Ownable2StepUpgradeable, UUPSU
         /// @dev Check if the sender is a Coprocessor
         _HTTPZ.checkIsCoprocessor(msg.sender);
 
-        /// @dev The addCiphertextHash is the hash of all input arguments.
-        /// @dev This hash is used to track the addition consensus over the received ciphertext digests.
-        bytes32 addCiphertextHash = keccak256(
-            abi.encode(ctHandle, keyId, chainId, ciphertextDigest, snsCiphertextDigest)
-        );
-
-        /// @dev Check if the Coprocessor has already added the ciphertext.
-        if ($._alreadyAddedCoprocessors[addCiphertextHash][msg.sender]) {
+        /**
+         * @dev Check if the Coprocessor has already added the ciphertext handle. Note that a Coprocessor
+         * cannot add the same ciphertext material on two different networks.
+         */
+        if ($._alreadyAddedCoprocessors[ctHandle][msg.sender]) {
             revert CoprocessorAlreadyAdded(msg.sender);
         }
 
@@ -156,13 +163,23 @@ contract CiphertextManager is ICiphertextManager, Ownable2StepUpgradeable, UUPSU
         //     revert InvalidCurrentKeyId(keyId);
         // }
 
+        /**
+         * @dev The addCiphertextHash is the hash of all received input arguments which means that multiple
+         * Coprocessors can only have a consensus on a ciphertext material with the same information.
+         * This hash is used to track the addition consensus on the received ciphertext material.
+         */
+        bytes32 addCiphertextHash = keccak256(
+            abi.encode(ctHandle, chainId, keyId, ciphertextDigest, snsCiphertextDigest)
+        );
         $._addCiphertextHashCounters[addCiphertextHash]++;
-        $._alreadyAddedCoprocessors[addCiphertextHash][msg.sender] = true;
+
+        $._alreadyAddedCoprocessors[ctHandle][msg.sender] = true;
+        $._coprocessorsAddedCtHandleForChainId[ctHandle][chainId][msg.sender] = true;
         $._coprocessorAddresses[ctHandle].push(msg.sender);
 
         /// @dev Only send the event if consensus has not been reached in a previous call
         /// @dev and the consensus is reached in the current call.
-        /// @dev This means a "late" allow will not be reverted, just ignored
+        /// @dev This means a "late" addition will not be reverted, just ignored
         if (
             !$._isCiphertextMaterialAdded[ctHandle] &&
             _isConsensusReached($._addCiphertextHashCounters[addCiphertextHash])
