@@ -30,7 +30,7 @@ export function isAppDeploymentEvent(
 type Context = {
   requestId: string
   dAppId: string
-  chainId: string
+  chainId: string | number
   address: string
 }
 

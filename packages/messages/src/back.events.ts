@@ -78,7 +78,8 @@ const schemas = [
     ciphertextWithZkpok: z.string(),
   }),
   genSchema('httpz:input-proof:completed', {
-    success: z.boolean(),
+    handles: z.array(z.string()),
+    signatures: z.array(z.string()),
   }),
 ] as const
 

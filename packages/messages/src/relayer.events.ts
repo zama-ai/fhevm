@@ -48,7 +48,8 @@ const schemas = [
     ciphertextWithZkpok: z.string(),
   }),
   genSchema('input-registration:input-registration-response', {
-    success: z.boolean(),
+    handles: z.array(z.string()),
+    signatures: z.array(z.string()),
   }),
 ] as const
 

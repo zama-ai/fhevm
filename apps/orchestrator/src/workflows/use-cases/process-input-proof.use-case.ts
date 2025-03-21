@@ -29,9 +29,6 @@ export class ProcessInputProof
   execute = (
     event: back.BackEvent | relayer.RelayerEvent,
   ): Task<void, AppError> => {
-    console.log(
-      `ProcessInputProof> ${event.type} [${isInputProofEvent(event)}]`,
-    )
     if (isInputProofEvent(event)) {
       return Task.of<InputProof, AppError>(new InputProof())
         .map(inputProof => inputProof.send(event))

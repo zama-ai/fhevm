@@ -70,7 +70,11 @@ describe('input proof', () => {
         relayer.inputRegistrationResponse(
           {
             requestId: faker.string.uuid(),
-            success: true,
+            handles: [faker.string.hexadecimal(), faker.string.hexadecimal()],
+            signatures: [
+              faker.string.hexadecimal(),
+              faker.string.hexadecimal(),
+            ],
           },
           { correlationId: faker.string.uuid() },
         ),
