@@ -80,19 +80,36 @@ describe("ACLManager", function () {
         .withArgs(fakeSigner.address, httpz.COPROCESSOR_ROLE());
     });
 
-    // TODO: Replace test with pending allow logic tests
-    // https://github.com/zama-ai/gateway-l2/issues/171
-    // it("Should revert because the ciphertext is not on the network", async function () {
-    //   // When
-    //   const txResponse = aclManager
-    //     .connect(coprocessorSigners[0])
-    //     .allowAccount(fakeChainId, ctHandle, allowedAddress);
+    it("Should revert because the coprocessor has not previously added the ciphertext", async function () {
+      // Given a not yet added ctHandle
+      const notAddedCtHandle = hre.ethers.hexlify(hre.ethers.randomBytes(8));
 
-    //   // Then
-    //   await expect(txResponse)
-    //     .revertedWithCustomError(ciphertextManager, "CiphertextNotOnNetwork")
-    //     .withArgs(ctHandle, fakeChainId);
-    // });
+      // Try allowing an account to use the not yet added ctHandle
+      const txResponse1 = aclManager
+        .connect(coprocessorSigners[0])
+        .allowAccount(chainId, notAddedCtHandle, allowedAddress);
+
+      // Then transaction reverts because the coprocessor has not added the ctHandle
+      await expect(txResponse1)
+        .revertedWithCustomError(ciphertextManager, "CoprocessorHasNotAdded")
+        .withArgs(notAddedCtHandle, chainId, coprocessorSigners[0].address);
+    });
+
+    it("Should revert because the coprocessor has not previously added the ciphertext for given network", async function () {
+      // Given a recently added ctHandle
+      const ctHandle = hre.ethers.hexlify(hre.ethers.randomBytes(8));
+      await ciphertextManager
+        .connect(coprocessorSigners[0])
+        .addCiphertextMaterial(ctHandle, keyId, chainId, ciphertextDigest, snsCiphertextDigest);
+
+      // Try allowing an account to use the previously added ctHandle but with a wrong chainId
+      const txResponse1 = aclManager.connect(coprocessorSigners[0]).allowAccount(fakeChainId, ctHandle, allowedAddress);
+
+      // Then transaction reverts because the coprocessor has not added the ctHandle for the given network
+      await expect(txResponse1)
+        .revertedWithCustomError(ciphertextManager, "CoprocessorHasNotAdded")
+        .withArgs(ctHandle, fakeChainId, coprocessorSigners[0].address);
+    });
   });
 
   describe("Allow public decrypt", async function () {
@@ -126,17 +143,34 @@ describe("ACLManager", function () {
         .withArgs(fakeSigner.address, httpz.COPROCESSOR_ROLE());
     });
 
-    // TODO: Replace test with pending allow logic tests
-    // https://github.com/zama-ai/gateway-l2/issues/171
-    // it("Should revert because the ciphertext is not on the network", async function () {
-    //   // When
-    //   const txResponse = aclManager.connect(coprocessorSigners[0]).allowPublicDecrypt(fakeChainId, ctHandle);
+    it("Should revert because the coprocessor has not previously added the ciphertext", async function () {
+      // Given a not yet added ctHandle
+      const notAddedCtHandle = hre.ethers.hexlify(hre.ethers.randomBytes(8));
 
-    //   // Then
-    //   await expect(txResponse)
-    //     .revertedWithCustomError(ciphertextManager, "CiphertextNotOnNetwork")
-    //     .withArgs(ctHandle, fakeChainId);
-    // });
+      // Try allowing public decryption on the not yet added ctHandle
+      const txResponse1 = aclManager.connect(coprocessorSigners[0]).allowPublicDecrypt(chainId, notAddedCtHandle);
+
+      // Then transaction reverts because the coprocessor has not added the ctHandle
+      await expect(txResponse1)
+        .revertedWithCustomError(ciphertextManager, "CoprocessorHasNotAdded")
+        .withArgs(notAddedCtHandle, chainId, coprocessorSigners[0].address);
+    });
+
+    it("Should revert because the coprocessor has not previously added the ciphertext for given network", async function () {
+      // Given a recently added ctHandle
+      const ctHandle = hre.ethers.hexlify(hre.ethers.randomBytes(8));
+      await ciphertextManager
+        .connect(coprocessorSigners[0])
+        .addCiphertextMaterial(ctHandle, keyId, chainId, ciphertextDigest, snsCiphertextDigest);
+
+      // Try allowing public decryption on the previously added ctHandle but with a wrong chainId
+      const txResponse1 = aclManager.connect(coprocessorSigners[0]).allowPublicDecrypt(fakeChainId, ctHandle);
+
+      // Then transaction reverts because the coprocessor has not added the ctHandle for the given network
+      await expect(txResponse1)
+        .revertedWithCustomError(ciphertextManager, "CoprocessorHasNotAdded")
+        .withArgs(ctHandle, fakeChainId, coprocessorSigners[0].address);
+    });
   });
 
   describe("Delegate account", async function () {
