@@ -176,14 +176,21 @@ describe('PrismaDappRepository', () => {
         })
 
         test('should soft delete it', async () => {
+          const startedAt = new Date()
           const { success } = await executeTask<void, AppError>(
             repo.delete(dappId),
           )
           expect(success).toBe(true)
           expect(prisma.dapp.update).toHaveBeenCalledExactlyOnceWith({
-            data: { deletedAt: new Date() },
+            data: { deletedAt: expect.any(Date) },
             where: { id: dappId.value },
           })
+          expect(
+            prisma.dapp.update.mock.calls[0][0].data.deletedAt,
+          ).greaterThanOrEqual(startedAt)
+          expect(
+            prisma.dapp.update.mock.calls[0][0].data.deletedAt,
+          ).lessThanOrEqual(new Date())
         })
       })
     })
