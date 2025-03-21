@@ -93,7 +93,7 @@ describe('ValidateAddress', () => {
           address: faker.string.alphanumeric(40),
         })
         .toPromise()
-      await expect(task).rejects.toThrowError(/invalid address/i)
+      await expect(task).rejects.toThrowError(/address must be/i)
     })
   })
 })
