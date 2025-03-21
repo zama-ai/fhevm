@@ -45,3 +45,37 @@ sol! {
     #[derive(Debug)]
     event Transfer(address indexed from, address indexed to, uint256 value);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy_sol_types::SolEvent;
+
+    #[test]
+    fn test_decryption() {
+        println!(
+            "DecryptionManager UserDecryptionRequest:\n{}\n{}\n",
+            DecyptionManager::UserDecryptionRequest::SIGNATURE,
+            DecyptionManager::UserDecryptionRequest::SIGNATURE_HASH
+        );
+        println!(
+            "DecryptionManager UserDecryptionResponse:\n{}\n{}\n",
+            DecyptionManager::UserDecryptionResponse::SIGNATURE,
+            DecyptionManager::UserDecryptionResponse::SIGNATURE_HASH
+        );
+    }
+
+    #[test]
+    fn test_zkpok() {
+        println!(
+            "ZKPoKManager VerifyProofRequest:\n{}\n{}\n",
+            ZKPoKManager::VerifyProofRequest::SIGNATURE,
+            ZKPoKManager::VerifyProofRequest::SIGNATURE_HASH
+        );
+        println!(
+            "ZKPoKManager VerifyProofResponse:\n{}\n{}\n",
+            ZKPoKManager::VerifyProofResponse::SIGNATURE,
+            ZKPoKManager::VerifyProofResponse::SIGNATURE_HASH
+        );
+    }
+}
