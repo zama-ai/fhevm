@@ -78,7 +78,7 @@ describe("HTTPZ", function () {
       const proxyContract = await deployEmptyProxy(owner);
 
       // Define a bad KMS threshold
-      // The threshold must verify `3t < n`, with `n` the number of KMS nodes
+      // The threshold must verify `t <= n`, with `n` the number of KMS nodes
       const badKmsThreshold = kmsNodes.length + 1;
 
       // Check that the initialization reverts
@@ -213,6 +213,18 @@ describe("HTTPZ", function () {
 
       // Check that the KMS threshold has been updated
       expect(await httpz.getKmsThreshold()).to.equal(newKmsThreshold);
+    });
+
+    it("Should revert because the KMS threshold is too high", async function () {
+      const { httpz, admins, kmsSigners } = await loadFixture(deployHTTPZFixture);
+
+      // Define a KMS threshold that is too high (greater than the number of KMS nodes)
+      const badKmsThreshold = kmsSigners.length + 1;
+
+      // Check that updating with a KMS threshold that is too high reverts
+      await expect(httpz.connect(admins[0]).updateKmsThreshold(badKmsThreshold))
+        .to.be.revertedWithCustomError(httpz, "KmsThresholdTooHigh")
+        .withArgs(badKmsThreshold, kmsSigners.length);
     });
   });
 
