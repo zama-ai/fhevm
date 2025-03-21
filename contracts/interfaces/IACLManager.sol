@@ -22,7 +22,7 @@ interface IACLManager {
     /// @param chainId The chainId of the blockchain the allowed contract addresses belongs to.
     /// @param delegator The address of the current permission owner.
     /// @param delegatee The address of the access permission receiver.
-    /// @param contractAddresses The addresses of the delegatedcontracts.
+    /// @param contractAddresses The addresses of the delegated contracts.
     event DelegateAccount(uint256 indexed chainId, address delegator, address delegatee, address[] contractAddresses);
 
     /// @notice Error indicating that the coprocessor has already allowed access to the ciphertext.

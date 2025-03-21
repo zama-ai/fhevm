@@ -79,23 +79,28 @@ contract ACLManager is IACLManager, Ownable2StepUpgradeable, UUPSUpgradeable {
         _;
     }
 
-    /// @notice Checks if the given ciphertext handle is associated to the given chain ID.
-    /// @dev TODO: Remove chainId check and replace with pending allow logic in allow calls
-    /// @dev https://github.com/zama-ai/gateway-l2/issues/171
-    modifier isHandleOnNetwork(uint256 ctHandle, uint256 chainId) {
-        // _CIPHERTEXT_MANAGER.checkIsOnNetwork(ctHandle, chainId);
-        _;
-    }
-
     /// @dev See {IACLManager-allowAccount}.
     function allowAccount(
         uint256 chainId,
         uint256 ctHandle,
         address accountAddress
-    ) public virtual override onlyCoprocessor isHandleOnNetwork(ctHandle, chainId) {
+    ) public virtual override onlyCoprocessor {
         ACLManagerStorage storage $ = _getACLManagerStorage();
 
-        /// @dev Check if the coprocessor has already allowed the account to use the ciphertext handle.
+        /**
+         * @dev Check if the current Coprocessor has added the ciphertext material with the associated chain ID.
+         * This check is only performed if consensus on the "addCiphertextMaterial" has not been reached yet.
+         * If a Coprocessor was replaced, it should not revert the current transaction.
+         */
+        if (!_CIPHERTEXT_MANAGER.ciphertextMaterialExists(ctHandle)) {
+            _CIPHERTEXT_MANAGER.checkCoprocessorHasAdded(ctHandle, chainId, msg.sender);
+        }
+
+        /**
+         * @dev Check if the coprocessor has already allowed the account to use the ciphertext handle.
+         * A Coprocessor can only allow once for a given ctHandle, so it's not possible for it to allow
+         * the same ctHandle for different chainIds, hence the chainId is not included in the mapping.
+         */
         if ($._allowAccountCoprocessors[ctHandle][accountAddress][msg.sender]) {
             revert CoprocessorAlreadyAllowed(msg.sender, ctHandle);
         }
@@ -115,12 +120,23 @@ contract ACLManager is IACLManager, Ownable2StepUpgradeable, UUPSUpgradeable {
     }
 
     /// @dev See {IACLManager-allowPublicDecrypt}.
-    function allowPublicDecrypt(
-        uint256 chainId,
-        uint256 ctHandle
-    ) public virtual override onlyCoprocessor isHandleOnNetwork(ctHandle, chainId) {
+    function allowPublicDecrypt(uint256 chainId, uint256 ctHandle) public virtual override onlyCoprocessor {
         ACLManagerStorage storage $ = _getACLManagerStorage();
 
+        /**
+         * @dev Check if the current Coprocessor has added the ciphertext material with the associated chain ID.
+         * This check is only performed if consensus over the "addCiphertextMaterial" has not been reached yet.
+         * If a Coprocessor was replaced, it should not revert the current transaction.
+         */
+        if (!_CIPHERTEXT_MANAGER.ciphertextMaterialExists(ctHandle)) {
+            _CIPHERTEXT_MANAGER.checkCoprocessorHasAdded(ctHandle, chainId, msg.sender);
+        }
+
+        /**
+         * @dev Check if the coprocessor has already allowed the ciphertext handle for public decryption.
+         * A Coprocessor can only allow once for a given ctHandle, so it's not possible for it to allow
+         * the same ctHandle for different chainIds, hence the chainId is not included in the mapping.
+         */
         if ($._allowPublicDecryptCoprocessors[ctHandle][msg.sender]) {
             revert CoprocessorAlreadyAllowed(msg.sender, ctHandle);
         }

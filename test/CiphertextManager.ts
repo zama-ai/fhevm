@@ -150,15 +150,23 @@ describe("CiphertextManager", function () {
     });
   });
 
-  describe("Check is on network", async function () {
+  describe("Check coprocessor has added", async function () {
     it("Should not revert", async function () {
-      await expect(ciphertextManager.checkIsOnNetwork(ctHandle, chainId)).not.to.be.reverted;
+      await expect(ciphertextManager.checkCoprocessorHasAdded(ctHandle, chainId, coprocessorSigners[0].address)).not.to
+        .be.reverted;
     });
 
-    it("Should revert because the ciphertext is not on the network", async function () {
-      await expect(ciphertextManager.checkIsOnNetwork(ctHandle, fakeChainId))
-        .revertedWithCustomError(ciphertextManager, "CiphertextMaterialNotOnNetwork")
-        .withArgs(ctHandle, fakeChainId);
+    it("Should revert because the coprocessor address has not added the ciphertext", async function () {
+      const fakeCoprocessorAddress = hre.ethers.Wallet.createRandom().address;
+      await expect(ciphertextManager.checkCoprocessorHasAdded(fakeCtHandle, chainId, coprocessorSigners[0].address))
+        .revertedWithCustomError(ciphertextManager, "CoprocessorHasNotAdded")
+        .withArgs(fakeCtHandle, chainId, coprocessorSigners[0].address);
+      await expect(ciphertextManager.checkCoprocessorHasAdded(ctHandle, fakeChainId, coprocessorSigners[0].address))
+        .revertedWithCustomError(ciphertextManager, "CoprocessorHasNotAdded")
+        .withArgs(ctHandle, fakeChainId, coprocessorSigners[0].address);
+      await expect(ciphertextManager.checkCoprocessorHasAdded(ctHandle, chainId, fakeCoprocessorAddress))
+        .revertedWithCustomError(ciphertextManager, "CoprocessorHasNotAdded")
+        .withArgs(ctHandle, chainId, fakeCoprocessorAddress);
     });
   });
 });
