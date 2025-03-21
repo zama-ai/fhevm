@@ -84,7 +84,7 @@ interface IHTTPZ {
     event AddNetwork(Network network);
 
     /// @notice Error emitted when the KMS threshold is too high with respect to the number of KMS nodes
-    /// @notice For a set of `n` KMS nodes, the threshold `t` must verify `3t < n`.
+    /// @notice For a set of `n` KMS nodes, the threshold `t` must verify `0 <= t <= n`.
     /// @param threshold The threshold
     /// @param nParties The number of KMS nodes
     error KmsThresholdTooHigh(uint256 threshold, uint256 nParties);
@@ -101,7 +101,7 @@ interface IHTTPZ {
 
     /// @notice Update the KMS threshold
     /// @dev This function can only be called by an administrator
-    /// @dev The new threshold must verify `3t < n`, with `n` the number of KMS nodes currently registered
+    /// @dev The new threshold must verify `0 <= t <= n`, with `n` the number of KMS nodes currently registered
     /// @param newKmsThreshold The new KMS threshold
     function updateKmsThreshold(uint256 newKmsThreshold) external;
 
