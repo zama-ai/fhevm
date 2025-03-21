@@ -80,12 +80,8 @@ task("task:deployHttpz").setAction(async function (_, { ethers, upgrades }) {
     website: getRequiredEnvVar("PROTOCOL_WEBSITE"),
   };
 
-  // Parse the admin addresses
-  const adminAddresses = [];
-  const numAdmins = parseInt(getRequiredEnvVar("NUM_ADMINS"));
-  for (let idx = 0; idx < numAdmins; idx++) {
-    adminAddresses.push(getRequiredEnvVar(`ADMIN_ADDRESS_${idx}`));
-  }
+  // Parse the admin address
+  const adminAddress = getRequiredEnvVar(`ADMIN_ADDRESS`);
 
   // Parse the KMS threshold
   const kmsThreshold = getRequiredEnvVar("KMS_THRESHOLD");
@@ -124,13 +120,13 @@ task("task:deployHttpz").setAction(async function (_, { ethers, upgrades }) {
   await upgrades.upgradeProxy(proxy, newImplem, {
     call: {
       fn: "initialize",
-      args: [protocolMetadata, adminAddresses, kmsThreshold, kmsNodes, coprocessors],
+      args: [protocolMetadata, adminAddress, kmsThreshold, kmsNodes, coprocessors],
     },
   });
 
   console.log("HTTPZ contract deployed to:", proxyAddress);
   console.log("Protocol metadata:", protocolMetadata);
-  console.log("Admin addresses:", adminAddresses, "\n");
+  console.log("Admin address:", adminAddress, "\n");
   console.log("KMS threshold:", kmsThreshold, "\n");
   console.log("KMS nodes:", kmsNodes, "\n");
   console.log("Coprocessors:", coprocessors, "\n");
