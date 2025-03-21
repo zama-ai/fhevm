@@ -89,8 +89,8 @@ contract HTTPZ is IHTTPZ, AccessControlUpgradeable, Ownable2StepUpgradeable, UUP
         uint256 nParties = initialKmsNodes.length;
 
         /// @dev Check that this KMS node's threshold is valid. For a set of `n` KMS nodes, the
-        /// @dev threshold `t` must verify `3t < n`.
-        if (3 * initialKmsThreshold >= nParties) {
+        /// @dev threshold `t` must verify `0 <= t <= n`.
+        if (initialKmsThreshold > nParties) {
             revert KmsThresholdTooHigh(initialKmsThreshold, nParties);
         }
 
@@ -117,7 +117,7 @@ contract HTTPZ is IHTTPZ, AccessControlUpgradeable, Ownable2StepUpgradeable, UUP
     /// @dev See {IHTTPZ-updateKmsThreshold}.
     function updateKmsThreshold(uint256 newKmsThreshold) external virtual onlyRole(ADMIN_ROLE) {
         HTTPZStorage storage $ = _getHTTPZStorage();
-        if (3 * newKmsThreshold >= $.kmsNodeAddresses.length) {
+        if (newKmsThreshold > $.kmsNodeAddresses.length) {
             revert KmsThresholdTooHigh(newKmsThreshold, $.kmsNodeAddresses.length);
         }
 
