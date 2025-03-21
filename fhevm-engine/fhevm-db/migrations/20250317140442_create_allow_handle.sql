@@ -8,5 +8,5 @@ CREATE TABLE allowed_handles (
     txn_retry_count INT DEFAULT 0,
     txn_last_error TEXT DEFAULT NULL,
     txn_last_error_at TIMESTAMP DEFAULT NULL,
-    PRIMARY KEY (tenant_id, handle, account_address),
+    PRIMARY KEY (tenant_id, handle, account_address)
 );
