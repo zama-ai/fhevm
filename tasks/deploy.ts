@@ -7,14 +7,7 @@ import { task } from "hardhat/config";
 import type { TaskArguments } from "hardhat/types";
 import path from "path";
 
-// Get the required environment variable, throw an error if it's not set
-// We only check if the variable is set, not if it's empty
-function getRequiredEnvVar(name: string): string {
-  if (!(name in process.env)) {
-    throw new Error(`"${name}" env variable is not set`);
-  }
-  return process.env[name]!;
-}
+import { getRequiredEnvVar } from "./utils/loadVariables";
 
 // Deploy a new EmptyUUPSProxy contract
 async function deployEmptyUUPS(ethers: HardhatEthersHelpers, upgrades: HardhatUpgrades, deployer: Wallet) {
