@@ -33,7 +33,7 @@ const SUB_DAPP_UPDATED = gql(`
       id
       name
       status
-      stats {
+      rawStats {
         id
         name
         timestamp
@@ -62,7 +62,7 @@ export function DappPage() {
   return (
     <Box>
       {data ? (
-        <Stack direction="row" align="center">
+        <Stack direction="row" align="center" alignItems="flex-start">
           <Heading mb="5">
             {liveData ? liveData.dappUpdated.name : data.dapp.name}
           </Heading>
