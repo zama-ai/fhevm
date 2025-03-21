@@ -26,9 +26,9 @@ publish-app-deployment-sc-discovered:
 .PHONY: publish-back-dapp-stats-requests
 publish-back-dapp-stats-requests:
 	aws --endpoint=http://localhost:4566 sqs send-message \
-		--queue-url 'http://localhost:4566/000000000000/back-queue' \
+		--queue-url 'http://localhost:4566/000000000000/orchestrator-queue' \
 		--region eu-central-1 \
-		--message-body '{"type": "back:dapp:stats-requested", "payload": {"chainId": "123456", "address": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80"}, "meta": {"correlationId": "ea0ca1c2-3fde-4f80-8abb-08aecee4107c"}}' 
+		--message-body '{"type": "back:dapp:stats-requested", "payload": {"requestId":"ea0ca1c2-3fde-4f80-8abb-08aecee4107c", "dAppId": "dapp_eBNtPYLsxFUI", "chainId": "123456", "address": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80"}, "meta": {"correlationId": "ea0ca1c2-3fde-4f80-8abb-08aecee4107c"}}' 
 
 .PHONY: publish-back-dapp-stats-available
 publish-back-dapp-stats-available:

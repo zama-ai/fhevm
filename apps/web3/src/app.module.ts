@@ -77,7 +77,7 @@ export const configModule = ConfigModule.forRoot({
             queueUrl: config.get<string>('aws.web3.queueUrl')!,
             useQueueUrlAsEndpoint: false,
             sqs: new SQSClient({
-              endpoint: config.get<string>('aws.queueUrl'),
+              endpoint: config.get<string>('aws.endpoint'),
               region: config.get<string>('aws.region'),
             }),
             messageAttributeNames: ['All'],
