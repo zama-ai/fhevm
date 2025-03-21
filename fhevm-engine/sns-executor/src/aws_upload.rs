@@ -89,7 +89,7 @@ async fn upload_ciphertexts(
             client
                 .put_object()
                 .bucket(conf.bucket_ct128.clone())
-                .key(handle_as_hex.clone())
+                .key(hex::encode(&ct128_digest))
                 .body(ct128_bytes.into())
                 .send(),
         ),
@@ -98,7 +98,7 @@ async fn upload_ciphertexts(
             client
                 .put_object()
                 .bucket(conf.bucket_ct64.clone())
-                .key(handle_as_hex.clone())
+                .key(hex::encode(&ct64_digest))
                 .body(task.ct64_compressed.into())
                 .send(),
         )
