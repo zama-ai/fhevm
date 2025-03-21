@@ -216,7 +216,7 @@ describe("HTTPZ", function () {
     });
 
     it("Should revert because the KMS threshold is too high", async function () {
-      const { httpz, admins, kmsSigners } = await loadFixture(deployHTTPZFixture);
+      const { httpz, admins, kmsSigners } = await loadFixture(loadTestVariablesFixture);
 
       // Define a KMS threshold that is too high (greater than the number of KMS nodes)
       const badKmsThreshold = kmsSigners.length + 1;
