@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT zk_proof_id, chain_id, contract_address, user_address, handles\n             FROM verify_proofs\n             WHERE verified = true AND retry_count < $1\n             ORDER BY zk_proof_id\n             LIMIT $2",
+  "query": "SELECT zk_proof_id, chain_id, contract_address, user_address, handles, verified\n             FROM verify_proofs\n             WHERE verified IS NOT NULL AND retry_count < $1\n             ORDER BY zk_proof_id\n             LIMIT $2",
   "describe": {
     "columns": [
       {
@@ -27,6 +27,11 @@
         "ordinal": 4,
         "name": "handles",
         "type_info": "Bytea"
+      },
+      {
+        "ordinal": 5,
+        "name": "verified",
+        "type_info": "Bool"
       }
     ],
     "parameters": {
@@ -40,8 +45,9 @@
       false,
       false,
       false,
+      true,
       true
     ]
   },
-  "hash": "e0664c5a8716c4196090e211fe3e52a68fa94770e4a0e205a92047d8c47775f3"
+  "hash": "472ce6f9493ad23d87b20cd214ba2c9d511d5f39a248f94f7112fb40668f73b7"
 }

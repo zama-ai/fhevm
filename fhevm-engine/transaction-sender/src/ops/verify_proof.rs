@@ -123,11 +123,11 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
             Ok(txn) => txn,
             Err(e) => {
                 error!(target: VERIFY_PROOFS_TARGET, "Transaction {:?} sending failed with error: {}", txn_req, e);
-                if let Some(ZKPoKManagerErrors::CoprocessorHasAlreadySigned(_)) = e
+                if let Some(ZKPoKManagerErrors::CoprocessorSignerAlreadyResponded(_)) = e
                     .as_error_resp()
                     .and_then(|payload| payload.as_decoded_error::<ZKPoKManagerErrors>(true))
                 {
-                    info!(target: VERIFY_PROOFS_TARGET, "Coprocessor has already signed, removing proof");
+                    info!(target: VERIFY_PROOFS_TARGET, "Coprocessor has already responded, removing proof");
                     self.remove_proof_by_id(&db_pool, txn_request.0).await?;
                     return Ok(());
                 } else {
@@ -187,9 +187,9 @@ where
                 .await?;
         }
         let rows = sqlx::query!(
-            "SELECT zk_proof_id, chain_id, contract_address, user_address, handles
+            "SELECT zk_proof_id, chain_id, contract_address, user_address, handles, verified
              FROM verify_proofs
-             WHERE verified = true AND retry_count < $1
+             WHERE verified IS NOT NULL AND retry_count < $1
              ORDER BY zk_proof_id
              LIMIT $2",
             self.conf.verify_proof_resp_max_retries as i64,
@@ -201,65 +201,93 @@ where
         let maybe_has_more_work = rows.len() == self.conf.verify_proof_resp_batch_limit as usize;
         let mut join_set = JoinSet::new();
         for row in rows.into_iter() {
-            let handles = row
-                .handles
-                .ok_or(anyhow::anyhow!("handles field is None"))?;
-            if handles.is_empty() || handles.len() % 32 != 0 {
-                error!(target: VERIFY_PROOFS_TARGET, "Bad handles field, len {} is 0 or not divisible by 32", handles.len());
-                self.remove_proof_by_id(db_pool, row.zk_proof_id).await?;
-                continue;
-            }
-            let handles: Vec<FixedBytes<32>> = handles
-                .chunks(32)
-                .map(|chunk| {
-                    let array: [u8; 32] = chunk.try_into().expect("chunk size must be 32");
-                    FixedBytes(array)
-                })
-                .collect();
-            let domain = alloy::sol_types::eip712_domain! {
-                name: "ZKPoKManager",
-                version: "1",
-                chain_id: self.gw_chain_id,
-                verifying_contract: self.zkpok_manager_address,
-            };
-            let signing_hash = CiphertextVerification {
-                ctHandles: handles.clone(),
-                userAddress: row.user_address.parse().expect("invalid user address"),
-                contractAddress: row
-                    .contract_address
-                    .parse()
-                    .expect("invalid contract address"),
-                contractChainId: U256::from(row.chain_id),
-            }
-            .eip712_signing_hash(&domain);
-            let signature = self
-                .signer
-                .sign_hash_sync(&signing_hash)
-                .expect("signing failed");
+            let txn_request = match row.verified {
+                Some(true) => {
+                    info!(target: VERIFY_PROOFS_TARGET, "Processing verified proof with id {}", row.zk_proof_id);
+                    let handles = row
+                        .handles
+                        .ok_or(anyhow::anyhow!("handles field is None"))?;
+                    if handles.is_empty() || handles.len() % 32 != 0 {
+                        error!(target: VERIFY_PROOFS_TARGET, "Bad handles field, len {} is 0 or not divisible by 32", handles.len());
+                        self.remove_proof_by_id(db_pool, row.zk_proof_id).await?;
+                        continue;
+                    }
+                    let handles: Vec<FixedBytes<32>> = handles
+                        .chunks(32)
+                        .map(|chunk| {
+                            let array: [u8; 32] = chunk.try_into().expect("chunk size must be 32");
+                            FixedBytes(array)
+                        })
+                        .collect();
+                    let domain = alloy::sol_types::eip712_domain! {
+                        name: "ZKPoKManager",
+                        version: "1",
+                        chain_id: self.gw_chain_id,
+                        verifying_contract: self.zkpok_manager_address,
+                    };
+                    let signing_hash = CiphertextVerification {
+                        ctHandles: handles.clone(),
+                        userAddress: row.user_address.parse().expect("invalid user address"),
+                        contractAddress: row
+                            .contract_address
+                            .parse()
+                            .expect("invalid contract address"),
+                        contractChainId: U256::from(row.chain_id),
+                    }
+                    .eip712_signing_hash(&domain);
+                    let signature = self
+                        .signer
+                        .sign_hash_sync(&signing_hash)
+                        .expect("signing failed");
 
-            let txn_request = if let Some(gas) = self.gas {
-                (
-                    row.zk_proof_id,
-                    zkpok_manager
-                        .verifyProofResponse(
-                            U256::from(row.zk_proof_id),
-                            handles,
-                            signature.as_bytes().into(),
+                    if let Some(gas) = self.gas {
+                        (
+                            row.zk_proof_id,
+                            zkpok_manager
+                                .verifyProofResponse(
+                                    U256::from(row.zk_proof_id),
+                                    handles,
+                                    signature.as_bytes().into(),
+                                )
+                                .into_transaction_request()
+                                .with_gas_limit(gas),
                         )
-                        .into_transaction_request()
-                        .with_gas_limit(gas),
-                )
-            } else {
-                (
-                    row.zk_proof_id,
-                    zkpok_manager
-                        .verifyProofResponse(
-                            U256::from(row.zk_proof_id),
-                            handles,
-                            signature.as_bytes().into(),
+                    } else {
+                        (
+                            row.zk_proof_id,
+                            zkpok_manager
+                                .verifyProofResponse(
+                                    U256::from(row.zk_proof_id),
+                                    handles,
+                                    signature.as_bytes().into(),
+                                )
+                                .into_transaction_request(),
                         )
-                        .into_transaction_request(),
-                )
+                    }
+                }
+                Some(false) => {
+                    info!(target: VERIFY_PROOFS_TARGET, "Processing rejected proof with id {}", row.zk_proof_id);
+                    if let Some(gas) = self.gas {
+                        (
+                            row.zk_proof_id,
+                            zkpok_manager
+                                .rejectProofResponse(U256::from(row.zk_proof_id))
+                                .into_transaction_request()
+                                .with_gas_limit(gas),
+                        )
+                    } else {
+                        (
+                            row.zk_proof_id,
+                            zkpok_manager
+                                .rejectProofResponse(U256::from(row.zk_proof_id))
+                                .into_transaction_request(),
+                        )
+                    }
+                }
+                None => {
+                    error!(target: VERIFY_PROOFS_TARGET, "verified field is unexpectedly None for proof with ID {}", row.zk_proof_id);
+                    continue;
+                }
             };
 
             let db_pool = db_pool.clone();
