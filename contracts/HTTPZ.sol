@@ -10,7 +10,7 @@ import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 /**
  * @title HTTPZ contract
  * @dev See {IHTTPZ}.
- * @dev Add/remove methods will be added in the future for admins, KMS nodes, coprocessors and networks.
+ * @dev Add/remove methods will be added in the future for admin, KMS nodes, coprocessors and networks.
  * @dev See https://github.com/zama-ai/gateway-l2/issues/98 for more details.
  */
 contract HTTPZ is IHTTPZ, AccessControlUpgradeable, Ownable2StepUpgradeable, UUPSUpgradeable {
@@ -65,13 +65,13 @@ contract HTTPZ is IHTTPZ, AccessControlUpgradeable, Ownable2StepUpgradeable, UUP
 
     /// @notice Initializes the contract
     /// @param initialMetadata Metadata of the protocol
-    /// @param initialAdmins List of admin addresses
+    /// @param initialAdmin Admin address
     /// @param initialKmsThreshold The KMS threshold. Must verify `3t < n` for `n` KMS nodes.
     /// @param initialKmsNodes List of KMS nodes
     /// @param initialCoprocessors List of coprocessors
     function initialize(
         ProtocolMetadata memory initialMetadata,
-        address[] memory initialAdmins,
+        address initialAdmin,
         uint256 initialKmsThreshold,
         KmsNode[] memory initialKmsNodes,
         Coprocessor[] memory initialCoprocessors
@@ -81,10 +81,8 @@ contract HTTPZ is IHTTPZ, AccessControlUpgradeable, Ownable2StepUpgradeable, UUP
         HTTPZStorage storage $ = _getHTTPZStorage();
         $.protocolMetadata = initialMetadata;
 
-        /// @dev Register the admins
-        for (uint256 i = 0; i < initialAdmins.length; i++) {
-            _grantRole(ADMIN_ROLE, initialAdmins[i]);
-        }
+        /// @dev Register the admin
+        _grantRole(ADMIN_ROLE, initialAdmin);
 
         uint256 nParties = initialKmsNodes.length;
 
@@ -111,7 +109,7 @@ contract HTTPZ is IHTTPZ, AccessControlUpgradeable, Ownable2StepUpgradeable, UUP
             $.coprocessorAddresses.push(initialCoprocessors[i].transactionSenderAddress);
         }
 
-        emit Initialization(initialMetadata, initialAdmins, initialKmsThreshold, initialKmsNodes, initialCoprocessors);
+        emit Initialization(initialMetadata, initialAdmin, initialKmsThreshold, initialKmsNodes, initialCoprocessors);
     }
 
     /// @dev See {IHTTPZ-updateKmsThreshold}.
