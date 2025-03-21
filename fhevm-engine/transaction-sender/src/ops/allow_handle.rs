@@ -203,21 +203,14 @@ where
             let handle: Vec<u8> = row.handle.clone();
             let h_as_hex = compact_hex(&handle);
 
-            let account_addr = match row.account_address.as_ref() {
-                Some(addr) => addr,
-                None => {
-                    error!("Account address is None for handle: {}", h_as_hex);
-                    continue;
-                }
-            };
-
+            let account_addr = row.account_address;
             info!(
                 "Allow handle: {}, chain_id: {}, account: {}",
                 h_as_hex, chain_id, account_addr
             );
 
             let handle_u256 = U256::from_be_bytes(try_into_array::<32>(handle)?);
-            let address = match Address::from_str(account_addr) {
+            let address = match Address::from_str(&account_addr) {
                 Ok(addr) => addr,
                 Err(e) => {
                     error!("Failed to parse address: {}, error: {}", account_addr, e);
