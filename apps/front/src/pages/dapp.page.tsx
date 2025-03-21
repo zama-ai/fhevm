@@ -17,7 +17,7 @@ const GET_DAPP_DETAILS = graphql(`
       id
       name
       status
-      stats {
+      rawStats {
         id
         name
         timestamp
@@ -80,7 +80,7 @@ export function DappPage() {
           <Stack direction="row" gap="5">
             <BlockSimple
               title="Total FHE Events"
-              amount={data?.dapp.stats.length || 0}
+              amount={data?.dapp.rawStats.length || 0}
             />
           </Stack>
         </Stack>
