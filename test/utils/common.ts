@@ -48,10 +48,9 @@ async function initTestingWallets(nKmsNodes: number, nCoprocessors: number) {
   // - the user has no particular rights and is mostly used to check roles are properly set
   const owner = new Wallet(getRequiredEnvVar("DEPLOYER_PRIVATE_KEY"), hre.ethers.provider);
   await fund(owner.address, DEFAULT_BALANCE);
-  const admin = await hre.ethers.getSigner(getRequiredEnvVar("ADMIN_ADDRESS_0"));
+  const admin = await hre.ethers.getSigner(getRequiredEnvVar("ADMIN_ADDRESS"));
   await checkIsHardhatSigner(admin);
   const user = await createAndFundRandomUser();
-  const admins = [admin];
 
   const kmsSigners = [];
   for (let idx = 0; idx < nKmsNodes; idx++) {
@@ -67,7 +66,7 @@ async function initTestingWallets(nKmsNodes: number, nCoprocessors: number) {
     coprocessorSigners.push(coprocessor);
   }
 
-  return { owner, admins, user, kmsSigners, coprocessorSigners };
+  return { owner, admin, user, kmsSigners, coprocessorSigners };
 }
 
 // Loads the addresses of the deployed contracts, and the values required for the tests.
@@ -77,7 +76,7 @@ export async function loadTestVariablesFixture() {
   const nCoprocessors = parseInt(getRequiredEnvVar("NUM_COPROCESSORS"));
   const nNetwork = parseInt(getRequiredEnvVar("NUM_NETWORKS"));
 
-  const { owner, admins, user, kmsSigners, coprocessorSigners } = await initTestingWallets(nKmsNodes, nCoprocessors);
+  const { owner, admin, user, kmsSigners, coprocessorSigners } = await initTestingWallets(nKmsNodes, nCoprocessors);
 
   const chainIds = [...Array(nNetwork)].map((_, i) => {
     return parseInt(getRequiredEnvVar(`NETWORK_CHAIN_ID_${i}`));
@@ -118,7 +117,7 @@ export async function loadTestVariablesFixture() {
     decryptionManager,
     zkpokManager,
     owner,
-    admins,
+    admin,
     user,
     kmsSigners,
     coprocessorSigners,

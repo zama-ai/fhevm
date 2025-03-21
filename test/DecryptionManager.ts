@@ -34,7 +34,7 @@ describe("DecryptionManager", function () {
       aclManager,
       decryptionManager,
       owner,
-      admins,
+      admin,
       user,
       kmsSigners,
       coprocessorSigners,
@@ -42,7 +42,7 @@ describe("DecryptionManager", function () {
     } = await loadFixture(loadTestVariablesFixture);
 
     // Trigger a preprocessing keygen request
-    const txRequest = await keyManager.connect(admins[0]).preprocessKeygenRequest(fheParamsName);
+    const txRequest = await keyManager.connect(admin).preprocessKeygenRequest(fheParamsName);
 
     // Get the preKeyRequestId from the event in the transaction receipt
     const receipt = await txRequest.wait();
@@ -58,7 +58,7 @@ describe("DecryptionManager", function () {
     }
 
     // Trigger a keygen request
-    await keyManager.connect(admins[0]).keygenRequest(preKeyId);
+    await keyManager.connect(admin).keygenRequest(preKeyId);
 
     // Define a keyId for keygen response
     const keyId1 = 1;
@@ -69,7 +69,7 @@ describe("DecryptionManager", function () {
     }
 
     // Request activation of the key
-    await keyManager.connect(admins[0]).activateKeyRequest(keyId1);
+    await keyManager.connect(admin).activateKeyRequest(keyId1);
 
     // Trigger activation responses for all coprocessors
     for (let i = 0; i < coprocessorSigners.length; i++) {
@@ -83,7 +83,7 @@ describe("DecryptionManager", function () {
       decryptionManager,
       keyManager,
       owner,
-      admins,
+      admin,
       user,
       kmsSigners,
       coprocessorSigners,
@@ -100,7 +100,7 @@ describe("DecryptionManager", function () {
       ciphertextManager,
       aclManager,
       decryptionManager,
-      admins,
+      admin,
       kmsSigners,
       coprocessorSigners,
       user,
@@ -132,7 +132,7 @@ describe("DecryptionManager", function () {
       aclManager,
       decryptionManager,
       ciphertextManager,
-      admins,
+      admin,
       kmsSigners,
       coprocessorSigners,
       user,
@@ -146,14 +146,14 @@ describe("DecryptionManager", function () {
   async function createAndRotateKey(
     sourceKeyId: BigNumberish,
     keyManager: KeyManager,
-    admins: Wallet[],
+    admin: Wallet,
     coprocessorSigners: Wallet[],
     kmsSigners: Wallet[],
     fheParamsName: string,
   ): Promise<BigNumberish> {
     const newKeyId = hre.ethers.toBigInt(hre.ethers.randomBytes(32));
     // Trigger a preprocessing keygen request
-    let txRequest = await keyManager.connect(admins[0]).preprocessKeygenRequest(fheParamsName);
+    let txRequest = await keyManager.connect(admin).preprocessKeygenRequest(fheParamsName);
 
     // Get the preKeyRequestId from the event in the transaction receipt
     let receipt = await txRequest.wait();
@@ -169,7 +169,7 @@ describe("DecryptionManager", function () {
     }
 
     // Trigger a keygen request
-    await keyManager.connect(admins[0]).keygenRequest(preKeyId);
+    await keyManager.connect(admin).keygenRequest(preKeyId);
 
     // Trigger keygen responses for all KMS nodes
     for (let i = 0; i < kmsSigners.length; i++) {
@@ -177,7 +177,7 @@ describe("DecryptionManager", function () {
     }
 
     // Trigger a preprocessing kskgen request
-    txRequest = await keyManager.connect(admins[0]).preprocessKskgenRequest(fheParamsName);
+    txRequest = await keyManager.connect(admin).preprocessKskgenRequest(fheParamsName);
 
     // Get the preKeyRequestId from the event in the transaction receipt
     receipt = await txRequest.wait();
@@ -193,7 +193,7 @@ describe("DecryptionManager", function () {
     }
 
     // Trigger a kskgen request
-    await keyManager.connect(admins[0]).kskgenRequest(preKskId, sourceKeyId, newKeyId);
+    await keyManager.connect(admin).kskgenRequest(preKskId, sourceKeyId, newKeyId);
 
     // Define a kskId for kskgen response
     const kskId = hre.ethers.toBigInt(hre.ethers.randomBytes(32));
@@ -204,7 +204,7 @@ describe("DecryptionManager", function () {
     }
 
     // Request activation of the key
-    await keyManager.connect(admins[0]).activateKeyRequest(newKeyId);
+    await keyManager.connect(admin).activateKeyRequest(newKeyId);
 
     // Trigger activation responses for all coprocessors
     for (let i = 0; i < coprocessorSigners.length; i++) {
@@ -229,7 +229,7 @@ describe("DecryptionManager", function () {
         aclManager,
         decryptionManager,
         ciphertextManager,
-        admins,
+        admin,
         kmsSigners,
         coprocessorSigners,
         user,
@@ -251,7 +251,7 @@ describe("DecryptionManager", function () {
         aclManager,
         decryptionManager,
         ciphertextManager,
-        admins,
+        admin,
         kmsSigners,
         coprocessorSigners,
         user,
@@ -376,7 +376,7 @@ describe("DecryptionManager", function () {
         decryptionManager,
         ciphertextManager,
         aclManager,
-        admins,
+        admin,
         kmsSigners,
         coprocessorSigners,
         user,
@@ -384,14 +384,7 @@ describe("DecryptionManager", function () {
         fheParamsName,
       } = await loadFixture(prepareAllowPublicDecryptionFixture);
 
-      const keyId2 = await createAndRotateKey(
-        keyId1,
-        keyManager,
-        admins,
-        coprocessorSigners,
-        kmsSigners,
-        fheParamsName,
-      );
+      const keyId2 = await createAndRotateKey(keyId1, keyManager, admin, coprocessorSigners, kmsSigners, fheParamsName);
 
       // Define ciphertext dummy values
       const ctHandle = 2050;
@@ -512,7 +505,7 @@ describe("DecryptionManager", function () {
         aclManager,
         decryptionManager,
         ciphertextManager,
-        admins,
+        admin,
         kmsSigners,
         coprocessorSigners,
         user,
@@ -537,7 +530,7 @@ describe("DecryptionManager", function () {
         aclManager,
         decryptionManager,
         ciphertextManager,
-        admins,
+        admin,
         kmsSigners,
         coprocessorSigners,
         user,
@@ -555,7 +548,7 @@ describe("DecryptionManager", function () {
         aclManager,
         decryptionManager,
         ciphertextManager,
-        admins,
+        admin,
         coprocessorSigners,
         kmsSigners,
         user,
@@ -596,7 +589,7 @@ describe("DecryptionManager", function () {
         aclManager,
         decryptionManager,
         ciphertextManager,
-        admins,
+        admin,
         coprocessorSigners,
         kmsSigners,
         user,
@@ -931,7 +924,7 @@ describe("DecryptionManager", function () {
         decryptionManager,
         ciphertextManager,
         aclManager,
-        admins,
+        admin,
         coprocessorSigners,
         kmsSigners,
         user,
@@ -943,14 +936,7 @@ describe("DecryptionManager", function () {
         fheParamsName,
       } = await loadFixture(prepareUserDecryptEIP712Fixture);
 
-      const keyId2 = await createAndRotateKey(
-        keyId1,
-        keyManager,
-        admins,
-        coprocessorSigners,
-        kmsSigners,
-        fheParamsName,
-      );
+      const keyId2 = await createAndRotateKey(keyId1, keyManager, admin, coprocessorSigners, kmsSigners, fheParamsName);
 
       // Define ciphertext dummy values
       const ctHandle = 2050;
@@ -1160,7 +1146,7 @@ describe("DecryptionManager", function () {
         aclManager,
         decryptionManager,
         ciphertextManager,
-        admins,
+        admin,
         kmsSigners,
         coprocessorSigners,
         user,
@@ -1205,7 +1191,7 @@ describe("DecryptionManager", function () {
         aclManager,
         decryptionManager,
         ciphertextManager,
-        admins,
+        admin,
         kmsSigners,
         coprocessorSigners,
         user,
@@ -1223,7 +1209,7 @@ describe("DecryptionManager", function () {
         aclManager,
         decryptionManager,
         ciphertextManager,
-        admins,
+        admin,
         coprocessorSigners,
         kmsSigners,
         user,
@@ -1265,7 +1251,7 @@ describe("DecryptionManager", function () {
         aclManager,
         decryptionManager,
         ciphertextManager,
-        admins,
+        admin,
         coprocessorSigners,
         kmsSigners,
         user,
@@ -1581,7 +1567,7 @@ describe("DecryptionManager", function () {
         decryptionManager,
         ciphertextManager,
         aclManager,
-        admins,
+        admin,
         coprocessorSigners,
         kmsSigners,
         user,
@@ -1594,14 +1580,7 @@ describe("DecryptionManager", function () {
         fheParamsName,
       } = await loadFixture(prepareDelegatedUserDecryptEIP712Fixture);
 
-      const keyId2 = await createAndRotateKey(
-        keyId1,
-        keyManager,
-        admins,
-        coprocessorSigners,
-        kmsSigners,
-        fheParamsName,
-      );
+      const keyId2 = await createAndRotateKey(keyId1, keyManager, admin, coprocessorSigners, kmsSigners, fheParamsName);
 
       // Define ciphertext dummy values
       const ciphertextDigest = hre.ethers.hexlify(hre.ethers.randomBytes(32));

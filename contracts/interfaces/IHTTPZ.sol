@@ -63,13 +63,13 @@ interface IHTTPZ {
 
     /// @notice Emitted when the HTTPZ initialization is completed
     /// @param metadata Metadata of the protocol
-    /// @param admins List of admin addresses
+    /// @param admin Admin address
     /// @param kmsThreshold The KMS threshold
     /// @param kmsNodes List of KMS nodes
     /// @param coprocessors List of coprocessors
     event Initialization(
         ProtocolMetadata metadata,
-        address[] admins,
+        address admin,
         uint256 kmsThreshold,
         KmsNode[] kmsNodes,
         Coprocessor[] coprocessors
