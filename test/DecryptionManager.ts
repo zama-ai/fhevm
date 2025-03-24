@@ -1,13 +1,27 @@
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { expect } from "chai";
 import { BigNumberish, EventLog, Wallet } from "ethers";
+import { HDNodeWallet } from "ethers";
 import hre from "hardhat";
 
-import { IDecryptionManager, KeyManager } from "../typechain-types";
+import {
+  ACLManager,
+  CiphertextManager,
+  DecryptionManager,
+  HTTPZ,
+  IDecryptionManager,
+  KeyManager,
+} from "../typechain-types";
 // The type needs to be imported separately because it is not properly detected by the linter
 // as this type is defined as a shared structs instead of directly in the IDecryptionManager interface
-import { CtHandleContractPairStruct } from "../typechain-types/contracts/interfaces/IDecryptionManager";
 import {
+  CtHandleContractPairStruct,
+  SnsCiphertextMaterialStruct,
+} from "../typechain-types/contracts/interfaces/IDecryptionManager";
+import {
+  EIP712,
+  createAndFundRandomUser,
   createEIP712RequestDelegatedUserDecrypt,
   createEIP712RequestUserDecrypt,
   createEIP712ResponsePublicDecrypt,
@@ -17,29 +31,39 @@ import {
   getSignaturesUserDecryptRequest,
   getSignaturesUserDecryptResponse,
   loadTestVariablesFixture,
+  toValues,
 } from "./utils";
 
 describe("DecryptionManager", function () {
+  let httpz: HTTPZ;
+  let keyManager: KeyManager;
+  let aclManager: ACLManager;
+  let ciphertextManager: CiphertextManager;
+  let decryptionManager: DecryptionManager;
+  let admin: HardhatEthersSigner;
+  let user: HDNodeWallet;
+  let snsCiphertextMaterials: SnsCiphertextMaterialStruct[];
+  let kmsSignatures: string[];
+  let kmsTxSenders: HardhatEthersSigner[];
+  let coprocessorTxSenders: HardhatEthersSigner[];
+  let fakeTxSender: HDNodeWallet;
+  let fakeSigner: HDNodeWallet;
+  let keyId1: BigNumberish;
+  let fheParamsName: string;
+
+  // Define the gateway chain ID
   const chainId = hre.network.config.chainId!;
+
+  // Define the host chainId
+  const hostChainId = 123456;
 
   // Create 3 dummy ciphertext handles
   const ctHandles = [2025, 2026, 2027];
 
   // Trigger a key generation in KeyManager contract and activate the key
   async function prepareWithActivatedKeyFixture() {
-    const {
-      httpz,
-      keyManager,
-      ciphertextManager,
-      aclManager,
-      decryptionManager,
-      owner,
-      admin,
-      user,
-      kmsSigners,
-      coprocessorSigners,
-      fheParamsName,
-    } = await loadFixture(loadTestVariablesFixture);
+    const fixtureData = await loadFixture(loadTestVariablesFixture);
+    const { keyManager, admin, kmsTxSenders, coprocessorTxSenders, fheParamsName } = fixtureData;
 
     // Trigger a preprocessing keygen request
     const txRequest = await keyManager.connect(admin).preprocessKeygenRequest(fheParamsName);
@@ -53,8 +77,8 @@ describe("DecryptionManager", function () {
     const preKeyId = 1;
 
     // Trigger preprocessing keygen responses for all KMS nodes
-    for (let i = 0; i < kmsSigners.length; i++) {
-      await keyManager.connect(kmsSigners[i]).preprocessKeygenResponse(preKeyRequestId, preKeyId);
+    for (let i = 0; i < kmsTxSenders.length; i++) {
+      await keyManager.connect(kmsTxSenders[i]).preprocessKeygenResponse(preKeyRequestId, preKeyId);
     }
 
     // Trigger a keygen request
@@ -64,91 +88,59 @@ describe("DecryptionManager", function () {
     const keyId1 = 1;
 
     // Trigger keygen responses for all KMS nodes
-    for (let i = 0; i < kmsSigners.length; i++) {
-      await keyManager.connect(kmsSigners[i]).keygenResponse(preKeyId, keyId1);
+    for (let i = 0; i < kmsTxSenders.length; i++) {
+      await keyManager.connect(kmsTxSenders[i]).keygenResponse(preKeyId, keyId1);
     }
 
     // Request activation of the key
     await keyManager.connect(admin).activateKeyRequest(keyId1);
 
     // Trigger activation responses for all coprocessors
-    for (let i = 0; i < coprocessorSigners.length; i++) {
-      await keyManager.connect(coprocessorSigners[i]).activateKeyResponse(keyId1);
+    for (let i = 0; i < coprocessorTxSenders.length; i++) {
+      await keyManager.connect(coprocessorTxSenders[i]).activateKeyResponse(keyId1);
     }
 
-    return {
-      httpz,
-      ciphertextManager,
-      aclManager,
-      decryptionManager,
-      keyManager,
-      owner,
-      admin,
-      user,
-      kmsSigners,
-      coprocessorSigners,
-      keyId1,
-      fheParamsName,
-    };
+    return { ...fixtureData, keyId1 };
   }
 
   // Add SNS ciphertext materials associated to the handles
   async function prepareAddCiphertextFixture() {
-    const {
-      httpz,
-      keyManager,
-      ciphertextManager,
-      aclManager,
-      decryptionManager,
-      admin,
-      kmsSigners,
-      coprocessorSigners,
-      user,
-      keyId1,
-      fheParamsName,
-    } = await loadFixture(prepareWithActivatedKeyFixture);
+    const fixtureData = await loadFixture(prepareWithActivatedKeyFixture);
+    const { ciphertextManager, coprocessorTxSenders, keyId1 } = fixtureData;
 
     // Define dummy ciphertext values
     const ciphertextDigest = hre.ethers.hexlify(hre.ethers.randomBytes(32));
     const snsCiphertextDigest = hre.ethers.hexlify(hre.ethers.randomBytes(32));
 
-    let snsCiphertextMaterials = [];
+    let snsCiphertextMaterials: SnsCiphertextMaterialStruct[] = [];
 
     // Allow public decryption
     for (const ctHandle of ctHandles) {
-      for (let i = 0; i < coprocessorSigners.length; i++) {
+      for (let i = 0; i < coprocessorTxSenders.length; i++) {
         await ciphertextManager
-          .connect(coprocessorSigners[i])
-          .addCiphertextMaterial(ctHandle, keyId1, chainId, ciphertextDigest, snsCiphertextDigest);
+          .connect(coprocessorTxSenders[i])
+          .addCiphertextMaterial(ctHandle, keyId1, hostChainId, ciphertextDigest, snsCiphertextDigest);
       }
 
       // Store the SNS ciphertext materials for event checks
-      snsCiphertextMaterials.push([ctHandle, keyId1, snsCiphertextDigest, coprocessorSigners.map((s) => s.address)]);
+      snsCiphertextMaterials.push({
+        ctHandle,
+        keyId: keyId1,
+        snsCiphertextDigest,
+        coprocessorAddresses: coprocessorTxSenders.map((s) => s.address),
+      });
     }
 
-    return {
-      httpz,
-      keyManager,
-      aclManager,
-      decryptionManager,
-      ciphertextManager,
-      admin,
-      kmsSigners,
-      coprocessorSigners,
-      user,
-      snsCiphertextMaterials,
-      keyId1,
-      fheParamsName,
-    };
+    return { ...fixtureData, snsCiphertextMaterials };
   }
 
   // Create a new key, rotate it and activate it. It returns the new key ID.
   async function createAndRotateKey(
     sourceKeyId: BigNumberish,
     keyManager: KeyManager,
-    admin: Wallet,
-    coprocessorSigners: Wallet[],
-    kmsSigners: Wallet[],
+    admin: HardhatEthersSigner,
+    coprocessorTxSenders: HardhatEthersSigner[],
+    kmsTxSenders: HardhatEthersSigner[],
     fheParamsName: string,
   ): Promise<BigNumberish> {
     const newKeyId = hre.ethers.toBigInt(hre.ethers.randomBytes(32));
@@ -164,16 +156,16 @@ describe("DecryptionManager", function () {
     const preKeyId = hre.ethers.toBigInt(hre.ethers.randomBytes(32));
 
     // Trigger preprocessing keygen responses for all KMS nodes
-    for (let i = 0; i < kmsSigners.length; i++) {
-      await keyManager.connect(kmsSigners[i]).preprocessKeygenResponse(preKeyRequestId, preKeyId);
+    for (let i = 0; i < kmsTxSenders.length; i++) {
+      await keyManager.connect(kmsTxSenders[i]).preprocessKeygenResponse(preKeyRequestId, preKeyId);
     }
 
     // Trigger a keygen request
     await keyManager.connect(admin).keygenRequest(preKeyId);
 
     // Trigger keygen responses for all KMS nodes
-    for (let i = 0; i < kmsSigners.length; i++) {
-      await keyManager.connect(kmsSigners[i]).keygenResponse(preKeyId, newKeyId);
+    for (let i = 0; i < kmsTxSenders.length; i++) {
+      await keyManager.connect(kmsTxSenders[i]).keygenResponse(preKeyId, newKeyId);
     }
 
     // Trigger a preprocessing kskgen request
@@ -188,8 +180,8 @@ describe("DecryptionManager", function () {
     const preKskId = hre.ethers.toBigInt(hre.ethers.randomBytes(32));
 
     // Trigger preprocessing kskgen responses for all KMS nodes
-    for (let i = 0; i < kmsSigners.length; i++) {
-      await keyManager.connect(kmsSigners[i]).preprocessKskgenResponse(preKskRequestId, preKskId);
+    for (let i = 0; i < kmsTxSenders.length; i++) {
+      await keyManager.connect(kmsTxSenders[i]).preprocessKskgenResponse(preKskRequestId, preKskId);
     }
 
     // Trigger a kskgen request
@@ -199,16 +191,16 @@ describe("DecryptionManager", function () {
     const kskId = hre.ethers.toBigInt(hre.ethers.randomBytes(32));
 
     // Trigger kskgen responses for all KMS nodes
-    for (let i = 0; i < kmsSigners.length; i++) {
-      await keyManager.connect(kmsSigners[i]).kskgenResponse(preKskId, kskId);
+    for (let i = 0; i < kmsTxSenders.length; i++) {
+      await keyManager.connect(kmsTxSenders[i]).kskgenResponse(preKskId, kskId);
     }
 
     // Request activation of the key
     await keyManager.connect(admin).activateKeyRequest(newKeyId);
 
     // Trigger activation responses for all coprocessors
-    for (let i = 0; i < coprocessorSigners.length; i++) {
-      await keyManager.connect(coprocessorSigners[i]).activateKeyResponse(newKeyId);
+    for (let i = 0; i < coprocessorTxSenders.length; i++) {
+      await keyManager.connect(coprocessorTxSenders[i]).activateKeyResponse(newKeyId);
     }
 
     return newKeyId;
@@ -218,54 +210,30 @@ describe("DecryptionManager", function () {
     // Expected public decryption id (after first request)
     const publicDecryptionId = 1;
 
-    // Create a dummy decrypted result
+    // Create input values
     const decryptedResult = hre.ethers.randomBytes(32);
+    const dummySignature = hre.ethers.randomBytes(32);
 
     // Allow handles for public decryption
     async function prepareAllowPublicDecryptionFixture() {
-      const {
-        httpz,
-        keyManager,
-        aclManager,
-        decryptionManager,
-        ciphertextManager,
-        admin,
-        kmsSigners,
-        coprocessorSigners,
-        user,
-        snsCiphertextMaterials,
-        keyId1,
-        fheParamsName,
-      } = await loadFixture(prepareAddCiphertextFixture);
+      const fixtureData = await loadFixture(prepareAddCiphertextFixture);
+      const { coprocessorTxSenders, aclManager } = fixtureData;
 
       // Allow public decryption
       for (const ctHandle of ctHandles) {
-        for (let i = 0; i < coprocessorSigners.length; i++) {
-          await aclManager.connect(coprocessorSigners[i]).allowPublicDecrypt(chainId, ctHandle);
+        for (let i = 0; i < coprocessorTxSenders.length; i++) {
+          await aclManager.connect(coprocessorTxSenders[i]).allowPublicDecrypt(hostChainId, ctHandle);
         }
       }
 
-      return {
-        keyManager,
-        httpz,
-        aclManager,
-        decryptionManager,
-        ciphertextManager,
-        admin,
-        kmsSigners,
-        coprocessorSigners,
-        user,
-        snsCiphertextMaterials,
-        keyId1,
-        fheParamsName,
-      };
+      return fixtureData;
     }
 
     async function prepareGetEIP712Fixture() {
-      const { httpz, decryptionManager, kmsSigners, user } = await loadFixture(prepareAllowPublicDecryptionFixture);
+      const fixtureData = await loadFixture(prepareAllowPublicDecryptionFixture);
 
-      // Create EIP712 messages and get associated KMS nodes' signatures
-      const decryptionManagerAddress = await decryptionManager.getAddress();
+      // Create EIP712 messages
+      const decryptionManagerAddress = await fixtureData.decryptionManager.getAddress();
       const eip712Message = createEIP712ResponsePublicDecrypt(
         chainId,
         decryptionManagerAddress,
@@ -273,7 +241,7 @@ describe("DecryptionManager", function () {
         decryptedResult,
       );
 
-      return { httpz, decryptionManager, kmsSigners, user, eip712Message };
+      return { ...fixtureData, eip712Message };
     }
 
     it("Should request a public decryption with multiple ctHandles", async function () {
@@ -287,7 +255,7 @@ describe("DecryptionManager", function () {
       // Check request event
       await expect(requestTx)
         .to.emit(decryptionManager, "PublicDecryptionRequest")
-        .withArgs(publicDecryptionId, snsCiphertextMaterials);
+        .withArgs(publicDecryptionId, toValues(snsCiphertextMaterials));
     });
 
     it("Should request a public decryption with a single ctHandle", async function () {
@@ -298,10 +266,12 @@ describe("DecryptionManager", function () {
       // Request public decryption with a single ctHandle
       const requestTx = await decryptionManager.connect(user).publicDecryptionRequest([ctHandles[0]]);
 
+      const singleSnsCiphertextMaterials = snsCiphertextMaterials.slice(0, 1);
+
       // Check request event
       await expect(requestTx)
         .to.emit(decryptionManager, "PublicDecryptionRequest")
-        .withArgs(publicDecryptionId, [snsCiphertextMaterials[0]]);
+        .withArgs(publicDecryptionId, toValues(singleSnsCiphertextMaterials));
     });
 
     it("Should request a public decryption with empty ctHandles list", async function () {
@@ -325,28 +295,50 @@ describe("DecryptionManager", function () {
         .withArgs(ctHandles[0]);
     });
 
-    it("Should revert because the signer is not a KMS node", async function () {
-      const { httpz, decryptionManager, user, eip712Message } = await loadFixture(prepareGetEIP712Fixture);
+    it("Should revert because the message sender is not a KMS transaction sender", async function () {
+      const { httpz, decryptionManager } = await loadFixture(prepareGetEIP712Fixture);
+
+      const fakeTxSender = await createAndFundRandomUser();
+
+      // Check that the transaction fails because the msg.sender is not a registered KMS transaction sender
+      await expect(
+        decryptionManager
+          .connect(fakeTxSender)
+          .publicDecryptionResponse(publicDecryptionId, decryptedResult, dummySignature),
+      )
+        .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
+        .withArgs(fakeTxSender.address, httpz.KMS_TX_SENDER_ROLE());
+    });
+
+    it("Should revert because the signer is not a KMS signer", async function () {
+      const { httpz, decryptionManager, user, kmsTxSenders, eip712Message } =
+        await loadFixture(prepareGetEIP712Fixture);
 
       // Request public decryption
       // This step is necessary, else the publicDecryptionId won't be set in the state and the
       // signature verification will use wrong handles
       await decryptionManager.connect(user).publicDecryptionRequest(ctHandles);
 
-      // Sign the message with the user
-      const [userSignature] = await getSignaturesPublicDecrypt(eip712Message, [user]);
+      const fakeSigner = await createAndFundRandomUser();
 
-      // Check that the signature verification fails because the signer is not a registered KMS node
+      // Create a fake signature from the fake signer
+      const [fakeSignature] = await getSignaturesPublicDecrypt(eip712Message, [fakeSigner]);
+
+      // Check that the signature verification fails because the signer is not a registered KMS signer
       await expect(
-        decryptionManager.connect(user).publicDecryptionResponse(publicDecryptionId, decryptedResult, userSignature),
+        decryptionManager
+          .connect(kmsTxSenders[0])
+          .publicDecryptionResponse(publicDecryptionId, decryptedResult, fakeSignature),
       )
-        .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
-        .withArgs(user.address, httpz.KMS_NODE_ROLE());
+        .to.be.revertedWithCustomError(httpz, "NotKmsSigner")
+        .withArgs(fakeSigner.address);
     });
 
     it("Should revert because of two responses with same signature", async function () {
-      const { decryptionManager, kmsSigners, user, eip712Message } = await loadFixture(prepareGetEIP712Fixture);
+      const { decryptionManager, kmsTxSenders, kmsSigners, user, eip712Message } =
+        await loadFixture(prepareGetEIP712Fixture);
 
+      const firstKmsTxSender = kmsTxSenders[0];
       const firstKmsSigner = kmsSigners[0];
 
       // Request public decryption
@@ -357,13 +349,13 @@ describe("DecryptionManager", function () {
 
       // Trigger a first public decryption response
       await decryptionManager
-        .connect(firstKmsSigner)
+        .connect(firstKmsTxSender)
         .publicDecryptionResponse(publicDecryptionId, decryptedResult, signature1);
 
       // Check that a KMS node cannot sign a second time for the same public decryption
       await expect(
         decryptionManager
-          .connect(firstKmsSigner)
+          .connect(firstKmsTxSender)
           .publicDecryptionResponse(publicDecryptionId, decryptedResult, signature1),
       )
         .to.be.revertedWithCustomError(decryptionManager, "KmsSignerAlreadyResponded")
@@ -377,14 +369,21 @@ describe("DecryptionManager", function () {
         ciphertextManager,
         aclManager,
         admin,
-        kmsSigners,
-        coprocessorSigners,
+        kmsTxSenders,
+        coprocessorTxSenders,
         user,
         keyId1,
         fheParamsName,
       } = await loadFixture(prepareAllowPublicDecryptionFixture);
 
-      const keyId2 = await createAndRotateKey(keyId1, keyManager, admin, coprocessorSigners, kmsSigners, fheParamsName);
+      const keyId2 = await createAndRotateKey(
+        keyId1,
+        keyManager,
+        admin,
+        coprocessorTxSenders,
+        kmsTxSenders,
+        fheParamsName,
+      );
 
       // Define ciphertext dummy values
       const ctHandle = 2050;
@@ -392,13 +391,13 @@ describe("DecryptionManager", function () {
       const snsCiphertextDigest = hre.ethers.hexlify(hre.ethers.randomBytes(32));
 
       // Store the ciphertext and allow public decryption
-      for (let i = 0; i < coprocessorSigners.length; i++) {
+      for (let i = 0; i < coprocessorTxSenders.length; i++) {
         await ciphertextManager
-          .connect(coprocessorSigners[i])
-          .addCiphertextMaterial(ctHandle, keyId2, chainId, ciphertextDigest, snsCiphertextDigest);
+          .connect(coprocessorTxSenders[i])
+          .addCiphertextMaterial(ctHandle, keyId2, hostChainId, ciphertextDigest, snsCiphertextDigest);
       }
-      for (let i = 0; i < coprocessorSigners.length; i++) {
-        await aclManager.connect(coprocessorSigners[i]).allowPublicDecrypt(chainId, ctHandle);
+      for (let i = 0; i < coprocessorTxSenders.length; i++) {
+        await aclManager.connect(coprocessorTxSenders[i]).allowPublicDecrypt(hostChainId, ctHandle);
       }
 
       // Request public decryption with ctMaterials tied to different key IDs
@@ -411,21 +410,22 @@ describe("DecryptionManager", function () {
     });
 
     it("Should reach consensus with 2 valid responses", async function () {
-      const { decryptionManager, kmsSigners, user, eip712Message } = await loadFixture(prepareGetEIP712Fixture);
+      const { decryptionManager, kmsTxSenders, kmsSigners, user, eip712Message } =
+        await loadFixture(prepareGetEIP712Fixture);
 
       // Request public decryption
       await decryptionManager.connect(user).publicDecryptionRequest(ctHandles);
 
-      // Sign the message with all KMS nodes and get the first 2 signatures
+      // Sign the message with all KMS signers and get the first 2 signatures
       const [signature1, signature2] = await getSignaturesPublicDecrypt(eip712Message, kmsSigners);
 
       // Trigger two valid public decryption responses
       await decryptionManager
-        .connect(kmsSigners[0])
+        .connect(kmsTxSenders[0])
         .publicDecryptionResponse(publicDecryptionId, decryptedResult, signature1);
 
       const responseTx2 = await decryptionManager
-        .connect(kmsSigners[1])
+        .connect(kmsTxSenders[1])
         .publicDecryptionResponse(publicDecryptionId, decryptedResult, signature2);
 
       // Consensus should be reached at the second response
@@ -440,12 +440,13 @@ describe("DecryptionManager", function () {
     });
 
     it("Should ignore other valid responses", async function () {
-      const { decryptionManager, kmsSigners, user, eip712Message } = await loadFixture(prepareGetEIP712Fixture);
+      const { decryptionManager, kmsTxSenders, kmsSigners, user, eip712Message } =
+        await loadFixture(prepareGetEIP712Fixture);
 
       // Request public decryption
       await decryptionManager.connect(user).publicDecryptionRequest(ctHandles);
 
-      // Sign the message with all KMS nodes and get their signatures
+      // Sign the message with all KMS signers and get their signatures
       const [signature1, signature2, signature3, signature4] = await getSignaturesPublicDecrypt(
         eip712Message,
         kmsSigners,
@@ -453,19 +454,19 @@ describe("DecryptionManager", function () {
 
       // Trigger four valid public decryption responses
       const responseTx1 = await decryptionManager
-        .connect(kmsSigners[0])
+        .connect(kmsTxSenders[0])
         .publicDecryptionResponse(publicDecryptionId, decryptedResult, signature1);
 
       await decryptionManager
-        .connect(kmsSigners[1])
+        .connect(kmsTxSenders[1])
         .publicDecryptionResponse(publicDecryptionId, decryptedResult, signature2);
 
       const responseTx3 = await decryptionManager
-        .connect(kmsSigners[2])
+        .connect(kmsTxSenders[2])
         .publicDecryptionResponse(publicDecryptionId, decryptedResult, signature3);
 
       const responseTx4 = await decryptionManager
-        .connect(kmsSigners[3])
+        .connect(kmsTxSenders[3])
         .publicDecryptionResponse(publicDecryptionId, decryptedResult, signature4);
 
       // Check that the 1st, 3rd and 4th responses do not emit an event:
@@ -475,210 +476,141 @@ describe("DecryptionManager", function () {
       await expect(responseTx3).to.not.emit(decryptionManager, "PublicDecryptionResponse");
       await expect(responseTx4).to.not.emit(decryptionManager, "PublicDecryptionResponse");
     });
-
-    it("Should revert because the transaction sender is not a KMS node", async function () {
-      const { httpz, decryptionManager, user, kmsSigners, eip712Message } = await loadFixture(prepareGetEIP712Fixture);
-
-      const [signature1] = await getSignaturesPublicDecrypt(eip712Message, [kmsSigners[0]]);
-
-      // Check that the transaction fails because the msg.sender is not a registered KMS node
-      await expect(
-        decryptionManager.connect(user).publicDecryptionResponse(publicDecryptionId, decryptedResult, signature1),
-      )
-        .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
-        .withArgs(user.address, httpz.KMS_NODE_ROLE());
-    });
   });
 
   describe("User Decryption", function () {
+    let userSignature: string;
+    let fakeUserAddress: string;
+    let eip712RequestMessage: EIP712;
+    let eip712ResponseMessage: EIP712;
+
     // Expected user decryption id (after first request)
     const userDecryptionId = 1;
 
-    // Create a dummy reencrypted share
+    // Create input values
     const reencryptedShare = hre.ethers.randomBytes(32);
+    const contractAddress = hre.ethers.Wallet.createRandom().address;
+    const contractAddresses = [contractAddress];
+    const publicKey = hre.ethers.randomBytes(32);
+    const ctHandleContractPairs: CtHandleContractPairStruct[] = ctHandles.map((ctHandle) => ({
+      contractAddress,
+      ctHandle,
+    }));
+    const requestValidity: IDecryptionManager.RequestValidityStruct = {
+      durationDays: 120,
+      startTimestamp: Date.now(),
+    };
 
     // Allow access the the handles for the user and the contract
     async function prepareAllowAccountFixture() {
-      const {
-        httpz,
-        keyManager,
-        aclManager,
-        decryptionManager,
-        ciphertextManager,
-        admin,
-        kmsSigners,
-        coprocessorSigners,
-        user,
-        snsCiphertextMaterials,
-        keyId1,
-        fheParamsName,
-      } = await loadFixture(prepareAddCiphertextFixture);
+      const fixtureData = await loadFixture(prepareAddCiphertextFixture);
+      const { coprocessorTxSenders, aclManager, user } = fixtureData;
 
-      const contractAddress = hre.ethers.Wallet.createRandom().address;
-
-      // Allow user decryption
+      // Allow user decryption for the user and contract address over all handles
       for (const ctHandle of ctHandles) {
-        for (let i = 0; i < coprocessorSigners.length; i++) {
-          await aclManager.connect(coprocessorSigners[i]).allowAccount(chainId, ctHandle, user.address);
-          await aclManager.connect(coprocessorSigners[i]).allowAccount(chainId, ctHandle, contractAddress);
+        for (let i = 0; i < coprocessorTxSenders.length; i++) {
+          await aclManager.connect(coprocessorTxSenders[i]).allowAccount(hostChainId, ctHandle, user.address);
+          await aclManager.connect(coprocessorTxSenders[i]).allowAccount(hostChainId, ctHandle, contractAddress);
         }
       }
 
-      return {
-        httpz,
-        keyManager,
-        aclManager,
-        decryptionManager,
-        ciphertextManager,
-        admin,
-        kmsSigners,
-        coprocessorSigners,
-        user,
-        contractAddress,
-        snsCiphertextMaterials,
-        keyId1,
-        fheParamsName,
-      };
+      return fixtureData;
     }
 
     async function prepareUserDecryptEIP712Fixture() {
-      const {
-        httpz,
-        keyManager,
-        aclManager,
-        decryptionManager,
-        ciphertextManager,
-        admin,
-        coprocessorSigners,
-        kmsSigners,
-        user,
-        contractAddress,
-        snsCiphertextMaterials,
-        keyId1,
-        fheParamsName,
-      } = await loadFixture(prepareAllowAccountFixture);
+      const fixtureData = await loadFixture(prepareAllowAccountFixture);
+      const { decryptionManager, user, kmsSigners } = fixtureData;
 
-      const publicKey = hre.ethers.randomBytes(32);
-      const requestValidity: IDecryptionManager.RequestValidityStruct = {
-        durationDays: 120,
-        startTimestamp: Date.now(),
-      };
-
-      // Create EIP712 messages and get associated KMS nodes' signatures
+      // Create EIP712 messages
       const decryptionManagerAddress = await decryptionManager.getAddress();
       const eip712RequestMessage = createEIP712RequestUserDecrypt(
         chainId,
         decryptionManagerAddress,
         publicKey,
-        [contractAddress],
-        chainId,
+        contractAddresses,
+        hostChainId,
         requestValidity.startTimestamp.toString(),
         requestValidity.durationDays.toString(),
       );
+
+      // Sign the message with the user
+      const [userSignature] = await getSignaturesUserDecryptRequest(eip712RequestMessage, [user]);
+
       const eip712ResponseMessage = createEIP712ResponseUserDecrypt(
         chainId,
         decryptionManagerAddress,
         publicKey,
-        [ctHandles[0]],
+        ctHandles,
         reencryptedShare,
       );
 
+      // Sign the message with all KMS signers
+      const kmsSignatures = await getSignaturesUserDecryptResponse(eip712ResponseMessage, kmsSigners);
+
       return {
-        httpz,
-        keyManager,
-        aclManager,
-        decryptionManager,
-        ciphertextManager,
-        admin,
-        coprocessorSigners,
-        kmsSigners,
-        user,
-        contractAddress,
-        publicKey,
-        requestValidity,
-        snsCiphertextMaterials,
-        keyId1,
+        ...fixtureData,
         eip712RequestMessage,
         eip712ResponseMessage,
-        fheParamsName,
+        userSignature,
+        kmsSignatures,
       };
     }
 
+    beforeEach(async function () {
+      // Initialize globally used variables before each test
+      const fixtureData = await loadFixture(prepareUserDecryptEIP712Fixture);
+      httpz = fixtureData.httpz;
+      keyManager = fixtureData.keyManager;
+      aclManager = fixtureData.aclManager;
+      ciphertextManager = fixtureData.ciphertextManager;
+      decryptionManager = fixtureData.decryptionManager;
+      admin = fixtureData.admin;
+      user = fixtureData.user;
+      snsCiphertextMaterials = fixtureData.snsCiphertextMaterials;
+      userSignature = fixtureData.userSignature;
+      kmsSignatures = fixtureData.kmsSignatures;
+      kmsTxSenders = fixtureData.kmsTxSenders;
+      coprocessorTxSenders = fixtureData.coprocessorTxSenders;
+      eip712RequestMessage = fixtureData.eip712RequestMessage;
+      eip712ResponseMessage = fixtureData.eip712ResponseMessage;
+      keyId1 = fixtureData.keyId1;
+      fheParamsName = fixtureData.fheParamsName;
+
+      fakeTxSender = await createAndFundRandomUser();
+      fakeSigner = await createAndFundRandomUser();
+      fakeUserAddress = (await createAndFundRandomUser()).address;
+    });
+
     it("Should request a user decryption with multiple ctHandleContractPairs", async function () {
-      const {
-        decryptionManager,
-        user,
-        contractAddress,
-        publicKey,
-        requestValidity,
-        snsCiphertextMaterials,
-        eip712RequestMessage,
-      } = await loadFixture(prepareUserDecryptEIP712Fixture);
-
-      // Create dummy input data for the user decryption request
-      const contractsChainId = chainId;
-      const contractAddresses = [contractAddress];
-      let ctHandleContractPairs: CtHandleContractPairStruct[] = [];
-      for (const ctHandle of ctHandles) {
-        ctHandleContractPairs.push({
-          contractAddress,
-          ctHandle,
-        });
-      }
-
-      // Sign the message with the user
-      const [userSignature] = await getSignaturesUserDecryptRequest(eip712RequestMessage, [user]);
-
       // Request user decryption
-      const requestTx = await decryptionManager
-        .connect(user)
-        .userDecryptionRequest(
-          ctHandleContractPairs,
-          requestValidity,
-          contractsChainId,
-          contractAddresses,
-          user.address,
-          publicKey,
-          userSignature,
-        );
+      const requestTx = await decryptionManager.userDecryptionRequest(
+        ctHandleContractPairs,
+        requestValidity,
+        hostChainId,
+        contractAddresses,
+        user.address,
+        publicKey,
+        userSignature,
+      );
 
       // Check request event
       await expect(requestTx)
         .to.emit(decryptionManager, "UserDecryptionRequest")
-        .withArgs(userDecryptionId, snsCiphertextMaterials, publicKey);
+        .withArgs(userDecryptionId, toValues(snsCiphertextMaterials), publicKey);
     });
 
     it("Should request a user decryption with a single ctHandleContractPair", async function () {
-      const {
-        decryptionManager,
-        user,
-        contractAddress,
-        publicKey,
-        requestValidity,
-        snsCiphertextMaterials,
-        eip712RequestMessage,
-      } = await loadFixture(prepareUserDecryptEIP712Fixture);
-
-      // Create dummy input data for the user decryption request
-      const contractsChainId = chainId;
-      const contractAddresses = [contractAddress];
-      const ctHandleContractPairs: CtHandleContractPairStruct[] = [
-        {
-          contractAddress,
-          ctHandle: ctHandles[0],
-        },
-      ];
-
-      // Sign the message with the user
-      const [userSignature] = await getSignaturesUserDecryptRequest(eip712RequestMessage, [user]);
+      // Create single list of inputs
+      const singleCtHandleContractPair: CtHandleContractPairStruct[] = ctHandleContractPairs.slice(0, 1);
+      const singleSnsCiphertextMaterials = snsCiphertextMaterials.slice(0, 1);
 
       // Request user decryption
       const requestTx = await decryptionManager
         .connect(user)
         .userDecryptionRequest(
-          ctHandleContractPairs,
+          singleCtHandleContractPair,
           requestValidity,
-          contractsChainId,
+          hostChainId,
           contractAddresses,
           user.address,
           publicKey,
@@ -688,28 +620,20 @@ describe("DecryptionManager", function () {
       // Check request event
       await expect(requestTx)
         .to.emit(decryptionManager, "UserDecryptionRequest")
-        .withArgs(userDecryptionId, [snsCiphertextMaterials[0]], publicKey);
+        .withArgs(userDecryptionId, toValues(singleSnsCiphertextMaterials), publicKey);
     });
 
     it("Should request a user decryption with empty ctHandleContractPairs list", async function () {
-      const { decryptionManager, user, contractAddress, publicKey, requestValidity, eip712RequestMessage } =
-        await loadFixture(prepareUserDecryptEIP712Fixture);
-
       // Create dummy input data for the user decryption request
-      const contractsChainId = chainId;
-      const contractAddresses = [contractAddress];
-      const ctHandleContractPairs: CtHandleContractPairStruct[] = [];
-
-      // Sign the message with the user
-      const [userSignature] = await getSignaturesUserDecryptRequest(eip712RequestMessage, [user]);
+      const emptyCtHandleContractPairs: CtHandleContractPairStruct[] = [];
 
       // Request user decryption with an empty list of ctHandleContractPairs
       const requestTx = await decryptionManager
         .connect(user)
         .userDecryptionRequest(
-          ctHandleContractPairs,
+          emptyCtHandleContractPairs,
           requestValidity,
-          contractsChainId,
+          hostChainId,
           contractAddresses,
           user.address,
           publicKey,
@@ -719,118 +643,78 @@ describe("DecryptionManager", function () {
       // Check request event
       await expect(requestTx)
         .to.emit(decryptionManager, "UserDecryptionRequest")
-        .withArgs(userDecryptionId, [], publicKey);
+        .withArgs(userDecryptionId, toValues(emptyCtHandleContractPairs), publicKey);
     });
 
-    it("Should revert because contractAddresses exceeds maximum length allowed", async function () {
-      const { decryptionManager, user } = await loadFixture(loadTestVariablesFixture);
-
+    it("Should revert because contract addresses exceeds maximum length allowed", async function () {
       // Create dummy input data for the user decryption request
-      const contractAddresses = [];
+      const largeContractAddresses = [];
       for (let i = 0; i < 11; i++) {
-        contractAddresses.push(hre.ethers.Wallet.createRandom().address);
+        largeContractAddresses.push(hre.ethers.Wallet.createRandom().address);
       }
 
-      // Check that the request fails because the given contractAddresses exceeds the maximum length allowed
+      // Check that the request fails because the given contract addresses exceeds the maximum length allowed
       await expect(
-        decryptionManager
-          .connect(user)
-          .userDecryptionRequest(
-            [],
-            { durationDays: 120, startTimestamp: Date.now() },
-            chainId,
-            contractAddresses,
-            user.address,
-            hre.ethers.randomBytes(32),
-            hre.ethers.randomBytes(32),
-          ),
+        decryptionManager.userDecryptionRequest(
+          ctHandleContractPairs,
+          requestValidity,
+          hostChainId,
+          largeContractAddresses,
+          user.address,
+          publicKey,
+          userSignature,
+        ),
       )
         .to.be.revertedWithCustomError(decryptionManager, "ContractAddressesMaxLengthExceeded")
-        .withArgs(10, contractAddresses.length);
+        .withArgs(10, largeContractAddresses.length);
     });
 
     it("Should revert because durationDays exceeds maximum allowed", async function () {
-      const { decryptionManager, user } = await loadFixture(loadTestVariablesFixture);
-
-      // Create dummy input data for the user decryption request
-      const requestValidity: IDecryptionManager.RequestValidityStruct = {
-        durationDays: 400,
+      // Create a fake input data with a durationDays that exceeds the maximum allowed (currently: 365 days)
+      const durationDays = 400;
+      const fakeRequestValidity: IDecryptionManager.RequestValidityStruct = {
+        durationDays,
         startTimestamp: Date.now(),
       };
 
-      // Check that the request fails because the given requestValidity.durationDays exceeds the maximum allowed
+      // Check that the request fails because the durationDays exceeds the maximum allowed
       await expect(
-        decryptionManager
-          .connect(user)
-          .userDecryptionRequest(
-            [],
-            requestValidity,
-            chainId,
-            [],
-            user.address,
-            hre.ethers.randomBytes(32),
-            hre.ethers.randomBytes(32),
-          ),
+        decryptionManager.userDecryptionRequest(
+          ctHandleContractPairs,
+          fakeRequestValidity,
+          hostChainId,
+          contractAddresses,
+          user.address,
+          publicKey,
+          userSignature,
+        ),
       )
         .to.be.revertedWithCustomError(decryptionManager, "MaxDurationDaysExceeded")
-        .withArgs(365, requestValidity.durationDays);
+        .withArgs(365, durationDays);
     });
 
     it("Should revert because user is not allowed for user decryption over given handles", async function () {
-      const { aclManager, decryptionManager, user } = await loadFixture(loadTestVariablesFixture);
-
-      // Create dummy input data for the user decryption request
-      const contractsChainId = chainId;
-      const contractAddress = hre.ethers.Wallet.createRandom().address;
-      const publicKey = hre.ethers.randomBytes(32);
-      const userSignature = hre.ethers.randomBytes(32);
-      const ctHandleContractPairs: CtHandleContractPairStruct[] = [
-        {
-          contractAddress,
-          ctHandle: ctHandles[0],
-        },
-      ];
-      const requestValidity: IDecryptionManager.RequestValidityStruct = {
-        durationDays: 120,
-        startTimestamp: Date.now(),
-      };
-
       // Check that the request fails because the given userAddress is not allowed for user decryption
       // Note: the function should be reverted on the first handle since it loops over the handles
       // in order internally
       await expect(
-        decryptionManager
-          .connect(user)
-          .userDecryptionRequest(
-            ctHandleContractPairs,
-            requestValidity,
-            contractsChainId,
-            [contractAddress],
-            user.address,
-            publicKey,
-            userSignature,
-          ),
+        decryptionManager.userDecryptionRequest(
+          ctHandleContractPairs,
+          requestValidity,
+          hostChainId,
+          contractAddresses,
+          fakeUserAddress,
+          publicKey,
+          userSignature,
+        ),
       )
         .to.be.revertedWithCustomError(aclManager, "AccountNotAllowedToUseCiphertext")
-        .withArgs(ctHandles[0], user.address);
+        .withArgs(ctHandles[0], fakeUserAddress);
     });
 
     it("Should revert because of invalid EIP712 user request signature", async function () {
-      const { decryptionManager, user, contractAddress, publicKey, requestValidity, eip712RequestMessage } =
-        await loadFixture(prepareUserDecryptEIP712Fixture);
-
-      // Create dummy input data for the user decryption request
-      const contractAddresses = [contractAddress];
-      const ctHandleContractPairs: CtHandleContractPairStruct[] = [
-        {
-          contractAddress,
-          ctHandle: ctHandles[0],
-        },
-      ];
-      const fakeSigners = await hre.ethers.getSigners();
-
       // Sign the message with the user
-      const [fakeSignature] = await getSignaturesUserDecryptRequest(eip712RequestMessage, [fakeSigners.pop()!]);
+      const [fakeSignature] = await getSignaturesUserDecryptRequest(eip712RequestMessage, [fakeSigner]);
 
       // Request user decryption
       const requestTx = decryptionManager
@@ -838,7 +722,7 @@ describe("DecryptionManager", function () {
         .userDecryptionRequest(
           ctHandleContractPairs,
           requestValidity,
-          chainId,
+          hostChainId,
           contractAddresses,
           user.address,
           publicKey,
@@ -851,120 +735,116 @@ describe("DecryptionManager", function () {
         .withArgs(fakeSignature);
     });
 
-    it("Should revert because the transaction sender is not a KMS node", async function () {
-      const { httpz, decryptionManager, user, kmsSigners, eip712ResponseMessage } = await loadFixture(
-        prepareUserDecryptEIP712Fixture,
+    it("Should revert because the response signer is not a registered KMS signer", async function () {
+      // Request user decryption
+      // This step is necessary, else the publicDecryptionId won't be set in the state and the
+      // signature verification will use wrong handles
+      // Request user decryption
+      await decryptionManager.userDecryptionRequest(
+        ctHandleContractPairs,
+        requestValidity,
+        hostChainId,
+        contractAddresses,
+        user.address,
+        publicKey,
+        userSignature,
       );
 
-      // Sign the message with all KMS nodes and get the first 3 signatures
-      const [signature1] = await getSignaturesUserDecryptResponse(eip712ResponseMessage, [kmsSigners[0]]);
+      // Create a fake signature from the fake signer
+      const [fakeSignature] = await getSignaturesUserDecryptResponse(eip712ResponseMessage, [fakeSigner]);
 
-      // Check that the transaction fails because the msg.sender is not a registered KMS node
+      // Check that the transaction fails because the signer is not a registered KMS signer
       await expect(
-        decryptionManager.connect(user).userDecryptionResponse(userDecryptionId, reencryptedShare, signature1),
+        decryptionManager
+          .connect(kmsTxSenders[0])
+          .userDecryptionResponse(userDecryptionId, reencryptedShare, fakeSignature),
+      )
+        .to.be.revertedWithCustomError(httpz, "NotKmsSigner")
+        .withArgs(fakeSigner.address);
+    });
+
+    it("Should revert because the message sender is not a KMS transaction sender", async function () {
+      // Check that the transaction fails because the msg.sender is not a registered KMS transaction sender
+      await expect(
+        decryptionManager
+          .connect(fakeTxSender)
+          .userDecryptionResponse(userDecryptionId, reencryptedShare, userSignature),
       )
         .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
-        .withArgs(user.address, httpz.KMS_NODE_ROLE());
+        .withArgs(fakeTxSender.address, httpz.KMS_TX_SENDER_ROLE());
     });
 
     it("Should revert because contract in ctHandleContractPairs not included in contractAddresses list", async function () {
-      const { decryptionManager, user, contractAddress } = await loadFixture(prepareAllowAccountFixture);
+      // Create a fake contract address list
+      const fakeContractAddresses = [(await createAndFundRandomUser()).address];
 
-      // Create dummy input data for the user decryption request
-      const contractAddresses = [hre.ethers.Wallet.createRandom().address];
-      const publicKey = hre.ethers.randomBytes(32);
-      const ctHandleContractPairs: CtHandleContractPairStruct[] = [
-        {
-          contractAddress,
-          ctHandle: ctHandles[0],
-        },
-      ];
-      const requestValidity: IDecryptionManager.RequestValidityStruct = {
-        durationDays: 120,
-        startTimestamp: Date.now(),
-      };
-
-      // Create EIP712 messages and get associated KMS nodes' signatures
+      // Create EIP712 message using the fake contract address list
       const decryptionManagerAddress = await decryptionManager.getAddress();
-      const eip712Message = createEIP712RequestUserDecrypt(
+      const eip712RequestMessage = createEIP712RequestUserDecrypt(
         chainId,
         decryptionManagerAddress,
         publicKey,
-        contractAddresses,
-        chainId,
+        fakeContractAddresses,
+        hostChainId,
         requestValidity.startTimestamp.toString(),
         requestValidity.durationDays.toString(),
       );
 
       // Sign the message with the user
-      const [userSignature] = await getSignaturesUserDecryptRequest(eip712Message, [user]);
+      const [userSignature] = await getSignaturesUserDecryptRequest(eip712RequestMessage, [user]);
 
       // Request user decryption
-      const requestTx = decryptionManager
-        .connect(user)
-        .userDecryptionRequest(
-          ctHandleContractPairs,
-          requestValidity,
-          chainId,
-          contractAddresses,
-          user.address,
-          publicKey,
-          userSignature,
-        );
+      const requestTx = decryptionManager.userDecryptionRequest(
+        ctHandleContractPairs,
+        requestValidity,
+        hostChainId,
+        fakeContractAddresses,
+        user.address,
+        publicKey,
+        userSignature,
+      );
 
-      // Check request event
+      // Check that the request fails because the contract address is not included in the contractAddresses list
       await expect(requestTx)
         .to.be.revertedWithCustomError(decryptionManager, "ContractNotInContractAddresses")
-        .withArgs(contractAddress);
+        .withArgs(contractAddress, fakeContractAddresses);
     });
 
     it("Should revert because of ctMaterials tied to different key IDs", async function () {
-      const {
-        keyManager,
-        decryptionManager,
-        ciphertextManager,
-        aclManager,
-        admin,
-        coprocessorSigners,
-        kmsSigners,
-        user,
+      const keyId2 = await createAndRotateKey(
         keyId1,
-        contractAddress,
-        requestValidity,
-        publicKey,
-        eip712RequestMessage,
+        keyManager,
+        admin,
+        coprocessorTxSenders,
+        kmsTxSenders,
         fheParamsName,
-      } = await loadFixture(prepareUserDecryptEIP712Fixture);
-
-      const keyId2 = await createAndRotateKey(keyId1, keyManager, admin, coprocessorSigners, kmsSigners, fheParamsName);
+      );
 
       // Define ciphertext dummy values
-      const ctHandle = 2050;
+      const fakeCtHandle = 2050;
       const ciphertextDigest = hre.ethers.hexlify(hre.ethers.randomBytes(32));
       const snsCiphertextDigest = hre.ethers.hexlify(hre.ethers.randomBytes(32));
 
       // Store the ciphertext and allow public decryption
-      for (let i = 0; i < coprocessorSigners.length; i++) {
+      for (let i = 0; i < coprocessorTxSenders.length; i++) {
         await ciphertextManager
-          .connect(coprocessorSigners[i])
-          .addCiphertextMaterial(ctHandle, keyId2, chainId, ciphertextDigest, snsCiphertextDigest);
+          .connect(coprocessorTxSenders[i])
+          .addCiphertextMaterial(fakeCtHandle, keyId2, hostChainId, ciphertextDigest, snsCiphertextDigest);
       }
-      for (let i = 0; i < coprocessorSigners.length; i++) {
-        await aclManager.connect(coprocessorSigners[i]).allowAccount(chainId, ctHandle, user.address);
-        await aclManager.connect(coprocessorSigners[i]).allowAccount(chainId, ctHandle, contractAddress);
+      for (let i = 0; i < coprocessorTxSenders.length; i++) {
+        await aclManager.connect(coprocessorTxSenders[i]).allowAccount(hostChainId, fakeCtHandle, user.address);
+        await aclManager.connect(coprocessorTxSenders[i]).allowAccount(hostChainId, fakeCtHandle, contractAddress);
       }
 
-      // Create dummy input data for the user decryption request
-      const contractsChainId = chainId;
-      const contractAddresses = [contractAddress];
-      const ctHandleContractPairs: CtHandleContractPairStruct[] = [
+      // Create a fake input containing 2 handles tied to different key IDs
+      const fakeCtHandleContractPairs: CtHandleContractPairStruct[] = [
         {
           contractAddress,
           ctHandle: ctHandles[0],
         },
         {
           contractAddress,
-          ctHandle,
+          ctHandle: fakeCtHandle,
         },
       ];
 
@@ -972,17 +852,15 @@ describe("DecryptionManager", function () {
       const [userSignature] = await getSignaturesUserDecryptRequest(eip712RequestMessage, [user]);
 
       // Request user decryption with ctMaterials tied to different key IDs
-      const requestTx = decryptionManager
-        .connect(user)
-        .userDecryptionRequest(
-          ctHandleContractPairs,
-          requestValidity,
-          contractsChainId,
-          contractAddresses,
-          user.address,
-          publicKey,
-          userSignature,
-        );
+      const requestTx = decryptionManager.userDecryptionRequest(
+        fakeCtHandleContractPairs,
+        requestValidity,
+        hostChainId,
+        contractAddresses,
+        user.address,
+        publicKey,
+        userSignature,
+      );
 
       // Check that different key IDs are not allowed for batched user decryption
       await expect(requestTx)
@@ -991,61 +869,31 @@ describe("DecryptionManager", function () {
     });
 
     it("Should reach consensus with 3 valid responses", async function () {
-      const {
-        decryptionManager,
-        user,
-        contractAddress,
-        requestValidity,
-        publicKey,
-        kmsSigners,
-        eip712RequestMessage,
-        eip712ResponseMessage,
-      } = await loadFixture(prepareUserDecryptEIP712Fixture);
-
-      // Create dummy input data for the user decryption request
-      const contractsChainId = chainId;
-      const contractAddresses = [contractAddress];
-      const ctHandleContractPairs: CtHandleContractPairStruct[] = [
-        {
-          contractAddress,
-          ctHandle: ctHandles[0],
-        },
-      ];
-
-      // Sign the message with the user
-      const [userSignature] = await getSignaturesUserDecryptRequest(eip712RequestMessage, [user]);
-
       // Request user decryption
       await decryptionManager
         .connect(user)
         .userDecryptionRequest(
           ctHandleContractPairs,
           requestValidity,
-          contractsChainId,
+          hostChainId,
           contractAddresses,
           user.address,
           publicKey,
           userSignature,
         );
 
-      // Sign the message with all KMS nodes and get the first 3 signatures
-      const [signature1, signature2, signature3] = await getSignaturesUserDecryptResponse(
-        eip712ResponseMessage,
-        kmsSigners,
-      );
-
-      // Trigger three valid user decryption responses
+      // Trigger three valid user decryption responses using different KMS transaction senders
       await decryptionManager
-        .connect(kmsSigners[0])
-        .userDecryptionResponse(userDecryptionId, reencryptedShare, signature1);
+        .connect(kmsTxSenders[0])
+        .userDecryptionResponse(userDecryptionId, reencryptedShare, kmsSignatures[0]);
 
       await decryptionManager
-        .connect(kmsSigners[1])
-        .userDecryptionResponse(userDecryptionId, reencryptedShare, signature2);
+        .connect(kmsTxSenders[1])
+        .userDecryptionResponse(userDecryptionId, reencryptedShare, kmsSignatures[1]);
 
       const responseTx3 = await decryptionManager
-        .connect(kmsSigners[2])
-        .userDecryptionResponse(userDecryptionId, reencryptedShare, signature3);
+        .connect(kmsTxSenders[2])
+        .userDecryptionResponse(userDecryptionId, reencryptedShare, kmsSignatures[2]);
 
       // Consensus should be reached at the third response (reconstruction threshold)
       // Check 3rd response event: it should only contain 3 valid signatures
@@ -1054,7 +902,7 @@ describe("DecryptionManager", function () {
         .withArgs(
           userDecryptionId,
           [reencryptedShare, reencryptedShare, reencryptedShare],
-          [signature1, signature2, signature3],
+          [kmsSignatures[0], kmsSignatures[1], kmsSignatures[2]],
         );
 
       // Check that the user decryption is done
@@ -1063,65 +911,35 @@ describe("DecryptionManager", function () {
     });
 
     it("Should ignore other valid responses", async function () {
-      const {
-        decryptionManager,
-        user,
-        publicKey,
-        requestValidity,
-        contractAddress,
-        kmsSigners,
-        eip712RequestMessage,
-        eip712ResponseMessage,
-      } = await loadFixture(prepareUserDecryptEIP712Fixture);
-
-      // Create dummy input data for the user decryption request
-      const contractsChainId = chainId;
-      const contractAddresses = [contractAddress];
-      const ctHandleContractPairs: CtHandleContractPairStruct[] = [
-        {
-          contractAddress,
-          ctHandle: ctHandles[0],
-        },
-      ];
-
-      // Sign the message with the user
-      const [userSignature] = await getSignaturesUserDecryptRequest(eip712RequestMessage, [user]);
-
       // Request user decryption
       await decryptionManager
         .connect(user)
         .userDecryptionRequest(
           ctHandleContractPairs,
           requestValidity,
-          contractsChainId,
+          hostChainId,
           contractAddresses,
           user.address,
           publicKey,
           userSignature,
         );
 
-      // Sign the message with all KMS nodes and get the first 3 signatures
-      const [signature1, signature2, signature3, signature4] = await getSignaturesUserDecryptResponse(
-        eip712ResponseMessage,
-        kmsSigners,
-      );
-
-      // Trigger three valid user decryption responses
+      // Trigger three valid user decryption responses using different KMS transaction senders
       const responseTx1 = await decryptionManager
-        .connect(kmsSigners[0])
-        .userDecryptionResponse(userDecryptionId, reencryptedShare, signature1);
+        .connect(kmsTxSenders[0])
+        .userDecryptionResponse(userDecryptionId, reencryptedShare, kmsSignatures[0]);
 
       const responseTx2 = await decryptionManager
-        .connect(kmsSigners[1])
-        .userDecryptionResponse(userDecryptionId, reencryptedShare, signature2);
+        .connect(kmsTxSenders[1])
+        .userDecryptionResponse(userDecryptionId, reencryptedShare, kmsSignatures[1]);
 
       await decryptionManager
-        .connect(kmsSigners[2])
-        .userDecryptionResponse(userDecryptionId, reencryptedShare, signature3);
+        .connect(kmsTxSenders[2])
+        .userDecryptionResponse(userDecryptionId, reencryptedShare, kmsSignatures[2]);
 
       const responseTx4 = await decryptionManager
-        .connect(kmsSigners[3])
-        .userDecryptionResponse(userDecryptionId, reencryptedShare, signature4);
+        .connect(kmsTxSenders[3])
+        .userDecryptionResponse(userDecryptionId, reencryptedShare, kmsSignatures[3]);
 
       // Check that the 1st, 2nd and 4th responses do not emit an event:
       // - 1st and 2nd responses are ignored because consensus is not reached yet
@@ -1141,19 +959,8 @@ describe("DecryptionManager", function () {
 
     // Allow handles for user decryption
     async function prepareAllowDelegatedUserDecryptionFixture() {
-      const {
-        keyManager,
-        aclManager,
-        decryptionManager,
-        ciphertextManager,
-        admin,
-        kmsSigners,
-        coprocessorSigners,
-        user,
-        snsCiphertextMaterials,
-        keyId1,
-        fheParamsName,
-      } = await loadFixture(prepareAddCiphertextFixture);
+      const fixtureData = await loadFixture(prepareAddCiphertextFixture);
+      const { coprocessorTxSenders, aclManager, user } = fixtureData;
 
       const delegationAccounts: IDecryptionManager.DelegationAccountsStruct = {
         userAddress: user.address,
@@ -1164,11 +971,11 @@ describe("DecryptionManager", function () {
       const ctHandleContractPairs: CtHandleContractPairStruct[] = [];
       for (const ctHandle of ctHandles) {
         const contractAddress = hre.ethers.Wallet.createRandom().address;
-        for (let i = 0; i < coprocessorSigners.length; i++) {
+        for (let i = 0; i < coprocessorTxSenders.length; i++) {
           await aclManager
-            .connect(coprocessorSigners[i])
-            .allowAccount(chainId, ctHandle, delegationAccounts.delegatedAddress);
-          await aclManager.connect(coprocessorSigners[i]).allowAccount(chainId, ctHandle, contractAddress);
+            .connect(coprocessorTxSenders[i])
+            .allowAccount(hostChainId, ctHandle, delegationAccounts.delegatedAddress);
+          await aclManager.connect(coprocessorTxSenders[i]).allowAccount(hostChainId, ctHandle, contractAddress);
         }
         ctHandleContractPairs.push({
           contractAddress,
@@ -1177,48 +984,21 @@ describe("DecryptionManager", function () {
       }
 
       // Delegate account
-      for (const coprocessorSigner of coprocessorSigners) {
-        await aclManager.connect(coprocessorSigner).delegateAccount(
-          chainId,
+      for (const txSender of coprocessorTxSenders) {
+        await aclManager.connect(txSender).delegateAccount(
+          hostChainId,
           user.address,
           delegationAccounts.delegatedAddress,
           ctHandleContractPairs.map((pair) => pair.contractAddress),
         );
       }
 
-      return {
-        keyManager,
-        aclManager,
-        decryptionManager,
-        ciphertextManager,
-        admin,
-        kmsSigners,
-        coprocessorSigners,
-        user,
-        ctHandleContractPairs,
-        delegationAccounts,
-        snsCiphertextMaterials,
-        keyId1,
-        fheParamsName,
-      };
+      return { ...fixtureData, user, ctHandleContractPairs, delegationAccounts };
     }
 
     async function prepareDelegatedUserDecryptEIP712Fixture() {
-      const {
-        keyManager,
-        aclManager,
-        decryptionManager,
-        ciphertextManager,
-        admin,
-        coprocessorSigners,
-        kmsSigners,
-        user,
-        ctHandleContractPairs,
-        delegationAccounts,
-        snsCiphertextMaterials,
-        keyId1,
-        fheParamsName,
-      } = await loadFixture(prepareAllowDelegatedUserDecryptionFixture);
+      const fixtureData = await loadFixture(prepareAllowDelegatedUserDecryptionFixture);
+      const { decryptionManager, ctHandleContractPairs, delegationAccounts } = fixtureData;
 
       const publicKey = hre.ethers.randomBytes(32);
       const requestValidity: IDecryptionManager.RequestValidityStruct = {
@@ -1226,7 +1006,7 @@ describe("DecryptionManager", function () {
         startTimestamp: Date.now(),
       };
 
-      // Create EIP712 messages and get associated KMS nodes' signatures
+      // Create EIP712 messages
       const decryptionManagerAddress = await decryptionManager.getAddress();
       const eip712RequestMessage = createEIP712RequestDelegatedUserDecrypt(
         chainId,
@@ -1234,7 +1014,7 @@ describe("DecryptionManager", function () {
         publicKey,
         ctHandleContractPairs.map((pair) => pair.contractAddress.toString()),
         delegationAccounts.delegatedAddress.toString(),
-        chainId,
+        hostChainId,
         requestValidity.startTimestamp.toString(),
         requestValidity.durationDays.toString(),
       );
@@ -1247,23 +1027,13 @@ describe("DecryptionManager", function () {
       );
 
       return {
-        keyManager,
-        aclManager,
-        decryptionManager,
-        ciphertextManager,
-        admin,
-        coprocessorSigners,
-        kmsSigners,
-        user,
+        ...fixtureData,
         ctHandleContractPairs,
         delegationAccounts,
         publicKey,
         requestValidity,
-        snsCiphertextMaterials,
-        keyId1,
         eip712RequestMessage,
         eip712ResponseMessage,
-        fheParamsName,
       };
     }
 
@@ -1280,7 +1050,6 @@ describe("DecryptionManager", function () {
       } = await loadFixture(prepareDelegatedUserDecryptEIP712Fixture);
 
       // Create dummy input data for the user decryption request
-      const contractsChainId = chainId;
       const contractAddresses = ctHandleContractPairs.map((pair) => pair.contractAddress);
 
       // Sign the message with the user
@@ -1293,7 +1062,7 @@ describe("DecryptionManager", function () {
           ctHandleContractPairs,
           requestValidity,
           delegationAccounts,
-          contractsChainId,
+          hostChainId,
           contractAddresses,
           publicKey,
           userSignature,
@@ -1302,7 +1071,7 @@ describe("DecryptionManager", function () {
       // Check request event
       await expect(requestTx)
         .to.emit(decryptionManager, "UserDecryptionRequest")
-        .withArgs(userDecryptionId, snsCiphertextMaterials, publicKey);
+        .withArgs(userDecryptionId, toValues(snsCiphertextMaterials), publicKey);
     });
 
     it("Should request a user decryption with a single ctHandleContractPair", async function () {
@@ -1318,20 +1087,22 @@ describe("DecryptionManager", function () {
       } = await loadFixture(prepareDelegatedUserDecryptEIP712Fixture);
 
       // Create dummy input data for the user decryption request
-      const contractsChainId = chainId;
       const contractAddresses = ctHandleContractPairs.map((pair) => pair.contractAddress);
 
       // Sign the message with the user
       const [userSignature] = await getSignaturesDelegatedUserDecryptRequest(eip712RequestMessage, [user]);
 
+      const singleCtHandleContractPairs = ctHandleContractPairs.slice(0, 1);
+      const singleSnsCiphertextMaterials = snsCiphertextMaterials.slice(0, 1);
+
       // Request user decryption
       const requestTx = await decryptionManager
         .connect(user)
         .delegatedUserDecryptionRequest(
-          [ctHandleContractPairs[0]],
+          singleCtHandleContractPairs,
           requestValidity,
           delegationAccounts,
-          contractsChainId,
+          hostChainId,
           contractAddresses,
           publicKey,
           userSignature,
@@ -1340,7 +1111,7 @@ describe("DecryptionManager", function () {
       // Check request event
       await expect(requestTx)
         .to.emit(decryptionManager, "UserDecryptionRequest")
-        .withArgs(userDecryptionId, [snsCiphertextMaterials[0]], publicKey);
+        .withArgs(userDecryptionId, toValues(singleSnsCiphertextMaterials), publicKey);
     });
 
     it("Should request a user decryption with empty ctHandleContractPairs list", async function () {
@@ -1355,7 +1126,6 @@ describe("DecryptionManager", function () {
       } = await loadFixture(prepareDelegatedUserDecryptEIP712Fixture);
 
       // Create dummy input data for the user decryption request
-      const contractsChainId = chainId;
       const contractAddresses = ctHandleContractPairs.map((pair) => pair.contractAddress);
 
       // Sign the message with the user
@@ -1368,7 +1138,7 @@ describe("DecryptionManager", function () {
           [],
           requestValidity,
           delegationAccounts,
-          contractsChainId,
+          hostChainId,
           contractAddresses,
           publicKey,
           userSignature,
@@ -1397,7 +1167,7 @@ describe("DecryptionManager", function () {
             [],
             { durationDays: 120, startTimestamp: Date.now() },
             { userAddress: user.address, delegatedAddress: hre.ethers.Wallet.createRandom().address },
-            chainId,
+            hostChainId,
             contractAddresses,
             hre.ethers.randomBytes(32),
             hre.ethers.randomBytes(32),
@@ -1424,7 +1194,7 @@ describe("DecryptionManager", function () {
             [],
             requestValidity,
             { userAddress: user.address, delegatedAddress: hre.ethers.Wallet.createRandom().address },
-            chainId,
+            hostChainId,
             [],
             hre.ethers.randomBytes(32),
             hre.ethers.randomBytes(32),
@@ -1438,7 +1208,6 @@ describe("DecryptionManager", function () {
       const { aclManager, decryptionManager, user } = await loadFixture(loadTestVariablesFixture);
 
       // Create dummy input data for the user decryption request
-      const contractsChainId = chainId;
       const contractAddress = hre.ethers.Wallet.createRandom().address;
       const publicKey = hre.ethers.randomBytes(32);
       const userSignature = hre.ethers.randomBytes(32);
@@ -1464,7 +1233,7 @@ describe("DecryptionManager", function () {
             ctHandleContractPairs,
             requestValidity,
             { userAddress: user.address, delegatedAddress },
-            contractsChainId,
+            hostChainId,
             [contractAddress],
             publicKey,
             userSignature,
@@ -1487,12 +1256,10 @@ describe("DecryptionManager", function () {
 
       // Create dummy input data for the user decryption request
       const contractAddresses = ctHandleContractPairs.map((pair) => pair.contractAddress);
-      const fakeSigners = await hre.ethers.getSigners();
+      const fakeSigner = await createAndFundRandomUser();
 
-      // Sign the message with the user
-      const [fakeSignature] = await getSignaturesDelegatedUserDecryptRequest(eip712RequestMessage, [
-        fakeSigners.pop()!,
-      ]);
+      // Sign the message with a fake signer
+      const [fakeSignature] = await getSignaturesDelegatedUserDecryptRequest(eip712RequestMessage, [fakeSigner]);
 
       // Request user decryption
       const requestTx = decryptionManager
@@ -1501,13 +1268,13 @@ describe("DecryptionManager", function () {
           ctHandleContractPairs,
           requestValidity,
           delegationAccounts,
-          chainId,
+          hostChainId,
           contractAddresses,
           publicKey,
           fakeSignature,
         );
 
-      // Check request event
+      // Check that the request has been reverted because of an invalid EIP712 user request signature
       await expect(requestTx)
         .to.be.revertedWithCustomError(decryptionManager, "InvalidUserSignature")
         .withArgs(fakeSignature);
@@ -1519,14 +1286,14 @@ describe("DecryptionManager", function () {
       );
 
       // Create dummy input data for the user decryption request
-      const contractAddresses = [hre.ethers.Wallet.createRandom().address];
+      const fakeContractAddresses = [hre.ethers.Wallet.createRandom().address];
       const publicKey = hre.ethers.randomBytes(32);
       const requestValidity: IDecryptionManager.RequestValidityStruct = {
         durationDays: 120,
         startTimestamp: Date.now(),
       };
 
-      // Create EIP712 messages and get associated KMS nodes' signatures
+      // Create EIP712 messages
       const decryptionManagerAddress = await decryptionManager.getAddress();
       const eip712RequestMessage = createEIP712RequestDelegatedUserDecrypt(
         chainId,
@@ -1534,7 +1301,7 @@ describe("DecryptionManager", function () {
         publicKey,
         ctHandleContractPairs.map((pair) => pair.contractAddress.toString()),
         delegationAccounts.delegatedAddress.toString(),
-        chainId,
+        hostChainId,
         requestValidity.startTimestamp.toString(),
         requestValidity.durationDays.toString(),
       );
@@ -1549,8 +1316,8 @@ describe("DecryptionManager", function () {
           ctHandleContractPairs,
           requestValidity,
           delegationAccounts,
-          chainId,
-          contractAddresses,
+          hostChainId,
+          fakeContractAddresses,
           publicKey,
           userSignature,
         );
@@ -1558,7 +1325,7 @@ describe("DecryptionManager", function () {
       // Check request event
       await expect(requestTx)
         .to.be.revertedWithCustomError(decryptionManager, "ContractNotInContractAddresses")
-        .withArgs(ctHandleContractPairs[0].contractAddress);
+        .withArgs(ctHandleContractPairs[0].contractAddress, fakeContractAddresses);
     });
 
     it("Should revert because of ctMaterials tied to different key IDs", async function () {
@@ -1568,8 +1335,8 @@ describe("DecryptionManager", function () {
         ciphertextManager,
         aclManager,
         admin,
-        coprocessorSigners,
-        kmsSigners,
+        coprocessorTxSenders,
+        kmsTxSenders,
         user,
         keyId1,
         ctHandleContractPairs,
@@ -1580,7 +1347,14 @@ describe("DecryptionManager", function () {
         fheParamsName,
       } = await loadFixture(prepareDelegatedUserDecryptEIP712Fixture);
 
-      const keyId2 = await createAndRotateKey(keyId1, keyManager, admin, coprocessorSigners, kmsSigners, fheParamsName);
+      const keyId2 = await createAndRotateKey(
+        keyId1,
+        keyManager,
+        admin,
+        coprocessorTxSenders,
+        kmsTxSenders,
+        fheParamsName,
+      );
 
       // Define ciphertext dummy values
       const ciphertextDigest = hre.ethers.hexlify(hre.ethers.randomBytes(32));
@@ -1591,22 +1365,27 @@ describe("DecryptionManager", function () {
       };
 
       // Store the ciphertext and allow public decryption
-      for (let i = 0; i < coprocessorSigners.length; i++) {
+      for (let i = 0; i < coprocessorTxSenders.length; i++) {
         await ciphertextManager
-          .connect(coprocessorSigners[i])
-          .addCiphertextMaterial(ctHandleContractPair.ctHandle, keyId2, chainId, ciphertextDigest, snsCiphertextDigest);
+          .connect(coprocessorTxSenders[i])
+          .addCiphertextMaterial(
+            ctHandleContractPair.ctHandle,
+            keyId2,
+            hostChainId,
+            ciphertextDigest,
+            snsCiphertextDigest,
+          );
       }
-      for (let i = 0; i < coprocessorSigners.length; i++) {
+      for (let i = 0; i < coprocessorTxSenders.length; i++) {
         await aclManager
-          .connect(coprocessorSigners[i])
-          .allowAccount(chainId, ctHandleContractPair.ctHandle, delegationAccounts.delegatedAddress);
+          .connect(coprocessorTxSenders[i])
+          .allowAccount(hostChainId, ctHandleContractPair.ctHandle, delegationAccounts.delegatedAddress);
         await aclManager
-          .connect(coprocessorSigners[i])
-          .allowAccount(chainId, ctHandleContractPair.ctHandle, ctHandleContractPair.contractAddress);
+          .connect(coprocessorTxSenders[i])
+          .allowAccount(hostChainId, ctHandleContractPair.ctHandle, ctHandleContractPair.contractAddress);
       }
 
       // Create dummy input data for the user decryption request
-      const contractsChainId = chainId;
       const contractAddresses = ctHandleContractPairs.map((pair) => pair.contractAddress);
 
       // Sign the message with the user
@@ -1619,7 +1398,7 @@ describe("DecryptionManager", function () {
           [ctHandleContractPair, ...ctHandleContractPairs.slice(1)],
           requestValidity,
           delegationAccounts,
-          contractsChainId,
+          hostChainId,
           contractAddresses,
           publicKey,
           userSignature,
@@ -1639,13 +1418,13 @@ describe("DecryptionManager", function () {
         requestValidity,
         delegationAccounts,
         publicKey,
+        kmsTxSenders,
         kmsSigners,
         eip712RequestMessage,
         eip712ResponseMessage,
       } = await loadFixture(prepareDelegatedUserDecryptEIP712Fixture);
 
       // Create dummy input data for the user decryption request
-      const contractsChainId = chainId;
       const contractAddresses = ctHandleContractPairs.map((pair) => pair.contractAddress);
 
       // Sign the message with the user
@@ -1658,29 +1437,29 @@ describe("DecryptionManager", function () {
           ctHandleContractPairs,
           requestValidity,
           delegationAccounts,
-          contractsChainId,
+          hostChainId,
           contractAddresses,
           publicKey,
           userSignature,
         );
 
-      // Sign the message with all KMS nodes and get the first 3 signatures
+      // Sign the message with all KMS signers and get the first 3 signatures
       const [signature1, signature2, signature3] = await getSignaturesUserDecryptResponse(
         eip712ResponseMessage,
         kmsSigners,
       );
 
-      // Trigger three valid user decryption responses
+      // Trigger three valid user decryption responses using different KMS transaction senders
       await decryptionManager
-        .connect(kmsSigners[0])
+        .connect(kmsTxSenders[0])
         .userDecryptionResponse(userDecryptionId, reencryptedShare, signature1);
 
       await decryptionManager
-        .connect(kmsSigners[1])
+        .connect(kmsTxSenders[1])
         .userDecryptionResponse(userDecryptionId, reencryptedShare, signature2);
 
       const responseTx3 = await decryptionManager
-        .connect(kmsSigners[2])
+        .connect(kmsTxSenders[2])
         .userDecryptionResponse(userDecryptionId, reencryptedShare, signature3);
 
       // Consensus should be reached at the third response (reconstruction threshold)
@@ -1706,13 +1485,13 @@ describe("DecryptionManager", function () {
         ctHandleContractPairs,
         requestValidity,
         delegationAccounts,
+        kmsTxSenders,
         kmsSigners,
         eip712RequestMessage,
         eip712ResponseMessage,
       } = await loadFixture(prepareDelegatedUserDecryptEIP712Fixture);
 
       // Create dummy input data for the user decryption request
-      const contractsChainId = chainId;
       const contractAddresses = ctHandleContractPairs.map((pair) => pair.contractAddress);
 
       // Sign the message with the user
@@ -1725,33 +1504,33 @@ describe("DecryptionManager", function () {
           ctHandleContractPairs,
           requestValidity,
           delegationAccounts,
-          contractsChainId,
+          hostChainId,
           contractAddresses,
           publicKey,
           userSignature,
         );
 
-      // Sign the message with all KMS nodes and get the first 3 signatures
+      // Sign the message with all KMS signers and get the first 3 signatures
       const [signature1, signature2, signature3, signature4] = await getSignaturesUserDecryptResponse(
         eip712ResponseMessage,
         kmsSigners,
       );
 
-      // Trigger three valid user decryption responses
+      // Trigger three valid user decryption responses using different KMS transaction senders
       const responseTx1 = await decryptionManager
-        .connect(kmsSigners[0])
+        .connect(kmsTxSenders[0])
         .userDecryptionResponse(userDecryptionId, reencryptedShare, signature1);
 
       const responseTx2 = await decryptionManager
-        .connect(kmsSigners[1])
+        .connect(kmsTxSenders[1])
         .userDecryptionResponse(userDecryptionId, reencryptedShare, signature2);
 
       await decryptionManager
-        .connect(kmsSigners[2])
+        .connect(kmsTxSenders[2])
         .userDecryptionResponse(userDecryptionId, reencryptedShare, signature3);
 
       const responseTx4 = await decryptionManager
-        .connect(kmsSigners[3])
+        .connect(kmsTxSenders[3])
         .userDecryptionResponse(userDecryptionId, reencryptedShare, signature4);
 
       // Check that the 1st, 2nd and 4th responses do not emit an event:

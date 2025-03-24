@@ -1,6 +1,7 @@
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { expect } from "chai";
-import { HDNodeWallet, Wallet } from "ethers";
+import { HDNodeWallet } from "ethers";
 import hre from "hardhat";
 
 import { ACLManager, CiphertextManager, HTTPZ } from "../typechain-types";
@@ -20,21 +21,21 @@ describe("ACLManager", function () {
   let httpz: HTTPZ;
   let aclManager: ACLManager;
   let ciphertextManager: CiphertextManager;
-  let coprocessorSigners: Wallet[];
-  let fakeSigner: HDNodeWallet;
+  let coprocessorTxSenders: HardhatEthersSigner[];
+  let fakeTxSender: HDNodeWallet;
 
   async function prepareACLManagerFixture() {
-    const { httpz, aclManager, ciphertextManager, coprocessorSigners } = await loadFixture(loadTestVariablesFixture);
+    const fixtureData = await loadFixture(loadTestVariablesFixture);
+    const { ciphertextManager, coprocessorTxSenders } = fixtureData;
 
     // Add the ciphertext to the CiphertextManager contract state which will be used during the tests
-    for (let i = 0; i < coprocessorSigners.length; i++) {
+    for (let i = 0; i < coprocessorTxSenders.length; i++) {
       await ciphertextManager
-        .connect(coprocessorSigners[i])
+        .connect(coprocessorTxSenders[i])
         .addCiphertextMaterial(ctHandle, keyId, chainId, ciphertextDigest, snsCiphertextDigest);
     }
 
-    const fakeSigner = await createAndFundRandomUser();
-    return { httpz, aclManager, ciphertextManager, coprocessorSigners, fakeSigner };
+    return fixtureData;
   }
 
   beforeEach(async function () {
@@ -43,8 +44,9 @@ describe("ACLManager", function () {
     httpz = fixture.httpz;
     aclManager = fixture.aclManager;
     ciphertextManager = fixture.ciphertextManager;
-    coprocessorSigners = fixture.coprocessorSigners;
-    fakeSigner = fixture.fakeSigner;
+    coprocessorTxSenders = fixture.coprocessorTxSenders;
+
+    fakeTxSender = await createAndFundRandomUser();
   });
 
   describe("Allow account", async function () {
@@ -52,8 +54,8 @@ describe("ACLManager", function () {
 
     it("Should allow account to use the ciphertext", async function () {
       // When
-      await aclManager.connect(coprocessorSigners[0]).allowAccount(chainId, ctHandle, allowedAddress);
-      const txResponse = aclManager.connect(coprocessorSigners[1]).allowAccount(chainId, ctHandle, allowedAddress);
+      await aclManager.connect(coprocessorTxSenders[0]).allowAccount(chainId, ctHandle, allowedAddress);
+      const txResponse = aclManager.connect(coprocessorTxSenders[1]).allowAccount(chainId, ctHandle, allowedAddress);
 
       // Then
       await expect(txResponse).to.emit(aclManager, "AllowAccount").withArgs(ctHandle, allowedAddress);
@@ -61,23 +63,23 @@ describe("ACLManager", function () {
 
     it("Should revert with CoprocessorAlreadyAllowed", async function () {
       // When
-      await aclManager.connect(coprocessorSigners[0]).allowAccount(chainId, ctHandle, allowedAddress);
-      const txResponse = aclManager.connect(coprocessorSigners[0]).allowAccount(chainId, ctHandle, allowedAddress);
+      await aclManager.connect(coprocessorTxSenders[0]).allowAccount(chainId, ctHandle, allowedAddress);
+      const txResponse = aclManager.connect(coprocessorTxSenders[0]).allowAccount(chainId, ctHandle, allowedAddress);
 
       // Then
       await expect(txResponse)
         .revertedWithCustomError(aclManager, "CoprocessorAlreadyAllowed")
-        .withArgs(coprocessorSigners[0].address, ctHandle);
+        .withArgs(coprocessorTxSenders[0].address, ctHandle);
     });
 
-    it("Should revert because the signer is not a Coprocessor", async function () {
+    it("Should revert because the transaction sender is not a coprocessor", async function () {
       // When
-      const txResponse = aclManager.connect(fakeSigner).allowAccount(chainId, ctHandle, allowedAddress);
+      const txResponse = aclManager.connect(fakeTxSender).allowAccount(chainId, ctHandle, allowedAddress);
 
       // Then
       await expect(txResponse)
         .revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
-        .withArgs(fakeSigner.address, httpz.COPROCESSOR_ROLE());
+        .withArgs(fakeTxSender.address, httpz.COPROCESSOR_TX_SENDER_ROLE());
     });
 
     it("Should revert because the coprocessor has not previously added the ciphertext", async function () {
@@ -86,37 +88,39 @@ describe("ACLManager", function () {
 
       // Try allowing an account to use the not yet added ctHandle
       const txResponse1 = aclManager
-        .connect(coprocessorSigners[0])
+        .connect(coprocessorTxSenders[0])
         .allowAccount(chainId, notAddedCtHandle, allowedAddress);
 
       // Then transaction reverts because the coprocessor has not added the ctHandle
       await expect(txResponse1)
         .revertedWithCustomError(ciphertextManager, "CoprocessorHasNotAdded")
-        .withArgs(notAddedCtHandle, chainId, coprocessorSigners[0].address);
+        .withArgs(notAddedCtHandle, chainId, coprocessorTxSenders[0].address);
     });
 
     it("Should revert because the coprocessor has not previously added the ciphertext for given network", async function () {
       // Given a recently added ctHandle
       const ctHandle = hre.ethers.hexlify(hre.ethers.randomBytes(8));
       await ciphertextManager
-        .connect(coprocessorSigners[0])
+        .connect(coprocessorTxSenders[0])
         .addCiphertextMaterial(ctHandle, keyId, chainId, ciphertextDigest, snsCiphertextDigest);
 
       // Try allowing an account to use the previously added ctHandle but with a wrong chainId
-      const txResponse1 = aclManager.connect(coprocessorSigners[0]).allowAccount(fakeChainId, ctHandle, allowedAddress);
+      const txResponse1 = aclManager
+        .connect(coprocessorTxSenders[0])
+        .allowAccount(fakeChainId, ctHandle, allowedAddress);
 
       // Then transaction reverts because the coprocessor has not added the ctHandle for the given network
       await expect(txResponse1)
         .revertedWithCustomError(ciphertextManager, "CoprocessorHasNotAdded")
-        .withArgs(ctHandle, fakeChainId, coprocessorSigners[0].address);
+        .withArgs(ctHandle, fakeChainId, coprocessorTxSenders[0].address);
     });
   });
 
   describe("Allow public decrypt", async function () {
     it("Should allow for public decryption", async function () {
       // When
-      await aclManager.connect(coprocessorSigners[0]).allowPublicDecrypt(chainId, ctHandle);
-      const txResponse = aclManager.connect(coprocessorSigners[1]).allowPublicDecrypt(chainId, ctHandle);
+      await aclManager.connect(coprocessorTxSenders[0]).allowPublicDecrypt(chainId, ctHandle);
+      const txResponse = aclManager.connect(coprocessorTxSenders[1]).allowPublicDecrypt(chainId, ctHandle);
 
       // Then
       await expect(txResponse).to.emit(aclManager, "AllowPublicDecrypt").withArgs(ctHandle);
@@ -124,23 +128,23 @@ describe("ACLManager", function () {
 
     it("Should revert with CoprocessorAlreadyAllowed", async function () {
       // When
-      await aclManager.connect(coprocessorSigners[0]).allowPublicDecrypt(chainId, ctHandle);
-      const txResponse = aclManager.connect(coprocessorSigners[0]).allowPublicDecrypt(chainId, ctHandle);
+      await aclManager.connect(coprocessorTxSenders[0]).allowPublicDecrypt(chainId, ctHandle);
+      const txResponse = aclManager.connect(coprocessorTxSenders[0]).allowPublicDecrypt(chainId, ctHandle);
 
       // Then
       await expect(txResponse)
         .revertedWithCustomError(aclManager, "CoprocessorAlreadyAllowed")
-        .withArgs(coprocessorSigners[0].address, ctHandle);
+        .withArgs(coprocessorTxSenders[0].address, ctHandle);
     });
 
-    it("Should revert because the signer is not a Coprocessor", async function () {
+    it("Should revert because the transaction sender is not a coprocessor", async function () {
       // When
-      const txResponse = aclManager.connect(fakeSigner).allowPublicDecrypt(chainId, ctHandle);
+      const txResponse = aclManager.connect(fakeTxSender).allowPublicDecrypt(chainId, ctHandle);
 
       // Then
       await expect(txResponse)
         .revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
-        .withArgs(fakeSigner.address, httpz.COPROCESSOR_ROLE());
+        .withArgs(fakeTxSender.address, httpz.COPROCESSOR_TX_SENDER_ROLE());
     });
 
     it("Should revert because the coprocessor has not previously added the ciphertext", async function () {
@@ -148,28 +152,28 @@ describe("ACLManager", function () {
       const notAddedCtHandle = hre.ethers.hexlify(hre.ethers.randomBytes(8));
 
       // Try allowing public decryption on the not yet added ctHandle
-      const txResponse1 = aclManager.connect(coprocessorSigners[0]).allowPublicDecrypt(chainId, notAddedCtHandle);
+      const txResponse1 = aclManager.connect(coprocessorTxSenders[0]).allowPublicDecrypt(chainId, notAddedCtHandle);
 
       // Then transaction reverts because the coprocessor has not added the ctHandle
       await expect(txResponse1)
         .revertedWithCustomError(ciphertextManager, "CoprocessorHasNotAdded")
-        .withArgs(notAddedCtHandle, chainId, coprocessorSigners[0].address);
+        .withArgs(notAddedCtHandle, chainId, coprocessorTxSenders[0].address);
     });
 
     it("Should revert because the coprocessor has not previously added the ciphertext for given network", async function () {
       // Given a recently added ctHandle
       const ctHandle = hre.ethers.hexlify(hre.ethers.randomBytes(8));
       await ciphertextManager
-        .connect(coprocessorSigners[0])
+        .connect(coprocessorTxSenders[0])
         .addCiphertextMaterial(ctHandle, keyId, chainId, ciphertextDigest, snsCiphertextDigest);
 
       // Try allowing public decryption on the previously added ctHandle but with a wrong chainId
-      const txResponse1 = aclManager.connect(coprocessorSigners[0]).allowPublicDecrypt(fakeChainId, ctHandle);
+      const txResponse1 = aclManager.connect(coprocessorTxSenders[0]).allowPublicDecrypt(fakeChainId, ctHandle);
 
       // Then transaction reverts because the coprocessor has not added the ctHandle for the given network
       await expect(txResponse1)
         .revertedWithCustomError(ciphertextManager, "CoprocessorHasNotAdded")
-        .withArgs(ctHandle, fakeChainId, coprocessorSigners[0].address);
+        .withArgs(ctHandle, fakeChainId, coprocessorTxSenders[0].address);
     });
   });
 
@@ -184,10 +188,10 @@ describe("ACLManager", function () {
     it("Should delegate account", async function () {
       // When
       await aclManager
-        .connect(coprocessorSigners[0])
+        .connect(coprocessorTxSenders[0])
         .delegateAccount(chainId, delegator, delegatee, [allowedContract1, allowedContract2, allowedContract3]);
       const txResponse = aclManager
-        .connect(coprocessorSigners[1])
+        .connect(coprocessorTxSenders[1])
         .delegateAccount(chainId, delegator, delegatee, [allowedContract1, allowedContract2, allowedContract3]);
 
       // Then
@@ -199,28 +203,28 @@ describe("ACLManager", function () {
     it("Should revert with CoprocessorAlreadyDelegated", async function () {
       // When
       await aclManager
-        .connect(coprocessorSigners[0])
+        .connect(coprocessorTxSenders[0])
         .delegateAccount(chainId, delegator, delegatee, [allowedContract1]);
       const txResponse = aclManager
-        .connect(coprocessorSigners[0])
+        .connect(coprocessorTxSenders[0])
         .delegateAccount(chainId, delegator, delegatee, [allowedContract1]);
 
       // Then
       await expect(txResponse)
         .revertedWithCustomError(aclManager, "CoprocessorAlreadyDelegated")
-        .withArgs(coprocessorSigners[0].address, chainId, delegator, delegatee, [allowedContract1]);
+        .withArgs(coprocessorTxSenders[0].address, chainId, delegator, delegatee, [allowedContract1]);
     });
 
-    it("Should revert because the signer is not a Coprocessor", async function () {
+    it("Should revert because the transaction sender is not a coprocessor", async function () {
       // When
       const txResponse = aclManager
-        .connect(fakeSigner)
+        .connect(fakeTxSender)
         .delegateAccount(chainId, delegator, delegatee, [allowedContract1]);
 
       // Then
       await expect(txResponse)
         .revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
-        .withArgs(fakeSigner.address, httpz.COPROCESSOR_ROLE());
+        .withArgs(fakeTxSender.address, httpz.COPROCESSOR_TX_SENDER_ROLE());
     });
 
     it("Should revert because the contracts list exceeds the maximum length", async function () {
@@ -232,7 +236,7 @@ describe("ACLManager", function () {
       }
       // When
       const txResponse = aclManager
-        .connect(coprocessorSigners[0])
+        .connect(coprocessorTxSenders[0])
         .delegateAccount(chainId, delegator, delegatee, exceededContracts);
 
       // Then
@@ -249,14 +253,14 @@ describe("ACLManager", function () {
 
     beforeEach(async function () {
       // Setup the account access permission
-      for (let i = 0; i < coprocessorSigners.length; i++) {
-        await aclManager.connect(coprocessorSigners[i]).allowAccount(chainId, ctHandle, allowedUserAddress);
-        await aclManager.connect(coprocessorSigners[i]).allowAccount(chainId, ctHandle, allowedContractAddress);
+      for (let i = 0; i < coprocessorTxSenders.length; i++) {
+        await aclManager.connect(coprocessorTxSenders[i]).allowAccount(chainId, ctHandle, allowedUserAddress);
+        await aclManager.connect(coprocessorTxSenders[i]).allowAccount(chainId, ctHandle, allowedContractAddress);
       }
     });
 
     it("Should check account is allowed to use the ciphertext", async function () {
-      await aclManager.connect(coprocessorSigners[0]).checkAccountAllowed(allowedUserAddress, ctHandleContractPairs);
+      await aclManager.connect(coprocessorTxSenders[0]).checkAccountAllowed(allowedUserAddress, ctHandleContractPairs);
     });
 
     it("Should revert because user part of the contract addresses", async function () {
@@ -264,7 +268,7 @@ describe("ACLManager", function () {
 
       // Check that the fakeUserAddress is not allowed to use the ciphertext
       await expect(
-        aclManager.connect(coprocessorSigners[0]).checkAccountAllowed(allowedUserAddress, fakeCtHandleContractPairs),
+        aclManager.connect(coprocessorTxSenders[0]).checkAccountAllowed(allowedUserAddress, fakeCtHandleContractPairs),
       )
         .to.be.revertedWithCustomError(aclManager, "AccountAddressInContractAddresses")
         .withArgs(allowedUserAddress);
@@ -275,7 +279,7 @@ describe("ACLManager", function () {
 
       // Check that the fakeUserAddress is not allowed to use the ciphertext
       await expect(
-        aclManager.connect(coprocessorSigners[0]).checkAccountAllowed(fakeUserAddress, ctHandleContractPairs),
+        aclManager.connect(coprocessorTxSenders[0]).checkAccountAllowed(fakeUserAddress, ctHandleContractPairs),
       )
         .to.be.revertedWithCustomError(aclManager, "AccountNotAllowedToUseCiphertext")
         .withArgs(ctHandle, fakeUserAddress);
@@ -287,7 +291,7 @@ describe("ACLManager", function () {
 
       // Check that the fakeContractAddress is not allowed to use the ciphertext
       await expect(
-        aclManager.connect(coprocessorSigners[0]).checkAccountAllowed(allowedUserAddress, fakeCtHandleContractPairs),
+        aclManager.connect(coprocessorTxSenders[0]).checkAccountAllowed(allowedUserAddress, fakeCtHandleContractPairs),
       )
         .to.be.revertedWithCustomError(aclManager, "ContractNotAllowedToUseCiphertext")
         .withArgs(ctHandle, fakeContractAddress);
@@ -297,18 +301,18 @@ describe("ACLManager", function () {
   describe("Check public decrypt allowed", async function () {
     beforeEach(async function () {
       // Setup the public decrypt permission for the given chainId and ctHandle used during tests
-      for (let i = 0; i < coprocessorSigners.length; i++) {
-        await aclManager.connect(coprocessorSigners[i]).allowPublicDecrypt(chainId, ctHandle);
+      for (let i = 0; i < coprocessorTxSenders.length; i++) {
+        await aclManager.connect(coprocessorTxSenders[i]).allowPublicDecrypt(chainId, ctHandle);
       }
     });
 
     it("Should check public decrypt is allowed", async function () {
-      await aclManager.connect(coprocessorSigners[0]).checkPublicDecryptAllowed([ctHandle]);
+      await aclManager.connect(coprocessorTxSenders[0]).checkPublicDecryptAllowed([ctHandle]);
     });
 
     it("Should revert with PublicDecryptNotAllowed", async function () {
       // Check that the fakeCtHandle is not allowed for public decryption
-      await expect(aclManager.connect(coprocessorSigners[0]).checkPublicDecryptAllowed([fakeCtHandle]))
+      await expect(aclManager.connect(coprocessorTxSenders[0]).checkPublicDecryptAllowed([fakeCtHandle]))
         .to.be.revertedWithCustomError(aclManager, "PublicDecryptNotAllowed")
         .withArgs(fakeCtHandle);
     });
@@ -324,9 +328,9 @@ describe("ACLManager", function () {
 
     beforeEach(async function () {
       // Setup the account delegation for the given chainId, delegator, delegatee and allowedContracts used during tests
-      for (let i = 0; i < coprocessorSigners.length; i++) {
+      for (let i = 0; i < coprocessorTxSenders.length; i++) {
         await aclManager
-          .connect(coprocessorSigners[i])
+          .connect(coprocessorTxSenders[i])
           .delegateAccount(chainId, delegator, delegatee, allowedContracts);
       }
     });

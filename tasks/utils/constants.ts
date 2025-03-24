@@ -14,4 +14,10 @@ export const ACCOUNT_NAMES = [
   "mike",
   "nina",
   "olivier",
+  "paul",
+  "quentin",
+  "rachel",
+  "sara",
+  "tom",
+  "ursula",
 ];

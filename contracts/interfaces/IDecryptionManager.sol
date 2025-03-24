@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import "./IACLManager.sol";
 import "../shared/Structs.sol";
 
 /// @title An interface for the decryption manager
@@ -78,7 +77,8 @@ interface IDecryptionManager {
 
     /// @notice Error indicating that the contract address is not included in the contract addresses list
     /// @param contractAddress The contract address that is not in the list
-    error ContractNotInContractAddresses(address contractAddress);
+    /// @param contractAddresses The list of expected contract addresses
+    error ContractNotInContractAddresses(address contractAddress, address[] contractAddresses);
 
     /// @notice Error indicating that the key IDs in a given SNS ciphertext materials list are not the same
     /// @param keyId The key ID that is different

@@ -5,11 +5,11 @@ import { ACCOUNT_NAMES } from "./utils/constants";
 
 // Use this task to get the list of accounts (addresses, private keys, public keys)
 task("get-accounts", "Prints the list of accounts")
-  .addParam("numAccounts", "Number of accounts to return (1-15)", 3, types.int)
+  .addParam("numAccounts", "Number of accounts to return (1-20)", 3, types.int)
   .setAction(async ({ numAccounts }, hre) => {
     // Validate input
-    if (numAccounts < 1 || numAccounts > 15) {
-      throw new Error("Number of accounts must be between 1 and 15");
+    if (numAccounts < 1 || numAccounts > 20) {
+      throw new Error("Number of accounts must be between 1 and 20");
     }
 
     // Get signers from hardhat

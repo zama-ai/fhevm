@@ -46,7 +46,11 @@ interface ICiphertextManager {
     /// @param ctHandle The handle of the ciphertext material.
     /// @param chainId The chain ID of the blockchain associated to the ciphertext handle.
     /// @param coprocessorAddress The address of the coprocessor.
-    function checkCoprocessorHasAdded(uint256 ctHandle, uint256 chainId, address coprocessorAddress) external view;
+    function checkCoprocessorTxSenderHasAdded(
+        uint256 ctHandle,
+        uint256 chainId,
+        address coprocessorAddress
+    ) external view;
 
     /// @notice Retrieves the list of "normal" ciphertext materials for the given handles.
     /// @param ctHandles The list of handles of the ciphertexts to retrieve.
