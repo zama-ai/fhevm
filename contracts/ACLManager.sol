@@ -73,9 +73,9 @@ contract ACLManager is IACLManager, Ownable2StepUpgradeable, UUPSUpgradeable {
         __Ownable_init(owner());
     }
 
-    /// @notice Checks if the sender is a Coprocessor.
-    modifier onlyCoprocessor() {
-        _HTTPZ.checkIsCoprocessor(msg.sender);
+    /// @notice Checks if the sender is a coprocessor transaction sender.
+    modifier onlyCoprocessorTxSender() {
+        _HTTPZ.checkIsCoprocessorTxSender(msg.sender);
         _;
     }
 
@@ -84,7 +84,7 @@ contract ACLManager is IACLManager, Ownable2StepUpgradeable, UUPSUpgradeable {
         uint256 chainId,
         uint256 ctHandle,
         address accountAddress
-    ) public virtual override onlyCoprocessor {
+    ) public virtual override onlyCoprocessorTxSender {
         ACLManagerStorage storage $ = _getACLManagerStorage();
 
         /**
@@ -93,7 +93,7 @@ contract ACLManager is IACLManager, Ownable2StepUpgradeable, UUPSUpgradeable {
          * If a Coprocessor was replaced, it should not revert the current transaction.
          */
         if (!_CIPHERTEXT_MANAGER.ciphertextMaterialExists(ctHandle)) {
-            _CIPHERTEXT_MANAGER.checkCoprocessorHasAdded(ctHandle, chainId, msg.sender);
+            _CIPHERTEXT_MANAGER.checkCoprocessorTxSenderHasAdded(ctHandle, chainId, msg.sender);
         }
 
         /**
@@ -120,7 +120,7 @@ contract ACLManager is IACLManager, Ownable2StepUpgradeable, UUPSUpgradeable {
     }
 
     /// @dev See {IACLManager-allowPublicDecrypt}.
-    function allowPublicDecrypt(uint256 chainId, uint256 ctHandle) public virtual override onlyCoprocessor {
+    function allowPublicDecrypt(uint256 chainId, uint256 ctHandle) public virtual override onlyCoprocessorTxSender {
         ACLManagerStorage storage $ = _getACLManagerStorage();
 
         /**
@@ -129,7 +129,7 @@ contract ACLManager is IACLManager, Ownable2StepUpgradeable, UUPSUpgradeable {
          * If a Coprocessor was replaced, it should not revert the current transaction.
          */
         if (!_CIPHERTEXT_MANAGER.ciphertextMaterialExists(ctHandle)) {
-            _CIPHERTEXT_MANAGER.checkCoprocessorHasAdded(ctHandle, chainId, msg.sender);
+            _CIPHERTEXT_MANAGER.checkCoprocessorTxSenderHasAdded(ctHandle, chainId, msg.sender);
         }
 
         /**
@@ -158,7 +158,7 @@ contract ACLManager is IACLManager, Ownable2StepUpgradeable, UUPSUpgradeable {
         address delegator,
         address delegatee,
         address[] calldata contractAddresses
-    ) public virtual override onlyCoprocessor {
+    ) public virtual override onlyCoprocessorTxSender {
         ACLManagerStorage storage $ = _getACLManagerStorage();
 
         if (contractAddresses.length > _MAX_CONTRACT_ADDRESSES) {

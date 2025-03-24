@@ -1,10 +1,11 @@
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { expect } from "chai";
-import { HDNodeWallet, Wallet } from "ethers";
+import { HDNodeWallet } from "ethers";
 import hre from "hardhat";
 
 import { CiphertextManager, HTTPZ } from "../typechain-types";
-import { loadTestVariablesFixture } from "./utils";
+import { createAndFundRandomUser, loadTestVariablesFixture } from "./utils";
 
 describe("CiphertextManager", function () {
   const ctHandle = 2025;
@@ -19,29 +20,30 @@ describe("CiphertextManager", function () {
 
   let httpz: HTTPZ;
   let ciphertextManager: CiphertextManager;
-  let coprocessorSigners: Wallet[];
-  let user: HDNodeWallet;
+  let coprocessorTxSenders: HardhatEthersSigner[];
+  let fakeTxSender: HDNodeWallet;
 
   async function prepareCiphertextManagerFixture() {
-    const { httpz, ciphertextManager, coprocessorSigners, user } = await loadFixture(loadTestVariablesFixture);
+    const fixtureData = await loadFixture(loadTestVariablesFixture);
+    const { ciphertextManager, coprocessorTxSenders } = fixtureData;
 
     // Setup the CiphertextManager contract state with a ciphertext used during tests
-    for (let signer of coprocessorSigners) {
+    for (let txSender of coprocessorTxSenders) {
       await ciphertextManager
-        .connect(signer)
+        .connect(txSender)
         .addCiphertextMaterial(ctHandle, keyId, chainId, ciphertextDigest, snsCiphertextDigest);
     }
-
-    return { httpz, ciphertextManager, coprocessorSigners, user };
+    return fixtureData;
   }
 
   beforeEach(async function () {
     // Initialize globally used variables before each test
     const fixture = await loadFixture(prepareCiphertextManagerFixture);
     httpz = fixture.httpz;
-    coprocessorSigners = fixture.coprocessorSigners;
+    coprocessorTxSenders = fixture.coprocessorTxSenders;
     ciphertextManager = fixture.ciphertextManager;
-    user = fixture.user;
+
+    fakeTxSender = await createAndFundRandomUser();
   });
 
   describe("Add ciphertext material", async function () {
@@ -51,25 +53,25 @@ describe("CiphertextManager", function () {
 
       // When
       await ciphertextManager
-        .connect(coprocessorSigners[0])
+        .connect(coprocessorTxSenders[0])
         .addCiphertextMaterial(newCtHandle, keyId, chainId, ciphertextDigest, snsCiphertextDigest);
 
       // This transaction should make the consensus to be reached and thus emit the expected event
       const result = ciphertextManager
-        .connect(coprocessorSigners[1])
+        .connect(coprocessorTxSenders[1])
         .addCiphertextMaterial(newCtHandle, keyId, chainId, ciphertextDigest, snsCiphertextDigest);
 
       // Then
       await expect(result)
         .to.emit(ciphertextManager, "AddCiphertextMaterial")
         .withArgs(newCtHandle, ciphertextDigest, snsCiphertextDigest, [
-          coprocessorSigners[0].address,
-          coprocessorSigners[1].address,
+          coprocessorTxSenders[0].address,
+          coprocessorTxSenders[1].address,
         ]);
 
       // Then check that no other events get triggered
       await ciphertextManager
-        .connect(coprocessorSigners[2])
+        .connect(coprocessorTxSenders[2])
         .addCiphertextMaterial(newCtHandle, keyId, chainId, ciphertextDigest, snsCiphertextDigest);
       const events = await ciphertextManager.queryFilter(ciphertextManager.filters.AddCiphertextMaterial(newCtHandle));
 
@@ -77,22 +79,21 @@ describe("CiphertextManager", function () {
       expect(events.length).to.equal(1);
     });
 
-    it("Should revert because the signer is not a Coprocessor", async function () {
-      // Use a signer that is not a Coprocessor
+    it("Should revert because the transaction sender is not a Coprocessor", async function () {
       const result = ciphertextManager
-        .connect(user)
+        .connect(fakeTxSender)
         .addCiphertextMaterial(ctHandle, keyId, chainId, ciphertextDigest, snsCiphertextDigest);
 
       // Then
       await expect(result)
         .revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
-        .withArgs(user.address, httpz.COPROCESSOR_ROLE());
+        .withArgs(fakeTxSender.address, httpz.COPROCESSOR_TX_SENDER_ROLE());
     });
 
     it("Should revert with CoprocessorAlreadyAdded", async function () {
       // When
       const result = ciphertextManager
-        .connect(coprocessorSigners[0])
+        .connect(coprocessorTxSenders[0])
         .addCiphertextMaterial(ctHandle, keyId, chainId, ciphertextDigest, snsCiphertextDigest);
 
       // Then
@@ -108,7 +109,7 @@ describe("CiphertextManager", function () {
       const result = await ciphertextManager.getCiphertextMaterials([ctHandle]);
 
       // Then
-      expect(result).to.be.deep.eq([[ctHandle, keyId, ciphertextDigest, coprocessorSigners.map((s) => s.address)]]);
+      expect(result).to.be.deep.eq([[ctHandle, keyId, ciphertextDigest, coprocessorTxSenders.map((s) => s.address)]]);
     });
 
     it("Should revert with CiphertextMaterialNotFound (regular)", async function () {
@@ -124,7 +125,9 @@ describe("CiphertextManager", function () {
       const result = await ciphertextManager.getSnsCiphertextMaterials([ctHandle]);
 
       // Then
-      expect(result).to.be.deep.eq([[ctHandle, keyId, snsCiphertextDigest, coprocessorSigners.map((s) => s.address)]]);
+      expect(result).to.be.deep.eq([
+        [ctHandle, keyId, snsCiphertextDigest, coprocessorTxSenders.map((s) => s.address)],
+      ]);
     });
 
     it("Should revert with CiphertextMaterialNotFound (SNS)", async function () {
@@ -150,21 +153,26 @@ describe("CiphertextManager", function () {
     });
   });
 
-  describe("Check coprocessor has added", async function () {
+  describe("Check coprocessor transaction sender has added the ciphertext handle on the network", async function () {
     it("Should not revert", async function () {
-      await expect(ciphertextManager.checkCoprocessorHasAdded(ctHandle, chainId, coprocessorSigners[0].address)).not.to
-        .be.reverted;
+      await expect(
+        ciphertextManager.checkCoprocessorTxSenderHasAdded(ctHandle, chainId, coprocessorTxSenders[0].address),
+      ).not.to.be.reverted;
     });
 
-    it("Should revert because the coprocessor address has not added the ciphertext", async function () {
+    it("Should revert because the coprocessor transaction sender has not added the ciphertext handle on the network", async function () {
       const fakeCoprocessorAddress = hre.ethers.Wallet.createRandom().address;
-      await expect(ciphertextManager.checkCoprocessorHasAdded(fakeCtHandle, chainId, coprocessorSigners[0].address))
+      await expect(
+        ciphertextManager.checkCoprocessorTxSenderHasAdded(fakeCtHandle, chainId, coprocessorTxSenders[0].address),
+      )
         .revertedWithCustomError(ciphertextManager, "CoprocessorHasNotAdded")
-        .withArgs(fakeCtHandle, chainId, coprocessorSigners[0].address);
-      await expect(ciphertextManager.checkCoprocessorHasAdded(ctHandle, fakeChainId, coprocessorSigners[0].address))
+        .withArgs(fakeCtHandle, chainId, coprocessorTxSenders[0].address);
+      await expect(
+        ciphertextManager.checkCoprocessorTxSenderHasAdded(ctHandle, fakeChainId, coprocessorTxSenders[0].address),
+      )
         .revertedWithCustomError(ciphertextManager, "CoprocessorHasNotAdded")
-        .withArgs(ctHandle, fakeChainId, coprocessorSigners[0].address);
-      await expect(ciphertextManager.checkCoprocessorHasAdded(ctHandle, chainId, fakeCoprocessorAddress))
+        .withArgs(ctHandle, fakeChainId, coprocessorTxSenders[0].address);
+      await expect(ciphertextManager.checkCoprocessorTxSenderHasAdded(ctHandle, chainId, fakeCoprocessorAddress))
         .revertedWithCustomError(ciphertextManager, "CoprocessorHasNotAdded")
         .withArgs(ctHandle, chainId, fakeCoprocessorAddress);
     });

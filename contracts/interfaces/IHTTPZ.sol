@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
+import "../shared/Structs.sol";
+
 /**
  * @title Interface for the HTTPZ contract
  * @notice The HTTPZ contract is responsible for being a point of truth for all contracts and
@@ -15,52 +17,6 @@ pragma solidity ^0.8.24;
  * Some view functions are accessible to everyone (ex: getting the number of KMS nodes).
  */
 interface IHTTPZ {
-    /// @notice Struct that contains metadata about the protocol
-    struct ProtocolMetadata {
-        /// @notice Name of the protocol
-        string name;
-        /// @notice Website of the protocol
-        string website;
-    }
-
-    /// @notice Struct that represents a KMS (Key Management Service) node
-    struct KmsNode {
-        /// @notice Address of the KMS node's connector
-        address connectorAddress;
-        /// @notice Identity of the KMS node (its public signature key)
-        bytes identity;
-        /// @notice IP address of the KMS node
-        string ipAddress;
-        /// @notice URL address of the KMS node's data availability (DA)
-        string daUrl;
-    }
-
-    /// @notice Struct that represents a coprocessor
-    struct Coprocessor {
-        /// @notice Address of the the coprocessor's transaction sender
-        address transactionSenderAddress;
-        /// @notice Identity of the coprocessor (its public signature key)
-        bytes identity;
-        /// @notice URL address of the coprocessor's data availability (DA)
-        string daUrl;
-        /// @notice URL address of the coprocessor's S3 bucket where ciphertexts are stored
-        string s3BucketUrl;
-    }
-
-    /// @notice Struct that represents a network
-    struct Network {
-        /// @notice Chain ID of the network (unique identifier)
-        uint256 chainId;
-        /// @notice Address where the HTTPZ library contract is deployed
-        address httpzExecutor;
-        /// @notice Address where the ACL contract is deployed
-        address aclAddress;
-        /// @notice Name of the network
-        string name;
-        /// @notice Website of the network
-        string website;
-    }
-
     /// @notice Emitted when the HTTPZ initialization is completed
     /// @param metadata Metadata of the protocol
     /// @param admin Admin address
@@ -89,6 +45,14 @@ interface IHTTPZ {
     /// @param nParties The number of KMS nodes
     error KmsThresholdTooHigh(uint256 threshold, uint256 nParties);
 
+    /// @notice Error emitted when an address is not a KMS signer
+    /// @param kmsSignerAddress The address that is not a KMS signer
+    error NotKmsSigner(address kmsSignerAddress);
+
+    /// @notice Error emitted when an address is not a coprocessor signer
+    /// @param coprocessorSignerAddress The address that is not a coprocessor signer
+    error NotCoprocessorSigner(address coprocessorSignerAddress);
+
     /// @notice Error emitted when a network is not registered
     /// @param chainId The chain ID of the network
     error NetworkNotRegistered(uint256 chainId);
@@ -109,13 +73,21 @@ interface IHTTPZ {
     /// @param adminAddress The address to check
     function checkIsAdmin(address adminAddress) external view;
 
-    /// @notice Check if an address is a registered KMS node
-    /// @param kmsNodeAddress The address to check
-    function checkIsKmsNode(address kmsNodeAddress) external view;
+    /// @notice Check if an address is a registered KMS transaction sender
+    /// @param kmsTxSenderAddress The address to check
+    function checkIsKmsTxSender(address kmsTxSenderAddress) external view;
 
-    /// @notice Check if an address is a registered coprocessor
-    /// @param coprocessorAddress The address to check
-    function checkIsCoprocessor(address coprocessorAddress) external view;
+    /// @notice Check if an address is a registered KMS signer
+    /// @param signerAddress The address to check
+    function checkIsKmsSigner(address signerAddress) external view;
+
+    /// @notice Check if an address is a registered coprocessor transaction sender
+    /// @param coprocessorTxSenderAddress The address to check
+    function checkIsCoprocessorTxSender(address coprocessorTxSenderAddress) external view;
+
+    /// @notice Check if an address is a registered coprocessor signer
+    /// @param signerAddress The address to check
+    function checkIsCoprocessorSigner(address signerAddress) external view;
 
     /// @notice Check if a chain ID corresponds to a registered network
     /// @param chainId The chain ID to check
@@ -141,29 +113,29 @@ interface IHTTPZ {
     /// @return The coprocessor majority threshold
     function getCoprocessorMajorityThreshold() external view returns (uint256);
 
-    /// @notice Get the metadata of the KMS node with the given address
+    /// @notice Get the metadata of the KMS node with the given transaction sender address
     /// @return The KMS node's metadata
-    function kmsNodes(address addr) external view returns (KmsNode memory);
+    function kmsNodes(address kmsTxSenderAddress) external view returns (KmsNode memory);
 
-    /// @notice Get the address of the KMS node with the given index
-    /// @return The KMS node's address
-    function kmsNodeAddresses(uint256 index) external view returns (address);
+    /// @notice Get the address of the KMS transaction sender with the given index
+    /// @return The KMS transaction sender's address
+    function kmsTxSenderAddresses(uint256 index) external view returns (address);
 
-    /// @notice Get the list of all KMS nodes' addresses currently registered
-    /// @return The list of KMS nodes' addresses
-    function getAllKmsNodeAddresses() external view returns (address[] memory);
+    /// @notice Get the list of all KMS nodes' transaction sender addresses currently registered
+    /// @return The list of KMS nodes' transaction sender addresses
+    function getAllKmsTxSenderAddresses() external view returns (address[] memory);
 
-    /// @notice Get the metadata of the coprocessor with the given address
+    /// @notice Get the metadata of the coprocessor with the given transaction sender address
     /// @return The coprocessor's metadata
-    function coprocessors(address addr) external view returns (Coprocessor memory);
+    function coprocessors(address coprocessorTxSenderAddress) external view returns (Coprocessor memory);
 
-    /// @notice Get the address of the coprocessor with the given index
-    /// @return The coprocessor's address
-    function coprocessorAddresses(uint256 index) external view returns (address);
+    /// @notice Get the address of the coprocessor transaction sender with the given index
+    /// @return The coprocessor transaction sender's address
+    function coprocessorTxSenderAddresses(uint256 index) external view returns (address);
 
-    /// @notice Get the list of all coprocessors' addresses currently registered
-    /// @return The list of coprocessors' addresses
-    function getAllCoprocessorAddresses() external view returns (address[] memory);
+    /// @notice Get the list of all coprocessors' transaction sender addresses currently registered
+    /// @return The list of coprocessors' transaction sender addresses
+    function getAllCoprocessorTxSenderAddresses() external view returns (address[] memory);
 
     /// @notice Get the metadata of the network with the given index
     /// @return The network's metadata

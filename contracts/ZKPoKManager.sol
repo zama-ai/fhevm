@@ -119,10 +119,10 @@ contract ZKPoKManager is IZKPoKManager, EIP712Upgradeable, Ownable2StepUpgradeab
         bytes calldata signature
     ) public virtual {
         /**
-         * @dev Check that the transaction sender is a Coprocessor. In case of reorgs, this prevents
+         * @dev Check that the sender is a coprocessor transaction sender. In case of reorgs, this prevents
          * someone else from copying the signature and sending it to trigger a consensus.
          */
-        _HTTPZ.checkIsCoprocessor(msg.sender);
+        _HTTPZ.checkIsCoprocessorTxSender(msg.sender);
 
         ZKPoKManagerStorage storage $ = _getZKPoKManagerStorage();
 
@@ -140,19 +140,25 @@ contract ZKPoKManager is IZKPoKManager, EIP712Upgradeable, Ownable2StepUpgradeab
         /// @dev Compute the digest of the CiphertextVerification structure.
         bytes32 digest = _hashCiphertextVerification(ciphertextVerification);
 
-        /// @dev Recover the signer address from the signature and validate that it is a coprocessor
-        /// @dev that has not already responded (with either a proof verification or rejection).
+        /**
+         * @dev Recover the signer address from the signature and validate that it is a coprocessor
+         * that has not already responded (with either a proof verification or rejection).
+         */
         _validateEIP712Signature(zkProofId, digest, signature);
 
         bytes[] storage currentSignatures = $.zkProofSignatures[zkProofId][digest];
         currentSignatures.push(signature);
 
-        /// @dev Send the event if and only if the consensus is reached in the current response call
-        /// @dev for a proof verification.
-        /// @dev This means a "late" response will not be reverted, just ignored
-        /// @dev Note that this considers that the consensus is reached with at least N/2 + 1
-        /// @dev coprocessors. If the threshold is updated to below this number, we should also
-        /// @dev check that the ZK proof request has not been rejected yet.
+        /**
+         * @dev Send the event if and only if the consensus is reached in the current response call
+         * for a proof verification.
+         *
+         * This means a "late" response will not be reverted, just ignored
+         *
+         * Note that this considers that the consensus is reached with at least N/2 + 1
+         * coprocessors. If the threshold is updated to below this number, we should also
+         * check that the ZK proof request has not been rejected yet.
+         */
         if (!isProofVerified(zkProofId) && _isConsensusReached(currentSignatures.length)) {
             // TODO(#52): Implement calling PaymentManager contract to burn and distribute fees
             $.verifiedZKProofs[zkProofId] = true;
@@ -165,19 +171,26 @@ contract ZKPoKManager is IZKPoKManager, EIP712Upgradeable, Ownable2StepUpgradeab
     function rejectProofResponse(uint256 zkProofId) public virtual {
         ZKPoKManagerStorage storage $ = _getZKPoKManagerStorage();
 
-        /// @dev Validate that the caller is a coprocessor that has not already responded.
-        /// @dev More info on why we do not need to validate the signature in this case is in the
-        /// @dev functions's description from the interface.
-        _checkCoprocessorAddress(msg.sender, zkProofId);
+        /**
+         * @dev Validate that the caller is a coprocessor that has not already responded.
+         *
+         * More info on why we do not need to validate the signature in this case is in the
+         * functions's description from the interface.
+         */
+        _checkCoprocessorTxSenderAddress(msg.sender, zkProofId);
 
         $.rejectedProofResponseCounter[zkProofId]++;
 
-        /// @dev Send the event if and only if the consensus is reached in the current response call
-        /// @dev for a proof rejection.
-        /// @dev This means a "late" response will not be reverted, just ignored
-        /// @dev Note that this considers that the consensus is reached with at least N/2 + 1
-        /// @dev coprocessors. If the threshold is updated to below this number, we should also
-        /// @dev check that the ZK proof request has not been verified yet.
+        /**
+         * @dev Send the event if and only if the consensus is reached in the current response call
+         * for a proof rejection.
+         *
+         * This means a "late" response will not be reverted, just ignored
+         *
+         * Note that this considers that the consensus is reached with at least N/2 + 1
+         * coprocessors. If the threshold is updated to below this number, we should also
+         * check that the ZK proof request has not been verified yet.
+         */
         if (!isProofRejected(zkProofId) && _isConsensusReached($.rejectedProofResponseCounter[zkProofId])) {
             // TODO(#52): Implement calling PaymentManager contract to burn and distribute fees
             $.rejectedZKProofs[zkProofId] = true;
@@ -218,19 +231,55 @@ contract ZKPoKManager is IZKPoKManager, EIP712Upgradeable, Ownable2StepUpgradeab
     }
 
     /**
-     * @notice Check that the given address is a registered coprocessor that has not already responded.
-     * @param coprocessorAddress The address of the potential coprocessor
+     * @notice Check that the given address is a registered coprocessor signer that has not already signed.
+     * @param coprocessorSignerAddress The address of the potential coprocessor signer
      * @param zkProofId The ID of the ZK Proof
      */
-    function _checkCoprocessorAddress(address coprocessorAddress, uint256 zkProofId) internal virtual {
+    function _checkCoprocessorSignerAddress(address coprocessorSignerAddress, uint256 zkProofId) internal virtual {
         ZKPoKManagerStorage storage $ = _getZKPoKManagerStorage();
-        _HTTPZ.checkIsCoprocessor(coprocessorAddress);
 
-        if ($.alreadyResponded[zkProofId][coprocessorAddress]) {
-            revert CoprocessorSignerAlreadyResponded(zkProofId, coprocessorAddress);
+        _HTTPZ.checkIsCoprocessorSigner(coprocessorSignerAddress);
+
+        if ($.alreadyResponded[zkProofId][coprocessorSignerAddress]) {
+            revert CoprocessorSignerAlreadySigned(zkProofId, coprocessorSignerAddress);
         }
 
-        $.alreadyResponded[zkProofId][coprocessorAddress] = true;
+        $.alreadyResponded[zkProofId][coprocessorSignerAddress] = true;
+    }
+
+    /**
+     * @notice Check that the given address is a registered coprocessor transaction sender that has
+     * not already responded.
+     * @param coprocessorTxSenderAddress The address of the potential coprocessor transaction sender
+     * @param zkProofId The ID of the ZK Proof
+     */
+    function _checkCoprocessorTxSenderAddress(address coprocessorTxSenderAddress, uint256 zkProofId) internal virtual {
+        ZKPoKManagerStorage storage $ = _getZKPoKManagerStorage();
+
+        _HTTPZ.checkIsCoprocessorTxSender(coprocessorTxSenderAddress);
+
+        /**
+         * @dev Retrieve the coprocessor signer address from the HTTPZ contract using the
+         * coprocessor transaction sender address (second element of the tuple returned).
+         */
+        Coprocessor memory coprocessor = _HTTPZ.coprocessors(coprocessorTxSenderAddress);
+        address coprocessorSignerAddress = coprocessor.signerAddress;
+
+        /**
+         * @dev Check that the coprocessor signer has not already responded to the ZK Proof verification
+         * request (either by verifying or rejecting the proof).
+         *
+         * Here, it is important that we consider the signer address, not the transaction sender,
+         * address as the `alreadyResponded` mapping is shared between responses for both rejecting
+         * and verifying proofs. This is to avoid a coprocessor to be able to both reject and verify
+         * a proof for the same ZK Proof ID.
+         */
+        if ($.alreadyResponded[zkProofId][coprocessorSignerAddress]) {
+            revert CoprocessorSignerAlreadyResponded(zkProofId, coprocessorSignerAddress);
+        }
+
+        /// @dev As explained above, we need to consider the signer address, not the transaction sender one.
+        $.alreadyResponded[zkProofId][coprocessorSignerAddress] = true;
     }
 
     /**
@@ -242,7 +291,7 @@ contract ZKPoKManager is IZKPoKManager, EIP712Upgradeable, Ownable2StepUpgradeab
     function _validateEIP712Signature(uint256 zkProofId, bytes32 digest, bytes calldata signature) internal virtual {
         address signerAddress = ECDSA.recover(digest, signature);
 
-        _checkCoprocessorAddress(signerAddress, zkProofId);
+        _checkCoprocessorSignerAddress(signerAddress, zkProofId);
     }
 
     /**

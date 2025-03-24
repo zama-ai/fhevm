@@ -91,8 +91,8 @@ task("task:deployHttpz").setAction(async function (_, { ethers, upgrades }) {
   const kmsNodes = [];
   for (let idx = 0; idx < numKmsNodes; idx++) {
     kmsNodes.push({
-      connectorAddress: getRequiredEnvVar(`KMS_NODE_ADDRESS_${idx}`),
-      identity: getRequiredEnvVar(`KMS_NODE_IDENTITY_${idx}`),
+      txSenderAddress: getRequiredEnvVar(`KMS_TX_SENDER_ADDRESS_${idx}`),
+      signerAddress: getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${idx}`),
       ipAddress: getRequiredEnvVar(`KMS_NODE_IP_ADDRESS_${idx}`),
       daUrl: getRequiredEnvVar(`KMS_NODE_DA_URL_${idx}`),
     });
@@ -103,8 +103,8 @@ task("task:deployHttpz").setAction(async function (_, { ethers, upgrades }) {
   const coprocessors = [];
   for (let idx = 0; idx < numCoprocessors; idx++) {
     coprocessors.push({
-      transactionSenderAddress: getRequiredEnvVar(`COPROCESSOR_ADDRESS_${idx}`),
-      identity: getRequiredEnvVar(`COPROCESSOR_IDENTITY_${idx}`),
+      txSenderAddress: getRequiredEnvVar(`COPROCESSOR_TX_SENDER_ADDRESS_${idx}`),
+      signerAddress: getRequiredEnvVar(`COPROCESSOR_SIGNER_ADDRESS_${idx}`),
       daUrl: getRequiredEnvVar(`COPROCESSOR_DA_URL_${idx}`),
       s3BucketUrl: getRequiredEnvVar(`COPROCESSOR_S3_BUCKET_URL_${idx}`),
     });

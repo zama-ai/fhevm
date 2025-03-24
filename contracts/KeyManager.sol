@@ -135,14 +135,14 @@ contract KeyManager is IKeyManager, Ownable2StepUpgradeable, UUPSUpgradeable {
     }
 
     /// @notice Checks if the sender is a KMS node.
-    modifier onlyKmsNode() {
-        _HTTPZ.checkIsKmsNode(msg.sender);
+    modifier onlyKmsTxSender() {
+        _HTTPZ.checkIsKmsTxSender(msg.sender);
         _;
     }
 
-    /// @notice Checks if the sender is a Coprocessor.
-    modifier onlyCoprocessor() {
-        _HTTPZ.checkIsCoprocessor(msg.sender);
+    /// @notice Checks if the sender is a coprocessor transaction sender.
+    modifier onlyCoprocessorTxSender() {
+        _HTTPZ.checkIsCoprocessorTxSender(msg.sender);
         _;
     }
 
@@ -169,7 +169,7 @@ contract KeyManager is IKeyManager, Ownable2StepUpgradeable, UUPSUpgradeable {
     }
 
     /// @dev See {IKeyManager-preprocessKeygenResponse}.
-    function preprocessKeygenResponse(uint256 preKeygenRequestId, uint256 preKeyId) external virtual onlyKmsNode {
+    function preprocessKeygenResponse(uint256 preKeygenRequestId, uint256 preKeyId) external virtual onlyKmsTxSender {
         KeyManagerStorage storage $ = _getKeyManagerStorage();
 
         /// @dev A KMS node can only respond once
@@ -215,7 +215,7 @@ contract KeyManager is IKeyManager, Ownable2StepUpgradeable, UUPSUpgradeable {
     }
 
     /// @dev See {IKeyManager-preprocessKskgenResponse}.
-    function preprocessKskgenResponse(uint256 preKskgenRequestId, uint256 preKskId) external virtual onlyKmsNode {
+    function preprocessKskgenResponse(uint256 preKskgenRequestId, uint256 preKskId) external virtual onlyKmsTxSender {
         KeyManagerStorage storage $ = _getKeyManagerStorage();
 
         /// @dev A KMS node can only respond once
@@ -259,7 +259,7 @@ contract KeyManager is IKeyManager, Ownable2StepUpgradeable, UUPSUpgradeable {
     }
 
     /// @dev See {IKeyManager-keygenResponse}.
-    function keygenResponse(uint256 preKeyId, uint256 keyId) external virtual onlyKmsNode {
+    function keygenResponse(uint256 preKeyId, uint256 keyId) external virtual onlyKmsTxSender {
         KeyManagerStorage storage $ = _getKeyManagerStorage();
 
         /// @dev A KMS node can only respond once
@@ -304,7 +304,7 @@ contract KeyManager is IKeyManager, Ownable2StepUpgradeable, UUPSUpgradeable {
     }
 
     /// @dev See {IKeyManager-crsgenResponse}.
-    function crsgenResponse(uint256 crsgenRequestId, uint256 crsId) external virtual onlyKmsNode {
+    function crsgenResponse(uint256 crsgenRequestId, uint256 crsId) external virtual onlyKmsTxSender {
         KeyManagerStorage storage $ = _getKeyManagerStorage();
 
         /// @dev A KMS node can only respond once
@@ -367,7 +367,7 @@ contract KeyManager is IKeyManager, Ownable2StepUpgradeable, UUPSUpgradeable {
     }
 
     /// @dev See {IKeyManager-kskgenResponse}.
-    function kskgenResponse(uint256 preKskId, uint256 kskId) external virtual onlyKmsNode {
+    function kskgenResponse(uint256 preKskId, uint256 kskId) external virtual onlyKmsTxSender {
         KeyManagerStorage storage $ = _getKeyManagerStorage();
 
         /// @dev A KMS node can only respond once
@@ -422,7 +422,7 @@ contract KeyManager is IKeyManager, Ownable2StepUpgradeable, UUPSUpgradeable {
     }
 
     /// @dev See {IKeyManager-activateKeyResponse}.
-    function activateKeyResponse(uint256 keyId) external virtual onlyCoprocessor {
+    function activateKeyResponse(uint256 keyId) external virtual onlyCoprocessorTxSender {
         KeyManagerStorage storage $ = _getKeyManagerStorage();
 
         /// @dev A coprocessor can only respond once

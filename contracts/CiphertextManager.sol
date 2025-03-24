@@ -82,8 +82,12 @@ contract CiphertextManager is ICiphertextManager, Ownable2StepUpgradeable, UUPSU
         }
     }
 
-    /// @notice See {ICiphertextManager-checkCoprocessorHasAdded}.
-    function checkCoprocessorHasAdded(uint256 ctHandle, uint256 chainId, address coprocessorAddress) external view {
+    /// @notice See {ICiphertextManager-checkCoprocessorTxSenderHasAdded}.
+    function checkCoprocessorTxSenderHasAdded(
+        uint256 ctHandle,
+        uint256 chainId,
+        address coprocessorAddress
+    ) external view {
         CiphertextManagerStorage storage $ = _getCiphertextManagerStorage();
         if (!$._coprocessorsAddedCtHandleForChainId[ctHandle][chainId][coprocessorAddress]) {
             revert CoprocessorHasNotAdded(ctHandle, chainId, coprocessorAddress);
@@ -144,7 +148,7 @@ contract CiphertextManager is ICiphertextManager, Ownable2StepUpgradeable, UUPSU
         CiphertextManagerStorage storage $ = _getCiphertextManagerStorage();
 
         /// @dev Check if the sender is a Coprocessor
-        _HTTPZ.checkIsCoprocessor(msg.sender);
+        _HTTPZ.checkIsCoprocessorTxSender(msg.sender);
 
         /**
          * @dev Check if the Coprocessor has already added the ciphertext handle. Note that a Coprocessor

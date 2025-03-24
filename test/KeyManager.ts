@@ -10,8 +10,8 @@ describe("KeyManager", function () {
 
   // Run a preprocessing keygen
   async function prepareKeyManagerPreKeygenFixture() {
-    const { keyManager, owner, admin, user, kmsSigners, coprocessorSigners, fheParamsName, fheParamsDigest } =
-      await loadFixture(loadTestVariablesFixture);
+    const fixtureData = await loadFixture(loadTestVariablesFixture);
+    const { keyManager, admin, kmsTxSenders, fheParamsName } = fixtureData;
 
     // Trigger a preprocessing keygen request
     const txRequest = await keyManager.connect(admin).preprocessKeygenRequest(fheParamsName);
@@ -27,27 +27,17 @@ describe("KeyManager", function () {
 
     // Trigger preprocessing keygen responses for all KMS nodes
     // Note: not all responses are strictly needed (the consensus can be reached before the last response(s))
-    for (let i = 0; i < kmsSigners.length; i++) {
-      await keyManager.connect(kmsSigners[i]).preprocessKeygenResponse(preKeyRequestId, preKeyId);
+    for (let i = 0; i < kmsTxSenders.length; i++) {
+      await keyManager.connect(kmsTxSenders[i]).preprocessKeygenResponse(preKeyRequestId, preKeyId);
     }
 
-    return {
-      keyManager,
-      owner,
-      admin,
-      user,
-      kmsSigners,
-      coprocessorSigners,
-      preKeyId,
-      fheParamsName,
-      fheParamsDigest,
-    };
+    return { ...fixtureData, preKeyId };
   }
 
   // Run a keygen
   async function prepareKeyManagerKeygenFixture() {
-    const { keyManager, owner, admin, user, kmsSigners, coprocessorSigners, fheParamsName, fheParamsDigest, preKeyId } =
-      await loadFixture(prepareKeyManagerPreKeygenFixture);
+    const fixtureData = await loadFixture(prepareKeyManagerPreKeygenFixture);
+    const { keyManager, admin, kmsTxSenders, preKeyId } = fixtureData;
 
     // Trigger a keygen request
     await keyManager.connect(admin).keygenRequest(preKeyId);
@@ -58,39 +48,18 @@ describe("KeyManager", function () {
 
     // Trigger keygen responses for all KMS nodes
     // Note: not all responses are strictly needed (the consensus can be reached before the last response(s))
-    for (let i = 0; i < kmsSigners.length; i++) {
-      await keyManager.connect(kmsSigners[i]).keygenResponse(preKeyId, keyId1);
-      await keyManager.connect(kmsSigners[i]).keygenResponse(preKeyId, keyId2);
+    for (let i = 0; i < kmsTxSenders.length; i++) {
+      await keyManager.connect(kmsTxSenders[i]).keygenResponse(preKeyId, keyId1);
+      await keyManager.connect(kmsTxSenders[i]).keygenResponse(preKeyId, keyId2);
     }
 
-    return {
-      keyManager,
-      owner,
-      admin,
-      user,
-      kmsSigners,
-      coprocessorSigners,
-      fheParamsName,
-      fheParamsDigest,
-      keyId1,
-      keyId2,
-    };
+    return { ...fixtureData, keyId1, keyId2 };
   }
 
   // Run a preprocessing KSK generation
   async function prepareKeyManagerPreKskgenFixture() {
-    const {
-      keyManager,
-      owner,
-      admin,
-      user,
-      kmsSigners,
-      coprocessorSigners,
-      fheParamsName,
-      fheParamsDigest,
-      keyId1,
-      keyId2,
-    } = await loadFixture(prepareKeyManagerKeygenFixture);
+    const fixtureData = await loadFixture(prepareKeyManagerKeygenFixture);
+    const { keyManager, admin, kmsTxSenders, fheParamsName } = fixtureData;
 
     // Trigger a preprocessing KSK generation request
     const txRequest = await keyManager.connect(admin).preprocessKskgenRequest(fheParamsName);
@@ -106,29 +75,17 @@ describe("KeyManager", function () {
 
     // Trigger preprocessing KSK generation responses for all KMS nodes
     // Note: not all responses are strictly needed (the consensus can be reached before the last response(s))
-    for (let i = 0; i < kmsSigners.length; i++) {
-      await keyManager.connect(kmsSigners[i]).preprocessKskgenResponse(preKskRequestId, preKskId);
+    for (let i = 0; i < kmsTxSenders.length; i++) {
+      await keyManager.connect(kmsTxSenders[i]).preprocessKskgenResponse(preKskRequestId, preKskId);
     }
 
-    return {
-      keyManager,
-      owner,
-      admin,
-      user,
-      kmsSigners,
-      coprocessorSigners,
-      fheParamsName,
-      fheParamsDigest,
-      keyId1,
-      keyId2,
-      preKskId,
-    };
+    return { ...fixtureData, preKskId };
   }
 
   // Run a KSK generation and activate the first key
   async function prepareKeyManagerActivateFixture() {
-    const { keyManager, owner, admin, user, kmsSigners, coprocessorSigners, fheParamsName, keyId1, keyId2, preKskId } =
-      await loadFixture(prepareKeyManagerPreKskgenFixture);
+    const fixtureData = await loadFixture(prepareKeyManagerPreKskgenFixture);
+    const { keyManager, admin, kmsTxSenders, coprocessorTxSenders, preKskId, keyId1, keyId2 } = fixtureData;
 
     // Trigger a KSK generation request
     await keyManager.connect(admin).kskgenRequest(preKskId, keyId1, keyId2);
@@ -138,30 +95,19 @@ describe("KeyManager", function () {
 
     // Trigger preprocessing KSK generation responses for all KMS nodes
     // Note: not all responses are strictly needed (the consensus can be reached before the last response(s))
-    for (let i = 0; i < kmsSigners.length; i++) {
-      await keyManager.connect(kmsSigners[i]).kskgenResponse(preKskId, kskId);
+    for (let i = 0; i < kmsTxSenders.length; i++) {
+      await keyManager.connect(kmsTxSenders[i]).kskgenResponse(preKskId, kskId);
     }
 
     // Request activation of the first key
     await keyManager.connect(admin).activateKeyRequest(keyId1);
 
     // Trigger activation responses for all coprocessors
-    for (let i = 0; i < coprocessorSigners.length; i++) {
-      await keyManager.connect(coprocessorSigners[i]).activateKeyResponse(keyId1);
+    for (let i = 0; i < coprocessorTxSenders.length; i++) {
+      await keyManager.connect(coprocessorTxSenders[i]).activateKeyResponse(keyId1);
     }
 
-    return {
-      keyManager,
-      owner,
-      admin,
-      user,
-      kmsSigners,
-      coprocessorSigners,
-      fheParamsName,
-      keyId1,
-      keyId2,
-      kskId,
-    };
+    return { ...fixtureData, kskId };
   }
 
   describe("Key generation", function () {
@@ -186,7 +132,7 @@ describe("KeyManager", function () {
       // Check that someone else than the admin cannot trigger a preprocessing keygen response
       await expect(keyManager.connect(user).preprocessKeygenResponse(0, 0))
         .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
-        .withArgs(user.address, httpz.KMS_NODE_ROLE());
+        .withArgs(user.address, httpz.KMS_TX_SENDER_ROLE());
 
       // Check that someone else than the admin cannot trigger a keygen request
       await expect(keyManager.connect(user).keygenRequest(0))
@@ -196,11 +142,11 @@ describe("KeyManager", function () {
       // Check that someone else than the KMS node cannot trigger a keygen response
       await expect(keyManager.connect(user).keygenResponse(0, 0))
         .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
-        .withArgs(user.address, httpz.KMS_NODE_ROLE());
+        .withArgs(user.address, httpz.KMS_TX_SENDER_ROLE());
     });
 
     it("Should handle a preprocessed keygen", async function () {
-      const { keyManager, admin, kmsSigners, fheParamsName, fheParamsDigest } =
+      const { keyManager, admin, kmsTxSenders, fheParamsName, fheParamsDigest } =
         await loadFixture(loadTestVariablesFixture);
 
       // Define the expected preprocessing key request ID
@@ -219,7 +165,7 @@ describe("KeyManager", function () {
 
       // Trigger a preprocessing keygen response with the first KMS node
       const txResponse1 = await keyManager
-        .connect(kmsSigners[0])
+        .connect(kmsTxSenders[0])
         .preprocessKeygenResponse(expectedPreKeyRequestId, preKeyId);
 
       // Check that the first response does not emit an event (consensus is not reached yet)
@@ -227,13 +173,13 @@ describe("KeyManager", function () {
 
       // Check that a KMS node cannot respond twice to the same preprocessing keygen request
       await expect(
-        keyManager.connect(kmsSigners[0]).preprocessKeygenResponse(expectedPreKeyRequestId, preKeyId),
+        keyManager.connect(kmsTxSenders[0]).preprocessKeygenResponse(expectedPreKeyRequestId, preKeyId),
       ).to.be.revertedWithCustomError(keyManager, "PreprocessKeygenKmsNodeAlreadyResponded");
 
       // Trigger a second preprocessing keygen response with the second KMS node, which should reach
       // consensus (4 / 3 + 1 = 2) and thus emit an event
       const txResponse2 = await keyManager
-        .connect(kmsSigners[1])
+        .connect(kmsTxSenders[1])
         .preprocessKeygenResponse(expectedPreKeyRequestId, preKeyId);
 
       // Check event
@@ -243,10 +189,10 @@ describe("KeyManager", function () {
 
       // The 3rd and 4th responses should be ignored (not reverted) and not emit an event
       const txResponse3 = await keyManager
-        .connect(kmsSigners[2])
+        .connect(kmsTxSenders[2])
         .preprocessKeygenResponse(expectedPreKeyRequestId, preKeyId);
       const txResponse4 = await keyManager
-        .connect(kmsSigners[3])
+        .connect(kmsTxSenders[3])
         .preprocessKeygenResponse(expectedPreKeyRequestId, preKeyId);
 
       // Check that the 3rd and 4th responses do not emit an event
@@ -262,7 +208,7 @@ describe("KeyManager", function () {
     });
 
     it("Should handle a keygen", async function () {
-      const { keyManager, admin, kmsSigners, preKeyId, fheParamsDigest } = await loadFixture(
+      const { keyManager, admin, kmsTxSenders, preKeyId, fheParamsDigest } = await loadFixture(
         prepareKeyManagerPreKeygenFixture,
       );
 
@@ -288,27 +234,27 @@ describe("KeyManager", function () {
       const keyId = 1;
 
       // Trigger a keygen response
-      const txResponse1 = await keyManager.connect(kmsSigners[0]).keygenResponse(preKeyId, keyId);
+      const txResponse1 = await keyManager.connect(kmsTxSenders[0]).keygenResponse(preKeyId, keyId);
 
       // Check that the first response does not emit an event (consensus is not reached yet)
       await expect(txResponse1).to.not.emit(keyManager, "KeygenResponse");
 
       // Check that a KMS node cannot respond twice to the same keygen request
-      await expect(keyManager.connect(kmsSigners[0]).keygenResponse(preKeyId, keyId)).to.be.revertedWithCustomError(
+      await expect(keyManager.connect(kmsTxSenders[0]).keygenResponse(preKeyId, keyId)).to.be.revertedWithCustomError(
         keyManager,
         "KeygenKmsNodeAlreadyResponded",
       );
 
       // Trigger a second keygen response with the second KMS node, which should reach
       // consensus (4 / 3 + 1 = 2) and thus emit an event
-      const txResponse2 = await keyManager.connect(kmsSigners[1]).keygenResponse(preKeyId, keyId);
+      const txResponse2 = await keyManager.connect(kmsTxSenders[1]).keygenResponse(preKeyId, keyId);
 
       // Check event
       await expect(txResponse2).to.emit(keyManager, "KeygenResponse").withArgs(preKeyId, keyId, fheParamsDigest);
 
       // The 3rd and 4th responses should be ignored (not reverted) and not emit an event
-      const txResponse3 = await keyManager.connect(kmsSigners[2]).keygenResponse(preKeyId, keyId);
-      const txResponse4 = await keyManager.connect(kmsSigners[3]).keygenResponse(preKeyId, keyId);
+      const txResponse3 = await keyManager.connect(kmsTxSenders[2]).keygenResponse(preKeyId, keyId);
+      const txResponse4 = await keyManager.connect(kmsTxSenders[3]).keygenResponse(preKeyId, keyId);
 
       // Check that the 3rd and 4th responses do not emit an event
       await expect(txResponse3).to.not.emit(keyManager, "KeygenResponse");
@@ -338,11 +284,11 @@ describe("KeyManager", function () {
       // Check that someone else than the KMS node cannot trigger a CRS generation response
       await expect(keyManager.connect(user).crsgenResponse(0, 0))
         .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
-        .withArgs(user.address, httpz.KMS_NODE_ROLE());
+        .withArgs(user.address, httpz.KMS_TX_SENDER_ROLE());
     });
 
     it("Should handle a CRS generation", async function () {
-      const { keyManager, admin, kmsSigners, fheParamsName, fheParamsDigest } =
+      const { keyManager, admin, kmsTxSenders, fheParamsName, fheParamsDigest } =
         await loadFixture(loadTestVariablesFixture);
 
       // Define an expected preCrsId
@@ -358,19 +304,19 @@ describe("KeyManager", function () {
       const crsId = 1;
 
       // Trigger a CRS generation response with the first KMS node
-      const txResponse1 = await keyManager.connect(kmsSigners[0]).crsgenResponse(expectedPreCrsId, crsId);
+      const txResponse1 = await keyManager.connect(kmsTxSenders[0]).crsgenResponse(expectedPreCrsId, crsId);
 
       // Check that the first response does not emit an event (consensus is not reached yet)
       await expect(txResponse1).to.not.emit(keyManager, "CrsgenResponse");
 
       // Check that a KMS node cannot respond twice to the same CRS generation request
       await expect(
-        keyManager.connect(kmsSigners[0]).crsgenResponse(expectedPreCrsId, crsId),
+        keyManager.connect(kmsTxSenders[0]).crsgenResponse(expectedPreCrsId, crsId),
       ).to.be.revertedWithCustomError(keyManager, "CrsgenKmsNodeAlreadyResponded");
 
       // Trigger a second CRS generation response with the second KMS node, which should reach
       // consensus (4 / 3 + 1 = 2) and thus emit an event
-      const txResponse2 = await keyManager.connect(kmsSigners[1]).crsgenResponse(expectedPreCrsId, crsId);
+      const txResponse2 = await keyManager.connect(kmsTxSenders[1]).crsgenResponse(expectedPreCrsId, crsId);
 
       // Check event
       await expect(txResponse2)
@@ -378,8 +324,8 @@ describe("KeyManager", function () {
         .withArgs(expectedPreCrsId, crsId, fheParamsDigest);
 
       // The 3rd and 4th responses should be ignored (not reverted) and not emit an event
-      const txResponse3 = await keyManager.connect(kmsSigners[2]).crsgenResponse(expectedPreCrsId, crsId);
-      const txResponse4 = await keyManager.connect(kmsSigners[3]).crsgenResponse(expectedPreCrsId, crsId);
+      const txResponse3 = await keyManager.connect(kmsTxSenders[2]).crsgenResponse(expectedPreCrsId, crsId);
+      const txResponse4 = await keyManager.connect(kmsTxSenders[3]).crsgenResponse(expectedPreCrsId, crsId);
 
       // Check that the 3rd and 4th responses do not emit an event
       await expect(txResponse3).to.not.emit(keyManager, "CrsgenResponse");
@@ -416,7 +362,7 @@ describe("KeyManager", function () {
       // Check that someone else than the KMS node cannot trigger a preprocessing KSK generation response
       await expect(keyManager.connect(user).preprocessKskgenResponse(0, 0))
         .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
-        .withArgs(user.address, httpz.KMS_NODE_ROLE());
+        .withArgs(user.address, httpz.KMS_TX_SENDER_ROLE());
 
       // Check that someone else than the admin cannot trigger a KSK generation request
       await expect(keyManager.connect(user).kskgenRequest(0, 0, 0))
@@ -426,11 +372,11 @@ describe("KeyManager", function () {
       // Check that someone else than the KMS node cannot trigger a KSK generation response
       await expect(keyManager.connect(user).kskgenResponse(0, 0))
         .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
-        .withArgs(user.address, httpz.KMS_NODE_ROLE());
+        .withArgs(user.address, httpz.KMS_TX_SENDER_ROLE());
     });
 
     it("Should handle a preprocessed KSK generation", async function () {
-      const { keyManager, admin, kmsSigners, fheParamsName, fheParamsDigest } =
+      const { keyManager, admin, kmsTxSenders, fheParamsName, fheParamsDigest } =
         await loadFixture(loadTestVariablesFixture);
 
       // Define the expected preprocessing KSK ID
@@ -449,7 +395,7 @@ describe("KeyManager", function () {
 
       // Trigger a preprocessing KSK generation response with the first KMS node
       const txResponse1 = await keyManager
-        .connect(kmsSigners[0])
+        .connect(kmsTxSenders[0])
         .preprocessKskgenResponse(expectedPreKskRequestId, preKskRequestId);
 
       // Check that the first response does not emit an event (consensus is not reached yet)
@@ -457,13 +403,13 @@ describe("KeyManager", function () {
 
       // Check that a KMS node cannot respond twice to the same preprocessing KSK generation request
       await expect(
-        keyManager.connect(kmsSigners[0]).preprocessKskgenResponse(expectedPreKskRequestId, preKskRequestId),
+        keyManager.connect(kmsTxSenders[0]).preprocessKskgenResponse(expectedPreKskRequestId, preKskRequestId),
       ).to.be.revertedWithCustomError(keyManager, "PreprocessKskgenKmsNodeAlreadyResponded");
 
       // Trigger a second preprocessing KSK generation response with the second KMS node, which should reach
       // consensus (4 / 3 + 1 = 2) and thus emit an event
       const txResponse2 = await keyManager
-        .connect(kmsSigners[1])
+        .connect(kmsTxSenders[1])
         .preprocessKskgenResponse(expectedPreKskRequestId, preKskRequestId);
 
       // Check event
@@ -473,10 +419,10 @@ describe("KeyManager", function () {
 
       // The 3rd and 4th responses should be ignored (not reverted) and not emit an event
       const txResponse3 = await keyManager
-        .connect(kmsSigners[2])
+        .connect(kmsTxSenders[2])
         .preprocessKskgenResponse(expectedPreKskRequestId, preKskRequestId);
       const txResponse4 = await keyManager
-        .connect(kmsSigners[3])
+        .connect(kmsTxSenders[3])
         .preprocessKskgenResponse(expectedPreKskRequestId, preKskRequestId);
 
       // Check that the 3rd and 4th responses do not emit an event
@@ -492,7 +438,7 @@ describe("KeyManager", function () {
     });
 
     it("Should handle a KSK generation", async function () {
-      const { keyManager, admin, kmsSigners, fheParamsDigest, keyId1, keyId2, preKskId } = await loadFixture(
+      const { keyManager, admin, kmsTxSenders, fheParamsDigest, keyId1, keyId2, preKskId } = await loadFixture(
         prepareKeyManagerPreKskgenFixture,
       );
 
@@ -534,27 +480,27 @@ describe("KeyManager", function () {
       const kskId = 1;
 
       // Trigger a KSK generation response
-      const txResponse1 = await keyManager.connect(kmsSigners[0]).kskgenResponse(preKskId, kskId);
+      const txResponse1 = await keyManager.connect(kmsTxSenders[0]).kskgenResponse(preKskId, kskId);
 
       // Check that the first response does not emit an event (consensus is not reached yet)
       await expect(txResponse1).to.not.emit(keyManager, "KskgenResponse");
 
       // Check that a KMS node cannot respond twice to the same KSK generation request
-      await expect(keyManager.connect(kmsSigners[0]).kskgenResponse(preKskId, kskId)).to.be.revertedWithCustomError(
+      await expect(keyManager.connect(kmsTxSenders[0]).kskgenResponse(preKskId, kskId)).to.be.revertedWithCustomError(
         keyManager,
         "KskgenKmsNodeAlreadyResponded",
       );
 
       // Trigger a second KSK generation response with the second KMS node, which should reach
       // consensus (4 / 3 + 1 = 2) and thus emit an event
-      const txResponse2 = await keyManager.connect(kmsSigners[1]).kskgenResponse(preKskId, kskId);
+      const txResponse2 = await keyManager.connect(kmsTxSenders[1]).kskgenResponse(preKskId, kskId);
 
       // Check event
       await expect(txResponse2).to.emit(keyManager, "KskgenResponse").withArgs(preKskId, kskId, fheParamsDigest);
 
       // The 3rd and 4th responses should be ignored (not reverted) and not emit an event
-      const txResponse3 = await keyManager.connect(kmsSigners[2]).kskgenResponse(preKskId, kskId);
-      const txResponse4 = await keyManager.connect(kmsSigners[3]).kskgenResponse(preKskId, kskId);
+      const txResponse3 = await keyManager.connect(kmsTxSenders[2]).kskgenResponse(preKskId, kskId);
+      const txResponse4 = await keyManager.connect(kmsTxSenders[3]).kskgenResponse(preKskId, kskId);
 
       // Check that the 3rd and 4th responses do not emit an event
       await expect(txResponse3).to.not.emit(keyManager, "KskgenResponse");
@@ -574,11 +520,11 @@ describe("KeyManager", function () {
       // Check that someone else than the coprocessor cannot trigger a key activation response
       await expect(keyManager.connect(user).activateKeyResponse(0))
         .to.be.revertedWithCustomError(httpz, "AccessControlUnauthorizedAccount")
-        .withArgs(user.address, httpz.COPROCESSOR_ROLE());
+        .withArgs(user.address, httpz.COPROCESSOR_TX_SENDER_ROLE());
     });
 
     it("Should handle a first key activation (no KSK generation)", async function () {
-      const { keyManager, admin, coprocessorSigners, keyId1, keyId2 } =
+      const { keyManager, admin, coprocessorTxSenders, keyId1, keyId2 } =
         await loadFixture(prepareKeyManagerKeygenFixture);
 
       // Check that the key to activate must be generated
@@ -599,20 +545,19 @@ describe("KeyManager", function () {
         .withArgs(keyId1);
 
       // Trigger a key activation response
-      const txResponse1 = await keyManager.connect(coprocessorSigners[0]).activateKeyResponse(keyId1);
+      const txResponse1 = await keyManager.connect(coprocessorTxSenders[0]).activateKeyResponse(keyId1);
 
       // Check that the first response does not emit an event (consensus is not reached yet)
       await expect(txResponse1).to.not.emit(keyManager, "ActivateKeyResponse");
 
       // Check that a coprocessor cannot respond twice to the same key activation request
-      await expect(keyManager.connect(coprocessorSigners[0]).activateKeyResponse(keyId1)).to.be.revertedWithCustomError(
-        keyManager,
-        "ActivateKeyKmsNodeAlreadyResponded",
-      );
+      await expect(
+        keyManager.connect(coprocessorTxSenders[0]).activateKeyResponse(keyId1),
+      ).to.be.revertedWithCustomError(keyManager, "ActivateKeyKmsNodeAlreadyResponded");
 
       // Trigger a 2nd key activation response with the 2nd coprocessor, which should reach consensus
       // (tests use a total of 3 coprocessors) and thus emit an event
-      const txResponse2 = await keyManager.connect(coprocessorSigners[1]).activateKeyResponse(keyId1);
+      const txResponse2 = await keyManager.connect(coprocessorTxSenders[1]).activateKeyResponse(keyId1);
 
       // Check that the 2nd response emits an event
       await expect(txResponse2).to.emit(keyManager, "ActivateKeyResponse").withArgs(keyId1);
@@ -627,22 +572,22 @@ describe("KeyManager", function () {
         .withArgs(keyId1, keyId2);
 
       // The 3rd response should be ignored (not reverted) and not emit an event
-      const txResponse3 = await keyManager.connect(coprocessorSigners[2]).activateKeyResponse(keyId1);
+      const txResponse3 = await keyManager.connect(coprocessorTxSenders[2]).activateKeyResponse(keyId1);
 
       // Check that the 3rd response does not emit an event
       await expect(txResponse3).to.not.emit(keyManager, "ActivateKeyResponse");
     });
 
     it("Should handle a second key activation (with KSK generation)", async function () {
-      const { keyManager, admin, coprocessorSigners, keyId1, keyId2 } = await loadFixture(
+      const { keyManager, admin, coprocessorTxSenders, keyId1, keyId2 } = await loadFixture(
         prepareKeyManagerActivateFixture,
       );
 
       // Activate the 2nd key
       await keyManager.connect(admin).activateKeyRequest(keyId2);
-      await keyManager.connect(coprocessorSigners[0]).activateKeyResponse(keyId2);
-      await keyManager.connect(coprocessorSigners[1]).activateKeyResponse(keyId2);
-      await keyManager.connect(coprocessorSigners[2]).activateKeyResponse(keyId2);
+      await keyManager.connect(coprocessorTxSenders[0]).activateKeyResponse(keyId2);
+      await keyManager.connect(coprocessorTxSenders[1]).activateKeyResponse(keyId2);
+      await keyManager.connect(coprocessorTxSenders[2]).activateKeyResponse(keyId2);
 
       // Check that the 2nd key is activated and is now the current key, while the 1st key is not
       expect(await keyManager.isCurrentKeyId(keyId2)).to.be.true;
